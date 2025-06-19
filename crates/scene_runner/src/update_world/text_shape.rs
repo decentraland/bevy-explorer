@@ -88,14 +88,15 @@ bevy: not implemented
 */
 
 use bevy::{
-    core::FrameCount,
-    prelude::*,
-    text::{BreakLineOn, CosmicBuffer, TextLayoutInfo},
-    ui::{update::update_clipping_system, widget::text_system},
+    diagnostic::FrameCount,
+    ecs::{relationship::RelatedSpawner, spawn::SpawnWith},
     platform::collections::{HashMap, HashSet},
+    prelude::*,
+    text::{ComputedTextBlock, CosmicBuffer, LineBreak},
+    ui::{update::update_clipping_system, widget::text_system},
 };
 use common::{
-    sets::{SceneLoopSets, SceneSets},
+    sets::SceneLoopSets,
     util::{DespawnWith, TryPushChildrenEx},
 };
 use dcl::interface::ComponentPosition;
@@ -124,10 +125,6 @@ impl Plugin for TextShapePlugin {
         app.add_systems(
             Update,
             update_text_shapes.in_set(SceneLoopSets::UpdateWorld),
-        );
-        app.add_systems(
-            Update,
-            add_cosmic_buffers.after(SceneSets::RestrictedActions),
         );
         app.add_systems(
             PostUpdate,
@@ -169,7 +166,7 @@ fn update_text_shapes(
 ) {
     // remove deleted ui nodes
     for e in removed.read() {
-        if let Some(mut commands) = commands.get_entity(e) {
+        if let Ok(mut commands) = commands.get_entity(e) {
             commands.remove::<WorldUi>();
         }
         debug!("[{}] kill textshape {e:?}", frame.0);
@@ -192,7 +189,7 @@ fn update_text_shapes(
                 continue;
             }
 
-            if let Some(commands) = commands.get_entity(prior.0) {
+            if let Ok(mut commands) = commands.get_entity(prior.0) {
                 commands.despawn();
             }
         }
@@ -207,21 +204,18 @@ fn update_text_shapes(
                 commands.entity(view).insert(DespawnWith(ent));
                 let ui_root = commands
                     .spawn((
-                        NodeBundle {
-                            style: Node {
-                                width: Val::Px(8192.0),
-                                min_width: Val::Px(8192.0),
-                                max_width: Val::Px(8192.0),
-                                max_height: Val::Px(8192.0),
-                                flex_direction: FlexDirection::Row,
-                                flex_wrap: FlexWrap::Wrap,
-                                align_items: AlignItems::FlexStart,
-                                align_content: AlignContent::FlexStart,
-                                ..Default::default()
-                            },
+                        Node {
+                            width: Val::Px(8192.0),
+                            min_width: Val::Px(8192.0),
+                            max_width: Val::Px(8192.0),
+                            max_height: Val::Px(8192.0),
+                            flex_direction: FlexDirection::Row,
+                            flex_wrap: FlexWrap::Wrap,
+                            align_items: AlignItems::FlexStart,
+                            align_content: AlignContent::FlexStart,
                             ..Default::default()
                         },
-                        TargetCamera(view),
+                        UiTargetCamera(view),
                         DespawnWith(ent),
                     ))
                     .id();
@@ -283,7 +277,7 @@ fn update_text_shapes(
         } else {
             text_shape.0.text.as_str()
         };
-        let (text, extras) = make_text_section(
+        let text = make_text_section(
             source,
             font_size,
             text_shape
@@ -298,26 +292,20 @@ fn update_text_shapes(
 
         let ui_node = commands
             .spawn((
-                NodeBundle {
-                    style: Node {
-                        margin: UiRect::all(Val::Px(1.0)),
-                        flex_direction: FlexDirection::Row,
-                        max_width: Val::Px(width),
-                        ..Default::default()
-                    },
+                Node {
+                    margin: UiRect::all(Val::Px(1.0)),
+                    flex_direction: FlexDirection::Row,
+                    max_width: Val::Px(width),
                     ..Default::default()
                 },
                 DespawnWith(ent),
             ))
             .with_children(|c| {
                 if text_shape.0.padding_left.is_some() {
-                    c.spawn(NodeBundle {
-                        style: Node {
-                            width: Val::Px(text_shape.0.padding_left() * PIX_PER_M),
-                            min_width: Val::Px(text_shape.0.padding_left() * PIX_PER_M),
-                            max_width: Val::Px(text_shape.0.padding_left() * PIX_PER_M),
-                            ..Default::default()
-                        },
+                    c.spawn(Node {
+                        width: Val::Px(text_shape.0.padding_left() * PIX_PER_M),
+                        min_width: Val::Px(text_shape.0.padding_left() * PIX_PER_M),
+                        max_width: Val::Px(text_shape.0.padding_left() * PIX_PER_M),
                         ..Default::default()
                     });
                 }
@@ -326,47 +314,35 @@ fn update_text_shapes(
                     c.spacer();
                 }
 
-                c.spawn(NodeBundle {
-                    ..Default::default()
-                })
-                .with_children(|c| {
-                    let mut cmds = c.spawn(TextBundle {
-                        text,
-                        style: Node {
-                            align_self: match halign {
-                                JustifyText::Left => AlignSelf::FlexStart,
-                                JustifyText::Center => AlignSelf::Center,
-                                JustifyText::Right => AlignSelf::FlexEnd,
-                                JustifyText::Justified => AlignSelf::Center,
-                            },
-                            ..Default::default()
+                c.spawn(Node::default()).with_child((
+                    text,
+                    Node {
+                        align_self: match halign {
+                            JustifyText::Left => AlignSelf::FlexStart,
+                            JustifyText::Center => AlignSelf::Center,
+                            JustifyText::Right => AlignSelf::FlexEnd,
+                            JustifyText::Justified => AlignSelf::Center,
                         },
                         ..Default::default()
-                    });
-                    if let Some(extras) = extras {
-                        cmds.insert(extras);
-                    }
-                });
+                    },
+                ));
 
                 if halign != JustifyText::Right {
                     c.spacer();
                 }
 
                 if text_shape.0.padding_right.is_some() {
-                    c.spawn(NodeBundle {
-                        style: Node {
-                            width: Val::Px(text_shape.0.padding_right() * PIX_PER_M),
-                            min_width: Val::Px(text_shape.0.padding_right() * PIX_PER_M),
-                            max_width: Val::Px(text_shape.0.padding_right() * PIX_PER_M),
-                            ..Default::default()
-                        },
+                    c.spawn(Node {
+                        width: Val::Px(text_shape.0.padding_right() * PIX_PER_M),
+                        min_width: Val::Px(text_shape.0.padding_right() * PIX_PER_M),
+                        max_width: Val::Px(text_shape.0.padding_right() * PIX_PER_M),
                         ..Default::default()
                     });
                 }
             })
             .id();
 
-        if let Some(mut commands) = commands.get_entity(world_ui.ui_root) {
+        if let Ok(mut commands) = commands.get_entity(world_ui.ui_root) {
             commands.try_push_children(&[ui_node]);
         }
 
@@ -411,40 +387,29 @@ fn round_layout_coords(value: Vec2) -> Vec2 {
 }
 fn apply_text_extras(
     mut commands: Commands,
-    q: Query<
+    text: Query<(
+        Entity,
+        &Children,
+        &GlobalTransform,
+        Ref<TextLayout>,
+        Ref<ComputedTextBlock>,
+        Ref<ComputedNode>,
+        Option<Ref<UiTargetCamera>>,
+    )>,
+    changed_spans: Query<
+        &ChildOf,
         (
-            &Text,
-            &TextExtras,
-            &CosmicBuffer,
-            &Parent,
-            &GlobalTransform,
-            &ComputedNode,
-            Option<&TargetCamera>,
-            Option<&Children>,
+            With<TextExtras>,
+            Or<(Changed<TextSpan>, Changed<TextExtras>)>,
         ),
-        Or<(Changed<Text>, Changed<TextLayoutInfo>, Changed<TextExtras>)>,
     >,
+    spans: Query<(&TextSpan, &TextColor, Option<&TextExtras>)>,
     existing: Query<(), With<TextExtraMarker>>,
     mut removed: RemovedComponents<TextExtras>,
-    children: Query<&Children>,
 ) {
-    for removed in removed.read() {
-        if let Ok(children) = children.get(removed) {
-            for child in children {
-                if existing.get(*child).is_ok() {
-                    commands.entity(*child).despawn();
-                }
-            }
-        }
-    }
-
-    let find_bounds = |buffer: &CosmicBuffer, text: &Text, section: usize| -> Vec<Vec4> {
+    let find_bounds = |buffer: &CosmicBuffer, text: &str, section: (usize, usize)| -> Vec<Vec4> {
         let mut segments = Vec::default();
-        let preceding_text = text.sections[..section]
-            .iter()
-            .map(|s| s.value.clone())
-            .collect::<Vec<_>>()
-            .join("");
+        let preceding_text = &text[..section.0];
         let start_line = preceding_text.chars().filter(|c| *c == '\n').count();
         let start_line_index = preceding_text
             .char_indices()
@@ -458,20 +423,14 @@ fn apply_text_extras(
             .unwrap_or(0)
             - start_line_index;
 
-        let end_line = start_line
-            + text.sections[section]
-                .value
-                .chars()
-                .filter(|c| *c == '\n')
-                .count();
-        let end_line_index = text.sections[section]
-            .value
+        let section_text = &text[section.0..section.1];
+        let end_line = start_line + section_text.chars().filter(|c| *c == '\n').count();
+        let end_line_index = section_text
             .char_indices()
             .last()
             .map(|(ix, _)| ix)
             .unwrap_or(0);
-        let end_section_index = text.sections[section]
-            .value
+        let end_section_index = section_text
             .char_indices()
             .rfind(|(_, c)| *c == '\n')
             .map(|(ix, _)| end_line_index - ix)
@@ -510,13 +469,28 @@ fn apply_text_extras(
         segments
     };
 
-    for (text, extras, buffer, parent, gt, node, maybe_camera, maybe_children) in q.iter() {
-        for &child in maybe_children.map(|c| c.iter()).unwrap_or_default() {
-            if existing.get(child).is_ok() {
-                commands.entity(child).despawn();
+    let removed_extras = removed.read().collect::<HashSet<_>>();
+    let changed = changed_spans
+        .iter()
+        .map(|c| c.parent())
+        .collect::<HashSet<_>>();
+
+    for (entity, children, gt, layout, computed_text, computed_node, maybe_camera) in text.iter() {
+        let mut requires_update =
+            layout.is_changed() || computed_text.is_changed() || computed_node.is_changed();
+        requires_update |= changed.contains(&entity);
+        requires_update |= children.iter().any(|child| removed_extras.contains(&child));
+
+        if !requires_update {
+            continue;
+        }
+
+        // remove prior
+        for child in children {
+            if existing.get(*child).is_ok() {
+                commands.entity(*child).despawn();
             }
         }
-        let mut ents = Vec::default();
 
         let mut make_mark = |bound: Vec4, color: Color, top: f32, height: f32| -> Entity {
             // because we make marks based on calculated text positions, we have to run after the ui layout functions
@@ -528,91 +502,86 @@ fn apply_text_extras(
             view_visibility.set();
             let height = (bound.w * height).max(1.0);
             let size = Vec2::new(bound.z, height);
-            let parent_tl = gt.translation().truncate() - node.calculated_size * 0.5;
+            let parent_tl = gt.translation().truncate() - computed_node.size * 0.5;
             let my_tl = parent_tl + Vec2::new(bound.x, bound.y + bound.w * top);
             let my_translation = round_layout_coords(my_tl + size * 0.5);
             let mut cmds = commands.spawn((
-                NodeBundle {
-                    style: Node {
-                        position_type: PositionType::Absolute,
-                        left: Val::Px(bound.x),
-                        top: Val::Px(bound.y + bound.w * top),
-                        width: Val::Px(bound.z),
-                        height: Val::Px(height),
-                        ..Default::default()
-                    },
-                    background_color: color.into(),
-                    z_index: ZIndex::Local(1),
-                    view_visibility,
-                    node: ComputedNode {
-                        stack_index: node.stack_index + 1,
-                        calculated_size: round_layout_coords(size),
-                        outline_width: 0.0,
-                        outline_offset: 0.0,
-                        unrounded_size: size,
-                    },
-                    global_transform: GlobalTransform::from_translation(my_translation.extend(0.0)),
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(bound.x),
+                    top: Val::Px(bound.y + bound.w * top),
+                    width: Val::Px(bound.z),
+                    height: Val::Px(height),
                     ..Default::default()
                 },
+                BackgroundColor(color),
+                ZIndex(1),
+                view_visibility,
+                ComputedNode {
+                    stack_index: computed_node.stack_index + 1,
+                    size: round_layout_coords(size),
+                    outline_width: 0.0,
+                    outline_offset: 0.0,
+                    unrounded_size: size,
+                    content_size: size,
+                    border: BorderRect::ZERO,
+                    border_radius: ResolvedBorderRadius::ZERO,
+                    padding: BorderRect::ZERO,
+                    inverse_scale_factor: computed_node.inverse_scale_factor,
+                },
+                GlobalTransform::from_translation(my_translation.extend(0.0)),
                 TextExtraMarker,
             ));
 
-            if let Some(target_camera) = maybe_camera {
-                cmds.insert(target_camera.clone());
+            if let Some(target_camera) = maybe_camera.as_ref() {
+                cmds.insert(UiTargetCamera(target_camera.0));
             }
 
             cmds.id()
         };
 
-        for strike in extras.strike.iter() {
-            let bounds = find_bounds(buffer, text, *strike);
+        let mut text = String::default();
+        let mut spanned_extras = Vec::default();
+        for &child in children {
+            let Ok((span, color, maybe_extras)) = spans.get(child) else {
+                continue;
+            };
+
+            if let Some(extras) = maybe_extras {
+                spanned_extras.push((extras, color.0, text.len(), text.len() + span.0.len()));
+            }
+            text.push_str(span.0.as_str());
+        }
+
+        let buffer = computed_text.buffer();
+        let mut ents = Vec::default();
+
+        for (extras, text_color, start, end) in spanned_extras {
+            let bounds = find_bounds(buffer, &text, (start, end));
             for bound in bounds {
-                ents.push(make_mark(
-                    bound,
-                    text.sections[*strike].style.color,
-                    0.6,
-                    0.1,
-                ));
+                if extras.strike {
+                    ents.push(make_mark(bound, text_color, 0.6, 0.1));
+                }
+                if extras.underline {
+                    ents.push(make_mark(bound, text_color, 0.95, 0.1));
+                }
+                if let Some(color) = extras.mark {
+                    ents.push(make_mark(bound, color, 0.0, 1.0));
+                }
             }
         }
 
-        for under in extras.underline.iter() {
-            let bounds = find_bounds(buffer, text, *under);
-            for bound in bounds {
-                ents.push(make_mark(
-                    bound,
-                    text.sections[*under].style.color,
-                    0.95,
-                    0.1,
-                ));
-            }
-        }
-
-        for (mark_section, mark_color) in extras.mark.iter() {
-            let bounds = find_bounds(buffer, text, *mark_section);
-            for bound in bounds {
-                ents.push(make_mark(bound, *mark_color, 0.0, 1.0));
-            }
-        }
-
-        commands
-            .entity(parent.get())
-            .try_push_children(ents.as_slice());
+        commands.entity(entity).try_push_children(ents.as_slice());
     }
 }
 
-#[derive(Component, Default)]
+#[derive(Component, Default, Clone, Copy)]
 pub struct TextExtras {
-    strike: HashSet<usize>,
-    underline: HashSet<usize>,
-    mark: HashMap<usize, Color>,
+    strike: bool,
+    underline: bool,
+    mark: Option<Color>,
 }
 
-impl TextExtras {
-    pub fn is_empty(&self) -> bool {
-        self.strike.is_empty() && self.underline.is_empty() && self.mark.is_empty()
-    }
-}
 pub fn make_text_section(
     text: &str,
     font_size: f32,
@@ -620,9 +589,8 @@ pub fn make_text_section(
     font: dcl_component::proto_components::sdk::components::common::Font,
     justify: JustifyText,
     wrapping: bool,
-) -> (Text, Option<TextExtras>) {
+) -> impl Bundle {
     let text = text.replace("\\n", "\n");
-    let mut extras = TextExtras::default();
 
     let font_name = match font {
         dcl_component::proto_components::sdk::components::common::Font::FSansSerif => {
@@ -643,9 +611,9 @@ pub fn make_text_section(
     let mut override_colors = Vec::<Color>::default();
     let mut section_start = 0usize;
 
-    let mut sections = Vec::default();
+    let mut spans = Vec::default();
 
-    loop {
+    while section_start < text.len() {
         // read initial tags
         while text[section_start..].starts_with('<') {
             if let Some((close, _)) = text[section_start..]
@@ -706,14 +674,17 @@ pub fn make_text_section(
             (_, 0) => WeightName::Bold,
             (_, _) => WeightName::BoldItalic,
         };
+
+        let mut maybe_extras: Option<TextExtras> = None;
+
         if s_count > 0 {
-            extras.strike.insert(sections.len());
+            maybe_extras.get_or_insert_default().strike = true;
         }
         if u_count > 0 {
-            extras.underline.insert(sections.len());
+            maybe_extras.get_or_insert_default().underline = true;
         }
         if let Some(mark) = marks.last().as_ref() {
-            extras.mark.insert(sections.len(), **mark);
+            maybe_extras.get_or_insert_default().mark = Some(**mark);
         }
 
         let section_end = text[section_start..]
@@ -722,44 +693,44 @@ pub fn make_text_section(
             .map(|(ix, _)| section_start + ix.max(1))
             .unwrap_or(usize::MAX);
 
-        let style = TextStyle {
+        let font = TextFont {
             font: user_font(font_name, weight),
             font_size: font_size * 0.95,
-            color: override_colors.last().copied().unwrap_or(color),
+            ..Default::default()
         };
 
-        if section_end == usize::MAX {
-            sections.push(TextSection::new(&text[section_start..], style));
-            break;
-        }
+        let color = TextColor(override_colors.last().copied().unwrap_or(color));
 
-        sections.push(TextSection::new(&text[section_start..section_end], style));
+        let span = if section_end == usize::MAX {
+            TextSpan::new(&text[section_start..]);
+        } else {
+            TextSpan::new(&text[section_start..section_end]);
+        };
+
+        spans.push((span, font, color, maybe_extras));
 
         section_start = section_end;
     }
 
-    (
-        Text {
-            sections,
-            linebreak_behavior: if wrapping {
-                BreakLineOn::WordBoundary
-            } else {
-                BreakLineOn::NoWrap
-            },
-            justify,
-        },
-        (!extras.is_empty()).then_some(extras),
-    )
-}
-
-// workaround for using bevy cosmic buffer patch without lib support
-fn add_cosmic_buffers(
-    mut commands: Commands,
-    q: Query<Entity, (With<Text>, Without<CosmicBuffer>)>,
-) {
-    for e in q.iter() {
-        if let Some(mut commands) = commands.get_entity(e) {
-            commands.try_insert(CosmicBuffer::default());
+    let f = move |parent: &mut RelatedSpawner<ChildOf>| {
+        for (span, font, color, maybe_extras) in spans {
+            let mut child = parent.spawn((span, font, color));
+            if let Some(extras) = maybe_extras {
+                child.insert(extras);
+            }
         }
-    }
+    };
+
+    (
+        Text::default(),
+        TextLayout::new(
+            justify,
+            if wrapping {
+                LineBreak::WordBoundary
+            } else {
+                LineBreak::NoWrap
+            },
+        ),
+        Children::spawn(SpawnWith(f)),
+    )
 }

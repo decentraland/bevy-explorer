@@ -2,7 +2,7 @@ use bevy::{
     color::palettes::css,
     core::FrameCount,
     prelude::*,
-    text::BreakLineOn,
+    text::LineBreak,
     ui::FocusPolicy,
     platform::collections::HashSet,
     window::{PrimaryWindow, WindowFocused, WindowResized},
@@ -381,7 +381,7 @@ fn show_emote_ui(
                         }
                         if let Ok(mut text) = text.get_mut(output) {
                             text.sections[0].value.clone_from(&name);
-                            text.linebreak_behavior = BreakLineOn::WordBoundary;
+                            text.linebreak_behavior = LineBreak::WordBoundary;
                         }
                     },
                 ),
