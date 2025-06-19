@@ -280,16 +280,14 @@ impl<S: States + FreelyMutableState> StateTracker<S> {
                            asset_server: Res<AssetServer>,
                            mut next_state: ResMut<NextState<S>>| {
             if slf.assets.iter().all(|a| {
-                if let Some((
-                    LoadState::Loaded,
-                    DependencyLoadState::Loaded,
-                    RecursiveDependencyLoadState::Loaded,
-                )) = asset_server.get_load_states(a.id())
-                {
-                    true
-                } else {
-                    false
-                }
+                matches!(
+                    asset_server.get_load_states(a.id()),
+                    Some((
+                        LoadState::Loaded,
+                        DependencyLoadState::Loaded,
+                        RecursiveDependencyLoadState::Loaded,
+                    ))
+                )
             }) && slf.systems.values().all(|v| *v)
             {
                 next_state.set(next.clone())

@@ -179,7 +179,7 @@ fn update_comboboxen(
                     *text_font = style_copy.0.clone();
                 })
                 .modify_component(move |text_color: &mut TextColor| {
-                    *text_color = style_copy.1.clone();
+                    *text_color = style_copy.1;
                 });
         } else {
             commands

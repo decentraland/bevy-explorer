@@ -57,7 +57,7 @@ fn setup(
     // emote button
     let button = commands
         .spawn((
-            ImageNode::new(asset_server.load("images/emote_button.png").into()),
+            ImageNode::new(asset_server.load("images/emote_button.png")),
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::VMin(BUTTON_SCALE * 2.5),

@@ -1377,9 +1377,7 @@ fn handle_spawned_command(
                     }
                 },
                 Err(e) => {
-                    reply.write(PrintConsoleLine::new(
-                        format!("failed to lookup ens: {e}").into(),
-                    ));
+                    reply.write(PrintConsoleLine::new(format!("failed to lookup ens: {e}")));
                     reply.write(PrintConsoleLine::new("[failed]".into()));
                 }
             }

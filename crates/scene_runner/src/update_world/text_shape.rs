@@ -702,9 +702,9 @@ pub fn make_text_section(
         let color = TextColor(override_colors.last().copied().unwrap_or(color));
 
         let span = if section_end == usize::MAX {
-            TextSpan::new(&text[section_start..]);
+            TextSpan::new(&text[section_start..])
         } else {
-            TextSpan::new(&text[section_start..section_end]);
+            TextSpan::new(&text[section_start..section_end])
         };
 
         spans.push((span, font, color, maybe_extras));

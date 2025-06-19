@@ -138,14 +138,14 @@ pub fn post_events(
             Some(PrintConsoleLine { line }) if line.as_str() == "[ok]" => {
                 response.send(Ok(reply
                     .into_iter()
-                    .map(|l| format!("{}", l.line))
+                    .map(|l| l.line.clone())
                     .collect::<Vec<_>>()
                     .join("\n")));
             }
             Some(PrintConsoleLine { line }) if line.as_str() == "[failed]" => {
                 response.send(Err(reply
                     .into_iter()
-                    .map(|l| format!("{}", l.line))
+                    .map(|l| l.line.clone())
                     .collect::<Vec<_>>()
                     .join("\n")));
             }

@@ -350,7 +350,7 @@ fn update_texture_cameras(
                         ..Default::default()
                     },
                 },
-                Projection::from(projection),
+                projection,
                 Bloom {
                     intensity: 0.15,
                     ..Bloom::OLD_SCHOOL

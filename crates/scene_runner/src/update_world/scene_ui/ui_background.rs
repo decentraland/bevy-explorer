@@ -286,10 +286,8 @@ pub fn set_ui_background(
     for (ent, maybe_stretch, source) in sourced.iter() {
         if commands.get_entity(source.0).is_err() {
             commands.entity(ent).insert(RetryBackground);
-        } else {
-            if let Some(h_stretch) = maybe_stretch {
-                stretch_uvs.get_mut(h_stretch);
-            }
+        } else if let Some(h_stretch) = maybe_stretch {
+            stretch_uvs.get_mut(h_stretch);
         }
     }
 }

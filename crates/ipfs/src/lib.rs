@@ -589,12 +589,12 @@ pub fn change_realm(
                     };
 
                     match about.configurations {
-                        Some(_) => print.write(PrintConsoleLine::new(
-                            format!("Realm set to `{realm}`").into(),
-                        )),
-                        None => print.write(PrintConsoleLine::new(
-                            format!("Failed to set realm `{realm}`").into(),
-                        )),
+                        Some(_) => {
+                            print.write(PrintConsoleLine::new(format!("Realm set to `{realm}`")))
+                        }
+                        None => print.write(PrintConsoleLine::new(format!(
+                            "Failed to set realm `{realm}`"
+                        ))),
                     };
                 }
             }

@@ -491,7 +491,7 @@ impl DuiTemplate for DuiBooth {
                 height: Val::Percent(100.0),
                 ..Default::default()
             },
-            ImageNode::new(booth.avatar_texture.clone().into()),
+            ImageNode::new(booth.avatar_texture.clone()),
             Interaction::default(),
             BoothImage,
             booth,

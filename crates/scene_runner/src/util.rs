@@ -125,19 +125,18 @@ fn debug_dump_scene(
                         let mut count = count.lock().unwrap();
                         if let Some(fail) = fail {
                             count.2 += 1;
-                            let _ = send.send(fail.into());
+                            let _ = send.send(fail);
                         } else {
                             count.1 += 1;
                         }
                         if count.0 == count.1 + count.2 {
                             if count.2 == 0 {
-                                let _ =
-                                    send.send(format!("[ok] {} files downloaded", count.0).into());
+                                let _ = send.send(format!("[ok] {} files downloaded", count.0));
                             } else {
-                                let _ = send.send(
-                                    format!("[failed] {}/{} files downloaded", count.1, count.0)
-                                        .into(),
-                                );
+                                let _ = send.send(format!(
+                                    "[failed] {}/{} files downloaded",
+                                    count.1, count.0
+                                ));
                             }
                         }
                     };
