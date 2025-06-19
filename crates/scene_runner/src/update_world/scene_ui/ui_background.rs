@@ -125,10 +125,7 @@ pub fn set_ui_background(
         };
 
         if let Ok(children) = children.get(link.ui_entity) {
-            for child in children
-                .iter()
-                .filter(|c| prev_backgrounds.get(*c).is_ok())
-            {
+            for child in children.iter().filter(|c| prev_backgrounds.get(*c).is_ok()) {
                 if let Ok(mut commands) = commands.get_entity(child) {
                     commands.despawn();
                 }
@@ -142,10 +139,7 @@ pub fn set_ui_background(
 
     for (ent, scene_ent, background, link) in backgrounds.iter() {
         if let Ok(children) = children.get(link.ui_entity) {
-            for child in children
-                .iter()
-                .filter(|c| prev_backgrounds.get(*c).is_ok())
-            {
+            for child in children.iter().filter(|c| prev_backgrounds.get(*c).is_ok()) {
                 if let Ok(mut commands) = commands.get_entity(child) {
                     commands.despawn();
                 }

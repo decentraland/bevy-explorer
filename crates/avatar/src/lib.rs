@@ -6,6 +6,7 @@ use bevy::{
     animation::{AnimationTarget, AnimationTargetId},
     asset::{io::AssetReader, AsyncReadExt},
     gltf::Gltf,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
         mesh::skinning::SkinnedMesh,
@@ -13,7 +14,6 @@ use bevy::{
     },
     scene::InstanceId,
     tasks::{IoTaskPool, Task},
-    platform::collections::{HashSet, HashMap},
 };
 use bevy_console::ConsoleCommand;
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
@@ -724,9 +724,7 @@ fn update_render_avatar(
                         panic!();
                     }
                     chose_existing = true;
-                    commands
-                        .entity(entity)
-                        .insert(PreviousAvatar(render_child));
+                    commands.entity(entity).insert(PreviousAvatar(render_child));
                 }
             }
         }
@@ -1046,7 +1044,9 @@ fn process_avatar(
                     let instance_mat = instance_scene_materials
                         .entry(h_mat.clone_weak())
                         .or_insert_with(|| scene_materials.add(new_mat));
-                    commands.entity(scene_ent).try_insert(MeshMaterial3d(instance_mat.clone()));
+                    commands
+                        .entity(scene_ent)
+                        .try_insert(MeshMaterial3d(instance_mat.clone()));
                 }
             }
 
@@ -1107,7 +1107,9 @@ fn process_avatar(
                                 ),
                             };
                             let material = scene_materials.add(new_mat);
-                            commands.entity(scene_ent).try_insert(MeshMaterial3d(material));
+                            commands
+                                .entity(scene_ent)
+                                .try_insert(MeshMaterial3d(material));
                         };
                         *vis = Visibility::Inherited;
                     }
@@ -1282,7 +1284,9 @@ fn process_avatar(
                         let instance_mat = instance_scene_materials
                             .entry(h_mat.clone_weak())
                             .or_insert_with(|| scene_materials.add(new_mat));
-                        commands.entity(scene_ent).try_insert(MeshMaterial3d(instance_mat.clone()));
+                        commands
+                            .entity(scene_ent)
+                            .try_insert(MeshMaterial3d(instance_mat.clone()));
                     }
                 }
             }

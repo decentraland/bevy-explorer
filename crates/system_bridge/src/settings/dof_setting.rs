@@ -1,6 +1,6 @@
 use super::SettingCategory;
 use bevy::{
-    core_pipeline::dof::{DepthOfFieldMode, DepthOfField},
+    core_pipeline::dof::{DepthOfField, DepthOfFieldMode},
     ecs::system::{lifetimeless::SRes, SystemParamItem},
     prelude::*,
 };

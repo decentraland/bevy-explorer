@@ -7,7 +7,9 @@ use bevy::{
 };
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry, DuiTemplate};
 use common::{
-    sets::SceneSets, structs::TextStyle, util::{DespawnWith, ModifyComponentExt, TryPushChildrenEx}
+    sets::SceneSets,
+    structs::TextStyle,
+    util::{DespawnWith, ModifyComponentExt, TryPushChildrenEx},
 };
 
 use crate::{
@@ -238,7 +240,7 @@ fn update_comboboxen(
                     // dbg!(node.size());
 
                     let text_lightness =
-                        Lcha::from(cbox.style.as_ref().map(|s| s.1.0).unwrap_or(Color::WHITE))
+                        Lcha::from(cbox.style.as_ref().map(|s| s.1 .0).unwrap_or(Color::WHITE))
                             .lightness;
                     let background = if text_lightness > 0.5 {
                         Color::BLACK.with_alpha(0.85)

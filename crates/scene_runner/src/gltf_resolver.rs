@@ -2,9 +2,9 @@ use anyhow::anyhow;
 use bevy::{
     ecs::system::SystemParam,
     gltf::{Gltf, GltfLoaderSettings, GltfMesh},
+    platform::collections::HashMap,
     prelude::*,
     render::render_asset::RenderAssetUsages,
-    platform::collections::HashMap,
 };
 use ipfs::IpfsAssetServer;
 

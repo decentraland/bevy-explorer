@@ -163,7 +163,8 @@ pub fn update_user_position(
         let mut transforms = vec![sync_transform];
         let mut pointer = maybe_parent;
         while let Some(next_parent) = pointer {
-            let Ok((next_transform, next_parent)) = manual_transform.get(next_parent.parent()) else {
+            let Ok((next_transform, next_parent)) = manual_transform.get(next_parent.parent())
+            else {
                 break;
             };
 

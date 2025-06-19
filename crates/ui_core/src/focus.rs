@@ -1,4 +1,4 @@
-use bevy::{prelude::*, platform::collections::HashSet};
+use bevy::{platform::collections::HashSet, prelude::*};
 use input_manager::{InputManager, InputPriority, InputType};
 
 use crate::ui_actions::{UiActionPriority, UiFocusActionSet};

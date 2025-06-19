@@ -1,8 +1,8 @@
 use crate::AvatarMaterials;
 use bevy::{
     diagnostic::FrameCount,
-    prelude::*,
     platform::collections::{HashMap, HashSet},
+    prelude::*,
 };
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
@@ -143,7 +143,8 @@ fn update_avatar_collider_actions(
     let Ok(window) = windows.single() else {
         return;
     };
-    let cursor_position = if window.cursor_options.grab_mode == bevy::window::CursorGrabMode::Locked {
+    let cursor_position = if window.cursor_options.grab_mode == bevy::window::CursorGrabMode::Locked
+    {
         // if pointer locked, just middle
         Vec2::new(window.width(), window.height()) / 2.0
     } else {

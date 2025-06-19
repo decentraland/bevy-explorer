@@ -143,7 +143,7 @@ impl AssetReader for NftReader {
         &'a self,
         path: &'a Path,
     ) -> Result<impl bevy::asset::io::Reader + 'a, AssetReaderError> {
-        Err::<AsyncCursor<Vec<u8>>,_>(AssetReaderError::NotFound(path.to_owned()))
+        Err::<AsyncCursor<Vec<u8>>, _>(AssetReaderError::NotFound(path.to_owned()))
     }
 
     async fn is_directory<'a>(&'a self, _path: &'a Path) -> Result<bool, AssetReaderError> {

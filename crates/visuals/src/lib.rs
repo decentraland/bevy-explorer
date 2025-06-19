@@ -495,8 +495,7 @@ fn update_dof(
     mut cam: Query<(&Transform, &DofConfig, &mut DepthOfField), With<PrimaryCamera>>,
     player: Query<&Transform, With<PrimaryUser>>,
 ) {
-    let (Ok((cam, mydof, mut dof)), Ok(player)) = (cam.single_mut(), player.single())
-    else {
+    let (Ok((cam, mydof, mut dof)), Ok(player)) = (cam.single_mut(), player.single()) else {
         return;
     };
 

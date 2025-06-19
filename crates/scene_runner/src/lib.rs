@@ -11,9 +11,9 @@ use bevy::{
     diagnostic::FrameCount,
     ecs::{query::Has, schedule::ScheduleLabel, system::SystemParam},
     math::{FloatOrd, Vec3A, Vec3Swizzles},
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     scene::scene_spawner_system,
-    platform::collections::{HashMap, HashSet},
     window::PrimaryWindow,
     winit::WinitWindows,
 };

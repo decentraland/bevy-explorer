@@ -2,7 +2,7 @@
 // - support blending animations
 // - suport morph targets
 use bevy::{animation::RepeatAnimation, platform::collections::HashSet};
-use bevy::{prelude::*, platform::collections::HashMap};
+use bevy::{platform::collections::HashMap, prelude::*};
 
 use common::sets::SceneSets;
 use dcl::interface::ComponentPosition;

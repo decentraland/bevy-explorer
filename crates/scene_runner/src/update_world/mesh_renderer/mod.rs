@@ -1,9 +1,9 @@
 use std::f32::consts::FRAC_PI_2;
 
 use bevy::{
+    platform::collections::HashMap,
     prelude::*,
     render::mesh::{skinning::SkinnedMesh, VertexAttributeValues},
-    platform::collections::HashMap,
 };
 
 use common::{sets::SceneSets, structs::AppConfig};

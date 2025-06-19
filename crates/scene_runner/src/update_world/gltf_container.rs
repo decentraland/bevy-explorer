@@ -12,6 +12,7 @@ use bevy::{
     asset::LoadState,
     gltf::{Gltf, GltfExtras, GltfLoaderSettings},
     pbr::ExtendedMaterial,
+    platform::collections::HashMap,
     prelude::*,
     render::{
         mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues},
@@ -20,7 +21,6 @@ use bevy::{
     },
     scene::{scene_spawner_system, InstanceId},
     transform::TransformSystem,
-    platform::collections::HashMap,
 };
 use common::{
     anim_last_system,
@@ -31,10 +31,13 @@ use rapier3d_f64::prelude::*;
 use serde::Deserialize;
 
 use crate::{
-    initialize_scene::SceneEntityDefinitionHandle, renderer_context::RendererSceneContext, update_world::{
+    initialize_scene::SceneEntityDefinitionHandle,
+    renderer_context::RendererSceneContext,
+    update_world::{
         lights::{Light, SpotlightAngles},
         material::{dcl_material_from_standard_material, BaseMaterial},
-    }, ContainerEntity, SceneEntity, SceneSets
+    },
+    ContainerEntity, SceneEntity, SceneSets,
 };
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
@@ -758,7 +761,9 @@ fn update_ready_gltfs(
                                                 Mesh::ATTRIBUTE_COLOR
                                             }
                                             _ => {
-                                                warn!("unrecognised vertex attribute {attribute:?}");
+                                                warn!(
+                                                    "unrecognised vertex attribute {attribute:?}"
+                                                );
                                                 continue;
                                             }
                                         };

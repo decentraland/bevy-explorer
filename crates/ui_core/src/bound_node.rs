@@ -1,9 +1,9 @@
 use bevy::{
+    platform::collections::HashMap,
     prelude::*,
     render::render_resource::{AsBindGroup, ShaderRef, ShaderType},
     transform::TransformSystem,
     ui::FocusPolicy,
-    platform::collections::HashMap,
     window::{PrimaryWindow, WindowResized},
 };
 use bevy_dui::{DuiRegistry, DuiTemplate};
@@ -127,14 +127,21 @@ fn update_bounded_nodes(
     mut commands: Commands,
     new_children: Query<
         (Entity, &BoundedNode),
-        Or<(Without<MaterialNode<BoundedImageMaterial>>, Changed<BoundedNode>)>,
+        Or<(
+            Without<MaterialNode<BoundedImageMaterial>>,
+            Changed<BoundedNode>,
+        )>,
     >,
     mut existing: Local<HashMap<Entity, Vec<(AssetId<BoundedImageMaterial>, bool)>>>,
     mut removed_nodes: RemovedComponents<ComputedNode>,
     mut mats: ResMut<Assets<BoundedImageMaterial>>,
     updated_nodes: Query<
         (Entity, &ComputedNode, &GlobalTransform, &NodeBounds),
-        Or<(Changed<ComputedNode>, Changed<GlobalTransform>, Changed<NodeBounds>)>,
+        Or<(
+            Changed<ComputedNode>,
+            Changed<GlobalTransform>,
+            Changed<NodeBounds>,
+        )>,
     >,
     all_nodes: Query<(Entity, &ComputedNode, &GlobalTransform, &NodeBounds)>,
     window: Query<&Window, With<PrimaryWindow>>,
@@ -251,7 +258,14 @@ fn update_bounded_nodes(
         existing: &mut HashMap<Entity, Vec<(AssetId<BoundedImageMaterial>, bool)>>,
         mats: &mut Assets<BoundedImageMaterial>,
         window: Vec2,
-        iter: impl Iterator<Item = (Entity, &'a ComputedNode, &'a GlobalTransform, &'a NodeBounds)>,
+        iter: impl Iterator<
+            Item = (
+                Entity,
+                &'a ComputedNode,
+                &'a GlobalTransform,
+                &'a NodeBounds,
+            ),
+        >,
     ) {
         for (node_ent, node, gt, bounds) in iter {
             if let Some(ids) = existing.get_mut(&node_ent) {

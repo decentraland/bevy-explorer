@@ -1,5 +1,7 @@
 use bevy::{
-    image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor}, prelude::*, render::{
+    image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor},
+    prelude::*,
+    render::{
         render_asset::{RenderAssetUsages, RenderAssets},
         render_resource::{
             binding_types::{sampler, texture_2d},
@@ -9,11 +11,9 @@ use bevy::{
             TextureDimension, TextureSampleType,
         },
         renderer::RenderDevice,
-        texture::{
-            FallbackImage, GpuImage, 
-        },
+        texture::{FallbackImage, GpuImage},
         RenderApp,
-    }
+    },
 };
 use bevy_atmosphere::{model::AtmosphereModelMetadata, pipeline::AtmosphereImageBindGroupLayout};
 use chrono::Datelike;

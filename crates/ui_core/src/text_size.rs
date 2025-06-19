@@ -1,5 +1,7 @@
 use bevy::{
-    prelude::*, text::LineBreak, window::{PrimaryWindow, WindowResized}
+    prelude::*,
+    text::LineBreak,
+    window::{PrimaryWindow, WindowResized},
 };
 use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry, DuiTemplate};
 use bevy_egui::EguiContextSettings;
@@ -8,7 +10,7 @@ use common::util::ModifyComponentExt;
 use crate::{
     dui_utils::PropsExt,
     ui_actions::{Click, HoverEnter, HoverExit, On},
-/*    user_font, FontName, WeightName, */
+    /*    user_font, FontName, WeightName, */
 };
 
 pub struct TextSizePlugin;

@@ -4,13 +4,10 @@ pub struct UiActionPlugin;
 use std::marker::PhantomData;
 
 use bevy::{
-    ecs::{
-        query::QueryData,
-        system::BoxedSystem,
-    },
+    ecs::{query::QueryData, system::BoxedSystem},
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     ui::UiSystem,
-    platform::collections::{HashMap, HashSet},
     window::PrimaryWindow,
 };
 

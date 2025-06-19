@@ -7,12 +7,12 @@ use bevy::{
     color::palettes::basic,
     diagnostic::FrameCount,
     math::FloatOrd,
+    platform::collections::HashMap,
     prelude::*,
     render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
     },
-    platform::collections::HashMap,
 };
 use common::{
     sets::SceneSets,

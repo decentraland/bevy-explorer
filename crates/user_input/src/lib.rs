@@ -3,7 +3,11 @@ pub mod dynamics;
 pub mod player_input;
 
 use bevy::{
-    app::Propagate, ecs::query::Has, prelude::*, render::{camera::CameraUpdateSystem, view::RenderLayers}, transform::TransformSystem
+    app::Propagate,
+    ecs::query::Has,
+    prelude::*,
+    render::{camera::CameraUpdateSystem, view::RenderLayers},
+    transform::TransformSystem,
 };
 
 use camera::update_cursor_lock;

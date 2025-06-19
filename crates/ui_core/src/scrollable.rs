@@ -1,6 +1,6 @@
 use bevy::{
-    prelude::*, transform::TransformSystem, ui::CameraCursorPosition, platform::collections::HashMap,
-    window::PrimaryWindow,
+    platform::collections::HashMap, prelude::*, transform::TransformSystem,
+    ui::CameraCursorPosition, window::PrimaryWindow,
 };
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
 use common::{
@@ -236,10 +236,7 @@ fn update_scrollables(
         ),
         (Without<Scrollable>, Without<Slider>),
     >,
-    mut sliders: Query<
-        (Entity, &mut Slider, &mut Node),
-        (Without<Scrollable>, Without<ScrollBar>),
-    >,
+    mut sliders: Query<(Entity, &mut Slider, &mut Node), (Without<Scrollable>, Without<ScrollBar>)>,
     mut clicked_slider: Local<Option<Entity>>,
     mut clicked_scrollable: Local<Option<(Entity, Vec2)>>,
     mut events: EventReader<ScrollTargetEvent>,

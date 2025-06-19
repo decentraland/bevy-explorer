@@ -1,7 +1,13 @@
 use std::marker::PhantomData;
 
 use bevy::{
-    ecs::system::SystemParam, platform::{collections::{hash_map::Entry, HashMap, HashSet}, hash::FixedHasher}, prelude::*, transform::TransformSystem
+    ecs::system::SystemParam,
+    platform::{
+        collections::{hash_map::Entry, HashMap, HashSet},
+        hash::FixedHasher,
+    },
+    prelude::*,
+    transform::TransformSystem,
 };
 use common::{anim_last_system, util::ModifyComponentExt};
 use dcl::{crdt::lww::CrdtLWWState, interface::ComponentPosition};
@@ -175,7 +181,8 @@ pub(crate) fn process_transform_and_parent_updates(
             let mut parents = HashMap::new();
 
             // entities that we know connect ultimately to the root
-            let mut valid_entities: HashSet<_, FixedHasher> = HashSet::from_iter(std::iter::once(root));
+            let mut valid_entities: HashSet<_, FixedHasher> =
+                HashSet::from_iter(std::iter::once(root));
             // entities that we know are part of a cycle (or lead to a cycle)
             let mut invalid_entities = HashSet::default();
 

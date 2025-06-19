@@ -1,9 +1,6 @@
 use bevy::{
     core_pipeline::fxaa::{Fxaa, Sensitivity},
-    ecs::system::{
-        lifetimeless::SRes,
-        SystemParamItem,
-    },
+    ecs::system::{lifetimeless::SRes, SystemParamItem},
     prelude::*,
 };
 use common::structs::{AaSetting, AppConfig, PrimaryCameraRes};

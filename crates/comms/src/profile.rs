@@ -3,9 +3,9 @@ use std::{io::Read, path::PathBuf, sync::Arc};
 use anyhow::anyhow;
 use bevy::{
     ecs::system::SystemParam,
+    platform::collections::HashMap,
     prelude::*,
     tasks::{IoTaskPool, Task},
-    platform::collections::HashMap,
 };
 use dcl::interface::CrdtType;
 use ethers_core::types::Address;

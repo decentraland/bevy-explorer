@@ -4,7 +4,14 @@ use std::collections::BTreeSet;
 use strum::IntoEnumIterator;
 
 use bevy::{
-    ecs::system::SystemParam, input::{gamepad::GamepadInput, mouse::{MouseMotion, MouseWheel}}, platform::collections::{HashMap, HashSet}, prelude::*, window::PrimaryWindow
+    ecs::system::SystemParam,
+    input::{
+        gamepad::GamepadInput,
+        mouse::{MouseMotion, MouseWheel},
+    },
+    platform::collections::{HashMap, HashSet},
+    prelude::*,
+    window::PrimaryWindow,
 };
 
 use common::{
@@ -211,9 +218,7 @@ impl InputManager<'_> {
                 self.mouse_input.just_pressed(*mb) && self.check_priority(item, priority)
             }
             InputIdentifier::Gamepad(b) => {
-                self.gamepad_input
-                    .get_just_pressed()
-                    .any(|p| p == b)
+                self.gamepad_input.get_just_pressed().any(|p| p == b)
                     && self.check_priority(item, priority)
             }
             InputIdentifier::Analog(axis, input_direction) => {
@@ -227,10 +232,7 @@ impl InputManager<'_> {
         self.inputs(action.into()).any(|item| match item {
             InputIdentifier::Key(k) => self.key_input.just_released(*k),
             InputIdentifier::Mouse(mb) => self.mouse_input.just_released(*mb),
-            InputIdentifier::Gamepad(b) => self
-                .gamepad_input
-                .get_just_released()
-                .any(|p| p == b),
+            InputIdentifier::Gamepad(b) => self.gamepad_input.get_just_released().any(|p| p == b),
             InputIdentifier::Analog(axis, input_direction) => {
                 self.axis_data.just_up(*axis, *input_direction)
             }
@@ -246,9 +248,7 @@ impl InputManager<'_> {
                 self.mouse_input.pressed(*mb) && self.check_priority(item, priority)
             }
             InputIdentifier::Gamepad(b) => {
-                self.gamepad_input
-                    .get_pressed()
-                    .any(|p| p == b)
+                self.gamepad_input.get_pressed().any(|p| p == b)
                     && self.check_priority(item, priority)
             }
             InputIdentifier::Analog(axis, input_direction) => {
@@ -276,10 +276,7 @@ impl InputManager<'_> {
                         }
                     }
                     InputIdentifier::Gamepad(b) => {
-                        if self
-                            .gamepad_input
-                            .get_pressed()
-                            .any(|p| p == b)
+                        if self.gamepad_input.get_pressed().any(|p| p == b)
                             && self.check_priority(item, priority)
                         {
                             1.0
@@ -328,9 +325,7 @@ impl InputManager<'_> {
                             && self.check_priority(button, InputPriority::Scene)
                     }
                     InputIdentifier::Gamepad(b) => {
-                        self.gamepad_input
-                            .get_just_pressed()
-                            .any(|p| p == b)
+                        self.gamepad_input.get_just_pressed().any(|p| p == b)
                             && self.check_priority(button, InputPriority::Scene)
                     }
                     InputIdentifier::Analog(axis, input_direction) => {
@@ -356,10 +351,9 @@ impl InputManager<'_> {
                 buttons.iter().any(|button| match button {
                     InputIdentifier::Key(k) => self.key_input.just_released(*k),
                     InputIdentifier::Mouse(m) => self.mouse_input.just_released(*m),
-                    InputIdentifier::Gamepad(b) => self
-                        .gamepad_input
-                        .get_just_released()
-                        .any(|p| p == b),
+                    InputIdentifier::Gamepad(b) => {
+                        self.gamepad_input.get_just_released().any(|p| p == b)
+                    }
                     InputIdentifier::Analog(axis, input_direction) => {
                         self.axis_data.just_up(*axis, *input_direction)
                     }
@@ -404,7 +398,6 @@ fn update_deltas(
             };
 
             match axis {
-
                 GamepadAxis::LeftStickX => {
                     *axis_data
                         .current
@@ -543,21 +536,11 @@ fn handle_native_input(
                         continue;
                     };
                     let (axis, value) = match axis {
-                        GamepadAxis::LeftStickX => {
-                            (AxisIdentifier::GamepadLeft, Vec2::X * value)
-                        }
-                        GamepadAxis::LeftStickY => {
-                            (AxisIdentifier::GamepadLeft, Vec2::Y * value)
-                        }
-                        GamepadAxis::LeftZ => {
-                            (AxisIdentifier::GamepadLeftTrigger, Vec2::X * value)
-                        }
-                        GamepadAxis::RightStickX => {
-                            (AxisIdentifier::GamepadRight, Vec2::X * value)
-                        }
-                        GamepadAxis::RightStickY => {
-                            (AxisIdentifier::GamepadRight, Vec2::Y * value)
-                        }
+                        GamepadAxis::LeftStickX => (AxisIdentifier::GamepadLeft, Vec2::X * value),
+                        GamepadAxis::LeftStickY => (AxisIdentifier::GamepadLeft, Vec2::Y * value),
+                        GamepadAxis::LeftZ => (AxisIdentifier::GamepadLeftTrigger, Vec2::X * value),
+                        GamepadAxis::RightStickX => (AxisIdentifier::GamepadRight, Vec2::X * value),
+                        GamepadAxis::RightStickY => (AxisIdentifier::GamepadRight, Vec2::Y * value),
                         GamepadAxis::RightZ => {
                             (AxisIdentifier::GamepadRightTrigger, Vec2::Y * value)
                         }
@@ -644,10 +627,7 @@ fn handle_system_input_stream(
     mut pressed: Local<HashSet<SystemAction>>,
     modifiers: Query<&PlayerModifiers>,
 ) {
-    let block_emote = modifiers
-        .single()
-        .map(|m| m.block_emote)
-        .unwrap_or(false);
+    let block_emote = modifiers.single().map(|m| m.block_emote).unwrap_or(false);
 
     let new_senders = events
         .read()

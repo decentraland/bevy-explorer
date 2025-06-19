@@ -1124,7 +1124,10 @@ fn layout_scene_ui(
 
 pub fn fully_update_target_camera_system(
     mut commands: Commands,
-    root_nodes_query: Query<(Entity, Option<&UiTargetCamera>), (With<ComputedNode>, Without<ChildOf>)>,
+    root_nodes_query: Query<
+        (Entity, Option<&UiTargetCamera>),
+        (With<ComputedNode>, Without<ChildOf>),
+    >,
     children_query: Query<&Children, With<ComputedNode>>,
 ) {
     // Track updated entities to prevent redundant updates, as `Commands` changes are deferred,

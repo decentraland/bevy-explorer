@@ -418,16 +418,17 @@ pub fn show_settings(
             |caller: Res<UiCaller>,
              selected: Query<&TabSelection>,
              mut content: Query<&mut SettingsTab>| {
-                *content.single_mut().unwrap() = match selected.get(caller.0).unwrap().selected.unwrap() {
-                    0 => SettingsTab::Discover,
-                    1 => SettingsTab::ProfileDetail,
-                    2 => SettingsTab::Wearables,
-                    3 => SettingsTab::Emotes,
-                    4 => SettingsTab::Map,
-                    5 => SettingsTab::Settings,
-                    6 => SettingsTab::Permissions,
-                    _ => panic!(),
-                }
+                *content.single_mut().unwrap() =
+                    match selected.get(caller.0).unwrap().selected.unwrap() {
+                        0 => SettingsTab::Discover,
+                        1 => SettingsTab::ProfileDetail,
+                        2 => SettingsTab::Wearables,
+                        3 => SettingsTab::Emotes,
+                        4 => SettingsTab::Map,
+                        5 => SettingsTab::Settings,
+                        6 => SettingsTab::Permissions,
+                        _ => panic!(),
+                    }
             },
         ),
     );

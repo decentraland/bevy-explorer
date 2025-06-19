@@ -1,4 +1,4 @@
-use bevy::{prelude::*, platform::collections::HashSet};
+use bevy::{platform::collections::HashSet, prelude::*};
 
 use common::{
     structs::SpawnPoint,

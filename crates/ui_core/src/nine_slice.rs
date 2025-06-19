@@ -54,7 +54,12 @@ fn update_slices(
     mut commands: Commands,
     images: Res<Assets<Image>>,
     new_slices: Query<
-        (Entity, &ComputedNode, &Ui9Slice, Option<&MaterialNode<NineSliceMaterial>>),
+        (
+            Entity,
+            &ComputedNode,
+            &Ui9Slice,
+            Option<&MaterialNode<NineSliceMaterial>>,
+        ),
         Or<(
             Changed<Ui9Slice>,
             Added<Ui9Slice>,

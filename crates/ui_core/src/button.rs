@@ -250,12 +250,11 @@ impl DuiTemplate for DuiButtonTemplate {
         if !data.enabled {
             // delayed modification
             if let Some(label) = components.get("label") {
-                commands
-                    .commands()
-                    .entity(*label)
-                    .modify_component(|text_color: &mut TextColor| {
+                commands.commands().entity(*label).modify_component(
+                    |text_color: &mut TextColor| {
                         text_color.0 = Color::srgb(0.5, 0.5, 0.5);
-                    });
+                    },
+                );
             }
         }
 

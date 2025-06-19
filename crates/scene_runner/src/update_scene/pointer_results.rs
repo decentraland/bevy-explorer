@@ -1,5 +1,12 @@
 use bevy::{
-    diagnostic::FrameCount, ecs::entity::Entities, input::InputSystem, math::FloatOrd, platform::collections::{HashMap, HashSet}, prelude::*, render::mesh::{Indices, VertexAttributeValues}, ui::{CameraCursorPosition, RelativeCursorPosition, UiSystem}
+    diagnostic::FrameCount,
+    ecs::entity::Entities,
+    input::InputSystem,
+    math::FloatOrd,
+    platform::collections::{HashMap, HashSet},
+    prelude::*,
+    render::mesh::{Indices, VertexAttributeValues},
+    ui::{CameraCursorPosition, RelativeCursorPosition, UiSystem},
 };
 use bevy_console::ConsoleCommand;
 use console::DoAddConsoleCommand;
@@ -170,7 +177,8 @@ fn update_pointer_target(
     let Ok(window) = windows.single() else {
         return;
     };
-    let cursor_position = if window.cursor_options.grab_mode == bevy::window::CursorGrabMode::Locked {
+    let cursor_position = if window.cursor_options.grab_mode == bevy::window::CursorGrabMode::Locked
+    {
         // if pointer locked, just middle
         Vec2::new(window.width(), window.height()) / 2.0
     } else {

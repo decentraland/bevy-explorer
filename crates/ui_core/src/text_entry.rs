@@ -12,7 +12,7 @@ use bevy_dui::{DuiRegistry, DuiTemplate};
 use bevy_simple_text_input::{
     TextInputCursorTimer, TextInputInactive, TextInputPlaceholder, TextInputPlugin,
     TextInputSelectionStyle, TextInputSettings, TextInputSubmitEvent, TextInputSystem,
-    TextInputTextFont, TextInputTextColor, TextInputValue,
+    TextInputTextColor, TextInputTextFont, TextInputValue,
 };
 use common::{sets::SceneSets, structs::TextStyle, util::TryPushChildrenEx};
 use input_manager::{InputManager, InputPriority, InputType};
@@ -80,7 +80,7 @@ fn update_text_entry_components(
             textbox
                 .text_style
                 .as_ref()
-                .map(|s| s.1.0)
+                .map(|s| s.1 .0)
                 .unwrap_or(Color::WHITE),
         )
         .lightness;
@@ -148,12 +148,11 @@ fn update_text_entry_components(
             },
             TextInputPlaceholder {
                 value: textbox.hint_text.clone(),
-                text_font: Some(
-                    textbox.text_style.clone().unwrap_or_default().0
-                ),
-                text_color: Some(TextColor(textbox
+                text_font: Some(textbox.text_style.clone().unwrap_or_default().0),
+                text_color: Some(TextColor(
+                    textbox
                         .hint_text_color
-                        .unwrap_or(Color::srgb(0.3, 0.3, 0.3))
+                        .unwrap_or(Color::srgb(0.3, 0.3, 0.3)),
                 )),
             },
             TextInputValue(value.clone()),

@@ -144,11 +144,13 @@ fn handle_emote_key(
         for (emote_key, slot) in EMOTE_KEYS {
             if key_input.just_pressed(emote_key) {
                 if let Some(button) = buttons.iter().find(|b| b.1 == slot) {
-                    commands.entity(player.single().unwrap()).try_insert(EmoteCommand {
-                        urn: button.0.clone(),
-                        r#loop: false,
-                        timestamp: frame.0 as i64,
-                    });
+                    commands
+                        .entity(player.single().unwrap())
+                        .try_insert(EmoteCommand {
+                            urn: button.0.clone(),
+                            r#loop: false,
+                            timestamp: frame.0 as i64,
+                        });
                     w.write(EmoteUiEvent::Hide);
                 }
             }
@@ -272,11 +274,13 @@ fn show_emote_ui(
 
             for (button, interact) in &buttons {
                 if interact != &Interaction::None {
-                    commands.entity(player.single().unwrap()).try_insert(EmoteCommand {
-                        urn: button.0.clone(),
-                        r#loop: false,
-                        timestamp: frame.0 as i64,
-                    });
+                    commands
+                        .entity(player.single().unwrap())
+                        .try_insert(EmoteCommand {
+                            urn: button.0.clone(),
+                            r#loop: false,
+                            timestamp: frame.0 as i64,
+                        });
                 }
             }
         }

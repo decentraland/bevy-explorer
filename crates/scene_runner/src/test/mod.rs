@@ -3,7 +3,17 @@ use std::{path::PathBuf, sync::Mutex, time::Instant};
 use std::{collections::BTreeMap, fs::File, io::Write};
 
 use bevy::{
-    app::{PluginGroupBuilder, ScheduleRunnerPlugin}, diagnostic::{DiagnosticsPlugin, FrameCountPlugin}, gizmos::GizmoPlugin, gltf::GltfPlugin, input::InputPlugin, log::LogPlugin, platform::collections::HashMap, prelude::*, render::mesh::MeshPlugin, scene::ScenePlugin, time::TimePlugin
+    app::{PluginGroupBuilder, ScheduleRunnerPlugin},
+    diagnostic::{DiagnosticsPlugin, FrameCountPlugin},
+    gizmos::GizmoPlugin,
+    gltf::GltfPlugin,
+    input::InputPlugin,
+    log::LogPlugin,
+    platform::collections::HashMap,
+    prelude::*,
+    render::mesh::MeshPlugin,
+    scene::ScenePlugin,
+    time::TimePlugin,
 };
 use bevy_dui::DuiPlugin;
 use itertools::Itertools;

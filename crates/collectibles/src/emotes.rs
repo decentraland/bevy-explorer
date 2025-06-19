@@ -2,8 +2,8 @@ use anyhow::anyhow;
 use bevy::{
     asset::AssetLoader,
     gltf::Gltf,
-    prelude::*,
     platform::collections::{HashMap, HashSet},
+    prelude::*,
 };
 use ipfs::EntityDefinitionLoader;
 use serde::{Deserialize, Serialize};

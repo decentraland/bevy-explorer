@@ -10,9 +10,9 @@ use std::{
 use bevy::{
     diagnostic::FrameCount,
     math::FloatOrd,
+    platform::collections::HashSet,
     prelude::*,
     render::{primitives::Aabb, view::RenderLayers},
-    platform::collections::HashSet,
 };
 use boimp::{
     bake::{BakeState, ImposterBakeBundle, ImposterBakeCamera},

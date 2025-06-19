@@ -23,7 +23,8 @@ use bevy::{
 };
 use bevy_atmosphere::pipeline::{AtmosphereImage, BevyAtmosphereLabel};
 
-pub const ENV_DOWNSAMPLE_SHADER_HANDLE: Handle<Shader> = weak_handle!("21e75ed5-7834-49e5-bcca-fa699f25c393");
+pub const ENV_DOWNSAMPLE_SHADER_HANDLE: Handle<Shader> =
+    weak_handle!("21e75ed5-7834-49e5-bcca-fa699f25c393");
 
 pub struct EnvmapDownsamplePlugin;
 

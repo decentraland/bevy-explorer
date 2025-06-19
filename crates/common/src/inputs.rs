@@ -1,4 +1,4 @@
-use bevy::{prelude::*, platform::collections::HashMap};
+use bevy::{platform::collections::HashMap, prelude::*};
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
 
@@ -184,8 +184,7 @@ impl<'de> serde::Deserialize<'de> for InputIdentifier {
             };
             Ok(Self::Mouse(button))
         } else if let Some(button) = string.strip_prefix("Gamepad ") {
-            let Ok(button) = serde_json::from_str::<GamepadButton>(&format!("\"{button}\""))
-            else {
+            let Ok(button) = serde_json::from_str::<GamepadButton>(&format!("\"{button}\"")) else {
                 return Err(serde::de::Error::custom("invalid string"));
             };
             Ok(Self::Gamepad(button))

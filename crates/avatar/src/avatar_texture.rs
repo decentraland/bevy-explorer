@@ -13,7 +13,10 @@ use bevy::{
         render_resource::{
             Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
         },
-        view::{screenshot::{Screenshot, ScreenshotCaptured}, RenderLayers},
+        view::{
+            screenshot::{Screenshot, ScreenshotCaptured},
+            RenderLayers,
+        },
     },
     window::{EnabledButtons, WindowLevel, WindowRef, WindowResolution},
 };

@@ -8,8 +8,8 @@ use std::{marker::PhantomData, path::PathBuf};
 use bevy::{
     diagnostic::FrameCount,
     ecs::system::SystemParam,
-    prelude::*,
     platform::collections::{HashMap, HashSet},
+    prelude::*,
 };
 
 use common::util::TaskExt;

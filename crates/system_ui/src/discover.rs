@@ -2,9 +2,9 @@ use std::{path::PathBuf, str::FromStr};
 
 use anyhow::anyhow;
 use bevy::{
+    platform::collections::HashSet,
     prelude::*,
     tasks::{IoTaskPool, Task},
-    platform::collections::HashSet,
 };
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
@@ -34,8 +34,7 @@ impl Plugin for DiscoverSettingsPlugin {
             (
                 set_discover_content,
                 (update_results, update_page).run_if(|q: Query<&SettingsTab>| {
-                    q.single()
-                        .is_ok_and(|tab| tab == &SettingsTab::Discover)
+                    q.single().is_ok_and(|tab| tab == &SettingsTab::Discover)
                 }),
             ),
         );
@@ -368,7 +367,14 @@ fn set_discover_content(
                             warn!("no value from text entry?");
                             return;
                         };
-                        if settings.single().unwrap().search_filter.as_deref().unwrap_or("") == value {
+                        if settings
+                            .single()
+                            .unwrap()
+                            .search_filter
+                            .as_deref()
+                            .unwrap_or("")
+                            == value
+                        {
                             // no change
                             return;
                         }

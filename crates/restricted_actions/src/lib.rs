@@ -8,9 +8,9 @@ use std::{
 use bevy::{
     asset::LoadState,
     math::Vec3Swizzles,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     tasks::{IoTaskPool, Task},
-    platform::collections::{HashMap, HashSet},
 };
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};

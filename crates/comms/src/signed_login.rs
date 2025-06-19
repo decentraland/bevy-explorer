@@ -1,5 +1,7 @@
 use bevy::{
-    ecs::event::EventCursor, prelude::*, tasks::{IoTaskPool, Task}
+    ecs::event::EventCursor,
+    prelude::*,
+    tasks::{IoTaskPool, Task},
 };
 use common::util::{TaskCompat, TaskExt};
 use http::Uri;

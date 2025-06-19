@@ -7,10 +7,10 @@ use avatar::{
 };
 use bevy::{
     color::palettes::css,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::render_resource::Extent3d,
     tasks::{IoTaskPool, Task},
-    platform::collections::{HashMap, HashSet},
 };
 use bevy_dui::{
     DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry, DuiWalker,
@@ -59,8 +59,7 @@ impl Plugin for WearableSettingsPlugin {
                     )
                         .chain()
                         .run_if(|q: Query<&SettingsTab>| {
-                            q.single()
-                                .is_ok_and(|tab| tab == &SettingsTab::Wearables)
+                            q.single().is_ok_and(|tab| tab == &SettingsTab::Wearables)
                         }),
                 )
                     .chain(),

@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_simple_text_input::{
-    TextInput, TextInputPlaceholder, TextInputPlugin, TextInputSettings, TextInputSubmitEvent
+    TextInput, TextInputPlaceholder, TextInputPlugin, TextInputSettings, TextInputSubmitEvent,
 };
 use common::util::{AsH160, TryPushChildrenEx};
 use social::{
@@ -101,7 +101,6 @@ fn setup(
                     },
                     BackgroundColor(Color::srgba(0.0, 0.0, 1.0, 0.2)),
                 TextInput,
-                    
                     TextInputSettings {
                         multiline: true,
                         retain_on_submit: false,
@@ -129,9 +128,7 @@ fn update(
     let (output, children) = q.single().unwrap();
 
     let mut reply = |msg: String| {
-        let text = c2
-            .spawn(Text::new(msg))
-            .id();
+        let text = c2.spawn(Text::new(msg)).id();
         c2.entity(output).try_push_children(&[text]);
     };
 
@@ -140,8 +137,8 @@ fn update(
             .spawn((
                 Text::new(format!("> {}", ev.value)),
                 BackgroundColor(Color::srgba(0.0, 0.0, 1.0, 0.2)),
-
-                            ))                .id();
+            ))
+            .id();
         commands.entity(output).try_push_children(&[text]);
 
         if ev.value.starts_with('/') {

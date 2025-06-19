@@ -5,10 +5,10 @@ use bevy::{
     animation::RepeatAnimation,
     gltf::Gltf,
     math::Vec3Swizzles,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::view::RenderLayers,
     scene::InstanceId,
-    platform::collections::{HashMap, HashSet},
 };
 use bevy_console::ConsoleCommand;
 use bevy_kira_audio::{AudioControl, AudioInstance, AudioTween};
@@ -20,7 +20,8 @@ use common::{
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
     structs::{
-        AppConfig, AudioEmitter, AvatarDynamicState, EmoteCommand, MoveKind, PlayerModifiers, PrimaryUser
+        AppConfig, AudioEmitter, AvatarDynamicState, EmoteCommand, MoveKind, PlayerModifiers,
+        PrimaryUser,
     },
     util::{TryPushChildrenEx, VolumePanning},
 };
@@ -399,8 +400,7 @@ fn animate(
                     urn: EmoteUrn::new("jump").unwrap(),
                     speed: time_to_peak.recip() * 0.75,
                     repeat: true,
-                    restart: dynamic_state.jump_time
-                        > time.elapsed_secs() - time.delta_secs(),
+                    restart: dynamic_state.jump_time > time.elapsed_secs() - time.delta_secs(),
                     transition_seconds: 0.1,
                     initial_audio_mark: if !just_jumped { Some(0.1) } else { None },
                     ..Default::default()
@@ -517,11 +517,7 @@ fn play_current_emote(
 
     for (entity, mut active_emote, target_entity, children, transform, layers) in q.iter_mut() {
         debug!("emote {}", active_emote.urn);
-        let Some(definition) = children
-            .iter()
-            .flat_map(|c| definitions.get(c).ok())
-            .next()
-        else {
+        let Some(definition) = children.iter().flat_map(|c| definitions.get(c).ok()).next() else {
             warn!("no definition");
             continue;
         };
@@ -700,7 +696,9 @@ fn play_current_emote(
                         .filter(|ent| {
                             if let Ok((_, _, _, g)) = players.get(*ent) {
                                 if g.is_none() {
-                                    commands.entity(*ent).insert(AnimationGraphHandle(clip.1.clone()));
+                                    commands
+                                        .entity(*ent)
+                                        .insert(AnimationGraphHandle(clip.1.clone()));
                                 }
                                 true
                             } else {
