@@ -14,7 +14,7 @@ use common::{
         ActiveDialog, AppConfig, PermissionTarget, SettingsTab, ShowSettingsEvent, SystemAudio,
         PROFILE_UI_RENDERLAYER,
     },
-    util::{FireEventEx, TryPushChildrenEx},
+    util::TryPushChildrenEx,
 };
 use comms::profile::{CurrentUserProfile, ProfileDeployedEvent};
 use ipfs::{ChangeRealmEvent, CurrentRealm};
@@ -57,19 +57,16 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, ui_root: Res<Sy
     // profile button
     let button = commands
         .spawn((
-            ImageBundle {
-                image: asset_server.load("images/profile_button.png").into(),
-                style: Node {
-                    position_type: PositionType::Absolute,
-                    top: Val::VMin(BUTTON_SCALE * 0.5),
-                    right: Val::VMin(BUTTON_SCALE * 0.5),
-                    width: Val::VMin(BUTTON_SCALE),
-                    height: Val::VMin(BUTTON_SCALE),
-                    ..Default::default()
-                },
-                focus_policy: bevy::ui::FocusPolicy::Block,
+            ImageNode::new(asset_server.load("images/profile_button.png")),
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::VMin(BUTTON_SCALE * 0.5),
+                right: Val::VMin(BUTTON_SCALE * 0.5),
+                width: Val::VMin(BUTTON_SCALE),
+                height: Val::VMin(BUTTON_SCALE),
                 ..Default::default()
             },
+            bevy::ui::FocusPolicy::Block,
             Interaction::default(),
             On::<Click>::new(
                 (move |mut target: ResMut<PermissionTarget>| {
@@ -248,8 +245,8 @@ pub fn close_settings(
         let send_onclose =
             move |mut cr: EventWriter<ChangeRealmEvent>, mut rpc: EventWriter<RpcCall>| match &ev {
                 Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev)) => {
-                    cr.send(cr_ev.clone());
-                    rpc.send(rpc_ev.clone());
+                    cr.write(cr_ev.clone());
+                    rpc.write(rpc_ev.clone());
                 }
                 Some(OnCloseEvent::SomethingElse) => (),
                 _ => (),
@@ -292,8 +289,8 @@ pub fn close_settings(
         commands.entity(settings_ent).despawn();
         match &ev {
             Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev)) => {
-                cr.send(cr_ev.clone());
-                rpc.send(rpc_ev.clone());
+                cr.write(cr_ev.clone());
+                rpc.write(rpc_ev.clone());
                 commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
             }
             _ => {
@@ -421,7 +418,7 @@ pub fn show_settings(
             |caller: Res<UiCaller>,
              selected: Query<&TabSelection>,
              mut content: Query<&mut SettingsTab>| {
-                *content.single_mut() = match selected.get(caller.0).unwrap().selected.unwrap() {
+                *content.single_mut().unwrap() = match selected.get(caller.0).unwrap().selected.unwrap() {
                     0 => SettingsTab::Discover,
                     1 => SettingsTab::ProfileDetail,
                     2 => SettingsTab::Wearables,
@@ -439,7 +436,7 @@ pub fn show_settings(
 
     commands
         .entity(components.root)
-        .insert(ZIndex::Global((1 << 18) + 4));
+        .insert(GlobalZIndex((1 << 18) + 4));
     commands
         .entity(components.named("change-realm-button"))
         .insert(UpdateRealmText);

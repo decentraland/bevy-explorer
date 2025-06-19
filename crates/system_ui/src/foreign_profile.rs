@@ -4,7 +4,6 @@ use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     profile::SerializedProfile,
     structs::{ActiveDialog, ShowProfileEvent, PROFILE_UI_RENDERLAYER},
-    util::FireEventEx,
 };
 use comms::profile::{ProfileManager, UserProfile};
 use ethers_core::types::Address;

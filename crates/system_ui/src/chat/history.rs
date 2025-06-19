@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
     structs::{ShowProfileEvent, SystemAudio},
-    util::{AsH160, FireEventEx},
+    util::AsH160,
 };
 use comms::{chat_marker_things, global_crdt::ChatEvent, profile::UserProfile};
 use social::{DirectChatEvent, DirectChatMessage, FriendshipEvent, FriendshipEventBody};

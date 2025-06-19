@@ -52,10 +52,8 @@ impl Plugin for WearableSettingsPlugin {
                 (
                     set_wearables_content,
                     (
-                        apply_deferred,
                         get_owned_wearables,
                         update_wearables_list,
-                        apply_deferred,
                         update_wearable_item,
                         update_selected_item,
                     )
@@ -200,7 +198,7 @@ fn set_wearables_content(
 
         debug!("redraw");
 
-        commands.entity(ent).despawn_descendants();
+        commands.entity(ent).despawn_related::<Children>();
 
         let instance = maybe_instance.cloned().unwrap_or_else(|| {
             let avatar = player.single().unwrap();
@@ -413,7 +411,7 @@ fn set_wearables_content(
                             warn!("no value from sort combo?");
                             return;
                         };
-                        settings.single_mut().sort_by = SortBy::from(value.as_str());
+                        settings.single_mut().unwrap().sort_by = SortBy::from(value.as_str());
                     },
                 ),
             )
@@ -432,9 +430,9 @@ fn set_wearables_content(
                             return;
                         };
                         if value.is_empty() {
-                            settings.single_mut().search_filter = None;
+                            settings.single_mut().unwrap().search_filter = None;
                         } else {
-                            settings.single_mut().search_filter = Some(value);
+                            settings.single_mut().unwrap().search_filter = Some(value);
                         }
                     },
                 ),
@@ -446,7 +444,7 @@ fn set_wearables_content(
             .unwrap();
         commands.entity(ent).try_insert(components);
 
-        e.send_default();
+        e.write_default();
         *prev_tab = Some(*tab);
     }
 }
@@ -790,7 +788,7 @@ fn update_wearables_list(
 
     commands
         .entity(components.named("items"))
-        .despawn_descendants();
+        .despawn_related::<Children>();
 
     let mut initial = None;
     let buttons: Vec<_> = wearables
@@ -866,7 +864,7 @@ fn update_wearables_list(
                                 .ok()
                                 .and_then(|tab| tab.selected_entity())
                                 .and_then(|nodes| wearable.get(nodes.named("label")).ok());
-                            e.send(SelectItem(selection.cloned()));
+                            e.write(SelectItem(selection.cloned()));
                             debug!("selected {:?}", selection)
                         },
                     ),
@@ -935,7 +933,7 @@ fn update_wearable_item(
                             warn!("failed to load wearable: {other:?}");
                             commands
                                 .entity(ent)
-                                .despawn_descendants()
+                                .despawn_related::<Children>()
                                 .remove::<WearableItemState>()
                                 .spawn_template(
                                     &dui,
@@ -974,7 +972,7 @@ fn update_wearable_item(
                             debug!("loaded image");
                             commands
                                 .entity(ent)
-                                .despawn_descendants()
+                                .despawn_related::<Children>()
                                 .remove::<WearableItemState>()
                                 .spawn_template(
                                     &dui,
@@ -990,7 +988,7 @@ fn update_wearable_item(
                             warn!("failed to load wearable image");
                             commands
                                 .entity(ent)
-                                .despawn_descendants()
+                                .despawn_related::<Children>()
                                 .remove::<WearableItemState>()
                                 .spawn_template(
                                     &dui,
@@ -1014,7 +1012,7 @@ fn update_wearable_item(
     }
 }
 
-#[derive(Event, Clone)]
+#[derive(Event, Clone, Component)]
 struct SelectItem(Option<WearableEntry>);
 
 #[allow(clippy::too_many_arguments)]
@@ -1056,7 +1054,7 @@ fn update_selected_item(
         .and_then(|sel| settings.current_list.iter().find(|s| s == &sel));
     commands
         .entity(components.named("selected-item"))
-        .despawn_descendants();
+        .despawn_related::<Children>();
 
     let worn = settings
         .current_wearables
@@ -1099,7 +1097,7 @@ fn update_selected_item(
                   mut dialog: Query<(&mut SettingsDialog, &BoothInstance, &mut AvatarShape)>,
                   mut booth: PhotoBooth,
                   walker: DuiWalker| {
-                let (mut wearable_settings, components) = wearables.single_mut();
+                let (mut wearable_settings, components) = wearables.single_mut().unwrap();
                 let prev = if is_remove {
                     wearable_settings.current_wearables.remove(&category)
                 } else {
@@ -1171,7 +1169,7 @@ fn update_selected_item(
 
                 commands
                     .entity(image_entity)
-                    .try_insert(UiImage::new(wearable_img));
+                    .try_insert(ImageNode::new(wearable_img));
             },
         );
 

@@ -1,10 +1,10 @@
 use bevy::{
     color::palettes::css,
-    core::FrameCount,
+    diagnostic::FrameCount,
+    platform::collections::HashSet,
     prelude::*,
     text::LineBreak,
     ui::FocusPolicy,
-    platform::collections::HashSet,
     window::{PrimaryWindow, WindowFocused, WindowResized},
 };
 use bevy_dui::{DuiComponentFromClone, DuiEntityCommandsExt, DuiProps, DuiRegistry};
@@ -13,7 +13,7 @@ use common::{
     inputs::SystemAction,
     sets::SetupSets,
     structs::{ActiveDialog, EmoteCommand, PrimaryUser, SystemAudio},
-    util::{FireEventEx, ModifyComponentExt, TryPushChildrenEx},
+    util::{ModifyComponentExt, TryPushChildrenEx},
 };
 use comms::profile::CurrentUserProfile;
 use input_manager::{InputManager, InputPriority};
@@ -57,26 +57,23 @@ fn setup(
     // emote button
     let button = commands
         .spawn((
-            ImageBundle {
-                image: asset_server.load("images/emote_button.png").into(),
-                style: Node {
-                    position_type: PositionType::Absolute,
-                    top: Val::VMin(BUTTON_SCALE * 2.5),
-                    right: Val::VMin(BUTTON_SCALE * 0.5),
-                    width: Val::VMin(BUTTON_SCALE),
-                    height: Val::VMin(BUTTON_SCALE),
-                    ..Default::default()
-                },
-                focus_policy: bevy::ui::FocusPolicy::Block,
+            ImageNode::new(asset_server.load("images/emote_button.png").into()),
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::VMin(BUTTON_SCALE * 2.5),
+                right: Val::VMin(BUTTON_SCALE * 0.5),
+                width: Val::VMin(BUTTON_SCALE),
+                height: Val::VMin(BUTTON_SCALE),
                 ..Default::default()
             },
+            bevy::ui::FocusPolicy::Block,
             Interaction::default(),
             On::<Click>::new(
                 |mut w: EventWriter<EmoteUiEvent>, existing: Query<&EmoteDialog>| {
                     if existing.is_empty() {
-                        w.send(EmoteUiEvent::Show { coords: None });
+                        w.write(EmoteUiEvent::Show { coords: None });
                     } else {
-                        w.send(EmoteUiEvent::Hide);
+                        w.write(EmoteUiEvent::Hide);
                     }
                 },
             ),
@@ -108,27 +105,27 @@ fn handle_emote_key(
 ) {
     if input_manager.just_down(SystemAction::Emote, InputPriority::None) {
         if !existing.is_empty() {
-            w.send(EmoteUiEvent::Hide);
+            w.write(EmoteUiEvent::Hide);
             return;
         }
 
-        let window = window.single();
-        let coords = if window.cursor.grab_mode != bevy::window::CursorGrabMode::Locked {
+        let window = window.single().unwrap();
+        let coords = if window.cursor_options.grab_mode != bevy::window::CursorGrabMode::Locked {
             window.cursor_position()
         } else {
             None
         };
 
-        w.send(EmoteUiEvent::Show { coords });
+        w.write(EmoteUiEvent::Show { coords });
         *press_time = time.elapsed_secs();
     }
 
     if input_manager.just_up(SystemAction::Emote) && time.elapsed_secs() > *press_time + 0.25 {
-        w.send(EmoteUiEvent::Hide);
+        w.write(EmoteUiEvent::Hide);
     }
 
     if lost_focus_events.read().any(|ev| !ev.focused) {
-        w.send(EmoteUiEvent::Hide);
+        w.write(EmoteUiEvent::Hide);
     }
 
     const EMOTE_KEYS: [(KeyCode, u32); 10] = [
@@ -147,12 +144,12 @@ fn handle_emote_key(
         for (emote_key, slot) in EMOTE_KEYS {
             if key_input.just_pressed(emote_key) {
                 if let Some(button) = buttons.iter().find(|b| b.1 == slot) {
-                    commands.entity(player.single()).try_insert(EmoteCommand {
+                    commands.entity(player.single().unwrap()).try_insert(EmoteCommand {
                         urn: button.0.clone(),
                         r#loop: false,
                         timestamp: frame.0 as i64,
                     });
-                    w.send(EmoteUiEvent::Hide);
+                    w.write(EmoteUiEvent::Hide);
                 }
             }
         }
@@ -275,7 +272,7 @@ fn show_emote_ui(
 
             for (button, interact) in &buttons {
                 if interact != &Interaction::None {
-                    commands.entity(player.single()).try_insert(EmoteCommand {
+                    commands.entity(player.single().unwrap()).try_insert(EmoteCommand {
                         urn: button.0.clone(),
                         r#loop: false,
                         timestamp: frame.0 as i64,
@@ -292,7 +289,7 @@ fn show_emote_ui(
             return;
         };
 
-        let mut props = window.single().get_layout_props(1.5, 0.6, coords);
+        let mut props = window.single().unwrap().get_layout_props(1.5, 0.6, coords);
 
         let Some(player_emotes) = profile
             .profile
@@ -346,7 +343,7 @@ fn show_emote_ui(
                 Focus,
                 Interaction::default(),
                 On::<Defocus>::new(|mut w: EventWriter<EmoteUiEvent>| {
-                    w.send(EmoteUiEvent::Hide);
+                    w.write(EmoteUiEvent::Hide);
                 }),
             ))
             .apply_template(&dui, "choose-emote-base", props)
@@ -371,28 +368,28 @@ fn show_emote_ui(
                 FocusPolicy::Block,
                 On::<HoverEnter>::new(
                     move |mut commands: Commands,
-                          mut color: Query<&mut UiImage>,
-                          mut text: Query<&mut Text>| {
+                          mut color: Query<&mut ImageNode>,
+                          mut text: Query<(&mut Text, &mut TextLayout)>| {
                         commands.send_event(SystemAudio(
                             "sounds/ui/widget_emotes_highlight.wav".to_owned(),
                         ));
                         if let Ok(mut img) = color.get_mut(button) {
                             img.color = Color::srgb(1.0, 1.0, 1.50);
                         }
-                        if let Ok(mut text) = text.get_mut(output) {
-                            text.sections[0].value.clone_from(&name);
-                            text.linebreak_behavior = LineBreak::WordBoundary;
+                        if let Ok((mut text, mut layout)) = text.get_mut(output) {
+                            text.0.clone_from(&name);
+                            layout.linebreak = LineBreak::WordBoundary;
                         }
                     },
                 ),
                 On::<HoverExit>::new(
-                    move |mut color: Query<&mut UiImage>, mut text: Query<&mut Text>| {
+                    move |mut color: Query<&mut ImageNode>, mut text: Query<&mut Text>| {
                         if let Ok(mut img) = color.get_mut(button) {
                             img.color = Color::srgb(0.67, 0.67, 0.87);
                         }
                         if let Ok(mut text) = text.get_mut(output) {
-                            if text.sections[0].value == name2 {
-                                text.sections[0].value = String::default();
+                            if text.0 == name2 {
+                                text.0 = String::default();
                             }
                         }
                     },
@@ -406,7 +403,7 @@ fn show_emote_ui(
                 .despawn();
             commands
                 .entity(buttons.named(format!("emote_{unused_slot}").as_str()))
-                .modify_component(|img: &mut UiImage| img.color = css::GRAY.into());
+                .modify_component(|img: &mut ImageNode| img.color = css::GRAY.into());
         }
     }
 }

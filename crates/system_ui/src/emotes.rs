@@ -49,10 +49,8 @@ impl Plugin for EmoteSettingsPlugin {
                 (
                     set_emotes_content,
                     (
-                        apply_deferred,
                         get_owned_emotes,
                         update_emotes_list,
-                        apply_deferred,
                         update_emote_item,
                         update_selected_item,
                     )
@@ -195,7 +193,7 @@ fn set_emotes_content(
 
         debug!("redraw");
 
-        commands.entity(ent).despawn_descendants();
+        commands.entity(ent).despawn_related::<Children>();
 
         let instance = maybe_instance.cloned().unwrap_or_else(|| {
             let avatar = player.single().unwrap();
@@ -391,7 +389,7 @@ fn set_emotes_content(
                             warn!("no value from sort combo?");
                             return;
                         };
-                        settings.single_mut().sort_by = SortBy::from(value.as_str());
+                        settings.single_mut().unwrap().sort_by = SortBy::from(value.as_str());
                     },
                 ),
             )
@@ -410,9 +408,9 @@ fn set_emotes_content(
                             return;
                         };
                         if value.is_empty() {
-                            settings.single_mut().search_filter = None;
+                            settings.single_mut().unwrap().search_filter = None;
                         } else {
-                            settings.single_mut().search_filter = Some(value);
+                            settings.single_mut().unwrap().search_filter = Some(value);
                         }
                     },
                 ),
@@ -424,7 +422,7 @@ fn set_emotes_content(
             .unwrap();
         commands.entity(ent).try_insert(components);
 
-        e.send_default();
+        e.write_default();
         *prev_tab = Some(*tab);
     }
 }
@@ -712,7 +710,7 @@ fn update_emotes_list(
 
     commands
         .entity(components.named("items"))
-        .despawn_descendants();
+        .despawn_related::<Children>();
 
     let mut initial = None;
     let buttons: Vec<_> = emotes
@@ -785,7 +783,7 @@ fn update_emotes_list(
                                 .ok()
                                 .and_then(|tab| tab.selected_entity())
                                 .and_then(|nodes| emote.get(nodes.named("label")).ok());
-                            e.send(SelectItem(selection.cloned()));
+                            e.write(SelectItem(selection.cloned()));
                             debug!("selected {:?}", selection)
                         },
                     ),
@@ -853,7 +851,7 @@ fn update_emote_item(
                             warn!("failed to load emote: {other:?}");
                             commands
                                 .entity(ent)
-                                .despawn_descendants()
+                                .despawn_related::<Children>()
                                 .remove::<EmoteItemState>()
                                 .spawn_template(
                                     &dui,
@@ -895,7 +893,7 @@ fn update_emote_item(
                             );
                             commands
                                 .entity(ent)
-                                .despawn_descendants()
+                                .despawn_related::<Children>()
                                 .remove::<EmoteItemState>()
                                 .spawn_template(
                                     &dui,
@@ -911,7 +909,7 @@ fn update_emote_item(
                             warn!("failed to load emote image");
                             commands
                                 .entity(ent)
-                                .despawn_descendants()
+                                .despawn_related::<Children>()
                                 .remove::<EmoteItemState>()
                                 .spawn_template(
                                     &dui,
@@ -935,7 +933,7 @@ fn update_emote_item(
     }
 }
 
-#[derive(Event, Clone)]
+#[derive(Component, Event, Clone)]
 struct SelectItem(Option<EmoteEntry>);
 
 #[allow(clippy::too_many_arguments)]
@@ -983,7 +981,7 @@ fn update_selected_item(
         .and_then(|sel| settings.current_list.iter().find(|s| s == &sel));
     commands
         .entity(components.named("selected-item"))
-        .despawn_descendants();
+        .despawn_related::<Children>();
 
     if let Some(sel) = current_selection {
         let body_shape = settings.body_shape.base().as_str();
@@ -1014,7 +1012,7 @@ fn update_selected_item(
                   mut dialog: Query<(&mut SettingsDialog, &BoothInstance, &mut AvatarShape)>,
                   mut booth: PhotoBooth,
                   walker: DuiWalker| {
-                let (mut emote_settings, components) = emotes.single_mut();
+                let (mut emote_settings, components) = emotes.single_mut().unwrap();
                 if is_remove {
                     emote_settings.current_emotes.remove(&selected_slot)
                 } else {
@@ -1081,7 +1079,7 @@ fn update_selected_item(
 
                 commands
                     .entity(image_entity)
-                    .try_insert(UiImage::new(emote_img));
+                    .try_insert(ImageNode::new(emote_img));
             },
         );
 

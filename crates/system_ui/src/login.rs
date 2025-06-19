@@ -13,7 +13,7 @@ use common::{
     rpc::RpcResultSender,
     sets::SceneSets,
     structs::{ActiveDialog, AppConfig, ChainLink, DialogPermit, PreviousLogin, SystemAudio},
-    util::{FireEventEx, TaskCompat, TaskExt},
+    util::{TaskCompat, TaskExt},
 };
 use comms::profile::{get_remote_profile, CurrentUserProfile, UserProfile};
 use ethers_core::types::Address;
@@ -90,7 +90,7 @@ fn login(
                         .with_prop("download", url)
                         .with_prop("body", desc)
                         .with_prop("buttons", vec![DuiButton::new_enabled("Ok", (|mut commands: Commands, dui: Res<DuiRegistry>, mut permit: Query<&mut DialogPermit>| {
-                            let mut permit = permit.single_mut();
+                            let mut permit = permit.single_mut().unwrap();
                             let permit = permit.take();
                             let components = commands
                                 .spawn_template(
@@ -124,7 +124,7 @@ fn login(
 
     // cleanup if we're done
     if wallet.address().is_some() {
-        if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
+        if let Some(mut commands) = dialog.and_then(|d| commands.get_entity(d).ok()) {
             commands.despawn();
         }
         *dialog = None;
@@ -154,7 +154,7 @@ fn login(
                 .with_prop(
                     "quit",
                     On::<Click>::new(|mut e: EventWriter<AppExit>| {
-                        e.send_default();
+                        e.write_default();
                     }),
                 ),
         )
@@ -167,7 +167,7 @@ fn login(
     if let Some(mut t) = req_code.take() {
         match t.try_recv() {
             Ok(Ok(code)) => {
-                if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
+                if let Some(mut commands) = dialog.and_then(|d| commands.get_entity(d).ok()) {
                     commands.despawn();
                     *dialog = None;
                 }
@@ -182,7 +182,7 @@ fn login(
                                 vec![DuiButton::new_enabled(
                                     "Cancel",
                                     |mut e: EventWriter<LoginType>| {
-                                        e.send(LoginType::Cancel);
+                                        e.write(LoginType::Cancel);
                                     },
                                 )],
                             )
@@ -194,7 +194,7 @@ fn login(
             }
             Ok(Err(e)) => {
                 toaster.add_toast("login profile", format!("Login failed: {e}"));
-                if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
+                if let Some(mut commands) = dialog.and_then(|d| commands.get_entity(d).ok()) {
                     commands.despawn();
                     *dialog = None;
                 }
@@ -216,7 +216,7 @@ fn login(
             Ok(Err(e)) => {
                 error!("{e}");
                 toaster.add_toast("login profile", format!("Login failed: {e}"));
-                if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
+                if let Some(mut commands) = dialog.and_then(|d| commands.get_entity(d).ok()) {
                     commands.despawn();
                 }
                 *dialog = None;
@@ -232,7 +232,7 @@ fn login(
 
     // handle click
     if let Some(login) = logins.read().last() {
-        if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
+        if let Some(mut commands) = dialog.and_then(|d| commands.get_entity(d).ok()) {
             commands.despawn();
             *dialog = None;
         }
@@ -242,7 +242,7 @@ fn login(
                 info!("existing remote");
                 commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
                 let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
-                bridge.send(SystemApi::LoginPrevious(sx.into()));
+                bridge.write(SystemApi::LoginPrevious(sx.into()));
                 *req_done = Some(rx);
             }
             LoginType::NewRemote => {
@@ -251,7 +251,7 @@ fn login(
                 commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
                 let (scode, rcode) = tokio::sync::oneshot::channel::<Result<Option<i32>, String>>();
                 let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
-                bridge.send(SystemApi::LoginNew(scode.into(), sx.into()));
+                bridge.write(SystemApi::LoginNew(scode.into(), sx.into()));
                 *req_code = Some(rcode);
                 *req_done = Some(rx);
 
@@ -265,7 +265,7 @@ fn login(
                                 vec![DuiButton::new_enabled(
                                     "Cancel",
                                     |mut e: EventWriter<LoginType>| {
-                                        e.send(LoginType::Cancel);
+                                        e.write(LoginType::Cancel);
                                     },
                                 )],
                             )
@@ -282,14 +282,14 @@ fn login(
                     "Warning: Guest profile will not persist beyond the current session",
                 );
                 commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
-                bridge.send(SystemApi::LoginGuest);
+                bridge.write(SystemApi::LoginGuest);
             }
             LoginType::Cancel => {
                 *req_code = None;
                 *req_done = None;
                 *dialog = None;
                 commands.send_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
-                bridge.send(SystemApi::LoginCancel);
+                bridge.write(SystemApi::LoginCancel);
             }
         }
     }

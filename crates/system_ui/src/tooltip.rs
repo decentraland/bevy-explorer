@@ -28,7 +28,8 @@ pub fn update_tooltip(
     let Ok(window) = windows.single() else {
         return;
     };
-    let cursor_position = if window.cursor.grab_mode == bevy::window::CursorGrabMode::Locked {
+    let cursor_position = if window.cursor_options.grab_mode == bevy::window::CursorGrabMode::Locked
+    {
         // if pointer locked, just middle
         Vec2::new(window.width(), window.height()) / 2.0
     } else {
@@ -43,7 +44,7 @@ pub fn update_tooltip(
         !content.is_empty()
             && match key {
                 TooltipSource::Label(_) => true,
-                TooltipSource::Entity(e) => commands.get_entity(*e).is_some(),
+                TooltipSource::Entity(e) => commands.get_entity(*e).is_err(),
             }
     });
 
@@ -92,40 +93,33 @@ pub fn update_tooltip(
         let columns = content[0].0.split(':').count();
         commands
             .spawn((
-                NodeBundle {
-                    style: Node {
-                        position_type: PositionType::Absolute,
-                        left,
-                        right,
-                        top: Val::Px(
-                            (cursor_position.y - content.len() as f32 * 15.0).max(0.0) + y_offset,
-                        ),
-                        border: UiRect::all(Val::Px(1.0)),
-                        padding: UiRect::all(Val::Px(2.0)),
-                        ..Default::default()
-                    },
-                    border_color: Color::srgba(1.0, 1.0, 1.0, 1.0 * *vis).into(),
-                    background_color: Color::srgba(0.0, 0.0, 0.0, 0.5 * *vis).into(),
-                    z_index: ZIndex::Global((1 << 18) + 6),
+                Node {
+                    position_type: PositionType::Absolute,
+                    left,
+                    right,
+                    top: Val::Px(
+                        (cursor_position.y - content.len() as f32 * 15.0).max(0.0) + y_offset,
+                    ),
+                    border: UiRect::all(Val::Px(1.0)),
+                    padding: UiRect::all(Val::Px(2.0)),
                     ..Default::default()
                 },
-                ToolTipNode,
+                BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 1.0 * *vis)),
+                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5 * *vis)),
+                GlobalZIndex((1 << 18) + 6),
             ))
             .with_children(|c| {
                 for i in 0..columns {
-                    c.spawn(NodeBundle {
-                        style: Node {
-                            flex_direction: FlexDirection::Column,
-                            ..Default::default()
-                        },
+                    c.spawn(Node {
+                        flex_direction: FlexDirection::Column,
                         ..Default::default()
                     })
                     .with_children(|c| {
                         for (text, active) in content.iter() {
                             let hover_index =
                                 (*vis * 9.0 * if *active { 1.0 } else { 0.3 }) as usize;
-                            c.spawn(TextBundle::from_section(
-                                text.split('\t').nth(i).unwrap_or_default(),
+                            c.spawn((
+                                Text::new(text.split('\t').nth(i).unwrap_or_default()),
                                 HOVER_TEXT_STYLE.get().unwrap()[hover_index].clone(),
                             ));
                         }

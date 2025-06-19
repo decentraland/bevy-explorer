@@ -4,7 +4,7 @@ use common::{
     structs::{
         AppConfig, PermissionTarget, PermissionType, PermissionValue, PrimaryPlayerRes, SettingsTab,
     },
-    util::{FireEventEx, ModifyComponentExt, TryPushChildrenEx},
+    util::{ModifyComponentExt, TryPushChildrenEx},
 };
 use ipfs::CurrentRealm;
 use scene_runner::{
@@ -105,7 +105,7 @@ fn set_permission_settings_content(
             realm.address.clone()
         };
 
-        commands.entity(ent).despawn_descendants();
+        commands.entity(ent).despawn_related::<Children>();
         let components = commands
             .entity(ent)
             .apply_template(
@@ -286,7 +286,7 @@ fn set_permission_settings_content(
                 Interaction::default(),
                 On::<HoverEnter>::new(
                     move |mut q: Query<&mut Text, With<PermissionSettingDescription>>| {
-                        q.single_mut().unwrap().sections[0].value = ty.description();
+                        q.single_mut().unwrap().0 = ty.description();
                     },
                 ),
             ));

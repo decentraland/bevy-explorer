@@ -149,7 +149,7 @@ fn set_profile_detail_content(
         let cat_items_sel = cat_items.clone();
         let components = commands
             .entity(ent)
-            .despawn_descendants()
+            .despawn_related::<Children>()
             .apply_template(
                 &dui,
                 "profile-detail",
@@ -171,7 +171,7 @@ fn set_profile_detail_content(
 
                                 if let Some(mut commands) = cat_items_sel
                                     .get(selected)
-                                    .and_then(|e| commands.get_entity(e.named("entry")))
+                                    .and_then(|e| commands.get_entity(e.named("entry")).ok())
                                 {
                                     commands.try_insert(Focus);
                                 }

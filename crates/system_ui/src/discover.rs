@@ -261,7 +261,7 @@ fn set_discover_content(
             None => &mut new_settings,
         };
 
-        commands.entity(ent).despawn_descendants();
+        commands.entity(ent).despawn_related::<Children>();
 
         let category_buttons = DiscoverCategory::iter()
             .map(|cat| {
@@ -368,14 +368,14 @@ fn set_discover_content(
                             warn!("no value from text entry?");
                             return;
                         };
-                        if settings.single().search_filter.as_deref().unwrap_or("") == value {
+                        if settings.single().unwrap().search_filter.as_deref().unwrap_or("") == value {
                             // no change
                             return;
                         }
                         if value.is_empty() {
-                            settings.single_mut().search_filter = None;
+                            settings.single_mut().unwrap().search_filter = None;
                         } else {
-                            let mut settings = settings.single_mut();
+                            let mut settings = settings.single_mut().unwrap();
                             settings.search_filter = Some(value);
                             settings.search_timer = 1.0;
                         }
@@ -466,7 +466,7 @@ fn update_page(
 
     let Some(mut commands) = components
         .get_named("items")
-        .and_then(|e| commands.get_entity(e))
+        .and_then(|e| commands.get_entity(e).ok())
     else {
         warn!("no content node");
         return;
@@ -482,7 +482,7 @@ fn update_page(
         return;
     }
 
-    commands.despawn_descendants();
+    commands.despawn_related::<Children>();
     let mut visible_count = 0;
 
     if settings.search_filter != *prev_search {

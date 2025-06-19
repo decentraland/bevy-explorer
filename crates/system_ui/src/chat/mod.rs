@@ -11,9 +11,7 @@ use common::{
     inputs::SystemAction,
     sets::SetupSets,
     structs::{PrimaryPlayerRes, PrimaryUser, SystemAudio, ToolTips, TooltipSource},
-    util::{
-        AsH160, FireEventEx, ModifyComponentExt, RingBuffer, RingBufferReceiver, TryPushChildrenEx,
-    },
+    util::{AsH160, ModifyComponentExt, RingBuffer, RingBufferReceiver, TryPushChildrenEx},
 };
 use comms::{
     chat_marker_things,
@@ -97,19 +95,16 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, ui_root: Res<Sy
     // profile button
     let button = commands
         .spawn((
-            ImageBundle {
-                image: asset_server.load("images/chat_button.png").into(),
-                style: Node {
-                    position_type: PositionType::Absolute,
-                    top: Val::VMin(BUTTON_SCALE * 3.5),
-                    right: Val::VMin(BUTTON_SCALE * 0.5),
-                    width: Val::VMin(BUTTON_SCALE),
-                    height: Val::VMin(BUTTON_SCALE),
-                    ..Default::default()
-                },
-                focus_policy: bevy::ui::FocusPolicy::Block,
+            ImageNode::new(asset_server.load("images/chat_button.png")),
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::VMin(BUTTON_SCALE * 3.5),
+                right: Val::VMin(BUTTON_SCALE * 0.5),
+                width: Val::VMin(BUTTON_SCALE),
+                height: Val::VMin(BUTTON_SCALE),
                 ..Default::default()
             },
+            bevy::ui::FocusPolicy::Block,
             Interaction::default(),
             On::<Click>::new(
                 |mut commands: Commands, mut q: Query<&mut Node, With<ChatboxContainer>>| {
@@ -181,6 +176,7 @@ fn debug_chat(
             }
             "add" => {
                 tab.single_mut()
+                    .unwrap()
                     .add(
                         &mut commands,
                         &dui,
@@ -260,7 +256,7 @@ fn setup_chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<Du
         ChatboxContainer,
         On::<Click>::new(
             |mut commands: Commands, q: Query<Entity, With<ChatInput>>| {
-                commands.entity(q.single()).try_insert(Focus);
+                commands.entity(q.single().unwrap()).try_insert(Focus);
             },
         ),
     ));
@@ -364,21 +360,17 @@ fn make_log(commands: &mut Commands, asset_server: &AssetServer, log: SceneLogMe
                 message: message.clone(),
             },
             FontSize(0.0175),
-            TextBundle {
-                text: Text::from_sections([TextSection::new(
-                    message,
-                    TextStyle {
-                        font: asset_server.load("fonts/NotoSans-Bold.ttf"),
-                        font_size: 15.0,
-                        color: match level {
-                            SceneLogLevel::Log => Color::WHITE,
-                            SceneLogLevel::SceneError => css::YELLOW.into(),
-                            SceneLogLevel::SystemError => css::BISQUE.into(),
-                        },
-                    },
-                )]),
+            Text::new(message),
+            TextFont {
+                font: asset_server.load("fonts/NotoSans-Bold.ttf"),
+                font_size: 15.0,
                 ..Default::default()
             },
+            TextColor(match level {
+                SceneLogLevel::Log => Color::WHITE,
+                SceneLogLevel::SceneError => css::YELLOW.into(),
+                SceneLogLevel::SystemError => css::BISQUE.into(),
+            }),
         ))
         .id()
 }
@@ -401,7 +393,7 @@ fn display_chat(
         if children.len() > 255 {
             let mut iter = children.iter();
             for _ in 0..children.len() - 255 {
-                commands.entity(*iter.next().unwrap()).despawn();
+                commands.entity(iter.next().unwrap()).despawn();
             }
         }
     }
@@ -440,7 +432,7 @@ fn display_chat(
 
         if chatbox.active_log_sink.as_ref().map(|(id, _)| id) != current_scene.as_ref() {
             chatbox.active_log_sink = None;
-            commands.entity(entity).despawn_descendants();
+            commands.entity(entity).despawn_related::<Children>();
 
             if let Some(current_scene) = current_scene {
                 if let Ok(context) = contexts.get(current_scene) {
@@ -520,7 +512,7 @@ fn emit_user_chat(
         } else {
             if output.active_tab.is_empty() {
                 // private chat (what a hacky approach this is)
-                private.send(PrivateChatEntered(message.clone()));
+                private.write(PrivateChatEntered(message.clone()));
                 return;
             }
 
@@ -531,7 +523,7 @@ fn emit_user_chat(
                 player
             };
 
-            chats.send(ChatEvent {
+            chats.write(ChatEvent {
                 timestamp: time.elapsed_secs_f64(),
                 sender,
                 channel: output.active_tab.to_owned(),
@@ -547,7 +539,7 @@ fn emit_user_chat(
                 let command = console_config.commands.get(command_name.as_str());
 
                 if command.is_some() {
-                    command_entered.send(ConsoleCommandEntered { command_name, args });
+                    command_entered.write(ConsoleCommandEntered { command_name, args });
                 } else {
                     debug!(
                         "Command not recognized, recognized commands: `{:?}`",
@@ -559,7 +551,7 @@ fn emit_user_chat(
     }
 
     for PrintConsoleLine { line } in console_lines.read() {
-        chats.send(ChatEvent {
+        chats.write(ChatEvent {
             timestamp: time.elapsed_secs_f64(),
             sender: Entity::PLACEHOLDER,
             channel: "Nearby".to_owned(),
@@ -621,7 +613,7 @@ pub(crate) fn select_chat_tab(
     let clicked_current = chatbox.active_tab == tab;
 
     if !clicked_current {
-        commands.entity(entity).despawn_descendants();
+        commands.entity(entity).despawn_related::<Children>();
         chatbox.active_log_sink = None;
         chatbox.active_chat_sink = None;
         if tab == "Nearby" {
@@ -641,9 +633,9 @@ pub(crate) fn select_chat_tab(
                     false,
                 );
             }
-            text_entry.single_mut().enabled = true;
+            text_entry.single_mut().unwrap().enabled = true;
         } else if tab == "Scene Log" {
-            text_entry.single_mut().enabled = false;
+            text_entry.single_mut().unwrap().enabled = false;
         }
 
         debug!("tab set to {}", tab);
@@ -721,7 +713,7 @@ fn pipe_chats_from_scene(
         }
     }) {
         if message.starts_with('/') {
-            sender.send(ChatEvent {
+            sender.write(ChatEvent {
                 timestamp: time.elapsed_secs_f64(),
                 sender: primary_player.0,
                 channel: "System".to_owned(),
@@ -736,9 +728,9 @@ fn pipe_chats_from_scene(
             let command = console_config.commands.get(command_name.as_str());
 
             if command.is_some() {
-                command_entered.send(ConsoleCommandEntered { command_name, args });
+                command_entered.write(ConsoleCommandEntered { command_name, args });
             } else {
-                sender.send(ChatEvent {
+                sender.write(ChatEvent {
                     timestamp: time.elapsed_secs_f64(),
                     sender: Entity::PLACEHOLDER,
                     channel: "System".to_owned(),
@@ -749,7 +741,7 @@ fn pipe_chats_from_scene(
                 });
             }
         } else {
-            sender.send(ChatEvent {
+            sender.write(ChatEvent {
                 timestamp: time.elapsed_secs_f64(),
                 sender: primary_player.0,
                 channel,
@@ -759,7 +751,7 @@ fn pipe_chats_from_scene(
     }
 
     for PrintConsoleLine { line } in console_lines.read() {
-        sender.send(ChatEvent {
+        sender.write(ChatEvent {
             timestamp: time.elapsed_secs_f64(),
             sender: Entity::PLACEHOLDER,
             channel: "System".to_owned(),

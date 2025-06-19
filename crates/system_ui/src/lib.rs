@@ -82,17 +82,14 @@ struct SystemUiRoot(Entity);
 fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
     let root = commands
         .spawn((
-            NodeBundle {
-                style: Node {
-                    flex_direction: FlexDirection::Column,
-                    justify_content: JustifyContent::SpaceBetween,
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    ..Default::default()
-                },
-                z_index: ZIndex::Global((1 << 18) + 2),
+            Node {
+                flex_direction: FlexDirection::Column,
+                justify_content: JustifyContent::SpaceBetween,
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
                 ..Default::default()
             },
+            GlobalZIndex((1 << 18) + 2),
             UiRoot,
         ))
         .id();
@@ -100,18 +97,15 @@ fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
 
     // interaction component
     commands.spawn((
-        NodeBundle {
-            style: Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(0.0),
-                right: Val::Px(0.0),
-                top: Val::Px(0.0),
-                bottom: Val::Px(0.0),
-                ..Default::default()
-            },
-            z_index: ZIndex::Global((1 << 18) + 1),
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(0.0),
+            right: Val::Px(0.0),
+            top: Val::Px(0.0),
+            bottom: Val::Px(0.0),
             ..Default::default()
         },
+        GlobalZIndex((1 << 18) + 1),
         Interaction::default(),
         MouseInteractionComponent,
     ));

@@ -68,13 +68,13 @@ fn set_oow(
                 .get_named("title")
                 .and_then(|c| text.get_mut(c).ok())
             {
-                title.sections[0].value = title_text;
+                title.0 = title_text;
             }
             if let Some(mut state) = components
                 .get_named("load-state")
                 .and_then(|c| text.get_mut(c).ok())
             {
-                state.sections[0].value = state_text;
+                state.0 = state_text;
             }
         }
         None => {

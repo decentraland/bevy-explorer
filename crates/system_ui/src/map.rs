@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use anyhow::anyhow;
 use bevy::{
+    platform::collections::{hash_map::Entry, HashMap},
     prelude::*,
     tasks::{IoTaskPool, Task},
-    platform::collections::{hash_map::Entry, HashMap},
     window::{PrimaryWindow, WindowResized},
 };
 use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
@@ -88,7 +88,7 @@ fn set_map_content(
             return;
         }
 
-        commands.entity(ent).despawn_descendants();
+        commands.entity(ent).despawn_related::<Children>();
 
         if maybe_map_settings.is_none() {
             commands.entity(ent).insert(MapSettings::default());
@@ -284,7 +284,7 @@ fn update_map_data(
             .and_then(|c| c.first())
             .and_then(|c| text.get_mut(*c).ok())
         {
-            text.sections[0].value = format!("({},{})", parcel.x, parcel.y + 1);
+            text.0 = format!("({},{})", parcel.x, parcel.y + 1);
         }
     }
 }
@@ -329,7 +329,7 @@ fn render_map(
             None => {
                 let cursor = commands
                     .spawn(BoundedNodeBundle {
-                        z_index: ZIndex::Local(8),
+                        z_index: ZIndex(8),
                         bounded: BoundedNode {
                             image: Some(asset_server.load("images/cursor.png")),
                             ..Default::default()
@@ -338,23 +338,20 @@ fn render_map(
                     })
                     .with_children(|c| {
                         c.spawn((
-                            TextBundle {
-                                style: Node {
-                                    position_type: PositionType::Absolute,
-                                    bottom: Val::Percent(100.0),
-                                    left: Val::Percent(100.0),
-                                    ..Default::default()
-                                },
-                                text: Text::from_section("Hello!", Default::default()),
+                            Node {
+                                position_type: PositionType::Absolute,
+                                bottom: Val::Percent(100.0),
+                                left: Val::Percent(100.0),
                                 ..Default::default()
                             },
+                            Text::new("Hello!"),
                             FontSize(0.03),
                         ));
                     })
                     .id();
                 let you_are_here = commands
                     .spawn(BoundedNodeBundle {
-                        z_index: ZIndex::Local(7),
+                        z_index: ZIndex(7),
                         bounded: BoundedNode {
                             image: Some(asset_server.load("images/you_are_here.png")),
                             ..Default::default()
@@ -492,7 +489,7 @@ fn render_map(
                                         image: Some(h_image),
                                         color: None,
                                     },
-                                    z_index: ZIndex::Local(level as i32 + 1),
+                                    z_index: ZIndex(level as i32 + 1),
                                     ..Default::default()
                                 })
                                 .id();
