@@ -154,16 +154,16 @@ impl CumulativeAxisData {
 }
 
 #[derive(SystemParam)]
-pub struct InputManager<'w> {
+pub struct InputManager<'w, 's> {
     map: Res<'w, InputMap>,
     mouse_input: Res<'w, ButtonInput<MouseButton>>,
     key_input: Res<'w, ButtonInput<KeyCode>>,
     axis_data: ResMut<'w, CumulativeAxisData>,
-    gamepad_input: Res<'w, ButtonInput<GamepadButton>>,
+    gamepads: Query<'w, 's, &'static Gamepad>,
     priorities: ResMut<'w, InputPriorities>,
 }
 
-impl InputManager<'_> {
+impl InputManager<'_, '_> {
     pub fn priorities(&mut self) -> &mut InputPriorities {
         &mut self.priorities
     }
@@ -173,8 +173,8 @@ impl InputManager<'_> {
             || self.mouse_input.get_just_released().len() != 0
             || self.key_input.get_just_pressed().len() != 0
             || self.key_input.get_just_released().len() != 0
-            || self.gamepad_input.get_just_pressed().len() != 0
-            || self.gamepad_input.get_just_released().len() != 0
+            || self.gamepads.iter().any(|gp| gp.get_just_pressed().next().is_some())
+            || self.gamepads.iter().any(|gp| gp.get_just_released().next().is_some())
             || !self.axis_data.current.is_empty()
     }
 
@@ -218,7 +218,7 @@ impl InputManager<'_> {
                 self.mouse_input.just_pressed(*mb) && self.check_priority(item, priority)
             }
             InputIdentifier::Gamepad(b) => {
-                self.gamepad_input.get_just_pressed().any(|p| p == b)
+                self.gamepads.iter().map(|gp| gp.get_just_pressed()).flatten().any(|p| p == b)
                     && self.check_priority(item, priority)
             }
             InputIdentifier::Analog(axis, input_direction) => {
@@ -232,7 +232,7 @@ impl InputManager<'_> {
         self.inputs(action.into()).any(|item| match item {
             InputIdentifier::Key(k) => self.key_input.just_released(*k),
             InputIdentifier::Mouse(mb) => self.mouse_input.just_released(*mb),
-            InputIdentifier::Gamepad(b) => self.gamepad_input.get_just_released().any(|p| p == b),
+            InputIdentifier::Gamepad(b) => self.gamepads.iter().map(|gp| gp.get_just_released()).flatten().any(|p| p == b),
             InputIdentifier::Analog(axis, input_direction) => {
                 self.axis_data.just_up(*axis, *input_direction)
             }
@@ -248,7 +248,7 @@ impl InputManager<'_> {
                 self.mouse_input.pressed(*mb) && self.check_priority(item, priority)
             }
             InputIdentifier::Gamepad(b) => {
-                self.gamepad_input.get_pressed().any(|p| p == b)
+                self.gamepads.iter().map(|gp| gp.get_pressed()).flatten().any(|p| p == b)
                     && self.check_priority(item, priority)
             }
             InputIdentifier::Analog(axis, input_direction) => {
@@ -276,7 +276,7 @@ impl InputManager<'_> {
                         }
                     }
                     InputIdentifier::Gamepad(b) => {
-                        if self.gamepad_input.get_pressed().any(|p| p == b)
+                        if self.gamepads.iter().map(|gp| gp.get_pressed()).flatten().any(|p| p == b)
                             && self.check_priority(item, priority)
                         {
                             1.0
@@ -325,7 +325,7 @@ impl InputManager<'_> {
                             && self.check_priority(button, InputPriority::Scene)
                     }
                     InputIdentifier::Gamepad(b) => {
-                        self.gamepad_input.get_just_pressed().any(|p| p == b)
+                        self.gamepads.iter().map(|gp| gp.get_just_pressed()).flatten().any(|p| p == b)
                             && self.check_priority(button, InputPriority::Scene)
                     }
                     InputIdentifier::Analog(axis, input_direction) => {
@@ -352,7 +352,7 @@ impl InputManager<'_> {
                     InputIdentifier::Key(k) => self.key_input.just_released(*k),
                     InputIdentifier::Mouse(m) => self.mouse_input.just_released(*m),
                     InputIdentifier::Gamepad(b) => {
-                        self.gamepad_input.get_just_released().any(|p| p == b)
+                        self.gamepads.iter().map(|gp| gp.get_just_released()).flatten().any(|p| p == b)
                     }
                     InputIdentifier::Analog(axis, input_direction) => {
                         self.axis_data.just_up(*axis, *input_direction)

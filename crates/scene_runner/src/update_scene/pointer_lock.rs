@@ -49,7 +49,7 @@ impl From<PbPointerLock> for PointerLock {
 
 #[derive(SystemParam)]
 pub struct CameraInteractionState<'w, 's> {
-    input_manager: InputManager<'w>,
+    input_manager: InputManager<'w, 's>,
     state: Local<'s, (ClickState, f32)>,
     time: Res<'w, Time>,
     _p: PhantomData<&'s ()>,
