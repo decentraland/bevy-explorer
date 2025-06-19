@@ -4,9 +4,12 @@ const activeRooms = new Set();
 // Store audio elements and panner nodes for spatial audio
 const participantAudioNodes = new Map();
 
+// Store available track publications for subscription management
+const availableTrackPublications = new Map();
+
 export async function connect_room(url, token) {
     const room = new LivekitClient.Room({
-        autoSubscribe: true,
+        autoSubscribe: false,
         adaptiveStream: false,
         dynacast: false,
     });
@@ -129,6 +132,38 @@ export function set_room_event_handler(room, handler) {
         });
     });
     
+    room.on(LivekitClient.RoomEvent.TrackPublished, (publication, participant) => {
+        if (publication.source === LivekitClient.Track.Source.Microphone) {
+            // Store the track publication for potential subscription
+            const key = `${room.sid}-${participant.identity}`;
+            availableTrackPublications.set(key, publication);
+            
+            handler({
+                type: 'trackPublished',
+                participant: {
+                    identity: participant.identity,
+                    metadata: participant.metadata || ''
+                }
+            });
+        }
+    });
+    
+    room.on(LivekitClient.RoomEvent.TrackUnpublished, (publication, participant) => {
+        if (publication.source === LivekitClient.Track.Source.Microphone) {
+            // Remove the track publication
+            const key = `${room.sid}-${participant.identity}`;
+            availableTrackPublications.delete(key);
+            
+            handler({
+                type: 'trackUnpublished',
+                participant: {
+                    identity: participant.identity,
+                    metadata: participant.metadata || ''
+                }
+            });
+        }
+    });
+    
     room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
         // For audio tracks, set up spatial audio
         if (track.kind === 'audio') {
@@ -220,6 +255,21 @@ export function set_room_event_handler(room, handler) {
             }
         });
     });
+}
+
+// New function to manage track subscriptions
+export function set_track_subscription(room, participantIdentity, shouldSubscribe) {
+    const key = `${room.sid}-${participantIdentity}`;
+    const publication = availableTrackPublications.get(key);
+    
+    if (publication) {
+        publication.setSubscribed(shouldSubscribe);
+        console.log(`${shouldSubscribe ? 'Subscribed to' : 'Unsubscribed from'} voice track for player ${participantIdentity}`);
+        return true;
+    } else {
+        console.warn(`No available track publication found for player ${participantIdentity}`);
+        return false;
+    }
 }
 
 // Spatial audio control functions

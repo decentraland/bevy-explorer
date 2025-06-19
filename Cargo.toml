@@ -107,7 +107,7 @@ serde = "1.0.152"
 serde_json = { version = "1.0.92", features = ["raw_value"] }
 
 itertools = "0.12"
-tokio = { version = "1.44", features = ["sync"] }
+tokio = { version = "1.44", features = ["sync", "macros"] }
 anyhow = "1.0.70"
 http = "1.1"
 urn = "0.7.0"

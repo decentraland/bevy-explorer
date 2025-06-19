@@ -5,9 +5,10 @@ use serde::Deserialize;
 use tokio::sync::mpsc::{Receiver, Sender};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
+use futures_util::FutureExt;
 
 use crate::{
-    global_crdt::{GlobalCrdtState, MicState, PlayerMessage, PlayerUpdate},
+    global_crdt::{GlobalCrdtState, MicState, PlayerMessage, PlayerUpdate, VoiceSourceEvent},
     livekit_room::{LivekitConnection, LivekitTransport},
     NetworkMessage,
 };
@@ -74,6 +75,13 @@ extern "C" {
 
     #[wasm_bindgen(catch)]
     fn get_audio_participants() -> Result<JsValue, JsValue>;
+
+    #[wasm_bindgen(catch)]
+    fn set_track_subscription(
+        room: &JsValue,
+        participant_identity: &str,
+        should_subscribe: bool,
+    ) -> Result<bool, JsValue>;
 }
 
 pub struct MicPlugin;
@@ -118,10 +126,11 @@ pub fn connect_livekit(
         debug!("spawn lk connect");
         let remote_address = new_transport.address.to_owned();
         let receiver = new_transport.receiver.take().unwrap();
+        let subscription_rx = new_transport.voice_subscription_receiver.take().unwrap();
         let sender = player_state.get_sender();
 
         // For WASM, we directly call the handler which will spawn the async task
-        if let Err(e) = livekit_handler_inner(transport_id, &remote_address, receiver, sender) {
+        if let Err(e) = livekit_handler_inner(transport_id, &remote_address, receiver, subscription_rx, sender) {
             warn!("Failed to start livekit connection: {e}");
         }
 
@@ -133,6 +142,7 @@ fn livekit_handler_inner(
     transport_id: Entity,
     remote_address: &str,
     app_rx: Receiver<NetworkMessage>,
+    subscription_rx: Receiver<(ethers_core::types::Address, bool)>,
     sender: Sender<PlayerUpdate>,
 ) -> Result<(), anyhow::Error> {
     debug!(">> lk connect async : {}", remote_address);
@@ -153,7 +163,7 @@ fn livekit_handler_inner(
 
     // In WASM, we can't block or create threads, so we just spawn the async task
     spawn_local(async move {
-        if let Err(e) = run_livekit_session(transport_id, &address, &token, app_rx, sender).await {
+        if let Err(e) = run_livekit_session(transport_id, &address, &token, app_rx, subscription_rx, sender).await {
             error!("LiveKit session error: {:?}", e);
         }
     });
@@ -166,6 +176,7 @@ async fn run_livekit_session(
     address: &str,
     token: &str,
     mut app_rx: Receiver<NetworkMessage>,
+    mut subscription_rx: Receiver<(ethers_core::types::Address, bool)>,
     sender: Sender<PlayerUpdate>,
 ) -> Result<(), anyhow::Error> {
     loop {
@@ -175,7 +186,7 @@ async fn run_livekit_session(
             break;
         }
 
-        match connect_and_handle_session(transport_id, address, token, &mut app_rx, &sender).await {
+        match connect_and_handle_session(transport_id, address, token, &mut app_rx, &mut subscription_rx, &sender).await {
             Ok(_) => {
                 debug!("LiveKit session ended normally");
                 // Check if we should reconnect
@@ -209,6 +220,7 @@ async fn connect_and_handle_session(
     address: &str,
     token: &str,
     app_rx: &mut Receiver<NetworkMessage>,
+    subscription_rx: &mut Receiver<(ethers_core::types::Address, bool)>,
     sender: &Sender<PlayerUpdate>,
 ) -> Result<(), anyhow::Error> {
     let room = connect_room(address, token)
@@ -216,6 +228,7 @@ async fn connect_and_handle_session(
         .map_err(|e| anyhow::anyhow!("Failed to connect room: {:?}", e))?;
 
     let sender_clone = sender.clone();
+    let room_clone = room.clone();
 
     // Set up event handler
     let event_handler = Closure::wrap(Box::new(move |event: JsValue| {
@@ -231,30 +244,46 @@ async fn connect_and_handle_session(
 
     // Microphone is handled entirely in JavaScript
 
-    // Handle outgoing messages
+    // Handle both outgoing messages and subscription requests
     loop {
-        let message = app_rx.recv().await;
-        let Some(outgoing) = message else {
-            debug!("App pipe broken, exiting loop");
-            break;
-        };
+        tokio::select! {
+            message = app_rx.recv().fuse() => {
+                let Some(outgoing) = message else {
+                    debug!("App pipe broken, exiting loop");
+                    break;
+                };
 
-        let destinations = if let Some(address) = outgoing.recipient {
-            js_sys::Array::of1(&JsValue::from_str(&format!("{:#x}", address)))
-        } else {
-            js_sys::Array::new()
-        };
+                let destinations = if let Some(address) = outgoing.recipient {
+                    js_sys::Array::of1(&JsValue::from_str(&format!("{:#x}", address)))
+                } else {
+                    js_sys::Array::new()
+                };
 
-        if let Err(e) = publish_data(
-            &room,
-            &outgoing.data,
-            !outgoing.unreliable,
-            destinations.into(),
-        )
-        .await
-        {
-            warn!("Failed to publish data: {:?}", e);
-            break;
+                if let Err(e) = publish_data(
+                    &room,
+                    &outgoing.data,
+                    !outgoing.unreliable,
+                    destinations.into(),
+                )
+                .await
+                {
+                    warn!("Failed to publish data: {:?}", e);
+                    break;
+                }
+            }
+            subscription_request = subscription_rx.recv().fuse() => {
+                if let Some((player_address, should_subscribe)) = subscription_request {
+                    let participant_identity = format!("{:#x}", player_address);
+                    if let Err(e) = set_track_subscription(&room_clone, &participant_identity, should_subscribe) {
+                        warn!("Failed to set track subscription for {}: {:?}", participant_identity, e);
+                    } else {
+                        debug!("{}subscribed {} voice track for player {}", 
+                            if should_subscribe { "S" } else { "Uns" }, 
+                            if should_subscribe { "to" } else { "from" },
+                            participant_identity);
+                    }
+                }
+            }
         }
     }
 
@@ -272,6 +301,12 @@ enum RoomEvent {
     DataReceived {
         participant: Participant,
         payload: serde_bytes::ByteBuf,
+    },
+    TrackPublished {
+        participant: Participant,
+    },
+    TrackUnpublished {
+        participant: Participant,
     },
     TrackSubscribed {
         participant: Participant,
@@ -317,6 +352,28 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                                 .await;
                         }
                     }
+                }
+            }
+            RoomEvent::TrackPublished { participant } => {
+                if let Some(address) = participant.identity.as_h160() {
+                    let _ = sender
+                        .send(PlayerUpdate {
+                            transport_id,
+                            message: PlayerMessage::VoiceSourceChange(VoiceSourceEvent::Published),
+                            address,
+                        })
+                        .await;
+                }
+            }
+            RoomEvent::TrackUnpublished { participant } => {
+                if let Some(address) = participant.identity.as_h160() {
+                    let _ = sender
+                        .send(PlayerUpdate {
+                            transport_id,
+                            message: PlayerMessage::VoiceSourceChange(VoiceSourceEvent::Unpublished),
+                            address,
+                        })
+                        .await;
                 }
             }
             RoomEvent::TrackSubscribed { participant: _p } => {
