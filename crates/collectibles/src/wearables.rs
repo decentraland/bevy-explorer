@@ -7,12 +7,12 @@ use crate::{
 use anyhow::anyhow;
 use bevy::{
     asset::AssetLoader,
-    core::FrameCount,
+    diagnostic::FrameCount,
     gltf::{Gltf, GltfLoaderSettings},
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::render_asset::RenderAssetUsages,
     tasks::{IoTaskPool, Task},
-    utils::{ConditionalSendFuture, HashMap, HashSet},
 };
 use serde::Deserialize;
 
@@ -316,160 +316,158 @@ impl AssetLoader for WearableLoader {
 
     type Error = anyhow::Error;
 
-    fn load<'a>(
-        &'a self,
-        reader: &'a mut bevy::asset::io::Reader,
-        settings: &'a Self::Settings,
-        load_context: &'a mut bevy::asset::LoadContext,
-    ) -> impl ConditionalSendFuture<Output = Result<Self::Asset, Self::Error>> {
-        Box::pin(async move {
-            let mut entity = EntityDefinitionLoader
-                .load(reader, settings, load_context)
-                .await?;
-            let metadata = entity.metadata.ok_or(anyhow!("no metadata?"))?;
-            let meta = serde_json::from_value::<WearableMeta>(metadata)?;
+    async fn load(
+        &self,
+        reader: &mut dyn bevy::asset::io::Reader,
+        settings: &Self::Settings,
+        load_context: &mut bevy::asset::LoadContext<'_>,
+    ) -> Result<Self::Asset, Self::Error> {
+        let mut entity = EntityDefinitionLoader
+            .load(reader, settings, load_context)
+            .await?;
+        let metadata = entity.metadata.ok_or(anyhow!("no metadata?"))?;
+        let meta = serde_json::from_value::<WearableMeta>(metadata)?;
 
-            let category = meta.data.category;
-            let thumbnail =
-                load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
+        let category = meta.data.category;
+        let thumbnail =
+            load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
 
-            let mut representations = HashMap::default();
+        let mut representations = HashMap::default();
 
-            for representation in meta.data.representations.into_iter() {
-                let (model, texture, mask) = if category.is_texture {
-                    // don't validate the main file, as some base wearables have no extension on the main_file member (Eyebrows_09 e.g)
-                    let texture = representation
-                        .contents
-                        .iter()
-                        .find(|f| {
-                            f.to_lowercase().ends_with(".png")
-                                && !f.to_lowercase().ends_with("_mask.png")
-                        })
-                        .map(|f| load_context.load(load_context.path().parent().unwrap().join(f)));
-                    let mask = representation
-                        .contents
-                        .iter()
-                        .find(|f| f.to_lowercase().ends_with("_mask.png"))
-                        .map(|f| load_context.load(load_context.path().parent().unwrap().join(f)));
+        for representation in meta.data.representations.into_iter() {
+            let (model, texture, mask) = if category.is_texture {
+                // don't validate the main file, as some base wearables have no extension on the main_file member (Eyebrows_09 e.g)
+                let texture = representation
+                    .contents
+                    .iter()
+                    .find(|f| {
+                        f.to_lowercase().ends_with(".png")
+                            && !f.to_lowercase().ends_with("_mask.png")
+                    })
+                    .map(|f| load_context.load(load_context.path().parent().unwrap().join(f)));
+                let mask = representation
+                    .contents
+                    .iter()
+                    .find(|f| f.to_lowercase().ends_with("_mask.png"))
+                    .map(|f| load_context.load(load_context.path().parent().unwrap().join(f)));
 
-                    (None, texture, mask)
+                (None, texture, mask)
+            } else {
+                if !representation.main_file.to_lowercase().ends_with(".glb")
+                    && !representation.main_file.to_lowercase().ends_with(".gltf")
+                {
+                    return Err(anyhow!(
+                        "expected .gl[b|tf] main file, found {}",
+                        representation.main_file
+                    ));
+                }
+
+                let path = load_context
+                    .path()
+                    .parent()
+                    .unwrap()
+                    .join(&representation.main_file);
+                let model = load_context
+                    .loader()
+                    .with_settings::<GltfLoaderSettings>(|s| {
+                        s.load_cameras = false;
+                        s.load_lights = false;
+                        s.load_materials = RenderAssetUsages::RENDER_WORLD;
+                    })
+                    .load(path);
+
+                (Some(model), None, None)
+            };
+
+            for body_shape in representation.body_shapes {
+                let mut hides: HashSet<_> = if representation.override_hides.is_empty() {
+                    &meta.data.hides
                 } else {
-                    if !representation.main_file.to_lowercase().ends_with(".glb")
-                        && !representation.main_file.to_lowercase().ends_with(".gltf")
-                    {
-                        return Err(anyhow!(
-                            "expected .gl[b|tf] main file, found {}",
-                            representation.main_file
-                        ));
-                    }
+                    &representation.override_hides
+                }
+                .iter()
+                .copied()
+                .collect();
 
-                    let path = load_context
-                        .path()
-                        .parent()
-                        .unwrap()
-                        .join(&representation.main_file);
-                    let model = load_context
-                        .loader()
-                        .with_settings::<GltfLoaderSettings>(|s| {
-                            s.load_cameras = false;
-                            s.load_lights = false;
-                            s.load_materials = RenderAssetUsages::RENDER_WORLD;
-                        })
-                        .load(path);
-
-                    (Some(model), None, None)
-                };
-
-                for body_shape in representation.body_shapes {
-                    let mut hides: HashSet<_> = if representation.override_hides.is_empty() {
-                        &meta.data.hides
+                hides.extend(
+                    if representation.override_replaces.is_empty() {
+                        &meta.data.replaces
                     } else {
                         &representation.override_hides
                     }
                     .iter()
-                    .copied()
-                    .collect();
+                    .copied(),
+                );
 
-                    hides.extend(
-                        if representation.override_replaces.is_empty() {
-                            &meta.data.replaces
-                        } else {
-                            &representation.override_hides
-                        }
-                        .iter()
-                        .copied(),
-                    );
-
-                    // add extra hides
-                    if category == WearableCategory::SKIN {
-                        hides.extend([
-                            WearableCategory::HEAD,
-                            WearableCategory::FACIAL_HAIR,
-                            WearableCategory::UPPER_BODY,
-                            WearableCategory::LOWER_BODY,
-                            WearableCategory::FEET,
-                            WearableCategory::HAND_WEAR,
-                            WearableCategory::BODY_SHAPE,
-                        ]);
-                    }
-
-                    // upper body or hide(upper body) -> hide hands
-                    if category == WearableCategory::UPPER_BODY
-                        || hides.contains(&WearableCategory::UPPER_BODY)
-                    {
-                        // unless it explicitly removes it
-                        if !meta
-                            .data
-                            .removes_default_hiding
-                            .as_ref()
-                            .map(|removes| removes.iter())
-                            .unwrap_or_default()
-                            .any(|r| r == "hands")
-                        {
-                            hides.insert(WearableCategory::HANDS);
-                        }
-                    }
-
-                    // hide "head" pseudo-category -> hide a bunch of other stuff
-                    if hides.contains(&WearableCategory::HEAD) {
-                        hides.extend([
-                            WearableCategory::EYES,
-                            WearableCategory::EYEBROWS,
-                            WearableCategory::MOUTH,
-                            WearableCategory::FACIAL_HAIR,
-                            WearableCategory::MASK,
-                            WearableCategory::HAIR,
-                        ]);
-                    }
-
-                    // remove self
-                    hides.remove(&category);
-
-                    representations.insert(
-                        body_shape.to_lowercase(),
-                        Wearable {
-                            category,
-                            hides,
-                            model: model.clone(),
-                            texture: texture.clone(),
-                            mask: mask.clone(),
-                        },
-                    );
+                // add extra hides
+                if category == WearableCategory::SKIN {
+                    hides.extend([
+                        WearableCategory::HEAD,
+                        WearableCategory::FACIAL_HAIR,
+                        WearableCategory::UPPER_BODY,
+                        WearableCategory::LOWER_BODY,
+                        WearableCategory::FEET,
+                        WearableCategory::HAND_WEAR,
+                        WearableCategory::BODY_SHAPE,
+                    ]);
                 }
-            }
 
-            Ok(Collectible {
-                data: CollectibleData {
-                    thumbnail,
-                    hash: entity.id,
-                    urn: entity.pointers.pop().unwrap_or_default(),
-                    name: meta.name.unwrap_or_default(),
-                    description: meta.description.unwrap_or_default(),
-                    available_representations: representations.keys().cloned().collect(),
-                    extra_data: WearableExtraData { category },
-                },
-                representations,
-            })
+                // upper body or hide(upper body) -> hide hands
+                if category == WearableCategory::UPPER_BODY
+                    || hides.contains(&WearableCategory::UPPER_BODY)
+                {
+                    // unless it explicitly removes it
+                    if !meta
+                        .data
+                        .removes_default_hiding
+                        .as_ref()
+                        .map(|removes| removes.iter())
+                        .unwrap_or_default()
+                        .any(|r| r == "hands")
+                    {
+                        hides.insert(WearableCategory::HANDS);
+                    }
+                }
+
+                // hide "head" pseudo-category -> hide a bunch of other stuff
+                if hides.contains(&WearableCategory::HEAD) {
+                    hides.extend([
+                        WearableCategory::EYES,
+                        WearableCategory::EYEBROWS,
+                        WearableCategory::MOUTH,
+                        WearableCategory::FACIAL_HAIR,
+                        WearableCategory::MASK,
+                        WearableCategory::HAIR,
+                    ]);
+                }
+
+                // remove self
+                hides.remove(&category);
+
+                representations.insert(
+                    body_shape.to_lowercase(),
+                    Wearable {
+                        category,
+                        hides,
+                        model: model.clone(),
+                        texture: texture.clone(),
+                        mask: mask.clone(),
+                    },
+                );
+            }
+        }
+
+        Ok(Collectible {
+            data: CollectibleData {
+                thumbnail,
+                hash: entity.id,
+                urn: entity.pointers.pop().unwrap_or_default(),
+                name: meta.name.unwrap_or_default(),
+                description: meta.description.unwrap_or_default(),
+                available_representations: representations.keys().cloned().collect(),
+                extra_data: WearableExtraData { category },
+            },
+            representations,
         })
     }
 }
@@ -502,43 +500,41 @@ impl AssetLoader for WearableMetaLoader {
 
     type Error = anyhow::Error;
 
-    fn load<'a>(
-        &'a self,
-        reader: &'a mut bevy::asset::io::Reader,
-        settings: &'a Self::Settings,
-        load_context: &'a mut bevy::asset::LoadContext,
-    ) -> impl ConditionalSendFuture<Output = Result<Self::Asset, Self::Error>> {
-        Box::pin(async move {
-            let mut entity = EntityDefinitionLoader
-                .load(reader, settings, load_context)
-                .await?;
-            let metadata = entity.metadata.ok_or(anyhow!("no metadata?"))?;
-            let meta = serde_json::from_value::<WearableMeta>(metadata)?;
+    async fn load(
+        &self,
+        reader: &mut dyn bevy::asset::io::Reader,
+        settings: &Self::Settings,
+        load_context: &mut bevy::asset::LoadContext<'_>,
+    ) -> Result<Self::Asset, Self::Error> {
+        let mut entity = EntityDefinitionLoader
+            .load(reader, settings, load_context)
+            .await?;
+        let metadata = entity.metadata.ok_or(anyhow!("no metadata?"))?;
+        let meta = serde_json::from_value::<WearableMeta>(metadata)?;
 
-            let category = meta.data.category;
-            let thumbnail =
-                load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
+        let category = meta.data.category;
+        let thumbnail =
+            load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
 
-            let available_representations = meta
-                .data
-                .representations
-                .into_iter()
-                .flat_map(|rep| {
-                    rep.body_shapes
-                        .into_iter()
-                        .map(|shape| shape.to_lowercase())
-                })
-                .collect();
-
-            Ok(CollectibleData {
-                thumbnail,
-                hash: entity.id,
-                urn: entity.pointers.pop().unwrap_or_default(),
-                name: meta.name.unwrap_or_default(),
-                description: meta.description.unwrap_or_default(),
-                available_representations,
-                extra_data: WearableExtraData { category },
+        let available_representations = meta
+            .data
+            .representations
+            .into_iter()
+            .flat_map(|rep| {
+                rep.body_shapes
+                    .into_iter()
+                    .map(|shape| shape.to_lowercase())
             })
+            .collect();
+
+        Ok(CollectibleData {
+            thumbnail,
+            hash: entity.id,
+            urn: entity.pointers.pop().unwrap_or_default(),
+            name: meta.name.unwrap_or_default(),
+            description: meta.description.unwrap_or_default(),
+            available_representations,
+            extra_data: WearableExtraData { category },
         })
     }
 }
