@@ -1139,7 +1139,7 @@ pub fn process_scene_lifecycle(
     pointers: Res<ScenePointers>,
     imposter_scene: Res<CurrentImposterScene>,
 ) {
-    let mut required_scene_ids: HashMap<(String, Option<String>), bool> = HashMap::default();
+    let mut required_scene_ids: HashMap<(String, Option<String>), bool> = HashMap::new();
 
     // add nearby scenes to requirements
     let Ok(focus) = focus.single() else {

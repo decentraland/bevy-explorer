@@ -8,7 +8,7 @@ use bevy::{
 use bevy_kira_audio::{AudioControl, AudioInstance, AudioTween};
 use common::{
     sets::SetupSets,
-    structs::{AudioSettings, PrimaryCameraRes, PrimaryUser, SystemAudio},
+    structs::{AudioEmitter, AudioSettings, PrimaryCameraRes, PrimaryUser, SystemAudio},
     util::{AudioReceiver, VolumePanning},
 };
 use dcl::interface::ComponentPosition;
@@ -244,11 +244,6 @@ fn play_system_audio(
         }
         retain
     })
-}
-
-#[derive(Component)]
-pub struct AudioEmitter {
-    pub instances: Vec<Handle<AudioInstance>>,
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]

@@ -172,7 +172,7 @@ fn update_text_shapes(
         debug!("[{}] kill textshape {e:?}", frame.0);
     }
 
-    let mut new_world_uis: HashMap<Entity, SceneWorldUi> = HashMap::default();
+    let mut new_world_uis: HashMap<Entity, SceneWorldUi> = HashMap::new();
     let images = images.into_inner();
 
     // add new nodes

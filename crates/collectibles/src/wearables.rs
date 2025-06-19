@@ -332,7 +332,7 @@ impl AssetLoader for WearableLoader {
         let thumbnail =
             load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
 
-        let mut representations = HashMap::default();
+        let mut representations = HashMap::new();
 
         for representation in meta.data.representations.into_iter() {
             let (model, texture, mask) = if category.is_texture {

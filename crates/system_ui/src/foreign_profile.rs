@@ -88,7 +88,7 @@ fn show_foreign_profiles(
                                     if let Err(e) = client.friend_request(address, None) {
                                         warn!("error: {e}");
                                     } else {
-                                        commands.fire_event(FriendshipEvent(None));
+                                        commands.send_event(FriendshipEvent(None));
                                     }
                                 },
                             ),
@@ -103,7 +103,7 @@ fn show_foreign_profiles(
                                     if let Err(e) = client.cancel_request(address) {
                                         warn!("error: {e}");
                                     } else {
-                                        commands.fire_event(FriendshipEvent(None));
+                                        commands.send_event(FriendshipEvent(None));
                                     }
                                 },
                             ),
@@ -118,7 +118,7 @@ fn show_foreign_profiles(
                                     if let Err(e) = client.reject_request(address) {
                                         warn!("error: {e}");
                                     } else {
-                                        commands.fire_event(FriendshipEvent(None));
+                                        commands.send_event(FriendshipEvent(None));
                                     }
                                 },
                             ),
@@ -133,7 +133,7 @@ fn show_foreign_profiles(
                                     if let Err(e) = client.accept_request(address) {
                                         warn!("error: {e}");
                                     } else {
-                                        commands.fire_event(FriendshipEvent(None));
+                                        commands.send_event(FriendshipEvent(None));
                                     }
                                 },
                             ),
@@ -148,7 +148,7 @@ fn show_foreign_profiles(
                                     if let Err(e) = client.delete_friend(address) {
                                         warn!("error: {e}");
                                     } else {
-                                        commands.fire_event(FriendshipEvent(None));
+                                        commands.send_event(FriendshipEvent(None));
                                     }
                                 },
                             ),

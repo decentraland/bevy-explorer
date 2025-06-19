@@ -821,3 +821,9 @@ impl TimeOfDay {
 
 // porting aid, used to be one component
 pub type TextStyle = (TextFont, TextColor);
+
+// non-spatial audio
+#[derive(Component)]
+pub struct AudioEmitter {
+    pub instances: Vec<Handle<bevy_kira_audio::AudioInstance>>,
+}

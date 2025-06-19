@@ -180,7 +180,7 @@ fn make_scene_oven(
 
         // disable animations and tweens
         for child in children.iter_descendants(*entity) {
-            if let Some(mut commands) = commands.get_entity(child) {
+            if let Ok(mut commands) = commands.get_entity(child) {
                 commands
                     .remove::<AnimationPlayer>()
                     .remove::<tween::Tween>();
@@ -273,7 +273,7 @@ fn bake_scene_imposters(
                 for parcel in std::mem::take(&mut oven.all_parcels).drain() {
                     for ingredient in [true, false] {
                         if let Some(entity) = lookup.0.get(&(parcel, 0, ingredient)) {
-                            if let Some(mut commands) = commands.get_entity(*entity) {
+                            if let Ok(mut commands) = commands.get_entity(*entity) {
                                 commands.remove::<ImposterMissing>();
 
                                 if let Some(spec) = oven.baked_scene.imposters.get(&parcel) {
@@ -600,7 +600,7 @@ fn bake_imposter_imposter(
 
             for ingredient in [true, false] {
                 if let Some(entity) = lookup.0.get(&(parcel, level, ingredient)) {
-                    if let Some(mut commands) = commands.get_entity(*entity) {
+                    if let Ok(mut commands) = commands.get_entity(*entity) {
                         commands.remove::<ImposterMissing>();
 
                         if let Some(spec) = baking.imposters.get(&parcel) {
@@ -615,7 +615,7 @@ fn bake_imposter_imposter(
             }
 
             for (ent, _) in all_baking_cams.iter() {
-                if let Some(commands) = commands.get_entity(ent) {
+                if let Ok(mut commands) = commands.get_entity(ent) {
                     commands.despawn();
                 }
             }

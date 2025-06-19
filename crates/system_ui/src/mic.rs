@@ -59,9 +59,9 @@ fn setup(mut commands: Commands, images: Res<MicImages>, ui_root: Res<SystemUiRo
             On::<Click>::new(|mut commands: Commands, mut mic_state: ResMut<MicState>| {
                 mic_state.enabled = !mic_state.enabled;
                 if mic_state.enabled {
-                    commands.fire_event(SystemAudio("sounds/ui/voice_chat_mic_on.wav".to_owned()));
+                    commands.send_event(SystemAudio("sounds/ui/voice_chat_mic_on.wav".to_owned()));
                 } else {
-                    commands.fire_event(SystemAudio("sounds/ui/voice_chat_mic_off.wav".to_owned()));
+                    commands.send_event(SystemAudio("sounds/ui/voice_chat_mic_off.wav".to_owned()));
                 }
             }),
             On::<HoverEnter>::new(
@@ -124,9 +124,9 @@ fn update_mic_ui(
     let active = mic_available && mic_state.enabled && transport_available;
     if active != *prev_active {
         if active {
-            commands.fire_event(SystemAudio("sounds/ui/voice_chat_mic_on.wav".to_owned()));
+            commands.send_event(SystemAudio("sounds/ui/voice_chat_mic_on.wav".to_owned()));
         } else {
-            commands.fire_event(SystemAudio("sounds/ui/voice_chat_mic_off.wav".to_owned()));
+            commands.send_event(SystemAudio("sounds/ui/voice_chat_mic_off.wav".to_owned()));
         }
         *prev_active = active;
     }

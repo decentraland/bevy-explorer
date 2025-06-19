@@ -416,7 +416,7 @@ fn update_ready_gltfs(
             // - if mask != 0 create collider
 
             // create a counter per name so we can make unique collider handles
-            let mut collider_counter: HashMap<_, u32> = HashMap::default();
+            let mut collider_counter: HashMap<_, u32> = HashMap::new();
 
             // track if any animations exist
             let mut has_animations = false;
@@ -427,7 +427,7 @@ fn update_ready_gltfs(
                 continue;
             };
 
-            let mut named_nodes = HashMap::default();
+            let mut named_nodes = HashMap::new();
 
             for spawned_ent in scene_spawner.iter_instance_entities(*instance) {
                 // delete any base materials
@@ -1607,7 +1607,7 @@ fn update_gltf_linked_transforms(
         }
     }
 
-    let mut updated_transforms = HashMap::default();
+    let mut updated_transforms = HashMap::new();
 
     // update
     while !node_movement_state.is_empty() {

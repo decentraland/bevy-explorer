@@ -270,7 +270,7 @@ pub fn process_transport_updates(
             SceneEntityId,
             mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
         ),
-    > = HashMap::default();
+    > = HashMap::new();
 
     while let Ok(update) = state.ext_receiver.try_recv() {
         // create/update timestamp/transport_id on the foreign player

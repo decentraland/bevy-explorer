@@ -216,7 +216,7 @@ fn set_emotes_content(
         });
 
         let booth_camera = instance.camera;
-        if let Some(mut commands) = commands.get_entity(booth_camera) {
+        if let Ok(mut commands) = commands.get_entity(booth_camera) {
             commands.try_insert(SystemTween {
                 target: Transform {
                     translation: Vec3::new(1.2844446, 1.1353853, -2.876228),

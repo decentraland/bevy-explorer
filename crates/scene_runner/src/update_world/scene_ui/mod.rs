@@ -786,7 +786,7 @@ fn layout_scene_ui(
         let mut blocked_elements: HashMap<
             SceneEntityId,
             Vec<(SceneEntityId, (Entity, UiTransform, bool, Entity))>,
-        > = HashMap::default();
+        > = HashMap::new();
 
         while let Some((scene_id, (bevy_entity, ui_transform, transform_is_changed, root_node))) =
             unprocessed_uis.pop_front()

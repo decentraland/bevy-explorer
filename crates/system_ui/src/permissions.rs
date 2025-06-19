@@ -343,7 +343,7 @@ fn set_permission_settings_content(
             .insert(PermissionSettingDescription);
 
         if let Some(target) = target_entity {
-            commands.fire_event(ScrollTargetEvent {
+            commands.send_event(ScrollTargetEvent {
                 scrollable: components.named("scrollable"),
                 position: ScrollTarget::Entity(target),
             });

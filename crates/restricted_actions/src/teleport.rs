@@ -32,7 +32,7 @@ pub fn teleport_player(
         transform.translation.x = to.x as f32 * 16.0 + 8.0;
         transform.translation.z = -to.y as f32 * 16.0 - 8.0;
         dynamic_state.velocity = Vec3::ZERO;
-        if let Some(mut commands) = commands.get_entity(ent) {
+        if let Ok(mut commands) = commands.get_entity(ent) {
             commands.try_insert(OutOfWorld);
         }
 

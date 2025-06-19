@@ -20,7 +20,7 @@ use common::{
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
     structs::{
-        AppConfig, AvatarDynamicState, EmoteCommand, MoveKind, PlayerModifiers, PrimaryUser,
+        AppConfig, AudioEmitter, AvatarDynamicState, EmoteCommand, MoveKind, PlayerModifiers, PrimaryUser
     },
     util::{TryPushChildrenEx, VolumePanning},
 };
@@ -133,7 +133,7 @@ fn broadcast_emote(
             let old_packet = rfc4::Packet {
                 message: Some(rfc4::packet::Message::Chat(Chat {
                     message: format!("{}{} {}", chat_marker_things::EMOTE, emote.urn, *count),
-                    timestamp: time.elapsed_seconds_f64(),
+                    timestamp: time.elapsed_secs_f64(),
                 })),
                 protocol_version: 100,
             };
@@ -493,7 +493,7 @@ fn play_current_emote(
         &mut AnimationPlayer,
         Option<&mut AnimationTransitions>,
         Option<&mut Clips>,
-        Option<&Handle<AnimationGraph>>,
+        Option<&AnimationGraphHandle>,
     )>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
     mut playing: Local<HashMap<Entity, EmoteUrn>>,
@@ -508,9 +508,9 @@ fn play_current_emote(
         Res<AppConfig>,
         VolumePanning,
     ),
-    mut emitters: Query<&mut bevy_kira_audio::prelude::AudioEmitter>,
+    mut emitters: Query<&mut AudioEmitter>,
     mut audio_instances: ResMut<Assets<AudioInstance>>,
-    prop_details: Query<(Option<&Name>, &Transform, &Parent)>,
+    prop_details: Query<(Option<&Name>, &Transform, &ChildOf)>,
 ) {
     let prior_playing = std::mem::take(&mut *playing);
     let mut prev_spawned_extras = std::mem::take(&mut *spawned_extras);
@@ -519,7 +519,7 @@ fn play_current_emote(
         debug!("emote {}", active_emote.urn);
         let Some(definition) = children
             .iter()
-            .flat_map(|c| definitions.get(*c).ok())
+            .flat_map(|c| definitions.get(c).ok())
             .next()
         else {
             warn!("no definition");
@@ -534,7 +534,7 @@ fn play_current_emote(
                 }
 
                 if let Some((audio_ent, _)) = extras.audio.as_ref() {
-                    if let Some(commands) = commands.get_entity(*audio_ent) {
+                    if let Ok(mut commands) = commands.get_entity(*audio_ent) {
                         commands.despawn();
                     }
                 }
@@ -673,9 +673,9 @@ fn play_current_emote(
                                 }
                             }
 
-                            if parent.get() == entity {
+                            if parent.parent() == entity {
                                 // children of root nodes -> rotate
-                                if parent.get() == entity {
+                                if parent.parent() == entity {
                                     let mut rotated = *transform;
                                     rotated.rotate_around(
                                         Vec3::ZERO,
@@ -700,7 +700,7 @@ fn play_current_emote(
                         .filter(|ent| {
                             if let Ok((_, _, _, g)) = players.get(*ent) {
                                 if g.is_none() {
-                                    commands.entity(*ent).insert(clip.1.clone());
+                                    commands.entity(*ent).insert(AnimationGraphHandle(clip.1.clone()));
                                 }
                                 true
                             } else {
@@ -901,14 +901,15 @@ fn play_current_emote(
 
                     let audio_entity = commands
                         .spawn((
-                            SpatialBundle::default(),
-                            bevy_kira_audio::prelude::AudioEmitter {
+                            Transform::default(),
+                            Visibility::default(),
+                            AudioEmitter {
                                 instances: vec![handle],
                             },
                         ))
                         .id();
 
-                    if let Some(mut commands) = commands.get_entity(ent) {
+                    if let Ok(mut commands) = commands.get_entity(ent) {
                         commands.try_push_children(&[audio_entity]);
                     }
 

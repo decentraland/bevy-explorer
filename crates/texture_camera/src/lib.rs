@@ -224,7 +224,7 @@ fn update_texture_cameras(
 
     // remove cameras when TextureCam is removed
     for (ent, removed) in &removed {
-        if let Some(commands) = commands.get_entity(removed.0) {
+        if let Ok(mut commands) = commands.get_entity(removed.0) {
             commands.despawn();
         }
         commands.entity(ent).remove::<TextureCamEntity>();
@@ -236,7 +236,7 @@ fn update_texture_cameras(
         if texture_cam.is_changed() || layer_cache.changed_layers.contains(&layer_ix) {
             // remove previous camera if modified
             if let Some(prev) = maybe_existing_camera {
-                if let Some(commands) = commands.get_entity(prev.0) {
+                if let Ok(mut commands) = commands.get_entity(prev.0) {
                     commands.despawn();
                 }
             }
@@ -462,7 +462,7 @@ fn update_camera_layers(
     }
 
     for entity in removed.read() {
-        if let Some(mut commands) = commands.get_entity(entity) {
+        if let Ok(mut commands) = commands.get_entity(entity) {
             commands.remove::<Propagate<RenderLayers>>();
         }
     }

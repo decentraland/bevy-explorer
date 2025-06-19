@@ -294,10 +294,10 @@ pub fn close_settings(
             Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev)) => {
                 cr.send(cr_ev.clone());
                 rpc.send(rpc_ev.clone());
-                commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+                commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
             }
             _ => {
-                commands.fire_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
+                commands.send_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
             }
         }
     }

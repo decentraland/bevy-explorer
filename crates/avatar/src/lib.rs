@@ -125,19 +125,16 @@ fn setup(mut commands: Commands, images: ResMut<Assets<Image>>, mut view: ResMut
     view.view = spawn_world_ui_view(&mut commands, images.into_inner(), None).0;
     view.ui_root = commands
         .spawn((
-            NodeBundle {
-                style: Node {
-                    width: Val::Px(0.0),
-                    min_width: Val::Px(0.0),
-                    max_width: Val::Px(0.0),
-                    max_height: Val::Px(0.0),
-                    flex_direction: FlexDirection::Row,
-                    flex_wrap: FlexWrap::Wrap,
-                    ..Default::default()
-                },
+            Node {
+                width: Val::Px(0.0),
+                min_width: Val::Px(0.0),
+                max_width: Val::Px(0.0),
+                max_height: Val::Px(0.0),
+                flex_direction: FlexDirection::Row,
+                flex_wrap: FlexWrap::Wrap,
                 ..Default::default()
             },
-            TargetCamera(view.view),
+            UiTargetCamera(view.view),
         ))
         .id();
 }
@@ -335,7 +332,7 @@ fn select_avatar(
         current_source: Option<Entity>,
     }
 
-    let mut updates = HashMap::default();
+    let mut updates = HashMap::new();
 
     // set up initial state
     for (entity, maybe_player, base_shape, ref_avatar, maybe_prev_selection) in
@@ -448,7 +445,7 @@ fn select_avatar(
     // remove any orphans
     for (entity, selection) in &orphaned_avatar_selections {
         if selection.automatic_delete {
-            if let Some(mut commands) = commands.get_entity(entity) {
+            if let Ok(mut commands) = commands.get_entity(entity) {
                 commands.remove::<AvatarSelection>();
             }
         }
@@ -502,9 +499,9 @@ fn update_render_avatar(
                 .try_push_children(&attach_points.entities());
             for render_child in children
                 .iter()
-                .filter(|child| avatar_render_entities.get(**child).is_ok())
+                .filter(|child| avatar_render_entities.get(*child).is_ok())
             {
-                commands.entity(*render_child).despawn();
+                commands.entity(render_child).despawn();
             }
         }
     }
@@ -573,7 +570,7 @@ fn update_render_avatar(
             .collect();
 
         // take only the first item for each category and build a category map
-        let mut wearables = HashMap::default();
+        let mut wearables = HashMap::new();
         for (category, data) in specified_wearables {
             if !wearables.contains_key(&category) && category != WearableCategory::BODY_SHAPE {
                 wearables.insert(category, data);
@@ -638,10 +635,8 @@ fn update_render_avatar(
         debug!("avatar definition loaded: {wearables:?}");
         commands.entity(entity).with_children(|commands| {
             commands.spawn((
-                SpatialBundle {
-                    transform: Transform::from_rotation(Quat::from_rotation_y(PI)),
-                    ..Default::default()
-                },
+                Transform::from_rotation(Quat::from_rotation_y(PI)),
+                Visibility::default(),
                 AvatarDefinition {
                     label: selection.shape.0.name.as_ref().and_then(|name| {
                         (!name.is_empty()).then_some(format!(
@@ -718,11 +713,11 @@ fn update_render_avatar(
         if let Some(children) = maybe_children {
             for render_child in children
                 .iter()
-                .filter(|child| avatar_render_entities.get(**child).is_ok())
+                .filter(|child| avatar_render_entities.get(*child).is_ok())
             {
-                if maybe_prev.is_some_and(|e| e.0 != *render_child) {
+                if maybe_prev.is_some_and(|e| e.0 != render_child) {
                     debug!("despawn {render_child:?} as prev is already {maybe_prev:?}");
-                    commands.entity(*render_child).despawn();
+                    commands.entity(render_child).despawn();
                 } else {
                     debug!("set prev -> {render_child:?}");
                     if chose_existing {
@@ -731,7 +726,7 @@ fn update_render_avatar(
                     chose_existing = true;
                     commands
                         .entity(entity)
-                        .insert(PreviousAvatar(*render_child));
+                        .insert(PreviousAvatar(render_child));
                 }
             }
         }
@@ -881,13 +876,13 @@ pub struct PreviousAvatar(Entity);
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn process_avatar(
     mut commands: Commands,
-    query: Query<(Entity, &AvatarDefinition, &AvatarLoaded, &Parent), Without<AvatarProcessed>>,
+    query: Query<(Entity, &AvatarDefinition, &AvatarLoaded, &ChildOf), Without<AvatarProcessed>>,
     scene_spawner: SceneSpawnerPlus,
     mut instance_ents: Query<(
         &mut Visibility,
-        &Parent,
-        Option<&Handle<StandardMaterial>>,
-        Option<&Handle<Mesh>>,
+        &ChildOf,
+        Option<&MeshMaterial3d<StandardMaterial>>,
+        Option<&Mesh3d>,
         Option<&AnimationPlayer>,
     )>,
     named_ents: Query<&Name>,
@@ -902,14 +897,14 @@ fn process_avatar(
     mut emote_loader: CollectibleManager<Emote>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
     (names, previous_avatar, scene_ent, previous_animator, mut contexts): (
-        Query<(&Name, &Parent)>,
+        Query<(&Name, &ChildOf)>,
         Query<&PreviousAvatar>,
         Query<&SceneEntity>,
         Query<
             (),
             (
                 With<AnimationPlayer>,
-                With<Handle<AnimationGraph>>,
+                With<AnimationGraphHandle>,
                 With<Clips>,
                 With<AnimationTransitions>,
             ),
@@ -932,11 +927,11 @@ fn process_avatar(
             continue;
         }
 
-        let mut instance_scene_materials = HashMap::default();
+        let mut instance_scene_materials = HashMap::new();
         let mut armature_node = None;
-        let mut target_armature_entities = HashMap::default();
+        let mut target_armature_entities = HashMap::new();
 
-        if previous_animator.get(root_player_entity.get()).is_err() {
+        if previous_animator.get(root_player_entity.parent()).is_err() {
             let mut player = AnimationPlayer::default();
             let mut graph = AnimationGraph::new();
             let mut clips = Clips::default();
@@ -952,25 +947,25 @@ fn process_avatar(
                 clips.named.insert("Idle_Male".into(), (ix, 0.0));
                 transitions.play(&mut player, ix, Duration::from_secs_f32(0.2));
             }
-            commands.entity(root_player_entity.get()).try_insert((
+            commands.entity(root_player_entity.parent()).try_insert((
                 player,
                 transitions,
                 clips,
-                graphs.add(graph),
+                AnimationGraphHandle(graphs.add(graph)),
             ));
         }
 
         if let Some(emote) = &def.emote {
             debug!("set emote -> {emote:?}");
             commands
-                .entity(root_player_entity.get())
+                .entity(root_player_entity.parent())
                 .try_insert(emote.clone());
         }
 
         // record the node with the animator
         commands
-            .entity(root_player_entity.get())
-            .try_insert(AvatarAnimPlayer(root_player_entity.get()));
+            .entity(root_player_entity.parent())
+            .try_insert(AvatarAnimPlayer(root_player_entity.parent()));
 
         // hide and colour the base model
         for scene_ent in scene_spawner.iter_instance_entities(loaded_avatar.body_instance) {
@@ -1026,12 +1021,12 @@ fn process_avatar(
             if let Some(h_mat) = maybe_h_mat {
                 commands
                     .entity(scene_ent)
-                    .remove::<Handle<StandardMaterial>>();
+                    .remove::<MeshMaterial3d<StandardMaterial>>();
 
                 if let Some(mat) = standard_materials.get(h_mat) {
-                    let base_color = if loaded_avatar.skin_materials.contains(h_mat) {
+                    let base_color = if loaded_avatar.skin_materials.contains(&h_mat.0) {
                         def.skin_color
-                    } else if loaded_avatar.hair_materials.contains(h_mat) {
+                    } else if loaded_avatar.hair_materials.contains(&h_mat.0) {
                         def.hair_color
                     } else {
                         mat.base_color
@@ -1051,7 +1046,7 @@ fn process_avatar(
                     let instance_mat = instance_scene_materials
                         .entry(h_mat.clone_weak())
                         .or_insert_with(|| scene_materials.add(new_mat));
-                    commands.entity(scene_ent).try_insert(instance_mat.clone());
+                    commands.entity(scene_ent).try_insert(MeshMaterial3d(instance_mat.clone()));
                 }
             }
 
@@ -1066,7 +1061,7 @@ fn process_avatar(
                 ("mask_mouth", def.skin_color, WearableCategory::MOUTH, false),
             ];
 
-            let Ok(parent_name) = named_ents.get(parent.get()) else {
+            let Ok(parent_name) = named_ents.get(parent.parent()) else {
                 continue;
             };
             let parent_name = parent_name.to_lowercase();
@@ -1090,8 +1085,8 @@ fn process_avatar(
                             ));
                             commands
                                 .entity(scene_ent)
-                                .try_insert(mask_material)
-                                .remove::<Handle<SceneMaterial>>();
+                                .try_insert(MeshMaterial3d(mask_material))
+                                .remove::<MeshMaterial3d<SceneMaterial>>();
                         } else {
                             debug!("no mask for {suffix}");
                             let new_mat = SceneMaterial {
@@ -1112,7 +1107,7 @@ fn process_avatar(
                                 ),
                             };
                             let material = scene_materials.add(new_mat);
-                            commands.entity(scene_ent).try_insert(material);
+                            commands.entity(scene_ent).try_insert(MeshMaterial3d(material));
                         };
                         *vis = Visibility::Inherited;
                     }
@@ -1155,7 +1150,7 @@ fn process_avatar(
             continue;
         } else {
             // reparent hands
-            if let Ok(attach_points) = attach_points.get(root_player_entity.get()) {
+            if let Ok(attach_points) = attach_points.get(root_player_entity.parent()) {
                 if let Some(left_hand) =
                     target_armature_entities.get(&String::from("avatar_lefthand"))
                 {
@@ -1189,12 +1184,12 @@ fn process_avatar(
                     if name.to_lowercase() == "armature" {
                         break;
                     }
-                    e = parent.get();
+                    e = parent.parent();
                 }
 
                 commands.entity(*ent).try_insert(AnimationTarget {
                     id: AnimationTargetId::from_names(path.into_iter()),
-                    player: root_player_entity.get(),
+                    player: root_player_entity.parent(),
                 });
             }
         }
@@ -1206,7 +1201,7 @@ fn process_avatar(
                 continue;
             };
 
-            let mut armature_map = HashMap::default();
+            let mut armature_map = HashMap::new();
 
             for scene_ent in scene_spawner.iter_instance_entities(*instance) {
                 let Ok((_, parent, maybe_h_mat, maybe_h_mesh, maybe_player)) =
@@ -1219,7 +1214,7 @@ fn process_avatar(
                     commands.entity(scene_ent).remove::<AnimationPlayer>();
                 }
 
-                let Ok(parent_name) = named_ents.get(parent.get()) else {
+                let Ok(parent_name) = named_ents.get(parent.parent()) else {
                     continue;
                 };
                 let parent_name = parent_name.to_lowercase();
@@ -1242,7 +1237,7 @@ fn process_avatar(
 
                 // move children of the root to the body mesh
                 if parent_name.to_lowercase() == "armature" {
-                    commands.entity(scene_ent).set_parent(armature_node);
+                    commands.entity(scene_ent).insert(ChildOf(armature_node));
                 }
 
                 if let Some(h_mesh) = maybe_h_mesh {
@@ -1262,12 +1257,12 @@ fn process_avatar(
                 if let Some(h_mat) = maybe_h_mat {
                     commands
                         .entity(scene_ent)
-                        .remove::<Handle<StandardMaterial>>();
+                        .remove::<MeshMaterial3d<StandardMaterial>>();
 
                     if let Some(mat) = standard_materials.get(h_mat) {
-                        let base_color = if loaded_avatar.skin_materials.contains(h_mat) {
+                        let base_color = if loaded_avatar.skin_materials.contains(&h_mat.0) {
                             def.skin_color
-                        } else if loaded_avatar.hair_materials.contains(h_mat) {
+                        } else if loaded_avatar.hair_materials.contains(&h_mat.0) {
                             def.hair_color
                         } else {
                             mat.base_color
@@ -1287,7 +1282,7 @@ fn process_avatar(
                         let instance_mat = instance_scene_materials
                             .entry(h_mat.clone_weak())
                             .or_insert_with(|| scene_materials.add(new_mat));
-                        commands.entity(scene_ent).try_insert(instance_mat.clone());
+                        commands.entity(scene_ent).try_insert(MeshMaterial3d(instance_mat.clone()));
                     }
                 }
             }
@@ -1325,7 +1320,7 @@ fn process_avatar(
             .try_insert((AvatarProcessed, Visibility::Inherited));
 
         commands
-            .entity(root_player_entity.get())
+            .entity(root_player_entity.parent())
             .insert(AvatarMaterials(
                 instance_scene_materials.values().map(|h| h.id()).collect(),
             ));
@@ -1348,10 +1343,8 @@ fn process_avatar(
 
             commands.entity(avatar_ent).with_children(|commands| {
                 commands.spawn((
-                    SpatialBundle {
-                        transform: Transform::from_translation(Vec3::Y * 2.2),
-                        ..Default::default()
-                    },
+                    Transform::from_translation(Vec3::Y * 2.2),
+                    Visibility::default(),
                     WorldUi {
                         dbg: label.clone(),
                         pix_per_m: 200.0,
@@ -1369,18 +1362,18 @@ fn process_avatar(
         }
 
         // remove previous
-        if let Ok(prev) = previous_avatar.get(root_player_entity.get()) {
+        if let Ok(prev) = previous_avatar.get(root_player_entity.parent()) {
             debug!("new {avatar_ent:?} done, remove prev -> {prev:?}");
-            if let Some(commands) = commands.get_entity(prev.0) {
+            if let Ok(mut commands) = commands.get_entity(prev.0) {
                 commands.despawn();
             }
             commands
-                .entity(root_player_entity.get())
+                .entity(root_player_entity.parent())
                 .remove::<PreviousAvatar>();
         }
 
         // announce state
-        if let Ok(scene_ent) = scene_ent.get(root_player_entity.get()) {
+        if let Ok(scene_ent) = scene_ent.get(root_player_entity.parent()) {
             if let Ok(mut ctx) = contexts.get_mut(scene_ent.root) {
                 ctx.update_crdt(
                     SceneComponentId::GLTF_CONTAINER_LOADING_STATE,

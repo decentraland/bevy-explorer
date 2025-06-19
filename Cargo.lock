@@ -2659,6 +2659,7 @@ version = "0.1.0"
 dependencies = [
  "async-compat",
  "bevy",
+ "bevy_kira_audio",
  "dcl_component",
  "directories",
  "ethers-core",

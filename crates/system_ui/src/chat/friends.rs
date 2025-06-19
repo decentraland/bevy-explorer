@@ -139,7 +139,7 @@ pub fn show_conversation(
 
     if let Ok(mut style) = container.single_mut() {
         if style.display == Display::None {
-            commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+            commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
             style.display = Display::Flex;
         };
     }
@@ -317,7 +317,7 @@ pub fn update_friends(
                                         };
 
                                         let _ = client.cancel_request(friend);
-                                        commands.fire_event(FriendshipEvent(None));
+                                        commands.send_event(FriendshipEvent(None));
                                     }),
                                 ),
                         )
@@ -359,7 +359,7 @@ pub fn update_friends(
                                         };
 
                                         let _ = client.accept_request(friend);
-                                        commands.fire_event(FriendshipEvent(None));
+                                        commands.send_event(FriendshipEvent(None));
                                     }),
                                 )
                                 .with_prop(
@@ -371,7 +371,7 @@ pub fn update_friends(
                                         };
 
                                         let _ = client.reject_request(friend);
-                                        commands.fire_event(FriendshipEvent(None));
+                                        commands.send_event(FriendshipEvent(None));
                                     }),
                                 ),
                         )
@@ -541,7 +541,7 @@ pub fn update_conversations(
 pub struct BoldUnread(Address);
 
 pub fn bold_unread(mut q: Query<(&mut Text, Ref<BoldUnread>)>, client: Res<SocialClient>) {
-    let default = HashMap::default();
+    let default = HashMap::new();
     let unread = client
         .0
         .as_ref()

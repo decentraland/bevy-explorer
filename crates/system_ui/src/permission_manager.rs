@@ -65,7 +65,7 @@ fn update_permissions(
 
         // kill/requeue dialogs where the scene is no longer active
         if !active_scenes.contains(&req.as_ref().unwrap().scene) {
-            if let Some(commands) = commands.get_entity(*ent) {
+            if let Ok(mut commands) = commands.get_entity(*ent) {
                 commands.despawn();
             }
             let req = req.take().unwrap();

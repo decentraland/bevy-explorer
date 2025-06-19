@@ -575,7 +575,7 @@ fn change_location(
         if let Ok((ent, mut transform)) = player.single_mut() {
             transform.translation.x = command.x as f32 * 16.0 + 8.0;
             transform.translation.z = -command.y as f32 * 16.0 - 8.0;
-            if let Some(mut commands) = commands.get_entity(ent) {
+            if let Ok(mut commands) = commands.get_entity(ent) {
                 commands.try_insert(OutOfWorld);
             }
             input.reply_ok(format!("new location: {:?}", (command.x, command.y)));

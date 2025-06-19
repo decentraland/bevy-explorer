@@ -384,7 +384,7 @@ fn set_wearables_content(
                             .selected
                             .and_then(|selection| WearableCategory::iter().nth(selection));
 
-                        if let Some(mut commands) = commands.get_entity(booth_camera) {
+                        if let Ok(mut commands) = commands.get_entity(booth_camera) {
                             commands.try_insert(SystemTween {
                                 target: target_position(
                                     settings.category.unwrap_or(&WearableCategory::BODY_SHAPE),

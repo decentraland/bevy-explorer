@@ -1,6 +1,6 @@
 use crate::AvatarMaterials;
 use bevy::{
-    core::FrameCount,
+    diagnostic::FrameCount,
     prelude::*,
     platform::collections::{HashMap, HashSet},
 };
@@ -10,7 +10,7 @@ use common::{
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
     structs::{PlayerModifiers, PrimaryCamera, ShowProfileEvent, ToolTips, TooltipSource},
-    util::{AsH160, FireEventEx},
+    util::AsH160,
 };
 use comms::{global_crdt::ForeignPlayer, profile::UserProfile};
 use input_manager::{InputManager, InputPriority, InputType};
@@ -143,7 +143,7 @@ fn update_avatar_collider_actions(
     let Ok(window) = windows.single() else {
         return;
     };
-    let cursor_position = if window.cursor.grab_mode == bevy::window::CursorGrabMode::Locked {
+    let cursor_position = if window.cursor_options.grab_mode == bevy::window::CursorGrabMode::Locked {
         // if pointer locked, just middle
         Vec2::new(window.width(), window.height()) / 2.0
     } else {
@@ -154,7 +154,7 @@ fn update_avatar_collider_actions(
         cursor_position
     };
 
-    let Some(ray) = camera.viewport_to_world(camera_position, cursor_position) else {
+    let Ok(ray) = camera.viewport_to_world(camera_position, cursor_position) else {
         error!("no ray, not sure why that would happen");
         return;
     };
@@ -229,7 +229,7 @@ fn update_avatar_collider_actions(
         if input_manager.just_down(SystemAction::ShowProfile, InputPriority::AvatarCollider) {
             // display profile
             if let Some(address) = profile.content.eth_address.as_h160() {
-                commands.fire_event(ShowProfileEvent(address));
+                commands.send_event(ShowProfileEvent(address));
             } else {
                 warn!("Profile has a bad address {}", profile.content.eth_address);
             }

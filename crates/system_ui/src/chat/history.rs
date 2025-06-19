@@ -126,7 +126,7 @@ fn update_chat_history(
         }
 
         // despawn the message
-        if let Some(commands) = commands.get_entity(*message) {
+        if let Ok(mut commands) = commands.get_entity(*message) {
             commands.despawn();
         }
 
@@ -136,7 +136,7 @@ fn update_chat_history(
             .get(1)
             .is_none_or(|(next_bubble, ..)| next_bubble != bubble)
         {
-            if let Some(commands) = commands.get_entity(*bubble) {
+            if let Ok(mut commands) = commands.get_entity(*bubble) {
                 commands.despawn();
             }
         }
@@ -234,7 +234,7 @@ fn update_chat_history(
                     if let Ok(mut style) = container.single_mut() {
                         if style.display == Display::None {
                             commands
-                                .fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+                                .send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
                             style.display = Display::Flex;
                         };
                     }

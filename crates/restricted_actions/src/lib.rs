@@ -215,7 +215,7 @@ fn change_realm(
     }
 
     for (new_realm, response) in perms.drain_success(PermissionType::ChangeRealm) {
-        commands.fire_event(ChangeRealmEvent {
+        commands.send_event(ChangeRealmEvent {
             new_realm,
             content_server_override: None,
         });
@@ -377,7 +377,7 @@ fn spawn_portable(
     )>,
     ipfas: IpfsAssetServer,
 ) {
-    let mut new_portables = HashMap::default();
+    let mut new_portables = HashMap::new();
     let mut failed_portables = HashSet::default();
 
     // process incoming events
@@ -871,8 +871,8 @@ fn event_player_moved_scene(
         .collect();
 
     // gather diffs
-    let mut left: HashMap<Entity, Vec<Address>> = HashMap::default();
-    let mut entered: HashMap<Entity, Vec<Address>> = HashMap::default();
+    let mut left: HashMap<Entity, Vec<Address>> = HashMap::new();
+    let mut entered: HashMap<Entity, Vec<Address>> = HashMap::new();
 
     for (address, scene) in current_scene.iter() {
         if new_scene.get(address) != Some(scene) {

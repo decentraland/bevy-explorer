@@ -45,7 +45,7 @@ pub fn update_attached(
     all_users: Query<(&AttachPoints, &UserProfile)>,
 ) {
     for removed in removed_attachments.read() {
-        if let Some(mut commands) = commands.get_entity(removed) {
+        if let Ok(mut commands) = commands.get_entity(removed) {
             commands.remove::<(ParentPositionSync<AvatarAttachStage>, DisableCollisions)>();
         }
     }

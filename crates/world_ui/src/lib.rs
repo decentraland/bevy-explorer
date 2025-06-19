@@ -187,7 +187,7 @@ pub fn update_worldui_materials(
     frame: Res<FrameCount>,
     render_device: Res<RenderDevice>,
 ) {
-    let mut target_sizes: HashMap<AssetId<Image>, UVec2> = HashMap::default();
+    let mut target_sizes: HashMap<AssetId<Image>, UVec2> = HashMap::new();
 
     for (ent, ref_mat, node, gt) in q.iter() {
         let Some(mat) = mats.get_mut(ref_mat.0) else {

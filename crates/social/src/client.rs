@@ -433,7 +433,7 @@ async fn social_socket_handler_inner(
         }
     }
 
-    let mut received_requests = HashMap::default();
+    let mut received_requests = HashMap::new();
     let mut sent_requests = HashSet::default();
     if let Some(request_events_response::Response::Events(RequestEvents { incoming, outgoing })) =
         requests_req.response

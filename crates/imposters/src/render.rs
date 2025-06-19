@@ -281,7 +281,7 @@ pub fn spawn_imposters(
 ) {
     if current_realm.is_changed() {
         for (_, entity) in lookup.0.drain() {
-            if let Some(commands) = commands.get_entity(entity) {
+            if let Ok(mut commands) = commands.get_entity(entity) {
                 commands.despawn();
             }
         }
@@ -410,7 +410,7 @@ pub fn spawn_imposters(
 
         if !required {
             debug!("remove {}: {} [{}]", level, pos, ingredient);
-            if let Some(mut commands) = commands.get_entity(*ent) {
+            if let Ok(mut commands) = commands.get_entity(*ent) {
                 if ingredient {
                     commands.despawn();
                     return false;
@@ -599,7 +599,7 @@ fn load_imposters(
                     debug!("load fail {hash}");
                     for (entity, parcel) in entities.iter() {
                         debug!(" @ {parcel}");
-                        if let Some(mut commands) = commands.get_entity(*entity) {
+                        if let Ok(mut commands) = commands.get_entity(*entity) {
                             commands.try_insert(ImposterMissing(Some(hash.clone())));
                         }
                     }
@@ -612,7 +612,7 @@ fn load_imposters(
 
     for (ent, mut task, imposter) in loading_parcels.iter_mut() {
         if let Some(res) = task.0.complete() {
-            if let Some(mut commands) = commands.get_entity(ent) {
+            if let Ok(mut commands) = commands.get_entity(ent) {
                 match res {
                     Some(mut baked) => {
                         debug!("load success {:?}", imposter);

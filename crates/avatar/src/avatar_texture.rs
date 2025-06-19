@@ -2,14 +2,20 @@ use std::sync::Arc;
 
 use anyhow::anyhow;
 use bevy::{
-    app::Propagate, core::FrameCount, core_pipeline::bloom::BloomSettings, ecs::system::SystemParam, prelude::*, render::{
+    app::Propagate,
+    core_pipeline::bloom::Bloom,
+    diagnostic::FrameCount,
+    ecs::system::SystemParam,
+    prelude::*,
+    render::{
         camera::RenderTarget,
         render_asset::RenderAssetUsages,
         render_resource::{
             Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
         },
-        view::{screenshot::ScreenshotManager, RenderLayers},
-    }, window::{EnabledButtons, WindowLevel, WindowRef, WindowResolution}
+        view::{screenshot::{Screenshot, ScreenshotCaptured}, RenderLayers},
+    },
+    window::{EnabledButtons, WindowLevel, WindowRef, WindowResolution},
 };
 use bevy_dui::{DuiRegistry, DuiTemplate};
 use collectibles::{urn::CollectibleUrn, Emote};
@@ -69,7 +75,8 @@ impl PhotoBooth<'_, '_> {
         let avatar = self
             .commands
             .spawn((
-                SpatialBundle::default(),
+                Transform::default(),
+                Visibility::default(),
                 AvatarSelection {
                     scene: None,
                     shape,
@@ -142,15 +149,12 @@ impl PhotoBooth<'_, '_> {
 impl BoothInstance {
     pub fn image_bundle(&self) -> impl Bundle {
         (
-            ImageBundle {
-                style: Node {
-                    width: Val::Percent(30.0),
-                    height: Val::Percent(100.0),
-                    ..Default::default()
-                },
-                image: self.avatar_texture.clone().into(),
+            Node {
+                width: Val::Percent(30.0),
+                height: Val::Percent(100.0),
                 ..Default::default()
             },
+            ImageNode::new(self.avatar_texture.clone()),
             Interaction::default(),
             BoothImage,
             self.clone(),
@@ -237,23 +241,21 @@ fn add_booth_camera(
     commands.entity(entity).with_children(|c| {
         camera = Some(
             c.spawn((
-                Camera3dBundle {
-                    transform: Transform::from_translation(Vec3::Z * -1.0 + Vec3::Y * 1.8)
-                        .looking_at(Vec3::Y * 1.8, Vec3::Y),
-                    camera: Camera {
-                        // render before the "main pass" camera
-                        order: -1,
-                        target: RenderTarget::Image(avatar_texture.clone()),
-                        is_active: true,
-                        clear_color: ClearColorConfig::Custom(Color::NONE),
-                        ..default()
-                    },
-                    ..Default::default()
+                Camera3d::default(),
+                Transform::from_translation(Vec3::Z * -1.0 + Vec3::Y * 1.8)
+                    .looking_at(Vec3::Y * 1.8, Vec3::Y),
+                Camera {
+                    // render before the "main pass" camera
+                    order: -1,
+                    target: RenderTarget::Image(avatar_texture.clone().into()),
+                    is_active: true,
+                    clear_color: ClearColorConfig::Custom(Color::NONE),
+                    ..default()
                 },
                 render_layers.clone(),
-                BloomSettings {
+                Bloom {
                     intensity: 0.15,
-                    ..BloomSettings::OLD_SCHOOL
+                    ..Bloom::OLD_SCHOOL
                 },
                 DepthPrepass,
                 NormalPrepass,
@@ -262,17 +264,13 @@ fn add_booth_camera(
         );
 
         c.spawn((
-            SpotLightBundle {
-                transform: Transform::from_xyz(1.0, 2.0, -1.0)
-                    .looking_at(Vec3::new(0.0, 1.8, 0.0), Vec3::Z),
-                spot_light: SpotLight {
-                    intensity: 30000.0,
-                    color: Color::WHITE,
-                    shadows_enabled: false,
-                    inner_angle: 0.6,
-                    outer_angle: 0.8,
-                    ..default()
-                },
+            Transform::from_xyz(1.0, 2.0, -1.0).looking_at(Vec3::new(0.0, 1.8, 0.0), Vec3::Z),
+            SpotLight {
+                intensity: 30000.0,
+                color: Color::WHITE,
+                shadows_enabled: false,
+                inner_angle: 0.6,
+                outer_angle: 0.8,
                 ..default()
             },
             render_layers.clone(),
@@ -283,17 +281,17 @@ fn add_booth_camera(
 }
 
 fn update_booth_image(
-    q: Query<(&ComputedNode, &UiImage), With<BoothImage>>,
+    q: Query<(&ComputedNode, &ImageNode), With<BoothImage>>,
     mut images: ResMut<Assets<Image>>,
 ) {
     for (node, h_image) in q.iter() {
         let node_size = node.size();
-        let Some(image) = images.get(h_image.texture.id()) else {
+        let Some(image) = images.get(h_image.image.id()) else {
             continue;
         };
         if image.size() != node_size.as_uvec2() {
             images
-                .get_mut(h_image.texture.id())
+                .get_mut(h_image.image.id())
                 .unwrap()
                 .resize(Extent3d {
                     width: (node_size.x as u32).max(16),
@@ -319,7 +317,6 @@ fn snapshot(
     mut booths: Query<&mut BoothInstance>,
     mut avatars: Query<(Entity, &mut SnapshotTimer, &AvatarSelection)>,
     frame: Res<FrameCount>,
-    mut screenshotter: ResMut<ScreenshotManager>,
     mut local_sender: Local<Option<tokio::sync::mpsc::Sender<SnapshotResult>>>,
     mut local_receiver: Local<Option<tokio::sync::mpsc::Receiver<SnapshotResult>>>,
     mut images: ResMut<Assets<Image>>,
@@ -368,15 +365,15 @@ fn snapshot(
 
             let mut cam = |window: Entity, transform: Transform| {
                 commands
-                    .spawn((Camera3dBundle {
+                    .spawn((
+                        Camera3d::default(),
                         transform,
-                        camera: Camera {
+                        Camera {
                             clear_color: ClearColorConfig::Custom(Color::NONE),
                             target: RenderTarget::Window(WindowRef::Entity(window)),
                             ..default()
                         },
-                        ..Default::default()
-                    },))
+                    ))
                     .id()
             };
 
@@ -400,30 +397,34 @@ fn snapshot(
                 // snap face
                 let sender = local_sender.as_ref().unwrap().clone();
                 let target = instance.pending_target.as_ref().unwrap().0.clone();
-                let _ = screenshotter.take_screenshot(face_window, move |image| {
-                    let _ = sender.blocking_send(SnapshotResult {
-                        image,
-                        window: face_window,
-                        camera: face_cam,
-                        target,
-                        source: ent,
-                        index: 0,
-                    });
-                });
+                commands.spawn(Screenshot::window(face_window)).observe(
+                    move |mut trigger: Trigger<ScreenshotCaptured>| {
+                        let _ = sender.blocking_send(SnapshotResult {
+                            image: std::mem::take(&mut trigger.0),
+                            window: face_window,
+                            camera: face_cam,
+                            target: target.clone(),
+                            source: ent,
+                            index: 0,
+                        });
+                    },
+                );
 
                 // snap body
                 let sender = local_sender.as_ref().unwrap().clone();
                 let target = instance.pending_target.as_ref().unwrap().1.clone();
-                let _ = screenshotter.take_screenshot(body_window, move |image| {
-                    let _ = sender.blocking_send(SnapshotResult {
-                        image,
-                        window: body_window,
-                        camera: body_cam,
-                        target,
-                        source: ent,
-                        index: 1,
-                    });
-                });
+                commands.spawn(Screenshot::window(body_window)).observe(
+                    move |mut trigger: Trigger<ScreenshotCaptured>| {
+                        let _ = sender.blocking_send(SnapshotResult {
+                            image: std::mem::take(&mut trigger.0),
+                            window: body_window,
+                            camera: body_cam,
+                            target: target.clone(),
+                            source: ent,
+                            index: 1,
+                        });
+                    },
+                );
             } else {
                 error!("no matching instance for timed snapshot");
             }
@@ -482,15 +483,12 @@ impl DuiTemplate for DuiBooth {
             .ok_or(anyhow!("no booth provided"))?;
 
         commands.insert((
-            ImageBundle {
-                style: Node {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    ..Default::default()
-                },
-                image: booth.avatar_texture.clone().into(),
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
                 ..Default::default()
             },
+            ImageNode::new(booth.avatar_texture.clone().into()),
             Interaction::default(),
             BoothImage,
             booth,

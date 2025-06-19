@@ -787,7 +787,7 @@ fn propagate_disabled(
     q: Query<(&ContainerEntity, Option<&HasCollider>, Option<&Children>), With<DisableCollisions>>,
     r: Query<(Option<&HasCollider>, Option<&Children>), Or<(With<Children>, With<HasCollider>)>>,
 ) {
-    let mut disable: HashMap<Entity, HashSet<&ColliderId>> = HashMap::default();
+    let mut disable: HashMap<Entity, HashSet<&ColliderId>> = HashMap::new();
     for (container, maybe_collider, maybe_children) in q.iter() {
         let set = disable.entry(container.root).or_default();
         if let Some(collider) = maybe_collider {

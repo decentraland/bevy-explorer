@@ -116,11 +116,11 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, ui_root: Res<Sy
                     if let Ok(mut style) = q.single_mut() {
                         style.display = if style.display == Display::Flex {
                             commands
-                                .fire_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
+                                .send_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
                             Display::None
                         } else {
                             commands
-                                .fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+                                .send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
                             Display::Flex
                         };
                     }
@@ -150,7 +150,7 @@ fn keyboard_popup(
     if input_manager.just_down(SystemAction::Chat, InputPriority::None) {
         if let Ok(mut style) = container.single_mut() {
             if style.display == Display::None {
-                commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+                commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
                 style.display = Display::Flex;
             };
         }
@@ -176,7 +176,7 @@ fn debug_chat(
                     commands.entity(existing).despawn();
                 }
 
-                commands.fire_event(FriendshipEvent(None));
+                commands.send_event(FriendshipEvent(None));
                 setup_chat_popup(commands, root, dui);
             }
             "add" => {
@@ -241,7 +241,7 @@ fn setup_chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<Du
             return;
         };
         style.display = Display::None;
-        commands.fire_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
+        commands.send_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
     };
 
     let props = DuiProps::new()
@@ -532,7 +532,7 @@ fn emit_user_chat(
             };
 
             chats.send(ChatEvent {
-                timestamp: time.elapsed_seconds_f64(),
+                timestamp: time.elapsed_secs_f64(),
                 sender,
                 channel: output.active_tab.to_owned(),
                 message: message.clone(),
@@ -560,7 +560,7 @@ fn emit_user_chat(
 
     for PrintConsoleLine { line } in console_lines.read() {
         chats.send(ChatEvent {
-            timestamp: time.elapsed_seconds_f64(),
+            timestamp: time.elapsed_secs_f64(),
             sender: Entity::PLACEHOLDER,
             channel: "Nearby".to_owned(),
             message: line.to_string(),
@@ -584,7 +584,7 @@ pub fn broadcast_nearby_chats(
         .filter(|ev| ev.sender == player)
         .filter(|ev| !ev.message.starts_with("/"))
     {
-        commands.fire_event(SystemAudio(
+        commands.send_event(SystemAudio(
             "sounds/ui/widget_chat_message_private_send.wav".to_owned(),
         ));
 
@@ -722,7 +722,7 @@ fn pipe_chats_from_scene(
     }) {
         if message.starts_with('/') {
             sender.send(ChatEvent {
-                timestamp: time.elapsed_seconds_f64(),
+                timestamp: time.elapsed_secs_f64(),
                 sender: primary_player.0,
                 channel: "System".to_owned(),
                 message: message.clone(),
@@ -739,7 +739,7 @@ fn pipe_chats_from_scene(
                 command_entered.send(ConsoleCommandEntered { command_name, args });
             } else {
                 sender.send(ChatEvent {
-                    timestamp: time.elapsed_seconds_f64(),
+                    timestamp: time.elapsed_secs_f64(),
                     sender: Entity::PLACEHOLDER,
                     channel: "System".to_owned(),
                     message: format!(
@@ -750,7 +750,7 @@ fn pipe_chats_from_scene(
             }
         } else {
             sender.send(ChatEvent {
-                timestamp: time.elapsed_seconds_f64(),
+                timestamp: time.elapsed_secs_f64(),
                 sender: primary_player.0,
                 channel,
                 message,
@@ -760,7 +760,7 @@ fn pipe_chats_from_scene(
 
     for PrintConsoleLine { line } in console_lines.read() {
         sender.send(ChatEvent {
-            timestamp: time.elapsed_seconds_f64(),
+            timestamp: time.elapsed_secs_f64(),
             sender: Entity::PLACEHOLDER,
             channel: "System".to_owned(),
             message: line.to_string(),

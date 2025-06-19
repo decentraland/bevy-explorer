@@ -201,7 +201,7 @@ fn load_animations(
                                 sound,
                             };
 
-                            let mut representations = HashMap::default();
+                            let mut representations = HashMap::new();
 
                             if is_female {
                                 representations.insert(base_bodyshapes().remove(0), emote.clone());
@@ -562,7 +562,7 @@ impl AssetLoader for EmoteLoader {
         let thumbnail =
             load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
 
-        let mut representations = HashMap::default();
+        let mut representations = HashMap::new();
 
         for representation in meta.emote_extended_data.representations.into_iter() {
             let gltf = load_context.load(
