@@ -16,11 +16,18 @@ use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
 use imposters::DclImposterPlugin;
 
 use bevy::{
-    app::Propagate, core::TaskPoolThreadAssignmentPolicy, core_pipeline::{
-        bloom::BloomSettings,
+    app::{Propagate, TaskPoolThreadAssignmentPolicy},
+    core_pipeline::{
+        bloom::Bloom,
         prepass::{DepthPrepass, NormalPrepass},
         tonemapping::{DebandDither, Tonemapping},
-    }, diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}, pbr::ShadowFilteringMethod, prelude::*, render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers}, tasks::{IoTaskPool, Task}, window::WindowResolution
+    },
+    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
+    pbr::ShadowFilteringMethod,
+    prelude::*,
+    render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers},
+    tasks::{IoTaskPool, Task},
+    window::WindowResolution,
 };
 use bevy_console::ConsoleCommand;
 
@@ -298,16 +305,22 @@ fn main() {
                             min_threads: 2,
                             max_threads: 8,
                             percent: 0.25,
+                            on_thread_spawn: None,
+                            on_thread_destroy: None,
                         },
                         io: TaskPoolThreadAssignmentPolicy {
                             min_threads: 8,
                             max_threads: 8,
                             percent: 0.25,
+                            on_thread_spawn: None,
+                            on_thread_destroy: None,
                         },
                         compute: TaskPoolThreadAssignmentPolicy {
                             min_threads: 2,
                             max_threads: 8,
                             percent: 0.25,
+                            on_thread_spawn: None,
+                            on_thread_destroy: None,
                         },
                         ..Default::default()
                     },
@@ -341,18 +354,18 @@ fn main() {
                     ..default()
                 })
                 .build()
-                .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
+                .add_before::<bevy::asset::AssetPlugin>(IpfsIoPlugin {
                     preview: is_preview,
                     starting_realm: Some(final_config.server.clone()),
                     content_server_override,
                     assets_root: Default::default(),
                     num_slots: final_config.max_concurrent_remotes,
                 })
-                .add_before::<IpfsIoPlugin, _>(NftReaderPlugin),
+                .add_before::<IpfsIoPlugin>(NftReaderPlugin),
         );
 
     if final_config.graphics.log_fps || is_preview {
-        app.add_plugins(FrameTimeDiagnosticsPlugin);
+        app.add_plugins(FrameTimeDiagnosticsPlugin::default());
     }
     if final_config.graphics.log_fps {
         app.add_plugins(LogDiagnosticsPlugin::default());
@@ -442,6 +455,7 @@ fn main() {
         .insert_resource(AmbientLight {
             color: Color::srgb(0.85, 0.85, 1.0),
             brightness: 575.0,
+            ..Default::default()
         });
 
     app.add_console_command::<ChangeLocationCommand, _>(change_location);
@@ -481,14 +495,12 @@ fn setup(
     let attach_points = AttachPoints::new(&mut commands);
     let player_id = commands
         .spawn((
-            SpatialBundle {
-                transform: Transform::from_translation(Vec3::new(
-                    8.0 + 16.0 * config.location.x as f32,
-                    8.0,
-                    -8.0 + -16.0 * config.location.y as f32,
-                )),
-                ..Default::default()
-            },
+            Transform::from_translation(Vec3::new(
+                8.0 + 16.0 * config.location.x as f32,
+                8.0,
+                -8.0 + -16.0 * config.location.y as f32,
+            )),
+            Visibility::default(),
             config.player_settings.clone(),
             OutOfWorld,
             AvatarDynamicState::default(),
@@ -502,46 +514,43 @@ fn setup(
     // add a camera
     let camera_id = commands
         .spawn((
-            Camera3dBundle {
-                camera: Camera {
-                    hdr: true,
-                    ..Default::default()
-                },
-                tonemapping: Tonemapping::TonyMcMapface,
-                deband_dither: DebandDither::Enabled,
-                color_grading: ColorGrading {
-                    // exposure: -0.5,
-                    // gamma: 1.5,
-                    // pre_saturation: 1.0,
-                    // post_saturation: 1.0,
-                    global: ColorGradingGlobal {
-                        exposure: -0.5,
-                        ..default()
-                    },
-                    shadows: ColorGradingSection {
-                        gamma: 0.75,
-                        ..Default::default()
-                    },
-                    midtones: ColorGradingSection {
-                        gamma: 0.75,
-                        ..Default::default()
-                    },
-                    highlights: ColorGradingSection {
-                        gamma: 0.75,
-                        ..Default::default()
-                    },
-                },
-                projection: PerspectiveProjection {
-                    // projection: OrthographicProjection {
-                    far: 100000.0,
-                    ..Default::default()
-                }
-                .into(),
+            Camera3d::default(),
+            Camera {
+                hdr: true,
                 ..Default::default()
             },
-            BloomSettings {
+            Tonemapping::TonyMcMapface,
+            DebandDither::Enabled,
+            ColorGrading {
+                // exposure: -0.5,
+                // gamma: 1.5,
+                // pre_saturation: 1.0,
+                // post_saturation: 1.0,
+                global: ColorGradingGlobal {
+                    exposure: -0.5,
+                    ..default()
+                },
+                shadows: ColorGradingSection {
+                    gamma: 0.75,
+                    ..Default::default()
+                },
+                midtones: ColorGradingSection {
+                    gamma: 0.75,
+                    ..Default::default()
+                },
+                highlights: ColorGradingSection {
+                    gamma: 0.75,
+                    ..Default::default()
+                },
+            },
+            Projection::from(PerspectiveProjection {
+                // projection: OrthographicProjection {
+                far: 100000.0,
+                ..Default::default()
+            }),
+            Bloom {
                 intensity: 0.15,
-                ..BloomSettings::OLD_SCHOOL
+                ..Bloom::OLD_SCHOOL
             },
             ShadowFilteringMethod::Gaussian,
             PrimaryCamera::default(),
@@ -652,7 +661,7 @@ pub fn process_system_ui_scene(
     mut writer: EventWriter<PreviewCommand>,
 ) {
     if let Some(command) = channel.as_mut().and_then(|rx| rx.try_recv().ok()) {
-        writer.send(command);
+        writer.write(command);
         *done = false;
         system_scene.hash = None;
         return;
