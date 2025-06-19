@@ -6568,7 +6568,7 @@ dependencies = [
 [[package]]
 name = "libwebrtc"
 version = "0.3.6"
-source = "git+https://github.com/robtfm/client-sdk-rust?branch=0.6-h264-false-2#c59f7e4693579dc137dba72153a0e995079305c6"
+source = "git+https://github.com/robtfm/client-sdk-rust?rev=3a97ae8c8f86a86ec628325e9b53b31b06c5f31d#3a97ae8c8f86a86ec628325e9b53b31b06c5f31d"
 dependencies = [
  "cxx",
  "jni",
@@ -6630,7 +6630,7 @@ checksum = "b4ce301924b7887e9d637144fdade93f9dfff9b60981d4ac161db09720d39aa5"
 [[package]]
 name = "livekit"
 version = "0.5.2"
-source = "git+https://github.com/robtfm/client-sdk-rust?branch=0.6-h264-false-2#c59f7e4693579dc137dba72153a0e995079305c6"
+source = "git+https://github.com/robtfm/client-sdk-rust?rev=3a97ae8c8f86a86ec628325e9b53b31b06c5f31d#3a97ae8c8f86a86ec628325e9b53b31b06c5f31d"
 dependencies = [
  "futures-util",
  "lazy_static",
@@ -6650,7 +6650,7 @@ dependencies = [
 [[package]]
 name = "livekit-api"
 version = "0.4.0"
-source = "git+https://github.com/robtfm/client-sdk-rust?branch=0.6-h264-false-2#c59f7e4693579dc137dba72153a0e995079305c6"
+source = "git+https://github.com/robtfm/client-sdk-rust?rev=3a97ae8c8f86a86ec628325e9b53b31b06c5f31d#3a97ae8c8f86a86ec628325e9b53b31b06c5f31d"
 dependencies = [
  "async-tungstenite",
  "futures-util",
@@ -6673,7 +6673,7 @@ dependencies = [
 [[package]]
 name = "livekit-protocol"
 version = "0.3.5"
-source = "git+https://github.com/robtfm/client-sdk-rust?branch=0.6-h264-false-2#c59f7e4693579dc137dba72153a0e995079305c6"
+source = "git+https://github.com/robtfm/client-sdk-rust?rev=3a97ae8c8f86a86ec628325e9b53b31b06c5f31d#3a97ae8c8f86a86ec628325e9b53b31b06c5f31d"
 dependencies = [
  "futures-util",
  "livekit-runtime",
@@ -6690,7 +6690,7 @@ dependencies = [
 [[package]]
 name = "livekit-runtime"
 version = "0.3.0"
-source = "git+https://github.com/robtfm/client-sdk-rust?branch=0.6-h264-false-2#c59f7e4693579dc137dba72153a0e995079305c6"
+source = "git+https://github.com/robtfm/client-sdk-rust?rev=3a97ae8c8f86a86ec628325e9b53b31b06c5f31d#3a97ae8c8f86a86ec628325e9b53b31b06c5f31d"
 dependencies = [
  "tokio",
  "tokio-stream",
@@ -12703,7 +12703,7 @@ dependencies = [
 [[package]]
 name = "webrtc-sys"
 version = "0.3.4"
-source = "git+https://github.com/robtfm/client-sdk-rust?branch=0.6-h264-false-2#c59f7e4693579dc137dba72153a0e995079305c6"
+source = "git+https://github.com/robtfm/client-sdk-rust?rev=3a97ae8c8f86a86ec628325e9b53b31b06c5f31d#3a97ae8c8f86a86ec628325e9b53b31b06c5f31d"
 dependencies = [
  "cc",
  "cxx",
@@ -12716,7 +12716,7 @@ dependencies = [
 [[package]]
 name = "webrtc-sys-build"
 version = "0.3.4"
-source = "git+https://github.com/robtfm/client-sdk-rust?branch=0.6-h264-false-2#c59f7e4693579dc137dba72153a0e995079305c6"
+source = "git+https://github.com/robtfm/client-sdk-rust?rev=3a97ae8c8f86a86ec628325e9b53b31b06c5f31d#3a97ae8c8f86a86ec628325e9b53b31b06c5f31d"
 dependencies = [
  "fs2",
  "regex",

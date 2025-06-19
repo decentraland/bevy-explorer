@@ -46,7 +46,7 @@ multipart = { version = "0.18.0", default-features = false, features = ["client"
 image = "0.25"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-livekit = { git = "https://github.com/robtfm/client-sdk-rust", branch="0.6-h264-false-2", features=["native-tls"], optional = true }
+livekit = { git = "https://github.com/robtfm/client-sdk-rust", rev = "3a97ae8c8f86a86ec628325e9b53b31b06c5f31d", features=["native-tls"], optional = true }
 cpal = "0.15.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
