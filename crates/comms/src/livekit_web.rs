@@ -1,11 +1,11 @@
 use bevy::{prelude::*, utils::HashMap};
+use futures_util::FutureExt;
 use http::Uri;
 use prost::Message;
 use serde::Deserialize;
 use tokio::sync::mpsc::{Receiver, Sender};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use futures_util::FutureExt;
 
 use crate::{
     global_crdt::{GlobalCrdtState, MicState, PlayerMessage, PlayerUpdate, VoiceSourceEvent},
@@ -130,7 +130,13 @@ pub fn connect_livekit(
         let sender = player_state.get_sender();
 
         // For WASM, we directly call the handler which will spawn the async task
-        if let Err(e) = livekit_handler_inner(transport_id, &remote_address, receiver, subscription_rx, sender) {
+        if let Err(e) = livekit_handler_inner(
+            transport_id,
+            &remote_address,
+            receiver,
+            subscription_rx,
+            sender,
+        ) {
             warn!("Failed to start livekit connection: {e}");
         }
 
@@ -163,7 +169,16 @@ fn livekit_handler_inner(
 
     // In WASM, we can't block or create threads, so we just spawn the async task
     spawn_local(async move {
-        if let Err(e) = run_livekit_session(transport_id, &address, &token, app_rx, subscription_rx, sender).await {
+        if let Err(e) = run_livekit_session(
+            transport_id,
+            &address,
+            &token,
+            app_rx,
+            subscription_rx,
+            sender,
+        )
+        .await
+        {
             error!("LiveKit session error: {:?}", e);
         }
     });
@@ -186,7 +201,16 @@ async fn run_livekit_session(
             break;
         }
 
-        match connect_and_handle_session(transport_id, address, token, &mut app_rx, &mut subscription_rx, &sender).await {
+        match connect_and_handle_session(
+            transport_id,
+            address,
+            token,
+            &mut app_rx,
+            &mut subscription_rx,
+            &sender,
+        )
+        .await
+        {
             Ok(_) => {
                 debug!("LiveKit session ended normally");
                 // Check if we should reconnect
@@ -277,8 +301,8 @@ async fn connect_and_handle_session(
                     if let Err(e) = set_track_subscription(&room_clone, &participant_identity, should_subscribe) {
                         warn!("Failed to set track subscription for {}: {:?}", participant_identity, e);
                     } else {
-                        debug!("{}subscribed {} voice track for player {}", 
-                            if should_subscribe { "S" } else { "Uns" }, 
+                        debug!("{}subscribed {} voice track for player {}",
+                            if should_subscribe { "S" } else { "Uns" },
                             if should_subscribe { "to" } else { "from" },
                             participant_identity);
                     }
@@ -370,7 +394,9 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                     let _ = sender
                         .send(PlayerUpdate {
                             transport_id,
-                            message: PlayerMessage::VoiceSourceChange(VoiceSourceEvent::Unpublished),
+                            message: PlayerMessage::VoiceSourceChange(
+                                VoiceSourceEvent::Unpublished,
+                            ),
                             address,
                         })
                         .await;
