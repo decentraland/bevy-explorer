@@ -1,8 +1,8 @@
 // --server https://worlds-content-server.decentraland.org/world/shibu.dcl.eth --location 1,1
 
 use bevy::prelude::*;
-use tokio::sync::mpsc::Receiver;
 use ethers_core::types::Address;
+use tokio::sync::mpsc::Receiver;
 
 use dcl_component::proto_components::kernel::comms::rfc4;
 

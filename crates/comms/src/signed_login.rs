@@ -33,7 +33,12 @@ pub fn start_signed_login(
     mut signed_login_events: Local<ManualEventReader<StartSignedLogin>>,
     current_realm: Res<CurrentRealm>,
     wallet: Res<Wallet>,
-    mut task: Local<Option<(TransportType, Task<Result<SignedLoginResponse, anyhow::Error>>)>>,
+    mut task: Local<
+        Option<(
+            TransportType,
+            Task<Result<SignedLoginResponse, anyhow::Error>>,
+        )>,
+    >,
     mut manager: AdapterManager,
 ) {
     if let Some(ev) = signed_login_events
@@ -53,7 +58,10 @@ pub fn start_signed_login(
         };
 
         let meta = SignedLoginMeta::new(wallet.is_guest(), origin);
-        *task = Some((ev.transport_type, IoTaskPool::get().spawn_compat(signed_login(uri, wallet, meta))));
+        *task = Some((
+            ev.transport_type,
+            IoTaskPool::get().spawn_compat(signed_login(uri, wallet, meta)),
+        ));
     }
 
     if let Some((transport_type, mut current_task)) = task.take() {

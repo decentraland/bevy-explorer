@@ -15,7 +15,8 @@ use dcl_component::proto_components::kernel::comms::rfc4;
 
 use crate::{
     global_crdt::{
-        GlobalCrdtState, LocalAudioFrame, LocalAudioSource, MicState, PlayerMessage, PlayerUpdate, VoiceSourceEvent,
+        GlobalCrdtState, LocalAudioFrame, LocalAudioSource, MicState, PlayerMessage, PlayerUpdate,
+        VoiceSourceEvent,
     },
     livekit_room::{LivekitConnection, LivekitTransport},
     NetworkMessage,
@@ -133,7 +134,14 @@ pub fn connect_livekit(
 
         let subscription = mic.subscribe();
         std::thread::spawn(move || {
-            livekit_handler(transport_id, remote_address, receiver, sender, subscription, subscription_rx)
+            livekit_handler(
+                transport_id,
+                remote_address,
+                receiver,
+                sender,
+                subscription,
+                subscription_rx,
+            )
         });
 
         commands.entity(transport_id).try_insert(LivekitConnection);

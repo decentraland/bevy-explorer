@@ -654,7 +654,7 @@ fn manage_voice_subscriptions(
                 })
                 .max_by_key(|(_, transport_type)| {
                     match transport_type {
-                        crate::TransportType::Island => 1, // Highest priority
+                        crate::TransportType::Island => 1,    // Highest priority
                         crate::TransportType::SceneRoom => 0, // Lower priority
                         crate::TransportType::Realm => -1, // lowest (no realm-channels support voice currently)
                     }
