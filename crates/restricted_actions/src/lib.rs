@@ -22,7 +22,7 @@ use common::{
     },
     sets::SceneSets,
     structs::{AvatarDynamicState, PermissionType, PrimaryCamera, PrimaryUser},
-    util::{AsH160, FireEventEx, TaskCompat, TaskExt},
+    util::{AsH160, TaskCompat, TaskExt},
 };
 use comms::{
     global_crdt::ForeignPlayer,
@@ -135,7 +135,7 @@ pub fn move_player(
         if !target_scenes.contains(&root) {
             warn!("move player request from {root:?} was outside scene bounds");
         } else {
-            let (_, mut player_transform, mut dynamics) = player.single_mut();
+            let (_, mut player_transform, mut dynamics) = player.single_mut().unwrap();
             player_transform.translation = target_translation;
             debug!("player transform to {}", target_translation);
 
@@ -184,7 +184,7 @@ pub fn move_camera(
 
         let (yaw, pitch, roll) = facing.to_euler(EulerRot::YXZ);
 
-        let mut camera = camera.single_mut();
+        let mut camera = camera.single_mut().unwrap();
         camera.yaw = yaw;
         camera.pitch = pitch;
         camera.roll = roll;
@@ -378,7 +378,7 @@ fn spawn_portable(
     ipfas: IpfsAssetServer,
 ) {
     let mut new_portables = HashMap::new();
-    let mut failed_portables = HashSet::default();
+    let mut failed_portables = HashSet::new();
 
     // process incoming events
     for (location, spawner, response) in events.read().filter_map(|ev| match ev {
@@ -513,13 +513,13 @@ fn spawn_portable(
 
     // deferred write to PortableScenes (we can't take it mutably as it is used in Permissions)
     if !new_portables.is_empty() {
-        commands.add(move |world: &mut World| {
+        commands.queue(move |world: &mut World| {
             let mut portables = world.resource_mut::<PortableScenes>();
             portables.0.extend(new_portables);
         });
     }
     if !failed_portables.is_empty() {
-        commands.add(move |world: &mut World| {
+        commands.queue(move |world: &mut World| {
             let mut portables = world.resource_mut::<PortableScenes>();
             for portable in failed_portables {
                 portables.0.remove(&portable);
@@ -534,7 +534,7 @@ fn kill_portable(
     mut events: EventReader<RpcCall>,
     mut perms: Permission<(PortableLocation, RpcResultSender<bool>)>,
 ) {
-    let mut kill_portables = HashSet::default();
+    let mut kill_portables = HashSet::new();
 
     for (scene, location, response) in events.read().filter_map(|ev| match ev {
         RpcCall::KillPortable {
@@ -588,7 +588,7 @@ fn kill_portable(
 
     // deferred write to avoid resource conflict
     if !kill_portables.is_empty() {
-        commands.add(|world: &mut World| {
+        commands.queue(|world: &mut World| {
             let mut portables = world.resource_mut::<PortableScenes>();
             for killed in kill_portables {
                 portables.0.remove(&killed);
@@ -1365,22 +1365,22 @@ fn handle_spawned_command(
                 Ok((hash, source)) => match action {
                     PortableAction::Spawn => {
                         portables.0.insert(hash.clone(), source);
-                        reply.send(PrintConsoleLine::new("[ok]".into()));
+                        reply.write(PrintConsoleLine::new("[ok]".into()));
                     }
                     PortableAction::Kill => {
                         if portables.0.remove(&hash).is_some() {
-                            reply.send(PrintConsoleLine::new("[ok]".into()));
+                            reply.write(PrintConsoleLine::new("[ok]".into()));
                         } else {
-                            reply.send(PrintConsoleLine::new("portable not running".into()));
-                            reply.send(PrintConsoleLine::new("[failed]".into()));
+                            reply.write(PrintConsoleLine::new("portable not running".into()));
+                            reply.write(PrintConsoleLine::new("[failed]".into()));
                         }
                     }
                 },
                 Err(e) => {
-                    reply.send(PrintConsoleLine::new(
+                    reply.write(PrintConsoleLine::new(
                         format!("failed to lookup ens: {e}").into(),
                     ));
-                    reply.send(PrintConsoleLine::new("[failed]".into()));
+                    reply.write(PrintConsoleLine::new("[failed]".into()));
                 }
             }
             false
