@@ -138,7 +138,7 @@ fn automatic_testing(
 
             let sender = local_sender.as_ref().unwrap().clone();
             commands.spawn(Screenshot::window(window)).observe(
-                move |trigger: Trigger<ScreenshotCaptured>| {
+                move |mut trigger: Trigger<ScreenshotCaptured>| {
                     let _ = sender.blocking_send(SnapshotResult {
                         request: snapshot.clone(),
                         image: std::mem::take(&mut trigger.0),

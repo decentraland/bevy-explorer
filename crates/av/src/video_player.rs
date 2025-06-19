@@ -5,7 +5,7 @@ use crate::{
 };
 use bevy::{
     color::palettes::basic,
-    core::FrameCount,
+    diagnostic::FrameCount,
     math::FloatOrd,
     prelude::*,
     render::{
@@ -119,6 +119,8 @@ fn play_videos(
                 .get_mut(&sink.image)
                 .unwrap()
                 .data
+                .as_mut()
+                .unwrap()
                 .copy_from_slice(frame.data(0));
         }
 
