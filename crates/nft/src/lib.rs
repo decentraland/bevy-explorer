@@ -7,9 +7,9 @@ use asset_source::{Nft, NftLoader};
 use bevy::{
     asset::LoadState,
     gltf::Gltf,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     scene::InstanceId,
-    platform::collections::{HashMap, HashSet},
 };
 use common::{sets::SceneSets, structs::AppConfig, util::TryPushChildrenEx};
 use dcl::interface::ComponentPosition;
@@ -72,7 +72,7 @@ pub struct RetryNftShape;
 fn update_nft_shapes(
     mut commands: Commands,
     query: Query<(Entity, &NftShape, &SceneEntity), Changed<NftShape>>,
-    existing: Query<(Entity, &Parent), With<NftShapeMarker>>,
+    existing: Query<(Entity, &ChildOf), With<NftShapeMarker>>,
     mut removed: RemovedComponents<NftShape>,
     asset_server: Res<AssetServer>,
 ) {
@@ -83,7 +83,7 @@ fn update_nft_shapes(
         .chain(removed.read())
         .collect::<HashSet<_>>();
     for (ent, par) in existing.iter() {
-        if old_parents.contains(&par.get()) {
+        if old_parents.contains(&par.parent()) {
             commands.entity(ent).despawn();
         }
     }
@@ -93,23 +93,23 @@ fn update_nft_shapes(
         // spawn parent
         let nft_ent = commands
             .spawn((
-                SpatialBundle {
-                    transform: Transform::from_scale(Vec3::new(0.5, 0.5, 1.0)),
-                    ..Default::default()
-                },
+                Transform::from_scale(Vec3::new(0.5, 0.5, 1.0)),
+                Visibility::default(),
                 NftShapeMarker,
             ))
             .with_children(|c| {
                 // spawn frame
                 c.spawn((
-                    SpatialBundle::default(),
+                    Transform::default(),
+                    Visibility::default(),
                     FrameLoading(nft_shape.0.style()),
                     scene_ent.clone(),
                 ));
 
                 // spawn content
                 c.spawn((
-                    SpatialBundle::default(),
+                    Transform::default(),
+                    Visibility::default(),
                     NftLoading(asset_server.load(format!(
                         "nft://{}.nft",
                         urlencoding::encode(&nft_shape.0.urn)
@@ -154,12 +154,7 @@ fn load_frame(
             Transform::from_rotation(Quat::from_rotation_x(-FRAC_PI_2))
         };
 
-        let child = commands
-            .spawn(SpatialBundle {
-                transform,
-                ..Default::default()
-            })
-            .id();
+        let child = commands.spawn((transform, Visibility::default())).id();
 
         let instance = scene_spawner.spawn_as_child(gltf.default_scene.clone().unwrap(), child);
         commands
@@ -175,7 +170,7 @@ fn process_frame(
     mut commands: Commands,
     q: Query<(Entity, &FrameProcess, &SceneEntity)>,
     scene_spawner: Res<SceneSpawner>,
-    mat_nodes: Query<&Handle<StandardMaterial>>,
+    mat_nodes: Query<&MeshMaterial3d<StandardMaterial>>,
     mats: ResMut<Assets<StandardMaterial>>,
     mut new_mats: ResMut<Assets<SceneMaterial>>,
     scenes: Query<&RendererSceneContext>,
@@ -195,11 +190,11 @@ fn process_frame(
                 {
                     commands
                         .entity(spawned_ent)
-                        .remove::<Handle<StandardMaterial>>()
-                        .try_insert(new_mats.add(SceneMaterial {
+                        .remove::<MeshMaterial3d<StandardMaterial>>()
+                        .try_insert(MeshMaterial3d(new_mats.add(SceneMaterial {
                             base: mat.clone(),
                             extension: SceneBound::new(bounds.clone(), config.graphics.oob),
-                        }));
+                        })));
                 }
             }
         }
@@ -245,20 +240,18 @@ fn load_nft(
         commands
             .entity(ent)
             .try_insert((
-                MaterialMeshBundle {
-                    transform: Transform::from_translation(Vec3::Z * 0.03),
-                    mesh: mesh
-                        .get_or_insert_with(|| meshes.add(Rectangle::default()))
+                Transform::from_translation(Vec3::Z * 0.03),
+                Mesh3d(
+                    mesh.get_or_insert_with(|| meshes.add(Rectangle::default()))
                         .clone(),
-                    material: materials.add(SceneMaterial {
-                        base: StandardMaterial {
-                            base_color_texture: Some(h_image.clone()),
-                            ..Default::default()
-                        },
-                        extension: SceneBound::new(bounds, config.graphics.oob),
-                    }),
-                    ..Default::default()
-                },
+                ),
+                MeshMaterial3d(materials.add(SceneMaterial {
+                    base: StandardMaterial {
+                        base_color_texture: Some(h_image.clone()),
+                        ..Default::default()
+                    },
+                    extension: SceneBound::new(bounds, config.graphics.oob),
+                })),
                 NftResize(h_image),
             ))
             .remove::<NftLoading>();
@@ -270,7 +263,7 @@ pub struct NftResize(Handle<Image>);
 
 fn resize_nft(
     mut commands: Commands,
-    q: Query<(Entity, &Parent, &NftResize)>,
+    q: Query<(Entity, &ChildOf, &NftResize)>,
     images: Res<Assets<Image>>,
     mut transforms: Query<&mut Transform, With<NftShapeMarker>>,
 ) {
@@ -280,7 +273,7 @@ fn resize_nft(
             let w = image.width() as f32 / max_dim;
             let h = image.height() as f32 / max_dim;
 
-            if let Ok(mut transform) = transforms.get_mut(parent.get()) {
+            if let Ok(mut transform) = transforms.get_mut(parent.parent()) {
                 transform.scale = Vec3::new(w, h, 1.0);
             }
 
