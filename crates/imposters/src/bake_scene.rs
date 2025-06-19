@@ -8,7 +8,7 @@ use std::{
 };
 
 use bevy::{
-    core::FrameCount,
+    diagnostic::FrameCount,
     math::FloatOrd,
     prelude::*,
     render::{primitives::Aabb, view::RenderLayers},
@@ -95,7 +95,7 @@ fn make_scene_oven(
     mut start_tick: Local<Option<(String, u32)>>,
     bake_list: Res<ImposterBakeList>,
     children: Query<&Children>,
-    mat_handles: Query<&Handle<SceneMaterial>>,
+    mat_handles: Query<&MeshMaterial3d<SceneMaterial>>,
     materials: Res<Assets<SceneMaterial>>,
     asset_server: Res<AssetServer>,
 ) {
@@ -224,8 +224,8 @@ fn bake_scene_imposters(
     ipfas: IpfsAssetServer,
     tick: Res<FrameCount>,
     children: Query<&Children>,
-    meshes: Query<(&GlobalTransform, &Aabb, &Visibility), With<Handle<Mesh>>>,
-    bound_materials: Query<&Handle<SceneMaterial>>,
+    meshes: Query<(&GlobalTransform, &Aabb, &Visibility), With<Mesh3d>>,
+    bound_materials: Query<&MeshMaterial3d<SceneMaterial>>,
     mut materials: ResMut<Assets<SceneMaterial>>,
     lookup: Res<ImposterEntities>,
     config: Res<AppConfig>,
@@ -686,7 +686,7 @@ fn bake_imposter_imposter(
 
                 // add layer to children
                 for child in children.iter() {
-                    let mut layer = layers.get_mut(*child).unwrap();
+                    let mut layer = layers.get_mut(child).unwrap();
                     *layer = layer.union(&IMPOSTERCEPTION_LAYER);
                 }
             }

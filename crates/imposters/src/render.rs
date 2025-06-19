@@ -1,16 +1,16 @@
 use bevy::{
     asset::LoadState,
-    core::FrameCount,
+    diagnostic::FrameCount,
     ecs::system::SystemParam,
     math::FloatOrd,
     pbr::{NotShadowCaster, NotShadowReceiver},
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
         mesh::VertexAttributeValues,
         view::{NoFrustumCulling, RenderLayers},
     },
     tasks::{IoTaskPool, Task},
-    platform::collections::{HashSet, HashMap},
 };
 use boimp::{bake::ImposterBakeMaterialPlugin, render::Imposter, ImposterLoaderSettings};
 use common::{
@@ -139,8 +139,8 @@ pub struct ImposterLookup<'w, 's> {
         'w,
         's,
         (
-            Option<&'static Handle<Imposter>>,
-            Option<&'static Handle<FloorImposter>>,
+            Option<&'static MeshMaterial3d<Imposter>>,
+            Option<&'static MeshMaterial3d<FloorImposter>>,
         ),
     >,
     asset_server: Res<'w, AssetServer>,
@@ -154,7 +154,10 @@ impl ImposterLookup<'_, '_> {
             Option<&Children>,
             Option<&ImposterReady>,
         )>,
-        handles: &Query<(Option<&Handle<Imposter>>, Option<&Handle<FloorImposter>>)>,
+        handles: &Query<(
+            Option<&MeshMaterial3d<Imposter>>,
+            Option<&MeshMaterial3d<FloorImposter>>,
+        )>,
         asset_server: &AssetServer,
         parcel: IVec2,
         level: usize,
@@ -425,7 +428,8 @@ pub fn spawn_imposters(
     // add new
     for (parcel, level, as_ingredient) in required.drain() {
         let mut cmds = commands.spawn((
-            SpatialBundle::default(),
+            Transform::default(),
+            Visibility::default(),
             SceneImposter {
                 parcel,
                 level,
@@ -678,28 +682,24 @@ fn render_imposters(
                 let mut scale = spec.region_max - spec.region_min;
                 scale.y = spec.scale * 2.0;
                 c.spawn((
-                    MaterialMeshBundle {
-                        mesh: imposter_meshes.cube.clone(),
-                        material: asset_server
-                            .load_with_settings::<Imposter, ImposterLoaderSettings>(
-                                path,
-                                move |s| {
-                                    *s = ImposterLoaderSettings {
-                                        multisample,
-                                        alpha: initial_alpha,
-                                        alpha_blend: 0.0, // blend
-                                        multisample_amount,
-                                    }
-                                },
-                            ),
-                        transform: Transform::from_translation(
-                            (spec.region_min + spec.region_max) * 0.5,
-                        )
+                    Mesh3d(imposter_meshes.cube.clone()),
+                    MeshMaterial3d(
+                        asset_server.load_with_settings::<Imposter, ImposterLoaderSettings>(
+                            path,
+                            move |s| {
+                                *s = ImposterLoaderSettings {
+                                    multisample,
+                                    alpha: initial_alpha,
+                                    alpha_blend: 0.0, // blend
+                                    multisample_amount,
+                                }
+                            },
+                        ),
+                    ),
+                    Transform::from_translation((spec.region_min + spec.region_max) * 0.5)
                         .with_scale(
                             scale.max(Vec3::splat(0.001)) * (1.0 + req.level as f32 / 1000.0),
                         ),
-                        ..Default::default()
-                    },
                     NoFrustumCulling,
                     NotShadowCaster,
                     NotShadowReceiver,
@@ -725,16 +725,15 @@ fn render_imposters(
                     req.level,
                 );
                 c.spawn((
-                    MaterialMeshBundle {
-                        transform: Transform::from_translation(Vec3::new(mid.x, -0.01, mid.y))
-                            .with_scale(Vec3::new(size, 1.0, size)),
-                        mesh: imposter_meshes.floor.clone(),
-                        material: asset_server
+                    Transform::from_translation(Vec3::new(mid.x, -0.01, mid.y))
+                        .with_scale(Vec3::new(size, 1.0, size)),
+                    Mesh3d(imposter_meshes.floor.clone()),
+                    MeshMaterial3d(
+                        asset_server
                             .load_with_settings::<FloorImposter, f32>(path, move |s: &mut f32| {
                                 *s = offset
                             }),
-                        ..Default::default()
-                    },
+                    ),
                     NotShadowCaster,
                     NotShadowReceiver,
                     layer,
@@ -769,7 +768,7 @@ fn transition_imposters(
     mut commands: Commands,
     q_in: Query<(Entity, &Children, Has<ImposterTransitionOut>), With<ImposterTransitionIn>>,
     q_out: Query<(Entity, &Children, &SceneImposter), With<ImposterTransitionOut>>,
-    handles: Query<&Handle<Imposter>>,
+    handles: Query<&MeshMaterial3d<Imposter>>,
     mut assets: ResMut<Assets<Imposter>>,
     time: Res<Time>,
     pointers: Res<ScenePointers>,
@@ -779,10 +778,7 @@ fn transition_imposters(
     config: Res<AppConfig>,
 ) {
     const TPOW: f32 = 2.0;
-    let player = player
-        .single()
-        .map(|t| t.translation)
-        .unwrap_or_default();
+    let player = player.single().map(|t| t.translation).unwrap_or_default();
 
     for (ent, children, transitioning_out) in q_in.iter() {
         if transitioning_out {
