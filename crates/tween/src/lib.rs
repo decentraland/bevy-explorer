@@ -30,7 +30,7 @@ impl Tween {
         &self,
         time: f32,
         transform: &mut Transform,
-        maybe_h_mat: Option<&Handle<SceneMaterial>>,
+        maybe_h_mat: Option<&MeshMaterial3d<SceneMaterial>>,
         materials: &mut Assets<SceneMaterial>,
     ) {
         use simple_easing::*;
@@ -150,11 +150,11 @@ pub fn update_tween(
     mut tweens: Query<(
         Entity,
         &ContainerEntity,
-        &Parent,
+        &ChildOf,
         Ref<Tween>,
         &mut Transform,
         Option<&mut TweenState>,
-        Option<&Handle<SceneMaterial>>,
+        Option<&MeshMaterial3d<SceneMaterial>>,
     )>,
     mut scenes: Query<&mut RendererSceneContext>,
     parents: Query<&SceneEntity>,
@@ -212,7 +212,7 @@ pub fn update_tween(
 
             tween.apply(updated_time, &mut transform, maybe_h_mat, materials);
 
-            let Ok(parent) = parents.get(parent.get()) else {
+            let Ok(parent) = parents.get(parent.parent()) else {
                 warn!("no parent for tweened ent");
                 continue;
             };
