@@ -197,7 +197,10 @@ impl kira::sound::streaming::Decoder for FfmpegKiraBridge {
         if self.step == 0 && seek == 0 {
             return Ok(0);
         }
-        Err(AudioDecoderError::Other(format!("Can't seek (step {}, requested {seek})", self.step)))
+        Err(AudioDecoderError::Other(format!(
+            "Can't seek (step {}, requested {seek})",
+            self.step
+        )))
     }
 }
 

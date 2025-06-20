@@ -428,6 +428,8 @@ impl kira::sound::streaming::Decoder for LivekitKiraBridge {
         if !self.started && seek == 0 {
             return Ok(0);
         }
-        Err(AudioDecoderError::Other(format!("Can't seek (requested {seek})")))
+        Err(AudioDecoderError::Other(format!(
+            "Can't seek (requested {seek})"
+        )))
     }
 }

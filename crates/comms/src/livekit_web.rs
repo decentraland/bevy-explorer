@@ -1,4 +1,7 @@
-use bevy::{platform::collections::HashMap, prelude::*};
+use bevy::{
+    platform::{collections::HashMap, hash::FixedHasher},
+    prelude::*,
+};
 use http::Uri;
 use prost::Message;
 use serde::Deserialize;
