@@ -193,8 +193,11 @@ impl kira::sound::streaming::Decoder for FfmpegKiraBridge {
         }
     }
 
-    fn seek(&mut self, _: usize) -> Result<usize, Self::Error> {
-        Err(AudioDecoderError::Other("Can't seek".to_owned()))
+    fn seek(&mut self, seek: usize) -> Result<usize, Self::Error> {
+        if self.step == 0 && seek == 0 {
+            return Ok(0);
+        }
+        Err(AudioDecoderError::Other(format!("Can't seek (step {}, requested {seek})", self.step)))
     }
 }
 

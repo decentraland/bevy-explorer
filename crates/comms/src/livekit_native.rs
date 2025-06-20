@@ -296,6 +296,7 @@ fn livekit_handler_inner(
                                             let (frame_sender, frame_receiver) = tokio::sync::mpsc::channel(10);
 
                                             let bridge = LivekitKiraBridge {
+                                                started: false,
                                                 sample_rate: frame.sample_rate,
                                                 receiver: frame_receiver,
                                             };
@@ -379,6 +380,7 @@ fn livekit_handler_inner(
 }
 
 struct LivekitKiraBridge {
+    started: bool,
     sample_rate: u32,
     receiver: tokio::sync::mpsc::Receiver<AudioFrame<'static>>,
 }
@@ -422,7 +424,10 @@ impl kira::sound::streaming::Decoder for LivekitKiraBridge {
         }
     }
 
-    fn seek(&mut self, _: usize) -> Result<usize, Self::Error> {
-        Err(AudioDecoderError::Other("Can't seek".to_owned()))
+    fn seek(&mut self, seek: usize) -> Result<usize, Self::Error> {
+        if !self.started && seek == 0 {
+            return Ok(0);
+        }
+        Err(AudioDecoderError::Other(format!("Can't seek (requested {seek})")))
     }
 }
