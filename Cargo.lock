@@ -910,7 +910,7 @@ dependencies = [
 [[package]]
 name = "bevy"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_internal",
  "tracing",
@@ -919,7 +919,7 @@ dependencies = [
 [[package]]
 name = "bevy_a11y"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "accesskit",
  "bevy_app",
@@ -932,7 +932,7 @@ dependencies = [
 [[package]]
 name = "bevy_animation"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -965,7 +965,7 @@ dependencies = [
 [[package]]
 name = "bevy_app"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_derive",
  "bevy_ecs",
@@ -988,7 +988,7 @@ dependencies = [
 [[package]]
 name = "bevy_asset"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "async-broadcast",
  "async-fs",
@@ -1028,7 +1028,7 @@ dependencies = [
 [[package]]
 name = "bevy_asset_macros"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_macro_utils 0.16.1 (git+https://github.com/robtfm/bevy?branch=release-0.16-dcl)",
  "proc-macro2",
@@ -1061,7 +1061,7 @@ dependencies = [
 [[package]]
 name = "bevy_color"
 version = "0.16.2"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_math",
  "bevy_reflect",
@@ -1102,7 +1102,7 @@ dependencies = [
 [[package]]
 name = "bevy_core_pipeline"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -1131,7 +1131,7 @@ dependencies = [
 [[package]]
 name = "bevy_derive"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_macro_utils 0.16.1 (git+https://github.com/robtfm/bevy?branch=release-0.16-dcl)",
  "quote",
@@ -1141,7 +1141,7 @@ dependencies = [
 [[package]]
 name = "bevy_diagnostic"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -1168,7 +1168,7 @@ dependencies = [
 [[package]]
 name = "bevy_ecs"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "arrayvec",
  "bevy_ecs_macros",
@@ -1196,7 +1196,7 @@ dependencies = [
 [[package]]
 name = "bevy_ecs_macros"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_macro_utils 0.16.1 (git+https://github.com/robtfm/bevy?branch=release-0.16-dcl)",
  "proc-macro2",
@@ -1253,7 +1253,7 @@ dependencies = [
 [[package]]
 name = "bevy_encase_derive"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_macro_utils 0.16.1 (git+https://github.com/robtfm/bevy?branch=release-0.16-dcl)",
  "encase_derive_impl",
@@ -1262,7 +1262,7 @@ dependencies = [
 [[package]]
 name = "bevy_gilrs"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -1278,7 +1278,7 @@ dependencies = [
 [[package]]
 name = "bevy_gizmos"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -1302,7 +1302,7 @@ dependencies = [
 [[package]]
 name = "bevy_gizmos_macros"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_macro_utils 0.16.1 (git+https://github.com/robtfm/bevy?branch=release-0.16-dcl)",
  "proc-macro2",
@@ -1313,7 +1313,7 @@ dependencies = [
 [[package]]
 name = "bevy_gltf"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "base64 0.22.1",
  "bevy_animation",
@@ -1347,7 +1347,7 @@ dependencies = [
 [[package]]
 name = "bevy_image"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -1374,7 +1374,7 @@ dependencies = [
 [[package]]
 name = "bevy_input"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -1392,7 +1392,7 @@ dependencies = [
 [[package]]
 name = "bevy_input_focus"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -1407,7 +1407,7 @@ dependencies = [
 [[package]]
 name = "bevy_internal"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_a11y",
  "bevy_animation",
@@ -1461,7 +1461,7 @@ dependencies = [
 [[package]]
 name = "bevy_log"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "android_log-sys",
  "bevy_app",
@@ -1492,7 +1492,7 @@ dependencies = [
 [[package]]
 name = "bevy_macro_utils"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "parking_lot",
  "proc-macro2",
@@ -1504,7 +1504,7 @@ dependencies = [
 [[package]]
 name = "bevy_math"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "approx",
  "bevy_reflect",
@@ -1523,7 +1523,7 @@ dependencies = [
 [[package]]
 name = "bevy_mesh"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_asset",
  "bevy_derive",
@@ -1547,7 +1547,7 @@ dependencies = [
 [[package]]
 name = "bevy_mikktspace"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "glam",
 ]
@@ -1555,7 +1555,7 @@ dependencies = [
 [[package]]
 name = "bevy_pbr"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -1588,7 +1588,7 @@ dependencies = [
 [[package]]
 name = "bevy_platform"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "cfg-if",
  "critical-section",
@@ -1605,12 +1605,12 @@ dependencies = [
 [[package]]
 name = "bevy_ptr"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 
 [[package]]
 name = "bevy_reflect"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "assert_type_match",
  "bevy_platform",
@@ -1636,7 +1636,7 @@ dependencies = [
 [[package]]
 name = "bevy_reflect_derive"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_macro_utils 0.16.1 (git+https://github.com/robtfm/bevy?branch=release-0.16-dcl)",
  "proc-macro2",
@@ -1648,7 +1648,7 @@ dependencies = [
 [[package]]
 name = "bevy_render"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "async-channel 2.3.1",
  "bevy_app",
@@ -1701,7 +1701,7 @@ dependencies = [
 [[package]]
 name = "bevy_render_macros"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_macro_utils 0.16.1 (git+https://github.com/robtfm/bevy?branch=release-0.16-dcl)",
  "proc-macro2",
@@ -1712,7 +1712,7 @@ dependencies = [
 [[package]]
 name = "bevy_scene"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -1743,7 +1743,7 @@ dependencies = [
 [[package]]
 name = "bevy_sprite"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -1770,7 +1770,7 @@ dependencies = [
 [[package]]
 name = "bevy_state"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -1785,7 +1785,7 @@ dependencies = [
 [[package]]
 name = "bevy_state_macros"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_macro_utils 0.16.1 (git+https://github.com/robtfm/bevy?branch=release-0.16-dcl)",
  "proc-macro2",
@@ -1796,7 +1796,7 @@ dependencies = [
 [[package]]
 name = "bevy_tasks"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "async-channel 2.3.1",
  "async-executor",
@@ -1817,7 +1817,7 @@ dependencies = [
 [[package]]
 name = "bevy_text"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -1846,7 +1846,7 @@ dependencies = [
 [[package]]
 name = "bevy_time"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -1860,7 +1860,7 @@ dependencies = [
 [[package]]
 name = "bevy_transform"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -1877,7 +1877,7 @@ dependencies = [
 [[package]]
 name = "bevy_ui"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "accesskit",
  "bevy_a11y",
@@ -1911,7 +1911,7 @@ dependencies = [
 [[package]]
 name = "bevy_utils"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "bevy_platform",
  "thread_local",
@@ -1920,7 +1920,7 @@ dependencies = [
 [[package]]
 name = "bevy_window"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "android-activity",
  "bevy_app",
@@ -1939,7 +1939,7 @@ dependencies = [
 [[package]]
 name = "bevy_winit"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#6f2a256ad450e02e7ee2c4be153209542b4a54c6"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#3216503ebfd067323a182550814be0fb159e4978"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -2011,7 +2011,7 @@ dependencies = [
  "bitflags 2.9.1",
  "cexpr",
  "clang-sys",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "lazy_static",
  "lazycell",
  "log",
@@ -2034,7 +2034,7 @@ dependencies = [
  "bitflags 2.9.1",
  "cexpr",
  "clang-sys",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "log",
  "prettyplease 0.2.34",
  "proc-macro2",
@@ -2054,7 +2054,7 @@ dependencies = [
  "bitflags 2.9.1",
  "cexpr",
  "clang-sys",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "regex",
@@ -2225,7 +2225,7 @@ version = "0.1.1"
 source = "git+https://github.com/robtfm/boimp?branch=0.3#6f2e09828fc1e0bb01f73596101bd10b15b99546"
 dependencies = [
  "anyhow",
- "async-channel 1.9.0",
+ "async-channel 2.3.1",
  "bevy",
  "bytemuck",
  "crossbeam-channel",
@@ -3340,7 +3340,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d162beedaa69905488a8da94f5ac3edb4dd4788b732fadb7bd120b2625c1976"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.103",
 ]
 
 [[package]]
@@ -3577,6 +3577,7 @@ dependencies = [
  "dcl_deno",
  "dcl_wasm",
  "futures-lite 1.13.0",
+ "getrandom 0.3.3",
  "imposters",
  "input_manager",
  "ipfs",
@@ -5104,9 +5105,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26145e563e54f2cadc477553f1ec5ee650b00862f0a58bcd12cbdc5f0ea2d2f4"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi",
  "wasi 0.14.2+wasi-0.2.4",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -5150,7 +5153,7 @@ dependencies = [
  "vec_map",
  "wasm-bindgen",
  "web-sys",
- "windows 0.58.0",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -8833,8 +8836,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22505a5c94da8e3b7c2996394d1c933236c4d743e81a410bcca4e6989fc066a4"
 dependencies = [
  "bytes",
- "heck 0.4.1",
- "itertools 0.11.0",
+ "heck 0.5.0",
+ "itertools 0.12.1",
  "log",
  "multimap 0.10.1",
  "once_cell",
@@ -8867,7 +8870,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
 dependencies = [
  "anyhow",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn 2.0.103",
@@ -8880,7 +8883,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.11.0",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.103",
@@ -11699,7 +11702,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c032d68a49d25d9012a864fef1c64ac17aee43c87e0477bf7301d8ae8bfea7b7"
 dependencies = [
  "cc",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]

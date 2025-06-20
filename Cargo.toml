@@ -26,8 +26,8 @@ hot_reload = ["bevy/file_watcher", "ipfs/hot_reload"]
 livekit = ["comms/livekit", "system_ui/livekit"]
 ffmpeg = ["av/ffmpeg"]
 social = ["dcl_component/social", "social/social"]
-# wasm =   ["uuid/js", "bevy/webgpu"]
-wasm =   ["uuid/js"]
+# wasm =   ["uuid/js", "getrandom/wasm_js"]
+wasm =   ["uuid/js", "getrandom/wasm_js", "bevy/webgpu"]
 
 [profile.release]
 codegen-units = 1
@@ -221,6 +221,7 @@ dcl_wasm = { workspace = true }
 console_error_panic_hook = "0.1.7"
 console_log = "1.0"
 log = "0.4"
+getrandom = "0.3"
 wasm-bindgen = { workspace = true }
 
 [build-dependencies]
