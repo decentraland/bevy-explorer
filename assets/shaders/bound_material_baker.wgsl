@@ -1,7 +1,7 @@
 #import bevy_pbr::{
     prepass_io::{VertexOutput, FragmentOutput},
     pbr_fragment::pbr_input_from_standard_material,
-    pbr_functions::{SampleBias, sample_texture, alpha_discard, apply_pbr_lighting, main_pass_post_lighting_processing},
+    pbr_functions::{SampleBias, alpha_discard, apply_pbr_lighting, main_pass_post_lighting_processing},
     pbr_bindings::{material, emissive_texture, emissive_sampler},
     pbr_types::STANDARD_MATERIAL_FLAGS_EMISSIVE_TEXTURE_BIT,
     mesh_view_bindings::{globals, view},
@@ -77,7 +77,7 @@ fn fragment(
         }
         var bias: SampleBias;
         bias.mip_bias = view.mip_bias;
-        emissive = vec4<f32>(emissive.rgb * sample_texture(
+        emissive = vec4<f32>(emissive.rgb * textureSampleBias(
             emissive_texture,
             emissive_sampler,
 #ifdef STANDARD_MATERIAL_EMISSIVE_UV_B
@@ -89,7 +89,7 @@ fn fragment(
 #else
             (material.uv_transform * vec3(in.uv, 1.0)).xy,
 #endif
-            bias,
+            bias.mip_bias,
         ).rgb, emissive.a);
     } else {
         if dot(emissive, emissive) != 0.0 {
