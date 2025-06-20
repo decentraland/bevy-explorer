@@ -107,6 +107,7 @@ pub fn update_tooltip(
                 BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 1.0 * *vis)),
                 BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5 * *vis)),
                 GlobalZIndex((1 << 18) + 6),
+                ToolTipNode,
             ))
             .with_children(|c| {
                 for i in 0..columns {
