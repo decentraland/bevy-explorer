@@ -1086,7 +1086,7 @@ fn layout_scene_ui(
             if let Ok(link) = ui_links.get(node) {
                 if let Ok(mut commands) = commands.get_entity(link.ui_entity) {
                     debug!("{node} delete linked {:?}", link.ui_entity);
-                    commands.despawn();
+                    commands.try_despawn();
                 }
             }
             ui_data.nodes.remove(&node);
@@ -1097,7 +1097,7 @@ fn layout_scene_ui(
             if let Ok(link) = ui_links.get(node) {
                 if let Ok(mut commands) = commands.get_entity(link.ui_entity) {
                     debug!("{node} delete linked {:?}", link.ui_entity);
-                    commands.despawn();
+                    commands.try_despawn();
                 }
             }
         }
@@ -1105,7 +1105,7 @@ fn layout_scene_ui(
         // and any invalidated nodes
         for node in invalid_ui_entities {
             debug!("?? delete linked {:?}", node);
-            commands.entity(node).despawn();
+            commands.entity(node).try_despawn();
         }
 
         // send any pending events

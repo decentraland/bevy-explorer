@@ -300,7 +300,7 @@ pub struct DespawnWith(pub Entity);
 fn despawn_with(mut commands: Commands, q: Query<(Entity, &DespawnWith)>) {
     for (ent, with) in q.iter() {
         if commands.get_entity(with.0).is_err() {
-            commands.entity(ent).despawn();
+            commands.entity(ent).try_despawn();
         }
     }
 }
