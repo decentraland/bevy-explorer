@@ -9,7 +9,7 @@ use bevy::{
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     rpc::RpcCall,
-    structs::{IVec2Arg, SettingsTab},
+    structs::{IVec2Arg, SettingsTab, ZOrder},
     util::{ModifyComponentExt, TaskCompat, TaskExt},
 };
 use ipfs::{ipfs_path::IpfsPath, ChangeRealmEvent, IpfsAssetServer};
@@ -686,7 +686,10 @@ pub fn spawn_discover_popup(
         )
         .with_prop("jump-in", jump_in);
 
-    commands
+    let popup = commands
         .spawn_template(dui, "discover-popup", props)
         .unwrap();
+    commands
+        .entity(popup.root)
+        .insert(ZOrder::DiscoverPopup.default());
 }

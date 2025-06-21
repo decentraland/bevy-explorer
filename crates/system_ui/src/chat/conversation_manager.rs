@@ -1,6 +1,9 @@
 use bevy::{diagnostic::FrameCount, ecs::system::SystemParam, prelude::*, tasks::IoTaskPool};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
-use common::{structs::ShowProfileEvent, util::TryPushChildrenEx};
+use common::{
+    structs::{ShowProfileEvent, ZOrder},
+    util::TryPushChildrenEx,
+};
 use copypwasmta::{ClipboardContext, ClipboardProvider};
 use ethers_core::types::Address;
 use scene_runner::Toaster;
@@ -163,7 +166,7 @@ impl ConversationManager<'_, '_> {
 
         self.commands
             .entity(bubble)
-            .insert(ChatBubble(address, color));
+            .insert((ChatBubble(address, color), ZOrder::ChatBubble.default()));
 
         let added = self.added_this_frame.get_or_insert_with(Default::default);
         if added.0 != self.frame.0 {

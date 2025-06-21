@@ -12,7 +12,7 @@ use common::{
     sets::SetupSets,
     structs::{
         ActiveDialog, AppConfig, PermissionTarget, SettingsTab, ShowSettingsEvent, SystemAudio,
-        PROFILE_UI_RENDERLAYER,
+        ZOrder, PROFILE_UI_RENDERLAYER,
     },
     util::TryPushChildrenEx,
 };
@@ -347,6 +347,7 @@ pub fn show_settings(
             on_close: None,
         },
         permit,
+        ZOrder::Backpack.default(),
     ));
     // let root_id = root.id();
 
@@ -435,9 +436,6 @@ pub fn show_settings(
 
     let components = root.apply_template(&dui, "settings", props).unwrap();
 
-    commands
-        .entity(components.root)
-        .insert(GlobalZIndex((1 << 18) + 4));
     commands
         .entity(components.named("change-realm-button"))
         .insert(UpdateRealmText);

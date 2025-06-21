@@ -1,5 +1,6 @@
 use bevy::{platform::collections::HashMap, prelude::*};
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
+use common::structs::ZOrder;
 use scene_runner::Toasts;
 
 pub struct ToastsPlugin;
@@ -47,9 +48,11 @@ fn update_toasts(
                 .unwrap();
             displays.insert(key.clone(), Some(components.root));
             if let Some(on_click) = toast.on_click.take() {
-                commands
-                    .entity(components.root)
-                    .insert((Interaction::default(), on_click));
+                commands.entity(components.root).insert((
+                    Interaction::default(),
+                    on_click,
+                    ZOrder::Toast.default(),
+                ));
             }
             continue;
         };

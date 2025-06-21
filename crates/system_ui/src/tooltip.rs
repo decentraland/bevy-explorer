@@ -1,7 +1,7 @@
 use std::collections::{btree_map::Entry, BTreeMap};
 
 use bevy::prelude::*;
-use common::structs::{ToolTips, TooltipSource};
+use common::structs::{ToolTips, TooltipSource, ZOrder};
 use ui_core::{ui_builder::SpawnSpacer, HOVER_TEXT_STYLE};
 
 #[derive(Component)]
@@ -106,7 +106,7 @@ pub fn update_tooltip(
                 },
                 BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 1.0 * *vis)),
                 BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5 * *vis)),
-                GlobalZIndex((1 << 18) + 6),
+                ZOrder::ToolTip.default(),
                 ToolTipNode,
             ))
             .with_children(|c| {

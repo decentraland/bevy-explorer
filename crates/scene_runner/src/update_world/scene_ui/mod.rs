@@ -29,7 +29,7 @@ use crate::{
 };
 use common::{
     rpc::RpcCall,
-    structs::{AppConfig, PrimaryPlayerRes, PrimaryUser},
+    structs::{AppConfig, PrimaryPlayerRes, PrimaryUser, ZOrder},
     util::{DespawnWith, ModifyComponentExt},
 };
 use dcl::interface::{ComponentPosition, CrdtType};
@@ -195,7 +195,7 @@ pub struct UiTransform {
     margin: UiRect,
     padding: UiRect,
     opacity: f32,
-    zindex: Option<i16>,
+    zindex: Option<i32>,
     border: UiRect,
     border_radius: BorderRadius,
     border_color: BorderColor,
@@ -339,7 +339,7 @@ impl From<PbUiTransform> for UiTransform {
                 Val::Px(0.0)
             ),
             opacity: value.opacity.unwrap_or(1.0),
-            zindex: value.z_index.map(|z| z as i16),
+            zindex: value.z_index,
             border: rect!(
                 value,
                 border_left_width_unit,
@@ -572,6 +572,12 @@ fn create_ui_roots(
 
     // spawn window root ui nodes
     for (ent, context, maybe_link, ui_data, maybe_super) in scene_uis.iter_mut() {
+        let z_order = if ui_data.super_user {
+            ZOrder::SystemSceneUi
+        } else {
+            ZOrder::SceneUi
+        };
+
         if current_scenes.contains(&ent) && (maybe_link.is_none() || config.is_changed()) {
             let display = if maybe_super.is_some()
                 || hidden_uis
@@ -606,12 +612,10 @@ fn create_ui_roots(
                 }
             };
 
-            let z_index = GlobalZIndex(if ui_data.super_user { 1 << 17 } else { 0 });
-
             let window_root = commands
                 .spawn((
                     root_style,
-                    z_index,
+                    z_order.default(),
                     SceneUiRoot {
                         scene: ent,
                         canvas: ent,
@@ -654,7 +658,6 @@ fn create_ui_roots(
                             height: Val::Percent(100.0),
                             ..Default::default()
                         },
-                        GlobalZIndex(0), // behind the ZIndex((1 << 18) + 1) MouseInteractionComponent
                     ));
                     debug!("create texture root {:?} -> {:?}", ent, root);
 
@@ -732,6 +735,12 @@ fn layout_scene_ui(
     let removed_transforms = removed_transforms.read().collect::<Vec<_>>();
 
     for (scene_root, mut ui_data) in scene_uis.iter_mut() {
+        let z_order = if ui_data.super_user {
+            ZOrder::SystemSceneUi
+        } else {
+            ZOrder::SceneUi
+        };
+
         if !current_scenes.contains(&scene_root) {
             ui_data.relayout = true;
             continue;
@@ -1012,18 +1021,8 @@ fn layout_scene_ui(
                     cmds.remove::<(BorderColor, BorderRadius)>();
                 }
 
-                let mut zindex_added = false;
-                if let Some(zindex) = ui_transform.zindex {
-                    if zindex != 0 {
-                        zindex_added = true;
-                        cmds.try_insert(GlobalZIndex(
-                            zindex as i32 + if ui_data.super_user { 1 << 17 } else { 0 },
-                        ));
-                    }
-                }
-                if !zindex_added {
-                    cmds.remove::<ZIndex>();
-                }
+                let zindex = ui_transform.zindex.unwrap_or_default();
+                cmds.try_insert(z_order.index(zindex));
             }
 
             // gather scroll events

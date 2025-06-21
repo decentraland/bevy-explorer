@@ -16,7 +16,7 @@ use common::{
     sets::{SceneSets, SetupSets},
     structs::{
         AppConfig, CursorLocks, PreviewCommand, PrimaryUser, SettingsTab, ShowSettingsEvent,
-        SystemScene, Version,
+        SystemScene, Version, ZOrder,
     },
     util::ModifyComponentExt,
 };
@@ -106,7 +106,7 @@ pub(crate) fn setup(
                     justify_content: JustifyContent::Center,
                     ..Default::default()
                 },
-                GlobalZIndex(i16::MIN as i32 - 1),
+                ZOrder::Crosshair.default(),
             ))
             .with_children(|c| {
                 c.spawn((
@@ -120,6 +120,7 @@ pub(crate) fn setup(
                     CrossHair,
                 ));
             });
+
         commands.spawn((
             Node {
                 position_type: PositionType::Absolute,
@@ -151,7 +152,6 @@ pub(crate) fn setup(
                 },
                 BackgroundColor(Color::srgba(0.8, 0.8, 1.0, 0.8)),
                 FocusPolicy::Block,
-                GlobalZIndex((1 << 18) + 3),
                 SysInfoContainer,
             ))
             .with_children(|commands| {
@@ -344,7 +344,9 @@ fn setup_minimap(
         .entity(root.0)
         .insert_children(0, &[components.root]);
 
-    commands.entity(components.root).insert(Minimap);
+    commands
+        .entity(components.root)
+        .insert((Minimap, ZOrder::Minimap.default()));
     commands.entity(components.named("map-node")).insert((
         MapTexture {
             center: Default::default(),

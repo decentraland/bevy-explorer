@@ -27,7 +27,7 @@ use change_realm::ChangeRealmPlugin;
 use common::{
     inputs::SystemAction,
     sets::SetupSets,
-    structs::{ActiveDialog, UiRoot},
+    structs::{ActiveDialog, UiRoot, ZOrder},
 };
 use emote_select::EmoteUiPlugin;
 use foreign_profile::ForeignProfilePlugin;
@@ -89,7 +89,7 @@ fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
                 height: Val::Percent(100.0),
                 ..Default::default()
             },
-            GlobalZIndex((1 << 18) + 2),
+            ZOrder::SystemUi.default(),
             UiRoot,
         ))
         .id();
@@ -105,7 +105,7 @@ fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
             bottom: Val::Px(0.0),
             ..Default::default()
         },
-        GlobalZIndex((1 << 18) + 1),
+        ZOrder::MouseInteractionComponent.default(),
         Interaction::default(),
         MouseInteractionComponent,
     ));

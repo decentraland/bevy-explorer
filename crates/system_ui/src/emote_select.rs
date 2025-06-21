@@ -12,7 +12,7 @@ use collectibles::{CollectibleError, CollectibleManager, Emote, EmoteUrn};
 use common::{
     inputs::SystemAction,
     sets::SetupSets,
-    structs::{ActiveDialog, EmoteCommand, PrimaryUser, SystemAudio},
+    structs::{ActiveDialog, EmoteCommand, PrimaryUser, SystemAudio, ZOrder},
     util::{ModifyComponentExt, TryPushChildrenEx},
 };
 use comms::profile::CurrentUserProfile;
@@ -352,6 +352,9 @@ fn show_emote_ui(
             ))
             .apply_template(&dui, "choose-emote-base", props)
             .unwrap();
+        commands
+            .entity(buttons.root)
+            .insert(ZOrder::EmoteSelect.default());
 
         let output = buttons.named("output");
         commands.entity(output).insert((EmoteOutput, permit));

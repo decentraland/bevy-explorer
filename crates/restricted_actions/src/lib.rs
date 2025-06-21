@@ -21,7 +21,7 @@ use common::{
         SpawnResponse,
     },
     sets::SceneSets,
-    structs::{AvatarDynamicState, PermissionType, PrimaryCamera, PrimaryUser},
+    structs::{AvatarDynamicState, PermissionType, PrimaryCamera, PrimaryUser, ZOrder},
     util::{AsH160, TaskCompat, TaskExt},
 };
 use comms::{
@@ -1051,7 +1051,7 @@ fn show_nft_dialog(
 
             let link = nft.permalink.clone();
 
-            commands
+            let components = commands
                 .spawn_template(
                     &dui,
                     "nft-dialog",
@@ -1074,6 +1074,9 @@ fn show_nft_dialog(
                         ),
                 )
                 .unwrap();
+            commands
+                .entity(components.root)
+                .insert(ZOrder::NftDialog.default());
 
             nft_spawn.response.clone().send(Ok(()));
         } else if let LoadState::Failed(_) = asset_server.load_state(nft_spawn.h_nft.id()) {

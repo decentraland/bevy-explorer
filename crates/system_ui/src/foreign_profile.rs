@@ -3,7 +3,7 @@ use bevy::{prelude::*, render::render_resource::Extent3d};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     profile::SerializedProfile,
-    structs::{ActiveDialog, ShowProfileEvent, PROFILE_UI_RENDERLAYER},
+    structs::{ActiveDialog, ShowProfileEvent, ZOrder, PROFILE_UI_RENDERLAYER},
 };
 use comms::profile::{ProfileManager, UserProfile};
 use ethers_core::types::Address;
@@ -157,9 +157,11 @@ fn show_foreign_profiles(
                 )
                 .unwrap();
 
-            commands
-                .entity(components.root)
-                .insert((ProfileDialog(address), permit));
+            commands.entity(components.root).insert((
+                ProfileDialog(address),
+                permit,
+                ZOrder::ProfileView.default(),
+            ));
             false
         })
         .collect();

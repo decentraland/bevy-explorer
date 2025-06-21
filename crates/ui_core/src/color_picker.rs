@@ -2,6 +2,7 @@ use anyhow::anyhow;
 use bevy::{math::Vec3Swizzles, prelude::*, window::PrimaryWindow};
 use bevy_dui::{DuiRegistry, DuiTemplate};
 use bevy_egui::{egui, EguiContext};
+use common::structs::ZOrder;
 
 use crate::{
     ui_actions::{DataChanged, On},
@@ -73,7 +74,7 @@ fn update_color_picker_components(
                     ..Default::default()
                 },
                 bevy::ui::FocusPolicy::Block,
-                GlobalZIndex((1 << 18) + 5),
+                ZOrder::EguiBlocker.default(),
                 Blocker,
             ))
             .id()

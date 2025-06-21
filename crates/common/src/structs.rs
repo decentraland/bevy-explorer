@@ -827,3 +827,37 @@ pub type TextStyle = (TextFont, TextColor);
 pub struct AudioEmitter {
     pub instances: Vec<Handle<bevy_kira_audio::AudioInstance>>,
 }
+
+#[derive(Clone, Copy)]
+#[repr(i32)]
+pub enum ZOrder {
+    // PortableScene -> some value < -2
+    SceneUi = 0,
+    Crosshair,
+    MouseInteractionComponent,
+    SceneLoadingDialog,
+    ChatBubble,
+    NftDialog,
+    EmoteSelect,
+    ProfileView,
+    Login,
+    Minimap,
+    SystemSceneUi,
+    SystemUi,
+    ToolTip,
+    Backpack,
+    DiscoverPopup,
+    Toast,
+    Permission,
+    EguiBlocker,
+}
+
+impl ZOrder {
+    pub fn default(&self) -> GlobalZIndex {
+        GlobalZIndex((*self as i32, 0))
+    }
+
+    pub fn index(&self, index: i32) -> GlobalZIndex {
+        GlobalZIndex((*self as i32, index))
+    }
+}

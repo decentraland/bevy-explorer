@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps};
-use common::structs::PrimaryUser;
+use common::structs::{PrimaryUser, ZOrder};
 use scene_runner::{
     renderer_context::RendererSceneContext, update_world::gltf_container::GltfLoadingCount,
     ContainingScene, OutOfWorld,
@@ -78,19 +78,21 @@ fn set_oow(
             }
         }
         None => {
-            *dialog = Some(
-                commands
-                    .spawn_template(
-                        &dui,
-                        "out-of-world",
-                        DuiProps::new()
-                            .with_prop("title", title_text)
-                            .with_prop("load-state", state_text)
-                            .with_prop("cancel", ChangeRealmDialog::send_default_on::<Click>()),
-                    )
-                    .unwrap()
-                    .root,
-            );
+            let ent = commands
+                .spawn_template(
+                    &dui,
+                    "out-of-world",
+                    DuiProps::new()
+                        .with_prop("title", title_text)
+                        .with_prop("load-state", state_text)
+                        .with_prop("cancel", ChangeRealmDialog::send_default_on::<Click>()),
+                )
+                .unwrap()
+                .root;
+            commands
+                .entity(ent)
+                .insert(ZOrder::SceneLoadingDialog.default());
+            *dialog = Some(ent);
         }
     }
 }

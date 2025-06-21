@@ -5,7 +5,7 @@ use common::{
     rpc::RpcResultSender,
     structs::{
         ActiveDialog, AppConfig, PermissionTarget, PermissionValue, PrimaryPlayerRes, SettingsTab,
-        ShowSettingsEvent,
+        ShowSettingsEvent, ZOrder,
     },
 };
 use ipfs::CurrentRealm;
@@ -271,6 +271,7 @@ fn update_permissions(
                 hash: hash.to_owned(),
                 realm: req.realm.clone(),
             },
+            ZOrder::Permission.default(),
         ));
         displayed_dialogs.push((cancel_rx, popup.root, Some(req)));
         break;

@@ -12,7 +12,9 @@ use common::{
     profile::SerializedProfile,
     rpc::RpcResultSender,
     sets::SceneSets,
-    structs::{ActiveDialog, AppConfig, ChainLink, DialogPermit, PreviousLogin, SystemAudio},
+    structs::{
+        ActiveDialog, AppConfig, ChainLink, DialogPermit, PreviousLogin, SystemAudio, ZOrder,
+    },
     util::{TaskCompat, TaskExt},
 };
 use comms::profile::{get_remote_profile, CurrentUserProfile, UserProfile};
@@ -100,11 +102,13 @@ fn login(
                                         .with_prop("buttons", vec![DuiButton::new_enabled("Ok", close_ui_happy)]),
                                 )
                                 .unwrap();
-                            commands.entity(components.root).insert(permit);
+                            commands.entity(components.root).insert((permit, ZOrder::Login.default()));
                         }).pipe(close_ui_happy))]),
                 )
                 .unwrap();
-            commands.entity(components.root).insert(permit);
+            commands
+                .entity(components.root)
+                .insert((permit, ZOrder::Login.default()));
         } else {
             let components = commands
                 .spawn_template(
@@ -116,7 +120,9 @@ fn login(
                     ),
                 )
                 .unwrap();
-            commands.entity(components.root).insert(permit);
+            commands
+                .entity(components.root)
+                .insert((permit, ZOrder::Login.default()));
         }
         *motd_shown = true;
         return;
@@ -190,6 +196,9 @@ fn login(
                     )
                     .unwrap();
 
+                commands
+                    .entity(components.root)
+                    .insert(ZOrder::Login.default());
                 *dialog = Some(components.root);
             }
             Ok(Err(e)) => {
@@ -273,6 +282,9 @@ fn login(
                     )
                     .unwrap();
 
+                commands
+                    .entity(components.root)
+                    .insert(ZOrder::Login.default());
                 *dialog = Some(components.root);
             }
             LoginType::Guest => {
