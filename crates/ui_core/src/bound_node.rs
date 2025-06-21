@@ -1,4 +1,5 @@
 use bevy::{
+    asset::AssetEvents,
     platform::collections::HashMap,
     prelude::*,
     render::render_resource::{AsBindGroup, ShaderRef, ShaderType},
@@ -75,7 +76,9 @@ impl Plugin for BoundedNodePlugin {
             .add_systems(Startup, setup_templates)
             .add_systems(
                 PostUpdate,
-                update_bounded_nodes.after(TransformSystem::TransformPropagate),
+                update_bounded_nodes
+                    .after(TransformSystem::TransformPropagate)
+                    .before(AssetEvents),
             );
     }
 }
@@ -331,8 +334,8 @@ impl DuiTemplate for DuiBoundNode {
     ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
         let image = props.take_as::<Handle<Image>>(ctx, "bound-image")?;
         let color = props.take_as::<Color>(ctx, "color")?;
-        commands.insert(BoundedNode { image, color });
-        commands.remove::<BackgroundColor>().remove::<ImageNode>();
+        commands.insert((BoundedNode { image, color }, BackgroundColor::DEFAULT));
+        commands.remove::<ImageNode>();
         Ok(Default::default())
     }
 }
