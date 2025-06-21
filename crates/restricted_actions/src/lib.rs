@@ -13,7 +13,7 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
-use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
+use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::SerializedProfile,
     rpc::{
@@ -1051,8 +1051,9 @@ fn show_nft_dialog(
 
             let link = nft.permalink.clone();
 
-            let components = commands
-                .spawn_template(
+            commands
+                .spawn(ZOrder::NftDialog.default())
+                .apply_template(
                     &dui,
                     "nft-dialog",
                     DuiProps::new()
@@ -1074,15 +1075,13 @@ fn show_nft_dialog(
                         ),
                 )
                 .unwrap();
-            commands
-                .entity(components.root)
-                .insert(ZOrder::NftDialog.default());
 
             nft_spawn.response.clone().send(Ok(()));
         } else if let LoadState::Failed(_) = asset_server.load_state(nft_spawn.h_nft.id()) {
             commands.entity(ent).remove::<NftDialogSpawn>();
             commands
-                .spawn_template(
+                .spawn(ZOrder::NftDialog.default())
+                .apply_template(
                     &dui,
                     "text-dialog",
                     DuiProps::new()

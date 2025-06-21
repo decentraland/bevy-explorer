@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps};
+use bevy_dui::{DuiEntities, DuiEntityCommandsExt, DuiProps};
 use common::structs::{PrimaryUser, ZOrder};
 use scene_runner::{
     renderer_context::RendererSceneContext, update_world::gltf_container::GltfLoadingCount,
@@ -79,7 +79,8 @@ fn set_oow(
         }
         None => {
             let ent = commands
-                .spawn_template(
+                .spawn(ZOrder::SceneLoadingDialog.default())
+                .apply_template(
                     &dui,
                     "out-of-world",
                     DuiProps::new()
@@ -89,9 +90,6 @@ fn set_oow(
                 )
                 .unwrap()
                 .root;
-            commands
-                .entity(ent)
-                .insert(ZOrder::SceneLoadingDialog.default());
             *dialog = Some(ent);
         }
     }

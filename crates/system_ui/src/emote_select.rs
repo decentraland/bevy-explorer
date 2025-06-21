@@ -343,6 +343,7 @@ fn show_emote_ui(
 
         let buttons = commands
             .spawn((
+                ZOrder::EmoteSelect.default(),
                 EmoteDialog,
                 Focus,
                 Interaction::default(),
@@ -352,9 +353,6 @@ fn show_emote_ui(
             ))
             .apply_template(&dui, "choose-emote-base", props)
             .unwrap();
-        commands
-            .entity(buttons.root)
-            .insert(ZOrder::EmoteSelect.default());
 
         let output = buttons.named("output");
         commands.entity(output).insert((EmoteOutput, permit));

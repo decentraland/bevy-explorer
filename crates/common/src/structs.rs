@@ -846,7 +846,6 @@ pub enum ZOrder {
     SystemUi,
     ToolTip,
     Backpack,
-    DiscoverPopup,
     Toast,
     Permission,
     EguiBlocker,

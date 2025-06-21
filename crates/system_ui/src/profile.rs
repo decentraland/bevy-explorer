@@ -5,7 +5,7 @@ use avatar::{
     AvatarShape,
 };
 use bevy::prelude::*;
-use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
+use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::{AvatarColor, AvatarEmote, SerializedProfile},
     rpc::{RpcCall, RpcResultSender},
@@ -88,7 +88,8 @@ impl InfoDialog {
     pub fn click(title: String, body: String) -> On<Click> {
         On::<Click>::new(move |mut commands: Commands, dui: Res<DuiRegistry>| {
             commands
-                .spawn_template(
+                .spawn(ZOrder::Backpack.index(1))
+                .apply_template(
                     &dui,
                     "text-dialog",
                     DuiProps::new()
@@ -253,7 +254,8 @@ pub fn close_settings(
             };
 
         commands
-            .spawn_template(
+            .spawn(ZOrder::Backpack.index(1))
+            .apply_template(
                 &dui,
                 "text-dialog",
                 DuiProps::new()

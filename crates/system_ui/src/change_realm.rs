@@ -5,7 +5,7 @@ use bevy::{
 };
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
-    structs::SystemAudio,
+    structs::{SystemAudio, ZOrder},
     util::{TaskCompat, TaskExt},
 };
 use ipfs::{ChangeRealmEvent, CurrentRealm, IpfsAssetServer};
@@ -92,7 +92,7 @@ fn change_realm_dialog(
                 .map_err(|e| anyhow!(e))
         });
 
-    let mut root = commands.spawn_empty();
+    let mut root = commands.spawn(ZOrder::Backpack.index(1));
     let root_id = root.id();
 
     let components = dui

@@ -133,7 +133,7 @@ pub fn set_ui_background(
         }
 
         if let Ok(mut commands) = commands.get_entity(link.ui_entity) {
-            commands.remove::<BackgroundColor>();
+            commands.insert(BackgroundColor::DEFAULT);
         }
     }
 

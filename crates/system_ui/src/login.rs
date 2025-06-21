@@ -179,7 +179,8 @@ fn login(
                 }
 
                 let components = commands
-                    .spawn_template(
+                    .spawn(ZOrder::Login.default())
+                    .apply_template(
                         &dui,
                         "cancel-login",
                         DuiProps::new()
@@ -196,9 +197,6 @@ fn login(
                     )
                     .unwrap();
 
-                commands
-                    .entity(components.root)
-                    .insert(ZOrder::Login.default());
                 *dialog = Some(components.root);
             }
             Ok(Err(e)) => {
@@ -265,7 +263,8 @@ fn login(
                 *req_done = Some(rx);
 
                 let components = commands
-                    .spawn_template(
+                    .spawn(ZOrder::Login.default())
+                    .apply_template(
                         &dui,
                         "cancel-login",
                         DuiProps::new()
@@ -282,9 +281,6 @@ fn login(
                     )
                     .unwrap();
 
-                commands
-                    .entity(components.root)
-                    .insert(ZOrder::Login.default());
                 *dialog = Some(components.root);
             }
             LoginType::Guest => {
