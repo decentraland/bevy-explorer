@@ -687,7 +687,7 @@ pub fn spawn_discover_popup(
         .with_prop("jump-in", jump_in);
 
     commands
-        .spawn(ZOrder::Backpack.index(1))
+        .spawn(ZOrder::BackpackPopup.default())
         .apply_template(dui, "discover-popup", props)
         .unwrap();
 }

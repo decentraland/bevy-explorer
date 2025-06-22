@@ -735,12 +735,6 @@ fn layout_scene_ui(
     let removed_transforms = removed_transforms.read().collect::<Vec<_>>();
 
     for (scene_root, mut ui_data) in scene_uis.iter_mut() {
-        let z_order = if ui_data.super_user {
-            ZOrder::SystemSceneUi
-        } else {
-            ZOrder::SceneUi
-        };
-
         if !current_scenes.contains(&scene_root) {
             ui_data.relayout = true;
             continue;
@@ -1025,11 +1019,11 @@ fn layout_scene_ui(
                 if let Some(zindex) = ui_transform.zindex {
                     if zindex != 0 {
                         zindex_added = true;
-                        cmds.try_insert(z_order.index(zindex));
+                        cmds.try_insert(ZIndex(zindex));
                     }
                 }
                 if !zindex_added {
-                    cmds.remove::<GlobalZIndex>();
+                    cmds.remove::<ZIndex>();
                 }
             }
 

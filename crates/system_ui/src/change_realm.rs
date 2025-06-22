@@ -92,7 +92,7 @@ fn change_realm_dialog(
                 .map_err(|e| anyhow!(e))
         });
 
-    let mut root = commands.spawn(ZOrder::Backpack.index(1));
+    let mut root = commands.spawn(ZOrder::BackpackPopup.default());
     let root_id = root.id();
 
     let components = dui

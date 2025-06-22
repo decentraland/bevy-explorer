@@ -846,17 +846,14 @@ pub enum ZOrder {
     SystemUi,
     ToolTip,
     Backpack,
+    BackpackPopup,
     Toast,
     Permission,
     EguiBlocker,
 }
 
 impl ZOrder {
-    pub fn default(&self) -> GlobalZIndex {
-        GlobalZIndex((*self as i32, 0))
-    }
-
-    pub fn index(&self, index: i32) -> GlobalZIndex {
-        GlobalZIndex((*self as i32, index))
+    pub fn default(self) -> GlobalZIndex {
+        GlobalZIndex((0, self as i32))
     }
 }

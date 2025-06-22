@@ -88,7 +88,7 @@ impl InfoDialog {
     pub fn click(title: String, body: String) -> On<Click> {
         On::<Click>::new(move |mut commands: Commands, dui: Res<DuiRegistry>| {
             commands
-                .spawn(ZOrder::Backpack.index(1))
+                .spawn(ZOrder::BackpackPopup.default())
                 .apply_template(
                     &dui,
                     "text-dialog",
@@ -254,7 +254,7 @@ pub fn close_settings(
             };
 
         commands
-            .spawn(ZOrder::Backpack.index(1))
+            .spawn(ZOrder::BackpackPopup.default())
             .apply_template(
                 &dui,
                 "text-dialog",
