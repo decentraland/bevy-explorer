@@ -1021,8 +1021,16 @@ fn layout_scene_ui(
                     cmds.remove::<(BorderColor, BorderRadius)>();
                 }
 
-                let zindex = ui_transform.zindex.unwrap_or_default();
-                cmds.try_insert(z_order.index(zindex));
+                let mut zindex_added = false;
+                if let Some(zindex) = ui_transform.zindex {
+                    if zindex != 0 {
+                        zindex_added = true;
+                        cmds.try_insert(z_order.index(zindex));
+                    }
+                }
+                if !zindex_added {
+                    cmds.remove::<GlobalZIndex>();
+                }
             }
 
             // gather scroll events
