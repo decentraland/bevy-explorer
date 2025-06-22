@@ -5,11 +5,11 @@ use bevy::{
 };
 use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry, DuiTemplate};
 use bevy_egui::EguiContextSettings;
-use common::util::ModifyComponentExt;
+use common::util::{ModifyComponentExt, ModifyDefaultComponentExt};
 
 use crate::{
     dui_utils::PropsExt,
-    ui_actions::{Click, HoverEnter, HoverExit, On},
+    ui_actions::{Click, HoverEnter, HoverExit, On}, user_font, FontName, WeightName,
     /*    user_font, FontName, WeightName, */
 };
 
@@ -50,6 +50,9 @@ impl DuiTemplate for TextTemplate {
             } else {
                 LineBreak::NoWrap
             };
+        });
+        commands.default_and_modify_component(|font: &mut TextFont| {
+            font.font = user_font(FontName::Sans, WeightName::Regular);
         });
 
         Ok(Default::default())
