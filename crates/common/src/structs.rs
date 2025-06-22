@@ -834,6 +834,7 @@ pub enum ZOrder {
     // PortableScene -> some value < -2
     SceneUi = 0,
     Crosshair,
+    SystemSceneUi,
     MouseInteractionComponent,
     SceneLoadingDialog,
     ChatBubble,
@@ -842,7 +843,6 @@ pub enum ZOrder {
     ProfileView,
     Login,
     Minimap,
-    SystemSceneUi,
     SystemUi,
     ToolTip,
     Backpack,
