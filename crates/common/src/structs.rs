@@ -854,6 +854,6 @@ pub enum ZOrder {
 
 impl ZOrder {
     pub fn default(self) -> GlobalZIndex {
-        GlobalZIndex((0, self as i32))
+        GlobalZIndex(self as i32)
     }
 }
