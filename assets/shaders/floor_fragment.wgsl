@@ -34,7 +34,7 @@ fn fragment(in: VertexOut) -> FragmentOutput {
     #endif
     // we don't support MOTION_VECTOR or DEFERRED
     #ifdef UNCLIPPED_DEPTH_ORTHO_EMULATION
-        out.frag_depth = in.unclipped_depth;
+        out.frag_depth = in.position.z;
     #endif
 
 #else 
