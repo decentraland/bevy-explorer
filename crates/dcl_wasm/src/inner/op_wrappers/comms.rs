@@ -10,7 +10,7 @@ pub async fn op_comms_send_string(state: &WorkerContext, message: String) {
 pub async fn op_comms_send_binary_single(
     state: &WorkerContext,
     message: js_sys::ArrayBuffer,
-    recipient: String,
+    recipient: Option<String>,
 ) {
     let view = js_sys::Uint8Array::new(&message);
     dcl::js::comms::op_comms_send_binary_single(state.rc(), &view.to_vec(), recipient).await

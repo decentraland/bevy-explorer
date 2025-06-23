@@ -41,7 +41,7 @@ pub async fn op_comms_send_string(state: Rc<RefCell<impl State>>, message: Strin
 pub async fn op_comms_send_binary_single(
     state: Rc<RefCell<impl State>>,
     message: impl AsRef<[u8]>,
-    recipient: String,
+    recipient: Option<String>,
 ) {
     debug!("op_comms_send_binary_single");
     let mut state = state.borrow_mut();
@@ -51,7 +51,7 @@ pub async fn op_comms_send_binary_single(
     let mut data = vec![CommsMessageType::Binary as u8];
     data.extend(message.as_ref());
 
-    let recipient = recipient.as_h160();
+    let recipient = recipient.and_then(|r| r.as_h160());
 
     state
         .borrow_mut::<RpcCalls>()
