@@ -13,7 +13,8 @@ use common::{anim_last_system, util::ModifyComponentExt};
 use dcl::{crdt::lww::CrdtLWWState, interface::ComponentPosition};
 
 use crate::{
-    initialize_scene::process_scene_lifecycle, primary_entities::PrimaryEntities, DeletedSceneEntities, RendererSceneContext, SceneEntity, SceneLoopSchedule, TargetParent
+    initialize_scene::process_scene_lifecycle, primary_entities::PrimaryEntities,
+    DeletedSceneEntities, RendererSceneContext, SceneEntity, SceneLoopSchedule, TargetParent,
 };
 use common::sets::SceneLoopSets;
 use dcl_component::{
