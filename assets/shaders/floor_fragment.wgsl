@@ -33,8 +33,8 @@ fn fragment(in: VertexOut) -> FragmentOutput {
         out.normal = vec4<f32>(0.0, 1.0, 0.0, 0.0);
     #endif
     // we don't support MOTION_VECTOR or DEFERRED
-    #ifdef DEPTH_CLAMP_ORTHO
-        out.frag_depth = in.position.z;
+    #ifdef UNCLIPPED_DEPTH_ORTHO_EMULATION
+        out.frag_depth = in.unclipped_depth;
     #endif
 
 #else 
