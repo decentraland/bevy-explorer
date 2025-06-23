@@ -19,9 +19,7 @@ use common::{
     rpc::RpcCall,
     sets::SetupSets,
     structs::{
-        AppConfig, AvatarDynamicState, CursorLocks, GraphicsSettings, IVec2Arg, PrimaryCamera,
-        PrimaryCameraRes, PrimaryPlayerRes, SceneGlobalLight, SceneImposterBake, SceneLoadDistance,
-        SystemAudio, ToolTips,
+        AppConfig, AvatarDynamicState, CursorLocks, GraphicsSettings, IVec2Arg, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, SceneGlobalLight, SceneImposterBake, SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips
     },
     util::UtilsPlugin,
 };
@@ -213,7 +211,13 @@ fn main() {
         .add_event::<ScrollTargetEvent>()
         .init_resource::<PreviewMode>()
         .init_asset::<Nft>()
-        .init_resource::<CursorLocks>();
+        .init_resource::<CursorLocks>()
+        .insert_resource(TimeOfDay {
+            time: 10.0 * 3600.0,
+            target_time: None,
+            speed: 12.0,
+        });
+
 
     // requires local version of `bevy_mod_debugdump` due to once_cell version conflict.
     // probably resolved by updating deno. TODO: add feature flag for this after bumping deno
