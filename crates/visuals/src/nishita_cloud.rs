@@ -293,8 +293,8 @@ pub fn init_noise(size: usize) -> Image {
         .build(); // range[-0.5, 0.5]
     let data: Vec<_> = noise_pixels
         .into_iter()
-        .map(|pixel| (pixel * 65535.0).round() as i16)
-        .flat_map(i16::to_le_bytes)
+        .map(|pixel| pixel as f32)
+        .flat_map(f32::to_le_bytes)
         .collect();
     let mut image = Image::new(
         Extent3d {
@@ -304,7 +304,7 @@ pub fn init_noise(size: usize) -> Image {
         },
         TextureDimension::D2,
         data,
-        bevy::render::render_resource::TextureFormat::R16Snorm,
+        bevy::render::render_resource::TextureFormat::R32Float,
         RenderAssetUsages::all(),
     );
 

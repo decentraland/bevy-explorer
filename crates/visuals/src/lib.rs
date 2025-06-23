@@ -1,5 +1,4 @@
 pub mod env_downsample;
-#[cfg(not(target_arch = "wasm32"))]
 mod nishita_cloud;
 
 use bevy::{
@@ -12,16 +11,13 @@ use bevy::{
     },
 };
 
-#[cfg(not(target_arch = "wasm32"))]
 use bevy::render::RenderApp;
-#[cfg(not(target_arch = "wasm32"))]
 use bevy_atmosphere::{
     model::AddAtmosphereModel,
     pipeline::AtmosphereImageBindGroupLayout,
     prelude::{AtmosphereCamera, AtmosphereModel, AtmospherePlugin, AtmosphereSettings},
     system_param::AtmosphereMut,
 };
-#[cfg(not(target_arch = "wasm32"))]
 use nishita_cloud::{init_noise, NishitaCloud};
 
 use bevy_console::ConsoleCommand;
@@ -60,7 +56,6 @@ impl Plugin for VisualsPlugin {
             .add_systems(Update, update_dof)
             .add_systems(Startup, setup.in_set(SetupSets::Main));
 
-        #[cfg(not(target_arch = "wasm32"))]
         app.insert_resource(AtmosphereSettings {
             resolution: 1024,
             dithering: true,
@@ -89,7 +84,6 @@ impl Plugin for VisualsPlugin {
         app.add_console_command::<TimeOfDayConsoleCommand, _>(timeofday_console_command);
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     fn finish(&self, app: &mut App) {
         let render_app = app.sub_app_mut(RenderApp);
         render_app.init_resource::<AtmosphereImageBindGroupLayout>();
@@ -106,8 +100,8 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     camera: Res<PrimaryCameraRes>,
-    #[cfg(not(target_arch = "wasm32"))] mut atmosphere: AtmosphereMut<NishitaCloud>,
-    #[cfg(not(target_arch = "wasm32"))] mut images: ResMut<Assets<Image>>,
+    mut atmosphere: AtmosphereMut<NishitaCloud>,
+    mut images: ResMut<Assets<Image>>,
     // envmap: Res<Envmap>,
 ) {
     info!("visuals::setup");
@@ -133,7 +127,6 @@ fn setup(
         GROUND_RENDERLAYER.clone(),
     ));
 
-    #[cfg(not(target_arch = "wasm32"))]
     {
         commands.entity(camera.0).try_insert(AtmosphereCamera {
             render_layers: Some(RenderLayers::default()),
@@ -160,8 +153,8 @@ static TRANSITION_TIME: f32 = 1.0;
 fn apply_global_light(
     mut commands: Commands,
     setting: Res<AppConfig>,
-    #[cfg(not(target_arch = "wasm32"))] mut atmosphere: AtmosphereMut<NishitaCloud>,
-    #[cfg(not(target_arch = "wasm32"))] cloud: Res<CloudCover>,
+    mut atmosphere: AtmosphereMut<NishitaCloud>,
+    cloud: Res<CloudCover>,
     mut sun: Query<(
         Entity,
         &DirectionalLightLayer,
@@ -175,7 +168,7 @@ fn apply_global_light(
     scene_global_light: Res<SceneGlobalLight>,
     mut prev: Local<(f32, SceneGlobalLight)>,
     config: Res<AppConfig>,
-    #[cfg(not(target_arch = "wasm32"))] mut cloud_dt: Local<f32>,
+    mut cloud_dt: Local<f32>,
 ) {
     let next_light = if prev.0 >= TRANSITION_TIME && prev.1.source == scene_global_light.source {
         scene_global_light.clone()
@@ -208,30 +201,27 @@ fn apply_global_light(
     };
 
     let rotation = Quat::from_rotation_arc(Vec3::NEG_Z, next_light.dir_direction);
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        atmosphere.sun_position = -next_light.dir_direction;
-        atmosphere.rayleigh_coefficient =
-            Vec3::new(5.5e-6, 13.0e-6, 22.4e-6) * next_light.dir_color.to_srgba().to_vec3();
-        atmosphere.dir_light_intensity = next_light.dir_illuminance;
-        atmosphere.sun_color = next_light.dir_color.to_srgba().to_vec3();
-        atmosphere.tick += 1;
+    atmosphere.sun_position = -next_light.dir_direction;
+    atmosphere.rayleigh_coefficient =
+        Vec3::new(5.5e-6, 13.0e-6, 22.4e-6) * next_light.dir_color.to_srgba().to_vec3();
+    atmosphere.dir_light_intensity = next_light.dir_illuminance;
+    atmosphere.sun_color = next_light.dir_color.to_srgba().to_vec3();
+    atmosphere.tick += 1;
 
-        if atmosphere.cloudy != cloud.cover {
-            *cloud_dt = (*cloud_dt + time.delta_secs() * 20.0)
-                .min(80.0 * (atmosphere.cloudy - cloud.cover).abs())
-                .max(1.0);
-            atmosphere.cloudy += (cloud.cover - atmosphere.cloudy).clamp(
-                -time.delta_secs() * 0.005 * *cloud_dt,
-                time.delta_secs() * 0.005 * *cloud_dt,
-            );
-            // atmosphere.time += time.delta_secs() * 10.0;
-        } else {
-            *cloud_dt = f32::max(*cloud_dt - time.delta_secs(), cloud.speed);
-        }
-
-        atmosphere.time += time.delta_secs() * *cloud_dt;
+    if atmosphere.cloudy != cloud.cover {
+        *cloud_dt = (*cloud_dt + time.delta_secs() * 20.0)
+            .min(80.0 * (atmosphere.cloudy - cloud.cover).abs())
+            .max(1.0);
+        atmosphere.cloudy += (cloud.cover - atmosphere.cloudy).clamp(
+            -time.delta_secs() * 0.005 * *cloud_dt,
+            time.delta_secs() * 0.005 * *cloud_dt,
+        );
+        // atmosphere.time += time.delta_secs() * 10.0;
+    } else {
+        *cloud_dt = f32::max(*cloud_dt - time.delta_secs(), cloud.speed);
     }
+
+    atmosphere.time += time.delta_secs() * *cloud_dt;
 
     let mut directional_layers = RenderLayers::none();
     for (entity, layer, mut light_trans, mut directional) in sun.iter_mut() {
