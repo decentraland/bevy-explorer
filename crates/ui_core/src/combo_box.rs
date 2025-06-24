@@ -5,10 +5,10 @@ use bevy::{
     render::camera::RenderTarget,
     window::{PrimaryWindow, WindowRef},
 };
-use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry, DuiTemplate};
+use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry, DuiTemplate};
 use common::{
     sets::SceneSets,
-    structs::TextStyle,
+    structs::{TextStyle, ZOrder},
     util::{DespawnWith, ModifyComponentExt, TryPushChildrenEx},
 };
 
@@ -29,16 +29,18 @@ pub struct ComboBox {
     pub allow_null: bool,
     pub disabled: bool,
     pub style: Option<TextStyle>,
+    pub global_zindex: GlobalZIndex,
 }
 
 impl ComboBox {
-    pub fn new(
+    pub fn new_scene(
         empty_text: String,
         options: impl IntoIterator<Item = impl Into<String>>,
         allow_null: bool,
         disabled: bool,
         initial_selection: Option<isize>,
         style: Option<TextStyle>,
+        is_system_scene: bool,
     ) -> Self {
         Self {
             empty_text,
@@ -47,6 +49,11 @@ impl ComboBox {
             allow_null,
             disabled,
             style,
+            global_zindex: if is_system_scene {
+                ZOrder::SystemSceneUiOverlay.default()
+            } else {
+                ZOrder::SceneUiOverlay.default()
+            },
         }
     }
 
@@ -249,7 +256,8 @@ fn update_comboboxen(
                     };
 
                     let popup = commands
-                        .spawn_template(
+                        .spawn(cbox.global_zindex)
+                        .apply_template(
                             &dui,
                             "combo-popup",
                             DuiProps::new()
@@ -260,7 +268,7 @@ fn update_comboboxen(
                                 )
                                 .with_prop("width", format!("{}px", node.size().x))
                                 .with_prop("height", format!("{height}px"))
-                                .with_prop("background", background.to_srgba().to_hex()),
+                                .with_prop("background", background.to_srgba().to_hex())
                         )
                         .unwrap();
 
@@ -377,6 +385,7 @@ impl DuiTemplate for DuiComboBoxTemplate {
             allow_null: props.take_as::<bool>(ctx, "allow-null")?.unwrap_or(false),
             disabled: props.take_as::<bool>(ctx, "disabled")?.unwrap_or(false),
             style: None,
+            global_zindex: GlobalZIndex(props.take_as::<i32>(ctx, "global-z-index")?.unwrap_or(ZOrder::BackpackPopup as i32)),
         };
         commands.insert(combobox);
 

@@ -831,10 +831,13 @@ pub struct AudioEmitter {
 #[derive(Clone, Copy)]
 #[repr(i32)]
 pub enum ZOrder {
-    // PortableScene -> some value < -2
-    SceneUi = 0,
-    Crosshair,
+    Crosshair = -65536,
+    // PortableScene -> -65535 <= value <= -1
+    // default 0 => appear in world, under scene ui
+    SceneUi = 1,
+    SceneUiOverlay,
     SystemSceneUi,
+    SystemSceneUiOverlay,
     MouseInteractionComponent,
     SceneLoadingDialog,
     ChatBubble,
