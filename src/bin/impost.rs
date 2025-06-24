@@ -10,7 +10,8 @@ use dcl_deno::init_runtime;
 use imposters::{render::ImposterMissing, DclImposterPlugin};
 
 use bevy::{
-    core::TaskPoolThreadAssignmentPolicy, prelude::*, window::ExitCondition, winit::WinitSettings,
+    app::ScheduleRunnerPlugin, core::TaskPoolThreadAssignmentPolicy, prelude::*,
+    window::ExitCondition, winit::WinitPlugin,
 };
 
 use common::{
@@ -19,7 +20,9 @@ use common::{
     rpc::RpcCall,
     sets::SetupSets,
     structs::{
-        AppConfig, AvatarDynamicState, CursorLocks, GraphicsSettings, IVec2Arg, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, SceneGlobalLight, SceneImposterBake, SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips
+        AppConfig, AvatarDynamicState, CursorLocks, GraphicsSettings, IVec2Arg, PrimaryCamera,
+        PrimaryCameraRes, PrimaryPlayerRes, SceneGlobalLight, SceneImposterBake, SceneLoadDistance,
+        SystemAudio, TimeOfDay, ToolTips,
     },
     util::UtilsPlugin,
 };
@@ -106,10 +109,6 @@ fn main() {
     }
 
     let mut app = App::new();
-    app.insert_resource(WinitSettings {
-        focused_mode: bevy::winit::UpdateMode::Continuous,
-        unfocused_mode: bevy::winit::UpdateMode::Continuous,
-    });
     app.add_plugins(
         DefaultPlugins
             .set(TaskPoolPlugin {
@@ -137,6 +136,7 @@ fn main() {
                 exit_condition: ExitCondition::DontExit,
                 ..Default::default()
             })
+            .disable::<WinitPlugin>()
             .build()
             .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
                 preview: false,
@@ -146,6 +146,11 @@ fn main() {
                 num_slots: final_config.max_concurrent_remotes,
             }),
     );
+
+    app.add_plugins(ScheduleRunnerPlugin::run_loop(
+        // Run full speed
+        std::time::Duration::ZERO,
+    ));
 
     // Analytics
     app.insert_resource(SceneLoadDistance {
@@ -211,7 +216,6 @@ fn main() {
             target_time: None,
             speed: 12.0,
         });
-
 
     // requires local version of `bevy_mod_debugdump` due to once_cell version conflict.
     // probably resolved by updating deno. TODO: add feature flag for this after bumping deno
