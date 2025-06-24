@@ -1,6 +1,6 @@
 use bevy::prelude::*;
-use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps};
-use common::structs::PrimaryUser;
+use bevy_dui::{DuiEntities, DuiEntityCommandsExt, DuiProps};
+use common::structs::{PrimaryUser, ZOrder};
 use scene_runner::{
     renderer_context::RendererSceneContext, update_world::gltf_container::GltfLoadingCount,
     ContainingScene, OutOfWorld,
@@ -34,13 +34,13 @@ fn set_oow(
 ) {
     if wallet.address().is_none() || oow.is_empty() {
         if let Some(ent) = dialog.take() {
-            commands.entity(ent).despawn_recursive();
+            commands.entity(ent).despawn();
         }
         *last_count = 0;
         return;
     }
 
-    let Ok(player) = player.get_single() else {
+    let Ok(player) = player.single() else {
         return;
     };
 
@@ -68,29 +68,29 @@ fn set_oow(
                 .get_named("title")
                 .and_then(|c| text.get_mut(c).ok())
             {
-                title.sections[0].value = title_text;
+                title.0 = title_text;
             }
             if let Some(mut state) = components
                 .get_named("load-state")
                 .and_then(|c| text.get_mut(c).ok())
             {
-                state.sections[0].value = state_text;
+                state.0 = state_text;
             }
         }
         None => {
-            *dialog = Some(
-                commands
-                    .spawn_template(
-                        &dui,
-                        "out-of-world",
-                        DuiProps::new()
-                            .with_prop("title", title_text)
-                            .with_prop("load-state", state_text)
-                            .with_prop("cancel", ChangeRealmDialog::send_default_on::<Click>()),
-                    )
-                    .unwrap()
-                    .root,
-            );
+            let ent = commands
+                .spawn(ZOrder::SceneLoadingDialog.default())
+                .apply_template(
+                    &dui,
+                    "out-of-world",
+                    DuiProps::new()
+                        .with_prop("title", title_text)
+                        .with_prop("load-state", state_text)
+                        .with_prop("cancel", ChangeRealmDialog::send_default_on::<Click>()),
+                )
+                .unwrap()
+                .root;
+            *dialog = Some(ent);
         }
     }
 }

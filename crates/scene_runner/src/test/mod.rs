@@ -1,19 +1,19 @@
-use std::{path::PathBuf, sync::Mutex};
+use std::{path::PathBuf, sync::Mutex, time::Instant};
 
 use std::{collections::BTreeMap, fs::File, io::Write};
 
 use bevy::{
     app::{PluginGroupBuilder, ScheduleRunnerPlugin},
-    diagnostic::DiagnosticsPlugin,
+    diagnostic::{DiagnosticsPlugin, FrameCountPlugin},
     gizmos::GizmoPlugin,
     gltf::GltfPlugin,
     input::InputPlugin,
     log::LogPlugin,
+    platform::collections::HashMap,
     prelude::*,
     render::mesh::MeshPlugin,
     scene::ScenePlugin,
     time::TimePlugin,
-    utils::{HashMap, Instant},
 };
 use bevy_dui::DuiPlugin;
 use itertools::Itertools;
@@ -80,12 +80,10 @@ impl PluginGroup for TestPlugins {
 
         builder
             .add(TaskPoolPlugin::default())
-            .add(TypeRegistrationPlugin)
             .add(FrameCountPlugin)
             .add(TimePlugin)
             .add(ScheduleRunnerPlugin::default())
             .add(TransformPlugin)
-            .add(HierarchyPlugin)
             .add(DiagnosticsPlugin)
             .add(IpfsIoPlugin {
                 preview: false,
@@ -180,7 +178,8 @@ fn init_test_app(entity_json: &str) -> App {
     // startup system to create camera and fire load event
     app.add_systems(Startup, move |mut commands: Commands| {
         commands.spawn((
-            SpatialBundle::default(),
+            Transform::default(),
+            Visibility::default(),
             PrimaryUser::default(),
             PrimaryCamera::default(),
         ));
@@ -205,12 +204,12 @@ fn init_test_app(entity_json: &str) -> App {
     let mut q = app
         .world_mut()
         .query_filtered::<&RendererSceneContext, Without<SceneLoading>>();
-    while q.get_single(app.world_mut()).is_err() {
+    while q.single(app.world_mut()).is_err() {
         app.update();
-        // if let Ok(loading) = app.world.query::<&SceneLoading>().get_single(&mut app.world) {
+        // if let Ok(loading) = app.world.query::<&SceneLoading>().single(&mut app.world) {
         //     warn!("load state: {loading:?}");
         // }
-        // if let Ok(context) = app.world.query::<&RendererSceneContext>().get_single(&mut app.world) {
+        // if let Ok(context) = app.world.query::<&RendererSceneContext>().single(&mut app.world) {
         //     warn!("context tick: {:?} (blocked: {:?})", context.tick_number, context.blocked);
         // }
     }
@@ -263,7 +262,7 @@ fn make_graph(app: &mut App) -> String {
     let root = scene_query.iter(app.world()).next().unwrap();
 
     let mut scene_entity_query = app.world_mut().query::<(&SceneEntity, Option<&Children>)>();
-    let mut graph_nodes = HashMap::default();
+    let mut graph_nodes = HashMap::new();
     let mut graph = petgraph::Graph::<_, ()>::new();
     let mut to_check = vec![root];
 
@@ -283,7 +282,7 @@ fn make_graph(app: &mut App) -> String {
                 .iter()
                 .filter_map(|c| {
                     scene_entity_query
-                        .get(app.world(), *c)
+                        .get(app.world(), c)
                         .ok()
                         .map(|q| (q.0.id, c))
                 })
@@ -296,7 +295,7 @@ fn make_graph(app: &mut App) -> String {
                     ent, scene_entity.id, child_ent, child_id
                 );
                 let child_graph_node = *graph_nodes
-                    .entry(*child_ent)
+                    .entry(child_ent)
                     .or_insert_with(|| graph.add_node(child_id.to_string()));
                 graph.add_edge(graph_node, child_graph_node, ());
             }
@@ -456,7 +455,8 @@ fn cyclic_recovery() {
         let scene_entity = app
             .world_mut()
             .query_filtered::<Entity, With<RendererSceneContext>>()
-            .single(app.world_mut());
+            .single(app.world_mut())
+            .unwrap();
         app.world_mut()
             .entity_mut(scene_entity)
             .insert(CrdtStateComponent::<CrdtLWWState, DclTransformAndParent>::default());
@@ -470,7 +470,8 @@ fn cyclic_recovery() {
                     &mut RendererSceneContext,
                     &mut CrdtStateComponent<CrdtLWWState, DclTransformAndParent>,
                 )>()
-                .single_mut(app.world_mut());
+                .single_mut(app.world_mut())
+                .unwrap();
 
             // initialize the scene entity
             if scene_context.bevy_entity(*dcl_entity).is_none() {
@@ -501,7 +502,6 @@ fn cyclic_recovery() {
                 .add_systems(
                     (
                         process_scene_entity_lifecycle,
-                        apply_deferred,
                         process_transform_and_parent_updates,
                     )
                         .chain(),

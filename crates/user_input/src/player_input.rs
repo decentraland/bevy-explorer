@@ -24,7 +24,7 @@ pub(crate) fn update_user_velocity(
     time: Res<Time>,
 ) {
     let (Ok((player_transform, mut dynamic_state, user, maybe_modifiers)), Ok(camera_transform)) =
-        (player.get_single_mut(), camera.get_single())
+        (player.single_mut(), camera.single())
     else {
         return;
     };
@@ -41,7 +41,7 @@ pub(crate) fn update_user_velocity(
         && !user.block_jump
     {
         dynamic_state.velocity.y = (user.jump_height * -user.gravity * 2.0).sqrt();
-        dynamic_state.jump_time = time.elapsed_seconds();
+        dynamic_state.jump_time = time.elapsed_secs();
     }
 
     let axis_input = input.get_analog(MOVE_SET, InputPriority::Scene);
@@ -57,10 +57,10 @@ pub(crate) fn update_user_velocity(
     };
 
     if rotate {
-        *tankiness = (*tankiness + time.delta_seconds() / TRANSITION_TIME).min(1.0);
+        *tankiness = (*tankiness + time.delta_secs() / TRANSITION_TIME).min(1.0);
         dynamic_state.tank = true;
     } else {
-        *tankiness = (*tankiness - time.delta_seconds() / TRANSITION_TIME).max(0.0);
+        *tankiness = (*tankiness - time.delta_secs() / TRANSITION_TIME).max(0.0);
         dynamic_state.tank = false;
     }
 

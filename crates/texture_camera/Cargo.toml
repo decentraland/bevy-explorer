@@ -24,7 +24,6 @@ scene_material = { workspace = true }
 world_ui = { workspace = true }
 analytics = { workspace = true }
 system_bridge = { workspace = true }
-propagate = { workspace = true }
 platform = { workspace = true }
 
 bevy = { workspace = true }
@@ -46,4 +45,4 @@ urlencoding = { workspace = true }
 build-time = { workspace = true }
 futures-lite = { workspace = true }
 
-bevy_atmosphere = { git = "https://github.com/robtfm/bevy_atmosphere", branch = "0.14-dcl" }
+bevy_atmosphere = { git = "https://github.com/robtfm/bevy_atmosphere", branch = "0.16-2" }

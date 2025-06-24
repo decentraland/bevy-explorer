@@ -53,10 +53,10 @@ impl From<PbBillboard> for Billboard {
 
 pub(crate) fn update_billboards(
     global_transforms: Query<&GlobalTransform>,
-    mut q: Query<(&mut Transform, &GlobalTransform, &Billboard, &Parent)>,
+    mut q: Query<(&mut Transform, &GlobalTransform, &Billboard, &ChildOf)>,
     cam: Query<&GlobalTransform, With<PrimaryCamera>>,
 ) {
-    let Ok(cam_global_transform) = cam.get_single() else {
+    let Ok(cam_global_transform) = cam.single() else {
         // no camera, no billboard
         return;
     };
@@ -66,7 +66,7 @@ pub(crate) fn update_billboards(
 
     for (mut local_transform, global_transform, billboard, parent) in q.iter_mut() {
         // get reference frame
-        let frame = global_transforms.get(parent.get()).unwrap();
+        let frame = global_transforms.get(parent.parent()).unwrap();
 
         match billboard {
             Billboard::None => (),

@@ -1,6 +1,6 @@
 use bevy::{
-    prelude::*, transform::TransformSystem, ui::ManualCursorPosition, utils::HashMap,
-    window::PrimaryWindow,
+    platform::collections::HashMap, prelude::*, transform::TransformSystem,
+    ui::CameraCursorPosition, window::PrimaryWindow,
 };
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
 use common::{
@@ -42,16 +42,16 @@ pub trait SpawnScrollable {
         &mut self,
         bundle: impl Bundle,
         scrollable: Scrollable,
-        spawn_children: impl FnOnce(&mut ChildBuilder),
+        spawn_children: impl FnOnce(&mut ChildSpawnerCommands),
     );
 }
 
-impl SpawnScrollable for ChildBuilder<'_> {
+impl SpawnScrollable for ChildSpawnerCommands<'_> {
     fn spawn_scrollable(
         &mut self,
         bundle: impl Bundle,
         scrollable: Scrollable,
-        spawn_children: impl FnOnce(&mut ChildBuilder),
+        spawn_children: impl FnOnce(&mut ChildSpawnerCommands),
     ) {
         let panel_size = match scrollable.direction {
             ScrollDirection::Vertical(_) => (Val::Auto, Val::Px(100000.0)),
@@ -64,25 +64,17 @@ impl SpawnScrollable for ChildBuilder<'_> {
         self.spawn((bundle, scrollable))
             .with_children(|commands| {
                 commands
-                    .spawn(NodeBundle {
-                        style: Style {
-                            width: panel_size.0,
-                            height: panel_size.1,
-                            // TODO this should be set based on direction
-                            flex_direction: FlexDirection::Column,
-                            ..Default::default()
-                        },
+                    .spawn(Node {
+                        width: panel_size.0,
+                        height: panel_size.1,
+                        // TODO this should be set based on direction
+                        flex_direction: FlexDirection::Column,
                         ..Default::default()
                     })
                     .with_children(|commands| {
                         // TODO need one more layer for bidirectional scrolling
                         content = commands
-                            .spawn(NodeBundle {
-                                style: Style {
-                                    ..Default::default()
-                                },
-                                ..Default::default()
-                            })
+                            .spawn(Node::default())
                             .with_children(|commands| spawn_children(commands))
                             .id();
                         commands.spacer();
@@ -217,41 +209,38 @@ fn update_scrollables(
     mut commands: Commands,
     window: Query<&Window, With<PrimaryWindow>>,
     mut nodes: Query<
-        (&Node, &mut Style, Option<&Children>),
+        (&ComputedNode, &mut Node, Option<&Children>),
         (Without<Scrollable>, Without<ScrollBar>, Without<Slider>),
     >,
-    positions: Query<(&Node, &Transform, &Parent, &GlobalTransform)>,
+    positions: Query<(&ComputedNode, &Transform, &ChildOf, &GlobalTransform)>,
     mut scrollables: Query<(
         Entity,
         &mut Scrollable,
         &ScrollContent,
-        &Node,
+        &ComputedNode,
         &GlobalTransform,
         Ref<GlobalTransform>,
-        Ref<Node>,
+        Ref<ComputedNode>,
         &Interaction,
-        Option<&TargetCamera>,
+        Option<&UiTargetCamera>,
     )>,
     mut bars: Query<
         (
             Entity,
             &ScrollBar,
-            &mut Style,
+            &mut Node,
             &Interaction,
-            &Node,
+            &ComputedNode,
             &GlobalTransform,
-            Option<&TargetCamera>,
+            Option<&UiTargetCamera>,
         ),
         (Without<Scrollable>, Without<Slider>),
     >,
-    mut sliders: Query<
-        (Entity, &mut Slider, &mut Style),
-        (Without<Scrollable>, Without<ScrollBar>),
-    >,
+    mut sliders: Query<(Entity, &mut Slider, &mut Node), (Without<Scrollable>, Without<ScrollBar>)>,
     mut clicked_slider: Local<Option<Entity>>,
     mut clicked_scrollable: Local<Option<(Entity, Vec2)>>,
     mut events: EventReader<ScrollTargetEvent>,
-    cursors: Query<(Entity, &ManualCursorPosition)>,
+    cursors: Query<(Entity, &CameraCursorPosition)>,
     mut input_manager: InputManager,
 ) {
     #[derive(Copy, Clone, Debug)]
@@ -287,7 +276,7 @@ fn update_scrollables(
         InputPriority::Scroll,
     );
 
-    let Ok(window) = window.get_single() else {
+    let Ok(window) = window.single() else {
         return;
     };
 
@@ -297,7 +286,7 @@ fn update_scrollables(
         return;
     };
     let manual_cursor_positions: HashMap<_, _> = cursors.iter().collect();
-    let cursor_position = |camera: Option<&TargetCamera>| -> Option<Vec2> {
+    let cursor_position = |camera: Option<&UiTargetCamera>| -> Option<Vec2> {
         if let Some(camera) = camera {
             if let Some(position) = manual_cursor_positions.get(&camera.0) {
                 return position.0;
@@ -312,8 +301,8 @@ fn update_scrollables(
         *clicked_scrollable = None;
     }
 
-    let mut vertical_scrollers = HashMap::default();
-    let mut horizontal_scrollers = HashMap::default();
+    let mut vertical_scrollers = HashMap::new();
+    let mut horizontal_scrollers = HashMap::new();
 
     // gather scrollable components that need scrollbars
     for (
@@ -360,10 +349,10 @@ fn update_scrollables(
                         };
 
                         translation += transform.translation.xy();
-                        if parent.get() == scroll_content.0 {
+                        if parent.parent() == scroll_content.0 {
                             break;
                         }
-                        i = parent.get();
+                        i = parent.parent();
                     }
 
                     let overflow = (child_size - parent_size).max(Vec2::ONE);
@@ -489,7 +478,7 @@ fn update_scrollables(
         };
 
         let Some(info) = source.get_mut(&bar.parent) else {
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).despawn();
             continue;
         };
 
@@ -549,7 +538,7 @@ fn update_scrollables(
             &mut horizontal_scrollers
         };
         let Some(info) = source.get(&slider.parent) else {
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).despawn();
             continue;
         };
 
@@ -641,7 +630,7 @@ fn update_scrollables(
                         image: None,
                         color: Color::srgba(0.5, 0.5, 0.5, 0.2).into(),
                     },
-                    style: Style {
+                    style: Node {
                         display: if info.visible {
                             Display::Flex
                         } else {
@@ -654,7 +643,7 @@ fn update_scrollables(
                         height: bar_size.1,
                         ..Default::default()
                     },
-                    z_index: ZIndex::Local(1),
+                    z_index: ZIndex(1),
                     ..Default::default()
                 },
                 ScrollBar {
@@ -726,7 +715,7 @@ fn update_scrollables(
                         image: None,
                         color: Color::srgba(1.0, 1.0, 1.0, 0.2).into(),
                     },
-                    style: Style {
+                    style: Node {
                         display: if info.visible {
                             Display::Flex
                         } else {
@@ -739,7 +728,7 @@ fn update_scrollables(
                         height,
                         ..Default::default()
                     },
-                    z_index: ZIndex::Local(2),
+                    z_index: ZIndex(2),
                     ..Default::default()
                 },
                 Slider {
@@ -813,12 +802,7 @@ impl DuiTemplate for ScrollableTemplate {
         let mut results = Ok(Default::default());
         let content = props.take::<Entity>("content")?.unwrap_or_else(|| {
             let mut root_cmds = commands.commands();
-            let mut content_cmds = root_cmds.spawn(NodeBundle {
-                style: Style {
-                    ..Default::default()
-                },
-                ..Default::default()
-            });
+            let mut content_cmds = root_cmds.spawn(Node::default());
 
             results = ctx.apply_children(&mut content_cmds);
             content_cmds.id()
@@ -831,28 +815,22 @@ impl DuiTemplate for ScrollableTemplate {
         };
 
         commands
-            .insert(NodeBundle {
-                style: Style {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    min_width: Val::Percent(0.0),
-                    min_height: Val::Percent(0.0),
-                    max_width: Val::Percent(100.0),
-                    max_height: Val::Percent(100.0),
-                    overflow: Overflow::clip(),
-                    ..Default::default()
-                },
+            .insert(Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                min_width: Val::Percent(0.0),
+                min_height: Val::Percent(0.0),
+                max_width: Val::Percent(100.0),
+                max_height: Val::Percent(100.0),
+                overflow: Overflow::clip(),
                 ..Default::default()
             })
             .with_children(|c| {
-                c.spawn(NodeBundle {
-                    style: Style {
-                        width: panel_size.0,
-                        height: panel_size.1,
-                        // TODO this should be set based on direction
-                        flex_direction: FlexDirection::Column,
-                        ..Default::default()
-                    },
+                c.spawn(Node {
+                    width: panel_size.0,
+                    height: panel_size.1,
+                    // TODO this should be set based on direction
+                    flex_direction: FlexDirection::Column,
                     ..Default::default()
                 })
                 .try_push_children(&[content]);

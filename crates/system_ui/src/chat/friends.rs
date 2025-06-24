@@ -1,8 +1,8 @@
-use bevy::{prelude::*, utils::hashbrown::HashMap};
+use bevy::{platform::collections::HashMap, prelude::*};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     structs::{ShowProfileEvent, SystemAudio},
-    util::{format_address, FireEventEx, TryPushChildrenEx},
+    util::{format_address, TryPushChildrenEx},
 };
 use comms::profile::ProfileManager;
 use ethers_core::types::Address;
@@ -53,23 +53,17 @@ pub struct PendingProfileName(Address);
 pub fn update_profile_names(
     mut cache: ProfileManager,
     mut commands: Commands,
-    mut q: Query<(Entity, &PendingProfileName, &mut Text)>,
+    mut q: Query<(Entity, &PendingProfileName, &mut Text, &mut TextColor)>,
 ) {
-    for (ent, pending, mut text) in q.iter_mut() {
+    for (ent, pending, mut text, mut text_color) in q.iter_mut() {
         match cache.get_name(pending.0) {
             Err(_) => {
-                for section in &mut text.sections {
-                    section.style.color = Color::srgb(0.5, 0.0, 0.0);
-                }
+                text_color.0 = Color::srgb(0.5, 0.0, 0.0);
                 commands.entity(ent).remove::<PendingProfileName>();
             }
             Ok(Some(name)) => {
-                for section in &mut text.sections {
-                    section.style.color = Color::srgb(0.0, 0.0, 0.0);
-                    if section.value.starts_with("0x") {
-                        section.value = format_address(pending.0, Some(name));
-                    }
-                }
+                text.0 = format_address(pending.0, Some(name));
+                text_color.0 = Color::srgb(0.0, 0.0, 0.0);
                 commands.entity(ent).remove::<PendingProfileName>();
             }
             Ok(None) => (),
@@ -83,15 +77,15 @@ pub struct PendingProfileUiImage(pub Address);
 pub fn update_profile_images(
     mut commands: Commands,
     mut cache: ProfileManager,
-    mut q: Query<(Entity, &PendingProfileUiImage, &mut UiImage)>,
+    mut q: Query<(Entity, &PendingProfileUiImage, &mut ImageNode)>,
 ) {
     for (ent, pending, mut ui_image) in q.iter_mut() {
         match cache.get_image(pending.0) {
             Err(_) => {
-                commands.entity(ent).remove::<PendingProfileName>();
+                commands.entity(ent).remove::<PendingProfileUiImage>();
             }
             Ok(Some(image)) => {
-                ui_image.texture = image;
+                ui_image.image = image;
                 commands.entity(ent).remove::<PendingProfileUiImage>();
             }
             Ok(None) => (),
@@ -113,14 +107,14 @@ pub fn show_conversation(
     mut tab_manager: TabManager,
     tab: Query<Entity, With<ChatTab>>,
     mut profile_cache: ProfileManager,
-    mut container: Query<&mut Style, With<ChatboxContainer>>,
+    mut container: Query<&mut Node, With<ChatboxContainer>>,
     entry: Query<Entity, With<ChatInput>>,
 ) {
     if let Some(event) = show_events.read().last() {
         *pending_event = Some(event.0);
     }
 
-    let Ok(tab) = tab.get_single() else {
+    let Ok(tab) = tab.single() else {
         return;
     };
 
@@ -137,14 +131,14 @@ pub fn show_conversation(
     // we're going ahead after these checks, so clear the pending
     pending_event.take();
 
-    if let Ok(mut style) = container.get_single_mut() {
+    if let Ok(mut style) = container.single_mut() {
         if style.display == Display::None {
-            commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+            commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
             style.display = Display::Flex;
         };
     }
 
-    if let Ok(entry) = entry.get_single() {
+    if let Ok(entry) = entry.single() {
         commands.entity(entry).insert(Focus);
     }
 
@@ -174,7 +168,7 @@ pub fn show_conversation(
                           tab: Query<Entity, With<ChatTab>>,
                           buttons: Query<(Entity, &PrivateChat)>| {
                         // delete this tab
-                        let Ok(tab) = tab.get_single() else {
+                        let Ok(tab) = tab.single() else {
                             return;
                         };
 
@@ -248,7 +242,7 @@ pub fn update_friends(
     let is_init = client.0.as_ref().is_some_and(|c| c.is_initialized);
     if is_init != *init || friend_events.read().next().is_some() {
         *init = is_init;
-        let Ok(components) = components.get_single() else {
+        let Ok(components) = components.single() else {
             return;
         };
         if !is_init {
@@ -290,7 +284,7 @@ pub fn update_friends(
                 })
                 .collect::<Vec<_>>();
             let mut friends = commands.entity(components.named("friends"));
-            friends.despawn_descendants();
+            friends.despawn_related::<Children>();
             friends.try_push_children(&new_friends);
 
             let new_sent = client
@@ -317,7 +311,7 @@ pub fn update_friends(
                                         };
 
                                         let _ = client.cancel_request(friend);
-                                        commands.fire_event(FriendshipEvent(None));
+                                        commands.send_event(FriendshipEvent(None));
                                     }),
                                 ),
                         )
@@ -332,7 +326,7 @@ pub fn update_friends(
                 .collect::<Vec<_>>();
 
             let mut sent_pending = commands.entity(components.named("sent-friends"));
-            sent_pending.despawn_descendants();
+            sent_pending.despawn_related::<Children>();
             sent_pending.try_push_children(&new_sent);
 
             let new_recd = client
@@ -359,7 +353,7 @@ pub fn update_friends(
                                         };
 
                                         let _ = client.accept_request(friend);
-                                        commands.fire_event(FriendshipEvent(None));
+                                        commands.send_event(FriendshipEvent(None));
                                     }),
                                 )
                                 .with_prop(
@@ -371,7 +365,7 @@ pub fn update_friends(
                                         };
 
                                         let _ = client.reject_request(friend);
-                                        commands.fire_event(FriendshipEvent(None));
+                                        commands.send_event(FriendshipEvent(None));
                                     }),
                                 ),
                         )
@@ -386,7 +380,7 @@ pub fn update_friends(
                 .collect::<Vec<_>>();
 
             let mut recd_pending = commands.entity(components.named("received-friends"));
-            recd_pending.despawn_descendants();
+            recd_pending.despawn_related::<Children>();
             recd_pending.try_push_children(&new_recd);
         }
     }
@@ -404,7 +398,7 @@ pub fn update_conversations(
     mut new_chats_outbound: EventReader<PrivateChatEntered>,
     mut conversation: ConversationManager,
 ) {
-    let (Ok(tab), Ok(chatbox)) = (tab.get_single(), chatbox.get_single()) else {
+    let (Ok(tab), Ok(chatbox)) = (tab.single(), chatbox.single()) else {
         return;
     };
 
@@ -438,7 +432,7 @@ pub fn update_conversations(
         *last_chat = Some(private_chat.address);
 
         conversation.clear(chatbox);
-        text_entry.single_mut().enabled = true;
+        text_entry.single_mut().unwrap().enabled = true;
 
         if private_chat.wants_history_count == 0
             && !(private_chat.history_receiver.is_closed()
@@ -540,24 +534,22 @@ pub fn update_conversations(
 #[derive(Component)]
 pub struct BoldUnread(Address);
 
-pub fn bold_unread(mut q: Query<(&mut Text, Ref<BoldUnread>)>, client: Res<SocialClient>) {
-    let default = HashMap::default();
+pub fn bold_unread(mut q: Query<(&mut TextFont, Ref<BoldUnread>)>, client: Res<SocialClient>) {
+    let default = HashMap::new();
     let unread = client
         .0
         .as_ref()
         .map(|client| client.unread_messages())
         .unwrap_or(&default);
-    for (mut text, b) in q.iter_mut() {
+    for (mut font, b) in q.iter_mut() {
         let bold = unread.get(&b.0).copied().unwrap_or(0) > 0;
-        for section in &mut text.sections {
-            section.style.font = user_font(
-                FontName::Sans,
-                if bold {
-                    WeightName::Bold
-                } else {
-                    WeightName::Regular
-                },
-            );
-        }
+        font.font = user_font(
+            FontName::Sans,
+            if bold {
+                WeightName::Bold
+            } else {
+                WeightName::Regular
+            },
+        );
     }
 }

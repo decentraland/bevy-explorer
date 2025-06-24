@@ -3,7 +3,7 @@ use common::{
     inputs::SystemAction,
     sets::SetupSets,
     structs::{SystemAudio, ToolTips, TooltipSource},
-    util::{FireEventEx, TryPushChildrenEx},
+    util::TryPushChildrenEx,
 };
 use comms::{global_crdt::MicState, Transport, TransportType};
 use input_manager::{InputManager, InputPriority};
@@ -42,26 +42,23 @@ fn setup(mut commands: Commands, images: Res<MicImages>, ui_root: Res<SystemUiRo
     // profile button
     let mic_button = commands
         .spawn((
-            ImageBundle {
-                image: images.inactive.clone_weak().into(),
-                style: Style {
-                    position_type: PositionType::Absolute,
-                    top: Val::VMin(BUTTON_SCALE * 1.5),
-                    right: Val::VMin(BUTTON_SCALE * 0.5),
-                    width: Val::VMin(BUTTON_SCALE),
-                    height: Val::VMin(BUTTON_SCALE),
-                    ..Default::default()
-                },
-                focus_policy: bevy::ui::FocusPolicy::Block,
+            ImageNode::new(images.inactive.clone_weak()),
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::VMin(BUTTON_SCALE * 1.5),
+                right: Val::VMin(BUTTON_SCALE * 0.5),
+                width: Val::VMin(BUTTON_SCALE),
+                height: Val::VMin(BUTTON_SCALE),
                 ..Default::default()
             },
+            bevy::ui::FocusPolicy::Block,
             Interaction::default(),
             On::<Click>::new(|mut commands: Commands, mut mic_state: ResMut<MicState>| {
                 mic_state.enabled = !mic_state.enabled;
                 if mic_state.enabled {
-                    commands.fire_event(SystemAudio("sounds/ui/voice_chat_mic_on.wav".to_owned()));
+                    commands.send_event(SystemAudio("sounds/ui/voice_chat_mic_on.wav".to_owned()));
                 } else {
-                    commands.fire_event(SystemAudio("sounds/ui/voice_chat_mic_off.wav".to_owned()));
+                    commands.send_event(SystemAudio("sounds/ui/voice_chat_mic_off.wav".to_owned()));
                 }
             }),
             On::<HoverEnter>::new(
@@ -95,7 +92,7 @@ fn update_mic_ui(
     mut commands: Commands,
     mut mic_state: ResMut<MicState>,
     transport: Query<&Transport>,
-    mut button: Query<&mut UiImage, With<MicUiMarker>>,
+    mut button: Query<&mut ImageNode, With<MicUiMarker>>,
     mut pressed: Local<bool>,
     input_manager: InputManager,
     mic_images: Res<MicImages>,
@@ -108,12 +105,12 @@ fn update_mic_ui(
 
     if mic_available && transport_available {
         if mic_state.enabled {
-            *button.single_mut() = mic_images.on.clone_weak().into();
+            *button.single_mut().unwrap() = mic_images.on.clone_weak().into();
         } else {
-            *button.single_mut() = mic_images.off.clone_weak().into();
+            *button.single_mut().unwrap() = mic_images.off.clone_weak().into();
         }
     } else {
-        *button.single_mut() = mic_images.inactive.clone_weak().into();
+        *button.single_mut().unwrap() = mic_images.inactive.clone_weak().into();
     }
 
     if input_manager.is_down(SystemAction::Microphone, InputPriority::None) != *pressed {
@@ -124,9 +121,9 @@ fn update_mic_ui(
     let active = mic_available && mic_state.enabled && transport_available;
     if active != *prev_active {
         if active {
-            commands.fire_event(SystemAudio("sounds/ui/voice_chat_mic_on.wav".to_owned()));
+            commands.send_event(SystemAudio("sounds/ui/voice_chat_mic_on.wav".to_owned()));
         } else {
-            commands.fire_event(SystemAudio("sounds/ui/voice_chat_mic_off.wav".to_owned()));
+            commands.send_event(SystemAudio("sounds/ui/voice_chat_mic_off.wav".to_owned()));
         }
         *prev_active = active;
     }

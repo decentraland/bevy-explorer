@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_simple_text_input::{
-    TextInputBundle, TextInputPlaceholder, TextInputPlugin, TextInputSettings, TextInputSubmitEvent,
+    TextInput, TextInputPlaceholder, TextInputPlugin, TextInputSettings, TextInputSubmitEvent,
 };
 use common::util::{AsH160, TryPushChildrenEx};
 use social::{
@@ -64,68 +64,53 @@ fn setup(
         },
     );
 
-    commands.spawn(Camera3dBundle::default());
+    commands.spawn(Camera3d::default());
 
     commands
-        .spawn(NodeBundle {
-            style: Style {
+        .spawn(
+            Node {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
                 flex_direction: FlexDirection::Column,
                 justify_content: JustifyContent::SpaceBetween,
                 ..Default::default()
             },
-            ..Default::default()
-        })
-        .with_children(|c| {
+        )
+            .with_children(|c| {
             c.spawn((
-                NodeBundle {
-                    style: Style {
+                Node {
                         flex_grow: 1.0,
                         flex_direction: FlexDirection::Column,
                         ..Default::default()
                     },
-                    ..Default::default()
-                },
                 OutputMarker,
             ))
             .with_children(|c| {
-                c.spawn(TextBundle {
-                    text: Text::from_section(
-                        format!("address: {:#x}", wallet.address().unwrap()),
-                        TextStyle::default(),
-                    ),
-                    ..Default::default()
-                });
-                c.spawn(TextBundle {
-                    text: Text::from_section(
-                        "valid commands:\n- clear\nfriend management:\n- request <address> [...message]\n- cancel <address>\n- accept <address>\n- reject <address>\n- delete <address>\ninfo:\n- friends\n- received\n- sent\nconversation:\n- chat <address> <message>\n- history <address> [count]\n".to_owned(),
-                        TextStyle::default(),
-                    ),
-                    ..Default::default()
-                });
+                c.spawn(
+                    Text::new(
+                        format!("address: {:#x}", wallet.address().unwrap())),
+                    );
+                c.spawn(Text::new(
+                        "valid commands:\n- clear\nfriend management:\n- request <address> [...message]\n- cancel <address>\n- accept <address>\n- reject <address>\n- delete <address>\ninfo:\n- friends\n- received\n- sent\nconversation:\n- chat <address> <message>\n- history <address> [count]\n".to_owned())
+                    );
             });
             c.spawn((
-                NodeBundle {
-                    style: Style {
+                Node {
                         height: Val::Px(100.0),
                         ..Default::default()
                     },
-                    background_color: Color::srgba(0.0, 0.0, 1.0, 0.2).into(),
-                    ..Default::default()
-                },
-                TextInputBundle {
-                    settings: TextInputSettings {
+                    BackgroundColor(Color::srgba(0.0, 0.0, 1.0, 0.2)),
+                TextInput,
+                    TextInputSettings {
                         multiline: true,
                         retain_on_submit: false,
                         mask_character: None,
                     },
-                    placeholder: TextInputPlaceholder {
+                    TextInputPlaceholder {
                         value: "Type here ...".into(),
-                        text_style: None,
+                        text_font: None,
+                        text_color: None,
                     },
-                    ..Default::default()
-                },
             ));
         });
 }
@@ -140,27 +125,19 @@ fn update(
 ) {
     let client = client.0.as_mut().unwrap();
 
-    let (output, children) = q.single();
+    let (output, children) = q.single().unwrap();
 
     let mut reply = |msg: String| {
-        let text = Text::from_section(msg, TextStyle::default());
-        let text = c2
-            .spawn(TextBundle {
-                text,
-                ..Default::default()
-            })
-            .id();
+        let text = c2.spawn(Text::new(msg)).id();
         c2.entity(output).try_push_children(&[text]);
     };
 
     for ev in input.read() {
-        let text = Text::from_section(format!("> {}", ev.value), TextStyle::default());
         let text = commands
-            .spawn(TextBundle {
-                text,
-                background_color: Color::srgba(0.0, 0.0, 1.0, 0.2).into(),
-                ..Default::default()
-            })
+            .spawn((
+                Text::new(format!("> {}", ev.value)),
+                BackgroundColor(Color::srgba(0.0, 0.0, 1.0, 0.2)),
+            ))
             .id();
         commands.entity(output).try_push_children(&[text]);
 
@@ -306,7 +283,7 @@ fn update(
                 "clear" => {
                     if let Some(children) = children {
                         for child in children.iter().rev().skip(1) {
-                            commands.entity(*child).despawn_recursive();
+                            commands.entity(child).despawn();
                         }
                     }
                 }

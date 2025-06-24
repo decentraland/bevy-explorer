@@ -30,7 +30,7 @@ impl Tween {
         &self,
         time: f32,
         transform: &mut Transform,
-        maybe_h_mat: Option<&Handle<SceneMaterial>>,
+        maybe_h_mat: Option<&MeshMaterial3d<SceneMaterial>>,
         materials: &mut Assets<SceneMaterial>,
     ) {
         use simple_easing::*;
@@ -150,11 +150,11 @@ pub fn update_tween(
     mut tweens: Query<(
         Entity,
         &ContainerEntity,
-        &Parent,
+        &ChildOf,
         Ref<Tween>,
         &mut Transform,
         Option<&mut TweenState>,
-        Option<&Handle<SceneMaterial>>,
+        Option<&MeshMaterial3d<SceneMaterial>>,
     )>,
     mut scenes: Query<&mut RendererSceneContext>,
     parents: Query<&SceneEntity>,
@@ -164,7 +164,7 @@ pub fn update_tween(
     for (ent, scene_ent, parent, tween, mut transform, state, maybe_h_mat) in tweens.iter_mut() {
         let playing = tween.0.playing.unwrap_or(true);
         let delta = if playing {
-            time.delta_seconds() * 1000.0 / tween.0.duration
+            time.delta_secs() * 1000.0 / tween.0.duration
         } else {
             0.0
         };
@@ -212,7 +212,7 @@ pub fn update_tween(
 
             tween.apply(updated_time, &mut transform, maybe_h_mat, materials);
 
-            let Ok(parent) = parents.get(parent.get()) else {
+            let Ok(parent) = parents.get(parent.parent()) else {
                 warn!("no parent for tweened ent");
                 continue;
             };
@@ -258,12 +258,12 @@ pub fn update_system_tween(
                 debug!("system tween starting {} @ {:?}", tween.time, tween.target);
                 commands.entity(ent).try_insert(SystemTweenData {
                     start_pos: *transform,
-                    start_time: time.elapsed_seconds(),
+                    start_time: time.elapsed_secs(),
                 });
             }
         } else {
             let data = data.unwrap();
-            let elapsed = time.elapsed_seconds() - data.start_time;
+            let elapsed = time.elapsed_secs() - data.start_time;
             if elapsed >= tween.time {
                 debug!("system tween complete @ {:?}", tween.target);
                 *transform = tween.target;

@@ -49,28 +49,26 @@ impl AssetLoader for FloorImposterLoader {
     type Settings = f32;
     type Error = anyhow::Error;
 
-    fn load<'a>(
-        &'a self,
-        reader: &'a mut bevy::asset::io::Reader,
-        settings: &'a Self::Settings,
-        load_context: &'a mut bevy::asset::LoadContext,
-    ) -> impl bevy::utils::ConditionalSendFuture<Output = Result<Self::Asset, Self::Error>> {
-        Box::pin(async move {
-            let base = ImposterLoader
-                .load(
-                    reader,
-                    &ImposterLoaderSettings {
-                        multisample: true,
-                        alpha_blend: 0.5,
-                        ..Default::default()
-                    },
-                    load_context,
-                )
-                .await?;
-            Ok(FloorImposter {
-                base,
-                extension: FloorMaterialExt { offset: *settings },
-            })
+    async fn load(
+        &self,
+        reader: &mut dyn bevy::asset::io::Reader,
+        settings: &Self::Settings,
+        load_context: &mut bevy::asset::LoadContext<'_>,
+    ) -> Result<Self::Asset, Self::Error> {
+        let base = ImposterLoader
+            .load(
+                reader,
+                &ImposterLoaderSettings {
+                    multisample: true,
+                    alpha_blend: 0.5,
+                    ..Default::default()
+                },
+                load_context,
+            )
+            .await?;
+        Ok(FloorImposter {
+            base,
+            extension: FloorMaterialExt { offset: *settings },
         })
     }
 }

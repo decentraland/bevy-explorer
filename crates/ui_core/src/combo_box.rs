@@ -5,10 +5,11 @@ use bevy::{
     render::camera::RenderTarget,
     window::{PrimaryWindow, WindowRef},
 };
-use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry, DuiTemplate};
+use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry, DuiTemplate};
 use common::{
     sets::SceneSets,
-    util::{DespawnWith, FireEventEx, ModifyComponentExt, TryPushChildrenEx},
+    structs::{TextStyle, ZOrder},
+    util::{DespawnWith, ModifyComponentExt, TryPushChildrenEx},
 };
 
 use crate::{
@@ -28,16 +29,18 @@ pub struct ComboBox {
     pub allow_null: bool,
     pub disabled: bool,
     pub style: Option<TextStyle>,
+    pub global_zindex: GlobalZIndex,
 }
 
 impl ComboBox {
-    pub fn new(
+    pub fn new_scene(
         empty_text: String,
         options: impl IntoIterator<Item = impl Into<String>>,
         allow_null: bool,
         disabled: bool,
         initial_selection: Option<isize>,
         style: Option<TextStyle>,
+        is_system_scene: bool,
     ) -> Self {
         Self {
             empty_text,
@@ -46,6 +49,11 @@ impl ComboBox {
             allow_null,
             disabled,
             style,
+            global_zindex: if is_system_scene {
+                ZOrder::SystemSceneUiOverlay.default()
+            } else {
+                ZOrder::SceneUiOverlay.default()
+            },
         }
     }
 
@@ -72,7 +80,7 @@ fn setup(mut dui: ResMut<DuiRegistry>) {
 
 #[derive(SystemParam)]
 pub struct TargetCameraHelper<'w, 's> {
-    target_camera: Query<'w, 's, &'static TargetCamera>,
+    target_camera: Query<'w, 's, &'static UiTargetCamera>,
     cameras: Query<'w, 's, &'static Camera>,
     all_windows: Query<'w, 's, &'static Window>,
     primary_window: Query<'w, 's, &'static Window, With<PrimaryWindow>>,
@@ -80,7 +88,7 @@ pub struct TargetCameraHelper<'w, 's> {
 }
 
 pub struct TargetCameraProps {
-    pub target_camera: Option<TargetCamera>,
+    pub target_camera: Option<UiTargetCamera>,
     pub size: UVec2,
     pub scale_factor: f32,
 }
@@ -103,12 +111,12 @@ impl TargetCameraHelper<'_, '_> {
 
         let window = window_ref.and_then(|window_ref| match window_ref {
             WindowRef::Entity(w) => self.all_windows.get(w).ok(),
-            WindowRef::Primary => self.primary_window.get_single().ok(),
+            WindowRef::Primary => self.primary_window.single().ok(),
         });
 
         let scale_factor = window.map(Window::scale_factor).unwrap_or(1.0);
         let size = if let Some(h_image) = texture_ref {
-            self.images.get(h_image)?.size()
+            self.images.get(&h_image.handle)?.size()
         } else {
             window?.size().as_uvec2()
         };
@@ -136,7 +144,7 @@ fn update_comboboxen(
         if let Ok(children) = children.get(ent) {
             for child in children {
                 if marked.get(*child).is_ok() {
-                    commands.entity(*child).despawn_recursive();
+                    commands.entity(*child).despawn();
                 }
             }
         }
@@ -148,7 +156,7 @@ fn update_comboboxen(
         if let Some(children) = maybe_children {
             for child in children {
                 if marked.get(*child).is_ok() {
-                    commands.entity(*child).despawn_recursive();
+                    commands.entity(*child).despawn();
                 }
             }
         }
@@ -174,10 +182,11 @@ fn update_comboboxen(
             let style_copy = style.clone();
             commands
                 .entity(components.named("text"))
-                .modify_component(move |text: &mut Text| {
-                    for section in text.sections.iter_mut() {
-                        section.style = style_copy.clone();
-                    }
+                .modify_component(move |text_font: &mut TextFont| {
+                    *text_font = style_copy.0.clone();
+                })
+                .modify_component(move |text_color: &mut TextColor| {
+                    *text_color = style_copy.1;
                 });
         } else {
             commands
@@ -185,17 +194,18 @@ fn update_comboboxen(
                 .insert(FontSize(0.03 / 1.3));
         }
         let entity = components.root;
-        commands.entity(components.root).set_parent(ent).insert((
+        commands.entity(components.root).try_insert((
+            ChildOf(ent),
             ComboMarker,
             Interaction::default(),
             On::<Click>::new(move |mut commands: Commands| {
-                if let Some(mut commands) = commands.get_entity(entity) {
+                if let Ok(mut commands) = commands.get_entity(entity) {
                     commands.insert(Focus);
                 }
             }),
             On::<Focus>::new(
                 move |mut commands: Commands,
-                      combo: Query<(&ComboBox, &Node, &GlobalTransform)>,
+                      combo: Query<(&ComboBox, &ComputedNode, &GlobalTransform)>,
                       target_camera: TargetCameraHelper,
                       dui: Res<DuiRegistry>| {
                     let Ok((cbox, node, gt)) = combo.get(ent) else {
@@ -237,7 +247,7 @@ fn update_comboboxen(
                     // dbg!(node.size());
 
                     let text_lightness =
-                        Lcha::from(cbox.style.as_ref().map(|s| s.color).unwrap_or(Color::WHITE))
+                        Lcha::from(cbox.style.as_ref().map(|s| s.1 .0).unwrap_or(Color::WHITE))
                             .lightness;
                     let background = if text_lightness > 0.5 {
                         Color::BLACK.with_alpha(0.85)
@@ -246,7 +256,8 @@ fn update_comboboxen(
                     };
 
                     let popup = commands
-                        .spawn_template(
+                        .spawn(cbox.global_zindex)
+                        .apply_template(
                             &dui,
                             "combo-popup",
                             DuiProps::new()
@@ -268,25 +279,16 @@ fn update_comboboxen(
                         .enumerate()
                         .map(|(ix, option)| {
                             let mut cmds = commands.spawn((
-                                NodeBundle {
-                                    style: Style {
-                                        // width: Val::Percent(100.0),
-                                        // min_width: Val::Percent(100.0),
-                                        // flex_grow: 1.0,
-                                        // flex_shrink: 0.0,
-                                        ..Default::default()
-                                    },
-                                    ..Default::default()
-                                },
+                                Node::default(),
                                 Interaction::default(),
                                 Focus,
                                 On::<Defocus>::new(close_ui_silent),
                                 On::<Click>::new(move |mut commands: Commands| {
                                     debug!("selected {ix:?}");
-                                    if let Some(commands) = commands.get_entity(popup.root) {
-                                        commands.despawn_recursive();
+                                    if let Ok(mut commands) = commands.get_entity(popup.root) {
+                                        commands.despawn();
                                     }
-                                    let Some(mut commands) = commands.get_entity(ent) else {
+                                    let Ok(mut commands) = commands.get_entity(ent) else {
                                         warn!("no combo");
                                         return;
                                     };
@@ -318,20 +320,17 @@ fn update_comboboxen(
                             ));
 
                             cmds.with_children(|c| {
-                                let mut cmds = c.spawn((TextBundle {
-                                    text: Text::from_section(
-                                        option,
-                                        cbox.style.clone().unwrap_or_default(),
-                                    ),
-                                    style: Style {
+                                let mut cmds = c.spawn((
+                                    Text::new(option),
+                                    cbox.style.clone().unwrap_or_default(),
+                                    Node {
                                         width: Val::Percent(100.0),
                                         min_width: Val::Percent(100.0),
                                         flex_grow: 1.0,
                                         flex_shrink: 0.0,
                                         ..Default::default()
                                     },
-                                    ..Default::default()
-                                },));
+                                ));
 
                                 if cbox.style.is_none() {
                                     cmds.insert(FontSize(0.03 / 1.3));
@@ -352,7 +351,7 @@ fn update_comboboxen(
                         .try_push_children(contents.as_slice());
 
                     if let Some(target) = target {
-                        commands.fire_event(ScrollTargetEvent {
+                        commands.send_event(ScrollTargetEvent {
                             scrollable: popup.named("popup-scroll"),
                             position: crate::scrollable::ScrollTarget::Entity(target),
                         });
@@ -386,6 +385,11 @@ impl DuiTemplate for DuiComboBoxTemplate {
             allow_null: props.take_as::<bool>(ctx, "allow-null")?.unwrap_or(false),
             disabled: props.take_as::<bool>(ctx, "disabled")?.unwrap_or(false),
             style: None,
+            global_zindex: GlobalZIndex(
+                props
+                    .take_as::<i32>(ctx, "global-z-index")?
+                    .unwrap_or(ZOrder::DefaultComboPopup as i32),
+            ),
         };
         commands.insert(combobox);
 

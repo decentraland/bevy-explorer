@@ -6,10 +6,10 @@ pub mod wearables;
 use std::{marker::PhantomData, path::PathBuf};
 
 use bevy::{
-    core::FrameCount,
+    diagnostic::FrameCount,
     ecs::system::SystemParam,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
-    utils::{HashMap, HashSet},
 };
 
 use common::util::TaskExt;

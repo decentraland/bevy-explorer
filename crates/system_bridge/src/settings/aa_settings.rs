@@ -1,9 +1,6 @@
 use bevy::{
     core_pipeline::fxaa::{Fxaa, Sensitivity},
-    ecs::system::{
-        lifetimeless::{SRes, SResMut},
-        SystemParamItem,
-    },
+    ecs::system::{lifetimeless::SRes, SystemParamItem},
     prelude::*,
 };
 use common::structs::{AaSetting, AppConfig, PrimaryCameraRes};
@@ -36,7 +33,7 @@ impl EnumAppSetting for AaSetting {
 }
 
 impl AppSetting for AaSetting {
-    type Param = (SResMut<Msaa>, SRes<PrimaryCameraRes>);
+    type Param = SRes<PrimaryCameraRes>;
 
     fn title() -> String {
         "Anti-aliasing".to_owned()
@@ -67,15 +64,15 @@ impl AppSetting for AaSetting {
         config.graphics.msaa
     }
 
-    fn apply(&self, (mut msaa, cam_res): SystemParamItem<Self::Param>, mut commands: Commands) {
-        *msaa = match self {
+    fn apply(&self, cam_res: SystemParamItem<Self::Param>, mut commands: Commands) {
+        let msaa = match self {
             AaSetting::Off | AaSetting::FxaaLow | AaSetting::FxaaHigh => Msaa::Off,
             AaSetting::Msaa2x => Msaa::Sample2,
             AaSetting::Msaa4x => Msaa::Sample4,
             AaSetting::Msaa8x => Msaa::Sample8,
         };
 
-        commands.entity(cam_res.0).remove::<Fxaa>();
+        commands.entity(cam_res.0).remove::<Fxaa>().insert(msaa);
         if let Some(sensitivity) = match self {
             AaSetting::FxaaLow => Some(Sensitivity::Medium),
             AaSetting::FxaaHigh => Some(Sensitivity::Ultra),

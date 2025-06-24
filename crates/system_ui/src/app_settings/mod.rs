@@ -61,7 +61,7 @@ fn set_app_settings_content(
     }
 
     for (ent, tab) in q.iter() {
-        let Ok((settings_entity, maybe_settings)) = dialog.get_single() else {
+        let Ok((settings_entity, maybe_settings)) = dialog.single() else {
             return;
         };
 
@@ -84,7 +84,7 @@ fn set_app_settings_content(
             }
         };
 
-        commands.entity(ent).despawn_descendants();
+        commands.entity(ent).despawn_related::<Children>();
         let components = commands
             .entity(ent)
             .apply_template(&dui, "settings-tab", DuiProps::new())
@@ -176,12 +176,12 @@ fn bump_enum<S: EnumAppSetting, const I: isize>(
     params: StaticSystemParam<S::Param>,
     commands: Commands,
     caller: Res<UiCaller>,
-    parents: Query<(&Parent, Option<&DuiEntities>)>,
+    parents: Query<(&ChildOf, Option<&DuiEntities>)>,
     mut text: Query<&mut Text, Without<AppSettingDescription>>,
     mut description: Query<&mut Text, With<AppSettingDescription>>,
 ) {
     let mut variants = S::variants();
-    let (mut dialog, mut config) = q.single_mut();
+    let (mut dialog, mut config) = q.single_mut().unwrap();
     let config = &mut config.0;
     let current = S::load(config);
     let index = variants.iter().position(|v| v == &current).unwrap();
@@ -192,13 +192,12 @@ fn bump_enum<S: EnumAppSetting, const I: isize>(
 
     let (mut parent, mut entities) = parents.get(caller.0).unwrap();
     while entities.is_none_or(|e| e.get_named("setting-label").is_none()) {
-        (parent, entities) = parents.get(parent.get()).unwrap()
+        (parent, entities) = parents.get(parent.parent()).unwrap()
     }
     text.get_mut(entities.unwrap().named("setting-label"))
         .unwrap()
-        .sections[0]
-        .value = next.name();
-    description.single_mut().sections[0].value = next.description();
+        .0 = next.name();
+    description.single_mut().unwrap().0 = next.description();
     dialog.modified = true;
 }
 
@@ -207,11 +206,11 @@ fn bump_int<S: IntAppSetting, const I: i32>(
     params: StaticSystemParam<S::Param>,
     commands: Commands,
     caller: Res<UiCaller>,
-    parents: Query<(&Parent, Option<&DuiEntities>)>,
-    mut style: Query<&mut Style>,
+    parents: Query<(&ChildOf, Option<&DuiEntities>)>,
+    mut style: Query<&mut Node>,
     mut text: Query<&mut Text, Without<AppSettingDescription>>,
 ) {
-    let (mut dialog, mut config) = q.single_mut();
+    let (mut dialog, mut config) = q.single_mut().unwrap();
     let config = &mut config.0;
     let current = S::load(config).value();
     let next = S::from_int((current + I).clamp(S::min(), S::max()));
@@ -220,7 +219,7 @@ fn bump_int<S: IntAppSetting, const I: i32>(
 
     let (mut parent, mut entities) = parents.get(caller.0).unwrap();
     while entities.is_none_or(|e| e.get_named("marker").is_none()) {
-        (parent, entities) = parents.get(parent.get()).unwrap()
+        (parent, entities) = parents.get(parent.parent()).unwrap()
     }
     style
         .get_mut(entities.unwrap().named("marker"))
@@ -230,12 +229,11 @@ fn bump_int<S: IntAppSetting, const I: i32>(
 
     let (mut parent, mut entities) = parents.get(caller.0).unwrap();
     while entities.is_none_or(|e| e.get_named("setting-label").is_none()) {
-        (parent, entities) = parents.get(parent.get()).unwrap()
+        (parent, entities) = parents.get(parent.parent()).unwrap()
     }
     text.get_mut(entities.unwrap().named("setting-label"))
         .unwrap()
-        .sections[0]
-        .value = next.display();
+        .0 = next.display();
 
     dialog.modified = true;
 }
@@ -262,8 +260,8 @@ fn spawn_enum_setting_template<S: EnumAppSetting>(
         On::<HoverEnter>::new(
             |q: Query<&AppSettingsDetail>,
              mut description: Query<&mut Text, With<AppSettingDescription>>| {
-                let value = S::load(&q.single().0);
-                description.single_mut().sections[0].value = value.description();
+                let value = S::load(&q.single().unwrap().0);
+                description.single_mut().unwrap().0 = value.description();
             },
         ),
     ));
@@ -296,8 +294,8 @@ fn spawn_int_setting_template<S: IntAppSetting>(
         On::<HoverEnter>::new(
             |q: Query<&AppSettingsDetail>,
              mut description: Query<&mut Text, With<AppSettingDescription>>| {
-                let value = S::load(&q.single().0);
-                description.single_mut().sections[0].value = value.description();
+                let value = S::load(&q.single().unwrap().0);
+                description.single_mut().unwrap().0 = value.description();
             },
         ),
     ));
@@ -311,8 +309,8 @@ fn spawn_int_setting_template<S: IntAppSetting>(
              mut q: Query<(&mut SettingsDialog, &mut AppSettingsDetail)>,
              params: StaticSystemParam<S::Param>,
              commands: Commands,
-             parents: Query<(&Parent, Option<&DuiEntities>)>,
-             mut style: Query<&mut Style>,
+             parents: Query<(&ChildOf, Option<&DuiEntities>)>,
+             mut style: Query<&mut Node>,
              mut text: Query<&mut Text, Without<AppSettingDescription>>| {
                 let Some(pos) = cursor.get(caller.0).ok().and_then(|rcp| rcp.normalized) else {
                     return;
@@ -321,14 +319,14 @@ fn spawn_int_setting_template<S: IntAppSetting>(
                 let new = S::min() + ((S::max() - S::min()) as f32 * pos.x.clamp(0.0, 1.0)) as i32;
                 let next = S::from_int(new);
 
-                let (mut dialog, mut config) = q.single_mut();
+                let (mut dialog, mut config) = q.single_mut().unwrap();
                 let config = &mut config.0;
                 S::save(&next, config);
                 S::apply(&next, params.into_inner(), commands);
 
                 let (mut parent, mut entities) = parents.get(caller.0).unwrap();
                 while entities.is_none_or(|e| e.get_named("marker").is_none()) {
-                    (parent, entities) = parents.get(parent.get()).unwrap()
+                    (parent, entities) = parents.get(parent.parent()).unwrap()
                 }
                 style
                     .get_mut(entities.unwrap().named("marker"))
@@ -339,12 +337,11 @@ fn spawn_int_setting_template<S: IntAppSetting>(
 
                 let (mut parent, mut entities) = parents.get(caller.0).unwrap();
                 while entities.is_none_or(|e| e.get_named("setting-label").is_none()) {
-                    (parent, entities) = parents.get(parent.get()).unwrap()
+                    (parent, entities) = parents.get(parent.parent()).unwrap()
                 }
                 text.get_mut(entities.unwrap().named("setting-label"))
                     .unwrap()
-                    .sections[0]
-                    .value = next.display();
+                    .0 = next.display();
 
                 dialog.modified = true;
             },

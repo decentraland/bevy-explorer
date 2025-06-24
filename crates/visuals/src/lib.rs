@@ -1,9 +1,8 @@
 pub mod env_downsample;
-#[cfg(not(target_arch = "wasm32"))]
 mod nishita_cloud;
 
 use bevy::{
-    core_pipeline::dof::{DepthOfFieldMode, DepthOfFieldSettings},
+    core_pipeline::dof::{DepthOfField, DepthOfFieldMode},
     pbr::{wireframe::WireframePlugin, CascadeShadowConfigBuilder, DirectionalLightShadowMap},
     prelude::*,
     render::{
@@ -12,16 +11,13 @@ use bevy::{
     },
 };
 
-#[cfg(not(target_arch = "wasm32"))]
 use bevy::render::RenderApp;
-#[cfg(not(target_arch = "wasm32"))]
 use bevy_atmosphere::{
     model::AddAtmosphereModel,
     pipeline::AtmosphereImageBindGroupLayout,
     prelude::{AtmosphereCamera, AtmosphereModel, AtmospherePlugin, AtmosphereSettings},
     system_param::AtmosphereMut,
 };
-#[cfg(not(target_arch = "wasm32"))]
 use nishita_cloud::{init_noise, NishitaCloud};
 
 use bevy_console::ConsoleCommand;
@@ -53,17 +49,20 @@ impl Plugin for VisualsPlugin {
                 cover: 0.45,
                 speed: 10.0,
             })
-            .add_plugins(WireframePlugin)
+            .add_plugins(WireframePlugin::default())
             .add_systems(First, update_time_of_day.after(bevy::time::TimeSystem))
             .add_systems(Update, apply_global_light)
             .add_systems(Update, move_ground)
             .add_systems(Update, update_dof)
             .add_systems(Startup, setup.in_set(SetupSets::Main));
 
-        #[cfg(not(target_arch = "wasm32"))]
         app.insert_resource(AtmosphereSettings {
             resolution: 1024,
             dithering: true,
+            skybox_creation_mode:
+                bevy_atmosphere::settings::SkyboxCreationMode::FromProjectionFarWithFallback(
+                    99999.0,
+                ),
         })
         .insert_resource(AtmosphereModel::new(NishitaCloud::default()))
         .add_plugins(AtmospherePlugin);
@@ -85,7 +84,6 @@ impl Plugin for VisualsPlugin {
         app.add_console_command::<TimeOfDayConsoleCommand, _>(timeofday_console_command);
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     fn finish(&self, app: &mut App) {
         let render_app = app.sub_app_mut(RenderApp);
         render_app.init_resource::<AtmosphereImageBindGroupLayout>();
@@ -102,13 +100,13 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     camera: Res<PrimaryCameraRes>,
-    #[cfg(not(target_arch = "wasm32"))] mut atmosphere: AtmosphereMut<NishitaCloud>,
-    #[cfg(not(target_arch = "wasm32"))] mut images: ResMut<Assets<Image>>,
+    mut atmosphere: AtmosphereMut<NishitaCloud>,
+    mut images: ResMut<Assets<Image>>,
     // envmap: Res<Envmap>,
 ) {
     info!("visuals::setup");
 
-    commands.entity(camera.0).try_insert(FogSettings {
+    commands.entity(camera.0).try_insert(DistanceFog {
         color: Color::srgb(0.3, 0.2, 0.1),
         directional_light_color: Color::srgb(1.0, 1.0, 0.7),
         directional_light_exponent: 10.0,
@@ -116,23 +114,19 @@ fn setup(
     });
 
     commands.spawn((
-        PbrBundle {
-            mesh: meshes.add(Plane3d::default().mesh().size(50000.0, 50000.0)),
-            material: materials.add(StandardMaterial {
-                base_color: Color::srgb(0.3, 0.45, 0.2),
-                perceptual_roughness: 1.0,
-                metallic: 0.0,
-                depth_bias: -100.0,
-                fog_enabled: false,
-                ..Default::default()
-            }),
+        Mesh3d(meshes.add(Plane3d::default().mesh().size(50000.0, 50000.0))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::srgb(0.3, 0.45, 0.2),
+            perceptual_roughness: 1.0,
+            metallic: 0.0,
+            depth_bias: -100.0,
+            fog_enabled: false,
             ..Default::default()
-        },
+        })),
         Ground,
         GROUND_RENDERLAYER.clone(),
     ));
 
-    #[cfg(not(target_arch = "wasm32"))]
     {
         commands.entity(camera.0).try_insert(AtmosphereCamera {
             render_layers: Some(RenderLayers::default()),
@@ -159,8 +153,8 @@ static TRANSITION_TIME: f32 = 1.0;
 fn apply_global_light(
     mut commands: Commands,
     setting: Res<AppConfig>,
-    #[cfg(not(target_arch = "wasm32"))] mut atmosphere: AtmosphereMut<NishitaCloud>,
-    #[cfg(not(target_arch = "wasm32"))] cloud: Res<CloudCover>,
+    mut atmosphere: AtmosphereMut<NishitaCloud>,
+    cloud: Res<CloudCover>,
     mut sun: Query<(
         Entity,
         &DirectionalLightLayer,
@@ -169,21 +163,21 @@ fn apply_global_light(
     )>,
     mut ambient: ResMut<AmbientLight>,
     time: Res<Time>,
-    mut cameras: Query<(Option<&PrimaryCamera>, Option<&mut FogSettings>), With<Camera3d>>,
+    mut cameras: Query<(Option<&PrimaryCamera>, Option<&mut DistanceFog>), With<Camera3d>>,
     scene_distance: Res<SceneLoadDistance>,
     scene_global_light: Res<SceneGlobalLight>,
     mut prev: Local<(f32, SceneGlobalLight)>,
     config: Res<AppConfig>,
-    #[cfg(not(target_arch = "wasm32"))] mut cloud_dt: Local<f32>,
+    mut cloud_dt: Local<f32>,
 ) {
     let next_light = if prev.0 >= TRANSITION_TIME && prev.1.source == scene_global_light.source {
         scene_global_light.clone()
     } else {
         // transition part way
         let new_amount = if prev.1.source == scene_global_light.source {
-            (time.delta_seconds() / (TRANSITION_TIME - prev.0)).clamp(0.0, 1.0)
+            (time.delta_secs() / (TRANSITION_TIME - prev.0)).clamp(0.0, 1.0)
         } else {
-            time.delta_seconds() / TRANSITION_TIME
+            time.delta_secs() / TRANSITION_TIME
         };
         let old_amount = 1.0 - new_amount;
         SceneGlobalLight {
@@ -207,35 +201,32 @@ fn apply_global_light(
     };
 
     let rotation = Quat::from_rotation_arc(Vec3::NEG_Z, next_light.dir_direction);
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        atmosphere.sun_position = -next_light.dir_direction;
-        atmosphere.rayleigh_coefficient =
-            Vec3::new(5.5e-6, 13.0e-6, 22.4e-6) * next_light.dir_color.to_srgba().to_vec3();
-        atmosphere.dir_light_intensity = next_light.dir_illuminance;
-        atmosphere.sun_color = next_light.dir_color.to_srgba().to_vec3();
-        atmosphere.tick += 1;
+    atmosphere.sun_position = -next_light.dir_direction;
+    atmosphere.rayleigh_coefficient =
+        Vec3::new(5.5e-6, 13.0e-6, 22.4e-6) * next_light.dir_color.to_srgba().to_vec3();
+    atmosphere.dir_light_intensity = next_light.dir_illuminance;
+    atmosphere.sun_color = next_light.dir_color.to_srgba().to_vec3();
+    atmosphere.tick += 1;
 
-        if atmosphere.cloudy != cloud.cover {
-            *cloud_dt = (*cloud_dt + time.delta_seconds() * 20.0)
-                .min(80.0 * (atmosphere.cloudy - cloud.cover).abs())
-                .max(1.0);
-            atmosphere.cloudy += (cloud.cover - atmosphere.cloudy).clamp(
-                -time.delta_seconds() * 0.005 * *cloud_dt,
-                time.delta_seconds() * 0.005 * *cloud_dt,
-            );
-            // atmosphere.time += time.delta_seconds() * 10.0;
-        } else {
-            *cloud_dt = f32::max(*cloud_dt - time.delta_seconds(), cloud.speed);
-        }
-
-        atmosphere.time += time.delta_seconds() * *cloud_dt;
+    if atmosphere.cloudy != cloud.cover {
+        *cloud_dt = (*cloud_dt + time.delta_secs() * 20.0)
+            .min(80.0 * (atmosphere.cloudy - cloud.cover).abs())
+            .max(1.0);
+        atmosphere.cloudy += (cloud.cover - atmosphere.cloudy).clamp(
+            -time.delta_secs() * 0.005 * *cloud_dt,
+            time.delta_secs() * 0.005 * *cloud_dt,
+        );
+        // atmosphere.time += time.delta_secs() * 10.0;
+    } else {
+        *cloud_dt = f32::max(*cloud_dt - time.delta_secs(), cloud.speed);
     }
+
+    atmosphere.time += time.delta_secs() * *cloud_dt;
 
     let mut directional_layers = RenderLayers::none();
     for (entity, layer, mut light_trans, mut directional) in sun.iter_mut() {
         if !next_light.layers.intersects(&RenderLayers::layer(layer.0)) {
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).despawn();
             continue;
         }
 
@@ -282,17 +273,14 @@ fn apply_global_light(
         };
 
         commands.spawn((
-            DirectionalLightBundle {
-                directional_light: DirectionalLight {
-                    color: next_light.dir_color,
-                    illuminance: next_light.dir_illuminance,
-                    shadows_enabled,
-                    ..Default::default()
-                },
-                transform: Transform::default().with_rotation(rotation),
-                cascade_shadow_config,
+            DirectionalLight {
+                color: next_light.dir_color,
+                illuminance: next_light.dir_illuminance,
+                shadows_enabled,
                 ..Default::default()
             },
+            Transform::default().with_rotation(rotation),
+            cascade_shadow_config,
             layer,
             DirectionalLightLayer(new_layer),
         ));
@@ -338,9 +326,9 @@ fn apply_global_light(
     ambient.color = next_light.ambient_color;
 
     if prev.1.source == scene_global_light.source {
-        prev.0 += time.delta_seconds()
+        prev.0 += time.delta_secs()
     } else {
-        prev.0 = time.delta_seconds()
+        prev.0 = time.delta_secs()
     };
     prev.1 = next_light;
 }
@@ -352,11 +340,11 @@ fn move_ground(
     mut ground: Query<&mut Transform, With<Ground>>,
     cam: Query<&GlobalTransform, With<PrimaryUser>>,
 ) {
-    let Ok(mut transform) = ground.get_single_mut() else {
+    let Ok(mut transform) = ground.single_mut() else {
         return;
     };
 
-    let Ok(target) = cam.get_single() else {
+    let Ok(target) = cam.single() else {
         return;
     };
 
@@ -370,7 +358,7 @@ fn update_time_of_day(time: Res<Time>, mut tod: ResMut<TimeOfDay>, mut t_delta: 
         let seconds_to_travel = (seconds_diff + 12.0 * 3600.0) % (24.0 * 3600.0) - (12.0 * 3600.0);
         let unwrapped_target = initial_time + seconds_to_travel;
 
-        tod.time += *t_delta * time.delta_seconds();
+        tod.time += *t_delta * time.delta_secs();
 
         const ACCEL: f32 = 4.0 * 3600.0;
 
@@ -378,10 +366,10 @@ fn update_time_of_day(time: Res<Time>, mut tod: ResMut<TimeOfDay>, mut t_delta: 
         if (tod.time + total_change_min - unwrapped_target).signum()
             == (tod.time - unwrapped_target).signum()
         {
-            *t_delta += time.delta_seconds() * ACCEL * seconds_to_travel.signum();
+            *t_delta += time.delta_secs() * ACCEL * seconds_to_travel.signum();
         } else {
             // we overshoot at this speed, start slowing down
-            *t_delta -= time.delta_seconds() * ACCEL * seconds_to_travel.signum();
+            *t_delta -= time.delta_secs() * ACCEL * seconds_to_travel.signum();
         }
 
         if (initial_time - target).signum() != (tod.time - target).signum() {
@@ -393,7 +381,7 @@ fn update_time_of_day(time: Res<Time>, mut tod: ResMut<TimeOfDay>, mut t_delta: 
         debug!("time: {initial_time}, target: {:?}, secs_to_travel: {seconds_to_travel}, t_delta: {}, final: {}", target, *t_delta, tod.time);
     } else {
         let speed = tod.speed;
-        tod.time += time.delta_seconds() * speed;
+        tod.time += time.delta_secs() * speed;
         tod.time %= 3600.0 * 24.0;
         if tod.time < 0.0 {
             tod.time += 3600.0 * 24.0;
@@ -469,14 +457,14 @@ struct DofConsoleCommand {
 
 fn dof_console_command(
     mut input: ConsoleCommand<DofConsoleCommand>,
-    mut cam: Query<(&mut DepthOfFieldSettings, &mut DofConfig)>,
+    mut cam: Query<(&mut DepthOfField, &mut DofConfig)>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        let Ok((mut dof, mut mydof)) = cam.get_single_mut() else {
+        let Ok((mut dof, mut mydof)) = cam.single_mut() else {
             return;
         };
 
-        *dof = DepthOfFieldSettings {
+        *dof = DepthOfField {
             mode: if command.mode == 0 {
                 DepthOfFieldMode::Gaussian
             } else {
@@ -494,11 +482,10 @@ fn dof_console_command(
 }
 
 fn update_dof(
-    mut cam: Query<(&Transform, &DofConfig, &mut DepthOfFieldSettings), With<PrimaryCamera>>,
+    mut cam: Query<(&Transform, &DofConfig, &mut DepthOfField), With<PrimaryCamera>>,
     player: Query<&Transform, With<PrimaryUser>>,
 ) {
-    let (Ok((cam, mydof, mut dof)), Ok(player)) = (cam.get_single_mut(), player.get_single())
-    else {
+    let (Ok((cam, mydof, mut dof)), Ok(player)) = (cam.single_mut(), player.single()) else {
         return;
     };
 
@@ -573,7 +560,7 @@ fn timeofday_console_command(
             (target as u32 / 3600),
             target as u32 % 3600 / 60,
             time.speed,
-            time.elapsed_seconds()
+            time.elapsed_secs()
         ));
     }
 }

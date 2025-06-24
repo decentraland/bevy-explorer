@@ -1,6 +1,7 @@
 use bevy::{
-    core::FrameCount,
+    diagnostic::FrameCount,
     pbr::{ExtendedMaterial, MaterialExtension, NotShadowCaster},
+    platform::collections::HashMap,
     prelude::*,
     render::{
         camera::RenderTarget,
@@ -14,7 +15,6 @@ use bevy::{
     },
     transform::TransformSystem,
     ui::UiSystem,
-    utils::HashMap,
 };
 use boimp::bake::{
     ImposterBakeMaterialExtension, ImposterBakeMaterialPlugin, STANDARD_BAKE_HANDLE,
@@ -39,6 +39,9 @@ impl Plugin for WorldUiPlugin {
         );
     }
 }
+
+#[derive(Component)]
+pub struct WorldUiRenderTarget(Handle<Image>);
 
 #[derive(Component)]
 pub struct WorldUi {
@@ -77,15 +80,13 @@ pub fn spawn_world_ui_view(
 
     let camera = commands
         .spawn((
-            image.clone(),
-            Camera2dBundle {
-                camera: Camera {
-                    target: RenderTarget::Image(image.clone()),
-                    order: -1,
-                    is_active: true,
-                    clear_color: bevy::render::camera::ClearColorConfig::Custom(Color::NONE),
-                    ..Default::default()
-                },
+            WorldUiRenderTarget(image.clone()),
+            Camera2d,
+            Camera {
+                target: RenderTarget::Image(image.clone().into()),
+                order: -1,
+                is_active: true,
+                clear_color: bevy::render::camera::ClearColorConfig::Custom(Color::NONE),
                 ..Default::default()
             },
         ))
@@ -105,8 +106,8 @@ pub fn add_worldui_materials(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<TextShapeMaterial>>,
     config: Res<AppConfig>,
-    targets: Query<&Handle<Image>>,
-    mats: Query<&Handle<TextShapeMaterial>>,
+    targets: Query<&WorldUiRenderTarget>,
+    mats: Query<&MeshMaterial3d<TextShapeMaterial>>,
     frame: Res<FrameCount>,
 ) {
     for (ent, wui, maybe_children) in q.iter() {
@@ -131,7 +132,7 @@ pub fn add_worldui_materials(
             base: SceneMaterial {
                 base: StandardMaterial {
                     base_color: Color::srgb(2.0, 2.0, 2.0),
-                    base_color_texture: Some(target.clone()),
+                    base_color_texture: Some(target.0.clone()),
                     unlit: true,
                     alpha_mode: wui.blend_mode,
                     ..Default::default()
@@ -145,15 +146,12 @@ pub fn add_worldui_materials(
 
         commands
             .entity(wui.ui_node)
-            .try_insert(WorldUiMaterialRef(material.id(), target.id()));
+            .try_insert(WorldUiMaterialRef(material.id(), target.0.id()));
 
         let quad = commands
             .spawn((
-                MaterialMeshBundle {
-                    mesh: meshes.add(bevy::math::primitives::Rectangle::default().mesh()),
-                    material,
-                    ..Default::default()
-                },
+                Mesh3d(meshes.add(bevy::math::primitives::Rectangle::default().mesh())),
+                MeshMaterial3d(material),
                 NotShadowCaster,
                 NoFrustumCulling, // TODO calculate aabb based on font size (and update when it changes)
             ))
@@ -163,7 +161,7 @@ pub fn add_worldui_materials(
         if let Some(children) = maybe_children {
             for &child in children {
                 if mats.get(child).is_ok() {
-                    commands.entity(child).despawn_recursive();
+                    commands.entity(child).despawn();
                 }
             }
         }
@@ -177,9 +175,9 @@ pub fn add_worldui_materials(
 #[allow(clippy::type_complexity)]
 pub fn update_worldui_materials(
     q: Query<
-        (Entity, &WorldUiMaterialRef, &Node, &GlobalTransform),
+        (Entity, &WorldUiMaterialRef, &ComputedNode, &GlobalTransform),
         Or<(
-            Changed<Node>,
+            Changed<ComputedNode>,
             Changed<GlobalTransform>,
             Added<WorldUiMaterialRef>,
         )>,
@@ -189,7 +187,7 @@ pub fn update_worldui_materials(
     frame: Res<FrameCount>,
     render_device: Res<RenderDevice>,
 ) {
-    let mut target_sizes: HashMap<AssetId<Image>, UVec2> = HashMap::default();
+    let mut target_sizes: HashMap<AssetId<Image>, UVec2> = HashMap::new();
 
     for (ent, ref_mat, node, gt) in q.iter() {
         let Some(mat) = mats.get_mut(ref_mat.0) else {

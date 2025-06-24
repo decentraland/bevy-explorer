@@ -41,7 +41,7 @@ pub struct AudioSpawned(
 impl Drop for AudioSpawned {
     fn drop(&mut self) {
         if let Some(mut handle) = self.0.take() {
-            let _ = handle.stop(Tween::default());
+            handle.stop(Tween::default());
         }
     }
 }
@@ -65,7 +65,7 @@ pub fn spawn_audio_streams(
     }
 
     let containing_scenes = player
-        .get_single()
+        .single()
         .ok()
         .map(|player| containing_scene.get(player))
         .unwrap_or_default();
@@ -96,9 +96,9 @@ pub fn spawn_audio_streams(
         let volume = stream.volume * settings.scene();
         if let Some(handle) = maybe_spawned.as_mut().and_then(|a| a.0.as_mut()) {
             if containing_scenes.contains(&scene.root) {
-                let _ = handle.set_volume(volume as f64, Tween::default());
+                handle.set_volume(volume as f64, Tween::default());
             } else {
-                let _ = handle.set_volume(0.0, Tween::default());
+                handle.set_volume(0.0, Tween::default());
             }
         }
     }
@@ -144,8 +144,8 @@ pub fn spawn_and_locate_foreign_streams(
                 pan.volume_and_panning(emitter_transform.translation(), render_layers);
             let volume = volume * settings.voice();
 
-            let _ = handle.set_volume(volume as f64, Tween::default());
-            let _ = handle.set_panning(panning as f64, Tween::default());
+            handle.set_volume(volume as f64, Tween::default());
+            handle.set_panning(panning as f64, Tween::default());
         }
     }
 }

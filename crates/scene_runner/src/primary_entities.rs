@@ -12,11 +12,11 @@ pub struct PrimaryEntities<'w, 's> {
 
 impl PrimaryEntities<'_, '_> {
     pub fn player(&self) -> Entity {
-        self.player.single()
+        self.player.single().unwrap()
     }
 
     pub fn camera(&self) -> Entity {
-        self.camera.single()
+        self.camera.single().unwrap()
     }
 
     pub fn primary_or_scene(

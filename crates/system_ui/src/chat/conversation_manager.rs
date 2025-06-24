@@ -1,6 +1,9 @@
-use bevy::{core::FrameCount, ecs::system::SystemParam, prelude::*, tasks::IoTaskPool};
+use bevy::{diagnostic::FrameCount, ecs::system::SystemParam, prelude::*, tasks::IoTaskPool};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
-use common::{structs::ShowProfileEvent, util::TryPushChildrenEx};
+use common::{
+    structs::{ShowProfileEvent, ZOrder},
+    util::TryPushChildrenEx,
+};
 use copypwasmta::{ClipboardContext, ClipboardProvider};
 use ethers_core::types::Address;
 use scene_runner::Toaster;
@@ -64,13 +67,15 @@ impl ConversationManager<'_, '_> {
             children.iter().last()
         }?;
 
-        let (potential_container, entities) = self.containers.get(*potential_container).ok()?;
+        let (potential_container, entities) = self.containers.get(potential_container).ok()?;
         (potential_container.0 == address && potential_container.1 == color)
             .then_some((entities.root, entities.named("content")))
     }
 
     pub fn clear(&mut self, container: Entity) {
-        self.commands.entity(container).despawn_descendants();
+        self.commands
+            .entity(container)
+            .despawn_related::<Children>();
     }
 
     pub fn add_history_button(&mut self, container: Entity, private_chat_ent: Entity) {
@@ -86,10 +91,10 @@ impl ConversationManager<'_, '_> {
                         On::<Click>::new(
                             move |mut private_chats: Query<&mut PrivateChat>,
                                   caller: Res<UiCaller>,
-                                  parent: Query<&Parent>,
+                                  parent: Query<&ChildOf>,
                                   mut commands: Commands| {
                                 if let Ok(parent) = parent.get(caller.0) {
-                                    commands.entity(parent.get()).despawn_recursive();
+                                    commands.entity(parent.parent()).despawn();
                                 }
                                 if let Ok(mut chat) = private_chats.get_mut(private_chat_ent) {
                                     chat.wants_history_count = 10;
@@ -149,7 +154,7 @@ impl ConversationManager<'_, '_> {
             } else {
                 self.commands
                     .entity(components.named("image"))
-                    .insert(UiImage::new(
+                    .insert(ImageNode::new(
                         self.asset_server
                             .load("images/backpack/wearable_categories/hat.png"),
                     ));
@@ -161,7 +166,7 @@ impl ConversationManager<'_, '_> {
 
         self.commands
             .entity(bubble)
-            .insert(ChatBubble(address, color));
+            .insert((ChatBubble(address, color), ZOrder::ChatBubble.default()));
 
         let added = self.added_this_frame.get_or_insert_with(Default::default);
         if added.0 != self.frame.0 {

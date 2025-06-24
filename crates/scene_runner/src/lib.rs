@@ -8,12 +8,12 @@ use std::{
 use web_time::SystemTime;
 
 use bevy::{
-    core::FrameCount,
+    diagnostic::FrameCount,
     ecs::{query::Has, schedule::ScheduleLabel, system::SystemParam},
     math::{FloatOrd, Vec3A, Vec3Swizzles},
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     scene::scene_spawner_system,
-    utils::{HashMap, HashSet},
     window::PrimaryWindow,
     winit::WinitWindows,
 };
@@ -139,7 +139,6 @@ pub struct Toasts(pub HashMap<String, Toast>);
 pub struct Toaster<'w, 's> {
     toasts: ResMut<'w, Toasts>,
     time: Res<'w, Time>,
-    #[system_param(ignore)]
     _p: PhantomData<&'s ()>,
 }
 
@@ -154,7 +153,7 @@ impl Toaster<'_, '_> {
         let message = message.into();
         if let Some(existing) = self.toasts.0.get_mut(&key) {
             if existing.message == message {
-                existing.last_update = self.time.elapsed_seconds();
+                existing.last_update = self.time.elapsed_secs();
                 return;
             }
         }
@@ -163,8 +162,8 @@ impl Toaster<'_, '_> {
             key,
             Toast {
                 message,
-                time: self.time.elapsed_seconds(),
-                last_update: self.time.elapsed_seconds(),
+                time: self.time.elapsed_secs(),
+                last_update: self.time.elapsed_secs(),
                 on_click,
             },
         );
@@ -244,42 +243,6 @@ impl Plugin for SceneRunnerPlugin {
             )
                 .chain(),
         );
-        app.add_systems(
-            Update,
-            apply_deferred
-                .after(SceneSets::UiActions)
-                .before(SceneSets::Init),
-        );
-        app.add_systems(
-            Update,
-            apply_deferred
-                .after(SceneSets::Init)
-                .before(SceneSets::PostInit),
-        );
-        app.add_systems(
-            Update,
-            apply_deferred
-                .after(SceneSets::PostInit)
-                .before(SceneSets::Input),
-        );
-        app.add_systems(
-            Update,
-            apply_deferred
-                .after(SceneSets::Input)
-                .before(SceneSets::RunLoop),
-        );
-        app.add_systems(
-            Update,
-            apply_deferred
-                .after(SceneSets::RunLoop)
-                .before(SceneSets::PostLoop),
-        );
-        app.add_systems(
-            Update,
-            apply_deferred
-                .after(SceneSets::PostLoop)
-                .before(SceneSets::RestrictedActions),
-        );
 
         app.add_plugins(SceneLifecyclePlugin);
 
@@ -306,14 +269,6 @@ impl Plugin for SceneRunnerPlugin {
         scene_schedule.add_systems(receive_scene_updates.in_set(SceneLoopSets::ReceiveFromScene));
         scene_schedule.add_systems(process_scene_entity_lifecycle.in_set(SceneLoopSets::Lifecycle));
 
-        // add a command flush between CreateDestroy and HandleOutput so that
-        // commands can be applied to entities in the same frame they are created
-        scene_schedule.add_systems(
-            apply_deferred
-                .after(SceneLoopSets::Lifecycle)
-                .before(SceneLoopSets::UpdateWorld),
-        );
-
         app.insert_resource(SceneLoopSchedule {
             schedule: scene_schedule,
             prev_time: Instant::now(),
@@ -335,7 +290,7 @@ fn run_scene_loop(world: &mut World) {
     let mut window_query = world.query_filtered::<Entity, With<PrimaryWindow>>();
     let winit_windows = world.get_non_send_resource::<WinitWindows>();
     let refresh_rate = window_query
-        .get_single(world)
+        .single(world)
         .ok()
         .and_then(|window_ent| winit_windows.and_then(|ww| ww.get_window(window_ent)))
         .and_then(|window| window.current_monitor())
@@ -410,7 +365,7 @@ fn update_scene_priority(
     updates.eligible_jobs = 0;
 
     let (active_scenes, player_translation) = player
-        .get_single()
+        .single()
         .map(|(e, gt)| (containing_scene.get(e), gt.translation()))
         .unwrap_or_default();
 
@@ -436,12 +391,12 @@ fn update_scene_priority(
             } else {
                 distance
             };
-            let not_yet_run = context.last_sent < time.elapsed_seconds();
+            let not_yet_run = context.last_sent < time.elapsed_secs();
 
             (!context.in_flight && not_yet_run).then(|| {
                 updates.eligible_jobs += 1;
                 let priority =
-                    FloatOrd(context.priority / (time.elapsed_seconds() - context.last_sent));
+                    FloatOrd(context.priority / (time.elapsed_secs() - context.last_sent));
                 (ent, priority)
             })
         })
@@ -690,14 +645,14 @@ fn send_scene_updates(
     for (mut affine, id) in [
         (
             player
-                .get_single()
+                .single()
                 .map(Transform::compute_affine)
                 .unwrap_or_default(),
             SceneEntityId::PLAYER,
         ),
         (
             camera
-                .get_single()
+                .single()
                 .map(Transform::compute_affine)
                 .unwrap_or_default(),
             SceneEntityId::CAMERA,
@@ -769,7 +724,7 @@ fn send_scene_updates(
     );
 
     // add canvas info
-    let canvas_info = if let Ok(window) = window.get_single() {
+    let canvas_info = if let Ok(window) = window.single() {
         let vmin = window.resolution.width().min(window.resolution.height());
 
         if config.constrain_scene_ui {
@@ -828,7 +783,7 @@ fn send_scene_updates(
         // TODO: clean up
     } else {
         context.in_flight = true;
-        context.last_sent = time.elapsed_seconds();
+        context.last_sent = time.elapsed_secs();
         dcl_assert!(!updates.jobs_in_flight.contains(&ent));
         updates.jobs_in_flight.insert(ent);
     }
@@ -856,7 +811,7 @@ fn receive_scene_updates(
                 SceneResponse::CompareSnapshot(compare) => {
                     let scene = compare.scene;
                     debug!("[{scene:?}] requested snapshot");
-                    rpc_call_events.send(RpcCall::TestSnapshot(compare.clone()));
+                    rpc_call_events.write(RpcCall::TestSnapshot(compare.clone()));
                     None
                 }
                 SceneResponse::Error(scene_id, message) => {
@@ -906,7 +861,7 @@ fn receive_scene_updates(
                         // );
 
                         for rpc_call in rpc_calls {
-                            rpc_call_events.send(rpc_call);
+                            rpc_call_events.write(rpc_call);
                         }
                     } else {
                         debug!(
@@ -972,8 +927,7 @@ fn process_scene_entity_lifecycle(
                 if let Ok(children) = children.get(deleted_bevy_entity) {
                     let scene_children = children
                         .iter()
-                        .filter(|child| scene_entities.get(**child).is_ok())
-                        .copied()
+                        .filter(|child| scene_entities.get(*child).is_ok())
                         .collect::<Vec<_>>();
                     commands
                         .entity(root)
@@ -984,7 +938,7 @@ fn process_scene_entity_lifecycle(
                     "despawned {:?} -> {:?}",
                     deleted_scene_entity, deleted_bevy_entity
                 );
-                commands.entity(deleted_bevy_entity).despawn_recursive();
+                commands.entity(deleted_bevy_entity).despawn();
             }
             context.set_dead(*deleted_scene_entity);
         }
@@ -1002,14 +956,14 @@ fn update_scene_room(
     let (Some(realm), Some(scene)) = (
         realm.config.realm_name.as_ref(),
         player
-            .get_single()
+            .single()
             .ok()
             .and_then(|p| containing_scene.get_parcel(p))
             .and_then(|scene| scenes.get(scene).ok()),
     ) else {
         if last.take().is_some() {
             debug!("clear scene room");
-            writer.send(SetCurrentScene {
+            writer.write(SetCurrentScene {
                 realm_name: default(),
                 scene_id: default(),
             });
@@ -1031,5 +985,5 @@ fn update_scene_room(
 
     *last = Some(ev.clone());
     debug!("set scene room {ev:?}");
-    writer.send(ev);
+    writer.write(ev);
 }

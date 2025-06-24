@@ -2,16 +2,19 @@ use std::marker::PhantomData;
 
 use bevy::{
     ecs::system::SystemParam,
+    platform::{
+        collections::{hash_map::Entry, HashMap, HashSet},
+        hash::FixedHasher,
+    },
     prelude::*,
     transform::TransformSystem,
-    utils::{Entry, HashMap, HashSet},
 };
 use common::{anim_last_system, util::ModifyComponentExt};
 use dcl::{crdt::lww::CrdtLWWState, interface::ComponentPosition};
 
 use crate::{
-    primary_entities::PrimaryEntities, DeletedSceneEntities, RendererSceneContext, SceneEntity,
-    SceneLoopSchedule, TargetParent,
+    initialize_scene::process_scene_lifecycle, primary_entities::PrimaryEntities,
+    DeletedSceneEntities, RendererSceneContext, SceneEntity, SceneLoopSchedule, TargetParent,
 };
 use common::sets::SceneLoopSets;
 use dcl_component::{
@@ -39,7 +42,8 @@ impl Plugin for TransformAndParentPlugin {
                 parent_position_sync::<AvatarAttachStage>
                     .after(anim_last_system!())
                     .after(GltfLinkSet)
-                    .before(TransformSystem::TransformPropagate),
+                    .before(TransformSystem::TransformPropagate)
+                    .before(process_scene_lifecycle),
                 parent_position_sync::<SceneProxyStage>
                     .after(anim_last_system!())
                     .after(GltfLinkSet)
@@ -175,10 +179,11 @@ pub(crate) fn process_transform_and_parent_updates(
             scene.hierarchy_changed = false;
 
             // hashmap for parent lookup to avoid reusing query
-            let mut parents = HashMap::default();
+            let mut parents = HashMap::new();
 
             // entities that we know connect ultimately to the root
-            let mut valid_entities = HashSet::from_iter(std::iter::once(root));
+            let mut valid_entities: HashSet<_, FixedHasher> =
+                HashSet::from_iter(std::iter::once(root));
             // entities that we know are part of a cycle (or lead to a cycle)
             let mut invalid_entities = HashSet::default();
 
@@ -212,7 +217,7 @@ pub(crate) fn process_transform_and_parent_updates(
                     );
                     // this entity (and all checked entities) link to the root
                     // apply parenting
-                    commands.entity(*entity).set_parent(parents[entity]);
+                    commands.entity(*entity).insert(ChildOf(parents[entity]));
                     //  record validity of the chain
                     valid_entities.extend(checklist.into_iter());
                     // remove from the unparented list
@@ -221,7 +226,7 @@ pub(crate) fn process_transform_and_parent_updates(
                     debug!("{:?}: not valid, setting parent to {:?}", entity, root);
                     // this entity (and all checked entities) end in a cycle
                     // parent to the root
-                    commands.entity(*entity).set_parent(root);
+                    commands.entity(*entity).insert(ChildOf(root));
                     // mark as invalid
                     invalid_entities.extend(checklist.into_iter());
                     // keep the entity in the unparented list to recheck at the next hierarchy update
@@ -233,7 +238,7 @@ pub(crate) fn process_transform_and_parent_updates(
 }
 
 // sync an entity's transform with a given target, without blowing the native
-// hierarchy so we still catch it when we despawn_recursive the scene, etc.
+// hierarchy so we still catch it when we despawn the scene, etc.
 // since this runs before global hierarchy update we calculate the full target
 // transform by walking up the tree of local transforms. this will be slow so
 // should only be used with shallow entities ... hands are not very shallow
@@ -259,12 +264,12 @@ impl ParentPositionSyncStage for SceneProxyStage {}
 
 pub fn parent_position_sync<T: ParentPositionSyncStage>(
     mut commands: Commands,
-    syncees: Query<(Entity, &ParentPositionSync<T>, &Parent)>,
+    syncees: Query<(Entity, &ParentPositionSync<T>, &ChildOf)>,
     globals: Query<&GlobalTransform>,
     gt_helper: TransformHelperPub,
 ) {
     for (ent, sync, parent) in syncees.iter() {
-        let Ok(parent_transform) = globals.get(parent.get()) else {
+        let Ok(parent_transform) = globals.get(parent.parent()) else {
             continue;
         };
 
@@ -288,7 +293,7 @@ pub fn parent_position_sync<T: ParentPositionSyncStage>(
 /// the last time the transform propagation systems ran.
 #[derive(SystemParam)]
 pub struct TransformHelperPub<'w, 's> {
-    pub parent_query: Query<'w, 's, &'static Parent>,
+    pub parent_query: Query<'w, 's, &'static ChildOf>,
     pub transform_query: Query<'w, 's, &'static Transform>,
 }
 

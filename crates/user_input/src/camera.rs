@@ -39,9 +39,9 @@ pub fn update_camera(
     input_manager: InputManager,
     gt_helper: TransformHelper,
 ) {
-    let dt = time.delta_seconds();
+    let dt = time.delta_secs();
 
-    let Ok((camera_transform, mut options)) = camera.get_single_mut() else {
+    let Ok((camera_transform, mut options)) = camera.single_mut() else {
         return;
     };
 
@@ -185,7 +185,7 @@ pub fn update_camera_position(
     let (
         Ok((player_transform, dynamic_state)),
         Ok((camera_ent, camera_transform, options, mut projection, maybe_tween)),
-    ) = (player.get_single_mut(), camera.get_single_mut())
+    ) = (player.single_mut(), camera.single_mut())
     else {
         return;
     };
@@ -373,16 +373,16 @@ pub fn update_cursor_lock(
                 continue;
             }
 
-            if window.cursor.grab_mode == CursorGrabMode::None {
-                window.cursor.grab_mode = CursorGrabMode::Locked;
-                window.cursor.visible = false;
+            if window.cursor_options.grab_mode == CursorGrabMode::None {
+                window.cursor_options.grab_mode = CursorGrabMode::Locked;
+                window.cursor_options.visible = false;
             }
         }
     } else {
         for mut window in &mut windows {
-            if window.cursor.grab_mode != CursorGrabMode::None {
-                window.cursor.grab_mode = CursorGrabMode::None;
-                window.cursor.visible = true;
+            if window.cursor_options.grab_mode != CursorGrabMode::None {
+                window.cursor_options.grab_mode = CursorGrabMode::None;
+                window.cursor_options.visible = true;
             }
         }
     }

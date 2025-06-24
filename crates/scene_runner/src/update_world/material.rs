@@ -2,16 +2,14 @@ use std::sync::OnceLock;
 
 use bevy::{
     ecs::system::SystemParam,
+    image::{
+        ImageAddressMode, ImageFilterMode, ImageLoaderSettings, ImageSampler,
+        ImageSamplerDescriptor,
+    },
     math::Affine2,
     pbr::NotShadowCaster,
     prelude::*,
-    render::{
-        primitives::Aabb,
-        texture::{
-            ImageAddressMode, ImageFilterMode, ImageLoaderSettings, ImageSampler,
-            ImageSamplerDescriptor,
-        },
-    },
+    render::primitives::Aabb,
 };
 use common::{structs::AppConfig, util::AsH160};
 use comms::profile::ProfileManager;
@@ -401,7 +399,7 @@ fn update_materials(
         )>,
     >,
     mut materials: ResMut<Assets<SceneMaterial>>,
-    sourced: Query<(Entity, &Handle<SceneMaterial>, &MaterialSource)>,
+    sourced: Query<(Entity, &MeshMaterial3d<SceneMaterial>, &MaterialSource)>,
     mut resolver: TextureResolver,
     mut scenes: Query<&mut RendererSceneContext>,
     config: Res<AppConfig>,
@@ -500,23 +498,25 @@ fn update_materials(
             .unwrap_or_default();
 
         let mut commands = commands.entity(ent);
-        commands.remove::<RetryMaterial>().try_insert(
-            materials.add(SceneMaterial {
-                base: StandardMaterial {
-                    base_color_texture: base_color_texture
-                        .map(|t| t.image)
-                        .or(base.and_then(|b| b.material.base_color_texture.clone())),
-                    emissive_texture: emissive_texture
-                        .map(|t| t.image)
-                        .or(base.and_then(|b| b.material.emissive_texture.clone())),
-                    normal_map_texture: normal_map_texture
-                        .map(|t| t.image)
-                        .or(base.and_then(|b| b.material.normal_map_texture.clone())),
-                    ..defn.material.clone()
-                },
-                extension: SceneBound::new(bounds, config.graphics.oob),
-            }),
-        );
+        commands
+            .remove::<RetryMaterial>()
+            .try_insert(MeshMaterial3d(
+                materials.add(SceneMaterial {
+                    base: StandardMaterial {
+                        base_color_texture: base_color_texture
+                            .map(|t| t.image)
+                            .or(base.and_then(|b| b.material.base_color_texture.clone())),
+                        emissive_texture: emissive_texture
+                            .map(|t| t.image)
+                            .or(base.and_then(|b| b.material.emissive_texture.clone())),
+                        normal_map_texture: normal_map_texture
+                            .map(|t| t.image)
+                            .or(base.and_then(|b| b.material.normal_map_texture.clone())),
+                        ..defn.material.clone()
+                    },
+                    extension: SceneBound::new(bounds, config.graphics.oob),
+                }),
+            ));
         if defn.shadow_caster {
             commands.remove::<NotShadowCaster>();
         } else {
@@ -545,7 +545,7 @@ fn update_materials(
     }
 
     for (ent, touch, source) in sourced.iter() {
-        if commands.get_entity(source.0).is_none() {
+        if commands.get_entity(source.0).is_err() {
             commands.entity(ent).insert(RetryMaterial(Vec::default()));
         } else {
             materials.get_mut(touch);
@@ -557,8 +557,8 @@ fn update_materials(
 fn update_bias(
     mut materials: ResMut<Assets<SceneMaterial>>,
     query: Query<
-        (&Aabb, &Handle<SceneMaterial>),
-        Or<(Changed<Handle<SceneMaterial>>, Changed<Aabb>)>,
+        (&Aabb, &MeshMaterial3d<SceneMaterial>),
+        Or<(Changed<MeshMaterial3d<SceneMaterial>>, Changed<Aabb>)>,
     >,
 ) {
     for (aabb, h_material) in query.iter() {

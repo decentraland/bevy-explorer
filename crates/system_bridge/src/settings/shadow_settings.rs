@@ -108,7 +108,7 @@ impl AppSetting for ShadowSetting {
         mut commands: Commands,
         camera_entity: Entity,
     ) {
-        let Some(mut cmds) = commands.get_entity(camera_entity) else {
+        let Ok(mut cmds) = commands.get_entity(camera_entity) else {
             return;
         };
         match self {

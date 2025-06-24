@@ -1,9 +1,9 @@
 use std::f32::consts::FRAC_PI_2;
 
 use bevy::{
+    platform::collections::HashMap,
     prelude::*,
     render::mesh::{skinning::SkinnedMesh, VertexAttributeValues},
-    utils::HashMap,
 };
 
 use common::{sets::SceneSets, structs::AppConfig};
@@ -193,8 +193,8 @@ pub fn update_mesh(
             Entity,
             &SceneEntity,
             &MeshDefinition,
-            Option<&Handle<SceneMaterial>>,
-            Option<&Handle<Mesh>>,
+            Option<&MeshMaterial3d<SceneMaterial>>,
+            Option<&Mesh3d>,
         ),
         Or<(Changed<MeshDefinition>, With<RetryMeshDefinition>)>,
     >,
@@ -309,13 +309,13 @@ pub fn update_mesh(
                     continue;
                 };
                 // remove skin if mesh changed
-                if maybe_existing_mesh != Some(&h_mesh) {
+                if maybe_existing_mesh.map(|me| &me.0) != Some(&h_mesh) {
                     commands.entity(ent).remove::<SkinnedMesh>();
                 }
                 h_mesh
             }
         };
-        commands.entity(ent).try_insert(handle);
+        commands.entity(ent).try_insert(Mesh3d(handle));
 
         if maybe_material.is_none() {
             let mat = default_material.entry(scene_ent.root).or_insert_with(|| {
@@ -331,13 +331,13 @@ pub fn update_mesh(
                 })
             });
 
-            commands.entity(ent).try_insert(mat.clone());
+            commands.entity(ent).try_insert(MeshMaterial3d(mat.clone()));
         }
     }
 
     for ent in removed_primitives.read() {
-        if let Some(mut e) = commands.get_entity(ent) {
-            e.remove::<Handle<Mesh>>();
+        if let Ok(mut e) = commands.get_entity(ent) {
+            e.remove::<Mesh3d>();
         }
     }
 

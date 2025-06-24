@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use bevy::{prelude::*, utils::HashMap};
+use bevy::{platform::collections::HashMap, prelude::*};
 use futures_lite::StreamExt;
 use http::Uri;
 use prost::Message;
@@ -181,10 +181,11 @@ fn livekit_handler_inner(
         url.host().unwrap_or_default(),
         url.path()
     );
-    let params = HashMap::from_iter(url.query().unwrap_or_default().split('&').flat_map(|par| {
-        par.split_once('=')
-            .map(|(a, b)| (a.to_owned(), b.to_owned()))
-    }));
+    let params: HashMap<_, _, bevy::platform::hash::FixedHasher> =
+        HashMap::from_iter(url.query().unwrap_or_default().split('&').flat_map(|par| {
+            par.split_once('=')
+                .map(|(a, b)| (a.to_owned(), b.to_owned()))
+        }));
     debug!("{params:?}");
     let token = params.get("access_token").cloned().unwrap_or_default();
 
@@ -295,6 +296,7 @@ fn livekit_handler_inner(
                                             let (frame_sender, frame_receiver) = tokio::sync::mpsc::channel(10);
 
                                             let bridge = LivekitKiraBridge {
+                                                started: false,
                                                 sample_rate: frame.sample_rate,
                                                 receiver: frame_receiver,
                                             };
@@ -303,7 +305,6 @@ fn livekit_handler_inner(
 
                                             let sound_data = kira::sound::streaming::StreamingSoundData::from_decoder(
                                                 bridge,
-                                                kira::sound::streaming::StreamingSoundSettings::new(),
                                             );
 
                                             let _ = sender.send(PlayerUpdate {
@@ -379,6 +380,7 @@ fn livekit_handler_inner(
 }
 
 struct LivekitKiraBridge {
+    started: bool,
     sample_rate: u32,
     receiver: tokio::sync::mpsc::Receiver<AudioFrame<'static>>,
 }
@@ -394,7 +396,7 @@ impl kira::sound::streaming::Decoder for LivekitKiraBridge {
         u32::MAX as usize
     }
 
-    fn decode(&mut self) -> Result<Vec<kira::dsp::Frame>, Self::Error> {
+    fn decode(&mut self) -> Result<Vec<kira::Frame>, Self::Error> {
         let mut frames = Vec::default();
 
         loop {
@@ -413,7 +415,7 @@ impl kira::sound::streaming::Decoder for LivekitKiraBridge {
 
                     for i in 0..frame.samples_per_channel as usize {
                         let sample = frame.data[i] as f32 / i16::MAX as f32;
-                        frames.push(kira::dsp::Frame::new(sample, sample));
+                        frames.push(kira::Frame::new(sample, sample));
                     }
                 }
                 Err(TryRecvError::Disconnected) => return Err(AudioDecoderError::StreamClosed),
@@ -422,7 +424,12 @@ impl kira::sound::streaming::Decoder for LivekitKiraBridge {
         }
     }
 
-    fn seek(&mut self, _: usize) -> Result<usize, Self::Error> {
-        Err(AudioDecoderError::Other("Can't seek".to_owned()))
+    fn seek(&mut self, seek: usize) -> Result<usize, Self::Error> {
+        if !self.started && seek == 0 {
+            return Ok(0);
+        }
+        Err(AudioDecoderError::Other(format!(
+            "Can't seek (requested {seek})"
+        )))
     }
 }

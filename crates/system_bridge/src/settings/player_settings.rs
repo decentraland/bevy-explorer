@@ -49,7 +49,7 @@ macro_rules! player_setting {
             }
 
             fn apply(&self, mut q: Query<&mut PrimaryUser>, _: Commands) {
-                let Ok(mut settings) = q.get_single_mut() else {
+                let Ok(mut settings) = q.single_mut() else {
                     warn!("no primary user");
                     return;
                 };

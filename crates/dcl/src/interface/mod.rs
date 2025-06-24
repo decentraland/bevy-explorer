@@ -3,8 +3,8 @@
 // it resets internal "updated" markers (for lww) and removes unneeded data (for go)
 
 use bevy::{
-    utils::tracing::{debug, error, warn},
-    utils::{HashMap, HashSet},
+    log::{debug, error, warn},
+    platform::collections::{HashMap, HashSet},
 };
 use num::{FromPrimitive, ToPrimitive};
 use num_derive::{FromPrimitive, ToPrimitive};

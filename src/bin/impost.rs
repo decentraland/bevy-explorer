@@ -10,8 +10,10 @@ use dcl_deno::init_runtime;
 use imposters::{render::ImposterMissing, DclImposterPlugin};
 
 use bevy::{
-    app::ScheduleRunnerPlugin, core::TaskPoolThreadAssignmentPolicy, prelude::*,
-    window::ExitCondition, winit::WinitPlugin,
+    app::{ScheduleRunnerPlugin, TaskPoolThreadAssignmentPolicy},
+    prelude::*,
+    window::ExitCondition,
+    winit::WinitPlugin,
 };
 
 use common::{
@@ -117,16 +119,22 @@ fn main() {
                         min_threads: 2,
                         max_threads: 8,
                         percent: 0.25,
+                        on_thread_spawn: None,
+                        on_thread_destroy: None,
                     },
                     io: TaskPoolThreadAssignmentPolicy {
                         min_threads: 8,
                         max_threads: 8,
                         percent: 0.25,
+                        on_thread_spawn: None,
+                        on_thread_destroy: None,
                     },
                     compute: TaskPoolThreadAssignmentPolicy {
                         min_threads: 2,
                         max_threads: 8,
                         percent: 0.25,
+                        on_thread_spawn: None,
+                        on_thread_destroy: None,
                     },
                     ..Default::default()
                 },
@@ -138,7 +146,7 @@ fn main() {
             })
             .disable::<WinitPlugin>()
             .build()
-            .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
+            .add_before::<bevy::asset::AssetPlugin>(IpfsIoPlugin {
                 preview: false,
                 starting_realm: Some(final_config.server.clone()),
                 content_server_override,
@@ -257,7 +265,7 @@ fn check_done(
         *counter += 1;
         if *counter == 10 {
             println!("all done!");
-            exit.send_default();
+            exit.write_default();
         }
     } else {
         *counter = 0;
@@ -276,14 +284,12 @@ fn setup(
     // create the main player
     let player_id = commands
         .spawn((
-            SpatialBundle {
-                transform: Transform::from_translation(Vec3::new(
-                    8.0 + 16.0 * config.location.x as f32,
-                    8.0,
-                    -8.0 + -16.0 * config.location.y as f32,
-                )),
-                ..Default::default()
-            },
+            Transform::from_translation(Vec3::new(
+                8.0 + 16.0 * config.location.x as f32,
+                8.0,
+                -8.0 + -16.0 * config.location.y as f32,
+            )),
+            Visibility::default(),
             config.player_settings.clone(),
             OutOfWorld,
             AvatarDynamicState::default(),
@@ -292,7 +298,7 @@ fn setup(
         .id();
 
     let camera_id = commands
-        .spawn((Camera3dBundle::default(), PrimaryCamera::default()))
+        .spawn((Camera3d::default(), PrimaryCamera::default()))
         .id();
 
     player_resource.0 = player_id;

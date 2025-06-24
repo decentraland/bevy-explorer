@@ -1,4 +1,4 @@
-use bevy::{prelude::*, sprite::TextureAtlasLayout, ui::widget::UiImageSize};
+use bevy::prelude::*;
 use bevy_dui::*;
 
 #[derive(Component)]
@@ -28,9 +28,9 @@ fn setup(
     dui.set_default_prop("spinner-layout", texture_atlas_layout_handle);
 }
 
-fn spin_spinners(mut q: Query<&mut TextureAtlas, With<Spinner>>, time: Res<Time>) {
+fn spin_spinners(mut q: Query<&mut ImageNode, With<Spinner>>, time: Res<Time>) {
     for mut t in q.iter_mut() {
-        t.index = (time.elapsed_seconds() * 8.0) as usize % 8;
+        t.texture_atlas.as_mut().unwrap().index = (time.elapsed_secs() * 8.0) as usize % 8;
     }
 }
 
@@ -54,9 +54,7 @@ impl DuiTemplate for DuiSpinnerTemplate {
             .clone();
 
         commands.insert((
-            UiImage::new(image),
-            TextureAtlas { layout, index: 0 },
-            UiImageSize::default(),
+            ImageNode::from_atlas_image(image, TextureAtlas { layout, index: 0 }),
             Spinner,
         ));
         Ok(Default::default())

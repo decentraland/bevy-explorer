@@ -5,7 +5,6 @@ use dcl_component::proto_components::{
 };
 
 use crate::{update_world::text_shape::make_text_section, SceneEntity};
-use common::util::TryPushChildrenEx;
 
 use super::{UiLink, UiTransform};
 
@@ -89,9 +88,9 @@ pub fn set_ui_text(
         };
 
         if let Ok(children) = children.get(link.ui_entity) {
-            for child in children.iter().filter(|c| prev_texts.get(**c).is_ok()) {
-                if let Some(commands) = commands.get_entity(*child) {
-                    commands.despawn_recursive();
+            for child in children.iter().filter(|c| prev_texts.get(*c).is_ok()) {
+                if let Ok(mut commands) = commands.get_entity(child) {
+                    commands.despawn();
                 }
             }
         }
@@ -102,9 +101,9 @@ pub fn set_ui_text(
 
         // remove old text
         if let Ok(children) = children.get(link.ui_entity) {
-            for child in children.iter().filter(|c| prev_texts.get(**c).is_ok()) {
-                if let Some(commands) = commands.get_entity(*child) {
-                    commands.despawn_recursive();
+            for child in children.iter().filter(|c| prev_texts.get(*c).is_ok()) {
+                if let Ok(mut commands) = commands.get_entity(child) {
+                    commands.despawn();
                 }
             }
         }
@@ -113,11 +112,11 @@ pub fn set_ui_text(
             continue;
         }
 
-        let Some(mut ent_cmds) = commands.get_entity(link.ui_entity) else {
+        let Ok(mut ent_cmds) = commands.get_entity(link.ui_entity) else {
             continue;
         };
 
-        let (text, extras) = make_text_section(
+        let text = make_text_section(
             ui_text.text.as_str(),
             ui_text.font_size,
             ui_text
@@ -141,13 +140,13 @@ pub fn set_ui_text(
             .any(Option::is_some);
 
         let inner_style = if any_axis_specified {
-            Style {
+            Node {
                 position_type: PositionType::Relative,
                 margin: UiRect::all(Val::Px(ui_text.font_size * 0.5)),
                 ..Default::default()
             }
         } else {
-            Style {
+            Node {
                 position_type: PositionType::Absolute,
                 left: if ui_text.h_align == JustifyText::Left {
                     Val::Percent(50.0)
@@ -189,48 +188,29 @@ pub fn set_ui_text(
         let text_element = ent_cmds
             .commands()
             .spawn((
-                NodeBundle {
-                    style: Style {
-                        flex_direction: FlexDirection::Row,
-                        justify_content: match ui_text.h_align {
-                            JustifyText::Left => JustifyContent::FlexStart,
-                            JustifyText::Center => JustifyContent::Center,
-                            JustifyText::Right => JustifyContent::FlexEnd,
-                            JustifyText::Justified => unreachable!(),
-                        },
-                        align_items: match ui_text.v_align {
-                            VAlign::Top => AlignItems::FlexStart,
-                            VAlign::Middle => AlignItems::Center,
-                            VAlign::Bottom => AlignItems::FlexEnd,
-                        },
-                        width,
-                        height,
-                        align_self: AlignSelf::FlexStart,
-                        // elements are horizontally centered by default
-                        margin: UiRect::horizontal(Val::Auto),
-                        ..Default::default()
+                Node {
+                    flex_direction: FlexDirection::Row,
+                    justify_content: match ui_text.h_align {
+                        JustifyText::Left => JustifyContent::FlexStart,
+                        JustifyText::Center => JustifyContent::Center,
+                        JustifyText::Right => JustifyContent::FlexEnd,
+                        JustifyText::Justified => unreachable!(),
                     },
+                    align_items: match ui_text.v_align {
+                        VAlign::Top => AlignItems::FlexStart,
+                        VAlign::Middle => AlignItems::Center,
+                        VAlign::Bottom => AlignItems::FlexEnd,
+                    },
+                    width,
+                    height,
+                    align_self: AlignSelf::FlexStart,
+                    // elements are horizontally centered by default
+                    margin: UiRect::horizontal(Val::Auto),
                     ..Default::default()
                 },
                 UiTextMarker,
+                children!((inner_style, children!((text, ZIndex(1))))),
             ))
-            .try_with_children(|c| {
-                c.spawn(NodeBundle {
-                    style: inner_style,
-                    ..Default::default()
-                })
-                .try_with_children(|c| {
-                    let mut cmds = c.spawn(TextBundle {
-                        text,
-                        z_index: ZIndex::Local(1),
-                        ..Default::default()
-                    });
-
-                    if let Some(extras) = extras {
-                        cmds.insert(extras);
-                    }
-                });
-            })
             .id();
 
         ent_cmds.insert_children(0, &[text_element]);

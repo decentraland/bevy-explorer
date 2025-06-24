@@ -33,6 +33,7 @@ impl_dui_str!(u32);
 impl_dui_str!(f32);
 impl_dui_str!(usize);
 impl_dui_str!(isize);
+impl_dui_str!(i32);
 
 impl DuiFromStr for Val {
     fn from_str(_: &DuiContext, value: &str) -> Result<Self, anyhow::Error>

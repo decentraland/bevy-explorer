@@ -1,4 +1,5 @@
 use bevy::{
+    image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor},
     prelude::*,
     render::{
         render_asset::{RenderAssetUsages, RenderAssets},
@@ -10,9 +11,7 @@ use bevy::{
             TextureDimension, TextureSampleType,
         },
         renderer::RenderDevice,
-        texture::{
-            FallbackImage, GpuImage, ImageAddressMode, ImageSampler, ImageSamplerDescriptor,
-        },
+        texture::{FallbackImage, GpuImage},
         RenderApp,
     },
 };
@@ -233,6 +232,7 @@ impl bevy_atmosphere::model::RegisterAtmosphereModel for NishitaCloud {
             shader: handle,
             shader_defs: vec![],
             entry_point: Cow::from("main"),
+            zero_initialize_workgroup_memory: false,
         });
         let id = TypeId::of::<Self>();
         let data = AtmosphereModelMetadata {
@@ -293,8 +293,8 @@ pub fn init_noise(size: usize) -> Image {
         .build(); // range[-0.5, 0.5]
     let data: Vec<_> = noise_pixels
         .into_iter()
-        .map(|pixel| (pixel * 65535.0).round() as i16)
-        .flat_map(i16::to_le_bytes)
+        .map(|pixel| pixel as f32)
+        .flat_map(f32::to_le_bytes)
         .collect();
     let mut image = Image::new(
         Extent3d {
@@ -304,7 +304,7 @@ pub fn init_noise(size: usize) -> Image {
         },
         TextureDimension::D2,
         data,
-        bevy::render::render_resource::TextureFormat::R16Snorm,
+        bevy::render::render_resource::TextureFormat::R32Float,
         RenderAssetUsages::all(),
     );
 

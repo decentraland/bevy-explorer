@@ -20,7 +20,6 @@ world_ui = { workspace = true }
 collectibles = { workspace = true }
 scene_material = { workspace = true }
 social = { workspace = true }
-propagate = { workspace = true }
 platform = { workspace = true }
 
 bevy = { workspace = true }

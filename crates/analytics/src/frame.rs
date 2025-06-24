@@ -34,7 +34,7 @@ fn metrics_frame_system(
     mut frame_data: ResMut<Frame>,
     mut metrics: ResMut<SegmentMetricsEvents>,
 ) {
-    let dt = 1000.0 * time.delta_seconds();
+    let dt = 1000.0 * time.delta_secs();
     frame_data.sum_dt += dt;
     frame_data.dt_ms_vec.push(dt);
     if dt > HICCUP_THRESHOLD_MS {

@@ -54,11 +54,16 @@ fn update_slices(
     mut commands: Commands,
     images: Res<Assets<Image>>,
     new_slices: Query<
-        (Entity, &Node, &Ui9Slice, Option<&Handle<NineSliceMaterial>>),
+        (
+            Entity,
+            &ComputedNode,
+            &Ui9Slice,
+            Option<&MaterialNode<NineSliceMaterial>>,
+        ),
         Or<(
             Changed<Ui9Slice>,
             Added<Ui9Slice>,
-            Changed<Node>,
+            Changed<ComputedNode>,
             With<Retry9Slice>,
         )>,
     >,
@@ -67,8 +72,8 @@ fn update_slices(
 ) {
     // clean up removed slices
     for ent in removed.read() {
-        if let Some(mut commands) = commands.get_entity(ent) {
-            commands.remove::<Handle<NineSliceMaterial>>();
+        if let Ok(mut commands) = commands.get_entity(ent) {
+            commands.remove::<MaterialNode<NineSliceMaterial>>();
         }
     }
 
@@ -114,7 +119,7 @@ fn update_slices(
         } else {
             commands
                 .entity(ent)
-                .try_insert(mats.add(new_mat))
+                .try_insert(MaterialNode(mats.add(new_mat)))
                 .remove::<BackgroundColor>();
         }
     }
@@ -196,15 +201,12 @@ impl DuiTemplate for Ui9SliceTemplate {
         debug!("border rect: {center_region:?}");
 
         commands.insert((
-            NodeBundle {
-                style: Style {
-                    position_type: PositionType::Absolute,
-                    top: Val::Px(0.0),
-                    right: Val::Px(0.0),
-                    left: Val::Px(0.0),
-                    bottom: Val::Px(0.0),
-                    ..Default::default()
-                },
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(0.0),
+                right: Val::Px(0.0),
+                left: Val::Px(0.0),
+                bottom: Val::Px(0.0),
                 ..Default::default()
             },
             Ui9Slice {

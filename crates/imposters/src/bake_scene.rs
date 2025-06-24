@@ -8,11 +8,11 @@ use std::{
 };
 
 use bevy::{
-    core::FrameCount,
+    diagnostic::FrameCount,
     math::FloatOrd,
+    platform::collections::HashSet,
     prelude::*,
     render::{primitives::Aabb, view::RenderLayers},
-    utils::HashSet,
 };
 use boimp::{
     bake::{BakeState, ImposterBakeBundle, ImposterBakeCamera},
@@ -95,7 +95,7 @@ fn make_scene_oven(
     mut start_tick: Local<Option<(String, u32)>>,
     bake_list: Res<ImposterBakeList>,
     children: Query<&Children>,
-    mat_handles: Query<&Handle<SceneMaterial>>,
+    mat_handles: Query<&MeshMaterial3d<SceneMaterial>>,
     materials: Res<Assets<SceneMaterial>>,
     asset_server: Res<AssetServer>,
 ) {
@@ -180,7 +180,7 @@ fn make_scene_oven(
 
         // disable animations and tweens
         for child in children.iter_descendants(*entity) {
-            if let Some(mut commands) = commands.get_entity(child) {
+            if let Ok(mut commands) = commands.get_entity(child) {
                 commands
                     .remove::<AnimationPlayer>()
                     .remove::<tween::Tween>();
@@ -224,14 +224,14 @@ fn bake_scene_imposters(
     ipfas: IpfsAssetServer,
     tick: Res<FrameCount>,
     children: Query<&Children>,
-    meshes: Query<(&GlobalTransform, &Aabb, &Visibility), With<Handle<Mesh>>>,
-    bound_materials: Query<&Handle<SceneMaterial>>,
+    meshes: Query<(&GlobalTransform, &Aabb, &Visibility), With<Mesh3d>>,
+    bound_materials: Query<&MeshMaterial3d<SceneMaterial>>,
     mut materials: ResMut<Assets<SceneMaterial>>,
     lookup: Res<ImposterEntities>,
     config: Res<AppConfig>,
     plugin: Res<DclImposterPlugin>,
 ) {
-    if let Ok((baking_ent, mut oven)) = baking.get_single_mut() {
+    if let Ok((baking_ent, mut oven)) = baking.single_mut() {
         let current_scene_ent = {
             let Some(entity) = live_scenes.scenes.get(&oven.hash) else {
                 return;
@@ -267,13 +267,13 @@ fn bake_scene_imposters(
                 }
 
                 // delete the scene since we messed with it a lot to get it stable
-                commands.entity(current_scene_ent).despawn_recursive();
+                commands.entity(current_scene_ent).despawn();
                 live_scenes.scenes.remove(&oven.hash);
 
                 for parcel in std::mem::take(&mut oven.all_parcels).drain() {
                     for ingredient in [true, false] {
                         if let Some(entity) = lookup.0.get(&(parcel, 0, ingredient)) {
-                            if let Some(mut commands) = commands.get_entity(*entity) {
+                            if let Ok(mut commands) = commands.get_entity(*entity) {
                                 commands.remove::<ImposterMissing>();
 
                                 if let Some(spec) = oven.baked_scene.imposters.get(&parcel) {
@@ -289,7 +289,7 @@ fn bake_scene_imposters(
                 }
 
                 current_imposter.0.as_mut().unwrap().1 = true;
-                commands.entity(baking_ent).despawn_recursive();
+                commands.entity(baking_ent).despawn();
                 return;
             };
 
@@ -487,7 +487,7 @@ fn bake_scene_imposters(
                 debug!("finished baking");
 
                 for (cam_ent, _) in all_baking_cams.iter() {
-                    commands.entity(cam_ent).despawn_recursive();
+                    commands.entity(cam_ent).despawn();
                 }
             }
         }
@@ -600,7 +600,7 @@ fn bake_imposter_imposter(
 
             for ingredient in [true, false] {
                 if let Some(entity) = lookup.0.get(&(parcel, level, ingredient)) {
-                    if let Some(mut commands) = commands.get_entity(*entity) {
+                    if let Ok(mut commands) = commands.get_entity(*entity) {
                         commands.remove::<ImposterMissing>();
 
                         if let Some(spec) = baking.imposters.get(&parcel) {
@@ -615,8 +615,8 @@ fn bake_imposter_imposter(
             }
 
             for (ent, _) in all_baking_cams.iter() {
-                if let Some(commands) = commands.get_entity(ent) {
-                    commands.despawn_recursive();
+                if let Ok(mut commands) = commands.get_entity(ent) {
+                    commands.despawn();
                 }
             }
 
@@ -686,7 +686,7 @@ fn bake_imposter_imposter(
 
                 // add layer to children
                 for child in children.iter() {
-                    let mut layer = layers.get_mut(*child).unwrap();
+                    let mut layer = layers.get_mut(child).unwrap();
                     *layer = layer.union(&IMPOSTERCEPTION_LAYER);
                 }
             }
@@ -854,7 +854,7 @@ fn pick_imposter_to_bake(
     }
 
     let focus = focus
-        .get_single()
+        .single()
         .map(|gt| gt.translation())
         .unwrap_or_default();
 
@@ -1083,10 +1083,10 @@ fn output_progress(
         return;
     }
 
-    if time.elapsed_seconds() < *last_time + 5.0 {
+    if time.elapsed_secs() < *last_time + 5.0 {
         return;
     }
-    *last_time = time.elapsed_seconds();
+    *last_time = time.elapsed_secs();
 
     let max_level = config.scene_imposter_distances.len() - 1;
     let count = q.iter().filter(|i| i.level == max_level).count();

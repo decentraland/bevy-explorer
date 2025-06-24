@@ -3,8 +3,7 @@ use bevy::{prelude::*, render::render_resource::Extent3d};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     profile::SerializedProfile,
-    structs::{ActiveDialog, ShowProfileEvent, PROFILE_UI_RENDERLAYER},
-    util::FireEventEx,
+    structs::{ActiveDialog, ShowProfileEvent, ZOrder, PROFILE_UI_RENDERLAYER},
 };
 use comms::profile::{ProfileManager, UserProfile};
 use ethers_core::types::Address;
@@ -88,7 +87,7 @@ fn show_foreign_profiles(
                                     if let Err(e) = client.friend_request(address, None) {
                                         warn!("error: {e}");
                                     } else {
-                                        commands.fire_event(FriendshipEvent(None));
+                                        commands.send_event(FriendshipEvent(None));
                                     }
                                 },
                             ),
@@ -103,7 +102,7 @@ fn show_foreign_profiles(
                                     if let Err(e) = client.cancel_request(address) {
                                         warn!("error: {e}");
                                     } else {
-                                        commands.fire_event(FriendshipEvent(None));
+                                        commands.send_event(FriendshipEvent(None));
                                     }
                                 },
                             ),
@@ -118,7 +117,7 @@ fn show_foreign_profiles(
                                     if let Err(e) = client.reject_request(address) {
                                         warn!("error: {e}");
                                     } else {
-                                        commands.fire_event(FriendshipEvent(None));
+                                        commands.send_event(FriendshipEvent(None));
                                     }
                                 },
                             ),
@@ -133,7 +132,7 @@ fn show_foreign_profiles(
                                     if let Err(e) = client.accept_request(address) {
                                         warn!("error: {e}");
                                     } else {
-                                        commands.fire_event(FriendshipEvent(None));
+                                        commands.send_event(FriendshipEvent(None));
                                     }
                                 },
                             ),
@@ -148,7 +147,7 @@ fn show_foreign_profiles(
                                     if let Err(e) = client.delete_friend(address) {
                                         warn!("error: {e}");
                                     } else {
-                                        commands.fire_event(FriendshipEvent(None));
+                                        commands.send_event(FriendshipEvent(None));
                                     }
                                 },
                             ),
@@ -158,9 +157,11 @@ fn show_foreign_profiles(
                 )
                 .unwrap();
 
-            commands
-                .entity(components.root)
-                .insert((ProfileDialog(address), permit));
+            commands.entity(components.root).insert((
+                ProfileDialog(address),
+                permit,
+                ZOrder::ProfileView.default(),
+            ));
             false
         })
         .collect();
@@ -171,9 +172,9 @@ fn update_profile_friend_buttons(
     client: Res<SocialClient>,
     mut events: EventReader<FriendshipEvent>,
     children: Query<&Children>,
-    mut style: Query<&mut Style>,
+    mut style: Query<&mut Node>,
 ) {
-    let Ok((profile, components)) = q.get_single() else {
+    let Ok((profile, components)) = q.single() else {
         events.clear();
         return;
     };

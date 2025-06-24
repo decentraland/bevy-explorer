@@ -1,4 +1,4 @@
-use bevy::{prelude::*, utils::HashMap};
+use bevy::{platform::collections::HashMap, prelude::*};
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
 
@@ -90,7 +90,7 @@ pub enum AxisIdentifier {
 pub enum InputIdentifier {
     Key(KeyCode),
     Mouse(MouseButton),
-    Gamepad(GamepadButtonType),
+    Gamepad(GamepadButton),
     Analog(AxisIdentifier, InputDirection),
 }
 
@@ -184,8 +184,7 @@ impl<'de> serde::Deserialize<'de> for InputIdentifier {
             };
             Ok(Self::Mouse(button))
         } else if let Some(button) = string.strip_prefix("Gamepad ") {
-            let Ok(button) = serde_json::from_str::<GamepadButtonType>(&format!("\"{button}\""))
-            else {
+            let Ok(button) = serde_json::from_str::<GamepadButton>(&format!("\"{button}\"")) else {
                 return Err(serde::de::Error::custom("invalid string"));
             };
             Ok(Self::Gamepad(button))
@@ -231,21 +230,21 @@ impl Default for InputMap {
                     Action::Scene(CommonInputAction::IaPointer),
                     vec![
                         InputIdentifier::Mouse(MouseButton::Left),
-                        InputIdentifier::Gamepad(GamepadButtonType::LeftTrigger2),
+                        InputIdentifier::Gamepad(GamepadButton::LeftTrigger2),
                     ],
                 ),
                 (
                     Action::Scene(CommonInputAction::IaPrimary),
                     vec![
                         InputIdentifier::Key(KeyCode::KeyE),
-                        InputIdentifier::Gamepad(GamepadButtonType::South),
+                        InputIdentifier::Gamepad(GamepadButton::South),
                     ],
                 ),
                 (
                     Action::Scene(CommonInputAction::IaSecondary),
                     vec![
                         InputIdentifier::Key(KeyCode::KeyF),
-                        InputIdentifier::Gamepad(GamepadButtonType::East),
+                        InputIdentifier::Gamepad(GamepadButton::East),
                     ],
                 ),
                 (
@@ -280,7 +279,7 @@ impl Default for InputMap {
                     Action::Scene(CommonInputAction::IaJump),
                     vec![
                         InputIdentifier::Key(KeyCode::Space),
-                        InputIdentifier::Gamepad(GamepadButtonType::North),
+                        InputIdentifier::Gamepad(GamepadButton::North),
                     ],
                 ),
                 (
@@ -291,49 +290,49 @@ impl Default for InputMap {
                     Action::Scene(CommonInputAction::IaAction3),
                     vec![
                         InputIdentifier::Key(KeyCode::Digit1),
-                        InputIdentifier::Gamepad(GamepadButtonType::DPadUp),
+                        InputIdentifier::Gamepad(GamepadButton::DPadUp),
                     ],
                 ),
                 (
                     Action::Scene(CommonInputAction::IaAction4),
                     vec![
                         InputIdentifier::Key(KeyCode::Digit2),
-                        InputIdentifier::Gamepad(GamepadButtonType::DPadRight),
+                        InputIdentifier::Gamepad(GamepadButton::DPadRight),
                     ],
                 ),
                 (
                     Action::Scene(CommonInputAction::IaAction5),
                     vec![
                         InputIdentifier::Key(KeyCode::Digit3),
-                        InputIdentifier::Gamepad(GamepadButtonType::DPadDown),
+                        InputIdentifier::Gamepad(GamepadButton::DPadDown),
                     ],
                 ),
                 (
                     Action::Scene(CommonInputAction::IaAction6),
                     vec![
                         InputIdentifier::Key(KeyCode::Digit4),
-                        InputIdentifier::Gamepad(GamepadButtonType::DPadLeft),
+                        InputIdentifier::Gamepad(GamepadButton::DPadLeft),
                     ],
                 ),
                 (
                     Action::System(SystemAction::CameraLock),
                     vec![
                         InputIdentifier::Mouse(MouseButton::Right),
-                        InputIdentifier::Gamepad(GamepadButtonType::RightTrigger2),
+                        InputIdentifier::Gamepad(GamepadButton::RightTrigger2),
                     ],
                 ),
                 (
                     Action::System(SystemAction::Emote),
                     vec![
                         InputIdentifier::Key(KeyCode::AltLeft),
-                        InputIdentifier::Gamepad(GamepadButtonType::West),
+                        InputIdentifier::Gamepad(GamepadButton::West),
                     ],
                 ),
                 (
                     Action::System(SystemAction::Cancel),
                     vec![
                         InputIdentifier::Key(KeyCode::Escape),
-                        InputIdentifier::Gamepad(GamepadButtonType::Select),
+                        InputIdentifier::Gamepad(GamepadButton::Select),
                     ],
                 ),
                 (
@@ -363,14 +362,14 @@ impl Default for InputMap {
                     Action::System(SystemAction::CameraZoomIn),
                     vec![
                         InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Up),
-                        InputIdentifier::Gamepad(GamepadButtonType::LeftTrigger),
+                        InputIdentifier::Gamepad(GamepadButton::LeftTrigger),
                     ],
                 ),
                 (
                     Action::System(SystemAction::CameraZoomOut),
                     vec![
                         InputIdentifier::Analog(AxisIdentifier::MouseWheel, InputDirection::Down),
-                        InputIdentifier::Gamepad(GamepadButtonType::RightTrigger),
+                        InputIdentifier::Gamepad(GamepadButton::RightTrigger),
                     ],
                 ),
                 (
@@ -405,7 +404,7 @@ impl Default for InputMap {
                     Action::System(SystemAction::ShowProfile),
                     vec![
                         InputIdentifier::Mouse(MouseButton::Middle),
-                        InputIdentifier::Gamepad(GamepadButtonType::North),
+                        InputIdentifier::Gamepad(GamepadButton::North),
                     ],
                 ),
                 (

@@ -1,4 +1,4 @@
-use bevy::{math::IVec2, utils::HashSet};
+use bevy::{math::IVec2, platform::collections::HashSet};
 
 #[derive(Debug)]
 pub struct Region {

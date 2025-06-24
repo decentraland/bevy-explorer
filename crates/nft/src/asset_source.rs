@@ -1,15 +1,14 @@
-use std::{io::ErrorKind, str::FromStr, sync::Arc, time::Duration};
+use std::{io::ErrorKind, path::Path, str::FromStr, sync::Arc, time::Duration};
 
-use async_std::io::{Cursor, ReadExt};
 use bevy::{
     asset::{
         io::{AssetReader, AssetReaderError, AssetSourceBuilder, Reader},
         AssetApp, AssetLoader,
     },
     prelude::*,
-    utils::ConditionalSendFuture,
 };
 use common::util::reqwest_client;
+use ipfs::AsyncCursor;
 use num::{BigInt, ToPrimitive};
 use reqwest::StatusCode;
 use serde::Deserialize;
@@ -32,14 +31,11 @@ impl Plugin for NftReaderPlugin {
 pub struct NftReader;
 
 impl AssetReader for NftReader {
-    fn read<'a>(
+    async fn read<'a>(
         &'a self,
         path: &'a std::path::Path,
-    ) -> impl ConditionalSendFuture<
-        Output = Result<Box<bevy::asset::io::Reader<'a>>, bevy::asset::io::AssetReaderError>,
-    > {
-        let path = path.to_owned();
-        Box::pin(platform::compat(async move {
+    ) -> Result<impl Reader + 'a, bevy::asset::io::AssetReaderError> {
+        platform::compat(async move {
             debug!("getting nft raw data");
 
             let path = path.to_string_lossy();
@@ -138,36 +134,27 @@ impl AssetReader for NftReader {
 
             debug!("got nft raw data");
 
-            let reader: Box<Reader> = Box::new(Cursor::new(data));
+            let reader = AsyncCursor::new(data);
             Ok(reader)
-        }))
+        }).await
     }
 
-    fn read_meta<'a>(
+    async fn read_meta<'a>(
         &'a self,
-        path: &'a std::path::Path,
-    ) -> impl ConditionalSendFuture<
-        Output = Result<Box<bevy::asset::io::Reader<'a>>, bevy::asset::io::AssetReaderError>,
-    > {
-        Box::pin(async { Err(AssetReaderError::NotFound(path.to_owned())) })
+        path: &'a Path,
+    ) -> Result<impl bevy::asset::io::Reader + 'a, AssetReaderError> {
+        Err::<AsyncCursor<Vec<u8>>, _>(AssetReaderError::NotFound(path.to_owned()))
     }
 
-    fn read_directory<'a>(
-        &'a self,
-        _: &'a std::path::Path,
-    ) -> impl ConditionalSendFuture<
-        Output = Result<Box<bevy::asset::io::PathStream>, bevy::asset::io::AssetReaderError>,
-    > {
-        Box::pin(async {
-            panic!();
-        })
+    async fn is_directory<'a>(&'a self, _path: &'a Path) -> Result<bool, AssetReaderError> {
+        Ok(false)
     }
 
-    fn is_directory<'a>(
+    async fn read_directory<'a>(
         &'a self,
-        _: &'a std::path::Path,
-    ) -> impl ConditionalSendFuture<Output = Result<bool, bevy::asset::io::AssetReaderError>> {
-        Box::pin(async { Ok(false) })
+        _path: &'a Path,
+    ) -> Result<Box<bevy::asset::io::PathStream>, AssetReaderError> {
+        panic!();
     }
 }
 
@@ -252,27 +239,25 @@ impl AssetLoader for NftLoader {
     type Settings = ();
     type Error = std::io::Error;
 
-    fn load<'a>(
-        &'a self,
-        reader: &'a mut Reader,
-        _: &'a Self::Settings,
-        _: &'a mut bevy::asset::LoadContext,
-    ) -> impl ConditionalSendFuture<Output = Result<Self::Asset, Self::Error>> {
-        Box::pin(async move {
-            debug!("loading nft");
-            let mut bytes = Vec::default();
-            reader
-                .read_to_end(&mut bytes)
-                .await
-                .map_err(|e| std::io::Error::new(e.kind(), e))?;
+    async fn load(
+        &self,
+        reader: &mut dyn Reader,
+        _: &Self::Settings,
+        _: &mut bevy::asset::LoadContext<'_>,
+    ) -> Result<Self::Asset, Self::Error> {
+        debug!("loading nft");
+        let mut bytes = Vec::default();
+        reader
+            .read_to_end(&mut bytes)
+            .await
+            .map_err(|e| std::io::Error::new(e.kind(), e))?;
 
-            let res = serde_json::from_reader::<_, NftWrapper>(bytes.as_slice())
-                .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e));
-            if res.is_err() {
-                debug!("errored nft bytes: {}", String::from_utf8(bytes).unwrap());
-            }
-            res.map(|wrapper| wrapper.nft)
-        })
+        let res = serde_json::from_reader::<_, NftWrapper>(bytes.as_slice())
+            .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e));
+        if res.is_err() {
+            debug!("errored nft bytes: {}", String::from_utf8(bytes).unwrap());
+        }
+        res.map(|wrapper| wrapper.nft)
     }
 
     fn extensions(&self) -> &[&str] {

@@ -9,7 +9,6 @@ mod client;
 pub use client::{FriendshipEventBody, SocialClientHandler};
 
 use bevy::prelude::*;
-use common::util::FireEventEx;
 use ethers_core::types::Address;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 use wallet::Wallet;
@@ -55,10 +54,10 @@ pub fn init_social_client(
     }
 
     while let Some(f) = friends.as_mut().and_then(|rx| rx.try_recv().ok()) {
-        commands.fire_event(f);
+        commands.send_event(f);
     }
     while let Some(c) = chats.as_mut().and_then(|rx| rx.try_recv().ok()) {
-        commands.fire_event(c);
+        commands.send_event(c);
     }
 }
 

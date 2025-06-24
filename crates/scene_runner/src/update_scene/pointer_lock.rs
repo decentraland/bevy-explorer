@@ -49,10 +49,9 @@ impl From<PbPointerLock> for PointerLock {
 
 #[derive(SystemParam)]
 pub struct CameraInteractionState<'w, 's> {
-    input_manager: InputManager<'w>,
+    input_manager: InputManager<'w, 's>,
     state: Local<'s, (ClickState, f32)>,
     time: Res<'w, Time>,
-    #[system_param(ignore)]
     _p: PhantomData<&'s ()>,
 }
 
@@ -70,14 +69,14 @@ impl CameraInteractionState<'_, '_> {
         match self.state.0 {
             ClickState::None | ClickState::Released => {
                 if self.input_manager.just_down(action, InputPriority::None) {
-                    *self.state = (ClickState::Held, self.time.elapsed_seconds());
+                    *self.state = (ClickState::Held, self.time.elapsed_secs());
                 } else {
                     self.state.0 = ClickState::None;
                 }
             }
             ClickState::Held => {
                 if self.input_manager.just_up(action) {
-                    if self.time.elapsed_seconds() - self.state.1 > 0.25 {
+                    if self.time.elapsed_secs() - self.state.1 > 0.25 {
                         self.state.0 = ClickState::Released;
                     } else {
                         self.state.0 = ClickState::Clicked;
@@ -110,10 +109,10 @@ pub fn update_pointer_lock(
     mut toggle: Local<bool>,
     mut last_explicit_tick: Local<u32>,
 ) {
-    let Ok(window) = window.get_single() else {
+    let Ok(window) = window.single() else {
         return;
     };
-    let Ok((camera, camera_position)) = camera.get_single() else {
+    let Ok((camera, camera_position)) = camera.single() else {
         return;
     };
 
@@ -133,7 +132,7 @@ pub fn update_pointer_lock(
             (0.0, 0.0, real_window_size.x, real_window_size.y)
         };
 
-        if window.cursor.grab_mode == bevy::window::CursorGrabMode::Locked {
+        if window.cursor_options.grab_mode == bevy::window::CursorGrabMode::Locked {
             // if pointer locked, just middle
             let window_size = Vec2::new(right - left, bottom - top);
             Some(window_size / 2.0)
@@ -189,7 +188,7 @@ pub fn update_pointer_lock(
     let frame_delta = input_manager.get_analog(POINTER_SET, InputPriority::Scene);
 
     let ray = screen_coordinates
-        .and_then(|coords| camera.viewport_to_world(camera_position, coords))
+        .and_then(|coords| camera.viewport_to_world(camera_position, coords).ok())
         .map(|ray| Vector3::world_vec_from_vec3(&ray.direction));
 
     for (entity, mut context, maybe_pointer_delta, _, _) in scenes.iter_mut() {

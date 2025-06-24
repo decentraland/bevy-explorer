@@ -2,14 +2,14 @@ use std::{path::PathBuf, str::FromStr};
 
 use anyhow::anyhow;
 use bevy::{
+    platform::collections::HashSet,
     prelude::*,
     tasks::{IoTaskPool, Task},
-    utils::HashSet,
 };
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     rpc::RpcCall,
-    structs::{IVec2Arg, SettingsTab},
+    structs::{IVec2Arg, SettingsTab, ZOrder},
     util::{ModifyComponentExt, TaskCompat, TaskExt},
 };
 use ipfs::{ipfs_path::IpfsPath, ChangeRealmEvent, IpfsAssetServer};
@@ -34,8 +34,7 @@ impl Plugin for DiscoverSettingsPlugin {
             (
                 set_discover_content,
                 (update_results, update_page).run_if(|q: Query<&SettingsTab>| {
-                    q.get_single()
-                        .is_ok_and(|tab| tab == &SettingsTab::Discover)
+                    q.single().is_ok_and(|tab| tab == &SettingsTab::Discover)
                 }),
             ),
         );
@@ -261,7 +260,7 @@ fn set_discover_content(
             None => &mut new_settings,
         };
 
-        commands.entity(ent).despawn_descendants();
+        commands.entity(ent).despawn_related::<Children>();
 
         let category_buttons = DiscoverCategory::iter()
             .map(|cat| {
@@ -284,7 +283,7 @@ fn set_discover_content(
                               caller: Res<UiCaller>,
                               mut buttons: Query<&mut Active>,
                               mut settings: Query<&mut DiscoverSettings>| {
-                            let Ok(mut settings) = settings.get_single_mut() else {
+                            let Ok(mut settings) = settings.single_mut() else {
                                 warn!("no settings");
                                 return;
                             };
@@ -324,7 +323,7 @@ fn set_discover_content(
                             warn!("no value from sort combo?");
                             return;
                         };
-                        let Ok(mut settings) = settings.get_single_mut() else {
+                        let Ok(mut settings) = settings.single_mut() else {
                             warn!("no settings");
                             return;
                         };
@@ -344,7 +343,7 @@ fn set_discover_content(
                             return;
                         };
 
-                        let Ok(mut settings) = settings.get_single_mut() else {
+                        let Ok(mut settings) = settings.single_mut() else {
                             warn!("no settings");
                             return;
                         };
@@ -368,14 +367,21 @@ fn set_discover_content(
                             warn!("no value from text entry?");
                             return;
                         };
-                        if settings.single().search_filter.as_deref().unwrap_or("") == value {
+                        if settings
+                            .single()
+                            .unwrap()
+                            .search_filter
+                            .as_deref()
+                            .unwrap_or("")
+                            == value
+                        {
                             // no change
                             return;
                         }
                         if value.is_empty() {
-                            settings.single_mut().search_filter = None;
+                            settings.single_mut().unwrap().search_filter = None;
                         } else {
-                            let mut settings = settings.single_mut();
+                            let mut settings = settings.single_mut().unwrap();
                             settings.search_filter = Some(value);
                             settings.search_timer = 1.0;
                         }
@@ -456,7 +462,7 @@ fn update_page(
     mut prev_search: Local<Option<String>>,
     time: Res<Time>,
 ) {
-    let Ok((settings_ent, settings, components)) = settings.get_single() else {
+    let Ok((settings_ent, settings, components)) = settings.single() else {
         return;
     };
 
@@ -466,14 +472,14 @@ fn update_page(
 
     let Some(mut commands) = components
         .get_named("items")
-        .and_then(|e| commands.get_entity(e))
+        .and_then(|e| commands.get_entity(e).ok())
     else {
         warn!("no content node");
         return;
     };
 
     if settings.search_timer > 0.0 {
-        let delta = time.delta_seconds();
+        let delta = time.delta_secs();
         commands.commands().entity(settings_ent).modify_component(
             move |settings: &mut DiscoverSettings| {
                 settings.search_timer = 0f32.max(settings.search_timer - delta);
@@ -482,7 +488,7 @@ fn update_page(
         return;
     }
 
-    commands.despawn_descendants();
+    commands.despawn_related::<Children>();
     let mut visible_count = 0;
 
     if settings.search_filter != *prev_search {
@@ -559,7 +565,7 @@ fn update_page(
             commands
                 .commands()
                 .entity(components.root)
-                .modify_component(|style: &mut Style| style.min_width = Val::Vw(80.0));
+                .modify_component(|style: &mut Node| style.min_width = Val::Vw(80.0));
 
             commands.commands().entity(settings_ent).modify_component(
                 |settings: &mut DiscoverSettings| {
@@ -579,8 +585,8 @@ fn update_page(
                         |caller: Res<UiCaller>,
                          mut commands: Commands,
                          mut settings: Query<&mut DiscoverSettings>| {
-                            commands.entity(caller.0).despawn_recursive();
-                            let Ok(mut settings) = settings.get_single_mut() else {
+                            commands.entity(caller.0).despawn();
+                            let Ok(mut settings) = settings.single_mut() else {
                                 warn!("no settings");
                                 return;
                             };
@@ -596,7 +602,7 @@ fn update_page(
             commands
                 .commands()
                 .entity(components.root)
-                .modify_component(|style: &mut Style| style.min_width = Val::Vw(80.0));
+                .modify_component(|style: &mut Node| style.min_width = Val::Vw(80.0));
         }
     }
 
@@ -632,7 +638,7 @@ pub fn spawn_discover_popup(
             response: Default::default(),
         };
 
-        if let Ok(mut settings) = settings.get_single_mut() {
+        if let Ok(mut settings) = settings.single_mut() {
             settings.on_close = Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev));
         } else {
             warn!("no settings");
@@ -681,6 +687,7 @@ pub fn spawn_discover_popup(
         .with_prop("jump-in", jump_in);
 
     commands
-        .spawn_template(dui, "discover-popup", props)
+        .spawn(ZOrder::BackpackPopup.default())
+        .apply_template(dui, "discover-popup", props)
         .unwrap();
 }

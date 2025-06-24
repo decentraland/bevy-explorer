@@ -5,16 +5,16 @@ use avatar::{
     AvatarShape,
 };
 use bevy::prelude::*;
-use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
+use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::{AvatarColor, AvatarEmote, SerializedProfile},
     rpc::{RpcCall, RpcResultSender},
     sets::SetupSets,
     structs::{
         ActiveDialog, AppConfig, PermissionTarget, SettingsTab, ShowSettingsEvent, SystemAudio,
-        PROFILE_UI_RENDERLAYER,
+        ZOrder, PROFILE_UI_RENDERLAYER,
     },
-    util::{FireEventEx, TryPushChildrenEx},
+    util::TryPushChildrenEx,
 };
 use comms::profile::{CurrentUserProfile, ProfileDeployedEvent};
 use ipfs::{ChangeRealmEvent, CurrentRealm};
@@ -57,19 +57,16 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, ui_root: Res<Sy
     // profile button
     let button = commands
         .spawn((
-            ImageBundle {
-                image: asset_server.load("images/profile_button.png").into(),
-                style: Style {
-                    position_type: PositionType::Absolute,
-                    top: Val::VMin(BUTTON_SCALE * 0.5),
-                    right: Val::VMin(BUTTON_SCALE * 0.5),
-                    width: Val::VMin(BUTTON_SCALE),
-                    height: Val::VMin(BUTTON_SCALE),
-                    ..Default::default()
-                },
-                focus_policy: bevy::ui::FocusPolicy::Block,
+            ImageNode::new(asset_server.load("images/profile_button.png")),
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::VMin(BUTTON_SCALE * 0.5),
+                right: Val::VMin(BUTTON_SCALE * 0.5),
+                width: Val::VMin(BUTTON_SCALE),
+                height: Val::VMin(BUTTON_SCALE),
                 ..Default::default()
             },
+            bevy::ui::FocusPolicy::Block,
             Interaction::default(),
             On::<Click>::new(
                 (move |mut target: ResMut<PermissionTarget>| {
@@ -91,7 +88,8 @@ impl InfoDialog {
     pub fn click(title: String, body: String) -> On<Click> {
         On::<Click>::new(move |mut commands: Commands, dui: Res<DuiRegistry>| {
             commands
-                .spawn_template(
+                .spawn(ZOrder::BackpackPopup.default())
+                .apply_template(
                     &dui,
                     "text-dialog",
                     DuiProps::new()
@@ -140,7 +138,7 @@ fn save_settings(
     };
 
     let Ok((dialog_ent, maybe_avatar, maybe_detail, maybe_booth, maybe_settings, maybe_perms)) =
-        modified.get_single()
+        modified.single()
     else {
         error!("no dialog");
         return;
@@ -212,7 +210,7 @@ fn save_settings(
         current_profile.is_deployed = false;
     }
 
-    commands.entity(dialog_ent).despawn_recursive();
+    commands.entity(dialog_ent).despawn();
 }
 
 fn really_close_settings(
@@ -220,12 +218,12 @@ fn really_close_settings(
     modified: Query<Entity, With<SettingsDialog>>,
     mut config: ResMut<AppConfig>,
 ) {
-    let Ok(dialog_ent) = modified.get_single() else {
+    let Ok(dialog_ent) = modified.single() else {
         error!("no dialog");
         return;
     };
 
-    commands.entity(dialog_ent).despawn_recursive();
+    commands.entity(dialog_ent).despawn();
 
     // touch the app config so all settings get reverted
     config.set_changed();
@@ -238,7 +236,7 @@ pub fn close_settings(
     mut cr: EventWriter<ChangeRealmEvent>,
     mut rpc: EventWriter<RpcCall>,
 ) {
-    let Ok((settings_ent, mut settings)) = q.get_single_mut() else {
+    let Ok((settings_ent, mut settings)) = q.single_mut() else {
         warn!("no settings dialog");
         return;
     };
@@ -248,15 +246,16 @@ pub fn close_settings(
         let send_onclose =
             move |mut cr: EventWriter<ChangeRealmEvent>, mut rpc: EventWriter<RpcCall>| match &ev {
                 Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev)) => {
-                    cr.send(cr_ev.clone());
-                    rpc.send(rpc_ev.clone());
+                    cr.write(cr_ev.clone());
+                    rpc.write(rpc_ev.clone());
                 }
                 Some(OnCloseEvent::SomethingElse) => (),
                 _ => (),
             };
 
         commands
-            .spawn_template(
+            .spawn(ZOrder::BackpackPopup.default())
+            .apply_template(
                 &dui,
                 "text-dialog",
                 DuiProps::new()
@@ -279,7 +278,7 @@ pub fn close_settings(
                             DuiButton::new_enabled_and_close_sad(
                                 "Cancel",
                                 |mut q: Query<&mut SettingsDialog>| {
-                                    if let Ok(mut settings) = q.get_single_mut() {
+                                    if let Ok(mut settings) = q.single_mut() {
                                         settings.on_close = None;
                                     }
                                 },
@@ -289,15 +288,15 @@ pub fn close_settings(
             )
             .unwrap();
     } else {
-        commands.entity(settings_ent).despawn_recursive();
+        commands.entity(settings_ent).despawn();
         match &ev {
             Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev)) => {
-                cr.send(cr_ev.clone());
-                rpc.send(rpc_ev.clone());
-                commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+                cr.write(cr_ev.clone());
+                rpc.write(rpc_ev.clone());
+                commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
             }
             _ => {
-                commands.fire_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
+                commands.send_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
             }
         }
     }
@@ -350,6 +349,7 @@ pub fn show_settings(
             on_close: None,
         },
         permit,
+        ZOrder::Backpack.default(),
     ));
     // let root_id = root.id();
 
@@ -421,25 +421,23 @@ pub fn show_settings(
             |caller: Res<UiCaller>,
              selected: Query<&TabSelection>,
              mut content: Query<&mut SettingsTab>| {
-                *content.single_mut() = match selected.get(caller.0).unwrap().selected.unwrap() {
-                    0 => SettingsTab::Discover,
-                    1 => SettingsTab::ProfileDetail,
-                    2 => SettingsTab::Wearables,
-                    3 => SettingsTab::Emotes,
-                    4 => SettingsTab::Map,
-                    5 => SettingsTab::Settings,
-                    6 => SettingsTab::Permissions,
-                    _ => panic!(),
-                }
+                *content.single_mut().unwrap() =
+                    match selected.get(caller.0).unwrap().selected.unwrap() {
+                        0 => SettingsTab::Discover,
+                        1 => SettingsTab::ProfileDetail,
+                        2 => SettingsTab::Wearables,
+                        3 => SettingsTab::Emotes,
+                        4 => SettingsTab::Map,
+                        5 => SettingsTab::Settings,
+                        6 => SettingsTab::Permissions,
+                        _ => panic!(),
+                    }
             },
         ),
     );
 
     let components = root.apply_template(&dui, "settings", props).unwrap();
 
-    commands
-        .entity(components.root)
-        .insert(ZIndex::Global((1 << 18) + 4));
     commands
         .entity(components.named("change-realm-button"))
         .insert(UpdateRealmText);
@@ -519,7 +517,7 @@ fn process_profile(
         if let Some(existing) = processing.take() {
             match existing {
                 ProcessProfileState::Snapping(entity, _, sender) => {
-                    commands.entity(entity).despawn_recursive();
+                    commands.entity(entity).despawn();
                     sender.send(Err("cancelled".to_owned()));
                 }
                 ProcessProfileState::Deploying(_, sender) => {
@@ -562,7 +560,7 @@ fn process_profile(
         };
         debug!("updating ...");
 
-        commands.entity(*booth_ent).despawn_recursive();
+        commands.entity(*booth_ent).despawn();
         current_profile.snapshots = Some((face, body));
         current_profile.is_deployed = false;
 

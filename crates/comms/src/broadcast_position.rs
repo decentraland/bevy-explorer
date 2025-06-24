@@ -34,10 +34,10 @@ fn broadcast_position(
     time: Res<Time>,
     global_crdt: Res<GlobalCrdtState>,
 ) {
-    let Ok((player, dynamics)) = player.get_single() else {
+    let Ok((player, dynamics)) = player.single() else {
         return;
     };
-    let time = time.elapsed_seconds_f64();
+    let time = time.elapsed_secs_f64();
     let elapsed = time - *last_sent;
     if elapsed < DYNAMIC_FREQ {
         return;

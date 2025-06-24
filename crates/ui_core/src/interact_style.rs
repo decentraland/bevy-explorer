@@ -48,7 +48,7 @@ pub fn set_interaction_style(
         Option<&mut BackgroundColor>,
         Option<&mut BorderColor>,
         Option<&mut Ui9Slice>,
-        Option<&mut UiImage>,
+        Option<&mut ImageNode>,
         Option<&mut BoundedNode>,
         Option<&mut NodeBounds>,
         Option<&Interaction>,
@@ -106,9 +106,7 @@ pub fn set_interaction_style(
                     nineslice.image = image.clone();
                 }
             }
-        }
-
-        if let Some(mut bounded) = maybe_bounded {
+        } else if let Some(mut bounded) = maybe_bounded {
             if let Some(req_bg) = style.background {
                 if bounded.color != Some(req_bg) {
                     bounded.color = Some(req_bg);
@@ -119,20 +117,16 @@ pub fn set_interaction_style(
                     bounded.image = Some(image.clone());
                 }
             }
-        }
-
-        if let Some(mut bounds) = maybe_bounds {
+        } else if let Some(mut bounds) = maybe_bounds {
             if let Some(border) = style.border {
                 if bounds.border_color != border {
                     bounds.border_color = border;
                 }
             }
-        }
-
-        if let Some(mut ui_image) = maybe_image {
+        } else if let Some(mut ui_image) = maybe_image {
             if let Some(image) = &style.image {
-                if &ui_image.texture != image {
-                    ui_image.texture = image.clone();
+                if &ui_image.image != image {
+                    ui_image.image = image.clone();
                 }
             }
             if let Some(req_bg) = style.background {

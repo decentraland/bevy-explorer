@@ -17,7 +17,7 @@ impl Plugin for CameraModePlugin {
 }
 
 fn update_camera_mode(mut scenes: Query<&mut RendererSceneContext>, camera: Query<&PrimaryCamera>) {
-    let Ok(camera) = camera.get_single() else {
+    let Ok(camera) = camera.single() else {
         return;
     };
 

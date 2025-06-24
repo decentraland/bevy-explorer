@@ -1,4 +1,4 @@
-use bevy::{prelude::*, utils::HashSet};
+use bevy::{platform::collections::HashSet, prelude::*};
 use input_manager::{InputManager, InputPriority, InputType};
 
 use crate::ui_actions::{UiActionPriority, UiFocusActionSet};
@@ -21,7 +21,7 @@ impl Plugin for FocusPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             PreUpdate,
-            (apply_deferred, defocus, focus)
+            (defocus, focus)
                 .chain()
                 .in_set(SceneSets::UiActions)
                 .after(UiActionSet)

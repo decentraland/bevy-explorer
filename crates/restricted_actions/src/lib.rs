@@ -8,12 +8,12 @@ use std::{
 use bevy::{
     asset::LoadState,
     math::Vec3Swizzles,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     tasks::{IoTaskPool, Task},
-    utils::{HashMap, HashSet},
 };
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
-use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
+use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::SerializedProfile,
     rpc::{
@@ -21,8 +21,8 @@ use common::{
         SpawnResponse,
     },
     sets::SceneSets,
-    structs::{AvatarDynamicState, PermissionType, PrimaryCamera, PrimaryUser},
-    util::{AsH160, FireEventEx, TaskCompat, TaskExt},
+    structs::{AvatarDynamicState, PermissionType, PrimaryCamera, PrimaryUser, ZOrder},
+    util::{AsH160, TaskCompat, TaskExt},
 };
 use comms::{
     global_crdt::ForeignPlayer,
@@ -135,7 +135,7 @@ pub fn move_player(
         if !target_scenes.contains(&root) {
             warn!("move player request from {root:?} was outside scene bounds");
         } else {
-            let (_, mut player_transform, mut dynamics) = player.single_mut();
+            let (_, mut player_transform, mut dynamics) = player.single_mut().unwrap();
             player_transform.translation = target_translation;
             debug!("player transform to {}", target_translation);
 
@@ -169,7 +169,7 @@ pub fn move_camera(
         _ => None,
     }) {
         if !player
-            .get_single()
+            .single()
             .ok()
             .is_some_and(|(_, e)| containing_scene.get(e).contains(root))
         {
@@ -177,14 +177,14 @@ pub fn move_camera(
             warn!("request from {root:?}");
             warn!(
                 "containing scenes {:?}",
-                player.get_single().map(|(_, p)| containing_scene.get(p))
+                player.single().map(|(_, p)| containing_scene.get(p))
             );
             return;
         }
 
         let (yaw, pitch, roll) = facing.to_euler(EulerRot::YXZ);
 
-        let mut camera = camera.single_mut();
+        let mut camera = camera.single_mut().unwrap();
         camera.yaw = yaw;
         camera.pitch = pitch;
         camera.roll = roll;
@@ -215,7 +215,7 @@ fn change_realm(
     }
 
     for (new_realm, response) in perms.drain_success(PermissionType::ChangeRealm) {
-        commands.fire_event(ChangeRealmEvent {
+        commands.send_event(ChangeRealmEvent {
             new_realm,
             content_server_override: None,
         });
@@ -377,8 +377,8 @@ fn spawn_portable(
     )>,
     ipfas: IpfsAssetServer,
 ) {
-    let mut new_portables = HashMap::default();
-    let mut failed_portables = HashSet::default();
+    let mut new_portables = HashMap::new();
+    let mut failed_portables = HashSet::new();
 
     // process incoming events
     for (location, spawner, response) in events.read().filter_map(|ev| match ev {
@@ -513,13 +513,13 @@ fn spawn_portable(
 
     // deferred write to PortableScenes (we can't take it mutably as it is used in Permissions)
     if !new_portables.is_empty() {
-        commands.add(move |world: &mut World| {
+        commands.queue(move |world: &mut World| {
             let mut portables = world.resource_mut::<PortableScenes>();
             portables.0.extend(new_portables);
         });
     }
     if !failed_portables.is_empty() {
-        commands.add(move |world: &mut World| {
+        commands.queue(move |world: &mut World| {
             let mut portables = world.resource_mut::<PortableScenes>();
             for portable in failed_portables {
                 portables.0.remove(&portable);
@@ -534,7 +534,7 @@ fn kill_portable(
     mut events: EventReader<RpcCall>,
     mut perms: Permission<(PortableLocation, RpcResultSender<bool>)>,
 ) {
-    let mut kill_portables = HashSet::default();
+    let mut kill_portables = HashSet::new();
 
     for (scene, location, response) in events.read().filter_map(|ev| match ev {
         RpcCall::KillPortable {
@@ -588,7 +588,7 @@ fn kill_portable(
 
     // deferred write to avoid resource conflict
     if !kill_portables.is_empty() {
-        commands.add(|world: &mut World| {
+        commands.queue(|world: &mut World| {
             let mut portables = world.resource_mut::<PortableScenes>();
             for killed in kill_portables {
                 portables.0.remove(&killed);
@@ -749,7 +749,7 @@ fn get_players_in_scene(
         _ => None,
     }) {
         let mut results = Vec::default();
-        if let Ok(player) = me.get_single() {
+        if let Ok(player) = me.single() {
             if containing_scene.get(player).contains(scene) {
                 if let Some(address) = wallet.address() {
                     results.push(format!("{address:#x}"));
@@ -871,8 +871,8 @@ fn event_player_moved_scene(
         .collect();
 
     // gather diffs
-    let mut left: HashMap<Entity, Vec<Address>> = HashMap::default();
-    let mut entered: HashMap<Entity, Vec<Address>> = HashMap::default();
+    let mut left: HashMap<Entity, Vec<Address>> = HashMap::new();
+    let mut entered: HashMap<Entity, Vec<Address>> = HashMap::new();
 
     for (address, scene) in current_scene.iter() {
         if new_scene.get(address) != Some(scene) {
@@ -998,7 +998,7 @@ fn open_nft_dialog(
         } => Some((scene, urn, response)),
         _ => None,
     }) {
-        let Ok(player) = primary_user.get_single() else {
+        let Ok(player) = primary_user.single() else {
             response.send(Err("No player".to_owned()));
             return;
         };
@@ -1052,7 +1052,8 @@ fn show_nft_dialog(
             let link = nft.permalink.clone();
 
             commands
-                .spawn_template(
+                .spawn(ZOrder::NftDialog.default())
+                .apply_template(
                     &dui,
                     "nft-dialog",
                     DuiProps::new()
@@ -1079,7 +1080,8 @@ fn show_nft_dialog(
         } else if let LoadState::Failed(_) = asset_server.load_state(nft_spawn.h_nft.id()) {
             commands.entity(ent).remove::<NftDialogSpawn>();
             commands
-                .spawn_template(
+                .spawn(ZOrder::NftDialog.default())
+                .apply_template(
                     &dui,
                     "text-dialog",
                     DuiProps::new()
@@ -1119,11 +1121,11 @@ pub fn handle_eth_async(
             .ok()
             .and_then(|scene| scene.last_action_event)
             .unwrap_or_default();
-        if last_action_time < time.elapsed_seconds() - 1.0 {
+        if last_action_time < time.elapsed_secs() - 1.0 {
             response.send(Err(format!(
                 "no recent user activity (last action {}, time {}).",
                 last_action_time,
-                time.elapsed_seconds()
+                time.elapsed_secs()
             )));
             continue;
         }
@@ -1184,11 +1186,11 @@ pub fn handle_copy_to_clipboard(
             .ok()
             .and_then(|scene| scene.last_action_event)
             .unwrap_or_default();
-        if last_action_time < time.elapsed_seconds() - 1.0 {
+        if last_action_time < time.elapsed_secs() - 1.0 {
             response.send(Err(format!(
                 "no recent user activity (last action {}, time {}).",
                 last_action_time,
-                time.elapsed_seconds()
+                time.elapsed_secs()
             )));
             continue;
         }
@@ -1365,22 +1367,20 @@ fn handle_spawned_command(
                 Ok((hash, source)) => match action {
                     PortableAction::Spawn => {
                         portables.0.insert(hash.clone(), source);
-                        reply.send(PrintConsoleLine::new("[ok]".into()));
+                        reply.write(PrintConsoleLine::new("[ok]".into()));
                     }
                     PortableAction::Kill => {
                         if portables.0.remove(&hash).is_some() {
-                            reply.send(PrintConsoleLine::new("[ok]".into()));
+                            reply.write(PrintConsoleLine::new("[ok]".into()));
                         } else {
-                            reply.send(PrintConsoleLine::new("portable not running".into()));
-                            reply.send(PrintConsoleLine::new("[failed]".into()));
+                            reply.write(PrintConsoleLine::new("portable not running".into()));
+                            reply.write(PrintConsoleLine::new("[failed]".into()));
                         }
                     }
                 },
                 Err(e) => {
-                    reply.send(PrintConsoleLine::new(
-                        format!("failed to lookup ens: {e}").into(),
-                    ));
-                    reply.send(PrintConsoleLine::new("[failed]".into()));
+                    reply.write(PrintConsoleLine::new(format!("failed to lookup ens: {e}")));
+                    reply.write(PrintConsoleLine::new("[failed]".into()));
                 }
             }
             false
