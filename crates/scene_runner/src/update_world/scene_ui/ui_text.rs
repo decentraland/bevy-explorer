@@ -211,15 +211,6 @@ pub fn set_ui_text(
                 UiTextMarker,
                 children!((inner_style, children!((text, ZIndex(1))))),
             ))
-            // .try_with_children(|c| {
-            //     c.spawn(inner_style)
-            //     .try_with_children(|c| {
-            //         c.spawn((
-            //             text,
-            //             ZIndex(1),
-            //         ));
-            //     });
-            // })
             .id();
 
         ent_cmds.insert_children(0, &[text_element]);

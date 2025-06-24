@@ -390,7 +390,8 @@ fn apply_text_extras(
     text: Query<(
         Entity,
         &Children,
-        &GlobalTransform,
+        &ChildOf,
+        Ref<GlobalTransform>,
         Ref<TextLayout>,
         Ref<ComputedTextBlock>,
         Ref<ComputedNode>,
@@ -409,32 +410,25 @@ fn apply_text_extras(
 ) {
     let find_bounds = |buffer: &CosmicBuffer, text: &str, section: (usize, usize)| -> Vec<Vec4> {
         let mut segments = Vec::default();
-        let preceding_text = &text[..section.0];
-        let start_line = preceding_text.chars().filter(|c| *c == '\n').count();
-        let start_line_index = preceding_text
-            .char_indices()
-            .rfind(|(_, c)| *c == '\n')
-            .map(|(ix, _)| ix)
-            .unwrap_or(0);
-        let start_section_index = preceding_text
-            .char_indices()
-            .last()
-            .map(|(ix, _)| ix)
-            .unwrap_or(0)
-            - start_line_index;
 
-        let section_text = &text[section.0..section.1];
-        let end_line = start_line + section_text.chars().filter(|c| *c == '\n').count();
-        let end_line_index = section_text
-            .char_indices()
-            .last()
-            .map(|(ix, _)| ix)
-            .unwrap_or(0);
-        let end_section_index = section_text
-            .char_indices()
-            .rfind(|(_, c)| *c == '\n')
-            .map(|(ix, _)| end_line_index - ix)
-            .unwrap_or(start_section_index + end_line_index + 1);
+        let char_position = |text: &str| -> (usize, usize) {
+            let line_count = text.chars().filter(|c| *c == '\n').count();
+            let enclosing_line_char_index = text
+                .char_indices()
+                .rfind(|(_, c)| *c == '\n')
+                .map(|(ix, _)| ix)
+                .unwrap_or(0);
+            let char_index = text
+                .char_indices()
+                .last()
+                .map(|(ix, _)| ix + 1)
+                .unwrap_or(0)
+                - enclosing_line_char_index;
+            (line_count, char_index)
+        };
+
+        let (start_line, start_char) = char_position(&text[..section.0]);
+        let (end_line, end_char) = char_position(&text[..section.1]);
 
         let mut segment_y = f32::NEG_INFINITY;
         let runs = buffer
@@ -446,8 +440,8 @@ fn apply_text_extras(
             let glyphs = run
                 .glyphs
                 .iter()
-                .skip_while(|g| run.line_i == start_line && g.start < start_section_index)
-                .take_while(|g| run.line_i < end_line || g.end <= end_section_index);
+                .skip_while(|g| run.line_i == start_line && g.start < start_char)
+                .take_while(|g| run.line_i < end_line || g.end <= end_char);
 
             for glyph in glyphs {
                 debug!("g: {},{}", glyph.x, glyph.y);
@@ -475,9 +469,10 @@ fn apply_text_extras(
         .map(|c| c.parent())
         .collect::<HashSet<_>>();
 
-    for (entity, children, gt, layout, computed_text, computed_node, maybe_camera) in text.iter() {
-        let mut requires_update =
-            layout.is_changed() || computed_text.is_changed() || computed_node.is_changed();
+    for (entity, children, parent, gt, layout, computed_text, computed_node, maybe_camera) in
+        text.iter()
+    {
+        let mut requires_update = layout.is_changed();
         requires_update |= changed.contains(&entity);
         requires_update |= children.iter().any(|child| removed_extras.contains(&child));
 
@@ -515,7 +510,7 @@ fn apply_text_extras(
                     ..Default::default()
                 },
                 BackgroundColor(color),
-                ZIndex(1),
+                ZIndex(-1),
                 view_visibility,
                 ComputedNode {
                     stack_index: computed_node.stack_index + 1,
@@ -560,7 +555,7 @@ fn apply_text_extras(
             let bounds = find_bounds(buffer, &text, (start, end));
             for bound in bounds {
                 if extras.strike {
-                    ents.push(make_mark(bound, text_color, 0.6, 0.1));
+                    ents.push(make_mark(bound, text_color, 0.5, 0.1));
                 }
                 if extras.underline {
                     ents.push(make_mark(bound, text_color, 0.95, 0.1));
@@ -571,11 +566,13 @@ fn apply_text_extras(
             }
         }
 
-        commands.entity(entity).try_push_children(ents.as_slice());
+        commands
+            .entity(parent.parent())
+            .try_push_children(ents.as_slice());
     }
 }
 
-#[derive(Component, Default, Clone, Copy)]
+#[derive(Component, Default, Clone, Copy, Debug)]
 pub struct TextExtras {
     strike: bool,
     underline: bool,
