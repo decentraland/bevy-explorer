@@ -852,6 +852,7 @@ pub enum ZOrder {
     BackpackPopup,
     Toast,
     Permission,
+    DefaultComboPopup,
     EguiBlocker,
 }
 

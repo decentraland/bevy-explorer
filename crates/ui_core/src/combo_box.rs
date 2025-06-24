@@ -388,7 +388,7 @@ impl DuiTemplate for DuiComboBoxTemplate {
             global_zindex: GlobalZIndex(
                 props
                     .take_as::<i32>(ctx, "global-z-index")?
-                    .unwrap_or(ZOrder::BackpackPopup as i32),
+                    .unwrap_or(ZOrder::DefaultComboPopup as i32),
             ),
         };
         commands.insert(combobox);
