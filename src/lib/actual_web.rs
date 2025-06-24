@@ -113,7 +113,7 @@ fn main_inner(server: &str, location: &str, system_scene: &str) {
         });
     }
 
-    let version = "webgl proof of concept".to_string();
+    let version = "webgpu proof of concept".to_string();
 
     app.insert_resource(Version(version.clone()))
         .insert_resource(final_config.audio.clone())
