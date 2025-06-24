@@ -10,8 +10,10 @@ use dcl_deno::init_runtime;
 use imposters::{render::ImposterMissing, DclImposterPlugin};
 
 use bevy::{
-    app::{ScheduleRunnerPlugin, TaskPoolThreadAssignmentPolicy}, prelude::*,
-    window::ExitCondition, winit::WinitPlugin,
+    app::{ScheduleRunnerPlugin, TaskPoolThreadAssignmentPolicy},
+    prelude::*,
+    window::ExitCondition,
+    winit::WinitPlugin,
 };
 
 use common::{
