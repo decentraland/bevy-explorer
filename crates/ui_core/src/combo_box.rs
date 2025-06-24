@@ -268,7 +268,7 @@ fn update_comboboxen(
                                 )
                                 .with_prop("width", format!("{}px", node.size().x))
                                 .with_prop("height", format!("{height}px"))
-                                .with_prop("background", background.to_srgba().to_hex())
+                                .with_prop("background", background.to_srgba().to_hex()),
                         )
                         .unwrap();
 
@@ -385,7 +385,11 @@ impl DuiTemplate for DuiComboBoxTemplate {
             allow_null: props.take_as::<bool>(ctx, "allow-null")?.unwrap_or(false),
             disabled: props.take_as::<bool>(ctx, "disabled")?.unwrap_or(false),
             style: None,
-            global_zindex: GlobalZIndex(props.take_as::<i32>(ctx, "global-z-index")?.unwrap_or(ZOrder::BackpackPopup as i32)),
+            global_zindex: GlobalZIndex(
+                props
+                    .take_as::<i32>(ctx, "global-z-index")?
+                    .unwrap_or(ZOrder::BackpackPopup as i32),
+            ),
         };
         commands.insert(combobox);
 

@@ -14,7 +14,9 @@ use ui_core::{
     user_font, FontName,
 };
 
-use crate::{renderer_context::RendererSceneContext, update_world::scene_ui::SceneUiData, SceneEntity};
+use crate::{
+    renderer_context::RendererSceneContext, update_world::scene_ui::SceneUiData, SceneEntity,
+};
 
 use super::UiLink;
 
