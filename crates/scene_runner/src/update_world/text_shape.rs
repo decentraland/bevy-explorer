@@ -416,7 +416,7 @@ fn apply_text_extras(
             let enclosing_line_char_index = text
                 .char_indices()
                 .rfind(|(_, c)| *c == '\n')
-                .map(|(ix, _)| ix)
+                .map(|(ix, _)| ix + 1)
                 .unwrap_or(0);
             let char_index = text
                 .char_indices()
@@ -554,14 +554,14 @@ fn apply_text_extras(
         for (extras, text_color, start, end) in spanned_extras {
             let bounds = find_bounds(buffer, &text, (start, end));
             for bound in bounds {
+                if let Some(color) = extras.mark {
+                    ents.push(make_mark(bound, color, 0.1, 1.0));
+                }
                 if extras.strike {
                     ents.push(make_mark(bound, text_color, 0.5, 0.1));
                 }
                 if extras.underline {
                     ents.push(make_mark(bound, text_color, 0.95, 0.1));
-                }
-                if let Some(color) = extras.mark {
-                    ents.push(make_mark(bound, color, 0.0, 1.0));
                 }
             }
         }
