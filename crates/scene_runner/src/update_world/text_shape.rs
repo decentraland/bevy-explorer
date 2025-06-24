@@ -92,8 +92,9 @@ use bevy::{
     ecs::{relationship::RelatedSpawner, spawn::SpawnWith},
     platform::collections::{HashMap, HashSet},
     prelude::*,
+    render::view::VisibilitySystems,
     text::{ComputedTextBlock, CosmicBuffer, LineBreak},
-    ui::{update::update_clipping_system, widget::text_system},
+    ui::{update::update_clipping_system, widget::text_system, UiSystem},
 };
 use common::{
     sets::SceneLoopSets,
@@ -131,7 +132,9 @@ impl Plugin for TextShapePlugin {
             apply_text_extras
                 .after(text_system)
                 .after(TransformSystem::TransformPropagate)
-                .before(update_clipping_system),
+                .before(update_clipping_system)
+                .before(UiSystem::Stack)
+                .before(VisibilitySystems::VisibilityPropagate),
         );
     }
 }
@@ -391,11 +394,12 @@ fn apply_text_extras(
         Entity,
         &Children,
         &ChildOf,
-        Ref<GlobalTransform>,
+        &GlobalTransform,
         Ref<TextLayout>,
-        Ref<ComputedTextBlock>,
-        Ref<ComputedNode>,
-        Option<Ref<UiTargetCamera>>,
+        &ComputedTextBlock,
+        &ComputedNode,
+        Option<&UiTargetCamera>,
+        &ComputedNodeTarget,
     )>,
     changed_spans: Query<
         &ChildOf,
@@ -469,8 +473,17 @@ fn apply_text_extras(
         .map(|c| c.parent())
         .collect::<HashSet<_>>();
 
-    for (entity, children, parent, gt, layout, computed_text, computed_node, maybe_camera) in
-        text.iter()
+    for (
+        entity,
+        children,
+        parent,
+        gt,
+        layout,
+        computed_text,
+        computed_node,
+        maybe_camera,
+        node_target,
+    ) in text.iter()
     {
         let mut requires_update = layout.is_changed();
         requires_update |= changed.contains(&entity);
@@ -499,7 +512,7 @@ fn apply_text_extras(
             let size = Vec2::new(bound.z, height);
             let parent_tl = gt.translation().truncate() - computed_node.size * 0.5;
             let my_tl = parent_tl + Vec2::new(bound.x, bound.y + bound.w * top);
-            let my_translation = round_layout_coords(my_tl + size * 0.5);
+            let my_global_translation = round_layout_coords(my_tl) + size * 0.5;
             let mut cmds = commands.spawn((
                 Node {
                     position_type: PositionType::Absolute,
@@ -524,7 +537,8 @@ fn apply_text_extras(
                     padding: BorderRect::ZERO,
                     inverse_scale_factor: computed_node.inverse_scale_factor,
                 },
-                GlobalTransform::from_translation(my_translation.extend(0.0)),
+                GlobalTransform::from_translation(my_global_translation.extend(0.0)),
+                *node_target,
                 TextExtraMarker,
             ));
 
