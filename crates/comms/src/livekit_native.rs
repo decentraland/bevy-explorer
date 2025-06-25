@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use bevy::{platform::collections::HashMap, prelude::*};
+use ethers_core::types::Address;
 use futures_lite::StreamExt;
 use http::Uri;
 use prost::Message;
@@ -407,13 +408,13 @@ fn livekit_handler_inner(
                         if should_subscribe {
                             // Subscribe to the player's voice track
                             if let Some(publication) = available_tracks.get(&player_address) {
-                                debug!("Subscribing to voice track for player {}", player_address);
+                                warn!("Subscribing to voice track for player {}", player_address);
                                 publication.set_subscribed(true);
                             }
                         } else {
                             // Unsubscribe from the player's voice track
                             if let Some(publication) = available_tracks.get(&player_address) {
-                                debug!("Unsubscribing from voice track for player {}", player_address);
+                                warn!("Unsubscribing from voice track for player {}", player_address);
                                 publication.set_subscribed(false);
                             }
                         }

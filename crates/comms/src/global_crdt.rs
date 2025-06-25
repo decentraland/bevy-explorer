@@ -669,7 +669,7 @@ fn manage_voice_subscriptions(
                     best_source, player.address
                 );
                 player.active_voice_subscription = Some(best_source);
-                subscription_events.send(VoiceSubscriptionRequest {
+                subscription_events.write(VoiceSubscriptionRequest {
                     transport_id: best_source,
                     player_address: player.address,
                     subscribe: true,
