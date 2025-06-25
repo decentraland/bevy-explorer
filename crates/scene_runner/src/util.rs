@@ -11,7 +11,6 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
-use clap::builder::StyledStr;
 use common::{
     structs::{PreviewCommand, PrimaryUser},
     util::TaskExt,
@@ -43,13 +42,13 @@ impl Plugin for SceneUtilPlugin {
 
 #[derive(Resource)]
 pub struct ConsoleRelay {
-    pub send: tokio::sync::mpsc::UnboundedSender<StyledStr>,
-    recv: tokio::sync::mpsc::UnboundedReceiver<StyledStr>,
+    pub send: tokio::sync::mpsc::UnboundedSender<String>,
+    recv: tokio::sync::mpsc::UnboundedReceiver<String>,
 }
 
 fn console_relay(mut write: EventWriter<PrintConsoleLine>, mut relay: ResMut<ConsoleRelay>) {
     while let Ok(line) = relay.recv.try_recv() {
-        write.send(PrintConsoleLine { line });
+        write.write(PrintConsoleLine { line });
     }
 }
 
@@ -70,7 +69,7 @@ fn debug_dump_scene(
 ) {
     if let Some(Ok(_)) = input.take() {
         let scenes = player
-            .get_single()
+            .single()
             .ok()
             .map(|p| containing_scene.get(p))
             .unwrap_or_default()
@@ -126,19 +125,18 @@ fn debug_dump_scene(
                         let mut count = count.lock().unwrap();
                         if let Some(fail) = fail {
                             count.2 += 1;
-                            let _ = send.send(fail.into());
+                            let _ = send.send(fail);
                         } else {
                             count.1 += 1;
                         }
                         if count.0 == count.1 + count.2 {
                             if count.2 == 0 {
-                                let _ =
-                                    send.send(format!("[ok] {} files downloaded", count.0).into());
+                                let _ = send.send(format!("[ok] {} files downloaded", count.0));
                             } else {
-                                let _ = send.send(
-                                    format!("[failed] {}/{} files downloaded", count.1, count.0)
-                                        .into(),
-                                );
+                                let _ = send.send(format!(
+                                    "[failed] {}/{} files downloaded",
+                                    count.1, count.0
+                                ));
                             }
                         }
                     };

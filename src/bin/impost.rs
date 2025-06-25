@@ -10,7 +10,10 @@ use dcl_deno::init_runtime;
 use imposters::{render::ImposterMissing, DclImposterPlugin};
 
 use bevy::{
-    core::TaskPoolThreadAssignmentPolicy, prelude::*, window::ExitCondition, winit::WinitSettings,
+    app::{ScheduleRunnerPlugin, TaskPoolThreadAssignmentPolicy},
+    prelude::*,
+    window::ExitCondition,
+    winit::WinitPlugin,
 };
 
 use common::{
@@ -21,7 +24,7 @@ use common::{
     structs::{
         AppConfig, AvatarDynamicState, CursorLocks, GraphicsSettings, IVec2Arg, PrimaryCamera,
         PrimaryCameraRes, PrimaryPlayerRes, SceneGlobalLight, SceneImposterBake, SceneLoadDistance,
-        SystemAudio, ToolTips,
+        SystemAudio, TimeOfDay, ToolTips,
     },
     util::UtilsPlugin,
 };
@@ -108,10 +111,6 @@ fn main() {
     }
 
     let mut app = App::new();
-    app.insert_resource(WinitSettings {
-        focused_mode: bevy::winit::UpdateMode::Continuous,
-        unfocused_mode: bevy::winit::UpdateMode::Continuous,
-    });
     app.add_plugins(
         DefaultPlugins
             .set(TaskPoolPlugin {
@@ -120,16 +119,22 @@ fn main() {
                         min_threads: 2,
                         max_threads: 8,
                         percent: 0.25,
+                        on_thread_spawn: None,
+                        on_thread_destroy: None,
                     },
                     io: TaskPoolThreadAssignmentPolicy {
                         min_threads: 8,
                         max_threads: 8,
                         percent: 0.25,
+                        on_thread_spawn: None,
+                        on_thread_destroy: None,
                     },
                     compute: TaskPoolThreadAssignmentPolicy {
                         min_threads: 2,
                         max_threads: 8,
                         percent: 0.25,
+                        on_thread_spawn: None,
+                        on_thread_destroy: None,
                     },
                     ..Default::default()
                 },
@@ -139,8 +144,9 @@ fn main() {
                 exit_condition: ExitCondition::DontExit,
                 ..Default::default()
             })
+            .disable::<WinitPlugin>()
             .build()
-            .add_before::<bevy::asset::AssetPlugin, _>(IpfsIoPlugin {
+            .add_before::<bevy::asset::AssetPlugin>(IpfsIoPlugin {
                 preview: false,
                 starting_realm: Some(final_config.server.clone()),
                 content_server_override,
@@ -148,6 +154,11 @@ fn main() {
                 num_slots: final_config.max_concurrent_remotes,
             }),
     );
+
+    app.add_plugins(ScheduleRunnerPlugin::run_loop(
+        // Run full speed
+        std::time::Duration::ZERO,
+    ));
 
     // Analytics
     app.insert_resource(SceneLoadDistance {
@@ -207,7 +218,12 @@ fn main() {
         .add_event::<ScrollTargetEvent>()
         .init_resource::<PreviewMode>()
         .init_asset::<Nft>()
-        .init_resource::<CursorLocks>();
+        .init_resource::<CursorLocks>()
+        .insert_resource(TimeOfDay {
+            time: 10.0 * 3600.0,
+            target_time: None,
+            speed: 12.0,
+        });
 
     // requires local version of `bevy_mod_debugdump` due to once_cell version conflict.
     // probably resolved by updating deno. TODO: add feature flag for this after bumping deno
@@ -249,7 +265,7 @@ fn check_done(
         *counter += 1;
         if *counter == 10 {
             println!("all done!");
-            exit.send_default();
+            exit.write_default();
         }
     } else {
         *counter = 0;
@@ -268,14 +284,12 @@ fn setup(
     // create the main player
     let player_id = commands
         .spawn((
-            SpatialBundle {
-                transform: Transform::from_translation(Vec3::new(
-                    8.0 + 16.0 * config.location.x as f32,
-                    8.0,
-                    -8.0 + -16.0 * config.location.y as f32,
-                )),
-                ..Default::default()
-            },
+            Transform::from_translation(Vec3::new(
+                8.0 + 16.0 * config.location.x as f32,
+                8.0,
+                -8.0 + -16.0 * config.location.y as f32,
+            )),
+            Visibility::default(),
             config.player_settings.clone(),
             OutOfWorld,
             AvatarDynamicState::default(),
@@ -284,7 +298,7 @@ fn setup(
         .id();
 
     let camera_id = commands
-        .spawn((Camera3dBundle::default(), PrimaryCamera::default()))
+        .spawn((Camera3d::default(), PrimaryCamera::default()))
         .id();
 
     player_resource.0 = player_id;

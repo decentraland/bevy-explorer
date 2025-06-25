@@ -7,10 +7,10 @@ use avatar::{
 };
 use bevy::{
     color::palettes::css,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::render_resource::Extent3d,
     tasks::{IoTaskPool, Task},
-    utils::{HashMap, HashSet},
 };
 use bevy_dui::{
     DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry, DuiWalker,
@@ -52,17 +52,14 @@ impl Plugin for WearableSettingsPlugin {
                 (
                     set_wearables_content,
                     (
-                        apply_deferred,
                         get_owned_wearables,
                         update_wearables_list,
-                        apply_deferred,
                         update_wearable_item,
                         update_selected_item,
                     )
                         .chain()
                         .run_if(|q: Query<&SettingsTab>| {
-                            q.get_single()
-                                .is_ok_and(|tab| tab == &SettingsTab::Wearables)
+                            q.single().is_ok_and(|tab| tab == &SettingsTab::Wearables)
                         }),
                 )
                     .chain(),
@@ -185,7 +182,7 @@ fn set_wearables_content(
     }
 
     for (ent, tab, wearable_settings, has_select) in q.iter_mut() {
-        let Ok((settings_entity, maybe_instance, _, dialog)) = dialog.get_single() else {
+        let Ok((settings_entity, maybe_instance, _, dialog)) = dialog.single() else {
             return;
         };
 
@@ -200,10 +197,10 @@ fn set_wearables_content(
 
         debug!("redraw");
 
-        commands.entity(ent).despawn_descendants();
+        commands.entity(ent).despawn_related::<Children>();
 
         let instance = maybe_instance.cloned().unwrap_or_else(|| {
-            let avatar = player.get_single().unwrap();
+            let avatar = player.single().unwrap();
             let instance = booth.spawn_booth(
                 PROFILE_UI_RENDERLAYER,
                 avatar.clone(),
@@ -228,7 +225,7 @@ fn set_wearables_content(
                 settings.into_inner()
             }
             None => {
-                let player_shape = &player.get_single().unwrap().0;
+                let player_shape = &player.single().unwrap().0;
                 let body_instance =
                     WearableInstance::new(player_shape.body_shape.as_ref().unwrap())
                         .unwrap_or_else(|_| default_bodyshape_instance());
@@ -375,7 +372,7 @@ fn set_wearables_content(
                             return;
                         };
 
-                        let Ok(mut settings) = settings.get_single_mut() else {
+                        let Ok(mut settings) = settings.single_mut() else {
                             warn!("failed to get settings");
                             return;
                         };
@@ -384,7 +381,7 @@ fn set_wearables_content(
                             .selected
                             .and_then(|selection| WearableCategory::iter().nth(selection));
 
-                        if let Some(mut commands) = commands.get_entity(booth_camera) {
+                        if let Ok(mut commands) = commands.get_entity(booth_camera) {
                             commands.try_insert(SystemTween {
                                 target: target_position(
                                     settings.category.unwrap_or(&WearableCategory::BODY_SHAPE),
@@ -413,7 +410,7 @@ fn set_wearables_content(
                             warn!("no value from sort combo?");
                             return;
                         };
-                        settings.single_mut().sort_by = SortBy::from(value.as_str());
+                        settings.single_mut().unwrap().sort_by = SortBy::from(value.as_str());
                     },
                 ),
             )
@@ -432,9 +429,9 @@ fn set_wearables_content(
                             return;
                         };
                         if value.is_empty() {
-                            settings.single_mut().search_filter = None;
+                            settings.single_mut().unwrap().search_filter = None;
                         } else {
-                            settings.single_mut().search_filter = Some(value);
+                            settings.single_mut().unwrap().search_filter = Some(value);
                         }
                     },
                 ),
@@ -446,7 +443,7 @@ fn set_wearables_content(
             .unwrap();
         commands.entity(ent).try_insert(components);
 
-        e.send_default();
+        e.write_default();
         *prev_tab = Some(*tab);
     }
 }
@@ -461,7 +458,7 @@ fn only_collectibles(
         return;
     };
 
-    let Ok(mut settings) = q.get_single_mut() else {
+    let Ok(mut settings) = q.single_mut() else {
         warn!("settings access failed");
         return;
     };
@@ -486,7 +483,7 @@ fn get_owned_wearables(
     if let Some(mut t) = task.take() {
         match t.complete() {
             Some(Ok(wearable_data)) => {
-                if let Ok(mut settings) = q.get_single_mut() {
+                if let Ok(mut settings) = q.single_mut() {
                     debug!("wearable task ok");
                     settings.owned_wearables = wearable_data.elements;
 
@@ -687,7 +684,7 @@ fn update_wearables_list(
     collections: Res<WearableCollections>,
     mut retry: Local<bool>,
 ) {
-    let Ok((mut settings, components, selected)) = q.get_single_mut() else {
+    let Ok((mut settings, components, selected)) = q.single_mut() else {
         return;
     };
 
@@ -775,7 +772,7 @@ fn update_wearables_list(
         }
     }
 
-    if wearables == settings.current_list && !dialog.get_single().is_ok_and(|d| d.is_changed()) {
+    if wearables == settings.current_list && !dialog.single().is_ok_and(|d| d.is_changed()) {
         // wearables list matches and dialog has not changed (so current wearables have not changed)
         return;
     }
@@ -790,7 +787,7 @@ fn update_wearables_list(
 
     commands
         .entity(components.named("items"))
-        .despawn_descendants();
+        .despawn_related::<Children>();
 
     let mut initial = None;
     let buttons: Vec<_> = wearables
@@ -866,7 +863,7 @@ fn update_wearables_list(
                                 .ok()
                                 .and_then(|tab| tab.selected_entity())
                                 .and_then(|nodes| wearable.get(nodes.named("label")).ok());
-                            e.send(SelectItem(selection.cloned()));
+                            e.write(SelectItem(selection.cloned()));
                             debug!("selected {:?}", selection)
                         },
                     ),
@@ -895,7 +892,7 @@ fn update_wearable_item(
     settings: Query<(Entity, &WearablesSettings)>,
     walker: DuiWalker,
 ) {
-    let Ok((settings_ent, settings)) = settings.get_single() else {
+    let Ok((settings_ent, settings)) = settings.single() else {
         return;
     };
 
@@ -935,7 +932,7 @@ fn update_wearable_item(
                             warn!("failed to load wearable: {other:?}");
                             commands
                                 .entity(ent)
-                                .despawn_descendants()
+                                .despawn_related::<Children>()
                                 .remove::<WearableItemState>()
                                 .spawn_template(
                                     &dui,
@@ -974,7 +971,7 @@ fn update_wearable_item(
                             debug!("loaded image");
                             commands
                                 .entity(ent)
-                                .despawn_descendants()
+                                .despawn_related::<Children>()
                                 .remove::<WearableItemState>()
                                 .spawn_template(
                                     &dui,
@@ -990,7 +987,7 @@ fn update_wearable_item(
                             warn!("failed to load wearable image");
                             commands
                                 .entity(ent)
-                                .despawn_descendants()
+                                .despawn_related::<Children>()
                                 .remove::<WearableItemState>()
                                 .spawn_template(
                                     &dui,
@@ -1014,7 +1011,7 @@ fn update_wearable_item(
     }
 }
 
-#[derive(Event, Clone)]
+#[derive(Event, Clone, Component)]
 struct SelectItem(Option<WearableEntry>);
 
 #[allow(clippy::too_many_arguments)]
@@ -1027,11 +1024,11 @@ fn update_selected_item(
     mut wearable_loader: CollectibleManager<Wearable>,
     mut retry: Local<bool>,
 ) {
-    let Ok((settings_ent, settings, components, selection)) = settings.get_single() else {
+    let Ok((settings_ent, settings, components, selection)) = settings.single() else {
         return;
     };
 
-    let Ok(avatar) = avatar.get_single() else {
+    let Ok(avatar) = avatar.single() else {
         return;
     };
 
@@ -1056,7 +1053,7 @@ fn update_selected_item(
         .and_then(|sel| settings.current_list.iter().find(|s| s == &sel));
     commands
         .entity(components.named("selected-item"))
-        .despawn_descendants();
+        .despawn_related::<Children>();
 
     let worn = settings
         .current_wearables
@@ -1099,7 +1096,7 @@ fn update_selected_item(
                   mut dialog: Query<(&mut SettingsDialog, &BoothInstance, &mut AvatarShape)>,
                   mut booth: PhotoBooth,
                   walker: DuiWalker| {
-                let (mut wearable_settings, components) = wearables.single_mut();
+                let (mut wearable_settings, components) = wearables.single_mut().unwrap();
                 let prev = if is_remove {
                     wearable_settings.current_wearables.remove(&category)
                 } else {
@@ -1108,7 +1105,7 @@ fn update_selected_item(
                         .insert(category, (instance.clone(), data.clone()))
                 };
 
-                let Ok((mut dialog, booth_instance, mut avatar)) = dialog.get_single_mut() else {
+                let Ok((mut dialog, booth_instance, mut avatar)) = dialog.single_mut() else {
                     warn!("fail to update dialog+booth instance");
                     return;
                 };
@@ -1171,7 +1168,7 @@ fn update_selected_item(
 
                 commands
                     .entity(image_entity)
-                    .try_insert(UiImage::new(wearable_img));
+                    .try_insert(ImageNode::new(wearable_img));
             },
         );
 
@@ -1204,7 +1201,7 @@ fn update_selected_item(
                     return;
                 };
 
-                let Ok((mut dialog, instance, mut avatar)) = dialog.get_single_mut() else {
+                let Ok((mut dialog, instance, mut avatar)) = dialog.single_mut() else {
                     warn!("fail to update dialog+booth instance");
                     return;
                 };

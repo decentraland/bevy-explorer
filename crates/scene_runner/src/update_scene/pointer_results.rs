@@ -1,12 +1,12 @@
 use bevy::{
-    core::FrameCount,
+    diagnostic::FrameCount,
     ecs::entity::Entities,
     input::InputSystem,
     math::FloatOrd,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::mesh::{Indices, VertexAttributeValues},
-    ui::{ManualCursorPosition, RelativeCursorPosition, UiSystem},
-    utils::{HashMap, HashSet},
+    ui::{CameraCursorPosition, RelativeCursorPosition, UiSystem},
 };
 use bevy_console::ConsoleCommand;
 use console::DoAddConsoleCommand;
@@ -164,20 +164,21 @@ fn update_pointer_target(
     mut scenes: Query<(Entity, &mut RendererSceneContext, &mut SceneColliderData)>,
     mut world_target: ResMut<WorldPointerTarget>,
 ) {
-    let Ok((camera, camera_position)) = camera.get_single() else {
+    let Ok((camera, camera_position)) = camera.single() else {
         // can't do much without a camera
         return;
     };
-    let Ok((player, player_transform)) = player.get_single() else {
+    let Ok((player, player_transform)) = player.single() else {
         return;
     };
     let player_translation = player_transform.translation();
 
     // get new 3d hover target
-    let Ok(window) = windows.get_single() else {
+    let Ok(window) = windows.single() else {
         return;
     };
-    let cursor_position = if window.cursor.grab_mode == bevy::window::CursorGrabMode::Locked {
+    let cursor_position = if window.cursor_options.grab_mode == bevy::window::CursorGrabMode::Locked
+    {
         // if pointer locked, just middle
         Vec2::new(window.width(), window.height()) / 2.0
     } else {
@@ -188,13 +189,12 @@ fn update_pointer_target(
         cursor_position
     };
 
-    let Some(ray) = camera.viewport_to_world(camera_position, cursor_position) else {
+    let Ok(ray) = camera.viewport_to_world(camera_position, cursor_position) else {
         error!("no ray, not sure why that would happen");
         return;
     };
 
-    let containing_scenes =
-        HashSet::from_iter(containing_scenes.get_area(player, PLAYER_COLLIDER_RADIUS));
+    let containing_scenes = containing_scenes.get_area(player, PLAYER_COLLIDER_RADIUS);
     let maybe_nearest_hit = scenes
         .iter_mut()
         .filter(|(scene_entity, ..)| containing_scenes.contains(scene_entity))
@@ -263,12 +263,12 @@ fn update_manual_cursor(
     uis: Query<(
         &GlobalTransform,
         &MeshCollider,
-        &Handle<Mesh>,
+        &Mesh3d,
         &ResolveCursor,
         &ContainerEntity,
     )>,
     meshes: Res<Assets<Mesh>>,
-    mut cursors: Query<&mut ManualCursorPosition>,
+    mut cursors: Query<&mut CameraCursorPosition>,
     mut gltf_resolver: GltfMeshResolver,
     scenes: Query<&RendererSceneContext>,
 ) {
@@ -586,7 +586,7 @@ fn send_hover_events(
     mut input_manager: InputManager,
     mut previously_entered: Local<HashSet<Entity>>,
     scene_ui_ent: Query<&UiLink>,
-    linked: Query<(&Parent, &DespawnWith, Option<&RelativeCursorPosition>)>,
+    linked: Query<(&ChildOf, &DespawnWith, Option<&RelativeCursorPosition>)>,
 ) {
     debug!("hover target : {:?}", new_target);
 
@@ -679,7 +679,7 @@ fn send_hover_events(
             new_entities.insert(scene_ent.0);
         }
 
-        ui_entity = Some(next.get());
+        ui_entity = Some(next.parent());
     }
 
     input_manager.priorities().release_all(InputPriority::Scene);
@@ -805,7 +805,7 @@ fn send_action_events(
                             tick_number,
                         },
                     );
-                    context.last_action_event = Some(time.elapsed_seconds());
+                    context.last_action_event = Some(time.elapsed_secs());
                     consumed = true;
                 }
             }

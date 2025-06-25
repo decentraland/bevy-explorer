@@ -1,4 +1,4 @@
-use bevy::{prelude::Entity, utils::HashSet};
+use bevy::{platform::collections::HashSet, prelude::Entity};
 use common::rpc::{CompareSnapshot, RpcCall};
 
 use dcl_component::SceneEntityId;

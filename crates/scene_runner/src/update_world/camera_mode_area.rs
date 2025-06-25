@@ -1,4 +1,4 @@
-use bevy::{prelude::*, utils::HashSet};
+use bevy::{platform::collections::HashSet, prelude::*};
 
 use crate::{
     permissions::Permission, renderer_context::RendererSceneContext, ContainingScene, SceneEntity,
@@ -92,12 +92,12 @@ pub fn update_camera_mode_area(
     mut camera: Query<&mut PrimaryCamera>,
     mut perms: Permission<Entity>,
 ) {
-    let Ok(mut camera) = camera.get_single_mut() else {
+    let Ok(mut camera) = camera.single_mut() else {
         return;
     };
 
     let (scenes, player_position) = player
-        .get_single()
+        .single()
         .map(|(player, player_transform)| {
             (
                 containing_scene

@@ -2,6 +2,7 @@ use anyhow::anyhow;
 use bevy::{math::Vec3Swizzles, prelude::*, window::PrimaryWindow};
 use bevy_dui::{DuiRegistry, DuiTemplate};
 use bevy_egui::{egui, EguiContext};
+use common::structs::ZOrder;
 
 use crate::{
     ui_actions::{DataChanged, On},
@@ -44,8 +45,8 @@ fn update_color_picker_components(
         (
             Entity,
             &mut ColorPicker,
-            &Style,
             &Node,
+            &ComputedNode,
             &GlobalTransform,
             Option<&mut Interaction>,
             Option<&Focus>,
@@ -53,30 +54,27 @@ fn update_color_picker_components(
         Without<Blocker>,
     >,
     mut blocker: Local<Option<Entity>>,
-    mut blocker_display: Query<&mut Style, With<Blocker>>,
+    mut blocker_display: Query<&mut Node, With<Blocker>>,
     mut blocker_active: Local<bool>,
 ) {
-    let Ok(mut ctx) = egui_ctx.get_single_mut() else {
+    let Ok(mut ctx) = egui_ctx.single_mut() else {
         return;
     };
     let ctx = ctx.get_mut();
     let blocker = *blocker.get_or_insert_with(|| {
         commands
             .spawn((
-                NodeBundle {
-                    style: Style {
-                        position_type: PositionType::Absolute,
-                        display: Display::None,
-                        left: Val::Px(0.0),
-                        right: Val::Px(0.0),
-                        top: Val::Px(0.0),
-                        bottom: Val::Px(0.0),
-                        ..Default::default()
-                    },
-                    focus_policy: bevy::ui::FocusPolicy::Block,
-                    z_index: ZIndex::Global((1 << 18) + 5),
+                Node {
+                    position_type: PositionType::Absolute,
+                    display: Display::None,
+                    left: Val::Px(0.0),
+                    right: Val::Px(0.0),
+                    top: Val::Px(0.0),
+                    bottom: Val::Px(0.0),
                     ..Default::default()
                 },
+                bevy::ui::FocusPolicy::Block,
+                ZOrder::EguiBlocker.default(),
                 Blocker,
             ))
             .id()
@@ -95,7 +93,7 @@ fn update_color_picker_components(
             egui::Window::new(format!("{entity:?}"))
                 .fixed_pos(topleft.to_array())
                 .fixed_size(size.to_array())
-                .frame(egui::Frame::none())
+                .frame(egui::Frame::NONE)
                 .title_bar(false)
                 .show(ctx, |ui| {
                     let response = ui.color_edit_button_rgb(&mut color_picker.color);

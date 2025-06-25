@@ -5,7 +5,7 @@ use std::{
     sync::{mpsc::SyncSender, Mutex},
 };
 
-use bevy::{log::error, utils::HashMap};
+use bevy::{log::error, platform::collections::HashMap};
 use deno_core::v8::IsolateHandle;
 use once_cell::sync::Lazy;
 use system_bridge::SystemApi;

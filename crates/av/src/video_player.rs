@@ -5,14 +5,14 @@ use crate::{
 };
 use bevy::{
     color::palettes::basic,
-    core::FrameCount,
+    diagnostic::FrameCount,
     math::FloatOrd,
+    platform::collections::HashMap,
     prelude::*,
     render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
     },
-    utils::HashMap,
 };
 use common::{
     sets::SceneSets,
@@ -119,6 +119,8 @@ fn play_videos(
                 .get_mut(&sink.image)
                 .unwrap()
                 .data
+                .as_mut()
+                .unwrap()
                 .copy_from_slice(frame.data(0));
         }
 
@@ -235,7 +237,7 @@ pub fn update_video_players(
     }
 
     // disable distant av
-    let Ok(user) = user.get_single() else {
+    let Ok(user) = user.single() else {
         return;
     };
 

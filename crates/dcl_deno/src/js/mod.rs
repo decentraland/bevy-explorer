@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
 
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
-use bevy::utils::tracing::{debug, error, info_span};
+use bevy::log::{debug, error, info_span};
 use dcl::{
     interface::CrdtComponentInterfaces,
     js::{

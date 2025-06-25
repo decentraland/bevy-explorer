@@ -1,26 +1,27 @@
 use std::f32::consts::FRAC_PI_4;
 
 use bevy::{
+    app::{HierarchyPropagatePlugin, Propagate, PropagateStop},
     core_pipeline::{
-        bloom::BloomSettings,
+        bloom::Bloom,
         tonemapping::{DebandDither, Tonemapping},
     },
     pbr::ShadowFilteringMethod,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureFormat, TextureUsages},
-        texture::BevyDefault,
         view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers},
     },
-    utils::{hashbrown::HashMap, HashSet},
 };
 use bevy_atmosphere::plugin::AtmosphereCamera;
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     sets::SceneSets,
     structs::{
-        AppConfig, PrimaryUser, SceneGlobalLight, GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER,
+        AppConfig, PrimaryUser, SceneGlobalLight, SceneLoadDistance, GROUND_RENDERLAYER,
+        PRIMARY_AVATAR_LIGHT_LAYER,
     },
     util::{camera_to_render_layers, AudioReceiver, TryPushChildrenEx},
 };
@@ -33,7 +34,6 @@ use dcl_component::{
     SceneComponentId,
 };
 use platform::{DepthPrepass, NormalPrepass};
-use propagate::{HierarchyPropagatePlugin, Propagate, PropagateStop};
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::{
@@ -51,7 +51,7 @@ impl Plugin for TextureCameraPlugin {
             .init_resource::<SceneLayerProperties>();
         app.add_systems(PostUpdate, TextureLayersCache::cleanup);
 
-        app.add_plugins(HierarchyPropagatePlugin::<RenderLayers, ()>::default());
+        app.add_plugins(HierarchyPropagatePlugin::<RenderLayers>::default());
 
         app.add_crdt_lww_component::<PbTextureCamera, TextureCamera>(
             SceneComponentId::TEXTURE_CAMERA,
@@ -110,7 +110,7 @@ fn update_layer_properties(
     mut props: ResMut<SceneLayerProperties>,
     mut cache: ResMut<TextureLayersCache>,
 ) {
-    let mut changed = HashSet::default();
+    let mut changed = HashSet::new();
 
     for removed in removed.read() {
         if let Some(layer) = props.ent_to_layer.remove(&removed) {
@@ -221,16 +221,17 @@ fn update_texture_cameras(
     config: Res<AppConfig>,
     layers: Res<SceneLayerProperties>,
     mut layer_cache: ResMut<TextureLayersCache>,
+    scene_distance: Res<SceneLoadDistance>,
 ) {
     let active_scenes = player
-        .get_single()
+        .single()
         .map(|p| containing_scene.get_area(p, PLAYER_COLLIDER_RADIUS))
         .unwrap_or_default();
 
     // remove cameras when TextureCam is removed
     for (ent, removed) in &removed {
-        if let Some(commands) = commands.get_entity(removed.0) {
-            commands.despawn_recursive();
+        if let Ok(mut commands) = commands.get_entity(removed.0) {
+            commands.despawn();
         }
         commands.entity(ent).remove::<TextureCamEntity>();
     }
@@ -241,8 +242,8 @@ fn update_texture_cameras(
         if texture_cam.is_changed() || layer_cache.changed_layers.contains(&layer_ix) {
             // remove previous camera if modified
             if let Some(prev) = maybe_existing_camera {
-                if let Some(commands) = commands.get_entity(prev.0) {
-                    commands.despawn_recursive();
+                if let Ok(mut commands) = commands.get_entity(prev.0) {
+                    commands.despawn();
                 }
             }
 
@@ -303,60 +304,56 @@ fn update_texture_cameras(
                 Some(dcl_component::proto_components::sdk::components::pb_texture_camera::Mode::Orthographic(o)) => {
                     OrthographicProjection {
                         far,
-                        scaling_mode: bevy::render::camera::ScalingMode::FixedVertical(o.vertical_range.unwrap_or(4.0)),
-                        ..Default::default()
+                        scaling_mode: bevy::render::camera::ScalingMode::FixedVertical{ viewport_height: o.vertical_range.unwrap_or(4.0) },
+                        ..OrthographicProjection::default_3d()
                     }.into()
                 }
             };
 
             let mut camera = commands.spawn((
-                Camera3dBundle {
-                    camera: Camera {
-                        hdr: true,
-                        order: isize::MIN + container.container_id.id as isize,
-                        target: bevy::render::camera::RenderTarget::Image(image.clone()),
-                        clear_color: ClearColorConfig::Custom(
-                            texture_cam
-                                .0
-                                .clear_color
-                                .map(Color4DclToBevy::convert_srgba)
-                                .unwrap_or(Color::BLACK),
-                        ),
-                        is_active: true,
-                        ..Default::default()
-                    },
-                    tonemapping: Tonemapping::TonyMcMapface,
-                    deband_dither: DebandDither::Enabled,
-                    color_grading: ColorGrading {
-                        // exposure: -0.5,
-                        // gamma: 1.5,
-                        // pre_saturation: 1.0,
-                        // post_saturation: 1.0,
-                        global: ColorGradingGlobal {
-                            exposure: -0.5,
-                            ..default()
-                        },
-                        shadows: ColorGradingSection {
-                            gamma: 0.75,
-                            ..Default::default()
-                        },
-                        midtones: ColorGradingSection {
-                            gamma: 0.75,
-                            ..Default::default()
-                        },
-                        highlights: ColorGradingSection {
-                            gamma: 0.75,
-                            ..Default::default()
-                        },
-                    },
-                    projection,
-                    // not sure why but seems like we need to invert the look direction
-                    // transform: Transform::from_rotation(Quat::inverse(Quat::IDENTITY)),
+                Camera3d::default(),
+                Camera {
+                    hdr: true,
+                    order: isize::MIN + container.container_id.id as isize,
+                    target: bevy::render::camera::RenderTarget::Image(image.clone().into()),
+                    clear_color: ClearColorConfig::Custom(
+                        texture_cam
+                            .0
+                            .clear_color
+                            .map(Color4DclToBevy::convert_srgba)
+                            .unwrap_or(Color::BLACK),
+                    ),
+                    is_active: true,
                     ..Default::default()
                 },
-                BloomSettings {
+                Tonemapping::TonyMcMapface,
+                DebandDither::Enabled,
+                ColorGrading {
+                    // exposure: -0.5,
+                    // gamma: 1.5,
+                    // pre_saturation: 1.0,
+                    // post_saturation: 1.0,
+                    global: ColorGradingGlobal {
+                        exposure: -0.5,
+                        ..default()
+                    },
+                    shadows: ColorGradingSection {
+                        gamma: 0.75,
+                        ..Default::default()
+                    },
+                    midtones: ColorGradingSection {
+                        gamma: 0.75,
+                        ..Default::default()
+                    },
+                    highlights: ColorGradingSection {
+                        gamma: 0.75,
+                        ..Default::default()
+                    },
+                },
+                projection,
+                Bloom {
                     intensity: 0.15,
-                    ..BloomSettings::OLD_SCHOOL
+                    ..Bloom::OLD_SCHOOL
                 },
                 ShadowFilteringMethod::Gaussian,
                 DepthPrepass,
@@ -366,7 +363,17 @@ fn update_texture_cameras(
             ));
 
             if maybe_layer.is_some_and(|l| l.show_fog()) {
-                camera.insert(FogSettings::default());
+                let distance = texture_cam.0.far_plane.unwrap_or(
+                    (scene_distance.load + scene_distance.unload)
+                        .max(scene_distance.load_imposter * 0.333),
+                );
+
+                camera.insert(DistanceFog {
+                    color: Color::srgb(0.3, 0.2, 0.1),
+                    directional_light_color: Color::srgb(1.0, 1.0, 0.7),
+                    directional_light_exponent: 10.0,
+                    falloff: FogFalloff::from_visibility_squared(distance * 2.0),
+                });
             }
 
             if maybe_layer.is_some_and(|l| l.show_skybox())
@@ -391,6 +398,7 @@ fn update_texture_cameras(
                         .unwrap_or(global_light.ambient_brightness)
                         * config.graphics.ambient_brightness as f32
                         * 20.0,
+                    affects_lightmapped_meshes: false,
                 });
             }
 
@@ -408,7 +416,7 @@ fn update_texture_cameras(
                 .try_push_children(&[camera_id])
                 .insert((TextureCamEntity(camera_id), VideoTextureOutput(image)));
 
-            new_cam_events.send(NewCameraEvent(camera_id));
+            new_cam_events.write(NewCameraEvent(camera_id));
         } else {
             // set active for current scenes only
             // TODO: limit / cycle
@@ -467,7 +475,7 @@ fn update_camera_layers(
     }
 
     for entity in removed.read() {
-        if let Some(mut commands) = commands.get_entity(entity) {
+        if let Ok(mut commands) = commands.get_entity(entity) {
             commands.remove::<Propagate<RenderLayers>>();
         }
     }

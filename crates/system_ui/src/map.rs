@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use anyhow::anyhow;
 use bevy::{
+    platform::collections::{hash_map::Entry, HashMap},
     prelude::*,
     tasks::{IoTaskPool, Task},
-    utils::{hashbrown::hash_map::Entry, HashMap},
     window::{PrimaryWindow, WindowResized},
 };
 use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
@@ -88,7 +88,7 @@ fn set_map_content(
             return;
         }
 
-        commands.entity(ent).despawn_descendants();
+        commands.entity(ent).despawn_related::<Children>();
 
         if maybe_map_settings.is_none() {
             commands.entity(ent).insert(MapSettings::default());
@@ -100,7 +100,7 @@ fn set_map_content(
             .unwrap();
 
         let center = player
-            .get_single()
+            .single()
             .ok()
             .map(|gt| vec3_to_parcel(gt.translation()).as_vec2())
             .unwrap_or(Vec2::ZERO)
@@ -124,7 +124,7 @@ fn set_map_content(
                         return;
                     };
 
-                    let Ok(window) = window.get_single() else {
+                    let Ok(window) = window.single() else {
                         return;
                     };
                     let window = Vec2::new(window.width(), window.height());
@@ -143,7 +143,7 @@ fn set_map_content(
                 |caller: Res<UiCaller>,
                  mut map: Query<(&GlobalTransform, &MouseWheelData, &mut MapTexture, &MapData)>,
                  window: Query<&Window, With<PrimaryWindow>>| {
-                    let Ok(window) = window.get_single() else {
+                    let Ok(window) = window.single() else {
                         return;
                     };
 
@@ -172,11 +172,11 @@ fn set_map_content(
                  window: Query<&Window, With<PrimaryWindow>>,
                  map: Query<(&GlobalTransform, &MapTexture, &MapData)>,
                  ipfas: IpfsAssetServer| {
-                    let Ok(mut settings) = q.get_single_mut() else {
+                    let Ok(mut settings) = q.single_mut() else {
                         warn!("no settings");
                         return;
                     };
-                    let Ok(window) = window.get_single() else {
+                    let Ok(window) = window.single() else {
                         warn!("no window");
                         return;
                     };
@@ -223,12 +223,12 @@ fn update_map_data(
     children: Query<&Children>,
     mut text: Query<&mut Text>,
 ) {
-    let Ok(window) = window.get_single() else {
+    let Ok(window) = window.single() else {
         return;
     };
     for (gt, map, data, interaction) in map.iter() {
         // update you are here
-        if let Ok(gt) = player.get_single() {
+        if let Ok(gt) = player.single() {
             let icon_pos = data.bottom_left_offset
                 + (((gt.translation().xz() * Vec2::new(1.0, -1.0)) / PARCEL_SIZE)
                     - data.min_parcel.as_vec2())
@@ -239,7 +239,7 @@ fn update_map_data(
 
             commands.entity(data.you_are_here).try_insert((
                 Visibility::Inherited,
-                Style {
+                Node {
                     position_type: PositionType::Absolute,
                     left: Val::Px(icon_pos.x - icon_size * 0.5),
                     bottom: Val::Px(icon_pos.y - data.pixels_per_parcel),
@@ -269,7 +269,7 @@ fn update_map_data(
 
         commands
             .entity(data.cursor)
-            .modify_component(move |style: &mut Style| {
+            .modify_component(move |style: &mut Node| {
                 style.position_type = PositionType::Absolute;
                 style.left = Val::Px(bottomleft_pixel.x);
                 style.bottom = Val::Px(bottomleft_pixel.y);
@@ -284,7 +284,7 @@ fn update_map_data(
             .and_then(|c| c.first())
             .and_then(|c| text.get_mut(*c).ok())
         {
-            text.sections[0].value = format!("({},{})", parcel.x, parcel.y + 1);
+            text.0 = format!("({},{})", parcel.x, parcel.y + 1);
         }
     }
 }
@@ -311,14 +311,14 @@ fn touch_map(mut e: EventReader<WindowResized>, mut q: Query<&mut MapTexture>) {
 fn render_map(
     mut commands: Commands,
     mut q: Query<
-        (Entity, &Node, &MapTexture, Option<&mut MapData>),
-        Or<(Changed<MapTexture>, Changed<Node>)>,
+        (Entity, &ComputedNode, &MapTexture, Option<&mut MapData>),
+        Or<(Changed<MapTexture>, Changed<ComputedNode>)>,
     >,
     window: Query<&Window, With<PrimaryWindow>>,
-    mut styles: Query<(&mut Style, &mut Visibility)>,
+    mut styles: Query<(&mut Node, &mut Visibility)>,
     asset_server: Res<AssetServer>,
 ) {
-    let Ok(window) = window.get_single() else {
+    let Ok(window) = window.single() else {
         return;
     };
 
@@ -329,7 +329,7 @@ fn render_map(
             None => {
                 let cursor = commands
                     .spawn(BoundedNodeBundle {
-                        z_index: ZIndex::Local(8),
+                        z_index: ZIndex(8),
                         bounded: BoundedNode {
                             image: Some(asset_server.load("images/cursor.png")),
                             ..Default::default()
@@ -338,23 +338,20 @@ fn render_map(
                     })
                     .with_children(|c| {
                         c.spawn((
-                            TextBundle {
-                                style: Style {
-                                    position_type: PositionType::Absolute,
-                                    bottom: Val::Percent(100.0),
-                                    left: Val::Percent(100.0),
-                                    ..Default::default()
-                                },
-                                text: Text::from_section("Hello!", Default::default()),
+                            Node {
+                                position_type: PositionType::Absolute,
+                                bottom: Val::Percent(100.0),
+                                left: Val::Percent(100.0),
                                 ..Default::default()
                             },
+                            Text::new("Hello!"),
                             FontSize(0.03),
                         ));
                     })
                     .id();
                 let you_are_here = commands
                     .spawn(BoundedNodeBundle {
-                        z_index: ZIndex::Local(7),
+                        z_index: ZIndex(7),
                         bounded: BoundedNode {
                             image: Some(asset_server.load("images/you_are_here.png")),
                             ..Default::default()
@@ -480,7 +477,7 @@ fn render_map(
 
                             let tile_entity = commands
                                 .spawn(BoundedNodeBundle {
-                                    style: Style {
+                                    style: Node {
                                         position_type: PositionType::Absolute,
                                         left: Val::Px(left),
                                         bottom: Val::Px(bottom),
@@ -492,7 +489,7 @@ fn render_map(
                                         image: Some(h_image),
                                         color: None,
                                     },
-                                    z_index: ZIndex::Local(level as i32 + 1),
+                                    z_index: ZIndex(level as i32 + 1),
                                     ..Default::default()
                                 })
                                 .id();

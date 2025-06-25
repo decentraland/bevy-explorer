@@ -5,10 +5,10 @@ use bevy::{
     animation::RepeatAnimation,
     gltf::Gltf,
     math::Vec3Swizzles,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::view::RenderLayers,
     scene::InstanceId,
-    utils::{HashMap, HashSet},
 };
 use bevy_console::ConsoleCommand;
 use bevy_kira_audio::{AudioControl, AudioInstance, AudioTween};
@@ -20,7 +20,8 @@ use common::{
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
     structs::{
-        AppConfig, AvatarDynamicState, EmoteCommand, MoveKind, PlayerModifiers, PrimaryUser,
+        AppConfig, AudioEmitter, AvatarDynamicState, EmoteCommand, MoveKind, PlayerModifiers,
+        PrimaryUser,
     },
     util::{TryPushChildrenEx, VolumePanning},
 };
@@ -76,7 +77,7 @@ fn handle_trigger_emotes(
     player: Query<(Entity, Option<&EmoteCommand>), With<PrimaryUser>>,
     mut perms: Permission<EmoteCommand>,
 ) {
-    let Ok((player, maybe_prev)) = player.get_single() else {
+    let Ok((player, maybe_prev)) = player.single() else {
         return;
     };
 
@@ -126,14 +127,14 @@ fn broadcast_emote(
         senders.push(sender.clone());
     }
 
-    if let Ok(emote) = q.get_single() {
+    if let Ok(emote) = q.single() {
         if last.as_ref() != Some(emote) {
             *count += 1;
             debug!("sending emote: {emote:?} {}", *count);
             let old_packet = rfc4::Packet {
                 message: Some(rfc4::packet::Message::Chat(Chat {
                     message: format!("{}{} {}", chat_marker_things::EMOTE, emote.urn, *count),
-                    timestamp: time.elapsed_seconds_f64(),
+                    timestamp: time.elapsed_secs_f64(),
                 })),
                 protocol_version: 100,
             };
@@ -243,7 +244,7 @@ fn animate(
     mut scenes: Query<&mut RendererSceneContext>,
 ) {
     let (gravity, jump_height) = player
-        .get_single()
+        .single()
         .map(|(p, m)| m.map(|m| m.combine(p)).unwrap_or(p.clone()))
         .map(|p| (p.gravity, p.jump_height))
         .unwrap_or((-20.0, 1.25));
@@ -279,7 +280,7 @@ fn animate(
             .get(&avatar_ent)
             .copied()
             .unwrap_or(Vec3::ZERO);
-        let ratio = time.delta_seconds().clamp(0.0, 0.1) / 0.1;
+        let ratio = time.delta_secs().clamp(0.0, 0.1) / 0.1;
         let damped_velocity =
             dynamic_state.force.extend(0.0).xzy() * ratio + prior_velocity * (1.0 - ratio);
         let damped_velocity_len = damped_velocity.xz().length();
@@ -385,7 +386,7 @@ fn animate(
             // otherwise play a default emote based on motion
             let time_to_peak = (jump_height * -gravity * 2.0).sqrt() / -gravity;
             let just_jumped =
-                dynamic_state.jump_time > (time.elapsed_seconds() - time_to_peak / 2.0).max(0.0);
+                dynamic_state.jump_time > (time.elapsed_secs() - time_to_peak / 2.0).max(0.0);
             if dynamic_state.ground_height > 0.2 || (dynamic_state.velocity.y > 0.0 && just_jumped)
             {
                 if just_jumped {
@@ -397,8 +398,7 @@ fn animate(
                     urn: EmoteUrn::new("jump").unwrap(),
                     speed: time_to_peak.recip() * 0.75,
                     repeat: true,
-                    restart: dynamic_state.jump_time
-                        > time.elapsed_seconds() - time.delta_seconds(),
+                    restart: dynamic_state.jump_time > time.elapsed_secs() - time.delta_secs(),
                     transition_seconds: 0.1,
                     initial_audio_mark: if !just_jumped { Some(0.1) } else { None },
                     ..Default::default()
@@ -491,7 +491,7 @@ fn play_current_emote(
         &mut AnimationPlayer,
         Option<&mut AnimationTransitions>,
         Option<&mut Clips>,
-        Option<&Handle<AnimationGraph>>,
+        Option<&AnimationGraphHandle>,
     )>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
     mut playing: Local<HashMap<Entity, EmoteUrn>>,
@@ -506,20 +506,16 @@ fn play_current_emote(
         Res<AppConfig>,
         VolumePanning,
     ),
-    mut emitters: Query<&mut bevy_kira_audio::prelude::AudioEmitter>,
+    mut emitters: Query<&mut AudioEmitter>,
     mut audio_instances: ResMut<Assets<AudioInstance>>,
-    prop_details: Query<(Option<&Name>, &Transform, &Parent)>,
+    prop_details: Query<(Option<&Name>, &Transform, &ChildOf)>,
 ) {
     let prior_playing = std::mem::take(&mut *playing);
     let mut prev_spawned_extras = std::mem::take(&mut *spawned_extras);
 
     for (entity, mut active_emote, target_entity, children, transform, layers) in q.iter_mut() {
         debug!("emote {}", active_emote.urn);
-        let Some(definition) = children
-            .iter()
-            .flat_map(|c| definitions.get(*c).ok())
-            .next()
-        else {
+        let Some(definition) = children.iter().flat_map(|c| definitions.get(c).ok()).next() else {
             warn!("no definition");
             continue;
         };
@@ -532,8 +528,8 @@ fn play_current_emote(
                 }
 
                 if let Some((audio_ent, _)) = extras.audio.as_ref() {
-                    if let Some(commands) = commands.get_entity(*audio_ent) {
-                        commands.despawn_recursive();
+                    if let Ok(mut commands) = commands.get_entity(*audio_ent) {
+                        commands.despawn();
                     }
                 }
             } else {
@@ -671,9 +667,9 @@ fn play_current_emote(
                                 }
                             }
 
-                            if parent.get() == entity {
+                            if parent.parent() == entity {
                                 // children of root nodes -> rotate
-                                if parent.get() == entity {
+                                if parent.parent() == entity {
                                     let mut rotated = *transform;
                                     rotated.rotate_around(
                                         Vec3::ZERO,
@@ -698,7 +694,9 @@ fn play_current_emote(
                         .filter(|ent| {
                             if let Ok((_, _, _, g)) = players.get(*ent) {
                                 if g.is_none() {
-                                    commands.entity(*ent).insert(clip.1.clone());
+                                    commands
+                                        .entity(*ent)
+                                        .insert(AnimationGraphHandle(clip.1.clone()));
                                 }
                                 true
                             } else {
@@ -899,14 +897,15 @@ fn play_current_emote(
 
                     let audio_entity = commands
                         .spawn((
-                            SpatialBundle::default(),
-                            bevy_kira_audio::prelude::AudioEmitter {
+                            Transform::default(),
+                            Visibility::default(),
+                            AudioEmitter {
                                 instances: vec![handle],
                             },
                         ))
                         .id();
 
-                    if let Some(mut commands) = commands.get_entity(ent) {
+                    if let Ok(mut commands) = commands.get_entity(ent) {
                         commands.try_push_children(&[audio_entity]);
                     }
 
@@ -936,7 +935,7 @@ fn emote_console_command(
     profile: Res<CurrentUserProfile>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        if let Ok((player, maybe_prev)) = player.get_single() {
+        if let Ok((player, maybe_prev)) = player.single() {
             let mut urn = &command.urn;
             if let Ok(slot) = command.urn.parse::<u32>() {
                 if let Some(emote) = profile

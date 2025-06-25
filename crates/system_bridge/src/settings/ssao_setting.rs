@@ -1,6 +1,6 @@
 use bevy::{
     ecs::system::{lifetimeless::SRes, SystemParamItem},
-    pbr::{ScreenSpaceAmbientOcclusionBundle, ScreenSpaceAmbientOcclusionSettings},
+    pbr::ScreenSpaceAmbientOcclusion,
     prelude::*,
 };
 use common::structs::{AppConfig, PrimaryCameraRes, SsaoSetting};
@@ -23,7 +23,7 @@ impl EnumAppSetting for SsaoSetting {
 }
 
 impl AppSetting for SsaoSetting {
-    type Param = (SRes<PrimaryCameraRes>, SRes<Msaa>);
+    type Param = SRes<PrimaryCameraRes>;
 
     fn title() -> String {
         "SSAO".to_owned()
@@ -50,40 +50,30 @@ impl AppSetting for SsaoSetting {
         super::SettingCategory::Graphics
     }
 
-    fn apply(&self, (cam_res, msaa_res): SystemParamItem<Self::Param>, commands: Commands) {
+    fn apply(&self, cam_res: SystemParamItem<Self::Param>, commands: Commands) {
         let primary_cam = cam_res.0;
-        self.apply_to_camera(&(cam_res, msaa_res), commands, primary_cam);
+        self.apply_to_camera(&cam_res, commands, primary_cam);
     }
 
     fn apply_to_camera(
         &self,
-        (_, msaa_res): &SystemParamItem<Self::Param>,
+        _: &SystemParamItem<Self::Param>,
         mut commands: Commands,
         camera_entity: Entity,
     ) {
-        let Some(mut cmds) = commands.get_entity(camera_entity) else {
+        let Ok(mut cmds) = commands.get_entity(camera_entity) else {
             return;
         };
 
-        if self != &SsaoSetting::Off && msaa_res.samples() > 1 {
-            warn!("SSAO disabled due to MSAA setting");
-        }
-
-        match (msaa_res.samples() > 1, self) {
-            (_, SsaoSetting::Off) | (true, _) => {
-                cmds.remove::<ScreenSpaceAmbientOcclusionSettings>()
-            }
-            (false, SsaoSetting::Low) => cmds.insert(ScreenSpaceAmbientOcclusionBundle {
-                settings: ScreenSpaceAmbientOcclusionSettings {
-                    quality_level: bevy::pbr::ScreenSpaceAmbientOcclusionQualityLevel::Medium,
-                },
-                ..Default::default()
+        match self {
+            SsaoSetting::Off => cmds.remove::<ScreenSpaceAmbientOcclusion>(),
+            SsaoSetting::Low => cmds.insert(ScreenSpaceAmbientOcclusion {
+                quality_level: bevy::pbr::ScreenSpaceAmbientOcclusionQualityLevel::Medium,
+                constant_object_thickness: 0.25,
             }),
-            (false, SsaoSetting::High) => cmds.insert(ScreenSpaceAmbientOcclusionBundle {
-                settings: ScreenSpaceAmbientOcclusionSettings {
-                    quality_level: bevy::pbr::ScreenSpaceAmbientOcclusionQualityLevel::Ultra,
-                },
-                ..Default::default()
+            SsaoSetting::High => cmds.insert(ScreenSpaceAmbientOcclusion {
+                quality_level: bevy::pbr::ScreenSpaceAmbientOcclusionQualityLevel::Ultra,
+                constant_object_thickness: 0.25,
             }),
         };
     }

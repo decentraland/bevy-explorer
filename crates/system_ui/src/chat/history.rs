@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
     structs::{ShowProfileEvent, SystemAudio},
-    util::{AsH160, FireEventEx},
+    util::AsH160,
 };
 use comms::{chat_marker_things, global_crdt::ChatEvent, profile::UserProfile};
 use social::{DirectChatEvent, DirectChatMessage, FriendshipEvent, FriendshipEventBody};
@@ -95,7 +95,7 @@ fn update_chat_history(
         })
     }));
 
-    let Ok((entity, mut history)) = q.get_single_mut() else {
+    let Ok((entity, mut history)) = q.single_mut() else {
         return;
     };
 
@@ -110,7 +110,7 @@ fn update_chat_history(
             warn!("no");
             break;
         };
-        let mut alpha = (time.elapsed_seconds() - 10.0 - *exp).clamp(-1.0, 0.0) * -0.3;
+        let mut alpha = (time.elapsed_secs() - 10.0 - *exp).clamp(-1.0, 0.0) * -0.3;
         if history
             .current
             .get(1)
@@ -121,13 +121,13 @@ fn update_chat_history(
         node.0.border_color.set_alpha(alpha * 2.0);
         node.1.color.as_mut().unwrap().set_alpha(alpha);
 
-        if *exp > time.elapsed_seconds() - 10.0 {
+        if *exp > time.elapsed_secs() - 10.0 {
             break;
         }
 
         // despawn the message
-        if let Some(commands) = commands.get_entity(*message) {
-            commands.despawn_recursive();
+        if let Ok(mut commands) = commands.get_entity(*message) {
+            commands.despawn();
         }
 
         // and the bubble if this was last
@@ -136,8 +136,8 @@ fn update_chat_history(
             .get(1)
             .is_none_or(|(next_bubble, ..)| next_bubble != bubble)
         {
-            if let Some(commands) = commands.get_entity(*bubble) {
-                commands.despawn_recursive();
+            if let Ok(mut commands) = commands.get_entity(*bubble) {
+                commands.despawn();
             }
         }
 
@@ -191,7 +191,7 @@ fn update_chat_history(
         ));
         history
             .current
-            .push_back((bubble, message, time.elapsed_seconds()));
+            .push_back((bubble, message, time.elapsed_secs()));
     }
 
     for chat in pending_private_chats.drain(..) {
@@ -212,7 +212,7 @@ fn update_chat_history(
         ));
         history
             .current
-            .push_back((bubble, message, time.elapsed_seconds()));
+            .push_back((bubble, message, time.elapsed_secs()));
     }
 
     for chat in pending_nearby_chats.drain(..) {
@@ -227,23 +227,23 @@ fn update_chat_history(
             Interaction::default(),
             On::<Click>::new(
                 |mut commands: Commands,
-                 mut container: Query<&mut Style, With<ChatboxContainer>>,
+                 mut container: Query<&mut Node, With<ChatboxContainer>>,
                  entry: Query<Entity, With<ChatInput>>,
                  tab_entity: Query<Entity, With<ChatTab>>,
                  mut tab_mgr: TabManager| {
-                    if let Ok(mut style) = container.get_single_mut() {
+                    if let Ok(mut style) = container.single_mut() {
                         if style.display == Display::None {
                             commands
-                                .fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+                                .send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
                             style.display = Display::Flex;
                         };
                     }
 
-                    if let Ok(entry) = entry.get_single() {
+                    if let Ok(entry) = entry.single() {
                         commands.entity(entry).insert(Focus);
                     }
 
-                    let Ok(tab_entity) = tab_entity.get_single() else {
+                    let Ok(tab_entity) = tab_entity.single() else {
                         warn!("no tab");
                         return;
                     };
@@ -254,6 +254,6 @@ fn update_chat_history(
         ));
         history
             .current
-            .push_back((bubble, message, time.elapsed_seconds()));
+            .push_back((bubble, message, time.elapsed_secs()));
     }
 }

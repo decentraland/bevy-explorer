@@ -113,7 +113,7 @@ impl kira::sound::streaming::Decoder for FfmpegKiraBridge {
         }
     }
 
-    fn decode(&mut self) -> Result<Vec<kira::dsp::Frame>, Self::Error> {
+    fn decode(&mut self) -> Result<Vec<kira::Frame>, Self::Error> {
         self.step += 1;
         let mut frames = Vec::default();
         let bytes_per_sample = self.format.bytes();
@@ -128,7 +128,7 @@ impl kira::sound::streaming::Decoder for FfmpegKiraBridge {
                             d0.chunks_exact(bytes_per_sample)
                                 .take(self.frame_size)
                                 .zip(d1.chunks_exact(bytes_per_sample))
-                                .map(|(l, r)| kira::dsp::Frame {
+                                .map(|(l, r)| kira::Frame {
                                     left: self.format.to_f32(l),
                                     right: self.format.to_f32(r),
                                 }),
@@ -141,7 +141,7 @@ impl kira::sound::streaming::Decoder for FfmpegKiraBridge {
                                 .take(self.frame_size)
                                 .map(|c| {
                                     let val = self.format.to_f32(c);
-                                    kira::dsp::Frame {
+                                    kira::Frame {
                                         left: val,
                                         right: val,
                                     }
@@ -153,7 +153,7 @@ impl kira::sound::streaming::Decoder for FfmpegKiraBridge {
                                 .data(0)
                                 .chunks_exact(bytes_per_sample * self.channels)
                                 .take(self.frame_size)
-                                .map(|c| kira::dsp::Frame {
+                                .map(|c| kira::Frame {
                                     left: self.format.to_f32(&c[0..bytes_per_sample]),
                                     right: self
                                         .format
@@ -193,8 +193,14 @@ impl kira::sound::streaming::Decoder for FfmpegKiraBridge {
         }
     }
 
-    fn seek(&mut self, _: usize) -> Result<usize, Self::Error> {
-        Err(AudioDecoderError::Other("Can't seek".to_owned()))
+    fn seek(&mut self, seek: usize) -> Result<usize, Self::Error> {
+        if self.step == 0 && seek == 0 {
+            return Ok(0);
+        }
+        Err(AudioDecoderError::Other(format!(
+            "Can't seek (step {}, requested {seek})",
+            self.step
+        )))
     }
 }
 
@@ -276,10 +282,7 @@ impl AudioContext {
             step: 0,
         };
 
-        let sound_data = kira::sound::streaming::StreamingSoundData::from_decoder(
-            kira_decoder,
-            kira::sound::streaming::StreamingSoundSettings::new(),
-        );
+        let sound_data = kira::sound::streaming::StreamingSoundData::from_decoder(kira_decoder);
 
         let _ = channel.blocking_send(sound_data);
 

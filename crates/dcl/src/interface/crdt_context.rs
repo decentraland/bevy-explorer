@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 
-use bevy::{prelude::debug, utils::HashSet};
+use bevy::{platform::collections::HashSet, prelude::debug};
 
 use crate::{SceneCensus, SceneId};
 use dcl_component::SceneEntityId;

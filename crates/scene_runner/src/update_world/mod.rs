@@ -4,7 +4,12 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use bevy::{core::FrameCount, ecs::system::EntityCommands, prelude::*, utils::HashMap};
+use bevy::{
+    diagnostic::FrameCount,
+    ecs::{component::Mutable, system::EntityCommands},
+    platform::collections::HashMap,
+    prelude::*,
+};
 
 use dcl::{
     crdt::{growonly::CrdtGOState, lww::CrdtLWWState},
@@ -173,11 +178,11 @@ impl Plugin for SceneOutputPlugin {
 
         app.add_systems(
             PostUpdate,
-            track_components::<Handle<Mesh>, true>.run_if(|track: Res<TrackComponents>| track.0),
+            track_components::<Mesh3d, true>.run_if(|track: Res<TrackComponents>| track.0),
         );
         app.add_systems(
             PostUpdate,
-            track_components::<Handle<SceneMaterial>, true>
+            track_components::<MeshMaterial3d<SceneMaterial>, true>
                 .run_if(|track: Res<TrackComponents>| track.0),
         );
     }
@@ -200,7 +205,7 @@ pub trait AddCrdtInterfaceExt {
 
     fn add_crdt_go_component<
         D: FromDclReader + std::fmt::Debug,
-        C: Component + DerefMut<Target = VecDeque<D>> + Default,
+        C: Component<Mutability = Mutable> + DerefMut<Target = VecDeque<D>> + Default,
     >(
         &mut self,
         id: SceneComponentId,
@@ -248,7 +253,7 @@ impl AddCrdtInterfaceExt for App {
 
     fn add_crdt_go_component<
         D: FromDclReader + std::fmt::Debug,
-        C: Component + DerefMut<Target = VecDeque<D>> + Default,
+        C: Component<Mutability = Mutable> + DerefMut<Target = VecDeque<D>> + Default,
     >(
         &mut self,
         id: SceneComponentId,
@@ -342,7 +347,7 @@ pub(crate) fn process_crdt_lww_updates<
 
 fn process_crdt_go_updates<
     D: FromDclReader + std::fmt::Debug,
-    C: Component + DerefMut<Target = VecDeque<D>> + Default,
+    C: Component<Mutability = Mutable> + DerefMut<Target = VecDeque<D>> + Default,
 >(
     mut commands: Commands,
     mut scenes: Query<(
@@ -408,7 +413,7 @@ pub fn track_components<C: Component, const ALLOW_UNALLOCATED: bool>(
         return;
     }
 
-    let mut counts = HashMap::default();
+    let mut counts = HashMap::new();
 
     for container in q.iter() {
         let Some(container) = container else {

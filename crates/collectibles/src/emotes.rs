@@ -2,8 +2,8 @@ use anyhow::anyhow;
 use bevy::{
     asset::AssetLoader,
     gltf::Gltf,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
-    utils::{ConditionalSendFuture, HashMap, HashSet},
 };
 use ipfs::EntityDefinitionLoader;
 use serde::{Deserialize, Serialize};
@@ -173,6 +173,8 @@ fn load_animations(
                                 default_scene: Default::default(),
                                 animations: Default::default(),
                                 source: Default::default(),
+                                skins: Default::default(),
+                                named_skins: Default::default(),
                             };
                             let new_gltf = gltfs.add(new_gltf);
 
@@ -199,7 +201,7 @@ fn load_animations(
                                 sound,
                             };
 
-                            let mut representations = HashMap::default();
+                            let mut representations = HashMap::new();
 
                             if is_female {
                                 representations.insert(base_bodyshapes().remove(0), emote.clone());
@@ -544,64 +546,62 @@ impl AssetLoader for EmoteLoader {
 
     type Error = anyhow::Error;
 
-    fn load<'a>(
-        &'a self,
-        reader: &'a mut bevy::asset::io::Reader,
-        settings: &'a Self::Settings,
-        load_context: &'a mut bevy::asset::LoadContext,
-    ) -> impl ConditionalSendFuture<Output = Result<Self::Asset, Self::Error>> {
-        Box::pin(async move {
-            let mut entity = EntityDefinitionLoader
-                .load(reader, settings, load_context)
-                .await?;
-            let metadata = entity.metadata.ok_or(anyhow!("no metadata?"))?;
-            debug!("meta: {metadata:#?}");
-            let meta = serde_json::from_value::<EmoteMeta>(metadata)?;
+    async fn load(
+        &self,
+        reader: &mut dyn bevy::asset::io::Reader,
+        settings: &Self::Settings,
+        load_context: &mut bevy::asset::LoadContext<'_>,
+    ) -> Result<Self::Asset, Self::Error> {
+        let mut entity = EntityDefinitionLoader
+            .load(reader, settings, load_context)
+            .await?;
+        let metadata = entity.metadata.ok_or(anyhow!("no metadata?"))?;
+        debug!("meta: {metadata:#?}");
+        let meta = serde_json::from_value::<EmoteMeta>(metadata)?;
 
-            let thumbnail =
-                load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
+        let thumbnail =
+            load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
 
-            let mut representations = HashMap::default();
+        let mut representations = HashMap::new();
 
-            for representation in meta.emote_extended_data.representations.into_iter() {
-                let gltf = load_context.load(
-                    load_context
-                        .path()
-                        .parent()
-                        .unwrap()
-                        .join(&representation.main_file),
+        for representation in meta.emote_extended_data.representations.into_iter() {
+            let gltf = load_context.load(
+                load_context
+                    .path()
+                    .parent()
+                    .unwrap()
+                    .join(&representation.main_file),
+            );
+
+            let sound = representation
+                .contents
+                .iter()
+                .find(|f| f.ends_with(".mp3") || f.ends_with(".ogg"))
+                .map(|af| load_context.load(load_context.path().parent().unwrap().join(af)));
+
+            for body_shape in representation.body_shapes {
+                representations.insert(
+                    body_shape.to_lowercase(),
+                    Emote {
+                        gltf: gltf.clone(),
+                        default_repeat: meta.emote_extended_data.loops,
+                        sound: vec![(0.0, sound.iter().cloned().collect())],
+                    },
                 );
-
-                let sound = representation
-                    .contents
-                    .iter()
-                    .find(|f| f.ends_with(".mp3") || f.ends_with(".ogg"))
-                    .map(|af| load_context.load(load_context.path().parent().unwrap().join(af)));
-
-                for body_shape in representation.body_shapes {
-                    representations.insert(
-                        body_shape.to_lowercase(),
-                        Emote {
-                            gltf: gltf.clone(),
-                            default_repeat: meta.emote_extended_data.loops,
-                            sound: vec![(0.0, sound.iter().cloned().collect())],
-                        },
-                    );
-                }
             }
+        }
 
-            Ok(Collectible {
-                data: CollectibleData {
-                    thumbnail,
-                    hash: entity.id,
-                    urn: entity.pointers.pop().unwrap_or_default(),
-                    name: meta.name,
-                    description: meta.description,
-                    available_representations: representations.keys().cloned().collect(),
-                    extra_data: (),
-                },
-                representations,
-            })
+        Ok(Collectible {
+            data: CollectibleData {
+                thumbnail,
+                hash: entity.id,
+                urn: entity.pointers.pop().unwrap_or_default(),
+                name: meta.name,
+                description: meta.description,
+                available_representations: representations.keys().cloned().collect(),
+                extra_data: (),
+            },
+            representations,
         })
     }
 }
@@ -615,43 +615,41 @@ impl AssetLoader for EmoteMetaLoader {
 
     type Error = anyhow::Error;
 
-    fn load<'a>(
-        &'a self,
-        reader: &'a mut bevy::asset::io::Reader,
-        settings: &'a Self::Settings,
-        load_context: &'a mut bevy::asset::LoadContext,
-    ) -> impl ConditionalSendFuture<Output = Result<Self::Asset, Self::Error>> {
-        Box::pin(async move {
-            let mut entity = EntityDefinitionLoader
-                .load(reader, settings, load_context)
-                .await?;
-            let metadata = entity.metadata.ok_or(anyhow!("no metadata?"))?;
-            debug!("meta: {metadata:#?}");
-            let meta = serde_json::from_value::<EmoteMeta>(metadata)?;
+    async fn load(
+        &self,
+        reader: &mut dyn bevy::asset::io::Reader,
+        settings: &Self::Settings,
+        load_context: &mut bevy::asset::LoadContext<'_>,
+    ) -> Result<Self::Asset, Self::Error> {
+        let mut entity = EntityDefinitionLoader
+            .load(reader, settings, load_context)
+            .await?;
+        let metadata = entity.metadata.ok_or(anyhow!("no metadata?"))?;
+        debug!("meta: {metadata:#?}");
+        let meta = serde_json::from_value::<EmoteMeta>(metadata)?;
 
-            let thumbnail =
-                load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
+        let thumbnail =
+            load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
 
-            let available_representations = meta
-                .emote_extended_data
-                .representations
-                .into_iter()
-                .flat_map(|rep| {
-                    rep.body_shapes
-                        .into_iter()
-                        .map(|shape| shape.to_lowercase())
-                })
-                .collect();
-
-            Ok(CollectibleData {
-                thumbnail,
-                hash: entity.id,
-                urn: entity.pointers.pop().unwrap_or_default(),
-                name: meta.name,
-                description: meta.description,
-                available_representations,
-                extra_data: (),
+        let available_representations = meta
+            .emote_extended_data
+            .representations
+            .into_iter()
+            .flat_map(|rep| {
+                rep.body_shapes
+                    .into_iter()
+                    .map(|shape| shape.to_lowercase())
             })
+            .collect();
+
+        Ok(CollectibleData {
+            thumbnail,
+            hash: entity.id,
+            urn: entity.pointers.pop().unwrap_or_default(),
+            name: meta.name,
+            description: meta.description,
+            available_representations,
+            extra_data: (),
         })
     }
 }

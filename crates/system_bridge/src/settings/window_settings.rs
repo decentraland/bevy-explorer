@@ -55,11 +55,16 @@ impl AppSetting for WindowSetting {
     }
 
     fn apply(&self, mut window: SystemParamItem<Self::Param>, _: Commands) {
-        let mut window = window.get_single_mut().unwrap();
+        let mut window = window.single_mut().unwrap();
         window.mode = match self {
-            WindowSetting::Fullscreen => bevy::window::WindowMode::Fullscreen,
+            WindowSetting::Fullscreen => bevy::window::WindowMode::Fullscreen(
+                MonitorSelection::Current,
+                VideoModeSelection::Current,
+            ),
             WindowSetting::Windowed => bevy::window::WindowMode::Windowed,
-            WindowSetting::Borderless => bevy::window::WindowMode::BorderlessFullscreen,
+            WindowSetting::Borderless => {
+                bevy::window::WindowMode::BorderlessFullscreen(MonitorSelection::Current)
+            }
         };
     }
 }
@@ -80,7 +85,7 @@ pub fn set_resolutions(
     if winit_windows.is_changed() {
         println!("update resolutions!");
         if let Some(monitor) = window_query
-            .get_single()
+            .single()
             .ok()
             .and_then(|entity| winit_windows.get_window(entity))
             .and_then(|winit_window| winit_window.current_monitor())
@@ -133,7 +138,7 @@ impl AppSetting for FullscreenResSetting {
     }
 
     fn apply(&self, mut window: SystemParamItem<Self::Param>, _: Commands) {
-        let mut window = window.get_single_mut().unwrap();
+        let mut window = window.single_mut().unwrap();
         window.resolution = WindowResolution::new(self.0.x as f32, self.0.y as f32);
     }
 }

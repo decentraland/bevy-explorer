@@ -59,7 +59,7 @@ fn play_interact_sounds(
             )
         {
             if let Some(sound) = sounds.press.as_ref() {
-                writer.send(format!("sounds/ui/{sound}").into());
+                writer.write(format!("sounds/ui/{sound}").into());
             }
             commands
                 .entity(entity)
@@ -69,7 +69,7 @@ fn play_interact_sounds(
 
         if maybe_last < Some(&LastInteractSound(InteractSound::Hover)) {
             if let Some(sound) = sounds.hover.as_ref() {
-                writer.send(format!("sounds/ui/{sound}").into());
+                writer.write(format!("sounds/ui/{sound}").into());
             }
             commands
                 .entity(entity)

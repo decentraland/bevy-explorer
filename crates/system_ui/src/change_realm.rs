@@ -5,8 +5,8 @@ use bevy::{
 };
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
-    structs::SystemAudio,
-    util::{FireEventEx, TaskCompat, TaskExt},
+    structs::{SystemAudio, ZOrder},
+    util::{TaskCompat, TaskExt},
 };
 use ipfs::{ChangeRealmEvent, CurrentRealm, IpfsAssetServer};
 use serde::Deserialize;
@@ -54,7 +54,7 @@ fn change_realm_dialog(
 ) {
     if realm.is_changed() {
         for mut text in q.iter_mut() {
-            text.sections[0].value = format!(
+            text.0 = format!(
                 "Realm: {}",
                 realm
                     .config
@@ -92,7 +92,7 @@ fn change_realm_dialog(
                 .map_err(|e| anyhow!(e))
         });
 
-    let mut root = commands.spawn_empty();
+    let mut root = commands.spawn(ZOrder::BackpackPopup.default());
     let root_id = root.id();
 
     let components = dui
@@ -129,7 +129,7 @@ fn update_server_list(
             match res {
                 Ok(mut servers) => {
                     let root_id = server_list.root_id;
-                    commands.entity(ent).despawn_descendants();
+                    commands.entity(ent).despawn_related::<Children>();
                     servers.sort_by_key(|server| -server.users_count);
                     for server in servers {
                         commands.entity(ent).spawn_template(
@@ -142,12 +142,12 @@ fn update_server_list(
                                 .with_prop(
                                     "onclick",
                                     On::<Click>::new(move |mut commands: Commands, mut e: EventWriter<ChangeRealmEvent>| {
-                                        commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
-                                        e.send(ChangeRealmEvent {
+                                        commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+                                        e.write(ChangeRealmEvent {
                                             new_realm: server.url.clone(),
                                             content_server_override: None,
                                         });
-                                        commands.entity(root_id).despawn_recursive();
+                                        commands.entity(root_id).despawn();
                                     }),
                                 )
                         ).unwrap();

@@ -1,4 +1,4 @@
-use bevy::utils::{HashMap, HashSet};
+use bevy::platform::collections::{HashMap, HashSet};
 use ethers_core::types::Address;
 
 use crate::DirectChatMessage;

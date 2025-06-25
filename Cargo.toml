@@ -26,8 +26,7 @@ hot_reload = ["bevy/file_watcher", "ipfs/hot_reload"]
 livekit = ["comms/livekit", "system_ui/livekit"]
 ffmpeg = ["av/ffmpeg"]
 social = ["dcl_component/social", "social/social"]
-# wasm =   ["uuid/js", "bevy/webgpu"]
-wasm =   ["uuid/js"]
+wasm = ["uuid/js", "getrandom/wasm_js", "bevy/webgpu"]
 
 [profile.release]
 codegen-units = 1
@@ -71,10 +70,9 @@ social = { path="crates/social" }
 imposters = { path="crates/imposters" }
 system_bridge = { path="crates/system_bridge" }
 texture_camera = { path="crates/texture_camera" }
-propagate = { path="crates/propagate" }
 platform = { path="crates/platform" }
 
-bevy = { version = "0.14", default-features = false, features=[
+bevy = { version = "0.16.1", default-features = false, features=[
     "animation",
     "bevy_asset",
     "bevy_gilrs",
@@ -89,19 +87,21 @@ bevy = { version = "0.14", default-features = false, features=[
     "bevy_ui",
     "multi_threaded",
     "png",
+    "tiff",
+    "jpeg",
     "hdr",
     "x11",
     "bevy_gizmos",
     "tonemapping_luts",
     "default_font",
-    "webgl2",
-    "jpeg",
     "serialize",
+    "bevy_log",
+    "std",
+    "bevy_state",
 ] }
-wgpu = "0.20"
-bevy_console = { git = "https://github.com/robtfm/bevy-console", branch="bevy-0.14" }
-# bevy_console = { path = "../bevy-console" }
-bevy_egui = { version = "0.28", default-features = false, features = ["default_fonts", "render"] }
+wgpu = "24"
+bevy_console = { git = "https://github.com/robtfm/bevy-console", branch="0.16" }
+bevy_egui = { version = "0.34", default-features = false, features = ["default_fonts", "render"] }
 
 serde = "1.0.152"
 serde_json = { version = "1.0.92", features = ["raw_value"] }
@@ -122,14 +122,14 @@ rapier3d-f64 = "0.25"
 urlencoding = "2.1.2"
 async-std = "1.12.0"
 reqwest = { version = "0.12", default-features = false, features = ["native-tls", "json", "blocking"] }
-kira = "0.8.4"
+kira = "0.9.6"
 data-encoding = "2.5"
 opener = { version = "0.8", git = "https://github.com/robtfm/opener" }
 chrono = { version = "0.4.31", features = ["serde"] }
-bevy_dui = { git = "https://github.com/robtfm/bevy_dui", branch = "main-14" }
-bevy_ecss = { git = "https://github.com/robtfm/bevy_ecss", branch = "v0.14" }
-bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = "0.14-dcl", features=["flac", "mp3", "ogg", "wav"] }
-bevy_simple_text_input = { git = "https://github.com/robtfm/bevy_simple_text_input", features=["clipboard"], branch="multiline" }
+bevy_dui = { git = "https://github.com/robtfm/bevy_dui", branch = "0.16" }
+bevy_ecss = { git = "https://github.com/robtfm/bevy_ecss", branch = "0.16" }
+bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = "0.16-2", features=["flac", "mp3", "ogg", "wav"] }
+bevy_simple_text_input = { git = "https://github.com/robtfm/bevy_simple_text_input", features=["clipboard"], branch="0.16" }
 directories = "5"
 uuid = { version = "1.7", features = ["v4"] }
 build-time = "0.1.3"
@@ -141,7 +141,7 @@ fastrand = "2"
 rand = "0.8.5"
 futures-util = "0.3.28"
 async-native-tls = { version = "0.5", features = ["runtime-async-std"] }
-boimp = { git = "https://github.com/robtfm/boimp", branch = "0.1.1" }
+boimp = { git = "https://github.com/robtfm/boimp", branch = "0.3" }
 crc = "3"
 num-traits = "0.2"
 async-compat = "0.2"
@@ -185,7 +185,6 @@ social = { workspace = true }
 imposters = { workspace = true }
 system_bridge = { workspace = true }
 texture_camera = { workspace = true }
-propagate = { workspace = true }
 platform = { workspace = true }
 
 bevy = { workspace = true }
@@ -221,22 +220,53 @@ dcl_wasm = { workspace = true }
 console_error_panic_hook = "0.1.7"
 console_log = "1.0"
 log = "0.4"
+getrandom = "0.3"
 wasm-bindgen = { workspace = true }
 
 [build-dependencies]
 prost-build = "0.11.8"
 
 [patch.crates-io]
-bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.14-dcl-cosmic-noimage" }
+# mess required by egui referencing bevy crates directly
+bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
+bevy_a11y = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
+bevy_asset = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
+bevy_app = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
+bevy_derive = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
+bevy_ecs = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
+bevy_image = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
+bevy_input = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
+bevy_log = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
+bevy_math = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
+bevy_reflect = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
+bevy_render = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
+bevy_time = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
+bevy_winit = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
+bevy_window = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
+bevy_platform = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
 # bevy = { path="../bevy" }
-dcl-rpc = { git = "https://github.com/decentraland/rpc-rust", branch = "chore/bump-tokio-tungstenite" }
+# bevy_a11y = { path="../bevy/crates/bevy_a11y" }
+# bevy_asset = { path="../bevy/crates/bevy_asset" }
+# bevy_app = { path="../bevy/crates/bevy_app" }
+# bevy_derive = { path="../bevy/crates/bevy_derive" }
+# bevy_ecs = { path="../bevy/crates/bevy_ecs" }
+# bevy_image = { path="../bevy/crates/bevy_image" }
+# bevy_input = { path="../bevy/crates/bevy_input" }
+# bevy_log = { path="../bevy/crates/bevy_log" }
+# bevy_math = { path="../bevy/crates/bevy_math" }
+# bevy_reflect = { path="../bevy/crates/bevy_reflect" }
+# bevy_render = { path="../bevy/crates/bevy_render" }
+# bevy_time = { path="../bevy/crates/bevy_time" }
+# bevy_winit = { path="../bevy/crates/bevy_winit" }
+# bevy_window = { path="../bevy/crates/bevy_window" }
+# bevy_platform = { path="../bevy/crates/bevy_platform" }
+
 ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-linesize-0-6.1" }
 parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "bugfix-project-local-point" }
 # rapier3d-f64 = { git = "https://github.com/robtfm/rapier", branch = "master" }
 deno_core = { git = "https://github.com/robtfm/deno_core", branch = "0_307_hotfix" }
 serde_v8 = { git = "https://github.com/robtfm/deno_core", branch = "0_307_hotfix" }
 deno_ops = { git = "https://github.com/robtfm/deno_core", branch = "0_307_hotfix" }
-winit = { git = "https://github.com/robtfm/winit", branch = "wnidows-cursor-lock" }
 
 deno_console = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 deno_fetch = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
@@ -261,3 +291,4 @@ deno_webstorage = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfi
 
 # [patch."https://github.com/robtfm/bevy_atmosphere"]
 # bevy_atmosphere = { path = "../bevy_atmosphere" }
+

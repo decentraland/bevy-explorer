@@ -35,14 +35,14 @@ pub fn set_ui_input(
 ) {
     for ent in removed.read() {
         if let Ok(link) = links.get(ent) {
-            if let Some(mut commands) = commands.get_entity(link.ui_entity) {
+            if let Ok(mut commands) = commands.get_entity(link.ui_entity) {
                 commands.remove::<TextEntry>();
             }
         }
     }
 
     for (scene_ent, input, link) in inputs.iter() {
-        let Some(mut commands) = commands.get_entity(link.ui_entity) else {
+        let Ok(mut commands) = commands.get_entity(link.ui_entity) else {
             continue;
         };
 
@@ -88,10 +88,10 @@ pub fn set_ui_input(
                     is_submit: Some(submit),
                 },
             );
-            context.last_action_event = Some(time.elapsed_seconds());
+            context.last_action_event = Some(time.elapsed_secs());
         };
 
-        commands.modify_component(move |style: &mut Style| {
+        commands.modify_component(move |style: &mut Node| {
             //ensure we use max width if not given
             if style.width == Val::Px(0.0) {
                 style.width = Val::Percent(100.0);
@@ -114,15 +114,20 @@ pub fn set_ui_input(
                 enabled: !input.0.disabled,
                 content: input.0.value.clone().unwrap_or_default(),
                 accept_line: true,
-                text_style: Some(TextStyle {
-                    font: user_font(font_name, ui_core::WeightName::Regular),
-                    font_size,
-                    color: input
-                        .0
-                        .color
-                        .map(Color4DclToBevy::convert_srgba)
-                        .unwrap_or(Color::BLACK),
-                }),
+                text_style: Some((
+                    TextFont {
+                        font: user_font(font_name, ui_core::WeightName::Regular),
+                        font_size,
+                        ..Default::default()
+                    },
+                    TextColor(
+                        input
+                            .0
+                            .color
+                            .map(Color4DclToBevy::convert_srgba)
+                            .unwrap_or(Color::BLACK),
+                    ),
+                )),
                 ..Default::default()
             },
             On::<DataChanged>::new((|| false).pipe(data_handler)),

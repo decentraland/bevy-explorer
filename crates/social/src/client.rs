@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use bevy::{
     log::{debug, warn},
-    utils::{HashMap, HashSet},
+    platform::collections::{HashMap, HashSet},
 };
 use common::util::AsH160;
 use dcl_component::proto_components::social::{
@@ -433,7 +433,7 @@ async fn social_socket_handler_inner(
         }
     }
 
-    let mut received_requests = HashMap::default();
+    let mut received_requests = HashMap::new();
     let mut sent_requests = HashSet::default();
     if let Some(request_events_response::Response::Events(RequestEvents { incoming, outgoing })) =
         requests_req.response

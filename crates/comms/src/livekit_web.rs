@@ -1,5 +1,7 @@
-use bevy::{prelude::*, utils::HashMap};
-use futures_util::FutureExt;
+use bevy::{
+    platform::{collections::HashMap, hash::FixedHasher},
+    prelude::*,
+};
 use http::Uri;
 use prost::Message;
 use serde::Deserialize;
@@ -160,10 +162,11 @@ fn livekit_handler_inner(
         url.host().unwrap_or_default(),
         url.path()
     );
-    let params = HashMap::from_iter(url.query().unwrap_or_default().split('&').flat_map(|par| {
-        par.split_once('=')
-            .map(|(a, b)| (a.to_owned(), b.to_owned()))
-    }));
+    let params: HashMap<_, _, FixedHasher> =
+        HashMap::from_iter(url.query().unwrap_or_default().split('&').flat_map(|par| {
+            par.split_once('=')
+                .map(|(a, b)| (a.to_owned(), b.to_owned()))
+        }));
     debug!("{:?}", params);
     let token = params.get("access_token").cloned().unwrap_or_default();
 

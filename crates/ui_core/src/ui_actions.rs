@@ -4,13 +4,10 @@ pub struct UiActionPlugin;
 use std::marker::PhantomData;
 
 use bevy::{
-    ecs::{
-        query::{QueryData, WorldQuery},
-        system::BoxedSystem,
-    },
+    ecs::{query::QueryData, system::BoxedSystem},
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     ui::UiSystem,
-    utils::{HashMap, HashSet},
     window::PrimaryWindow,
 };
 
@@ -18,7 +15,6 @@ use common::{
     inputs::{CommonInputAction, POINTER_SET, SCROLL_SET},
     sets::SceneSets,
     structs::SystemAudio,
-    util::FireEventEx,
 };
 use input_manager::{InputManager, InputPriority};
 
@@ -67,7 +63,6 @@ impl Plugin for UiActionPlugin {
                         gather_actions::<MouseWheeled>,
                     )
                         .chain(),
-                    apply_deferred,
                     (
                         run_actions::<HoverExit>,
                         run_actions::<HoverEnter>,
@@ -90,7 +85,6 @@ impl Plugin for UiActionPlugin {
                 PreUpdate,
                 (
                     (gather_actions::<Focus>, gather_actions::<Defocus>).chain(),
-                    apply_deferred,
                     (run_actions::<Focus>, run_actions::<Defocus>).chain(),
                 )
                     .chain()
@@ -125,30 +119,30 @@ impl<M: ActionMarker> On<M> {
     }
 }
 
-pub fn close_ui_silent(mut commands: Commands, parents: Query<&Parent>, c: Res<UiCaller>) {
+pub fn close_ui_silent(mut commands: Commands, parents: Query<&ChildOf>, c: Res<UiCaller>) {
     let mut ent = c.0;
     while let Ok(p) = parents.get(ent) {
-        ent = **p;
+        ent = p.parent();
     }
-    if let Some(commands) = commands.get_entity(ent) {
-        commands.despawn_recursive();
+    if let Ok(mut commands) = commands.get_entity(ent) {
+        commands.despawn();
     }
 }
 
-pub fn close_ui_happy(mut commands: Commands, parents: Query<&Parent>, c: Res<UiCaller>) {
-    commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+pub fn close_ui_happy(mut commands: Commands, parents: Query<&ChildOf>, c: Res<UiCaller>) {
+    commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
     close_ui_silent(commands, parents, c)
 }
 
-pub fn close_ui_sad(mut commands: Commands, parents: Query<&Parent>, c: Res<UiCaller>) {
-    commands.fire_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
+pub fn close_ui_sad(mut commands: Commands, parents: Query<&ChildOf>, c: Res<UiCaller>) {
+    commands.send_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
     close_ui_silent(commands, parents, c)
 }
 
 pub trait ActionMarker: Send + Sync + 'static {
     type Component: QueryData;
 
-    fn activate(param: <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>) -> bool;
+    fn activate(param: <<Self::Component as QueryData>::ReadOnly as QueryData>::Item<'_>) -> bool;
     fn repeat_activate() -> bool {
         false
     }
@@ -168,7 +162,7 @@ impl ActionMarker for Click {
         Option<&'static Enabled>,
     );
     fn activate(
-        (interact, clickdata, enabled): <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>,
+        (interact, clickdata, enabled): <<Self::Component as QueryData>::ReadOnly as QueryData>::Item<'_>,
     ) -> bool {
         !matches!(interact, Interaction::None)
             && enabled.is_none_or(|a| a.0)
@@ -184,7 +178,7 @@ impl ActionMarker for ClickRepeat {
         Option<&'static Enabled>,
     );
     fn activate(
-        (interact, clickdata, enabled): <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>,
+        (interact, clickdata, enabled): <<Self::Component as QueryData>::ReadOnly as QueryData>::Item<'_>,
     ) -> bool {
         !matches!(interact, Interaction::None)
             && enabled.is_none_or(|a| a.0)
@@ -200,7 +194,7 @@ pub struct HoverEnter;
 impl ActionMarker for HoverEnter {
     type Component = (&'static Interaction, Option<&'static Enabled>);
     fn activate(
-        (interact, enabled): <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>,
+        (interact, enabled): <<Self::Component as QueryData>::ReadOnly as QueryData>::Item<'_>,
     ) -> bool {
         !matches!(interact, Interaction::None) && enabled.is_none_or(|a| a.0)
     }
@@ -209,21 +203,21 @@ pub struct HoverExit;
 impl ActionMarker for HoverExit {
     type Component = (&'static Interaction, Option<&'static Enabled>);
     fn activate(
-        (interact, enabled): <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>,
+        (interact, enabled): <<Self::Component as QueryData>::ReadOnly as QueryData>::Item<'_>,
     ) -> bool {
         matches!(interact, Interaction::None) && enabled.is_none_or(|a| a.0)
     }
 }
 impl ActionMarker for Focus {
     type Component = Option<&'static Focus>;
-    fn activate(param: <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>) -> bool {
+    fn activate(param: <<Self::Component as QueryData>::ReadOnly as QueryData>::Item<'_>) -> bool {
         param.is_some()
     }
 }
 pub struct Defocus;
 impl ActionMarker for Defocus {
     type Component = Option<&'static Focus>;
-    fn activate(param: <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>) -> bool {
+    fn activate(param: <<Self::Component as QueryData>::ReadOnly as QueryData>::Item<'_>) -> bool {
         param.is_none()
     }
 }
@@ -232,7 +226,7 @@ impl ActionMarker for Defocus {
 pub struct DataChanged;
 impl ActionMarker for DataChanged {
     type Component = Option<Ref<'static, DataChanged>>;
-    fn activate(param: <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>) -> bool {
+    fn activate(param: <<Self::Component as QueryData>::ReadOnly as QueryData>::Item<'_>) -> bool {
         param.map(|p| p.is_changed()).unwrap_or(false)
     }
 
@@ -245,7 +239,7 @@ impl ActionMarker for DataChanged {
 pub struct Submit;
 impl ActionMarker for Submit {
     type Component = Option<Ref<'static, Submit>>;
-    fn activate(param: <<Self::Component as QueryData>::ReadOnly as WorldQuery>::Item<'_>) -> bool {
+    fn activate(param: <<Self::Component as QueryData>::ReadOnly as QueryData>::Item<'_>) -> bool {
         param.map(|p| p.is_changed()).unwrap_or(false)
     }
 
@@ -510,7 +504,7 @@ fn update_drag(
         drag_data.trigger = delta != Vec2::ZERO;
         drag_data.delta_pixels = delta;
 
-        let Ok(window) = window.get_single() else {
+        let Ok(window) = window.single() else {
             return;
         };
         drag_data.delta_viewport = delta / Vec2::new(window.width(), window.height());
@@ -555,7 +549,7 @@ pub trait EventDefaultExt {
 impl<E: Event + Default> EventDefaultExt for E {
     fn send_default_on<A: ActionMarker>() -> On<A> {
         On::<A>::new(|mut e: EventWriter<Self>| {
-            e.send_default();
+            e.write_default();
         })
     }
 }
@@ -572,7 +566,7 @@ impl<E: Event + Clone> EventCloneExt for E {
 
     fn send_value(self) -> impl FnMut(EventWriter<Self>) {
         move |mut e: EventWriter<Self>| {
-            e.send(self.clone());
+            e.write(self.clone());
         }
     }
 }
@@ -586,14 +580,14 @@ impl EntityActionExt for Entity {
     fn despawn_recursive_on<A: ActionMarker>(&self) -> On<A> {
         let ent = *self;
         On::<A>::new(move |mut commands: Commands| {
-            commands.entity(ent).despawn_recursive();
+            commands.entity(ent).despawn();
         })
     }
 
     fn despawn_recursive_and_close_on<A: ActionMarker>(&self) -> On<A> {
         let ent = *self;
         On::<A>::new(close_ui_happy.pipe(move |mut commands: Commands| {
-            commands.entity(ent).despawn_recursive();
+            commands.entity(ent).despawn();
         }))
     }
 }

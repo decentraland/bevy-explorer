@@ -6,7 +6,11 @@ use std::{
 };
 
 use anyhow::anyhow;
-use bevy::{asset::AsyncReadExt, prelude::*, utils::HashMap};
+use bevy::{
+    asset::AsyncReadExt,
+    platform::{collections::HashMap, hash::FixedHasher},
+    prelude::*,
+};
 use common::structs::IVec2Arg;
 use ipfs::IpfsIo;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -31,7 +35,7 @@ fn imposter_serialize<S>(val: &HashMap<IVec2, ImposterSpec>, s: S) -> Result<S::
 where
     S: Serializer,
 {
-    let string_map = HashMap::from_iter(
+    let string_map: HashMap<_, _, FixedHasher> = HashMap::from_iter(
         val.iter()
             .map(|(key, val)| (format!("{},{}", key.x, key.y), val)),
     );

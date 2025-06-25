@@ -33,3 +33,4 @@ web-time = { workspace = true }
 
 url = "2.4.0"
 downcast-rs = "1.2"
+futures-io = "0.3"

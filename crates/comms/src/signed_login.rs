@@ -1,5 +1,5 @@
 use bevy::{
-    ecs::event::ManualEventReader,
+    ecs::event::EventCursor,
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
@@ -30,7 +30,7 @@ pub struct StartSignedLogin {
 
 #[allow(clippy::type_complexity)]
 pub fn start_signed_login(
-    mut signed_login_events: Local<ManualEventReader<StartSignedLogin>>,
+    mut signed_login_events: Local<EventCursor<StartSignedLogin>>,
     current_realm: Res<CurrentRealm>,
     wallet: Res<Wallet>,
     mut task: Local<

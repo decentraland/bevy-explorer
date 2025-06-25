@@ -1,9 +1,10 @@
 use std::{f32::consts::TAU, ops::RangeInclusive};
 
 use bevy::{
+    app::Propagate,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::view::RenderLayers,
-    utils::{HashMap, HashSet},
 };
 use bimap::BiMap;
 use common::{
@@ -294,7 +295,7 @@ pub fn process_transport_updates(
             SceneEntityId,
             mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
         ),
-    > = HashMap::default();
+    > = HashMap::new();
 
     while let Ok(update) = state.ext_receiver.try_recv() {
         // create/update timestamp/transport_id on the foreign player
@@ -303,7 +304,7 @@ pub fn process_transport_updates(
                 (*entity, *scene_id, channel.clone())
             } else if let Some(existing) = state.lookup.get_by_left(&update.address) {
                 let mut foreign_player = players.get_mut(*existing).unwrap();
-                foreign_player.last_update = time.elapsed_seconds();
+                foreign_player.last_update = time.elapsed_secs();
                 foreign_player.transport_id = update.transport_id;
                 (
                     *existing,
@@ -332,11 +333,12 @@ pub fn process_transport_updates(
 
                 let new_entity = commands
                     .spawn((
-                        SpatialBundle::default(),
+                        Transform::default(),
+                        Visibility::default(),
                         ForeignPlayer {
                             address: update.address,
                             transport_id: update.transport_id,
-                            last_update: time.elapsed_seconds(),
+                            last_update: time.elapsed_secs(),
                             scene_id: next_free,
                             profile_version: 0,
                             audio_sender: audio_sender.clone(),
@@ -344,7 +346,7 @@ pub fn process_transport_updates(
                             active_voice_subscription: None,
                         },
                         ForeignAudioSource(audio_receiver),
-                        propagate::Propagate(RenderLayers::default()),
+                        Propagate(RenderLayers::default()),
                     ))
                     .try_push_children(&attach_points.entities())
                     .insert(attach_points)
@@ -438,9 +440,9 @@ pub fn process_transport_updates(
                     scene_id,
                     &dcl_transform,
                 );
-                position_events.send(PlayerPositionEvent {
+                position_events.write(PlayerPositionEvent {
                     index: Some(pos.index),
-                    time: time.elapsed_seconds(),
+                    time: time.elapsed_secs(),
                     timestamp: None,
                     player: entity,
                     translation: DclTranslation([pos.position_x, pos.position_y, pos.position_z]),
@@ -456,19 +458,19 @@ pub fn process_transport_updates(
                 });
             }
             PlayerMessage::PlayerData(Message::ProfileVersion(version)) => {
-                profile_events.send(ProfileEvent {
+                profile_events.write(ProfileEvent {
                     sender: entity,
                     event: ProfileEventType::Version(version),
                 });
             }
             PlayerMessage::PlayerData(Message::ProfileRequest(request)) => {
-                profile_events.send(ProfileEvent {
+                profile_events.write(ProfileEvent {
                     sender: entity,
                     event: ProfileEventType::Request(request),
                 });
             }
             PlayerMessage::PlayerData(Message::ProfileResponse(response)) => {
-                profile_events.send(ProfileEvent {
+                profile_events.write(ProfileEvent {
                     sender: entity,
                     event: ProfileEventType::Response(response),
                 });
@@ -478,7 +480,7 @@ pub fn process_transport_updates(
 
                 if *last < chat.timestamp {
                     debug!("chat data: `{chat:#?}`");
-                    chat_events.send(ChatEvent {
+                    chat_events.write(ChatEvent {
                         sender: entity,
                         timestamp: chat.timestamp,
                         channel: "Nearby".to_owned(),
@@ -548,9 +550,9 @@ pub fn process_transport_updates(
                     scene_id,
                     &dcl_transform,
                 );
-                position_events.send(PlayerPositionEvent {
+                position_events.write(PlayerPositionEvent {
                     index: None,
-                    time: time.elapsed_seconds(),
+                    time: time.elapsed_secs(),
                     timestamp: Some(m.timestamp),
                     player: entity,
                     translation: dcl_transform.translation,
@@ -582,9 +584,9 @@ pub fn process_transport_updates(
                     scene_id,
                     &dcl_transform,
                 );
-                position_events.send(PlayerPositionEvent {
+                position_events.write(PlayerPositionEvent {
                     index: None,
-                    time: time.elapsed_seconds(),
+                    time: time.elapsed_secs(),
                     timestamp: Some(movement.temporal.timestamp_f32()),
                     player: entity,
                     translation: dcl_transform.translation,
@@ -621,10 +623,10 @@ fn despawn_players(
     time: Res<Time>,
 ) {
     for (entity, player) in players.iter() {
-        if player.last_update + 5.0 < time.elapsed_seconds() {
-            if let Some(commands) = commands.get_entity(entity) {
+        if player.last_update + 5.0 < time.elapsed_secs() {
+            if let Ok(mut commands) = commands.get_entity(entity) {
                 info!("removing stale player: {entity:?} : {player:?}");
-                commands.despawn_recursive();
+                commands.despawn();
             }
 
             state.delete_entity(player.scene_id);

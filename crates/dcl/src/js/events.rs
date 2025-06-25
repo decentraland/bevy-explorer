@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use bevy::utils::tracing::{debug, warn};
+use bevy::log::{debug, warn};
 use common::rpc::RpcCall;
 use serde::Serialize;
 

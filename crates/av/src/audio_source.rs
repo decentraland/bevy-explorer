@@ -1,14 +1,14 @@
 use std::time::Duration;
 
 use bevy::{
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::view::RenderLayers,
-    utils::{HashMap, HashSet},
 };
-use bevy_kira_audio::{prelude::AudioEmitter, AudioControl, AudioInstance, AudioTween};
+use bevy_kira_audio::{AudioControl, AudioInstance, AudioTween};
 use common::{
     sets::SetupSets,
-    structs::{AudioSettings, PrimaryCameraRes, PrimaryUser, SystemAudio},
+    structs::{AudioEmitter, AudioSettings, PrimaryCameraRes, PrimaryUser, SystemAudio},
     util::{AudioReceiver, VolumePanning},
 };
 use dcl::interface::ComponentPosition;
@@ -82,12 +82,12 @@ fn update_audio(
     settings: Res<AudioSettings>,
 ) {
     let current_scenes = player
-        .get_single()
+        .single()
         .ok()
         .map(|p| containing_scene.get(p))
         .unwrap_or_default();
 
-    let gt = cam.get_single().unwrap_or(&GlobalTransform::IDENTITY);
+    let gt = cam.single().unwrap_or(&GlobalTransform::IDENTITY);
 
     for (ent, scene_ent, audio_source, maybe_source, maybe_emitter, egt) in query.iter_mut() {
         let mut new_state = None;
@@ -165,9 +165,7 @@ fn update_audio(
                     playing_instance.set_playback_rate(playback_rate, AudioTween::default());
                     if let Some(time) = audio_source.0.current_time {
                         if time < 1e6 {
-                            if let Some(err) = playing_instance.seek_to(time as f64) {
-                                warn!("seek error: {}", err);
-                            }
+                            playing_instance.seek_to(time as f64);
                         } else {
                             warn!(
                                 "ignoring ridiculous time offset {} for audio clip `{}`",
@@ -267,7 +265,7 @@ fn update_source_volume(
     mut all_instances: Local<HashMap<Entity, Vec<Handle<AudioInstance>>>>,
 ) {
     let current_scenes = player
-        .get_single()
+        .single()
         .ok()
         .map(|p| containing_scene.get(p))
         .unwrap_or_default();

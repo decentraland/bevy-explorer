@@ -1,4 +1,4 @@
-use bevy::{prelude::*, scene::scene_spawner_system};
+use bevy::{ecs::system::ScheduleSystem, prelude::*, scene::scene_spawner_system};
 use bevy_console::{
     Command, ConsoleCommand, ConsoleCommandEntered, ConsoleConfiguration, ConsoleSet,
     PrintConsoleLine,
@@ -10,7 +10,7 @@ use common::sets::SceneSets;
 pub trait DoAddConsoleCommand {
     fn add_console_command<T: Command, U>(
         &mut self,
-        system: impl IntoSystemConfigs<U>,
+        system: impl IntoScheduleConfigs<ScheduleSystem, U>,
     ) -> &mut Self;
 }
 
@@ -19,7 +19,7 @@ pub trait DoAddConsoleCommand {
 impl DoAddConsoleCommand for App {
     fn add_console_command<T: bevy_console::Command, U>(
         &mut self,
-        system: impl IntoSystemConfigs<U>,
+        system: impl IntoScheduleConfigs<ScheduleSystem, U>,
     ) -> &mut Self {
         bevy_console::AddConsoleCommand::add_console_command::<T, U>(self, system)
     }
@@ -29,7 +29,7 @@ impl DoAddConsoleCommand for App {
 impl DoAddConsoleCommand for App {
     fn add_console_command<T: bevy_console::Command, U>(
         &mut self,
-        _: impl IntoSystemConfigs<U>,
+        _: impl IntoScheduleConfigs<ScheduleSystem, U>,
     ) -> &mut Self {
         // do nothing
         self
@@ -144,7 +144,7 @@ pub fn send_pending(
     mut sender: EventWriter<ConsoleCommandEntered>,
 ) {
     for command_name in pending.0.drain(..) {
-        sender.send(ConsoleCommandEntered {
+        sender.write(ConsoleCommandEntered {
             command_name,
             args: Default::default(),
         });

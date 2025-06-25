@@ -44,7 +44,7 @@
 // and back to scene loop
 
 use bevy::{
-    core::FrameCount,
+    diagnostic::FrameCount,
     math::{DVec3, Vec3Swizzles},
     prelude::*,
 };
@@ -87,7 +87,7 @@ pub fn update_user_position(
     containing_scenes: ContainingScene,
     time: Res<Time>,
     _frame: Res<FrameCount>,
-    manual_transform: Query<(&Transform, Option<&Parent>), Without<PrimaryUser>>,
+    manual_transform: Query<(&Transform, Option<&ChildOf>), Without<PrimaryUser>>,
     clip: Res<UserClipping>,
     mut prev_excess_time: Local<f32>,
 ) {
@@ -98,7 +98,7 @@ pub fn update_user_position(
         mut transform,
         mut dynamic_state,
         mut ground_collider,
-    )) = player.get_single_mut()
+    )) = player.single_mut()
     else {
         return;
     };
@@ -107,12 +107,12 @@ pub fn update_user_position(
         .map(|m| m.combine(user))
         .unwrap_or_else(|| user.clone());
 
-    let dt = time.delta_seconds();
+    let dt = time.delta_secs();
 
     let mut velocity = dynamic_state.velocity;
     let force = (dynamic_state.force * user.friction).extend(0.0).xzy();
 
-    let mut elapsed = time.delta_seconds() + *prev_excess_time;
+    let mut elapsed = time.delta_secs() + *prev_excess_time;
     let mut target_motion = Vec3::ZERO;
 
     let record_peak = velocity.y > 0.0;
@@ -139,7 +139,7 @@ pub fn update_user_position(
 
     if dynamic_state.tank {
         // rotate as instructed
-        transform.rotation *= Quat::from_rotation_y(dynamic_state.rotate * time.delta_seconds());
+        transform.rotation *= Quat::from_rotation_y(dynamic_state.rotate * time.delta_secs());
     } else {
         // rotate towards velocity vec
         if dynamic_state.force.length() > 0.0 {
@@ -163,7 +163,8 @@ pub fn update_user_position(
         let mut transforms = vec![sync_transform];
         let mut pointer = maybe_parent;
         while let Some(next_parent) = pointer {
-            let Ok((next_transform, next_parent)) = manual_transform.get(next_parent.get()) else {
+            let Ok((next_transform, next_parent)) = manual_transform.get(next_parent.parent())
+            else {
                 break;
             };
 
@@ -393,7 +394,7 @@ pub(crate) fn speed_cmd(
     mut user: Query<&mut PrimaryUser>,
 ) {
     if let Some(Ok(command)) = input.take() {
-        let mut user = user.single_mut();
+        let mut user = user.single_mut().unwrap();
         user.run_speed = command.run;
         user.friction = command.friction;
         input.reply_ok(format!(
@@ -414,7 +415,7 @@ pub(crate) struct JumpCommand {
 
 pub(crate) fn jump_cmd(mut input: ConsoleCommand<JumpCommand>, mut user: Query<&mut PrimaryUser>) {
     if let Some(Ok(command)) = input.take() {
-        let mut user = user.single_mut();
+        let mut user = user.single_mut().unwrap();
         user.jump_height = command.jump_height;
         user.gravity = -command.gravity;
         user.fall_speed = -command.fall_speed;

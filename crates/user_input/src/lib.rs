@@ -3,6 +3,7 @@ pub mod dynamics;
 pub mod player_input;
 
 use bevy::{
+    app::Propagate,
     ecs::query::Has,
     prelude::*,
     render::{camera::CameraUpdateSystem, view::RenderLayers},
@@ -88,7 +89,7 @@ fn manage_player_visibility(
         (
             &GlobalTransform,
             &mut Visibility,
-            &mut propagate::Propagate<RenderLayers>,
+            &mut Propagate<RenderLayers>,
             Has<OutOfWorld>,
             &PlayerModifiers,
         ),
@@ -96,7 +97,7 @@ fn manage_player_visibility(
     >,
 ) {
     if let (Ok(cam_transform), Ok((player_transform, mut vis, mut layers, is_oow, modifiers))) =
-        (camera.get_single(), player.get_single_mut())
+        (camera.single(), player.single_mut())
     {
         #[allow(clippy::collapsible_else_if)]
         if is_oow || modifiers.hide {

@@ -138,7 +138,7 @@ fn process_realm_change(
 ) {
     if realm.is_changed() || wallet.is_changed() {
         for adapter in adapters.iter() {
-            commands.entity(adapter).despawn_recursive();
+            commands.entity(adapter).despawn();
         }
 
         if wallet.address().is_none() {
@@ -196,8 +196,8 @@ fn connect_scene_room(
                 current.0 = Some((existing, room, entity));
                 return;
             }
-            if let Some(commands) = commands.get_entity(entity) {
-                commands.despawn_recursive();
+            if let Ok(mut commands) = commands.get_entity(entity) {
+                commands.despawn();
             }
             warn!("disconnected scene channel {ev:?}");
         }
@@ -252,7 +252,6 @@ pub struct AdapterManager<'w, 's> {
     archipelago_events: EventWriter<'w, StartArchipelago>,
     // can't use event writer due to conflict on Res<Events>
     pub signed_login_events: ResMut<'w, Events<StartSignedLogin>>,
-    #[system_param(ignore)]
     _p: PhantomData<&'s ()>,
 }
 
@@ -265,7 +264,7 @@ impl AdapterManager<'_, '_> {
 
         match protocol {
             "ws-room" => {
-                self.ws_room_events.send(StartWsRoom {
+                self.ws_room_events.write(StartWsRoom {
                     address: address.to_owned(),
                     transport_type,
                 });
@@ -279,7 +278,7 @@ impl AdapterManager<'_, '_> {
             #[cfg(feature = "livekit")]
             "livekit" => {
                 let entity = self.commands.spawn_empty().id();
-                self.livekit_events.send(StartLivekit {
+                self.livekit_events.write(StartLivekit {
                     entity,
                     address: address.to_owned(),
                     transport_type,
@@ -296,7 +295,7 @@ impl AdapterManager<'_, '_> {
             "archipelago" => {
                 debug!("arch starting: {address}");
                 assert_eq!(transport_type, TransportType::Realm);
-                self.archipelago_events.send(StartArchipelago {
+                self.archipelago_events.write(StartArchipelago {
                     address: address.to_owned(),
                 });
             }

@@ -5,9 +5,12 @@ use strum::IntoEnumIterator;
 
 use bevy::{
     ecs::system::SystemParam,
-    input::mouse::{MouseMotion, MouseWheel},
+    input::{
+        gamepad::GamepadInput,
+        mouse::{MouseMotion, MouseWheel},
+    },
+    platform::collections::{HashMap, HashSet},
     prelude::*,
-    utils::{HashMap, HashSet},
     window::PrimaryWindow,
 };
 
@@ -151,16 +154,16 @@ impl CumulativeAxisData {
 }
 
 #[derive(SystemParam)]
-pub struct InputManager<'w> {
+pub struct InputManager<'w, 's> {
     map: Res<'w, InputMap>,
     mouse_input: Res<'w, ButtonInput<MouseButton>>,
     key_input: Res<'w, ButtonInput<KeyCode>>,
     axis_data: ResMut<'w, CumulativeAxisData>,
-    gamepad_input: Res<'w, ButtonInput<GamepadButton>>,
+    gamepads: Query<'w, 's, &'static Gamepad>,
     priorities: ResMut<'w, InputPriorities>,
 }
 
-impl InputManager<'_> {
+impl InputManager<'_, '_> {
     pub fn priorities(&mut self) -> &mut InputPriorities {
         &mut self.priorities
     }
@@ -170,8 +173,14 @@ impl InputManager<'_> {
             || self.mouse_input.get_just_released().len() != 0
             || self.key_input.get_just_pressed().len() != 0
             || self.key_input.get_just_released().len() != 0
-            || self.gamepad_input.get_just_pressed().len() != 0
-            || self.gamepad_input.get_just_released().len() != 0
+            || self
+                .gamepads
+                .iter()
+                .any(|gp| gp.get_just_pressed().next().is_some())
+            || self
+                .gamepads
+                .iter()
+                .any(|gp| gp.get_just_released().next().is_some())
             || !self.axis_data.current.is_empty()
     }
 
@@ -215,9 +224,10 @@ impl InputManager<'_> {
                 self.mouse_input.just_pressed(*mb) && self.check_priority(item, priority)
             }
             InputIdentifier::Gamepad(b) => {
-                self.gamepad_input
-                    .get_just_pressed()
-                    .any(|p| &p.button_type == b)
+                self.gamepads
+                    .iter()
+                    .flat_map(|gp| gp.get_just_pressed())
+                    .any(|p| p == b)
                     && self.check_priority(item, priority)
             }
             InputIdentifier::Analog(axis, input_direction) => {
@@ -232,9 +242,10 @@ impl InputManager<'_> {
             InputIdentifier::Key(k) => self.key_input.just_released(*k),
             InputIdentifier::Mouse(mb) => self.mouse_input.just_released(*mb),
             InputIdentifier::Gamepad(b) => self
-                .gamepad_input
-                .get_just_released()
-                .any(|p| &p.button_type == b),
+                .gamepads
+                .iter()
+                .flat_map(|gp| gp.get_just_released())
+                .any(|p| p == b),
             InputIdentifier::Analog(axis, input_direction) => {
                 self.axis_data.just_up(*axis, *input_direction)
             }
@@ -250,9 +261,10 @@ impl InputManager<'_> {
                 self.mouse_input.pressed(*mb) && self.check_priority(item, priority)
             }
             InputIdentifier::Gamepad(b) => {
-                self.gamepad_input
-                    .get_pressed()
-                    .any(|p| &p.button_type == b)
+                self.gamepads
+                    .iter()
+                    .flat_map(|gp| gp.get_pressed())
+                    .any(|p| p == b)
                     && self.check_priority(item, priority)
             }
             InputIdentifier::Analog(axis, input_direction) => {
@@ -281,9 +293,10 @@ impl InputManager<'_> {
                     }
                     InputIdentifier::Gamepad(b) => {
                         if self
-                            .gamepad_input
-                            .get_pressed()
-                            .any(|p| &p.button_type == b)
+                            .gamepads
+                            .iter()
+                            .flat_map(|gp| gp.get_pressed())
+                            .any(|p| p == b)
                             && self.check_priority(item, priority)
                         {
                             1.0
@@ -332,9 +345,10 @@ impl InputManager<'_> {
                             && self.check_priority(button, InputPriority::Scene)
                     }
                     InputIdentifier::Gamepad(b) => {
-                        self.gamepad_input
-                            .get_just_pressed()
-                            .any(|p| &p.button_type == b)
+                        self.gamepads
+                            .iter()
+                            .flat_map(|gp| gp.get_just_pressed())
+                            .any(|p| p == b)
                             && self.check_priority(button, InputPriority::Scene)
                     }
                     InputIdentifier::Analog(axis, input_direction) => {
@@ -361,9 +375,10 @@ impl InputManager<'_> {
                     InputIdentifier::Key(k) => self.key_input.just_released(*k),
                     InputIdentifier::Mouse(m) => self.mouse_input.just_released(*m),
                     InputIdentifier::Gamepad(b) => self
-                        .gamepad_input
-                        .get_just_released()
-                        .any(|p| &p.button_type == b),
+                        .gamepads
+                        .iter()
+                        .flat_map(|gp| gp.get_just_released())
+                        .any(|p| p == b),
                     InputIdentifier::Analog(axis, input_direction) => {
                         self.axis_data.just_up(*axis, *input_direction)
                     }
@@ -387,7 +402,7 @@ struct CurrentNativeInputRequest {
 fn update_deltas(
     mut axis_data: ResMut<CumulativeAxisData>,
     mut wheel_events: EventReader<MouseWheel>,
-    pad_axes: Res<Axis<GamepadAxis>>,
+    gamepads: Query<&Gamepad>,
     prio: Res<InputPriorities>,
     mut prev: Local<InputPriorities>,
 ) {
@@ -398,46 +413,53 @@ fn update_deltas(
             .entry(AxisIdentifier::MouseWheel)
             .or_default() += Vec2::new(ev.x, ev.y);
     }
-    for device in pad_axes.devices() {
-        if let Some(value) = pad_axes.get(*device) {
-            match device.axis_type {
-                GamepadAxisType::LeftStickX => {
+    for device in gamepads.iter() {
+        for axis in device.get_analog_axes() {
+            let Some(value) = device.get(*axis) else {
+                continue;
+            };
+            let GamepadInput::Axis(axis) = *axis else {
+                continue;
+            };
+
+            match axis {
+                GamepadAxis::LeftStickX => {
                     *axis_data
                         .current
                         .entry(AxisIdentifier::GamepadLeft)
                         .or_default() += Vec2::X * value
                 }
-                GamepadAxisType::LeftStickY => {
+                GamepadAxis::LeftStickY => {
                     *axis_data
                         .current
                         .entry(AxisIdentifier::GamepadLeft)
                         .or_default() += Vec2::Y * value
                 }
-                GamepadAxisType::LeftZ => {
+                GamepadAxis::LeftZ => {
                     *axis_data
                         .current
                         .entry(AxisIdentifier::GamepadLeftTrigger)
                         .or_default() += Vec2::X * value
                 }
-                GamepadAxisType::RightStickX => {
+                GamepadAxis::RightStickX => {
                     *axis_data
                         .current
                         .entry(AxisIdentifier::GamepadRight)
                         .or_default() += Vec2::X * value
                 }
-                GamepadAxisType::RightStickY => {
+                GamepadAxis::RightStickY => {
                     *axis_data
                         .current
                         .entry(AxisIdentifier::GamepadRight)
                         .or_default() += Vec2::Y * value
                 }
-                GamepadAxisType::RightZ => {
+                GamepadAxis::RightZ => {
                     *axis_data
                         .current
                         .entry(AxisIdentifier::GamepadRightTrigger)
                         .or_default() += Vec2::Y * value
                 }
-                GamepadAxisType::Other(_) => (),
+                GamepadAxis::Other(_) => (),
             }
         }
     }
@@ -457,7 +479,7 @@ fn handle_pointer_motion(
     input_manager.axis_data.raw_mouse = Vec2::ZERO;
     let motion = input_manager.get_analog(POINTER_SET, InputPriority::BindInput);
 
-    if let Ok(mut window) = window.get_single_mut() {
+    if let Ok(mut window) = window.single_mut() {
         let position = window.cursor_position().unwrap_or(*last_position);
         if window.cursor_position().is_some() {
             *last_position = position + motion;
@@ -479,10 +501,9 @@ fn handle_native_input(
     mut active: Local<Option<CurrentNativeInputRequest>>,
     mouse_input: Res<ButtonInput<MouseButton>>,
     key_input: Res<ButtonInput<KeyCode>>,
-    gamepad_input: Res<ButtonInput<GamepadButton>>,
     mut wheel_events: EventReader<MouseWheel>,
     mut mouse_events: EventReader<MouseMotion>,
-    pad_axes: Res<Axis<GamepadAxis>>,
+    gamepads: Query<&Gamepad>,
     mut priorities: ResMut<InputPriorities>,
 ) {
     fn vec2dir(vec: Vec2) -> InputDirection {
@@ -505,11 +526,6 @@ fn handle_native_input(
         } else if let Some(mouse) = mouse_input.get_just_pressed().next() {
             current.sender.send(InputIdentifier::Mouse(*mouse));
             return;
-        } else if let Some(gamepad) = gamepad_input.get_just_pressed().next() {
-            current
-                .sender
-                .send(InputIdentifier::Gamepad(gamepad.button_type));
-            return;
         } else {
             for ev in mouse_events.read() {
                 let axis = current.axes.entry(AxisIdentifier::MouseMove).or_default();
@@ -529,28 +545,31 @@ fn handle_native_input(
                 ));
                 return;
             }
-            for device in pad_axes.devices() {
-                if let Some(value) = pad_axes.get(*device) {
-                    let (axis, value) = match device.axis_type {
-                        GamepadAxisType::LeftStickX => {
-                            (AxisIdentifier::GamepadLeft, Vec2::X * value)
-                        }
-                        GamepadAxisType::LeftStickY => {
-                            (AxisIdentifier::GamepadLeft, Vec2::Y * value)
-                        }
-                        GamepadAxisType::LeftZ => {
-                            (AxisIdentifier::GamepadLeftTrigger, Vec2::X * value)
-                        }
-                        GamepadAxisType::RightStickX => {
-                            (AxisIdentifier::GamepadRight, Vec2::X * value)
-                        }
-                        GamepadAxisType::RightStickY => {
-                            (AxisIdentifier::GamepadRight, Vec2::Y * value)
-                        }
-                        GamepadAxisType::RightZ => {
+            for gamepad in gamepads.iter() {
+                if let Some(gamepad_button) = gamepad.get_just_pressed().next() {
+                    current
+                        .sender
+                        .send(InputIdentifier::Gamepad(*gamepad_button));
+                    return;
+                }
+
+                for axis in gamepad.get_analog_axes() {
+                    let Some(value) = gamepad.get(*axis) else {
+                        continue;
+                    };
+                    let GamepadInput::Axis(axis) = *axis else {
+                        continue;
+                    };
+                    let (axis, value) = match axis {
+                        GamepadAxis::LeftStickX => (AxisIdentifier::GamepadLeft, Vec2::X * value),
+                        GamepadAxis::LeftStickY => (AxisIdentifier::GamepadLeft, Vec2::Y * value),
+                        GamepadAxis::LeftZ => (AxisIdentifier::GamepadLeftTrigger, Vec2::X * value),
+                        GamepadAxis::RightStickX => (AxisIdentifier::GamepadRight, Vec2::X * value),
+                        GamepadAxis::RightStickY => (AxisIdentifier::GamepadRight, Vec2::Y * value),
+                        GamepadAxis::RightZ => {
                             (AxisIdentifier::GamepadRightTrigger, Vec2::Y * value)
                         }
-                        GamepadAxisType::Other(_) => continue,
+                        GamepadAxis::Other(_) => continue,
                     };
                     let axis_val = current.axes.entry(axis).or_default();
                     *axis_val += value;
@@ -633,10 +652,7 @@ fn handle_system_input_stream(
     mut pressed: Local<HashSet<SystemAction>>,
     modifiers: Query<&PlayerModifiers>,
 ) {
-    let block_emote = modifiers
-        .get_single()
-        .map(|m| m.block_emote)
-        .unwrap_or(false);
+    let block_emote = modifiers.single().map(|m| m.block_emote).unwrap_or(false);
 
     let new_senders = events
         .read()

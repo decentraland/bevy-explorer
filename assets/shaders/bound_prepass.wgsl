@@ -50,9 +50,9 @@ fn fragment(
     out.normal = vec4(in.world_normal * 0.5 + vec3(0.5), 1.0);
 #endif
 
-#ifdef DEPTH_CLAMP_ORTHO
-    out.frag_depth = in.clip_position_unclamped.z;
-#endif // DEPTH_CLAMP_ORTHO
+#ifdef UNCLIPPED_DEPTH_ORTHO_EMULATION
+    out.frag_depth = in.unclipped_depth;
+#endif // UNCLIPPED_DEPTH_ORTHO_EMULATION
 
 #ifdef MOTION_VECTOR_PREPASS
     let clip_position_t = view.unjittered_view_proj * in.world_position;

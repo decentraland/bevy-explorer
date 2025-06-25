@@ -1,5 +1,6 @@
-use bevy::{prelude::*, utils::HashMap};
+use bevy::{platform::collections::HashMap, prelude::*};
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
+use common::structs::ZOrder;
 use scene_runner::Toasts;
 
 pub struct ToastsPlugin;
@@ -29,7 +30,7 @@ fn update_toasts(
     mut displays: Local<HashMap<String, Option<Entity>>>,
     dui: Res<DuiRegistry>,
 ) {
-    let Ok(toaster_ent) = toast_display.get_single() else {
+    let Ok(toaster_ent) = toast_display.single() else {
         return;
     };
 
@@ -47,16 +48,18 @@ fn update_toasts(
                 .unwrap();
             displays.insert(key.clone(), Some(components.root));
             if let Some(on_click) = toast.on_click.take() {
-                commands
-                    .entity(components.root)
-                    .insert((Interaction::default(), on_click));
+                commands.entity(components.root).insert((
+                    Interaction::default(),
+                    on_click,
+                    ZOrder::Toast.default(),
+                ));
             }
             continue;
         };
 
         if let Some(ent) = maybe_ent {
-            if toast.time < time.elapsed_seconds() - 5.0 {
-                commands.entity(ent).despawn_recursive();
+            if toast.time < time.elapsed_secs() - 5.0 {
+                commands.entity(ent).despawn();
                 displays.insert(key.clone(), None);
                 continue;
             }
@@ -68,12 +71,12 @@ fn update_toasts(
     for (key, ent) in prev_displays {
         if !displays.contains_key(&key) {
             if let Some(ent) = ent {
-                commands.entity(ent).despawn_recursive();
+                commands.entity(ent).despawn();
             }
         }
     }
 
     toasts
         .0
-        .retain(|_, toast| toast.last_update > time.elapsed_seconds() - 5.0);
+        .retain(|_, toast| toast.last_update > time.elapsed_secs() - 5.0);
 }

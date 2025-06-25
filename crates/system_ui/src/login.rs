@@ -12,8 +12,10 @@ use common::{
     profile::SerializedProfile,
     rpc::RpcResultSender,
     sets::SceneSets,
-    structs::{ActiveDialog, AppConfig, ChainLink, DialogPermit, PreviousLogin, SystemAudio},
-    util::{FireEventEx, TaskCompat, TaskExt},
+    structs::{
+        ActiveDialog, AppConfig, ChainLink, DialogPermit, PreviousLogin, SystemAudio, ZOrder,
+    },
+    util::{TaskCompat, TaskExt},
 };
 use comms::profile::{get_remote_profile, CurrentUserProfile, UserProfile};
 use ethers_core::types::Address;
@@ -90,7 +92,7 @@ fn login(
                         .with_prop("download", url)
                         .with_prop("body", desc)
                         .with_prop("buttons", vec![DuiButton::new_enabled("Ok", (|mut commands: Commands, dui: Res<DuiRegistry>, mut permit: Query<&mut DialogPermit>| {
-                            let mut permit = permit.single_mut();
+                            let mut permit = permit.single_mut().unwrap();
                             let permit = permit.take();
                             let components = commands
                                 .spawn_template(
@@ -100,11 +102,13 @@ fn login(
                                         .with_prop("buttons", vec![DuiButton::new_enabled("Ok", close_ui_happy)]),
                                 )
                                 .unwrap();
-                            commands.entity(components.root).insert(permit);
+                            commands.entity(components.root).insert((permit, ZOrder::Login.default()));
                         }).pipe(close_ui_happy))]),
                 )
                 .unwrap();
-            commands.entity(components.root).insert(permit);
+            commands
+                .entity(components.root)
+                .insert((permit, ZOrder::Login.default()));
         } else {
             let components = commands
                 .spawn_template(
@@ -116,7 +120,9 @@ fn login(
                     ),
                 )
                 .unwrap();
-            commands.entity(components.root).insert(permit);
+            commands
+                .entity(components.root)
+                .insert((permit, ZOrder::Login.default()));
         }
         *motd_shown = true;
         return;
@@ -124,8 +130,8 @@ fn login(
 
     // cleanup if we're done
     if wallet.address().is_some() {
-        if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
-            commands.despawn_recursive();
+        if let Some(mut commands) = dialog.and_then(|d| commands.get_entity(d).ok()) {
+            commands.despawn();
         }
         *dialog = None;
         *req_code = None;
@@ -154,7 +160,7 @@ fn login(
                 .with_prop(
                     "quit",
                     On::<Click>::new(|mut e: EventWriter<AppExit>| {
-                        e.send_default();
+                        e.write_default();
                     }),
                 ),
         )
@@ -167,13 +173,14 @@ fn login(
     if let Some(mut t) = req_code.take() {
         match t.try_recv() {
             Ok(Ok(code)) => {
-                if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
-                    commands.despawn_recursive();
+                if let Some(mut commands) = dialog.and_then(|d| commands.get_entity(d).ok()) {
+                    commands.despawn();
                     *dialog = None;
                 }
 
                 let components = commands
-                    .spawn_template(
+                    .spawn(ZOrder::Login.default())
+                    .apply_template(
                         &dui,
                         "cancel-login",
                         DuiProps::new()
@@ -182,7 +189,7 @@ fn login(
                                 vec![DuiButton::new_enabled(
                                     "Cancel",
                                     |mut e: EventWriter<LoginType>| {
-                                        e.send(LoginType::Cancel);
+                                        e.write(LoginType::Cancel);
                                     },
                                 )],
                             )
@@ -194,8 +201,8 @@ fn login(
             }
             Ok(Err(e)) => {
                 toaster.add_toast("login profile", format!("Login failed: {e}"));
-                if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
-                    commands.despawn_recursive();
+                if let Some(mut commands) = dialog.and_then(|d| commands.get_entity(d).ok()) {
+                    commands.despawn();
                     *dialog = None;
                 }
             }
@@ -216,8 +223,8 @@ fn login(
             Ok(Err(e)) => {
                 error!("{e}");
                 toaster.add_toast("login profile", format!("Login failed: {e}"));
-                if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
-                    commands.despawn_recursive();
+                if let Some(mut commands) = dialog.and_then(|d| commands.get_entity(d).ok()) {
+                    commands.despawn();
                 }
                 *dialog = None;
             }
@@ -232,31 +239,32 @@ fn login(
 
     // handle click
     if let Some(login) = logins.read().last() {
-        if let Some(commands) = dialog.and_then(|d| commands.get_entity(d)) {
-            commands.despawn_recursive();
+        if let Some(mut commands) = dialog.and_then(|d| commands.get_entity(d).ok()) {
+            commands.despawn();
             *dialog = None;
         }
 
         match login {
             LoginType::ExistingRemote => {
                 info!("existing remote");
-                commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+                commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
                 let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
-                bridge.send(SystemApi::LoginPrevious(sx.into()));
+                bridge.write(SystemApi::LoginPrevious(sx.into()));
                 *req_done = Some(rx);
             }
             LoginType::NewRemote => {
                 info!("new remote");
 
-                commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+                commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
                 let (scode, rcode) = tokio::sync::oneshot::channel::<Result<Option<i32>, String>>();
                 let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
-                bridge.send(SystemApi::LoginNew(scode.into(), sx.into()));
+                bridge.write(SystemApi::LoginNew(scode.into(), sx.into()));
                 *req_code = Some(rcode);
                 *req_done = Some(rx);
 
                 let components = commands
-                    .spawn_template(
+                    .spawn(ZOrder::Login.default())
+                    .apply_template(
                         &dui,
                         "cancel-login",
                         DuiProps::new()
@@ -265,7 +273,7 @@ fn login(
                                 vec![DuiButton::new_enabled(
                                     "Cancel",
                                     |mut e: EventWriter<LoginType>| {
-                                        e.send(LoginType::Cancel);
+                                        e.write(LoginType::Cancel);
                                     },
                                 )],
                             )
@@ -281,15 +289,15 @@ fn login(
                     "login profile",
                     "Warning: Guest profile will not persist beyond the current session",
                 );
-                commands.fire_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
-                bridge.send(SystemApi::LoginGuest);
+                commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+                bridge.write(SystemApi::LoginGuest);
             }
             LoginType::Cancel => {
                 *req_code = None;
                 *req_done = None;
                 *dialog = None;
-                commands.fire_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
-                bridge.send(SystemApi::LoginCancel);
+                commands.send_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
+                bridge.write(SystemApi::LoginCancel);
             }
         }
     }
@@ -498,7 +506,7 @@ fn process_login_bridge(
     if let Some(mut task) = login_task.take() {
         match task.complete() {
             Some(Ok((root_address, local_wallet, auth, profile, sender))) => {
-                if let Ok(mut window) = window.get_single_mut() {
+                if let Ok(mut window) = window.single_mut() {
                     window.focused = true;
                 }
 

@@ -148,10 +148,10 @@ fn update_foreign_user_actual_position(
 
         let turn_time;
         if let Some(velocity) = target.velocity {
-            let t0 = time.elapsed_seconds();
+            let t0 = time.elapsed_secs();
             let t1 = target.time + target.update_freq;
 
-            if t1 < t0 + time.delta_seconds() * 2.0 {
+            if t1 < t0 + time.delta_secs() * 2.0 {
                 actual.translation = target.translation + velocity * (t0 - t1);
                 dynamic_state.velocity = velocity;
                 turn_time = 0.0;
@@ -174,35 +174,35 @@ fn update_foreign_user_actual_position(
                 let speed_without_middle = (v0 + v1) * 0.25;
                 let req_middle = (v_req - speed_without_middle) * 2.0;
                 dynamic_state.velocity +=
-                    (req_middle - v0) * (time.delta_seconds() / (dt * 0.5)).min(1.0);
+                    (req_middle - v0) * (time.delta_secs() / (dt * 0.5)).min(1.0);
                 turn_time = dt.max(0.0);
-                actual.translation += dynamic_state.velocity * time.delta_seconds();
+                actual.translation += dynamic_state.velocity * time.delta_secs();
             }
         } else {
             // arrive at target position by time + 0.5
-            let walk_time_left = target.time + 0.5 - time.elapsed_seconds();
+            let walk_time_left = target.time + 0.5 - time.elapsed_secs();
             if walk_time_left <= 0.0 {
                 actual.translation = target.translation;
                 dynamic_state.velocity = Vec3::ZERO;
             } else {
-                let walk_fraction = (time.delta_seconds() / walk_time_left).min(1.0);
+                let walk_fraction = (time.delta_secs() / walk_time_left).min(1.0);
                 let delta = (target.translation - actual.translation) * walk_fraction;
-                dynamic_state.velocity = delta / time.delta_seconds();
-                actual.translation += dynamic_state.velocity * time.delta_seconds();
+                dynamic_state.velocity = delta / time.delta_secs();
+                actual.translation += dynamic_state.velocity * time.delta_secs();
             }
-            turn_time = target.time + 0.2 - time.elapsed_seconds();
+            turn_time = target.time + 0.2 - time.elapsed_secs();
         }
 
         if turn_time <= 0.0 {
             actual.rotation = target.rotation;
         } else {
-            let turn_fraction = (time.delta_seconds() / turn_time).min(1.0);
+            let turn_fraction = (time.delta_secs() / turn_time).min(1.0);
             actual.rotation = actual.rotation.lerp(target.rotation, turn_fraction);
         }
 
         if let Some(jumping) = target.jumping {
             if jumping && dynamic_state.jump_time == -1.0 {
-                dynamic_state.jump_time = time.elapsed_seconds();
+                dynamic_state.jump_time = time.elapsed_secs();
             }
         }
 
@@ -235,7 +235,7 @@ fn update_foreign_user_actual_position(
                 let updated_y = target
                     .translation
                     .y
-                    .max(actual.translation.y - 15.0 * time.delta_seconds())
+                    .max(actual.translation.y - 15.0 * time.delta_secs())
                     .max(actual.translation.y - dynamic_state.ground_height);
 
                 dynamic_state.ground_height += updated_y - actual.translation.y;

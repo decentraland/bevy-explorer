@@ -1,13 +1,13 @@
 use avatar::mask_material::MaskMaterial;
 use bevy::{
-    core::FrameCount,
+    diagnostic::FrameCount,
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     math::Vec3Swizzles,
+    platform::{collections::HashSet, hash::FixedHasher},
     prelude::*,
     render::mesh::Indices,
     text::JustifyText,
     ui::FocusPolicy,
-    utils::hashbrown::HashSet,
 };
 
 use bevy_console::ConsoleCommand;
@@ -16,7 +16,7 @@ use common::{
     sets::{SceneSets, SetupSets},
     structs::{
         AppConfig, CursorLocks, PreviewCommand, PrimaryUser, SettingsTab, ShowSettingsEvent,
-        SystemScene, Version,
+        SystemScene, Version, ZOrder,
     },
     util::ModifyComponentExt,
 };
@@ -95,8 +95,8 @@ pub(crate) fn setup(
 ) {
     commands.entity(root.0).with_children(|commands| {
         commands
-            .spawn(NodeBundle {
-                style: Style {
+            .spawn((
+                Node {
                     position_type: PositionType::Absolute,
                     left: Val::Percent(48.5),
                     top: Val::Percent(48.5),
@@ -106,113 +106,89 @@ pub(crate) fn setup(
                     justify_content: JustifyContent::Center,
                     ..Default::default()
                 },
-                z_index: ZIndex::Global(i16::MIN as i32 - 1),
-                ..Default::default()
-            })
+                ZOrder::Crosshair.default(),
+            ))
             .with_children(|c| {
                 c.spawn((
-                    ImageBundle {
-                        style: Style {
-                            width: Val::VMin(3.0),
-                            height: Val::VMin(3.0),
-                            ..Default::default()
-                        },
-                        image: UiImage {
-                            color: Color::srgba(1.0, 1.0, 1.0, 0.7),
-                            texture: asset_server.load("images/crosshair.png"),
-                            ..Default::default()
-                        },
+                    Node {
+                        width: Val::VMin(3.0),
+                        height: Val::VMin(3.0),
                         ..Default::default()
                     },
+                    ImageNode::new(asset_server.load("images/crosshair.png"))
+                        .with_color(Color::srgba(1.0, 1.0, 1.0, 0.7)),
                     CrossHair,
                 ));
             });
-        commands.spawn(TextBundle {
-            style: Style {
+
+        commands.spawn((
+            Node {
                 position_type: PositionType::Absolute,
                 right: Val::VMin(2.0),
                 bottom: Val::VMin(2.0),
                 ..Default::default()
             },
-            text: Text::from_section(
-                format!("Version: {}", version.0),
-                BODY_TEXT_STYLE.get().unwrap().clone(),
-            ),
-            ..Default::default()
-        });
+            Text::new(format!("Version: {}", version.0)),
+            BODY_TEXT_STYLE.get().unwrap().clone(),
+        ));
     });
 
     commands.entity(root.0).with_children(|commands| {
         commands
             .spawn((
-                NodeBundle {
-                    style: Style {
-                        position_type: PositionType::Absolute,
-                        right: Val::Px(40.0),
-                        top: Val::Px(0.0),
-                        display: if config.sysinfo_visible {
-                            Display::Flex
-                        } else {
-                            Display::None
-                        },
-                        flex_direction: FlexDirection::Column,
-                        align_self: AlignSelf::FlexStart,
-                        border: UiRect::all(Val::Px(5.)),
-                        ..default()
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: Val::Px(40.0),
+                    top: Val::Px(0.0),
+                    display: if config.sysinfo_visible {
+                        Display::Flex
+                    } else {
+                        Display::None
                     },
-                    background_color: Color::srgba(0.8, 0.8, 1.0, 0.8).into(),
-                    focus_policy: FocusPolicy::Block,
-                    z_index: ZIndex::Global((1 << 18) + 3),
+                    flex_direction: FlexDirection::Column,
+                    align_self: AlignSelf::FlexStart,
+                    border: UiRect::all(Val::Px(5.)),
                     ..default()
                 },
+                BackgroundColor(Color::srgba(0.8, 0.8, 1.0, 0.8)),
+                FocusPolicy::Block,
                 SysInfoContainer,
             ))
             .with_children(|commands| {
-                commands.spawn(TextBundle::from_section(
-                    "System Info",
+                commands.spawn((
+                    Text::new("System Info"),
                     TITLE_TEXT_STYLE.get().unwrap().clone(),
                 ));
 
                 commands
                     .spawn((
-                        NodeBundle {
-                            style: Style {
-                                flex_direction: FlexDirection::Column,
-                                ..Default::default()
-                            },
+                        Node {
+                            flex_direction: FlexDirection::Column,
                             ..Default::default()
                         },
                         SysInfoMarker,
                     ))
                     .with_children(|commands| {
                         let mut info_node = |label: String| {
-                            commands
-                                .spawn(NodeBundle::default())
-                                .with_children(|commands| {
-                                    commands.spawn(TextBundle {
-                                        style: Style {
-                                            width: Val::Px(150.0),
-                                            ..Default::default()
-                                        },
-                                        text: Text::from_section(
-                                            label,
-                                            BODY_TEXT_STYLE.get().unwrap().clone(),
-                                        )
-                                        .with_justify(JustifyText::Right),
+                            commands.spawn(Node::default()).with_children(|commands| {
+                                commands.spawn((
+                                    Node {
+                                        width: Val::Px(150.0),
                                         ..Default::default()
-                                    });
-                                    commands.spawn(TextBundle {
-                                        style: Style {
-                                            width: Val::Px(250.0),
-                                            ..Default::default()
-                                        },
-                                        text: Text::from_section(
-                                            "",
-                                            BODY_TEXT_STYLE.get().unwrap().clone(),
-                                        ),
+                                    },
+                                    Text::new(label),
+                                    TextLayout::new_with_justify(JustifyText::Right),
+                                    BODY_TEXT_STYLE.get().unwrap().clone(),
+                                ));
+                                commands.spawn((
+                                    Node {
+                                        width: Val::Px(250.0),
                                         ..Default::default()
-                                    });
-                                });
+                                    },
+                                    Text::default(),
+                                    BODY_TEXT_STYLE.get().unwrap().clone(),
+                                ));
+                            });
                         };
 
                         if config.graphics.log_fps {
@@ -245,7 +221,7 @@ fn update_scene_load_state(
     q: Query<Entity, With<SysInfoMarker>>,
     q_children: Query<&Children>,
     mut text: Query<&mut Text>,
-    mut style: Query<&mut Style>,
+    mut style: Query<&mut Node>,
     loading_scenes: Query<&SceneLoading>,
     running_scenes: Query<&RendererSceneContext, Without<SceneLoading>>,
     transports: Query<&Transport>,
@@ -258,13 +234,13 @@ fn update_scene_load_state(
     player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
     debug_info: Res<DebugInfo>,
 ) {
-    let tick = (time.elapsed_seconds() * 10.0) as u32;
+    let tick = (time.elapsed_secs() * 10.0) as u32;
     if tick == *last_update {
         return;
     }
     *last_update = tick;
 
-    let Ok((player, pos)) = player.get_single() else {
+    let Ok((player, pos)) = player.single() else {
         return;
     };
     let scene = containing_scene.get_parcel(player);
@@ -276,7 +252,7 @@ fn update_scene_load_state(
         .map(|context| context.title.clone())
         .unwrap_or("???".to_owned());
 
-    if let Ok(sysinfo) = q.get_single() {
+    if let Ok(sysinfo) = q.single() {
         let mut ix = 0;
         let children = q_children.get(sysinfo).unwrap();
         let mut set_child = |value: String| {
@@ -287,7 +263,7 @@ fn update_scene_load_state(
             }
             let container = q_children.get(children[ix]).unwrap();
             let mut text = text.get_mut(container[1]).unwrap();
-            text.sections[0].value = value;
+            text.0 = value;
             ix += 1;
         };
 
@@ -368,7 +344,9 @@ fn setup_minimap(
         .entity(root.0)
         .insert_children(0, &[components.root]);
 
-    commands.entity(components.root).insert(Minimap);
+    commands
+        .entity(components.root)
+        .insert((Minimap, ZOrder::Minimap.default()));
     commands.entity(components.named("map-node")).insert((
         MapTexture {
             center: Default::default(),
@@ -412,7 +390,7 @@ fn setup_minimap(
                             }
                             return;
                         }
-                        let Ok(player) = player.get_single() else {
+                        let Ok(player) = player.single() else {
                             return;
                         };
                         let Some(scene) = containing_scene.get_parcel_oow(player) else {
@@ -422,7 +400,7 @@ fn setup_minimap(
                             return;
                         };
                         test_data.inspect_hash = Some(scene.hash.clone());
-                        reload.send(PreviewCommand::ReloadScene { hash: scene.hash.clone() });
+                        reload.write(PreviewCommand::ReloadScene { hash: scene.hash.clone() });
                         toaster.add_toast("inspector", "Please open chrome and navigate to \"chrome://inspect\" to attach a debugger");
                     })
                 )
@@ -442,7 +420,7 @@ fn update_minimap(
     mut text: Query<&mut Text>,
     preview: Res<PreviewMode>,
 ) {
-    let Ok((player, gt)) = player.get_single() else {
+    let Ok((player, gt)) = player.single() else {
         return;
     };
 
@@ -474,17 +452,17 @@ fn update_minimap(
         })
         .unwrap_or("No scene".to_owned());
 
-    if let Ok(components) = q.get_single() {
+    if let Ok(components) = q.single() {
         if let Ok(mut map) = maps.get_mut(components.named("map-node")) {
             map.center = map_center;
         }
 
         if let Ok(mut text) = text.get_mut(components.named("title")) {
-            text.sections[0].value = title;
+            text.0 = title;
         }
 
         if let Ok(mut text) = text.get_mut(components.named("position")) {
-            text.sections[0].value = format!("({},{})   {sdk}   {state}", parcel.x, parcel.y);
+            text.0 = format!("({},{})   {sdk}   {state}", parcel.x, parcel.y);
         }
     }
 }
@@ -498,15 +476,19 @@ fn update_tracker(
     player: Query<Entity, With<PrimaryUser>>,
     containing_scene: ContainingScene,
     dui: Res<DuiRegistry>,
-    mesh_handles: Query<(&Handle<Mesh>, &ContainerEntity, &Visibility)>,
-    material_handles: Query<(&Handle<SceneMaterial>, &ContainerEntity, &Visibility)>,
+    mesh_handles: Query<(&Mesh3d, &ContainerEntity, &Visibility)>,
+    material_handles: Query<(
+        &MeshMaterial3d<SceneMaterial>,
+        &ContainerEntity,
+        &Visibility,
+    )>,
     scene_entities: Query<&ContainerEntity>,
     meshes: Res<Assets<Mesh>>,
     materials: Res<Assets<SceneMaterial>>,
     diagnostics: Res<DiagnosticsStore>,
     images: Res<Assets<Image>>,
 ) {
-    let Ok((tracker, entities)) = q.get_single_mut() else {
+    let Ok((tracker, entities)) = q.single_mut() else {
         return;
     };
 
@@ -516,13 +498,13 @@ fn update_tracker(
 
     commands
         .entity(entities.named("content"))
-        .despawn_descendants();
+        .despawn_related::<Children>();
 
     if !tracker.0 {
         return;
     }
 
-    let Ok(player) = player.get_single() else {
+    let Ok(player) = player.single() else {
         return;
     };
 
@@ -583,8 +565,8 @@ fn update_tracker(
     let visible_mats = material_handles
         .iter()
         .filter(|(_, c, v)| &c.root == scene && !matches!(v, Visibility::Hidden))
-        .map(|(h, ..)| h)
-        .collect::<HashSet<_>>();
+        .map(|(h, ..)| &h.0)
+        .collect::<HashSet<_, FixedHasher>>();
 
     display_data.push(("Visible Material Count", visible_mats.len()));
 
@@ -604,8 +586,8 @@ fn update_tracker(
 
     let total_memory = textures
         .iter()
-        .flat_map(|h| images.get(h.id()))
-        .map(|t| t.data.len())
+        .flat_map(|h| images.get(h.id()).and_then(|t| t.data.as_ref()))
+        .map(|data| data.len())
         .sum::<usize>();
     let total_mb = (total_memory as f32 / 1024.0 / 1024.0).round() as usize;
 
@@ -646,8 +628,8 @@ fn set_sysinfo(
         let on = command.on.unwrap_or(true);
 
         commands
-            .entity(q.single())
-            .modify_component(move |style: &mut Style| {
+            .entity(q.single().unwrap())
+            .modify_component(move |style: &mut Node| {
                 style.display = if on { Display::Flex } else { Display::None };
             });
         input.reply_ok("");
@@ -657,11 +639,11 @@ fn set_sysinfo(
 fn update_map_visibilty(
     realm: Res<CurrentRealm>,
     map: Query<&DuiEntities, With<Minimap>>,
-    mut style: Query<&mut Style>,
+    mut style: Query<&mut Node>,
     mut init: Local<bool>,
 ) {
     if !*init || realm.is_changed() {
-        let Ok(nodes) = map.get_single() else {
+        let Ok(nodes) = map.single() else {
             return;
         };
         let Ok(mut style) = style.get_mut(nodes.named("map-container")) else {
@@ -683,13 +665,13 @@ fn entity_count(
     f: Res<FrameCount>,
     meshes: Res<Assets<Mesh>>,
     textures: Res<Assets<Image>>,
-    ui_nodes: Query<(), With<Node>>,
-    scene_mats: Query<&Handle<SceneMaterial>>,
-    std_mats: Query<(), With<Handle<StandardMaterial>>>,
-    mask_mats: Query<(), With<Handle<MaskMaterial>>>,
-    uv_mats: Query<(), With<Handle<StretchUvMaterial>>>,
-    bound_mats: Query<(), With<Handle<BoundedImageMaterial>>>,
-    textshape_mats: Query<(), With<Handle<TextShapeMaterial>>>,
+    ui_nodes: Query<(), With<ComputedNode>>,
+    scene_mats: Query<&MeshMaterial3d<SceneMaterial>>,
+    std_mats: Query<(), With<MeshMaterial3d<StandardMaterial>>>,
+    mask_mats: Query<(), With<MeshMaterial3d<MaskMaterial>>>,
+    uv_mats: Query<(), With<MaterialNode<StretchUvMaterial>>>,
+    bound_mats: Query<(), With<MaterialNode<BoundedImageMaterial>>>,
+    textshape_mats: Query<(), With<MeshMaterial3d<TextShapeMaterial>>>,
     mats: Res<Assets<SceneMaterial>>,
 ) {
     if f.0 % 100 == 0 {
@@ -732,7 +714,7 @@ fn display_tracked_components(
         return;
     }
 
-    let Ok(player) = player.get_single() else {
+    let Ok(player) = player.single() else {
         return;
     };
 
@@ -766,11 +748,11 @@ fn set_track_components(
 fn update_crosshair(
     locks: Res<CursorLocks>,
     mut prev: Local<Option<bool>>,
-    mut crosshair: Query<&mut UiImage, With<CrossHair>>,
+    mut crosshair: Query<&mut ImageNode, With<CrossHair>>,
 ) {
     let locked = locks.0.contains("Camera");
     if Some(locked) != *prev {
-        let Ok(mut img) = crosshair.get_single_mut() else {
+        let Ok(mut img) = crosshair.single_mut() else {
             return;
         };
         *prev = Some(locked);

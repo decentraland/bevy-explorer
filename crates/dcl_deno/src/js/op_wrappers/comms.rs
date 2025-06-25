@@ -19,7 +19,7 @@ async fn op_comms_send_string(state: Rc<RefCell<OpState>>, #[string] message: St
 async fn op_comms_send_binary_single(
     state: Rc<RefCell<OpState>>,
     #[buffer(detach)] message: JsBuffer,
-    #[string] recipient: String,
+    #[string] recipient: Option<String>,
 ) {
     dcl::js::comms::op_comms_send_binary_single(state, message, recipient).await
 }

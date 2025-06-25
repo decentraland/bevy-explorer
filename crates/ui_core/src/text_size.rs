@@ -1,16 +1,17 @@
 use bevy::{
     prelude::*,
-    text::BreakLineOn,
+    text::LineBreak,
     window::{PrimaryWindow, WindowResized},
 };
 use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry, DuiTemplate};
-use bevy_egui::EguiSettings;
-use common::util::ModifyComponentExt;
+use bevy_egui::EguiContextSettings;
+use common::util::{ModifyComponentExt, ModifyDefaultComponentExt};
 
 use crate::{
     dui_utils::PropsExt,
     ui_actions::{Click, HoverEnter, HoverExit, On},
     user_font, FontName, WeightName,
+    /*    user_font, FontName, WeightName, */
 };
 
 pub struct TextSizePlugin;
@@ -44,12 +45,15 @@ impl DuiTemplate for TextTemplate {
     ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
         commands.insert(FontSize(self.0));
         let wrap = props.take_as::<bool>(ctx, "wrap")?.unwrap_or(true);
-        commands.modify_component(move |text: &mut Text| {
-            text.linebreak_behavior = if wrap {
-                BreakLineOn::WordBoundary
+        commands.modify_component(move |text: &mut TextLayout| {
+            text.linebreak = if wrap {
+                LineBreak::WordBoundary
             } else {
-                BreakLineOn::NoWrap
+                LineBreak::NoWrap
             };
+        });
+        commands.default_and_modify_component(|font: &mut TextFont| {
+            font.font = user_font(FontName::Sans, WeightName::Regular);
         });
 
         Ok(Default::default())
@@ -89,19 +93,15 @@ impl DuiTemplate for LinkTemplate {
                 opener::open(&link).unwrap();
             }),
             On::<HoverEnter>::new(
-                move |mut bg: Query<&mut BackgroundColor>, mut t: Query<&mut Text>| {
+                move |mut bg: Query<&mut BackgroundColor>, mut t: Query<&mut TextColor>| {
                     bg.get_mut(line).unwrap().0 = Color::WHITE;
-                    for section in t.get_mut(label).unwrap().sections.iter_mut() {
-                        section.style.color = Color::WHITE;
-                    }
+                    t.get_mut(label).unwrap().0 = Color::WHITE;
                 },
             ),
             On::<HoverExit>::new(
-                move |mut bg: Query<&mut BackgroundColor>, mut t: Query<&mut Text>| {
+                move |mut bg: Query<&mut BackgroundColor>, mut t: Query<&mut TextColor>| {
                     bg.get_mut(line).unwrap().0 = color;
-                    for section in t.get_mut(label).unwrap().sections.iter_mut() {
-                        section.style.color = color;
-                    }
+                    t.get_mut(label).unwrap().0 = color;
                 },
             ),
         ));
@@ -120,52 +120,35 @@ impl DuiTemplate for LinkTemplate {
 pub struct FontSize(pub f32);
 
 pub fn update_fontsize(
-    mut q: Query<(&mut Text, Ref<FontSize>)>,
+    mut q: Query<(&mut TextFont, Ref<FontSize>)>,
     mut resized: EventReader<WindowResized>,
     window: Query<&Window, With<PrimaryWindow>>,
-    mut egui_settings: ResMut<EguiSettings>,
+    mut egui_settings: Query<&mut EguiContextSettings>,
 ) {
     let resized = resized.read().last().is_some();
-    let Ok(window) = window.get_single() else {
+    let Ok(window) = window.single() else {
         return;
     };
     let win_size = window.width().min(window.height());
     if win_size <= 0.0 {
         return;
     }
-    for (mut text, size) in q.iter_mut().filter(|(_, sz)| resized || sz.is_changed()) {
-        if size.is_added() {
-            let raw_text = text
-                .sections
-                .iter()
-                .map(|s| &s.value)
-                .cloned()
-                .collect::<Vec<_>>()
-                .join("");
-            let new_sections = make_text_sections(
-                &raw_text,
-                FontName::Sans,
-                win_size * size.0,
-                text.sections[0].style.color,
-            );
-            text.sections = new_sections;
-        } else {
-            for section in &mut text.sections {
-                section.style.font_size = win_size * size.0;
-            }
-        }
+    for (mut text_font, size) in q.iter_mut().filter(|(_, sz)| resized || sz.is_changed()) {
+        text_font.font_size = win_size * size.0;
     }
     if resized && win_size > 0.0 {
-        egui_settings.scale_factor = win_size / 720.0;
+        for mut ctx in egui_settings.iter_mut() {
+            ctx.scale_factor = win_size / 720.0;
+        }
     }
 }
-
-pub fn make_text_sections(
+/*
+pub fn make_text_section(
     text: &str,
     font_name: FontName,
     font_size: f32,
     color: Color,
-) -> Vec<TextSection> {
+) -> impl Iterator<Item = impl Bundle> {
     let text = text.replace("\\n", "\n");
 
     // split by <b>s and <i>s
@@ -191,24 +174,26 @@ pub fn make_text_sections(
         };
 
         if section_end == usize::MAX {
-            sections.push(TextSection::new(
-                &text[section_start..],
-                TextStyle {
+            sections.push((
+                TextSpan::new(&text[section_start..]),
+                TextFont {
                     font: user_font(font_name, weight),
                     font_size,
-                    color,
+                    ..Default::default()
                 },
+                TextColor(color),
             ));
             break;
         }
 
-        sections.push(TextSection::new(
-            &text[section_start..section_end],
-            TextStyle {
+        sections.push((
+            TextSpan::new(&text[section_start..section_end]),
+            TextFont {
                 font: user_font(font_name, weight),
                 font_size,
-                color,
+                ..Default::default()
             },
+            TextColor(color),
         ));
 
         match &text[section_end..section_end + 3] {
@@ -247,5 +232,6 @@ pub fn make_text_sections(
         }
     }
 
-    sections
+    sections.into_iter()
 }
+*/

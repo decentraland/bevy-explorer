@@ -27,7 +27,7 @@ use change_realm::ChangeRealmPlugin;
 use common::{
     inputs::SystemAction,
     sets::SetupSets,
-    structs::{ActiveDialog, UiRoot},
+    structs::{ActiveDialog, UiRoot, ZOrder},
 };
 use emote_select::EmoteUiPlugin;
 use foreign_profile::ForeignProfilePlugin;
@@ -82,17 +82,14 @@ struct SystemUiRoot(Entity);
 fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
     let root = commands
         .spawn((
-            NodeBundle {
-                style: Style {
-                    flex_direction: FlexDirection::Column,
-                    justify_content: JustifyContent::SpaceBetween,
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    ..Default::default()
-                },
-                z_index: ZIndex::Global((1 << 18) + 2),
+            Node {
+                flex_direction: FlexDirection::Column,
+                justify_content: JustifyContent::SpaceBetween,
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
                 ..Default::default()
             },
+            ZOrder::SystemUi.default(),
             UiRoot,
         ))
         .id();
@@ -100,18 +97,15 @@ fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
 
     // interaction component
     commands.spawn((
-        NodeBundle {
-            style: Style {
-                position_type: PositionType::Absolute,
-                left: Val::Px(0.0),
-                right: Val::Px(0.0),
-                top: Val::Px(0.0),
-                bottom: Val::Px(0.0),
-                ..Default::default()
-            },
-            z_index: ZIndex::Global((1 << 18) + 1),
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(0.0),
+            right: Val::Px(0.0),
+            top: Val::Px(0.0),
+            bottom: Val::Px(0.0),
             ..Default::default()
         },
+        ZOrder::MouseInteractionComponent.default(),
         Interaction::default(),
         MouseInteractionComponent,
     ));
@@ -120,10 +114,10 @@ fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
 fn toggle_system_ui(
     mut toast: Toaster,
     input_manager: InputManager,
-    mut root: Query<&mut Style, With<UiRoot>>,
+    mut root: Query<&mut Node, With<UiRoot>>,
 ) {
     if input_manager.just_down(SystemAction::HideUi, InputPriority::None) {
-        let Ok(mut root) = root.get_single_mut() else {
+        let Ok(mut root) = root.single_mut() else {
             warn!("no root");
             return;
         };

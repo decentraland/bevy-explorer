@@ -1,9 +1,10 @@
 use bevy::{
+    asset::AssetEvents,
+    platform::collections::HashMap,
     prelude::*,
     render::render_resource::{AsBindGroup, ShaderRef, ShaderType},
     transform::TransformSystem,
     ui::FocusPolicy,
-    utils::HashMap,
     window::{PrimaryWindow, WindowResized},
 };
 use bevy_dui::{DuiRegistry, DuiTemplate};
@@ -41,21 +42,21 @@ pub struct BoundedNode {
 pub struct BoundedNodeBundle {
     pub bounded: BoundedNode,
     /// Describes the logical size of the node
-    pub node: Node,
+    pub node: ComputedNode,
     /// Styles which control the layout (size and position) of the node and it's children
     /// In some cases these styles also affect how the node drawn/painted.
-    pub style: Style,
+    pub style: Node,
     /// Whether this node should block interaction with lower nodes
     pub focus_policy: FocusPolicy,
     /// The transform of the node
     ///
     /// This component is automatically managed by the UI layout system.
-    /// To alter the position of the `NodeBundle`, use the properties of the [`Style`] component.
+    /// To alter the position of the `NodeBundle`, use the properties of the [`Node`] component.
     pub transform: Transform,
     /// The global transform of the node
     ///
     /// This component is automatically updated by the [`TransformPropagate`](`bevy_transform::TransformSystem::TransformPropagate`) systems.
-    /// To alter the position of the `NodeBundle`, use the properties of the [`Style`] component.
+    /// To alter the position of the `NodeBundle`, use the properties of the [`Node`] component.
     pub global_transform: GlobalTransform,
     /// Describes the visibility properties of the node
     pub visibility: Visibility,
@@ -75,7 +76,9 @@ impl Plugin for BoundedNodePlugin {
             .add_systems(Startup, setup_templates)
             .add_systems(
                 PostUpdate,
-                update_bounded_nodes.after(TransformSystem::TransformPropagate),
+                update_bounded_nodes
+                    .after(TransformSystem::TransformPropagate)
+                    .before(AssetEvents),
             );
     }
 }
@@ -127,28 +130,35 @@ fn update_bounded_nodes(
     mut commands: Commands,
     new_children: Query<
         (Entity, &BoundedNode),
-        Or<(Without<Handle<BoundedImageMaterial>>, Changed<BoundedNode>)>,
+        Or<(
+            Without<MaterialNode<BoundedImageMaterial>>,
+            Changed<BoundedNode>,
+        )>,
     >,
     mut existing: Local<HashMap<Entity, Vec<(AssetId<BoundedImageMaterial>, bool)>>>,
-    mut removed_nodes: RemovedComponents<Node>,
+    mut removed_nodes: RemovedComponents<ComputedNode>,
     mut mats: ResMut<Assets<BoundedImageMaterial>>,
     updated_nodes: Query<
-        (Entity, &Node, &GlobalTransform, &NodeBounds),
-        Or<(Changed<Node>, Changed<GlobalTransform>, Changed<NodeBounds>)>,
+        (Entity, &ComputedNode, &GlobalTransform, &NodeBounds),
+        Or<(
+            Changed<ComputedNode>,
+            Changed<GlobalTransform>,
+            Changed<NodeBounds>,
+        )>,
     >,
-    all_nodes: Query<(Entity, &Node, &GlobalTransform, &NodeBounds)>,
+    all_nodes: Query<(Entity, &ComputedNode, &GlobalTransform, &NodeBounds)>,
     window: Query<&Window, With<PrimaryWindow>>,
     mut resized: EventReader<WindowResized>,
-    bound_parents: Query<(Option<&Parent>, Option<&NodeBounds>)>,
+    bound_parents: Query<(Option<&ChildOf>, Option<&NodeBounds>)>,
 ) {
-    let Ok(window) = window.get_single() else {
+    let Ok(window) = window.single() else {
         return;
     };
     let window = Vec2::new(window.width(), window.height());
 
     fn update_mat(
         mat: &mut BoundedImageMaterial,
-        node: &Node,
+        node: &ComputedNode,
         gt: &GlobalTransform,
         bounds: &NodeBounds,
         window: Vec2,
@@ -210,7 +220,7 @@ fn update_bounded_nodes(
             if maybe_bounds.is_some() {
                 return Some(e);
             }
-            e = maybe_parent.map(|p| p.get())?;
+            e = maybe_parent.map(|p| p.parent())?;
         }
     };
 
@@ -240,7 +250,7 @@ fn update_bounded_nodes(
                 .or_default()
                 .push((mat.id(), bound_parent == ent));
         }
-        commands.entity(ent).try_insert(mat);
+        commands.entity(ent).try_insert(MaterialNode(mat));
     }
 
     for removed in removed_nodes.read() {
@@ -251,7 +261,14 @@ fn update_bounded_nodes(
         existing: &mut HashMap<Entity, Vec<(AssetId<BoundedImageMaterial>, bool)>>,
         mats: &mut Assets<BoundedImageMaterial>,
         window: Vec2,
-        iter: impl Iterator<Item = (Entity, &'a Node, &'a GlobalTransform, &'a NodeBounds)>,
+        iter: impl Iterator<
+            Item = (
+                Entity,
+                &'a ComputedNode,
+                &'a GlobalTransform,
+                &'a NodeBounds,
+            ),
+        >,
     ) {
         for (node_ent, node, gt, bounds) in iter {
             if let Some(ids) = existing.get_mut(&node_ent) {
@@ -317,8 +334,8 @@ impl DuiTemplate for DuiBoundNode {
     ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
         let image = props.take_as::<Handle<Image>>(ctx, "bound-image")?;
         let color = props.take_as::<Color>(ctx, "color")?;
-        commands.insert(BoundedNode { image, color });
-        commands.remove::<BackgroundColor>().remove::<UiImage>();
+        commands.insert((BoundedNode { image, color }, BackgroundColor::DEFAULT));
+        commands.remove::<ImageNode>();
         Ok(Default::default())
     }
 }
