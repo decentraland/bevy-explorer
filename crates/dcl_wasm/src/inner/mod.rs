@@ -8,9 +8,9 @@ use std::{
     sync::{mpsc::SyncSender, Arc},
 };
 
-use bevy::tasks::IoTaskPool;
+use bevy::{log::tracing::span::EnteredSpan, tasks::IoTaskPool};
 use dcl::{
-    interface::CrdtComponentInterfaces, js::ShuttingDown, RendererResponse, SceneId, SceneResponse,
+    interface::CrdtComponentInterfaces, js::{ShuttingDown, SuperUserScene}, RendererResponse, SceneId, SceneResponse,
 };
 use gotham_state::GothamState;
 use ipfs::{IpfsResource, SceneJsFile};
@@ -111,9 +111,6 @@ extern "C" {
 
 #[wasm_bindgen]
 pub async fn wasm_init_scene() -> Result<WorkerContext, JsValue> {
-    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-    let _ = console_log::init_with_level(log::Level::Info);
-
     let scene_initialization_data: SceneInitializationData = SCENE_QUEUE
         .get()
         .expect("scene queue not initialized")
@@ -231,4 +228,81 @@ impl From<WasmError> for JsValue {
 #[wasm_bindgen]
 pub fn op_continue_running(state: &WorkerContext) -> bool {
     !state.state.borrow().has::<ShuttingDown>()
+}
+
+#[wasm_bindgen]
+pub fn drop_context(state: WorkerContext) {
+    let span = state.state.borrow_mut().try_take::<EnteredSpan>();
+    drop(span);
+    let strong_count = Rc::strong_count(&state.state);
+    let weak_count = Rc::strong_count(&state.state);
+
+    let Ok(inner) = Rc::try_unwrap(state.state) else {
+        panic!("strong: {strong_count}, weak: {weak_count}");
+    };
+        
+    let inner_inner = inner.into_inner();
+    drop(inner_inner);
+}
+
+#[wasm_bindgen]
+pub fn builtin_module(state: &WorkerContext, path: &str) -> Result<String, String> {
+    match path {
+// system api (only allowed for su scene)
+        "~system/BevyExplorerApi" => {
+            if state.state.borrow().try_borrow::<SuperUserScene>().is_some() {
+                Ok(include_str!("../../../dcl/src/js/modules/SystemApi.js").to_owned())
+            } else {
+                Err(format!(
+                    "invalid module request `{path}`"
+                ))
+            }
+        }
+        // core module load
+        "~system/CommunicationsController" => {
+            Ok(include_str!("../../../dcl/src/js/modules/CommunicationsController.js").to_owned())
+        }
+        "~system/CommsApi" => {
+            Ok(include_str!("../../../dcl/src/js/modules/CommsApi.js").to_owned())
+        }
+        "~system/EngineApi" => {
+            Ok(include_str!("../../../dcl/src/js/modules/EngineApi.js").to_owned())
+        }
+        "~system/EnvironmentApi" => {
+            Ok(include_str!("../../../dcl/src/js/modules/EnvironmentApi.js").to_owned())
+        }
+        "~system/EthereumController" => {
+            Ok(include_str!("../../../dcl/src/js/modules/EthereumController.js").to_owned())
+        }
+        "~system/Players" => Ok(include_str!("../../../dcl/src/js/modules/Players.js").to_owned()),
+        "~system/PortableExperiences" => {
+            Ok(include_str!("../../../dcl/src/js/modules/PortableExperiences.js").to_owned())
+        }
+        "~system/RestrictedActions" => {
+            Ok(include_str!("../../../dcl/src/js/modules/RestrictedActions.js").to_owned())
+        }
+        "~system/Runtime" => Ok(include_str!("../../../dcl/src/js/modules/Runtime.js").to_owned()),
+        "~system/Scene" => Ok(include_str!("../../../dcl/src/js/modules/Scene.js").to_owned()),
+        "~system/SignedFetch" => {
+            Ok(include_str!("../../../dcl/src/js/modules/SignedFetch.js").to_owned())
+        }
+        "~system/Testing" => Ok(include_str!("../../../dcl/src/js/modules/Testing.js").to_owned()),
+        "~system/UserActionModule" => {
+            Ok(include_str!("../../../dcl/src/js/modules/UserActionModule.js").to_owned())
+        }
+        "~system/UserIdentity" => {
+            Ok(include_str!("../../../dcl/src/js/modules/UserIdentity.js").to_owned())
+        }
+        "~system/AdaptationLayerHelper" => {
+            Ok(include_str!("../../../dcl/src/js/modules/AdaptationLayerHelper.js").to_owned())
+        }
+        _ => Err(format!(
+            "invalid module request `{path}`"
+        )),
+    }
+}
+
+#[wasm_bindgen]
+pub fn is_super(state: &WorkerContext) -> bool {
+    state.state.borrow().try_borrow::<SuperUserScene>().is_some()
 }

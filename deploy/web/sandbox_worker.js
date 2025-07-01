@@ -3,7 +3,9 @@
 // Import the wasm-bindgen generated JS glue code.
 import init, * as wasm_bindgen_exports from "./pkg/webgpu_build.js";
 
-console.log("[Sandbox Worker] Starting");
+// self.WebSocket = {}
+
+console.log("[Scene Worker] Starting");
 
 const allowListES2020 = [
   "Array",
@@ -68,12 +70,14 @@ const jsContext = Object.create(null);
 var jsProxy = undefined;
 var jsPreamble = undefined;
 function createJsContext(wasmApi, context) {
+  const isSuper = wasmApi.is_super(context);
+
   Object.defineProperty(jsContext, "console", {
     value: {
       log: console.log.bind(console),
-      info: console.log.bind(console),
-      debug: console.log.bind(console),
-      trace: console.log.bind(console),
+      info: console.info.bind(console),
+      debug: console.debug.bind(console),
+      trace: console.trace.bind(console),
       warning: console.error.bind(console),
       error: console.error.bind(console),
     },
@@ -81,9 +85,7 @@ function createJsContext(wasmApi, context) {
 
   const ops = Object.create(null);
   for (const exportName in wasmApi) {
-    // console.log("checking", exportName);
     if (exportName.substring(0, 3) === "op_") {
-      // console.log("adding", exportName);
       Object.defineProperty(ops, exportName, {
         configurable: false,
         get() {
@@ -116,8 +118,27 @@ function createJsContext(wasmApi, context) {
   });
   Object.defineProperty(jsContext, "localStorage", {
     configurable: false,
-    value: createWebStorageProxy(ops)
-  })
+    value: createWebStorageProxy(ops),
+  });
+
+  // if (!isSuper) {
+  //   Object.defineProperty(jsContext, "fetch", {
+  //     configurable: false,
+  //     get() {
+  //       return (url, options) => {    
+  //         console.error('[Sandbox worker] Fetch request to', url, 'was intentionally blocked by the proxy.');
+  //         return Promise.reject(new Error('This request has been intentionally failed by the proxy.'));
+  //       };    
+  //     }
+  //   })
+  //   Object.defineProperty(jsContext, "WebSocket", {
+  //     configurable: false,
+  //     get() {
+  //       console.log("get WebSocket!!!")
+  //       return {}
+  //     }
+  //   })
+  // }
 
   jsProxy = new Proxy(jsContext, {
     has() {
@@ -162,40 +183,42 @@ async function runWithScope(code) {
 // prefetch all the requireable scripts before we replace the fetch function
 var allowedModules = undefined;
 
-async function preloadModules() {
-  const modules = {
-    "~system/BevyExplorerApi": "modules/SystemApi.js",
-    "~system/CommunicationsController": "modules/CommunicationsController.js",
-    "~system/CommsApi": "modules/CommsApi.js",
-    "~system/EngineApi": "modules/EngineApi.js",
-    "~system/EnvironmentApi": "modules/EnvironmentApi.js",
-    "~system/EthereumController": "modules/EthereumController.js",
-    "~system/Players": "modules/Players.js",
-    "~system/PortableExperiences": "modules/PortableExperiences.js",
-    "~system/RestrictedActions": "modules/RestrictedActions.js",
-    "~system/Runtime": "modules/Runtime.js",
-    "~system/Scene": "modules/Scene.js",
-    "~system/SignedFetch": "modules/SignedFetch.js",
-    "~system/Testing": "modules/Testing.js",
-    "~system/UserActionModule": "modules/UserActionModule.js",
-    "~system/UserIdentity": "modules/UserIdentity.js",
-    "~system/AdaptationLayerHelper": "modules/AdaptationLayerHelper.js",
-  };
+async function preloadModules(context, fetch_fn) {
+  const modules = [
+    "~system/BevyExplorerApi",
+    "~system/CommunicationsController",
+    "~system/CommsApi",
+    "~system/EngineApi",
+    "~system/EnvironmentApi",
+    "~system/EthereumController",
+    "~system/Players",
+    "~system/PortableExperiences",
+    "~system/RestrictedActions",
+    "~system/Runtime",
+    "~system/Scene",
+    "~system/SignedFetch",
+    "~system/Testing",
+    "~system/UserActionModule",
+    "~system/UserIdentity",
+    "~system/AdaptationLayerHelper",
+  ];
 
-  const promises = Object.entries(modules).map(async ([key, path]) => {
-    const response = await fetch(path);
-    const code = await response.text();
-    const result = await runWithScope(code);
-    return [key, result];
+  const promises = modules.map(async (key) => {
+    try {
+      const code = fetch_fn(context, key);
+      const result = await runWithScope(code);
+      return [key, result];
+    } catch (e) {
+      return undefined
+    }
   });
 
-  allowedModules = Object.fromEntries(await Promise.all(promises));
+  allowedModules = Object.fromEntries((await Promise.all(promises)).filter(e => e));
 }
 
 function require(moduleName) {
   let code = allowedModules[moduleName];
   if (!code) {
-    // console.log(allowedModules);
     throw "can't find module `" + moduleName + "`";
   }
 
@@ -211,15 +234,66 @@ self.onmessage = async (event) => {
       return;
     }
 
+    var wasm_init;
     try {
       // init wasm
-      await init({ module: compiledModule, memory: sharedMemory });
-      const wasmContext = await wasm_bindgen_exports.wasm_init_scene();
+      wasm_init = await init({
+        module_or_path: compiledModule,
+        memory: sharedMemory,
+      });
+    } catch (e) {
+      console.error(
+        "[Scene Worker] Error during Wasm instantiation or setup:",
+        e
+      );
+      postMessage({ type: `INIT_FAILED` });
+      self.close();
+      return;
+    }
+
+    postMessage({ type: `INIT_COMPLETE` });
+        
+    // add listener to clean up on unhandled rejections
+    self.addEventListener("unhandledrejection", (event) => {
+      // Prevent the default browser action (logging to console)
+      event.preventDefault();
+
+      console.error(
+        "[Sandbox worker] FATAL: Unhandled Promise Rejection in Worker:",
+        event.reason
+      );
+
+      try {
+        wasm_init.__wbindgen_thread_destroy();
+      } catch (cleanupError) {
+        console.error(
+          "[Sandbox worker] Error during WASM cleanup:",
+          cleanupError
+        );
+      }
+
+      self.close();
+    });
+
+    var wasmContext;
+    try {
+      wasmContext = await wasm_bindgen_exports.wasm_init_scene();
+    } catch (e) {
+      console.error("[Scene Worker] Error during scene construction:", e);
+      try {
+        wasm_init.drop_context(wasmContext);
+      } catch (e) {}
+      wasm_init.__wbindgen_thread_destroy();
+      self.close();
+      return;
+    }
+
+    try {
       createJsContext(wasm_bindgen_exports, wasmContext);
       const ops = jsContext.Deno.core.ops;
 
       // preload modules
-      await preloadModules();
+      await preloadModules(wasmContext, wasm_bindgen_exports.builtin_module);
 
       const sceneCode = wasmContext.get_source();
       let module = await runWithScope(sceneCode);
@@ -227,10 +301,7 @@ self.onmessage = async (event) => {
       // send any initial rpc requests
       ops.op_crdt_send_to_renderer([]);
 
-      console.log("[Scene Worker] calling onStart");
       await module.onStart();
-
-      console.log("[Scene Worker] entering onUpdate loop");
 
       var elapsed = 0;
       const startTime = new Date();
@@ -245,73 +316,79 @@ self.onmessage = async (event) => {
         count += 1;
       }
       console.log("[Scene Worker] exiting gracefully");
-      self.close();
     } catch (e) {
-      console.error(
-        "[Scene Worker] Error during Wasm instantiation or setup:",
-        e
-      );
+      console.error("[Scene Worker] Error during scene execution:", e);
     }
+
+    try {
+      wasm_init.drop_context(wasmContext);
+    } catch (e) {}
+    wasm_init.__wbindgen_thread_destroy();
+    self.close();
   }
 };
 
 function createWebStorageProxy(ops) {
-  return new Proxy({}, {
-    get(_target, prop, _receiver) {
-      if (prop === 'length') {
-        return ops.op_webstorage_length();
-      }
-
-      if (prop === 'getItem') {
-        return (key) => ops.op_webstorage_get(String(key));
-      }
-      if (prop === 'setItem') {
-        return (key, value) => ops.op_webstorage_set(String(key), String(value));
-      }
-      if (prop === 'key') {
-        return (index) => ops.op_webstorage_key(index);
-      }
-      if (prop === 'removeItem') {
-        return (key) => ops.op_webstorage_remove(String(key));
-      }
-      if (prop === 'clear') {
-        return () => ops.op_webstorage_clear();
-      }
-
-      // Handle direct property access like `localStorage.myKey`
-      return ops.op_storage_get(String(prop));
-    },
-
-    set(_target, prop, value, _receiver) {
-      ops.op_storage_set(String(prop), String(value));
-      return true;
-    },
-
-    deleteProperty(_target, prop) {
-      ops.op_webstorage_remove(String(prop));
-      return true;
-    },
-
-    ownKeys(_target) {
-      return ops.op_webstorage_iterate_keys();
-    },
-
-    getOwnPropertyDescriptor(_target, prop) {
-      if (ops.op_webstorage_has(String(prop))) {
-        return {
-          value: ops.op_webstorage_get(String(prop)),
-          writable: true,
-          enumerable: true,
-          configurable: true,
+  return new Proxy(
+    {},
+    {
+      get(_target, prop, _receiver) {
+        if (prop === "length") {
+          return ops.op_webstorage_length();
         }
-      }
-      return undefined;
-    },
 
-    has(_target, prop) {
-      return ops.op_webstorage_has(String(prop))
+        if (prop === "getItem") {
+          return (key) => ops.op_webstorage_get(String(key));
+        }
+        if (prop === "setItem") {
+          return (key, value) =>
+            ops.op_webstorage_set(String(key), String(value));
+        }
+        if (prop === "key") {
+          return (index) => ops.op_webstorage_key(index);
+        }
+        if (prop === "removeItem") {
+          return (key) => ops.op_webstorage_remove(String(key));
+        }
+        if (prop === "clear") {
+          return () => ops.op_webstorage_clear();
+        }
+
+        // Handle direct property access like `localStorage.myKey`
+        return ops.op_storage_get(String(prop));
+      },
+
+      set(_target, prop, value, _receiver) {
+        ops.op_storage_set(String(prop), String(value));
+        return true;
+      },
+
+      deleteProperty(_target, prop) {
+        ops.op_webstorage_remove(String(prop));
+        return true;
+      },
+
+      ownKeys(_target) {
+        return ops.op_webstorage_iterate_keys();
+      },
+
+      getOwnPropertyDescriptor(_target, prop) {
+        if (ops.op_webstorage_has(String(prop))) {
+          return {
+            value: ops.op_webstorage_get(String(prop)),
+            writable: true,
+            enumerable: true,
+            configurable: true,
+          };
+        }
+        return undefined;
+      },
+
+      has(_target, prop) {
+        return ops.op_webstorage_has(String(prop));
+      },
     }
-  });
+  );
 }
 
 postMessage({ type: `READY` });

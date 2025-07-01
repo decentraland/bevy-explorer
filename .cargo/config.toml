@@ -17,6 +17,7 @@ rustflags = [
     "-C", "target-feature=+atomics,+bulk-memory,+mutable-globals", 
     "-C", "link-arg=--shared-memory", 
     "-C", "link-arg=--max-memory=4294967296", 
+    "-C", "link-args=-z stack-size=10485760",
 ]
 
 [env]
