@@ -509,6 +509,10 @@ fn process_profile(
             profile.content.avatar.force_render = Some(equip.force_render.to_vec());
         }
 
+        if let Some(extras) = &set_avatar.profile_extras {
+            profile.content.extra_fields = extras.clone();
+        }
+
         profile.version += 1;
         profile.content.version = profile.version as i64;
 

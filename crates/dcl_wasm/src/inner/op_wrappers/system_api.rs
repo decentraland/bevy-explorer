@@ -107,10 +107,11 @@ pub async fn op_set_avatar(
     base: JsValue,
     equip: JsValue,
     has_claimed_name: Option<bool>,
+    profile_extras: Option<std::collections::HashMap<String, serde_json::Value>>,
 ) -> Result<u32, WasmError> {
     serde_parse!(base);
     serde_parse!(equip);
-    dcl::js::system_api::op_set_avatar(state.rc(), base, equip, has_claimed_name)
+    dcl::js::system_api::op_set_avatar(state.rc(), base, equip, has_claimed_name, profile_extras)
         .await
         .map_err(WasmError::from)
 }
@@ -198,4 +199,9 @@ pub async fn op_read_chat_stream(state: &WorkerContext, rid: u32) -> Result<JsVa
 #[wasm_bindgen]
 pub fn op_send_chat(state: &WorkerContext, message: String, channel: String) {
     dcl::js::system_api::op_send_chat(state.rc(), message, channel)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_profile_extras(state: &WorkerContext) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_get_profile_extras(state.rc()).await)
 }

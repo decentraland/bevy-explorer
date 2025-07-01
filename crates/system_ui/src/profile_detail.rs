@@ -70,7 +70,7 @@ fn set_profile_detail_content(
                     "profile-detail-category",
                     DuiProps::new()
                         .with_prop("label", $label.to_owned())
-                        .with_prop("initial", $init.clone())
+                        .with_prop("initial", $init)
                         .with_prop("multi-line", $multiline)
                         .with_prop("onchanged", On::<DataChanged>::new(|caller: Res<UiCaller>, data: Query<&TextEntryValue>, mut profile: Query<&mut ProfileDetail>, mut settings: Query<&mut SettingsDialog>| {
                             let Ok(data) = data.get(caller.0) else {
@@ -96,21 +96,39 @@ fn set_profile_detail_content(
         let cat_items = vec![
             category!(
                 "Name",
-                detail.name,
+                detail.name.clone(),
                 1u32,
                 |p: &mut SerializedProfile, d: String| p.name = d
             ),
             category!(
                 "Description",
-                detail.description,
+                serde_json::from_value::<String>(
+                    detail
+                        .extra_fields
+                        .get("description")
+                        .cloned()
+                        .unwrap_or_default()
+                )
+                .unwrap(),
                 10u32,
-                |p: &mut SerializedProfile, d: String| p.description = d
+                |p: &mut SerializedProfile, d: String| p
+                    .extra_fields
+                    .insert("description".to_owned(), serde_json::to_value(d).unwrap())
             ),
             category!(
                 "Email",
-                detail.email.clone().unwrap_or_default(),
+                serde_json::from_value::<String>(
+                    detail
+                        .extra_fields
+                        .get("description")
+                        .cloned()
+                        .unwrap_or_default()
+                )
+                .unwrap(),
                 1u32,
-                |p: &mut SerializedProfile, d: String| p.email = Some(d)
+                |p: &mut SerializedProfile, d: String| p
+                    .extra_fields
+                    .insert("email".to_owned(), serde_json::to_value(d).unwrap())
             ),
         ];
 

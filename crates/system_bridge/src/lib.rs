@@ -45,6 +45,7 @@ pub struct SetAvatarData {
     pub base: Option<PbAvatarBase>,
     pub equip: Option<PbAvatarEquippedData>,
     pub has_claimed_name: Option<bool>,
+    pub profile_extras: Option<std::collections::HashMap<String, serde_json::Value>>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
