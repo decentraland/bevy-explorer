@@ -8,9 +8,9 @@ use common::structs::ChainLink;
 use ethers_core::types::{Address, Signature};
 use ethers_signers::{LocalWallet, Signer, WalletError};
 use http::Uri;
+use platform::AsyncRwLock;
 use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
-use platform::AsyncRwLock;
 
 pub mod browser_auth;
 pub mod signed_login;

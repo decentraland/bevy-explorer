@@ -60,7 +60,13 @@ use visuals::VisualsPlugin;
 use wallet::WalletPlugin;
 use world_ui::WorldUiPlugin;
 
-fn main_inner(server: &str, location: &str, system_scene: &str, with_thread_loader: bool, rabpf: usize) {
+fn main_inner(
+    server: &str,
+    location: &str,
+    system_scene: &str,
+    with_thread_loader: bool,
+    rabpf: usize,
+) {
     // warnings before log init must be stored and replayed later
     let mut app = App::new();
 
@@ -120,7 +126,8 @@ fn main_inner(server: &str, location: &str, system_scene: &str, with_thread_load
 
     let version = "webgpu proof of concept".to_string();
 
-    let wasm_loader_handle = with_thread_loader.then(|| WASM_ASSET_LOADER_HANDLE.get().unwrap().clone());
+    let wasm_loader_handle =
+        with_thread_loader.then(|| WASM_ASSET_LOADER_HANDLE.get().unwrap().clone());
 
     app.insert_resource(Version(version.clone()))
         .insert_resource(final_config.audio.clone())
@@ -462,8 +469,7 @@ pub fn process_system_ui_scene(
 use once_cell::sync::OnceCell;
 use wasm_bindgen::prelude::*;
 
-static WASM_ASSET_LOADER_HANDLE: OnceCell<bevy::asset::WasmLoaderHandle> =
-    OnceCell::new();
+static WASM_ASSET_LOADER_HANDLE: OnceCell<bevy::asset::WasmLoaderHandle> = OnceCell::new();
 
 /// call from a separate worker to initialize a channel for asset load processing
 #[wasm_bindgen]
@@ -482,6 +488,12 @@ pub fn engine_init() -> Result<(), JsValue> {
 }
 
 #[wasm_bindgen]
-pub fn engine_run(realm: &str, location: &str, system_scene: &str, with_thread_loader: bool, rabpf: usize) {
+pub fn engine_run(
+    realm: &str,
+    location: &str,
+    system_scene: &str,
+    with_thread_loader: bool,
+    rabpf: usize,
+) {
     main_inner(realm, location, system_scene, with_thread_loader, rabpf);
 }

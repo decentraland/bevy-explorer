@@ -112,11 +112,15 @@ impl<T> AsyncRwLock<T> {
         self.0.blocking_write()
     }
 
-    pub fn try_read(&self) -> Result<tokio::sync::RwLockReadGuard<'_, T>, tokio::sync::TryLockError> {
+    pub fn try_read(
+        &self,
+    ) -> Result<tokio::sync::RwLockReadGuard<'_, T>, tokio::sync::TryLockError> {
         self.0.try_read()
     }
 
-    pub fn try_write(&self) -> Result<tokio::sync::RwLockWriteGuard<'_, T>, tokio::sync::TryLockError> {
+    pub fn try_write(
+        &self,
+    ) -> Result<tokio::sync::RwLockWriteGuard<'_, T>, tokio::sync::TryLockError> {
         self.0.try_write()
     }
 }

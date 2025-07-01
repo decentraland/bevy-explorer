@@ -10,7 +10,9 @@ use std::{
 
 use bevy::{log::tracing::span::EnteredSpan, tasks::IoTaskPool};
 use dcl::{
-    interface::CrdtComponentInterfaces, js::{ShuttingDown, SuperUserScene}, RendererResponse, SceneId, SceneResponse,
+    interface::CrdtComponentInterfaces,
+    js::{ShuttingDown, SuperUserScene},
+    RendererResponse, SceneId, SceneResponse,
 };
 use gotham_state::GothamState;
 use ipfs::{IpfsResource, SceneJsFile};
@@ -240,7 +242,7 @@ pub fn drop_context(state: WorkerContext) {
     let Ok(inner) = Rc::try_unwrap(state.state) else {
         panic!("strong: {strong_count}, weak: {weak_count}");
     };
-        
+
     let inner_inner = inner.into_inner();
     drop(inner_inner);
 }
@@ -248,14 +250,17 @@ pub fn drop_context(state: WorkerContext) {
 #[wasm_bindgen]
 pub fn builtin_module(state: &WorkerContext, path: &str) -> Result<String, String> {
     match path {
-// system api (only allowed for su scene)
+        // system api (only allowed for su scene)
         "~system/BevyExplorerApi" => {
-            if state.state.borrow().try_borrow::<SuperUserScene>().is_some() {
+            if state
+                .state
+                .borrow()
+                .try_borrow::<SuperUserScene>()
+                .is_some()
+            {
                 Ok(include_str!("../../../dcl/src/js/modules/SystemApi.js").to_owned())
             } else {
-                Err(format!(
-                    "invalid module request `{path}`"
-                ))
+                Err(format!("invalid module request `{path}`"))
             }
         }
         // core module load
@@ -296,13 +301,15 @@ pub fn builtin_module(state: &WorkerContext, path: &str) -> Result<String, Strin
         "~system/AdaptationLayerHelper" => {
             Ok(include_str!("../../../dcl/src/js/modules/AdaptationLayerHelper.js").to_owned())
         }
-        _ => Err(format!(
-            "invalid module request `{path}`"
-        )),
+        _ => Err(format!("invalid module request `{path}`")),
     }
 }
 
 #[wasm_bindgen]
 pub fn is_super(state: &WorkerContext) -> bool {
-    state.state.borrow().try_borrow::<SuperUserScene>().is_some()
+    state
+        .state
+        .borrow()
+        .try_borrow::<SuperUserScene>()
+        .is_some()
 }

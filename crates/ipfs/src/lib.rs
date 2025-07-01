@@ -43,9 +43,9 @@ use bevy::asset::io::wasm::HttpWasmAssetReader;
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use common::{structs::AppConfig, util::TaskCompat};
 use ipfs_path::IpfsAsset;
+use platform::AsyncRwLock;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
-use platform::AsyncRwLock;
 
 use console::DoAddConsoleCommand;
 

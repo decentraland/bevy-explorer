@@ -60,7 +60,7 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
 }
 
 pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Vec<Vec<u8>> {
-    #[cfg(feature="span_scene_loop")]
+    #[cfg(feature = "span_scene_loop")]
     {
         let span = op_state.borrow_mut().try_take::<EnteredSpan>();
         drop(span); // don't hold it over the await point so we get a clearer view of when js is running
@@ -74,7 +74,7 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
     let response = receiver.lock().await.recv().await;
 
     let mut op_state = op_state.borrow_mut();
-    #[cfg(feature="span_scene_loop")]
+    #[cfg(feature = "span_scene_loop")]
     {
         let span = info_span!("js update").entered();
         op_state.put(span);
