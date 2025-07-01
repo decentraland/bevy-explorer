@@ -196,7 +196,7 @@ jobs:
         run: |
           cp -r ./assets ./deploy/web/assets/
           cp -r ./crates/dcl/src/js/modules ./deploy/web/modules/
-          wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="wasm livekit"
+          wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="wasm"
       - name: Deploy
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.S3_WEB_ACCESS_KEY_ID }}
