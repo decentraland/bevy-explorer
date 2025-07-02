@@ -63,6 +63,8 @@ async function run() {
     });
     window.wasm_memory = sharedMemory;
 
+    // TODO: figure out why using blobs fails with livekit feature enabled
+    /*
     const wasmJs = URL.createObjectURL(
       await fetch("./pkg/webgpu_build.js")
         .then((response) => response.text())
@@ -77,11 +79,13 @@ async function run() {
           return new Blob([replacedText], { type: "application/javascript" });
         })
     );
+    */
 
     window.spawn_and_init_sandbox = async () => {
       var timeoutId;
       return new Promise((resolve, _reject) => {
-        var sandboxWorker = new Worker(sandboxJs, { type: "module" });
+        // var sandboxWorker = new Worker(sandboxJs, { type: "module" });
+        var sandboxWorker = new Worker("sandbox_worker.js", { type: "module" });
 
         var timeoutCount = 0;
         let logTimeout = () => {
@@ -157,7 +161,7 @@ async function run() {
         `[Main JS] "Go" button clicked. Initial Realm: "${initialRealm}", Location: "${location}", System Scene: "${systemScene}"`
       );
       hideSettings();
-      engine_run(initialRealm, location, systemScene, true, 5e5);
+      engine_run(initialRealm, location, systemScene, true, 1e6);
     };
   } catch (error) {
     console.error(
