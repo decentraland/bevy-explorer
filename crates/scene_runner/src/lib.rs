@@ -229,7 +229,8 @@ impl Plugin for SceneRunnerPlugin {
         });
 
         app.add_event::<LoadSceneEvent>();
-
+        app.add_event::<AppError>();
+        
         app.configure_sets(
             Update,
             (
