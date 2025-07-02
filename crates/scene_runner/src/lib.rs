@@ -21,7 +21,7 @@ use bevy::{
 use common::{
     rpc::RpcCall,
     sets::{SceneLoopSets, SceneSets},
-    structs::{AppConfig, PrimaryCamera, PrimaryUser},
+    structs::{AppConfig, AppError, PrimaryCamera, PrimaryUser},
     util::{dcl_assert, TryPushChildrenEx},
 };
 use comms::{SceneRoomConnection, SetCurrentScene};
@@ -283,6 +283,7 @@ impl Plugin for SceneRunnerPlugin {
         app.add_plugins(LightsPlugin);
 
         app.add_systems(Update, update_scene_room.in_set(SceneSets::PostLoop));
+        app.add_systems(Update, log_app_errors.in_set(SceneSets::PostLoop));
     }
 }
 
@@ -986,4 +987,10 @@ fn update_scene_room(
     *last = Some(ev.clone());
     debug!("set scene room {ev:?}");
     writer.write(ev);
+}
+
+fn log_app_errors(mut toaster: Toaster, mut errors: EventReader<AppError>, frame: Res<FrameCount>) {
+    for (i, error) in errors.read().enumerate() {
+        toaster.add_toast(format!("app-error {}-{i}", frame.0), format!("{error:?}"));
+    }
 }
