@@ -991,6 +991,7 @@ version = "0.16.1"
 source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#fa87f183b0a9fc06c805308f0d6791406a705611"
 dependencies = [
  "async-broadcast",
+ "async-channel 2.3.1",
  "async-fs",
  "async-lock",
  "atomicow",
@@ -1016,6 +1017,7 @@ dependencies = [
  "parking_lot",
  "ron",
  "serde",
+ "spin 0.9.8",
  "stackfuture",
  "thiserror 2.0.12",
  "tracing",
@@ -1039,7 +1041,7 @@ dependencies = [
 [[package]]
 name = "bevy_atmosphere"
 version = "0.13.0"
-source = "git+https://github.com/robtfm/bevy_atmosphere?branch=0.16-2#812cf523cb0100dffd5939171b63845fe24e1203"
+source = "git+https://github.com/robtfm/bevy_atmosphere?branch=0.16-2#87168130b4b4ac0c14a106c1bb3680e918dbd189"
 dependencies = [
  "bevy",
  "bevy_atmosphere_macros",
@@ -1049,7 +1051,7 @@ dependencies = [
 [[package]]
 name = "bevy_atmosphere_macros"
 version = "0.8.0"
-source = "git+https://github.com/robtfm/bevy_atmosphere?branch=0.16-2#812cf523cb0100dffd5939171b63845fe24e1203"
+source = "git+https://github.com/robtfm/bevy_atmosphere?branch=0.16-2#87168130b4b4ac0c14a106c1bb3680e918dbd189"
 dependencies = [
  "bevy_macro_utils 0.16.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "proc-macro-crate",
@@ -1713,7 +1715,7 @@ dependencies = [
 [[package]]
 name = "bevy_scene"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#fa87f183b0a9fc06c805308f0d6791406a705611"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#5282a287d435d3b3e4ac7e9c8c490e36457af1ab"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -1744,7 +1746,7 @@ dependencies = [
 [[package]]
 name = "bevy_sprite"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#fa87f183b0a9fc06c805308f0d6791406a705611"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#5282a287d435d3b3e4ac7e9c8c490e36457af1ab"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -1786,7 +1788,7 @@ dependencies = [
 [[package]]
 name = "bevy_state_macros"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#fa87f183b0a9fc06c805308f0d6791406a705611"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#5282a287d435d3b3e4ac7e9c8c490e36457af1ab"
 dependencies = [
  "bevy_macro_utils 0.16.1 (git+https://github.com/robtfm/bevy?branch=release-0.16-dcl)",
  "proc-macro2",
@@ -1797,7 +1799,7 @@ dependencies = [
 [[package]]
 name = "bevy_tasks"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#fa87f183b0a9fc06c805308f0d6791406a705611"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#5282a287d435d3b3e4ac7e9c8c490e36457af1ab"
 dependencies = [
  "async-channel 2.3.1",
  "async-executor",
@@ -1861,7 +1863,7 @@ dependencies = [
 [[package]]
 name = "bevy_transform"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#fa87f183b0a9fc06c805308f0d6791406a705611"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#5282a287d435d3b3e4ac7e9c8c490e36457af1ab"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -1878,7 +1880,7 @@ dependencies = [
 [[package]]
 name = "bevy_ui"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#fa87f183b0a9fc06c805308f0d6791406a705611"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#5282a287d435d3b3e4ac7e9c8c490e36457af1ab"
 dependencies = [
  "accesskit",
  "bevy_a11y",
@@ -3560,6 +3562,7 @@ name = "decentra-bevy"
 version = "0.1.0"
 dependencies = [
  "analytics",
+ "async-channel 2.3.1",
  "av",
  "avatar",
  "bevy",
@@ -3587,6 +3590,7 @@ dependencies = [
  "log-panics",
  "mimalloc",
  "nft",
+ "once_cell",
  "pico-args",
  "platform",
  "prost-build 0.11.9",
@@ -3608,6 +3612,7 @@ dependencies = [
  "visuals",
  "wallet",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-time",
  "wgpu",
  "world_ui",
@@ -8525,6 +8530,8 @@ dependencies = [
  "js-sys",
  "reqwest 0.12.15",
  "serde_json",
+ "spin 0.9.8",
+ "tokio",
  "tungstenite 0.21.0",
  "web-sys",
  "ws_stream_wasm 0.7.4",

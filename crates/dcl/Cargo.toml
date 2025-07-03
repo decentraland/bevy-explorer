@@ -5,6 +5,9 @@ edition = "2021"
 
 [lib]
 
+[features]
+span_scene_loop = []
+
 [dependencies]
 common = { workspace = true }
 dcl_component = { workspace = true }

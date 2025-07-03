@@ -60,7 +60,13 @@ use visuals::VisualsPlugin;
 use wallet::WalletPlugin;
 use world_ui::WorldUiPlugin;
 
-fn main_inner(server: &str, location: &str, system_scene: &str) {
+fn main_inner(
+    server: &str,
+    location: &str,
+    system_scene: &str,
+    with_thread_loader: bool,
+    rabpf: usize,
+) {
     // warnings before log init must be stored and replayed later
     let mut app = App::new();
 
@@ -71,6 +77,11 @@ fn main_inner(server: &str, location: &str, system_scene: &str) {
         location: IVec2Arg::from_str(location)
             .map(|l| l.0)
             .unwrap_or(IVec2::ZERO),
+        max_concurrent_remotes: 8,
+        graphics: common::structs::GraphicsSettings {
+            gpu_bytes_per_frame: rabpf,
+            ..default()
+        },
         ..Default::default()
     };
 
@@ -115,10 +126,17 @@ fn main_inner(server: &str, location: &str, system_scene: &str) {
 
     let version = "webgpu proof of concept".to_string();
 
+    let wasm_loader_handle =
+        with_thread_loader.then(|| WASM_ASSET_LOADER_HANDLE.get().unwrap().clone());
+
     app.insert_resource(Version(version.clone()))
         .insert_resource(final_config.audio.clone())
         .add_plugins(
             DefaultPlugins
+                .set(AssetPlugin {
+                    wasm_loader_handle,
+                    ..default()
+                })
                 .set(WindowPlugin {
                     primary_window: Some(Window {
                         // provide the ID selector string here
@@ -452,16 +470,34 @@ pub fn process_system_ui_scene(
     }
 }
 
+use once_cell::sync::OnceCell;
 use wasm_bindgen::prelude::*;
 
-#[wasm_bindgen(start)]
-pub fn initialize() -> Result<(), JsValue> {
-    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+static WASM_ASSET_LOADER_HANDLE: OnceCell<bevy::asset::WasmLoaderHandle> = OnceCell::new();
+
+/// call from a separate worker to initialize a channel for asset load processing
+#[wasm_bindgen]
+pub fn init_asset_load_thread() {
+    let asset_server_channel = bevy::asset::init_thread_loader();
+    let Ok(()) = WASM_ASSET_LOADER_HANDLE.set(asset_server_channel) else {
+        panic!("can't init wasm loader");
+    };
+}
+
+#[wasm_bindgen]
+pub fn engine_init() -> Result<(), JsValue> {
+    console_error_panic_hook::set_once();
     let _ = console_log::init_with_level(log::Level::Info);
     Ok(())
 }
 
 #[wasm_bindgen]
-pub fn wasm_run(realm: &str, location: &str, system_scene: &str) {
-    main_inner(realm, location, system_scene);
+pub fn engine_run(
+    realm: &str,
+    location: &str,
+    system_scene: &str,
+    with_thread_loader: bool,
+    rabpf: usize,
+) {
+    main_inner(realm, location, system_scene, with_thread_loader, rabpf);
 }

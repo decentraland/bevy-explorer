@@ -137,3 +137,36 @@ pub fn write_config_file(_config: &AppConfig) {
 pub struct DepthPrepass;
 #[derive(Component)]
 pub struct NormalPrepass;
+
+#[derive(Default)]
+pub struct AsyncRwLock<T>(spin::RwLock<T>);
+
+impl<T> AsyncRwLock<T> {
+    pub fn new(value: T) -> Self {
+        Self(spin::RwLock::new(value))
+    }
+
+    pub async fn read(&self) -> spin::RwLockReadGuard<'_, T> {
+        self.0.read()
+    }
+
+    pub async fn write(&self) -> spin::RwLockWriteGuard<'_, T> {
+        self.0.write()
+    }
+
+    pub fn blocking_read(&self) -> spin::RwLockReadGuard<'_, T> {
+        self.0.read()
+    }
+
+    pub fn blocking_write(&self) -> spin::RwLockWriteGuard<'_, T> {
+        self.0.write()
+    }
+
+    pub fn try_read(&self) -> Result<spin::RwLockReadGuard<'_, T>, ()> {
+        Ok(self.0.read())
+    }
+
+    pub fn try_write(&self) -> Result<spin::RwLockWriteGuard<'_, T>, ()> {
+        Ok(self.0.write())
+    }
+}

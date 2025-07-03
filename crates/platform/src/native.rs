@@ -87,3 +87,40 @@ pub fn write_config_file(config: &AppConfig) {
 
 // re-export prepass types
 pub use bevy::core_pipeline::prepass::{DepthPrepass, NormalPrepass};
+
+#[derive(Default)]
+pub struct AsyncRwLock<T>(tokio::sync::RwLock<T>);
+
+impl<T> AsyncRwLock<T> {
+    pub fn new(value: T) -> Self {
+        Self(tokio::sync::RwLock::new(value))
+    }
+
+    pub async fn read(&self) -> tokio::sync::RwLockReadGuard<'_, T> {
+        self.0.read().await
+    }
+
+    pub async fn write(&self) -> tokio::sync::RwLockWriteGuard<'_, T> {
+        self.0.write().await
+    }
+
+    pub fn blocking_read(&self) -> tokio::sync::RwLockReadGuard<'_, T> {
+        self.0.blocking_read()
+    }
+
+    pub fn blocking_write(&self) -> tokio::sync::RwLockWriteGuard<'_, T> {
+        self.0.blocking_write()
+    }
+
+    pub fn try_read(
+        &self,
+    ) -> Result<tokio::sync::RwLockReadGuard<'_, T>, tokio::sync::TryLockError> {
+        self.0.try_read()
+    }
+
+    pub fn try_write(
+        &self,
+    ) -> Result<tokio::sync::RwLockWriteGuard<'_, T>, tokio::sync::TryLockError> {
+        self.0.try_write()
+    }
+}

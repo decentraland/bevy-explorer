@@ -8,9 +8,9 @@ use common::structs::ChainLink;
 use ethers_core::types::{Address, Signature};
 use ethers_signers::{LocalWallet, Signer, WalletError};
 use http::Uri;
+use platform::AsyncRwLock;
 use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
 
 pub mod browser_auth;
 pub mod signed_login;
@@ -24,7 +24,7 @@ impl Plugin for WalletPlugin {
 }
 
 #[derive(Resource, Clone, Default)]
-pub struct Wallet(Arc<RwLock<WalletInner>>);
+pub struct Wallet(Arc<AsyncRwLock<WalletInner>>);
 
 #[derive(Default)]
 struct WalletInner {
