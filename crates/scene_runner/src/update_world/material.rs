@@ -130,7 +130,7 @@ impl MaterialDefinition {
                     && pbr.texture.is_some()
                     && pbr.alpha_texture != pbr.texture
                 {
-                    warn!("separate alpha texture not supported");
+                    debug!("separate alpha texture not supported");
                 }
 
                 let base_color = pbr

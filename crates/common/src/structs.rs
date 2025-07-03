@@ -861,3 +861,8 @@ impl ZOrder {
         GlobalZIndex(self as i32)
     }
 }
+
+#[derive(Event, Debug)]
+pub enum AppError {
+    NetworkFailure(anyhow::Error),
+}

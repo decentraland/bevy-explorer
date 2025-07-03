@@ -1,3 +1,5 @@
+use std::{fs::File, io::Write, sync::OnceLock};
+
 use comms::{
     preview::PreviewMode,
     profile::{CurrentUserProfile, ProfileCache, UserProfile},
@@ -22,9 +24,9 @@ use common::{
     rpc::RpcCall,
     sets::SetupSets,
     structs::{
-        AppConfig, AvatarDynamicState, CursorLocks, GraphicsSettings, IVec2Arg, PrimaryCamera,
-        PrimaryCameraRes, PrimaryPlayerRes, SceneGlobalLight, SceneImposterBake, SceneLoadDistance,
-        SystemAudio, TimeOfDay, ToolTips,
+        AppConfig, AppError, AvatarDynamicState, CursorLocks, GraphicsSettings, IVec2Arg,
+        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, SceneGlobalLight, SceneImposterBake,
+        SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips,
     },
     util::UtilsPlugin,
 };
@@ -42,7 +44,32 @@ use system_bridge::SystemBridgePlugin;
 use ui_core::{scrollable::ScrollTargetEvent, UiCorePlugin};
 use wallet::Wallet;
 
+static SESSION_LOG: OnceLock<String> = OnceLock::new();
+
 fn main() {
+    let session_time: chrono::DateTime<chrono::Utc> = chrono::DateTime::from_timestamp_millis(
+        web_time::SystemTime::now()
+            .duration_since(web_time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64,
+    )
+    .unwrap();
+    let dirs = platform::project_directories().unwrap();
+    let log_dir = dirs.data_local_dir();
+    let session_log = log_dir.join(format!(
+        "impost-{}.log",
+        session_time.format("%Y%m%d-%H%M%S")
+    ));
+    SESSION_LOG
+        .set(session_log.to_string_lossy().into_owned())
+        .unwrap();
+    std::fs::create_dir_all(log_dir).unwrap();
+
+    File::create(SESSION_LOG.get().unwrap())
+        .expect("failed to create log file")
+        .write_all(format!("{}\n\n", SESSION_LOG.get().unwrap()).as_bytes())
+        .expect("failed to create log file");
+
     init_runtime();
 
     let mut args = pico_args::Arguments::from_env();
@@ -144,8 +171,30 @@ fn main() {
                 exit_condition: ExitCondition::DontExit,
                 ..Default::default()
             })
+            .set(bevy::asset::AssetPlugin {
+                // we manage asset server loads via ipfs module, so we don't need this protection
+                unapproved_path_mode: bevy::asset::UnapprovedPathMode::Allow,
+                ..Default::default()
+            })
             .disable::<WinitPlugin>()
-            .build()
+            .set(bevy::log::LogPlugin {
+                filter: "wgpu=error,naga=error,bevy_animation=error,matrix=error".to_string(),
+                custom_layer: |_| {
+                    let (non_blocking, guard) = tracing_appender::non_blocking(
+                        File::options()
+                            .write(true)
+                            .open(SESSION_LOG.get().unwrap())
+                            .unwrap(),
+                    );
+                    Box::leak(guard.into());
+                    Some(Box::new(
+                        bevy::log::tracing_subscriber::fmt::layer()
+                            .with_writer(non_blocking)
+                            .with_ansi(false),
+                    ))
+                },
+                ..default()
+            })
             .add_before::<bevy::asset::AssetPlugin>(IpfsIoPlugin {
                 preview: false,
                 starting_realm: Some(final_config.server.clone()),
@@ -243,6 +292,7 @@ fn check_done(
     mut counter: Local<usize>,
     config: Res<AppConfig>,
     mut exit: EventWriter<AppExit>,
+    mut errors: EventReader<AppError>,
 ) {
     // wait for realm
     if realm.address.is_empty() {
@@ -264,11 +314,21 @@ fn check_done(
     if q.is_empty() {
         *counter += 1;
         if *counter == 10 {
-            println!("all done!");
+            info!("all done!");
             exit.write_default();
         }
     } else {
         *counter = 0;
+    }
+
+    // or till a fatal error occurs
+    let errors = errors.read().collect::<Vec<_>>();
+    if !errors.is_empty() {
+        for error in errors {
+            error!("fatal error: {error:?}");
+        }
+        println!("failed!");
+        exit.write(AppExit::from_code(1));
     }
 }
 

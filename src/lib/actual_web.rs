@@ -146,7 +146,11 @@ fn main_inner(
                     }),
                     ..Default::default()
                 })
-                .build()
+                .set(bevy::asset::AssetPlugin {
+                    // we manage asset server loads via ipfs module, so we don't need this protection
+                    unapproved_path_mode: bevy::asset::UnapprovedPathMode::Allow,
+                    ..Default::default()
+                })
                 .add_before::<bevy::asset::AssetPlugin>(IpfsIoPlugin {
                     preview: is_preview,
                     starting_realm: Some(final_config.server.clone()),

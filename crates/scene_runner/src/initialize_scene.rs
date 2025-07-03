@@ -12,7 +12,7 @@ use bevy::{
 };
 
 use common::{
-    structs::{AppConfig, IVec2Arg, SceneLoadDistance, SceneMeta},
+    structs::{AppConfig, AppError, IVec2Arg, SceneLoadDistance, SceneMeta},
     util::{TaskExt, TryPushChildrenEx},
 };
 use comms::{global_crdt::GlobalCrdtState, preview::PreviewMode};
@@ -903,6 +903,8 @@ fn load_active_entities(
     mut pointer_request: Local<Option<(HashSet<IVec2>, HashMap<String, String>, ActiveEntityTask)>>,
     ipfas: IpfsAssetServer,
     mut global_crdt: ResMut<GlobalCrdtState>,
+    mut consecutive_fetch_fail_count: Local<usize>,
+    mut commands: Commands,
 ) {
     if current_realm.is_changed() {
         // drop current request
@@ -1056,9 +1058,21 @@ fn load_active_entities(
         // process active scenes in the requested set
         let (mut requested_parcels, mut urn_lookup, _) = pointer_request.take().unwrap();
 
-        let Ok(retrieved_parcels) = task_result else {
-            warn!("failed to retrieve active scenes, will retry");
-            return;
+        let retrieved_parcels = match task_result {
+            Ok(res) => {
+                *consecutive_fetch_fail_count = 0;
+                res
+            }
+            Err(e) => {
+                warn!("failed to retrieve active scenes, will retry");
+                warn!("error: {e:?}");
+                *consecutive_fetch_fail_count += 1;
+                if *consecutive_fetch_fail_count == 10 {
+                    warn!("failed to retrieve active scenes 10 times, aborting");
+                    commands.send_event(AppError::NetworkFailure(e));
+                }
+                return;
+            }
         };
 
         info!(
