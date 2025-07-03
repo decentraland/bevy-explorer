@@ -171,6 +171,11 @@ fn main() {
                 exit_condition: ExitCondition::DontExit,
                 ..Default::default()
             })
+            .set(bevy::asset::AssetPlugin {
+                // we manage asset server loads via ipfs module, so we don't need this protection
+                unapproved_path_mode: bevy::asset::UnapprovedPathMode::Allow,
+                ..Default::default()
+            })
             .disable::<WinitPlugin>()
             .set(bevy::log::LogPlugin {
                 filter: "wgpu=error,naga=error,bevy_animation=error,matrix=error".to_string(),
