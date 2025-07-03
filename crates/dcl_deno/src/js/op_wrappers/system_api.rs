@@ -39,6 +39,7 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_get_chat_stream(),
             op_read_chat_stream(),
             op_send_chat(),
+            op_get_profile_extras(),
         ]
     } else {
         Vec::default()
@@ -135,8 +136,9 @@ pub async fn op_set_avatar(
     #[serde] base: Option<PbAvatarBase>,
     #[serde] equip: Option<PbAvatarEquippedData>,
     has_claimed_name: Option<bool>,
+    #[serde] profile_extras: Option<std::collections::HashMap<String, serde_json::Value>>,
 ) -> Result<u32, anyhow::Error> {
-    dcl::js::system_api::op_set_avatar(state, base, equip, has_claimed_name).await
+    dcl::js::system_api::op_set_avatar(state, base, equip, has_claimed_name, profile_extras).await
 }
 
 #[op2(async)]
@@ -236,4 +238,12 @@ pub fn op_send_chat(
     #[string] channel: String,
 ) {
     dcl::js::system_api::op_send_chat(state, message, channel)
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_profile_extras(
+    state: Rc<RefCell<OpState>>,
+) -> Result<std::collections::HashMap<String, serde_json::Value>, deno_core::anyhow::Error> {
+    dcl::js::system_api::op_get_profile_extras(state).await
 }

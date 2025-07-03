@@ -1,5 +1,9 @@
 use bevy::log::debug;
-use common::inputs::{Action, BindingsData, InputIdentifier, SystemActionEvent};
+use common::{
+    inputs::{Action, BindingsData, InputIdentifier, SystemActionEvent},
+    profile::SerializedProfile,
+    rpc::RpcCall,
+};
 use dcl_component::proto_components::{
     common::Vector2,
     sdk::components::{PbAvatarBase, PbAvatarEquippedData},
@@ -14,6 +18,8 @@ use system_bridge::{
 };
 use tokio::sync::mpsc::UnboundedReceiver;
 use wallet::{sign_request, Wallet};
+
+use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 
 use super::{State, SuperUserScene};
 
@@ -238,6 +244,7 @@ pub async fn op_set_avatar(
     base: Option<PbAvatarBase>,
     equip: Option<PbAvatarEquippedData>,
     has_claimed_name: Option<bool>,
+    profile_extras: Option<std::collections::HashMap<String, serde_json::Value>>,
 ) -> Result<u32, anyhow::Error> {
     let (sx, rx) = tokio::sync::oneshot::channel();
 
@@ -249,6 +256,7 @@ pub async fn op_set_avatar(
                 base,
                 equip,
                 has_claimed_name,
+                profile_extras,
             },
             sx.into(),
         ))?;
@@ -468,4 +476,29 @@ pub fn op_send_chat(state: Rc<RefCell<impl State>>, message: String, channel: St
         .borrow_mut::<SuperUserScene>()
         .send(SystemApi::SendChat(message, channel))
         .unwrap();
+}
+
+pub async fn op_get_profile_extras(
+    state: Rc<RefCell<impl State>>,
+) -> Result<std::collections::HashMap<String, serde_json::Value>, anyhow::Error> {
+    let (sx, rx) = tokio::sync::oneshot::channel::<Result<SerializedProfile, ()>>();
+
+    let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
+    debug!("[{scene:?}] -> op_get_profile_extras");
+
+    state
+        .borrow_mut()
+        .borrow_mut::<RpcCalls>()
+        .push(RpcCall::GetUserData {
+            user: None, // current user
+            scene,
+            response: sx.into(),
+        });
+
+    let profile = rx
+        .await
+        .map_err(|e| anyhow::anyhow!(e))?
+        .map_err(|_| anyhow::anyhow!("Not found"))?;
+
+    Ok(profile.extra_fields)
 }

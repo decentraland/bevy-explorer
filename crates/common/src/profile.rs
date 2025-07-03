@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use dcl_component::proto_components::common::Color3;
 use serde::{Deserialize, Serialize};
 
@@ -56,17 +58,13 @@ pub struct LambdaProfiles {
 pub struct SerializedProfile {
     pub user_id: Option<String>,
     pub name: String,
-    pub description: String,
     pub version: i64,
     pub eth_address: String,
-    pub tutorial_step: u32,
-    pub email: Option<String>,
-    pub blocked: Option<Vec<String>>,
-    pub muted: Option<Vec<String>>,
-    pub interests: Option<Vec<String>>,
     pub has_claimed_name: bool,
     pub has_connected_web3: Option<bool>,
     pub avatar: AvatarWireFormat,
+    #[serde(flatten)]
+    pub extra_fields: std::collections::HashMap<String, serde_json::Value>,
 }
 
 impl Default for SerializedProfile {
@@ -116,17 +114,21 @@ impl Default for SerializedProfile {
         Self {
             user_id: Default::default(),
             name: "Bevy_User".to_string(),
-            description: Default::default(),
             version: 1,
             eth_address: "0x0000000000000000000000000000000000000000".to_owned(),
-            tutorial_step: Default::default(),
-            email: Default::default(),
-            blocked: Default::default(),
-            muted: Default::default(),
-            interests: Default::default(),
             has_claimed_name: Default::default(),
             has_connected_web3: Default::default(),
             avatar,
+            extra_fields: HashMap::from_iter([
+                (
+                    "description".to_owned(),
+                    serde_json::to_value(String::default()).unwrap(),
+                ),
+                (
+                    "tutorialStep".to_owned(),
+                    serde_json::to_value(0u32).unwrap(),
+                ),
+            ]),
         }
     }
 }
