@@ -43,9 +43,9 @@ use bevy::asset::io::wasm::HttpWasmAssetReader;
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use common::{structs::AppConfig, util::TaskCompat};
 use ipfs_path::IpfsAsset;
+use platform::AsyncRwLock;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
 
 use console::DoAddConsoleCommand;
 
@@ -653,7 +653,7 @@ pub struct IpfsIo {
     default_fs_path: Option<PathBuf>,
     realm_config_receiver: tokio::sync::watch::Receiver<Option<(String, String, ServerAbout)>>,
     realm_config_sender: tokio::sync::watch::Sender<Option<(String, String, ServerAbout)>>,
-    context: RwLock<IpfsContext>,
+    context: AsyncRwLock<IpfsContext>,
     request_slots: tokio::sync::Semaphore,
     reqno: AtomicU16,
     static_files: HashMap<&'static str, &'static str>,
@@ -676,7 +676,7 @@ impl IpfsIo {
             default_fs_path,
             realm_config_receiver: receiver,
             realm_config_sender: sender,
-            context: RwLock::new(IpfsContext {
+            context: AsyncRwLock::new(IpfsContext {
                 num_slots,
                 ..Default::default()
             }),

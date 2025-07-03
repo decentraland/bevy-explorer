@@ -26,10 +26,15 @@ hot_reload = ["bevy/file_watcher", "ipfs/hot_reload"]
 livekit = ["comms/livekit", "system_ui/livekit"]
 ffmpeg = ["av/ffmpeg"]
 social = ["dcl_component/social", "social/social"]
-wasm = ["uuid/js", "getrandom/wasm_js", "bevy/webgpu"]
+wasm = ["uuid/js", "getrandom/wasm_js", "bevy/webgpu", "bevy/wasm_threaded_asset_loader", "bevy/reduce_image_sizes"]
 
 [profile.release]
 codegen-units = 1
+
+[profile.dev]
+# opt-level = 3
+# codegen-units = 1
+# lto = true
 
 [profile.dev.package."*"]
 opt-level = 3
@@ -222,6 +227,9 @@ console_log = "1.0"
 log = "0.4"
 getrandom = "0.3"
 wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+once_cell = { workspace = true }
+async-channel = "2"
 
 [build-dependencies]
 prost-build = "0.11.8"
@@ -276,6 +284,16 @@ deno_webidl = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 deno_web = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 deno_websocket = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
 deno_webstorage = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfix" }
+
+# deno_console = { path = "../deno/ext/console" }
+# deno_fetch = { path = "../deno/ext/fetch" }
+# deno_net = { path = "../deno/ext/net" }
+# deno_url = { path = "../deno/ext/url" }
+# deno_webidl = { path = "../deno/ext/webidl" }
+# deno_web = { path = "../deno/ext/web" }
+# deno_websocket = { path = "../deno/ext/websocket" }
+# deno_webstorage = { path = "../deno/ext/webstorage" }
+
 
 # [patch."https://github.com/robtfm/bevy"]
 # bevy = { path = "../bevy" }
