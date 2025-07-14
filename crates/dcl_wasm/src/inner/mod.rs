@@ -142,6 +142,8 @@ pub async fn wasm_init_scene() -> Result<WorkerContext, JsValue> {
         scene_initialization_data.super_user,
     );
 
+    local_storage::init(&context).await;
+
     Ok(context)
 }
 
