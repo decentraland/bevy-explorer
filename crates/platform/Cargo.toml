@@ -18,15 +18,17 @@ futures-util = { workspace = true }
 reqwest = { workspace = true }
 directories = { workspace = true }
 futures-lite = { workspace = true }
+serde_json = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 async-tungstenite = { workspace = true }
 async-compat = { workspace = true }
-serde_json = { workspace = true }
 tokio = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = { workspace = true }
 web-sys = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
 ws_stream_wasm = { git = "https://github.com/robtfm/ws_stream_wasm", branch = "bevy-explorer" }
 spin = { version = "0.9.8", default-features = false, features = ["rwlock"] }
+web-fs = { workspace = true }

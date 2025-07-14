@@ -1799,7 +1799,7 @@ dependencies = [
 [[package]]
 name = "bevy_tasks"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#5282a287d435d3b3e4ac7e9c8c490e36457af1ab"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#fa87f183b0a9fc06c805308f0d6791406a705611"
 dependencies = [
  "async-channel 2.3.1",
  "async-executor",
@@ -1863,7 +1863,7 @@ dependencies = [
 [[package]]
 name = "bevy_transform"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#5282a287d435d3b3e4ac7e9c8c490e36457af1ab"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#fa87f183b0a9fc06c805308f0d6791406a705611"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -2014,7 +2014,7 @@ dependencies = [
  "bitflags 2.9.1",
  "cexpr",
  "clang-sys",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "lazy_static",
  "lazycell",
  "log",
@@ -2037,7 +2037,7 @@ dependencies = [
  "bitflags 2.9.1",
  "cexpr",
  "clang-sys",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "log",
  "prettyplease 0.2.34",
  "proc-macro2",
@@ -2057,7 +2057,7 @@ dependencies = [
  "bitflags 2.9.1",
  "cexpr",
  "clang-sys",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "regex",
@@ -2228,7 +2228,7 @@ version = "0.1.1"
 source = "git+https://github.com/robtfm/boimp?branch=0.3#8e455305fbdadb954cd3fd939dcd8047ee481815"
 dependencies = [
  "anyhow",
- "async-channel 1.9.0",
+ "async-channel 2.3.1",
  "bevy",
  "bytemuck",
  "crossbeam-channel",
@@ -3344,7 +3344,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d162beedaa69905488a8da94f5ac3edb4dd4788b732fadb7bd120b2625c1976"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.103",
 ]
 
 [[package]]
@@ -3495,6 +3495,7 @@ dependencies = [
  "wallet",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "web-fs",
 ]
 
 [[package]]
@@ -3613,6 +3614,7 @@ dependencies = [
  "wallet",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "web-fs",
  "web-time",
  "wgpu",
  "world_ui",
@@ -8533,6 +8535,8 @@ dependencies = [
  "spin 0.9.8",
  "tokio",
  "tungstenite 0.21.0",
+ "wasm-bindgen-futures",
+ "web-fs",
  "web-sys",
  "ws_stream_wasm 0.7.4",
 ]
@@ -8845,8 +8849,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22505a5c94da8e3b7c2996394d1c933236c4d743e81a410bcca4e6989fc066a4"
 dependencies = [
  "bytes",
- "heck 0.4.1",
- "itertools 0.11.0",
+ "heck 0.5.0",
+ "itertools 0.12.1",
  "log",
  "multimap 0.10.1",
  "once_cell",
@@ -8879,7 +8883,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
 dependencies = [
  "anyhow",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn 2.0.103",
@@ -8892,7 +8896,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.11.0",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.103",
@@ -12508,6 +12512,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "555d470ec0bc3bb57890405e5d4322cc9ea83cebb085523ced7be4144dac1e61"
 dependencies = [
  "cfg-if",
+ "futures-core",
  "js-sys",
  "once_cell",
  "wasm-bindgen",
@@ -12666,6 +12671,19 @@ dependencies = [
  "log",
  "once_cell",
  "pkg-config",
+]
+
+[[package]]
+name = "web-fs"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "070a23323a39a52dd4b02521d4eaf97786f8e0bf5f75916565a975a053a15705"
+dependencies = [
+ "futures-lite 2.6.0",
+ "js-sys",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

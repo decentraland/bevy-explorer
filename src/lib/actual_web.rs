@@ -59,6 +59,7 @@ use uuid::Uuid;
 use visuals::VisualsPlugin;
 use wallet::WalletPlugin;
 use world_ui::WorldUiPlugin;
+use futures_lite::io::AsyncReadExt;
 
 fn main_inner(
     server: &str,
@@ -72,6 +73,9 @@ fn main_inner(
 
     init_runtime();
 
+    let base_config = INIT_DATA.get().cloned().unwrap_or_default();
+    let base_graphics = base_config.graphics.clone();
+
     let final_config = AppConfig {
         server: server.to_owned(),
         location: IVec2Arg::from_str(location)
@@ -80,9 +84,9 @@ fn main_inner(
         max_concurrent_remotes: 8,
         graphics: common::structs::GraphicsSettings {
             gpu_bytes_per_frame: rabpf,
-            ..default()
+            ..base_graphics
         },
-        ..Default::default()
+        ..base_config
     };
 
     let content_server_override = None;
@@ -474,6 +478,7 @@ use once_cell::sync::OnceCell;
 use wasm_bindgen::prelude::*;
 
 static WASM_ASSET_LOADER_HANDLE: OnceCell<bevy::asset::WasmLoaderHandle> = OnceCell::new();
+static INIT_DATA: OnceCell<AppConfig> = OnceCell::new();
 
 /// call from a separate worker to initialize a channel for asset load processing
 #[wasm_bindgen]
@@ -485,10 +490,31 @@ pub fn init_asset_load_thread() {
 }
 
 #[wasm_bindgen]
-pub fn engine_init() -> Result<(), JsValue> {
+pub async fn engine_init() -> Result<JsValue, JsValue> {
     console_error_panic_hook::set_once();
     let _ = console_log::init_with_level(log::Level::Info);
-    Ok(())
+
+    let mut file = match web_fs::File::open("config.json").await {
+        Ok(f) => f,
+        Err(e) => {
+            warn!("no config found: {e:?}");
+            return Ok("No Config".into());
+        }
+    };
+    let mut buf = String::new();
+    if let Err(e) = file.read_to_string(&mut buf).await {
+        warn!("failed to read config.json: {e:?}");
+        return Ok("failed to read".into());
+    }
+
+    let Ok(config) = serde_json::from_str(&buf) else {
+        warn!("failed to deserialize app config, using default");
+        return Ok("failed to deserialize".into());
+    };
+
+    let _ = INIT_DATA.set(config);
+    
+    Ok("Config loaded".into())
 }
 
 #[wasm_bindgen]
