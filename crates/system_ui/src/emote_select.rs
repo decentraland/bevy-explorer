@@ -383,7 +383,7 @@ fn show_emote_ui(
                         }
                         if let Ok((mut text, mut layout)) = text.get_mut(output) {
                             text.0.clone_from(&name);
-                            layout.linebreak = LineBreak::WordBoundary;
+                            layout.linebreak = LineBreak::WordOrCharacter;
                         }
                     },
                 ),
