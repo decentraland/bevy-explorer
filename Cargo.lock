@@ -6045,6 +6045,7 @@ dependencies = [
  "common",
  "console",
  "crc",
+ "futures-lite 1.13.0",
  "ipfs",
  "reqwest 0.12.15",
  "scene_material",
@@ -6053,6 +6054,7 @@ dependencies = [
  "serde_json",
  "tween",
  "urlencoding",
+ "web-fs",
  "zip 2.4.2",
 ]
 
@@ -6215,6 +6217,7 @@ dependencies = [
  "console",
  "downcast-rs 1.2.1",
  "futures-io",
+ "futures-lite 1.13.0",
  "multihash-codetable",
  "platform",
  "reqwest 0.12.15",
@@ -6224,6 +6227,7 @@ dependencies = [
  "url",
  "urlencoding",
  "urn",
+ "web-fs",
  "web-time",
 ]
 

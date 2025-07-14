@@ -1124,6 +1124,15 @@ impl AssetReader for IpfsIo {
                 None => return self.default_io.read(path).await,
             };
 
+            #[cfg(target_arch = "wasm32")]
+            if let Some(indexdb_path) = ipfs_path.to_indexdb() {
+                use futures_lite::io::AsyncReadExt;
+                let mut file = web_fs::File::open(indexdb_path).await?;
+                let mut daft_buffer = Vec::default();
+                file.read_to_end(&mut daft_buffer).await?;
+                return Ok(Box::new(VecReader::new(daft_buffer)));
+            }
+
             let hash = ipfs_path.hash(&*self.context.read().await);
 
             if let Some(cache_path) = self.cache_path() {

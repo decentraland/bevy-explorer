@@ -27,5 +27,9 @@ reqwest = { workspace = true }
 
 zip = { version = "2", default-features = false }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-fs = { workspace = true }
+futures-lite = { workspace = true }
+
 [lints]
 workspace = true

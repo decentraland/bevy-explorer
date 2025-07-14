@@ -248,7 +248,7 @@ fn bake_scene_imposters(
             let Some(region) = oven.unbaked_parcels.pop() else {
                 debug!("no regions left");
                 write_imposter(
-                    ipfas.ipfs_cache_path().unwrap(),
+                    ipfas.ipfs_cache_path(),
                     &oven.hash,
                     IVec2::MAX,
                     0,
@@ -257,7 +257,7 @@ fn bake_scene_imposters(
                 if let Some(output_path) = plugin.zip_output.clone() {
                     save_and_zip_callback::<()>(
                         |_| {},
-                        spec_path(ipfas.ipfs_cache_path().unwrap(), &oven.hash, IVec2::MAX, 0),
+                        spec_path(ipfas.ipfs_cache_path(), &oven.hash, IVec2::MAX, 0),
                         output_path,
                         oven.hash.clone(),
                         IVec2::MAX,
@@ -385,7 +385,7 @@ fn bake_scene_imposters(
                 };
 
                 let path = texture_path(
-                    ipfas.ipfs_cache_path().unwrap(),
+                    ipfas.ipfs_cache_path(),
                     &oven.hash,
                     region.parcel_min(),
                     0,
@@ -441,7 +441,7 @@ fn bake_scene_imposters(
             };
 
             let path = floor_path(
-                ipfas.ipfs_cache_path().unwrap(),
+                ipfas.ipfs_cache_path(),
                 &oven.hash,
                 region.parcel_min(),
                 0,
@@ -506,7 +506,7 @@ fn save_and_zip_callback<T>(
     move |arg: T| {
         save_asset_callback(arg);
 
-        let output_path = zip_path(&zip, &id, parcel, level, crc);
+        let output_path = zip_path(Some(&zip), &id, parcel, level, crc);
         let target_file = path.file_name().unwrap().to_string_lossy().into_owned();
 
         // create folder if required
@@ -621,7 +621,7 @@ fn bake_imposter_imposter(
             }
 
             write_imposter(
-                ipfas.ipfs_cache_path().unwrap(),
+                ipfas.ipfs_cache_path(),
                 &current_realm.about_url,
                 parcel,
                 level,
@@ -631,7 +631,7 @@ fn bake_imposter_imposter(
                 save_and_zip_callback::<()>(
                     |_| {},
                     spec_path(
-                        ipfas.ipfs_cache_path().unwrap(),
+                        ipfas.ipfs_cache_path(),
                         &current_realm.about_url,
                         parcel,
                         level,
@@ -722,7 +722,7 @@ fn bake_imposter_imposter(
             };
 
             let path = texture_path(
-                ipfas.ipfs_cache_path().unwrap(),
+                ipfas.ipfs_cache_path(),
                 &current_realm.about_url,
                 *parcel,
                 *level,
@@ -782,7 +782,7 @@ fn bake_imposter_imposter(
             };
 
             let path = floor_path(
-                ipfas.ipfs_cache_path().unwrap(),
+                ipfas.ipfs_cache_path(),
                 &current_realm.about_url,
                 *parcel,
                 *level,
@@ -911,7 +911,7 @@ fn pick_imposter_to_bake(
             // delete prev zip if exists
             if let Some(output_path) = plugin.zip_output.clone() {
                 let path = zip_path(
-                    &output_path,
+                    Some(&output_path),
                     &current_realm.about_url,
                     imposter.parcel,
                     imposter.level,

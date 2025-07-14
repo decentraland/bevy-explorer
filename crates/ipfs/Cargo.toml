@@ -34,3 +34,7 @@ web-time = { workspace = true }
 url = "2.4.0"
 downcast-rs = "1.2"
 futures-io = "0.3"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-fs = { workspace = true }
+futures-lite = { workspace = true }

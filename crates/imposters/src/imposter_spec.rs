@@ -5,16 +5,20 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::anyhow;
 use bevy::{
     asset::AsyncReadExt,
     platform::{collections::HashMap, hash::FixedHasher},
     prelude::*,
 };
 use common::structs::IVec2Arg;
-use ipfs::IpfsIo;
+use ipfs::{ipfs_path::IpfsPath, IpfsIo};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use zip::ZipArchive;
+
+#[cfg(not(target_arch = "wasm32"))]
+use async_fs as platform_fs;
+#[cfg(target_arch = "wasm32")]
+use web_fs as platform_fs;
 
 #[derive(Debug, Serialize, Deserialize, Component, Clone)]
 pub struct ImposterSpec {
@@ -54,8 +58,8 @@ where
 
 impl BakedScene {}
 
-fn file_root(cache_path: &Path, id: &str, level: usize) -> PathBuf {
-    let mut path = cache_path.to_owned();
+fn file_root(cache_path: Option<&Path>, as_ipfs_path: bool, id: &str, level: usize) -> PathBuf {
+    let mut path = cache_path.map(ToOwned::to_owned).unwrap_or_default();
 
     if level == 0 {
         path.push("imposters");
@@ -67,11 +71,21 @@ fn file_root(cache_path: &Path, id: &str, level: usize) -> PathBuf {
         path.push(urlencoding::encode(id).into_owned());
         path.push(format!("{level}"));
     }
-    path
+
+    if cache_path.is_none() && as_ipfs_path {
+        PathBuf::from(&IpfsPath::new_indexdb(path))
+    } else {
+        path
+    }
 }
 
-pub(crate) fn spec_path(cache_path: &Path, id: &str, parcel: IVec2, level: usize) -> PathBuf {
-    let mut path = file_root(cache_path, id, level);
+pub(crate) fn spec_path(
+    cache_path: Option<&Path>,
+    id: &str,
+    parcel: IVec2,
+    level: usize,
+) -> PathBuf {
+    let mut path = file_root(cache_path, false, id, level);
     if level == 0 {
         path.push("spec.json");
     } else {
@@ -80,26 +94,36 @@ pub(crate) fn spec_path(cache_path: &Path, id: &str, parcel: IVec2, level: usize
     path
 }
 
-pub(crate) fn texture_path(cache_path: &Path, id: &str, parcel: IVec2, level: usize) -> PathBuf {
-    let mut path = file_root(cache_path, id, level);
+pub(crate) fn texture_path(
+    cache_path: Option<&Path>,
+    id: &str,
+    parcel: IVec2,
+    level: usize,
+) -> PathBuf {
+    let mut path = file_root(cache_path, true, id, level);
     path.push(format!("{},{}.boimp", parcel.x, parcel.y));
     path
 }
 
-pub(crate) fn floor_path(cache_path: &Path, id: &str, parcel: IVec2, level: usize) -> PathBuf {
-    let mut path = file_root(cache_path, id, level);
+pub(crate) fn floor_path(
+    cache_path: Option<&Path>,
+    id: &str,
+    parcel: IVec2,
+    level: usize,
+) -> PathBuf {
+    let mut path = file_root(cache_path, true, id, level);
     path.push(format!("{},{}-floor.boimp", parcel.x, parcel.y));
     path
 }
 
 pub(crate) fn zip_path(
-    cache_path: &Path,
+    cache_path: Option<&Path>,
     id: &str,
     parcel: IVec2,
     level: usize,
     crc: Option<u32>,
 ) -> PathBuf {
-    let mut path = file_root(cache_path, id, level);
+    let mut path = file_root(cache_path, false, id, level);
     if level == 0 {
         path.push("scene.zip");
     } else {
@@ -109,7 +133,7 @@ pub(crate) fn zip_path(
 }
 
 pub(crate) fn write_imposter(
-    cache_path: &Path,
+    cache_path: Option<&Path>,
     id: &str,
     parcel: IVec2,
     level: usize,
@@ -157,7 +181,7 @@ pub async fn load_imposter_remote(
     crc: Option<u32>,
 ) -> Result<(), anyhow::Error> {
     let client = ipfs.client();
-    let zip_file = zip_path(&PathBuf::new(), id, parcel, level, crc)
+    let zip_file = zip_path(None, id, parcel, level, crc)
         .to_string_lossy()
         .into_owned()
         .replace("\\", "/");
@@ -173,13 +197,30 @@ pub async fn load_imposter_remote(
     }
     let bytes = response.bytes().await?;
     let mut zip = ZipArchive::new(Cursor::new(bytes))?;
-    let root = file_root(
-        ipfs.cache_path().ok_or(anyhow!("no cache root"))?,
-        id,
-        level,
-    );
-    async_fs::create_dir_all(&root).await?;
+    let root = file_root(ipfs.cache_path(), false, id, level);
+    platform_fs::create_dir_all(&root).await?;
+
+    #[cfg(not(target_arch = "wasm32"))]
     zip.extract(root)?;
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        for i in 0..zip.len() {
+            use std::io::Read;
+            use futures_lite::io::AsyncWriteExt;
+
+            let mut file = zip.by_index(i)?;
+            let outpath = root.clone().join(
+                file.enclosed_name()
+                    .ok_or(anyhow::anyhow!("bad filename in zip?"))?,
+            );
+            let mut outfile = platform_fs::File::create(&outpath).await?;
+            let mut buf = Vec::default();
+            file.read_to_end(&mut buf)?;
+            outfile.write_all(&buf).await?;
+        }
+    }
+
     Ok(())
 }
 
@@ -190,8 +231,8 @@ pub async fn load_imposter_local(
     level: usize,
     required_crc: Option<u32>,
 ) -> Option<BakedScene> {
-    let path = spec_path(ipfs.cache_path()?, id, parcel, level);
-    if let Ok(mut file) = async_fs::File::open(&path).await {
+    let path = spec_path(ipfs.cache_path(), id, parcel, level);
+    if let Ok(mut file) = platform_fs::File::open(&path).await {
         let mut buf = Vec::default();
         if file.read_to_end(&mut buf).await.is_ok() {
             if let Ok(baked_scene) = serde_json::from_slice::<BakedScene>(&buf) {

@@ -77,6 +77,9 @@ pub enum IpfsType {
         url: String,
         ext: String,
     },
+    IndexDb {
+        file_path: String,
+    },
 }
 
 impl IpfsType {
@@ -92,6 +95,7 @@ impl IpfsType {
             IpfsType::ContentFile { .. } | IpfsType::Entity { .. } => "/contents/",
             IpfsType::UrlCached { .. } => "",
             IpfsType::UrlUncached { .. } => "",
+            IpfsType::IndexDb { .. } => "",
         }
     }
 
@@ -122,6 +126,7 @@ impl IpfsType {
             IpfsType::UrlCached { url, .. } | IpfsType::UrlUncached { url, .. } => {
                 Ok(format!("{}", urlencoding::decode(url)?))
             }
+            IpfsType::IndexDb { .. } => panic!(),
         }
     }
 
@@ -142,8 +147,8 @@ impl IpfsType {
                     Some(Cow::Owned(BASE64_URL_SAFE_NO_PAD.encode(digest.digest())))
                 }),
             IpfsType::UrlCached { hash, .. } => Some(Cow::Borrowed(hash)),
-            IpfsType::UrlUncached { .. } => None,
             IpfsType::Entity { hash, .. } => Some(Cow::Borrowed(hash)),
+            IpfsType::UrlUncached { .. } | IpfsType::IndexDb { .. } => None,
         };
         x
     }
@@ -152,7 +157,9 @@ impl IpfsType {
     fn context_hash(&self) -> Option<&str> {
         match self {
             IpfsType::ContentFile { content_hash, .. } => Some(content_hash),
-            IpfsType::UrlCached { .. } | IpfsType::UrlUncached { .. } => None,
+            IpfsType::UrlCached { .. }
+            | IpfsType::UrlUncached { .. }
+            | IpfsType::IndexDb { .. } => None,
             IpfsType::Entity { hash, .. } => Some(hash),
         }
     }
@@ -162,7 +169,9 @@ impl IpfsType {
             IpfsType::ContentFile { .. } => {
                 anyhow::bail!("Can't get hash for content files without context")
             }
-            IpfsType::UrlCached { .. } | IpfsType::UrlUncached { .. } => Ok(None),
+            IpfsType::UrlCached { .. }
+            | IpfsType::UrlUncached { .. }
+            | IpfsType::IndexDb { .. } => Ok(None),
             IpfsType::Entity { hash, .. } => Ok(Some(hash)),
         }
     }
@@ -204,6 +213,7 @@ impl From<&IpfsType> for PathBuf {
                 urlencoding::encode(url).into_owned(),
                 ext
             )),
+            IpfsType::IndexDb { file_path } => PathBuf::from("$indexdb").join(file_path),
         }
     }
 }
@@ -290,6 +300,12 @@ where
                     ext: ext.to_owned(),
                 })
             }
+            "$indexdb" => Ok(IpfsType::IndexDb {
+                file_path: components
+                    .map(ToOwned::to_owned)
+                    .collect::<Vec<_>>()
+                    .join("/"),
+            }),
             _ => anyhow::bail!("invalid ipfs type {ty:?}"),
         }
     }
@@ -329,6 +345,15 @@ impl IpfsPath {
     pub fn new(ipfs_type: IpfsType) -> Self {
         Self {
             ipfs_type,
+            key_values: Default::default(),
+        }
+    }
+
+    pub fn new_indexdb(path: PathBuf) -> Self {
+        Self {
+            ipfs_type: IpfsType::IndexDb {
+                file_path: path.to_string_lossy().into_owned(),
+            },
             key_values: Default::default(),
         }
     }
@@ -437,6 +462,13 @@ impl IpfsPath {
     pub fn with_keyvalue(mut self, key: IpfsKey, value: String) -> Self {
         self.key_values.insert(key, value);
         self
+    }
+
+    pub fn to_indexdb(&self) -> Option<String> {
+        match &self.ipfs_type {
+            IpfsType::IndexDb { file_path } => Some(file_path.clone()),
+            _ => None,
+        }
     }
 
     pub fn to_url(&self, context: &IpfsContext) -> Result<String, anyhow::Error> {

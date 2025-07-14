@@ -2,7 +2,6 @@ use super::WorkerContext;
 use bevy::{log::warn, platform::collections::HashMap};
 use dcl::interface::crdt_context::CrdtContext;
 use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
 use wallet::Wallet;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
