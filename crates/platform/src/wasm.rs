@@ -1,18 +1,15 @@
 use std::time::Duration;
 
 use anyhow::anyhow;
-use bevy::{
-    ecs::component::Component,
-    log::warn,
-};
+use bevy::{ecs::component::Component, log::warn};
 use common::structs::AppConfig;
 use futures_util::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
 pub use tungstenite::client::IntoClientRequest;
-use ws_stream_wasm::{WsMessage, WsMeta, WsStream};
 use wasm_bindgen_futures::spawn_local;
+use ws_stream_wasm::{WsMessage, WsMeta, WsStream};
 pub struct WebSocket {
     _meta: WsMeta,
     stream: WsStream,
@@ -144,7 +141,10 @@ pub fn write_config_file(config: &AppConfig) {
             }
         };
 
-        if let Err(e) = f.write_all(serde_json::to_string(&config).unwrap().as_bytes()).await {
+        if let Err(e) = f
+            .write_all(serde_json::to_string(&config).unwrap().as_bytes())
+            .await
+        {
             warn!("couldn't write config file: {e:?}");
         }
     })

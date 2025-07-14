@@ -384,12 +384,8 @@ fn bake_scene_imposters(
                     ..Default::default()
                 };
 
-                let path = texture_path(
-                    ipfas.ipfs_cache_path(),
-                    &oven.hash,
-                    region.parcel_min(),
-                    0,
-                );
+                let path =
+                    texture_path(ipfas.ipfs_cache_path(), &oven.hash, region.parcel_min(), 0);
                 let _ = std::fs::create_dir_all(path.parent().unwrap());
                 let save_asset_callback = camera.save_asset_callback(&path, true, true);
 
@@ -440,12 +436,7 @@ fn bake_scene_imposters(
                 ..Default::default()
             };
 
-            let path = floor_path(
-                ipfas.ipfs_cache_path(),
-                &oven.hash,
-                region.parcel_min(),
-                0,
-            );
+            let path = floor_path(ipfas.ipfs_cache_path(), &oven.hash, region.parcel_min(), 0);
             let save_asset_callback = top_down.save_asset_callback(&path, true, true);
 
             if let Some(output_path) = plugin.zip_output.clone() {

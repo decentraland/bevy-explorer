@@ -1,11 +1,11 @@
 use super::WorkerContext;
 use bevy::{log::warn, platform::collections::HashMap};
 use dcl::interface::crdt_context::CrdtContext;
+use futures_lite::io::{AsyncReadExt, AsyncWriteExt};
 use serde::{Deserialize, Serialize};
 use wallet::Wallet;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use futures_lite::io::{AsyncReadExt, AsyncWriteExt};
 
 // wrap localStorage to include player address in all operations
 // TODO: init / store

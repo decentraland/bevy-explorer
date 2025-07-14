@@ -44,6 +44,7 @@ use comms::{
     CommsPlugin,
 };
 use console::{ConsolePlugin, DoAddConsoleCommand};
+use futures_lite::io::AsyncReadExt;
 use input_manager::InputManagerPlugin;
 use ipfs::{IpfsAssetServer, IpfsIoPlugin};
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
@@ -59,7 +60,6 @@ use uuid::Uuid;
 use visuals::VisualsPlugin;
 use wallet::WalletPlugin;
 use world_ui::WorldUiPlugin;
-use futures_lite::io::AsyncReadExt;
 
 fn main_inner(
     server: &str,
@@ -513,7 +513,7 @@ pub async fn engine_init() -> Result<JsValue, JsValue> {
     };
 
     let _ = INIT_DATA.set(config);
-    
+
     Ok("Config loaded".into())
 }
 

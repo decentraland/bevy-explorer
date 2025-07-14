@@ -206,8 +206,8 @@ pub async fn load_imposter_remote(
     #[cfg(target_arch = "wasm32")]
     {
         for i in 0..zip.len() {
-            use std::io::Read;
             use futures_lite::io::AsyncWriteExt;
+            use std::io::Read;
 
             let mut file = zip.by_index(i)?;
             let outpath = root.clone().join(
