@@ -135,6 +135,14 @@ fn main_inner(
     let wasm_loader_handle =
         with_thread_loader.then(|| WASM_ASSET_LOADER_HANDLE.get().unwrap().clone());
 
+    // on wasm we need to explicitly specify key binds for the platform
+    let text_bindings = if platform.contains("mac") {
+        bevy_simple_text_input::TextInputNavigationBindings::macos_default()
+    } else {
+        bevy_simple_text_input::TextInputNavigationBindings::non_macos_default()
+    };
+    app.insert_resource(text_bindings);
+
     app.insert_resource(Version(version.clone()))
         .insert_resource(final_config.audio.clone())
         .add_plugins(
