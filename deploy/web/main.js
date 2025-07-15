@@ -161,7 +161,15 @@ async function run() {
         `[Main JS] "Go" button clicked. Initial Realm: "${initialRealm}", Location: "${location}", System Scene: "${systemScene}"`
       );
       hideSettings();
-      engine_run(initialRealm, location, systemScene, true, 1e6);
+
+      const platform = (() => {
+        if (navigator.userAgent.includes("Mac")) return "macos";
+        if (navigator.userAgent.includes("Win")) return "windows";
+        if (navigator.userAgent.includes("Linux")) return "linux";
+        return "unknown";
+      })();
+
+      engine_run(platform, initialRealm, location, systemScene, true, 1e6);
     };
   } catch (error) {
     console.error(

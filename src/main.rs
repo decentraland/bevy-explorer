@@ -78,7 +78,8 @@ static SESSION_LOG: OnceLock<String> = OnceLock::new();
 pub fn version() -> String {
     #[cfg(not(debug_assertions))]
     return format!(
-        "{}{}",
+        "bevy-{}-native-{}{}",
+        std::env::consts::OS,
         env!("BEVY_EXPLORER_VERSION"),
         (env!("BEVY_EXPLORER_LOCAL_MODIFICATION") == "true")
             .then_some(format!("-{}", build_time_utc!("%Y-%m-%d %H:%M")))
