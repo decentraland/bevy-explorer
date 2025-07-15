@@ -737,7 +737,7 @@ pub fn make_text_section(
         TextLayout::new(
             justify,
             if wrapping {
-                LineBreak::WordBoundary
+                LineBreak::WordOrCharacter
             } else {
                 LineBreak::NoWrap
             },

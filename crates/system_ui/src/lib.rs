@@ -38,6 +38,7 @@ use oow::OowUiPlugin;
 use permission_manager::PermissionPlugin;
 use profile_detail::ProfileDetailPlugin;
 use scene_runner::Toaster;
+use system_bridge::NativeUi;
 use toasts::ToastsPlugin;
 use tooltip::ToolTipPlugin;
 
@@ -79,10 +80,13 @@ impl Plugin for SystemUiPlugin {
 struct SystemUiRoot(Entity);
 
 #[allow(clippy::type_complexity)]
-fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>) {
+fn setup(mut commands: Commands, mut ui_root: ResMut<SystemUiRoot>, native_ui: Res<NativeUi>) {
+    let show = native_ui.login;
+
     let root = commands
         .spawn((
             Node {
+                display: if show { Display::Flex } else { Display::None },
                 flex_direction: FlexDirection::Column,
                 justify_content: JustifyContent::SpaceBetween,
                 width: Val::Percent(100.0),

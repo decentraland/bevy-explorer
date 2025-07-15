@@ -124,9 +124,9 @@ async function run() {
     await init({ module_or_path: compiledModule, memory: sharedMemory });
     console.log("[Main JS] Main application WebAssembly module initialized.");
 
-    engine_init();
+    let res = await engine_init();
     console.log(
-      "[Main JS] Main application WebAssembly module custom initialized."
+      "[Main JS] Main application WebAssembly module custom initialized: ", res
     );
 
     // start asset loader thread

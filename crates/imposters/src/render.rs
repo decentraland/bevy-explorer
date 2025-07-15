@@ -674,7 +674,7 @@ fn render_imposters(
             if let Some(spec) = maybe_spec {
                 // spawn imposter
                 let path = texture_path(
-                    ipfas.ipfs_cache_path().unwrap(),
+                    ipfas.ipfs_cache_path(),
                     ready.scene.as_ref().unwrap_or(&current_realm.about_url),
                     req.parcel,
                     req.level,
@@ -719,7 +719,7 @@ fn render_imposters(
                     + Vec2::new(size, -size) * 0.5;
 
                 let path = floor_path(
-                    ipfas.ipfs_cache_path().unwrap(),
+                    ipfas.ipfs_cache_path(),
                     ready.scene.as_ref().unwrap_or(&current_realm.about_url),
                     req.parcel,
                     req.level,

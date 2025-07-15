@@ -1,15 +1,15 @@
 use std::time::Duration;
 
 use anyhow::anyhow;
-use bevy::ecs::component::Component;
+use bevy::{ecs::component::Component, log::warn};
 use common::structs::AppConfig;
 use futures_util::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
 pub use tungstenite::client::IntoClientRequest;
+use wasm_bindgen_futures::spawn_local;
 use ws_stream_wasm::{WsMessage, WsMeta, WsStream};
-
 pub struct WebSocket {
     _meta: WsMeta,
     stream: WsStream,
@@ -128,8 +128,26 @@ pub fn compat<F>(f: F) -> F {
 pub fn project_directories() -> Option<directories::ProjectDirs> {
     None
 }
-pub fn write_config_file(_config: &AppConfig) {
-    // do nothing
+pub fn write_config_file(config: &AppConfig) {
+    use futures_lite::io::AsyncWriteExt;
+    let config = config.clone();
+
+    spawn_local(async move {
+        let mut f = match web_fs::File::create("config.json").await {
+            Ok(f) => f,
+            Err(e) => {
+                warn!("couldn't create config file: {e:?}");
+                return;
+            }
+        };
+
+        if let Err(e) = f
+            .write_all(serde_json::to_string(&config).unwrap().as_bytes())
+            .await
+        {
+            warn!("couldn't write config file: {e:?}");
+        }
+    })
 }
 
 // dummy prepass markers for webgl

@@ -47,7 +47,7 @@ impl DuiTemplate for TextTemplate {
         let wrap = props.take_as::<bool>(ctx, "wrap")?.unwrap_or(true);
         commands.modify_component(move |text: &mut TextLayout| {
             text.linebreak = if wrap {
-                LineBreak::WordBoundary
+                LineBreak::WordOrCharacter
             } else {
                 LineBreak::NoWrap
             };

@@ -163,6 +163,7 @@ serde_bytes = "0.11"
 web-sys = { version = "0.3", features = ["Performance", "Window"] }
 web-time = "1.1"
 copypwasmta = { git = "https://github.com/robtfm/copypwasmta" }
+web-fs = "0.2.6"
 
 [dependencies]
 analytics = { workspace = true }
@@ -230,6 +231,7 @@ wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 once_cell = { workspace = true }
 async-channel = "2"
+web-fs = { workspace = true }
 
 [build-dependencies]
 prost-build = "0.11.8"

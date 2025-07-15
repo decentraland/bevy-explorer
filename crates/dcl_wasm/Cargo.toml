@@ -31,6 +31,7 @@ multihash-codetable = { workspace = true }
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 anyhow = { workspace = true }
+web-fs = { workspace = true }
 
 serde-wasm-bindgen = { workspace = true }
 js-sys = { workspace = true }
