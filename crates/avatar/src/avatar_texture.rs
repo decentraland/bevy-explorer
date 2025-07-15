@@ -318,7 +318,7 @@ struct SnapshotResult {
 fn snapshot(
     mut commands: Commands,
     mut booths: Query<&mut BoothInstance>,
-    mut avatars: Query<(Entity, &mut SnapshotTimer, &AvatarSelection)>,
+    mut avatars: Query<(Entity, &mut SnapshotTimer, &AvatarSelection, &RenderLayers)>,
     frame: Res<FrameCount>,
     mut local_sender: Local<Option<tokio::sync::mpsc::Sender<SnapshotResult>>>,
     mut local_receiver: Local<Option<tokio::sync::mpsc::Receiver<SnapshotResult>>>,
@@ -331,7 +331,7 @@ fn snapshot(
     }
 
     // take any pending shots
-    for (ent, mut timer, _selection) in avatars.iter_mut() {
+    for (ent, mut timer, _selection, render_layers) in avatars.iter_mut() {
         if frame.0 >= timer.0 {
             if timer.1.is_none() {
                 // Spawn secondary windows
@@ -376,6 +376,7 @@ fn snapshot(
                             target: RenderTarget::Window(WindowRef::Entity(window)),
                             ..default()
                         },
+                        render_layers.clone(),
                     ))
                     .id()
             };
