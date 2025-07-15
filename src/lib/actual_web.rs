@@ -1,10 +1,11 @@
-use analytics::segment_system::SegmentConfig;
+use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
 use bevy::{
     app::Propagate,
     core_pipeline::{
         bloom::Bloom,
         tonemapping::{DebandDither, Tonemapping},
     },
+    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     pbr::ShadowFilteringMethod,
     prelude::*,
     render::{
@@ -62,6 +63,7 @@ use wallet::WalletPlugin;
 use world_ui::WorldUiPlugin;
 
 fn main_inner(
+    platform: &str,
     server: &str,
     location: &str,
     system_scene: &str,
@@ -128,7 +130,7 @@ fn main_inner(
         });
     }
 
-    let version = "webgpu proof of concept".to_string();
+    let version = format!("bevy-{platform}-web-{}", env!("BEVY_EXPLORER_VERSION"));
 
     let wasm_loader_handle =
         with_thread_loader.then(|| WASM_ASSET_LOADER_HANDLE.get().unwrap().clone());
@@ -169,10 +171,11 @@ fn main_inner(
         inputs: final_config.inputs.0.clone().into_iter().collect(),
     });
 
+    app.add_plugins(MetricsPlugin);
     app.insert_resource(SegmentConfig::new(
         final_config.user_id.clone(),
         Uuid::new_v4().to_string(),
-        "web test".to_owned(),
+        version.clone(),
     ));
 
     app.insert_resource(PreviewMode {
@@ -197,6 +200,9 @@ fn main_inner(
 
     app.insert_resource(final_config);
     app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));
+
+    app.add_plugins(FrameTimeDiagnosticsPlugin::default());
+    app.add_plugins(LogDiagnosticsPlugin::default());
 
     app.add_plugins(UtilsPlugin)
         .add_plugins(InputManagerPlugin)
@@ -519,11 +525,19 @@ pub async fn engine_init() -> Result<JsValue, JsValue> {
 
 #[wasm_bindgen]
 pub fn engine_run(
+    platform: &str,
     realm: &str,
     location: &str,
     system_scene: &str,
     with_thread_loader: bool,
     rabpf: usize,
 ) {
-    main_inner(realm, location, system_scene, with_thread_loader, rabpf);
+    main_inner(
+        platform,
+        realm,
+        location,
+        system_scene,
+        with_thread_loader,
+        rabpf,
+    );
 }
