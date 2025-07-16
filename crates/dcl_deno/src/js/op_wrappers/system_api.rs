@@ -40,6 +40,7 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_read_chat_stream(),
             op_send_chat(),
             op_get_profile_extras(),
+            op_quit(),
         ]
     } else {
         Vec::default()
@@ -246,4 +247,9 @@ pub async fn op_get_profile_extras(
     state: Rc<RefCell<OpState>>,
 ) -> Result<std::collections::HashMap<String, serde_json::Value>, deno_core::anyhow::Error> {
     dcl::js::system_api::op_get_profile_extras(state).await
+}
+
+#[op2(fast)]
+pub fn op_quit(state: Rc<RefCell<OpState>>) {
+    dcl::js::system_api::op_quit(state);
 }
