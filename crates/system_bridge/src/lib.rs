@@ -3,7 +3,7 @@ pub mod settings;
 use std::collections::VecDeque;
 
 use bevy::{
-    app::{Plugin, Update},
+    app::{AppExit, Plugin, Update},
     ecs::{event::EventReader, system::Local},
     log::debug,
     prelude::{Event, EventWriter, ResMut, Resource},
@@ -30,7 +30,7 @@ impl Plugin for SystemBridgePlugin {
         app.add_event::<SystemApi>();
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         app.insert_resource(SystemBridge { sender, receiver });
-        app.add_systems(Update, (post_events, handle_home_scene));
+        app.add_systems(Update, (post_events, handle_home_scene, handle_exit));
 
         if self.bare {
             return;
@@ -100,6 +100,7 @@ pub enum SystemApi {
     GetSystemActionStream(tokio::sync::mpsc::UnboundedSender<SystemActionEvent>),
     GetChatStream(tokio::sync::mpsc::UnboundedSender<ChatMessage>),
     SendChat(String, String),
+    Quit,
 }
 
 #[derive(Resource)]
@@ -183,5 +184,16 @@ fn handle_home_scene(mut ev: EventReader<SystemApi>, mut config: ResMut<AppConfi
             }
             _ => (),
         }
+    }
+}
+
+fn handle_exit(mut ev: EventReader<SystemApi>, mut exit: EventWriter<AppExit>) {
+    if ev
+        .read()
+        .filter(|e| matches!(e, SystemApi::Quit))
+        .last()
+        .is_some()
+    {
+        exit.write_default();
     }
 }

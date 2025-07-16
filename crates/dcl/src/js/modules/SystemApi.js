@@ -258,3 +258,7 @@ module.exports.getChatStream = async function() {
 module.exports.sendChat = async function(message, channel) {
     Deno.core.ops.op_send_chat(message, channel ?? "Nearby")
 }
+
+module.exports.quit = function() {
+    Deno.core.ops.op_quit();
+}

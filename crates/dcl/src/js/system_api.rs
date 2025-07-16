@@ -502,3 +502,11 @@ pub async fn op_get_profile_extras(
 
     Ok(profile.extra_fields)
 }
+
+pub fn op_quit(state: Rc<RefCell<impl State>>) {
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::Quit)
+        .unwrap();
+}

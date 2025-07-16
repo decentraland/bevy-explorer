@@ -214,3 +214,8 @@ pub async fn op_get_profile_extras(state: &WorkerContext) -> Result<JsValue, Was
         })
         .map_err(WasmError::from)
 }
+
+#[wasm_bindgen]
+pub fn op_quit(state: &WorkerContext) {
+    dcl::js::system_api::op_quit(state.rc());
+}
