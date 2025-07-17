@@ -37,8 +37,7 @@ use common::{
     inputs::InputMap,
     rpc::RpcCall,
     structs::{
-        AppConfig, CursorLocks, GraphicsSettings, PrimaryCamera, PrimaryPlayerRes,
-        SceneGlobalLight, SceneLoadDistance, TimeOfDay, ToolTips,
+        AppConfig, CursorLocks, GraphicsSettings, PermissionUsed, PrimaryCamera, PrimaryPlayerRes, SceneGlobalLight, SceneLoadDistance, TimeOfDay, ToolTips
     },
 };
 use comms::{preview::PreviewMode, CommsPlugin};
@@ -140,6 +139,7 @@ fn init_test_app(entity_json: &str) -> App {
     });
     app.add_event::<RpcCall>();
     app.add_event::<ScrollTargetEvent>();
+    app.add_event::<PermissionUsed>();
     app.insert_resource(SceneLoadDistance {
         load: 1.0,
         unload: 0.0,
