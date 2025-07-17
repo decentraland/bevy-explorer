@@ -1,25 +1,14 @@
 use std::collections::VecDeque;
 
-use crate::{renderer_context::RendererSceneContext, ContainingScene, Toaster};
+use crate::{renderer_context::RendererSceneContext, ContainingScene};
 use bevy::{ecs::system::SystemParam, prelude::*};
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     rpc::RpcResultSender,
-    structs::{
-        AppConfig, PermissionTarget, PermissionType, PrimaryPlayerRes, SettingsTab,
-        ShowSettingsEvent, SystemScene,
-    },
+    structs::{AppConfig, PermissionType, PermissionUsed, PrimaryPlayerRes, SystemScene},
 };
 use ipfs::CurrentRealm;
 use tokio::sync::oneshot::{channel, error::TryRecvError, Receiver};
-use ui_core::ui_actions::{Click, EventCloneExt, On};
-
-#[derive(Clone)]
-pub enum PermissionLevel {
-    Scene(Entity, String),
-    Realm(String),
-    Global,
-}
 
 pub struct PermissionRequest {
     pub realm: String,
@@ -69,8 +58,8 @@ pub struct Permission<'w, 's, T: Send + Sync + 'static> {
     player: Res<'w, PrimaryPlayerRes>,
     scenes: Query<'w, 's, &'static RendererSceneContext>,
     manager: ResMut<'w, PermissionManager>,
-    pub toaster: Toaster<'w, 's>,
     system_scene: Option<Res<'w, SystemScene>>,
+    uses: EventWriter<'w, PermissionUsed>,
 }
 
 impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
@@ -220,23 +209,18 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
             .partition(|(_, perm_ty, _, _)| *perm_ty == ty);
         *self.success = not_matching;
 
-        if let Some(last) = matching.last() {
-            let (_, _, additional, scene) = last;
+        for item in matching.iter() {
+            let (_, _, additional, scene) = item;
             let scene = *scene;
-            if let Some((_, hash, title, is_portable)) = self.get_scene_info(scene) {
+            if let Some((_, hash, _, _)) = self.get_scene_info(scene) {
                 if !self.is_system_scene(hash) {
-                    let portable_name = is_portable.then_some(title);
-                    self.toaster.add_clicky_toast(
-                        format!("{ty:?}"),
-                        ty.on_success(portable_name, additional.as_deref()),
-                        On::<Click>::new(
-                            (move |mut target: ResMut<PermissionTarget>| {
-                                target.scene = Some(scene);
-                                target.ty = Some(ty);
-                            })
-                            .pipe(ShowSettingsEvent(SettingsTab::Permissions).send_value()),
-                        ),
-                    );
+                    let used = PermissionUsed {
+                        ty,
+                        additional: additional.clone(),
+                        scene: hash.to_owned(),
+                        was_allowed: true,
+                    };
+                    self.uses.write(used);
                 }
             }
         }
@@ -250,23 +234,18 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
             .partition(|(_, perm_ty, _)| *perm_ty == ty);
         *self.fail = not_matching;
 
-        if let Some(last) = matching.last() {
-            let (_, _, scene) = last;
+        for item in matching.iter() {
+            let (_, _, scene) = item;
             let scene = *scene;
-            if let Some((_, hash, title, is_portable)) = self.get_scene_info(scene) {
+            if let Some((_, hash, _, _)) = self.get_scene_info(scene) {
                 if !self.is_system_scene(hash) {
-                    let portable_name = is_portable.then_some(title);
-                    self.toaster.add_clicky_toast(
-                        format!("{ty:?}"),
-                        ty.on_fail(portable_name),
-                        On::<Click>::new(
-                            (move |mut target: ResMut<PermissionTarget>| {
-                                target.scene = Some(scene);
-                                target.ty = Some(ty);
-                            })
-                            .pipe(ShowSettingsEvent(SettingsTab::Permissions).send_value()),
-                        ),
-                    );
+                    let used = PermissionUsed {
+                        ty,
+                        additional: None,
+                        scene: hash.to_owned(),
+                        was_allowed: false,
+                    };
+                    self.uses.write(used);
                 }
             }
         }
@@ -275,113 +254,5 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
 
     pub fn iter_pending(&self) -> impl Iterator<Item = &T> + '_ {
         self.pending.iter().map(|(value, ..)| value)
-    }
-}
-
-pub trait PermissionStrings {
-    fn active(&self) -> &str;
-    fn passive(&self) -> &str;
-    fn title(&self) -> &str;
-    fn request(&self) -> String;
-    fn on_success(&self, portable: Option<&str>, additional: Option<&str>) -> String;
-
-    fn on_fail(&self, portable: Option<&str>) -> String;
-    fn description(&self) -> String;
-}
-
-impl PermissionStrings for PermissionType {
-    fn title(&self) -> &str {
-        match self {
-            PermissionType::MovePlayer => "Move Avatar",
-            PermissionType::ForceCamera => "Force Camera",
-            PermissionType::PlayEmote => "Play Emote",
-            PermissionType::SetLocomotion => "Set Locomotion",
-            PermissionType::HideAvatars => "Hide Avatars",
-            PermissionType::DisableVoice => "Disable Voice",
-            PermissionType::Teleport => "Teleport",
-            PermissionType::ChangeRealm => "Change Realm",
-            PermissionType::SpawnPortable => "Spawn Portable Experience",
-            PermissionType::KillPortables => "Manage Portable Experiences",
-            PermissionType::Web3 => "Web3 Transaction",
-            PermissionType::Fetch => "Fetch Data",
-            PermissionType::Websocket => "Open Websocket",
-            PermissionType::OpenUrl => "Open Url",
-            PermissionType::CopyToClipboard => "Copy to Clipboard",
-        }
-    }
-
-    fn request(&self) -> String {
-        format!("The scene wants permission to {}", self.passive())
-    }
-
-    fn description(&self) -> String {
-        format!(
-            "This permission is requested when scene attempts to {}",
-            self.passive()
-        )
-    }
-
-    fn on_success(&self, portable: Option<&str>, additional: Option<&str>) -> String {
-        format!(
-            "{} is {}{}(click to manage)",
-            match portable {
-                Some(portable) => format!("The portable scene {portable}"),
-                None => "The scene".to_owned(),
-            },
-            self.active(),
-            additional
-                .map(|add| format!(": {add} "))
-                .unwrap_or_default(),
-        )
-    }
-    fn on_fail(&self, portable: Option<&str>) -> String {
-        format!(
-            "{} was blocked from {} (click to manage)",
-            match portable {
-                Some(portable) => format!("The portable scene {portable}"),
-                None => "The scene".to_owned(),
-            },
-            self.active()
-        )
-    }
-
-    fn passive(&self) -> &str {
-        match self {
-            PermissionType::MovePlayer => "move your avatar within the scene bounds",
-            PermissionType::ForceCamera => "temporarily change the camera view",
-            PermissionType::PlayEmote => "make your avatar perform an emote",
-            PermissionType::SetLocomotion => "temporarily modify your avatar's locomotion settings",
-            PermissionType::HideAvatars => "temporarily hide player avatars",
-            PermissionType::DisableVoice => "temporarily disable voice chat",
-            PermissionType::Teleport => "teleport you to a new location",
-            PermissionType::ChangeRealm => "move you to a new realm",
-            PermissionType::SpawnPortable => "spawn a portable experience",
-            PermissionType::KillPortables => "manage your active portable experiences",
-            PermissionType::Web3 => "initiate a web3 transaction with your wallet",
-            PermissionType::Fetch => "fetch data from a remote server",
-            PermissionType::Websocket => "open a web socket to communicate with a remote server",
-            PermissionType::OpenUrl => "open a url in your browser",
-            PermissionType::CopyToClipboard => "copy text into the clipboard",
-        }
-    }
-
-    fn active(&self) -> &str {
-        match self {
-            PermissionType::MovePlayer => "moving your avatar",
-            PermissionType::ForceCamera => "enforcing the camera view",
-            PermissionType::PlayEmote => "making your avatar perform an emote",
-            PermissionType::SetLocomotion => "enforcing your locomotion settings",
-            PermissionType::HideAvatars => "hiding some avatars",
-            PermissionType::DisableVoice => "disabling voice communications",
-            PermissionType::Teleport => "teleporting you to a new location",
-            PermissionType::ChangeRealm => "teleporting you to a new realm",
-            PermissionType::SpawnPortable => "spawning a portable experience",
-            PermissionType::KillPortables => "managing your active portables",
-            PermissionType::Web3 => "initiating a web3 transaction",
-            PermissionType::Fetch => "fetching remote data",
-            PermissionType::Websocket => "opening a websocket",
-            PermissionType::OpenUrl => "opening a url in your browser",
-            PermissionType::CopyToClipboard => "copying text into the clipboard",
-        }
     }
 }

@@ -8,6 +8,7 @@ use bevy::{
 use dcl_component::proto_components::sdk::components::common::CameraTransition;
 use ethers_core::abi::Address;
 use serde::{Deserialize, Serialize};
+use strum_macros::EnumIter;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::inputs::InputMapSerialized;
@@ -623,7 +624,7 @@ pub enum PermissionValue {
     Ask,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, EnumIter)]
 pub enum PermissionType {
     MovePlayer,
     ForceCamera,
@@ -640,6 +641,130 @@ pub enum PermissionType {
     Fetch,
     Websocket,
     OpenUrl,
+}
+
+pub trait PermissionStrings {
+    fn active(&self) -> &str;
+    fn passive(&self) -> &str;
+    fn title(&self) -> &str;
+    fn request(&self) -> String;
+    fn on_success(&self, portable: Option<&str>, additional: Option<&str>) -> String;
+
+    fn on_fail(&self, portable: Option<&str>) -> String;
+    fn description(&self) -> String;
+}
+
+impl PermissionStrings for PermissionType {
+    fn title(&self) -> &str {
+        match self {
+            PermissionType::MovePlayer => "Move Avatar",
+            PermissionType::ForceCamera => "Force Camera",
+            PermissionType::PlayEmote => "Play Emote",
+            PermissionType::SetLocomotion => "Set Locomotion",
+            PermissionType::HideAvatars => "Hide Avatars",
+            PermissionType::DisableVoice => "Disable Voice",
+            PermissionType::Teleport => "Teleport",
+            PermissionType::ChangeRealm => "Change Realm",
+            PermissionType::SpawnPortable => "Spawn Portable Experience",
+            PermissionType::KillPortables => "Manage Portable Experiences",
+            PermissionType::Web3 => "Web3 Transaction",
+            PermissionType::Fetch => "Fetch Data",
+            PermissionType::Websocket => "Open Websocket",
+            PermissionType::OpenUrl => "Open Url",
+            PermissionType::CopyToClipboard => "Copy to Clipboard",
+        }
+    }
+
+    fn request(&self) -> String {
+        format!("The scene wants permission to {}", self.passive())
+    }
+
+    fn description(&self) -> String {
+        format!(
+            "This permission is requested when scene attempts to {}",
+            self.passive()
+        )
+    }
+
+    fn on_success(&self, portable: Option<&str>, additional: Option<&str>) -> String {
+        format!(
+            "{} is {}{}(click to manage)",
+            match portable {
+                Some(portable) => format!("The portable scene {portable}"),
+                None => "The scene".to_owned(),
+            },
+            self.active(),
+            additional
+                .map(|add| format!(": {add} "))
+                .unwrap_or_default(),
+        )
+    }
+    fn on_fail(&self, portable: Option<&str>) -> String {
+        format!(
+            "{} was blocked from {} (click to manage)",
+            match portable {
+                Some(portable) => format!("The portable scene {portable}"),
+                None => "The scene".to_owned(),
+            },
+            self.active()
+        )
+    }
+
+    fn passive(&self) -> &str {
+        match self {
+            PermissionType::MovePlayer => "move your avatar within the scene bounds",
+            PermissionType::ForceCamera => "temporarily change the camera view",
+            PermissionType::PlayEmote => "make your avatar perform an emote",
+            PermissionType::SetLocomotion => "temporarily modify your avatar's locomotion settings",
+            PermissionType::HideAvatars => "temporarily hide player avatars",
+            PermissionType::DisableVoice => "temporarily disable voice chat",
+            PermissionType::Teleport => "teleport you to a new location",
+            PermissionType::ChangeRealm => "move you to a new realm",
+            PermissionType::SpawnPortable => "spawn a portable experience",
+            PermissionType::KillPortables => "manage your active portable experiences",
+            PermissionType::Web3 => "initiate a web3 transaction with your wallet",
+            PermissionType::Fetch => "fetch data from a remote server",
+            PermissionType::Websocket => "open a web socket to communicate with a remote server",
+            PermissionType::OpenUrl => "open a url in your browser",
+            PermissionType::CopyToClipboard => "copy text into the clipboard",
+        }
+    }
+
+    fn active(&self) -> &str {
+        match self {
+            PermissionType::MovePlayer => "moving your avatar",
+            PermissionType::ForceCamera => "enforcing the camera view",
+            PermissionType::PlayEmote => "making your avatar perform an emote",
+            PermissionType::SetLocomotion => "enforcing your locomotion settings",
+            PermissionType::HideAvatars => "hiding some avatars",
+            PermissionType::DisableVoice => "disabling voice communications",
+            PermissionType::Teleport => "teleporting you to a new location",
+            PermissionType::ChangeRealm => "teleporting you to a new realm",
+            PermissionType::SpawnPortable => "spawning a portable experience",
+            PermissionType::KillPortables => "managing your active portables",
+            PermissionType::Web3 => "initiating a web3 transaction",
+            PermissionType::Fetch => "fetching remote data",
+            PermissionType::Websocket => "opening a websocket",
+            PermissionType::OpenUrl => "opening a url in your browser",
+            PermissionType::CopyToClipboard => "copying text into the clipboard",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum PermissionLevel {
+    Scene(Entity, String),
+    Realm(String),
+    Global,
+}
+
+#[derive(Clone, Serialize, Deserialize, Event)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionUsed {
+    pub ty: PermissionType,
+    pub additional: Option<String>,
+    pub scene: String,
+    pub was_allowed: bool,
 }
 
 #[derive(Resource)]
