@@ -37,7 +37,8 @@ use common::{
     inputs::InputMap,
     rpc::RpcCall,
     structs::{
-        AppConfig, CursorLocks, GraphicsSettings, PermissionUsed, PrimaryCamera, PrimaryPlayerRes, SceneGlobalLight, SceneLoadDistance, TimeOfDay, ToolTips
+        AppConfig, CursorLocks, GraphicsSettings, PermissionUsed, PrimaryCamera, PrimaryPlayerRes,
+        SceneGlobalLight, SceneLoadDistance, TimeOfDay, ToolTips,
     },
 };
 use comms::{preview::PreviewMode, CommsPlugin};
