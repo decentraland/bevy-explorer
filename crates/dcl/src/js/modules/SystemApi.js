@@ -262,3 +262,47 @@ module.exports.sendChat = async function(message, channel) {
 module.exports.quit = function() {
     Deno.core.ops.op_quit();
 }
+
+module.exports.getPermissionRequestStream = async function() {
+  const rid = await Deno.core.ops.op_get_permission_request_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_permission_request_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}
+
+module.exports.getPermissionUsedStream = async function() {
+  const rid = await Deno.core.ops.op_get_permission_used_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_permission_used_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}
+
+module.exports.setSinglePermission = function(body) {
+    Deno.core.ops.op_set_single_permission(body.id, body.allow);
+}
+
+module.exports.setPermanentPermission = function(body) {
+    Deno.core.ops.op_set_permanent_permission(body.level, body.value, body.ty, body.allow)
+}
+
+module.exports.getPermanentPermissions = function(body) {
+    return Deno.core.ops.op_get_permanent_permissions(body.level, body.value);
+}
+
+module.exports.getPermissionTypes = function() {
+    return Deno.core.ops.getPermissionTypes();
+}

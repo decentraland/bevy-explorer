@@ -2,16 +2,13 @@ use bevy::prelude::*;
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     structs::{
-        AppConfig, PermissionTarget, PermissionType, PermissionValue, PrimaryPlayerRes, SettingsTab,
+        AppConfig, PermissionLevel, PermissionStrings, PermissionTarget, PermissionType,
+        PermissionValue, PrimaryPlayerRes, SettingsTab,
     },
     util::{ModifyComponentExt, TryPushChildrenEx},
 };
 use ipfs::CurrentRealm;
-use scene_runner::{
-    permissions::{PermissionLevel, PermissionStrings},
-    renderer_context::RendererSceneContext,
-    ContainingScene,
-};
+use scene_runner::{renderer_context::RendererSceneContext, ContainingScene};
 use ui_core::{
     bound_node::BoundedNode,
     interact_style::set_interaction_style,
@@ -133,7 +130,7 @@ fn set_permission_settings_content(
                              enabled: bool|
          -> DuiProps {
             let current_value = match &level {
-                PermissionLevel::Scene(_, hash) => config
+                PermissionLevel::Scene(hash) => config
                     .scene_permissions
                     .get(hash)
                     .and_then(|sp| sp.get(&ty))
@@ -187,7 +184,7 @@ fn set_permission_settings_content(
                             };
 
                             let (current_value, dict) = match &level {
-                                PermissionLevel::Scene(_, hash) => {
+                                PermissionLevel::Scene(hash) => {
                                     let dict =
                                         config.0.scene_permissions.entry(hash.clone()).or_default();
                                     (dict.get(&ty).copied(), dict)
@@ -247,19 +244,9 @@ fn set_permission_settings_content(
             let hilight = target.ty == Some(ty);
             let mut props = DuiProps::default().with_prop("permission-name", ty.title().to_owned());
             if let Some(hash) = scene_hash.as_ref() {
-                props = spawn_setting(
-                    props,
-                    ty,
-                    PermissionLevel::Scene(scene_ent.unwrap(), hash.clone()),
-                    true,
-                );
+                props = spawn_setting(props, ty, PermissionLevel::Scene(hash.clone()), true);
             } else {
-                props = spawn_setting(
-                    props,
-                    ty,
-                    PermissionLevel::Scene(Entity::PLACEHOLDER, String::default()),
-                    false,
-                );
+                props = spawn_setting(props, ty, PermissionLevel::Scene(String::default()), false);
             }
             if is_portable {
                 props = spawn_setting(

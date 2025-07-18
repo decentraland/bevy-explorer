@@ -219,3 +219,77 @@ pub async fn op_get_profile_extras(state: &WorkerContext) -> Result<JsValue, Was
 pub fn op_quit(state: &WorkerContext) {
     dcl::js::system_api::op_quit(state.rc());
 }
+
+#[wasm_bindgen]
+pub async fn op_get_permission_request_stream(state: &WorkerContext) -> u32 {
+    dcl::js::system_api::op_get_permission_request_stream(state.rc()).await
+}
+
+#[wasm_bindgen]
+pub async fn op_read_permission_request_stream(
+    state: &WorkerContext,
+    rid: u32,
+) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_read_permission_request_stream(state.rc(), rid).await)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_permission_used_stream(state: &WorkerContext) -> u32 {
+    dcl::js::system_api::op_get_permission_used_stream(state.rc()).await
+}
+
+#[wasm_bindgen]
+pub async fn op_read_permission_used_stream(
+    state: &WorkerContext,
+    rid: u32,
+) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_read_permission_used_stream(state.rc(), rid).await)
+}
+
+#[wasm_bindgen]
+pub fn op_set_single_permission(state: &WorkerContext, id: usize, allow: bool) {
+    dcl::js::system_api::op_set_single_permission(state.rc(), id, allow);
+}
+
+#[wasm_bindgen]
+pub fn op_set_permanent_permission(
+    state: &WorkerContext,
+    level: &str,
+    value: Option<String>,
+    permission_type: JsValue,
+    allow: JsValue,
+) -> Result<(), WasmError> {
+    serde_parse!(permission_type);
+    serde_parse!(allow);
+    dcl::js::system_api::op_set_permanent_permission(
+        state.rc(),
+        level,
+        value,
+        permission_type,
+        allow,
+    )
+    .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
+pub fn op_get_permanent_permissions(
+    state: &WorkerContext,
+    level: &str,
+    value: Option<String>,
+) -> Result<js_sys::Array, WasmError> {
+    dcl::js::system_api::op_get_permanent_permissions(state.rc(), level, value)
+        .map(|r| {
+            r.into_iter()
+                .map(|v| serde_wasm_bindgen::to_value(&v).unwrap())
+                .collect()
+        })
+        .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
+pub fn op_get_permission_types(_: &WorkerContext) -> js_sys::Array {
+    dcl::js::system_api::op_get_permission_types()
+        .into_iter()
+        .map(|v| serde_wasm_bindgen::to_value(&v).unwrap())
+        .collect()
+}

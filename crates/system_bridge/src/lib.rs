@@ -12,7 +12,7 @@ use bevy_console::{ConsoleCommandEntered, PrintConsoleLine};
 use common::{
     inputs::{BindingsData, InputIdentifier, SystemActionEvent},
     rpc::RpcResultSender,
-    structs::AppConfig,
+    structs::{AppConfig, PermissionLevel, PermissionType, PermissionUsed, PermissionValue},
 };
 use dcl_component::proto_components::{
     common::Vector2,
@@ -101,6 +101,31 @@ pub enum SystemApi {
     GetChatStream(tokio::sync::mpsc::UnboundedSender<ChatMessage>),
     SendChat(String, String),
     Quit,
+    GetPermissionRequestStream(tokio::sync::mpsc::UnboundedSender<PermissionRequest>),
+    SetSinglePermission(SetSinglePermission),
+    SetPermanentPermission(SetPermanentPermission),
+    GetPermissionUsedStream(tokio::sync::mpsc::UnboundedSender<PermissionUsed>),
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct PermissionRequest {
+    pub ty: PermissionType,
+    pub additional: Option<String>,
+    pub scene: String,
+    pub id: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct SetSinglePermission {
+    pub id: usize,
+    pub allow: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct SetPermanentPermission {
+    pub ty: PermissionType,
+    pub level: PermissionLevel,
+    pub allow: Option<PermissionValue>,
 }
 
 #[derive(Resource)]
@@ -108,6 +133,7 @@ pub struct NativeUi {
     pub login: bool,
     pub emote_wheel: bool,
     pub chat: bool,
+    pub permissions: bool,
 }
 
 #[derive(Resource)]

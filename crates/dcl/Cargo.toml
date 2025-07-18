@@ -27,6 +27,7 @@ http = { workspace = true }
 urlencoding = { workspace = true }
 base64 = { workspace = true }
 multihash-codetable = { workspace = true }
+strum = { workspace = true }
 
 num-derive = "0.4.2"
 num = "0.4"

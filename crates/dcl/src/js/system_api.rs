@@ -1,8 +1,13 @@
+use anyhow::anyhow;
 use bevy::log::debug;
 use common::{
     inputs::{Action, BindingsData, InputIdentifier, SystemActionEvent},
     profile::SerializedProfile,
     rpc::RpcCall,
+    structs::{
+        AppConfig, PermissionLevel, PermissionStrings, PermissionType, PermissionUsed,
+        PermissionValue,
+    },
 };
 use dcl_component::proto_components::{
     common::Vector2,
@@ -12,9 +17,11 @@ use http::Uri;
 use ipfs::IpfsResource;
 use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, rc::Rc};
+use strum::IntoEnumIterator;
 use system_bridge::{
     settings::{SettingInfo, Settings},
-    ChatMessage, HomeScene, LiveSceneInfo, SetAvatarData, SystemApi,
+    ChatMessage, HomeScene, LiveSceneInfo, PermissionRequest, SetAvatarData,
+    SetPermanentPermission, SetSinglePermission, SystemApi,
 };
 use tokio::sync::mpsc::UnboundedReceiver;
 use wallet::{sign_request, Wallet};
@@ -509,4 +516,166 @@ pub fn op_quit(state: Rc<RefCell<impl State>>) {
         .borrow_mut::<SuperUserScene>()
         .send(SystemApi::Quit)
         .unwrap();
+}
+
+pub async fn op_get_permission_request_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
+    state.borrow_mut().put(rx);
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetPermissionRequestStream(sx))
+        .unwrap();
+
+    1
+}
+
+pub async fn op_read_permission_request_stream(
+    state: Rc<RefCell<impl State>>,
+    _rid: u32,
+) -> Result<Option<PermissionRequest>, anyhow::Error> {
+    let Some(mut receiver) = state
+        .borrow_mut()
+        .try_take::<UnboundedReceiver<PermissionRequest>>()
+    else {
+        return Ok(None);
+    };
+
+    let res = match receiver.recv().await {
+        Some(data) => Ok(Some(data)),
+        None => Ok(None),
+    };
+
+    state.borrow_mut().put(receiver);
+
+    res
+}
+
+pub async fn op_get_permission_used_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
+    state.borrow_mut().put(rx);
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetPermissionUsedStream(sx))
+        .unwrap();
+
+    1
+}
+
+pub async fn op_read_permission_used_stream(
+    state: Rc<RefCell<impl State>>,
+    _rid: u32,
+) -> Result<Option<PermissionUsed>, anyhow::Error> {
+    let Some(mut receiver) = state
+        .borrow_mut()
+        .try_take::<UnboundedReceiver<PermissionUsed>>()
+    else {
+        return Ok(None);
+    };
+
+    let res = match receiver.recv().await {
+        Some(data) => Ok(Some(data)),
+        None => Ok(None),
+    };
+
+    state.borrow_mut().put(receiver);
+
+    res
+}
+
+pub fn op_set_single_permission(state: Rc<RefCell<impl State>>, id: usize, allow: bool) {
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::SetSinglePermission(SetSinglePermission {
+            id,
+            allow,
+        }))
+        .unwrap();
+}
+
+fn get_permanent_level(
+    level: &str,
+    value: Option<String>,
+) -> Result<PermissionLevel, anyhow::Error> {
+    Ok(match level {
+        "Realm" => PermissionLevel::Realm(value.ok_or(anyhow!("Realm value must be specified"))?),
+        "Scene" => PermissionLevel::Scene(value.ok_or(anyhow!("Scene value must be specified"))?),
+        "Global" => PermissionLevel::Global,
+        _ => anyhow::bail!("invalid level {level}, must be `Realm`, `Scene` or `Global`"),
+    })
+}
+
+pub fn op_set_permanent_permission(
+    state: Rc<RefCell<impl State>>,
+    level: &str,
+    value: Option<String>,
+    permission_type: PermissionType,
+    allow: Option<PermissionValue>,
+) -> Result<(), anyhow::Error> {
+    let level = get_permanent_level(level, value)?;
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::SetPermanentPermission(SetPermanentPermission {
+            ty: permission_type,
+            level,
+            allow,
+        }))
+        .unwrap();
+
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct PermanentPermissionItem {
+    ty: PermissionType,
+    allow: PermissionValue,
+}
+
+pub fn op_get_permanent_permissions(
+    state: Rc<RefCell<impl State>>,
+    level: &str,
+    value: Option<String>,
+) -> Result<Vec<PermanentPermissionItem>, anyhow::Error> {
+    let level = get_permanent_level(level, value)?;
+    let state = state.borrow();
+    let config = state.borrow::<AppConfig>();
+
+    let perms = match level {
+        PermissionLevel::Scene(hash) => config.scene_permissions.get(&hash),
+        PermissionLevel::Realm(realm) => config.realm_permissions.get(&realm),
+        PermissionLevel::Global => Some(&config.default_permissions),
+    };
+
+    Ok(perms
+        .map(|h| {
+            h.iter()
+                .map(|(p, v)| PermanentPermissionItem { ty: *p, allow: *v })
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct PermissionTypeDetail {
+    ty: PermissionType,
+    name: String,
+    passive: String,
+    active: String,
+}
+
+pub fn op_get_permission_types() -> Vec<PermissionTypeDetail> {
+    PermissionType::iter()
+        .map(|ty| PermissionTypeDetail {
+            ty,
+            name: ty.title().to_owned(),
+            passive: ty.passive().to_owned(),
+            active: ty.active().to_owned(),
+        })
+        .collect()
 }
