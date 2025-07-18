@@ -293,15 +293,12 @@ fn update_source_volume(
                 (volume * volume_adjust, panning)
             };
 
-            emitter.instances.retain_mut(|h_instance| {
+            for h_instance in emitter.instances.iter_mut() {
                 if let Some(instance) = audio_instances.get_mut(h_instance) {
                     instance.set_volume(volume as f64, AudioTween::linear(Duration::ZERO));
                     instance.set_panning(panning as f64, AudioTween::default());
-                    true
-                } else {
-                    false
                 }
-            });
+            };
         } else if maybe_scene.is_some_and(|scene| prev_scenes.contains(&scene.root)) {
             debug!("stop [{:?}]", ent);
             for h_instance in &emitter.instances {
