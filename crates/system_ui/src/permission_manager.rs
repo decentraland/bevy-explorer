@@ -29,7 +29,8 @@ pub struct PermissionPlugin;
 
 impl Plugin for PermissionPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<PermissionManager>();
+        app.init_resource::<PermissionManager>()
+            .add_event::<PermissionUsed>();
 
         let native_ui = app.world().resource::<NativeUi>();
         if native_ui.permissions {
