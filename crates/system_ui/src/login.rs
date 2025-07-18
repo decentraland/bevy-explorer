@@ -327,14 +327,7 @@ fn update_profile_for_realm(
                 current_profile.is_deployed = true;
             }
             Some(Err(_)) => {
-                current_profile.profile = Some(UserProfile {
-                    version: 0,
-                    content: SerializedProfile {
-                        has_connected_web3: Some(true),
-                        ..Default::default()
-                    },
-                    base_url: ipfas.ipfs().contents_endpoint().unwrap_or_default(),
-                });
+                // keep existing profile
             }
             None => *task = Some(t),
         }
