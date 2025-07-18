@@ -1450,11 +1450,12 @@ dependencies = [
 [[package]]
 name = "bevy_kira_audio"
 version = "0.23.0"
-source = "git+https://github.com/robtfm/bevy_kira_audio?branch=0.16-2#9fd6a63be6ddd3da71d567e6b18d7450aca9d4dd"
+source = "git+https://github.com/robtfm/bevy_kira_audio?branch=0.16-2#a399357a9d8b0a155727086a26ad75970886d52a"
 dependencies = [
  "anyhow",
  "bevy",
  "bevy_math",
+ "cpal",
  "kira",
  "parking_lot",
  "thiserror 2.0.12",

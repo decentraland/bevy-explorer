@@ -453,7 +453,7 @@ fn main() {
         app.add_plugins(AutomaticTestingPlugin);
     }
 
-    app.add_plugins(AudioPlugin)
+    app.add_plugins(AudioPlugin::default())
         .add_plugins(RestrictedActionsPlugin)
         .insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER))
         .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))

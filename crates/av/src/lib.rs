@@ -23,10 +23,17 @@ use bevy::prelude::*;
 #[cfg(feature = "ffmpeg")]
 use video_player::VideoPlayerPlugin;
 
-pub struct AudioPlugin;
+#[derive(Default)]
+pub struct AudioPlugin {
+    pub buffer_size: Option<u32>,
+}
 
 impl Plugin for AudioPlugin {
     fn build(&self, app: &mut App) {
+        app.insert_resource(bevy_kira_audio::AudioSettings {
+            buffer_size: self.buffer_size,
+            ..Default::default()
+        });
         app.add_plugins(bevy_kira_audio::AudioPlugin);
         #[cfg(feature = "ffmpeg")]
         app.add_plugins(VideoPlayerPlugin);
