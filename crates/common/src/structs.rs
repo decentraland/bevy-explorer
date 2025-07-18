@@ -753,7 +753,7 @@ impl PermissionStrings for PermissionType {
 
 #[derive(Clone, Debug)]
 pub enum PermissionLevel {
-    Scene(Entity, String),
+    Scene(String),
     Realm(String),
     Global,
 }

@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use bevy::{ecs::entity::Entity, log::debug};
+use bevy::log::debug;
 use common::{
     inputs::{Action, BindingsData, InputIdentifier, SystemActionEvent},
     profile::SerializedProfile,
@@ -603,10 +603,7 @@ fn get_permanent_level(
 ) -> Result<PermissionLevel, anyhow::Error> {
     Ok(match level {
         "Realm" => PermissionLevel::Realm(value.ok_or(anyhow!("Realm value must be specified"))?),
-        "Scene" => PermissionLevel::Scene(
-            Entity::PLACEHOLDER,
-            value.ok_or(anyhow!("Scene value must be specified"))?,
-        ),
+        "Scene" => PermissionLevel::Scene(value.ok_or(anyhow!("Scene value must be specified"))?),
         "Global" => PermissionLevel::Global,
         _ => anyhow::bail!("invalid level {level}, must be `Realm`, `Scene` or `Global`"),
     })
@@ -650,7 +647,7 @@ pub fn op_get_permanent_permissions(
     let config = state.borrow::<AppConfig>();
 
     let perms = match level {
-        PermissionLevel::Scene(_, hash) => config.scene_permissions.get(&hash),
+        PermissionLevel::Scene(hash) => config.scene_permissions.get(&hash),
         PermissionLevel::Realm(realm) => config.realm_permissions.get(&realm),
         PermissionLevel::Global => Some(&config.default_permissions),
     };

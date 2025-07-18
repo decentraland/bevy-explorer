@@ -162,7 +162,7 @@ fn update_permissions(
                     return;
                 };
                 match level {
-                    PermissionLevel::Scene(_, hash) => config
+                    PermissionLevel::Scene(hash) => config
                         .scene_permissions
                         .entry(hash.clone())
                         .or_default()
@@ -252,10 +252,7 @@ fn update_permissions(
 
                                 dialog.level = match combo.selected {
                                     0 => None,
-                                    1 => Some(PermissionLevel::Scene(
-                                        dialog.scene,
-                                        dialog.hash.clone(),
-                                    )),
+                                    1 => Some(PermissionLevel::Scene(dialog.hash.clone())),
                                     2 => {
                                         if is_portable {
                                             Some(PermissionLevel::Global)
@@ -277,7 +274,6 @@ fn update_permissions(
             permit,
             PermissionDialog {
                 level: None,
-                scene: req.scene,
                 hash: hash.to_owned(),
                 realm: req.realm.clone(),
             },
@@ -295,7 +291,6 @@ fn update_permissions(
 #[derive(Component)]
 pub struct PermissionDialog {
     level: Option<PermissionLevel>,
-    scene: Entity,
     hash: String,
     realm: String,
 }
@@ -395,7 +390,7 @@ pub fn handle_scene_permissions(
             }
             SystemApi::SetPermanentPermission(result) => {
                 let store = match &result.level {
-                    PermissionLevel::Scene(_, hash) => {
+                    PermissionLevel::Scene(hash) => {
                         config.scene_permissions.entry(hash.clone()).or_default()
                     }
                     PermissionLevel::Realm(realm) => {
