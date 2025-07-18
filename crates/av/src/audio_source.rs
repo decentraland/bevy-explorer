@@ -222,9 +222,7 @@ fn create_audio_sources(
     }
 }
 
-fn remove_dead_audio_assets(
-    mut audio_instances: ResMut<Assets<AudioInstance>>,
-) {
+fn remove_dead_audio_assets(mut audio_instances: ResMut<Assets<AudioInstance>>) {
     let mut dead = HashSet::new();
     for (h, instance) in audio_instances.iter() {
         if instance.state() == bevy_kira_audio::PlaybackState::Stopped {
@@ -319,7 +317,7 @@ fn update_audio_sources(
                     instance.set_volume(volume as f64, AudioTween::linear(Duration::ZERO));
                     instance.set_panning(panning as f64, AudioTween::default());
                 }
-            };
+            }
         } else if maybe_scene.is_some_and(|scene| prev_scenes.contains(&scene.root)) {
             debug!("set zero [{:?}] ({:?})", ent, emitter.instances);
             for h_instance in &emitter.instances {
