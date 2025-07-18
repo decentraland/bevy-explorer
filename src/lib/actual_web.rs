@@ -69,6 +69,7 @@ fn main_inner(
     system_scene: &str,
     with_thread_loader: bool,
     rabpf: usize,
+    buffer_size: u32,
 ) {
     // warnings before log init must be stored and replayed later
     let mut app = App::new();
@@ -237,7 +238,9 @@ fn main_inner(
 
     app.add_plugins(AvatarPlugin);
 
-    app.add_plugins(AudioPlugin)
+    app.add_plugins(AudioPlugin {
+        buffer_size: Some(buffer_size)
+    })
         .add_plugins(RestrictedActionsPlugin)
         .insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER))
         .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
@@ -539,6 +542,7 @@ pub fn engine_run(
     system_scene: &str,
     with_thread_loader: bool,
     rabpf: usize,
+    buffer_size: u32,
 ) {
     main_inner(
         platform,
@@ -547,5 +551,6 @@ pub fn engine_run(
         system_scene,
         with_thread_loader,
         rabpf,
+        buffer_size,
     );
 }

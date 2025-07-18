@@ -39,7 +39,12 @@ impl Plugin for AudioSourcePlugin {
         );
         app.add_systems(
             PostUpdate,
-            (update_audio, update_source_volume, play_system_audio)
+            (
+                create_audio_sources,
+                update_audio_sources,
+                play_system_audio,
+                remove_dead_audio_assets,
+            )
                 .after(TransformSystem::TransformPropagate),
         );
         app.add_systems(Startup, setup_audio.in_set(SetupSets::Main));
@@ -59,7 +64,7 @@ pub struct AudioSourceState {
 }
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
-fn update_audio(
+fn create_audio_sources(
     mut commands: Commands,
     mut query: Query<
         (
@@ -176,6 +181,7 @@ fn update_audio(
                 }
                 None => {
                     let mut new_instance = &mut audio.play(state.handle.clone());
+                    debug!("created {:?}", new_instance.handle());
                     if audio_source.0.r#loop() {
                         new_instance = new_instance.looped();
                     }
@@ -201,7 +207,7 @@ fn update_audio(
                 }
             };
         } else if let Some(emitter) = maybe_emitter {
-            debug!("stop {:?}", audio_source.0);
+            debug!("stop {:?} ({:?})", audio_source.0, emitter.instances);
             // stop running
             for h_instance in emitter.instances.iter() {
                 if let Some(instance) = audio_instances.get_mut(h_instance) {
@@ -213,6 +219,21 @@ fn update_audio(
         if let Some(new_state) = new_state {
             commands.entity(ent).try_insert(new_state);
         }
+    }
+}
+
+fn remove_dead_audio_assets(
+    mut audio_instances: ResMut<Assets<AudioInstance>>,
+) {
+    let mut dead = HashSet::new();
+    for (h, instance) in audio_instances.iter() {
+        if instance.state() == bevy_kira_audio::PlaybackState::Stopped {
+            dead.insert(h);
+        }
+    }
+
+    for h in dead {
+        audio_instances.remove(h);
     }
 }
 
@@ -247,7 +268,7 @@ fn play_system_audio(
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-fn update_source_volume(
+fn update_audio_sources(
     mut query: Query<(
         Entity,
         Option<&SceneEntity>,
@@ -300,7 +321,7 @@ fn update_source_volume(
                 }
             };
         } else if maybe_scene.is_some_and(|scene| prev_scenes.contains(&scene.root)) {
-            debug!("stop [{:?}]", ent);
+            debug!("set zero [{:?}] ({:?})", ent, emitter.instances);
             for h_instance in &emitter.instances {
                 if let Some(instance) = audio_instances.get_mut(h_instance) {
                     instance.set_volume(0.0, AudioTween::default());
@@ -318,6 +339,7 @@ fn update_source_volume(
 
             for h_instance in prev_instances {
                 if !current_ids.contains(&h_instance.id()) {
+                    debug!("stop removed {:?}", h_instance);
                     if let Some(instance) = audio_instances.get_mut(h_instance.id()) {
                         instance.stop(AudioTween::default());
                     }
@@ -331,6 +353,7 @@ fn update_source_volume(
     for (_ent, prev_instances) in prev_instances {
         for h_instance in prev_instances {
             if let Some(instance) = audio_instances.get_mut(h_instance.id()) {
+                debug!("stop dropped {:?}", h_instance);
                 instance.stop(AudioTween::default());
             }
         }
