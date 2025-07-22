@@ -72,6 +72,7 @@ fn set_profile_detail_content(
                         .with_prop("label", $label.to_owned())
                         .with_prop("initial", $init)
                         .with_prop("multi-line", $multiline)
+                        .with_prop("min-height", format!("{}vh", $multiline * 2))
                         .with_prop("onchanged", On::<DataChanged>::new(|caller: Res<UiCaller>, data: Query<&TextEntryValue>, mut profile: Query<&mut ProfileDetail>, mut settings: Query<&mut SettingsDialog>| {
                             let Ok(data) = data.get(caller.0) else {
                                 warn!("no entry");

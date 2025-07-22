@@ -18,7 +18,7 @@
 <define-template id="profile-detail-category">
     <div style="flex-direction: column; width: 100%">
         <large-text text="@label" style="color: black" />
-        <text-entry id="entry" style="background-color: #000000aa; flex-grow: 1" initial-text="@initial" onchanged="@onchanged" multi-line="@multi-line" />
+        <text-entry id="entry" style="background-color: #000000aa; flex-grow: 1; min-height: '@min-height'" initial-text="@initial" onchanged="@onchanged" multi-line="@multi-line" />
         <hr />
     </div>
 </define-template>
