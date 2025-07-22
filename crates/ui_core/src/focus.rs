@@ -13,7 +13,7 @@ use common::{
 pub struct Focus;
 
 #[derive(Component)]
-pub struct Focusable;
+pub struct Focusable(pub Option<Entity>);
 
 pub struct FocusPlugin;
 
@@ -55,6 +55,7 @@ fn defocus(
                 debug!("defocus {:?}", entity);
                 we_defocussed.insert(entity);
             } else {
+                debug!("still focussed {entity}");
                 any_still_focussed = true;
             }
         }
@@ -86,17 +87,17 @@ fn defocus(
 #[allow(clippy::type_complexity)]
 fn focus(
     mut commands: Commands,
-    focused_elements: Query<(Entity, &Interaction, Option<&UiActionPriority>), With<Focusable>>,
+    focused_elements: Query<(Entity, &Interaction, Option<&UiActionPriority>, &Focusable)>,
     input_manager: InputManager,
 ) {
-    for (entity, interaction, maybe_priority) in focused_elements.iter() {
+    for (entity, interaction, maybe_priority, focusable) in focused_elements.iter() {
         if interaction != &Interaction::None
             && input_manager.just_down(
                 CommonInputAction::IaPointer,
                 maybe_priority.copied().unwrap_or_default().0,
             )
         {
-            commands.entity(entity).try_insert(Focus);
+            commands.entity(focusable.0.unwrap_or(entity)).try_insert(Focus);
             debug!("focus {:?}", entity);
         }
     }

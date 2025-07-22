@@ -2,7 +2,7 @@ use crate::{
     dui_utils::PropsExt,
     focus::Focusable,
     text_size::FontSize,
-    ui_actions::{DataChanged, Defocus, On, Submit, UiCaller},
+    ui_actions::{DataChanged, On, Submit},
 };
 use bevy::{
     prelude::*,
@@ -11,10 +11,12 @@ use bevy::{
 use bevy_dui::{DuiRegistry, DuiTemplate};
 use bevy_simple_text_input::{
     TextInputCursorTimer, TextInputInactive, TextInputPlaceholder, TextInputPlugin,
-    TextInputSelectionStyle, TextInputSettings, TextInputSubmitEvent, TextInputSystem,
-    TextInputTextColor, TextInputTextFont, TextInputValue,
+    TextInputPointerAction, TextInputPointerEvent, TextInputSelectionStyle, TextInputSettings,
+    TextInputSubmitEvent, TextInputSystem, TextInputTextColor, TextInputTextFont, TextInputValue,
 };
-use common::{sets::SceneSets, structs::TextStyle, util::TryPushChildrenEx};
+use common::{
+    inputs::CommonInputAction, sets::SceneSets, structs::TextStyle, util::TryPushChildrenEx,
+};
 use input_manager::{InputManager, InputPriority, InputType};
 
 use super::focus::Focus;
@@ -54,9 +56,10 @@ impl Plugin for TextEntryPlugin {
         app.add_systems(Startup, setup).add_systems(
             Update,
             (
+                propagate_focus,
+                pass_textinput_pointer_events,
                 update_text_entry_components,
                 pipe_events,
-                propagate_focus,
                 update_fontsize,
             )
                 .chain()
@@ -109,17 +112,7 @@ fn update_text_entry_components(
                     TextInputInactive(true),
                     TextInputCursorTimer::default(),
                     Interaction::default(),
-                    Focusable,
-                    On::<Focus>::new(
-                        |caller: Res<UiCaller>, mut inactive: Query<&mut TextInputInactive>| {
-                            inactive.get_mut(caller.0).unwrap().0 = false;
-                        },
-                    ),
-                    On::<Defocus>::new(
-                        |caller: Res<UiCaller>, mut inactive: Query<&mut TextInputInactive>| {
-                            inactive.get_mut(caller.0).unwrap().0 = true;
-                        },
-                    ),
+                    Focusable(Some(entity)),
                 ));
                 if textbox.text_style.is_none() {
                     cmds.insert(FontSize(0.03 / 1.3));
@@ -160,6 +153,48 @@ fn update_text_entry_components(
     }
 }
 
+pub fn pass_textinput_pointer_events(
+    input_manager: InputManager,
+    window: Query<&Window, With<PrimaryWindow>>,
+    mut was_pressed: Local<bool>,
+    mut prev_pos: Local<Vec2>,
+    mut pointer: EventWriter<TextInputPointerEvent>,
+    focus_check: Query<&TextInputInactive>,
+) {
+    let is_focussed = focus_check.iter().any(|inactive| !inactive.0);
+
+    let just_pressed = is_focussed
+        && input_manager.just_down(CommonInputAction::IaPointer, InputPriority::TextEntry);
+    let still_pressed = *was_pressed
+        && input_manager.is_down(CommonInputAction::IaPointer, InputPriority::TextEntry);
+
+    let position = window
+        .single()
+        .ok()
+        .and_then(|w| w.cursor_position())
+        .unwrap_or_default();
+
+    if just_pressed && is_focussed {
+        pointer.write(TextInputPointerEvent {
+            position,
+            action: TextInputPointerAction::Press,
+        });
+    } else if still_pressed && *prev_pos != position {
+        pointer.write(TextInputPointerEvent {
+            position,
+            action: TextInputPointerAction::Drag,
+        });
+    } else if *was_pressed && !still_pressed {
+        pointer.write(TextInputPointerEvent {
+            position,
+            action: TextInputPointerAction::Release,
+        });
+    }
+
+    *was_pressed = just_pressed || still_pressed;
+    *prev_pos = position;
+}
+
 pub fn update_fontsize(
     mut q: Query<(&mut TextInputTextFont, Ref<FontSize>)>,
     mut resized: EventReader<WindowResized>,
@@ -178,27 +213,44 @@ pub fn update_fontsize(
     }
 }
 
-fn propagate_focus(
-    q: Query<(&TextEntry, &Children), Changed<Focus>>,
-    child: Query<Entity, With<TextInputSettings>>,
-    focussed_text: Query<(), (With<TextInputSettings>, With<Focus>)>,
+pub fn propagate_focus(
+    q: Query<(&TextEntry, &Children), With<Focus>>,
+    mut activate: Query<(Entity, &mut TextInputInactive)>,
     mut input_manager: InputManager,
-    mut commands: Commands,
 ) {
-    for (textbox, children) in q.iter() {
-        if !textbox.enabled {
-            continue;
-        }
-        if let Some(child) = children.iter().find(|c| child.get(*c).is_ok()) {
-            commands.entity(child).insert(Focus);
+    let active = q
+        .iter()
+        .filter_map(|(textbox, children)| {
+            if !textbox.enabled {
+                return None;
+            }
+            for child in children.iter() {
+                let Ok((ent, mut inactive)) = activate.get_mut(child) else {
+                    continue;
+                };
+
+                inactive.bypass_change_detection();
+                if inactive.0 {
+                    inactive.0 = false;
+                    inactive.set_changed();
+                }
+
+                input_manager
+                    .priorities()
+                    .reserve(InputType::Keyboard, InputPriority::TextEntry);
+                return Some(ent);
+            }
+            None
+        })
+        .next();
+
+    for (ent, mut inactive) in activate.iter_mut() {
+        if Some(ent) != active {
+            inactive.0 = true;
         }
     }
 
-    if focussed_text.single().is_ok() {
-        input_manager
-            .priorities()
-            .reserve(InputType::Keyboard, InputPriority::TextEntry);
-    } else {
+    if active.is_none() {
         input_manager
             .priorities()
             .release(InputType::Keyboard, InputPriority::TextEntry);
