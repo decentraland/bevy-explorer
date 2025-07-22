@@ -97,7 +97,9 @@ fn focus(
                 maybe_priority.copied().unwrap_or_default().0,
             )
         {
-            commands.entity(focusable.0.unwrap_or(entity)).try_insert(Focus);
+            commands
+                .entity(focusable.0.unwrap_or(entity))
+                .try_insert(Focus);
             debug!("focus {:?}", entity);
         }
     }
