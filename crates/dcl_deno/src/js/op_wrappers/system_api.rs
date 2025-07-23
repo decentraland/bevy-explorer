@@ -1,12 +1,19 @@
-use common::inputs::SystemActionEvent;
-use dcl::js::system_api::{JsBindingsData, RealmProviderString};
+use common::{
+    inputs::SystemActionEvent,
+    structs::{PermissionType, PermissionUsed, PermissionValue},
+};
+use dcl::js::system_api::{
+    JsBindingsData, PermanentPermissionItem, PermissionTypeDetail, RealmProviderString,
+};
 use dcl_component::proto_components::{
     common::Vector2,
     sdk::components::{PbAvatarBase, PbAvatarEquippedData},
 };
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
-use system_bridge::{settings::SettingInfo, ChatMessage, HomeScene, LiveSceneInfo};
+use system_bridge::{
+    settings::SettingInfo, ChatMessage, HomeScene, LiveSceneInfo, PermissionRequest,
+};
 
 // list of op declarations
 pub fn ops(super_user: bool) -> Vec<OpDecl> {
@@ -41,6 +48,14 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_send_chat(),
             op_get_profile_extras(),
             op_quit(),
+            op_get_permission_request_stream(),
+            op_read_permission_request_stream(),
+            op_get_permission_used_stream(),
+            op_read_permission_used_stream(),
+            op_set_single_permission(),
+            op_set_permanent_permission(),
+            op_get_permanent_permissions(),
+            op_get_permission_types(),
         ]
     } else {
         Vec::default()
@@ -252,4 +267,65 @@ pub async fn op_get_profile_extras(
 #[op2(fast)]
 pub fn op_quit(state: Rc<RefCell<OpState>>) {
     dcl::js::system_api::op_quit(state);
+}
+
+#[op2(async)]
+pub async fn op_get_permission_request_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_permission_request_stream(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_permission_request_stream(
+    state: Rc<RefCell<OpState>>,
+    rid: u32,
+) -> Result<Option<PermissionRequest>, deno_core::anyhow::Error> {
+    dcl::js::system_api::op_read_permission_request_stream(state, rid).await
+}
+
+#[op2(async)]
+pub async fn op_get_permission_used_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_permission_used_stream(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_permission_used_stream(
+    state: Rc<RefCell<OpState>>,
+    rid: u32,
+) -> Result<Option<PermissionUsed>, deno_core::anyhow::Error> {
+    dcl::js::system_api::op_read_permission_used_stream(state, rid).await
+}
+
+#[op2(fast)]
+pub fn op_set_single_permission(state: Rc<RefCell<OpState>>, #[bigint] id: usize, allow: bool) {
+    dcl::js::system_api::op_set_single_permission(state, id, allow);
+}
+
+#[op2]
+#[serde]
+pub fn op_set_permanent_permission(
+    state: Rc<RefCell<OpState>>,
+    #[string] level: &str,
+    #[string] value: Option<String>,
+    #[serde] permission_type: PermissionType,
+    #[serde] allow: Option<PermissionValue>,
+) -> Result<(), anyhow::Error> {
+    dcl::js::system_api::op_set_permanent_permission(state, level, value, permission_type, allow)
+}
+
+#[op2]
+#[serde]
+pub fn op_get_permanent_permissions(
+    state: Rc<RefCell<OpState>>,
+    #[string] level: &str,
+    #[string] value: Option<String>,
+) -> Result<Vec<PermanentPermissionItem>, anyhow::Error> {
+    dcl::js::system_api::op_get_permanent_permissions(state, level, value)
+}
+
+#[op2]
+#[serde]
+pub fn op_get_permission_types() -> Vec<PermissionTypeDetail> {
+    dcl::js::system_api::op_get_permission_types()
 }

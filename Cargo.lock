@@ -3383,6 +3383,7 @@ dependencies = [
  "reqwest 0.12.15",
  "serde",
  "serde_json",
+ "strum 0.27.1",
  "system_bridge",
  "tokio",
  "urlencoding",

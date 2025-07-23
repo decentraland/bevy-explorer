@@ -2,6 +2,7 @@ use bevy::{platform::collections::HashSet, prelude::*};
 
 use crate::{
     permissions::Permission, renderer_context::RendererSceneContext, ContainingScene, SceneEntity,
+    Toaster,
 };
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_RADIUS},
@@ -91,6 +92,7 @@ pub fn update_camera_mode_area(
     mut current_areas: Local<Vec<(Entity, PermissionState)>>,
     mut camera: Query<&mut PrimaryCamera>,
     mut perms: Permission<Entity>,
+    mut toaster: Toaster,
 ) {
     let Ok(mut camera) = camera.single_mut() else {
         return;
@@ -269,9 +271,7 @@ pub fn update_camera_mode_area(
     }
 
     if current_areas.is_empty() {
-        perms
-            .toaster
-            .clear_toast(format!("{:?}", PermissionType::ForceCamera).as_str());
+        toaster.clear_toast(format!("{:?}", PermissionType::ForceCamera).as_str());
     }
 
     let succeeded = perms

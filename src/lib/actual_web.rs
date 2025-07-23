@@ -116,6 +116,7 @@ fn main_inner(
             login: false,
             emote_wheel: false,
             chat: false,
+            permissions: false,
         });
         app.insert_resource(SystemScene {
             source: Some(source),
@@ -128,6 +129,7 @@ fn main_inner(
             login: true,
             emote_wheel: true,
             chat: true,
+            permissions: true,
         });
     }
 
