@@ -280,7 +280,7 @@ fn update_text_shapes(
         } else {
             text_shape.0.text.as_str()
         };
-        let text = make_text_section(
+        let (text, _) = make_text_section(
             source,
             font_size,
             text_shape
@@ -600,7 +600,9 @@ pub fn make_text_section(
     font: dcl_component::proto_components::sdk::components::common::Font,
     justify: JustifyText,
     wrapping: bool,
-) -> impl Bundle {
+) -> (impl Bundle, Vec<(usize, String)>) {
+    let mut links = Vec::default();
+
     let text = text.replace("\\n", "\n");
 
     let font_name = match font {
@@ -621,8 +623,10 @@ pub fn make_text_section(
     let mut marks = Vec::<Color>::default();
     let mut override_colors = Vec::<Color>::default();
     let mut section_start = 0usize;
+    let mut link_data = Vec::<String>::default();
 
     let mut spans = Vec::default();
+    let mut span_index = 0;
 
     while section_start < text.len() {
         // read initial tags
@@ -671,6 +675,13 @@ pub fn make_text_section(
                     "/color" => {
                         override_colors.pop();
                     }
+                    i if i.get(0..4) == Some("link") => match i.get(5..) {
+                        Some(label) => link_data.push(label.to_owned()),
+                        None => warn!("text contains `link` tag without label"),
+                    },
+                    "/link" => {
+                        link_data.pop();
+                    }
                     _ => warn!("unrecognised text tag `{tag}`"),
                 }
                 section_start = section_start + close + 1;
@@ -698,12 +709,6 @@ pub fn make_text_section(
             maybe_extras.get_or_insert_default().mark = Some(**mark);
         }
 
-        let section_end = text[section_start..]
-            .char_indices()
-            .find(|(_, c)| *c == '<')
-            .map(|(ix, _)| section_start + ix.max(1))
-            .unwrap_or(usize::MAX);
-
         let font = TextFont {
             font: user_font(font_name, weight),
             font_size: font_size * 0.95,
@@ -711,6 +716,12 @@ pub fn make_text_section(
         };
 
         let color = TextColor(override_colors.last().copied().unwrap_or(color));
+
+        let section_end = text[section_start..]
+            .char_indices()
+            .find(|(_, c)| *c == '<')
+            .map(|(ix, _)| section_start + ix.max(1))
+            .unwrap_or(usize::MAX);
 
         let span = if section_end == usize::MAX {
             TextSpan::new(&text[section_start..])
@@ -720,7 +731,12 @@ pub fn make_text_section(
 
         spans.push((span, font, color, maybe_extras));
 
+        if let Some(link) = link_data.last().cloned() {
+            links.push((span_index, link));
+        }
+
         section_start = section_end;
+        span_index += 1;
     }
 
     let f = move |parent: &mut RelatedSpawner<ChildOf>| {
@@ -733,15 +749,18 @@ pub fn make_text_section(
     };
 
     (
-        Text::default(),
-        TextLayout::new(
-            justify,
-            if wrapping {
-                LineBreak::WordOrCharacter
-            } else {
-                LineBreak::NoWrap
-            },
+        (
+            Text::default(),
+            TextLayout::new(
+                justify,
+                if wrapping {
+                    LineBreak::WordOrCharacter
+                } else {
+                    LineBreak::NoWrap
+                },
+            ),
+            Children::spawn(SpawnWith(f)),
         ),
-        Children::spawn(SpawnWith(f)),
+        links,
     )
 }

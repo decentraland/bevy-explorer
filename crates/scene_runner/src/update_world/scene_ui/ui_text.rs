@@ -1,10 +1,18 @@
-use bevy::prelude::*;
+use bevy::{
+    ecs::system::SystemParam,
+    prelude::*,
+    text::{cosmic_text::Cursor, ComputedTextBlock},
+    window::PrimaryWindow,
+};
 use dcl_component::proto_components::{
     sdk::components::{self, PbUiText},
     Color4DclToBevy,
 };
 
-use crate::{update_world::text_shape::make_text_section, SceneEntity};
+use crate::{
+    update_scene::pointer_results::UiPointerTarget, update_world::text_shape::make_text_section,
+    SceneEntity,
+};
 
 use super::{UiLink, UiTransform};
 
@@ -74,7 +82,7 @@ pub struct UiTextMarker;
 pub fn set_ui_text(
     mut commands: Commands,
     texts: Query<
-        (&SceneEntity, &UiText, &UiTransform, &UiLink),
+        (Entity, &SceneEntity, &UiText, &UiTransform, &UiLink),
         Or<(Changed<UiText>, Changed<UiLink>)>,
     >,
     mut removed: RemovedComponents<UiText>,
@@ -96,7 +104,7 @@ pub fn set_ui_text(
         }
     }
 
-    for (scene_ent, ui_text, ui_transform, link) in texts.iter() {
+    for (ent, scene_ent, ui_text, ui_transform, link) in texts.iter() {
         debug!("{} added text {:?}", scene_ent.id, ui_text);
 
         // remove old text
@@ -116,7 +124,7 @@ pub fn set_ui_text(
             continue;
         };
 
-        let text = make_text_section(
+        let (text, links) = make_text_section(
             ui_text.text.as_str(),
             ui_text.font_size,
             ui_text
@@ -209,10 +217,136 @@ pub fn set_ui_text(
                     ..Default::default()
                 },
                 UiTextMarker,
-                children!((inner_style, children!((text, ZIndex(1))))),
             ))
+            .with_children(|c| {
+                c.spawn(inner_style).with_children(|c| {
+                    let mut inner_child = c.spawn((text, ZIndex(1)));
+                    if !links.is_empty() {
+                        inner_child.insert((
+                            Interaction::default(),
+                            TextLinks {
+                                links,
+                                source_entity: ent,
+                            },
+                        ));
+                    }
+                });
+            })
             .id();
 
         ent_cmds.insert_children(0, &[text_element]);
+    }
+}
+
+#[derive(Component)]
+pub struct TextLinks {
+    links: Vec<(usize, String)>,
+    source_entity: Entity,
+}
+
+/// TextPositionFinder
+#[derive(SystemParam)]
+pub struct TextPositionFinder<'w, 's> {
+    q: Query<'w, 's, (&'static ComputedNode, &'static ComputedTextBlock)>,
+    reader: TextUiReader<'w, 's>,
+    helper: TransformHelper<'w, 's>,
+}
+
+impl TextPositionFinder<'_, '_> {
+    /// TextPositionFinder
+    pub fn cursor_hit(&self, entity: Entity, position: Vec2) -> Option<Cursor> {
+        let (node, block) = self.q.get(entity).ok()?;
+        let buffer = block.buffer();
+
+        let top_left = self
+            .helper
+            .compute_global_transform(entity)
+            .unwrap()
+            .translation()
+            .xy()
+            - node.size() * 0.5;
+        let relative_position = position - top_left;
+
+        buffer.hit(relative_position.x, relative_position.y)
+    }
+
+    /// TextPositionFinder
+    pub fn cursor_entity(
+        &mut self,
+        entity: Entity,
+        position: Vec2,
+    ) -> Option<(Entity, usize, usize)> {
+        let Cursor {
+            mut line,
+            mut index,
+            ..
+        } = self.cursor_hit(entity, position)?;
+
+        for (span_index, (entity, _, text, _, _)) in self.reader.iter(entity).enumerate() {
+            let mut parts = text.split('\n');
+            let line_breaks = parts.clone().count() - 1;
+            if line_breaks < line {
+                line -= line_breaks;
+                continue;
+            }
+
+            let entity_line_offset: usize = parts.by_ref().take(line).map(|text| text.len()).sum();
+            line = 0;
+
+            let len = parts.next().unwrap().len();
+            if len > index {
+                return Some((entity, span_index, entity_line_offset + index));
+            } else {
+                index -= len;
+            }
+
+            if parts.next().is_some() {
+                panic!();
+            }
+        }
+
+        None
+    }
+}
+
+pub fn check_text_links(
+    q: Query<(Entity, &TextLinks, &Interaction)>,
+    mut ui_target: ResMut<UiPointerTarget>,
+    mut finder: TextPositionFinder,
+    window: Query<&Window, With<PrimaryWindow>>,
+) {
+    let Some(pointer_entity) = ui_target.0.entity() else {
+        return;
+    };
+
+    let Ok(window) = window.single() else {
+        return;
+    };
+    let maybe_pos = if window.cursor_options.grab_mode == bevy::window::CursorGrabMode::Locked {
+        None
+    } else {
+        window.cursor_position()
+    };
+
+    for (entity, links, interaction) in q.iter() {
+        if links.source_entity == pointer_entity {
+            let label = match interaction {
+                Interaction::None => None,
+                _ => maybe_pos
+                    .and_then(|pos| finder.cursor_entity(entity, pos))
+                    .and_then(|(_, index, _)| {
+                        // skip the blank parent text item
+                        let index = index - 1;
+                        links
+                            .links
+                            .iter()
+                            .find(|(ix, _)| *ix == index)
+                            .map(|(_, label)| label)
+                            .cloned()
+                    }),
+            };
+
+            ui_target.0.set_label(label);
+        }
     }
 }

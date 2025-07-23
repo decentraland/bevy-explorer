@@ -148,8 +148,27 @@ pub struct UiPointerTarget(pub UiPointerTargetValue);
 pub enum UiPointerTargetValue {
     #[default]
     None,
-    Primary(Entity),
-    World(Entity),
+    Primary(Entity, Option<String>),
+    World(Entity, Option<String>),
+}
+
+impl UiPointerTargetValue {
+    pub fn entity(&self) -> Option<Entity> {
+        match self {
+            UiPointerTargetValue::None => None,
+            UiPointerTargetValue::Primary(entity, _) | UiPointerTargetValue::World(entity, _) => {
+                Some(*entity)
+            }
+        }
+    }
+
+    pub fn set_label(&mut self, label: Option<String>) {
+        match self {
+            UiPointerTargetValue::None => todo!(),
+            UiPointerTargetValue::Primary(_, ref mut l)
+            | UiPointerTargetValue::World(_, ref mut l) => *l = label,
+        }
+    }
 }
 
 #[derive(Default, Debug, Resource, Clone, PartialEq)]
@@ -454,7 +473,7 @@ fn resolve_pointer_target(
         return;
     }
 
-    if let UiPointerTargetValue::Primary(entity) | UiPointerTargetValue::World(entity) =
+    if let UiPointerTargetValue::Primary(entity, _) | UiPointerTargetValue::World(entity, _) =
         &ui_target.0
     {
         if !entities.contains(*entity) {
@@ -463,18 +482,18 @@ fn resolve_pointer_target(
     }
 
     match &ui_target.0 {
-        UiPointerTargetValue::Primary(e) => {
+        UiPointerTargetValue::Primary(e, mesh) => {
             target.0 = Some(PointerTargetInfo {
                 container: *e,
                 distance: FloatOrd(0.0),
-                mesh_name: None,
+                mesh_name: mesh.clone(),
                 position: None,
                 normal: None,
                 face: None,
                 is_ui: Some(true),
             });
         }
-        UiPointerTargetValue::World(e) => {
+        UiPointerTargetValue::World(e, mesh) => {
             let distance = world_target
                 .0
                 .as_ref()
@@ -484,7 +503,7 @@ fn resolve_pointer_target(
             target.0 = Some(PointerTargetInfo {
                 container: *e,
                 distance,
-                mesh_name: None,
+                mesh_name: mesh.clone(),
                 position: None,
                 normal: None,
                 face: None,
@@ -530,11 +549,11 @@ fn debug_pointer(
     colliders: Query<&MeshCollider>,
 ) {
     if debug.0 {
-        let info = if let UiPointerTargetValue::Primary(ui_ent) = &ui_target.0 {
+        let info = if let UiPointerTargetValue::Primary(ui_ent, mesh) = &ui_target.0 {
             if let Ok(target) = target.get(*ui_ent) {
                 if let Ok(scene) = scene.get(target.root) {
                     format!(
-                        "ui element {} from scene {}",
+                        "ui element {}-{mesh:?} from scene {}",
                         target.container_id, scene.title
                     )
                 } else {
@@ -584,7 +603,7 @@ fn send_hover_events(
     mut scenes: Query<(&mut RendererSceneContext, &GlobalTransform)>,
     frame: Res<FrameCount>,
     mut input_manager: InputManager,
-    mut previously_entered: Local<HashSet<Entity>>,
+    mut previously_entered: Local<HashSet<(Entity, Option<String>)>>,
     scene_ui_ent: Query<&UiLink>,
     linked: Query<(&ChildOf, &DespawnWith, Option<&RelativeCursorPosition>)>,
 ) {
@@ -664,11 +683,17 @@ fn send_hover_events(
             action
         };
 
-    let container = new_target.0.as_ref().map(|t| t.container);
-    let mut new_entities = HashSet::from_iter(container);
+    let container = new_target
+        .0
+        .as_ref()
+        .map(|t| (t.container, t.mesh_name.clone()));
+    let mut new_entities = HashSet::from_iter(container.clone());
+    if let Some((e, _)) = container.as_ref().filter(|c| c.1.is_some()) {
+        new_entities.insert((*e, None));
+    }
 
     let mut ui_entity = container
-        .and_then(|c| scene_ui_ent.get(c).ok())
+        .and_then(|(c, _)| scene_ui_ent.get(c).ok())
         .map(|link| link.ui_entity);
 
     // walk up parent ui nodes
@@ -676,18 +701,18 @@ fn send_hover_events(
         ui_entity.and_then(|ui_entity| linked.get(ui_entity).ok())
     {
         if maybe_cursor.is_some_and(|cursor| cursor.mouse_over()) {
-            new_entities.insert(scene_ent.0);
+            new_entities.insert((scene_ent.0, None));
         }
 
         ui_entity = Some(next.parent());
     }
 
     input_manager.priorities().release_all(InputPriority::Scene);
-    for entity in previously_entered.difference(&new_entities) {
+    for (entity, mesh) in previously_entered.difference(&new_entities) {
         send_event(
             &PointerTargetInfo {
                 container: *entity,
-                mesh_name: None,
+                mesh_name: mesh.clone(),
                 distance: FloatOrd(0.0),
                 position: None,
                 normal: None,
@@ -698,11 +723,12 @@ fn send_hover_events(
         );
     }
 
-    for entity in new_entities.difference(&previously_entered) {
+    for (entity, mesh) in new_entities.difference(&previously_entered) {
         if let Some(info) = new_target.0.as_ref() {
             if let Some(action) = send_event(
                 &PointerTargetInfo {
                     container: *entity,
+                    mesh_name: mesh.clone(),
                     ..info.clone()
                 },
                 PointerEventType::PetHoverEnter,

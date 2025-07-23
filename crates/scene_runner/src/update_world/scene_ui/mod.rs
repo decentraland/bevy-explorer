@@ -25,6 +25,7 @@ use ui_text::{set_ui_text, UiText};
 use crate::{
     initialize_scene::{LiveScenes, SuperUserScene},
     renderer_context::RendererSceneContext,
+    update_world::scene_ui::ui_text::check_text_links,
     ContainerEntity, ContainingScene, SceneEntity, SceneSets,
 };
 use common::{
@@ -49,7 +50,7 @@ use ui_core::{
     scrollable::{
         ScrollDirection, ScrollPosition, ScrollTarget, ScrollTargetEvent, Scrollable, StartPosition,
     },
-    ui_actions::{DataChanged, On, UiCaller},
+    ui_actions::{DataChanged, On, UiActionSet, UiCaller},
 };
 
 use super::AddCrdtInterfaceExt;
@@ -444,6 +445,10 @@ impl Plugin for SceneUiPlugin {
                 .chain()
                 .in_set(SceneSets::PostLoop),
         );
+
+        // this overrides the On::<HoverEnter> so must be after ui actions and before usage
+        app.add_systems(PreUpdate, check_text_links.after(UiActionSet));
+
         app.add_console_command::<ToggleSceneUiCommand, _>(toggle_scene_ui_command);
     }
 }
