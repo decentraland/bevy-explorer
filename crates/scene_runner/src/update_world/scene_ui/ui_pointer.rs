@@ -43,16 +43,14 @@ pub fn set_ui_pointer_events(
                 On::<HoverEnter>::new(move |mut ui_target: ResMut<UiPointerTarget>| {
                     debug!("hover enter {ent:?}");
                     if is_primary {
-                        ui_target.0 = UiPointerTargetValue::Primary(ent);
+                        ui_target.0 = UiPointerTargetValue::Primary(ent, None);
                     } else {
-                        ui_target.0 = UiPointerTargetValue::World(ent);
+                        ui_target.0 = UiPointerTargetValue::World(ent, None);
                     }
                 }),
                 On::<HoverExit>::new(move |mut ui_target: ResMut<UiPointerTarget>| {
                     debug!("hover exit  {ent:?}");
-                    if ui_target.0 == UiPointerTargetValue::Primary(ent)
-                        || ui_target.0 == UiPointerTargetValue::World(ent)
-                    {
+                    if ui_target.0.entity() == Some(ent) {
                         ui_target.0 = UiPointerTargetValue::None;
                     }
                 }),

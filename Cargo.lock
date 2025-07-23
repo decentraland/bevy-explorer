@@ -10067,6 +10067,7 @@ dependencies = [
  "bevy",
  "bevy_console",
  "bevy_dui",
+ "bevy_simple_text_input",
  "bimap",
  "boimp",
  "clap",
