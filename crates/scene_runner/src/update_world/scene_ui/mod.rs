@@ -20,12 +20,12 @@ use ui_background::{set_ui_background, UiBackground};
 use ui_dropdown::{set_ui_dropdown, UiDropdown};
 use ui_input::{set_ui_input, UiInput};
 use ui_pointer::set_ui_pointer_events;
-use ui_text::{set_ui_text, UiText};
+use ui_text::{check_text_links, set_ui_text, UiText};
 
 use crate::{
     initialize_scene::{LiveScenes, SuperUserScene},
     renderer_context::RendererSceneContext,
-    update_world::scene_ui::ui_text::check_text_links,
+    update_world::scene_ui::ui_pointer::manage_scene_ui_interact,
     ContainerEntity, ContainingScene, SceneEntity, SceneSets,
 };
 use common::{
@@ -38,8 +38,9 @@ use dcl_component::{
     proto_components::{
         sdk::components::{
             self, scroll_position_value, PbUiBackground, PbUiCanvas, PbUiDropdown, PbUiInput,
-            PbUiScrollResult, PbUiText, PbUiTransform, ScrollPositionValue, YgAlign, YgDisplay,
-            YgFlexDirection, YgJustify, YgOverflow, YgPositionType, YgUnit, YgWrap,
+            PbUiScrollResult, PbUiText, PbUiTransform, PointerFilterMode, ScrollPositionValue,
+            YgAlign, YgDisplay, YgFlexDirection, YgJustify, YgOverflow, YgPositionType, YgUnit,
+            YgWrap,
         },
         Color4DclToBevy,
     },
@@ -200,6 +201,7 @@ pub struct UiTransform {
     border: UiRect,
     border_radius: BorderRadius,
     border_color: BorderColor,
+    block_pointer: bool,
 }
 
 impl From<PbUiTransform> for UiTransform {
@@ -383,6 +385,7 @@ impl From<PbUiTransform> for UiTransform {
                     .map(Color4DclToBevy::convert_srgba)
                     .unwrap_or(Color::NONE),
             },
+            block_pointer: value.pointer_filter() == PointerFilterMode::PfmBlock,
         }
     }
 }
@@ -441,12 +444,12 @@ impl Plugin for SceneUiPlugin {
                 ),
                 fully_update_target_camera_system,
                 set_ui_focus,
+                manage_scene_ui_interact,
             )
                 .chain()
                 .in_set(SceneSets::PostLoop),
         );
 
-        // this overrides the On::<HoverEnter> so must be after ui actions and before usage
         app.add_systems(PreUpdate, check_text_links.after(UiActionSet));
 
         app.add_console_command::<ToggleSceneUiCommand, _>(toggle_scene_ui_command);
@@ -513,6 +516,8 @@ pub struct UiLink {
     scroll_entity: Option<Entity>,
     // current scroll target
     scroll_position: Option<ScrollPositionValue>,
+    // pointer block requesters
+    interactors: HashSet<&'static str>,
 }
 
 impl Default for UiLink {
@@ -524,6 +529,7 @@ impl Default for UiLink {
             is_window_ui: true,
             scroll_entity: None,
             scroll_position: None,
+            interactors: HashSet::new(),
         }
     }
 }
@@ -857,11 +863,16 @@ fn layout_scene_ui(
                 commands
                     .entity(link.ui_entity)
                     .insert(ChildOf(parent_link.content_entity));
-                let updated = UiLink {
+                let mut updated = UiLink {
                     opacity: FloatOrd(parent_link.opacity.0 * ui_transform.opacity),
                     is_window_ui: bevy_ui_root.is_window_ui,
                     ..link.clone()
                 };
+                if ui_transform.block_pointer {
+                    updated.interactors.insert("pointer_filter");
+                } else {
+                    updated.interactors.remove("pointer_filter");
+                }
                 if &updated != link {
                     let updated = updated.clone();
                     commands
@@ -941,6 +952,11 @@ fn layout_scene_ui(
                     (None, ui_entity)
                 };
 
+                let mut interactors = HashSet::new();
+                if ui_transform.block_pointer {
+                    interactors.insert("pointer_filter");
+                }
+
                 let new_link = UiLink {
                     ui_entity,
                     is_window_ui: bevy_ui_root.is_window_ui,
@@ -948,7 +964,9 @@ fn layout_scene_ui(
                     scroll_entity,
                     opacity: FloatOrd(parent_link.opacity.0 * ui_transform.opacity),
                     scroll_position: None,
+                    interactors,
                 };
+
                 commands.entity(bevy_entity).try_insert(new_link.clone());
                 valid_nodes.insert(scene_id, new_link);
                 false

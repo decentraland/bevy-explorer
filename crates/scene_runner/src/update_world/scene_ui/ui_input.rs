@@ -29,19 +29,23 @@ impl From<PbUiInput> for UiInput {
 
 pub fn set_ui_input(
     mut commands: Commands,
-    inputs: Query<(&SceneEntity, &UiInput, &UiLink), Or<(Changed<UiInput>, Changed<UiLink>)>>,
+    mut inputs: Query<
+        (&SceneEntity, &UiInput, &mut UiLink),
+        Or<(Changed<UiInput>, Changed<UiLink>)>,
+    >,
     mut removed: RemovedComponents<UiInput>,
-    links: Query<&UiLink>,
+    mut links: Query<&mut UiLink, Without<UiInput>>,
 ) {
     for ent in removed.read() {
-        if let Ok(link) = links.get(ent) {
+        if let Ok(mut link) = links.get_mut(ent) {
+            link.interactors.remove("input");
             if let Ok(mut commands) = commands.get_entity(link.ui_entity) {
                 commands.remove::<TextEntry>();
             }
         }
     }
 
-    for (scene_ent, input, link) in inputs.iter() {
+    for (scene_ent, input, mut link) in inputs.iter_mut() {
         let Ok(mut commands) = commands.get_entity(link.ui_entity) else {
             continue;
         };
@@ -133,5 +137,7 @@ pub fn set_ui_input(
             On::<DataChanged>::new((|| false).pipe(data_handler)),
             On::<Submit>::new((|| true).pipe(data_handler)),
         ));
+
+        link.interactors.insert("input");
     }
 }
