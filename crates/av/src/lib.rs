@@ -23,6 +23,11 @@ use bevy::prelude::*;
 #[cfg(feature = "ffmpeg")]
 use video_player::VideoPlayerPlugin;
 
+#[cfg(feature = "html")]
+pub mod html_video_player;
+#[cfg(feature = "html")]
+use html_video_player::VideoPlayerPlugin;
+
 #[derive(Default)]
 pub struct AudioPlugin {
     pub buffer_size: Option<u32>,
@@ -35,7 +40,7 @@ impl Plugin for AudioPlugin {
             ..Default::default()
         });
         app.add_plugins(bevy_kira_audio::AudioPlugin);
-        #[cfg(feature = "ffmpeg")]
+        #[cfg(any(feature = "ffmpeg", feature="html"))]
         app.add_plugins(VideoPlayerPlugin);
 
         app.add_plugins(AudioSourcePlugin);

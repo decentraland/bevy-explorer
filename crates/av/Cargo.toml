@@ -7,6 +7,7 @@ edition = "2021"
 
 [features]
 ffmpeg = ["dep:ffmpeg-next"]
+html = ["dep:web-sys"]
 
 [dependencies]
 common = { workspace = true }
@@ -24,6 +25,9 @@ urlencoding = { workspace = true }
 futures-lite = { workspace = true }
 bevy_kira_audio = { workspace = true }
 kira = { workspace = true }
+wgpu = { workspace = true }
 
 ffmpeg-next = { version = "6.0.0", optional = true }
 thiserror = "1.0"
+
+web-sys = { workspace = true, features = ["HtmlMediaElement", "HtmlVideoElement"], optional = true}
