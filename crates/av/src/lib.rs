@@ -40,7 +40,7 @@ impl Plugin for AudioPlugin {
             ..Default::default()
         });
         app.add_plugins(bevy_kira_audio::AudioPlugin);
-        #[cfg(any(feature = "ffmpeg", feature="html"))]
+        #[cfg(any(feature = "ffmpeg", feature = "html"))]
         app.add_plugins(VideoPlayerPlugin);
 
         app.add_plugins(AudioSourcePlugin);

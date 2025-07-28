@@ -16,7 +16,7 @@ use bevy::{
     render::{
         render_asset::{RenderAssetUsages, RenderAssets},
         render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
-        renderer::RenderQueue,
+        renderer::{RenderQueue, WgpuWrapper},
         texture::GpuImage,
         Render, RenderApp, RenderSet,
     },
@@ -36,6 +36,7 @@ use scene_runner::{
     update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt},
     ContainerEntity, ContainingScene,
 };
+use wasm_bindgen::prelude::wasm_bindgen;
 use web_sys::{
     js_sys::Reflect,
     wasm_bindgen::{prelude::Closure, JsValue},
@@ -44,8 +45,23 @@ use web_sys::{wasm_bindgen::JsCast, HtmlVideoElement};
 
 pub struct VideoPlayerPlugin;
 
+const VIDEO_CONTAINER_ID: &str = "video-player-container";
+
 impl Plugin for VideoPlayerPlugin {
     fn build(&self, app: &mut App) {
+        if let Some(window) = web_sys::window() {
+            if let Some(document) = window.document() {
+                if document.get_element_by_id(VIDEO_CONTAINER_ID).is_none() {
+                    let container = document.create_element("div").unwrap();
+                    container.set_id(VIDEO_CONTAINER_ID);
+                    let style = container.dyn_ref::<web_sys::HtmlElement>().unwrap().style();
+                    // style.set_property("display", "none").unwrap();
+
+                    document.body().unwrap().append_child(&container).unwrap();
+                }
+            }
+        }
+
         app.add_crdt_lww_component::<PbVideoPlayer, AVPlayer>(
             SceneComponentId::VIDEO_PLAYER,
             ComponentPosition::EntityOnly,
@@ -74,7 +90,7 @@ pub struct FrameCopyRequestQueue(tokio::sync::mpsc::UnboundedSender<FrameCopyReq
 pub struct FrameCopyReceiveQueue(tokio::sync::mpsc::UnboundedReceiver<FrameCopyRequest>);
 
 pub struct FrameCopyRequest {
-    video: HtmlVideoEntity,
+    video: WgpuWrapper<HtmlVideoElement>,
     target: AssetId<Image>,
     size: Extent3d,
 }
@@ -118,6 +134,13 @@ pub struct HtmlVideoEntity {
 unsafe impl Sync for HtmlVideoEntity {}
 unsafe impl Send for HtmlVideoEntity {}
 
+// This block imports the global JS function we defined in main.js
+#[wasm_bindgen(js_namespace = window)]
+extern "C" {
+    #[wasm_bindgen(js_name = setVideoSource)]
+    fn set_video_source(elt: &HtmlVideoElement, src: &str);
+}
+
 impl HtmlVideoEntity {
     pub fn new(url: String, source: String, image: Handle<Image>) -> Self {
         let frame_ready = Arc::new(AtomicBool::default());
@@ -125,14 +148,18 @@ impl HtmlVideoEntity {
             .unwrap()
             .document()
             .and_then(|doc| {
+                let container = doc
+                    .get_element_by_id(VIDEO_CONTAINER_ID)
+                    .expect("video container should exist");
                 let video = doc.create_element("video").unwrap();
-                doc.body().unwrap().append_child(&video).unwrap();
+                container.append_child(&video).unwrap();
                 video.dyn_into::<HtmlVideoElement>().ok()
             })
             .expect("Couldn't create video element");
 
         video.set_cross_origin(Some("anonymous"));
-        video.set_src(&url);
+        // SAFETY: just an extern function, params are valid
+        unsafe { set_video_source(&video, &url) };
         video.set_autoplay(true);
 
         // no wasm_bindgen for this!
@@ -174,6 +201,12 @@ impl HtmlVideoEntity {
     }
 }
 
+impl Drop for HtmlVideoEntity {
+    fn drop(&mut self) {
+        self.video.remove();
+    }
+}
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn update_video_players(
     mut commands: Commands,
@@ -193,9 +226,11 @@ pub fn update_video_players(
     user: Query<&GlobalTransform, With<PrimaryUser>>,
     mut send_queue: Res<FrameCopyRequestQueue>,
 ) {
-
     for (ent, container, player, mut maybe_html, maybe_texture, _) in video_players.iter_mut() {
-        if maybe_html.as_ref().is_none_or(|html| html.source != player.source.src) {
+        if maybe_html
+            .as_ref()
+            .is_none_or(|html| html.source != player.source.src)
+        {
             let image_handle = match maybe_texture {
                 None => {
                     let mut image = Image::new_fill(
@@ -209,8 +244,9 @@ pub fn update_video_players(
                         TextureFormat::Rgba8UnormSrgb,
                         RenderAssetUsages::all(),
                     );
-                    image.texture_descriptor.usage =
-                        TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT;
+                    image.texture_descriptor.usage = TextureUsages::COPY_DST
+                        | TextureUsages::TEXTURE_BINDING
+                        | TextureUsages::RENDER_ATTACHMENT;
                     images.add(image)
                 }
                 Some(texture) => texture.0.clone(),
@@ -223,7 +259,8 @@ pub fn update_video_players(
             let source = ipfs
                 .content_url(&player.source.src, &context.hash)
                 .unwrap_or_else(|| player.source.src.clone());
-            let video_entity = HtmlVideoEntity::new(player.source.src.clone(), source, image_handle.clone());
+            let video_entity =
+                HtmlVideoEntity::new(player.source.src.clone(), source, image_handle.clone());
             let video_output = VideoTextureOutput(image_handle);
 
             commands
@@ -256,7 +293,7 @@ pub fn update_video_players(
 
                 // queue copy
                 let _ = send_queue.0.send(FrameCopyRequest {
-                    video: html_player.clone(),
+                    video: WgpuWrapper::new(html_player.video.clone()),
                     target: html_player.image.id(),
                     size: wgpu::Extent3d {
                         width: video_size.0,
@@ -274,14 +311,14 @@ fn perform_video_copies(
     images: Res<RenderAssets<GpuImage>>,
     render_queue: Res<RenderQueue>,
 ) {
-    while let Ok(request) = requests.0.try_recv() {
+    while let Ok(mut request) = requests.0.try_recv() {
         let Some(gpu_image) = images.get(request.target) else {
             warn!("missing gpu image");
             continue;
         };
         render_queue.copy_external_image_to_texture(
             &wgpu::ImageCopyExternalImage {
-                source: wgpu::ExternalImageSource::HTMLVideoElement(request.video.video),
+                source: wgpu::ExternalImageSource::HTMLVideoElement(request.video.into_inner()),
                 origin: wgpu::Origin2d::ZERO,
                 flip_y: false,
             },
