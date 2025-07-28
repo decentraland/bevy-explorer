@@ -13,44 +13,64 @@ use super::UiLink;
 
 pub fn set_ui_pointer_events(
     mut commands: Commands,
-    pes: Query<
-        (Entity, &UiLink),
+    mut pes: Query<
+        &mut UiLink,
         (
             With<PointerEvents>,
             Or<(Changed<PointerEvents>, Changed<UiLink>)>,
         ),
     >,
-    links: Query<&UiLink>,
+    mut links: Query<&mut UiLink, Without<PointerEvents>>,
     mut removed: RemovedComponents<PointerEvents>,
 ) {
     for ent in removed.read() {
-        let Ok(link) = links.get(ent) else {
+        let Ok(mut link) = links.get_mut(ent) else {
             continue;
         };
 
         if let Ok(mut commands) = commands.get_entity(link.ui_entity) {
             commands.remove::<(On<HoverEnter>, On<HoverExit>)>();
         }
+
+        link.interactors.remove("pointer_events");
     }
 
-    for (ent, link) in pes.iter() {
-        if let Ok(mut commands) = commands.get_entity(link.ui_entity) {
+    for mut link in pes.iter_mut() {
+        link.interactors.insert("pointer_events");
+    }
+}
+
+pub fn manage_scene_ui_interact(
+    q: Query<(Entity, &UiLink), Changed<UiLink>>,
+    mut commands: Commands,
+    mut ui_target: ResMut<UiPointerTarget>,
+) {
+    for (entity, link) in q.iter() {
+        if link.interactors.is_empty() {
+            commands
+                .entity(link.ui_entity)
+                .insert(FocusPolicy::Pass)
+                .remove::<(Interaction, On<HoverEnter>, On<HoverExit>)>();
+            if ui_target.0.entity() == Some(entity) {
+                ui_target.0 = UiPointerTargetValue::None;
+            }
+        } else if let Ok(mut commands) = commands.get_entity(link.ui_entity) {
             let is_primary = link.is_window_ui;
             commands.try_insert((
                 FocusPolicy::Block,
                 RelativeCursorPosition::default(),
                 Interaction::default(),
                 On::<HoverEnter>::new(move |mut ui_target: ResMut<UiPointerTarget>| {
-                    debug!("hover enter {ent:?}");
+                    debug!("hover enter {entity:?}");
                     if is_primary {
-                        ui_target.0 = UiPointerTargetValue::Primary(ent, None);
+                        ui_target.0 = UiPointerTargetValue::Primary(entity, None);
                     } else {
-                        ui_target.0 = UiPointerTargetValue::World(ent, None);
+                        ui_target.0 = UiPointerTargetValue::World(entity, None);
                     }
                 }),
                 On::<HoverExit>::new(move |mut ui_target: ResMut<UiPointerTarget>| {
-                    debug!("hover exit  {ent:?}");
-                    if ui_target.0.entity() == Some(ent) {
+                    debug!("hover exit  {entity:?}");
+                    if ui_target.0.entity() == Some(entity) {
                         ui_target.0 = UiPointerTargetValue::None;
                     }
                 }),
