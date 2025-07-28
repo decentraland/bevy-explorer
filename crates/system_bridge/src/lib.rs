@@ -105,6 +105,16 @@ pub enum SystemApi {
     SetSinglePermission(SetSinglePermission),
     SetPermanentPermission(SetPermanentPermission),
     GetPermissionUsedStream(tokio::sync::mpsc::UnboundedSender<PermissionUsed>),
+    GetPermanentPermissions(
+        PermissionLevel,
+        RpcResultSender<Vec<PermanentPermissionItem>>,
+    ),
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct PermanentPermissionItem {
+    pub ty: PermissionType,
+    pub allow: PermissionValue,
 }
 
 #[derive(Clone, Serialize, Deserialize)]

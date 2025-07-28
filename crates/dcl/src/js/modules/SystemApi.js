@@ -299,8 +299,8 @@ module.exports.setPermanentPermission = function(body) {
     Deno.core.ops.op_set_permanent_permission(body.level, body.value, body.ty, body.allow)
 }
 
-module.exports.getPermanentPermissions = function(body) {
-    return Deno.core.ops.op_get_permanent_permissions(body.level, body.value);
+module.exports.getPermanentPermissions = async function(body) {
+    return await Deno.core.ops.op_get_permanent_permissions(body.level, body.value);
 }
 
 module.exports.getPermissionTypes = function() {

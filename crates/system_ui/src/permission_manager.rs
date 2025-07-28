@@ -17,7 +17,7 @@ use scene_runner::{
     renderer_context::RendererSceneContext,
     ContainingScene, Toaster,
 };
-use system_bridge::{NativeUi, SystemApi};
+use system_bridge::{NativeUi, PermanentPermissionItem, SystemApi};
 use tokio::sync::oneshot::{channel, error::TryRecvError, Receiver};
 use ui_core::{
     button::DuiButton,
@@ -405,6 +405,23 @@ pub fn handle_scene_permissions(
                 } else {
                     store.remove(&result.ty);
                 }
+            }
+            SystemApi::GetPermanentPermissions(level, sender) => {
+                let perms = match level {
+                    PermissionLevel::Scene(hash) => config.scene_permissions.get(hash),
+                    PermissionLevel::Realm(realm) => config.realm_permissions.get(realm),
+                    PermissionLevel::Global => Some(&config.default_permissions),
+                };
+
+                sender.send(
+                    perms
+                        .map(|h| {
+                            h.iter()
+                                .map(|(p, v)| PermanentPermissionItem { ty: *p, allow: *v })
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                )
             }
             _ => (),
         }
