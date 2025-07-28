@@ -2,15 +2,16 @@ use std::{
     cell::RefCell,
     rc::Rc,
     sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
+        atomic::{AtomicU32, Ordering},
+        Arc, Mutex,
     },
 };
 
 use bevy::{
     color::palettes::basic,
+    diagnostic::FrameCount,
     math::FloatOrd,
-    platform::collections::{HashMap, HashSet},
+    platform::collections::HashSet,
     prelude::*,
     render::{
         render_asset::{RenderAssetUsages, RenderAssets},
@@ -37,7 +38,7 @@ use scene_runner::{
 };
 use wasm_bindgen::prelude::wasm_bindgen;
 use web_sys::{
-    js_sys::Reflect,
+    js_sys::{self, Reflect},
     wasm_bindgen::{prelude::Closure, JsValue},
 };
 use web_sys::{wasm_bindgen::JsCast, HtmlVideoElement};
@@ -65,10 +66,12 @@ impl Plugin for VideoPlayerPlugin {
             SceneComponentId::VIDEO_PLAYER,
             ComponentPosition::EntityOnly,
         );
-        app.add_crdt_lww_component::<PbAudioStream, AVPlayer>(
-            SceneComponentId::AUDIO_STREAM,
-            ComponentPosition::EntityOnly,
-        );
+
+        // TODO: we can't reuse the same html element for audio and video, so will have to do audio separately
+        // app.add_crdt_lww_component::<PbAudioStream, AVPlayer>(
+        //     SceneComponentId::AUDIO_STREAM,
+        //     ComponentPosition::EntityOnly,
+        // );
         app.add_systems(Update, update_video_players.in_set(SceneSets::PostLoop));
 
         let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
@@ -119,13 +122,18 @@ impl From<PbAudioStream> for AVPlayer {
     }
 }
 
-#[derive(Component, Clone)]
+#[derive(Component)]
 pub struct HtmlVideoEntity {
     source: String,
     video: HtmlVideoElement,
     image: Handle<Image>,
     size: Option<(u32, u32)>,
-    frame_ready: Arc<AtomicBool>,
+    last_state: VideoState,
+    last_reported_time: f32,
+    current_time: f32,
+    new_frame_time: Arc<AtomicU32>,
+    state: Arc<Mutex<VideoState>>,
+    _closures: Vec<Closure<dyn FnMut()>>,
 }
 
 /// safety: engine is single threaded
@@ -141,7 +149,9 @@ extern "C" {
 
 impl HtmlVideoEntity {
     pub fn new(url: String, source: String, image: Handle<Image>) -> Self {
-        let frame_ready = Arc::new(AtomicBool::default());
+        let frame_time = Arc::new(AtomicU32::default());
+        let state = Arc::new(Mutex::new(VideoState::VsLoading));
+        let mut closures = Vec::new();
         let video = web_sys::window()
             .unwrap()
             .document()
@@ -156,8 +166,59 @@ impl HtmlVideoEntity {
             .expect("Couldn't create video element");
 
         video.set_cross_origin(Some("anonymous"));
-        // SAFETY: just an extern function, params are valid
-        set_video_source(&video, &url);
+
+        fn register_callback<'a>(
+            closures: &'a mut Vec<Closure<dyn FnMut()>>,
+            state: &Arc<Mutex<VideoState>>,
+            new_state: VideoState,
+        ) -> Option<&'a js_sys::Function> {
+            let state = state.clone();
+            let closure = Closure::wrap(Box::new({
+                move || {
+                    let mut state = state.lock().unwrap();
+                    *state = new_state;
+                    debug!("state -> {new_state:?}");
+                }
+            }) as Box<dyn FnMut()>);
+            closures.push(closure);
+            closures.last().map(move |c| c.as_ref().unchecked_ref())
+        }
+
+        video.set_oncanplay(register_callback(
+            &mut closures,
+            &state,
+            VideoState::VsReady,
+        ));
+        video.set_onabort(register_callback(
+            &mut closures,
+            &state,
+            VideoState::VsError,
+        ));
+        video.set_onerror(register_callback(
+            &mut closures,
+            &state,
+            VideoState::VsError,
+        ));
+        video.set_onwaiting(register_callback(
+            &mut closures,
+            &state,
+            VideoState::VsBuffering,
+        ));
+        video.set_onplaying(register_callback(
+            &mut closures,
+            &state,
+            VideoState::VsPlaying,
+        ));
+        video.set_onpause(register_callback(
+            &mut closures,
+            &state,
+            VideoState::VsPaused,
+        ));
+        video.set_onended(register_callback(
+            &mut closures,
+            &state,
+            VideoState::VsPaused,
+        ));
 
         // no wasm_bindgen for this!
         let rvc_prop = Reflect::get(&video, &"requestVideoFrameCallback".into()).unwrap();
@@ -168,14 +229,23 @@ impl HtmlVideoEntity {
 
         let callback = Rc::new(RefCell::new(None));
         let callback_clone = callback.clone();
-        let ready_clone = frame_ready.clone();
+        let frame_time_clone = frame_time.clone();
         let rvc_clone = rvc_fn.clone();
 
         *callback.borrow_mut() = Some(
             Closure::wrap(Box::new({
                 let video = video.clone();
-                move |_now: f64, _metadata: JsValue| {
-                    ready_clone.store(true, std::sync::atomic::Ordering::Relaxed);
+                move |_now: f64, metadata: JsValue| {
+                    if let Some(media_time) = Reflect::get(&metadata, &"mediaTime".into())
+                        .ok()
+                        .and_then(|mt| mt.as_f64())
+                    {
+                        frame_time_clone.store(
+                            (media_time as f32).to_bits(),
+                            std::sync::atomic::Ordering::Relaxed,
+                        );
+                    };
+
                     rvc_clone
                         .call1(&video, callback_clone.borrow().as_ref().unwrap())
                         .unwrap();
@@ -187,12 +257,19 @@ impl HtmlVideoEntity {
             .call1(&video, callback.borrow().as_ref().unwrap())
             .unwrap();
 
+        set_video_source(&video, &url);
+
         Self {
             source,
             video,
             image,
             size: None,
-            frame_ready,
+            new_frame_time: frame_time,
+            last_state: VideoState::VsNone,
+            last_reported_time: -1.0,
+            current_time: -1.0,
+            state,
+            _closures: closures,
         }
     }
 
@@ -201,20 +278,29 @@ impl HtmlVideoEntity {
     }
 
     pub fn play(&mut self) {
+        debug!("called play");
         let _ = self.video.play();
     }
 
     pub fn stop(&mut self) {
+        debug!("called play");
         let _ = self.video.pause();
     }
 
-    pub fn is_playing(&self) -> bool {
-        self.frame_ready.load(Ordering::Relaxed)
+    pub fn state(&self) -> VideoState {
+        self.state.lock().unwrap().clone()
     }
 }
 
 impl Drop for HtmlVideoEntity {
     fn drop(&mut self) {
+        self.video.set_oncanplay(None);
+        self.video.set_onabort(None);
+        self.video.set_onerror(None);
+        self.video.set_onwaiting(None);
+        self.video.set_onplaying(None);
+        self.video.set_onpause(None);
+        self.video.set_onended(None);
         self.video.remove();
     }
 }
@@ -232,14 +318,18 @@ pub fn update_video_players(
     )>,
     mut images: ResMut<Assets<Image>>,
     ipfs: Res<IpfsResource>,
-    scenes: Query<&RendererSceneContext>,
+    mut scenes: Query<&mut RendererSceneContext>,
     config: Res<AppConfig>,
     containing_scene: ContainingScene,
     user: Query<&GlobalTransform, With<PrimaryUser>>,
     send_queue: Res<FrameCopyRequestQueue>,
+    frame: Res<FrameCount>,
 ) {
     for (ent, container, player, mut maybe_video, maybe_texture, _) in video_players.iter_mut() {
-        if let Some(video) = maybe_video.as_mut().filter(|p| p.source == player.source.src) {
+        if let Some(video) = maybe_video
+            .as_mut()
+            .filter(|p| p.source == player.source.src)
+        {
             if player.is_changed() {
                 video.set_loop(player.source.r#loop.unwrap_or(false));
             }
@@ -278,9 +368,7 @@ pub fn update_video_players(
             video.set_loop(player.source.r#loop.unwrap_or(false));
             let video_output = VideoTextureOutput(image_handle);
 
-            commands
-                .entity(ent)
-                .try_insert((video, video_output));
+            commands.entity(ent).try_insert((video, video_output));
         }
     }
 
@@ -313,25 +401,25 @@ pub fn update_video_players(
         .map(|(_, _, ent)| *ent)
         .collect::<HashSet<_>>();
 
-    for (ent, _, _, video, _, _) in video_players.iter_mut() {
+    for (ent, container, _, video, _, _) in video_players.iter_mut() {
         let Some(mut video) = video else { continue };
 
         let should_be_playing = should_be_playing.contains(&ent);
 
-        if !video.is_playing() && should_be_playing {
+        let is_playing = video.state() == VideoState::VsPlaying;
+        if !is_playing && should_be_playing {
             video.play()
-        } else if video.is_playing() {
+        } else if is_playing {
             if !should_be_playing {
                 video.stop();
             } else {
-                if video.frame_ready.swap(false, Ordering::Relaxed) {
-                    // new frame is ready, queue a copy
+                let new_time = video.new_frame_time.swap(0, Ordering::Relaxed);
+                if new_time != 0 {
+                    // new frame is ready
+                    let new_time = f32::from_bits(new_time);
 
                     // check size
-                    let video_size = (
-                        video.video.video_width(),
-                        video.video.video_height(),
-                    );
+                    let video_size = (video.video.video_width(), video.video.video_height());
                     if video.size.is_none_or(|sz| sz != video_size) {
                         let Some(image) = images.get_mut(video.image.id()) else {
                             warn!("no image!");
@@ -356,8 +444,37 @@ pub fn update_video_players(
                             depth_or_array_layers: 1,
                         },
                     });
+
+                    video.current_time = new_time;
                 }
             }
+        }
+
+        const VIDEO_REPORT_FREQUENCY: f32 = 1.0;
+        let new_state = video.state();
+        if new_state != video.last_state
+            || video.current_time > video.last_reported_time + VIDEO_REPORT_FREQUENCY
+            || video.current_time < video.last_reported_time
+        {
+            let Ok(mut context) = scenes.get_mut(container.root) else {
+                continue;
+            };
+            let tick_number = context.tick_number;
+            debug!("set {:?} {:?}", video.state(), video.current_time);
+            context.update_crdt(
+                SceneComponentId::VIDEO_EVENT,
+                CrdtType::GO_ANY,
+                container.container_id,
+                &PbVideoEvent {
+                    timestamp: frame.0,
+                    tick_number,
+                    current_offset: video.current_time,
+                    video_length: video.video.duration() as f32,
+                    state: video.state() as i32,
+                },
+            );
+            video.last_state = new_state;
+            video.last_reported_time = video.current_time;
         }
     }
 }
