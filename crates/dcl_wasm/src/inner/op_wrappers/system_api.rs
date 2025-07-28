@@ -272,12 +272,13 @@ pub fn op_set_permanent_permission(
 }
 
 #[wasm_bindgen]
-pub fn op_get_permanent_permissions(
+pub async fn op_get_permanent_permissions(
     state: &WorkerContext,
     level: &str,
     value: Option<String>,
 ) -> Result<js_sys::Array, WasmError> {
     dcl::js::system_api::op_get_permanent_permissions(state.rc(), level, value)
+        .await
         .map(|r| {
             r.into_iter()
                 .map(|v| serde_wasm_bindgen::to_value(&v).unwrap())

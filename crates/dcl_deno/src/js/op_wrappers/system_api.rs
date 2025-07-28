@@ -2,9 +2,7 @@ use common::{
     inputs::SystemActionEvent,
     structs::{PermissionType, PermissionUsed, PermissionValue},
 };
-use dcl::js::system_api::{
-    JsBindingsData, PermanentPermissionItem, PermissionTypeDetail, RealmProviderString,
-};
+use dcl::js::system_api::{JsBindingsData, PermissionTypeDetail, RealmProviderString};
 use dcl_component::proto_components::{
     common::Vector2,
     sdk::components::{PbAvatarBase, PbAvatarEquippedData},
@@ -12,7 +10,8 @@ use dcl_component::proto_components::{
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
-    settings::SettingInfo, ChatMessage, HomeScene, LiveSceneInfo, PermissionRequest,
+    settings::SettingInfo, ChatMessage, HomeScene, LiveSceneInfo, PermanentPermissionItem,
+    PermissionRequest,
 };
 
 // list of op declarations
@@ -314,14 +313,14 @@ pub fn op_set_permanent_permission(
     dcl::js::system_api::op_set_permanent_permission(state, level, value, permission_type, allow)
 }
 
-#[op2]
+#[op2(async)]
 #[serde]
-pub fn op_get_permanent_permissions(
+pub async fn op_get_permanent_permissions(
     state: Rc<RefCell<OpState>>,
-    #[string] level: &str,
+    #[string] level: String,
     #[string] value: Option<String>,
 ) -> Result<Vec<PermanentPermissionItem>, anyhow::Error> {
-    dcl::js::system_api::op_get_permanent_permissions(state, level, value)
+    dcl::js::system_api::op_get_permanent_permissions(state, &level, value).await
 }
 
 #[op2]

@@ -5,8 +5,7 @@ use common::{
     profile::SerializedProfile,
     rpc::RpcCall,
     structs::{
-        AppConfig, PermissionLevel, PermissionStrings, PermissionType, PermissionUsed,
-        PermissionValue,
+        PermissionLevel, PermissionStrings, PermissionType, PermissionUsed, PermissionValue,
     },
 };
 use dcl_component::proto_components::{
@@ -20,8 +19,8 @@ use std::{cell::RefCell, rc::Rc};
 use strum::IntoEnumIterator;
 use system_bridge::{
     settings::{SettingInfo, Settings},
-    ChatMessage, HomeScene, LiveSceneInfo, PermissionRequest, SetAvatarData,
-    SetPermanentPermission, SetSinglePermission, SystemApi,
+    ChatMessage, HomeScene, LiveSceneInfo, PermanentPermissionItem, PermissionRequest,
+    SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi,
 };
 use tokio::sync::mpsc::UnboundedReceiver;
 use wallet::{sign_request, Wallet};
@@ -631,34 +630,19 @@ pub fn op_set_permanent_permission(
     Ok(())
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct PermanentPermissionItem {
-    ty: PermissionType,
-    allow: PermissionValue,
-}
-
-pub fn op_get_permanent_permissions(
+pub async fn op_get_permanent_permissions(
     state: Rc<RefCell<impl State>>,
     level: &str,
     value: Option<String>,
 ) -> Result<Vec<PermanentPermissionItem>, anyhow::Error> {
     let level = get_permanent_level(level, value)?;
-    let state = state.borrow();
-    let config = state.borrow::<AppConfig>();
+    let (sx, result) = tokio::sync::oneshot::channel();
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetPermanentPermissions(level, sx.into()))?;
 
-    let perms = match level {
-        PermissionLevel::Scene(hash) => config.scene_permissions.get(&hash),
-        PermissionLevel::Realm(realm) => config.realm_permissions.get(&realm),
-        PermissionLevel::Global => Some(&config.default_permissions),
-    };
-
-    Ok(perms
-        .map(|h| {
-            h.iter()
-                .map(|(p, v)| PermanentPermissionItem { ty: *p, allow: *v })
-                .collect()
-        })
-        .unwrap_or_default())
+    Ok(result.await?)
 }
 
 #[derive(Serialize, Deserialize)]
