@@ -9,9 +9,8 @@ use std::{
 
 use bevy::{
     color::palettes::basic,
-    diagnostic::FrameCount,
     math::FloatOrd,
-    platform::collections::HashMap,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
         render_asset::{RenderAssetUsages, RenderAssets},
@@ -55,7 +54,7 @@ impl Plugin for VideoPlayerPlugin {
                     let container = document.create_element("div").unwrap();
                     container.set_id(VIDEO_CONTAINER_ID);
                     let style = container.dyn_ref::<web_sys::HtmlElement>().unwrap().style();
-                    // style.set_property("display", "none").unwrap();
+                    style.set_property("display", "none").unwrap();
 
                     document.body().unwrap().append_child(&container).unwrap();
                 }
@@ -122,7 +121,6 @@ impl From<PbAudioStream> for AVPlayer {
 
 #[derive(Component, Clone)]
 pub struct HtmlVideoEntity {
-    url: String,
     source: String,
     video: HtmlVideoElement,
     image: Handle<Image>,
@@ -159,8 +157,7 @@ impl HtmlVideoEntity {
 
         video.set_cross_origin(Some("anonymous"));
         // SAFETY: just an extern function, params are valid
-        unsafe { set_video_source(&video, &url) };
-        video.set_autoplay(true);
+        set_video_source(&video, &url);
 
         // no wasm_bindgen for this!
         let rvc_prop = Reflect::get(&video, &"requestVideoFrameCallback".into()).unwrap();
@@ -191,13 +188,28 @@ impl HtmlVideoEntity {
             .unwrap();
 
         Self {
-            url,
             source,
             video,
             image,
             size: None,
             frame_ready,
         }
+    }
+
+    pub fn set_loop(&mut self, looping: bool) {
+        self.video.set_loop(looping)
+    }
+
+    pub fn play(&mut self) {
+        let _ = self.video.play();
+    }
+
+    pub fn stop(&mut self) {
+        let _ = self.video.pause();
+    }
+
+    pub fn is_playing(&self) -> bool {
+        self.frame_ready.load(Ordering::Relaxed)
     }
 }
 
@@ -224,13 +236,14 @@ pub fn update_video_players(
     config: Res<AppConfig>,
     containing_scene: ContainingScene,
     user: Query<&GlobalTransform, With<PrimaryUser>>,
-    mut send_queue: Res<FrameCopyRequestQueue>,
+    send_queue: Res<FrameCopyRequestQueue>,
 ) {
-    for (ent, container, player, mut maybe_html, maybe_texture, _) in video_players.iter_mut() {
-        if maybe_html
-            .as_ref()
-            .is_none_or(|html| html.source != player.source.src)
-        {
+    for (ent, container, player, mut maybe_video, maybe_texture, _) in video_players.iter_mut() {
+        if let Some(video) = maybe_video.as_mut().filter(|p| p.source == player.source.src) {
+            if player.is_changed() {
+                video.set_loop(player.source.r#loop.unwrap_or(false));
+            }
+        } else {
             let image_handle = match maybe_texture {
                 None => {
                     let mut image = Image::new_fill(
@@ -259,48 +272,91 @@ pub fn update_video_players(
             let source = ipfs
                 .content_url(&player.source.src, &context.hash)
                 .unwrap_or_else(|| player.source.src.clone());
-            let video_entity =
+            let mut video =
                 HtmlVideoEntity::new(player.source.src.clone(), source, image_handle.clone());
+
+            video.set_loop(player.source.r#loop.unwrap_or(false));
             let video_output = VideoTextureOutput(image_handle);
 
             commands
                 .entity(ent)
-                .try_insert((video_entity, video_output));
+                .try_insert((video, video_output));
         }
+    }
 
-        if let Some(mut html_player) = maybe_html {
-            if html_player.frame_ready.swap(false, Ordering::Relaxed) {
-                // new frame is ready, queue a copy
+    // disable distant av
+    let Ok(user) = user.single() else {
+        return;
+    };
 
-                // check size
-                let video_size = (
-                    html_player.video.video_width(),
-                    html_player.video.video_height(),
-                );
-                if html_player.size.is_none_or(|sz| sz != video_size) {
-                    let Some(mut image) = images.get_mut(html_player.image.id()) else {
-                        warn!("no image!");
-                        continue;
-                    };
+    let containing_scenes = containing_scene.get_position(user.translation());
 
-                    image.resize(Extent3d {
-                        width: video_size.0.max(16),
-                        height: video_size.1.max(16),
-                        depth_or_array_layers: 1,
+    let mut sorted_players = video_players
+        .iter()
+        .filter_map(|(ent, container, player, _, _, transform)| {
+            if player.source.playing.unwrap_or(true) {
+                let in_scene = containing_scenes.contains(&container.root);
+                let distance = transform.translation().distance(user.translation());
+                Some((in_scene, distance, ent))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    // prioritise av in current scene (false < true), then by distance
+    sorted_players.sort_by_key(|(in_scene, distance, _)| (!in_scene, FloatOrd(*distance)));
+
+    let should_be_playing = sorted_players
+        .iter()
+        .take(config.max_videos)
+        .map(|(_, _, ent)| *ent)
+        .collect::<HashSet<_>>();
+
+    for (ent, _, _, video, _, _) in video_players.iter_mut() {
+        let Some(mut video) = video else { continue };
+
+        let should_be_playing = should_be_playing.contains(&ent);
+
+        if !video.is_playing() && should_be_playing {
+            video.play()
+        } else if video.is_playing() {
+            if !should_be_playing {
+                video.stop();
+            } else {
+                if video.frame_ready.swap(false, Ordering::Relaxed) {
+                    // new frame is ready, queue a copy
+
+                    // check size
+                    let video_size = (
+                        video.video.video_width(),
+                        video.video.video_height(),
+                    );
+                    if video.size.is_none_or(|sz| sz != video_size) {
+                        let Some(image) = images.get_mut(video.image.id()) else {
+                            warn!("no image!");
+                            continue;
+                        };
+
+                        image.resize(Extent3d {
+                            width: video_size.0.max(16),
+                            height: video_size.1.max(16),
+                            depth_or_array_layers: 1,
+                        });
+                        video.size = Some(video_size)
+                    }
+
+                    // queue copy
+                    let _ = send_queue.0.send(FrameCopyRequest {
+                        video: WgpuWrapper::new(video.video.clone()),
+                        target: video.image.id(),
+                        size: wgpu::Extent3d {
+                            width: video_size.0,
+                            height: video_size.1,
+                            depth_or_array_layers: 1,
+                        },
                     });
-                    html_player.size = Some(video_size)
                 }
-
-                // queue copy
-                let _ = send_queue.0.send(FrameCopyRequest {
-                    video: WgpuWrapper::new(html_player.video.clone()),
-                    target: html_player.image.id(),
-                    size: wgpu::Extent3d {
-                        width: video_size.0,
-                        height: video_size.1,
-                        depth_or_array_layers: 1,
-                    },
-                });
             }
         }
     }
@@ -311,18 +367,18 @@ fn perform_video_copies(
     images: Res<RenderAssets<GpuImage>>,
     render_queue: Res<RenderQueue>,
 ) {
-    while let Ok(mut request) = requests.0.try_recv() {
+    while let Ok(request) = requests.0.try_recv() {
         let Some(gpu_image) = images.get(request.target) else {
             warn!("missing gpu image");
             continue;
         };
         render_queue.copy_external_image_to_texture(
-            &wgpu::ImageCopyExternalImage {
+            &wgpu::CopyExternalImageSourceInfo {
                 source: wgpu::ExternalImageSource::HTMLVideoElement(request.video.into_inner()),
                 origin: wgpu::Origin2d::ZERO,
                 flip_y: false,
             },
-            wgpu::ImageCopyTextureTagged {
+            wgpu::CopyExternalImageDestInfo {
                 texture: &gpu_image.texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
