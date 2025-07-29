@@ -28,8 +28,8 @@ CARGO_FEATURE_CRT_STATIC = "ohyes"
 build-std = ["std", "panic_abort"]
 
 # uncomment for rust analyzer to attempt (and fail) to use wasm32 as default
-[build]
-target = "wasm32-unknown-unknown"
+# [build]
+# target = "wasm32-unknown-unknown"
 
 
 ### for panic_unwind (currently unsupported by walrus)

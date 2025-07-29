@@ -15,8 +15,8 @@ name = "webgpu_build"
 # - wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="wasm" && npx serve deploy/web
 
 [features]
-# default = ["livekit", "ffmpeg", "inspect", "social"]
-default = ["wasm"]
+default = ["livekit", "ffmpeg", "inspect", "social"]
+# default = ["wasm"]
 console = []
 dcl-assert = ["common/dcl-assert"]
 gen-tests = []
