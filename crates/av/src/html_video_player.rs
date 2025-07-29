@@ -460,8 +460,15 @@ pub fn update_av_players(
 
         let should_be_playing = should_be_playing.contains(&ent);
 
-        let is_playing = av.state() == VideoState::VsPlaying;
-        if !is_playing && should_be_playing {
+        let state = av.state();
+
+        let is_playing = state == VideoState::VsPlaying;
+        let can_play = match state {
+            VideoState::VsReady | VideoState::VsPaused => true,
+            _ => false,
+        };
+
+        if !is_playing && should_be_playing && can_play {
             av.play()
         } else if is_playing {
             if !should_be_playing {
