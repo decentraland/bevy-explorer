@@ -210,7 +210,7 @@ async function run() {
         return "unknown";
       })();
 
-      engine_run(platform, initialRealm, location, systemScene, true, 1e6, 8);
+      engine_run(platform, initialRealm, location, systemScene, true, 1e6, 64);
     };
   } catch (error) {
     console.error(

@@ -42,8 +42,7 @@ fn write(state: &WorkerContext) {
         };
 
         let _ = web_fs::create_dir_all("local_storage").await;
-        let Ok(mut file) = web_fs::File::create(format!("local_storage/{scene_urn}")).await
-        else {
+        let Ok(mut file) = web_fs::File::create(format!("local_storage/{scene_urn}")).await else {
             warn!("failed to write storage");
             return;
         };
