@@ -142,6 +142,8 @@ pub struct HtmlMediaEntity {
     new_frame_time: Arc<AtomicU32>,
     state: Arc<Mutex<VideoState>>,
     _closures: Vec<Closure<dyn FnMut()>>,
+    frame_closure: Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>>,
+    frame_callback_handle: Rc<RefCell<Option<u32>>>,
 }
 
 /// safety: engine is single threaded
@@ -222,9 +224,11 @@ impl HtmlMediaEntity {
             last_state: VideoState::VsNone,
             last_reported_time: -1.0,
             current_time: -1.0,
-            new_frame_time: Arc::new(AtomicU32::default()),
+            new_frame_time: Default::default(),
             state,
             _closures: closures,
+            frame_closure: Default::default(),
+            frame_callback_handle: Default::default(),
         }
     }
 
@@ -274,41 +278,54 @@ impl HtmlMediaEntity {
         }
         let rvc_fn = rvc_prop.dyn_into::<web_sys::js_sys::Function>().unwrap();
 
-        let callback = Rc::new(RefCell::new(None));
+        let callback: Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>> =
+            Rc::new(RefCell::new(None));
+        let callback_handle: Rc<RefCell<Option<u32>>> = Rc::new(RefCell::new(None));
         let callback_clone = callback.clone();
+        let handle_clone = callback_handle.clone();
         let frame_time_clone = frame_time.clone();
         let rvc_clone = rvc_fn.clone();
 
-        *callback.borrow_mut() = Some(
-            Closure::wrap(Box::new({
-                let video = video.clone();
-                move |_now: f64, metadata: JsValue| {
-                    if let Some(media_time) = Reflect::get(&metadata, &"mediaTime".into())
-                        .ok()
-                        .and_then(|mt| mt.as_f64())
-                    {
-                        frame_time_clone.store(
-                            (media_time as f32).to_bits(),
-                            std::sync::atomic::Ordering::Relaxed,
-                        );
-                    };
+        *callback.borrow_mut() = Some(Closure::wrap(Box::new({
+            let video = video.clone();
+            move |_now: f64, metadata: JsValue| {
+                debug!("frame received");
+                if let Some(media_time) = Reflect::get(&metadata, &"mediaTime".into())
+                    .ok()
+                    .and_then(|mt| mt.as_f64())
+                {
+                    debug!("frame received -> {media_time}");
+                    frame_time_clone.store(
+                        (media_time as f32).to_bits(),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                };
 
-                    rvc_clone
-                        .call1(&video, callback_clone.borrow().as_ref().unwrap())
-                        .unwrap();
+                if let Some(cb) = callback_clone.borrow().as_ref() {
+                    if let Ok(new_handle) = rvc_clone.call1(&video, cb.as_ref().unchecked_ref()) {
+                        *handle_clone.borrow_mut() = new_handle.as_f64().map(|f| f as u32);
+                    }
+                } else {
+                    debug!("no cb - dropping");
                 }
-            }) as Box<dyn FnMut(f64, JsValue)>)
-            .into_js_value(),
-        );
-        rvc_fn
-            .call1(&video, callback.borrow().as_ref().unwrap())
+            }
+        }) as Box<dyn FnMut(f64, JsValue)>));
+        let initial_handle = rvc_fn
+            .call1(
+                &video,
+                callback.borrow().as_ref().unwrap().as_ref().unchecked_ref(),
+            )
             .unwrap();
+        *callback_handle.borrow_mut() = initial_handle.as_f64().map(|f| f as u32);
 
         set_video_source(&video, url);
 
         let mut slf = Self::common_init(source, media);
         slf.video = Some(video);
         slf.image = Some(image);
+        slf.new_frame_time = frame_time;
+        slf.frame_closure = callback;
+        slf.frame_callback_handle = callback_handle;
         slf
     }
 
@@ -337,6 +354,18 @@ impl HtmlMediaEntity {
 
 impl Drop for HtmlMediaEntity {
     fn drop(&mut self) {
+        debug!("shutdown");
+        if let (Some(video), Some(handle)) =
+            (&self.video, self.frame_callback_handle.borrow_mut().take())
+        {
+            Reflect::get(&video, &"cancelVideoFrameCallback".into())
+                .unwrap()
+                .dyn_into::<web_sys::js_sys::Function>()
+                .unwrap()
+                .call1(&video, &JsValue::from(handle))
+                .unwrap();
+        }
+        self.frame_closure.take();
         self.media.set_oncanplay(None);
         self.media.set_onabort(None);
         self.media.set_onerror(None);
@@ -480,6 +509,7 @@ pub fn update_av_players(
                     if new_time != 0 {
                         // new frame is ready
                         let new_time = f32::from_bits(new_time);
+                        debug!("got new frame -> {new_time}");
                         let image_id = av.image.as_ref().unwrap().id();
                         let video_size = (video.video_width(), video.video_height());
                         let video = video.clone();
@@ -512,8 +542,11 @@ pub fn update_av_players(
 
                         av.current_time = new_time;
                     } else {
-                        // we don't report audio timestamps, otherwise would need to grab it here
+                        debug!("no frame (new_time == 0)");
                     }
+                } else {
+                    debug!("no video");
+                    // we don't report audio timestamps, otherwise would need to grab it here
                 }
             }
         }
