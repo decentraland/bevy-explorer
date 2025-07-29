@@ -102,6 +102,7 @@ impl DclProtoComponent for sdk::components::PbAudioSource {}
 impl DclProtoComponent for sdk::components::PbVideoPlayer {}
 impl DclProtoComponent for sdk::components::PbAudioStream {}
 impl DclProtoComponent for sdk::components::PbVideoEvent {}
+impl DclProtoComponent for sdk::components::PbAudioEvent {}
 impl DclProtoComponent for sdk::components::PbVisibilityComponent {}
 impl DclProtoComponent for sdk::components::PbAvatarModifierArea {}
 impl DclProtoComponent for sdk::components::PbNftShape {}

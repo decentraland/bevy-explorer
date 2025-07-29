@@ -81,6 +81,47 @@ async function run() {
     );
     */
 
+    window.setVideoSource = (video, src) => {
+      async function isHlsStream(url) {
+        try {
+          const response = await fetch(url, {
+            method: 'HEAD',
+            mode: 'cors', 
+          });
+
+          if (!response.ok) {
+            return false;
+          }
+
+          const contentType = response.headers.get('Content-Type');
+
+          if (contentType) {
+            return contentType.includes('application/vnd.apple.mpegurl') ||
+                  contentType.includes('application/x-mpegURL');
+          }
+
+          return false;
+        } catch (error) {
+          return false;
+        }
+      }
+
+      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = src;
+      } else if (Hls.isSupported()) {
+        // check if we need hls
+        setTimeout(async () => {
+          if (await isHlsStream(src)) {
+            var hls = new Hls();
+            hls.loadSource(src);
+            hls.attachMedia(video);
+          } else {
+            video.src = src;
+          }
+        }, 0)
+      }
+    }
+
     window.spawn_and_init_sandbox = async () => {
       var timeoutId;
       return new Promise((resolve, _reject) => {
@@ -169,7 +210,7 @@ async function run() {
         return "unknown";
       })();
 
-      engine_run(platform, initialRealm, location, systemScene, true, 1e6, 8);
+      engine_run(platform, initialRealm, location, systemScene, true, 1e6, 64);
     };
   } catch (error) {
     console.error(

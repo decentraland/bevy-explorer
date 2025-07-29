@@ -39,6 +39,7 @@ fn gen_sdk_components() -> Result<()> {
         "video_player",
         "audio_stream",
         "video_event",
+        "audio_event",
         "visibility_component",
         "avatar_modifier_area",
         "nft_shape",

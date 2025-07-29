@@ -26,7 +26,7 @@ hot_reload = ["bevy/file_watcher", "ipfs/hot_reload"]
 livekit = ["comms/livekit", "system_ui/livekit"]
 ffmpeg = ["av/ffmpeg"]
 social = ["dcl_component/social", "social/social"]
-wasm = ["uuid/js", "getrandom/wasm_js", "bevy/webgpu", "bevy/wasm_threaded_asset_loader", "bevy/reduce_image_sizes"]
+wasm = ["uuid/js", "getrandom/wasm_js", "bevy/webgpu", "bevy/wasm_threaded_asset_loader", "bevy/reduce_image_sizes", "av/html"]
 
 [profile.release]
 codegen-units = 1

@@ -69,6 +69,7 @@ impl SceneComponentId {
 
     pub const VIDEO_PLAYER: SceneComponentId = SceneComponentId(1043);
     pub const VIDEO_EVENT: SceneComponentId = SceneComponentId(1044);
+    pub const AUDIO_EVENT: SceneComponentId = SceneComponentId(1105);
 
     pub const GLTF_NODE: SceneComponentId = SceneComponentId(1200);
     pub const GLTF_NODE_STATE: SceneComponentId = SceneComponentId(1201);
