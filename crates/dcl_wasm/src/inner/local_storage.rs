@@ -16,7 +16,7 @@ struct LocalStorage(HashMap<String, String>);
 pub async fn init(state: &WorkerContext) {
     let scene_urn = state.state.borrow().borrow::<CrdtContext>().hash.clone();
 
-    if let Ok(mut existing) = web_fs::File::open(format!("local_storage/{}", scene_urn)).await {
+    if let Ok(mut existing) = web_fs::File::open(format!("local_storage/{scene_urn}")).await {
         let mut buf = String::default();
         if let Err(e) = existing.read_to_string(&mut buf).await {
             warn!("failed to read storage: {e:?}");
@@ -42,7 +42,7 @@ fn write(state: &WorkerContext) {
         };
 
         let _ = web_fs::create_dir_all("local_storage").await;
-        let Ok(mut file) = web_fs::File::create(format!("local_storage/{}", scene_urn)).await
+        let Ok(mut file) = web_fs::File::create(format!("local_storage/{scene_urn}")).await
         else {
             warn!("failed to write storage");
             return;
