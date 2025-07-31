@@ -7,7 +7,7 @@ async function createSnapshot() {
   console.log('Starting snapshot of node_modules...');
   
   // Define the source and destination paths
-  const sourcePath = './dcl-deps/node_modules';
+  const sourcePath = './dcl-deps/node_modules_full';
   const outputPath = '../web/assets/node_modules.snapshot';
 
   try {
