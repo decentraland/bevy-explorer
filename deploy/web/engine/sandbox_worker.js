@@ -1,7 +1,7 @@
 // sandbox_worker.js - Runs inside the final Web Worker, the most isolated environment.
 
 // Import the wasm-bindgen generated JS glue code.
-import init, * as wasm_bindgen_exports from "./pkg/webgpu_build.js";
+import init, * as wasm_bindgen_exports from "../pkg/webgpu_build.js";
 
 // self.WebSocket = {}
 

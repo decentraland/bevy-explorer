@@ -1,4 +1,4 @@
-import init, * as wasm_bindgen_exports from "./pkg/webgpu_build.js";
+import init, * as wasm_bindgen_exports from "../pkg/webgpu_build.js";
 
 console.log("[Asset Loader] Starting");
 
