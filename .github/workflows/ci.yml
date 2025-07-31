@@ -193,7 +193,7 @@ jobs:
       - name: install deps (linux)
         run: sudo apt install -y --no-install-recommends clang curl
       - name: build playground
-        run: cd deploy/web-build && ./build_playground.sh
+        run: cd deploy/web-build && chmod +x ./build_playground.sh && ./build_playground.sh
       - name: Build WASM package
         run: |
           cp -r ./assets ./deploy/web/assets/
