@@ -1,0 +1,18 @@
+{
+  "name": "BevyPlaygroundScene",
+  "description": "ECS7 ",
+  "version": "1.0.0",
+  "dependencies": {
+    "@dcl-sdk/utils": "latest",
+    "@dcl/js-runtime": "7.8.12",
+    "@dcl/sdk": "https://sdk-team-cdn.decentraland.org/@dcl/js-sdk-toolchain/branch/multi-button-ui/dcl-sdk-7.8.2-14263989025.commit-616a77e.tgz"
+  },
+  "scripts": {
+    "build": "sdk-commands build --skip-install",
+    "deploy": "sdk-commands deploy",
+    "start": "sdk-commands start"
+  },
+  "devDependencies": {
+    "@dcl/asset-packs": "^1.20.0"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "bevy-playground",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@webcontainer/snapshot": "^0.1.0",
+    "vite": "^7.0.6"
+  },
+  "dependencies": {
+    "@webcontainer/api": "^1.6.1",
+    "path-browserify": "^1.0.1"
+  }
+}

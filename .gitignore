@@ -7,3 +7,8 @@ config.json
 /log
 /deploy/web/assets
 /deploy/web/modules
+/deploy/web/playground
+/deploy/web-build/node_modules
+/deploy/web-build/package-lock.json
+/deploy/web-build/dist
+/deploy/web-build/dcl-deps
