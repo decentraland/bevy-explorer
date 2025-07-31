@@ -1,6 +1,6 @@
 npm i
 npm run build
-cp -r dist ../web
+cp -r dist/* ../web
 mkdir dcl-deps
 cd dcl-deps
 npm init -y
