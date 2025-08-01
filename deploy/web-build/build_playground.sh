@@ -5,7 +5,7 @@ set -e
 echo "--- installing playground node dependencies ---"
 npm i
 echo "--- running playground build ---"
-vite build --base=/${GITHUB_SHA}/
+npx vite build --base=/${GITHUB_SHA}/
 echo "--- copying playground artifacts ---"
 cp -r dist/* ../web
 echo "--- generating node modules for snapshot ---"
