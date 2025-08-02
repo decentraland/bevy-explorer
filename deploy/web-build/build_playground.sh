@@ -19,5 +19,6 @@ echo "--- resolving symlinks ---"
 cp -rL node_modules node_modules_full
 cd ..
 echo "--- creating snapshot ---"
+mkdir ../web/assets
 node create-snapshot.mjs
 echo "--- playground build done ---"
