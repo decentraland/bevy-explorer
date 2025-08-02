@@ -1,7 +1,6 @@
 // create-snapshot.js
 import { snapshot } from '@webcontainer/snapshot';
 import { writeFile } from 'fs/promises';
-import path from 'path';
 
 async function createSnapshot() {
   console.log('Starting snapshot of node_modules...');

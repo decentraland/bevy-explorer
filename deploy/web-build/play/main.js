@@ -1,6 +1,5 @@
 // Import the wasm-bindgen generated JS glue code and Rust functions
 import { initEngine, startEngine } from "../engine/engine.js";
-import init, { engine_init, engine_run } from "../pkg/webgpu_build.js"; // Ensure this path is correct
 
 const initialRealmInput = document.getElementById("initialRealm");
 const locationInput = document.getElementById("location");
@@ -39,8 +38,6 @@ function hideSettings() {
   if (systemSceneGroup) systemSceneGroup.style.display = "none";
   if (initButton) initButton.style.display = "none";
 }
-
-var sharedMemory;
 
 async function run() {
   populateInputsFromQueryParams();

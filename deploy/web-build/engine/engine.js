@@ -1,9 +1,5 @@
 import init, { engine_init, engine_run } from "../pkg/webgpu_build.js";
 
-const canvas = document.getElementById("mygame-canvas");
-
-var sharedMemory;
-
 export async function initEngine() {
   const wasmUrl = "../pkg/webgpu_build_bg.wasm";
 

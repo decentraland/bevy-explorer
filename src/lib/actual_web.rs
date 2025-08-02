@@ -172,7 +172,7 @@ fn main_inner(
                     preview: is_preview,
                     starting_realm: Some(final_config.server.clone()),
                     content_server_override,
-                    assets_root: Default::default(),
+                    assets_root: Some("/assets".to_owned()),
                     num_slots: final_config.max_concurrent_remotes,
                 })
                 .add_before::<IpfsIoPlugin>(NftReaderPlugin),

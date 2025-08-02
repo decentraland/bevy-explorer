@@ -5,17 +5,17 @@ import { defineConfig } from "vite";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
+  appType: 'mpa',  
   build: {
     rollupOptions: {
       input: {
-        playground: resolve(__dirname, "playground/index.html"),
+        playground: resolve(__dirname, "index.html"),
       },
     },
+    outDir: "../web", // Changed back to playground sub-directory
   },
   server: {
     headers: {
-      // These two headers are required for SharedArrayBuffer to work,
-      // which WebContainers rely on.
       "Cross-Origin-Opener-Policy": "same-origin",
       "Cross-Origin-Embedder-Policy": "require-corp",
       "Cross-Origin-Resource-Policy": "cross-origin",

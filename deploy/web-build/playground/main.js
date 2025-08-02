@@ -1,4 +1,5 @@
 import { WebContainer } from "@webcontainer/api";
+import { initEngine, startEngine } from "/engine/engine.js";
 import path from "path-browserify";
 
 // Get DOM elements
@@ -12,12 +13,10 @@ let webcontainerInstance;
 window.addEventListener("load", async () => {
   outputEl.textContent = "Booting WebContainer...\n";
   webcontainerInstance = await WebContainer.boot();
-
   webcontainerInstance.on("error", (error) => {
     console.error("A WebContainer error occurred:", error);
     outputEl.textContent += `\n\nFATAL WEBCONTAINER ERROR: ${error.message}`;
   });
-
   outputEl.textContent += "WebContainer booted. Loading scene files...\n";
   try {
     const sceneFiles = ["package.json", "scene.json", "tsconfig.json"];
@@ -28,7 +27,6 @@ window.addEventListener("load", async () => {
       await webcontainerInstance.fs.writeFile(`/${filePath}`, content);
     }
     outputEl.textContent += "Scene config files loaded.\n";
-
     // Fetch the official snapshot file and mount it
     outputEl.textContent += "Loading dependencies snapshot...\n";
     const response = await fetch("../assets/node_modules.snapshot");
@@ -36,7 +34,6 @@ window.addEventListener("load", async () => {
       throw new Error(
         "Fetch failed for /node_modules.snapshot. Make sure it's in the 'public' directory."
       );
-
     const snapshotBuffer = await response.arrayBuffer();
     const snapshotUint8Array = new Uint8Array(snapshotBuffer);
     outputEl.textContent += "Mounting dependencies snapshot...\n";
@@ -44,7 +41,6 @@ window.addEventListener("load", async () => {
     await webcontainerInstance.mount(snapshotUint8Array, {
       mountPoint: "/node_modules",
     });
-
     outputEl.textContent += "Dependencies mounted. Ready to build.\n";
   } catch (error) {
     console.error("Error during setup:", error);
@@ -97,8 +93,8 @@ buildButton.addEventListener("click", async () => {
       new WritableStream({
         write(data) {
           function stripAnsiCodes(str) {
-            return str.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '');
-          }          
+            return str.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
+          }
           outputEl.textContent += stripAnsiCodes(data);
         },
       })
@@ -113,13 +109,73 @@ buildButton.addEventListener("click", async () => {
 
     outputEl.textContent += `--- BUILD SUCCEEDED ---\n\n`;
 
-    // Read the final output file
-    // const result = await webcontainerInstance.fs.readFile(
-    //   "/bin/game.js",
-    //   "utf-8"
-    // );
-    // outputEl.textContent += `\n\n${result}\n`;
+    const game_js = await webcontainerInstance.fs.readFile(
+      "/bin/game.js",
+      "utf-8"
+    );
+
+    const game_js_blob = new Blob([game_js], {
+      type: "application/javascript",
+    });
+    const content = new Map([["game.js", URL.createObjectURL(game_js_blob)]]);
+
+    const meta = await sceneMeta(content);
+    content.set("bevyPlaygroundHash", meta);
+
+    // start explorer
+    await initEngine();
+
+    const originalFetch = window.fetch;
+    window.fetch = async (input, init) => {
+      let url;
+
+      if (typeof input === "string") {
+        url = input;
+      } else if (input instanceof Request) {
+        url = input.url;
+      } else {
+        return originalFetch.apply(this, arguments);
+      }
+
+      if (url.startsWith("https://redirect/")) {
+        const redirect_url = url.substring("https://redirect/".length);
+        if (content.has(redirect_url)) {
+          const newUrl = content.get(redirect_url);
+          console.log(`Redirecting fetch: ${url} -> ${newUrl}`);
+
+          // Replace the input with the new URL
+          if (typeof input === "string") {
+            input = newUrl;
+          } else {
+            // Re-create the Request object with the new URL
+            input = new Request(newUrl, input);
+          }
+        } else {
+          // 4. Call the original fetch with the (potentially modified) arguments
+          console.log(`NOT redirecting fetch: ${url}`);
+        }
+      }
+      return originalFetch.apply(this, [input, init]);
+    };
+
+    let realm = String(new URL("/realm-provider", window.location.origin));
+    startEngine(realm, "0,0", "");
   } catch (e) {
     outputEl.textContent += `\n\nAn error occurred during the build process. Error: ${e.message}\n`;
   }
 });
+
+async function sceneMeta(content) {
+  const meta_fetch = await fetch(
+    new URL("/realm-provider/scene_meta", window.location.origin)
+  );
+  var meta_content = await meta_fetch.text();
+  var meta_json = JSON.parse(meta_content);
+  for (const [f, h] of content) {
+    meta_json["content"].push({ file: f, hash: f });
+  }
+  const meta_str = JSON.stringify(meta_json);
+  console.log(`meta: ${meta_str}`);
+  const blob = new Blob([meta_str], { type: "application/json" });
+  return URL.createObjectURL(blob);
+}
