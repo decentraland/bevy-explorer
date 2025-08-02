@@ -7,6 +7,7 @@ npm i
 echo "--- running playground build ---"
 npx vite build --base=/${GITHUB_SHA}/
 echo "--- copying playground artifacts ---"
+cp -r ./pkg ../web
 echo "--- generating node modules for snapshot ---"
 mkdir dcl-deps
 cd dcl-deps
