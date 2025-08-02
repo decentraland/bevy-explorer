@@ -5,10 +5,7 @@
 .vscode/settings.json
 config.json
 /log
-/deploy/web/assets
-/deploy/web/engine
-/deploy/web/play
-/deploy/web/playground
+/deploy/web
 /deploy/web-build/assets
 /deploy/web-build/dcl-deps
 /deploy/web-build/modules

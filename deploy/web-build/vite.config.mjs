@@ -9,9 +9,9 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        playground: resolve(__dirname, "index.html"),
+        root: resolve(__dirname, "index.html"),
+        play: resolve(__dirname, "play/index.html"),
         playground: resolve(__dirname, "playground/index.html"),
-        playground: resolve(__dirname, "play/index.html"),
       },
     },
     outDir: "../web", // Changed back to playground sub-directory
