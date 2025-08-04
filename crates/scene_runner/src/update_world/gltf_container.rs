@@ -43,9 +43,9 @@ use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
         sdk::components::{
-            common::LoadingState, pb_light_source, pb_material, pb_mesh_collider, pb_mesh_renderer, ColliderLayer,
-            GltfNodeStateValue, PbGltfContainer, PbGltfContainerLoadingState, PbGltfNode,
-            PbGltfNodeState, PbLightSource, PbMaterial, PbMeshCollider, PbMeshRenderer,
+            common::LoadingState, pb_light_source, pb_material, pb_mesh_collider, pb_mesh_renderer,
+            ColliderLayer, GltfNodeStateValue, PbGltfContainer, PbGltfContainerLoadingState,
+            PbGltfNode, PbGltfNodeState, PbLightSource, PbMaterial, PbMeshCollider, PbMeshRenderer,
         },
         Color3BevyToDcl,
     },
@@ -1406,19 +1406,17 @@ fn expose_gltfs(
                         .remove::<SpotLight>()
                         .insert(HiddenSpotLight(*spot));
                     // copy
-                    commands.entity(ent).insert((
-                        LightSource {
-                            enabled: true,
-                            intensity: Some(spot.intensity / (4.0 * PI)),
-                            shadow: Some(true),
-                            color: Some(spot.color),
-                            spotlight_angles: Some((
-                                (spot.inner_angle * 360.0 / TAU),
-                                (spot.outer_angle * 360.0 / TAU),
-                            )),
-                            ..Default::default()
-                        },
-                    ));
+                    commands.entity(ent).insert((LightSource {
+                        enabled: true,
+                        intensity: Some(spot.intensity / (4.0 * PI)),
+                        shadow: Some(true),
+                        color: Some(spot.color),
+                        spotlight_angles: Some((
+                            (spot.inner_angle * 360.0 / TAU),
+                            (spot.outer_angle * 360.0 / TAU),
+                        )),
+                        ..Default::default()
+                    },));
                     // write to scene
                     scene.update_crdt(
                         SceneComponentId::LIGHT_SOURCE,
