@@ -1,6 +1,11 @@
 use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
-use bevy::{math::FloatOrd, prelude::*, render::view::RenderLayers};
+use bevy::{
+    math::FloatOrd,
+    pbr::decal::clustered::{CubemapLayout, PointLightTexture, SpotLightTexture},
+    prelude::*,
+    render::view::RenderLayers,
+};
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     sets::SceneSets,
@@ -10,14 +15,18 @@ use common::{
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::{
-        common::Vector3,
-        sdk::components::{PbGlobalLight, PbLight, PbSpotlight},
+        common::{TextureUnion, Vector3},
+        sdk::components::{pb_light_source, PbGlobalLight, PbLightSource},
         Color3DclToBevy,
     },
     SceneComponentId,
 };
 
-use crate::{renderer_context::RendererSceneContext, ContainerEntity, ContainingScene};
+use crate::{
+    renderer_context::RendererSceneContext,
+    update_world::material::{TextureResolveError, TextureResolver},
+    ContainerEntity, ContainingScene,
+};
 
 use super::AddCrdtInterfaceExt;
 
@@ -25,13 +34,9 @@ pub struct LightsPlugin;
 
 impl Plugin for LightsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_crdt_lww_component::<PbLight, Light>(
-            SceneComponentId::LIGHT,
+        app.add_crdt_lww_component::<PbLightSource, LightSource>(
+            SceneComponentId::LIGHT_SOURCE,
             ComponentPosition::Any,
-        );
-        app.add_crdt_lww_component::<PbSpotlight, SpotlightAngles>(
-            SceneComponentId::SPOTLIGHT,
-            ComponentPosition::EntityOnly,
         );
         app.add_crdt_lww_component::<PbGlobalLight, GlobalLight>(
             SceneComponentId::GLOBAL_LIGHT,
@@ -49,36 +54,34 @@ impl Plugin for LightsPlugin {
     }
 }
 
-#[derive(Component, Debug)]
-pub struct Light {
+#[derive(Component, Debug, Default)]
+pub struct LightSource {
     pub enabled: bool,
-    pub illuminance: Option<f32>,
-    pub shadows: Option<bool>,
+    pub intensity: Option<f32>,
+    pub shadow: Option<bool>,
     pub color: Option<Color>,
+    pub range: Option<f32>,
+    pub spotlight_angles: Option<(f32, f32)>,
+    pub light_texture: Option<TextureUnion>,
 }
 
-impl From<PbLight> for Light {
-    fn from(value: PbLight) -> Self {
+impl From<PbLightSource> for LightSource {
+    fn from(value: PbLightSource) -> Self {
         Self {
-            enabled: value.enabled.unwrap_or(true),
-            illuminance: value.illuminance,
-            shadows: value.shadows,
+            enabled: value.active.unwrap_or(true),
+            intensity: value.intensity,
+            shadow: value.shadow,
             color: value.color.map(Color3DclToBevy::convert_linear_rgb),
-        }
-    }
-}
-
-#[derive(Component)]
-pub struct SpotlightAngles {
-    pub inner_angle: f32,
-    pub outer_angle: f32,
-}
-
-impl From<PbSpotlight> for SpotlightAngles {
-    fn from(value: PbSpotlight) -> Self {
-        Self {
-            inner_angle: value.inner_angle.unwrap_or(value.angle).min(value.angle),
-            outer_angle: value.angle,
+            range: value.range,
+            spotlight_angles: if let Some(pb_light_source::Type::Spot(spot)) = value.r#type {
+                Some((
+                    spot.inner_angle.unwrap_or(21.8),
+                    spot.outer_angle.unwrap_or(30.0),
+                ))
+            } else {
+                None
+            },
+            light_texture: value.shadow_mask_texture,
         }
     }
 }
@@ -101,7 +104,11 @@ impl From<PbGlobalLight> for GlobalLight {
 }
 
 pub fn update_directional_light(
-    lights: Query<(&RendererSceneContext, Option<&Light>, Option<&GlobalLight>)>,
+    lights: Query<(
+        &RendererSceneContext,
+        Option<&LightSource>,
+        Option<&GlobalLight>,
+    )>,
     mut global_light: ResMut<SceneGlobalLight>,
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
@@ -125,14 +132,14 @@ pub fn update_directional_light(
     };
 
     let mut apply =
-        |parcel: Entity, maybe_light: Option<&Light>, maybe_global: Option<&GlobalLight>| {
+        |parcel: Entity, maybe_light: Option<&LightSource>, maybe_global: Option<&GlobalLight>| {
             global_light.source = Some(parcel);
             if let Some(light) = maybe_light {
                 if let Some(color) = light.color {
                     global_light.dir_color = color;
                 }
                 if let Some(ill) = if light.enabled {
-                    light.illuminance
+                    light.intensity
                 } else {
                     Some(0.0)
                 } {
@@ -164,8 +171,12 @@ pub fn update_directional_light(
     }
 
     // if the primary parcel doesn't specify anything, check any portables
-    let mut portable_settings: Option<(&String, Entity, Option<&Light>, Option<&GlobalLight>)> =
-        None;
+    let mut portable_settings: Option<(
+        &String,
+        Entity,
+        Option<&LightSource>,
+        Option<&GlobalLight>,
+    )> = None;
     for entity in containing_scene.get_portables(false) {
         if let Ok((ctx, maybe_light, maybe_global)) = lights.get(entity) {
             if maybe_light.is_none() && maybe_global.is_none() {
@@ -197,24 +208,20 @@ pub struct LightEntity {
 
 fn update_point_lights(
     q: Query<
-        (
-            Entity,
-            &ContainerEntity,
-            &Light,
-            Option<&SpotlightAngles>,
-            Option<&Children>,
-        ),
+        (Entity, &ContainerEntity, &LightSource, Option<&Children>),
         (
             Without<RendererSceneContext>,
-            Or<(Changed<Light>, Changed<SpotlightAngles>)>,
+            Or<(Changed<LightSource>, With<RetryLightTexture>)>,
         ),
     >,
+    scenes: Query<&RendererSceneContext>,
     mut commands: Commands,
-    mut removed_points: RemovedComponents<Light>,
+    mut removed_points: RemovedComponents<LightSource>,
     children: Query<&Children>,
     child_lights: Query<&LightEntity>,
+    mut resolver: TextureResolver,
 ) {
-    for (entity, container, light, angles, maybe_children) in q.iter() {
+    for (entity, container, light, maybe_children) in q.iter() {
         // despawn any previous
         if let Some(children) = maybe_children {
             for child in children.iter() {
@@ -224,34 +231,81 @@ fn update_point_lights(
             }
         }
 
+        commands.entity(entity).remove::<RetryLightTexture>();
+
+        let maybe_light_texture = if let Some(texture) = light.light_texture.as_ref() {
+            let Ok(ctx) = scenes.get(container.root) else {
+                continue;
+            };
+            let image = texture
+                .tex
+                .as_ref()
+                .map(|tex| resolver.resolve_texture(ctx, tex));
+            let resolved_texture = match image {
+                Some(Err(TextureResolveError::SourceNotReady)) => {
+                    commands.entity(entity).insert(RetryLightTexture);
+                    continue;
+                }
+                None | Some(Err(_)) => None,
+                Some(Ok(t)) => Some(t),
+            };
+
+            resolved_texture.map(|rt| rt.image)
+        } else {
+            None
+        };
+
         let lumens = if light.enabled {
-            light.illuminance.unwrap_or(10000.0) * 4.0 * PI
+            light.intensity.unwrap_or(10000.0) * 4.0 * PI
         } else {
             0.0
         };
-        let range = light.illuminance.unwrap_or(10000.0).powf(0.25);
-        let mut light = match angles {
-            Some(angles) => commands.spawn(SpotLight {
-                color: light.color.unwrap_or(Color::WHITE),
-                intensity: lumens,
-                range,
-                radius: 0.0,
-                shadows_enabled: light.shadows.unwrap_or(false),
-                outer_angle: angles.outer_angle,
-                inner_angle: angles.inner_angle,
-                ..Default::default()
-            }),
-            None => commands.spawn(PointLight {
-                color: light.color.unwrap_or(Color::WHITE),
-                intensity: lumens,
-                range,
-                radius: 0.0,
-                shadows_enabled: light.shadows.unwrap_or(false),
-                ..Default::default()
-            }),
+        let range = light
+            .range
+            .unwrap_or(light.intensity.unwrap_or(10000.0).powf(0.25));
+        let mut light_cmds = match light.spotlight_angles {
+            Some(angles) => {
+                let mut cmds = commands.spawn(SpotLight {
+                    color: light.color.unwrap_or(Color::WHITE),
+                    intensity: lumens,
+                    range,
+                    radius: 0.0,
+                    shadows_enabled: light.shadow.unwrap_or(false),
+                    outer_angle: angles.1.clamp(0.0, 179.0) * TAU / 360.0,
+                    inner_angle: angles.0.clamp(0.0, angles.1.min(179.0)) * TAU / 360.0,
+                    ..Default::default()
+                });
+
+                if let Some(light_texture) = maybe_light_texture {
+                    cmds.insert(SpotLightTexture {
+                        image: light_texture,
+                    });
+                }
+
+                cmds
+            }
+            None => {
+                let mut cmds = commands.spawn(PointLight {
+                    color: light.color.unwrap_or(Color::WHITE),
+                    intensity: lumens,
+                    range,
+                    radius: 0.0,
+                    shadows_enabled: light.shadow.unwrap_or(false),
+                    ..Default::default()
+                });
+
+                if let Some(light_texture) = maybe_light_texture {
+                    cmds.insert(PointLightTexture {
+                        image: light_texture,
+                        cubemap_layout: CubemapLayout::SequenceVertical,
+                    });
+                }
+
+                cmds
+            }
         };
 
-        let light_id = light
+        let light_id = light_cmds
             .insert((
                 LightEntity {
                     scene: container.root,
@@ -274,6 +328,9 @@ fn update_point_lights(
         }
     }
 }
+
+#[derive(Component)]
+pub struct RetryLightTexture;
 
 fn manage_shadow_casters(
     mut q: Query<

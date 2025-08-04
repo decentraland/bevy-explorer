@@ -3,7 +3,7 @@
 // - clean up of cached colliders (when mesh is unloaded?)
 use std::{
     collections::BTreeMap,
-    f32::consts::PI,
+    f32::consts::{PI, TAU},
     hash::{Hash, Hasher},
 };
 
@@ -34,7 +34,7 @@ use crate::{
     initialize_scene::SceneEntityDefinitionHandle,
     renderer_context::RendererSceneContext,
     update_world::{
-        lights::{Light, SpotlightAngles},
+        lights::LightSource,
         material::{dcl_material_from_standard_material, BaseMaterial},
     },
     ContainerEntity, SceneEntity, SceneSets,
@@ -43,9 +43,9 @@ use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
         sdk::components::{
-            common::LoadingState, pb_material, pb_mesh_collider, pb_mesh_renderer, ColliderLayer,
+            common::LoadingState, pb_light_source, pb_material, pb_mesh_collider, pb_mesh_renderer, ColliderLayer,
             GltfNodeStateValue, PbGltfContainer, PbGltfContainerLoadingState, PbGltfNode,
-            PbGltfNodeState, PbLight, PbMaterial, PbMeshCollider, PbMeshRenderer, PbSpotlight,
+            PbGltfNodeState, PbLightSource, PbMaterial, PbMeshCollider, PbMeshRenderer,
         },
         Color3BevyToDcl,
     },
@@ -1374,22 +1374,26 @@ fn expose_gltfs(
                         .remove::<PointLight>()
                         .insert(HiddenPointLight(*point));
                     // copy
-                    commands.entity(ent).insert(Light {
+                    commands.entity(ent).insert(LightSource {
                         enabled: true,
-                        illuminance: Some(point.intensity / (4.0 * PI)),
-                        shadows: Some(true),
+                        intensity: Some(point.intensity / (4.0 * PI)),
+                        shadow: Some(true),
                         color: Some(point.color),
+                        ..Default::default()
                     });
                     // write to scene
                     scene.update_crdt(
-                        SceneComponentId::LIGHT,
+                        SceneComponentId::LIGHT_SOURCE,
                         CrdtType::LWW_ANY,
                         scene_ent.id,
-                        &PbLight {
-                            enabled: None,
-                            illuminance: Some(point.intensity / (4.0 * PI)),
-                            shadows: Some(true),
+                        &PbLightSource {
+                            active: None,
+                            intensity: Some(point.intensity / (4.0 * PI)),
+                            shadow: Some(true),
                             color: Some(point.color.convert_linear_rgb()),
+                            r#type: Some(pb_light_source::Type::Point(pb_light_source::Point {})),
+                            range: Some(point.range),
+                            shadow_mask_texture: None,
                         },
                     );
                 }
@@ -1403,36 +1407,34 @@ fn expose_gltfs(
                         .insert(HiddenSpotLight(*spot));
                     // copy
                     commands.entity(ent).insert((
-                        Light {
+                        LightSource {
                             enabled: true,
-                            illuminance: Some(spot.intensity / (4.0 * PI)),
-                            shadows: Some(true),
+                            intensity: Some(spot.intensity / (4.0 * PI)),
+                            shadow: Some(true),
                             color: Some(spot.color),
-                        },
-                        SpotlightAngles {
-                            inner_angle: spot.inner_angle,
-                            outer_angle: spot.outer_angle,
+                            spotlight_angles: Some((
+                                (spot.inner_angle * 360.0 / TAU),
+                                (spot.outer_angle * 360.0 / TAU),
+                            )),
+                            ..Default::default()
                         },
                     ));
                     // write to scene
                     scene.update_crdt(
-                        SceneComponentId::LIGHT,
+                        SceneComponentId::LIGHT_SOURCE,
                         CrdtType::LWW_ANY,
                         scene_ent.id,
-                        &PbLight {
-                            enabled: None,
-                            illuminance: Some(spot.intensity / (4.0 * PI)),
-                            shadows: Some(true),
+                        &PbLightSource {
+                            active: None,
+                            intensity: Some(spot.intensity / (4.0 * PI)),
+                            shadow: Some(true),
                             color: Some(spot.color.convert_linear_rgb()),
-                        },
-                    );
-                    scene.update_crdt(
-                        SceneComponentId::SPOTLIGHT,
-                        CrdtType::LWW_ANY,
-                        scene_ent.id,
-                        &PbSpotlight {
-                            angle: spot.outer_angle,
-                            inner_angle: Some(spot.inner_angle),
+                            r#type: Some(pb_light_source::Type::Spot(pb_light_source::Spot {
+                                inner_angle: Some(spot.inner_angle * 360.0 / TAU),
+                                outer_angle: Some(spot.outer_angle * 360.0 / TAU),
+                            })),
+                            range: Some(spot.range),
+                            shadow_mask_texture: None,
                         },
                     );
                 }
