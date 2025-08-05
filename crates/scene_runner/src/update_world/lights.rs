@@ -273,13 +273,13 @@ fn update_point_lights(
         };
 
         let lumens = if light.enabled {
-            light.intensity.unwrap_or(10000.0) * 4.0 * PI
+            light.intensity.unwrap_or(16000.0) * 4.0 * PI
         } else {
             0.0
         };
         let range = light
             .range
-            .unwrap_or(light.intensity.unwrap_or(10000.0).powf(0.25));
+            .unwrap_or(light.intensity.unwrap_or(16000.0).powf(0.25));
         match light.spotlight_angles {
             Some(angles) => {
                 light_cmds.insert(SpotLight {
