@@ -49,6 +49,7 @@ impl Plugin for LightsPlugin {
                 update_point_lights,
                 manage_shadow_casters,
             )
+                .chain()
                 .in_set(SceneSets::PostLoop),
         );
     }
@@ -222,16 +223,32 @@ fn update_point_lights(
     mut resolver: TextureResolver,
 ) {
     for (entity, container, light, maybe_children) in q.iter() {
-        // despawn any previous
-        if let Some(children) = maybe_children {
-            for child in children.iter() {
-                if child_lights.get(child).is_ok() {
-                    commands.entity(child).despawn();
-                }
-            }
-        }
-
         commands.entity(entity).remove::<RetryLightTexture>();
+
+        // try and reuse any previous
+        let previous_light_entity = maybe_children.and_then(|children| {
+            children
+                .iter()
+                .find(|child| child_lights.get(*child).is_ok())
+        });
+
+        let mut light_cmds = match previous_light_entity {
+            Some(prev) => commands.entity(prev),
+            None => {
+                let mut cmds = commands.spawn((
+                    LightEntity {
+                        scene: container.root,
+                    },
+                    // light hidden avatars too
+                    RenderLayers::default().union(&PRIMARY_AVATAR_LIGHT_LAYER),
+                ));
+                let light_id = cmds.id();
+                cmds.commands()
+                    .entity(entity)
+                    .try_push_children(&[light_id]);
+                cmds
+            }
+        };
 
         let maybe_light_texture = if let Some(texture) = light.light_texture.as_ref() {
             let Ok(ctx) = scenes.get(container.root) else {
@@ -263,9 +280,9 @@ fn update_point_lights(
         let range = light
             .range
             .unwrap_or(light.intensity.unwrap_or(10000.0).powf(0.25));
-        let mut light_cmds = match light.spotlight_angles {
+        match light.spotlight_angles {
             Some(angles) => {
-                let mut cmds = commands.spawn(SpotLight {
+                light_cmds.insert(SpotLight {
                     color: light.color.unwrap_or(Color::WHITE),
                     intensity: lumens,
                     range,
@@ -277,15 +294,15 @@ fn update_point_lights(
                 });
 
                 if let Some(light_texture) = maybe_light_texture {
-                    cmds.insert(SpotLightTexture {
+                    light_cmds.insert(SpotLightTexture {
                         image: light_texture,
                     });
                 }
 
-                cmds
+                light_cmds.remove::<(PointLight, PointLightTexture)>();
             }
             None => {
-                let mut cmds = commands.spawn(PointLight {
+                light_cmds.insert(PointLight {
                     color: light.color.unwrap_or(Color::WHITE),
                     intensity: lumens,
                     range,
@@ -295,26 +312,15 @@ fn update_point_lights(
                 });
 
                 if let Some(light_texture) = maybe_light_texture {
-                    cmds.insert(PointLightTexture {
+                    light_cmds.insert(PointLightTexture {
                         image: light_texture,
                         cubemap_layout: CubemapLayout::CrossHorizontal,
                     });
                 }
 
-                cmds
+                light_cmds.remove::<(SpotLight, SpotLightTexture)>();
             }
         };
-
-        let light_id = light_cmds
-            .insert((
-                LightEntity {
-                    scene: container.root,
-                },
-                // light hidden avatars too
-                RenderLayers::default().union(&PRIMARY_AVATAR_LIGHT_LAYER),
-            ))
-            .id();
-        commands.entity(entity).try_push_children(&[light_id]);
     }
 
     for removed_light in removed_points.read() {
