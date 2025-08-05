@@ -297,7 +297,7 @@ fn update_point_lights(
                 if let Some(light_texture) = maybe_light_texture {
                     cmds.insert(PointLightTexture {
                         image: light_texture,
-                        cubemap_layout: CubemapLayout::SequenceVertical,
+                        cubemap_layout: CubemapLayout::CrossHorizontal,
                     });
                 }
 
