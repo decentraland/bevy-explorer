@@ -67,7 +67,7 @@ pub fn set_ui_input(
                                  mut context: Query<&mut RendererSceneContext>,
                                  time: Res<Time>,
                                  caller: Res<UiCaller>| {
-            debug!("callback on {:?}", caller.0);
+            debug!("callback on {:?} (submit = {})", caller.0, submit);
             let value = if submit {
                 submit_entry.get(ui_entity).map(|v| v.0.clone())
             } else {
