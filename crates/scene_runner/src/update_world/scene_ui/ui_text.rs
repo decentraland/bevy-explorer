@@ -261,7 +261,7 @@ impl TextPositionFinder<'_, '_> {
         let top_left = self
             .helper
             .compute_global_transform(entity)
-            .unwrap()
+            .ok()?
             .translation()
             .xy()
             - node.size() * 0.5;
