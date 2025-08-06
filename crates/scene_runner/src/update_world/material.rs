@@ -247,6 +247,7 @@ pub enum TextureResolveError {
     SourceNotReady,
     SceneNotFound,
     AvatarNotFound,
+    NoTexture,
     NotImplemented,
 }
 
@@ -273,6 +274,9 @@ impl TextureResolver<'_, '_> {
     ) -> Result<ResolvedTexture, TextureResolveError> {
         match texture {
             texture_union::Tex::Texture(texture) => {
+                if texture.src.is_empty() {
+                    return Err(TextureResolveError::NoTexture);
+                }
                 let filter_mode = texture
                     .filter_mode
                     .and_then(TextureFilterMode::from_i32)
