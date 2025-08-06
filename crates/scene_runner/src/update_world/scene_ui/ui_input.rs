@@ -38,7 +38,7 @@ pub fn set_ui_input(
 ) {
     for ent in removed.read() {
         if let Ok(mut link) = links.get_mut(ent) {
-            link.interactors.remove("input");
+            link.bypass_change_detection().interactors.remove("input");
             if let Ok(mut commands) = commands.get_entity(link.ui_entity) {
                 commands.remove::<TextEntry>();
             }
@@ -138,6 +138,6 @@ pub fn set_ui_input(
             On::<Submit>::new((|| true).pipe(data_handler)),
         ));
 
-        link.interactors.insert("input");
+        link.bypass_change_detection().interactors.insert("input");
     }
 }
