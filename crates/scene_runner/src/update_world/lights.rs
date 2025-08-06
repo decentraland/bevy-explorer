@@ -349,6 +349,7 @@ fn manage_shadow_casters(
             &LightEntity,
             Option<&mut PointLight>,
             Option<&mut SpotLight>,
+            &LightSource,
         ),
         Or<(With<PointLight>, With<SpotLight>)>,
     >,
@@ -365,16 +366,19 @@ fn manage_shadow_casters(
     let active_scenes = containing_scene.get_area(player, PLAYER_COLLIDER_RADIUS);
 
     // collect lights
-    lights.extend(q.iter().map(|(entity, gt, container, maybe_p, maybe_s)| {
-        (
-            entity,
-            active_scenes.contains(&container.scene),
-            FloatOrd(gt.translation().distance_squared(player_t)),
-            maybe_p
-                .map(|p| p.shadows_enabled)
-                .unwrap_or_else(|| maybe_s.unwrap().shadows_enabled),
-        )
-    }));
+    lights.extend(
+        q.iter()
+            .map(|(entity, gt, container, maybe_p, maybe_s, _)| {
+                (
+                    entity,
+                    active_scenes.contains(&container.scene),
+                    FloatOrd(gt.translation().distance_squared(player_t)),
+                    maybe_p
+                        .map(|p| p.shadows_enabled)
+                        .unwrap_or_else(|| maybe_s.unwrap().shadows_enabled),
+                )
+            }),
+    );
     // sort by scene-active and distance
     lights.sort_by_key(|(_, scene_active, distance, _)| (*scene_active, *distance));
     // enable up to limit
@@ -390,7 +394,7 @@ fn manage_shadow_casters(
     let mut iter = lights.drain(..);
     for (light, _, _, enabled) in iter.by_ref().take(max_casters) {
         if !enabled {
-            let (_, _, _, maybe_p, maybe_s) = q.get_mut(light).unwrap();
+            let (_, _, _, maybe_p, maybe_s, _) = q.get_mut(light).unwrap();
             if let Some(mut p) = maybe_p {
                 p.shadows_enabled = true;
             }
@@ -402,7 +406,7 @@ fn manage_shadow_casters(
     // disable over limit
     for (light, _, _, enabled) in iter {
         if enabled {
-            let (_, _, _, maybe_p, maybe_s) = q.get_mut(light).unwrap();
+            let (_, _, _, maybe_p, maybe_s, _) = q.get_mut(light).unwrap();
             if let Some(mut p) = maybe_p {
                 p.shadows_enabled = false;
             }
