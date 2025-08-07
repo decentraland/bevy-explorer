@@ -48,7 +48,8 @@ impl Plugin for TransformAndParentPlugin {
                     .after(anim_last_system!())
                     .after(GltfLinkSet)
                     .after(parent_position_sync::<AvatarAttachStage>)
-                    .before(TransformSystem::TransformPropagate),
+                    .before(TransformSystem::TransformPropagate)
+                    .before(process_scene_lifecycle),
             ),
         );
     }
