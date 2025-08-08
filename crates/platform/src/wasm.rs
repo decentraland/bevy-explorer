@@ -180,11 +180,14 @@ impl<T> AsyncRwLock<T> {
         self.0.write()
     }
 
-    pub fn try_read(&self) -> Result<spin::RwLockReadGuard<'_, T>, ()> {
+    pub fn try_read(&self) -> Result<spin::RwLockReadGuard<'_, T>, NoError> {
         Ok(self.0.read())
     }
 
-    pub fn try_write(&self) -> Result<spin::RwLockWriteGuard<'_, T>, ()> {
+    pub fn try_write(&self) -> Result<spin::RwLockWriteGuard<'_, T>, NoError> {
         Ok(self.0.write())
     }
 }
+
+#[derive(Debug)]
+pub struct NoError;
