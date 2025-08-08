@@ -1,6 +1,5 @@
 use crate::AvatarMaterials;
 use bevy::{
-    diagnostic::FrameCount,
     platform::collections::{HashMap, HashSet},
     prelude::*,
 };
@@ -20,16 +19,16 @@ use rapier3d_f64::{
 };
 use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE_RED};
 use scene_runner::{
-    update_scene::pointer_results::{PointerTarget, UiPointerTarget, UiPointerTargetValue},
-    update_world::mesh_collider::{ColliderId, SceneColliderData},
+    update_scene::pointer_results::{AvatarColliders, PointerTarget, PointerTargetType},
+    update_world::mesh_collider::ColliderId,
 };
 use serde_json::json;
+use system_bridge::NativeUi;
 
 pub struct AvatarColliderPlugin;
 
 impl Plugin for AvatarColliderPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<AvatarColliders>();
         app.add_systems(
             Update,
             (
@@ -38,12 +37,6 @@ impl Plugin for AvatarColliderPlugin {
             ),
         );
     }
-}
-
-#[derive(Resource, Default)]
-pub struct AvatarColliders {
-    pub collider_data: SceneColliderData,
-    pub lookup: HashMap<ColliderId, Entity>,
 }
 
 fn update_avatar_colliders(
@@ -101,11 +94,8 @@ fn update_avatar_colliders(
 #[allow(clippy::too_many_arguments)]
 fn update_avatar_collider_actions(
     mut commands: Commands,
-    ui_target: Res<UiPointerTarget>,
-    mut colliders: ResMut<AvatarColliders>,
     camera: Query<(&Camera, &GlobalTransform), With<PrimaryCamera>>,
-    windows: Query<&Window>,
-    (pointer_target, frame): (Res<PointerTarget>, Res<FrameCount>),
+    pointer_target: Res<PointerTarget>,
     mut tooltips: ResMut<ToolTips>,
     profiles: Query<(
         &ForeignPlayer,
@@ -118,6 +108,7 @@ fn update_avatar_collider_actions(
     mut hilighted_materials: Local<HashSet<AssetId<SceneMaterial>>>,
     mut scene_materials: ResMut<Assets<SceneMaterial>>,
     mut input_manager: InputManager,
+    native_ui: Res<NativeUi>,
 ) {
     // gather any event receivers
     for sender in subscribe_events.read().filter_map(|ev| match ev {
@@ -129,44 +120,6 @@ fn update_avatar_collider_actions(
 
     tooltips.0.remove(&TooltipSource::Label("avatar_pointer"));
 
-    // check for scene ui
-    if ui_target.0 != UiPointerTargetValue::None {
-        return;
-    }
-
-    let Ok((camera, camera_position)) = camera.single() else {
-        // can't do much without a camera
-        return;
-    };
-
-    // get new 3d hover target
-    let Ok(window) = windows.single() else {
-        return;
-    };
-    let cursor_position = if window.cursor_options.grab_mode == bevy::window::CursorGrabMode::Locked
-    {
-        // if pointer locked, just middle
-        Vec2::new(window.width(), window.height()) / 2.0
-    } else {
-        let Some(cursor_position) = window.cursor_position() else {
-            // outside window
-            return;
-        };
-        cursor_position
-    };
-
-    let Ok(ray) = camera.viewport_to_world(camera_position, cursor_position) else {
-        error!("no ray, not sure why that would happen");
-        return;
-    };
-
-    let camera_translation = camera_position.translation();
-    let pointer_distance = pointer_target
-        .0
-        .as_ref()
-        .map(|info| (info.position.unwrap_or(camera_translation) - camera_translation).length())
-        .unwrap_or(f32::MAX);
-
     // reset old mats
     for mat in hilighted_materials.drain() {
         if let Some(mat) = scene_materials.get_mut(mat) {
@@ -174,72 +127,78 @@ fn update_avatar_collider_actions(
         }
     }
 
-    if let Some(avatar_target) = colliders.collider_data.cast_ray_nearest(
-        frame.0,
-        ray.origin,
-        ray.direction.into(),
-        pointer_distance,
-        u32::MAX,
-        true,
-    ) {
-        input_manager.priorities().reserve(
-            InputType::Action(SystemAction::ShowProfile.into()),
-            InputPriority::AvatarCollider,
-        );
+    input_manager.priorities().release(
+        InputType::Action(SystemAction::ShowProfile.into()),
+        InputPriority::AvatarCollider,
+    );
 
-        let avatar = colliders.lookup.get(&avatar_target.id).unwrap();
-        let Ok((player, profile, modifiers, materials)) = profiles.get(*avatar) else {
-            return;
-        };
+    if let Some(target) = pointer_target.0.as_ref() {
+        if target.ty == PointerTargetType::Avatar {
+            if native_ui.profile {
+                input_manager.priorities().reserve(
+                    InputType::Action(SystemAction::ShowProfile.into()),
+                    InputPriority::AvatarCollider,
+                );
+            }
 
-        // check modifier
-        if modifiers.hide_profile {
-            return;
-        }
+            let Ok((player, profile, modifiers, materials)) = profiles.get(target.container) else {
+                return;
+            };
 
-        // hilight selected mats
-        if materials.0 != *hilighted_materials {
-            for id in materials.0.iter() {
-                if let Some(mat) = scene_materials.get_mut(*id) {
-                    mat.extension.data.flags |= SCENE_MATERIAL_OUTLINE_RED;
-                    hilighted_materials.insert(*id);
+            // check modifier
+            if modifiers.hide_profile {
+                return;
+            }
+
+            // hilight selected mats
+            if materials.0 != *hilighted_materials {
+                for id in materials.0.iter() {
+                    if let Some(mat) = scene_materials.get_mut(*id) {
+                        mat.extension.data.flags |= SCENE_MATERIAL_OUTLINE_RED;
+                        hilighted_materials.insert(*id);
+                    }
                 }
             }
-        }
 
-        tooltips.0.insert(
-            TooltipSource::Label("avatar_pointer"),
-            vec![("Middle Click : Profile".to_owned(), true)],
-        );
+            if native_ui.profile {
+                tooltips.0.insert(
+                    TooltipSource::Label("avatar_pointer"),
+                    vec![("Middle Click : Profile".to_owned(), true)],
+                );
+            }
 
-        if input_manager.just_down(CommonInputAction::IaPointer, InputPriority::Scene) {
-            // send event
-            let event = json!({
+            if input_manager.just_down(CommonInputAction::IaPointer, InputPriority::Scene) {
+                let camera_position = camera
+                    .single()
+                    .map(|(_, gt)| gt.translation())
+                    .unwrap_or_default();
+                let direction = (target.position.unwrap() - camera_position).normalize();
+
+                // send event
+                let event = json!({
                 "userId": format!("{:#x}", player.address),
                 "ray": {
-                    "origin": { "x": ray.origin.x, "y": ray.origin.y, "z": -ray.origin.z },
-                    "direction": { "x": ray.direction.x, "y": ray.direction.y, "z": -ray.direction.z },
-                    "distance": avatar_target.toi
+                    "origin": { "x": camera_position.x, "y": camera_position.y, "z": -camera_position.z },
+                    "direction": { "x": direction.x, "y": direction.y, "z": -direction.z },
+                    "distance": target.distance.0
                 }
             }).to_string();
-            for sender in senders.iter() {
-                let _ = sender.send(event.clone());
+                for sender in senders.iter() {
+                    let _ = sender.send(event.clone());
+                }
             }
-        }
 
-        if input_manager.just_down(SystemAction::ShowProfile, InputPriority::AvatarCollider) {
-            // display profile
-            if let Some(address) = profile.content.eth_address.as_h160() {
-                commands.send_event(ShowProfileEvent(address));
-            } else {
-                warn!("Profile has a bad address {}", profile.content.eth_address);
+            if native_ui.profile
+                && input_manager.just_down(SystemAction::ShowProfile, InputPriority::AvatarCollider)
+            {
+                // display profile
+                if let Some(address) = profile.content.eth_address.as_h160() {
+                    commands.send_event(ShowProfileEvent(address));
+                } else {
+                    warn!("Profile has a bad address {}", profile.content.eth_address);
+                }
             }
         }
-    } else {
-        input_manager.priorities().release(
-            InputType::Action(SystemAction::ShowProfile.into()),
-            InputPriority::AvatarCollider,
-        );
     }
 
     senders.retain(|s| !s.is_closed());
