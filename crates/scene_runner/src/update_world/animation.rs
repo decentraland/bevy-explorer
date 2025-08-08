@@ -21,7 +21,7 @@ impl Plugin for AnimatorPlugin {
     fn build(&self, app: &mut App) {
         app.add_crdt_lww_component::<PbAnimator, Animator>(
             SceneComponentId::ANIMATOR,
-            ComponentPosition::EntityOnly,
+            ComponentPosition::Any,
         );
 
         app.add_systems(Update, update_animations.in_set(SceneSets::PostLoop));

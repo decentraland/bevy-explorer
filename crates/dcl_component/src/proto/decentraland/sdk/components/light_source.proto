@@ -1,0 +1,28 @@
+syntax = "proto3";
+package decentraland.sdk.components;
+import "decentraland/sdk/components/common/id.proto";
+import "decentraland/common/colors.proto";
+import "decentraland/common/texture.proto";
+option (common.ecs_component_id) = 1079;
+
+message PBLightSource {
+  optional bool active = 1;                                          // default = true, whether the lightSource is active or not.
+  optional decentraland.common.Color3 color = 2;                     // default = white, the tint of the light, in RGB format where each component is a floating point value with a range from 0 to 1.
+  optional float intensity = 3;                                      // default = 100, light intensity expressed in candels (lumens/m^2 at 1 m distance, or lumens divided by 4*pi)
+  optional float range = 4;                                          // default = -1, how far the light travels, expressed in meters. If left at 0 will be computed automatically as pow(intensity, 0.5)
+  optional bool shadow = 5;                                          // default = false, whether the light casts shadows or not.
+  optional decentraland.common.TextureUnion shadow_mask_texture = 6; // Texture mask through which shadows are cast to simulate caustics, soft shadows, and light shapes such as light entering from a window.
+
+  oneof type {
+    Point point = 7;
+    Spot spot = 8;
+  }
+
+  message Point {
+  }
+
+  message Spot {
+    optional float inner_angle = 9;   // default = 21.8. Inner angle can't be higher than outer angle, otherwise will default to same value. Min value is 0. Max value is 179.
+    optional float outer_angle = 10;  // default = 30. Outer angle can't be lower than inner angle, otherwise will inner angle will be set to same value. Max value is 179.
+  }
+}

@@ -32,11 +32,15 @@ pub fn set_ui_pointer_events(
             commands.remove::<(On<HoverEnter>, On<HoverExit>)>();
         }
 
-        link.interactors.remove("pointer_events");
+        link.bypass_change_detection()
+            .interactors
+            .remove("pointer_events");
     }
 
     for mut link in pes.iter_mut() {
-        link.interactors.insert("pointer_events");
+        link.bypass_change_detection()
+            .interactors
+            .insert("pointer_events");
     }
 }
 

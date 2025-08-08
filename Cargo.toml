@@ -103,6 +103,7 @@ bevy = { version = "0.16.1", default-features = false, features=[
     "bevy_log",
     "std",
     "bevy_state",
+    "pbr_light_textures",
 ] }
 wgpu = "24"
 bevy_console = { git = "https://github.com/robtfm/bevy-console", branch="0.16" }

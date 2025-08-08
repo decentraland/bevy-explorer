@@ -21,7 +21,7 @@ use input_manager::{InputManager, InputPriority, InputType};
 
 use super::focus::Focus;
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct TextEntry {
     pub text_style: Option<TextStyle>,
     pub hint_text: String,
@@ -100,9 +100,9 @@ fn update_text_entry_components(
                 commands
                     .entity(entity)
                     .try_push_children(&[id])
-                    .insert(TextEntryEntity(id));
+                    .try_insert(TextEntryEntity(id));
                 let mut cmds = commands.entity(id);
-                cmds.insert((
+                cmds.try_insert((
                     Node {
                         width: Val::Percent(100.0),
                         min_width: Val::Percent(100.0),
@@ -115,7 +115,7 @@ fn update_text_entry_components(
                     Focusable(Some(entity)),
                 ));
                 if textbox.text_style.is_none() {
-                    cmds.insert(FontSize(0.03 / 1.3));
+                    cmds.try_insert(FontSize(0.03 / 1.3));
                 }
                 cmds
             }
@@ -127,7 +127,7 @@ fn update_text_entry_components(
             .map(|tev| &tev.0)
             .unwrap_or_else(|| &textbox.content);
 
-        cmds.insert((
+        cmds.try_insert((
             TextInputSettings {
                 multiline: textbox.multiline > 1,
                 retain_on_submit: !textbox.accept_line,

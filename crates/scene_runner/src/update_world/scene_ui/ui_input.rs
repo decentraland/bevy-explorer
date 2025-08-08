@@ -38,7 +38,7 @@ pub fn set_ui_input(
 ) {
     for ent in removed.read() {
         if let Ok(mut link) = links.get_mut(ent) {
-            link.interactors.remove("input");
+            link.bypass_change_detection().interactors.remove("input");
             if let Ok(mut commands) = commands.get_entity(link.ui_entity) {
                 commands.remove::<TextEntry>();
             }
@@ -67,7 +67,7 @@ pub fn set_ui_input(
                                  mut context: Query<&mut RendererSceneContext>,
                                  time: Res<Time>,
                                  caller: Res<UiCaller>| {
-            debug!("callback on {:?}", caller.0);
+            debug!("callback on {:?} (submit = {})", caller.0, submit);
             let value = if submit {
                 submit_entry.get(ui_entity).map(|v| v.0.clone())
             } else {
@@ -138,6 +138,6 @@ pub fn set_ui_input(
             On::<Submit>::new((|| true).pipe(data_handler)),
         ));
 
-        link.interactors.insert("input");
+        link.bypass_change_detection().interactors.insert("input");
     }
 }
