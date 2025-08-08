@@ -1,3 +1,6 @@
+// temporary for ShaderType macro, remove in future
+#![allow(dead_code)]
+
 use bevy::{
     image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor},
     prelude::*,

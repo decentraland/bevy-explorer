@@ -1,7 +1,7 @@
 use bevy::{
     prelude::*,
     reflect::TypePath,
-    render::render_resource::{AsBindGroup, ShaderRef, ShaderType},
+    render::render_resource::{AsBindGroup, ShaderRef},
 };
 use scene_material::BoundRegion;
 
@@ -23,14 +23,20 @@ impl Material for MaskMaterial {
     }
 }
 
-#[derive(ShaderType, Debug, Clone)]
-pub struct MaskData {
-    bounds: [BoundRegion; 8],
-    color: Vec4,
-    distance: f32,
-    num_bounds: u32,
-    _pad: u32,
+mod decl {
+    #![allow(dead_code)]
+    use bevy::{math::Vec4, render::render_resource::ShaderType};
+
+    #[derive(ShaderType, Debug, Clone)]
+    pub struct MaskData {
+        pub(super) bounds: [scene_material::BoundRegion; 8],
+        pub(super) color: Vec4,
+        pub(super) distance: f32,
+        pub(super) num_bounds: u32,
+        pub(super) _pad: u32,
+    }
 }
+use decl::*;
 
 // This is the struct that will be passed to your shader
 #[derive(AsBindGroup, Asset, Debug, Clone, TypePath)]

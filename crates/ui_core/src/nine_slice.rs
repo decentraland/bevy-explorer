@@ -1,7 +1,7 @@
 use anyhow::{anyhow, bail};
 use bevy::{
     prelude::*,
-    render::render_resource::{AsBindGroup, ShaderRef, ShaderType},
+    render::render_resource::{AsBindGroup, ShaderRef},
     ui::UiSystem,
 };
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate, NodeMap};
@@ -125,11 +125,16 @@ fn update_slices(
     }
 }
 
-#[derive(ShaderType, Debug, Clone)]
-struct GpuSliceData {
-    bounds: Vec4,
-    surface: Vec4,
+mod decl {
+    #![allow(dead_code)]
+    use bevy::{math::Vec4, render::render_resource::ShaderType};
+    #[derive(ShaderType, Debug, Clone)]
+    pub(super) struct GpuSliceData {
+        pub(super) bounds: Vec4,
+        pub(super) surface: Vec4,
+    }
 }
+use decl::*;
 
 #[derive(AsBindGroup, Asset, TypePath, Debug, Clone)]
 struct NineSliceMaterial {

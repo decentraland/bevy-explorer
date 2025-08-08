@@ -65,7 +65,7 @@ impl<'a> DclReader<'a> {
         result
     }
 
-    pub fn take_reader(&mut self, len: usize) -> DclReader {
+    pub fn take_reader(&mut self, len: usize) -> DclReader<'_> {
         DclReader::new(self.take_slice(len))
     }
 
