@@ -98,9 +98,9 @@ pub fn update_camera(
         }
 
         allow_cam_move = cine.allow_manual_rotation;
-        yaw_range = cine.yaw_range.map(|r| (-r..r));
-        pitch_range = cine.pitch_range.map(|r| (-r..r));
-        roll_range = cine.roll_range.map(|r| (-r..r));
+        yaw_range = cine.yaw_range.map(|r| -r..r);
+        pitch_range = cine.pitch_range.map(|r| -r..r);
+        roll_range = cine.roll_range.map(|r| -r..r);
         zoom_range = Some(
             cine.zoom_min.unwrap_or(scale.z).clamp(0.3, 100.0)
                 ..cine.zoom_max.unwrap_or(scale.z).clamp(0.3, 100.0),

@@ -528,23 +528,25 @@ fn update_materials(
         }
 
         // write material back if required
-        if mat.0.material.is_none() && base.is_some() {
-            let Ok(mut scene) = scenes.get_mut(container.root) else {
-                continue;
-            };
+        if mat.0.material.is_none() {
+            if let Some(base) = base.as_ref() {
+                let Ok(mut scene) = scenes.get_mut(container.root) else {
+                    continue;
+                };
 
-            scene.update_crdt(
-                SceneComponentId::MATERIAL,
-                CrdtType::LWW_ANY,
-                scene_ent.id,
-                &PbMaterial {
-                    material: Some(dcl_material_from_standard_material(
-                        &base.as_ref().unwrap().material,
-                        &images,
-                    )),
-                    gltf: mat.0.gltf.clone(),
-                },
-            );
+                scene.update_crdt(
+                    SceneComponentId::MATERIAL,
+                    CrdtType::LWW_ANY,
+                    scene_ent.id,
+                    &PbMaterial {
+                        material: Some(dcl_material_from_standard_material(
+                            &base.material,
+                            &images,
+                        )),
+                        gltf: mat.0.gltf.clone(),
+                    },
+                );
+            }
         }
     }
 

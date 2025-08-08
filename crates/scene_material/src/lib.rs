@@ -1,7 +1,7 @@
 use bevy::{
     pbr::{ExtendedMaterial, MaterialExtension},
     prelude::*,
-    render::render_resource::{AsBindGroup, ShaderRef, ShaderType},
+    render::render_resource::{AsBindGroup, ShaderRef},
 };
 use boimp::bake::{ImposterBakeMaterialExtension, ImposterBakeMaterialPlugin};
 use comms::preview::PreviewMode;
@@ -118,13 +118,29 @@ impl SceneBound {
     }
 }
 
-#[derive(ShaderType, Clone, Copy, Debug, Default)]
-pub struct BoundRegion {
-    pub min: u32, // 2x i16
-    pub max: u32, // 2x i16
-    pub height: f32,
-    pub parcel_count: u32,
+mod decl {
+    // temporary for ShaderType macro, remove in future
+    #![allow(dead_code)]
+
+    use bevy::render::render_resource::ShaderType;
+    #[derive(ShaderType, Clone, Copy, Debug, Default)]
+    pub struct BoundRegion {
+        pub min: u32, // 2x i16
+        pub max: u32, // 2x i16
+        pub height: f32,
+        pub parcel_count: u32,
+    }
+
+    #[derive(ShaderType, Clone)]
+    pub struct SceneBoundData {
+        pub(super) bounds: [BoundRegion; 8],
+        pub distance: f32,
+        pub flags: u32,
+        pub num_bounds: u32,
+        pub(super) _pad: u32,
+    }
 }
+pub use decl::*;
 
 impl BoundRegion {
     pub fn new(min: IVec2, max: IVec2, parcel_count: u32) -> Self {
@@ -218,15 +234,6 @@ mod test {
             }
         }
     }
-}
-
-#[derive(ShaderType, Clone)]
-pub struct SceneBoundData {
-    bounds: [BoundRegion; 8],
-    pub distance: f32,
-    pub flags: u32,
-    pub num_bounds: u32,
-    _pad: u32,
 }
 
 impl MaterialExtension for SceneBound {

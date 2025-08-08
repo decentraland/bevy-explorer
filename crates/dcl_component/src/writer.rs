@@ -49,7 +49,7 @@ impl<'a> DclWriter<'a> {
         self.buffer.clear();
     }
 
-    pub fn reader(&self) -> DclReader {
+    pub fn reader(&self) -> DclReader<'_> {
         DclReader::new(self.buffer)
     }
 }

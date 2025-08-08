@@ -250,37 +250,41 @@ pub fn update_system_tween(
     time: Res<Time>,
 ) {
     for (ent, mut transform, tween, data) in q.iter_mut() {
-        if tween.is_changed() || data.is_none() {
-            if tween.time <= 0.0 {
-                debug!("system tween instant complete @ {:?}", tween.target);
-                *transform = tween.target;
-            } else {
-                debug!("system tween starting {} @ {:?}", tween.time, tween.target);
-                commands.entity(ent).try_insert(SystemTweenData {
-                    start_pos: *transform,
-                    start_time: time.elapsed_secs(),
-                });
+        match (tween.is_changed(), data) {
+            (true, _) | (_, None) => {
+                if tween.time <= 0.0 {
+                    debug!("system tween instant complete @ {:?}", tween.target);
+                    *transform = tween.target;
+                } else {
+                    debug!("system tween starting {} @ {:?}", tween.time, tween.target);
+                    commands.entity(ent).try_insert(SystemTweenData {
+                        start_pos: *transform,
+                        start_time: time.elapsed_secs(),
+                    });
+                }
             }
-        } else {
-            let data = data.unwrap();
-            let elapsed = time.elapsed_secs() - data.start_time;
-            if elapsed >= tween.time {
-                debug!("system tween complete @ {:?}", tween.target);
-                *transform = tween.target;
-                commands
-                    .entity(ent)
-                    .remove::<SystemTween>()
-                    .remove::<SystemTweenData>();
-            } else {
-                let ratio = simple_easing::quad_in_out(elapsed / tween.time);
-                transform.translation =
-                    (1.0 - ratio) * data.start_pos.translation + ratio * tween.target.translation;
-                transform.scale = (1.0 - ratio) * data.start_pos.scale + ratio * tween.target.scale;
-                transform.rotation = data.start_pos.rotation.slerp(tween.target.rotation, ratio);
-                debug!(
-                    "system tween partial {}/{} @ {:?}",
-                    elapsed, tween.time, transform
-                );
+            (false, Some(data)) => {
+                let elapsed = time.elapsed_secs() - data.start_time;
+                if elapsed >= tween.time {
+                    debug!("system tween complete @ {:?}", tween.target);
+                    *transform = tween.target;
+                    commands
+                        .entity(ent)
+                        .remove::<SystemTween>()
+                        .remove::<SystemTweenData>();
+                } else {
+                    let ratio = simple_easing::quad_in_out(elapsed / tween.time);
+                    transform.translation = (1.0 - ratio) * data.start_pos.translation
+                        + ratio * tween.target.translation;
+                    transform.scale =
+                        (1.0 - ratio) * data.start_pos.scale + ratio * tween.target.scale;
+                    transform.rotation =
+                        data.start_pos.rotation.slerp(tween.target.rotation, ratio);
+                    debug!(
+                        "system tween partial {}/{} @ {:?}",
+                        elapsed, tween.time, transform
+                    );
+                }
             }
         }
     }

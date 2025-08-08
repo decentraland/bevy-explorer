@@ -188,7 +188,7 @@ pub struct TryChildBuilder<'a> {
 impl TryChildBuilder<'_> {
     /// Spawns an entity with the given bundle and inserts it into the parent entity's [`Children`].
     /// Also adds [`Parent`] component to the created entity.
-    pub fn spawn(&mut self, bundle: impl Bundle) -> EntityCommands {
+    pub fn spawn(&mut self, bundle: impl Bundle) -> EntityCommands<'_> {
         let e = self.commands.spawn(bundle);
         self.push_children.children.push(e.id());
         e
@@ -196,7 +196,7 @@ impl TryChildBuilder<'_> {
 
     /// Spawns an [`Entity`] with no components and inserts it into the parent entity's [`Children`].
     /// Also adds [`Parent`] component to the created entity.
-    pub fn spawn_empty(&mut self) -> EntityCommands {
+    pub fn spawn_empty(&mut self) -> EntityCommands<'_> {
         let e = self.commands.spawn_empty();
         self.push_children.children.push(e.id());
         e
