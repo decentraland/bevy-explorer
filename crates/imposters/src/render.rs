@@ -859,7 +859,7 @@ fn debug_write_imposters(
     tick: Res<FrameCount>,
     mut debug: ResMut<DebugInfo>,
 ) {
-    if tick.0 % 100 != 0 {
+    if tick.0.is_multiple_of(100) {
         return;
     }
 

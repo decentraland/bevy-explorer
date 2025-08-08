@@ -12,7 +12,7 @@ pub struct FetchResponseBodyResource {
 }
 
 impl deno_core::Resource for FetchResponseBodyResource {
-    fn name(&self) -> Cow<str> {
+    fn name(&self) -> Cow<'_, str> {
         "fetchResponseBody".into()
     }
 

@@ -52,21 +52,29 @@ pub enum VelocityTier {
     Fast = 3,
 }
 
-#[bitfield]
-#[derive(Debug)]
-pub struct Temporal {
-    pub timestamp: B15,
-    pub movement_kind: Kind,
-    pub sliding: bool,
-    pub stunned: bool,
-    pub grounded: bool,
-    pub jump: bool,
-    pub long_jump: bool,
-    pub falling: bool,
-    pub long_falling: bool,
-    pub rotation_y: B6,
-    pub velocity_tier: VelocityTier,
+mod decl {
+    // temporary scope for unused_parens in bitfield macro
+    #![allow(unused_parens)]
+    use modular_bitfield::bitfield;
+    use modular_bitfield::specifiers::*;
+
+    #[bitfield]
+    #[derive(Debug)]
+    pub struct Temporal {
+        pub timestamp: B15,
+        pub movement_kind: super::Kind,
+        pub sliding: bool,
+        pub stunned: bool,
+        pub grounded: bool,
+        pub jump: bool,
+        pub long_jump: bool,
+        pub falling: bool,
+        pub long_falling: bool,
+        pub rotation_y: B6,
+        pub velocity_tier: super::VelocityTier,
+    }
 }
+pub use decl::*;
 
 impl Temporal {
     const TIMESTAMP_BITS: u32 = 15;

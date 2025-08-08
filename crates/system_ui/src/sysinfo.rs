@@ -492,7 +492,7 @@ fn update_tracker(
         return;
     };
 
-    if f.0 % 100 != 0 && !tracker.is_changed() {
+    if !f.0.is_multiple_of(100) && !tracker.is_changed() {
         return;
     }
 
@@ -674,7 +674,7 @@ fn entity_count(
     textshape_mats: Query<(), With<MeshMaterial3d<TextShapeMaterial>>>,
     mats: Res<Assets<SceneMaterial>>,
 ) {
-    if f.0 % 100 == 0 {
+    if f.0.is_multiple_of(100) {
         let entities = q.iter().count();
         let meshes = meshes.iter().count();
         let textures = textures.iter().count();
@@ -710,7 +710,7 @@ fn display_tracked_components(
         return;
     };
 
-    if !track.0 || f.0 % 100 != 0 {
+    if !track.0 || f.0.is_multiple_of(100) {
         return;
     }
 
