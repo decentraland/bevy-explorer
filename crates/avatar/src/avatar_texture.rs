@@ -339,7 +339,8 @@ fn snapshot(
                     commands
                         .spawn(Window {
                             title: "snapshot window".to_owned(),
-                            resolution: WindowResolution::new(256.0, 256.0),
+                            resolution: WindowResolution::new(256.0, 256.0)
+                                .with_scale_factor_override(1.0),
                             resizable: false,
                             enabled_buttons: EnabledButtons {
                                 minimize: false,
