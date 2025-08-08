@@ -9,12 +9,13 @@ use bevy::{
     ui::{CameraCursorPosition, RelativeCursorPosition, UiSystem},
 };
 use bevy_console::ConsoleCommand;
+use comms::global_crdt::ForeignPlayer;
 use console::DoAddConsoleCommand;
 
 use crate::{
     gltf_resolver::GltfMeshResolver,
     update_world::{
-        mesh_collider::{MeshCollider, MeshColliderShape, SceneColliderData},
+        mesh_collider::{ColliderId, MeshCollider, MeshColliderShape, SceneColliderData},
         pointer_events::PointerEvents,
         scene_ui::UiLink,
     },
@@ -99,7 +100,9 @@ impl Plugin for PointerResultPlugin {
             .init_resource::<PointerDragTarget>()
             .init_resource::<UiPointerTarget>()
             .init_resource::<WorldPointerTarget>()
-            .init_resource::<DebugPointers>();
+            .init_resource::<DebugPointers>()
+            .init_resource::<AvatarColliders>();
+
         app.add_systems(
             PreUpdate,
             (update_pointer_target, update_manual_cursor)
@@ -122,6 +125,13 @@ impl Plugin for PointerResultPlugin {
     }
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub enum PointerTargetType {
+    World,
+    Ui,
+    Avatar,
+}
+
 #[derive(Debug, Resource, Clone, PartialEq)]
 pub struct PointerTargetInfo {
     pub container: Entity,
@@ -130,7 +140,7 @@ pub struct PointerTargetInfo {
     pub position: Option<Vec3>,
     pub normal: Option<Vec3>,
     pub face: Option<usize>,
-    pub is_ui: Option<bool>,
+    pub ty: PointerTargetType,
 }
 
 #[derive(Default, Debug, Resource, Clone, PartialEq)]
@@ -171,6 +181,12 @@ impl UiPointerTargetValue {
     }
 }
 
+#[derive(Resource, Default)]
+pub struct AvatarColliders {
+    pub collider_data: SceneColliderData,
+    pub lookup: HashMap<ColliderId, Entity>,
+}
+
 #[derive(Default, Debug, Resource, Clone, PartialEq)]
 pub struct WorldPointerTarget(Option<PointerTargetInfo>);
 
@@ -181,6 +197,8 @@ fn update_pointer_target(
     windows: Query<&Window>,
     containing_scenes: ContainingScene,
     mut scenes: Query<(Entity, &mut RendererSceneContext, &mut SceneColliderData)>,
+    mut avatar_colliders: ResMut<AvatarColliders>,
+    frame: Res<FrameCount>,
     mut world_target: ResMut<WorldPointerTarget>,
 ) {
     let Ok((camera, camera_position)) = camera.single() else {
@@ -242,8 +260,38 @@ fn update_pointer_target(
             },
         );
 
+    let maybe_nearest_avatar = avatar_colliders.collider_data.cast_ray_nearest(
+        frame.0,
+        ray.origin,
+        ray.direction.into(),
+        maybe_nearest_hit
+            .as_ref()
+            .map(|(_, hit)| hit.toi)
+            .unwrap_or(f32::MAX),
+        u32::MAX,
+        true,
+    );
+
     world_target.0 = None;
-    if let Some((scene_entity, hit)) = maybe_nearest_hit {
+    if let Some(avatar_hit) = maybe_nearest_avatar {
+        let nearest_point = avatar_colliders
+            .collider_data
+            .closest_point(frame.0, player_translation, |cid| cid == &avatar_hit.id)
+            .unwrap_or(player_translation);
+        let distance = (nearest_point - player_translation).length();
+
+        let avatar = avatar_colliders.lookup.get(&avatar_hit.id).unwrap();
+
+        world_target.0 = Some(PointerTargetInfo {
+            container: *avatar,
+            mesh_name: None,
+            distance: FloatOrd(distance),
+            position: Some(ray.origin + ray.direction * avatar_hit.toi),
+            normal: Some(avatar_hit.normal.normalize_or_zero()),
+            face: avatar_hit.face,
+            ty: PointerTargetType::Avatar,
+        });
+    } else if let Some((scene_entity, hit)) = maybe_nearest_hit {
         let (_, context, mut collider_data) = scenes.get_mut(scene_entity).unwrap();
 
         // get player distance
@@ -263,7 +311,7 @@ fn update_pointer_target(
                 position: Some(ray.origin + ray.direction * hit.toi),
                 normal: Some(hit.normal.normalize_or_zero()),
                 face: hit.face,
-                is_ui: Some(false),
+                ty: PointerTargetType::World,
             });
         } else {
             warn!("hit some dead entity?");
@@ -490,7 +538,7 @@ fn resolve_pointer_target(
                 position: None,
                 normal: None,
                 face: None,
-                is_ui: Some(true),
+                ty: PointerTargetType::Ui,
             });
         }
         UiPointerTargetValue::World(e, mesh) => {
@@ -507,7 +555,7 @@ fn resolve_pointer_target(
                 position: None,
                 normal: None,
                 face: None,
-                is_ui: Some(true),
+                ty: PointerTargetType::Ui,
             });
         }
         UiPointerTargetValue::None => target.0.clone_from(&world_target.0),
@@ -599,11 +647,11 @@ fn debug_pointer(
 
 fn send_hover_events(
     new_target: Res<PointerTarget>,
-    pointer_requests: Query<(&SceneEntity, Option<&PointerEvents>)>,
+    pointer_requests: Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
     mut scenes: Query<(&mut RendererSceneContext, &GlobalTransform)>,
     frame: Res<FrameCount>,
     mut input_manager: InputManager,
-    mut previously_entered: Local<HashSet<(Entity, Option<String>)>>,
+    mut previously_entered: Local<HashSet<(Entity, Option<String>, PointerTargetType)>>,
     scene_ui_ent: Query<&UiLink>,
     linked: Query<(&ChildOf, &DespawnWith, Option<&RelativeCursorPosition>)>,
 ) {
@@ -612,64 +660,69 @@ fn send_hover_events(
     let mut send_event =
         |info: &PointerTargetInfo, ev_type: PointerEventType| -> Option<InputAction> {
             let mut action = None;
-            if let Ok((scene_entity, maybe_pe)) = pointer_requests.get(info.container) {
-                if let Some(pe) = maybe_pe {
-                    let mut potential_entries = pe.msg.pointer_events.iter().peekable();
-                    // check there's at least one potential request before doing any work
-                    if potential_entries.peek().is_some() {
-                        let Ok((mut context, scene_transform)) = scenes.get_mut(scene_entity.root)
-                        else {
-                            return None;
-                        };
+            if let Ok((maybe_scene_entity, maybe_foreign_player, pe)) =
+                pointer_requests.get(info.container)
+            {
+                let mut potential_entries = pe
+                    .iter_with_scene(maybe_scene_entity.map(|se| se.root))
+                    .peekable();
+                // check there's at least one potential request before doing any work
+                if potential_entries.peek().is_some() {
+                    for (scene, ev) in potential_entries {
+                        let max_distance = ev
+                            .event_info
+                            .as_ref()
+                            .and_then(|info| info.max_distance)
+                            .unwrap_or(10.0);
+                        if info.distance <= FloatOrd(max_distance) {
+                            action = Some(
+                                ev.event_info
+                                    .as_ref()
+                                    .and_then(|info| info.button.map(|_| info.button()))
+                                    .unwrap_or(InputAction::IaAny),
+                            );
 
-                        for ev in potential_entries {
-                            let max_distance = ev
-                                .event_info
-                                .as_ref()
-                                .and_then(|info| info.max_distance)
-                                .unwrap_or(10.0);
-                            if info.distance <= FloatOrd(max_distance) {
-                                action = Some(
-                                    ev.event_info
-                                        .as_ref()
-                                        .and_then(|info| info.button.map(|_| info.button()))
-                                        .unwrap_or(InputAction::IaAny),
-                                );
-
-                                if ev.event_type != ev_type as i32 {
-                                    continue;
-                                }
-
-                                let tick_number = context.tick_number;
-                                context.update_crdt(
-                                    SceneComponentId::POINTER_RESULT,
-                                    CrdtType::GO_ENT,
-                                    scene_entity.id,
-                                    &PbPointerEventsResult {
-                                        button: InputAction::IaPointer as i32,
-                                        hit: Some(RaycastHit {
-                                            position: info.position.as_ref().map(|p| {
-                                                Vector3::world_vec_from_vec3(
-                                                    &(*p - scene_transform.translation()),
-                                                )
-                                            }),
-                                            global_origin: None,
-                                            direction: None,
-                                            normal_hit: info
-                                                .normal
-                                                .as_ref()
-                                                .map(Vector3::world_vec_from_vec3),
-                                            length: info.distance.0,
-                                            mesh_name: info.mesh_name.clone(),
-                                            entity_id: scene_entity.id.as_proto_u32(),
-                                        }),
-                                        state: ev_type as i32,
-                                        timestamp: frame.0,
-                                        analog: None,
-                                        tick_number,
-                                    },
-                                );
+                            if ev.event_type != ev_type as i32 {
+                                continue;
                             }
+
+                            let Ok((mut context, scene_transform)) = scenes.get_mut(scene) else {
+                                continue;
+                            };
+
+                            let scene_entity_id = maybe_scene_entity
+                                .map(|se| se.id)
+                                .unwrap_or_else(|| maybe_foreign_player.unwrap().scene_id);
+
+                            let tick_number = context.tick_number;
+                            context.update_crdt(
+                                SceneComponentId::POINTER_RESULT,
+                                CrdtType::GO_ENT,
+                                scene_entity_id,
+                                &PbPointerEventsResult {
+                                    button: InputAction::IaPointer as i32,
+                                    hit: Some(RaycastHit {
+                                        position: info.position.as_ref().map(|p| {
+                                            Vector3::world_vec_from_vec3(
+                                                &(*p - scene_transform.translation()),
+                                            )
+                                        }),
+                                        global_origin: None,
+                                        direction: None,
+                                        normal_hit: info
+                                            .normal
+                                            .as_ref()
+                                            .map(Vector3::world_vec_from_vec3),
+                                        length: info.distance.0,
+                                        mesh_name: info.mesh_name.clone(),
+                                        entity_id: scene_entity_id.as_proto_u32(),
+                                    }),
+                                    state: ev_type as i32,
+                                    timestamp: frame.0,
+                                    analog: None,
+                                    tick_number,
+                                },
+                            );
                         }
                     }
                 }
@@ -686,14 +739,14 @@ fn send_hover_events(
     let container = new_target
         .0
         .as_ref()
-        .map(|t| (t.container, t.mesh_name.clone()));
+        .map(|t| (t.container, t.mesh_name.clone(), t.ty));
     let mut new_entities = HashSet::from_iter(container.clone());
-    if let Some((e, _)) = container.as_ref().filter(|c| c.1.is_some()) {
-        new_entities.insert((*e, None));
+    if let Some((e, _, ty)) = container.as_ref().filter(|c| c.1.is_some()) {
+        new_entities.insert((*e, None, *ty));
     }
 
     let mut ui_entity = container
-        .and_then(|(c, _)| scene_ui_ent.get(c).ok())
+        .and_then(|(c, _, _)| scene_ui_ent.get(c).ok())
         .map(|link| link.ui_entity);
 
     // walk up parent ui nodes
@@ -701,14 +754,14 @@ fn send_hover_events(
         ui_entity.and_then(|ui_entity| linked.get(ui_entity).ok())
     {
         if maybe_cursor.is_some_and(|cursor| cursor.mouse_over()) {
-            new_entities.insert((scene_ent.0, None));
+            new_entities.insert((scene_ent.0, None, PointerTargetType::Ui));
         }
 
         ui_entity = Some(next.parent());
     }
 
     input_manager.priorities().release_all(InputPriority::Scene);
-    for (entity, mesh) in previously_entered.difference(&new_entities) {
+    for (entity, mesh, ty) in previously_entered.difference(&new_entities) {
         send_event(
             &PointerTargetInfo {
                 container: *entity,
@@ -717,18 +770,19 @@ fn send_hover_events(
                 position: None,
                 normal: None,
                 face: None,
-                is_ui: None,
+                ty: *ty,
             },
             PointerEventType::PetHoverLeave,
         );
     }
 
-    for (entity, mesh) in new_entities.difference(&previously_entered) {
+    for (entity, mesh, ty) in new_entities.difference(&previously_entered) {
         if let Some(info) = new_target.0.as_ref() {
             if let Some(action) = send_event(
                 &PointerTargetInfo {
                     container: *entity,
                     mesh_name: mesh.clone(),
+                    ty: *ty,
                     ..info.clone()
                 },
                 PointerEventType::PetHoverEnter,
@@ -747,7 +801,7 @@ fn send_hover_events(
 
 fn send_action_events(
     target: Res<PointerTarget>,
-    pointer_requests: Query<(&SceneEntity, Option<&PointerEvents>)>,
+    pointer_requests: Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
     mut scenes: Query<(&mut RendererSceneContext, &GlobalTransform)>,
     input_mgr: InputManager,
     frame: Res<FrameCount>,
@@ -756,19 +810,21 @@ fn send_action_events(
     mut locks: ResMut<CursorLocks>,
 ) {
     fn filtered_events<'a>(
-        pointer_requests: &'a Query<(&SceneEntity, Option<&PointerEvents>)>,
+        pointer_requests: &'a Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
         info: &PointerTargetInfo,
         ev_type: PointerEventType,
         action: InputAction,
-    ) -> impl Iterator<Item = &'a Entry> {
+    ) -> impl Iterator<Item = (Entity, &'a Entry)> {
         let pe = pointer_requests
             .get(info.container)
             .ok()
-            .and_then(|(_, pes)| pes)
-            .map(|pes| pes.msg.pointer_events.iter())
-            .unwrap_or_default();
+            .map(|(maybe_scene_entity, _, pes)| {
+                pes.iter_with_scene(maybe_scene_entity.map(|se| se.root))
+            })
+            .into_iter()
+            .flatten();
 
-        pe.filter(move |f| {
+        pe.filter(move |(_, f)| {
             let event_button = f
                 .event_info
                 .as_ref()
@@ -784,7 +840,9 @@ fn send_action_events(
                           action: InputAction,
                           direction: Option<Vec2>|
      -> bool {
-        let Ok((scene_entity, _)) = pointer_requests.get(info.container) else {
+        let Ok((maybe_scene_entity, maybe_foreign_player, _)) =
+            pointer_requests.get(info.container)
+        else {
             return false;
         };
 
@@ -792,18 +850,21 @@ fn send_action_events(
             filtered_events(&pointer_requests, info, ev_type, action).peekable();
         // check there's at least one potential request before doing any work
         if potential_entries.peek().is_some() {
-            let Ok((mut context, scene_transform)) = scenes.get_mut(scene_entity.root) else {
-                return false;
-            };
-
             let mut consumed = false;
-            for ev in potential_entries {
+            let scene_entity_id = maybe_scene_entity
+                .map(|se| se.id)
+                .unwrap_or_else(|| maybe_foreign_player.unwrap().scene_id);
+            for (scene, ev) in potential_entries {
                 let max_distance = ev
                     .event_info
                     .as_ref()
                     .and_then(|info| info.max_distance)
                     .unwrap_or(10.0);
                 if info.distance.0 <= max_distance {
+                    let Ok((mut context, scene_transform)) = scenes.get_mut(scene) else {
+                        return false;
+                    };
+
                     let tick_number = context.tick_number;
                     let hit = RaycastHit {
                         position: info.position.as_ref().map(|p| {
@@ -814,14 +875,14 @@ fn send_action_events(
                         normal_hit: info.normal.as_ref().map(Vector3::world_vec_from_vec3),
                         length: info.distance.0,
                         mesh_name: info.mesh_name.clone(),
-                        entity_id: scene_entity.id.as_proto_u32(),
+                        entity_id: scene_entity_id.as_proto_u32(),
                     };
                     debug!("({:?} / {action:?}) pointer hit: {hit:?}", ev_type);
                     // send to target entity
                     context.update_crdt(
                         SceneComponentId::POINTER_RESULT,
                         CrdtType::GO_ENT,
-                        scene_entity.id,
+                        scene_entity_id,
                         &PbPointerEventsResult {
                             button: action as i32,
                             hit: Some(hit),

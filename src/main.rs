@@ -261,6 +261,7 @@ fn main() {
             emote_wheel: false,
             chat: !args.contains("--no-chat"),
             permissions: !args.contains("--no-perms"),
+            profile: !args.contains("--no-profile"),
         });
         app.insert_resource(SystemScene {
             source: Some(source),
@@ -274,6 +275,7 @@ fn main() {
             emote_wheel: true,
             chat: true,
             permissions: true,
+            profile: true,
         });
     }
 

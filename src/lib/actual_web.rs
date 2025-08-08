@@ -117,6 +117,7 @@ fn main_inner(
             emote_wheel: false,
             chat: false,
             permissions: false,
+            profile: false,
         });
         app.insert_resource(SystemScene {
             source: Some(source),
@@ -130,6 +131,7 @@ fn main_inner(
             emote_wheel: true,
             chat: true,
             permissions: true,
+            profile: true,
         });
     }
 
