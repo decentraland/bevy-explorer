@@ -7,8 +7,7 @@ use bevy::{
         camera::RenderTarget,
         render_asset::RenderAssetUsages,
         render_resource::{
-            AsBindGroup, Extent3d, ShaderRef, ShaderType, TextureDimension, TextureFormat,
-            TextureUsages,
+            AsBindGroup, Extent3d, ShaderRef, TextureDimension, TextureFormat, TextureUsages,
         },
         renderer::RenderDevice,
         view::NoFrustumCulling,
@@ -244,18 +243,24 @@ pub struct TextQuad {
     pub data: TextQuadData,
 }
 
-#[derive(Clone, ShaderType)]
-pub struct TextQuadData {
-    pub uvs: Vec4,
-    pub valign: f32,
-    pub halign: f32,
-    pub pix_per_m: f32,
-    pub add_y_pix: f32,
-    pub vertex_billboard: u32,
-    _pad0: u32,
-    _pad1: u32,
-    _pad2: u32,
+mod decl {
+    #![allow(dead_code)]
+
+    use bevy::{math::Vec4, render::render_resource::ShaderType};
+    #[derive(Clone, ShaderType)]
+    pub struct TextQuadData {
+        pub uvs: Vec4,
+        pub valign: f32,
+        pub halign: f32,
+        pub pix_per_m: f32,
+        pub add_y_pix: f32,
+        pub vertex_billboard: u32,
+        pub(super) _pad0: u32,
+        pub(super) _pad1: u32,
+        pub(super) _pad2: u32,
+    }
 }
+pub use decl::*;
 
 impl MaterialExtension for TextQuad {
     fn vertex_shader() -> bevy::render::render_resource::ShaderRef {

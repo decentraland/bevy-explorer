@@ -301,7 +301,7 @@ fn run_scene_loop(world: &mut World) {
     let fps = if config.graphics.vsync {
         // TODO this should use video mode if we add fullscreen video modes
         refresh_rate
-            .map(|rr| (((rr as f64 + 999.0) / 1000.0).ceil()))
+            .map(|rr| ((rr as f64 + 999.0) / 1000.0).ceil())
             .unwrap_or(config.graphics.fps_target as f64)
     } else {
         config.graphics.fps_target as f64

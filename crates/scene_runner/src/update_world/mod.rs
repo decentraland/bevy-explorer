@@ -409,7 +409,7 @@ pub fn track_components<C: Component, const ALLOW_UNALLOCATED: bool>(
     mut track: Query<(Entity, &mut ComponentTracker)>,
     frame: Res<FrameCount>,
 ) {
-    if frame.0 % 100 != 0 {
+    if frame.0.is_multiple_of(100) {
         return;
     }
 

@@ -459,7 +459,7 @@ fn bake_scene_imposters(
                 ..Default::default()
             });
         } else {
-            if tick.0 % 200 == 0 {
+            if tick.0.is_multiple_of(200) {
                 debug!("waiting for bake ...");
             }
 

@@ -2,7 +2,7 @@ use bevy::{
     asset::AssetEvents,
     platform::collections::HashMap,
     prelude::*,
-    render::render_resource::{AsBindGroup, ShaderRef, ShaderType},
+    render::render_resource::{AsBindGroup, ShaderRef},
     transform::TransformSystem,
     ui::FocusPolicy,
     window::{PrimaryWindow, WindowResized},
@@ -83,16 +83,23 @@ impl Plugin for BoundedNodePlugin {
     }
 }
 
-#[derive(ShaderType, Debug, Clone)]
-struct GpuBoundsData {
-    bounds: Vec4,
-    border_color: Vec4,
-    edge_scale: Vec4,
-    corner_size: f32,
-    corner_blend_size: f32,
-    border_size: f32,
-    _pad: u32,
+mod decl {
+    #![allow(dead_code)]
+
+    use bevy::{math::Vec4, render::render_resource::ShaderType};
+
+    #[derive(ShaderType, Debug, Clone)]
+    pub(super) struct GpuBoundsData {
+        pub(super) bounds: Vec4,
+        pub(super) border_color: Vec4,
+        pub(super) edge_scale: Vec4,
+        pub(super) corner_size: f32,
+        pub(super) corner_blend_size: f32,
+        pub(super) border_size: f32,
+        pub(super) _pad: u32,
+    }
 }
+use decl::*;
 
 impl Default for GpuBoundsData {
     fn default() -> Self {
