@@ -52,6 +52,7 @@ function murmur3_128(key) {
 
 var gpuSessionState = {};
 var requiredItemTypes = new Map();
+var precaching = false;
 
 export async function initGpuCache() {
   patchWebgpuAdater();
@@ -89,23 +90,25 @@ function patchWebgpuAdater() {
           return cachedItem;
         }
 
-        console.log(`[GPU Cache] no cached ${itemType} for ${hash}`);
         const item = originalFunction.apply(device, args);
         item.__gpu_item_type = itemType;
         item.__gpu_hash = hash;
         gpuSessionState[itemType].set(hash, item);
 
-        if (!requiredItemTypes.has(itemType)) {
-          requiredItemTypes.set(itemType, new Set());
-        }
-        const requiredItems = requiredItemTypes.get(itemType);
-        if (!requiredItems.has(hash)) {
-          requiredItems.add(hash);
-          localStorage.setItem(
-            `required-${itemType}s`,
-            JSON.stringify([...requiredItems])
-          );
-          localStorage.setItem(`${itemType}-${hash}`, JSON.stringify(args));
+        if (!precaching) {
+          console.log(`[GPU Cache] no cached ${itemType} for ${hash}`);
+          if (!requiredItemTypes.has(itemType)) {
+            requiredItemTypes.set(itemType, new Set());
+          }
+          const requiredItems = requiredItemTypes.get(itemType);
+          if (!requiredItems.has(hash)) {
+            requiredItems.add(hash);
+            localStorage.setItem(
+              `required-${itemType}s`,
+              JSON.stringify([...requiredItems])
+            );
+            localStorage.setItem(`${itemType}-${hash}`, JSON.stringify(args));
+          }
         }
         return item;
       };
@@ -142,18 +145,23 @@ async function createGpuCache() {
     JSON.parse(cachedDeviceDescriptor)
   );
 
-  await createItemType("shader", async (args) => {
-    return device.createShaderModule(args);
-  });
-  await createItemType("bindgroup", async (args) => {
-    return device.createBindGroupLayout(args);
-  });
-  await createItemType("layout", async (args) => {
-    return device.createPipelineLayout(args);
-  });
-  await createItemType("pipeline", async (args) => {
-    return await device.createRenderPipelineAsync(args);
-  });
+  precaching = true;
+  try {
+    await createItemType("shader", async (args) => {
+      return device.createShaderModule(args);
+    });
+    await createItemType("bindgroup", async (args) => {
+      return device.createBindGroupLayout(args);
+    });
+    await createItemType("layout", async (args) => {
+      return device.createPipelineLayout(args);
+    });
+    await createItemType("pipeline", async (args) => {
+      return await device.createRenderPipelineAsync(args);
+    });
+  } finally {
+    precaching = false;
+  }
 }
 
 async function createItemType(itemType, asyncCreateFunction) {
@@ -169,12 +177,12 @@ async function createItemType(itemType, asyncCreateFunction) {
         return;
       }
       const args = JSON.parse(argString);
-      rehydrateItem(args);
       try {
+        rehydrateItem(args);
         const item = await asyncCreateFunction(args[0]);
         gpuSessionState[itemType].set(hash, item);
       } catch (e) {
-        throw e;
+        console.warn(`[GPU Cache] failed to precreate ${itemType}: ${e}`);
       }
     })
   );
@@ -194,6 +202,9 @@ function rehydrateItem(currentObject) {
         const type = item.__gpu_item_type;
         const hash = item.__gpu_hash;
         currentObject[i] = gpuSessionState[type].get(hash);
+        if (!currentObject[i]) {
+          throw `failed to rehydrate: missing ${type} with hash ${hash}`;
+        }
       } else {
         rehydrateItem(item);
       }
@@ -206,6 +217,9 @@ function rehydrateItem(currentObject) {
           const type = value.__gpu_item_type;
           const hash = value.__gpu_hash;
           currentObject[key] = gpuSessionState[type].get(hash);
+          if (!currentObject[key]) {
+            throw `failed to rehydrate: missing ${type} with hash ${hash}`;
+          }
         } else {
           rehydrateItem(value);
         }
