@@ -27,7 +27,9 @@ function patchWebgpuAdater() {
       return gpuSessionState.device;
     }
 
-    console.log("[GPU Cache] creating device and clearing cache");
+    if (!precaching) {
+        console.log("[GPU Cache] device params are different: creating device and clearing cache");
+    }
     gpuSessionState = {
       shader: new Map(),
       bindgroup: new Map(),
@@ -45,7 +47,6 @@ function patchWebgpuAdater() {
         const hash = simpleHash(jsonArgs);
         const cachedItem = gpuSessionState[itemType].get(hash);
         if (cachedItem !== undefined) {
-          console.log(`[GPU Cache] using cached ${itemType} ${hash}`);
           return cachedItem;
         }
 
@@ -99,12 +100,12 @@ async function createGpuCache() {
   if (cachedDeviceDescriptor === null) {
     return;
   }
+  precaching = true;
   const adapter = await navigator.gpu.requestAdapter();
   const device = await adapter.requestDevice(
     JSON.parse(cachedDeviceDescriptor)
   );
 
-  precaching = true;
   try {
     await createItemType("shader", async (args) => {
       return device.createShaderModule(args);
