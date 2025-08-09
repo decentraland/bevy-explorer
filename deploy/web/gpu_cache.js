@@ -1,53 +1,12 @@
-/**
- * JS Implementation of MurmurHash3 (128-bit)
- * @author <a href="mailto:gary.court@gmail.com">Gary Court</a>
- * @see http://github.com/garycourt/murmurhash-js
- * @author <a href="mailto:aappleby@gmail.com">Austin Appleby</a>
- * @see http://sites.google.com/site/murmurhash/
- */
-function murmur3_128(key) {
-  let h1 = 0x9747b28c,
-    h2 = 0x9747b28c,
-    h3 = 0x9747b28c,
-    h4 = 0x9747b28c;
-  const len = key.length;
+function simpleHash(s) {
+  var h = 0x811c9dc5;
 
-  for (let i = 0; i < len; i++) {
-    let k1 = key.charCodeAt(i);
-    k1 =
-      (k1 & 0xffff) * 0xcc9e2d51 +
-      ((((k1 >>> 16) * 0xcc9e2d51) & 0xffff) << 16);
-    k1 = (k1 << 15) | (k1 >>> 17);
-    k1 =
-      (k1 & 0xffff) * 0x1b873593 +
-      ((((k1 >>> 16) * 0x1b873593) & 0xffff) << 16);
-
-    h1 ^= k1;
-    h1 = (h1 << 19) | (h1 >>> 13);
-    h1 = h1 * 5 + 0x561ccd1b;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h += (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24);
   }
 
-  h1 ^= len;
-  h2 ^= len;
-  h3 ^= len;
-  h4 ^= len;
-  h1 += h2;
-  h1 += h3;
-  h1 += h4;
-  h2 += h1;
-  h3 += h1;
-  h4 += h1;
-
-  h1 ^= h1 >>> 16;
-  h1 =
-    (h1 & 0xffff) * 0x85ebca6b + ((((h1 >>> 16) * 0x85ebca6b) & 0xffff) << 16);
-  h1 ^= h1 >>> 13;
-  h1 =
-    (h1 & 0xffff) * 0xc2b2ae35 + ((((h1 >>> 16) * 0xc2b2ae35) & 0xffff) << 16);
-  h1 ^= h1 >>> 16;
-
-  // Convert to hex string for the final key
-  return h1.toString(16);
+  return h >>> 0;
 }
 
 var gpuSessionState = {};
@@ -83,7 +42,7 @@ function patchWebgpuAdater() {
     function wrapDeviceFunction(itemType, originalFunction) {
       return (...args) => {
         const jsonArgs = JSON.stringify(args);
-        const hash = murmur3_128(jsonArgs);
+        const hash = simpleHash(jsonArgs);
         const cachedItem = gpuSessionState[itemType].get(hash);
         if (cachedItem !== undefined) {
           console.log(`[GPU Cache] using cached ${itemType} ${hash}`);
