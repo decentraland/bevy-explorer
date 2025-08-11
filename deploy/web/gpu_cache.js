@@ -17,14 +17,12 @@ const dbConfig = {
   name: "GpuCacheDB",
   version: 1,
   onUpgrade: (db) => {
-    if (!db.objectStoreNames.contains("shader"))
-      db.createObjectStore("shader", { keyPath: "hash" });
+    if (!db.objectStoreNames.contains("shader")) db.createObjectStore("shader");
     if (!db.objectStoreNames.contains("bindgroup"))
-      db.createObjectStore("bindgroup", { keyPath: "hash" });
-    if (!db.objectStoreNames.contains("layout"))
-      db.createObjectStore("layout", { keyPath: "hash" });
+      db.createObjectStore("bindgroup");
+    if (!db.objectStoreNames.contains("layout")) db.createObjectStore("layout");
     if (!db.objectStoreNames.contains("pipeline"))
-      db.createObjectStore("pipeline", { keyPath: "hash" });
+      db.createObjectStore("pipeline");
     if (!db.objectStoreNames.contains("requiredItems"))
       db.createObjectStore("requiredItems");
     if (!db.objectStoreNames.contains("deviceConfig"))
@@ -77,6 +75,59 @@ async function storeRequiredItems() {
   });
 }
 
+async function fetchInstance(type, hash) {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction(type, "readonly");
+    const request = tx.objectStore(type).get(hash);
+    request.onsuccess = () => {
+      if (request.result) {
+        resolve(JSON.parse(request.result));
+      } else {
+        reject("undefined");
+      }
+    };
+    request.onerror = () => {
+      reject("error");
+    };
+  });
+}
+
+async function storeInstance(type, hash, value) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(type, "readwrite");
+    tx.oncomplete = () => {
+      resolve();
+    };
+    tx.onerror = () => {
+      console.log("[GPU Cache] failed to store ${type} instance");
+      reject(tx.error);
+    };
+    tx.objectStore(type).put(JSON.stringify(value), hash);
+  });
+}
+
+async function clearDatabase() {
+  const storeNames = ["shader", "bindgroup", "layout", "pipeline"];
+
+  const tx = await db.transaction("rqeuiredItems", "readwrite");
+  await tx.objectStore("requiredItems").clear();
+
+  const clearPromises = storeNames.map((name) => {
+    const tx = db.transaction(name, "readwrite");
+    return new Promise((resolve, reject) => {
+      const request = tx.objectStore(name).clear();
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  });
+
+  // Wait for all clear operations to complete
+  await Promise.all(clearPromises);
+  await tx.done;
+}
+
 export async function initGpuCache() {
   patchWebgpuAdater();
   await createGpuCache();
@@ -95,6 +146,7 @@ function patchWebgpuAdater() {
       console.log(
         "[GPU Cache] device params are different: creating device and clearing cache"
       );
+      clearDatabase();
     }
     gpuSessionState = {
       shader: new Map(),
@@ -130,7 +182,7 @@ function patchWebgpuAdater() {
           if (!requiredItems.has(hash)) {
             requiredItems.add(hash);
             storeRequiredItems();
-            localStorage.setItem(`${itemType}-${hash}`, JSON.stringify(args));
+            storeInstance(itemType, hash, args);
           }
         }
         return item;
@@ -198,22 +250,14 @@ async function createItemType(itemType, asyncCreateFunction) {
 
   await Promise.all(
     [...storedItems].map(async (hash) => {
-      const argString = localStorage.getItem(`${itemType}-${hash}`);
-      if (!argString) {
-        console.log(
-          "[GPU Cache] skipping precreate for missing ${itemType} ${hash}"
-        );
-        storedItems.remove(hash);
-        return;
-      }
-      const args = JSON.parse(argString);
       try {
+        const args = await fetchInstance(itemType, hash);
         rehydrateItem(args);
         const item = await asyncCreateFunction(args[0]);
         gpuSessionState[itemType].set(hash, item);
       } catch (e) {
         console.warn(`[GPU Cache] failed to precreate ${itemType}: ${e}`);
-        storedItems.remove(hash);
+        storedItems.delete(hash);
       }
     })
   );
