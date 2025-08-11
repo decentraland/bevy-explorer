@@ -77,7 +77,7 @@ async function storeRequiredItems() {
 
 async function fetchInstance(type, hash) {
   const db = await openDB();
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const tx = db.transaction(type, "readonly");
     const request = tx.objectStore(type).get(hash);
     request.onsuccess = () => {
