@@ -726,11 +726,6 @@ fn send_hover_events(
                         }
                     }
                 }
-            } else {
-                warn!(
-                    "failed to query entity for hover event {ev_type:?}: {:?}",
-                    info.container
-                );
             }
 
             action
