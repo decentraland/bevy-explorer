@@ -13,6 +13,70 @@ var gpuSessionState = {};
 var requiredItemTypes = new Map();
 var precaching = false;
 
+const dbConfig = {
+  name: "GpuCacheDB",
+  version: 1,
+  onUpgrade: (db) => {
+    if (!db.objectStoreNames.contains("shader"))
+      db.createObjectStore("shader", { keyPath: "hash" });
+    if (!db.objectStoreNames.contains("bindgroup"))
+      db.createObjectStore("bindgroup", { keyPath: "hash" });
+    if (!db.objectStoreNames.contains("layout"))
+      db.createObjectStore("layout", { keyPath: "hash" });
+    if (!db.objectStoreNames.contains("pipeline"))
+      db.createObjectStore("pipeline", { keyPath: "hash" });
+    if (!db.objectStoreNames.contains("requiredItems"))
+      db.createObjectStore("requiredItems");
+    if (!db.objectStoreNames.contains("deviceConfig"))
+      db.createObjectStore("deviceConfig");
+  },
+};
+
+var dbPromise;
+function openDB() {
+  if (dbPromise) {
+    return dbPromise;
+  }
+  dbPromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(dbConfig.name, dbConfig.version);
+    request.onupgradeneeded = (event) => {
+      dbConfig.onUpgrade(event.target.result);
+    };
+    request.onsuccess = (event) => resolve(event.target.result);
+    request.onerror = (event) => reject(event.target.error);
+  });
+  return dbPromise;
+}
+
+async function fetchRequiredItems() {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction("requiredItems", "readonly");
+    const request = tx.objectStore("requiredItems").get("it");
+    request.onsuccess = () => {
+      resolve(request.result ?? new Map());
+    };
+    request.onerror = () => {
+      resolve(new Map());
+    };
+  });
+}
+
+async function storeRequiredItems() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("requiredItems", "readwrite");
+    tx.oncomplete = () => {
+      resolve();
+    };
+    tx.onerror = () => {
+      console.log("[GPU Cache] failed to store requiredItems");
+      reject(tx.error);
+    };
+    tx.objectStore("requiredItems").put(requiredItemTypes, "it");
+  });
+}
+
 export async function initGpuCache() {
   patchWebgpuAdater();
   await createGpuCache();
@@ -28,7 +92,9 @@ function patchWebgpuAdater() {
     }
 
     if (!precaching) {
-        console.log("[GPU Cache] device params are different: creating device and clearing cache");
+      console.log(
+        "[GPU Cache] device params are different: creating device and clearing cache"
+      );
     }
     gpuSessionState = {
       shader: new Map(),
@@ -63,10 +129,7 @@ function patchWebgpuAdater() {
           const requiredItems = requiredItemTypes.get(itemType);
           if (!requiredItems.has(hash)) {
             requiredItems.add(hash);
-            localStorage.setItem(
-              `required-${itemType}s`,
-              JSON.stringify([...requiredItems])
-            );
+            storeRequiredItems();
             localStorage.setItem(`${itemType}-${hash}`, JSON.stringify(args));
           }
         }
@@ -106,6 +169,7 @@ async function createGpuCache() {
     JSON.parse(cachedDeviceDescriptor)
   );
 
+  requiredItemTypes = await fetchRequiredItems();
   try {
     await createItemType("shader", async (args) => {
       return device.createShaderModule(args);
@@ -122,18 +186,24 @@ async function createGpuCache() {
   } finally {
     precaching = false;
   }
+  storeRequiredItems();
+  const stats = Object.keys(gpuSessionState).map(
+    (k) => `\n${k}: ${gpuSessionState[k].size ?? "ok"}`
+  );
+  console.log(`[GPU Cache]: preloaded ${stats}`);
 }
 
 async function createItemType(itemType, asyncCreateFunction) {
-  const storedString = localStorage.getItem(`required-${itemType}s`);
-  const storedItems = storedString ? JSON.parse(storedString) : [];
-  const requiredItems = new Set();
+  const storedItems = requiredItemTypes.get(itemType) ?? new Set();
 
   await Promise.all(
-    storedItems.map(async (hash) => {
-      requiredItems.add(hash);
+    [...storedItems].map(async (hash) => {
       const argString = localStorage.getItem(`${itemType}-${hash}`);
       if (!argString) {
+        console.log(
+          "[GPU Cache] skipping precreate for missing ${itemType} ${hash}"
+        );
+        storedItems.remove(hash);
         return;
       }
       const args = JSON.parse(argString);
@@ -143,11 +213,10 @@ async function createItemType(itemType, asyncCreateFunction) {
         gpuSessionState[itemType].set(hash, item);
       } catch (e) {
         console.warn(`[GPU Cache] failed to precreate ${itemType}: ${e}`);
+        storedItems.remove(hash);
       }
     })
   );
-
-  requiredItemTypes.set(itemType, requiredItems);
 }
 
 function rehydrateItem(currentObject) {
