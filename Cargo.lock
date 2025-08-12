@@ -8545,7 +8545,6 @@ dependencies = [
  "spin 0.9.8",
  "tokio",
  "tungstenite 0.21.0",
- "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-fs",
  "web-sys",
