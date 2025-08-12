@@ -435,7 +435,6 @@ fn update_scene_priority(
 
     // remove any scenes we didn't see from the in-flight set
     updates.jobs_in_flight = &updates.jobs_in_flight - &missing_in_flight;
-    error!("eligible scenes: {}", updates.scene_queue.len());
 }
 
 // TODO: work out how to set this intelligently
