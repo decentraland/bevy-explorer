@@ -1212,7 +1212,7 @@ impl AssetReader for IpfsIo {
 
                 // in wasm we add a custom header to allow the service worker to cache ipfs requests across content servers
                 #[cfg(target_arch = "wasm32")]
-                let request = if ipfs_path.content_path().is_some() {
+                let request = if ipfs_path.content_path().is_some() && ipfs_path.should_cache() {
                     request.header("X-IPFS", "true")
                 } else {
                     request
