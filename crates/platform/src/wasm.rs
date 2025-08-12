@@ -8,6 +8,7 @@ use futures_util::{
     SinkExt, StreamExt,
 };
 pub use tungstenite::client::IntoClientRequest;
+use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen_futures::spawn_local;
 use ws_stream_wasm::{WsMessage, WsMeta, WsStream};
 pub struct WebSocket {
@@ -191,3 +192,14 @@ impl<T> AsyncRwLock<T> {
 
 #[derive(Debug)]
 pub struct NoError;
+
+
+#[wasm_bindgen(js_namespace = window)]
+extern "C" {
+    #[wasm_bindgen(js_name = browser_pointer_is_locked)]
+    fn browser_pointer_is_locked() -> bool;
+}
+
+pub fn platform_pointer_is_locked(_expected: bool) -> bool {
+    browser_pointer_is_locked()
+}

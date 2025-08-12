@@ -124,3 +124,7 @@ impl<T> AsyncRwLock<T> {
         self.0.try_write()
     }
 }
+
+pub fn platform_pointer_is_locked(expected: bool) -> bool {
+    expected
+}
