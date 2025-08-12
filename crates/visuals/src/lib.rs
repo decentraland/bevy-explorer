@@ -52,7 +52,6 @@ impl Plugin for VisualsPlugin {
             .add_plugins(WireframePlugin::default())
             .add_systems(First, update_time_of_day.after(bevy::time::TimeSystem))
             .add_systems(Update, apply_global_light)
-            .add_systems(Update, move_ground)
             .add_systems(Update, update_dof)
             .add_systems(Startup, setup.in_set(SetupSets::Main));
 
@@ -114,7 +113,14 @@ fn setup(
     });
 
     commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(50000.0, 50000.0))),
+        Mesh3d(
+            meshes.add(
+                Plane3d::default()
+                    .mesh()
+                    .size(6500.0, 6500.0)
+                    .subdivisions(10),
+            ),
+        ),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::srgb(0.3, 0.45, 0.2),
             perceptual_roughness: 1.0,
@@ -123,6 +129,7 @@ fn setup(
             fog_enabled: false,
             ..Default::default()
         })),
+        Transform::from_translation(Vec3::Y * -0.05),
         Ground,
         GROUND_RENDERLAYER.clone(),
     ));
@@ -335,21 +342,6 @@ fn apply_global_light(
 
 #[derive(Component)]
 struct Ground;
-
-fn move_ground(
-    mut ground: Query<&mut Transform, With<Ground>>,
-    cam: Query<&GlobalTransform, With<PrimaryUser>>,
-) {
-    let Ok(mut transform) = ground.single_mut() else {
-        return;
-    };
-
-    let Ok(target) = cam.single() else {
-        return;
-    };
-
-    transform.translation = target.translation() * Vec3::new(1.0, 0.0, 1.0) + Vec3::Y * -0.05;
-}
 
 fn update_time_of_day(time: Res<Time>, mut tod: ResMut<TimeOfDay>, mut t_delta: Local<f32>) {
     if let Some(target) = tod.target_time {
