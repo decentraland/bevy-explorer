@@ -193,7 +193,6 @@ impl<T> AsyncRwLock<T> {
 #[derive(Debug)]
 pub struct NoError;
 
-
 #[wasm_bindgen(js_namespace = window)]
 extern "C" {
     #[wasm_bindgen(js_name = browser_pointer_is_locked)]
