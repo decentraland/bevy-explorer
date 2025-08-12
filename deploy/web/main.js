@@ -40,7 +40,21 @@ function hideSettings() {
   if (initButton) initButton.style.display = "none";
 }
 
-var sharedMemory;
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("service_worker.js")
+      .then((registration) => {
+        console.log(
+          "Page: Service Worker registered successfully with scope: ",
+          registration.scope
+        );
+      })
+      .catch((error) => {
+        console.log("Page: Service Worker registration failed: ", error);
+      });
+  });
+}
 
 async function initEngine() {
   populateInputsFromQueryParams();
@@ -204,10 +218,12 @@ initButton.onclick = () => {
   engine_run(platform, initialRealm, location, systemScene, true, 1e6, 64);
 };
 
-Promise.all([initEngine(), initGpuCache()]).then(() => {
-  initButton.disabled = false;
-  initButton.textContent = "Go";
-}).catch((e) => {
-  console.log("error", e)
-  initButton.textContent = "Load Failed";
-});
+Promise.all([initEngine(), initGpuCache()])
+  .then(() => {
+    initButton.disabled = false;
+    initButton.textContent = "Go";
+  })
+  .catch((e) => {
+    console.log("error", e);
+    initButton.textContent = "Load Failed";
+  });
