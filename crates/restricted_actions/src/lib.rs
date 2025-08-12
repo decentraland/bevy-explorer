@@ -652,7 +652,7 @@ fn get_user_data(
         } => Some((user, scene, response)),
         _ => None,
     }) {
-        debug!("process get_user_data");
+        debug!("process get_user_data for {:?}", scene);
         match user {
             None => match profile.profile.as_ref() {
                 Some(profile) => response.send(Ok(profile.content.clone())),

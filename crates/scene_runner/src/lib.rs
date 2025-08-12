@@ -47,6 +47,8 @@ use util::SceneUtilPlugin;
 
 use web_time::Instant;
 
+use crate::initialize_scene::SuperUserScene;
+
 use self::{
     initialize_scene::{
         LiveScenes, PointerResult, SceneLifecyclePlugin, SceneLoading, ScenePointers, PARCEL_SIZE,
@@ -358,7 +360,15 @@ fn run_scene_loop(world: &mut World) {
 }
 
 fn update_scene_priority(
-    mut scenes: Query<(Entity, &GlobalTransform, &mut RendererSceneContext), Without<SceneLoading>>,
+    mut scenes: Query<
+        (
+            Entity,
+            &GlobalTransform,
+            &mut RendererSceneContext,
+            Option<&SuperUserScene>,
+        ),
+        Without<SceneLoading>,
+    >,
     player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
     mut updates: ResMut<SceneUpdates>,
     time: Res<Time>,
@@ -377,11 +387,26 @@ fn update_scene_priority(
     // sort eligible scenes
     updates.scene_queue = scenes
         .iter_mut()
-        .filter(|(ent, _, context)| {
+        .filter(|(ent, _, context, maybe_super)| {
             missing_in_flight.remove(ent);
-            !context.in_flight && !context.broken && context.blocked.is_empty()
+            let allow = !context.in_flight
+                && !context.broken
+                && (context.blocked.is_empty() || maybe_super.is_some());
+            if !allow {
+                debug!(
+                    "skipping {ent} (@{}) on {:?}",
+                    context.base,
+                    (
+                        context.in_flight,
+                        context.broken,
+                        &context.blocked,
+                        maybe_super.is_some()
+                    )
+                )
+            }
+            allow
         })
-        .filter_map(|(ent, transform, mut context)| {
+        .filter_map(|(ent, transform, mut context, _)| {
             // clamp to scene bounds instead of using distance to scene origin
             let nearest_point = player_translation.xz().clamp(
                 transform.translation().xz() - Vec2::Y * PARCEL_SIZE,
@@ -410,6 +435,7 @@ fn update_scene_priority(
 
     // remove any scenes we didn't see from the in-flight set
     updates.jobs_in_flight = &updates.jobs_in_flight - &missing_in_flight;
+    error!("eligible scenes: {}", updates.scene_queue.len());
 }
 
 // TODO: work out how to set this intelligently
