@@ -7,7 +7,7 @@ use bevy::{
 };
 
 use common::{
-    inputs::{Action, SystemAction, POINTER_SET},
+    inputs::{Action, SystemAction, CAMERA_SET, CAMERA_ZOOM, POINTER_SET},
     structs::{AvatarDynamicState, CameraOverride, CursorLocks, PrimaryCamera, PrimaryUser},
     util::ModifyComponentExt,
 };
@@ -114,9 +114,9 @@ pub fn update_camera(
         );
     }
 
-    let mut mouse_delta = Vec2::ZERO;
+    let mut mouse_delta = input_manager.get_analog(CAMERA_SET, InputPriority::Scroll) * 10.0;
     if locks.0.contains("camera") {
-        mouse_delta = input_manager.get_analog(POINTER_SET, InputPriority::BindInput);
+        mouse_delta += input_manager.get_analog(POINTER_SET, InputPriority::Scroll);
     }
 
     if allow_cam_move {
@@ -138,14 +138,11 @@ pub fn update_camera(
         options.pitch = (options.pitch - mouse_delta.y * options.sensitivity / 1000.0)
             .clamp(-PI / 2.1, PI / 2.1);
         options.yaw -= mouse_delta.x * options.sensitivity / 1000.0;
-        if input_manager.is_down(SystemAction::CameraZoomIn, InputPriority::None)
-            || input_manager.just_down(SystemAction::CameraZoomIn, InputPriority::None)
-        {
-            options.distance = 0f32.max((options.distance - 0.05) * 0.9);
-        } else if input_manager.is_down(SystemAction::CameraZoomOut, InputPriority::None)
-            || input_manager.just_down(SystemAction::CameraZoomOut, InputPriority::None)
-        {
-            options.distance = 7000f32.min((options.distance / 0.9) + 0.05);
+        let zoom = input_manager
+            .get_analog(CAMERA_ZOOM, InputPriority::Scroll)
+            .y;
+        if zoom != 0.0 {
+            options.distance = (options.distance * 1.0005f32.powf(-zoom)).clamp(0.0, 100.0);
         }
     }
 
