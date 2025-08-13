@@ -191,3 +191,10 @@ impl<T> AsyncRwLock<T> {
 
 #[derive(Debug)]
 pub struct NoError;
+
+pub fn platform_pointer_is_locked(_expected: bool) -> bool {
+    web_sys::window()
+        .and_then(|w| w.document())
+        .map(|d| d.pointer_lock_element().is_some())
+        .unwrap_or(false)
+}

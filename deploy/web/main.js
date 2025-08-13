@@ -223,4 +223,8 @@ async function run() {
   }
 }
 
+window.browser_pointer_is_locked = () => {
+  return document.pointerLockElement !== null;
+}
+
 run().catch(console.error);
