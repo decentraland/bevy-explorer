@@ -1,0 +1,113 @@
+use bevy::ecs::system::lifetimeless::SResMut;
+use bevy::prelude::*;
+use common::inputs::{InputDirectionSetLabel, InputMap};
+use common::structs::AppConfig;
+
+use super::{AppSetting, IntAppSetting};
+
+const SENS_BASE: f32 = 1.05;
+
+macro_rules! sensitivity_setting {
+    ($struct:ident, $label: expr, $name:expr, $description:expr, ) => {
+        #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+        pub struct $struct(i32);
+
+        impl IntAppSetting for $struct {
+            fn from_int(value: i32) -> Self {
+                Self(value)
+            }
+
+            fn value(&self) -> i32 {
+                self.0
+            }
+
+            fn min() -> i32 {
+                1
+            }
+
+            fn max() -> i32 {
+                100
+            }
+
+            fn scale() -> f32 {
+                1.0
+            }
+
+            fn display(&self) -> String {
+                format!("{}", self.0)
+            }
+        }
+
+        #[allow(clippy::redundant_closure_call)]
+        impl AppSetting for $struct {
+            type Param = SResMut<InputMap>;
+
+            fn title() -> String {
+                format!("{}", $name)
+            }
+
+            fn description(&self) -> String {
+                format!("{}\n\n{}", $name, $description)
+            }
+
+            fn apply(&self, mut input_map: ResMut<InputMap>, _: Commands) {
+                input_map
+                    .sensitivities
+                    .insert($label, SENS_BASE.powf(self.0 as f32 - 50.0));
+            }
+
+            fn save(&self, config: &mut AppConfig) {
+                config
+                    .inputs
+                    .1
+                    .insert($label, SENS_BASE.powf(self.0 as f32 - 50.0));
+            }
+
+            fn load(config: &AppConfig) -> Self {
+                Self(
+                    (config.inputs.1.get(&$label).unwrap_or(&1.0).log(SENS_BASE) + 50.0).round()
+                        as i32,
+                )
+            }
+
+            fn category() -> super::SettingCategory {
+                super::SettingCategory::Controls
+            }
+        }
+    };
+}
+
+sensitivity_setting!(
+    MovementSensitivitySetting,
+    InputDirectionSetLabel::Movement,
+    "Movement sensitivity",
+    "Controls the sensitivity of inputs (gamepad thumbsticks, mouse motion, etc) bound to avatar movement.",
+);
+
+sensitivity_setting!(
+    ScrollSensitivitySetting,
+    InputDirectionSetLabel::Scroll,
+    "Scroll sensitivity",
+    "Controls the sensitivity of scrolling UI panels.",
+);
+
+sensitivity_setting!(
+    PointerSensitivitySetting,
+    InputDirectionSetLabel::Pointer,
+    "Pointer and Locked Camera sensitivity",
+    "Controls the sensitivity of the camera when using \"locked\" camera mode.\n\nControls the sensitivity of the pointer when using non-mouse inputs (gamepad thumbsticks, etc).",
+);
+
+sensitivity_setting!(
+    CameraSensitivitySetting,
+    InputDirectionSetLabel::Camera,
+    "Camera Sensitivity",
+    "Controls the sensitivity of inputs for Camera movement controls.\n\nNOTE: This setting affects only explicit camera controls, it does not affect the speed of camera movement via pointer inputs when the camera is locked. For controlling locked camera movement speed, change the \"Pointer\" sensitivity",
+);
+
+sensitivity_setting!(
+    CameraZoomSensitivitySetting,
+    InputDirectionSetLabel::CameraZoom,
+    "Camera Zoom",
+    "Controls the sensitivity of Camera Zoom inputs.",
+);
