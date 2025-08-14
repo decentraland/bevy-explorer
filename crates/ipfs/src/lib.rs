@@ -1208,13 +1208,25 @@ impl AssetReader for IpfsIo {
                 let request = self
                     .client
                     .get(&remote)
-                    .timeout(Duration::from_secs(5 + 30 * attempt))
-                    .build()
-                    .map_err(|e| {
-                        AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
-                            "[{token:?}]: {e}"
-                        ))))
-                    })?;
+                    .timeout(Duration::from_secs(5 + 30 * attempt));
+
+                // in wasm we add a custom header to allow the service worker to cache ipfs requests across content servers
+                #[cfg(target_arch = "wasm32")]
+                let request = if ipfs_path.content_path().is_some()
+                    && hash
+                        .as_ref()
+                        .is_some_and(|hash| ipfs_path.should_cache(hash))
+                {
+                    request.header("X-IPFS", "true")
+                } else {
+                    request
+                };
+
+                let request = request.build().map_err(|e| {
+                    AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
+                        "[{token:?}]: {e}"
+                    ))))
+                })?;
 
                 let response = self.client.execute(request).await;
 

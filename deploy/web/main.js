@@ -1,4 +1,5 @@
 // Import the wasm-bindgen generated JS glue code and Rust functions
+import { initGpuCache } from "./gpu_cache.js";
 import init, { engine_init, engine_run } from "./pkg/webgpu_build.js"; // Ensure this path is correct
 
 const initialRealmInput = document.getElementById("initialRealm");
@@ -39,9 +40,23 @@ function hideSettings() {
   if (initButton) initButton.style.display = "none";
 }
 
-var sharedMemory;
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("service_worker.js")
+      .then((registration) => {
+        console.log(
+          "Page: Service Worker registered successfully with scope: ",
+          registration.scope
+        );
+      })
+      .catch((error) => {
+        console.log("Page: Service Worker registration failed: ", error);
+      });
+  });
+}
 
-async function run() {
+async function initEngine() {
   populateInputsFromQueryParams();
 
   if (initButton) {
@@ -63,41 +78,25 @@ async function run() {
     });
     window.wasm_memory = sharedMemory;
 
-    // TODO: figure out why using blobs fails with livekit feature enabled
-    /*
-    const wasmJs = URL.createObjectURL(
-      await fetch("./pkg/webgpu_build.js")
-        .then((response) => response.text())
-        .then((text) => new Blob([text], { type: "application/javascript" }))
-    );
-
-    const sandboxJs = URL.createObjectURL(
-      await fetch("sandbox_worker.js")
-        .then((response) => response.text())
-        .then((text) => {
-          const replacedText = text.replace("./pkg/webgpu_build.js", wasmJs);
-          return new Blob([replacedText], { type: "application/javascript" });
-        })
-    );
-    */
-
     window.setVideoSource = (video, src) => {
       async function isHlsStream(url) {
         try {
           const response = await fetch(url, {
-            method: 'HEAD',
-            mode: 'cors', 
+            method: "HEAD",
+            mode: "cors",
           });
 
           if (!response.ok) {
             return false;
           }
 
-          const contentType = response.headers.get('Content-Type');
+          const contentType = response.headers.get("Content-Type");
 
           if (contentType) {
-            return contentType.includes('application/vnd.apple.mpegurl') ||
-                  contentType.includes('application/x-mpegURL');
+            return (
+              contentType.includes("application/vnd.apple.mpegurl") ||
+              contentType.includes("application/x-mpegURL")
+            );
           }
 
           return false;
@@ -106,7 +105,7 @@ async function run() {
         }
       }
 
-      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = src;
       } else if (Hls.isSupported()) {
         // check if we need hls
@@ -118,9 +117,9 @@ async function run() {
           } else {
             video.src = src;
           }
-        }, 0)
+        }, 0);
       }
-    }
+    };
 
     window.spawn_and_init_sandbox = async () => {
       var timeoutId;
@@ -167,7 +166,8 @@ async function run() {
 
     let res = await engine_init();
     console.log(
-      "[Main JS] Main application WebAssembly module custom initialized: ", res
+      "[Main JS] Main application WebAssembly module custom initialized: ",
+      res
     );
 
     // start asset loader thread
@@ -188,30 +188,6 @@ async function run() {
         }
       };
     });
-
-    if (initButton) {
-      initButton.disabled = false;
-      initButton.textContent = "Go";
-    }
-
-    initButton.onclick = () => {
-      const initialRealm = initialRealmInput.value;
-      const location = locationInput.value;
-      const systemScene = systemSceneInput.value;
-      console.log(
-        `[Main JS] "Go" button clicked. Initial Realm: "${initialRealm}", Location: "${location}", System Scene: "${systemScene}"`
-      );
-      hideSettings();
-
-      const platform = (() => {
-        if (navigator.userAgent.includes("Mac")) return "macos";
-        if (navigator.userAgent.includes("Win")) return "windows";
-        if (navigator.userAgent.includes("Linux")) return "linux";
-        return "unknown";
-      })();
-
-      engine_run(platform, initialRealm, location, systemScene, true, 1e6, 64);
-    };
   } catch (error) {
     console.error(
       "[Main JS] Error during Wasm initialization or setup:",
@@ -223,8 +199,31 @@ async function run() {
   }
 }
 
-window.browser_pointer_is_locked = () => {
-  return document.pointerLockElement !== null;
-}
+initButton.onclick = () => {
+  const initialRealm = initialRealmInput.value;
+  const location = locationInput.value;
+  const systemScene = systemSceneInput.value;
+  console.log(
+    `[Main JS] "Go" button clicked. Initial Realm: "${initialRealm}", Location: "${location}", System Scene: "${systemScene}"`
+  );
+  hideSettings();
 
-run().catch(console.error);
+  const platform = (() => {
+    if (navigator.userAgent.includes("Mac")) return "macos";
+    if (navigator.userAgent.includes("Win")) return "windows";
+    if (navigator.userAgent.includes("Linux")) return "linux";
+    return "unknown";
+  })();
+
+  engine_run(platform, initialRealm, location, systemScene, true, 1e6, 64);
+};
+
+Promise.all([initEngine(), initGpuCache()])
+  .then(() => {
+    initButton.disabled = false;
+    initButton.textContent = "Go";
+  })
+  .catch((e) => {
+    console.log("error", e);
+    initButton.textContent = "Load Failed";
+  });
