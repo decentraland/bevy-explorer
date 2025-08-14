@@ -266,7 +266,7 @@ fn update_scrollables(
         .map(|ev| (ev.scrollable, ev.position))
         .collect::<HashMap<_, _>>();
 
-    for action in SCROLL_SET.0 {
+    for &action in SCROLL_SET.actions.iter().flatten() {
         input_manager
             .priorities()
             .release(InputType::Action(action), InputPriority::Scroll);
@@ -394,7 +394,7 @@ fn update_scrollables(
                     && cursor_position.clamp(ui_position, ui_position + parent_size)
                         == cursor_position
                 {
-                    for action in SCROLL_SET.0 {
+                    for &action in SCROLL_SET.actions.iter().flatten() {
                         input_manager
                             .priorities()
                             .reserve(InputType::Action(action), InputPriority::Scroll);

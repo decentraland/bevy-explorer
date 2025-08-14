@@ -7,7 +7,7 @@ use bevy::{
     ecs::system::SystemParam,
     input::{
         gamepad::GamepadInput,
-        mouse::{MouseMotion, MouseWheel},
+        mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
     },
     platform::collections::{HashMap, HashSet},
     prelude::*,
@@ -274,7 +274,10 @@ impl InputManager<'_, '_> {
     }
 
     pub fn get_analog(&self, set: InputDirectionalSet, priority: InputPriority) -> Vec2 {
-        let mut amts = set.0.iter().map(|a| {
+        let mut amts = set.actions.iter().map(|a| {
+            let Some(a) = a else {
+                return 0.0;
+            };
             self.inputs(*a)
                 .map(|item| match item {
                     InputIdentifier::Key(k) => {
@@ -322,11 +325,12 @@ impl InputManager<'_, '_> {
             Vec2::ZERO
         };
 
-        mouse
+        (mouse
             + Vec2::new(
                 amts.next().unwrap() - amts.next().unwrap(),
                 amts.next().unwrap() - amts.next().unwrap(),
-            )
+            ))
+            * self.map.sensitivities.get(&set.label).unwrap_or(&1.0)
     }
 
     // only scene actions
@@ -411,7 +415,11 @@ fn update_deltas(
         *axis_data
             .current
             .entry(AxisIdentifier::MouseWheel)
-            .or_default() += Vec2::new(ev.x, ev.y);
+            .or_default() += Vec2::new(ev.x, ev.y)
+            * match ev.unit {
+                MouseScrollUnit::Line => 16.0,
+                MouseScrollUnit::Pixel => 1.0,
+            };
     }
     for device in gamepads.iter() {
         for axis in device.get_analog_axes() {
@@ -637,7 +645,10 @@ fn handle_set_bindings(
         }
     }) {
         map.inputs = binding_data.bindings.clone();
-        config.inputs = InputMapSerialized(binding_data.bindings.clone().into_iter().collect());
+        config.inputs = InputMapSerialized(
+            binding_data.bindings.clone().into_iter().collect(),
+            config.inputs.1.clone(),
+        );
 
         platform::write_config_file(&config);
 

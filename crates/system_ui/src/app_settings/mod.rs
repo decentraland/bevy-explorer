@@ -7,7 +7,9 @@ use common::{
     },
     util::TryPushChildrenEx,
 };
-use system_bridge::settings::{cache_size::CacheSizeSetting, EnumAppSetting, IntAppSetting};
+use system_bridge::settings::{
+    cache_size::CacheSizeSetting, sensitivity::*, EnumAppSetting, IntAppSetting,
+};
 use ui_core::ui_actions::{Click, ClickRepeat, HoverEnter, On, UiCaller};
 
 use crate::profile::SettingsDialog;
@@ -155,6 +157,23 @@ fn set_app_settings_content(
             spawn_int_setting_template::<JumpSetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<GravitySetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<FallSpeedSetting>(&mut commands, &dui, &config),
+            commands
+                .spawn_template(
+                    &dui,
+                    "settings-header",
+                    DuiProps::new().with_prop("label", "Control Sensitivity Settings".to_owned()),
+                )
+                .unwrap()
+                .root,
+            spawn_int_setting_template::<PointerSensitivitySetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<CameraZoomSensitivitySetting>(
+                &mut commands,
+                &dui,
+                &config,
+            ),
+            spawn_int_setting_template::<ScrollSensitivitySetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<MovementSensitivitySetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<CameraSensitivitySetting>(&mut commands, &dui, &config),
         ];
 
         commands

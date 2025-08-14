@@ -40,7 +40,7 @@ use volume_settings::{
     VoiceVolumeSetting,
 };
 
-use crate::SystemApi;
+use crate::{settings::sensitivity::*, SystemApi};
 
 pub mod aa_settings;
 pub mod ambient_brightness_setting;
@@ -56,6 +56,7 @@ pub mod max_downloads;
 pub mod oob_setting;
 pub mod player_settings;
 pub mod scene_threads;
+pub mod sensitivity;
 pub mod shadow_settings;
 pub mod ssao_setting;
 pub mod video_threads;
@@ -156,6 +157,13 @@ impl Plugin for SettingBridgePlugin {
         add_int_setting::<JumpSetting>(app, &mut settings, &mut schedule);
         add_int_setting::<GravitySetting>(app, &mut settings, &mut schedule);
         add_int_setting::<FallSpeedSetting>(app, &mut settings, &mut schedule);
+
+        add_int_setting::<PointerSensitivitySetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<CameraZoomSensitivitySetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<ScrollSensitivitySetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<MovementSensitivitySetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<CameraSensitivitySetting>(app, &mut settings, &mut schedule);
+
         add_int_setting::<VideoThreadsSetting>(app, &mut settings, &mut schedule);
         add_int_setting::<MaxDownloadsSetting>(app, &mut settings, &mut schedule);
         add_enum_setting::<CacheSizeSetting>(app, &mut settings, &mut schedule);
@@ -174,6 +182,7 @@ pub enum SettingCategory {
     Graphics,
     Audio,
     Performance,
+    Controls,
 }
 
 impl Display for SettingCategory {
@@ -183,6 +192,7 @@ impl Display for SettingCategory {
             SettingCategory::Graphics => "Graphics",
             SettingCategory::Audio => "Audio",
             SettingCategory::Performance => "Performance",
+            SettingCategory::Controls => "Controls",
         })
     }
 }
