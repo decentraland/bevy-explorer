@@ -142,7 +142,8 @@ pub fn update_camera(
             .get_analog(CAMERA_ZOOM, InputPriority::Scroll)
             .y;
         if zoom != 0.0 {
-            options.distance = (options.distance * 1.0005f32.powf(-zoom)).clamp(0.0, 100.0);
+            options.distance =
+                (((options.distance + 0.5) * 1.0005f32.powf(-zoom)) - 0.5).clamp(0.0, 100.0);
         }
     }
 

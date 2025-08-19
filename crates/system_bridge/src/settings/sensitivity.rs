@@ -63,8 +63,12 @@ macro_rules! sensitivity_setting {
 
             fn load(config: &AppConfig) -> Self {
                 Self(
-                    ((config.inputs.1.get(&$label).unwrap_or(&1.0) / $base).log($scale) + 50.0)
-                        .round() as i32,
+                    config
+                        .inputs
+                        .1
+                        .get(&$label)
+                        .map(|v| (v / $base).log($scale).round() as i32 + 50)
+                        .unwrap_or(50),
                 )
             }
 
