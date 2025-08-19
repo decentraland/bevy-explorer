@@ -120,6 +120,6 @@ sensitivity_setting!(
     InputDirectionSetLabel::CameraZoom,
     "Camera Zoom",
     "Controls the sensitivity of Camera Zoom inputs.",
-    0.1,
-    1.05,
+    0.3,
+    1.1,
 );
