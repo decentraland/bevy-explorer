@@ -10,7 +10,7 @@
         }        
         body { 
             font-family: 'Inter', sans-serif; /* Changed to Inter */
-            margin: 20px; 
+            margin: 0px; 
             background-color: #f7fafc; /* Lighter gray */
             color: #2d3748; /* Darker gray for text */
             display: flex;
@@ -20,6 +20,7 @@
         .container {
             background-color: #ffffff;
             padding: 25px;
+            margin-top: 100px;
             border-radius: 8px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             width: 100%;
@@ -68,14 +69,14 @@
         button:hover { 
             background-color: #2b6cb0; /* Tailwind blue-700 */
         }
+        #canvas-parent {
+            display: none;
+            width: 100%;
+            height: 100vh;
+        }
         #mygame-canvas {
-            width: 100%; /* Make canvas responsive */
-            max-width: 1280px; /* Max width for canvas */
-            height: auto; /* Maintain aspect ratio */
-            aspect-ratio: 1280 / 720;
-            border: 1px solid #e2e8f0; /* Tailwind gray-300 */
-            border-radius: 6px;
-            margin-top: 20px;
+            width: 100%;
+            height: 100%;
             display: block; /* Remove extra space below canvas */
         }
         /* Added for better structure and responsiveness */
@@ -102,7 +103,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
+    <div id="header" class="container">
         <h1>Bevy Explorer</h1>
 
         <div class="input-group">
@@ -122,9 +123,10 @@
 
         <button id="initButton" disabled="true">Loading...</button>
         
-        </div>
-    <canvas id="mygame-canvas" width="1280" height="720"></canvas> 
-    
+    </div>
+    <div id="canvas-parent">
+        <canvas id="mygame-canvas" width="1280" height="720"></canvas> 
+    </div>
     <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script type="module" src="main.js"></script>
