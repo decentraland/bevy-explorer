@@ -5,10 +5,8 @@ use common::structs::AppConfig;
 
 use super::{AppSetting, IntAppSetting};
 
-const SENS_BASE: f32 = 1.05;
-
 macro_rules! sensitivity_setting {
-    ($struct:ident, $label: expr, $name:expr, $description:expr, ) => {
+    ($struct:ident, $label: expr, $name:expr, $description:expr, $base: expr, $scale:expr, ) => {
         #[derive(Debug, PartialEq, Eq, Clone, Copy)]
         pub struct $struct(i32);
 
@@ -53,20 +51,20 @@ macro_rules! sensitivity_setting {
             fn apply(&self, mut input_map: ResMut<InputMap>, _: Commands) {
                 input_map
                     .sensitivities
-                    .insert($label, SENS_BASE.powf(self.0 as f32 - 50.0));
+                    .insert($label, $base * ($scale as f32).powf(self.0 as f32 - 50.0));
             }
 
             fn save(&self, config: &mut AppConfig) {
                 config
                     .inputs
                     .1
-                    .insert($label, SENS_BASE.powf(self.0 as f32 - 50.0));
+                    .insert($label, $base * ($scale as f32).powf(self.0 as f32 - 50.0));
             }
 
             fn load(config: &AppConfig) -> Self {
                 Self(
-                    (config.inputs.1.get(&$label).unwrap_or(&1.0).log(SENS_BASE) + 50.0).round()
-                        as i32,
+                    ((config.inputs.1.get(&$label).unwrap_or(&1.0) / $base).log($scale) + 50.0)
+                        .round() as i32,
                 )
             }
 
@@ -82,6 +80,8 @@ sensitivity_setting!(
     InputDirectionSetLabel::Movement,
     "Movement sensitivity",
     "Controls the sensitivity of inputs (gamepad thumbsticks, mouse motion, etc) bound to avatar movement.",
+    1.0,
+    1.05,
 );
 
 sensitivity_setting!(
@@ -89,6 +89,8 @@ sensitivity_setting!(
     InputDirectionSetLabel::Scroll,
     "Scroll sensitivity",
     "Controls the sensitivity of scrolling UI panels.",
+    0.1,
+    1.10,
 );
 
 sensitivity_setting!(
@@ -96,6 +98,8 @@ sensitivity_setting!(
     InputDirectionSetLabel::Pointer,
     "Pointer and Locked Camera sensitivity",
     "Controls the sensitivity of the camera when using \"locked\" camera mode.\n\nControls the sensitivity of the pointer when using non-mouse inputs (gamepad thumbsticks, etc).",
+    1.0,
+    1.05,
 );
 
 sensitivity_setting!(
@@ -103,6 +107,8 @@ sensitivity_setting!(
     InputDirectionSetLabel::Camera,
     "Camera Sensitivity",
     "Controls the sensitivity of inputs for Camera movement controls.\n\nNOTE: This setting affects only explicit camera controls, it does not affect the speed of camera movement via pointer inputs when the camera is locked. For controlling locked camera movement speed, change the \"Pointer\" sensitivity",
+    1.0,
+    1.05,
 );
 
 sensitivity_setting!(
@@ -110,4 +116,6 @@ sensitivity_setting!(
     InputDirectionSetLabel::CameraZoom,
     "Camera Zoom",
     "Controls the sensitivity of Camera Zoom inputs.",
+    0.1,
+    1.05,
 );
