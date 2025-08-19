@@ -155,9 +155,8 @@ fn main_inner(
                 })
                 .set(WindowPlugin {
                     primary_window: Some(Window {
-                        // provide the ID selector string here
                         canvas: Some("#mygame-canvas".into()),
-                        // ... any other window properties ...
+                        fit_canvas_to_parent: true,
                         ..default()
                     }),
                     ..Default::default()

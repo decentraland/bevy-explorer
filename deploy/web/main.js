@@ -6,7 +6,8 @@ const initialRealmInput = document.getElementById("initialRealm");
 const locationInput = document.getElementById("location");
 const systemSceneInput = document.getElementById("systemScene");
 const initButton = document.getElementById("initButton");
-const canvas = document.getElementById("mygame-canvas");
+const canvas = document.getElementById("canvas-parent");
+const header = document.getElementById("header");
 
 let initialRealmGroup = document.getElementById("initialRealm")?.parentElement;
 let locationGroup = document.getElementById("location")?.parentElement;
@@ -33,11 +34,9 @@ function populateInputsFromQueryParams() {
     systemSceneInput.value = "";
   }
 }
-function hideSettings() {
-  if (initialRealmGroup) initialRealmGroup.style.display = "none";
-  if (locationGroup) locationGroup.style.display = "none";
-  if (systemSceneGroup) systemSceneGroup.style.display = "none";
-  if (initButton) initButton.style.display = "none";
+function hideHeader() {
+  if (header) header.style.display = "none";
+  if (canvas) canvas.style.display = "block";
 }
 
 if ("serviceWorker" in navigator) {
@@ -206,7 +205,7 @@ initButton.onclick = () => {
   console.log(
     `[Main JS] "Go" button clicked. Initial Realm: "${initialRealm}", Location: "${location}", System Scene: "${systemScene}"`
   );
-  hideSettings();
+  hideHeader();
 
   const platform = (() => {
     if (navigator.userAgent.includes("Mac")) return "macos";
