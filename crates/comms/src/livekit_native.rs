@@ -293,7 +293,7 @@ fn livekit_handler_inner(
                                                 return;
                                             };
 
-                                            let (frame_sender, frame_receiver) = tokio::sync::mpsc::channel(10);
+                                            let (frame_sender, frame_receiver) = tokio::sync::mpsc::channel(1000);
 
                                             let bridge = LivekitKiraBridge {
                                                 started: false,
@@ -318,6 +318,7 @@ fn livekit_handler_inner(
                                                     Ok(()) => (),
                                                     Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
                                                         warn!("livekit audio receiver buffer full, dropping frame");
+                                                        return;
                                                     },
                                                     Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
                                                         warn!("livekit audio receiver dropped, exiting task");
