@@ -12,6 +12,7 @@ scene_material = { workspace = true }
 scene_runner = { workspace = true }
 tween = { workspace = true }
 console = { workspace = true }
+visuals = { workspace = true }
 
 bevy = { workspace = true }
 boimp = { workspace = true }
@@ -24,6 +25,7 @@ async-fs = { workspace = true }
 clap = { workspace = true }
 crc = { workspace = true }
 reqwest = { workspace = true }
+bevy_atmosphere = { git = "https://github.com/robtfm/bevy_atmosphere", branch = "0.16-2" }
 
 zip = { version = "2", default-features = false }
 

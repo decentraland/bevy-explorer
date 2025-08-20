@@ -14,7 +14,7 @@ use bevy::{
 };
 use boimp::{bake::ImposterBakeMaterialPlugin, render::Imposter, ImposterLoaderSettings};
 use common::{
-    structs::{AppConfig, PrimaryUser},
+    structs::{AppConfig, PrimaryUser, DOWNRES_LAYER},
     util::{TaskCompat, TaskExt},
 };
 use crc::CRC_32_CKSUM;
@@ -68,21 +68,10 @@ struct ImposterMeshes {
     floor: Handle<Mesh>,
 }
 
-fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
-    // let mut cube = Cuboid::default().mesh().build();
-    // let Some(VertexAttributeValues::Float32x2(uvs)) = cube.attribute_mut(Mesh::ATTRIBUTE_UV_0)
-    // else {
-    //     panic!()
-    // };
-
-    // for ix in [0, 1, 6, 7, 8, 11, 12, 15, 20, 21, 22, 23] {
-    //     uvs[ix][1] = 0.0;
-    // }
-    // for ix in [2, 3, 4, 5, 9, 10, 13, 14, 16, 17, 18, 19] {
-    //     uvs[ix][1] = 1.0;
-    // }
-    // let cube = meshes.add(cube);
-
+fn setup(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+) {
     let mut floor = Plane3d {
         normal: Dir3::Y,
         half_size: Vec2::splat(0.5),
@@ -101,9 +90,8 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
 
     commands.insert_resource(ImposterMeshes {
         cube: meshes.add(Plane3d::new(Vec3::Z, Vec2::splat(0.5))),
-        // cube,
         floor: meshes.add(floor),
-    })
+    });
 }
 
 #[derive(Component)]
@@ -663,7 +651,7 @@ fn render_imposters(
             (IMPOSTERCEPTION_LAYER, 1.0, 0.0, false)
         } else {
             (
-                RenderLayers::default(),
+                DOWNRES_LAYER,
                 0.0,
                 config.scene_imposter_multisample_amount,
                 config.scene_imposter_multisample,

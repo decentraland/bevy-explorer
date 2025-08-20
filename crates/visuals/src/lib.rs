@@ -135,9 +135,9 @@ fn setup(
     ));
 
     {
-        commands.entity(camera.0).try_insert(AtmosphereCamera {
-            render_layers: Some(RenderLayers::default()),
-        });
+        // commands.entity(camera.0).try_insert(AtmosphereCamera {
+        //     render_layers: Some(RenderLayers::default()),
+        // });
 
         let noise = init_noise(512);
         let h_noise = images.add(noise);

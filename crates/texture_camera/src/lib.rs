@@ -6,6 +6,7 @@ use bevy::{
         bloom::Bloom,
         tonemapping::{DebandDither, Tonemapping},
     },
+    math::FloatOrd,
     pbr::ShadowFilteringMethod,
     platform::collections::{HashMap, HashSet},
     prelude::*,
@@ -20,10 +21,10 @@ use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     sets::SceneSets,
     structs::{
-        AppConfig, PrimaryUser, SceneGlobalLight, SceneLoadDistance, GROUND_RENDERLAYER,
-        PRIMARY_AVATAR_LIGHT_LAYER,
+        AppConfig, PrimaryUser, SceneGlobalLight, SceneLoadDistance, DOWNRES_LAYER,
+        GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER,
     },
-    util::{camera_to_render_layers, AudioReceiver, TryPushChildrenEx},
+    util::{camera_to_render_layers, AudioReceiver, DespawnWith, TryPushChildrenEx},
 };
 use comms::global_crdt::ForeignPlayer;
 use dcl_component::{
@@ -74,6 +75,7 @@ impl Plugin for TextureCameraPlugin {
                 update_texture_cameras,
                 update_avatar_layers,
                 update_directional_light_layers.after(update_directional_light),
+                add_downres_cameras,
             )
                 .in_set(SceneSets::PostLoop),
         );
@@ -534,5 +536,80 @@ impl TextureLayersCache {
         });
         slf.changed_layers.clear();
         slf.free = free;
+    }
+}
+
+fn add_downres_cameras(
+    cameras: Query<
+        (Entity, &Camera, Option<&RenderLayers>),
+        (With<Camera3d>, Or<(Added<Camera>, Changed<RenderLayers>)>),
+    >,
+    mut images: ResMut<Assets<Image>>,
+    mut commands: Commands,
+) {
+    for (ent, cam, maybe_layer) in cameras {
+        if maybe_layer.is_none_or(|l| l.intersects(&RenderLayers::default())) {
+            error!("add for {ent}");
+            let mut imposter_texture = Image::new_fill(
+                Extent3d {
+                    width: 320,
+                    height: 180,
+                    depth_or_array_layers: 1,
+                },
+                bevy::render::render_resource::TextureDimension::D2,
+                &[0, 0, 0, 0],
+                bevy::render::render_resource::TextureFormat::Bgra8UnormSrgb,
+                RenderAssetUsages::RENDER_WORLD,
+            );
+            imposter_texture.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT
+                | TextureUsages::COPY_DST
+                | TextureUsages::TEXTURE_BINDING;
+
+            let imposter_texture = images.add(imposter_texture);
+
+            commands.spawn((
+                ChildOf(ent),
+                Camera3d::default(),
+                Camera {
+                    order: -3,
+                    is_active: true,
+                    target: bevy::render::camera::RenderTarget::Image(
+                        bevy::render::camera::ImageRenderTarget {
+                            handle: imposter_texture.clone(),
+                            scale_factor: FloatOrd(1.0),
+                        },
+                    ),
+                    hdr: true,
+                    ..Default::default()
+                },
+                DOWNRES_LAYER,
+            ));
+
+            let downres_cam = commands
+                .spawn((
+                    ChildOf(ent),
+                    Camera2d,
+                    Camera {
+                        order: -2,
+                        is_active: true,
+                        target: cam.target.clone(),
+                        hdr: true,
+                        ..Default::default()
+                    },
+                ))
+                .id();
+
+            commands.spawn((
+                Node {
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    ..Default::default()
+                },
+                DespawnWith(downres_cam),
+                UiTargetCamera(downres_cam),
+                // ImageNode::new(imposter_texture),
+                BackgroundColor(Color::srgba(1.0, 0.0, 0.0, 1.0)),
+            ));
+        }
     }
 }

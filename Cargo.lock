@@ -6045,6 +6045,7 @@ dependencies = [
  "anyhow",
  "async-fs",
  "bevy",
+ "bevy_atmosphere",
  "bevy_console",
  "boimp",
  "clap",
@@ -6060,6 +6061,7 @@ dependencies = [
  "serde_json",
  "tween",
  "urlencoding",
+ "visuals",
  "web-fs",
  "zip 2.4.2",
 ]

@@ -7,6 +7,7 @@ use build_time::build_time_utc;
 use dcl_deno::init_runtime;
 
 use mimalloc::MiMalloc;
+use wgpu::{BlendComponent, BlendState};
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
@@ -527,6 +528,18 @@ fn setup(
             Camera3d::default(),
             Camera {
                 hdr: true,
+                output_mode: bevy::render::camera::CameraOutputMode::Write {
+                    blend_state: Some(BlendState {
+                        color: BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: BlendComponent::REPLACE,
+                    }),
+                    clear_color: ClearColorConfig::None,
+                },
+                // clear_color: ClearColorConfig::None,
                 ..Default::default()
             },
             Tonemapping::TonyMcMapface,
