@@ -3,7 +3,6 @@ use std::sync::Arc;
 use anyhow::anyhow;
 use bevy::{
     app::Propagate,
-    core_pipeline::bloom::Bloom,
     diagnostic::FrameCount,
     ecs::system::SystemParam,
     prelude::*,
@@ -26,7 +25,7 @@ use common::{
     sets::SetupSets,
     structs::{AvatarDynamicState, EmoteCommand},
 };
-use platform::{DepthPrepass, NormalPrepass};
+use platform::default_camera_components;
 use ui_core::ui_actions::{DragData, Dragged, On};
 
 use crate::{AvatarSelection, AvatarShape};
@@ -256,12 +255,7 @@ fn add_booth_camera(
                     ..default()
                 },
                 render_layers.clone(),
-                Bloom {
-                    intensity: 0.15,
-                    ..Bloom::OLD_SCHOOL
-                },
-                DepthPrepass,
-                NormalPrepass,
+                default_camera_components(),
             ))
             .id(),
         );

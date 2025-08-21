@@ -7,6 +7,7 @@ use build_time::build_time_utc;
 use dcl_deno::init_runtime;
 
 use mimalloc::MiMalloc;
+use platform::default_camera_components;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
@@ -17,15 +18,9 @@ use imposters::DclImposterPlugin;
 
 use bevy::{
     app::{Propagate, TaskPoolThreadAssignmentPolicy},
-    core_pipeline::{
-        bloom::Bloom,
-        prepass::{DepthPrepass, NormalPrepass},
-        tonemapping::{DebandDither, Tonemapping},
-    },
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
-    pbr::ShadowFilteringMethod,
     prelude::*,
-    render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers},
+    render::view::RenderLayers,
     tasks::{IoTaskPool, Task},
     window::WindowResolution,
 };
@@ -62,7 +57,7 @@ use input_manager::InputManagerPlugin;
 use ipfs::{IpfsAssetServer, IpfsIoPlugin};
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use social::SocialPlugin;
-use system_bridge::{NativeUi, SystemBridgePlugin};
+use system_bridge::{settings::NewCameraEvent, NativeUi, SystemBridgePlugin};
 use system_ui::{crash_report::CrashReportPlugin, SystemUiPlugin};
 use texture_camera::TextureCameraPlugin;
 use tween::TweenPlugin;
@@ -530,47 +525,17 @@ fn setup(
                 hdr: true,
                 ..Default::default()
             },
-            Tonemapping::TonyMcMapface,
-            DebandDither::Enabled,
-            ColorGrading {
-                // exposure: -0.5,
-                // gamma: 1.5,
-                // pre_saturation: 1.0,
-                // post_saturation: 1.0,
-                global: ColorGradingGlobal {
-                    exposure: -0.5,
-                    ..default()
-                },
-                shadows: ColorGradingSection {
-                    gamma: 0.75,
-                    ..Default::default()
-                },
-                midtones: ColorGradingSection {
-                    gamma: 0.75,
-                    ..Default::default()
-                },
-                highlights: ColorGradingSection {
-                    gamma: 0.75,
-                    ..Default::default()
-                },
-            },
+            default_camera_components(),
             Projection::from(PerspectiveProjection {
-                // projection: OrthographicProjection {
                 far: 100000.0,
                 ..Default::default()
             }),
-            Bloom {
-                intensity: 0.15,
-                ..Bloom::OLD_SCHOOL
-            },
-            ShadowFilteringMethod::Gaussian,
             PrimaryCamera::default(),
-            DepthPrepass,
-            NormalPrepass,
             GROUND_RENDERLAYER.with(0),
         ))
         .id();
 
+    commands.send_event(NewCameraEvent(camera_id));
     player_resource.0 = player_id;
     cam_resource.0 = camera_id;
 }

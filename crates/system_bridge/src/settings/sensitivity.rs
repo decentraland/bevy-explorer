@@ -48,7 +48,7 @@ macro_rules! sensitivity_setting {
                 format!("{}\n\n{}", $name, $description)
             }
 
-            fn apply(&self, mut input_map: ResMut<InputMap>, _: Commands) {
+            fn apply(&self, mut input_map: ResMut<InputMap>, _: Commands, _: &bevy::platform::collections::HashSet<Entity>) {
                 input_map
                     .sensitivities
                     .insert($label, $base * ($scale as f32).powf(self.0 as f32 - 50.0));

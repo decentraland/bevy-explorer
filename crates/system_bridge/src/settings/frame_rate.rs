@@ -50,8 +50,4 @@ impl AppSetting for FpsTargetSetting {
     fn category() -> super::SettingCategory {
         super::SettingCategory::Performance
     }
-
-    fn apply(&self, _: (), _: Commands) {
-        // handled in scene_runner
-    }
 }

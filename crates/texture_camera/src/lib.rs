@@ -2,17 +2,12 @@ use std::f32::consts::FRAC_PI_4;
 
 use bevy::{
     app::{HierarchyPropagatePlugin, Propagate, PropagateStop},
-    core_pipeline::{
-        bloom::Bloom,
-        tonemapping::{DebandDither, Tonemapping},
-    },
-    pbr::ShadowFilteringMethod,
     platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureFormat, TextureUsages},
-        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers},
+        view::RenderLayers,
     },
 };
 use bevy_atmosphere::plugin::AtmosphereCamera;
@@ -33,7 +28,7 @@ use dcl_component::{
     },
     SceneComponentId,
 };
-use platform::{DepthPrepass, NormalPrepass};
+use platform::default_camera_components;
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::{
@@ -326,38 +321,8 @@ fn update_texture_cameras(
                     is_active: true,
                     ..Default::default()
                 },
-                Tonemapping::TonyMcMapface,
-                DebandDither::Enabled,
-                ColorGrading {
-                    // exposure: -0.5,
-                    // gamma: 1.5,
-                    // pre_saturation: 1.0,
-                    // post_saturation: 1.0,
-                    global: ColorGradingGlobal {
-                        exposure: -0.5,
-                        ..default()
-                    },
-                    shadows: ColorGradingSection {
-                        gamma: 0.75,
-                        ..Default::default()
-                    },
-                    midtones: ColorGradingSection {
-                        gamma: 0.75,
-                        ..Default::default()
-                    },
-                    highlights: ColorGradingSection {
-                        gamma: 0.75,
-                        ..Default::default()
-                    },
-                },
-                projection,
-                Bloom {
-                    intensity: 0.15,
-                    ..Bloom::OLD_SCHOOL
-                },
-                ShadowFilteringMethod::Gaussian,
-                DepthPrepass,
-                NormalPrepass,
+                default_camera_components(),
+                projection.clone(),
                 render_layers.clone(),
                 PropagateStop::<RenderLayers>::default(),
             ));
