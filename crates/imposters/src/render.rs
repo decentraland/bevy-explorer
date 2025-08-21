@@ -6,10 +6,7 @@ use bevy::{
     pbr::{NotShadowCaster, NotShadowReceiver},
     platform::collections::{HashMap, HashSet},
     prelude::*,
-    render::{
-        mesh::VertexAttributeValues,
-        view::{NoFrustumCulling, RenderLayers},
-    },
+    render::{mesh::VertexAttributeValues, primitives::Aabb, view::RenderLayers},
     tasks::{IoTaskPool, Task},
 };
 use boimp::{bake::ImposterBakeMaterialPlugin, render::Imposter, ImposterLoaderSettings};
@@ -700,7 +697,10 @@ fn render_imposters(
                         .with_scale(
                             scale.max(Vec3::splat(0.001)) * (1.0 + req.level as f32 / 1000.0),
                         ),
-                    NoFrustumCulling,
+                    Aabb {
+                        center: Vec3A::ZERO,
+                        half_extents: Vec3A::splat(0.5),
+                    },
                     NotShadowCaster,
                     NotShadowReceiver,
                     layer.clone(),
