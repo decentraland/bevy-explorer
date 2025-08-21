@@ -1,4 +1,11 @@
 use async_tungstenite::{async_std::ConnectStream, WebSocketStream};
+use bevy::{
+    core_pipeline::{
+        bloom::Bloom, prepass::{DepthPrepass, NormalPrepass}, tonemapping::{DebandDither, Tonemapping}
+    }, ecs::bundle::Bundle, pbr::ShadowFilteringMethod, render::{
+        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
+    }
+};
 use common::structs::AppConfig;
 use futures_util::{
     sink::SinkExt,
@@ -85,9 +92,6 @@ pub fn write_config_file(config: &AppConfig) {
     let _ = std::fs::write(config_file, serde_json::to_string(config).unwrap());
 }
 
-// re-export prepass types
-pub use bevy::core_pipeline::prepass::{DepthPrepass, NormalPrepass};
-
 #[derive(Default)]
 pub struct AsyncRwLock<T>(tokio::sync::RwLock<T>);
 
@@ -127,4 +131,36 @@ impl<T> AsyncRwLock<T> {
 
 pub fn platform_pointer_is_locked(expected: bool) -> bool {
     expected
+}
+
+pub fn default_camera_components() -> impl Bundle {
+    (
+        Tonemapping::TonyMcMapface,
+        DebandDither::Enabled,
+        ColorGrading {
+            global: ColorGradingGlobal {
+                exposure: -0.5,
+                ..Default::default()
+            },
+            shadows: ColorGradingSection {
+                gamma: 0.75,
+                ..Default::default()
+            },
+            midtones: ColorGradingSection {
+                gamma: 0.75,
+                ..Default::default()
+            },
+            highlights: ColorGradingSection {
+                gamma: 0.75,
+                ..Default::default()
+            },
+        },
+        Bloom {
+            intensity: 0.15,
+            ..Bloom::OLD_SCHOOL
+        },
+        ShadowFilteringMethod::Gaussian,
+        DepthPrepass,
+        NormalPrepass,
+    )
 }

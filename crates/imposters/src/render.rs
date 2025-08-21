@@ -14,7 +14,7 @@ use bevy::{
 };
 use boimp::{bake::ImposterBakeMaterialPlugin, render::Imposter, ImposterLoaderSettings};
 use common::{
-    structs::{AppConfig, PrimaryUser, DOWNRES_LAYER},
+    structs::{AppConfig, PrimaryUser, DOWNRES_LAYER, DOWNRES_LAYERS},
     util::{TaskCompat, TaskExt},
 };
 use crc::CRC_32_CKSUM;
@@ -651,7 +651,8 @@ fn render_imposters(
             (IMPOSTERCEPTION_LAYER, 1.0, 0.0, false)
         } else {
             (
-                DOWNRES_LAYER,
+                DOWNRES_LAYERS,
+                // RenderLayers::default(),
                 0.0,
                 config.scene_imposter_multisample_amount,
                 config.scene_imposter_multisample,
@@ -745,9 +746,9 @@ fn update_imposter_visibility(
                 .is_some_and(|e| transform.get(*e).is_ok_and(|t| t.translation.y == 0.0))
         });
         *layers = if show {
-            layers.clone().with(0)
+            layers.clone().with(DOWNRES_LAYER)
         } else {
-            layers.clone().without(0)
+            layers.clone().without(DOWNRES_LAYER)
         };
     }
 }

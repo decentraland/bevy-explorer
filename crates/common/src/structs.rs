@@ -992,4 +992,5 @@ pub enum AppError {
     NetworkFailure(anyhow::Error),
 }
 
-pub const DOWNRES_LAYER: RenderLayers = RenderLayers::layer(6);
+pub const DOWNRES_LAYER: usize = 6;
+pub const DOWNRES_LAYERS: RenderLayers = RenderLayers::layer(DOWNRES_LAYER);

@@ -47,7 +47,4 @@ impl AppSetting for VideoThreadsSetting {
         super::SettingCategory::Performance
     }
 
-    fn apply(&self, (): (), _: Commands) {
-        // handled in av
-    }
 }

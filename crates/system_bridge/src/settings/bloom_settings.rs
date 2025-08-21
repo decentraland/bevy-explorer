@@ -1,10 +1,10 @@
 use super::SettingCategory;
 use bevy::{
     core_pipeline::bloom::Bloom,
-    ecs::system::{lifetimeless::SRes, SystemParamItem},
+    ecs::system::SystemParamItem,
     prelude::*,
 };
-use common::structs::{AppConfig, BloomSetting, PrimaryCameraRes};
+use common::structs::{AppConfig, BloomSetting};
 
 use super::{AppSetting, EnumAppSetting};
 
@@ -24,7 +24,7 @@ impl EnumAppSetting for BloomSetting {
 }
 
 impl AppSetting for BloomSetting {
-    type Param = SRes<PrimaryCameraRes>;
+    type Param = ();
 
     fn title() -> String {
         "Bloom".to_owned()
@@ -49,10 +49,6 @@ impl AppSetting for BloomSetting {
 
     fn load(config: &AppConfig) -> Self {
         config.graphics.bloom
-    }
-
-    fn apply(&self, cam_res: SystemParamItem<Self::Param>, commands: Commands) {
-        self.apply_to_camera(&cam_res, commands, cam_res.0);
     }
 
     fn apply_to_camera(

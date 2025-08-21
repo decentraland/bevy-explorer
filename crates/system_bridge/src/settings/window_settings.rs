@@ -2,9 +2,7 @@ use bevy::{
     ecs::system::{
         lifetimeless::{SQuery, Write},
         SystemParamItem,
-    },
-    prelude::*,
-    window::PrimaryWindow,
+    }, platform::collections::HashSet, prelude::*, window::PrimaryWindow
 };
 use common::structs::{AppConfig, WindowSetting};
 
@@ -54,7 +52,7 @@ impl AppSetting for WindowSetting {
         super::SettingCategory::Graphics
     }
 
-    fn apply(&self, mut window: SystemParamItem<Self::Param>, _: Commands) {
+    fn apply(&self, mut window: SystemParamItem<Self::Param>, _: Commands, _: &HashSet<Entity>) {
         let mut window = window.single_mut().unwrap();
         window.mode = match self {
             WindowSetting::Fullscreen => bevy::window::WindowMode::Fullscreen(

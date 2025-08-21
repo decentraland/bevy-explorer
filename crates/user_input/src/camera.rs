@@ -1,6 +1,7 @@
 use std::f32::consts::{FRAC_PI_4, PI};
 
 use bevy::{
+    app::Propagate,
     math::FloatOrd,
     prelude::*,
     window::{CursorGrabMode, PrimaryWindow},
@@ -170,7 +171,7 @@ pub fn update_camera_position(
         Entity,
         &Transform,
         &PrimaryCamera,
-        &mut Projection,
+        &mut Propagate<Projection>,
         Option<&mut SystemTween>,
     )>,
     mut player: Query<
@@ -228,7 +229,8 @@ pub fn update_camera_position(
             rotation * Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll)
         };
         let target_fov = FRAC_PI_4 * 1.25 / options.distance;
-        let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
+        let Propagate(Projection::Perspective(PerspectiveProjection { ref mut fov, .. })) =
+            &mut *projection
         else {
             panic!();
         };
@@ -244,7 +246,8 @@ pub fn update_camera_position(
         }
     } else {
         let target_fov = (dynamic_state.velocity.length() / 4.0).clamp(1.25, 1.25) * FRAC_PI_4;
-        if let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
+        if let Propagate(Projection::Perspective(PerspectiveProjection { ref mut fov, .. })) =
+            &mut *projection
         {
             if *fov != target_fov {
                 *fov = target_fov;

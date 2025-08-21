@@ -2,26 +2,23 @@ use std::f32::consts::FRAC_PI_4;
 
 use bevy::{
     app::{HierarchyPropagatePlugin, Propagate, PropagateStop},
-    core_pipeline::{
-        bloom::Bloom,
-        tonemapping::{DebandDither, Tonemapping},
-    },
     math::FloatOrd,
-    pbr::ShadowFilteringMethod,
     platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
+        camera::{ImageRenderTarget, ManualTextureViews, RenderTarget},
         render_asset::RenderAssetUsages,
-        render_resource::{Extent3d, TextureFormat, TextureUsages},
-        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers},
+        render_resource::{BlendComponent, BlendState, Extent3d, TextureFormat, TextureUsages},
+        view::RenderLayers,
     },
+    window::PrimaryWindow,
 };
 use bevy_atmosphere::plugin::AtmosphereCamera;
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     sets::SceneSets,
     structs::{
-        AppConfig, PrimaryUser, SceneGlobalLight, SceneLoadDistance, DOWNRES_LAYER,
+        AppConfig, PrimaryUser, SceneGlobalLight, SceneLoadDistance, DOWNRES_LAYERS,
         GROUND_RENDERLAYER, PRIMARY_AVATAR_LIGHT_LAYER,
     },
     util::{camera_to_render_layers, AudioReceiver, DespawnWith, TryPushChildrenEx},
@@ -34,15 +31,19 @@ use dcl_component::{
     },
     SceneComponentId,
 };
-use platform::{DepthPrepass, NormalPrepass};
+use platform::default_camera_components;
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::{
-        lights::update_directional_light, material::VideoTextureOutput, AddCrdtInterfaceExt,
+        lights::update_directional_light,
+        material::VideoTextureOutput,
+        transform_and_parent::{ParentPositionSync, SceneProxyStage},
+        AddCrdtInterfaceExt,
     },
     ContainerEntity, ContainingScene,
 };
 use system_bridge::settings::NewCameraEvent;
+use ui_core::stretch_uvs_image::StretchUvMaterial;
 
 pub struct TextureCameraPlugin;
 
@@ -79,6 +80,8 @@ impl Plugin for TextureCameraPlugin {
             )
                 .in_set(SceneSets::PostLoop),
         );
+
+        app.add_plugins(HierarchyPropagatePlugin::<Projection, (), DownscaleOf>::default());
     }
 }
 
@@ -312,54 +315,42 @@ fn update_texture_cameras(
                 }
             };
 
+            let mut camera = Camera {
+                hdr: true,
+                order: isize::MIN + container.container_id.id as isize,
+                target: bevy::render::camera::RenderTarget::Image(image.clone().into()),
+                clear_color: ClearColorConfig::Custom(
+                    texture_cam
+                        .0
+                        .clear_color
+                        .map(Color4DclToBevy::convert_srgba)
+                        .unwrap_or(Color::BLACK),
+                ),
+                is_active: true,
+                ..Default::default()
+            };
+
+            if render_layers.intersects(&RenderLayers::default()) {
+                // setup for downres
+                camera.output_mode = bevy::render::camera::CameraOutputMode::Write {
+                    blend_state: Some(BlendState {
+                        color: BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: BlendComponent::REPLACE,
+                    }),
+                    clear_color: ClearColorConfig::None,
+                };
+                camera.clear_color = ClearColorConfig::Custom(Color::NONE);
+            }
+
             let mut camera = commands.spawn((
                 Camera3d::default(),
-                Camera {
-                    hdr: true,
-                    order: isize::MIN + container.container_id.id as isize,
-                    target: bevy::render::camera::RenderTarget::Image(image.clone().into()),
-                    clear_color: ClearColorConfig::Custom(
-                        texture_cam
-                            .0
-                            .clear_color
-                            .map(Color4DclToBevy::convert_srgba)
-                            .unwrap_or(Color::BLACK),
-                    ),
-                    is_active: true,
-                    ..Default::default()
-                },
-                Tonemapping::TonyMcMapface,
-                DebandDither::Enabled,
-                ColorGrading {
-                    // exposure: -0.5,
-                    // gamma: 1.5,
-                    // pre_saturation: 1.0,
-                    // post_saturation: 1.0,
-                    global: ColorGradingGlobal {
-                        exposure: -0.5,
-                        ..default()
-                    },
-                    shadows: ColorGradingSection {
-                        gamma: 0.75,
-                        ..Default::default()
-                    },
-                    midtones: ColorGradingSection {
-                        gamma: 0.75,
-                        ..Default::default()
-                    },
-                    highlights: ColorGradingSection {
-                        gamma: 0.75,
-                        ..Default::default()
-                    },
-                },
-                projection,
-                Bloom {
-                    intensity: 0.15,
-                    ..Bloom::OLD_SCHOOL
-                },
-                ShadowFilteringMethod::Gaussian,
-                DepthPrepass,
-                NormalPrepass,
+                camera,
+                default_camera_components(),
+                Propagate(projection),
                 render_layers.clone(),
                 PropagateStop::<RenderLayers>::default(),
             ));
@@ -539,77 +530,171 @@ impl TextureLayersCache {
     }
 }
 
+#[derive(Component, Clone)]
+pub struct DownresCamera(Entity, Handle<StretchUvMaterial>);
+
 fn add_downres_cameras(
     cameras: Query<
-        (Entity, &Camera, Option<&RenderLayers>),
-        (With<Camera3d>, Or<(Added<Camera>, Changed<RenderLayers>)>),
+        (
+            Entity,
+            &Camera,
+            &Projection,
+            Option<&RenderLayers>,
+            Option<&DownresCamera>,
+        ),
+        (
+            With<Camera3d>,
+            // Or<(Added<Camera>, Changed<RenderLayers>)>,
+            Without<DownscaleOf>,
+        ),
     >,
+    cams: Query<&Camera>,
+    windows: Query<(Entity, &Window)>,
+    primary_window: Query<Entity, With<PrimaryWindow>>,
+    manual_texture_views: Res<ManualTextureViews>,
     mut images: ResMut<Assets<Image>>,
     mut commands: Commands,
+    mut stretch_uvs: ResMut<Assets<StretchUvMaterial>>,
+    debug_proj: Query<&Projection>,
 ) {
-    for (ent, cam, maybe_layer) in cameras {
+    const MAX_SIZE: u32 = 800;
+    const DOWNRES_FACTOR: u32 = 2;
+
+    let Ok(primary_window) = primary_window.single() else {
+        return;
+    };
+
+    for (ent, cam, proj, maybe_layer, maybe_downres) in cameras {
         if maybe_layer.is_none_or(|l| l.intersects(&RenderLayers::default())) {
-            error!("add for {ent}");
-            let mut imposter_texture = Image::new_fill(
-                Extent3d {
-                    width: 320,
-                    height: 180,
-                    depth_or_array_layers: 1,
-                },
-                bevy::render::render_resource::TextureDimension::D2,
-                &[0, 0, 0, 0],
-                bevy::render::render_resource::TextureFormat::Bgra8UnormSrgb,
-                RenderAssetUsages::RENDER_WORLD,
-            );
-            imposter_texture.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT
-                | TextureUsages::COPY_DST
-                | TextureUsages::TEXTURE_BINDING;
+            let Some(target_size) = cam
+                .target
+                .normalize(Some(primary_window))
+                .and_then(|r| r.get_render_target_info(&windows, &images, &manual_texture_views))
+                .map(|i| i.physical_size)
+            else {
+                panic!()
+            };
 
-            let imposter_texture = images.add(imposter_texture);
+            let downres_size = if target_size.max_element() > MAX_SIZE {
+                target_size / DOWNRES_FACTOR
+            } else {
+                target_size
+            };
 
-            commands.spawn((
-                ChildOf(ent),
-                Camera3d::default(),
-                Camera {
-                    order: -3,
-                    is_active: true,
-                    target: bevy::render::camera::RenderTarget::Image(
-                        bevy::render::camera::ImageRenderTarget {
-                            handle: imposter_texture.clone(),
-                            scale_factor: FloatOrd(1.0),
+            let (downres_cam, is_existing) =
+                maybe_downres.map(|d| (d.clone(), true)).unwrap_or_else(|| {
+                    debug!("add downres cam for {ent} with proj {:?}", proj);
+                    let mut imposter_texture = Image::new_fill(
+                        Extent3d {
+                            width: downres_size.x,
+                            height: downres_size.y,
+                            depth_or_array_layers: 1,
                         },
-                    ),
-                    hdr: true,
-                    ..Default::default()
-                },
-                DOWNRES_LAYER,
-            ));
+                        bevy::render::render_resource::TextureDimension::D2,
+                        &[0, 0, 0, 0],
+                        bevy::render::render_resource::TextureFormat::Bgra8UnormSrgb,
+                        RenderAssetUsages::all(),
+                    );
+                    imposter_texture.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT
+                        | TextureUsages::COPY_DST
+                        | TextureUsages::TEXTURE_BINDING;
 
-            let downres_cam = commands
-                .spawn((
-                    ChildOf(ent),
-                    Camera2d,
-                    Camera {
-                        order: -2,
-                        is_active: true,
-                        target: cam.target.clone(),
-                        hdr: true,
-                        ..Default::default()
-                    },
-                ))
-                .id();
+                    let imposter_texture = images.add(imposter_texture);
 
-            commands.spawn((
-                Node {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    ..Default::default()
-                },
-                DespawnWith(downres_cam),
-                UiTargetCamera(downres_cam),
-                // ImageNode::new(imposter_texture),
-                BackgroundColor(Color::srgba(1.0, 0.0, 0.0, 1.0)),
-            ));
+                    let downres_cam = commands
+                        .spawn((
+                            DespawnWith(ent),
+                            Camera2d,
+                            Camera {
+                                order: cam.order - 2,
+                                is_active: true,
+                                target: cam.target.clone(),
+                                hdr: true,
+                                ..Default::default()
+                            },
+                        ))
+                        .id();
+
+                    let material = stretch_uvs.add(StretchUvMaterial {
+                        image: imposter_texture.clone(),
+                        uvs: [Vec4::W, Vec4::ONE - Vec4::W],
+                        color: Vec4::ONE,
+                    });
+
+                    commands.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            top: Val::Px(0.0),
+                            left: Val::Px(0.0),
+                            bottom: Val::Px(0.0),
+                            right: Val::Px(0.0),
+                            ..Default::default()
+                        },
+                        DespawnWith(downres_cam),
+                        UiTargetCamera(downres_cam),
+                        MaterialNode(material.clone()),
+                        BackgroundColor(Color::srgba(1.0, 0.0, 0.0, 1.0)),
+                    ));
+
+                    let downres_cam = commands
+                        .spawn((
+                            DownscaleOf(ent),
+                            ParentPositionSync::<SceneProxyStage>::new(ent),
+                            Camera3d::default(),
+                            Camera {
+                                order: cam.order - 1,
+                                is_active: true,
+                                target: RenderTarget::Image(ImageRenderTarget {
+                                    handle: imposter_texture,
+                                    scale_factor: FloatOrd(1.0),
+                                }),
+                                clear_color: ClearColorConfig::Custom(Color::srgba(
+                                    0.0, 0.0, 0.0, 1.0,
+                                )),
+                                hdr: true,
+                                ..Default::default()
+                            },
+                            default_camera_components(),
+                            DOWNRES_LAYERS,
+                        ))
+                        .id();
+
+                    commands.send_event(NewCameraEvent(downres_cam));
+                    let downres_cam = DownresCamera(downres_cam, material);
+                    commands.entity(ent).insert(downres_cam.clone());
+                    (downres_cam, false)
+                });
+
+            if is_existing {
+                debug!("downscale proj is {:?}", debug_proj.get(downres_cam.0));
+                let Ok(downres_camera) = cams.get(downres_cam.0) else {
+                    error!("no downres camera");
+                    continue;
+                };
+                let RenderTarget::Image(ImageRenderTarget { handle, .. }) = &downres_camera.target
+                else {
+                    panic!();
+                };
+                let image = images.get(handle.id()).unwrap();
+                if image.size() != downres_size {
+                    let image = images.get_mut(handle.id()).unwrap();
+                    image.resize(Extent3d {
+                        width: downres_size.x,
+                        height: downres_size.y,
+                        depth_or_array_layers: 1,
+                    });
+                    let _ = stretch_uvs.get_mut(downres_cam.1.id());
+                }
+                commands.entity(downres_cam.0).insert(proj.clone());
+            }
         }
     }
 }
+
+#[derive(Component, Clone, PartialEq, Eq, Debug)]
+#[relationship(relationship_target = Downscaled)]
+pub struct DownscaleOf(pub Entity);
+
+#[derive(Component, Default, Debug, PartialEq, Eq)]
+#[relationship_target(relationship = DownscaleOf, linked_spawn)]
+pub struct Downscaled(Vec<Entity>);

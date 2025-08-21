@@ -57,8 +57,4 @@ impl AppSetting for OobSetting {
     fn category() -> super::SettingCategory {
         super::SettingCategory::Graphics
     }
-
-    fn apply(&self, _: (), _: Commands) {
-        // setting is handled in the places where materials are created
-    }
 }

@@ -16,6 +16,7 @@ console = { workspace = true }
 restricted_actions = { workspace = true }
 system_ui = { workspace = true }
 ui_core = { workspace = true }
+texture_camera = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }

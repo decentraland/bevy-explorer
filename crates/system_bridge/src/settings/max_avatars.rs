@@ -46,8 +46,4 @@ impl AppSetting for MaxAvatarsSetting {
     fn category() -> super::SettingCategory {
         super::SettingCategory::Performance
     }
-
-    fn apply(&self, (): (), _: Commands) {
-        // handled in scene_runner
-    }
 }

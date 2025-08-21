@@ -1,10 +1,8 @@
 use super::SettingCategory;
 use bevy::{
-    core_pipeline::dof::{DepthOfField, DepthOfFieldMode},
-    ecs::system::{lifetimeless::SRes, SystemParamItem},
-    prelude::*,
+    core_pipeline::dof::{DepthOfField, DepthOfFieldMode}, ecs::system::SystemParamItem, prelude::*
 };
-use common::structs::{AppConfig, DofConfig, DofSetting, PrimaryCameraRes};
+use common::structs::{AppConfig, DofConfig, DofSetting};
 
 use super::{AppSetting, EnumAppSetting};
 
@@ -24,7 +22,7 @@ impl EnumAppSetting for DofSetting {
 }
 
 impl AppSetting for DofSetting {
-    type Param = SRes<PrimaryCameraRes>;
+    type Param = ();
 
     fn title() -> String {
         "Depth of Field".to_owned()
@@ -51,10 +49,6 @@ impl AppSetting for DofSetting {
         config.graphics.dof
     }
 
-    fn apply(&self, cam_res: SystemParamItem<Self::Param>, commands: Commands) {
-        self.apply_to_camera(&cam_res, commands, cam_res.0);
-    }
-
     fn apply_to_camera(
         &self,
         _: &SystemParamItem<Self::Param>,
@@ -70,10 +64,11 @@ impl AppSetting for DofSetting {
             DofSetting::Low => cmds.try_insert((
                 DepthOfField {
                     mode: DepthOfFieldMode::Gaussian,
-                    focal_distance: 0.0, // updated based on cam + extra
+                    focal_distance: 50.0, // updated based on cam + extra
                     aperture_f_stops: 0.15,
-                    max_depth: 300.0,
+                    max_depth: 200.0,
                     max_circle_of_confusion_diameter: 20.0,
+                    sensor_height: 0.06,
                     ..Default::default()
                 },
                 DofConfig {
@@ -84,10 +79,11 @@ impl AppSetting for DofSetting {
             DofSetting::High => cmds.try_insert((
                 DepthOfField {
                     mode: DepthOfFieldMode::Gaussian,
-                    focal_distance: 0.0, // updated based on cam + extra
+                    focal_distance: 50.0, // updated based on cam + extra
                     aperture_f_stops: 0.05,
-                    max_depth: 300.0,
+                    max_depth: 200.0,
                     max_circle_of_confusion_diameter: 20.0,
+                    sensor_height: 0.06,
                     ..Default::default()
                 },
                 DofConfig {

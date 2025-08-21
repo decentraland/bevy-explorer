@@ -48,7 +48,7 @@ macro_rules! player_setting {
                 format!("{}\n\n{}\n\nFor all player settings, the plan is to make them available to scene authors, to specify for the whole scene or for a trigger area.", $name, $description)
             }
 
-            fn apply(&self, mut q: Query<&mut PrimaryUser>, _: Commands) {
+            fn apply(&self, mut q: Query<&mut PrimaryUser>, _: Commands, _: &bevy::platform::collections::HashSet<Entity>) {
                 let Ok(mut settings) = q.single_mut() else {
                     warn!("no primary user");
                     return;

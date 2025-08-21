@@ -25,7 +25,7 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, DofConfig, FogSetting, PrimaryCamera, PrimaryCameraRes, PrimaryUser,
-        SceneGlobalLight, SceneLoadDistance, ShadowSetting, TimeOfDay, GROUND_RENDERLAYER,
+        SceneGlobalLight, SceneLoadDistance, ShadowSetting, TimeOfDay, DOWNRES_LAYERS,
         PRIMARY_AVATAR_LIGHT_LAYER,
     },
 };
@@ -131,13 +131,13 @@ fn setup(
         })),
         Transform::from_translation(Vec3::Y * -0.05),
         Ground,
-        GROUND_RENDERLAYER.clone(),
+        DOWNRES_LAYERS,
     ));
 
     {
-        // commands.entity(camera.0).try_insert(AtmosphereCamera {
-        //     render_layers: Some(RenderLayers::default()),
-        // });
+        commands.entity(camera.0).try_insert(AtmosphereCamera {
+            render_layers: Some(DOWNRES_LAYERS),
+        });
 
         let noise = init_noise(512);
         let h_noise = images.add(noise);

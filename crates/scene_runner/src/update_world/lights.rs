@@ -9,7 +9,7 @@ use bevy::{
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     sets::SceneSets,
-    structs::{AppConfig, PrimaryUser, SceneGlobalLight, TimeOfDay, PRIMARY_AVATAR_LIGHT_LAYER},
+    structs::{AppConfig, PrimaryUser, SceneGlobalLight, TimeOfDay, DOWNRES_LAYER, PRIMARY_AVATAR_LIGHT_LAYER},
     util::TryPushChildrenEx,
 };
 use dcl::interface::ComponentPosition;
@@ -125,7 +125,7 @@ pub fn update_directional_light(
         dir_direction: Quat::from_euler(EulerRot::YXZ, FRAC_PI_2 * 0.8, -t, 0.0) * Vec3::NEG_Z,
         ambient_color: Color::srgb(0.85, 0.85, 1.0),
         ambient_brightness: 1.0,
-        layers: RenderLayers::default(),
+        layers: RenderLayers::default().with(DOWNRES_LAYER),
     };
 
     let Ok(player) = player.single() else {

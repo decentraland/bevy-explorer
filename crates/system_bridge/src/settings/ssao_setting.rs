@@ -50,11 +50,6 @@ impl AppSetting for SsaoSetting {
         super::SettingCategory::Graphics
     }
 
-    fn apply(&self, cam_res: SystemParamItem<Self::Param>, commands: Commands) {
-        let primary_cam = cam_res.0;
-        self.apply_to_camera(&cam_res, commands, primary_cam);
-    }
-
     fn apply_to_camera(
         &self,
         _: &SystemParamItem<Self::Param>,

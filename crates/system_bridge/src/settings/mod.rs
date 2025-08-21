@@ -11,6 +11,7 @@ use bevy::{
         schedule::ScheduleLabel,
         system::{StaticSystemParam, SystemParam, SystemParamItem},
     },
+    platform::collections::HashSet,
     prelude::*,
 };
 use cache_size::CacheSizeSetting;
@@ -162,9 +163,14 @@ impl Plugin for SettingBridgePlugin {
 
         app.insert_resource(settings);
         app.insert_resource(ApplyAppSettingsSchedule(schedule));
+        app.init_resource::<ActiveCameras>();
         app.add_systems(
             Update,
-            apply_settings.run_if(|config: Res<AppConfig>| config.is_changed()),
+            (
+                record_cameras,
+                apply_settings.run_if(|config: Res<AppConfig>| config.is_changed()),
+            )
+                .chain(),
         );
     }
 }
@@ -194,7 +200,16 @@ pub trait AppSetting: Eq + 'static {
     fn category() -> SettingCategory;
     fn load(config: &AppConfig) -> Self;
     fn save(&self, config: &mut AppConfig);
-    fn apply(&self, param: SystemParamItem<Self::Param>, commands: Commands);
+    fn apply(
+        &self,
+        param: SystemParamItem<Self::Param>,
+        mut commands: Commands,
+        cameras: &HashSet<Entity>,
+    ) {
+        for &cam in cameras {
+            self.apply_to_camera(&param, commands.reborrow(), cam)
+        }
+    }
     fn apply_to_camera(
         &self,
         _param: &SystemParamItem<Self::Param>,
@@ -386,10 +401,31 @@ fn apply_settings(world: &mut World) {
     platform::write_config_file(world.resource::<AppConfig>());
 }
 
+#[derive(Resource, Default)]
+pub struct ActiveCameras(HashSet<Entity>);
+
+impl ActiveCameras {
+    pub fn get<'a>(&'a mut self, commands: &mut Commands) -> &'a HashSet<Entity> {
+        self.0.retain(|c| commands.get_entity(*c).is_ok());
+        &self.0
+    }
+}
+
 fn apply_setting<S: AppSetting>(
     params: StaticSystemParam<S::Param>,
     config: Res<AppConfig>,
-    commands: Commands,
+    mut commands: Commands,
+    mut cameras: ResMut<ActiveCameras>,
 ) {
-    S::load(&config).apply(params.into_inner(), commands);
+    let cameras = cameras.get(&mut commands);
+    S::load(&config).apply(params.into_inner(), commands, cameras);
+}
+
+pub fn record_cameras(
+    mut cameras: ResMut<ActiveCameras>,
+    mut new_cams: EventReader<NewCameraEvent>,
+) {
+    for ev in new_cams.read() {
+        cameras.0.insert(ev.0);
+    }
 }

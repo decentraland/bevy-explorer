@@ -265,13 +265,19 @@ impl ParentPositionSyncStage for SceneProxyStage {}
 
 pub fn parent_position_sync<T: ParentPositionSyncStage>(
     mut commands: Commands,
-    syncees: Query<(Entity, &ParentPositionSync<T>, &ChildOf)>,
+    syncees: Query<(Entity, &ParentPositionSync<T>, Option<&ChildOf>)>,
     globals: Query<&GlobalTransform>,
     gt_helper: TransformHelperPub,
 ) {
-    for (ent, sync, parent) in syncees.iter() {
-        let Ok(parent_transform) = globals.get(parent.parent()) else {
-            continue;
+    for (ent, sync, maybe_parent) in syncees.iter() {
+        let parent_transform = match maybe_parent {
+            Some(parent) => {
+                let Ok(parent_transform) = globals.get(parent.parent()) else {
+                    continue;
+                };
+                parent_transform
+            }
+            None => &GlobalTransform::IDENTITY,
         };
 
         let Ok(gt) = gt_helper.compute_global_transform(sync.0, None) else {

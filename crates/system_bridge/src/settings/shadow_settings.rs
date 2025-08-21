@@ -4,6 +4,7 @@ use bevy::{
         SystemParamItem,
     },
     pbr::{CascadeShadowConfig, CascadeShadowConfigBuilder, ShadowFilteringMethod},
+    platform::collections::HashSet,
     prelude::*,
 };
 use common::structs::{AppConfig, PrimaryCameraRes, ShadowSetting};
@@ -60,7 +61,8 @@ impl AppSetting for ShadowSetting {
     fn apply(
         &self,
         (config, cam_res, mut lights): SystemParamItem<Self::Param>,
-        commands: Commands,
+        mut commands: Commands,
+        cameras: &HashSet<Entity>,
     ) {
         let value = if config.graphics.shadow_distance == 0.0 {
             ShadowSetting::Off
@@ -98,8 +100,10 @@ impl AppSetting for ShadowSetting {
             }
         }
 
-        let primary_cam = cam_res.0;
-        self.apply_to_camera(&(config, cam_res, lights), commands, primary_cam);
+        let res = &(config, cam_res, lights);
+        for &cam in cameras {
+            self.apply_to_camera(res, commands.reborrow(), cam);
+        }
     }
 
     fn apply_to_camera(
@@ -163,10 +167,6 @@ impl AppSetting for ShadowDistanceSetting {
         config.graphics.shadow_distance = self.0 as f32
     }
 
-    fn apply(&self, _: (), _: Commands) {
-        // applied via ShadowSetting
-    }
-
     fn category() -> super::SettingCategory {
         super::SettingCategory::Graphics
     }
@@ -210,10 +210,6 @@ impl AppSetting for ShadowCasterCountSetting {
 
     fn save(&self, config: &mut AppConfig) {
         config.graphics.shadow_caster_count = self.0 as usize
-    }
-
-    fn apply(&self, _: (), _: Commands) {
-        // applied via lights system
     }
 
     fn category() -> super::SettingCategory {
