@@ -77,6 +77,7 @@ impl Plugin for TextureCameraPlugin {
                 update_avatar_layers,
                 update_directional_light_layers.after(update_directional_light),
                 add_downres_cameras,
+                debug_camera_order,
             )
                 .in_set(SceneSets::PostLoop),
         );
@@ -317,7 +318,7 @@ fn update_texture_cameras(
 
             let mut camera = Camera {
                 hdr: true,
-                order: isize::MIN + container.container_id.id as isize,
+                order: isize::MAX - container.container_id.id as isize,
                 target: bevy::render::camera::RenderTarget::Image(image.clone().into()),
                 clear_color: ClearColorConfig::Custom(
                     texture_cam
@@ -332,14 +333,11 @@ fn update_texture_cameras(
 
             if render_layers.intersects(&RenderLayers::default()) {
                 // setup for downres
+                debug!("setting downres params for texturecam");
                 camera.output_mode = bevy::render::camera::CameraOutputMode::Write {
                     blend_state: Some(BlendState {
-                        color: BlendComponent {
-                            src_factor: wgpu::BlendFactor::One,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                        alpha: BlendComponent::REPLACE,
+                        color: BlendComponent::OVER,
+                        alpha: BlendComponent::OVER,
                     }),
                     clear_color: ClearColorConfig::None,
                 };
@@ -353,6 +351,11 @@ fn update_texture_cameras(
                 Propagate(projection),
                 render_layers.clone(),
                 PropagateStop::<RenderLayers>::default(),
+                Name::new(format!(
+                    "texture cam {} ({:?})",
+                    container.container_id,
+                    render_layers.iter().collect::<Vec<_>>()
+                )),
             ));
 
             if maybe_layer.is_some_and(|l| l.show_fog()) {
@@ -410,6 +413,7 @@ fn update_texture_cameras(
                 .insert((TextureCamEntity(camera_id), VideoTextureOutput(image)));
 
             new_cam_events.write(NewCameraEvent(camera_id));
+            debug!("new texturecam {camera_id}");
         } else {
             // set active for current scenes only
             // TODO: limit / cycle
@@ -541,12 +545,9 @@ fn add_downres_cameras(
             &Projection,
             Option<&RenderLayers>,
             Option<&DownresCamera>,
+            Option<&Name>,
         ),
-        (
-            With<Camera3d>,
-            // Or<(Added<Camera>, Changed<RenderLayers>)>,
-            Without<DownscaleOf>,
-        ),
+        (With<Camera3d>, Without<DownscaleOf>),
     >,
     cams: Query<&Camera>,
     windows: Query<(Entity, &Window)>,
@@ -555,7 +556,6 @@ fn add_downres_cameras(
     mut images: ResMut<Assets<Image>>,
     mut commands: Commands,
     mut stretch_uvs: ResMut<Assets<StretchUvMaterial>>,
-    debug_proj: Query<&Projection>,
 ) {
     const MAX_SIZE: u32 = 800;
     const DOWNRES_FACTOR: u32 = 2;
@@ -564,7 +564,7 @@ fn add_downres_cameras(
         return;
     };
 
-    for (ent, cam, proj, maybe_layer, maybe_downres) in cameras {
+    for (ent, cam, proj, maybe_layer, maybe_downres, maybe_name) in cameras {
         if maybe_layer.is_none_or(|l| l.intersects(&RenderLayers::default())) {
             let Some(target_size) = cam
                 .target
@@ -583,7 +583,10 @@ fn add_downres_cameras(
 
             let (downres_cam, is_existing) =
                 maybe_downres.map(|d| (d.clone(), true)).unwrap_or_else(|| {
-                    debug!("add downres cam for {ent} with proj {:?}", proj);
+                    debug!(
+                        "add downres cam for {ent} with proj {:?}, order: {}",
+                        proj, cam.order
+                    );
                     let mut imposter_texture = Image::new_fill(
                         Extent3d {
                             width: downres_size.x,
@@ -601,7 +604,7 @@ fn add_downres_cameras(
 
                     let imposter_texture = images.add(imposter_texture);
 
-                    let downres_cam = commands
+                    let downres_output_cam = commands
                         .spawn((
                             DespawnWith(ent),
                             Camera2d,
@@ -612,6 +615,7 @@ fn add_downres_cameras(
                                 hdr: true,
                                 ..Default::default()
                             },
+                            Name::new(format!("downres output {:?}", maybe_name)),
                         ))
                         .id();
 
@@ -630,8 +634,8 @@ fn add_downres_cameras(
                             right: Val::Px(0.0),
                             ..Default::default()
                         },
-                        DespawnWith(downres_cam),
-                        UiTargetCamera(downres_cam),
+                        DespawnWith(downres_output_cam),
+                        UiTargetCamera(downres_output_cam),
                         MaterialNode(material.clone()),
                         BackgroundColor(Color::srgba(1.0, 0.0, 0.0, 1.0)),
                     ));
@@ -642,7 +646,7 @@ fn add_downres_cameras(
                             ParentPositionSync::<SceneProxyStage>::new(ent),
                             Camera3d::default(),
                             Camera {
-                                order: cam.order - 1,
+                                order: cam.order - 3,
                                 is_active: true,
                                 target: RenderTarget::Image(ImageRenderTarget {
                                     handle: imposter_texture,
@@ -656,6 +660,7 @@ fn add_downres_cameras(
                             },
                             default_camera_components(),
                             DOWNRES_LAYERS,
+                            Name::new(format!("downres imposters {:?}", maybe_name)),
                         ))
                         .id();
 
@@ -666,7 +671,6 @@ fn add_downres_cameras(
                 });
 
             if is_existing {
-                debug!("downscale proj is {:?}", debug_proj.get(downres_cam.0));
                 let Ok(downres_camera) = cams.get(downres_cam.0) else {
                     error!("no downres camera");
                     continue;
@@ -698,3 +702,16 @@ pub struct DownscaleOf(pub Entity);
 #[derive(Component, Default, Debug, PartialEq, Eq)]
 #[relationship_target(relationship = DownscaleOf, linked_spawn)]
 pub struct Downscaled(Vec<Entity>);
+
+pub fn debug_camera_order(q: Query<(&Camera, &Name)>, mut last: Local<Vec<(isize, Name)>>) {
+    let mut v = q
+        .iter()
+        .map(|(c, n)| (c.order, n.clone()))
+        .collect::<Vec<_>>();
+    v.sort_by_key(|(c, _)| *c);
+
+    if *last != v {
+        println!("cameras: {v:#?}");
+        *last = v;
+    }
+}

@@ -525,12 +525,8 @@ fn setup(
                 hdr: true,
                 output_mode: bevy::render::camera::CameraOutputMode::Write {
                     blend_state: Some(BlendState {
-                        color: BlendComponent {
-                            src_factor: wgpu::BlendFactor::One,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                        alpha: BlendComponent::REPLACE,
+                        color: BlendComponent::OVER,
+                        alpha: BlendComponent::OVER,
                     }),
                     clear_color: ClearColorConfig::None,
                 },
@@ -544,6 +540,7 @@ fn setup(
             })),
             PrimaryCamera::default(),
             GROUND_RENDERLAYER.with(0),
+            Name::new("main")
         ))
         .id();
 
