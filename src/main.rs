@@ -383,6 +383,7 @@ fn main() {
 
     app.insert_resource(InputMap {
         inputs: final_config.inputs.0.clone().into_iter().collect(),
+        sensitivities: final_config.inputs.1.clone().into_iter().collect(),
     });
 
     // Analytics

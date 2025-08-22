@@ -182,6 +182,7 @@ fn main_inner(
 
     app.insert_resource(InputMap {
         inputs: final_config.inputs.0.clone().into_iter().collect(),
+        sensitivities: final_config.inputs.1.clone().into_iter().collect(),
     });
 
     app.add_plugins(MetricsPlugin);

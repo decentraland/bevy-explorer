@@ -179,40 +179,22 @@ fn update_bounded_nodes(
             center.x + size.x * 0.5,
             center.y + size.y * 0.5,
         );
+
+        let resolve = |v: Val| {
+            v.resolve(node.unrounded_size().min_element(), window)
+                .unwrap_or(1.0)
+                * node.inverse_scale_factor()
+        };
+
         mat.bounds.edge_scale = Vec4::new(
-            bounds
-                .edge_scale
-                .left
-                .resolve(node.unrounded_size().min_element(), window)
-                .unwrap_or(1.0),
-            bounds
-                .edge_scale
-                .top
-                .resolve(node.unrounded_size().min_element(), window)
-                .unwrap_or(1.0),
-            bounds
-                .edge_scale
-                .right
-                .resolve(node.unrounded_size().min_element(), window)
-                .unwrap_or(1.0),
-            bounds
-                .edge_scale
-                .bottom
-                .resolve(node.unrounded_size().min_element(), window)
-                .unwrap_or(1.0),
+            resolve(bounds.edge_scale.left),
+            resolve(bounds.edge_scale.top),
+            resolve(bounds.edge_scale.right),
+            resolve(bounds.edge_scale.bottom),
         );
-        mat.bounds.corner_size = bounds
-            .corner_size
-            .resolve(node.unrounded_size().min_element(), window)
-            .unwrap_or(0.0);
-        mat.bounds.corner_blend_size = bounds
-            .corner_blend_size
-            .resolve(node.unrounded_size().min_element(), window)
-            .unwrap_or(0.0);
-        mat.bounds.border_size = bounds
-            .border_size
-            .resolve(node.unrounded_size().min_element(), window)
-            .unwrap_or(0.0);
+        mat.bounds.corner_size = resolve(bounds.corner_size);
+        mat.bounds.corner_blend_size = resolve(bounds.corner_blend_size);
+        mat.bounds.border_size = resolve(bounds.border_size);
         if add_border {
             mat.bounds.border_color = bounds.border_color.to_linear().to_vec4();
         } else {
