@@ -8,7 +8,12 @@ use common::{
     util::TryPushChildrenEx,
 };
 use system_bridge::settings::{
-    cache_size::CacheSizeSetting, sensitivity::{CameraSensitivitySetting, CameraZoomSensitivitySetting, MovementSensitivitySetting, PointerSensitivitySetting, ScrollSensitivitySetting}, ActiveCameras, EnumAppSetting, IntAppSetting
+    cache_size::CacheSizeSetting,
+    sensitivity::{
+        CameraSensitivitySetting, CameraZoomSensitivitySetting, MovementSensitivitySetting,
+        PointerSensitivitySetting, ScrollSensitivitySetting,
+    },
+    ActiveCameras, EnumAppSetting, IntAppSetting,
 };
 use ui_core::ui_actions::{Click, ClickRepeat, HoverEnter, On, UiCaller};
 
@@ -173,7 +178,7 @@ fn set_app_settings_content(
             ),
             spawn_int_setting_template::<ScrollSensitivitySetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<MovementSensitivitySetting>(&mut commands, &dui, &config),
-            spawn_int_setting_template::<CameraSensitivitySetting>(&mut commands, &dui, &config),            
+            spawn_int_setting_template::<CameraSensitivitySetting>(&mut commands, &dui, &config),
         ];
 
         commands
