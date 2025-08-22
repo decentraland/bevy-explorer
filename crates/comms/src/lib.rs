@@ -80,11 +80,10 @@ impl Plugin for CommsPlugin {
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub enum TransportType {
-    WebsocketRoom,
-    Livekit,
-    Archipelago,
+    Realm,
+    Island,
     SceneRoom,
 }
 
@@ -127,6 +126,7 @@ pub struct Transport {
     pub transport_type: TransportType,
     pub sender: Sender<NetworkMessage>,
     pub foreign_aliases: BiMap<u32, Address>,
+    pub voice_subscription_sender: Option<tokio::sync::mpsc::Sender<(Address, bool)>>,
 }
 
 fn process_realm_change(
@@ -152,9 +152,9 @@ fn process_realm_change(
                     .split_once(':')
                     .map(|(_, tail)| tail)
                     .unwrap_or(adapter.as_str());
-                manager.connect(real_adapter);
+                manager.connect(real_adapter, TransportType::Realm);
             } else if let Some(adapter) = comms.fixed_adapter.as_ref() {
-                manager.connect(adapter);
+                manager.connect(adapter, TransportType::Realm);
             }
         } else {
             debug!("missing comms!");
@@ -232,7 +232,7 @@ fn connect_scene_room(
             None => *gatekeeper_task = Some(task),
             Some(Err(e)) => warn!("failed to get scene room from gatekeeper: {e}"),
             Some(Ok((adapter, ev))) => {
-                if let Some(ent) = manager.connect(&adapter) {
+                if let Some(ent) = manager.connect(&adapter, TransportType::SceneRoom) {
                     warn!("added scene channel {ev:?}");
                     current.0 = Some((ev, adapter, ent));
                     commands.entity(ent).insert(SceneRoom);
@@ -256,7 +256,7 @@ pub struct AdapterManager<'w, 's> {
 }
 
 impl AdapterManager<'_, '_> {
-    pub fn connect(&mut self, adapter: &str) -> Option<Entity> {
+    pub fn connect(&mut self, adapter: &str, transport_type: TransportType) -> Option<Entity> {
         let Some((protocol, address)) = adapter.split_once(':') else {
             warn!("unrecognised adapter string: {adapter}");
             return None;
@@ -266,11 +266,13 @@ impl AdapterManager<'_, '_> {
             "ws-room" => {
                 self.ws_room_events.write(StartWsRoom {
                     address: address.to_owned(),
+                    transport_type,
                 });
             }
             "signed-login" => {
                 self.signed_login_events.send(StartSignedLogin {
                     address: address.to_owned(),
+                    transport_type,
                 });
             }
             #[cfg(feature = "livekit")]
@@ -279,6 +281,7 @@ impl AdapterManager<'_, '_> {
                 self.livekit_events.write(StartLivekit {
                     entity,
                     address: address.to_owned(),
+                    transport_type,
                 });
                 return Some(entity);
             }
@@ -291,13 +294,14 @@ impl AdapterManager<'_, '_> {
             }
             "archipelago" => {
                 debug!("arch starting: {address}");
+                assert_eq!(transport_type, TransportType::Realm);
                 self.archipelago_events.write(StartArchipelago {
                     address: address.to_owned(),
                 });
             }
             "fixed-adapter" => {
                 // fixed-adapter should be ignored and we use the tail as the full protocol:address
-                return self.connect(address);
+                return self.connect(address, transport_type);
             }
             _ => {
                 warn!("unrecognised adapter protocol: {protocol}");
