@@ -400,7 +400,8 @@ fn update_scrollables(
                             .reserve(InputType::Action(action), InputPriority::Scroll);
                     }
                     let scroll_delta = input_manager.get_analog(SCROLL_SET, InputPriority::Scroll);
-                    let scroll_delta = scroll_delta.clamp(Vec2::splat(-1000.0), Vec2::splat(1000.0));
+                    let scroll_delta =
+                        scroll_delta.clamp(Vec2::splat(-1000.0), Vec2::splat(1000.0));
 
                     *new_slider_deltas.get_or_insert(Default::default()) +=
                         scroll_delta / slide_amount;
