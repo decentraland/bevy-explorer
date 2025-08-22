@@ -305,7 +305,7 @@ pub fn process_transport_updates(
                     },
                 );
 
-                let (audio_sender, audio_receiver) = mpsc::channel(1);
+                let (audio_sender, audio_receiver) = mpsc::channel(10);
 
                 let attach_points = AttachPoints::new(&mut commands);
 
@@ -353,7 +353,7 @@ pub fn process_transport_updates(
             }
             PlayerMessage::AudioStream(audio) => {
                 // pass through
-                let _ = audio_channel.blocking_send(*audio);
+                let _ = audio_channel.try_send(*audio);
             }
             PlayerMessage::PlayerData(Message::Position(pos)) => {
                 let dcl_transform = DclTransformAndParent {
