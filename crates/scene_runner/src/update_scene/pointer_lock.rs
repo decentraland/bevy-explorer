@@ -8,10 +8,7 @@ use common::{
 use input_manager::{InputManager, InputPriority};
 use platform::platform_pointer_is_locked;
 
-use crate::{
-    initialize_scene::SuperUserScene, renderer_context::RendererSceneContext,
-    update_world::AddCrdtInterfaceExt, SceneSets,
-};
+use crate::{renderer_context::RendererSceneContext, update_world::AddCrdtInterfaceExt, SceneSets};
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
@@ -27,7 +24,7 @@ impl Plugin for PointerLockPlugin {
     fn build(&self, app: &mut App) {
         app.add_crdt_lww_component::<PbPointerLock, PointerLock>(
             SceneComponentId::POINTER_LOCK,
-            ComponentPosition::RootOnly,
+            ComponentPosition::EntityOnly,
         );
         app.add_systems(Update, update_pointer_lock.in_set(SceneSets::Input));
     }
@@ -97,9 +94,8 @@ pub fn update_pointer_lock(
         Entity,
         &mut RendererSceneContext,
         Option<&mut CumulativePointerDelta>,
-        Option<&SuperUserScene>,
-        Option<Ref<PointerLock>>,
     )>,
+    changed_pointer_locks: Query<&PointerLock, Changed<PointerLock>>,
     window: Query<&Window, With<PrimaryWindow>>,
     camera: Query<(&Camera, &GlobalTransform), With<PrimaryCamera>>,
     mut prev_coords: Local<Option<Vec2>>,
@@ -108,7 +104,7 @@ pub fn update_pointer_lock(
     mut mb_state: CameraInteractionState,
     active_dialog: Option<Res<ActiveDialog>>,
     mut toggle: Local<bool>,
-    mut last_explicit_tick: Local<u32>,
+    // mut last_explicit_tick: Local<u32>,
 ) {
     let Ok(window) = window.single() else {
         return;
@@ -164,17 +160,10 @@ pub fn update_pointer_lock(
     let mut camera_locked =
         active_dialog.is_none_or(|ad| !ad.in_use()) && (state == ClickState::Held || *toggle);
 
-    for (_, context, _, maybe_super, maybe_lock) in scenes.iter_mut() {
-        if maybe_super.is_some()
-            && maybe_lock
-                .as_ref()
-                .is_some_and(|lock| lock.is_changed() || context.tick_number == *last_explicit_tick)
-        {
-            debug!("lock updated by scene");
-            *toggle = maybe_lock.unwrap().0.is_pointer_locked;
-            camera_locked = *toggle;
-            *last_explicit_tick = context.tick_number;
-        }
+    for changed_lock in changed_pointer_locks.iter() {
+        info!("lock updated by scene");
+        *toggle = changed_lock.0.is_pointer_locked;
+        camera_locked = *toggle;
     }
 
     if camera_locked {
@@ -193,7 +182,9 @@ pub fn update_pointer_lock(
         .and_then(|coords| camera.viewport_to_world(camera_position, coords).ok())
         .map(|ray| Vector3::world_vec_from_vec3(&ray.direction));
 
-    for (entity, mut context, maybe_pointer_delta, _, _) in scenes.iter_mut() {
+    for (entity, mut context, maybe_pointer_delta) in scenes.iter_mut() {
+        let mut screen_delta = Vec2::ZERO;
+
         if let Some(mut pointer_delta) = maybe_pointer_delta {
             if context.last_sent == pointer_delta.since {
                 pointer_delta.delta += frame_delta;
@@ -201,26 +192,28 @@ pub fn update_pointer_lock(
                 pointer_delta.delta = frame_delta;
                 pointer_delta.since = context.last_sent;
             };
-
-            let pointer_info = PbPrimaryPointerInfo {
-                pointer_type: Some(PointerType::PotMouse as i32),
-                screen_coordinates: screen_coordinates.map(Into::into),
-                screen_delta: Some(pointer_delta.delta.into()),
-                world_ray_direction: ray,
-            };
-
-            context.update_crdt(
-                SceneComponentId::PRIMARY_POINTER_INFO,
-                CrdtType::LWW_ENT,
-                SceneEntityId::ROOT,
-                &pointer_info,
-            );
+            screen_delta += pointer_delta.delta;
         } else {
             commands.entity(entity).try_insert(CumulativePointerDelta {
                 delta: frame_delta,
                 since: context.last_sent,
             });
         }
+
+        let pointer_info = PbPrimaryPointerInfo {
+            pointer_type: Some(PointerType::PotMouse as i32),
+            screen_coordinates: screen_coordinates.map(Into::into),
+            screen_delta: Some(screen_delta.into()),
+            world_ray_direction: ray,
+        };
+
+        context.update_crdt(
+            SceneComponentId::PRIMARY_POINTER_INFO,
+            CrdtType::LWW_ENT,
+            SceneEntityId::ROOT,
+            &pointer_info,
+        );
+
         context.update_crdt(
             SceneComponentId::POINTER_LOCK,
             CrdtType::LWW_ENT,
