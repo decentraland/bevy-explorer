@@ -8,7 +8,12 @@ use common::{
     util::TryPushChildrenEx,
 };
 use system_bridge::settings::{
-    cache_size::CacheSizeSetting, sensitivity::*, EnumAppSetting, IntAppSetting,
+    cache_size::CacheSizeSetting,
+    sensitivity::{
+        CameraSensitivitySetting, CameraZoomSensitivitySetting, MovementSensitivitySetting,
+        PointerSensitivitySetting, ScrollSensitivitySetting,
+    },
+    ActiveCameras, EnumAppSetting, IntAppSetting,
 };
 use ui_core::ui_actions::{Click, ClickRepeat, HoverEnter, On, UiCaller};
 
@@ -193,11 +198,12 @@ struct AppSettingDescription;
 fn bump_enum<S: EnumAppSetting, const I: isize>(
     mut q: Query<(&mut SettingsDialog, &mut AppSettingsDetail)>,
     params: StaticSystemParam<S::Param>,
-    commands: Commands,
+    mut commands: Commands,
     caller: Res<UiCaller>,
     parents: Query<(&ChildOf, Option<&DuiEntities>)>,
     mut text: Query<&mut Text, Without<AppSettingDescription>>,
     mut description: Query<&mut Text, With<AppSettingDescription>>,
+    mut cameras: ResMut<ActiveCameras>,
 ) {
     let mut variants = S::variants();
     let (mut dialog, mut config) = q.single_mut().unwrap();
@@ -207,7 +213,8 @@ fn bump_enum<S: EnumAppSetting, const I: isize>(
     let next =
         variants.remove(((index as isize + I) + variants.len() as isize) as usize % variants.len());
     S::save(&next, config);
-    S::apply(&next, params.into_inner(), commands);
+    let cameras = cameras.get(&mut commands);
+    S::apply(&next, params.into_inner(), commands, cameras);
 
     let (mut parent, mut entities) = parents.get(caller.0).unwrap();
     while entities.is_none_or(|e| e.get_named("setting-label").is_none()) {
@@ -220,21 +227,24 @@ fn bump_enum<S: EnumAppSetting, const I: isize>(
     dialog.modified = true;
 }
 
+#[allow(clippy::too_many_arguments)]
 fn bump_int<S: IntAppSetting, const I: i32>(
     mut q: Query<(&mut SettingsDialog, &mut AppSettingsDetail)>,
     params: StaticSystemParam<S::Param>,
-    commands: Commands,
+    mut commands: Commands,
     caller: Res<UiCaller>,
     parents: Query<(&ChildOf, Option<&DuiEntities>)>,
     mut style: Query<&mut Node>,
     mut text: Query<&mut Text, Without<AppSettingDescription>>,
+    mut cameras: ResMut<ActiveCameras>,
 ) {
     let (mut dialog, mut config) = q.single_mut().unwrap();
     let config = &mut config.0;
     let current = S::load(config).value();
     let next = S::from_int((current + I).clamp(S::min(), S::max()));
     S::save(&next, config);
-    S::apply(&next, params.into_inner(), commands);
+    let cameras = cameras.get(&mut commands);
+    S::apply(&next, params.into_inner(), commands, cameras);
 
     let (mut parent, mut entities) = parents.get(caller.0).unwrap();
     while entities.is_none_or(|e| e.get_named("marker").is_none()) {
@@ -327,10 +337,11 @@ fn spawn_int_setting_template<S: IntAppSetting>(
              cursor: Query<&RelativeCursorPosition>,
              mut q: Query<(&mut SettingsDialog, &mut AppSettingsDetail)>,
              params: StaticSystemParam<S::Param>,
-             commands: Commands,
+             mut commands: Commands,
              parents: Query<(&ChildOf, Option<&DuiEntities>)>,
              mut style: Query<&mut Node>,
-             mut text: Query<&mut Text, Without<AppSettingDescription>>| {
+             mut text: Query<&mut Text, Without<AppSettingDescription>>,
+             mut cameras: ResMut<ActiveCameras>| {
                 let Some(pos) = cursor.get(caller.0).ok().and_then(|rcp| rcp.normalized) else {
                     return;
                 };
@@ -341,7 +352,8 @@ fn spawn_int_setting_template<S: IntAppSetting>(
                 let (mut dialog, mut config) = q.single_mut().unwrap();
                 let config = &mut config.0;
                 S::save(&next, config);
-                S::apply(&next, params.into_inner(), commands);
+                let cameras = cameras.get(&mut commands);
+                S::apply(&next, params.into_inner(), commands, cameras);
 
                 let (mut parent, mut entities) = parents.get(caller.0).unwrap();
                 while entities.is_none_or(|e| e.get_named("marker").is_none()) {

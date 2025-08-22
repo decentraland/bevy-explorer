@@ -49,7 +49,7 @@ use futures_lite::io::AsyncReadExt;
 use input_manager::InputManagerPlugin;
 use ipfs::{IpfsAssetServer, IpfsIoPlugin};
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
-use platform::{DepthPrepass, NormalPrepass};
+use platform::default_camera_components;
 use social::SocialPlugin;
 use system_bridge::{NativeUi, SystemBridgePlugin};
 use system_ui::SystemUiPlugin;
@@ -307,43 +307,12 @@ fn setup(
                 hdr: true,
                 ..Default::default()
             },
-            Tonemapping::TonyMcMapface,
-            DebandDither::Enabled,
-            ColorGrading {
-                // exposure: -0.5,
-                // gamma: 1.5,
-                // pre_saturation: 1.0,
-                // post_saturation: 1.0,
-                global: ColorGradingGlobal {
-                    exposure: -0.5,
-                    ..default()
-                },
-                shadows: ColorGradingSection {
-                    gamma: 0.75,
-                    ..Default::default()
-                },
-                midtones: ColorGradingSection {
-                    gamma: 0.75,
-                    ..Default::default()
-                },
-                highlights: ColorGradingSection {
-                    gamma: 0.75,
-                    ..Default::default()
-                },
-            },
+            default_camera_components(),
             Projection::from(PerspectiveProjection {
-                // projection: OrthographicProjection {
                 far: 100000.0,
                 ..Default::default()
             }),
-            Bloom {
-                intensity: 0.15,
-                ..Bloom::OLD_SCHOOL
-            },
-            ShadowFilteringMethod::Gaussian,
             PrimaryCamera::default(),
-            DepthPrepass,
-            NormalPrepass,
             GROUND_RENDERLAYER.with(0),
         ))
         .id();
