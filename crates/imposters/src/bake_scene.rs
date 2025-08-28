@@ -39,10 +39,10 @@ use crate::{
     imposter_spec::{
         floor_path, spec_path, texture_path, write_imposter, zip_path, BakedScene, ImposterSpec,
     },
-    render::{
-        BakingIngredients, ImposterEntities, ImposterLookup, ImposterMissing, ImposterReady,
-        ImposterState, ImposterTransitionOut, SceneImposter,
-    },
+    // render::{
+    //     BakingIngredients, ImposterEntities, ImposterLookup, ImposterMissing, ImposterReady,
+    //     ImposterState, ImposterTransitionOut, SceneImposter,
+    // },
     DclImposterPlugin,
 };
 pub struct DclImposterBakeScenePlugin;
@@ -54,26 +54,26 @@ pub const IMPOSTERCEPTION_LAYER: RenderLayers = RenderLayers::layer(5);
 
 impl Plugin for DclImposterBakeScenePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(ImposterBakePlugin)
-            .init_resource::<ImposterBakeList>()
-            .init_resource::<CurrentImposterImposter>()
-            .add_systems(
-                Update,
-                (
-                    make_scene_oven,
-                    bake_scene_imposters,
-                    bake_imposter_imposter,
-                    check_bake_state,
-                    pick_imposter_to_bake,
-                    output_progress,
-                )
-                    .chain()
-                    .before(crate::render::spawn_imposters)
-                    .before(SceneSets::UiActions),
-            );
+        app.add_plugins(ImposterBakePlugin);
+        //     .init_resource::<ImposterBakeList>()
+        //     .init_resource::<CurrentImposterImposter>();
+        // .add_systems(
+        //     Update,
+        //     (
+        //         make_scene_oven,
+        //         bake_scene_imposters,
+        //         bake_imposter_imposter,
+        //         check_bake_state,
+        //         pick_imposter_to_bake,
+        //         output_progress,
+        //     )
+        //         .chain()
+        //         .before(crate::render::spawn_imposters)
+        //         .before(SceneSets::UiActions),
+        // );
     }
 }
-
+/*
 #[derive(Component)]
 pub struct ImposterOven {
     start_tick: u32,
@@ -1089,3 +1089,4 @@ fn output_progress(
         ((*max_count - count) as f32 / *max_count as f32 * 100.0).floor() as usize
     );
 }
+*/

@@ -1,20 +1,23 @@
+use std::path::PathBuf;
+
 use bevy::{
-    asset::LoadState,
     diagnostic::FrameCount,
     ecs::system::SystemParam,
-    math::FloatOrd,
     pbr::{NotShadowCaster, NotShadowReceiver},
     platform::collections::{HashMap, HashSet},
     prelude::*,
-    render::{mesh::VertexAttributeValues, primitives::Aabb, view::RenderLayers},
+    render::{
+        mesh::{MeshAabb, VertexAttributeValues},
+        primitives::Aabb,
+        view::{NoFrustumCulling, RenderLayers},
+    },
     tasks::{IoTaskPool, Task},
 };
 use boimp::{bake::ImposterBakeMaterialPlugin, render::Imposter, ImposterLoaderSettings};
 use common::{
-    structs::{AppConfig, PrimaryUser},
+    structs::{AppConfig, PrimaryCamera, PrimaryUser},
     util::{TaskCompat, TaskExt},
 };
-use crc::CRC_32_CKSUM;
 use ipfs::{CurrentRealm, IpfsAssetServer};
 
 use scene_runner::{
@@ -28,8 +31,8 @@ use scene_runner::{
 use crate::{
     bake_scene::IMPOSTERCEPTION_LAYER,
     floor_imposter::{FloorImposter, FloorImposterLoader},
+    imposter_mesh::ImposterMesh,
     imposter_spec::{floor_path, load_imposter, texture_path, BakedScene, ImposterSpec},
-    DclImposterPlugin,
 };
 
 pub struct DclImposterRenderPlugin;
@@ -40,18 +43,20 @@ impl Plugin for DclImposterRenderPlugin {
             MaterialPlugin::<FloorImposter>::default(),
             ImposterBakeMaterialPlugin::<FloorImposter>::default(),
         ))
-        .init_resource::<ImposterEntities>()
         .init_resource::<BakingIngredients>()
+        .init_resource::<ImposterFocus>()
+        .init_resource::<ImposterSpecs>()
         .init_asset_loader::<FloorImposterLoader>()
         .add_systems(Startup, setup)
         .add_systems(
             Update,
             (
+                focus_imposters,
                 spawn_imposters,
                 load_imposters,
-                render_imposters,
-                update_imposter_visibility,
-                transition_imposters,
+                // render_imposters,
+                // update_imposter_visibility,
+                // transition_imposters,
                 debug_write_imposters,
             )
                 .chain(),
@@ -62,6 +67,7 @@ impl Plugin for DclImposterRenderPlugin {
 #[derive(Resource)]
 struct ImposterMeshes {
     cube: Handle<Mesh>,
+    aabb: Aabb,
     floor: Handle<Mesh>,
 }
 
@@ -82,132 +88,19 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
         uv[1] = 0.0 / 18.0 + 17.0 / 18.0 * uv[1];
     }
 
+    let cube: Mesh = ImposterMesh::default().build();
+    let aabb = cube.compute_aabb().unwrap();
+
+    debug!("base mesh: {:#?}", cube);
+
     commands.insert_resource(ImposterMeshes {
-        cube: meshes.add(Plane3d::new(Vec3::Z, Vec2::splat(0.5))),
+        cube: meshes.add(cube),
+        aabb,
         floor: meshes.add(floor),
     });
 }
 
-#[derive(Component)]
-pub struct ImposterTransitionIn;
-
-#[derive(Component)]
-pub struct ImposterTransitionOut;
-
-pub const TRANSITION_TIME: f32 = 0.25;
-
-#[derive(PartialEq, Debug)]
-pub enum ImposterState {
-    NotSpawned,
-    Pending,
-    Ready,
-    Missing,
-    NoScene,
-}
-
-#[derive(SystemParam)]
-pub struct ImposterLookup<'w, 's> {
-    entities: Res<'w, ImposterEntities>,
-    imposters: Query<
-        'w,
-        's,
-        (
-            Option<&'static ImposterMissing>,
-            Option<&'static Children>,
-            Option<&'static ImposterReady>,
-        ),
-    >,
-    handles: Query<
-        'w,
-        's,
-        (
-            Option<&'static MeshMaterial3d<Imposter>>,
-            Option<&'static MeshMaterial3d<FloorImposter>>,
-        ),
-    >,
-    asset_server: Res<'w, AssetServer>,
-}
-
-impl ImposterLookup<'_, '_> {
-    fn imposter_state(
-        entities: &HashMap<(IVec2, usize, bool), Entity>,
-        imposters: &Query<(
-            Option<&ImposterMissing>,
-            Option<&Children>,
-            Option<&ImposterReady>,
-        )>,
-        handles: &Query<(
-            Option<&MeshMaterial3d<Imposter>>,
-            Option<&MeshMaterial3d<FloorImposter>>,
-        )>,
-        asset_server: &AssetServer,
-        parcel: IVec2,
-        level: usize,
-        ingredient: bool,
-    ) -> ImposterState {
-        let Some(entity) = entities.get(&(parcel, level, ingredient)) else {
-            return ImposterState::NotSpawned;
-        };
-
-        let Ok((maybe_missing, maybe_children, maybe_ready)) = imposters.get(*entity) else {
-            return ImposterState::Pending;
-        };
-
-        if let Some(missing) = maybe_missing {
-            if missing.0.is_some() || level > 0 {
-                return ImposterState::Missing;
-            } else {
-                return ImposterState::NoScene;
-            }
-        }
-
-        if maybe_ready.is_some_and(|r| r.crc == 0) {
-            return ImposterState::Ready;
-        }
-
-        let Some(children) = maybe_children else {
-            return ImposterState::Pending;
-        };
-
-        for child in children {
-            let (maybe_wall, maybe_floor) = handles.get(*child).unwrap();
-            for id in [
-                maybe_wall.map(|h| h.id().untyped()),
-                maybe_floor.map(|h| h.id().untyped()),
-            ]
-            .into_iter()
-            .flatten()
-            {
-                match asset_server.get_load_state(id) {
-                    None => return ImposterState::Pending,
-                    Some(LoadState::Loading) => return ImposterState::Pending,
-                    Some(LoadState::Failed(_)) => return ImposterState::Missing,
-                    Some(LoadState::NotLoaded) => return ImposterState::Missing,
-                    Some(LoadState::Loaded) => (),
-                }
-            }
-        }
-
-        ImposterState::Ready
-    }
-
-    pub fn state(&self, parcel: IVec2, size: usize, ingredient: bool) -> ImposterState {
-        Self::imposter_state(
-            &self.entities.0,
-            &self.imposters,
-            &self.handles,
-            &self.asset_server,
-            parcel,
-            size,
-            ingredient,
-        )
-    }
-}
-
-#[derive(Resource, Default)]
-pub struct ImposterEntities(pub HashMap<(IVec2, usize, bool), Entity>);
-
-#[derive(Component, Debug)]
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SceneImposter {
     pub parcel: IVec2,
     pub level: usize,
@@ -251,42 +144,85 @@ impl ImposterLoadTask {
 #[derive(Resource, Default)]
 pub struct BakingIngredients(pub Vec<(IVec2, usize)>);
 
+#[derive(Resource, Default)]
+pub struct ImposterFocus(Vec2);
+
+pub fn focus_imposters(
+    focus_player: Query<&GlobalTransform, With<PrimaryUser>>,
+    focus_camera: Query<&GlobalTransform, With<PrimaryCamera>>,
+    mut focus: ResMut<ImposterFocus>,
+) {
+    // check if looking at player
+    let Some((_, cam_rot, cam_pos)) = focus_camera
+        .single()
+        .ok()
+        .map(|gt| gt.to_scale_rotation_translation())
+    else {
+        return;
+    };
+    let Some(player_pos) = focus_player.single().ok().map(|gt| gt.translation()) else {
+        return;
+    };
+    let focus_player = (cam_pos - player_pos).length() < 20.0;
+    let focus_player = focus_player || {
+        let player_angle = Transform::from_translation(cam_pos)
+            .looking_at(player_pos, Vec3::Y)
+            .rotation;
+        let angle_between = cam_rot.angle_between(player_angle);
+        debug!("angle between: {angle_between}");
+        angle_between < 0.2
+    };
+
+    let origin = match focus_player {
+        true => player_pos,
+        false => {
+            let cam_fwd = cam_rot * Vec3::NEG_Z;
+            let ground_intersect = cam_pos - cam_fwd * cam_pos.y / cam_fwd.y;
+            // debug!("player pos: {player_pos}, ground_intersect: {ground_intersect}");
+            ground_intersect
+        }
+    };
+
+    focus.0 = origin.xz();
+}
+
 pub fn spawn_imposters(
     mut commands: Commands,
-    mut lookup: ResMut<ImposterEntities>,
     config: Res<AppConfig>,
-    focus: Query<&GlobalTransform, With<PrimaryUser>>,
+    focus: Res<ImposterFocus>,
     mut required: Local<HashSet<(IVec2, usize, bool)>>,
+    current_imposters: Query<(Entity, &SceneImposter)>,
     current_realm: Res<CurrentRealm>,
     ingredients: Res<BakingIngredients>,
-    pointers: Res<ScenePointers>,
     live_scenes: Res<LiveScenes>,
     scenes: Query<&RendererSceneContext, Without<SceneLoading>>,
     current_imposter_scene: Res<CurrentImposterScene>,
+    mut manager: ImposterSpecManager,
 ) {
     if current_realm.is_changed() {
-        for (_, entity) in lookup.0.drain() {
+        for (entity, _) in &current_imposters {
             if let Ok(mut commands) = commands.get_entity(entity) {
                 commands.despawn();
             }
         }
 
+        manager.clear();
+
         debug!("purge");
         return;
     }
 
+    manager.start_tick();
+
     // skip if no realm
-    if pointers.min() == IVec2::MAX {
+    if manager.pointers.min() == IVec2::MAX {
         return;
     }
 
     // add baking requirements
     required.extend(ingredients.0.iter().map(|(p, l)| (*p, *l, true)));
 
-    let Some(origin) = focus.single().ok().map(|gt| gt.translation().xz()) else {
-        return;
-    };
-    let origin = origin * Vec2::new(1.0, -1.0);
+    let origin = focus.0 * Vec2::new(1.0, -1.0);
 
     // record live parcels
     let current_imposter_scene = match &current_imposter_scene.0 {
@@ -320,8 +256,8 @@ pub fn spawn_imposters(
         .ceil()
         .as_ivec2();
 
-    let min_tile = min_tile.max(pointers.min() >> level as u32);
-    let max_tile = max_tile.min(pointers.max() >> level as u32);
+    let min_tile = min_tile.max(manager.pointers.min() >> level as u32);
+    let max_tile = max_tile.min(manager.pointers.max() >> level as u32);
 
     let mut required_tiles = (min_tile.x..=max_tile.x)
         .flat_map(|x| (min_tile.y..=max_tile.y).map(move |y| IVec2::new(x, y)))
@@ -390,459 +326,1196 @@ pub fn spawn_imposters(
     }
 
     // remove old
-    lookup.0.retain(|&(pos, level, ingredient), ent| {
-        let required = required.remove(&(pos, level, ingredient));
+    let mut old = HashMap::new();
+    for (ent, scene_imposter) in current_imposters.iter() {
+        let required = required.remove(&(
+            scene_imposter.parcel,
+            scene_imposter.level,
+            scene_imposter.as_ingredient,
+        ));
 
         if !required {
-            debug!("remove {}: {} [{}]", level, pos, ingredient);
-            if let Ok(mut commands) = commands.get_entity(*ent) {
-                if ingredient {
-                    commands.despawn();
-                    return false;
-                }
-
-                commands.try_insert(ImposterTransitionOut);
-            }
+            commands.entity(ent).remove::<SceneImposter>();
+            old.insert(scene_imposter, ent);
         }
-        required
-    });
+    }
 
     // add new
     for (parcel, level, as_ingredient) in required.drain() {
-        let mut cmds = commands.spawn((
-            Transform::default(),
-            Visibility::default(),
-            SceneImposter {
-                parcel,
-                level,
-                as_ingredient,
-            },
-        ));
-        if !as_ingredient {
-            cmds.insert(ImposterTransitionIn);
-        }
+        let scene_imposter = SceneImposter {
+            parcel,
+            level,
+            as_ingredient,
+        };
+
+        let max_parcel = parcel + (1 << level);
+        old.retain(|k, v| {
+            let is_child = k.parcel.cmpge(parcel).all() && k.parcel.cmplt(max_parcel).all();
+            if is_child {
+                manager.store_removed(scene_imposter, *v);
+            }
+            !is_child
+        });
+
+        commands.spawn((Transform::default(), Visibility::default(), scene_imposter));
 
         debug!("require {}: {} [{}]", level, parcel, as_ingredient);
-        lookup.0.insert((parcel, level, as_ingredient), cmds.id());
+    }
+
+    // remove any not required non-children
+    for (_, ent) in old.drain() {
+        println!("unexpected old children");
+        commands.entity(ent).despawn();
     }
 }
 
-#[derive(Component, Clone)]
-pub struct ImposterReady {
-    pub scene: Option<String>,
-    pub crc: u32,
+#[derive(Component)]
+pub struct WrongImposterLevel;
+
+#[derive(Debug)]
+pub enum ImposterSpecResolveState {
+    Missing,
+    PendingRemote,
+    Ready(BakedScene),
 }
 
-#[derive(Component)]
-pub struct ImposterMissing(pub Option<String>);
+pub enum ImposterSpecLoadState {
+    Local(ImposterLoadTask),
+    PendingRemote,
+    Remote(ImposterLoadTask),
+}
+
+#[derive(Resource, Default)]
+pub struct ImposterSpecs {
+    pub mips: HashMap<(IVec2, usize, u32), ImposterSpecResolveState>,
+    pub scenes: HashMap<String, ImposterSpecResolveState>,
+
+    pub loading_mips: HashMap<(IVec2, usize, u32), ImposterSpecLoadState>,
+    pub loading_scenes: HashMap<String, ImposterSpecLoadState>,
+
+    pub prev_loading_mips: HashMap<(IVec2, usize, u32), ImposterSpecLoadState>,
+    pub prev_loading_scenes: HashMap<String, ImposterSpecLoadState>,
+
+    pub imposter_paths: HashMap<(IVec2, usize, u32), (Option<PathBuf>, Option<PathBuf>, bool)>,
+    pub loading_handles: HashSet<UntypedHandle>,
+    pub permanent_handles: HashSet<UntypedHandle>,
+
+    pub just_removed: HashMap<SceneImposter, Vec<Entity>>,
+}
+
+#[derive(PartialEq)]
+pub enum ImposterSpecState {
+    Ready(Option<ImposterSpec>, String, bool),
+    Pending,
+    Missing,
+}
+
+#[derive(Debug)]
+pub enum ImposterState {
+    Ready(
+        Option<(Handle<Imposter>, ImposterSpec)>,
+        Option<Handle<FloorImposter>>,
+    ),
+    PendingWithSubstitute(
+        SceneImposter,
+        Option<(Handle<Imposter>, ImposterSpec)>,
+        Option<Handle<FloorImposter>>,
+    ),
+    PendingWithPrevious(Vec<Entity>),
+    Pending,
+    Missing,
+}
+
+#[derive(SystemParam)]
+pub struct ImposterSpecManager<'w, 's> {
+    commands: Commands<'w, 's>,
+    specs: ResMut<'w, ImposterSpecs>,
+    current_realm: Res<'w, CurrentRealm>,
+    pointers: ResMut<'w, ScenePointers>,
+    ipfas: IpfsAssetServer<'w, 's>,
+    focus: Res<'w, ImposterFocus>,
+    imposters: ResMut<'w, Assets<Imposter>>,
+    floor_imposters: ResMut<'w, Assets<FloorImposter>>,
+    textures: ResMut<'w, Assets<Image>>,
+}
+
+impl<'w, 's> ImposterSpecManager<'w, 's> {
+    fn clear(&mut self) {
+        self.specs.mips.clear();
+        self.specs.scenes.clear();
+    }
+
+    fn start_tick(&mut self) {
+        let dropped_loads = self
+            .specs
+            .prev_loading_mips
+            .values()
+            .filter(|l| matches!(l, ImposterSpecLoadState::Remote(_)))
+            .count();
+        if dropped_loads > 0 {
+            debug!("dropped {dropped_loads} loading mips");
+        }
+        self.specs.prev_loading_mips = std::mem::take(&mut self.specs.loading_mips);
+        self.specs.prev_loading_scenes = std::mem::take(&mut self.specs.loading_scenes);
+        self.specs.loading_handles.clear();
+    }
+
+    fn store_removed(&mut self, child_of: SceneImposter, entity: Entity) {
+        self.specs
+            .just_removed
+            .entry(child_of)
+            .or_default()
+            .push(entity);
+    }
+
+    fn get_spec(&mut self, req: &SceneImposter) -> ImposterSpecState {
+        let ImposterSpecs {
+            mips,
+            scenes,
+            loading_mips,
+            loading_scenes,
+            prev_loading_mips,
+            prev_loading_scenes,
+            ..
+        } = &mut *self.specs;
+
+        let resolve = |spec: Option<&ImposterSpecResolveState>,
+                       path: &str,
+                       has_floor: bool|
+         -> ImposterSpecState {
+            match spec {
+                Some(ImposterSpecResolveState::Missing) => ImposterSpecState::Missing,
+                Some(ImposterSpecResolveState::PendingRemote) | None => ImposterSpecState::Pending,
+                Some(ImposterSpecResolveState::Ready(baked_scene)) => ImposterSpecState::Ready(
+                    baked_scene.imposters.get(&req.parcel).copied(),
+                    path.to_owned(),
+                    has_floor,
+                ),
+            }
+        };
+
+        if req.level == 0 {
+            let hash = match self.pointers.get(req.parcel) {
+                None => return ImposterSpecState::Pending,
+                Some(PointerResult::Nothing) => return ImposterSpecState::Missing,
+                Some(PointerResult::Exists { hash, .. }) => hash,
+            };
+
+            let resolve_state = scenes.get(hash);
+            let state = resolve(resolve_state, hash, true);
+            if state != ImposterSpecState::Pending {
+                return state;
+            }
+
+            if let Some((hash, mut load_state)) = prev_loading_scenes.remove_entry(hash) {
+                match load_state {
+                    ImposterSpecLoadState::Local(ref mut imposter_load_task) => {
+                        if let Some(maybe_baked_scene) = imposter_load_task.0.complete() {
+                            let new_state = match maybe_baked_scene {
+                                Some(baked_scene) => ImposterSpecResolveState::Ready(baked_scene),
+                                None => ImposterSpecResolveState::PendingRemote,
+                            };
+                            debug!("end local fetch {hash}: {new_state:?}");
+                            scenes.insert(hash, new_state);
+                        } else {
+                            loading_scenes.insert(hash, load_state);
+                        }
+                    }
+                    ImposterSpecLoadState::Remote(ref mut imposter_load_task) => {
+                        if let Some(maybe_baked_scene) = imposter_load_task.0.complete() {
+                            let new_state = match maybe_baked_scene {
+                                Some(baked_scene) => ImposterSpecResolveState::Ready(baked_scene),
+                                None => ImposterSpecResolveState::Missing,
+                            };
+                            scenes.insert(hash, new_state);
+                        } else {
+                            loading_scenes.insert(hash, load_state);
+                        }
+                    }
+                    ImposterSpecLoadState::PendingRemote => (),
+                }
+            } else if !loading_scenes.contains_key(hash) {
+                match resolve_state {
+                    Some(ImposterSpecResolveState::PendingRemote) => {
+                        debug!("requesting remote fetch {hash}");
+                        loading_scenes.insert(hash.clone(), ImposterSpecLoadState::PendingRemote);
+                    }
+                    None => {
+                        debug!("start local fetch {hash}");
+                        loading_scenes.insert(
+                            hash.clone(),
+                            ImposterSpecLoadState::Local(ImposterLoadTask::new_scene(
+                                &self.ipfas,
+                                hash,
+                                false,
+                            )),
+                        );
+                    }
+                    _ => panic!(),
+                }
+            }
+
+            resolve(scenes.get(hash), hash, true)
+        } else {
+            let Some(crc) = self.pointers.crc(req.parcel, req.level) else {
+                return ImposterSpecState::Pending;
+            };
+
+            let key = (req.parcel, req.level, crc);
+
+            let resolve_state = mips.get(&key);
+            let state = resolve(resolve_state, &self.current_realm.about_url, crc != 0);
+            if state != ImposterSpecState::Pending {
+                return state;
+            }
+
+            if let Some(mut load_state) = prev_loading_mips.remove(&key) {
+                match load_state {
+                    ImposterSpecLoadState::Local(ref mut imposter_load_task) => {
+                        if let Some(maybe_baked_scene) = imposter_load_task.0.complete() {
+                            let new_state = match maybe_baked_scene {
+                                Some(baked_scene) => ImposterSpecResolveState::Ready(baked_scene),
+                                None => ImposterSpecResolveState::PendingRemote,
+                            };
+                            mips.insert(key, new_state);
+                        } else {
+                            loading_mips.insert(key, load_state);
+                        }
+                    }
+                    ImposterSpecLoadState::Remote(ref mut imposter_load_task) => {
+                        if let Some(maybe_baked_scene) = imposter_load_task.0.complete() {
+                            let new_state = match maybe_baked_scene {
+                                Some(baked_scene) => ImposterSpecResolveState::Ready(baked_scene),
+                                None => ImposterSpecResolveState::Missing,
+                            };
+                            mips.insert(key, new_state);
+                        } else {
+                            loading_mips.insert(key, load_state);
+                        }
+                    }
+                    ImposterSpecLoadState::PendingRemote => (),
+                }
+            } else if !loading_mips.contains_key(&key) {
+                match resolve_state {
+                    Some(ImposterSpecResolveState::PendingRemote) => {
+                        debug!("requesting remote fetch {req:?}");
+                        loading_mips.insert(key, ImposterSpecLoadState::PendingRemote);
+                    }
+                    None => {
+                        debug!("start local fetch {req:?}");
+                        loading_mips.insert(
+                            key,
+                            ImposterSpecLoadState::Local(ImposterLoadTask::new_mip(
+                                &self.ipfas,
+                                &self.current_realm.about_url,
+                                req.parcel,
+                                req.level,
+                                crc,
+                                false,
+                            )),
+                        );
+                    }
+                    _ => panic!(),
+                }
+            }
+
+            resolve(mips.get(&key), &self.current_realm.about_url, crc != 0)
+        }
+    }
+
+    fn get_imposter(&mut self, req: &SceneImposter) -> ImposterState {
+        let spec_state = self.get_spec(req);
+
+        let maybe_spec = match spec_state {
+            ImposterSpecState::Ready(imposter_spec, id, has_floor) => {
+                Some((imposter_spec, id, has_floor))
+            }
+            ImposterSpecState::Pending => None,
+            ImposterSpecState::Missing => return ImposterState::Missing,
+        };
+
+        if let Some((maybe_spec, id, has_floor)) = maybe_spec {
+            let crc = self.pointers.crc(req.parcel, req.level).unwrap();
+
+            // get paths
+            let mut is_new_load = false;
+
+            let ImposterSpecs {
+                imposter_paths,
+                loading_handles,
+                ..
+            } = &mut *self.specs;
+
+            let paths = imposter_paths
+                .entry((req.parcel, req.level, crc))
+                .or_insert_with(|| {
+                    (
+                        maybe_spec.map(|_| {
+                            texture_path(self.ipfas.ipfs_cache_path(), &id, req.parcel, req.level)
+                        }),
+                        has_floor.then(|| {
+                            floor_path(self.ipfas.ipfs_cache_path(), &id, req.parcel, req.level)
+                        }),
+                        false,
+                    )
+                });
+
+            // start loading if required
+            let imposter_handle = paths.0.as_deref().map(|p| {
+                self.ipfas.asset_server().get_handle(p).unwrap_or_else(|| {
+                    is_new_load = true;
+                    let handle = self
+                        .ipfas
+                        .asset_server()
+                        .load_with_settings::<Imposter, ImposterLoaderSettings>(p, move |s| {
+                            *s = ImposterLoaderSettings {
+                                multisample: false,
+                                alpha: 1.0,
+                                alpha_blend: 0.0, // blend
+                                multisample_amount: 0.0,
+                            }
+                        });
+                    loading_handles.insert(handle.clone().untyped());
+                    handle
+                })
+            });
+
+            let floor_handle = paths.1.as_deref().map(|p| {
+                self.ipfas.asset_server().get_handle(p).unwrap_or_else(|| {
+                    is_new_load = true;
+                    let handle = self.ipfas.asset_server().load::<FloorImposter>(p);
+                    loading_handles.insert(handle.clone().untyped());
+                    handle
+                })
+            });
+
+            paths.2 |= is_new_load;
+
+            if imposter_handle.as_ref().is_none_or(|handle| {
+                self.ipfas
+                    .asset_server()
+                    .is_loaded_with_dependencies(handle.id())
+            }) && floor_handle.as_ref().is_none_or(|handle| {
+                self.ipfas
+                    .asset_server()
+                    .is_loaded_with_dependencies(handle.id())
+            }) {
+                if paths.2 {
+                    // first use since load - update to bypass rabpf
+                    if let Some(handle) = imposter_handle.as_ref() {
+                        let imposter = self.imposters.get(handle.id()).unwrap();
+                        self.textures
+                            .get_mut(imposter.indices.id())
+                            .unwrap()
+                            .immediate_upload = true;
+                        self.textures
+                            .get_mut(imposter.pixels.id())
+                            .unwrap()
+                            .immediate_upload = true;
+                    }
+
+                    if let Some(handle) = floor_handle.as_ref() {
+                        let imposter = &self.floor_imposters.get(handle.id()).unwrap().base;
+                        self.textures
+                            .get_mut(imposter.indices.id())
+                            .unwrap()
+                            .immediate_upload = true;
+                        self.textures
+                            .get_mut(imposter.pixels.id())
+                            .unwrap()
+                            .immediate_upload = true;
+                    }
+
+                    paths.2 = false;
+                }
+
+                if !paths.2 {
+                    return ImposterState::Ready(
+                        maybe_spec.map(|s| (imposter_handle.unwrap(), s)),
+                        floor_handle,
+                    );
+                }
+            }
+        }
+
+        // not downloaded or not spawned, fallback to best available
+
+        // check for previously despawned lower mip entities first
+        if let Some(entities) = self.specs.just_removed.remove(req) {
+            return ImposterState::PendingWithPrevious(entities);
+        }
+
+        // check for larger mips
+        for level in req.level + 1..=5 {
+            // use mask to knock out the lower bits, this works for negative numbers too
+            let origin = req.parcel & !((1 << level) - 1);
+            let Some(crc) = self.pointers.crc(origin, level) else {
+                return ImposterState::Pending;
+            };
+
+            let substitute_imposter = SceneImposter {
+                parcel: origin,
+                level,
+                as_ingredient: false,
+            };
+            if let Some((imposter_path, floor_path, false)) =
+                self.specs.imposter_paths.get(&(origin, level, crc))
+            {
+                debug!("checking fallback {req:?} -> {substitute_imposter:?}");
+
+                let mut ready = true;
+
+                let imposter_handle = match imposter_path.as_deref() {
+                    Some(p) => {
+                        if let Some(handle) = self.ipfas.asset_server().get_handle(p) {
+                            ready &= self
+                                .ipfas
+                                .asset_server()
+                                .is_loaded_with_dependencies(handle.id());
+                            Some(handle)
+                        } else {
+                            ready = false;
+                            None
+                        }
+                    }
+                    None => None,
+                };
+
+                let floor_handle = match floor_path.as_deref() {
+                    Some(p) => {
+                        if let Some(handle) = self.ipfas.asset_server().get_handle(p) {
+                            ready &= self
+                                .ipfas
+                                .asset_server()
+                                .is_loaded_with_dependencies(handle.id());
+                            Some(handle)
+                        } else {
+                            ready = false;
+                            None
+                        }
+                    }
+                    None => None,
+                };
+
+                if ready {
+                    let imposter_and_spec = imposter_handle.map(|h| {
+                        let ImposterSpecState::Ready(maybe_spec, _, _) =
+                            self.get_spec(&substitute_imposter)
+                        else {
+                            panic!();
+                        };
+                        (h, maybe_spec.unwrap())
+                    });
+
+                    debug!("checking fallback {req:?} -> {substitute_imposter:?} -> ok!");
+                    return ImposterState::PendingWithSubstitute(
+                        substitute_imposter,
+                        imposter_and_spec,
+                        floor_handle,
+                    );
+                } else {
+                    debug!("checking fallback {req:?} -> {substitute_imposter:?} failed")
+                }
+            }
+        }
+
+        // we only reach here if actually requested with level 5
+        ImposterState::Pending
+    }
+
+    fn end_tick(&mut self) {
+        let ImposterSpecs {
+            loading_mips,
+            loading_scenes,
+            just_removed,
+            ..
+        } = &mut *self.specs;
+
+        for ent in just_removed
+            .drain()
+            .flat_map(|(_, ents)| ents.into_iter())
+        {
+            if let Ok(mut commands) = self.commands.get_entity(ent) {
+                commands.despawn();
+            }
+        }
+
+        let active = loading_mips
+            .values()
+            .chain(loading_scenes.values())
+            .filter(|v| matches!(v, ImposterSpecLoadState::Remote(_)))
+            .count();
+        let mut free = 20 - active;
+
+        if free == 0 {
+            return;
+        }
+
+        for (hash, v) in loading_scenes
+            .iter_mut()
+            .filter(|(_, v)| matches!(v, ImposterSpecLoadState::PendingRemote))
+            .take(free)
+        {
+            debug!("started scene remote: {hash}");
+            *v = ImposterSpecLoadState::Remote(ImposterLoadTask::new_scene(
+                &self.ipfas,
+                hash,
+                true,
+            ));
+            free -= 1;
+        }
+
+        if free == 0 {
+            return;
+        }
+
+        let focus = self.focus.0.as_ivec2() * IVec2::new(1, -1) / PARCEL_SIZE as i32;
+
+        let mut mips = loading_mips
+            .iter_mut()
+            .filter(|(_, v)| matches!(v, ImposterSpecLoadState::PendingRemote))
+            .map(|(k, v)| {
+                let &(parcel, level, _) = k;
+                let midpoint = parcel + IVec2::splat(1 << (level - 1));
+                let distance = (midpoint - focus).length_squared();
+                ((distance, (usize::MAX - level)), (k, v))
+            })
+            .collect::<Vec<_>>();
+        mips.sort_by_key(|(sort_key, _)| *sort_key);
+
+        for (_, (k, v)) in mips.into_iter().take(free) {
+            debug!("started mip remote {k:?}");
+            *v = ImposterSpecLoadState::Remote(ImposterLoadTask::new_mip(
+                &self.ipfas,
+                &self.current_realm.about_url,
+                k.0,
+                k.1,
+                k.2,
+                true,
+            ));
+            free -= 1;
+        }
+    }
+}
 
 #[derive(Component)]
 pub struct RetryImposter;
 
+#[derive(Component)]
+pub struct SubstituteImposter(SceneImposter);
+
+// #[derive(Component)]
+// pub struct Meh(Handle<Imposter>);
+
 fn load_imposters(
     mut commands: Commands,
-    mut loading_scenes: Local<HashMap<String, (ImposterLoadTask, Vec<(Entity, IVec2)>)>>,
-    mut loading_parcels: Query<(Entity, &mut ImposterLoadTask, &SceneImposter)>,
-    new_imposters: Query<
-        (Entity, &SceneImposter),
+    pending_imposters: Query<
+        (Entity, &SceneImposter, Option<&SubstituteImposter>),
         Or<(Changed<SceneImposter>, With<RetryImposter>)>,
     >,
-    all_imposters: Query<&SceneImposter>,
-    mut scene_pointers: ResMut<ScenePointers>,
-    ipfas: IpfsAssetServer,
-    current_realm: Res<CurrentRealm>,
-    plugin: Res<DclImposterPlugin>,
-    focus: Query<&Transform, With<PrimaryUser>>,
+    mut manager: ImposterSpecManager,
+    imposter_meshes: Res<ImposterMeshes>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    tick: Res<FrameCount>,
+    children: Query<&Children>,
 ) {
-    enum ImposterLoadTaskPending {
-        Scene(String, IVec2),
-        Mip(IVec2, usize, u32),
-    }
-
-    // create any new load tasks
-    let mut pending = Vec::default();
-    let free_count = 20 - loading_scenes.len() - loading_parcels.iter().count();
-
-    let focus = (focus
-        .single()
-        .map(|t| t.translation)
-        .unwrap_or_default()
-        .xz()
-        .as_ivec2()
-        * IVec2::new(1, -1))
-        / PARCEL_SIZE as i32;
-
-    // gather pending tasks
-    for (ent, imposter) in new_imposters.iter() {
-        if imposter.level == 0 {
-            match scene_pointers.get(imposter.parcel) {
-                Some(PointerResult::Exists { hash, .. }) => {
-                    let distance = (imposter.parcel - focus).as_vec2().length();
-                    pending.push((
-                        distance,
-                        ent,
-                        ImposterLoadTaskPending::Scene(hash.to_owned(), imposter.parcel),
-                    ));
-                }
-                Some(_) => {
-                    commands
-                        .entity(ent)
-                        .remove::<RetryImposter>()
-                        .insert(ImposterMissing(None));
-                }
-                None => {
-                    // retry next frame
-                    commands.entity(ent).try_insert(RetryImposter);
-                }
-            }
-        } else if current_realm.address.is_empty() {
-            commands.entity(ent).try_insert(RetryImposter);
-        } else if let Some(crc) = scene_pointers.crc(imposter.parcel, imposter.level) {
-            let distance = (imposter.parcel - focus + (1 << imposter.level))
-                .as_vec2()
-                .length();
-            pending.push((
-                distance,
-                ent,
-                ImposterLoadTaskPending::Mip(imposter.parcel, imposter.level, crc),
-            ));
-        } else {
-            commands.entity(ent).try_insert(RetryImposter);
-        }
-    }
-
-    // spawn tasks
-    pending.sort_by_key(|(dist, ..)| FloatOrd(*dist));
-    let mut pending = pending.into_iter();
-    for (_, entity, pending) in pending.by_ref().take(free_count) {
-        commands.entity(entity).remove::<RetryImposter>();
-        match pending {
-            ImposterLoadTaskPending::Scene(hash, parcel) => {
-                loading_scenes
-                    .entry(hash.clone())
-                    .or_insert_with(|| {
-                        (
-                            ImposterLoadTask::new_scene(&ipfas, &hash, plugin.download),
-                            Vec::default(),
-                        )
-                    })
-                    .1
-                    .push((entity, parcel));
-            }
-            ImposterLoadTaskPending::Mip(parcel, level, crc) => {
+    for (entity, base_imposter, maybe_substitute) in pending_imposters.iter() {
+        let state = manager.get_imposter(base_imposter);
+        let (scene_imposter, maybe_imposter, maybe_floor, is_final) = match state {
+            ImposterState::Missing => {
                 commands
                     .entity(entity)
-                    .try_insert(ImposterLoadTask::new_mip(
-                        &ipfas,
-                        &current_realm.about_url,
-                        parcel,
-                        level,
-                        crc,
-                        plugin.download,
+                    .remove::<RetryImposter>()
+                    .despawn_related::<Children>();
+                continue;
+            }
+            ImposterState::Pending => {
+                commands.entity(entity).insert(RetryImposter);
+                continue;
+            }
+            ImposterState::Ready(imposter, floor) => {
+                commands.entity(entity).remove::<RetryImposter>();
+                (*base_imposter, imposter, floor, true)
+            }
+            ImposterState::PendingWithSubstitute(scene_imposter, imposter, floor) => {
+                // debug!("wanted {base_imposter:?}, got {scene_imposter:?}");
+                (scene_imposter, imposter, floor, false)
+            }
+            ImposterState::PendingWithPrevious(ents) => {
+                for prev_child in ents {
+                    commands.entity(prev_child).insert(ChildOf(entity));
+
+                    // if let Ok(children) = children.get(prev_child) {
+                    //     for child in children {
+                    //         commands.entity(*child).insert(ShowAabbGizmo {
+                    //             color: Some(Color::linear_rgba(1.0, 1.0, 0.0, 0.7)),
+                    //         });
+                    //     }
+                    // }
+                }
+                commands.entity(entity).insert(RetryImposter);
+                continue;
+            }
+        };
+
+        if !is_final {
+            if let Some(substitute) = maybe_substitute {
+                if substitute.0 == scene_imposter {
+                    debug!("skip on repeat sub");
+                    continue;
+                }
+            }
+            commands
+                .entity(entity)
+                .insert((RetryImposter, SubstituteImposter(scene_imposter)));
+        }
+
+        commands.entity(entity).despawn_related::<Children>();
+
+        let layer = if base_imposter.as_ingredient {
+            IMPOSTERCEPTION_LAYER
+        } else {
+            RenderLayers::default()
+        };
+        debug!(
+            "[{}] spawn imposter: {:?} {:?} {:?}",
+            tick.0, base_imposter, is_final, scene_imposter
+        );
+
+        // let color = if is_final {
+        //     Some(Color::linear_rgba(0.0, 0.0, 1.0, 0.7))
+        // } else {
+        //     Some(Color::linear_rgba(1.0, 0.0, 0.0, 0.7))
+        // };
+
+        commands
+            .entity(entity)
+            .despawn_related::<Children>()
+            .with_children(|c| {
+                if let Some((imposter, spec)) = maybe_imposter {
+                    let (mesh, aabb) = if is_final {
+                        (imposter_meshes.cube.clone(), imposter_meshes.aabb)
+                    } else {
+                        let mesh = ImposterMesh::from_spec(&spec, base_imposter);
+                        let aabb = mesh.compute_aabb().unwrap();
+
+                        (meshes.add(mesh), aabb)
+                    };
+
+                    let mut scale = spec.region_max - spec.region_min;
+                    scale.y = spec.scale * 2.0;
+                    c.spawn((
+                        Mesh3d(mesh),
+                        MeshMaterial3d(imposter),
+                        Transform::from_translation((spec.region_min + spec.region_max) * 0.5)
+                            .with_scale(
+                                scale.max(Vec3::splat(0.001))
+                                    * (1.0 + scene_imposter.level as f32 / 1000.0),
+                            ),
+                        // ShowAabbGizmo { color },
+                        aabb,
+                        NoFrustumCulling,
+                        NotShadowCaster,
+                        NotShadowReceiver,
+                        layer.clone(),
                     ));
-            }
-        }
-    }
-    // queue others for retry
-    for (_, entity, pending) in pending {
-        match pending {
-            ImposterLoadTaskPending::Scene(hash, parcel) => {
-                if let Some(entities) = loading_scenes.get_mut(&hash) {
-                    entities.1.push((entity, parcel));
-                } else {
-                    commands.entity(entity).try_insert(RetryImposter);
                 }
-            }
-            ImposterLoadTaskPending::Mip(..) => {
-                commands.entity(entity).try_insert(RetryImposter);
-            }
-        }
-    }
 
-    // process tasks
-    (*loading_scenes).retain(|hash, (task, entities)| {
-        match task.0.complete() {
-            Some(res) => {
-                if let Some(mut scene) = res {
-                    debug!("load success {hash}");
-                    // loaded successfully
-                    for (entity, parcel) in entities.iter() {
-                        debug!(" @ {parcel}");
-                        if let Ok(imposter) = all_imposters.get(*entity) {
-                            let mut commands = commands.entity(*entity);
+                if let Some(floor) = maybe_floor {
+                    //spawn floor
+                    let base_size = (1i32 << base_imposter.level) as f32 * PARCEL_SIZE;
+                    let mid = (base_imposter.parcel * IVec2::new(1, -1)).as_vec2() * PARCEL_SIZE
+                        + Vec2::new(base_size, -base_size) * 0.5;
 
-                            if let Some(spec) = scene.imposters.remove(&imposter.parcel) {
-                                commands.try_insert(spec);
-                            }
-                            commands.try_insert(ImposterReady {
-                                scene: Some(hash.clone()),
-                                crc: crc::Crc::<u32>::new(&CRC_32_CKSUM).checksum(hash.as_bytes()),
-                            });
+                    let mesh = if is_final {
+                        imposter_meshes.floor.clone()
+                    } else {
+                        let mut floor = Plane3d {
+                            normal: Dir3::Y,
+                            half_size: Vec2::splat(0.5),
                         }
-                    }
-                } else {
-                    // didn't exist
-                    debug!("load fail {hash}");
-                    for (entity, parcel) in entities.iter() {
-                        debug!(" @ {parcel}");
-                        if let Ok(mut commands) = commands.get_entity(*entity) {
-                            commands.try_insert(ImposterMissing(Some(hash.clone())));
+                        .mesh()
+                        .build();
+
+                        let Some(VertexAttributeValues::Float32x2(uvs)) =
+                            floor.attribute_mut(Mesh::ATTRIBUTE_UV_0)
+                        else {
+                            panic!()
+                        };
+
+                        let base_size = 1i32 << base_imposter.level;
+                        let scene_size = 1i32 << scene_imposter.level;
+                        let parcel_size = base_size as f32 / scene_size as f32;
+                        let bottomleft = (base_imposter.parcel - scene_imposter.parcel)
+                            .as_vec2() / scene_size as f32;
+
+                        for uv in uvs.iter_mut() {
+                            let prev = *uv;
+                            uv[0] = 0.0 / 18.0 + 17.0 / 18.0 * (bottomleft.x + uv[0] * parcel_size);
+                            uv[1] = 0.0 / 18.0 + 17.0 / 18.0 * (1.0 - bottomleft.y - (1.0 - uv[1]) * parcel_size);
                         }
-                    }
-                }
-                false
-            }
-            None => true,
-        }
-    });
+                        floor.immediate_upload = true;
 
-    for (ent, mut task, imposter) in loading_parcels.iter_mut() {
-        if let Some(res) = task.0.complete() {
-            if let Ok(mut commands) = commands.get_entity(ent) {
-                match res {
-                    Some(mut baked) => {
-                        debug!("load success {:?}", imposter);
-                        if let Some(spec) = baked.imposters.remove(&imposter.parcel) {
-                            commands.try_insert(spec);
-                        }
-                        commands.try_insert(ImposterReady {
-                            scene: None,
-                            crc: baked.crc,
-                        });
-                    }
-                    None => {
-                        // didn't exist
-                        debug!("load fail {:?}", imposter);
-                        commands.try_insert(ImposterMissing(None));
-                    }
+                        meshes.add(floor)
+                    };
+
+                    c.spawn((
+                        Transform::from_translation(Vec3::new(mid.x, -0.01, mid.y))
+                            .with_scale(Vec3::new(base_size, 1.0, base_size)),
+                        Mesh3d(mesh),
+                        Aabb::from_min_max(Vec3::NEG_ONE * 0.49, Vec3::ONE * 0.49),
+                        // ShowAabbGizmo { color },
+                        MeshMaterial3d(floor),
+                        NotShadowCaster,
+                        NotShadowReceiver,
+                        layer,
+                    ));
                 }
-                commands.remove::<ImposterLoadTask>();
-            };
-        }
+            });
     }
+
+    manager.end_tick();
 }
 
-fn render_imposters(
-    mut commands: Commands,
-    new_imposters: Query<
-        (
-            Entity,
-            &SceneImposter,
-            Option<&ImposterSpec>,
-            &ImposterReady,
-        ),
-        Added<ImposterReady>,
-    >,
-    imposter_meshes: Res<ImposterMeshes>,
-    asset_server: Res<AssetServer>,
-    ipfas: IpfsAssetServer,
-    current_realm: Res<CurrentRealm>,
-    config: Res<AppConfig>,
-) {
-    // spawn/update required
-    for (entity, req, maybe_spec, ready) in new_imposters.iter() {
-        let (layer, initial_alpha, multisample_amount, multisample) = if req.as_ingredient {
-            (IMPOSTERCEPTION_LAYER, 1.0, 0.0, false)
-        } else {
-            (
-                RenderLayers::default(),
-                0.0,
-                config.scene_imposter_multisample_amount,
-                config.scene_imposter_multisample,
-            )
-        };
-        debug!("spawn imposter {:?} {:?} {}", req, maybe_spec, ready.crc);
-        commands.entity(entity).with_children(|c| {
-            if let Some(spec) = maybe_spec {
-                // spawn imposter
-                let path = texture_path(
-                    ipfas.ipfs_cache_path(),
-                    ready.scene.as_ref().unwrap_or(&current_realm.about_url),
-                    req.parcel,
-                    req.level,
-                );
-                let mut scale = spec.region_max - spec.region_min;
-                scale.y = spec.scale * 2.0;
-                c.spawn((
-                    Mesh3d(imposter_meshes.cube.clone()),
-                    MeshMaterial3d(
-                        asset_server.load_with_settings::<Imposter, ImposterLoaderSettings>(
-                            path,
-                            move |s| {
-                                *s = ImposterLoaderSettings {
-                                    multisample,
-                                    alpha: initial_alpha,
-                                    alpha_blend: 0.0, // blend
-                                    multisample_amount,
-                                }
-                            },
-                        ),
-                    ),
-                    Transform::from_translation((spec.region_min + spec.region_max) * 0.5)
-                        .with_scale(
-                            scale.max(Vec3::splat(0.001)) * (1.0 + req.level as f32 / 1000.0),
-                        ),
-                    Aabb {
-                        center: Vec3A::ZERO,
-                        half_extents: Vec3A::splat(0.5),
-                    },
-                    NotShadowCaster,
-                    NotShadowReceiver,
-                    layer.clone(),
-                    ready.clone(),
-                ));
-            }
+// fn load_imposters(
+//     mut commands: Commands,
+//     mut loading_scenes: Local<HashMap<String, (ImposterLoadTask, Vec<(Entity, IVec2)>)>>,
+//     mut loading_parcels: Query<(Entity, &mut ImposterLoadTask, &SceneImposter)>,
+//     new_imposters: Query<
+//         (Entity, &SceneImposter),
+//         Or<(Changed<SceneImposter>, With<RetryImposter>)>,
+//     >,
+//     all_imposters: Query<&SceneImposter>,
+//     mut scene_pointers: ResMut<ScenePointers>,
+//     ipfas: IpfsAssetServer,
+//     current_realm: Res<CurrentRealm>,
+//     plugin: Res<DclImposterPlugin>,
+//     focus: Res<ImposterFocus>,
+//     mut debug: ResMut<DebugInfo>,
+// ) {
+//     enum ImposterLoadTaskPending {
+//         Scene(String, IVec2),
+//         Mip(IVec2, usize, u32),
+//     }
 
-            if ready.crc != 0 {
-                //spawn floor
-                let offset = match req.level {
-                    0 => 0.0,
-                    _ => 0.0,
-                };
-                let size = (1i32 << req.level) as f32 * PARCEL_SIZE;
-                let mid = (req.parcel * IVec2::new(1, -1)).as_vec2() * PARCEL_SIZE
-                    + Vec2::new(size, -size) * 0.5;
+//     // create any new load tasks
+//     let mut pending = Vec::default();
 
-                let path = floor_path(
-                    ipfas.ipfs_cache_path(),
-                    ready.scene.as_ref().unwrap_or(&current_realm.about_url),
-                    req.parcel,
-                    req.level,
-                );
-                c.spawn((
-                    Transform::from_translation(Vec3::new(mid.x, -0.01, mid.y))
-                        .with_scale(Vec3::new(size, 1.0, size)),
-                    Mesh3d(imposter_meshes.floor.clone()),
-                    MeshMaterial3d(
-                        asset_server
-                            .load_with_settings::<FloorImposter, f32>(path, move |s: &mut f32| {
-                                *s = offset
-                            }),
-                    ),
-                    NotShadowCaster,
-                    NotShadowReceiver,
-                    layer,
-                    ready.clone(),
-                ));
-            }
-        });
-    }
-}
+//     let still_required_scenes = all_imposters
+//         .iter()
+//         .filter(|i| i.level == 0)
+//         .flat_map(|i| scene_pointers.get(i.parcel))
+//         .flat_map(|p| {
+//             if let PointerResult::Exists { hash, .. } = p {
+//                 Some(hash)
+//             } else {
+//                 None
+//             }
+//         })
+//         .collect::<HashSet<_>>();
+//     loading_scenes.retain(|h, _| still_required_scenes.contains(&h));
+//     drop (still_required_scenes);
 
-fn update_imposter_visibility(
-    mut q: Query<(&mut RenderLayers, &ImposterReady)>,
-    live_scenes: Res<LiveScenes>,
-    transform: Query<&Transform>,
-) {
-    for (mut layers, ready) in q.iter_mut() {
-        let show = ready.scene.as_ref().is_none_or(|hash| {
-            !live_scenes
-                .scenes
-                .get(hash)
-                .is_some_and(|e| transform.get(*e).is_ok_and(|t| t.translation.y == 0.0))
-        });
-        *layers = if show {
-            layers.clone().with(0)
-        } else {
-            layers.clone().without(0)
-        };
-    }
-}
+//     let free_count = 20 - loading_scenes.len() - loading_parcels.iter().count();
 
-fn transition_imposters(
-    mut commands: Commands,
-    q_in: Query<(Entity, &Children, Has<ImposterTransitionOut>), With<ImposterTransitionIn>>,
-    q_out: Query<(Entity, &Children, &SceneImposter), With<ImposterTransitionOut>>,
-    handles: Query<&MeshMaterial3d<Imposter>>,
-    mut assets: ResMut<Assets<Imposter>>,
-    time: Res<Time>,
-    pointers: Res<ScenePointers>,
-    scenes: Res<LiveScenes>,
-    contexts: Query<&RendererSceneContext>,
-    player: Query<&Transform, With<PrimaryUser>>,
-    config: Res<AppConfig>,
-) {
-    const TPOW: f32 = 2.0;
-    let player = player.single().map(|t| t.translation).unwrap_or_default();
+//     let focus = focus.0.as_ivec2() * IVec2::new(1, -1) / PARCEL_SIZE as i32;
 
-    for (ent, children, transitioning_out) in q_in.iter() {
-        if transitioning_out {
-            commands.entity(ent).remove::<ImposterTransitionIn>();
-            continue;
-        }
+//     // gather pending tasks
+//     for (ent, imposter) in new_imposters.iter() {
+//         if imposter.level == 0 {
+//             match scene_pointers.get(imposter.parcel) {
+//                 Some(PointerResult::Exists { hash, .. }) => {
+//                     let distance = (imposter.parcel - focus).as_vec2().length();
+//                     pending.push((
+//                         distance,
+//                         ent,
+//                         ImposterLoadTaskPending::Scene(hash.to_owned(), imposter.parcel),
+//                     ));
+//                 }
+//                 Some(_) => {
+//                     commands
+//                         .entity(ent)
+//                         .remove::<RetryImposter>()
+//                         .insert(ImposterMissing(None));
+//                 }
+//                 None => {
+//                     // retry next frame
+//                     commands.entity(ent).try_insert(RetryImposter);
+//                 }
+//             }
+//         } else if current_realm.address.is_empty() {
+//             commands.entity(ent).try_insert(RetryImposter);
+//         } else if let Some(crc) = scene_pointers.crc(imposter.parcel, imposter.level) {
+//             let distance = (imposter.parcel - focus + (1 << imposter.level))
+//                 .as_vec2()
+//                 .length();
+//             pending.push((
+//                 distance,
+//                 ent,
+//                 ImposterLoadTaskPending::Mip(imposter.parcel, imposter.level, crc),
+//             ));
+//         } else {
+//             commands.entity(ent).try_insert(RetryImposter);
+//         }
+//     }
 
-        let mut still_transitioning = false;
-        for child in children {
-            if let Ok(h_in) = handles.get(*child) {
-                let Some(asset) = assets.get_mut(h_in.id()) else {
-                    still_transitioning = true;
-                    continue;
-                };
+//     debug.info.insert(
+//         "Imposter pending count",
+//         format!(
+//             "req scenes: {}, req mips: {}, free count: {free_count}, loading: {}, waiting: {}",
+//             loading_scenes.len(),
+//             loading_parcels.iter().count(),
+//             pending.len().min(free_count),
+//             pending.len().max(free_count) - free_count
+//         ),
+//     );
 
-                asset.data.alpha = 1f32
-                    .min(asset.data.alpha.powf(TPOW) + time.delta_secs() / TRANSITION_TIME)
-                    .powf(TPOW.recip());
-                if asset.data.alpha < 1.0 {
-                    still_transitioning = true;
-                }
-            }
-        }
+//     // spawn tasks
+//     pending.sort_by_key(|(dist, ..)| FloatOrd(*dist));
+//     let mut pending = pending.into_iter();
+//     for (_, entity, pending) in pending.by_ref().take(free_count) {
+//         commands.entity(entity).remove::<RetryImposter>();
+//         match pending {
+//             ImposterLoadTaskPending::Scene(hash, parcel) => {
+//                 loading_scenes
+//                     .entry(hash.clone())
+//                     .or_insert_with(|| {
+//                         (
+//                             ImposterLoadTask::new_scene(&ipfas, &hash, plugin.download),
+//                             Vec::default(),
+//                         )
+//                     })
+//                     .1
+//                     .push((entity, parcel));
+//             }
+//             ImposterLoadTaskPending::Mip(parcel, level, crc) => {
+//                 commands
+//                     .entity(entity)
+//                     .try_insert(ImposterLoadTask::new_mip(
+//                         &ipfas,
+//                         &current_realm.about_url,
+//                         parcel,
+//                         level,
+//                         crc,
+//                         plugin.download,
+//                     ));
+//             }
+//         }
+//     }
+//     // queue others for retry
+//     for (_, entity, pending) in pending {
+//         match pending {
+//             ImposterLoadTaskPending::Scene(hash, parcel) => {
+//                 if let Some(entities) = loading_scenes.get_mut(&hash) {
+//                     entities.1.push((entity, parcel));
+//                 } else {
+//                     commands.entity(entity).try_insert(RetryImposter);
+//                 }
+//             }
+//             ImposterLoadTaskPending::Mip(..) => {
+//                 commands.entity(entity).try_insert(RetryImposter);
+//             }
+//         }
+//     }
 
-        if !still_transitioning {
-            commands.entity(ent).remove::<ImposterTransitionIn>();
-        }
-    }
+//     // process tasks
+//     (*loading_scenes).retain(|hash, (task, entities)| {
+//         match task.0.complete() {
+//             Some(res) => {
+//                 if let Some(mut scene) = res {
+//                     debug!("load success {hash}");
+//                     // loaded successfully
+//                     for (entity, parcel) in entities.iter() {
+//                         debug!(" @ {parcel}");
+//                         if let Ok(imposter) = all_imposters.get(*entity) {
+//                             let mut commands = commands.entity(*entity);
 
-    for (ent, children, imposter) in q_out.iter() {
-        if imposter.level == 0 {
-            // don't transition level0 out until the scene has spawned
-            let parcel_origin = imposter.parcel.as_vec2() * Vec2::new(PARCEL_SIZE, -PARCEL_SIZE);
-            if (player.xz() - parcel_origin - (PARCEL_SIZE / 2.0)).length()
-                < config
-                    .scene_imposter_distances
-                    .first()
-                    .copied()
-                    .unwrap_or(0.0)
-            {
-                if let Some(PointerResult::Exists { hash, .. }) = pointers.get(imposter.parcel) {
-                    if scenes
-                        .scenes
-                        .get(hash.as_str())
-                        .and_then(|e| contexts.get(*e).ok())
-                        .is_none_or(|ctx| ctx.tick_number < 5)
-                    {
-                        continue;
-                    }
-                }
-            }
-        }
+//                             if let Some(spec) = scene.imposters.remove(&imposter.parcel) {
+//                                 commands.try_insert(spec);
+//                             }
+//                             commands.try_insert(ImposterReady {
+//                                 scene: Some(hash.clone()),
+//                                 crc: crc::Crc::<u32>::new(&CRC_32_CKSUM).checksum(hash.as_bytes()),
+//                             });
+//                         }
+//                     }
+//                 } else {
+//                     // didn't exist
+//                     debug!("load fail {hash}");
+//                     for (entity, parcel) in entities.iter() {
+//                         debug!(" @ {parcel}");
+//                         if let Ok(mut commands) = commands.get_entity(*entity) {
+//                             commands.try_insert(ImposterMissing(Some(hash.clone())));
+//                         }
+//                     }
+//                 }
+//                 false
+//             }
+//             None => true,
+//         }
+//     });
 
-        let mut still_transitioning = false;
-        for child in children {
-            if let Ok(h_out) = handles.get(*child) {
-                let Some(asset) = assets.get_mut(h_out.id()) else {
-                    continue;
-                };
+//     for (ent, mut task, imposter) in loading_parcels.iter_mut() {
+//         if let Some(res) = task.0.complete() {
+//             if let Ok(mut commands) = commands.get_entity(ent) {
+//                 match res {
+//                     Some(mut baked) => {
+//                         debug!("load success {:?}", imposter);
+//                         if let Some(spec) = baked.imposters.remove(&imposter.parcel) {
+//                             commands.try_insert(spec);
+//                         }
+//                         commands.try_insert(ImposterReady {
+//                             scene: None,
+//                             crc: baked.crc,
+//                         });
+//                     }
+//                     None => {
+//                         // didn't exist
+//                         debug!("load fail {:?}", imposter);
+//                         commands.try_insert(ImposterMissing(None));
+//                     }
+//                 }
+//                 commands.remove::<ImposterLoadTask>();
+//             };
+//         }
+//     }
+// }
 
-                asset.data.alpha = 0f32
-                    .max(asset.data.alpha.powf(TPOW) - time.delta_secs() / TRANSITION_TIME)
-                    .powf(TPOW.recip());
-                if asset.data.alpha > 0.0 {
-                    still_transitioning = true;
-                }
-            }
-        }
+// fn render_imposters(
+//     mut commands: Commands,
+//     new_imposters: Query<
+//         (
+//             Entity,
+//             &SceneImposter,
+//             Option<&ImposterSpec>,
+//             &ImposterReady,
+//         ),
+//         Added<ImposterReady>,
+//     >,
+//     imposter_meshes: Res<ImposterMeshes>,
+//     asset_server: Res<AssetServer>,
+//     ipfas: IpfsAssetServer,
+//     current_realm: Res<CurrentRealm>,
+//     config: Res<AppConfig>,
+// ) {
+//     // spawn/update required
+//     for (entity, req, maybe_spec, ready) in new_imposters.iter() {
+//         let (layer, initial_alpha, multisample_amount, multisample) = if req.as_ingredient {
+//             (IMPOSTERCEPTION_LAYER, 1.0, 0.0, false)
+//         } else {
+//             (
+//                 RenderLayers::default(),
+//                 0.0,
+//                 config.scene_imposter_multisample_amount,
+//                 config.scene_imposter_multisample,
+//             )
+//         };
+//         debug!("spawn imposter {:?} {:?} {}", req, maybe_spec, ready.crc);
+//         commands.entity(entity).with_children(|c| {
+//             if let Some(spec) = maybe_spec {
+//                 // spawn imposter
+//                 let path = texture_path(
+//                     ipfas.ipfs_cache_path(),
+//                     ready.scene.as_ref().unwrap_or(&current_realm.about_url),
+//                     req.parcel,
+//                     req.level,
+//                 );
+//                 let mut scale = spec.region_max - spec.region_min;
+//                 scale.y = spec.scale * 2.0;
+//                 c.spawn((
+//                     Mesh3d(imposter_meshes.cube.clone()),
+//                     MeshMaterial3d(
+//                         asset_server.load_with_settings::<Imposter, ImposterLoaderSettings>(
+//                             path,
+//                             move |s| {
+//                                 *s = ImposterLoaderSettings {
+//                                     multisample,
+//                                     alpha: initial_alpha,
+//                                     alpha_blend: 0.0, // blend
+//                                     multisample_amount,
+//                                 }
+//                             },
+//                         ),
+//                     ),
+//                     Transform::from_translation((spec.region_min + spec.region_max) * 0.5)
+//                         .with_scale(
+//                             scale.max(Vec3::splat(0.001)) * (1.0 + req.level as f32 / 1000.0),
+//                         ),
+//                     Aabb {
+//                         center: Vec3A::ZERO,
+//                         half_extents: Vec3A::splat(0.5),
+//                     },
+//                     NotShadowCaster,
+//                     NotShadowReceiver,
+//                     layer.clone(),
+//                     ready.clone(),
+//                 ));
+//             }
 
-        if !still_transitioning {
-            commands.entity(ent).despawn();
-        }
-    }
-}
+//             if ready.crc != 0 {
+//                 //spawn floor
+//                 let offset = match req.level {
+//                     0 => 0.0,
+//                     _ => 0.0,
+//                 };
+//                 let size = (1i32 << req.level) as f32 * PARCEL_SIZE;
+//                 let mid = (req.parcel * IVec2::new(1, -1)).as_vec2() * PARCEL_SIZE
+//                     + Vec2::new(size, -size) * 0.5;
+
+//                 let path = floor_path(
+//                     ipfas.ipfs_cache_path(),
+//                     ready.scene.as_ref().unwrap_or(&current_realm.about_url),
+//                     req.parcel,
+//                     req.level,
+//                 );
+//                 c.spawn((
+//                     Transform::from_translation(Vec3::new(mid.x, -0.01, mid.y))
+//                         .with_scale(Vec3::new(size, 1.0, size)),
+//                     Mesh3d(imposter_meshes.floor.clone()),
+//                     MeshMaterial3d(
+//                         asset_server
+//                             .load_with_settings::<FloorImposter, f32>(path, move |s: &mut f32| {
+//                                 *s = offset
+//                             }),
+//                     ),
+//                     NotShadowCaster,
+//                     NotShadowReceiver,
+//                     layer,
+//                     ready.clone(),
+//                 ));
+//             }
+//         });
+//     }
+// }
+
+// fn update_imposter_visibility(
+//     mut q: Query<(&mut RenderLayers, &SceneImposter)>,
+//     live_scenes: Res<LiveScenes>,
+//     transform: Query<&Transform>,
+// ) {
+//     for (mut layers, ready) in q.iter_mut() {
+//         let show = ready.scene.as_ref().is_none_or(|hash| {
+//             !live_scenes
+//                 .scenes
+//                 .get(hash)
+//                 .is_some_and(|e| transform.get(*e).is_ok_and(|t| t.translation.y == 0.0))
+//         });
+//         *layers = if show {
+//             layers.clone().with(0)
+//         } else {
+//             layers.clone().without(0)
+//         };
+//     }
+// }
+
+// fn transition_imposters(
+//     mut commands: Commands,
+//     q_in: Query<(Entity, &Children, Has<ImposterTransitionOut>), With<ImposterTransitionIn>>,
+//     q_out: Query<(Entity, &Children, &SceneImposter), With<ImposterTransitionOut>>,
+//     handles: Query<&MeshMaterial3d<Imposter>>,
+//     mut assets: ResMut<Assets<Imposter>>,
+//     time: Res<Time>,
+//     pointers: Res<ScenePointers>,
+//     scenes: Res<LiveScenes>,
+//     contexts: Query<&RendererSceneContext>,
+//     player: Query<&Transform, With<PrimaryUser>>,
+//     config: Res<AppConfig>,
+//     lookup: ImposterLookup,
+// ) {
+//     const TPOW: f32 = 2.0;
+//     let player = player.single().map(|t| t.translation).unwrap_or_default();
+
+//     for (ent, children, transitioning_out) in q_in.iter() {
+//         if transitioning_out {
+//             commands.entity(ent).remove::<ImposterTransitionIn>();
+//             continue;
+//         }
+
+//         let mut still_transitioning = false;
+//         for child in children {
+//             if let Ok(h_in) = handles.get(*child) {
+//                 let Some(asset) = assets.get_mut(h_in.id()) else {
+//                     still_transitioning = true;
+//                     continue;
+//                 };
+
+//                 asset.data.alpha = 1f32
+//                     .min(asset.data.alpha.powf(TPOW) + time.delta_secs() / TRANSITION_TIME)
+//                     .powf(TPOW.recip());
+//                 if asset.data.alpha < 1.0 {
+//                     still_transitioning = true;
+//                 }
+//             }
+//         }
+
+//         if !still_transitioning {
+//             commands.entity(ent).remove::<ImposterTransitionIn>();
+//         }
+//     }
+
+//     for (ent, children, imposter) in q_out.iter() {
+//         match lookup.state(imposter.parcel, imposter.level, imposter.as_ingredient) {
+//             ImposterState::Ready => (),
+//             _ => {
+//                 if let Ok(mut commands) = commands.get_entity(ent) {
+//                     commands.despawn();
+//                 }
+//                 continue;
+//             }
+//         }
+
+//         if imposter.level == 0 {
+//             // don't transition level0 out until the scene has spawned
+//             let parcel_origin = imposter.parcel.as_vec2() * Vec2::new(PARCEL_SIZE, -PARCEL_SIZE);
+//             if (player.xz() - parcel_origin - (PARCEL_SIZE / 2.0)).length()
+//                 < config
+//                     .scene_imposter_distances
+//                     .first()
+//                     .copied()
+//                     .unwrap_or(0.0)
+//             {
+//                 if let Some(PointerResult::Exists { hash, .. }) = pointers.get(imposter.parcel) {
+//                     if scenes
+//                         .scenes
+//                         .get(hash.as_str())
+//                         .and_then(|e| contexts.get(*e).ok())
+//                         .is_none_or(|ctx| ctx.tick_number < 5)
+//                     {
+//                         continue;
+//                     }
+//                 }
+//             }
+//         }
+
+//         let mut still_transitioning = false;
+//         for child in children {
+//             if let Ok(h_out) = handles.get(*child) {
+//                 let Some(asset) = assets.get_mut(h_out.id()) else {
+//                     continue;
+//                 };
+
+//                 asset.data.alpha = 0f32
+//                     .max(asset.data.alpha.powf(TPOW) - time.delta_secs() / TRANSITION_TIME)
+//                     .powf(TPOW.recip());
+//                 if asset.data.alpha > 0.0 {
+//                     still_transitioning = true;
+//                 }
+//             }
+//         }
+
+//         if !still_transitioning {
+//             commands.entity(ent).despawn();
+//         }
+//     }
+// }
 
 fn debug_write_imposters(
     assets: Res<Assets<Imposter>>,
+    floor_assets: Res<Assets<FloorImposter>>,
     tick: Res<FrameCount>,
     mut debug: ResMut<DebugInfo>,
+    done: Query<&SceneImposter, Without<RetryImposter>>,
+    pending: Query<&SceneImposter, With<RetryImposter>>,
 ) {
     if tick.0.is_multiple_of(100) {
         return;
@@ -863,5 +1536,29 @@ fn debug_write_imposters(
             memory / 1024 / 1024,
             count
         ),
+    );
+
+    let mut count = 0;
+    let mut memory: usize = 0;
+    for (_, imposter) in floor_assets.iter() {
+        count += 1;
+        memory += imposter.base.vram_bytes;
+    }
+
+    debug.info.insert(
+        "Imposter floor memory",
+        format!(
+            "{} bytes ({} mb) over {} imposters",
+            memory,
+            memory / 1024 / 1024,
+            count
+        ),
+    );
+
+    let done = done.iter().count();
+    let pending = pending.iter().count();
+    debug.info.insert(
+        "Imposter states",
+        format!("done: {done}, pending: {pending}"),
     );
 }

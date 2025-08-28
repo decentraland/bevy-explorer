@@ -9,7 +9,10 @@ use console::ConsolePlugin;
 
 use dcl_deno::init_runtime;
 
-use imposters::{render::ImposterMissing, DclImposterPlugin};
+use imposters::{
+    render::{RetryImposter, SceneImposter},
+    DclImposterPlugin,
+};
 
 use bevy::{
     app::{ScheduleRunnerPlugin, TaskPoolThreadAssignmentPolicy},
@@ -285,8 +288,16 @@ fn main() {
     app.run();
 }
 
+#[allow(clippy::type_complexity)]
 fn check_done(
-    q: Query<(), With<ImposterMissing>>,
+    q: Query<
+        (),
+        (
+            With<SceneImposter>,
+            Without<RetryImposter>,
+            Without<Children>,
+        ),
+    >,
     realm: Res<CurrentRealm>,
     pointers: Res<ScenePointers>,
     mut counter: Local<usize>,
