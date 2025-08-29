@@ -20,7 +20,7 @@ use async_fs as platform_fs;
 #[cfg(target_arch = "wasm32")]
 use web_fs as platform_fs;
 
-#[derive(Debug, Serialize, Deserialize, Component, Clone)]
+#[derive(Debug, Serialize, Deserialize, Component, Clone, Copy, PartialEq)]
 pub struct ImposterSpec {
     pub scale: f32,
     pub region_min: Vec3,

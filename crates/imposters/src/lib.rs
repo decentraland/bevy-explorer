@@ -1,5 +1,6 @@
 pub mod bake_scene;
 pub mod floor_imposter;
+pub mod imposter_mesh;
 pub mod imposter_spec;
 pub mod render;
 
@@ -10,7 +11,7 @@ use bevy::prelude::*;
 use bevy_console::ConsoleCommand;
 use common::structs::{AppConfig, SceneLoadDistance};
 use console::DoAddConsoleCommand;
-use render::{DclImposterRenderPlugin, ImposterEntities, SceneImposter};
+use render::{DclImposterRenderPlugin, SceneImposter};
 
 #[derive(Resource, Clone)]
 pub struct DclImposterPlugin {
@@ -69,7 +70,6 @@ fn set_impost_multi(
     mut config: ResMut<AppConfig>,
     mut commands: Commands,
     q: Query<Entity, With<SceneImposter>>,
-    mut lookup: ResMut<ImposterEntities>,
 ) {
     if let Some(Ok(command)) = input.take() {
         let multisample = command
@@ -89,7 +89,5 @@ fn set_impost_multi(
         for e in q.iter() {
             commands.entity(e).despawn();
         }
-
-        lookup.0.retain(|(_, _, ingredient), _| *ingredient);
     }
 }
