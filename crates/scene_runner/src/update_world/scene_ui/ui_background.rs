@@ -174,9 +174,11 @@ pub fn set_ui_background(
             if let Some(image) = image {
                 let image_color = background.color.unwrap_or(Color::WHITE);
                 let image_color = image_color.with_alpha(image_color.alpha() * link.opacity.0);
-                let (border, border_radius) = radii.get(link.ui_entity).ok().map(|(node, radius)| {
-                    (node.border, radius)
-                }).unwrap_or((UiRect::DEFAULT, None));
+                let (border, border_radius) = radii
+                    .get(link.ui_entity)
+                    .ok()
+                    .map(|(node, radius)| (node.border, radius))
+                    .unwrap_or((UiRect::DEFAULT, None));
 
                 let unborder = |v: Val| -> Val {
                     match v {
