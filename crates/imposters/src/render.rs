@@ -697,6 +697,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                                 alpha: 1.0,
                                 alpha_blend: 0.0, // blend
                                 multisample_amount: 0.0,
+                                immediate_upload: true,
                             }
                         });
                     loading_handles.insert(handle.clone().untyped());
