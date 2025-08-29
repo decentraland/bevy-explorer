@@ -237,7 +237,7 @@ pub fn set_ui_background(
                                 inner.insert(UiMaterialSource(source));
                             }
                             if let Some(radius) = border_radius {
-                                inner.insert(radius.clone());
+                                inner.insert(radius);
                             }
                         })
                         .id(),
@@ -276,7 +276,7 @@ pub fn set_ui_background(
                                     inner.insert(UiMaterialSource(source));
                                 }
                                 if let Some(radius) = border_radius {
-                                    inner.insert(radius.clone());
+                                    inner.insert(radius);
                                 }
                                 c.spacer();
                             });
