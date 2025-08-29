@@ -56,21 +56,16 @@ fn draw(in: UiVertexOutput, color: vec4<f32>) -> vec4<f32> {
     // * Zero values indicate the point is on the edge of the shape.
     // * Positive values indicate the point is outside the shape.
 
-    let point = (in.uv - vec2<f32>(0.5)) * 2.0;
+    let point = (in.uv - vec2<f32>(0.5)) * in.size;
 
     // Signed distance from the border's internal edge (the signed distance is negative if the point 
     // is inside the rect but not on the border).
     // If the border size is set to zero, this is the same as the external distance.
-    let internal_distance = clamp(abs(sd_inset_rounded_box(point, in.size, in.border_radius, in.border_widths)) / 100.0, 0.0, 1.0);
-    // let internal_distance = 1.0;
+    let internal_distance = -sd_inset_rounded_box(point, in.size, in.border_radius, in.border_widths);
 
-    // let t = step(0.0, -internal_distance);
+    let t = saturate(internal_distance + 1.0);
 
-    if all(in.border_radius == vec4<f32>(0.0)) {
-        return vec4(color.rgb, saturate(color.a));
-    } else {
-        return vec4(internal_distance, internal_distance, internal_distance, 1.0); //saturate(color.a * t));
-    }
+    return vec4(color.rgb, saturate(color.a * t));
 }
 
 @fragment
