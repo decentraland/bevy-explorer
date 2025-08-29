@@ -379,7 +379,6 @@ pub fn spawn_imposters(
 
     // remove any not required non-children
     for (_, ent) in old.drain() {
-        println!("unexpected old children");
         commands.entity(ent).despawn();
     }
 }
@@ -411,7 +410,7 @@ pub struct ImposterSpecs {
     pub prev_loading_mips: HashMap<(IVec2, usize, u32), ImposterSpecLoadState>,
     pub prev_loading_scenes: HashMap<String, ImposterSpecLoadState>,
 
-    pub imposter_paths: HashMap<(IVec2, usize, u32), (Option<PathBuf>, Option<PathBuf>, bool)>,
+    pub imposter_paths: HashMap<(IVec2, usize, u32), (Option<PathBuf>, Option<PathBuf>)>,
     pub loading_handles: HashSet<UntypedHandle>,
     pub permanent_handles: HashSet<UntypedHandle>,
 
@@ -449,9 +448,6 @@ pub struct ImposterSpecManager<'w, 's> {
     pub(crate) pointers: ResMut<'w, ScenePointers>,
     ipfas: IpfsAssetServer<'w, 's>,
     focus: Res<'w, ImposterFocus>,
-    imposters: ResMut<'w, Assets<Imposter>>,
-    floor_imposters: ResMut<'w, Assets<FloorImposter>>,
-    textures: ResMut<'w, Assets<Image>>,
     plugin: Res<'w, DclImposterPlugin>,
 }
 
@@ -662,8 +658,6 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
             let crc = self.pointers.crc(req.parcel, req.level).unwrap();
 
             // get paths
-            let mut is_new_load = false;
-
             let ImposterSpecs {
                 imposter_paths,
                 loading_handles,
@@ -680,14 +674,12 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                         has_floor.then(|| {
                             floor_path(self.ipfas.ipfs_cache_path(), &id, req.parcel, req.level)
                         }),
-                        false,
                     )
                 });
 
             // start loading if required
             let imposter_handle = paths.0.as_deref().map(|p| {
                 self.ipfas.asset_server().get_handle(p).unwrap_or_else(|| {
-                    is_new_load = true;
                     let handle = self
                         .ipfas
                         .asset_server()
@@ -707,14 +699,11 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
 
             let floor_handle = paths.1.as_deref().map(|p| {
                 self.ipfas.asset_server().get_handle(p).unwrap_or_else(|| {
-                    is_new_load = true;
                     let handle = self.ipfas.asset_server().load::<FloorImposter>(p);
                     loading_handles.insert(handle.clone().untyped());
                     handle
                 })
             });
-
-            paths.2 |= is_new_load;
 
             if imposter_handle.as_ref().is_none_or(|handle| {
                 self.ipfas
@@ -725,41 +714,10 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                     .asset_server()
                     .is_loaded_with_dependencies(handle.id())
             }) {
-                if paths.2 {
-                    // first use since load - update to bypass rabpf
-                    if let Some(handle) = imposter_handle.as_ref() {
-                        let imposter = self.imposters.get(handle.id()).unwrap();
-                        self.textures
-                            .get_mut(imposter.indices.id())
-                            .unwrap()
-                            .immediate_upload = true;
-                        self.textures
-                            .get_mut(imposter.pixels.id())
-                            .unwrap()
-                            .immediate_upload = true;
-                    }
-
-                    if let Some(handle) = floor_handle.as_ref() {
-                        let imposter = &self.floor_imposters.get(handle.id()).unwrap().base;
-                        self.textures
-                            .get_mut(imposter.indices.id())
-                            .unwrap()
-                            .immediate_upload = true;
-                        self.textures
-                            .get_mut(imposter.pixels.id())
-                            .unwrap()
-                            .immediate_upload = true;
-                    }
-
-                    paths.2 = false;
-                }
-
-                if !paths.2 {
-                    return ImposterState::Ready(
-                        maybe_spec.map(|s| (imposter_handle.unwrap(), s)),
-                        floor_handle,
-                    );
-                }
+                return ImposterState::Ready(
+                    maybe_spec.map(|s| (imposter_handle.unwrap(), s)),
+                    floor_handle,
+                );
             }
         }
 
@@ -786,7 +744,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                 level,
                 as_ingredient: false,
             };
-            if let Some((imposter_path, floor_path, false)) =
+            if let Some((imposter_path, floor_path)) =
                 self.specs.imposter_paths.get(&(origin, level, crc))
             {
                 debug!("checking fallback {req:?} -> {substitute_imposter:?}");

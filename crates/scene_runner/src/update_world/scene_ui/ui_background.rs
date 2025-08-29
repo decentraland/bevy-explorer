@@ -106,6 +106,7 @@ pub fn set_ui_background(
             With<RetryBackground>,
         )>,
     >,
+    radii: Query<&BorderRadius>,
     mut removed: RemovedComponents<UiBackground>,
     links: Query<&UiLink>,
     children: Query<&Children>,
@@ -173,6 +174,7 @@ pub fn set_ui_background(
             if let Some(image) = image {
                 let image_color = background.color.unwrap_or(Color::WHITE);
                 let image_color = image_color.with_alpha(image_color.alpha() * link.opacity.0);
+                let border_radius = radii.get(link.ui_entity).ok();
 
                 let background_entity = match texture.mode {
                     BackgroundTextureMode::NineSlices(rect) => commands
@@ -227,6 +229,10 @@ pub fn set_ui_background(
                             ));
                             if let Some(source) = image.source_entity {
                                 inner.insert(UiMaterialSource(source));
+                            }
+                            if let Some(radius) = border_radius {
+                                error!("added radius: {radius:?}");
+                                inner.insert(radius.clone());
                             }
                         })
                         .id(),
