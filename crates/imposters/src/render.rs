@@ -15,6 +15,7 @@ use bevy::{
 };
 use boimp::{bake::ImposterBakeMaterialPlugin, render::Imposter, ImposterLoaderSettings};
 use common::{
+    sets::SceneSets,
     structs::{AppConfig, PrimaryCamera, PrimaryUser},
     util::{TaskCompat, TaskExt},
 };
@@ -33,6 +34,7 @@ use crate::{
     floor_imposter::{FloorImposter, FloorImposterLoader},
     imposter_mesh::ImposterMesh,
     imposter_spec::{floor_path, load_imposter, texture_path, BakedScene, ImposterSpec},
+    DclImposterPlugin,
 };
 
 pub struct DclImposterRenderPlugin;
@@ -50,6 +52,10 @@ impl Plugin for DclImposterRenderPlugin {
         .add_systems(Startup, setup)
         .add_systems(
             Update,
+            (|mut manager: ImposterSpecManager| manager.start_tick()).in_set(SceneSets::Init),
+        )
+        .add_systems(
+            Update,
             (
                 focus_imposters,
                 spawn_imposters,
@@ -59,7 +65,13 @@ impl Plugin for DclImposterRenderPlugin {
                 // transition_imposters,
                 debug_write_imposters,
             )
-                .chain(),
+                .chain()
+                .in_set(SceneSets::PostLoop),
+        )
+        .add_systems(
+            PostUpdate,
+            (|mut manager: ImposterSpecManager| manager.end_tick())
+                .in_set(SceneSets::RestrictedActions),
         );
     }
 }
@@ -169,7 +181,7 @@ pub fn focus_imposters(
             .looking_at(player_pos, Vec3::Y)
             .rotation;
         let angle_between = cam_rot.angle_between(player_angle);
-        debug!("angle between: {angle_between}");
+        // debug!("angle between: {angle_between}");
         angle_between < 0.2
     };
 
@@ -177,9 +189,8 @@ pub fn focus_imposters(
         true => player_pos,
         false => {
             let cam_fwd = cam_rot * Vec3::NEG_Z;
-            let ground_intersect = cam_pos - cam_fwd * cam_pos.y / cam_fwd.y;
+            cam_pos - cam_fwd * cam_pos.y / cam_fwd.y
             // debug!("player pos: {player_pos}, ground_intersect: {ground_intersect}");
-            ground_intersect
         }
     };
 
@@ -190,7 +201,7 @@ pub fn spawn_imposters(
     mut commands: Commands,
     config: Res<AppConfig>,
     focus: Res<ImposterFocus>,
-    mut required: Local<HashSet<(IVec2, usize, bool)>>,
+    mut required: Local<HashMap<(IVec2, usize), bool>>,
     current_imposters: Query<(Entity, &SceneImposter)>,
     current_realm: Res<CurrentRealm>,
     ingredients: Res<BakingIngredients>,
@@ -212,15 +223,13 @@ pub fn spawn_imposters(
         return;
     }
 
-    manager.start_tick();
-
     // skip if no realm
     if manager.pointers.min() == IVec2::MAX {
         return;
     }
 
     // add baking requirements
-    required.extend(ingredients.0.iter().map(|(p, l)| (*p, *l, true)));
+    required.extend(ingredients.0.iter().map(|(p, l)| ((*p, *l), true)));
 
     let origin = focus.0 * Vec2::new(1.0, -1.0);
 
@@ -296,7 +305,7 @@ pub fn spawn_imposters(
 
             if render_tile {
                 trace!("adding {}:{} == {}", tile, level, tile_origin_parcel);
-                required.insert((tile_origin_parcel, level, false));
+                required.entry((tile_origin_parcel, level)).or_default();
             } else {
                 // add to next level requirements
                 trace!(
@@ -321,27 +330,33 @@ pub fn spawn_imposters(
 
     for remaining_parcel in required_tiles {
         if !live_parcels.contains(&remaining_parcel) {
-            required.insert((remaining_parcel, 0, false));
+            required.entry((remaining_parcel, 0)).or_default();
         }
     }
 
     // remove old
     let mut old = HashMap::new();
     for (ent, scene_imposter) in current_imposters.iter() {
-        let required = required.remove(&(
-            scene_imposter.parcel,
-            scene_imposter.level,
-            scene_imposter.as_ingredient,
-        ));
+        let required_as_ingredient =
+            required.remove(&(scene_imposter.parcel, scene_imposter.level));
 
-        if !required {
-            commands.entity(ent).remove::<SceneImposter>();
-            old.insert(scene_imposter, ent);
+        match required_as_ingredient {
+            None => {
+                commands.entity(ent).remove::<SceneImposter>();
+                old.insert(scene_imposter, ent);
+            }
+            Some(as_ingredient) => {
+                if scene_imposter.as_ingredient != as_ingredient {
+                    commands.entity(ent).remove::<SceneImposter>();
+                    old.insert(scene_imposter, ent);
+                    required.insert((scene_imposter.parcel, scene_imposter.level), as_ingredient);
+                }
+            }
         }
     }
 
     // add new
-    for (parcel, level, as_ingredient) in required.drain() {
+    for ((parcel, level), as_ingredient) in required.drain() {
         let scene_imposter = SceneImposter {
             parcel,
             level,
@@ -431,18 +446,27 @@ pub struct ImposterSpecManager<'w, 's> {
     commands: Commands<'w, 's>,
     specs: ResMut<'w, ImposterSpecs>,
     current_realm: Res<'w, CurrentRealm>,
-    pointers: ResMut<'w, ScenePointers>,
+    pub(crate) pointers: ResMut<'w, ScenePointers>,
     ipfas: IpfsAssetServer<'w, 's>,
     focus: Res<'w, ImposterFocus>,
     imposters: ResMut<'w, Assets<Imposter>>,
     floor_imposters: ResMut<'w, Assets<FloorImposter>>,
     textures: ResMut<'w, Assets<Image>>,
+    plugin: Res<'w, DclImposterPlugin>,
 }
 
 impl<'w, 's> ImposterSpecManager<'w, 's> {
     fn clear(&mut self) {
         self.specs.mips.clear();
         self.specs.scenes.clear();
+    }
+
+    pub(crate) fn clear_scene(&mut self, hash: &str) {
+        self.specs.scenes.remove(hash);
+    }
+
+    pub(crate) fn clear_mip(&mut self, parcel: IVec2, level: usize, crc: u32) {
+        self.specs.mips.remove(&(parcel, level, crc));
     }
 
     fn start_tick(&mut self) {
@@ -468,7 +492,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
             .push(entity);
     }
 
-    fn get_spec(&mut self, req: &SceneImposter) -> ImposterSpecState {
+    pub fn get_spec(&mut self, req: &SceneImposter) -> ImposterSpecState {
         let ImposterSpecs {
             mips,
             scenes,
@@ -623,7 +647,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         }
     }
 
-    fn get_imposter(&mut self, req: &SceneImposter) -> ImposterState {
+    pub fn get_imposter(&mut self, req: &SceneImposter) -> ImposterState {
         let spec_state = self.get_spec(req);
 
         let maybe_spec = match spec_state {
@@ -633,6 +657,10 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
             ImposterSpecState::Pending => None,
             ImposterSpecState::Missing => return ImposterState::Missing,
         };
+
+        if req.as_ingredient {
+            debug!("{:?} -> {:?}", req, maybe_spec);
+        }
 
         if let Some((maybe_spec, id, has_floor)) = maybe_spec {
             let crc = self.pointers.crc(req.parcel, req.level).unwrap();
@@ -664,6 +692,9 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
             let imposter_handle = paths.0.as_deref().map(|p| {
                 self.ipfas.asset_server().get_handle(p).unwrap_or_else(|| {
                     is_new_load = true;
+                    if req.as_ingredient {
+                        debug!("{:?} -> {:?}", req, "new load imp");
+                    }
                     let handle = self
                         .ipfas
                         .asset_server()
@@ -683,6 +714,9 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
             let floor_handle = paths.1.as_deref().map(|p| {
                 self.ipfas.asset_server().get_handle(p).unwrap_or_else(|| {
                     is_new_load = true;
+                    if req.as_ingredient {
+                        debug!("{:?} -> {:?}", req, "new load floor");
+                    }
                     let handle = self.ipfas.asset_server().load::<FloorImposter>(p);
                     loading_handles.insert(handle.clone().untyped());
                     handle
@@ -735,10 +769,17 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                         floor_handle,
                     );
                 }
+            } else {
+                if req.as_ingredient {
+                    debug!("{:?} -> {:?}", req, paths);
+                }
             }
         }
 
         // not downloaded or not spawned, fallback to best available
+        if req.as_ingredient {
+            return ImposterState::Pending;
+        }
 
         // check for previously despawned lower mip entities first
         if let Some(entities) = self.specs.just_removed.remove(req) {
@@ -828,72 +869,93 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
             loading_mips,
             loading_scenes,
             just_removed,
+            scenes,
+            mips,
             ..
         } = &mut *self.specs;
 
-        for ent in just_removed
-            .drain()
-            .flat_map(|(_, ents)| ents.into_iter())
-        {
+        for ent in just_removed.drain().flat_map(|(_, ents)| ents.into_iter()) {
             if let Ok(mut commands) = self.commands.get_entity(ent) {
                 commands.despawn();
             }
         }
 
-        let active = loading_mips
-            .values()
-            .chain(loading_scenes.values())
-            .filter(|v| matches!(v, ImposterSpecLoadState::Remote(_)))
-            .count();
-        let mut free = 20 - active;
+        if self.plugin.download {
+            let active = loading_mips
+                .values()
+                .chain(loading_scenes.values())
+                .filter(|v| matches!(v, ImposterSpecLoadState::Remote(_)))
+                .count();
+            let mut free = 20 - active;
 
-        if free == 0 {
-            return;
-        }
+            if free == 0 {
+                return;
+            }
 
-        for (hash, v) in loading_scenes
-            .iter_mut()
-            .filter(|(_, v)| matches!(v, ImposterSpecLoadState::PendingRemote))
-            .take(free)
-        {
-            debug!("started scene remote: {hash}");
-            *v = ImposterSpecLoadState::Remote(ImposterLoadTask::new_scene(
-                &self.ipfas,
-                hash,
-                true,
-            ));
-            free -= 1;
-        }
+            for (hash, v) in loading_scenes
+                .iter_mut()
+                .filter(|(_, v)| matches!(v, ImposterSpecLoadState::PendingRemote))
+                .take(free)
+            {
+                debug!("started scene remote: {hash}");
+                *v = ImposterSpecLoadState::Remote(ImposterLoadTask::new_scene(
+                    &self.ipfas,
+                    hash,
+                    true,
+                ));
+                free -= 1;
+            }
 
-        if free == 0 {
-            return;
-        }
+            if free == 0 {
+                return;
+            }
 
-        let focus = self.focus.0.as_ivec2() * IVec2::new(1, -1) / PARCEL_SIZE as i32;
+            let focus = self.focus.0.as_ivec2() * IVec2::new(1, -1) / PARCEL_SIZE as i32;
 
-        let mut mips = loading_mips
-            .iter_mut()
-            .filter(|(_, v)| matches!(v, ImposterSpecLoadState::PendingRemote))
-            .map(|(k, v)| {
-                let &(parcel, level, _) = k;
-                let midpoint = parcel + IVec2::splat(1 << (level - 1));
-                let distance = (midpoint - focus).length_squared();
-                ((distance, (usize::MAX - level)), (k, v))
-            })
-            .collect::<Vec<_>>();
-        mips.sort_by_key(|(sort_key, _)| *sort_key);
+            let mut mips = loading_mips
+                .iter_mut()
+                .filter(|(_, v)| matches!(v, ImposterSpecLoadState::PendingRemote))
+                .map(|(k, v)| {
+                    let &(parcel, level, _) = k;
+                    let midpoint = parcel + IVec2::splat(1 << (level - 1));
+                    let distance = (midpoint - focus).length_squared();
+                    ((distance, (usize::MAX - level)), (k, v))
+                })
+                .collect::<Vec<_>>();
+            mips.sort_by_key(|(sort_key, _)| *sort_key);
 
-        for (_, (k, v)) in mips.into_iter().take(free) {
-            debug!("started mip remote {k:?}");
-            *v = ImposterSpecLoadState::Remote(ImposterLoadTask::new_mip(
-                &self.ipfas,
-                &self.current_realm.about_url,
-                k.0,
-                k.1,
-                k.2,
-                true,
-            ));
-            free -= 1;
+            for (_, (k, v)) in mips.into_iter().take(free) {
+                debug!("started mip remote {k:?}");
+                *v = ImposterSpecLoadState::Remote(ImposterLoadTask::new_mip(
+                    &self.ipfas,
+                    &self.current_realm.about_url,
+                    k.0,
+                    k.1,
+                    k.2,
+                    true,
+                ));
+                free -= 1;
+            }
+        } else {
+            // quickly fail everything remote
+            loading_scenes.retain(|hash, v| {
+                if matches!(v, ImposterSpecLoadState::PendingRemote) {
+                    debug!("auto-failing remote for scene {hash}");
+                    scenes.insert(hash.clone(), ImposterSpecResolveState::Missing);
+                    false
+                } else {
+                    true
+                }
+            });
+            loading_mips.retain(|key, v| {
+                if matches!(v, ImposterSpecLoadState::PendingRemote) {
+                    debug!("auto-failing remote for mip {key:?}");
+                    mips.insert(*key, ImposterSpecResolveState::Missing);
+                    false
+                } else {
+                    true
+                }
+            });
         }
     }
 }
@@ -903,9 +965,6 @@ pub struct RetryImposter;
 
 #[derive(Component)]
 pub struct SubstituteImposter(SceneImposter);
-
-// #[derive(Component)]
-// pub struct Meh(Handle<Imposter>);
 
 fn load_imposters(
     mut commands: Commands,
@@ -917,7 +976,7 @@ fn load_imposters(
     imposter_meshes: Res<ImposterMeshes>,
     mut meshes: ResMut<Assets<Mesh>>,
     tick: Res<FrameCount>,
-    children: Query<&Children>,
+    _children: Query<&Children>,
 ) {
     for (entity, base_imposter, maybe_substitute) in pending_imposters.iter() {
         let state = manager.get_imposter(base_imposter);
@@ -945,7 +1004,7 @@ fn load_imposters(
                 for prev_child in ents {
                     commands.entity(prev_child).insert(ChildOf(entity));
 
-                    // if let Ok(children) = children.get(prev_child) {
+                    // if let Ok(children) = _children.get(prev_child) {
                     //     for child in children {
                     //         commands.entity(*child).insert(ShowAabbGizmo {
                     //             color: Some(Color::linear_rgba(1.0, 1.0, 0.0, 0.7)),
@@ -982,7 +1041,7 @@ fn load_imposters(
             tick.0, base_imposter, is_final, scene_imposter
         );
 
-        // let color = if is_final {
+        // let color = if is_final {!
         //     Some(Color::linear_rgba(0.0, 0.0, 1.0, 0.7))
         // } else {
         //     Some(Color::linear_rgba(1.0, 0.0, 0.0, 0.7))
@@ -1046,13 +1105,13 @@ fn load_imposters(
                         let base_size = 1i32 << base_imposter.level;
                         let scene_size = 1i32 << scene_imposter.level;
                         let parcel_size = base_size as f32 / scene_size as f32;
-                        let bottomleft = (base_imposter.parcel - scene_imposter.parcel)
-                            .as_vec2() / scene_size as f32;
+                        let bottomleft = (base_imposter.parcel - scene_imposter.parcel).as_vec2()
+                            / scene_size as f32;
 
                         for uv in uvs.iter_mut() {
-                            let prev = *uv;
                             uv[0] = 0.0 / 18.0 + 17.0 / 18.0 * (bottomleft.x + uv[0] * parcel_size);
-                            uv[1] = 0.0 / 18.0 + 17.0 / 18.0 * (1.0 - bottomleft.y - (1.0 - uv[1]) * parcel_size);
+                            uv[1] = 0.0 / 18.0
+                                + 17.0 / 18.0 * (1.0 - bottomleft.y - (1.0 - uv[1]) * parcel_size);
                         }
                         floor.immediate_upload = true;
 
@@ -1073,8 +1132,6 @@ fn load_imposters(
                 }
             });
     }
-
-    manager.end_tick();
 }
 
 // fn load_imposters(

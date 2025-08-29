@@ -28,8 +28,8 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, AppError, AvatarDynamicState, CursorLocks, GraphicsSettings, IVec2Arg,
-        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, SceneGlobalLight, SceneImposterBake,
-        SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips,
+        PermissionUsed, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, SceneGlobalLight,
+        SceneImposterBake, SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips,
     },
     util::UtilsPlugin,
 };
@@ -268,6 +268,7 @@ fn main() {
         .init_resource::<SceneGlobalLight>()
         .add_event::<RpcCall>()
         .add_event::<ScrollTargetEvent>()
+        .add_event::<PermissionUsed>()
         .init_resource::<PreviewMode>()
         .init_asset::<Nft>()
         .init_resource::<CursorLocks>()

@@ -11,6 +11,7 @@ use crate::render::SceneImposter;
 pub struct ImposterMesh {
     pub min: Vec3,
     pub max: Vec3,
+    pub with_bake_attributes: bool,
 }
 
 impl Default for ImposterMesh {
@@ -18,6 +19,7 @@ impl Default for ImposterMesh {
         Self {
             min: Vec3::splat(-0.5),
             max: Vec3::splat(0.5),
+            with_bake_attributes: true,
         }
     }
 }
@@ -36,9 +38,8 @@ impl ImposterMesh {
         let builder = Self {
             min: Vec3::new(effective_min.x.max(-0.5), -0.5, effective_min.y.max(-0.5)),
             max: Vec3::new(effective_max.x.min(0.5), 0.5, effective_max.y.min(0.5)),
+            with_bake_attributes: target.as_ingredient,
         };
-
-        // println!("spec: {spec:?}, target: {target:?}, parcel: {parcel_min}..{parcel_max}, effective: {effective_min}..{effective_max}, final: {builder:?}", );
 
         builder.build()
     }
@@ -69,10 +70,28 @@ impl MeshBuilder for ImposterMesh {
         let mut mesh = Mesh::new(
             PrimitiveTopology::TriangleList,
             RenderAssetUsages::default(),
-        )
-        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-        .with_inserted_indices(indices);
+        );
+
+        if self.with_bake_attributes {
+            mesh = mesh
+                .with_inserted_attribute(
+                    Mesh::ATTRIBUTE_NORMAL,
+                    positions
+                        .iter()
+                        .map(|p| Vec3::new(p[0], p[1], p[2]).normalize())
+                        .collect::<Vec<_>>(),
+                )
+                .with_inserted_attribute(
+                    Mesh::ATTRIBUTE_UV_0,
+                    positions.iter().map(|p| [p[0], p[1]]).collect::<Vec<_>>(),
+                );
+        }
+
+        mesh = mesh
+            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+            .with_inserted_indices(indices);
         mesh.immediate_upload = true;
+
         mesh
     }
 }

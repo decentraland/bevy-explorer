@@ -10,7 +10,6 @@ use std::{
 use bevy::{
     diagnostic::FrameCount,
     math::FloatOrd,
-    platform::collections::HashSet,
     prelude::*,
     render::{primitives::Aabb, view::RenderLayers},
 };
@@ -39,10 +38,7 @@ use crate::{
     imposter_spec::{
         floor_path, spec_path, texture_path, write_imposter, zip_path, BakedScene, ImposterSpec,
     },
-    // render::{
-    //     BakingIngredients, ImposterEntities, ImposterLookup, ImposterMissing, ImposterReady,
-    //     ImposterState, ImposterTransitionOut, SceneImposter,
-    // },
+    render::{BakingIngredients, ImposterSpecManager, ImposterState, RetryImposter, SceneImposter},
     DclImposterPlugin,
 };
 pub struct DclImposterBakeScenePlugin;
@@ -54,32 +50,30 @@ pub const IMPOSTERCEPTION_LAYER: RenderLayers = RenderLayers::layer(5);
 
 impl Plugin for DclImposterBakeScenePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(ImposterBakePlugin);
-        //     .init_resource::<ImposterBakeList>()
-        //     .init_resource::<CurrentImposterImposter>();
-        // .add_systems(
-        //     Update,
-        //     (
-        //         make_scene_oven,
-        //         bake_scene_imposters,
-        //         bake_imposter_imposter,
-        //         check_bake_state,
-        //         pick_imposter_to_bake,
-        //         output_progress,
-        //     )
-        //         .chain()
-        //         .before(crate::render::spawn_imposters)
-        //         .before(SceneSets::UiActions),
-        // );
+        app.add_plugins(ImposterBakePlugin)
+            .init_resource::<ImposterBakeList>()
+            .init_resource::<CurrentImposterImposter>()
+            .add_systems(
+                Update,
+                (
+                    make_scene_oven,
+                    bake_scene_imposters,
+                    bake_imposter_imposter,
+                    check_bake_state,
+                    pick_imposter_to_bake,
+                    output_progress,
+                )
+                    .chain()
+                    .in_set(SceneSets::PostInit),
+            );
     }
 }
-/*
+
 #[derive(Component)]
 pub struct ImposterOven {
     start_tick: u32,
     hash: String,
     unbaked_parcels: Vec<BoundRegion>,
-    all_parcels: HashSet<IVec2>,
     baked_scene: BakedScene,
 }
 
@@ -126,7 +120,6 @@ fn make_scene_oven(
                     start_tick: tick.0,
                     hash: hash.clone(),
                     unbaked_parcels: vec![BoundRegion::new(*parcel, *parcel, 1)],
-                    all_parcels: HashSet::from_iter([*parcel]),
                     baked_scene: BakedScene {
                         crc: crc::Crc::<u32>::new(&CRC_32_CKSUM).checksum(hash.as_bytes()),
                         ..Default::default()
@@ -206,7 +199,6 @@ fn make_scene_oven(
             start_tick: tick.0,
             hash: hash.clone(),
             unbaked_parcels,
-            all_parcels: context.parcels.clone(),
             baked_scene: BakedScene {
                 crc: crc::Crc::<u32>::new(&CRC_32_CKSUM).checksum(hash.as_bytes()),
                 ..Default::default()
@@ -227,7 +219,6 @@ fn bake_scene_imposters(
     meshes: Query<(&GlobalTransform, &Aabb, &Visibility), With<Mesh3d>>,
     bound_materials: Query<&MeshMaterial3d<SceneMaterial>>,
     mut materials: ResMut<Assets<SceneMaterial>>,
-    lookup: Res<ImposterEntities>,
     config: Res<AppConfig>,
     plugin: Res<DclImposterPlugin>,
 ) {
@@ -269,24 +260,6 @@ fn bake_scene_imposters(
                 // delete the scene since we messed with it a lot to get it stable
                 commands.entity(current_scene_ent).despawn();
                 live_scenes.scenes.remove(&oven.hash);
-
-                for parcel in std::mem::take(&mut oven.all_parcels).drain() {
-                    for ingredient in [true, false] {
-                        if let Some(entity) = lookup.0.get(&(parcel, 0, ingredient)) {
-                            if let Ok(mut commands) = commands.get_entity(*entity) {
-                                commands.remove::<ImposterMissing>();
-
-                                if let Some(spec) = oven.baked_scene.imposters.get(&parcel) {
-                                    commands.try_insert(spec.clone());
-                                }
-                                commands.try_insert(ImposterReady {
-                                    scene: Some(oven.hash.clone()),
-                                    crc: oven.baked_scene.crc,
-                                });
-                            }
-                        }
-                    }
-                }
 
                 current_imposter.0.as_mut().unwrap().1 = true;
                 commands.entity(baking_ent).despawn();
@@ -565,16 +538,14 @@ fn save_and_zip_callback<T>(
 fn bake_imposter_imposter(
     mut commands: Commands,
     mut current_imposter: ResMut<CurrentImposterImposter>,
-    existing_imposters: Query<(Option<&ImposterSpec>, &Children)>,
     mut all_baking_cams: Query<(Entity, &mut ImposterBakeCamera)>,
-    lookup: Res<ImposterEntities>,
     mut baking: Local<Option<(u32, BakedScene)>>,
     ipfas: IpfsAssetServer,
     current_realm: Res<CurrentRealm>,
-    mut layers: Query<&mut RenderLayers>,
     tick: Res<FrameCount>,
     config: Res<AppConfig>,
     plugin: Res<DclImposterPlugin>,
+    mut manager: ImposterSpecManager,
 ) {
     if baking.is_some() {
         let all_cams_finished = all_baking_cams
@@ -588,22 +559,6 @@ fn bake_imposter_imposter(
             else {
                 return;
             };
-
-            for ingredient in [true, false] {
-                if let Some(entity) = lookup.0.get(&(parcel, level, ingredient)) {
-                    if let Ok(mut commands) = commands.get_entity(*entity) {
-                        commands.remove::<ImposterMissing>();
-
-                        if let Some(spec) = baking.imposters.get(&parcel) {
-                            commands.try_insert(spec.clone());
-                        }
-                        commands.try_insert(ImposterReady {
-                            scene: None,
-                            crc: baking.crc,
-                        });
-                    }
-                }
-            }
 
             for (ent, _) in all_baking_cams.iter() {
                 if let Ok(mut commands) = commands.get_entity(ent) {
@@ -665,21 +620,18 @@ fn bake_imposter_imposter(
         for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
             let key = (*parcel + offset * next_size, level - 1, true);
 
-            if let Some((maybe_spec, children)) = lookup
-                .0
-                .get(&key)
-                .and_then(|e| existing_imposters.get(*e).ok())
-            {
-                if let Some(spec) = maybe_spec {
-                    min = min.min(spec.region_min);
-                    max = max.max(spec.region_max);
+            let spec_state = manager.get_spec(&SceneImposter {
+                parcel: key.0,
+                level: key.1,
+                as_ingredient: false,
+            });
+            match spec_state {
+                crate::render::ImposterSpecState::Ready(Some(imposter_spec), _, _) => {
+                    min = min.min(imposter_spec.region_min);
+                    max = max.max(imposter_spec.region_max);
                 }
-
-                // add layer to children
-                for child in children.iter() {
-                    let mut layer = layers.get_mut(child).unwrap();
-                    *layer = layer.union(&IMPOSTERCEPTION_LAYER);
-                }
+                crate::render::ImposterSpecState::Pending => panic!(),
+                _ => continue,
             }
         }
 
@@ -818,7 +770,7 @@ pub enum ImposterToBake {
 pub struct ImposterBakeList(Vec<ImposterToBake>);
 
 fn pick_imposter_to_bake(
-    q: Query<(&SceneImposter, &ImposterMissing), Without<ImposterTransitionOut>>,
+    q: Query<&SceneImposter, (Without<RetryImposter>, Without<Children>)>,
     focus: Query<&GlobalTransform, With<PrimaryUser>>,
     mut scene_pointers: ResMut<ScenePointers>,
     live_scenes: Res<LiveScenes>,
@@ -851,23 +803,27 @@ fn pick_imposter_to_bake(
 
     let mut missing = q
         .iter()
-        .map(|(imposter, missing)| {
+        .map(|imposter| {
             let midpoint = (imposter.parcel.as_vec2() + ((1 << imposter.level) as f32) * 0.5)
                 * Vec2::new(1.0, -1.0)
                 * PARCEL_SIZE;
-            ((midpoint - focus.xz()).length_squared(), imposter, missing)
+            ((midpoint - focus.xz()).length_squared(), imposter)
         })
-        .filter(|(_, imposter, missing)| {
-            missing
-                .0
-                .as_ref()
-                .map_or(imposter.level > 0, |m| !live_scenes.scenes.contains_key(m))
+        .filter(|(_, imposter)| {
+            imposter.level > 0 || {
+                let Some(PointerResult::Exists { hash, .. }) = scene_pointers.get(imposter.parcel)
+                else {
+                    return false;
+                };
+                let is_live = live_scenes.scenes.contains_key(hash);
+                !is_live
+            }
         })
         .collect::<Vec<_>>();
 
     missing.sort_by_key(|(dist, ..)| FloatOrd(*dist));
 
-    'imposter: for (_, imposter, _) in missing.into_iter() {
+    'imposter: for (_, imposter) in missing.into_iter() {
         if imposter.level == 0 {
             if let Some(pointer) = scene_pointers.get(imposter.parcel).cloned() {
                 if matches!(pointer, PointerResult::Exists { .. }) {
@@ -932,8 +888,7 @@ fn check_bake_state(
     mut current_imposter_scene: ResMut<CurrentImposterScene>,
     mut current_imposter_imposter: ResMut<CurrentImposterImposter>,
     mut ingredients: ResMut<BakingIngredients>,
-    lookup: ImposterLookup,
-    mut scene_pointers: ResMut<ScenePointers>,
+    mut manager: ImposterSpecManager,
     mut debug_info: ResMut<DebugInfo>,
 ) {
     if !baking.0.is_empty() {
@@ -966,8 +921,12 @@ fn check_bake_state(
                 {
                     // done
                     info!("scene done!");
-                    baking.0.pop();
                     current_imposter_scene.0 = None;
+                    let PointerResult::Exists { hash, .. } = pointer_result else {
+                        panic!()
+                    };
+                    manager.clear_scene(hash);
+                    baking.0.pop();
                 } else {
                     // don't need to check for constituents, just go
                     debug!("scene running!");
@@ -984,16 +943,16 @@ fn check_bake_state(
                     .is_some_and(|detail| detail.complete)
                 {
                     info!("mip done!");
+                    let crc = manager.pointers.crc(parcel, *level).unwrap();
+                    manager.clear_mip(*parcel, *level, crc);
                     current_imposter_imposter.0 = None;
                     baking.0.clear();
                     return;
-                } else {
-                    debug!("mip bake state: {:?}", lookup.state(*parcel, *level, true));
                 }
 
                 let next_size = 1 << (level - 1);
-                let min = (scene_pointers.min() >> (level - 1) as u32) << (level - 1) as u32;
-                let max = (scene_pointers.max() >> (level - 1) as u32) << (level - 1) as u32;
+                let min = (manager.pointers.min() >> (level - 1) as u32) << (level - 1) as u32;
+                let max = (manager.pointers.max() >> (level - 1) as u32) << (level - 1) as u32;
 
                 if ingredients.0.last() != Some(&(*parcel, *level)) {
                     for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
@@ -1011,8 +970,8 @@ fn check_bake_state(
                     let key = (*parcel + offset * next_size, level - 1);
                     let mut pointer = None;
                     if *level == 1 {
-                        match scene_pointers.get(key.0) {
-                            Some(p @ PointerResult::Exists { .. }) => pointer = Some(p),
+                        match manager.pointers.get(key.0) {
+                            Some(p @ PointerResult::Exists { .. }) => pointer = Some(p.clone()),
                             Some(PointerResult::Nothing) => continue,
                             None => {
                                 error!("missing scene pointer for {}, bailing", &key.0);
@@ -1025,20 +984,24 @@ fn check_bake_state(
                         continue;
                     }
 
-                    match lookup.state(key.0, key.1, true) {
-                        ImposterState::Ready | ImposterState::NoScene => (),
+                    match manager.get_imposter(&SceneImposter {
+                        parcel: key.0,
+                        level: key.1,
+                        as_ingredient: true,
+                    }) {
+                        ImposterState::Ready(..) => (),
                         ImposterState::Missing => {
                             if *level == 1 {
                                 baking
                                     .0
-                                    .push(ImposterToBake::Scene(key.0, pointer.unwrap().clone()));
+                                    .push(ImposterToBake::Scene(key.0, pointer.unwrap()));
                             } else {
                                 baking.0.push(ImposterToBake::Mip(key.0, key.1));
                             }
                             return;
                         }
-                        _ => {
-                            debug!("waiting for pending {key:?}");
+                        other => {
+                            debug!("waiting for pending {key:?} ({other:?})");
                             any_pending = true;
                         }
                     }
@@ -1048,7 +1011,7 @@ fn check_bake_state(
                     return;
                 }
 
-                let crc = scene_pointers.crc(parcel, *level).unwrap();
+                let crc = manager.pointers.crc(parcel, *level).unwrap();
 
                 // run the bake
                 current_imposter_imposter.0 = Some(CurrentImposterImposterDetail {
@@ -1063,7 +1026,7 @@ fn check_bake_state(
 }
 
 fn output_progress(
-    q: Query<&SceneImposter, (With<ImposterMissing>, Without<ImposterTransitionOut>)>,
+    q: Query<&SceneImposter, (Without<Children>, Without<RetryImposter>)>,
     mut max_count: Local<usize>,
     config: Res<AppConfig>,
     time: Res<Time>,
@@ -1089,4 +1052,3 @@ fn output_progress(
         ((*max_count - count) as f32 / *max_count as f32 * 100.0).floor() as usize
     );
 }
-*/
