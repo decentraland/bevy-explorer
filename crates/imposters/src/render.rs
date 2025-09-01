@@ -505,12 +505,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                     let imposter_data = spec.map(|s| {
                         (
                             s,
-                            texture_path(
-                                self.ipfas.ipfs_cache_path(),
-                                path,
-                                req.parcel,
-                                req.level,
-                            ),
+                            texture_path(self.ipfas.ipfs_cache_path(), path, req.parcel, req.level),
                         )
                     });
                     let floor_data = has_floor.then(|| {
