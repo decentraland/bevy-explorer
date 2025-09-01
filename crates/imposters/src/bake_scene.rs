@@ -35,9 +35,14 @@ use scene_runner::{
 use zip::{write::SimpleFileOptions, ZipWriter};
 
 use crate::{
-    DclImposterPlugin, imposter_spec::{
-        BakedScene, ImposterSpec, floor_path, spec_path, texture_path, write_imposter, zip_path
-    }, render::{BakingIngredients, ImposterSpecManager, ImposterState, RetryImposter, SceneImposter, SpecStateReady}
+    imposter_spec::{
+        floor_path, spec_path, texture_path, write_imposter, zip_path, BakedScene, ImposterSpec,
+    },
+    render::{
+        BakingIngredients, ImposterSpecManager, ImposterState, RetryImposter, SceneImposter,
+        SpecStateReady,
+    },
+    DclImposterPlugin,
 };
 pub struct DclImposterBakeScenePlugin;
 

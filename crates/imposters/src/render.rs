@@ -363,7 +363,8 @@ pub fn spawn_imposters(
 
         let max_parcel = parcel + (1 << level);
         old.retain(|k, v| {
-            let is_child = k.parcel.cmpge(parcel).all() && (k.parcel + (1 << k.level)).cmple(max_parcel).all();
+            let is_child =
+                k.parcel.cmpge(parcel).all() && (k.parcel + (1 << k.level)).cmple(max_parcel).all();
             if is_child {
                 manager.store_removed(Some(scene_imposter), *v);
             }
@@ -506,14 +507,14 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                             s,
                             texture_path(
                                 self.ipfas.ipfs_cache_path(),
-                                &path,
+                                path,
                                 req.parcel,
                                 req.level,
                             ),
                         )
                     });
                     let floor_data = has_floor.then(|| {
-                        floor_path(self.ipfas.ipfs_cache_path(), &path, req.parcel, req.level)
+                        floor_path(self.ipfas.ipfs_cache_path(), path, req.parcel, req.level)
                     });
 
                     ImposterSpecState::Ready(SpecStateReady {
@@ -653,7 +654,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         }
     }
 
-    pub fn get_imposter(&mut self, req: &SceneImposter, ) -> ImposterState {
+    pub fn get_imposter(&mut self, req: &SceneImposter) -> ImposterState {
         let spec_state = self.get_spec(req);
 
         match spec_state {
@@ -684,13 +685,15 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                 });
 
                 needs_load |= imposter_data.as_ref().is_some_and(|(handle, _)| {
-                    !self.ipfas
+                    !self
+                        .ipfas
                         .asset_server()
                         .is_loaded_with_dependencies(handle.id())
                 });
 
                 needs_load |= floor_data.as_ref().is_some_and(|handle| {
-                    !self.ipfas
+                    !self
+                        .ipfas
                         .asset_server()
                         .is_loaded_with_dependencies(handle.id())
                 });
@@ -732,23 +735,23 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
             {
                 let imposter_data = match imposter_data {
                     Some((spec, path)) => {
-                        let Some(handle) = self.ipfas
-                        .asset_server()
-                        .get_handle(path.as_path()) else {
+                        let Some(handle) = self.ipfas.asset_server().get_handle(path.as_path())
+                        else {
                             continue;
                         };
                         Some((handle, spec))
-                    },
+                    }
                     None => None,
                 };
 
                 let floor_data = match floor_data {
                     Some(path) => {
-                        let Some(handle) = self.ipfas.asset_server().get_handle(path.as_path()) else {
+                        let Some(handle) = self.ipfas.asset_server().get_handle(path.as_path())
+                        else {
                             continue;
                         };
                         Some(handle)
-                    },
+                    }
                     None => None,
                 };
 
@@ -761,7 +764,10 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                         .asset_server()
                         .is_loaded_with_dependencies(handle.id())
                 }) {
-                    debug!("checking fallback {req:?} -> {substitute_imposter:?} -> ok! ({:?})", self.get_spec(&substitute_imposter));
+                    debug!(
+                        "checking fallback {req:?} -> {substitute_imposter:?} -> ok! ({:?})",
+                        self.get_spec(&substitute_imposter)
+                    );
                     return ImposterState::PendingWithSubstitute(
                         substitute_imposter,
                         imposter_data,
