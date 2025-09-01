@@ -451,7 +451,7 @@ pub struct ImposterSpecManager<'w, 's> {
     plugin: Res<'w, DclImposterPlugin>,
 }
 
-const MAX_ASSET_LOADS: usize = 10;
+const MAX_ASSET_LOADS: usize = 20;
 
 impl<'w, 's> ImposterSpecManager<'w, 's> {
     fn clear(&mut self) {
