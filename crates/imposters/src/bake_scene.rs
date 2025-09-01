@@ -35,11 +35,9 @@ use scene_runner::{
 use zip::{write::SimpleFileOptions, ZipWriter};
 
 use crate::{
-    imposter_spec::{
-        floor_path, spec_path, texture_path, write_imposter, zip_path, BakedScene, ImposterSpec,
-    },
-    render::{BakingIngredients, ImposterSpecManager, ImposterState, RetryImposter, SceneImposter},
-    DclImposterPlugin,
+    DclImposterPlugin, imposter_spec::{
+        BakedScene, ImposterSpec, floor_path, spec_path, texture_path, write_imposter, zip_path
+    }, render::{BakingIngredients, ImposterSpecManager, ImposterState, RetryImposter, SceneImposter, SpecStateReady}
 };
 pub struct DclImposterBakeScenePlugin;
 
@@ -626,7 +624,10 @@ fn bake_imposter_imposter(
                 as_ingredient: false,
             });
             match spec_state {
-                crate::render::ImposterSpecState::Ready(Some(imposter_spec), _, _) => {
+                crate::render::ImposterSpecState::Ready(SpecStateReady {
+                    imposter_data: Some((imposter_spec, _)),
+                    ..
+                }) => {
                     min = min.min(imposter_spec.region_min);
                     max = max.max(imposter_spec.region_max);
                 }

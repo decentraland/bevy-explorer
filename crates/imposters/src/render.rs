@@ -47,7 +47,7 @@ impl Plugin for DclImposterRenderPlugin {
         ))
         .init_resource::<BakingIngredients>()
         .init_resource::<ImposterFocus>()
-        .init_resource::<ImposterSpecs>()
+        .init_resource::<ImposterManagerData>()
         .init_asset_loader::<FloorImposterLoader>()
         .add_systems(Startup, setup)
         .add_systems(
@@ -60,16 +60,13 @@ impl Plugin for DclImposterRenderPlugin {
                 focus_imposters,
                 spawn_imposters,
                 load_imposters,
-                // render_imposters,
-                // update_imposter_visibility,
-                // transition_imposters,
                 debug_write_imposters,
             )
                 .chain()
                 .in_set(SceneSets::PostLoop),
         )
         .add_systems(
-            PostUpdate,
+            Update,
             (|mut manager: ImposterSpecManager| manager.end_tick())
                 .in_set(SceneSets::RestrictedActions),
         );
@@ -344,6 +341,7 @@ pub fn spawn_imposters(
             None => {
                 commands.entity(ent).remove::<SceneImposter>();
                 old.insert(scene_imposter, ent);
+                debug!("remove {:?}", scene_imposter);
             }
             Some(as_ingredient) => {
                 if scene_imposter.as_ingredient != as_ingredient {
@@ -365,9 +363,9 @@ pub fn spawn_imposters(
 
         let max_parcel = parcel + (1 << level);
         old.retain(|k, v| {
-            let is_child = k.parcel.cmpge(parcel).all() && k.parcel.cmplt(max_parcel).all();
+            let is_child = k.parcel.cmpge(parcel).all() && (k.parcel + (1 << k.level)).cmple(max_parcel).all();
             if is_child {
-                manager.store_removed(scene_imposter, *v);
+                manager.store_removed(Some(scene_imposter), *v);
             }
             !is_child
         });
@@ -379,13 +377,9 @@ pub fn spawn_imposters(
 
     // remove any not required non-children
     for (_, ent) in old.drain() {
-        println!("unexpected old children");
-        commands.entity(ent).despawn();
+        manager.store_removed(None, ent);
     }
 }
-
-#[derive(Component)]
-pub struct WrongImposterLevel;
 
 #[derive(Debug)]
 pub enum ImposterSpecResolveState {
@@ -401,7 +395,7 @@ pub enum ImposterSpecLoadState {
 }
 
 #[derive(Resource, Default)]
-pub struct ImposterSpecs {
+pub struct ImposterManagerData {
     pub mips: HashMap<(IVec2, usize, u32), ImposterSpecResolveState>,
     pub scenes: HashMap<String, ImposterSpecResolveState>,
 
@@ -411,16 +405,21 @@ pub struct ImposterSpecs {
     pub prev_loading_mips: HashMap<(IVec2, usize, u32), ImposterSpecLoadState>,
     pub prev_loading_scenes: HashMap<String, ImposterSpecLoadState>,
 
-    pub imposter_paths: HashMap<(IVec2, usize, u32), (Option<PathBuf>, Option<PathBuf>, bool)>,
-    pub loading_handles: HashSet<UntypedHandle>,
-    pub permanent_handles: HashSet<UntypedHandle>,
+    pub requested_loading_handles: HashMap<SceneImposter, SpecStateReady>,
+    pub loading_handles: HashMap<SceneImposter, (Option<UntypedHandle>, Option<UntypedHandle>)>,
 
-    pub just_removed: HashMap<SceneImposter, Vec<Entity>>,
+    pub just_removed: HashMap<Option<SceneImposter>, Vec<Entity>>,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
+pub struct SpecStateReady {
+    pub imposter_data: Option<(ImposterSpec, PathBuf)>,
+    pub floor_data: Option<PathBuf>,
+}
+
+#[derive(PartialEq, Debug)]
 pub enum ImposterSpecState {
-    Ready(Option<ImposterSpec>, String, bool),
+    Ready(SpecStateReady),
     Pending,
     Missing,
 }
@@ -444,48 +443,38 @@ pub enum ImposterState {
 #[derive(SystemParam)]
 pub struct ImposterSpecManager<'w, 's> {
     commands: Commands<'w, 's>,
-    specs: ResMut<'w, ImposterSpecs>,
+    data: ResMut<'w, ImposterManagerData>,
     current_realm: Res<'w, CurrentRealm>,
     pub(crate) pointers: ResMut<'w, ScenePointers>,
     ipfas: IpfsAssetServer<'w, 's>,
     focus: Res<'w, ImposterFocus>,
-    imposters: ResMut<'w, Assets<Imposter>>,
-    floor_imposters: ResMut<'w, Assets<FloorImposter>>,
-    textures: ResMut<'w, Assets<Image>>,
     plugin: Res<'w, DclImposterPlugin>,
 }
 
+const MAX_ASSET_LOADS: usize = 10;
+
 impl<'w, 's> ImposterSpecManager<'w, 's> {
     fn clear(&mut self) {
-        self.specs.mips.clear();
-        self.specs.scenes.clear();
+        self.data.mips.clear();
+        self.data.loading_mips.clear();
+        self.data.prev_loading_mips.clear();
     }
 
     pub(crate) fn clear_scene(&mut self, hash: &str) {
-        self.specs.scenes.remove(hash);
+        self.data.scenes.remove(hash);
     }
 
     pub(crate) fn clear_mip(&mut self, parcel: IVec2, level: usize, crc: u32) {
-        self.specs.mips.remove(&(parcel, level, crc));
+        self.data.mips.remove(&(parcel, level, crc));
     }
 
     fn start_tick(&mut self) {
-        let dropped_loads = self
-            .specs
-            .prev_loading_mips
-            .values()
-            .filter(|l| matches!(l, ImposterSpecLoadState::Remote(_)))
-            .count();
-        if dropped_loads > 0 {
-            debug!("dropped {dropped_loads} loading mips");
-        }
-        self.specs.prev_loading_mips = std::mem::take(&mut self.specs.loading_mips);
-        self.specs.prev_loading_scenes = std::mem::take(&mut self.specs.loading_scenes);
-        self.specs.loading_handles.clear();
+        self.data.prev_loading_mips = std::mem::take(&mut self.data.loading_mips);
+        self.data.prev_loading_scenes = std::mem::take(&mut self.data.loading_scenes);
     }
 
-    fn store_removed(&mut self, child_of: SceneImposter, entity: Entity) {
-        self.specs
+    fn store_removed(&mut self, child_of: Option<SceneImposter>, entity: Entity) {
+        self.data
             .just_removed
             .entry(child_of)
             .or_default()
@@ -493,7 +482,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
     }
 
     pub fn get_spec(&mut self, req: &SceneImposter) -> ImposterSpecState {
-        let ImposterSpecs {
+        let ImposterManagerData {
             mips,
             scenes,
             loading_mips,
@@ -501,7 +490,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
             prev_loading_mips,
             prev_loading_scenes,
             ..
-        } = &mut *self.specs;
+        } = &mut *self.data;
 
         let resolve = |spec: Option<&ImposterSpecResolveState>,
                        path: &str,
@@ -510,11 +499,28 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
             match spec {
                 Some(ImposterSpecResolveState::Missing) => ImposterSpecState::Missing,
                 Some(ImposterSpecResolveState::PendingRemote) | None => ImposterSpecState::Pending,
-                Some(ImposterSpecResolveState::Ready(baked_scene)) => ImposterSpecState::Ready(
-                    baked_scene.imposters.get(&req.parcel).copied(),
-                    path.to_owned(),
-                    has_floor,
-                ),
+                Some(ImposterSpecResolveState::Ready(baked_scene)) => {
+                    let spec = baked_scene.imposters.get(&req.parcel).copied();
+                    let imposter_data = spec.map(|s| {
+                        (
+                            s,
+                            texture_path(
+                                self.ipfas.ipfs_cache_path(),
+                                &path,
+                                req.parcel,
+                                req.level,
+                            ),
+                        )
+                    });
+                    let floor_data = has_floor.then(|| {
+                        floor_path(self.ipfas.ipfs_cache_path(), &path, req.parcel, req.level)
+                    });
+
+                    ImposterSpecState::Ready(SpecStateReady {
+                        imposter_data,
+                        floor_data,
+                    })
+                }
             }
         };
 
@@ -647,121 +653,56 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         }
     }
 
-    pub fn get_imposter(&mut self, req: &SceneImposter) -> ImposterState {
+    pub fn get_imposter(&mut self, req: &SceneImposter, ) -> ImposterState {
         let spec_state = self.get_spec(req);
 
-        let maybe_spec = match spec_state {
-            ImposterSpecState::Ready(imposter_spec, id, has_floor) => {
-                Some((imposter_spec, id, has_floor))
-            }
-            ImposterSpecState::Pending => None,
+        match spec_state {
+            ImposterSpecState::Pending => (),
             ImposterSpecState::Missing => return ImposterState::Missing,
-        };
+            ImposterSpecState::Ready(ready) => {
+                let ImposterManagerData {
+                    requested_loading_handles,
+                    ..
+                } = &mut *self.data;
 
-        if let Some((maybe_spec, id, has_floor)) = maybe_spec {
-            let crc = self.pointers.crc(req.parcel, req.level).unwrap();
-
-            // get paths
-            let mut is_new_load = false;
-
-            let ImposterSpecs {
-                imposter_paths,
-                loading_handles,
-                ..
-            } = &mut *self.specs;
-
-            let paths = imposter_paths
-                .entry((req.parcel, req.level, crc))
-                .or_insert_with(|| {
-                    (
-                        maybe_spec.map(|_| {
-                            texture_path(self.ipfas.ipfs_cache_path(), &id, req.parcel, req.level)
-                        }),
-                        has_floor.then(|| {
-                            floor_path(self.ipfas.ipfs_cache_path(), &id, req.parcel, req.level)
-                        }),
-                        false,
-                    )
+                // request loading if required
+                let mut needs_load = false;
+                let imposter_data = ready.imposter_data.as_ref().and_then(|(spec, path)| {
+                    let Some(handle) = self.ipfas.asset_server().get_handle(path.as_path()) else {
+                        needs_load = true;
+                        return None;
+                    };
+                    Some((handle, *spec))
                 });
 
-            // start loading if required
-            let imposter_handle = paths.0.as_deref().map(|p| {
-                self.ipfas.asset_server().get_handle(p).unwrap_or_else(|| {
-                    is_new_load = true;
-                    let handle = self
-                        .ipfas
+                let floor_data = ready.floor_data.as_ref().and_then(|path| {
+                    let Some(handle) = self.ipfas.asset_server().get_handle(path.as_path()) else {
+                        needs_load = true;
+                        return None;
+                    };
+                    Some(handle)
+                });
+
+                needs_load |= imposter_data.as_ref().is_some_and(|(handle, _)| {
+                    !self.ipfas
                         .asset_server()
-                        .load_with_settings::<Imposter, ImposterLoaderSettings>(p, move |s| {
-                            *s = ImposterLoaderSettings {
-                                multisample: false,
-                                alpha: 1.0,
-                                alpha_blend: 0.0, // blend
-                                multisample_amount: 0.0,
-                                immediate_upload: true,
-                            }
-                        });
-                    loading_handles.insert(handle.clone().untyped());
-                    handle
-                })
-            });
+                        .is_loaded_with_dependencies(handle.id())
+                });
 
-            let floor_handle = paths.1.as_deref().map(|p| {
-                self.ipfas.asset_server().get_handle(p).unwrap_or_else(|| {
-                    is_new_load = true;
-                    let handle = self.ipfas.asset_server().load::<FloorImposter>(p);
-                    loading_handles.insert(handle.clone().untyped());
-                    handle
-                })
-            });
+                needs_load |= floor_data.as_ref().is_some_and(|handle| {
+                    !self.ipfas
+                        .asset_server()
+                        .is_loaded_with_dependencies(handle.id())
+                });
 
-            paths.2 |= is_new_load;
-
-            if imposter_handle.as_ref().is_none_or(|handle| {
-                self.ipfas
-                    .asset_server()
-                    .is_loaded_with_dependencies(handle.id())
-            }) && floor_handle.as_ref().is_none_or(|handle| {
-                self.ipfas
-                    .asset_server()
-                    .is_loaded_with_dependencies(handle.id())
-            }) {
-                if paths.2 {
-                    // first use since load - update to bypass rabpf
-                    if let Some(handle) = imposter_handle.as_ref() {
-                        let imposter = self.imposters.get(handle.id()).unwrap();
-                        self.textures
-                            .get_mut(imposter.indices.id())
-                            .unwrap()
-                            .immediate_upload = true;
-                        self.textures
-                            .get_mut(imposter.pixels.id())
-                            .unwrap()
-                            .immediate_upload = true;
-                    }
-
-                    if let Some(handle) = floor_handle.as_ref() {
-                        let imposter = &self.floor_imposters.get(handle.id()).unwrap().base;
-                        self.textures
-                            .get_mut(imposter.indices.id())
-                            .unwrap()
-                            .immediate_upload = true;
-                        self.textures
-                            .get_mut(imposter.pixels.id())
-                            .unwrap()
-                            .immediate_upload = true;
-                    }
-
-                    paths.2 = false;
-                }
-
-                if !paths.2 {
-                    return ImposterState::Ready(
-                        maybe_spec.map(|s| (imposter_handle.unwrap(), s)),
-                        floor_handle,
-                    );
+                if needs_load {
+                    debug!("req {req:?}");
+                    requested_loading_handles.insert(*req, ready);
+                } else {
+                    return ImposterState::Ready(imposter_data, floor_data);
                 }
             }
-        }
+        };
 
         // not downloaded or not spawned, fallback to best available
         if req.as_ingredient {
@@ -769,7 +710,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         }
 
         // check for previously despawned lower mip entities first
-        if let Some(entities) = self.specs.just_removed.remove(req) {
+        if let Some(entities) = self.data.just_removed.remove(&Some(*req)) {
             return ImposterState::PendingWithPrevious(entities);
         }
 
@@ -777,95 +718,131 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         for level in req.level + 1..=5 {
             // use mask to knock out the lower bits, this works for negative numbers too
             let origin = req.parcel & !((1 << level) - 1);
-            let Some(crc) = self.pointers.crc(origin, level) else {
-                return ImposterState::Pending;
-            };
 
             let substitute_imposter = SceneImposter {
                 parcel: origin,
                 level,
                 as_ingredient: false,
             };
-            if let Some((imposter_path, floor_path, false)) =
-                self.specs.imposter_paths.get(&(origin, level, crc))
+
+            if let ImposterSpecState::Ready(SpecStateReady {
+                imposter_data,
+                floor_data,
+            }) = self.get_spec(&substitute_imposter)
             {
-                debug!("checking fallback {req:?} -> {substitute_imposter:?}");
-
-                let mut ready = true;
-
-                let imposter_handle = match imposter_path.as_deref() {
-                    Some(p) => {
-                        if let Some(handle) = self.ipfas.asset_server().get_handle(p) {
-                            ready &= self
-                                .ipfas
-                                .asset_server()
-                                .is_loaded_with_dependencies(handle.id());
-                            Some(handle)
-                        } else {
-                            ready = false;
-                            None
-                        }
-                    }
-                    None => None,
-                };
-
-                let floor_handle = match floor_path.as_deref() {
-                    Some(p) => {
-                        if let Some(handle) = self.ipfas.asset_server().get_handle(p) {
-                            ready &= self
-                                .ipfas
-                                .asset_server()
-                                .is_loaded_with_dependencies(handle.id());
-                            Some(handle)
-                        } else {
-                            ready = false;
-                            None
-                        }
-                    }
-                    None => None,
-                };
-
-                if ready {
-                    let imposter_and_spec = imposter_handle.map(|h| {
-                        let ImposterSpecState::Ready(maybe_spec, _, _) =
-                            self.get_spec(&substitute_imposter)
-                        else {
-                            panic!();
+                let imposter_data = match imposter_data {
+                    Some((spec, path)) => {
+                        let Some(handle) = self.ipfas
+                        .asset_server()
+                        .get_handle(path.as_path()) else {
+                            continue;
                         };
-                        (h, maybe_spec.unwrap())
-                    });
+                        Some((handle, spec))
+                    },
+                    None => None,
+                };
 
-                    debug!("checking fallback {req:?} -> {substitute_imposter:?} -> ok!");
+                let floor_data = match floor_data {
+                    Some(path) => {
+                        let Some(handle) = self.ipfas.asset_server().get_handle(path.as_path()) else {
+                            continue;
+                        };
+                        Some(handle)
+                    },
+                    None => None,
+                };
+
+                if imposter_data.as_ref().is_none_or(|(handle, _)| {
+                    self.ipfas
+                        .asset_server()
+                        .is_loaded_with_dependencies(handle.id())
+                }) && floor_data.as_ref().is_none_or(|handle| {
+                    self.ipfas
+                        .asset_server()
+                        .is_loaded_with_dependencies(handle.id())
+                }) {
+                    debug!("checking fallback {req:?} -> {substitute_imposter:?} -> ok! ({:?})", self.get_spec(&substitute_imposter));
                     return ImposterState::PendingWithSubstitute(
                         substitute_imposter,
-                        imposter_and_spec,
-                        floor_handle,
+                        imposter_data,
+                        floor_data,
                     );
                 } else {
                     debug!("checking fallback {req:?} -> {substitute_imposter:?} failed")
                 }
             }
         }
-
-        // we only reach here if actually requested with level 5
         ImposterState::Pending
     }
 
     fn end_tick(&mut self) {
-        let ImposterSpecs {
+        let ImposterManagerData {
             loading_mips,
             loading_scenes,
             just_removed,
             scenes,
             mips,
+            loading_handles,
+            requested_loading_handles,
             ..
-        } = &mut *self.specs;
+        } = &mut *self.data;
 
+        // clear unused imposter entities
         for ent in just_removed.drain().flat_map(|(_, ents)| ents.into_iter()) {
             if let Ok(mut commands) = self.commands.get_entity(ent) {
                 commands.despawn();
             }
         }
+
+        debug!("{} requested", requested_loading_handles.len());
+
+        // restrict loading assets
+        let mut new_loading_handles = HashMap::default();
+        // keep prior loads that are still required
+        for (imposter, loading_handle) in loading_handles.drain() {
+            if requested_loading_handles.contains_key(&imposter) {
+                new_loading_handles.insert(imposter, loading_handle);
+            }
+        }
+
+        let count = new_loading_handles.len();
+        // start loading up to max from the rest
+        new_loading_handles.extend(
+            requested_loading_handles
+                .drain()
+                .take(MAX_ASSET_LOADS - new_loading_handles.len())
+                .map(|(imposter, ready)| {
+                    let imposter_handle = ready.imposter_data.map(|(_, path)| {
+                        self.ipfas
+                            .asset_server()
+                            .load_with_settings::<Imposter, ImposterLoaderSettings>(
+                                path.as_path(),
+                                move |s| {
+                                    *s = ImposterLoaderSettings {
+                                        multisample: false,
+                                        alpha: 1.0,
+                                        alpha_blend: 0.0, // blend
+                                        multisample_amount: 0.0,
+                                        immediate_upload: true,
+                                    }
+                                },
+                            )
+                            .untyped()
+                    });
+
+                    let floor_handle = ready.floor_data.map(|path| {
+                        self.ipfas
+                            .asset_server()
+                            .load::<FloorImposter>(path.as_path())
+                            .untyped()
+                    });
+
+                    (imposter, (imposter_handle, floor_handle))
+                }),
+        );
+        let count2 = new_loading_handles.len();
+        *loading_handles = std::mem::take(&mut new_loading_handles);
+        debug!("loading {} / {}", count, count2);
 
         if self.plugin.download {
             let active = loading_mips
@@ -994,7 +971,7 @@ fn load_imposters(
                     // if let Ok(children) = _children.get(prev_child) {
                     //     for child in children {
                     //         commands.entity(*child).insert(ShowAabbGizmo {
-                    //             color: Some(Color::linear_rgba(1.0, 1.0, 0.0, 0.7)),
+                    //             color: Some(Color::linear_rgba(1.0, 1.0, 0.0, 0.4)),
                     //         });
                     //     }
                     // }
@@ -1028,10 +1005,10 @@ fn load_imposters(
             tick.0, base_imposter, is_final, scene_imposter
         );
 
-        // let color = if is_final {!
-        //     Some(Color::linear_rgba(0.0, 0.0, 1.0, 0.7))
+        // let color = if is_final {
+        //     Some(Color::linear_rgba(0.0, 0.0, 1.0, 0.4))
         // } else {
-        //     Some(Color::linear_rgba(1.0, 0.0, 0.0, 0.7))
+        //     Some(Color::linear_rgba(1.0, 0.0, 0.0, 0.4))
         // };
 
         commands
