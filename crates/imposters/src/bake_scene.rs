@@ -990,11 +990,14 @@ fn check_bake_state(
                         continue;
                     }
 
-                    match manager.get_imposter(&SceneImposter {
-                        parcel: key.0,
-                        level: key.1,
-                        as_ingredient: true,
-                    }) {
+                    match manager.get_imposter(
+                        &SceneImposter {
+                            parcel: key.0,
+                            level: key.1,
+                            as_ingredient: true,
+                        },
+                        None,
+                    ) {
                         ImposterState::Ready(..) => (),
                         ImposterState::Missing => {
                             if *level == 1 {

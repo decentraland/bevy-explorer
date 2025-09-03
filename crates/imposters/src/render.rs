@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use bevy::{
     diagnostic::FrameCount,
     ecs::system::SystemParam,
+    math::FloatOrd,
     pbr::{NotShadowCaster, NotShadowReceiver},
     platform::collections::{HashMap, HashSet},
     prelude::*,
@@ -154,7 +155,11 @@ impl ImposterLoadTask {
 pub struct BakingIngredients(pub Vec<(IVec2, usize)>);
 
 #[derive(Resource, Default)]
-pub struct ImposterFocus(Vec2);
+pub struct ImposterFocus {
+    pub origin: Vec2,
+    pub min_distance: f32,
+    pub distance_scale: f32,
+}
 
 pub fn focus_imposters(
     focus_player: Query<&GlobalTransform, With<PrimaryUser>>,
@@ -172,15 +177,7 @@ pub fn focus_imposters(
     let Some(player_pos) = focus_player.single().ok().map(|gt| gt.translation()) else {
         return;
     };
-    let focus_player = (cam_pos - player_pos).length() < 20.0;
-    let focus_player = focus_player || {
-        let player_angle = Transform::from_translation(cam_pos)
-            .looking_at(player_pos, Vec3::Y)
-            .rotation;
-        let angle_between = cam_rot.angle_between(player_angle);
-        // debug!("angle between: {angle_between}");
-        angle_between < 0.2
-    };
+    let focus_player = (cam_pos - player_pos).length() < 100.0;
 
     let origin = match focus_player {
         true => player_pos,
@@ -191,7 +188,12 @@ pub fn focus_imposters(
         }
     };
 
-    focus.0 = origin.xz();
+    focus.origin = origin.xz();
+    (focus.min_distance, focus.distance_scale) = if focus_player {
+        (0.0, 1.0)
+    } else {
+        (cam_pos.distance(origin) * 0.5, 0.5)
+    };
 }
 
 pub fn spawn_imposters(
@@ -228,7 +230,7 @@ pub fn spawn_imposters(
     // add baking requirements
     required.extend(ingredients.0.iter().map(|(p, l)| ((*p, *l), true)));
 
-    let origin = focus.0 * Vec2::new(1.0, -1.0);
+    let origin = focus.origin * Vec2::new(1.0, -1.0);
 
     // record live parcels
     let current_imposter_scene = match &current_imposter_scene.0 {
@@ -280,7 +282,8 @@ pub fn spawn_imposters(
 
             let closest_point =
                 origin.clamp(tile_origin_world, tile_origin_world + tile_size_world);
-            let closest_distance = (closest_point - origin).length();
+            let closest_distance =
+                (closest_point - origin).length() * focus.distance_scale + focus.min_distance;
 
             // check it's not too far
             if closest_distance > max_distance {
@@ -395,6 +398,24 @@ pub enum ImposterSpecLoadState {
     Remote(ImposterLoadTask),
 }
 
+pub struct AssetLoadRequest {
+    spec: SpecStateReady,
+    benefit: f32,
+    #[cfg(debug_assertions)]
+    debug: Vec<(SceneImposter, Option<usize>, f32, usize)>,
+}
+
+impl AssetLoadRequest {
+    pub fn new(spec: SpecStateReady) -> Self {
+        Self {
+            spec,
+            benefit: 0.0,
+            #[cfg(debug_assertions)]
+            debug: Vec::default(),
+        }
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct ImposterManagerData {
     pub mips: HashMap<(IVec2, usize, u32), ImposterSpecResolveState>,
@@ -406,7 +427,7 @@ pub struct ImposterManagerData {
     pub prev_loading_mips: HashMap<(IVec2, usize, u32), ImposterSpecLoadState>,
     pub prev_loading_scenes: HashMap<String, ImposterSpecLoadState>,
 
-    pub requested_loading_handles: HashMap<SceneImposter, SpecStateReady>,
+    pub requested_loading_handles: HashMap<SceneImposter, AssetLoadRequest>,
     pub loading_handles: HashMap<SceneImposter, (Option<UntypedHandle>, Option<UntypedHandle>)>,
 
     pub just_removed: HashMap<Option<SceneImposter>, Vec<Entity>>,
@@ -414,6 +435,7 @@ pub struct ImposterManagerData {
 
 #[derive(PartialEq, Debug)]
 pub struct SpecStateReady {
+    pub key: SceneImposter,
     pub imposter_data: Option<(ImposterSpec, PathBuf)>,
     pub floor_data: Option<PathBuf>,
 }
@@ -425,6 +447,8 @@ pub enum ImposterSpecState {
     Missing,
 }
 
+pub type LevelError = usize;
+
 #[derive(Debug)]
 pub enum ImposterState {
     Ready(
@@ -435,9 +459,10 @@ pub enum ImposterState {
         SceneImposter,
         Option<(Handle<Imposter>, ImposterSpec)>,
         Option<Handle<FloorImposter>>,
+        LevelError,
     ),
-    PendingWithPrevious(Vec<Entity>),
-    Pending,
+    PendingWithPrevious(Vec<Entity>, LevelError),
+    Pending(LevelError),
     Missing,
 }
 
@@ -452,7 +477,7 @@ pub struct ImposterSpecManager<'w, 's> {
     plugin: Res<'w, DclImposterPlugin>,
 }
 
-const MAX_ASSET_LOADS: usize = 20;
+const MAX_ASSET_LOADS: usize = 40;
 
 impl<'w, 's> ImposterSpecManager<'w, 's> {
     fn clear(&mut self) {
@@ -494,6 +519,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         } = &mut *self.data;
 
         let resolve = |spec: Option<&ImposterSpecResolveState>,
+                       key: SceneImposter,
                        path: &str,
                        has_floor: bool|
          -> ImposterSpecState {
@@ -513,6 +539,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                     });
 
                     ImposterSpecState::Ready(SpecStateReady {
+                        key,
                         imposter_data,
                         floor_data,
                     })
@@ -521,14 +548,18 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         };
 
         if req.level == 0 {
-            let hash = match self.pointers.get(req.parcel) {
+            let (hash, key) = match self.pointers.get(req.parcel) {
                 None => return ImposterSpecState::Pending,
                 Some(PointerResult::Nothing) => return ImposterSpecState::Missing,
-                Some(PointerResult::Exists { hash, .. }) => hash,
+                Some(PointerResult::Exists { hash, key, .. }) => (hash, key),
             };
 
             let resolve_state = scenes.get(hash);
-            let state = resolve(resolve_state, hash, true);
+            let key = SceneImposter {
+                parcel: key.0,
+                ..*req
+            };
+            let state = resolve(resolve_state, key, hash, true);
             if state != ImposterSpecState::Pending {
                 return state;
             }
@@ -581,7 +612,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                 }
             }
 
-            resolve(scenes.get(hash), hash, true)
+            resolve(scenes.get(hash), key, hash, true)
         } else {
             let Some(crc) = self.pointers.crc(req.parcel, req.level) else {
                 return ImposterSpecState::Pending;
@@ -590,7 +621,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
             let key = (req.parcel, req.level, crc);
 
             let resolve_state = mips.get(&key);
-            let state = resolve(resolve_state, &self.current_realm.about_url, crc != 0);
+            let state = resolve(resolve_state, *req, &self.current_realm.about_url, crc != 0);
             if state != ImposterSpecState::Pending {
                 return state;
             }
@@ -645,12 +676,28 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                 }
             }
 
-            resolve(mips.get(&key), &self.current_realm.about_url, crc != 0)
+            resolve(
+                mips.get(&key),
+                *req,
+                &self.current_realm.about_url,
+                crc != 0,
+            )
         }
     }
 
-    pub fn get_imposter(&mut self, req: &SceneImposter) -> ImposterState {
+    pub fn get_imposter(
+        &mut self,
+        req: &SceneImposter,
+        current_error: Option<LevelError>,
+    ) -> ImposterState {
         let spec_state = self.get_spec(req);
+        let parcel_count = (1 << req.level) * (1 << req.level);
+
+        let origin = self.focus.origin.as_ivec2() * IVec2::new(1, -1);
+        let closest_point = origin.clamp(req.parcel * 16, (req.parcel + (1 << req.level)) * 16);
+        let distance = (closest_point - origin).as_vec2().length() * self.focus.distance_scale
+            + self.focus.min_distance
+            + 1.0;
 
         match spec_state {
             ImposterSpecState::Pending => (),
@@ -695,7 +742,15 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
 
                 if needs_load {
                     debug!("req {req:?}");
-                    requested_loading_handles.insert(*req, ready);
+                    let load_request = requested_loading_handles
+                        .entry(*req)
+                        .or_insert_with(|| AssetLoadRequest::new(ready));
+                    let err = current_error.unwrap_or(0);
+                    load_request.benefit += (err * parcel_count) as f32 / distance;
+                    #[cfg(debug_assertions)]
+                    load_request
+                        .debug
+                        .push((*req, current_error, distance, err * parcel_count));
                 } else {
                     return ImposterState::Ready(imposter_data, floor_data);
                 }
@@ -704,16 +759,25 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
 
         // not downloaded or not spawned, fallback to best available
         if req.as_ingredient {
-            return ImposterState::Pending;
+            return ImposterState::Pending(0);
         }
 
         // check for previously despawned lower mip entities first
         if let Some(entities) = self.data.just_removed.remove(&Some(*req)) {
-            return ImposterState::PendingWithPrevious(entities);
+            return ImposterState::PendingWithPrevious(entities, 1);
         }
 
         // check for larger mips
         for level in req.level + 1..=5 {
+            let parcel_err = level - req.level;
+            let new_error = parcel_err * parcel_count;
+            if let Some(ce) = current_error {
+                if ce <= new_error {
+                    return ImposterState::Pending(ce);
+                }
+            }
+            let benefit = current_error.map(|ce| ce - new_error).unwrap_or(0);
+
             // use mask to knock out the lower bits, this works for negative numbers too
             let origin = req.parcel & !((1 << level) - 1);
 
@@ -723,42 +787,59 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                 as_ingredient: false,
             };
 
-            if let ImposterSpecState::Ready(SpecStateReady {
-                imposter_data,
-                floor_data,
-            }) = self.get_spec(&substitute_imposter)
-            {
-                let imposter_data = match imposter_data {
+            if let ImposterSpecState::Ready(ready) = self.get_spec(&substitute_imposter) {
+                let mut needs_load = false;
+                let imposter_data = match ready.imposter_data.as_ref() {
                     Some((spec, path)) => {
-                        let Some(handle) = self.ipfas.asset_server().get_handle(path.as_path())
-                        else {
-                            continue;
-                        };
-                        Some((handle, spec))
+                        if let Some(handle) = self.ipfas.asset_server().get_handle(path.as_path()) {
+                            Some((handle, *spec))
+                        } else {
+                            needs_load = true;
+                            None
+                        }
                     }
                     None => None,
                 };
 
-                let floor_data = match floor_data {
+                let floor_data = match ready.floor_data.as_ref() {
                     Some(path) => {
-                        let Some(handle) = self.ipfas.asset_server().get_handle(path.as_path())
-                        else {
-                            continue;
-                        };
-                        Some(handle)
+                        if let Some(handle) = self.ipfas.asset_server().get_handle(path.as_path()) {
+                            Some(handle)
+                        } else {
+                            needs_load = true;
+                            None
+                        }
                     }
                     None => None,
                 };
 
-                if imposter_data.as_ref().is_none_or(|(handle, _)| {
-                    self.ipfas
+                needs_load |= imposter_data.as_ref().is_some_and(|(handle, _)| {
+                    !self
+                        .ipfas
                         .asset_server()
                         .is_loaded_with_dependencies(handle.id())
-                }) && floor_data.as_ref().is_none_or(|handle| {
-                    self.ipfas
+                });
+
+                needs_load |= floor_data.as_ref().is_some_and(|handle| {
+                    !self
+                        .ipfas
                         .asset_server()
                         .is_loaded_with_dependencies(handle.id())
-                }) {
+                });
+
+                if needs_load {
+                    debug!("checking fallback {req:?} -> {substitute_imposter:?} failed");
+                    let load_request = self
+                        .data
+                        .requested_loading_handles
+                        .entry(substitute_imposter)
+                        .or_insert_with(|| AssetLoadRequest::new(ready));
+                    load_request.benefit += benefit as f32 / distance;
+                    #[cfg(debug_assertions)]
+                    load_request
+                        .debug
+                        .push((*req, current_error, distance, benefit));
+                } else {
                     debug!(
                         "checking fallback {req:?} -> {substitute_imposter:?} -> ok! ({:?})",
                         self.get_spec(&substitute_imposter)
@@ -767,13 +848,13 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                         substitute_imposter,
                         imposter_data,
                         floor_data,
+                        parcel_err,
                     );
-                } else {
-                    debug!("checking fallback {req:?} -> {substitute_imposter:?} failed")
                 }
             }
         }
-        ImposterState::Pending
+        let new_error = (6 - req.level) * (6 - req.level) * parcel_count;
+        ImposterState::Pending(new_error)
     }
 
     fn end_tick(&mut self) {
@@ -807,13 +888,27 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         }
 
         let count = new_loading_handles.len();
+
         // start loading up to max from the rest
+        let mut requests = requested_loading_handles.drain().collect::<Vec<_>>();
+        requests.sort_by_key(|(_, req)| FloatOrd(-req.benefit));
+
+        #[cfg(debug_assertions)]
+        debug!(
+            "candidates: {:?}",
+            requests
+                .iter()
+                .map(|(k, req)| { format!("{k:?}: {} ({:?})", req.benefit, req.debug) })
+                .collect::<Vec<_>>()
+        );
+
         new_loading_handles.extend(
-            requested_loading_handles
-                .drain()
+            requests
+                .into_iter()
                 .take(MAX_ASSET_LOADS - new_loading_handles.len())
-                .map(|(imposter, ready)| {
-                    let imposter_handle = ready.imposter_data.map(|(_, path)| {
+                .take_while(|(_, req)| req.benefit > 0.0)
+                .map(|(imposter, req)| {
+                    let imposter_handle = req.spec.imposter_data.map(|(_, path)| {
                         self.ipfas
                             .asset_server()
                             .load_with_settings::<Imposter, ImposterLoaderSettings>(
@@ -831,7 +926,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                             .untyped()
                     });
 
-                    let floor_handle = ready.floor_data.map(|path| {
+                    let floor_handle = req.spec.floor_data.map(|path| {
                         self.ipfas
                             .asset_server()
                             .load::<FloorImposter>(path.as_path())
@@ -875,7 +970,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                 return;
             }
 
-            let focus = self.focus.0.as_ivec2() * IVec2::new(1, -1) / PARCEL_SIZE as i32;
+            let focus = self.focus.origin.as_ivec2() * IVec2::new(1, -1) / PARCEL_SIZE as i32;
 
             let mut mips = loading_mips
                 .iter_mut()
@@ -926,7 +1021,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
 }
 
 #[derive(Component)]
-pub struct RetryImposter;
+pub struct RetryImposter(LevelError);
 
 #[derive(Component)]
 pub struct SubstituteImposter(SceneImposter);
@@ -934,7 +1029,12 @@ pub struct SubstituteImposter(SceneImposter);
 fn load_imposters(
     mut commands: Commands,
     pending_imposters: Query<
-        (Entity, &SceneImposter, Option<&SubstituteImposter>),
+        (
+            Entity,
+            &SceneImposter,
+            Option<&SubstituteImposter>,
+            Option<&RetryImposter>,
+        ),
         Or<(Changed<SceneImposter>, With<RetryImposter>)>,
     >,
     mut manager: ImposterSpecManager,
@@ -943,9 +1043,9 @@ fn load_imposters(
     tick: Res<FrameCount>,
     _children: Query<&Children>,
 ) {
-    for (entity, base_imposter, maybe_substitute) in pending_imposters.iter() {
-        let state = manager.get_imposter(base_imposter);
-        let (scene_imposter, maybe_imposter, maybe_floor, is_final) = match state {
+    for (entity, base_imposter, maybe_substitute, maybe_error) in pending_imposters.iter() {
+        let state = manager.get_imposter(base_imposter, maybe_error.map(|e| e.0));
+        let (scene_imposter, maybe_imposter, maybe_floor, error) = match state {
             ImposterState::Missing => {
                 commands
                     .entity(entity)
@@ -953,19 +1053,19 @@ fn load_imposters(
                     .despawn_related::<Children>();
                 continue;
             }
-            ImposterState::Pending => {
-                commands.entity(entity).insert(RetryImposter);
+            ImposterState::Pending(error) => {
+                commands.entity(entity).insert(RetryImposter(error));
                 continue;
             }
             ImposterState::Ready(imposter, floor) => {
                 commands.entity(entity).remove::<RetryImposter>();
-                (*base_imposter, imposter, floor, true)
+                (*base_imposter, imposter, floor, 0)
             }
-            ImposterState::PendingWithSubstitute(scene_imposter, imposter, floor) => {
+            ImposterState::PendingWithSubstitute(scene_imposter, imposter, floor, error) => {
                 // debug!("wanted {base_imposter:?}, got {scene_imposter:?}");
-                (scene_imposter, imposter, floor, false)
+                (scene_imposter, imposter, floor, error)
             }
-            ImposterState::PendingWithPrevious(ents) => {
+            ImposterState::PendingWithPrevious(ents, error) => {
                 for prev_child in ents {
                     commands.entity(prev_child).insert(ChildOf(entity));
 
@@ -977,12 +1077,12 @@ fn load_imposters(
                     //     }
                     // }
                 }
-                commands.entity(entity).insert(RetryImposter);
+                commands.entity(entity).insert(RetryImposter(error));
                 continue;
             }
         };
 
-        if !is_final {
+        if error != 0 {
             if let Some(substitute) = maybe_substitute {
                 if substitute.0 == scene_imposter {
                     debug!("skip on repeat sub");
@@ -991,7 +1091,7 @@ fn load_imposters(
             }
             commands
                 .entity(entity)
-                .insert((RetryImposter, SubstituteImposter(scene_imposter)));
+                .insert((RetryImposter(error), SubstituteImposter(scene_imposter)));
         }
 
         commands.entity(entity).despawn_related::<Children>();
@@ -1003,10 +1103,10 @@ fn load_imposters(
         };
         debug!(
             "[{}] spawn imposter: {:?} {:?} {:?}",
-            tick.0, base_imposter, is_final, scene_imposter
+            tick.0, base_imposter, error, scene_imposter
         );
 
-        // let color = if is_final {
+        // let color = if error == 0 {
         //     Some(Color::linear_rgba(0.0, 0.0, 1.0, 0.4))
         // } else {
         //     Some(Color::linear_rgba(1.0, 0.0, 0.0, 0.4))
@@ -1017,7 +1117,7 @@ fn load_imposters(
             .despawn_related::<Children>()
             .with_children(|c| {
                 if let Some((imposter, spec)) = maybe_imposter {
-                    let (mesh, aabb) = if is_final {
+                    let (mesh, aabb) = if error == 0 {
                         (imposter_meshes.cube.clone(), imposter_meshes.aabb)
                     } else {
                         let mesh = ImposterMesh::from_spec(&spec, base_imposter);
@@ -1051,7 +1151,7 @@ fn load_imposters(
                     let mid = (base_imposter.parcel * IVec2::new(1, -1)).as_vec2() * PARCEL_SIZE
                         + Vec2::new(base_size, -base_size) * 0.5;
 
-                    let mesh = if is_final {
+                    let mesh = if error == 0 {
                         imposter_meshes.floor.clone()
                     } else {
                         let mut floor = Plane3d {
