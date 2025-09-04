@@ -5,7 +5,7 @@ use bevy::{
     ecs::system::SystemParam,
     math::FloatOrd,
     pbr::{NotShadowCaster, NotShadowReceiver},
-    platform::collections::{HashMap, HashSet},
+    platform::collections::{hash_map::Entry, HashMap, HashSet},
     prelude::*,
     render::{
         mesh::{MeshAabb, VertexAttributeValues},
@@ -154,7 +154,7 @@ impl ImposterLoadTask {
 #[derive(Resource, Default)]
 pub struct BakingIngredients(pub Vec<(IVec2, usize)>);
 
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Debug)]
 pub struct ImposterFocus {
     pub origin: Vec2,
     pub min_distance: f32,
@@ -194,6 +194,7 @@ pub fn focus_imposters(
     } else {
         (cam_pos.distance(origin) * 0.5, 0.5)
     };
+    debug!("focus: {focus:?}");
 }
 
 pub fn spawn_imposters(
@@ -241,7 +242,15 @@ pub fn spawn_imposters(
         .scenes
         .iter()
         .filter(|(hash, _)| Some(*hash) != current_imposter_scene)
-        .flat_map(|(_, e)| scenes.get(*e).ok().map(|ctx| &ctx.parcels))
+        .flat_map(|(_, e)| {
+            let Ok(ctx) = scenes.get(*e) else {
+                return None;
+            };
+            if ctx.is_portable {
+                return None;
+            }
+            Some(&ctx.parcels)
+        })
         .flatten()
         .copied()
         .collect::<HashSet<_>>();
@@ -394,7 +403,7 @@ pub enum ImposterSpecResolveState {
 
 pub enum ImposterSpecLoadState {
     Local(ImposterLoadTask),
-    PendingRemote,
+    PendingRemote(f32),
     Remote(ImposterLoadTask),
 }
 
@@ -507,7 +516,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
             .push(entity);
     }
 
-    pub fn get_spec(&mut self, req: &SceneImposter) -> ImposterSpecState {
+    pub fn get_spec(&mut self, req: &SceneImposter, benefit: f32) -> ImposterSpecState {
         let ImposterManagerData {
             mips,
             scenes,
@@ -564,9 +573,11 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                 return state;
             }
 
+            // manage existing state from previous frame
             if let Some((hash, mut load_state)) = prev_loading_scenes.remove_entry(hash) {
                 match load_state {
                     ImposterSpecLoadState::Local(ref mut imposter_load_task) => {
+                        // check if local load completed successfully
                         if let Some(maybe_baked_scene) = imposter_load_task.0.complete() {
                             let new_state = match maybe_baked_scene {
                                 Some(baked_scene) => ImposterSpecResolveState::Ready(baked_scene),
@@ -575,10 +586,12 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                             debug!("end local fetch {hash}: {new_state:?}");
                             scenes.insert(hash, new_state);
                         } else {
+                            // reinsert for this frame if not
                             loading_scenes.insert(hash, load_state);
                         }
                     }
                     ImposterSpecLoadState::Remote(ref mut imposter_load_task) => {
+                        // check if remote load completed successfully
                         if let Some(maybe_baked_scene) = imposter_load_task.0.complete() {
                             let new_state = match maybe_baked_scene {
                                 Some(baked_scene) => ImposterSpecResolveState::Ready(baked_scene),
@@ -586,29 +599,42 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                             };
                             scenes.insert(hash, new_state);
                         } else {
+                            // reinsert for this frame if not
                             loading_scenes.insert(hash, load_state);
                         }
                     }
-                    ImposterSpecLoadState::PendingRemote => (),
+                    // reset the benefit for this frame
+                    ImposterSpecLoadState::PendingRemote(_) => {
+                        loading_scenes.insert(hash, ImposterSpecLoadState::PendingRemote(benefit));
+                    }
                 }
-            } else if !loading_scenes.contains_key(hash) {
-                match resolve_state {
-                    Some(ImposterSpecResolveState::PendingRemote) => {
-                        debug!("requesting remote fetch {hash}");
-                        loading_scenes.insert(hash.clone(), ImposterSpecLoadState::PendingRemote);
+            } else {
+                match loading_scenes.entry(hash.clone()) {
+                    Entry::Vacant(v) => {
+                        // no existing entry, create a new local task or remote request
+                        match resolve_state {
+                            None => {
+                                debug!("start local fetch {hash}");
+                                v.insert(ImposterSpecLoadState::Local(
+                                    ImposterLoadTask::new_scene(&self.ipfas, hash, false),
+                                ));
+                            }
+                            Some(ImposterSpecResolveState::PendingRemote) => {
+                                debug!("requesting remote fetch {hash} (via {req:?})");
+                                v.insert(ImposterSpecLoadState::PendingRemote(benefit));
+                            }
+                            // we should never reach here if the imposter is missing or ready
+                            _ => panic!(),
+                        }
                     }
-                    None => {
-                        debug!("start local fetch {hash}");
-                        loading_scenes.insert(
-                            hash.clone(),
-                            ImposterSpecLoadState::Local(ImposterLoadTask::new_scene(
-                                &self.ipfas,
-                                hash,
-                                false,
-                            )),
-                        );
+                    Entry::Occupied(mut o) => {
+                        if let ImposterSpecLoadState::PendingRemote(ref mut prev_benefit) =
+                            o.get_mut()
+                        {
+                            // add our benefit to the total for this remote request
+                            *prev_benefit += benefit
+                        }
                     }
-                    _ => panic!(),
                 }
             }
 
@@ -650,29 +676,37 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                             loading_mips.insert(key, load_state);
                         }
                     }
-                    ImposterSpecLoadState::PendingRemote => (),
-                }
-            } else if !loading_mips.contains_key(&key) {
-                match resolve_state {
-                    Some(ImposterSpecResolveState::PendingRemote) => {
-                        debug!("requesting remote fetch {req:?}");
-                        loading_mips.insert(key, ImposterSpecLoadState::PendingRemote);
+                    ImposterSpecLoadState::PendingRemote(_) => {
+                        loading_mips.insert(key, ImposterSpecLoadState::PendingRemote(benefit));
                     }
-                    None => {
-                        debug!("start local fetch {req:?}");
-                        loading_mips.insert(
-                            key,
-                            ImposterSpecLoadState::Local(ImposterLoadTask::new_mip(
+                }
+            } else {
+                match loading_mips.entry(key) {
+                    Entry::Vacant(v) => match resolve_state {
+                        None => {
+                            debug!("start local fetch {req:?}");
+                            v.insert(ImposterSpecLoadState::Local(ImposterLoadTask::new_mip(
                                 &self.ipfas,
                                 &self.current_realm.about_url,
                                 req.parcel,
                                 req.level,
                                 crc,
                                 false,
-                            )),
-                        );
+                            )));
+                        }
+                        Some(ImposterSpecResolveState::PendingRemote) => {
+                            debug!("requesting remote fetch {req:?}");
+                            v.insert(ImposterSpecLoadState::PendingRemote(benefit));
+                        }
+                        _ => panic!(),
+                    },
+                    Entry::Occupied(mut o) => {
+                        if let ImposterSpecLoadState::PendingRemote(ref mut prev_benefit) =
+                            o.get_mut()
+                        {
+                            *prev_benefit += benefit
+                        }
                     }
-                    _ => panic!(),
                 }
             }
 
@@ -690,7 +724,6 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         req: &SceneImposter,
         current_error: Option<LevelError>,
     ) -> ImposterState {
-        let spec_state = self.get_spec(req);
         let parcel_count = (1 << req.level) * (1 << req.level);
 
         let origin = self.focus.origin.as_ivec2() * IVec2::new(1, -1);
@@ -698,6 +731,10 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         let distance = (closest_point - origin).as_vec2().length() * self.focus.distance_scale
             + self.focus.min_distance
             + 1.0;
+        let parcel_benefit = current_error.unwrap_or(0);
+        let benefit = parcel_benefit as f32 / (distance * distance);
+
+        let spec_state = self.get_spec(req, benefit);
 
         match spec_state {
             ImposterSpecState::Pending => (),
@@ -745,12 +782,11 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                     let load_request = requested_loading_handles
                         .entry(*req)
                         .or_insert_with(|| AssetLoadRequest::new(ready));
-                    let err = current_error.unwrap_or(0);
-                    load_request.benefit += (err * parcel_count) as f32 / distance;
+                    load_request.benefit += benefit;
                     #[cfg(debug_assertions)]
                     load_request
                         .debug
-                        .push((*req, current_error, distance, err * parcel_count));
+                        .push((*req, current_error, distance, parcel_benefit));
                 } else {
                     return ImposterState::Ready(imposter_data, floor_data);
                 }
@@ -776,7 +812,8 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                     return ImposterState::Pending(ce);
                 }
             }
-            let benefit = current_error.map(|ce| ce - new_error).unwrap_or(0);
+            let parcel_benefit = current_error.map(|ce| ce - new_error).unwrap_or(0);
+            let benefit = parcel_benefit as f32 / (distance * distance);
 
             // use mask to knock out the lower bits, this works for negative numbers too
             let origin = req.parcel & !((1 << level) - 1);
@@ -787,7 +824,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                 as_ingredient: false,
             };
 
-            if let ImposterSpecState::Ready(ready) = self.get_spec(&substitute_imposter) {
+            if let ImposterSpecState::Ready(ready) = self.get_spec(&substitute_imposter, benefit) {
                 let mut needs_load = false;
                 let imposter_data = match ready.imposter_data.as_ref() {
                     Some((spec, path)) => {
@@ -834,16 +871,13 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                         .requested_loading_handles
                         .entry(substitute_imposter)
                         .or_insert_with(|| AssetLoadRequest::new(ready));
-                    load_request.benefit += benefit as f32 / distance;
+                    load_request.benefit += benefit;
                     #[cfg(debug_assertions)]
                     load_request
                         .debug
-                        .push((*req, current_error, distance, benefit));
+                        .push((*req, current_error, distance, parcel_benefit));
                 } else {
-                    debug!(
-                        "checking fallback {req:?} -> {substitute_imposter:?} -> ok! ({:?})",
-                        self.get_spec(&substitute_imposter)
-                    );
+                    debug!("checking fallback {req:?} -> {substitute_imposter:?} -> ok!",);
                     return ImposterState::PendingWithSubstitute(
                         substitute_imposter,
                         imposter_data,
@@ -878,7 +912,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
 
         debug!("{} requested", requested_loading_handles.len());
 
-        // restrict loading assets
+        // start loading available local assets
         let mut new_loading_handles = HashMap::default();
         // keep prior loads that are still required
         for (imposter, loading_handle) in loading_handles.drain() {
@@ -887,9 +921,9 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
             }
         }
 
+        // then start new loads up to MAX_ASSET_LOADS by priority
         let count = new_loading_handles.len();
 
-        // start loading up to max from the rest
         let mut requests = requested_loading_handles.drain().collect::<Vec<_>>();
         requests.sort_by_key(|(_, req)| FloatOrd(-req.benefit));
 
@@ -941,65 +975,109 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         debug!("loading {} / {}", count, count2);
 
         if self.plugin.download {
+            // count current downloads
             let active = loading_mips
                 .values()
                 .chain(loading_scenes.values())
                 .filter(|v| matches!(v, ImposterSpecLoadState::Remote(_)))
                 .count();
-            let mut free = 20 - active;
+            let mut free = 10 - active;
 
-            if free == 0 {
-                return;
+            #[derive(Debug)]
+            enum MipOrScene {
+                Mip((IVec2, usize, u32), f32),
+                Scene(String, f32),
             }
 
-            for (hash, v) in loading_scenes
-                .iter_mut()
-                .filter(|(_, v)| matches!(v, ImposterSpecLoadState::PendingRemote))
-                .take(free)
-            {
-                debug!("started scene remote: {hash}");
-                *v = ImposterSpecLoadState::Remote(ImposterLoadTask::new_scene(
-                    &self.ipfas,
-                    hash,
-                    true,
-                ));
-                free -= 1;
+            impl MipOrScene {
+                fn benefit(&self) -> f32 {
+                    match self {
+                        MipOrScene::Mip(_, d) => *d,
+                        MipOrScene::Scene(_, d) => *d,
+                    }
+                }
             }
 
-            if free == 0 {
-                return;
-            }
+            let mut pending_remotes = Vec::new();
 
-            let focus = self.focus.origin.as_ivec2() * IVec2::new(1, -1) / PARCEL_SIZE as i32;
+            // take all pending remotes, gather and sort those with positive benefit
+            let (pending, mut loading): (HashMap<_, _>, HashMap<_, _>) = loading_mips
+                .drain()
+                .partition(|kv| matches!(kv.1, ImposterSpecLoadState::PendingRemote(_)));
+            *loading_mips = std::mem::take(&mut loading);
+            pending_remotes.extend(pending.into_iter().filter_map(|(k, v)| {
+                let ImposterSpecLoadState::PendingRemote(benefit) = v else {
+                    panic!()
+                };
+                (benefit > 0.0).then_some(MipOrScene::Mip(k, benefit))
+            }));
 
-            let mut mips = loading_mips
-                .iter_mut()
-                .filter(|(_, v)| matches!(v, ImposterSpecLoadState::PendingRemote))
-                .map(|(k, v)| {
-                    let &(parcel, level, _) = k;
-                    let midpoint = parcel + IVec2::splat(1 << (level - 1));
-                    let distance = (midpoint - focus).length_squared();
-                    ((distance, (usize::MAX - level)), (k, v))
-                })
-                .collect::<Vec<_>>();
-            mips.sort_by_key(|(sort_key, _)| *sort_key);
+            let (pending, mut loading): (HashMap<_, _>, HashMap<_, _>) = loading_scenes
+                .drain()
+                .partition(|kv| matches!(kv.1, ImposterSpecLoadState::PendingRemote(_)));
+            *loading_scenes = std::mem::take(&mut loading);
+            pending_remotes.extend(pending.into_iter().filter_map(|(k, v)| {
+                let ImposterSpecLoadState::PendingRemote(benefit) = v else {
+                    panic!()
+                };
+                (benefit > 0.0).then_some(MipOrScene::Scene(k, benefit))
+            }));
 
-            for (_, (k, v)) in mips.into_iter().take(free) {
-                debug!("started mip remote {k:?}");
-                *v = ImposterSpecLoadState::Remote(ImposterLoadTask::new_mip(
-                    &self.ipfas,
-                    &self.current_realm.about_url,
-                    k.0,
-                    k.1,
-                    k.2,
-                    true,
-                ));
+            pending_remotes.sort_by_key(|mos| -FloatOrd(mos.benefit()));
+
+            // debug!("pending remotes: {:?}", pending_remotes);
+
+            // start new remote fetches
+            let mut active_regions: Vec<(IVec2, IVec2)> = Vec::default();
+            for mos in pending_remotes.into_iter() {
+                if free == 0 {
+                    break;
+                }
+
+                match mos {
+                    MipOrScene::Mip((parcel, level, crc), _benefit) => {
+                        let parcel_upper = parcel + (1 << level);
+                        if active_regions.iter().any(|(prev, prev_upper)| {
+                            (parcel.cmpge(*prev).all() && parcel_upper.cmple(*prev_upper).all())
+                                || (prev.cmpge(parcel).all()
+                                    && prev_upper.cmple(parcel_upper).all())
+                        }) {
+                            debug!("skipping {parcel}, {level} due to existing");
+                            continue;
+                        }
+
+                        loading_mips.insert(
+                            (parcel, level, crc),
+                            ImposterSpecLoadState::Remote(ImposterLoadTask::new_mip(
+                                &self.ipfas,
+                                &self.current_realm.about_url,
+                                parcel,
+                                level,
+                                crc,
+                                true,
+                            )),
+                        );
+
+                        active_regions.push((parcel, parcel_upper));
+                        debug!("took mip {:?}, benefit {}", (parcel, level, crc), _benefit);
+                    }
+                    MipOrScene::Scene(hash, _benefit) => {
+                        debug!("took scene {:?}, benefit {}", hash, _benefit);
+                        let task = ImposterSpecLoadState::Remote(ImposterLoadTask::new_scene(
+                            &self.ipfas,
+                            &hash,
+                            true,
+                        ));
+                        loading_scenes.insert(hash, task);
+                    }
+                }
+
                 free -= 1;
             }
         } else {
             // quickly fail everything remote
             loading_scenes.retain(|hash, v| {
-                if matches!(v, ImposterSpecLoadState::PendingRemote) {
+                if matches!(v, ImposterSpecLoadState::PendingRemote(_)) {
                     debug!("auto-failing remote for scene {hash}");
                     scenes.insert(hash.clone(), ImposterSpecResolveState::Missing);
                     false
@@ -1008,7 +1086,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                 }
             });
             loading_mips.retain(|key, v| {
-                if matches!(v, ImposterSpecLoadState::PendingRemote) {
+                if matches!(v, ImposterSpecLoadState::PendingRemote(_)) {
                     debug!("auto-failing remote for mip {key:?}");
                     mips.insert(*key, ImposterSpecResolveState::Missing);
                     false

@@ -623,11 +623,14 @@ fn bake_imposter_imposter(
         for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
             let key = (*parcel + offset * next_size, level - 1, true);
 
-            let spec_state = manager.get_spec(&SceneImposter {
-                parcel: key.0,
-                level: key.1,
-                as_ingredient: false,
-            });
+            let spec_state = manager.get_spec(
+                &SceneImposter {
+                    parcel: key.0,
+                    level: key.1,
+                    as_ingredient: false,
+                },
+                1.0,
+            );
             match spec_state {
                 crate::render::ImposterSpecState::Ready(SpecStateReady {
                     imposter_data: Some((imposter_spec, _)),
