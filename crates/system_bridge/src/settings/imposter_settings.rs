@@ -1,6 +1,6 @@
 use super::SettingCategory;
-use bevy::prelude::*;
-use common::structs::AppConfig;
+use bevy::{ecs::system::lifetimeless::SResMut, prelude::*};
+use common::structs::{AppConfig, SceneLoadDistance};
 
 use super::{AppSetting, EnumAppSetting};
 
@@ -27,7 +27,7 @@ impl EnumAppSetting for ImposterSetting {
 }
 
 impl AppSetting for ImposterSetting {
-    type Param = ();
+    type Param = SResMut<SceneLoadDistance>;
 
     fn title() -> String {
         "Distant Scene Rendering".to_owned()
@@ -62,5 +62,19 @@ impl AppSetting for ImposterSetting {
             Some(200.0) => Self::High,
             _ => Self::Low,
         }
+    }
+
+    fn apply(
+            &self,
+            mut param: bevy::ecs::system::SystemParamItem<Self::Param>,
+            _commands: Commands,
+            _cameras: &bevy::platform::collections::HashSet<Entity>,
+        ) {
+        let max_distance = match self {
+            ImposterSetting::Off => 0.0,
+            _ => 99999.0,
+        };
+        
+        param.load_imposter = max_distance;
     }
 }
