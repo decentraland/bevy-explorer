@@ -65,16 +65,16 @@ impl AppSetting for ImposterSetting {
     }
 
     fn apply(
-            &self,
-            mut param: bevy::ecs::system::SystemParamItem<Self::Param>,
-            _commands: Commands,
-            _cameras: &bevy::platform::collections::HashSet<Entity>,
-        ) {
+        &self,
+        mut param: bevy::ecs::system::SystemParamItem<Self::Param>,
+        _commands: Commands,
+        _cameras: &bevy::platform::collections::HashSet<Entity>,
+    ) {
         let max_distance = match self {
             ImposterSetting::Off => 0.0,
             _ => 99999.0,
         };
-        
+
         param.load_imposter = max_distance;
     }
 }
