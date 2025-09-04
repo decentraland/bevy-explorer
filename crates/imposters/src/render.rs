@@ -210,7 +210,7 @@ pub fn spawn_imposters(
     current_imposter_scene: Res<CurrentImposterScene>,
     mut manager: ImposterSpecManager,
 ) {
-    if current_realm.is_changed() {
+    if current_realm.is_changed() || config.scene_imposter_distances.is_empty() {
         for (entity, _) in &current_imposters {
             if let Ok(mut commands) = commands.get_entity(entity) {
                 commands.despawn();
