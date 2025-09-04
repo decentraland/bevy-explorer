@@ -23,6 +23,7 @@ use spin_sleep::SpinSleeper;
 use system_bridge::SystemBridgePlugin;
 use ui_core::{scrollable::ScrollTargetEvent, stretch_uvs_image::StretchUvMaterial};
 
+use crate::initialize_scene::IVec2Ord;
 use crate::{
     initialize_scene::{PointerResult, ScenePointers},
     permissions::PermissionManager,
@@ -173,6 +174,7 @@ fn init_test_app(entity_json: &str) -> App {
             realm: "manual value".to_owned(),
             hash: "whatever".to_owned(),
             urn: Some(urn),
+            key: IVec2Ord(IVec2::ZERO),
         },
     );
 
