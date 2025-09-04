@@ -249,6 +249,10 @@ pub fn spawn_imposters(
             if ctx.is_portable {
                 return None;
             }
+            if !ctx.broken && (ctx.tick_number <= 5 || !ctx.blocked.is_empty()) {
+                // not ready
+                return None;
+            }
             Some(&ctx.parcels)
         })
         .flatten()
@@ -487,6 +491,7 @@ pub struct ImposterSpecManager<'w, 's> {
 }
 
 const MAX_ASSET_LOADS: usize = 40;
+const MAX_ASSET_DOWNLOADS: usize = 10;
 
 impl<'w, 's> ImposterSpecManager<'w, 's> {
     fn clear(&mut self) {
@@ -981,7 +986,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                 .chain(loading_scenes.values())
                 .filter(|v| matches!(v, ImposterSpecLoadState::Remote(_)))
                 .count();
-            let mut free = 10 - active;
+            let mut free = MAX_ASSET_DOWNLOADS - active;
 
             #[derive(Debug)]
             enum MipOrScene {
