@@ -448,7 +448,6 @@ pub struct ImposterManagerData {
 
 #[derive(PartialEq, Debug)]
 pub struct SpecStateReady {
-    pub key: SceneImposter,
     pub imposter_data: Option<(ImposterSpec, PathBuf)>,
     pub floor_data: Option<PathBuf>,
 }
@@ -533,7 +532,6 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         } = &mut *self.data;
 
         let resolve = |spec: Option<&ImposterSpecResolveState>,
-                       key: SceneImposter,
                        path: &str,
                        has_floor: bool|
          -> ImposterSpecState {
@@ -553,7 +551,6 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                     });
 
                     ImposterSpecState::Ready(SpecStateReady {
-                        key,
                         imposter_data,
                         floor_data,
                     })
@@ -562,18 +559,14 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         };
 
         if req.level == 0 {
-            let (hash, key) = match self.pointers.get(req.parcel) {
+            let hash = match self.pointers.get(req.parcel) {
                 None => return ImposterSpecState::Pending,
                 Some(PointerResult::Nothing) => return ImposterSpecState::Missing,
-                Some(PointerResult::Exists { hash, key, .. }) => (hash, key),
+                Some(PointerResult::Exists { hash, .. }) => hash,
             };
 
             let resolve_state = scenes.get(hash);
-            let key = SceneImposter {
-                parcel: key.0,
-                ..*req
-            };
-            let state = resolve(resolve_state, key, hash, true);
+            let state = resolve(resolve_state, hash, true);
             if state != ImposterSpecState::Pending {
                 return state;
             }
@@ -643,7 +636,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                 }
             }
 
-            resolve(scenes.get(hash), key, hash, true)
+            resolve(scenes.get(hash), hash, true)
         } else {
             let Some(crc) = self.pointers.crc(req.parcel, req.level) else {
                 return ImposterSpecState::Pending;
@@ -652,7 +645,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
             let key = (req.parcel, req.level, crc);
 
             let resolve_state = mips.get(&key);
-            let state = resolve(resolve_state, *req, &self.current_realm.about_url, crc != 0);
+            let state = resolve(resolve_state, &self.current_realm.about_url, crc != 0);
             if state != ImposterSpecState::Pending {
                 return state;
             }
@@ -715,12 +708,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                 }
             }
 
-            resolve(
-                mips.get(&key),
-                *req,
-                &self.current_realm.about_url,
-                crc != 0,
-            )
+            resolve(mips.get(&key), &self.current_realm.about_url, crc != 0)
         }
     }
 

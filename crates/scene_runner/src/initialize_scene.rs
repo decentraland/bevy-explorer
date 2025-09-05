@@ -772,21 +772,6 @@ impl ScenePointers {
     }
 }
 
-#[derive(PartialEq, Eq, Hash, Debug, Clone)]
-pub struct IVec2Ord(pub IVec2);
-
-impl PartialOrd for IVec2Ord {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for IVec2Ord {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.x.cmp(&other.0.x).then(self.0.y.cmp(&other.0.y))
-    }
-}
-
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone)]
 pub enum PointerResult {
     Nothing,
@@ -794,7 +779,6 @@ pub enum PointerResult {
         realm: String,
         hash: String,
         urn: Option<String>,
-        key: IVec2Ord,
     },
 }
 
@@ -1121,25 +1105,12 @@ fn load_active_entities(
                 }
             }
 
-            let parcels = meta
-                .scene
-                .parcels
-                .iter()
-                .map(|pointer| {
-                    let (x, y) = pointer.split_once(',').unwrap();
-                    let x = x.parse::<i32>().unwrap();
-                    let y = y.parse::<i32>().unwrap();
-                    IVec2::new(x, y)
-                })
-                .collect::<Vec<_>>();
-
-            let key = parcels
-                .iter()
-                .cloned()
-                .reduce(|a, b| a.min(b))
-                .unwrap_or_default();
-
-            for parcel in parcels {
+            for parcel in meta.scene.parcels.iter().filter_map(|pointer| {
+                let (x, y) = pointer.split_once(',').unwrap();
+                let x = x.parse::<i32>().ok()?;
+                let y = y.parse::<i32>().ok()?;
+                Some(IVec2::new(x, y))
+            }) {
                 requested_parcels.remove(&parcel);
                 if let Some(new_bounds) = pointers.insert(
                     parcel,
@@ -1147,7 +1118,6 @@ fn load_active_entities(
                         realm: current_realm.address.clone(),
                         hash: active_entity.id.clone(),
                         urn: urn.clone(),
-                        key: IVec2Ord(key),
                     },
                 ) {
                     global_crdt.set_bounds(new_bounds.0, new_bounds.1);
