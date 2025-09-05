@@ -61,6 +61,7 @@ impl AssetLoader for FloorImposterLoader {
                 &ImposterLoaderSettings {
                     multisample: true,
                     alpha_blend: 0.5,
+                    immediate_upload: true,
                     ..Default::default()
                 },
                 load_context,

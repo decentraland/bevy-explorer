@@ -41,7 +41,10 @@ use volume_settings::{
     VoiceVolumeSetting,
 };
 
-use crate::{settings::sensitivity::*, SystemApi};
+use crate::{
+    settings::{imposter_settings::ImposterSetting, sensitivity::*},
+    SystemApi,
+};
 
 pub mod aa_settings;
 pub mod ambient_brightness_setting;
@@ -51,6 +54,7 @@ pub mod constrain_ui;
 pub mod dof_setting;
 pub mod fog_settings;
 pub mod frame_rate;
+pub mod imposter_settings;
 pub mod load_distance;
 pub mod max_avatars;
 pub mod max_downloads;
@@ -132,6 +136,7 @@ impl Plugin for SettingBridgePlugin {
             apply_setting::<ShadowSetting>.after(apply_setting::<ShadowDistanceSetting>),
         );
 
+        add_enum_setting::<ImposterSetting>(app, &mut settings, &mut schedule);
         add_enum_setting::<FogSetting>(app, &mut settings, &mut schedule);
         add_enum_setting::<BloomSetting>(app, &mut settings, &mut schedule);
         add_enum_setting::<DofSetting>(app, &mut settings, &mut schedule);

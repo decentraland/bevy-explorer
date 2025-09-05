@@ -9,7 +9,10 @@ use console::ConsolePlugin;
 
 use dcl_deno::init_runtime;
 
-use imposters::{render::ImposterMissing, DclImposterPlugin};
+use imposters::{
+    render::{RetryImposter, SceneImposter},
+    DclImposterPlugin,
+};
 
 use bevy::{
     app::{ScheduleRunnerPlugin, TaskPoolThreadAssignmentPolicy},
@@ -25,8 +28,8 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, AppError, AvatarDynamicState, CursorLocks, GraphicsSettings, IVec2Arg,
-        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, SceneGlobalLight, SceneImposterBake,
-        SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips,
+        PermissionUsed, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, SceneGlobalLight,
+        SceneImposterBake, SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips,
     },
     util::UtilsPlugin,
 };
@@ -265,6 +268,7 @@ fn main() {
         .init_resource::<SceneGlobalLight>()
         .add_event::<RpcCall>()
         .add_event::<ScrollTargetEvent>()
+        .add_event::<PermissionUsed>()
         .init_resource::<PreviewMode>()
         .init_asset::<Nft>()
         .init_resource::<CursorLocks>()
@@ -285,8 +289,16 @@ fn main() {
     app.run();
 }
 
+#[allow(clippy::type_complexity)]
 fn check_done(
-    q: Query<(), With<ImposterMissing>>,
+    q: Query<
+        (),
+        (
+            With<SceneImposter>,
+            Without<RetryImposter>,
+            Without<Children>,
+        ),
+    >,
     realm: Res<CurrentRealm>,
     pointers: Res<ScenePointers>,
     mut counter: Local<usize>,

@@ -9,6 +9,7 @@ use common::{
 };
 use system_bridge::settings::{
     cache_size::CacheSizeSetting,
+    imposter_settings::ImposterSetting,
     sensitivity::{
         CameraSensitivitySetting, CameraZoomSensitivitySetting, MovementSensitivitySetting,
         PointerSensitivitySetting, ScrollSensitivitySetting,
@@ -113,6 +114,7 @@ fn set_app_settings_content(
             spawn_enum_setting_template::<ShadowSetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<ShadowDistanceSetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<ShadowCasterCountSetting>(&mut commands, &dui, &config),
+            spawn_enum_setting_template::<ImposterSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<FogSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<BloomSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<DofSetting>(&mut commands, &dui, &config),

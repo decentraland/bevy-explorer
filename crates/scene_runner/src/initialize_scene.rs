@@ -1105,12 +1105,12 @@ fn load_active_entities(
                 }
             }
 
-            for pointer in meta.scene.parcels {
+            for parcel in meta.scene.parcels.iter().filter_map(|pointer| {
                 let (x, y) = pointer.split_once(',').unwrap();
-                let x = x.parse::<i32>().unwrap();
-                let y = y.parse::<i32>().unwrap();
-                let parcel = IVec2::new(x, y);
-
+                let x = x.parse::<i32>().ok()?;
+                let y = y.parse::<i32>().ok()?;
+                Some(IVec2::new(x, y))
+            }) {
                 requested_parcels.remove(&parcel);
                 if let Some(new_bounds) = pointers.insert(
                     parcel,
