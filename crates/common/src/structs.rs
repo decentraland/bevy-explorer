@@ -7,6 +7,7 @@ use bevy::{
 };
 use dcl_component::proto_components::sdk::components::common::CameraTransition;
 use ethers_core::abi::Address;
+use platform::AudioInstanceHandle;
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -949,7 +950,7 @@ pub type TextStyle = (TextFont, TextColor);
 // non-spatial audio
 #[derive(Component)]
 pub struct AudioEmitter {
-    pub instances: Vec<Handle<bevy_kira_audio::AudioInstance>>,
+    pub instances: Vec<AudioInstanceHandle>,
 }
 
 #[derive(Clone, Copy)]

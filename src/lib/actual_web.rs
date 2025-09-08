@@ -69,7 +69,6 @@ fn main_inner(
     system_scene: &str,
     with_thread_loader: bool,
     rabpf: usize,
-    buffer_size: u32,
 ) {
     // warnings before log init must be stored and replayed later
     let mut app = App::new();
@@ -243,18 +242,16 @@ fn main_inner(
 
     app.add_plugins(AvatarPlugin);
 
-    app.add_plugins(AudioPlugin {
-        buffer_size: Some(buffer_size),
-    })
-    .add_plugins(RestrictedActionsPlugin)
-    .insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER))
-    .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
-    .add_systems(Startup, setup.in_set(SetupSets::Init))
-    .insert_resource(AmbientLight {
-        color: Color::srgb(0.85, 0.85, 1.0),
-        brightness: 575.0,
-        ..Default::default()
-    });
+    app.add_plugins(AudioPlugin)
+        .add_plugins(RestrictedActionsPlugin)
+        .insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER))
+        .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
+        .add_systems(Startup, setup.in_set(SetupSets::Init))
+        .insert_resource(AmbientLight {
+            color: Color::srgb(0.85, 0.85, 1.0),
+            brightness: 575.0,
+            ..Default::default()
+        });
 
     app.add_console_command::<ChangeLocationCommand, _>(change_location);
     app.add_console_command::<SceneDistanceCommand, _>(scene_distance);
@@ -516,7 +513,6 @@ pub fn engine_run(
     system_scene: &str,
     with_thread_loader: bool,
     rabpf: usize,
-    buffer_size: u32,
 ) {
     main_inner(
         platform,
@@ -525,6 +521,5 @@ pub fn engine_run(
         system_scene,
         with_thread_loader,
         rabpf,
-        buffer_size,
     );
 }

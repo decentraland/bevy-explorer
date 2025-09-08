@@ -175,7 +175,7 @@ fn update_permissions(
                         .insert(ty, value),
                     PermissionLevel::Global => config.default_permissions.insert(ty, value),
                 };
-                platform::write_config_file(&config);
+                platform::write_config_file(&*config);
             }
         };
 

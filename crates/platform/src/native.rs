@@ -1,20 +1,18 @@
 use async_tungstenite::{async_std::ConnectStream, WebSocketStream};
 use bevy::{
-    core_pipeline::{
+    asset::{Assets, Handle}, core_pipeline::{
         bloom::Bloom,
         prepass::{DepthPrepass, NormalPrepass},
         tonemapping::{DebandDither, Tonemapping},
-    },
-    ecs::bundle::Bundle,
-    pbr::ShadowFilteringMethod,
-    render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
+    }, ecs::{bundle::Bundle, system::{Res, ResMut, SystemParam}}, pbr::ShadowFilteringMethod, render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection}
 };
-use common::structs::AppConfig;
+use bevy_kira_audio::AudioControl;
 use futures_util::{
     sink::SinkExt,
     stream::{SplitSink, SplitStream},
     StreamExt,
 };
+use serde::Serialize;
 pub use tungstenite::client::IntoClientRequest;
 
 pub struct WebSocket {
@@ -83,7 +81,7 @@ pub fn project_directories() -> Option<directories::ProjectDirs> {
     directories::ProjectDirs::from("org", "decentraland", "BevyExplorer")
 }
 
-pub fn write_config_file(config: &AppConfig) {
+pub fn write_config_file<T: Serialize>(config: &T) {
     let config_file = project_directories()
         .unwrap()
         .config_dir()
@@ -166,4 +164,32 @@ pub fn default_camera_components() -> impl Bundle {
         DepthPrepass,
         NormalPrepass,
     )
+}
+
+pub type AudioInstanceHandle = Handle<bevy_kira_audio::AudioInstance>;
+
+#[derive(SystemParam)]
+pub struct AudioManager<'w> {
+    pub instances: ResMut<'w, Assets<bevy_kira_audio::AudioInstance>>,
+    pub sounds: Res<'w, Assets<bevy_kira_audio::AudioSource>>,
+    pub audio: Res<'w, bevy_kira_audio::Audio>,
+}
+
+impl<'w> AudioManager<'w> {
+    pub fn play(&self, handle: Handle<bevy_kira_audio::AudioSource>, volume: f32, panning: f32) -> AudioInstanceHandle {
+        self.audio.play(handle).with_volume(volume as f64).with_panning(panning as f64).handle()
+    }
+
+    pub fn stop(&mut self, instance: &AudioInstanceHandle) {
+        if let Some(instance) = self.instances.get_mut(instance) {
+            instance.stop(bevy_kira_audio::AudioTween::default())
+        }
+    }
+
+    pub fn set_volume_and_panning(&mut self, instance: &AudioInstanceHandle, volume: f32, panning: f32) {
+        if let Some(instance) = self.instances.get_mut(instance) {
+            instance.set_volume(volume as f64, bevy_kira_audio::AudioTween::default());
+            instance.set_panning(panning as f64, bevy_kira_audio::AudioTween::default());
+        }
+    }
 }

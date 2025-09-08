@@ -32,6 +32,8 @@ pub struct AudioSourcePlugin;
 
 impl Plugin for AudioSourcePlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(bevy_kira_audio::AudioPlugin);
+
         app.add_event::<SystemAudio>();
         app.add_crdt_lww_component::<PbAudioSource, AudioSource>(
             SceneComponentId::AUDIO_SOURCE,

@@ -499,7 +499,7 @@ impl Emote {
 
     pub fn audio(
         &self,
-        audio: &Assets<bevy_kira_audio::AudioSource>,
+        sounds: &Assets<bevy_kira_audio::AudioSource>,
         after: f32,
     ) -> Result<Option<(f32, Handle<bevy_kira_audio::AudioSource>)>, CollectibleError> {
         self.sound
@@ -510,7 +510,7 @@ impl Emote {
                     return Ok(None);
                 }
                 let clip = &clips[fastrand::usize(0..clips.len())];
-                if audio.get(clip.id()).is_some() {
+                if sounds.get(clip.id()).is_some() {
                     Ok(Some((*t, clip.clone())))
                 } else {
                     Err(CollectibleError::Loading)

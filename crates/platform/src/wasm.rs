@@ -16,7 +16,7 @@ use bevy::{
 };
 use bevy::{ecs::component::Component, log::warn};
 
-use common::structs::AppConfig;
+use serde::Serialize;
 use futures_util::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
@@ -142,7 +142,7 @@ pub fn compat<F>(f: F) -> F {
 pub fn project_directories() -> Option<directories::ProjectDirs> {
     None
 }
-pub fn write_config_file(config: &AppConfig) {
+pub fn write_config_file<T: Serialize>(config: &T) {
     use futures_lite::io::AsyncWriteExt;
     let config = config.clone();
 

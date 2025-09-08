@@ -511,7 +511,7 @@ fn process_login_bridge(
                     ephemeral_key,
                     auth: auth.clone(),
                 });
-                platform::write_config_file(&config);
+                platform::write_config_file(&*config);
 
                 wallet.finalize(root_address, local_wallet, auth);
                 segment_config.update_identity(format!("{:#x}", wallet.address().unwrap()), false);

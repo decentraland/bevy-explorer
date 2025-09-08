@@ -9,6 +9,7 @@ edition = "2021"
 dcl-assert = []
 
 [dependencies]
+platform = { workspace = true }
 dcl_component = { workspace = true }
 
 bevy = { workspace = true }

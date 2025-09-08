@@ -11,7 +11,6 @@ use bevy::{
     scene::InstanceId,
 };
 use bevy_console::ConsoleCommand;
-use bevy_kira_audio::{AudioControl, AudioInstance, AudioTween};
 use collectibles::{
     Collectible, CollectibleData, CollectibleError, CollectibleManager, Emote, EmoteUrn,
 };
@@ -41,6 +40,7 @@ use dcl_component::{
     SceneComponentId, SceneEntityId,
 };
 use ipfs::IpfsAssetServer;
+use platform::AudioManager;
 use scene_runner::{
     permissions::Permission, renderer_context::RendererSceneContext,
     update_world::animation::Clips, ContainerEntity, ContainingScene,
@@ -501,15 +501,13 @@ fn play_current_emote(
     mut cached_gltf_handles: Local<HashSet<Handle<Gltf>>>,
     mut spawned_extras: Local<HashMap<Entity, SpawnedExtras>>,
     mut scene_spawner: ResMut<SceneSpawner>,
-    (audio, sounds, anim_clips, config, pan): (
-        Res<bevy_kira_audio::Audio>,
-        Res<Assets<bevy_kira_audio::AudioSource>>,
+    (mut audio, anim_clips, config, pan): (
+        AudioManager,
         Res<Assets<AnimationClip>>,
         Res<AppConfig>,
         VolumePanning,
     ),
     mut emitters: Query<&mut AudioEmitter>,
-    mut audio_instances: ResMut<Assets<AudioInstance>>,
     prop_details: Query<(Option<&Name>, &Transform, &ChildOf)>,
 ) {
     let prior_playing = std::mem::take(&mut *playing);
@@ -738,7 +736,7 @@ fn play_current_emote(
 
         // get next time to play a sound, with a lot of messing around for inf values
         let sound = match emote.audio(
-            &sounds,
+            &audio.sounds,
             if last_audio_mark.is_finite() {
                 last_audio_mark % clip_duration
             } else {
@@ -760,7 +758,7 @@ fn play_current_emote(
             sound.as_ref().map(|(t, _)| t)
         );
         let sound = if sound.is_none() && active_emote.repeat {
-            match emote.audio(&sounds, f32::NEG_INFINITY) {
+            match emote.audio(&audio.sounds, f32::NEG_INFINITY) {
                 Ok(None) => None,
                 Ok(Some((play_time, s))) => {
                     Some((play_time + clip_duration * (completions + 1.0), s))
@@ -878,24 +876,16 @@ fn play_current_emote(
                     .and_then(|(e, _)| emitters.get_mut(*e).ok())
                 {
                     for h_instance in existing_emitter.instances.drain(..) {
-                        if let Some(instance) = audio_instances.get_mut(&h_instance) {
-                            instance.stop(AudioTween::default());
-                        }
+                        audio.stop(&h_instance)
                     }
-                    existing_emitter.instances.push(
-                        audio
-                            .play(sound)
-                            .with_volume((volume * config.audio.avatar()) as f64)
-                            .with_panning(panning as f64)
-                            .handle(),
-                    );
+                    existing_emitter.instances.push(audio.play(
+                        sound,
+                        volume * config.audio.avatar(),
+                        panning,
+                    ));
                     existing.unwrap().1 = elapsed;
                 } else {
-                    let handle = audio
-                        .play(sound)
-                        .with_volume((volume * config.audio.avatar()) as f64)
-                        .with_panning(panning as f64)
-                        .handle();
+                    let handle = audio.play(sound, volume * config.audio.avatar(), panning);
 
                     let audio_entity = commands
                         .spawn((
