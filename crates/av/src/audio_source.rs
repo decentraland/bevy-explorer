@@ -8,7 +8,10 @@ use bevy::{
 use bevy_kira_audio::{AudioControl, AudioInstance, AudioTween};
 use common::{
     sets::SetupSets,
-    structs::{AudioEmitter, AudioSettings, AudioType, PRIMARY_AVATAR_LIGHT_LAYER_INDEX, PrimaryCameraRes, PrimaryUser, SystemAudio},
+    structs::{
+        AudioEmitter, AudioSettings, AudioType, PrimaryCameraRes, PrimaryUser, SystemAudio,
+        PRIMARY_AVATAR_LIGHT_LAYER_INDEX,
+    },
     util::{AudioReceiver, VolumePanning},
 };
 use dcl::interface::ComponentPosition;
@@ -57,11 +60,9 @@ impl Plugin for AudioSourcePlugin {
 }
 
 fn setup_audio(mut commands: Commands, camera: Res<PrimaryCameraRes>) {
-    commands
-        .entity(camera.0)
-        .try_insert(AudioReceiver {
-            layers: RenderLayers::default().with(PRIMARY_AVATAR_LIGHT_LAYER_INDEX),
-        });
+    commands.entity(camera.0).try_insert(AudioReceiver {
+        layers: RenderLayers::default().with(PRIMARY_AVATAR_LIGHT_LAYER_INDEX),
+    });
 }
 
 fn map_scene_audio_sources(
@@ -188,10 +189,9 @@ fn manage_audio_sources(
                     };
 
                     if matches!(
-                            instance.state(),
-                            bevy_kira_audio::PlaybackState::Playing { .. }
-                        )
-                    {
+                        instance.state(),
+                        bevy_kira_audio::PlaybackState::Playing { .. }
+                    ) {
                         // reuse existing only if same source AND still playing
                         instances.insert(ent, (id, h_instance));
                         Some(instance)
