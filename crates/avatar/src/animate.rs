@@ -18,7 +18,8 @@ use common::{
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
     structs::{
-        AudioEmitter, AudioType, AvatarDynamicState, EmoteCommand, MoveKind, PlayerModifiers, PrimaryUser
+        AudioEmitter, AudioType, AvatarDynamicState, EmoteCommand, MoveKind, PlayerModifiers,
+        PrimaryUser,
     },
     util::TryPushChildrenEx,
 };
@@ -475,12 +476,7 @@ impl SpawnedExtras {
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn play_current_emote(
     mut commands: Commands,
-    mut q: Query<(
-        Entity,
-        &mut ActiveEmote,
-        &AvatarAnimPlayer,
-        &Children,
-    )>,
+    mut q: Query<(Entity, &mut ActiveEmote, &AvatarAnimPlayer, &Children)>,
     definitions: Query<&AvatarDefinition>,
     mut emote_loader: CollectibleManager<Emote>,
     mut gltfs: ResMut<Assets<Gltf>>,

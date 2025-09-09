@@ -18,14 +18,16 @@ pub mod video_context;
 pub mod video_stream;
 
 // audio source (non-streaming audio)
-#[cfg(not(feature = "html"))]
 pub mod audio_source;
-#[cfg(not(feature = "html"))]
 use audio_source::AudioSourcePlugin;
-#[cfg(feature="html")]
-pub mod html_audio_source;
-#[cfg(feature="html")]
-use html_audio_source::AudioSourcePlugin;
+#[cfg(not(feature = "html"))]
+pub mod audio_source_native;
+#[cfg(not(feature = "html"))]
+use audio_source_native::AudioSourcePluginImpl;
+#[cfg(feature = "html")]
+pub mod audio_source_wasm;
+#[cfg(feature = "html")]
+use audio_source_wasm::AudioSourcePluginImpl;
 
 // foreign players
 #[cfg(feature = "ffmpeg")]
@@ -50,6 +52,7 @@ impl Plugin for AudioPlugin {
         app.add_plugins(VideoPlayerPlugin);
 
         app.add_plugins(AudioSourcePlugin);
+        app.add_plugins(AudioSourcePluginImpl);
         #[cfg(feature = "ffmpeg")]
         app.add_systems(
             PostUpdate,
