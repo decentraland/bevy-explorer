@@ -19,12 +19,12 @@ directories = { workspace = true }
 futures-lite = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+bevy_kira_audio = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 async-tungstenite = { workspace = true }
 async-compat = { workspace = true }
 tokio = { workspace = true }
-bevy_kira_audio = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = { workspace = true }

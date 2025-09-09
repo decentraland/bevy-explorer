@@ -7,7 +7,6 @@ use bevy::{
 };
 use dcl_component::proto_components::sdk::components::common::CameraTransition;
 use ethers_core::abi::Address;
-use platform::AudioInstanceHandle;
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -399,6 +398,13 @@ impl Default for GraphicsSettings {
             gpu_bytes_per_frame: 0,
         }
     }
+}
+
+pub enum AudioType {
+    Voice,
+    Scene,
+    System,
+    Avatar,
 }
 
 #[derive(Resource, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -950,7 +956,29 @@ pub type TextStyle = (TextFont, TextColor);
 // non-spatial audio
 #[derive(Component)]
 pub struct AudioEmitter {
-    pub instances: Vec<AudioInstanceHandle>,
+    pub handle: Handle<bevy_kira_audio::AudioSource>,
+    pub playing: bool,
+    pub playback_speed: f32,
+    pub r#loop: bool,
+    pub volume: f32,
+    pub global: bool,
+    pub seek_time: Option<f32>,
+    pub ty: AudioType,
+}
+
+impl Default for AudioEmitter {
+    fn default() -> Self {
+        Self {
+            handle: default(),
+            playing: true,
+            playback_speed: 1.0,
+            r#loop: false,
+            volume: 1.0,
+            global: false,
+            seek_time: None,
+            ty: AudioType::System,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]

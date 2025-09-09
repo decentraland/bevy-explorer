@@ -1,26 +1,25 @@
 use std::time::Duration;
 
 use anyhow::anyhow;
+use bevy::ecs::component::Component;
+use bevy::ecs::entity::Entity;
+use bevy::ecs::system::{Commands, Query, Res, SystemParam};
+use bevy::log::warn;
 use bevy::{
-    app::Propagate,
     core_pipeline::{
         bloom::Bloom,
         tonemapping::{DebandDither, Tonemapping},
     },
     ecs::bundle::Bundle,
     pbr::ShadowFilteringMethod,
-    render::{
-        camera::{PerspectiveProjection, Projection},
-        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
-    },
+    render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
 };
-use bevy::{ecs::component::Component, log::warn};
 
-use serde::Serialize;
 use futures_util::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
+use serde::Serialize;
 pub use tungstenite::client::IntoClientRequest;
 use wasm_bindgen_futures::spawn_local;
 use ws_stream_wasm::{WsMessage, WsMeta, WsStream};
@@ -142,7 +141,7 @@ pub fn compat<F>(f: F) -> F {
 pub fn project_directories() -> Option<directories::ProjectDirs> {
     None
 }
-pub fn write_config_file<T: Serialize>(config: &T) {
+pub fn write_config_file<T: Serialize + Clone + 'static>(config: &T) {
     use futures_lite::io::AsyncWriteExt;
     let config = config.clone();
 

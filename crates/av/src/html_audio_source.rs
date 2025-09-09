@@ -5,7 +5,6 @@ use bevy::{
     prelude::*,
     render::{renderer::WgpuWrapper, view::RenderLayers},
 };
-use bevy_kira_audio::{AudioControl, AudioInstance, AudioTween};
 use common::{
     sets::SetupSets,
     structs::{AudioEmitter, AudioSettings, PrimaryCameraRes, PrimaryUser, SystemAudio},
@@ -18,7 +17,7 @@ use scene_runner::{
     renderer_context::RendererSceneContext, update_world::AddCrdtInterfaceExt, ContainingScene,
     SceneEntity,
 };
-use web_sys::{AudioContext, AudioBuffer, GainNode, StereoPannerNode};
+use web_sys::{AudioBuffer, AudioContext, GainNode, StereoPannerNode};
 
 #[derive(Component, Debug)]
 pub struct AudioSource(PbAudioSource);
@@ -40,24 +39,25 @@ impl Plugin for AudioSourcePlugin {
             SceneComponentId::AUDIO_SOURCE,
             ComponentPosition::EntityOnly,
         );
-        app.add_systems(
-            PostUpdate,
-            (
-                create_audio_sources,
-                update_audio_sources,
-                play_system_audio,
-                remove_dead_audio_assets,
-            )
-                .after(TransformSystem::TransformPropagate),
-        );
+        // app.add_systems(
+        //     PostUpdate,
+        //     (
+        //         create_audio_sources,
+        //         update_audio_sources,
+        //         play_system_audio,
+        //         remove_dead_audio_assets,
+        //     )
+        //         .after(TransformSystem::TransformPropagate),
+        // );
         app.add_systems(Startup, setup_audio.in_set(SetupSets::Main));
     }
 }
 
-#[derive(Resource)]
+#[derive(NonSend)]
 pub struct HtmlAudioContext {
     context: AudioContext,
     buffers: HashMap<AssetId<bevy_kira_audio::AudioSource>, AudioBuffer>,
+    graphs: Vec<Option<AudioSourceGraph>>,
 }
 
 impl Default for HtmlAudioContext {
@@ -65,15 +65,102 @@ impl Default for HtmlAudioContext {
         Self {
             context: AudioContext::new().unwrap(),
             buffers: default(),
+            graphs: default(),
         }
     }
 }
 
 impl HtmlAudioContext {
-    fn get_buffer(&mut self, id: AssetId<bevy_kira_audio::AudioSource>, assets: String) -> Option<AudioBuffer> {
-        self.buffers.entry(id).or_insert_with(|| {
+    fn start(&mut self, handle: Handle<bevy_kira_audio::AudioSource>, r#loop: bool) -> usize {
+        let graph = AudioSourceGraph {
+            handle,
+            graph: None,
+        };
+        if let Some((ix, slot)) = self.graphs.iter_mut().enumerate().find(Option::is_none) {
+            *slot = Some(graph);
+            return ix;
+        };
 
-        }).clone()
+        self.graphs.push(Some(graph));
+        self.graphs.len() - 1
+    }
+
+    fn tick(
+        &mut self,
+        mut asset_events: EventReader<AssetEvent<bevy_kira_audio::AudioSource>>,
+        assets: Res<Assets<bevy_kira_audio::AudioSource>>,
+    ) {
+        for ev in asset_events.read() {
+            match ev {
+                AssetEvent::Added { id }
+                | AssetEvent::Modified { id }
+                | AssetEvent::LoadedWithDependencies { id } => {
+                    let Some(asset) = assets.get(id) else {
+                        continue;
+                    };
+                    let frame_count = asset.sound.frames.len();
+                    let buffer = self
+                        .context
+                        .create_buffer(1, frame_count, asset.sound.sample_rate as f32)
+                        .unwrap();
+                    let frames = asset
+                        .sound
+                        .frames
+                        .iter()
+                        .map(|f| (f.left + f.right) / 2.0)
+                        .collect::<Vec<_>>();
+                    buffer.copy_to_channel(&frames, 0).unwrap();
+                    self.buffers.insert(id, buffer);
+                }
+                AssetEvent::Removed { id } => {
+                    self.buffers.remove(id);
+                }
+                _ => (),
+            }
+        }
+
+        for graph in self.graphs.iter_mut() {
+            if let Some(graph) = graph {
+                if graph.graph.is_none() {
+                    if let Some(buffer) = self.buffers.get(graph.handle.id()) {
+                        // make new graph
+                        let source_node = self.context.create_buffer_source().unwrap();
+                        source_node.set_buffer(Some(buffer));
+                        if graph.r#loop {
+                            source_node.set_loop(true);
+                        }
+
+                        let gain_node = context.create_gain().unwrap();
+                        gain_node.gain().set_value(graph.volume);
+
+                        let pan_node = context.create_pan().unwrap();
+                        pan_node.pan().set_value(graph.pan);
+
+                        source_node.connect_with_audio_node(gain_node).unwrap();
+                        gain_node.connect_with_audio_node(pan_node).unwrap();
+                        pan_node
+                            .connect_with_audio_node(self.context.destination())
+                            .unwrap();
+
+                        graph.graph = Some(AudioGraphHtmlElements {
+                            source_node,
+                            gain_node,
+                            panner_node,
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl HtmlAudioContext {
+    fn get_buffer(
+        &mut self,
+        id: AssetId<bevy_kira_audio::AudioSource>,
+        assets: String,
+    ) -> Option<AudioBuffer> {
+        self.buffers.entry(id).or_insert_with(|| {}).clone()
     }
 }
 
@@ -83,175 +170,169 @@ fn setup_audio(mut commands: Commands, camera: Res<PrimaryCameraRes>) {
         .try_insert(AudioReceiver::default());
 }
 
+pub struct AudioGraphHtmlElements {
+    pub source_node: AudioBufferSourceNode,
+    pub gain_node: GainNode,
+    pub panner_node: StereoPannerNode,
+}
+
+pub struct AudioSourceGraph {
+    handle: Handle<bevy_kira_audio::AudioSource>,
+    graph: Option<AudioGraphHtmlElements>,
+}
+
 #[derive(Component)]
 pub struct AudioSourceState {
     handle: Handle<bevy_kira_audio::AudioSource>,
-    pub gain_node: GainNode,
-    pub panner_node: StereoPannerNode,
     clip_url: String,
 }
 
-#[derive(Asset)]
-pub struct AudioBufferAsset(WgpuWrapper<AudioBuffer>);
+#[derive(Component)]
+pub struct AudioInstance {
+    graph_id: usize,
+}
 
-// #[allow(clippy::type_complexity, clippy::too_many_arguments)]
-// fn create_audio_sources(
-//     mut commands: Commands,
-//     mut query: Query<
-//         (
-//             Entity,
-//             &SceneEntity,
-//             &AudioSource,
-//             Option<&mut AudioSourceState>,
-//             Option<&mut AudioEmitter>,
-//             &GlobalTransform,
-//         ),
-//         Changed<AudioSource>,
-//     >,
-//     scenes: Query<&RendererSceneContext>,
-//     audio: Res<bevy_kira_audio::Audio>,
-//     ipfas: IpfsAssetServer,
-//     mut audio_instances: ResMut<Assets<AudioInstance>>,
-//     containing_scene: ContainingScene,
-//     player: Query<Entity, With<PrimaryUser>>,
-//     cam: Query<&GlobalTransform, With<AudioReceiver>>,
-//     settings: Res<AudioSettings>,
-// ) {
-//     let current_scenes = player
-//         .single()
-//         .ok()
-//         .map(|p| containing_scene.get(p))
-//         .unwrap_or_default();
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+fn create_audio_sources(
+    mut commands: Commands,
+    mut query: Query<
+        (
+            Entity,
+            &SceneEntity,
+            &AudioSource,
+            Option<&mut AudioSourceState>,
+            Option<&mut AudioEmitter>,
+            &GlobalTransform,
+        ),
+        Changed<AudioSource>,
+    >,
+    scenes: Query<&RendererSceneContext>,
+    audio: ResMut<AudioContext>,
+    ipfas: IpfsAssetServer,
+    containing_scene: ContainingScene,
+    player: Query<Entity, With<PrimaryUser>>,
+    cam: Query<&GlobalTransform, With<AudioReceiver>>,
+    settings: Res<AudioSettings>,
+) {
+    let current_scenes = player
+        .single()
+        .ok()
+        .map(|p| containing_scene.get(p))
+        .unwrap_or_default();
 
-//     let gt = cam.single().unwrap_or(&GlobalTransform::IDENTITY);
+    let gt = cam.single().unwrap_or(&GlobalTransform::IDENTITY);
 
-//     for (ent, scene_ent, audio_source, maybe_source, maybe_emitter, egt) in query.iter_mut() {
-//         let mut new_state = None;
-//         // preload clips
-//         let state = match maybe_source {
-//             Some(state) if state.clip_url == audio_source.0.audio_clip_url => state.into_inner(),
-//             _ => {
-//                 // stop any previous different clips
-//                 if let Some(emitter) = maybe_emitter.as_ref() {
-//                     for h_instance in emitter.instances.iter() {
-//                         if let Some(instance) = audio_instances.get_mut(h_instance) {
-//                             instance.stop(AudioTween::default());
-//                         }
-//                     }
-//                 }
+    for (ent, scene_ent, audio_source, maybe_source, maybe_emitter, egt) in query.iter_mut() {
+        let mut new_state = None;
+        // preload clips
+        let state = match maybe_source {
+            Some(state) if state.clip_url == audio_source.0.audio_clip_url => state.into_inner(),
+            _ => {
+                // stop any previous different clips
+                if let Some(emitter) = maybe_emitter.as_ref() {
+                    for h_instance in emitter.instances.iter() {
+                        audio.stop(h_instance);
+                    }
+                }
 
-//                 let Ok(scene) = scenes.get(scene_ent.root) else {
-//                     warn!("failed to load audio source scene");
-//                     continue;
-//                 };
+                let Ok(scene) = scenes.get(scene_ent.root) else {
+                    warn!("failed to load audio source scene");
+                    continue;
+                };
 
-//                 let Ok(handle) =
-//                     ipfas.load_content_file(&audio_source.0.audio_clip_url, &scene.hash)
-//                 else {
-//                     warn!("failed to load content file");
-//                     continue;
-//                 };
+                let Ok(handle) =
+                    ipfas.load_content_file(&audio_source.0.audio_clip_url, &scene.hash)
+                else {
+                    warn!("failed to load content file");
+                    continue;
+                };
 
-//                 debug!("clip {:?}", audio_source.0);
-//                 new_state = Some(AudioSourceState {
-//                     handle,
-//                     clip_url: audio_source.0.audio_clip_url.clone(),
-//                 });
+                debug!("clip {:?}", audio_source.0);
+                new_state = Some(AudioSourceState {
+                    handle,
+                    clip_url: audio_source.0.audio_clip_url.clone(),
+                });
 
-//                 new_state.as_mut().unwrap()
-//             }
-//         };
+                new_state.as_mut().unwrap()
+            }
+        };
 
-//         if audio_source.0.playing() {
-//             debug!(
-//                 "play {:?} @ [{:?}] {} vs {}",
-//                 audio_source.0,
-//                 ent,
-//                 egt.translation(),
-//                 gt.translation()
-//             );
+        if audio_source.0.playing() {
+            debug!(
+                "play {:?} @ [{:?}] {} vs {}",
+                audio_source.0,
+                ent,
+                egt.translation(),
+                gt.translation()
+            );
 
-//             let volume = if current_scenes.contains(&scene_ent.root) {
-//                 audio_source.0.volume.unwrap_or(1.0) * settings.scene()
-//             } else {
-//                 0.0
-//             };
-//             let playback_rate = audio_source.0.pitch.unwrap_or(1.0) as f64;
+            let volume = if current_scenes.contains(&scene_ent.root) {
+                audio_source.0.volume.unwrap_or(1.0) * settings.scene()
+            } else {
+                0.0
+            };
+            let playback_rate = audio_source.0.pitch.unwrap_or(1.0) as f64;
 
-//             // get existing audio or create new
-//             let maybe_playing_instance = maybe_emitter
-//                 .as_ref()
-//                 .and_then(|emitter| emitter.instances.first())
-//                 .and_then(|h_instance| {
-//                     let instance = audio_instances.get_mut(h_instance)?;
-//                     matches!(
-//                         instance.state(),
-//                         bevy_kira_audio::PlaybackState::Playing { .. }
-//                     )
-//                     .then_some(instance)
-//                 });
+            // get existing audio or create new
+            let maybe_playing_instance = maybe_emitter
+                .as_ref()
+                .and_then(|emitter| emitter.instances.first())
+                .and_then(|h_instance| audio.instance(h_instance).playing.then_some(h_instance));
 
-//             match maybe_playing_instance {
-//                 Some(playing_instance) => {
-//                     playing_instance.set_loop(audio_source.0.r#loop());
-//                     playing_instance.set_volume(
-//                         bevy_kira_audio::prelude::Volume::Amplitude(volume as f64),
-//                         AudioTween::default(),
-//                     );
-//                     playing_instance.set_playback_rate(playback_rate, AudioTween::default());
-//                     if let Some(time) = audio_source.0.current_time {
-//                         if time < 1e6 {
-//                             playing_instance.seek_to(time as f64);
-//                         } else {
-//                             warn!(
-//                                 "ignoring ridiculous time offset {} for audio clip `{}`",
-//                                 time, audio_source.0.audio_clip_url
-//                             );
-//                         }
-//                     }
-//                 }
-//                 None => {
-//                     let mut new_instance = &mut audio.play(state.handle.clone());
-//                     debug!("created {:?}", new_instance.handle());
-//                     if audio_source.0.r#loop() {
-//                         new_instance = new_instance.looped();
-//                     }
-//                     new_instance = new_instance
-//                         .with_volume(bevy_kira_audio::prelude::Volume::Amplitude(volume as f64));
-//                     new_instance =
-//                         new_instance.with_playback_rate(audio_source.0.pitch.unwrap_or(1.0) as f64);
+            match maybe_playing_instance {
+                Some(playing_instance) => {
+                    audio.set_instance(playing_instance, audio_source.0.r#loop(), volume, playback_rate);
+                    if let Some(time) = audio_source.0.current_time {
+                        if time < 1e6 {
+                            audio.seek_to(time);
+                        } else {
+                            warn!(
+                                "ignoring ridiculous time offset {} for audio clip `{}`",
+                                time, audio_source.0.audio_clip_url
+                            );
+                        }
+                    }
+                }
+                None => {
+                    let mut new_instance = audio.play(state.handle.clone());
+                    debug!("created {:?}", new_instance.handle());
+                    if audio_source.0.r#loop() {
+                        new_instance = new_instance.looped();
+                    }
+                    new_instance = new_instance
+                        .with_volume(bevy_kira_audio::prelude::Volume::Amplitude(volume as f64));
+                    new_instance =
+                        new_instance.with_playback_rate(audio_source.0.pitch.unwrap_or(1.0) as f64);
 
-//                     if let Some(time) = audio_source.0.current_time {
-//                         if time < 1e6 {
-//                             new_instance.start_from(time as f64);
-//                         } else {
-//                             warn!(
-//                                 "ignoring ridiculous start time {} for audio clip `{}`",
-//                                 time, audio_source.0.audio_clip_url
-//                             );
-//                         }
-//                     }
+                    if let Some(time) = audio_source.0.current_time {
+                        if time < 1e6 {
+                            new_instance.start_from(time as f64);
+                        } else {
+                            warn!(
+                                "ignoring ridiculous start time {} for audio clip `{}`",
+                                time, audio_source.0.audio_clip_url
+                            );
+                        }
+                    }
 
-//                     commands.entity(ent).try_insert(AudioEmitter {
-//                         instances: vec![new_instance.handle()],
-//                     });
-//                 }
-//             };
-//         } else if let Some(emitter) = maybe_emitter {
-//             debug!("stop {:?} ({:?})", audio_source.0, emitter.instances);
-//             // stop running
-//             for h_instance in emitter.instances.iter() {
-//                 if let Some(instance) = audio_instances.get_mut(h_instance) {
-//                     instance.stop(AudioTween::default());
-//                 }
-//             }
-//         }
+                    commands.entity(ent).try_insert(AudioEmitter {
+                        instances: vec![new_instance.handle()],
+                    });
+                }
+            };
+        } else if let Some(emitter) = maybe_emitter {
+            debug!("stop {:?} ({:?})", audio_source.0, emitter.instances);
+            // stop running
+            for h_instance in emitter.instances.iter() {
+                audio.stop(h_instance);
+            }
+        }
 
-//         if let Some(new_state) = new_state {
-//             commands.entity(ent).try_insert(new_state);
-//         }
-//     }
-// }
+        if let Some(new_state) = new_state {
+            commands.entity(ent).try_insert(new_state);
+        }
+    }
+}
 
 // fn remove_dead_audio_assets(mut audio_instances: ResMut<Assets<AudioInstance>>) {
 //     let mut dead = HashSet::new();

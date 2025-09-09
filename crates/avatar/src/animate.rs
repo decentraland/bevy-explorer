@@ -7,7 +7,6 @@ use bevy::{
     math::Vec3Swizzles,
     platform::collections::{HashMap, HashSet},
     prelude::*,
-    render::view::RenderLayers,
     scene::InstanceId,
 };
 use bevy_console::ConsoleCommand;
@@ -22,7 +21,7 @@ use common::{
         AppConfig, AudioEmitter, AvatarDynamicState, EmoteCommand, MoveKind, PlayerModifiers,
         PrimaryUser,
     },
-    util::{TryPushChildrenEx, VolumePanning},
+    util::TryPushChildrenEx,
 };
 use comms::{
     chat_marker_things,
@@ -40,7 +39,6 @@ use dcl_component::{
     SceneComponentId, SceneEntityId,
 };
 use ipfs::IpfsAssetServer;
-use platform::AudioManager;
 use scene_runner::{
     permissions::Permission, renderer_context::RendererSceneContext,
     update_world::animation::Clips, ContainerEntity, ContainingScene,
@@ -483,8 +481,6 @@ fn play_current_emote(
         &mut ActiveEmote,
         &AvatarAnimPlayer,
         &Children,
-        &GlobalTransform,
-        Option<&RenderLayers>,
     )>,
     definitions: Query<&AvatarDefinition>,
     mut emote_loader: CollectibleManager<Emote>,
@@ -501,11 +497,10 @@ fn play_current_emote(
     mut cached_gltf_handles: Local<HashSet<Handle<Gltf>>>,
     mut spawned_extras: Local<HashMap<Entity, SpawnedExtras>>,
     mut scene_spawner: ResMut<SceneSpawner>,
-    (mut audio, anim_clips, config, pan): (
-        AudioManager,
+    (sounds, anim_clips, config): (
+        Res<Assets<bevy_kira_audio::AudioSource>>,
         Res<Assets<AnimationClip>>,
         Res<AppConfig>,
-        VolumePanning,
     ),
     mut emitters: Query<&mut AudioEmitter>,
     prop_details: Query<(Option<&Name>, &Transform, &ChildOf)>,
@@ -513,7 +508,7 @@ fn play_current_emote(
     let prior_playing = std::mem::take(&mut *playing);
     let mut prev_spawned_extras = std::mem::take(&mut *spawned_extras);
 
-    for (entity, mut active_emote, target_entity, children, transform, layers) in q.iter_mut() {
+    for (entity, mut active_emote, target_entity, children) in q.iter_mut() {
         debug!("emote {}", active_emote.urn);
         let Some(definition) = children.iter().flat_map(|c| definitions.get(c).ok()).next() else {
             warn!("no definition");
@@ -736,7 +731,7 @@ fn play_current_emote(
 
         // get next time to play a sound, with a lot of messing around for inf values
         let sound = match emote.audio(
-            &audio.sounds,
+            &sounds,
             if last_audio_mark.is_finite() {
                 last_audio_mark % clip_duration
             } else {
@@ -758,7 +753,7 @@ fn play_current_emote(
             sound.as_ref().map(|(t, _)| t)
         );
         let sound = if sound.is_none() && active_emote.repeat {
-            match emote.audio(&audio.sounds, f32::NEG_INFINITY) {
+            match emote.audio(&sounds, f32::NEG_INFINITY) {
                 Ok(None) => None,
                 Ok(Some((play_time, s))) => {
                     Some((play_time + clip_duration * (completions + 1.0), s))
@@ -867,7 +862,6 @@ fn play_current_emote(
             if elapsed >= play_time {
                 debug!("duration {}", clip_duration);
                 debug!("play {:?} @ {}>{}", sound.path(), elapsed, play_time);
-                let (volume, panning) = pan.volume_and_panning(transform.translation(), layers);
                 let existing = spawned_extras
                     .get_mut(&entity)
                     .and_then(|extras| extras.audio.as_mut());
@@ -875,24 +869,21 @@ fn play_current_emote(
                     .as_ref()
                     .and_then(|(e, _)| emitters.get_mut(*e).ok())
                 {
-                    for h_instance in existing_emitter.instances.drain(..) {
-                        audio.stop(&h_instance)
-                    }
-                    existing_emitter.instances.push(audio.play(
-                        sound,
-                        volume * config.audio.avatar(),
-                        panning,
-                    ));
+                    * existing_emitter = AudioEmitter {
+                        handle: sound,
+                        volume: config.audio.avatar(),
+                        ..Default::default()
+                    };
                     existing.unwrap().1 = elapsed;
                 } else {
-                    let handle = audio.play(sound, volume * config.audio.avatar(), panning);
-
                     let audio_entity = commands
                         .spawn((
                             Transform::default(),
                             Visibility::default(),
                             AudioEmitter {
-                                instances: vec![handle],
+                                handle: sound,
+                                volume: config.audio.avatar(),
+                                ..Default::default()
                             },
                         ))
                         .id();

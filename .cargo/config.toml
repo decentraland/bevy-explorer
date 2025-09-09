@@ -31,7 +31,6 @@ build-std = ["std", "panic_abort"]
 # [build]
 # target = "wasm32-unknown-unknown"
 
-
 ### for panic_unwind (currently unsupported by walrus)
 # - remove [unstable] section (we must add via wasm-pack cli so it is used for all deps)
 # - add `panic = "unwind"` to cargo.toml [profile.dev/release]
