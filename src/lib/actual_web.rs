@@ -1,17 +1,9 @@
 use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
 use bevy::{
     app::Propagate,
-    core_pipeline::{
-        bloom::Bloom,
-        tonemapping::{DebandDither, Tonemapping},
-    },
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
-    pbr::ShadowFilteringMethod,
     prelude::*,
-    render::{
-        renderer::RenderDevice,
-        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers},
-    },
+    render::{renderer::RenderDevice, view::RenderLayers},
     tasks::{IoTaskPool, Task},
 };
 use bevy_console::ConsoleCommand;
