@@ -8,7 +8,7 @@ use bevy::{
 use bevy_kira_audio::{AudioControl, AudioInstance, AudioTween};
 use common::{
     sets::SetupSets,
-    structs::{AudioEmitter, AudioSettings, AudioType, PrimaryCameraRes, PrimaryUser, SystemAudio},
+    structs::{AudioEmitter, AudioSettings, AudioType, PRIMARY_AVATAR_LIGHT_LAYER_INDEX, PrimaryCameraRes, PrimaryUser, SystemAudio},
     util::{AudioReceiver, VolumePanning},
 };
 use dcl::interface::ComponentPosition;
@@ -59,7 +59,9 @@ impl Plugin for AudioSourcePlugin {
 fn setup_audio(mut commands: Commands, camera: Res<PrimaryCameraRes>) {
     commands
         .entity(camera.0)
-        .try_insert(AudioReceiver::default());
+        .try_insert(AudioReceiver {
+            layers: RenderLayers::default().with(PRIMARY_AVATAR_LIGHT_LAYER_INDEX),
+        });
 }
 
 fn map_scene_audio_sources(
@@ -82,8 +84,8 @@ fn map_scene_audio_sources(
             continue;
         };
         let ipfs_path = PathBuf::from(&IpfsPath::new(IpfsType::new_content_file(
-            audio_source.0.audio_clip_url.to_owned(),
             scene.hash.to_owned(),
+            audio_source.0.audio_clip_url.to_owned(),
         )));
 
         let handle = maybe_emitter
@@ -108,7 +110,7 @@ fn map_scene_audio_sources(
             }
         });
 
-        commands.entity(ent).try_insert(AudioEmitter {
+        let emitter = AudioEmitter {
             handle,
             playing: audio_source.0.playing(),
             playback_speed: audio_source.0.pitch.unwrap_or(1.0),
@@ -117,7 +119,11 @@ fn map_scene_audio_sources(
             global: audio_source.0.global(),
             seek_time,
             ty: AudioType::Scene,
-        });
+        };
+
+        info!("emitter: {emitter:?}");
+
+        commands.entity(ent).try_insert(emitter);
     }
 }
 

@@ -400,6 +400,7 @@ impl Default for GraphicsSettings {
     }
 }
 
+#[derive(Debug)]
 pub enum AudioType {
     Voice,
     Scene,
@@ -954,7 +955,7 @@ impl TimeOfDay {
 pub type TextStyle = (TextFont, TextColor);
 
 // non-spatial audio
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct AudioEmitter {
     pub handle: Handle<bevy_kira_audio::AudioSource>,
     pub playing: bool,

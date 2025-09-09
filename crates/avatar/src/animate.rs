@@ -18,8 +18,7 @@ use common::{
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
     structs::{
-        AppConfig, AudioEmitter, AvatarDynamicState, EmoteCommand, MoveKind, PlayerModifiers,
-        PrimaryUser,
+        AudioEmitter, AudioType, AvatarDynamicState, EmoteCommand, MoveKind, PlayerModifiers, PrimaryUser
     },
     util::TryPushChildrenEx,
 };
@@ -497,10 +496,9 @@ fn play_current_emote(
     mut cached_gltf_handles: Local<HashSet<Handle<Gltf>>>,
     mut spawned_extras: Local<HashMap<Entity, SpawnedExtras>>,
     mut scene_spawner: ResMut<SceneSpawner>,
-    (sounds, anim_clips, config): (
+    (sounds, anim_clips): (
         Res<Assets<bevy_kira_audio::AudioSource>>,
         Res<Assets<AnimationClip>>,
-        Res<AppConfig>,
     ),
     mut emitters: Query<&mut AudioEmitter>,
     prop_details: Query<(Option<&Name>, &Transform, &ChildOf)>,
@@ -869,9 +867,9 @@ fn play_current_emote(
                     .as_ref()
                     .and_then(|(e, _)| emitters.get_mut(*e).ok())
                 {
-                    * existing_emitter = AudioEmitter {
+                    *existing_emitter = AudioEmitter {
                         handle: sound,
-                        volume: config.audio.avatar(),
+                        ty: AudioType::Avatar,
                         ..Default::default()
                     };
                     existing.unwrap().1 = elapsed;
@@ -882,7 +880,7 @@ fn play_current_emote(
                             Visibility::default(),
                             AudioEmitter {
                                 handle: sound,
-                                volume: config.audio.avatar(),
+                                ty: AudioType::Avatar,
                                 ..Default::default()
                             },
                         ))
