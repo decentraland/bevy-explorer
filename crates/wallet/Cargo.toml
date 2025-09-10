@@ -22,7 +22,6 @@ reqwest = { workspace = true }
 prost = { workspace = true }
 async-std = { workspace = true }
 bevy_kira_audio = { workspace = true }
-kira = { workspace = true }
 urlencoding = { workspace = true }
 data-encoding = { workspace = true }
 opener = { workspace = true }

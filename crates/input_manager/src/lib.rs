@@ -650,7 +650,7 @@ fn handle_set_bindings(
             config.inputs.1.clone(),
         );
 
-        platform::write_config_file(&config);
+        platform::write_config_file(&*config);
 
         sender.send(());
     }

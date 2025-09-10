@@ -217,7 +217,7 @@ fn handle_home_scene(mut ev: EventReader<SystemApi>, mut config: ResMut<AppConfi
             SystemApi::SetHomeScene(home_scene) => {
                 config.server = home_scene.realm.clone();
                 config.location = bevy::math::Vec2::from(&home_scene.parcel).as_ivec2();
-                platform::write_config_file(&config);
+                platform::write_config_file(&*config);
             }
             _ => (),
         }

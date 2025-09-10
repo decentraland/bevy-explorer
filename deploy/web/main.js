@@ -215,7 +215,7 @@ initButton.onclick = () => {
     return "unknown";
   })();
 
-  engine_run(platform, initialRealm, location, systemScene, true, 1e6, 64);
+  engine_run(platform, initialRealm, location, systemScene, true, 1e6);
 };
 
 Promise.all([initEngine(), initGpuCache()])

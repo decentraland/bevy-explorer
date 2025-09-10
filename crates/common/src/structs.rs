@@ -400,6 +400,14 @@ impl Default for GraphicsSettings {
     }
 }
 
+#[derive(Debug)]
+pub enum AudioType {
+    Voice,
+    Scene,
+    System,
+    Avatar,
+}
+
 #[derive(Resource, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct AudioSettings {
     pub master: i32, // 0-100
@@ -947,9 +955,31 @@ impl TimeOfDay {
 pub type TextStyle = (TextFont, TextColor);
 
 // non-spatial audio
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct AudioEmitter {
-    pub instances: Vec<Handle<bevy_kira_audio::AudioInstance>>,
+    pub handle: Handle<bevy_kira_audio::AudioSource>,
+    pub playing: bool,
+    pub playback_speed: f32,
+    pub r#loop: bool,
+    pub volume: f32,
+    pub global: bool,
+    pub seek_time: Option<f32>,
+    pub ty: AudioType,
+}
+
+impl Default for AudioEmitter {
+    fn default() -> Self {
+        Self {
+            handle: default(),
+            playing: true,
+            playback_speed: 1.0,
+            r#loop: false,
+            volume: 1.0,
+            global: false,
+            seek_time: None,
+            ty: AudioType::System,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]

@@ -30,5 +30,15 @@ wgpu = { workspace = true }
 ffmpeg-next = { version = "6.0.0", optional = true }
 thiserror = "1.0"
 
-web-sys = { workspace = true, features = ["HtmlMediaElement", "HtmlVideoElement"], optional = true}
+web-sys = { workspace = true, optional = true, features = [
+    "HtmlMediaElement", 
+    "HtmlVideoElement",
+    "AudioContext",
+    "AudioBuffer",
+    "AudioBufferSourceNode",
+    "GainNode",
+    "StereoPannerNode",
+    "AudioDestinationNode",
+    "AudioParam"
+]}
 wasm-bindgen = { workspace = true, optional = true}

@@ -1,7 +1,7 @@
 use bevy::{
     diagnostic::FrameCount,
     pbr::{ExtendedMaterial, MaterialExtension, NotShadowCaster},
-    platform::collections::HashMap,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
         camera::RenderTarget,
@@ -173,22 +173,35 @@ pub fn add_worldui_materials(
 
 #[allow(clippy::type_complexity)]
 pub fn update_worldui_materials(
-    q: Query<
-        (Entity, &WorldUiMaterialRef, &ComputedNode, &GlobalTransform),
+    changed: Query<
+        &WorldUiMaterialRef,
         Or<(
+            Changed<WorldUiMaterialRef>,
             Changed<ComputedNode>,
             Changed<GlobalTransform>,
-            Added<WorldUiMaterialRef>,
         )>,
     >,
+    all: Query<(Entity, &WorldUiMaterialRef, &ComputedNode, &GlobalTransform)>,
     mut mats: ResMut<Assets<TextShapeMaterial>>,
     mut images: ResMut<Assets<Image>>,
     frame: Res<FrameCount>,
     render_device: Res<RenderDevice>,
+    mut prev_changed_targets: Local<HashSet<AssetId<Image>>>,
 ) {
+    let mut changed_targets = std::mem::take(&mut *prev_changed_targets);
+    changed_targets.extend(changed.iter().map(|mat| mat.1));
+
+    if changed_targets.is_empty() {
+        return;
+    }
+
     let mut target_sizes: HashMap<AssetId<Image>, UVec2> = HashMap::new();
 
-    for (ent, ref_mat, node, gt) in q.iter() {
+    for (ent, ref_mat, node, gt) in all.iter() {
+        if !changed_targets.contains(&ref_mat.1) {
+            continue;
+        }
+
         let Some(mat) = mats.get_mut(ref_mat.0) else {
             warn!("failed to update mat");
             continue;
@@ -212,27 +225,32 @@ pub fn update_worldui_materials(
         *max_extent = max_extent.max(bottomright.ceil().as_uvec2());
     }
 
-    for (id, req_size) in target_sizes.into_iter() {
-        let Some(image) = images.get(id) else {
-            warn!("no image");
-            continue;
-        };
+    *prev_changed_targets = target_sizes
+        .into_iter()
+        .filter_map(|(id, req_size)| {
+            let Some(image) = images.get(id) else {
+                warn!("no image");
+                return None;
+            };
 
-        if image.size().cmplt(req_size).any() {
-            let max_size = UVec2::splat(render_device.limits().max_texture_dimension_2d);
-            if req_size.cmpge(max_size).any() {
-                warn!("too many textshapes, truncating image");
-                // TODO: split out to separate textures
+            if image.size().cmplt(req_size).any() {
+                let max_size = UVec2::splat(render_device.limits().max_texture_dimension_2d);
+                if req_size.cmpge(max_size).any() {
+                    warn!("too many textshapes, truncating image");
+                    // TODO: split out to separate textures
+                }
+                let req_size = req_size.min(max_size).max(image.size());
+                debug!("resized to {}", req_size);
+                images.get_mut(id).unwrap().resize(Extent3d {
+                    width: req_size.x,
+                    height: req_size.y,
+                    depth_or_array_layers: 1,
+                });
             }
-            let req_size = req_size.min(max_size).max(image.size());
-            debug!("resized to {}", req_size);
-            images.get_mut(id).unwrap().resize(Extent3d {
-                width: req_size.x,
-                height: req_size.y,
-                depth_or_array_layers: 1,
-            });
-        }
-    }
+
+            Some(id)
+        })
+        .collect();
 }
 
 pub type TextShapeMaterial = ExtendedMaterial<SceneMaterial, TextQuad>;
