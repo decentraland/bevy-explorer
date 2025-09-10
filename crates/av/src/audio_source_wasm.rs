@@ -275,7 +275,7 @@ fn manage_audio_sources(
     }
 
     for (_, (_, instance)) in prev_instances.drain() {
-        instance.stop();
+        instance.stop(now);
     }    
 }
 
