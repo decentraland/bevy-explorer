@@ -9,8 +9,6 @@ edition = "2021"
 default = []
 
 [dependencies]
-common = { workspace = true }
-dcl_component = { workspace = true }
 dcl = { workspace = true }
 ipfs = { workspace = true }
 wallet = { workspace = true }
@@ -20,14 +18,8 @@ bevy = { workspace = true }
 tokio = { workspace = true }
 once_cell = { workspace = true }
 futures-lite = { workspace = true }
-reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-num-traits = { workspace = true }
-http = { workspace = true }
-urlencoding = { workspace = true }
-base64 = { workspace = true }
-multihash-codetable = { workspace = true }
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 anyhow = { workspace = true }
@@ -36,9 +28,4 @@ web-fs = { workspace = true }
 serde-wasm-bindgen = { workspace = true }
 js-sys = { workspace = true }
 
-num-derive = "0.4.2"
-num = "0.4"
-bytes = "1.4.0"
-console_error_panic_hook = "0.1.7"
-console_log = "1.0"
 log = "0.4"

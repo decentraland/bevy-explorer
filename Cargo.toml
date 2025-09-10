@@ -25,7 +25,7 @@ inspect = ["dcl_deno/inspect", "system_ui/inspect"]
 hot_reload = ["bevy/file_watcher", "ipfs/hot_reload"]
 livekit = ["comms/livekit", "system_ui/livekit"]
 ffmpeg = ["av/ffmpeg"]
-social = ["dcl_component/social", "social/social"]
+social = ["social/social"]
 wasm = ["uuid/js", "getrandom/wasm_js", "bevy/webgpu", "bevy/wasm_threaded_asset_loader", "bevy/reduce_image_sizes", "av/html"]
 
 [profile.release]
@@ -182,7 +182,6 @@ console = { workspace = true }
 av = { workspace = true }
 restricted_actions = { workspace = true }
 wallet = { workspace = true }
-dcl = { workspace = true }
 nft = { workspace = true }
 tween = { workspace = true }
 scene_material = { workspace = true }
@@ -198,7 +197,6 @@ bevy = { workspace = true }
 wgpu = { workspace = true }
 bevy_console = { workspace = true }
 
-serde = { workspace = true }
 serde_json = { workspace = true }
 clap = { workspace = true }
 uuid = { workspace = true }
@@ -212,7 +210,6 @@ log-panics = { version = "2.1.0", features = ["with-backtrace"] }
 
 # non-main dependencies
 futures-lite = { workspace = true }
-dcl_component = { workspace = true }
 tokio = { workspace = true }
 bevy_simple_text_input = { workspace = true }
 
@@ -231,7 +228,6 @@ getrandom = "0.3"
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 once_cell = { workspace = true }
-async-channel = "2"
 web-fs = { workspace = true }
 
 [build-dependencies]

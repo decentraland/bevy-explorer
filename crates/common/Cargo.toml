@@ -19,7 +19,6 @@ futures-lite = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-directories = { workspace = true }
 uuid = { workspace = true }
 reqwest = { workspace = true }
 async-compat = { workspace = true }

@@ -17,21 +17,15 @@ system_bridge = { workspace = true }
 
 bevy = { workspace = true }
 tokio = { workspace = true }
-once_cell = { workspace = true }
 futures-lite = { workspace = true }
-reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 num-traits = { workspace = true }
 http = { workspace = true }
-urlencoding = { workspace = true }
-base64 = { workspace = true }
-multihash-codetable = { workspace = true }
 strum = { workspace = true }
 
 num-derive = "0.4.2"
 num = "0.4"
-bytes = "1.4.0"
 ethers-providers = { version = "2", features = ["ws","openssl"] }
 anyhow = { workspace = true }
 

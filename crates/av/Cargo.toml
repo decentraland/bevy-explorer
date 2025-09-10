@@ -22,7 +22,6 @@ tokio = { workspace = true }
 anyhow = { workspace = true }
 reqwest = { workspace = true }
 urlencoding = { workspace = true }
-futures-lite = { workspace = true }
 bevy_kira_audio = { workspace = true }
 kira = { workspace = true }
 wgpu = { workspace = true }
