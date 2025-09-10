@@ -21,13 +21,10 @@ platform = { workspace = true }
 bevy = { workspace = true }
 tokio = { workspace = true }
 once_cell = { workspace = true }
-futures-lite = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-num-traits = { workspace = true }
 http = { workspace = true }
-urlencoding = { workspace = true }
 base64 = { workspace = true }
 multihash-codetable = { workspace = true }
 
@@ -41,10 +38,7 @@ deno_web = "0.199"
 deno_websocket = "0.173"
 deno_webstorage = "0.163"
 
-num-derive = "0.4.2"
-num = "0.4"
 bytes = "1.4.0"
-ethers-providers = { version = "2", features = ["ws","openssl"] }
 
 # inspector requirements
 fastwebsockets = { version = "0.4.4", optional = true, features = ["upgrade"] }

@@ -6,40 +6,23 @@ edition = "2021"
 [lib]
 
 [features]
-social = ["dep:dcl-rpc", "dep:matrix-sdk"]
+social = ["dep:dcl-rpc", "dep:matrix-sdk", "dcl_component/social"]
 
 [dependencies]
 common = { workspace = true }
-comms = { workspace = true }
-dcl = { workspace = true }
 dcl_component = { workspace = true }
-ipfs = { workspace = true }
 wallet = { workspace = true }
 
 bevy = { workspace = true }
-bevy_egui = { workspace = true }
-bevy_dui = { workspace = true }
-bevy_console = { workspace = true }
-urn = { workspace = true }
 ethers-core = { workspace = true }
-ethers-signers = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-reqwest = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
-clap = { workspace = true }
 opener = { workspace = true }
-urlencoding = { workspace = true }
-build-time = { workspace = true }
 web-time = { workspace = true }
 
-futures-lite = { workspace = true }
-
-# platform = { workspace = true }
-
-prost = { workspace = true }
 dcl-rpc = { workspace = true, optional = true }
 futures-util = { workspace = true }
 

@@ -7,27 +7,18 @@ edition = "2021"
 
 [dependencies]
 common = { workspace = true }
-ipfs = { workspace = true }
 
 bevy = { workspace = true }
-bimap = { workspace = true }
 ethers-signers = { workspace = true }
 ethers-core = { workspace = true }
-tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
-futures-lite = { workspace = true }
 reqwest = { workspace = true }
-prost = { workspace = true }
 async-std = { workspace = true }
-bevy_kira_audio = { workspace = true }
-urlencoding = { workspace = true }
-data-encoding = { workspace = true }
 opener = { workspace = true }
 chrono = { workspace = true }
 async-trait = { workspace = true }
-futures-util = { workspace = true }
 rand = { workspace = true }
 http = { workspace = true }
 platform = { workspace = true }

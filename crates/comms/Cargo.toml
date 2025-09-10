@@ -18,7 +18,6 @@ platform = { workspace = true }
 
 bevy = { workspace = true }
 bimap = { workspace = true }
-ethers-signers = { workspace = true }
 ethers-core = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
@@ -28,14 +27,10 @@ futures-lite = { workspace = true }
 reqwest = { workspace = true }
 prost = { workspace = true }
 async-std = { workspace = true }
-bevy_kira_audio = { workspace = true }
 kira = { workspace = true }
-async-trait = { workspace = true }
 futures-util = { workspace = true }
-rand = { workspace = true }
 num-traits = { workspace = true }
 http = { workspace = true }
-async-compat = { workspace = true }
 multihash-codetable = { workspace = true }
 web-time = { workspace = true }
 
@@ -53,7 +48,6 @@ cpal = "0.15.2"
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 js-sys = { workspace = true }
-web-sys = { workspace = true }
 serde-wasm-bindgen = { workspace = true }
 serde_bytes = { workspace = true }
 gloo-timers = "0.3"
