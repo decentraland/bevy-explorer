@@ -1,5 +1,7 @@
 use bevy::{
-    platform::collections::{HashMap, HashSet}, prelude::*, render::view::RenderLayers
+    platform::collections::{HashMap, HashSet},
+    prelude::*,
+    render::view::RenderLayers,
 };
 use bevy_kira_audio::{AudioControl, AudioInstance, AudioTween};
 use common::{
@@ -15,7 +17,7 @@ impl Plugin for AudioSourcePluginImpl {
     fn build(&self, app: &mut App) {
         app.add_systems(
             PostUpdate,
-            (manage_audio_sources, play_system_audio, remove_dead_audio_assets)
+            (manage_audio_sources, play_system_audio)
                 .chain()
                 .after(TransformSystem::TransformPropagate),
         );
@@ -65,7 +67,7 @@ fn manage_audio_sources(
 
         if !emitter.playing {
             if let Some((_, h_instance)) = prev_instances.remove(&ent) {
-                if let Some(instance) = instance_assets.get_mut(h_instance.id()) {
+                if let Some(mut instance) = instance_assets.remove(h_instance.id()) {
                     instance.stop(AudioTween::default());
                 }
             }
@@ -95,7 +97,7 @@ fn manage_audio_sources(
                         None
                     }
                 } else {
-                    if let Some(instance) = instance_assets.get_mut(h_instance.id()) {
+                    if let Some(mut instance) = instance_assets.remove(h_instance.id()) {
                         instance.stop(AudioTween::default());
                     }
                     None
@@ -167,22 +169,9 @@ fn manage_audio_sources(
     }
 
     for (_, (_, h_instance)) in prev_instances.drain() {
-        if let Some(instance) = instance_assets.get_mut(h_instance.id()) {
+        if let Some(mut instance) = instance_assets.remove(h_instance.id()) {
             instance.stop(AudioTween::default());
         }
-    }
-}
-
-fn remove_dead_audio_assets(mut audio_instances: ResMut<Assets<AudioInstance>>) {
-    let mut dead = HashSet::new();
-    for (h, instance) in audio_instances.iter() {
-        if instance.state() == bevy_kira_audio::PlaybackState::Stopped {
-            dead.insert(h);
-        }
-    }
-
-    for h in dead {
-        audio_instances.remove(h);
     }
 }
 
