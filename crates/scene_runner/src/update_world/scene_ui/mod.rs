@@ -353,7 +353,7 @@ impl From<PbUiTransform> for UiTransform {
                 border_top_width,
                 border_bottom_width_unit,
                 border_bottom_width,
-                Val::Auto
+                Val::ZERO
             ),
             border_radius: radius!(
                 value,
@@ -1033,9 +1033,14 @@ fn layout_scene_ui(
 
                 if ui_transform.border_color != BorderColor::DEFAULT {
                     cmds.try_insert(ui_transform.border_color);
+                } else {
+                    cmds.remove::<BorderColor>();
+                }
+
+                if ui_transform.border_radius != BorderRadius::DEFAULT {
                     cmds.try_insert(ui_transform.border_radius);
                 } else {
-                    cmds.remove::<(BorderColor, BorderRadius)>();
+                    cmds.remove::<BorderRadius>();
                 }
 
                 let mut zindex_added = false;

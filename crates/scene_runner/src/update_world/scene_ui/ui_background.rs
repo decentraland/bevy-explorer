@@ -106,6 +106,7 @@ pub fn set_ui_background(
             With<RetryBackground>,
         )>,
     >,
+    radii: Query<(&Node, Option<&BorderRadius>)>,
     mut removed: RemovedComponents<UiBackground>,
     links: Query<&UiLink>,
     children: Query<&Children>,
@@ -173,20 +174,35 @@ pub fn set_ui_background(
             if let Some(image) = image {
                 let image_color = background.color.unwrap_or(Color::WHITE);
                 let image_color = image_color.with_alpha(image_color.alpha() * link.opacity.0);
+                let (border, border_radius) = radii
+                    .get(link.ui_entity)
+                    .ok()
+                    .map(|(node, radius)| (node.border, radius))
+                    .unwrap_or((UiRect::DEFAULT, None));
+
+                let unborder = |v: Val| -> Val {
+                    match v {
+                        Val::Auto => Val::Px(0.0),
+                        other => other * -1.0,
+                    }
+                };
+
+                let node = Node {
+                    position_type: PositionType::Absolute,
+                    top: unborder(border.top),
+                    left: unborder(border.left),
+                    bottom: unborder(border.bottom),
+                    right: unborder(border.right),
+                    border,
+                    overflow: Overflow::clip(),
+                    ..Default::default()
+                };
 
                 let background_entity = match texture.mode {
                     BackgroundTextureMode::NineSlices(rect) => commands
                         .commands()
                         .spawn((
-                            Node {
-                                position_type: PositionType::Absolute,
-                                top: Val::Px(0.0),
-                                right: Val::Px(0.0),
-                                left: Val::Px(0.0),
-                                bottom: Val::Px(0.0),
-                                overflow: Overflow::clip(),
-                                ..Default::default()
-                            },
+                            node,
                             Ui9Slice {
                                 image: image.image,
                                 center_region: rect.into(),
@@ -204,21 +220,13 @@ pub fn set_ui_background(
                                 right: Val::Px(0.0),
                                 left: Val::Px(0.0),
                                 bottom: Val::Px(0.0),
-                                overflow: Overflow::clip(),
                                 ..Default::default()
                             },
                             UiBackgroundMarker,
                         ))
                         .try_with_children(|c| {
                             let mut inner = c.spawn((
-                                Node {
-                                    position_type: PositionType::Absolute,
-                                    top: Val::Px(0.0),
-                                    right: Val::Px(0.0),
-                                    left: Val::Px(0.0),
-                                    bottom: Val::Px(0.0),
-                                    ..Default::default()
-                                },
+                                node,
                                 MaterialNode(stretch_uvs.add(StretchUvMaterial {
                                     image: image.image.clone(),
                                     uvs: *uvs,
@@ -227,6 +235,9 @@ pub fn set_ui_background(
                             ));
                             if let Some(source) = image.source_entity {
                                 inner.insert(UiMaterialSource(source));
+                            }
+                            if let Some(radius) = border_radius {
+                                inner.insert(*radius);
                             }
                         })
                         .id(),
@@ -258,14 +269,14 @@ pub fn set_ui_background(
                             .try_with_children(|c| {
                                 c.spacer();
                                 let mut inner = c.spawn((
-                                    Node {
-                                        overflow: Overflow::clip(),
-                                        ..Default::default()
-                                    },
+                                    node,
                                     ImageNode::new(image.image).with_color(image_color),
                                 ));
                                 if let Some(source) = image.source_entity {
                                     inner.insert(UiMaterialSource(source));
+                                }
+                                if let Some(radius) = border_radius {
+                                    inner.insert(*radius);
                                 }
                                 c.spacer();
                             });
