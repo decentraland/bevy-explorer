@@ -186,14 +186,14 @@ fn manage_audio_sources(
     *prev_time = now;
 
     for (ent, emitter, maybe_gt, maybe_scene_ent, maybe_layers, maybe_retry) in query.iter() {
-        commands.entity(ent).remove::<RetryEmitter>();
+        commands.entity(ent).try_remove::<RetryEmitter>();
 
         if !emitter.playing {
             if let Some((_, instance)) = prev_instances.remove(&ent) {
                 instance.stop(now);
             }
 
-            commands.entity(ent).remove::<Playing>();
+            commands.entity(ent).try_remove::<Playing>();
             continue;
         }
 
@@ -214,7 +214,7 @@ fn manage_audio_sources(
         };
 
         if existing.is_none() && !emitter.is_changed() && maybe_retry.is_none() {
-            commands.entity(ent).remove::<Playing>();
+            commands.entity(ent).try_remove::<Playing>();
             continue;
         }
 
@@ -242,10 +242,10 @@ fn manage_audio_sources(
                 existing
             }
             None => {
-                commands.entity(ent).insert(Playing);
+                commands.entity(ent).try_insert(Playing);
 
                 let Some(new_instance) = audio.start(emitter.handle.id(), emitter.seek_time) else {
-                    commands.entity(ent).insert(RetryEmitter);
+                    commands.entity(ent).try_insert(RetryEmitter);
                     continue;
                 };
 
@@ -273,6 +273,10 @@ fn manage_audio_sources(
         // PannerNode is -1 to 1, vs kira range of 0 to 1
         instance.panner_node.pan().set_value(panning * 2.0 - 1.0);
     }
+
+    for (_, (_, instance)) in prev_instances.drain() {
+        instance.stop();
+    }    
 }
 
 #[derive(Component)]

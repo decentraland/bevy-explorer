@@ -1,7 +1,5 @@
 use bevy::{
-    platform::collections::{HashMap, HashSet},
-    prelude::*,
-    render::view::RenderLayers,
+    platform::collections::{HashMap, HashSet}, prelude::*, render::view::RenderLayers
 };
 use bevy_kira_audio::{AudioControl, AudioInstance, AudioTween};
 use common::{
@@ -17,7 +15,7 @@ impl Plugin for AudioSourcePluginImpl {
     fn build(&self, app: &mut App) {
         app.add_systems(
             PostUpdate,
-            (manage_audio_sources, play_system_audio)
+            (manage_audio_sources, play_system_audio, remove_dead_audio_assets)
                 .chain()
                 .after(TransformSystem::TransformPropagate),
         );
@@ -63,16 +61,16 @@ fn manage_audio_sources(
     let mut prev_instances = std::mem::take(&mut *instances);
 
     for (ent, emitter, maybe_gt, maybe_scene_ent, maybe_layers, maybe_retry) in query.iter() {
-        commands.entity(ent).remove::<RetryEmitter>();
+        commands.entity(ent).try_remove::<RetryEmitter>();
 
         if !emitter.playing {
-            if let Some((_, instance)) = prev_instances.remove(&ent) {
-                if let Some(instance) = instance_assets.get_mut(instance.id()) {
+            if let Some((_, h_instance)) = prev_instances.remove(&ent) {
+                if let Some(instance) = instance_assets.get_mut(h_instance.id()) {
                     instance.stop(AudioTween::default());
                 }
             }
 
-            commands.entity(ent).remove::<Playing>();
+            commands.entity(ent).try_remove::<Playing>();
             continue;
         }
 
@@ -81,6 +79,7 @@ fn manage_audio_sources(
                 if id == emitter.handle.id() {
                     let Some(instance) = instance_assets.get_mut(h_instance.id()) else {
                         commands.entity(ent).try_insert(RetryEmitter);
+                        instances.insert(ent, (id, h_instance));
                         continue;
                     };
 
@@ -92,6 +91,7 @@ fn manage_audio_sources(
                         instances.insert(ent, (id, h_instance));
                         Some(instance)
                     } else {
+                        instance_assets.remove(h_instance.id());
                         None
                     }
                 } else {
@@ -105,7 +105,7 @@ fn manage_audio_sources(
         };
 
         if existing.is_none() && !emitter.is_changed() && maybe_retry.is_none() {
-            commands.entity(ent).remove::<Playing>();
+            commands.entity(ent).try_remove::<Playing>();
             continue;
         }
 
@@ -129,7 +129,7 @@ fn manage_audio_sources(
 
         match existing {
             None => {
-                commands.entity(ent).insert(Playing);
+                commands.entity(ent).try_insert(Playing);
                 let mut new_instance = audio.play(emitter.handle.clone());
 
                 new_instance
@@ -164,6 +164,25 @@ fn manage_audio_sources(
                 instance.set_panning(panning as f64, AudioTween::default());
             }
         };
+    }
+
+    for (_, (_, h_instance)) in prev_instances.drain() {
+        if let Some(instance) = instance_assets.get_mut(h_instance.id()) {
+            instance.stop(AudioTween::default());
+        }
+    }
+}
+
+fn remove_dead_audio_assets(mut audio_instances: ResMut<Assets<AudioInstance>>) {
+    let mut dead = HashSet::new();
+    for (h, instance) in audio_instances.iter() {
+        if instance.state() == bevy_kira_audio::PlaybackState::Stopped {
+            dead.insert(h);
+        }
+    }
+
+    for h in dead {
+        audio_instances.remove(h);
     }
 }
 
