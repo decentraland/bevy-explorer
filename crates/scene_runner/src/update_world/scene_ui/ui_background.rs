@@ -176,7 +176,10 @@ pub fn set_ui_background(
                     continue;
                 }
                 Some(Err(other)) => {
-                    warn!("failed to load ui image from content map: {:?}: {other:?}", texture);
+                    warn!(
+                        "failed to load ui image from content map: {:?}: {other:?}",
+                        texture
+                    );
                     continue;
                 }
             };
@@ -277,10 +280,8 @@ pub fn set_ui_background(
                         })
                         .try_with_children(|c| {
                             c.spacer();
-                            let mut inner = c.spawn((
-                                node,
-                                ImageNode::new(image.image).with_color(image_color),
-                            ));
+                            let mut inner = c
+                                .spawn((node, ImageNode::new(image.image).with_color(image_color)));
                             if let Some(source) = image.source_entity {
                                 inner.insert(UiMaterialSource(source));
                             }
