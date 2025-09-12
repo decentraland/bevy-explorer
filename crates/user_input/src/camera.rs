@@ -114,7 +114,7 @@ pub fn update_camera(
         );
     }
 
-    let mut mouse_delta = input_manager.get_analog(CAMERA_SET, InputPriority::Scroll) * 10.0;
+    let mut mouse_delta = input_manager.get_analog(CAMERA_SET, InputPriority::Scene) * 10.0;
     if locks.0.contains("camera") {
         mouse_delta += input_manager.get_analog(POINTER_SET, InputPriority::Scroll);
     }
