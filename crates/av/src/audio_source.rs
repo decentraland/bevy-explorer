@@ -106,7 +106,7 @@ fn map_scene_audio_sources(
             ty: AudioType::Scene,
         };
 
-        info!("emitter: {emitter:?}");
+        debug!("emitter: {emitter:?}");
 
         commands.entity(ent).try_insert(emitter);
     }

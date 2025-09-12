@@ -305,6 +305,7 @@ fn update_avatar_modifier_area(
                     };
 
                 if permit {
+                    modifiers.block_all |= modifier.disable_all();
                     modifiers.block_run |= modifier.disable_all() || modifier.disable_run();
                     modifiers.block_walk |= modifier.disable_all() || modifier.disable_walk();
                     modifiers.block_jump |= modifier.disable_all() || modifier.disable_jump();

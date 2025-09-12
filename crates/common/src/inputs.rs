@@ -13,6 +13,7 @@ pub enum SystemAction {
     RollLeft,
     RollRight,
     Microphone,
+    Map,
     Chat,
     CameraZoomIn,
     CameraZoomOut,
@@ -377,7 +378,7 @@ impl Default for InputMap {
                 (
                     Action::System(SystemAction::Emote),
                     vec![
-                        InputIdentifier::Key(KeyCode::AltLeft),
+                        InputIdentifier::Key(KeyCode::KeyB),
                         InputIdentifier::Gamepad(GamepadButton::West),
                     ],
                 ),
@@ -402,7 +403,14 @@ impl Default for InputMap {
                 ),
                 (
                     Action::System(SystemAction::Microphone),
-                    vec![InputIdentifier::Key(KeyCode::ControlLeft)],
+                    vec![InputIdentifier::Key(KeyCode::KeyV)],
+                ),
+                (
+                    Action::System(SystemAction::Map),
+                    vec![
+                        InputIdentifier::Key(KeyCode::KeyM),
+                        InputIdentifier::Key(KeyCode::Tab),
+                    ],
                 ),
                 (
                     Action::System(SystemAction::Chat),

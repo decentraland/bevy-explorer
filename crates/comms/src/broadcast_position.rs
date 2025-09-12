@@ -1,3 +1,5 @@
+use std::f32::consts::TAU;
+
 use bevy::prelude::*;
 
 use common::structs::{AvatarDynamicState, PrimaryUser};
@@ -104,23 +106,52 @@ fn broadcast_position(
 
     let movement_compressed = crate::movement_compressed::MovementCompressed { temporal, movement };
 
-    let movement_packet = rfc4::MovementCompressed {
-        temporal_data: i32::from_le_bytes(movement_compressed.temporal.into_bytes()),
-        movement_data: i64::from_le_bytes(movement_compressed.movement.into_bytes()),
+    let movement_uncompressed = dcl_component::proto_components::kernel::comms::rfc4::Movement {
+        timestamp: time as f32,
+        position_x: dcl_position.0[0],
+        position_y: dcl_position.0[1],
+        position_z: dcl_position.0[2],
+        rotation_y: -movement_compressed.temporal.rotation_f32() * 360.0 / TAU,
+        velocity_x: movement_compressed.movement.velocity().x,
+        velocity_y: movement_compressed.movement.velocity().y,
+        velocity_z: movement_compressed.movement.velocity().z,
+        movement_blend_value: dynamics.velocity.length_squared(),
+        slide_blend_value: 0.0,
+        is_grounded: movement_compressed.temporal.grounded(),
+        is_jumping: movement_compressed.temporal.jump(),
+        is_long_jump: movement_compressed.temporal.long_jump(),
+        is_long_fall: movement_compressed.temporal.long_falling(),
+        is_falling: movement_compressed.temporal.falling(),
+        is_stunned: movement_compressed.temporal.stunned(),
     };
 
-    debug!("sending compressed: {movement_packet:?}");
-    crate::movement_compressed::MovementCompressed::from_proto(movement_packet.clone());
-    debug!("---");
-    let packet = rfc4::Packet {
-        message: Some(rfc4::packet::Message::MovementCompressed(movement_packet)),
+    // let movement_packet = rfc4::MovementCompressed {
+    //     temporal_data: i32::from_le_bytes(movement_compressed.temporal.into_bytes()),
+    //     movement_data: i64::from_le_bytes(movement_compressed.movement.into_bytes()),
+    // };
+
+    // debug!("sending compressed: {movement_packet:?}");
+    // let packet = rfc4::Packet {
+    //     message: Some(rfc4::packet::Message::MovementCompressed(movement_packet)),
+    //     protocol_version: 100,
+    // };
+    let uncompressed_packet = rfc4::Packet {
+        message: Some(rfc4::packet::Message::Movement(movement_uncompressed)),
         protocol_version: 100,
     };
 
+    debug!("sending uncompressed: {uncompressed_packet:?}");
+
     for transport in transports.iter() {
+        // if let Err(e) = transport
+        //     .sender
+        //     .try_send(NetworkMessage::unreliable(&packet))
+        // {
+        //     warn!("failed to update to transport: {e}");
+        // }
         if let Err(e) = transport
             .sender
-            .try_send(NetworkMessage::unreliable(&packet))
+            .try_send(NetworkMessage::unreliable(&uncompressed_packet))
         {
             warn!("failed to update to transport: {e}");
         }

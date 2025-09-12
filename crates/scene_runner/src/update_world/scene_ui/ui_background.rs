@@ -165,130 +165,137 @@ pub fn set_ui_background(
                 .tex
                 .as_ref()
                 .map(|tex| resolver.resolve_texture(ctx, tex));
-            if let Some(Err(TextureResolveError::SourceNotReady)) = image.as_ref() {
-                commands.commands().entity(ent).insert(RetryBackground);
-                continue;
-            }
-            let image = image.and_then(|r| r.ok());
 
-            if let Some(image) = image {
-                let image_color = background.color.unwrap_or(Color::WHITE);
-                let image_color = image_color.with_alpha(image_color.alpha() * link.opacity.0);
-                let (border, border_radius) = radii
-                    .get(link.ui_entity)
-                    .ok()
-                    .map(|(node, radius)| (node.border, radius))
-                    .unwrap_or((UiRect::DEFAULT, None));
+            let image = match image {
+                Some(Ok(t)) => t,
+                Some(Err(TextureResolveError::SourceNotReady)) => {
+                    commands.commands().entity(ent).insert(RetryBackground);
+                    continue;
+                }
+                None | Some(Err(TextureResolveError::NoTexture)) => {
+                    continue;
+                }
+                Some(Err(other)) => {
+                    warn!(
+                        "failed to load ui image from content map: {:?}: {other:?}",
+                        texture
+                    );
+                    continue;
+                }
+            };
 
-                let unborder = |v: Val| -> Val {
-                    match v {
-                        Val::Auto => Val::Px(0.0),
-                        other => other * -1.0,
-                    }
-                };
+            let image_color = background.color.unwrap_or(Color::WHITE);
+            let image_color = image_color.with_alpha(image_color.alpha() * link.opacity.0);
+            let (border, border_radius) = radii
+                .get(link.ui_entity)
+                .ok()
+                .map(|(node, radius)| (node.border, radius))
+                .unwrap_or((UiRect::DEFAULT, None));
 
-                let node = Node {
-                    position_type: PositionType::Absolute,
-                    top: unborder(border.top),
-                    left: unborder(border.left),
-                    bottom: unborder(border.bottom),
-                    right: unborder(border.right),
-                    border,
-                    overflow: Overflow::clip(),
-                    ..Default::default()
-                };
+            let unborder = |v: Val| -> Val {
+                match v {
+                    Val::Auto => Val::Px(0.0),
+                    other => other * -1.0,
+                }
+            };
 
-                let background_entity = match texture.mode {
-                    BackgroundTextureMode::NineSlices(rect) => commands
-                        .commands()
-                        .spawn((
+            let node = Node {
+                position_type: PositionType::Absolute,
+                top: unborder(border.top),
+                left: unborder(border.left),
+                bottom: unborder(border.bottom),
+                right: unborder(border.right),
+                border,
+                overflow: Overflow::clip(),
+                ..Default::default()
+            };
+
+            let background_entity = match texture.mode {
+                BackgroundTextureMode::NineSlices(rect) => commands
+                    .commands()
+                    .spawn((
+                        node,
+                        Ui9Slice {
+                            image: image.image,
+                            center_region: rect.into(),
+                            tint: Some(image_color),
+                        },
+                        UiBackgroundMarker,
+                    ))
+                    .id(),
+                BackgroundTextureMode::Stretch(ref uvs) => commands
+                    .commands()
+                    .spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            top: Val::Px(0.0),
+                            right: Val::Px(0.0),
+                            left: Val::Px(0.0),
+                            bottom: Val::Px(0.0),
+                            ..Default::default()
+                        },
+                        UiBackgroundMarker,
+                    ))
+                    .try_with_children(|c| {
+                        let mut inner = c.spawn((
                             node,
-                            Ui9Slice {
-                                image: image.image,
-                                center_region: rect.into(),
-                                tint: Some(image_color),
-                            },
-                            UiBackgroundMarker,
-                        ))
-                        .id(),
-                    BackgroundTextureMode::Stretch(ref uvs) => commands
-                        .commands()
-                        .spawn((
-                            Node {
-                                position_type: PositionType::Absolute,
-                                top: Val::Px(0.0),
-                                right: Val::Px(0.0),
-                                left: Val::Px(0.0),
-                                bottom: Val::Px(0.0),
-                                ..Default::default()
-                            },
-                            UiBackgroundMarker,
-                        ))
+                            MaterialNode(stretch_uvs.add(StretchUvMaterial {
+                                image: image.image.clone(),
+                                uvs: *uvs,
+                                color: image_color.to_linear().to_vec4(),
+                            })),
+                        ));
+                        if let Some(source) = image.source_entity {
+                            inner.insert(UiMaterialSource(source));
+                        }
+                        if let Some(radius) = border_radius {
+                            inner.insert(*radius);
+                        }
+                    })
+                    .id(),
+                BackgroundTextureMode::Center => commands
+                    .commands()
+                    .spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(0.0),
+                            right: Val::Px(0.0),
+                            top: Val::Px(0.0),
+                            bottom: Val::Px(0.0),
+                            justify_content: JustifyContent::Center,
+                            overflow: Overflow::clip(),
+                            width: Val::Percent(100.0),
+                            ..Default::default()
+                        },
+                        UiBackgroundMarker,
+                    ))
+                    .try_with_children(|c| {
+                        c.spacer();
+                        c.spawn(Node {
+                            flex_direction: FlexDirection::Column,
+                            justify_content: JustifyContent::Center,
+                            overflow: Overflow::clip(),
+                            height: Val::Percent(100.0),
+                            ..Default::default()
+                        })
                         .try_with_children(|c| {
-                            let mut inner = c.spawn((
-                                node,
-                                MaterialNode(stretch_uvs.add(StretchUvMaterial {
-                                    image: image.image.clone(),
-                                    uvs: *uvs,
-                                    color: image_color.to_linear().to_vec4(),
-                                })),
-                            ));
+                            c.spacer();
+                            let mut inner = c
+                                .spawn((node, ImageNode::new(image.image).with_color(image_color)));
                             if let Some(source) = image.source_entity {
                                 inner.insert(UiMaterialSource(source));
                             }
                             if let Some(radius) = border_radius {
                                 inner.insert(*radius);
                             }
-                        })
-                        .id(),
-                    BackgroundTextureMode::Center => commands
-                        .commands()
-                        .spawn((
-                            Node {
-                                position_type: PositionType::Absolute,
-                                left: Val::Px(0.0),
-                                right: Val::Px(0.0),
-                                top: Val::Px(0.0),
-                                bottom: Val::Px(0.0),
-                                justify_content: JustifyContent::Center,
-                                overflow: Overflow::clip(),
-                                width: Val::Percent(100.0),
-                                ..Default::default()
-                            },
-                            UiBackgroundMarker,
-                        ))
-                        .try_with_children(|c| {
                             c.spacer();
-                            c.spawn(Node {
-                                flex_direction: FlexDirection::Column,
-                                justify_content: JustifyContent::Center,
-                                overflow: Overflow::clip(),
-                                height: Val::Percent(100.0),
-                                ..Default::default()
-                            })
-                            .try_with_children(|c| {
-                                c.spacer();
-                                let mut inner = c.spawn((
-                                    node,
-                                    ImageNode::new(image.image).with_color(image_color),
-                                ));
-                                if let Some(source) = image.source_entity {
-                                    inner.insert(UiMaterialSource(source));
-                                }
-                                if let Some(radius) = border_radius {
-                                    inner.insert(*radius);
-                                }
-                                c.spacer();
-                            });
-                            c.spacer();
-                        })
-                        .id(),
-                };
+                        });
+                        c.spacer();
+                    })
+                    .id(),
+            };
 
-                commands.insert_children(0, &[background_entity]);
-            } else {
-                warn!("failed to load ui image from content map: {:?}", texture);
-            }
+            commands.insert_children(0, &[background_entity]);
         } else if let Some(color) = background.color {
             commands.insert(BackgroundColor(color));
         }
