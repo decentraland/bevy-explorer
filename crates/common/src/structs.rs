@@ -18,6 +18,7 @@ pub struct Version(pub String);
 
 // main user entity
 #[derive(Component, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PrimaryUser {
     pub walk_speed: f32,
     pub run_speed: f32,
@@ -27,6 +28,7 @@ pub struct PrimaryUser {
     pub fall_speed: f32,
     pub control_type: AvatarControl,
     pub turn_speed: f32,
+    pub block_all: bool,
     pub block_run: bool,
     pub block_walk: bool,
     pub block_jump: bool,
@@ -44,6 +46,7 @@ impl Default for PrimaryUser {
             fall_speed: -15.0,
             control_type: AvatarControl::Relative,
             turn_speed: PI,
+            block_all: false,
             block_run: false,
             block_walk: false,
             block_jump: false,
@@ -64,6 +67,7 @@ pub struct PlayerModifiers {
     pub fall_speed: Option<f32>,
     pub control_type: Option<AvatarControl>,
     pub turn_speed: Option<f32>,
+    pub block_all: bool,
     pub block_run: bool,
     pub block_walk: bool,
     pub block_jump: bool,
@@ -88,6 +92,7 @@ impl PlayerModifiers {
             fall_speed: self.fall_speed.unwrap_or(user.fall_speed),
             control_type: self.control_type.unwrap_or(user.control_type),
             turn_speed: self.turn_speed.unwrap_or(user.turn_speed),
+            block_all: self.block_all || user.block_all,
             block_run: self.block_run || user.block_run,
             block_walk: self.block_walk || user.block_walk,
             block_jump: self.block_jump || user.block_jump,

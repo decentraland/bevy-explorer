@@ -64,16 +64,19 @@ pub(crate) fn update_user_velocity(
         dynamic_state.tank = false;
     }
 
-    if axis_input != Vec2::ZERO {
-        let movement_axis = if user.block_walk {
-            axis_input.normalize_or_zero() * user.run_speed
-        } else {
-            axis_input / axis_input.length().max(1.0)
-                * if input.is_down(CommonInputAction::IaWalk, InputPriority::Scene) {
-                    user.walk_speed
-                } else {
-                    user.run_speed
-                }
+    if axis_input != Vec2::ZERO && !user.block_run {
+        let movement_axis = match (user.block_walk, user.block_run, user.block_all) {
+            (_, _, true) | (true, true, false) => Vec2::ZERO,
+            (true, false, false) => axis_input.normalize_or_zero() * user.run_speed,
+            (false, true, false) => axis_input / axis_input.length().max(1.0) * user.walk_speed,
+            (false, false, false) => {
+                axis_input / axis_input.length().max(1.0)
+                    * if input.is_down(CommonInputAction::IaWalk, InputPriority::Scene) {
+                        user.walk_speed
+                    } else {
+                        user.run_speed
+                    }
+            }
         };
 
         let ground = Vec3::X + Vec3::Z;
@@ -84,7 +87,9 @@ pub(crate) fn update_user_velocity(
             .xz()
             .normalize_or_zero();
 
-        dynamic_state.rotate = -axis_input.x * *tankiness * user.turn_speed;
+        if !user.block_all {
+            dynamic_state.rotate = -axis_input.x * *tankiness * user.turn_speed;
+        }
         let axis_output = forward * movement_axis.y + right * movement_axis.x * (1.0 - *tankiness);
 
         dynamic_state.force = axis_output;

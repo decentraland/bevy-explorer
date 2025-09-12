@@ -192,12 +192,13 @@ fn update_avatar_modifier_area(
                         .filter(|player_ent| input_modifiers.get(*player_ent).is_ok())
                 })
                 .next();
-            modifiers
-                .areas
-                .extend(input_modifier.map(|e| ActiveAvatarArea {
+            modifiers.areas.extend(input_modifier.map(|e| {
+                error!("got area");
+                ActiveAvatarArea {
                     entity: e,
                     allow_locomotion: PermissionState::NotRequested,
-                }));
+                }
+            }));
         }
 
         // remove destroyed areas
@@ -246,6 +247,7 @@ fn update_avatar_modifier_area(
             }
 
             if let Some(movement) = maybe_area.and_then(|area| area.0.movement_settings.as_ref()) {
+                error!("check movement");
                 let permit = maybe_foreign.is_some()
                     || match active_area.allow_locomotion {
                         PermissionState::Resolved(true) => true,
@@ -287,6 +289,7 @@ fn update_avatar_modifier_area(
             if let Some(pb_input_modifier::Mode::Standard(modifier)) =
                 maybe_modifier.and_then(|m| m.0.mode.as_ref())
             {
+                error!("check modifier");
                 let permit = maybe_foreign.is_some()
                     || match active_area.allow_locomotion {
                         PermissionState::Resolved(true) => true,
@@ -305,6 +308,8 @@ fn update_avatar_modifier_area(
                     };
 
                 if permit {
+                    error!("modifier ok, blocking: {modifier:?}");
+                    modifiers.block_all |= modifier.disable_all();
                     modifiers.block_run |= modifier.disable_all() || modifier.disable_run();
                     modifiers.block_walk |= modifier.disable_all() || modifier.disable_walk();
                     modifiers.block_jump |= modifier.disable_all() || modifier.disable_jump();
