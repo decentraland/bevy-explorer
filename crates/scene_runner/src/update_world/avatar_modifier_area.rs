@@ -192,12 +192,12 @@ fn update_avatar_modifier_area(
                         .filter(|player_ent| input_modifiers.get(*player_ent).is_ok())
                 })
                 .next();
-            modifiers.areas.extend(input_modifier.map(|e| {
-                ActiveAvatarArea {
+            modifiers
+                .areas
+                .extend(input_modifier.map(|e| ActiveAvatarArea {
                     entity: e,
                     allow_locomotion: PermissionState::NotRequested,
-                }
-            }));
+                }));
         }
 
         // remove destroyed areas
