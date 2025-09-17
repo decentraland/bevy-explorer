@@ -363,17 +363,28 @@ pub fn update_camera_position(
 pub fn update_cursor_lock(
     locks: Res<CursorLocks>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
+    mut prev: Local<bool>,
 ) {
     let lock = !locks.0.is_empty();
 
     if lock {
         for mut window in &mut windows {
             if !window.focused {
-                continue;
+                if !*prev {
+                    // new right-click while not focussed - try to focus
+                    window.focused = true;
+                    // and skip updating window fields until focus is processed
+                    return;
+                } else {
+                    continue;
+                }
             }
 
             if window.cursor_options.grab_mode == CursorGrabMode::None {
                 window.cursor_options.grab_mode = CursorGrabMode::Locked;
+            }
+
+            if window.cursor_options.visible {
                 window.cursor_options.visible = false;
             }
         }
@@ -381,8 +392,13 @@ pub fn update_cursor_lock(
         for mut window in &mut windows {
             if window.cursor_options.grab_mode != CursorGrabMode::None {
                 window.cursor_options.grab_mode = CursorGrabMode::None;
+            }
+
+            if !window.cursor_options.visible {
                 window.cursor_options.visible = true;
             }
         }
     }
+
+    *prev = lock;
 }
