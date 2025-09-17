@@ -382,6 +382,7 @@ pub fn update_cursor_lock(
 
             if window.cursor_options.grab_mode == CursorGrabMode::None {
                 window.cursor_options.grab_mode = CursorGrabMode::Locked;
+                return;
             }
 
             if window.cursor_options.visible {
