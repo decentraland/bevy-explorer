@@ -91,6 +91,7 @@ pub fn update_user_position(
     clip: Res<UserClipping>,
     mut prev_excess_time: Local<f32>,
 ) {
+    return;
     let Ok((
         user_ent,
         user,

@@ -74,7 +74,9 @@ pub(crate) fn process_transform_and_parent_updates(
             updates.last_write.remove(deleted);
         }
 
+        let mut count = 0;
         for (scene_entity, entry) in std::mem::take(&mut updates.last_write) {
+            count += 1;
             // since transforms are 2-way we have to force update the return crdt with the current scene timestamps
             scene_context
                 .crdt_store
@@ -173,6 +175,8 @@ pub(crate) fn process_transform_and_parent_updates(
                 }
             }
         }
+
+        // if count > 0 { println!("{} -> {} updates", root, count); }
     }
 
     for (root, mut scene, ..) in scenes.iter_mut() {

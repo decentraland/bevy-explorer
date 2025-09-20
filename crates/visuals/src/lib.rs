@@ -122,7 +122,8 @@ fn setup(
             ),
         ),
         MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgb(0.3, 0.45, 0.2),
+            alpha_mode: AlphaMode::Blend,
+            base_color: Color::srgba(0.3, 0.45, 0.2, 0.2),
             perceptual_roughness: 1.0,
             metallic: 0.0,
             depth_bias: -100.0,

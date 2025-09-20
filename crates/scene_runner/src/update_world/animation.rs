@@ -12,6 +12,7 @@ use dcl_component::{
 };
 
 use crate::SceneEntity;
+use crate::update_world::gltf_container::update_ready_gltfs;
 
 use super::{gltf_container::GltfProcessed, AddCrdtInterfaceExt};
 
@@ -24,7 +25,7 @@ impl Plugin for AnimatorPlugin {
             ComponentPosition::Any,
         );
 
-        app.add_systems(Update, update_animations.in_set(SceneSets::PostLoop));
+        app.add_systems(SpawnScene, update_animations.after(update_ready_gltfs));
     }
 }
 
@@ -54,15 +55,31 @@ fn update_animations(
             Option<&mut Animator>,
             &mut AnimationPlayer,
             &Clips,
+            &AnimationGraphHandle,
+            Ref<GltfProcessed>,
         ),
         Or<(Changed<Animator>, Changed<GltfProcessed>)>,
     >,
+    graphs: Res<Assets<AnimationGraph>>,
+    asset_server: Res<AssetServer>,
+    mut once: Local<bool>,
 ) {
-    for (ent, scene_ent, maybe_animator, mut player, clips) in animators.iter_mut() {
+    for (ent, scene_ent, maybe_animator, mut player, clips, h_graph, rgp) in animators.iter_mut() {
         debug!(
-            "[{ent:?} / {scene_ent:?}] {:?}",
-            maybe_animator.as_ref().map(|a| &a.pb_animator)
+            "[{ent:?} / {scene_ent:?}] {:?} {}",
+            maybe_animator.as_ref().map(|a| &a.pb_animator),
+            rgp.is_changed(),
         );
+        continue;
+        if scene_ent.id.id == 1811 {
+            if *once {
+                debug!("skip!");
+                continue;
+            } else {
+                debug!("no skip 1");
+                *once = true;
+            }
+        }
         let targets: HashMap<AnimationNodeIndex, (f32, PbAnimationState)> = match maybe_animator {
             Some(ref animator) => animator
                 .pb_animator
@@ -130,6 +147,8 @@ fn update_animations(
                 active_animation.replay();
                 active_animation.seek_to(seek_time);
             }
+
+
         }
 
         let playing = player.playing_animations().collect::<Vec<_>>();

@@ -20,7 +20,7 @@ use bevy::{
     app::{Propagate, TaskPoolThreadAssignmentPolicy},
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     prelude::*,
-    render::view::RenderLayers,
+    render::{batching::gpu_preprocessing::GpuPreprocessingSupport, view::RenderLayers},
     tasks::{IoTaskPool, Task},
     window::WindowResolution,
 };
@@ -29,11 +29,9 @@ use bevy_console::ConsoleCommand;
 use collectibles::CollectiblesPlugin;
 use common::{
     inputs::InputMap,
-    sets::SetupSets,
+    sets::{SceneSets, SetupSets},
     structs::{
-        AppConfig, AttachPoints, AvatarDynamicState, GraphicsSettings, IVec2Arg, PreviewCommand,
-        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneImposterBake,
-        SceneLoadDistance, SystemScene, Version, GROUND_RENDERLAYER,
+        AppConfig, AttachPoints, AvatarDynamicState, GROUND_RENDERLAYER, GraphicsSettings, IVec2Arg, PreviewCommand, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneImposterBake, SceneLoadDistance, SystemScene, Version
     },
     util::{TaskCompat, TaskExt, TryPushChildrenEx, UtilsPlugin},
 };
@@ -485,6 +483,8 @@ fn main() {
     #[cfg(not(feature = "console"))]
     log_panics::init();
 
+    app.add_systems(Update, debug.in_set(SceneSets::Init));
+
     app.run();
 
     let _ = std::fs::remove_file(format!("{}.touch", SESSION_LOG.get().unwrap()));
@@ -682,4 +682,33 @@ pub fn process_system_ui_scene(
         }
         None => *task = Some(t),
     }
+}
+
+#[derive(Component)]
+pub struct PrevTransform(GlobalTransform);
+
+fn debug(
+    mut commands: Commands,
+    q: Query<(Entity, &GlobalTransform, Option<&PrevTransform>)>
+) {
+    let mut changed = 0;
+    for (e, t, mp) in q.iter() {
+        if mp.is_some_and(|p| {
+            let scale_changed = !p.0.scale().abs_diff_eq(t.scale(), 0.01);
+            let translation_changed = (p.0.translation() - t.translation()).length() > 0.01;
+            let rotation_changed = p.0.rotation().angle_between(t.rotation()) > 0.01;
+
+            scale_changed || translation_changed || rotation_changed
+        }) {
+            // println!("[{e}] translation: {} -> {}", mp.unwrap().0.translation(), t.translation());
+            changed += 1;
+        }
+        if let Ok(mut commands) = commands.get_entity(e) {
+            commands.try_insert(PrevTransform(*t));
+        }
+    }
+
+    // if changed > 0 {
+    //     println!("changed {}", changed);
+    // }
 }

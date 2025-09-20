@@ -4,22 +4,23 @@
 use std::{
     collections::BTreeMap,
     f32::consts::{PI, TAU},
-    hash::{Hash, Hasher},
+    hash::{BuildHasher, Hash, Hasher},
 };
 
 use bevy::{
     animation::AnimationTarget,
     asset::LoadState,
+    diagnostic::FrameCount,
     gltf::{Gltf, GltfExtras, GltfLoaderSettings},
     pbr::ExtendedMaterial,
-    platform::collections::HashMap,
+    platform::{collections::HashMap, hash::{DefaultHasher, FixedHasher}},
     prelude::*,
     render::{
-        mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues},
+        mesh::{Indices, VertexAttributeValues, skinning::SkinnedMesh},
         render_asset::RenderAssetUsages,
         view::NoFrustumCulling,
     },
-    scene::{scene_spawner_system, InstanceId},
+    scene::{InstanceId, scene_spawner_system},
     transform::TransformSystem,
 };
 use common::{
@@ -92,6 +93,8 @@ impl Plugin for GltfDefinitionPlugin {
         app.add_systems(Update, update_gltf.in_set(SceneSets::PostLoop));
         app.add_systems(SpawnScene, update_ready_gltfs.after(scene_spawner_system));
         app.add_systems(Update, check_gltfs_ready.in_set(SceneSets::PostInit));
+        app.add_systems(Update, make_vis.after(update_gltf));
+        app.add_systems(Last, fucked);
         app.add_systems(
             Update,
             (expose_gltfs, update_gltf_linked_visibility)
@@ -114,7 +117,7 @@ pub struct GltfEntity {
 }
 
 #[derive(Component)]
-struct GltfLoaded(Option<InstanceId>);
+pub struct GltfLoaded(Option<InstanceId>);
 #[derive(Component, Default)]
 pub struct GltfProcessed {
     pub instance_id: Option<InstanceId>,
@@ -128,6 +131,9 @@ struct DclNodeExtras {
 
 #[derive(Component)]
 pub struct GltfHandle(Handle<Gltf>);
+
+#[derive(Component)]
+pub struct Fucked;
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn update_gltf(
@@ -158,7 +164,20 @@ fn update_gltf(
     mut scene_spawner: ResMut<SceneSpawner>,
     mut contexts: Query<(Entity, &mut RendererSceneContext, Has<SceneResourceLookup>)>,
     mut instances_to_despawn_when_ready: Local<Vec<InstanceId>>,
+    mut once: Local<bool>,
+    tick: Res<FrameCount>,
 ) {
+    let skip = [
+        "models/core_building/BobOctorossV46.glb",
+        // "models/core_building/ch1_crowdV5.glb",
+        "models/core_building/Aisha.glb",
+        "models/core_building/ch2_crowdV5.glb",
+        "models/robots/ron.glb",
+        "models/core_building/doge.glb",
+        "models/core_building/WearableConnoisseurRotatedV08.glb",
+        "models/core_building/Simone.glb",
+    ];
+
     // clean up old instances
     instances_to_despawn_when_ready.retain(|instance| {
         if scene_spawner.instance_is_ready(*instance) {
@@ -174,31 +193,85 @@ fn update_gltf(
         }
     });
 
-    let mut set_state = |scene_ent: &SceneEntity, current_state: LoadingState| {
-        if let Ok((root, mut context, has_material_lookup)) = contexts.get_mut(scene_ent.root) {
+    let mut set_state =
+        |contexts: &mut Query<(Entity, &mut RendererSceneContext, Has<SceneResourceLookup>)>,
+         scene_ent: &SceneEntity,
+         current_state: LoadingState| {
+            if let Ok((root, mut context, has_material_lookup)) = contexts.get_mut(scene_ent.root) {
+                context.update_crdt(
+                    SceneComponentId::GLTF_CONTAINER_LOADING_STATE,
+                    CrdtType::LWW_ANY,
+                    scene_ent.id,
+                    &PbGltfContainerLoadingState {
+                        current_state: current_state as i32,
+                        node_paths: Default::default(),
+                        mesh_names: Default::default(),
+                        material_names: Default::default(),
+                        skin_names: Default::default(),
+                        animation_names: Default::default(),
+                    },
+                );
+
+                if !has_material_lookup {
+                    commands2
+                        .entity(root)
+                        .try_insert(SceneResourceLookup::default());
+                }
+            };
+        };
+
+    for (ent, scene_ent, gltf, maybe_loaded, maybe_processed) in new_gltfs.iter() {
+        if &gltf.0.src == "models/core_building/ch1_crowdV5.glb" {
+            if *once {
+                // commands.entity(ent).insert((Fucked));
+                // commands.entity(ent).insert((Fucked, Visibility::Hidden));
+                println!("[{}]: fucked", tick.0);
+            // commands.entity(ent).insert(GltfProcessed::default());
+            // let (_, mut context, _) = contexts.get_mut(scene_ent.root).unwrap();
+            // context.update_crdt(
+            //     SceneComponentId::GLTF_CONTAINER_LOADING_STATE,
+            //     CrdtType::LWW_ANY,
+            //     scene_ent.id,
+            //     &PbGltfContainerLoadingState {
+            //         current_state: LoadingState::Finished as i32,
+            //         ..Default::default()
+            //     },
+            // );
+            // continue;
+            } else {
+                *once = true;
+                // commands.entity(ent).insert((Fucked, Visibility::Hidden));
+                commands.entity(ent).insert((Fucked));
+                // commands.entity(ent).insert(GltfProcessed::default());
+                // let (_, mut context, _) = contexts.get_mut(scene_ent.root).unwrap();
+                // context.update_crdt(
+                //     SceneComponentId::GLTF_CONTAINER_LOADING_STATE,
+                //     CrdtType::LWW_ANY,
+                //     scene_ent.id,
+                //     &PbGltfContainerLoadingState {
+                //         current_state: LoadingState::Finished as i32,
+                //         ..Default::default()
+                //     },
+                // );
+                // continue;
+            }
+        }
+        // if skip.contains(&gltf.0.src.as_str()) {
+        else {
+            println!("gltf skip {}", &gltf.0.src);
+            commands.entity(ent).insert(GltfProcessed::default());
+            let (_, mut context, _) = contexts.get_mut(scene_ent.root).unwrap();
             context.update_crdt(
                 SceneComponentId::GLTF_CONTAINER_LOADING_STATE,
                 CrdtType::LWW_ANY,
                 scene_ent.id,
                 &PbGltfContainerLoadingState {
-                    current_state: current_state as i32,
-                    node_paths: Default::default(),
-                    mesh_names: Default::default(),
-                    material_names: Default::default(),
-                    skin_names: Default::default(),
-                    animation_names: Default::default(),
+                    current_state: LoadingState::Finished as i32,
+                    ..Default::default()
                 },
             );
-
-            if !has_material_lookup {
-                commands2
-                    .entity(root)
-                    .try_insert(SceneResourceLookup::default());
-            }
-        };
-    };
-
-    for (ent, scene_ent, gltf, maybe_loaded, maybe_processed) in new_gltfs.iter() {
+            continue;
+        }
         debug!("{} has {}", scene_ent.id, gltf.0.src);
 
         if let Some(GltfLoaded(Some(instance))) = maybe_loaded {
@@ -244,13 +317,13 @@ fn update_gltf(
             Ok(h_gltf) => h_gltf,
             Err(e) => {
                 warn!("gltf content file not found: {e}");
-                set_state(scene_ent, LoadingState::NotFound);
+                set_state(&mut contexts, scene_ent, LoadingState::NotFound);
                 commands.entity(ent).remove::<GltfLoaded>();
                 continue;
             }
         };
 
-        set_state(scene_ent, LoadingState::Loading);
+        set_state(&mut contexts, scene_ent, LoadingState::Loading);
         commands
             .entity(ent)
             .try_insert(GltfHandle(h_gltf))
@@ -262,7 +335,7 @@ fn update_gltf(
             bevy::asset::LoadState::Loaded => (),
             bevy::asset::LoadState::Failed(e) => {
                 warn!("failed to process gltf {}: {}", def.0.src, e);
-                set_state(scene_ent, LoadingState::FinishedWithError);
+                set_state(&mut contexts, scene_ent, LoadingState::FinishedWithError);
                 commands.entity(ent).try_insert(GltfLoaded(None));
                 continue;
             }
@@ -302,6 +375,7 @@ fn update_gltf(
 
         match gltf_scene_handle {
             Some(gltf_scene_handle) => {
+                println!("[{}]: spawn {}", tick.0, def.0.src);
                 let instance_id = scene_spawner.spawn_as_child(gltf_scene_handle.clone_weak(), ent);
                 commands
                     .entity(ent)
@@ -309,7 +383,7 @@ fn update_gltf(
             }
             None => {
                 warn!("no default scene found in gltf.");
-                set_state(scene_ent, LoadingState::FinishedWithError);
+                set_state(&mut contexts, scene_ent, LoadingState::FinishedWithError);
                 commands.entity(ent).try_insert(GltfLoaded(None));
             }
         }
@@ -331,7 +405,7 @@ pub struct SceneResourceLookup {
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-fn update_ready_gltfs(
+pub fn update_ready_gltfs(
     mut commands: Commands,
     ready_gltfs: Query<
         (
@@ -380,6 +454,7 @@ fn update_ready_gltfs(
     config: Res<AppConfig>,
     gltfs: Res<Assets<Gltf>>,
     animation_clips: Res<Assets<AnimationClip>>,
+    tick: Res<FrameCount>,
 ) {
     for (bevy_scene_entity, dcl_scene_entity, loaded, definition, h_gltf) in ready_gltfs.iter() {
         if loaded.0.is_none() {
@@ -391,6 +466,7 @@ fn update_ready_gltfs(
         }
         let instance = loaded.0.as_ref().unwrap();
         if scene_spawner.instance_is_really_ready(*instance) {
+            println!("[{}]: ready {}", tick.0, definition.0.src);
             let Some(gltf) = gltfs.get(h_gltf.0.id()) else {
                 commands
                     .entity(bevy_scene_entity)
@@ -510,7 +586,10 @@ fn update_ready_gltfs(
                         let mut rotated = *transform;
                         rotated
                             .rotate_around(Vec3::ZERO, Quat::from_rotation_y(std::f32::consts::PI));
-                        commands.entity(spawned_ent).try_insert(rotated);
+                        commands
+                            .entity(spawned_ent)
+                            // .try_insert((rotated, Visibility::Inherited));
+                            .try_insert((rotated, VisCount(0)));
                     }
 
                     // retarget animations to our manually added root player
@@ -531,6 +610,8 @@ fn update_ready_gltfs(
                             *tracker.0.entry("Animations").or_default() += 1;
                         }
                     }
+
+                    commands.entity(spawned_ent).insert(NoFrustumCulling);
 
                     // if there is no mesh, there's nothing further to do
                     let Some(h_gltf_mesh) = maybe_h_mesh else {
@@ -866,6 +947,7 @@ fn update_ready_gltfs(
                     instance_id: Some(*instance),
                     named_nodes,
                 });
+            println!("finished {}", definition.0.src);
             if has_animations && !gltf.animations.is_empty() {
                 let mut graph = AnimationGraph::new();
                 let animation_clips = Clips {
@@ -900,6 +982,38 @@ fn update_ready_gltfs(
                 .iter()
                 .filter(|(_, data)| meshes.get(data.mesh_id).is_some())
                 .count();
+        }
+    }
+}
+
+#[derive(Component)]
+pub struct VisCount(usize);
+
+fn make_vis(
+    mut commands: Commands,
+    mut q: Query<(Entity, &mut VisCount)>,
+    mut count: Local<usize>,
+) {
+    for (e, mut v) in q.iter_mut() {
+        if v.0 == 5 {
+            if let Ok(mut commands) = commands.get_entity(e) {
+                if *count == 0 {
+                    commands
+                        .remove::<VisCount>();
+                } else {
+                    commands
+                        .try_insert(Visibility::Inherited)
+                        .remove::<VisCount>();
+                }
+                println!("set vis {}!", *count);
+                *count += 1;
+                if *count == 3 {
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            println!("...tick vis {}!", v.0 + 1);
+            v.0 += 1;
         }
     }
 }
@@ -1708,4 +1822,46 @@ fn update_gltf_linked_visibility(
             *target_vis = *vis;
         }
     }
+}
+
+pub fn fucked(
+    q: Query<Entity, With<Fucked>>,
+    info: Query<(
+        Entity,
+        Option<&Children>,
+        (
+            Option<&Visibility>,
+            Option<&ViewVisibility>,
+            Option<&SceneEntity>,
+            &GlobalTransform,
+        ),
+    )>,
+    tick: Res<FrameCount>,
+    mut prev: Local<HashMap<Entity, GlobalTransform>>,
+) {
+    let mut hash = FixedHasher.build_hasher();
+    for e in q.iter() {
+        println!(" --> {}: {}", tick.0, e);
+        let mut stack = vec![(e, 0)];
+
+        while let Some((e, d)) = stack.pop() {
+            let (_, children, info) = info.get(e).unwrap();
+            println!("{}[{e}]: {info:?}", std::iter::repeat(" ").take(d).collect::<Vec<_>>().join(""));
+            if let Some(children) = children {
+                stack.extend(children.iter().map(|c| (c, d + 1)));
+            }
+            let gt = info.3;
+            if let Some(prev) = prev.get(&e) {
+                if prev != gt {
+                    println!("{}[{e}] {:?} -> {:?}", std::iter::repeat(" ").take(d).collect::<Vec<_>>().join(""), prev, gt);
+                }
+            }
+            prev.insert(e, gt.clone());
+            let bytes: &[u8; std::mem::size_of::<GlobalTransform>()] = unsafe { std::mem::transmute(gt) };
+            hash.write(bytes);
+        }
+    }
+
+    let res = hash.finish();
+    println!("[{}] hash: {}", tick.0, res);
 }
