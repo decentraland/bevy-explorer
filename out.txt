@@ -1,0 +1,402 @@
+warning: implicit autoref creates a reference to the dereference of a raw pointer
+   --> /Users/robertmacdonald/decentraland/bevy/crates/bevy_mikktspace/src/generated.rs:759:25
+    |
+759 |         bStillSame = if (*pg1).pTriMembers[i] == (*pg2).pTriMembers[i] {
+    |                         ^^---^^^^^^^^^^^^^^^^
+    |                           |
+    |                           this raw pointer has type `*const SSubGroup`
+    |
+    = note: creating a reference requires the pointer target to be valid and imposes aliasing requirements
+note: autoref is being applied to this expression, resulting in: `&Vec<i32>`
+   --> /Users/robertmacdonald/decentraland/bevy/crates/bevy_mikktspace/src/generated.rs:759:25
+    |
+759 |         bStillSame = if (*pg1).pTriMembers[i] == (*pg2).pTriMembers[i] {
+    |                         ^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(dangerous_implicit_autorefs)]` on by default
+help: try using a raw pointer method instead; or if this reference is intentional, make it explicit
+    |
+759 |         bStillSame = if (&(*pg1).pTriMembers)[i] == (*pg2).pTriMembers[i] {
+    |                         ++                  +
+
+warning: implicit autoref creates a reference to the dereference of a raw pointer
+   --> /Users/robertmacdonald/decentraland/bevy/crates/bevy_mikktspace/src/generated.rs:759:50
+    |
+759 |         bStillSame = if (*pg1).pTriMembers[i] == (*pg2).pTriMembers[i] {
+    |                                                  ^^---^^^^^^^^^^^^^^^^
+    |                                                    |
+    |                                                    this raw pointer has type `*const SSubGroup`
+    |
+    = note: creating a reference requires the pointer target to be valid and imposes aliasing requirements
+note: autoref is being applied to this expression, resulting in: `&Vec<i32>`
+   --> /Users/robertmacdonald/decentraland/bevy/crates/bevy_mikktspace/src/generated.rs:759:50
+    |
+759 |         bStillSame = if (*pg1).pTriMembers[i] == (*pg2).pTriMembers[i] {
+    |                                                  ^^^^^^^^^^^^^^^^^^
+help: try using a raw pointer method instead; or if this reference is intentional, make it explicit
+    |
+759 |         bStillSame = if (*pg1).pTriMembers[i] == (&(*pg2).pTriMembers)[i] {
+    |                                                  ++                  +
+
+warning: `bevy_mikktspace` (lib) generated 2 warnings
+warning: unused import: `tracing::warn`
+  --> /Users/robertmacdonald/decentraland/bevy/crates/bevy_render/src/render_phase/mod.rs:70:5
+   |
+70 | use tracing::warn;
+   |     ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: `bevy_render` (lib) generated 1 warning (run `cargo fix --lib -p bevy_render` to apply 1 suggestion)
+warning: unused import: `Vec3`
+  --> /Users/robertmacdonald/decentraland/bevy/crates/bevy_gizmos/src/lib.rs:88:17
+   |
+88 | use bevy_math::{Vec3, Vec4};
+   |                 ^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: `bevy_gizmos` (lib) generated 1 warning (run `cargo fix --lib -p bevy_gizmos` to apply 1 suggestion)
+warning: unused variable: `ui_scale`
+   --> /Users/robertmacdonald/decentraland/bevy/crates/bevy_ui/src/focus.rs:161:5
+    |
+161 |     ui_scale: Res<UiScale>,
+    |     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_ui_scale`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: `bevy_ui` (lib) generated 1 warning
+   Compiling scene_runner v0.1.0 (/Users/robertmacdonald/decentraland/bevy-explorer/crates/scene_runner)
+   Compiling decentra-bevy v0.1.0 (/Users/robertmacdonald/decentraland/bevy-explorer)
+warning: unused import: `AtmosphereCamera`
+  --> crates/visuals/src/lib.rs:18:15
+   |
+18 |     prelude::{AtmosphereCamera, AtmosphereModel, AtmospherePlugin, AtmosphereSettings},
+   |               ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `init_noise`
+  --> crates/visuals/src/lib.rs:21:21
+   |
+21 | use nishita_cloud::{init_noise, NishitaCloud};
+   |                     ^^^^^^^^^^
+
+warning: unused variable: `atmosphere`
+   --> crates/visuals/src/lib.rs:102:9
+    |
+102 |     mut atmosphere: AtmosphereMut<NishitaCloud>,
+    |         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_atmosphere`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `images`
+   --> crates/visuals/src/lib.rs:103:9
+    |
+103 |     mut images: ResMut<Assets<Image>>,
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_images`
+
+warning: variable does not need to be mutable
+   --> crates/visuals/src/lib.rs:102:5
+    |
+102 |     mut atmosphere: AtmosphereMut<NishitaCloud>,
+    |     ----^^^^^^^^^^
+    |     |
+    |     help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` on by default
+
+warning: variable does not need to be mutable
+   --> crates/visuals/src/lib.rs:103:5
+    |
+103 |     mut images: ResMut<Assets<Image>>,
+    |     ----^^^^^^
+    |     |
+    |     help: remove this `mut`
+
+warning: `visuals` (lib) generated 6 warnings (run `cargo fix --lib -p visuals` to apply 4 suggestions)
+warning: unused import: `common::sets::SceneSets`
+ --> crates/scene_runner/src/update_world/animation.rs:7:5
+  |
+7 | use common::sets::SceneSets;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `DefaultHasher`
+  --> crates/scene_runner/src/update_world/gltf_container.rs:16:45
+   |
+16 |     platform::{collections::HashMap, hash::{DefaultHasher, FixedHasher}},
+   |                                             ^^^^^^^^^^^^^
+
+warning: unnecessary parentheses around method argument
+   --> crates/scene_runner/src/update_world/gltf_container.rs:244:45
+    |
+244 |                 commands.entity(ent).insert((Fucked));
+    |                                             ^      ^
+    |
+    = note: `#[warn(unused_parens)]` on by default
+help: remove these parentheses
+    |
+244 -                 commands.entity(ent).insert((Fucked));
+244 +                 commands.entity(ent).insert(Fucked);
+    |
+
+warning: unused import: `set_ui_background`
+  --> crates/scene_runner/src/update_world/scene_ui/mod.rs:19:21
+   |
+19 | use ui_background::{set_ui_background, UiBackground};
+   |                     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `set_ui_dropdown`
+  --> crates/scene_runner/src/update_world/scene_ui/mod.rs:20:19
+   |
+20 | use ui_dropdown::{set_ui_dropdown, UiDropdown};
+   |                   ^^^^^^^^^^^^^^^
+
+warning: unused import: `set_ui_input`
+  --> crates/scene_runner/src/update_world/scene_ui/mod.rs:21:16
+   |
+21 | use ui_input::{set_ui_input, UiInput};
+   |                ^^^^^^^^^^^^
+
+warning: unused import: `ui_pointer::set_ui_pointer_events`
+  --> crates/scene_runner/src/update_world/scene_ui/mod.rs:22:5
+   |
+22 | use ui_pointer::set_ui_pointer_events;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `check_text_links` and `set_ui_text`
+  --> crates/scene_runner/src/update_world/scene_ui/mod.rs:23:15
+   |
+23 | use ui_text::{check_text_links, set_ui_text, UiText};
+   |               ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused imports: `SceneSets` and `update_world::scene_ui::ui_pointer::manage_scene_ui_interact`
+  --> crates/scene_runner/src/update_world/scene_ui/mod.rs:28:5
+   |
+28 |     update_world::scene_ui::ui_pointer::manage_scene_ui_interact,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+29 |     ContainerEntity, ContainingScene, SceneEntity, SceneSets,
+   |                                                    ^^^^^^^^^
+
+warning: unused import: `UiActionSet`
+  --> crates/scene_runner/src/update_world/scene_ui/mod.rs:54:35
+   |
+54 |     ui_actions::{DataChanged, On, UiActionSet, UiCaller},
+   |                                   ^^^^^^^^^^^
+
+warning: unreachable statement
+  --> crates/scene_runner/src/update_world/animation.rs:74:9
+   |
+73 |           continue;
+   |           -------- any code following this expression is unreachable
+74 | /         if scene_ent.id.id == 1811 {
+75 | |             if *once {
+76 | |                 debug!("skip!");
+77 | |                 continue;
+...  |
+82 | |         }
+   | |_________^ unreachable statement
+   |
+   = note: `#[warn(unreachable_code)]` on by default
+
+warning: unreachable statement
+   --> crates/scene_runner/src/update_world/mesh_renderer/mod.rs:211:5
+    |
+210 |       return;
+    |       ------ any code following this expression is unreachable
+211 | /     for (ent, scene_ent, prim, maybe_material, maybe_existing_mesh) in new_primitives.iter() {
+212 | |         commands.entity(ent).remove::<RetryMeshDefinition>();
+213 | |         let handle = match prim {
+214 | |             MeshDefinition::Box { uvs } => {
+...   |
+337 | |     }
+    | |_____^ unreachable statement
+
+error[E0599]: no variant or associated item named `R` found for enum `bevy::prelude::KeyCode` in the current scope
+   --> crates/scene_runner/src/util.rs:196:35
+    |
+196 |     if keys.just_pressed(KeyCode::R) {
+    |                                   ^ variant or associated item not found in `bevy::prelude::KeyCode`
+
+warning: unused variable: `player`
+  --> crates/scene_runner/src/update_world/animation.rs:67:46
+   |
+67 |     for (ent, scene_ent, maybe_animator, mut player, clips, h_graph, rgp) in animators.iter_mut() {
+   |                                              ^^^^^^ help: if this is intentional, prefix it with an underscore: `_player`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `clips`
+  --> crates/scene_runner/src/update_world/animation.rs:67:54
+   |
+67 |     for (ent, scene_ent, maybe_animator, mut player, clips, h_graph, rgp) in animators.iter_mut() {
+   |                                                      ^^^^^ help: if this is intentional, prefix it with an underscore: `_clips`
+
+warning: unused variable: `h_graph`
+  --> crates/scene_runner/src/update_world/animation.rs:67:61
+   |
+67 |     for (ent, scene_ent, maybe_animator, mut player, clips, h_graph, rgp) in animators.iter_mut() {
+   |                                                             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_h_graph`
+
+warning: unused variable: `graphs`
+  --> crates/scene_runner/src/update_world/animation.rs:63:5
+   |
+63 |     graphs: Res<Assets<AnimationGraph>>,
+   |     ^^^^^^ help: if this is intentional, prefix it with an underscore: `_graphs`
+
+warning: unused variable: `asset_server`
+  --> crates/scene_runner/src/update_world/animation.rs:64:5
+   |
+64 |     asset_server: Res<AssetServer>,
+   |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_asset_server`
+
+warning: unused variable: `once`
+  --> crates/scene_runner/src/update_world/animation.rs:65:9
+   |
+65 |     mut once: Local<bool>,
+   |         ^^^^ help: if this is intentional, prefix it with an underscore: `_once`
+
+warning: variable does not need to be mutable
+  --> crates/scene_runner/src/update_world/animation.rs:65:5
+   |
+65 |     mut once: Local<bool>,
+   |     ----^^^^
+   |     |
+   |     help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` on by default
+
+warning: variable does not need to be mutable
+  --> crates/scene_runner/src/update_world/animation.rs:67:42
+   |
+67 |     for (ent, scene_ent, maybe_animator, mut player, clips, h_graph, rgp) in animators.iter_mut() {
+   |                                          ----^^^^^^
+   |                                          |
+   |                                          help: remove this `mut`
+
+warning: unused variable: `skip`
+   --> crates/scene_runner/src/update_world/gltf_container.rs:170:9
+    |
+170 |     let skip = [
+    |         ^^^^ help: if this is intentional, prefix it with an underscore: `_skip`
+
+warning: unused variable: `commands`
+   --> crates/scene_runner/src/update_world/mesh_renderer/mod.rs:190:9
+    |
+190 |     mut commands: Commands,
+    |         ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_commands`
+
+warning: unused variable: `new_primitives`
+   --> crates/scene_runner/src/update_world/mesh_renderer/mod.rs:191:5
+    |
+191 |     new_primitives: Query<
+    |     ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_new_primitives`
+
+warning: unused variable: `removed_primitives`
+   --> crates/scene_runner/src/update_world/mesh_renderer/mod.rs:201:9
+    |
+201 |     mut removed_primitives: RemovedComponents<MeshDefinition>,
+    |         ^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_removed_primitives`
+
+warning: unused variable: `meshes`
+   --> crates/scene_runner/src/update_world/mesh_renderer/mod.rs:202:9
+    |
+202 |     mut meshes: ResMut<Assets<Mesh>>,
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_meshes`
+
+warning: unused variable: `defaults`
+   --> crates/scene_runner/src/update_world/mesh_renderer/mod.rs:203:5
+    |
+203 |     defaults: Res<MeshPrimitiveDefaults>,
+    |     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_defaults`
+
+warning: unused variable: `default_material`
+   --> crates/scene_runner/src/update_world/mesh_renderer/mod.rs:204:9
+    |
+204 |     mut default_material: Local<HashMap<Entity, Handle<SceneMaterial>>>,
+    |         ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_default_material`
+
+warning: unused variable: `materials`
+   --> crates/scene_runner/src/update_world/mesh_renderer/mod.rs:205:9
+    |
+205 |     mut materials: ResMut<Assets<SceneMaterial>>,
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_materials`
+
+warning: unused variable: `scenes`
+   --> crates/scene_runner/src/update_world/mesh_renderer/mod.rs:206:5
+    |
+206 |     scenes: Query<&RendererSceneContext>,
+    |     ^^^^^^ help: if this is intentional, prefix it with an underscore: `_scenes`
+
+warning: unused variable: `config`
+   --> crates/scene_runner/src/update_world/mesh_renderer/mod.rs:207:5
+    |
+207 |     config: Res<AppConfig>,
+    |     ^^^^^^ help: if this is intentional, prefix it with an underscore: `_config`
+
+warning: unused variable: `gltf_mesh_resolver`
+   --> crates/scene_runner/src/update_world/mesh_renderer/mod.rs:208:9
+    |
+208 |     mut gltf_mesh_resolver: GltfMeshResolver,
+    |         ^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_gltf_mesh_resolver`
+
+warning: variable does not need to be mutable
+   --> crates/scene_runner/src/update_world/mesh_renderer/mod.rs:190:5
+    |
+190 |     mut commands: Commands,
+    |     ----^^^^^^^^
+    |     |
+    |     help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/scene_runner/src/update_world/mesh_renderer/mod.rs:201:5
+    |
+201 |     mut removed_primitives: RemovedComponents<MeshDefinition>,
+    |     ----^^^^^^^^^^^^^^^^^^
+    |     |
+    |     help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/scene_runner/src/update_world/mesh_renderer/mod.rs:202:5
+    |
+202 |     mut meshes: ResMut<Assets<Mesh>>,
+    |     ----^^^^^^
+    |     |
+    |     help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/scene_runner/src/update_world/mesh_renderer/mod.rs:204:5
+    |
+204 |     mut default_material: Local<HashMap<Entity, Handle<SceneMaterial>>>,
+    |     ----^^^^^^^^^^^^^^^^
+    |     |
+    |     help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/scene_runner/src/update_world/mesh_renderer/mod.rs:205:5
+    |
+205 |     mut materials: ResMut<Assets<SceneMaterial>>,
+    |     ----^^^^^^^^^
+    |     |
+    |     help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> crates/scene_runner/src/update_world/mesh_renderer/mod.rs:208:5
+    |
+208 |     mut gltf_mesh_resolver: GltfMeshResolver,
+    |     ----^^^^^^^^^^^^^^^^^^
+    |     |
+    |     help: remove this `mut`
+
+warning: variable `count` is assigned to, but never used
+  --> crates/scene_runner/src/update_world/transform_and_parent.rs:77:17
+   |
+77 |         let mut count = 0;
+   |                 ^^^^^
+   |
+   = note: consider using `_count` instead
+
+For more information about this error, try `rustc --explain E0599`.
+warning: `scene_runner` (lib) generated 38 warnings
+error: could not compile `scene_runner` (lib) due to 1 previous error; 38 warnings emitted

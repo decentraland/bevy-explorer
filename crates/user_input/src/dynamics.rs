@@ -91,7 +91,6 @@ pub fn update_user_position(
     clip: Res<UserClipping>,
     mut prev_excess_time: Local<f32>,
 ) {
-    return;
     let Ok((
         user_ent,
         user,
@@ -324,7 +323,7 @@ pub fn update_user_position(
     );
 
     transform.translation += target_motion;
-    transform.translation.y = transform.translation.y.max(0.0);
+    transform.translation.y = 0.0;//transform.translation.y.max(0.0);
     dynamic_state.ground_height = transform.translation.y;
 
     // calculate ground height / ground-collider after updating

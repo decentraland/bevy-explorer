@@ -428,29 +428,29 @@ impl Plugin for SceneUiPlugin {
 
         app.init_resource::<HiddenSceneUis>();
 
-        app.add_systems(Update, init_scene_ui_root.in_set(SceneSets::PostInit));
-        app.add_systems(
-            Update,
-            (
-                update_scene_ui_components,
-                create_ui_roots,
-                layout_scene_ui,
-                (
-                    set_ui_text,       // text runs before background as both insert to position 0.
-                    set_ui_background, // so text is actually in front of background, but "behind"/before children
-                    set_ui_input,
-                    set_ui_dropdown,
-                    set_ui_pointer_events,
-                ),
-                fully_update_target_camera_system,
-                set_ui_focus,
-                manage_scene_ui_interact,
-            )
-                .chain()
-                .in_set(SceneSets::PostLoop),
-        );
+        // app.add_systems(Update, init_scene_ui_root.in_set(SceneSets::PostInit));
+        // app.add_systems(
+        //     Update,
+        //     (
+        //         update_scene_ui_components,
+        //         create_ui_roots,
+        //         layout_scene_ui,
+        //         (
+        //             set_ui_text,       // text runs before background as both insert to position 0.
+        //             set_ui_background, // so text is actually in front of background, but "behind"/before children
+        //             set_ui_input,
+        //             set_ui_dropdown,
+        //             set_ui_pointer_events,
+        //         ),
+        //         fully_update_target_camera_system,
+        //         set_ui_focus,
+        //         manage_scene_ui_interact,
+        //     )
+        //         .chain()
+        //         .in_set(SceneSets::PostLoop),
+        // );
 
-        app.add_systems(PreUpdate, check_text_links.after(UiActionSet));
+        // app.add_systems(PreUpdate, check_text_links.after(UiActionSet));
 
         app.add_console_command::<ToggleSceneUiCommand, _>(toggle_scene_ui_command);
     }

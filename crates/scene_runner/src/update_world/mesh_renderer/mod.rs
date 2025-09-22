@@ -207,6 +207,7 @@ pub fn update_mesh(
     config: Res<AppConfig>,
     mut gltf_mesh_resolver: GltfMeshResolver,
 ) {
+    return;
     for (ent, scene_ent, prim, maybe_material, maybe_existing_mesh) in new_primitives.iter() {
         commands.entity(ent).remove::<RetryMeshDefinition>();
         let handle = match prim {

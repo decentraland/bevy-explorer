@@ -37,6 +37,7 @@ impl Plugin for SceneUtilPlugin {
         app.add_console_command::<ReloadCommand, _>(reload_command);
         app.add_console_command::<ClearStoreCommand, _>(clear_store_command);
         app.add_systems(Update, (console_relay, handle_preview_command));
+        app.add_systems(Update, reload_on_r);
     }
 }
 
@@ -186,6 +187,15 @@ fn debug_dump_scene(
 #[command(name = "/reload")]
 struct ReloadCommand {
     hash: Option<String>,
+}
+
+fn reload_on_r(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut live_scenes: ResMut<LiveScenes>,
+) {
+    if keys.just_pressed(KeyCode::KeyR) {
+        live_scenes.scenes.clear();        
+    }
 }
 
 fn reload_command(mut input: ConsoleCommand<ReloadCommand>, mut live_scenes: ResMut<LiveScenes>) {

@@ -133,17 +133,18 @@ fn setup(
         Transform::from_translation(Vec3::Y * -0.05),
         Ground,
         GROUND_RENDERLAYER.clone(),
+        Visibility::Hidden
     ));
 
     {
-        commands.entity(camera.0).try_insert(AtmosphereCamera {
-            render_layers: Some(RenderLayers::default()),
-        });
+        // commands.entity(camera.0).try_insert(AtmosphereCamera {
+        //     render_layers: Some(RenderLayers::default()),
+        // });
 
-        let noise = init_noise(512);
-        let h_noise = images.add(noise);
+        // let noise = init_noise(512);
+        // let h_noise = images.add(noise);
 
-        atmosphere.noise_texture = h_noise;
+        // atmosphere.noise_texture = h_noise;
     }
 
     // commands.entity(camera.0).try_insert(

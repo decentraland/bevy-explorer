@@ -284,8 +284,10 @@ pub fn spawn_imposters(
         .flat_map(|x| (min_tile.y..=max_tile.y).map(move |y| IVec2::new(x, y)))
         .collect::<HashSet<_>>();
 
+    required_tiles.clear();
+
     // take the largest permitted tile to fill the area
-    while level > 0 {
+    while level > 0 && false {
         let tile_size = 1 << level;
         let tile_size_world = (tile_size * 16) as f32;
 

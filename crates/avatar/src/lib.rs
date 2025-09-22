@@ -1421,7 +1421,7 @@ fn set_avatar_visibility(
         *vis = if is_root_layer && (t.translation() - player_pos).length_squared() >= cutoff {
             Visibility::Hidden
         } else {
-            Visibility::Inherited
+            Visibility::Hidden
         };
     }
 }

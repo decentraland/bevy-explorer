@@ -36,17 +36,17 @@ impl Plugin for NftShapePlugin {
             SceneComponentId::NFT_SHAPE,
             ComponentPosition::EntityOnly,
         );
-        app.add_systems(
-            Update,
-            (
-                update_nft_shapes,
-                load_frame,
-                process_frame,
-                load_nft,
-                resize_nft,
-            )
-                .in_set(SceneSets::PostLoop),
-        );
+        // app.add_systems(
+        //     Update,
+        //     (
+        //         update_nft_shapes,
+        //         load_frame,
+        //         process_frame,
+        //         load_nft,
+        //         resize_nft,
+        //     )
+        //         .in_set(SceneSets::PostLoop),
+        // );
     }
 
     fn finish(&self, app: &mut App) {

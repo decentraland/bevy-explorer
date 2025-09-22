@@ -612,6 +612,7 @@ pub fn update_ready_gltfs(
                     }
 
                     commands.entity(spawned_ent).insert(NoFrustumCulling);
+                    commands.entity(spawned_ent).insert(ShowAabbGizmo{ color: Some(Color::srgb(1.0,0.0,1.0)) });
 
                     // if there is no mesh, there's nothing further to do
                     let Some(h_gltf_mesh) = maybe_h_mesh else {
@@ -1007,9 +1008,6 @@ fn make_vis(
                 }
                 println!("set vis {}!", *count);
                 *count += 1;
-                if *count == 3 {
-                    std::process::exit(1);
-                }
             }
         } else {
             println!("...tick vis {}!", v.0 + 1);
@@ -1839,29 +1837,29 @@ pub fn fucked(
     tick: Res<FrameCount>,
     mut prev: Local<HashMap<Entity, GlobalTransform>>,
 ) {
-    let mut hash = FixedHasher.build_hasher();
-    for e in q.iter() {
-        println!(" --> {}: {}", tick.0, e);
-        let mut stack = vec![(e, 0)];
+    // let mut hash = FixedHasher.build_hasher();
+    // for e in q.iter() {
+    //     println!(" --> {}: {}", tick.0, e);
+    //     let mut stack = vec![(e, 0)];
 
-        while let Some((e, d)) = stack.pop() {
-            let (_, children, info) = info.get(e).unwrap();
-            println!("{}[{e}]: {info:?}", std::iter::repeat(" ").take(d).collect::<Vec<_>>().join(""));
-            if let Some(children) = children {
-                stack.extend(children.iter().map(|c| (c, d + 1)));
-            }
-            let gt = info.3;
-            if let Some(prev) = prev.get(&e) {
-                if prev != gt {
-                    println!("{}[{e}] {:?} -> {:?}", std::iter::repeat(" ").take(d).collect::<Vec<_>>().join(""), prev, gt);
-                }
-            }
-            prev.insert(e, gt.clone());
-            let bytes: &[u8; std::mem::size_of::<GlobalTransform>()] = unsafe { std::mem::transmute(gt) };
-            hash.write(bytes);
-        }
-    }
+    //     while let Some((e, d)) = stack.pop() {
+    //         let (_, children, info) = info.get(e).unwrap();
+    //         println!("{}[{e}]: {info:?}", std::iter::repeat(" ").take(d).collect::<Vec<_>>().join(""));
+    //         if let Some(children) = children {
+    //             stack.extend(children.iter().map(|c| (c, d + 1)));
+    //         }
+    //         let gt = info.3;
+    //         if let Some(prev) = prev.get(&e) {
+    //             if prev != gt {
+    //                 println!("{}[{e}] {:?} -> {:?}", std::iter::repeat(" ").take(d).collect::<Vec<_>>().join(""), prev, gt);
+    //             }
+    //         }
+    //         prev.insert(e, gt.clone());
+    //         let bytes: &[u8; std::mem::size_of::<GlobalTransform>()] = unsafe { std::mem::transmute(gt) };
+    //         hash.write(bytes);
+    //     }
+    // }
 
-    let res = hash.finish();
-    println!("[{}] hash: {}", tick.0, res);
+    // let res = hash.finish();
+    // println!("[{}] hash: {}", tick.0, res);
 }
