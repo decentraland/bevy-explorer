@@ -618,26 +618,26 @@ pub fn update_ready_gltfs(
                     let Some(h_gltf_mesh) = maybe_h_mesh else {
                         continue;
                     };
-                    let Some(mesh_data) = meshes.get_mut(h_gltf_mesh) else {
+                    let Some(mut read_only_mesh_data) = meshes.get(h_gltf_mesh) else {
                         error!("gltf contained mesh not loaded?!");
                         continue;
                     };
 
                     let hash = &mut std::hash::DefaultHasher::new();
-                    for (attr, data) in mesh_data.attributes() {
+                    for (attr, data) in read_only_mesh_data.attributes() {
                         attr.id.hash(hash);
                         data.get_bytes().hash(hash);
                     }
 
-                    let has_joints = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_INDEX).is_some();
-                    let has_weights = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
+                    let has_joints = read_only_mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_INDEX).is_some();
+                    let has_weights = read_only_mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
                     let has_skin = maybe_skin.is_some();
                     let is_skinned = has_skin && has_joints && has_weights;
                     is_skinned.hash(hash);
 
-                    mesh_data.primitive_topology().hash(hash);
+                    read_only_mesh_data.primitive_topology().hash(hash);
 
-                    if let Some(indices) = mesh_data.indices() {
+                    if let Some(indices) = read_only_mesh_data.indices() {
                         indices.iter().for_each(|index| index.hash(hash));
                     }
 
@@ -651,27 +651,61 @@ pub fn update_ready_gltfs(
 
                     // note: disable cache for meshes with morph targets as we don't include them in the hash
                     let (h_mesh, cached_collider) =
-                        match (mesh_data.has_morph_targets(), cached_data) {
+                        match (read_only_mesh_data.has_morph_targets(), cached_data) {
                             (false, Some((h_mesh, cached_collider))) => {
                                 // overwrite with cached handle
                                 commands.entity(spawned_ent).insert(Mesh3d(h_mesh.clone()));
+
+                                error!("unneeded mutate {}", h_gltf_mesh.id());
+                                let mesh_data = meshes.get_mut(h_gltf_mesh).unwrap();
+                                read_only_mesh_data = &*mesh_data;
+
                                 (h_mesh, cached_collider.clone())
                             }
                             _ => {
+                                error!("normalizing {} for {}/{}", h_gltf_mesh.id(), read_only_mesh_data.has_morph_targets(), "?");
+                                let mesh_data = meshes.get_mut(h_gltf_mesh).unwrap();
                                 mesh_data.normalize_joint_weights();
 
                                 if !is_skinned {
                                     // bevy crashes if unskinned models have joints and weights, or if skinned models don't
                                     if has_joints {
+                                        error!("removing joints");
                                         mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_INDEX);
                                     }
                                     if has_weights {
+                                        error!("removing weights");
                                         mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT);
                                     }
                                 }
 
+                                read_only_mesh_data = &*mesh_data;
+
+                                let hasher = &mut std::hash::DefaultHasher::new();
+                                for (attr, data) in read_only_mesh_data.attributes() {
+                                    attr.id.hash(hasher);
+                                    data.get_bytes().hash(hasher);
+                                }
+
+                                let has_joints = read_only_mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_INDEX).is_some();
+                                let has_weights = read_only_mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
+                                let has_skin = maybe_skin.is_some();
+                                let is_skinned = has_skin && has_joints && has_weights;
+                                is_skinned.hash(hasher);
+
+                                read_only_mesh_data.primitive_topology().hash(hasher);
+
+                                if let Some(indices) = read_only_mesh_data.indices() {
+                                    indices.iter().for_each(|index| index.hash(hasher));
+                                }
+
+                                let hash2 = hasher.finish();
+                                if hash != hash2 {
+                                    error!("changed hash!");
+                                }
+
                                 resource_lookup.meshes.insert(
-                                    hash,
+                                    hash2,
                                     CachedMeshData {
                                         mesh_id: h_gltf_mesh.id(),
                                         maybe_collider: None,
@@ -802,7 +836,7 @@ pub fn update_ready_gltfs(
                     if collider_bits != 0
                     /* && !is_skinned */
                     {
-                        let shape = mesh_to_parry_shape(mesh_data);
+                        let shape = mesh_to_parry_shape(read_only_mesh_data);
 
                         let index = collider_counter
                             .entry(collider_base_name.to_owned())
@@ -814,13 +848,13 @@ pub fn update_ready_gltfs(
                                 Some(collider) => collider,
                                 None => {
                                     let mut new_mesh = Mesh::new(
-                                        mesh_data.primitive_topology(),
+                                        read_only_mesh_data.primitive_topology(),
                                         RenderAssetUsages::RENDER_WORLD,
                                     );
-                                    if let Some(indices) = mesh_data.indices().cloned() {
+                                    if let Some(indices) = read_only_mesh_data.indices().cloned() {
                                         new_mesh.insert_indices(indices);
                                     }
-                                    for (attribute, data) in mesh_data.attributes() {
+                                    for (attribute, data) in read_only_mesh_data.attributes() {
                                         let attribute = match attribute.id {
                                             id if id == Mesh::ATTRIBUTE_JOINT_INDEX.id => continue,
                                             id if id == Mesh::ATTRIBUTE_JOINT_WEIGHT.id => continue,
