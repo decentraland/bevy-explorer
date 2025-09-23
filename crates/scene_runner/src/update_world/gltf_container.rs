@@ -225,7 +225,7 @@ fn update_gltf(
             if *once {
                 // commands.entity(ent).insert((Fucked));
                 // commands.entity(ent).insert((Fucked, Visibility::Hidden));
-                println!("[{}]: fucked", tick.0);
+                error!("[{}]: fucked", tick.0);
             // commands.entity(ent).insert(GltfProcessed::default());
             // let (_, mut context, _) = contexts.get_mut(scene_ent.root).unwrap();
             // context.update_crdt(
@@ -258,7 +258,7 @@ fn update_gltf(
         }
         // if skip.contains(&gltf.0.src.as_str()) {
         else {
-            println!("gltf skip {}", &gltf.0.src);
+            // error!("gltf skip {}", &gltf.0.src);
             commands.entity(ent).insert(GltfProcessed::default());
             let (_, mut context, _) = contexts.get_mut(scene_ent.root).unwrap();
             context.update_crdt(
@@ -375,7 +375,7 @@ fn update_gltf(
 
         match gltf_scene_handle {
             Some(gltf_scene_handle) => {
-                println!("[{}]: spawn {}", tick.0, def.0.src);
+                error!("[{}]: spawn {}", tick.0, def.0.src);
                 let instance_id = scene_spawner.spawn_as_child(gltf_scene_handle.clone_weak(), ent);
                 commands
                     .entity(ent)
@@ -466,7 +466,7 @@ pub fn update_ready_gltfs(
         }
         let instance = loaded.0.as_ref().unwrap();
         if scene_spawner.instance_is_really_ready(*instance) {
-            println!("[{}]: ready {}", tick.0, definition.0.src);
+            error!("[{}]: ready {}", tick.0, definition.0.src);
             let Some(gltf) = gltfs.get(h_gltf.0.id()) else {
                 commands
                     .entity(bevy_scene_entity)
@@ -476,8 +476,8 @@ pub fn update_ready_gltfs(
             };
 
             // let graph = _node_graph(&_debug_query, bevy_scene_entity);
-            // println!("{bevy_scene_entity:?}");
-            // println!("{graph}");
+            // error!("{bevy_scene_entity:?}");
+            // error!("{graph}");
 
             // special behaviours, mainly from ADR-215
             // position
@@ -948,7 +948,7 @@ pub fn update_ready_gltfs(
                     instance_id: Some(*instance),
                     named_nodes,
                 });
-            println!("finished {}", definition.0.src);
+            error!("finished {}", definition.0.src);
             if has_animations && !gltf.animations.is_empty() {
                 let mut graph = AnimationGraph::new();
                 let animation_clips = Clips {
@@ -1006,11 +1006,11 @@ fn make_vis(
                         .try_insert(Visibility::Inherited)
                         .remove::<VisCount>();
                 }
-                println!("set vis {}!", *count);
+                error!("set vis {}!", *count);
                 *count += 1;
             }
         } else {
-            println!("...tick vis {}!", v.0 + 1);
+            // error!("...tick vis {}!", v.0 + 1);
             v.0 += 1;
         }
     }
@@ -1836,30 +1836,36 @@ pub fn fucked(
     )>,
     tick: Res<FrameCount>,
     mut prev: Local<HashMap<Entity, GlobalTransform>>,
+    mut count: Local<usize>,
 ) {
-    // let mut hash = FixedHasher.build_hasher();
-    // for e in q.iter() {
-    //     println!(" --> {}: {}", tick.0, e);
-    //     let mut stack = vec![(e, 0)];
+    if *count > 2 {
+        return;
+    }
 
-    //     while let Some((e, d)) = stack.pop() {
-    //         let (_, children, info) = info.get(e).unwrap();
-    //         println!("{}[{e}]: {info:?}", std::iter::repeat(" ").take(d).collect::<Vec<_>>().join(""));
-    //         if let Some(children) = children {
-    //             stack.extend(children.iter().map(|c| (c, d + 1)));
-    //         }
-    //         let gt = info.3;
-    //         if let Some(prev) = prev.get(&e) {
-    //             if prev != gt {
-    //                 println!("{}[{e}] {:?} -> {:?}", std::iter::repeat(" ").take(d).collect::<Vec<_>>().join(""), prev, gt);
-    //             }
-    //         }
-    //         prev.insert(e, gt.clone());
-    //         let bytes: &[u8; std::mem::size_of::<GlobalTransform>()] = unsafe { std::mem::transmute(gt) };
-    //         hash.write(bytes);
-    //     }
-    // }
+    let mut hash = FixedHasher.build_hasher();
+    for e in q.iter() {
+        *count += 1;
+        error!(" --> {}: {}", tick.0, e);
+        let mut stack = vec![(e, 0)];
 
-    // let res = hash.finish();
-    // println!("[{}] hash: {}", tick.0, res);
+        while let Some((e, d)) = stack.pop() {
+            let (_, children, info) = info.get(e).unwrap();
+            error!("{}[{e}]: {info:?}", std::iter::repeat(" ").take(d).collect::<Vec<_>>().join(""));
+            if let Some(children) = children {
+                stack.extend(children.iter().map(|c| (c, d + 1)));
+            }
+            let gt = info.3;
+            if let Some(prev) = prev.get(&e) {
+                if prev != gt {
+                    error!("{}[{e}] {:?} -> {:?}", std::iter::repeat(" ").take(d).collect::<Vec<_>>().join(""), prev, gt);
+                }
+            }
+            prev.insert(e, gt.clone());
+            let bytes: &[u8; std::mem::size_of::<GlobalTransform>()] = unsafe { std::mem::transmute(gt) };
+            hash.write(bytes);
+        }
+    }
+
+    let res = hash.finish();
+    error!("[{}] hash: {}", tick.0, res);
 }

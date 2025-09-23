@@ -29,13 +29,6 @@ impl Plugin for WorldUiPlugin {
             MaterialPlugin::<TextShapeMaterial>::default(),
             ImposterBakeMaterialPlugin::<TextShapeMaterial>::default(),
         ));
-        app.add_systems(Update, add_worldui_materials.in_set(SceneSets::PostLoop));
-        app.add_systems(
-            PostUpdate,
-            update_worldui_materials
-                .after(UiSystem::Layout)
-                .after(TransformSystem::TransformPropagate),
-        );
     }
 }
 
