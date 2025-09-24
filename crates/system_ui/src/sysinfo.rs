@@ -526,7 +526,7 @@ fn update_tracker(
     display_data.push((
         "Unique Gltf Meshes",
         resource_lookup
-            .meshes
+            .meshes_by_hash
             .values()
             .filter(|c| meshes.get(c.mesh_id).is_some())
             .count(),
