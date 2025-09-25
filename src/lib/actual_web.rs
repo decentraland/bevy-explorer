@@ -43,7 +43,7 @@ use ipfs::{IpfsAssetServer, IpfsIoPlugin};
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use platform::default_camera_components;
 use social::SocialPlugin;
-use system_bridge::{NativeUi, SystemBridgePlugin};
+use system_bridge::{settings::NewCameraEvent, NativeUi, SystemBridgePlugin};
 use system_ui::SystemUiPlugin;
 use texture_camera::TextureCameraPlugin;
 use tween::TweenPlugin;
@@ -305,7 +305,7 @@ fn setup(
             GROUND_RENDERLAYER.with(0),
         ))
         .id();
-
+    commands.send_event(NewCameraEvent(camera_id));
     player_resource.0 = player_id;
     cam_resource.0 = camera_id;
 }
