@@ -782,7 +782,14 @@ impl IpfsIo {
 
     pub async fn get_realm_info(&self) -> (String, Option<ServerAbout>) {
         let context = self.context.read().await;
-        (context.base_url.clone(), context.about.clone())
+        (
+            context
+                .about_url
+                .strip_suffix("/about")
+                .unwrap_or(&context.about_url)
+                .to_owned(),
+            context.about.clone(),
+        )
     }
 
     async fn set_realm_inner(

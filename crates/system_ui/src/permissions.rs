@@ -99,7 +99,7 @@ fn set_permission_settings_content(
         let realm_address = if is_portable {
             "<portable>".to_owned()
         } else {
-            realm.address.clone()
+            realm.about_url.clone()
         };
 
         commands.entity(ent).despawn_related::<Children>();

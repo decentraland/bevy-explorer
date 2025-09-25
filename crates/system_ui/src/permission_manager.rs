@@ -395,7 +395,15 @@ pub fn handle_scene_permissions(
                         config.scene_permissions.entry(hash.clone()).or_default()
                     }
                     PermissionLevel::Realm(realm) => {
-                        config.realm_permissions.entry(realm.clone()).or_default()
+                        if current_realm.about_url.starts_with(realm) {
+                            config
+                                .realm_permissions
+                                .entry(current_realm.about_url.clone())
+                                .or_default()
+                        } else {
+                            warn!("permission realm didn't match current realm: {} is not initial segment of {}", realm, current_realm.about_url);
+                            continue;
+                        }
                     }
                     PermissionLevel::Global => &mut config.default_permissions,
                 };
