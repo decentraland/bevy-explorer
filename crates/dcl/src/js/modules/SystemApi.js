@@ -206,11 +206,6 @@ module.exports.setHomeScene = async function(args) {
     await Deno.core.ops.op_set_home_scene(args.realm, args.parcel)
 }
 
-// string
-module.exports.getRealmProvider = async function() {
-    return (await Deno.core.ops.op_get_realm_provider()).realm
-}
-
 // get system actions as a stream
 // type SystemAction = {
 //   action: string,

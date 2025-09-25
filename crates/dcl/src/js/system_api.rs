@@ -13,7 +13,6 @@ use dcl_component::proto_components::{
     sdk::components::{PbAvatarBase, PbAvatarEquippedData},
 };
 use http::Uri;
-use ipfs::IpfsResource;
 use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, rc::Rc};
 use strum::IntoEnumIterator;
@@ -385,27 +384,6 @@ pub fn op_set_home_scene(state: Rc<RefCell<impl State>>, realm: String, parcel: 
         .borrow_mut::<SuperUserScene>()
         .send(SystemApi::SetHomeScene(HomeScene { realm, parcel }))
         .unwrap();
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct RealmProviderString {
-    realm: String,
-}
-
-pub async fn op_get_realm_provider(
-    state: Rc<RefCell<impl State>>,
-) -> Result<RealmProviderString, anyhow::Error> {
-    let url = state
-        .borrow_mut()
-        .borrow_mut::<IpfsResource>()
-        .about_url()
-        .ok_or(anyhow::anyhow!("not connected"))?;
-
-    let url = url.strip_suffix("/about").unwrap_or(&url);
-
-    Ok(RealmProviderString {
-        realm: url.to_owned(),
-    })
 }
 
 pub async fn op_get_system_action_stream(state: Rc<RefCell<impl State>>) -> u32 {
