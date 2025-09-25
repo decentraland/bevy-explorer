@@ -461,11 +461,11 @@ pub enum AaSetting {
     Off,
     FxaaLow,
     FxaaHigh,
-    #[cfg(not(target_arch="wasm32"))]
+    #[cfg(not(target_arch = "wasm32"))]
     Msaa2x,
-    #[cfg(not(target_arch="wasm32"))]
+    #[cfg(not(target_arch = "wasm32"))]
     Msaa4x,
-    #[cfg(not(target_arch="wasm32"))]
+    #[cfg(not(target_arch = "wasm32"))]
     Msaa8x,
 }
 
