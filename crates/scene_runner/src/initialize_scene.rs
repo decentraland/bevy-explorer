@@ -1436,7 +1436,7 @@ fn update_loading_quads(
         (
             &GlobalTransform,
             &mut Transform,
-            &LoadingMaterialHandle,
+            &MeshMaterial3d<LoadingMaterial>,
             &LoadingQuad,
         ),
         Without<PrimaryUser>,
