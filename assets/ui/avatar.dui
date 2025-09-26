@@ -10,7 +10,7 @@
                 color="#446134"
             >
             </bounds>
-            <div style="margin: 5px">
+            <div style="margin: 5px; padding: 3px;">
                 <med-text text="@name" style="text-align: center;" wrap="false"/>
             </div>
         </div>
