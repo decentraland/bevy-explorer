@@ -250,6 +250,7 @@ fn update_scrollables(
     }
 
     struct ScrollInfo {
+        ui_position: Vec2,
         content: Entity,
         ratio: f32,
         slide_amount: Vec2,
@@ -423,6 +424,7 @@ fn update_scrollables(
                 horizontal_scrollers.insert(
                     entity,
                     ScrollInfo {
+                        ui_position,
                         content: scroll_content.0,
                         slide_amount,
                         ratio: ratio.x,
@@ -448,6 +450,7 @@ fn update_scrollables(
                 vertical_scrollers.insert(
                     entity,
                     ScrollInfo {
+                        ui_position,
                         content: scroll_content.0,
                         slide_amount,
                         ratio: ratio.y,
@@ -468,6 +471,36 @@ fn update_scrollables(
         }
 
         scrollable.content_size = child_size;
+    }
+
+    // make sure we only update a single scrollable
+    for scrollers in [&mut vertical_scrollers, &mut horizontal_scrollers] {
+        let updated_positions = scrollers
+            .values()
+            .filter(|v| v.update_slider.is_some())
+            .map(|s| s.ui_position)
+            .collect::<Vec<_>>();
+        if updated_positions.len() > 1 {
+            let last = updated_positions
+                .into_iter()
+                .reduce(|a, b| {
+                    match a
+                        .y
+                        .partial_cmp(&b.y)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then(a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal))
+                    {
+                        std::cmp::Ordering::Greater => a,
+                        _ => b,
+                    }
+                })
+                .unwrap_or_default();
+            for scroller in scrollers.values_mut() {
+                if scroller.update_slider.is_some() && scroller.ui_position != last {
+                    scroller.update_slider = None;
+                }
+            }
+        }
     }
 
     // bars

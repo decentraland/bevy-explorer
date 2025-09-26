@@ -139,7 +139,7 @@ pub fn update_camera(
             .clamp(-PI / 2.1, PI / 2.1);
         options.yaw -= mouse_delta.x * options.sensitivity / 1000.0;
         let zoom = input_manager
-            .get_analog(CAMERA_ZOOM, InputPriority::Scroll)
+            .get_analog(CAMERA_ZOOM, InputPriority::Scene)
             .y;
         if zoom != 0.0 {
             let zoom = zoom.clamp(-1000.0, 1000.0);
