@@ -1139,9 +1139,14 @@ impl AssetReader for IpfsIo {
                 if let Some(hash) = &hash {
                     debug!("hash: {}", hash);
                     if !hash.starts_with("b64") {
-                        if let Ok(mut res) = self.default_io.read(&cache_path.join(hash)).await {
+                        if let Ok(res) = self.default_io.read(&cache_path.join(hash)).await {
+                            let mut res: Box<dyn Reader> = res;
                             let mut daft_buffer = Vec::default();
-                            res.read_to_end(&mut daft_buffer).await?;
+                            let res = res.read_to_end(&mut daft_buffer).await;
+                            if let Err(e) = &res {
+                                error!("read_to_end error: {e}");
+                            }
+                            let _ = res?;
                             return Ok(Box::new(VecReader::new(daft_buffer)));
                         }
                     }
