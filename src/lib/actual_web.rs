@@ -67,7 +67,14 @@ fn main_inner(
 
     init_runtime();
 
-    let base_config = INIT_DATA.get().cloned().unwrap_or_default();
+    let base_config = INIT_DATA.get().cloned().unwrap_or_else(|| AppConfig {
+        graphics: common::structs::GraphicsSettings {
+            shadow_distance: 20.0,
+            shadow_settings: ShadowSetting::Low,
+            ..Default::default()
+        },
+        ..Default::default()
+    });
     let base_graphics = base_config.graphics.clone();
 
     let final_config = AppConfig {
@@ -75,7 +82,6 @@ fn main_inner(
         location: IVec2Arg::from_str(location)
             .map(|l| l.0)
             .unwrap_or(IVec2::ZERO),
-        max_concurrent_remotes: 8000,
         graphics: common::structs::GraphicsSettings {
             gpu_bytes_per_frame: rabpf,
             ..base_graphics
