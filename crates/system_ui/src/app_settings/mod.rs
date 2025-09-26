@@ -118,6 +118,7 @@ fn set_app_settings_content(
             spawn_enum_setting_template::<FogSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<BloomSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<DofSetting>(&mut commands, &dui, &config),
+            #[cfg(not(target_arch = "wasm32"))]
             spawn_enum_setting_template::<SsaoSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<OobSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<ConstrainUiSetting>(&mut commands, &dui, &config),

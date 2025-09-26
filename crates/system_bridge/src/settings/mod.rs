@@ -140,6 +140,7 @@ impl Plugin for SettingBridgePlugin {
         add_enum_setting::<FogSetting>(app, &mut settings, &mut schedule);
         add_enum_setting::<BloomSetting>(app, &mut settings, &mut schedule);
         add_enum_setting::<DofSetting>(app, &mut settings, &mut schedule);
+        #[cfg(not(target_arch = "wasm32"))]
         add_enum_setting::<SsaoSetting>(app, &mut settings, &mut schedule);
         add_enum_setting::<OobSetting>(app, &mut settings, &mut schedule);
         add_enum_setting::<AaSetting>(app, &mut settings, &mut schedule);
