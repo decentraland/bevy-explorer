@@ -1,9 +1,11 @@
 use bevy::{ecs::system::StaticSystemParam, prelude::*, ui::RelativeCursorPosition};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry};
+#[cfg(not(target_arch = "wasm32"))]
+use common::structs::SsaoSetting;
 use common::{
     structs::{
         AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, SettingsTab, ShadowSetting,
-        SsaoSetting, WindowSetting,
+        WindowSetting,
     },
     util::TryPushChildrenEx,
 };
@@ -118,6 +120,7 @@ fn set_app_settings_content(
             spawn_enum_setting_template::<FogSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<BloomSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<DofSetting>(&mut commands, &dui, &config),
+            #[cfg(not(target_arch = "wasm32"))]
             spawn_enum_setting_template::<SsaoSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<OobSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<ConstrainUiSetting>(&mut commands, &dui, &config),

@@ -13,8 +13,11 @@ impl EnumAppSetting for AaSetting {
             Self::Off,
             Self::FxaaLow,
             Self::FxaaHigh,
+            #[cfg(not(target_arch = "wasm32"))]
             Self::Msaa2x,
+            #[cfg(not(target_arch = "wasm32"))]
             Self::Msaa4x,
+            #[cfg(not(target_arch = "wasm32"))]
             Self::Msaa8x,
         ]
     }

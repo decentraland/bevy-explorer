@@ -15,11 +15,12 @@ use bevy::{
     prelude::*,
 };
 use cache_size::CacheSizeSetting;
+#[cfg(not(target_arch = "wasm32"))]
+use common::structs::SsaoSetting;
 use common::{
     sets::SceneSets,
     structs::{
-        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, ShadowSetting, SsaoSetting,
-        WindowSetting,
+        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, ShadowSetting, WindowSetting,
     },
 };
 use constrain_ui::ConstrainUiSetting;
@@ -140,6 +141,7 @@ impl Plugin for SettingBridgePlugin {
         add_enum_setting::<FogSetting>(app, &mut settings, &mut schedule);
         add_enum_setting::<BloomSetting>(app, &mut settings, &mut schedule);
         add_enum_setting::<DofSetting>(app, &mut settings, &mut schedule);
+        #[cfg(not(target_arch = "wasm32"))]
         add_enum_setting::<SsaoSetting>(app, &mut settings, &mut schedule);
         add_enum_setting::<OobSetting>(app, &mut settings, &mut schedule);
         add_enum_setting::<AaSetting>(app, &mut settings, &mut schedule);

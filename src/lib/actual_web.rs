@@ -43,7 +43,7 @@ use ipfs::{IpfsAssetServer, IpfsIoPlugin};
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use platform::default_camera_components;
 use social::SocialPlugin;
-use system_bridge::{NativeUi, SystemBridgePlugin};
+use system_bridge::{settings::NewCameraEvent, NativeUi, SystemBridgePlugin};
 use system_ui::SystemUiPlugin;
 use texture_camera::TextureCameraPlugin;
 use tween::TweenPlugin;
@@ -67,7 +67,14 @@ fn main_inner(
 
     init_runtime();
 
-    let base_config = INIT_DATA.get().cloned().unwrap_or_default();
+    let base_config = INIT_DATA.get().cloned().unwrap_or_else(|| AppConfig {
+        graphics: common::structs::GraphicsSettings {
+            shadow_distance: 20.0,
+            shadow_settings: common::structs::ShadowSetting::Low,
+            ..Default::default()
+        },
+        ..Default::default()
+    });
     let base_graphics = base_config.graphics.clone();
 
     let final_config = AppConfig {
@@ -75,7 +82,6 @@ fn main_inner(
         location: IVec2Arg::from_str(location)
             .map(|l| l.0)
             .unwrap_or(IVec2::ZERO),
-        max_concurrent_remotes: 8000,
         graphics: common::structs::GraphicsSettings {
             gpu_bytes_per_frame: rabpf,
             ..base_graphics
@@ -305,7 +311,7 @@ fn setup(
             GROUND_RENDERLAYER.with(0),
         ))
         .id();
-
+    commands.send_event(NewCameraEvent(camera_id));
     player_resource.0 = player_id;
     cam_resource.0 = camera_id;
 }
