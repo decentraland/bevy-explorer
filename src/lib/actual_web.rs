@@ -70,7 +70,7 @@ fn main_inner(
     let base_config = INIT_DATA.get().cloned().unwrap_or_else(|| AppConfig {
         graphics: common::structs::GraphicsSettings {
             shadow_distance: 20.0,
-            shadow_settings: ShadowSetting::Low,
+            shadow_settings: common::structs::ShadowSetting::Low,
             ..Default::default()
         },
         ..Default::default()

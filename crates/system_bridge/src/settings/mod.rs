@@ -15,10 +15,12 @@ use bevy::{
     prelude::*,
 };
 use cache_size::CacheSizeSetting;
+#[cfg(not(target_arch = "wasm32"))]
+use common::structs::SsaoSetting;
 use common::{
     sets::SceneSets,
     structs::{
-        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, ShadowSetting, SsaoSetting,
+        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, SettingsTab, ShadowSetting,
         WindowSetting,
     },
 };

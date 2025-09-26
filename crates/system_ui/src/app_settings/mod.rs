@@ -1,9 +1,11 @@
 use bevy::{ecs::system::StaticSystemParam, prelude::*, ui::RelativeCursorPosition};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry};
+#[cfg(not(target_arch = "wasm32"))]
+use common::structs::SsaoSetting;
 use common::{
     structs::{
         AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, SettingsTab, ShadowSetting,
-        SsaoSetting, WindowSetting,
+        WindowSetting,
     },
     util::TryPushChildrenEx,
 };
