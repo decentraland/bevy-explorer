@@ -858,6 +858,10 @@ fn layout_scene_ui(
                 None
             };
 
+            if ui_transform.opacity == 2.0 {
+                error!("got elt: {} / {:?}", scene_id, ui_transform.position);
+            }
+
             let existing = if let Some(link) = existing_link {
                 // update parent (always, so the child order is correct)
                 commands
