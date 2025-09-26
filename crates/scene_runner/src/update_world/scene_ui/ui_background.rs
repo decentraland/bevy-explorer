@@ -185,7 +185,7 @@ pub fn set_ui_background(
             };
 
             let image_color = background.color.unwrap_or(Color::WHITE);
-            let image_color = image_color.with_alpha(image_color.alpha() * link.opacity.0);
+            let image_color = image_color.with_alpha((image_color.alpha() * link.opacity.0).clamp(0.0, 1.0));
             let (border, border_radius) = radii
                 .get(link.ui_entity)
                 .ok()

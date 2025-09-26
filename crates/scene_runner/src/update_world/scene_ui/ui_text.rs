@@ -130,7 +130,7 @@ pub fn set_ui_text(
             ui_text.font_size,
             ui_text
                 .color
-                .with_alpha(ui_text.color.alpha() * link.opacity.0),
+                .with_alpha((ui_text.color.alpha() * link.opacity.0).clamp(0.0, 1.0)),
             ui_text.font,
             ui_text.h_align,
             ui_text.wrapping,
