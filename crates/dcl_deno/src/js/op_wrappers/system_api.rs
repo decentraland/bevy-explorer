@@ -2,7 +2,7 @@ use common::{
     inputs::SystemActionEvent,
     structs::{PermissionType, PermissionUsed, PermissionValue},
 };
-use dcl::js::system_api::{JsBindingsData, PermissionTypeDetail, RealmProviderString};
+use dcl::js::system_api::{JsBindingsData, PermissionTypeDetail};
 use dcl_component::proto_components::{
     common::Vector2,
     sdk::components::{PbAvatarBase, PbAvatarEquippedData},
@@ -39,7 +39,6 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_live_scene_info(),
             op_get_home_scene(),
             op_set_home_scene(),
-            op_get_realm_provider(),
             op_get_system_action_stream(),
             op_read_system_action_stream(),
             op_get_chat_stream(),
@@ -208,14 +207,6 @@ pub fn op_set_home_scene(
     #[serde] parcel: Vector2,
 ) {
     dcl::js::system_api::op_set_home_scene(state, realm, parcel);
-}
-
-#[op2(async)]
-#[serde]
-pub async fn op_get_realm_provider(
-    state: Rc<RefCell<OpState>>,
-) -> Result<RealmProviderString, anyhow::Error> {
-    dcl::js::system_api::op_get_realm_provider(state).await
 }
 
 #[op2(async)]

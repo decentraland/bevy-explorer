@@ -724,10 +724,13 @@ fn send_scene_updates(
         .as_ref()
         .and_then(|(scene, addr, _)| (scene.scene_id == context.hash).then_some(addr));
     let base_url = realm
-        .public_url
-        .strip_suffix("/")
-        .unwrap_or(&realm.public_url);
-    let base_url = base_url.strip_suffix("/content").unwrap_or(base_url);
+        .about_url
+        .strip_suffix("/about")
+        .unwrap_or(&realm.about_url);
+    let realm_name = realm.config.realm_name.clone().unwrap_or_default();
+    let base_url = base_url
+        .strip_suffix(&format!("/{realm_name}"))
+        .unwrap_or(base_url);
     let realm_info = PbRealmInfo {
         base_url: base_url.to_owned(),
         realm_name: realm.config.realm_name.clone().unwrap_or_default(),

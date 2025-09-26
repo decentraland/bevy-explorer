@@ -112,7 +112,7 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
             common::structs::PermissionValue::Ask
         } else {
             self.config
-                .get_permission(ty, &self.realm.address, hash, is_portable)
+                .get_permission(ty, &self.realm.about_url, hash, is_portable)
         };
 
         debug!(
@@ -123,7 +123,7 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
             in_scene,
             allow_out_of_scene,
             self.config
-                .get_permission(ty, &self.realm.address, hash, is_portable)
+                .get_permission(ty, &self.realm.about_url, hash, is_portable)
         );
         match perm {
             common::structs::PermissionValue::Allow => {

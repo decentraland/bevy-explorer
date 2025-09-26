@@ -116,19 +116,23 @@ pub async fn realm_information(
 
     let info = info.ok_or_else(|| anyhow!("Not connected?"))?;
 
-    let base_url = base_url.strip_suffix("/content").unwrap_or(&base_url);
-    let config = info.configurations.unwrap_or_default();
+    let config = info.configurations.ok_or(anyhow::anyhow!("no realm"))?;
+    let realm_name = config.realm_name.unwrap_or_default();
+    let base_url = base_url
+        .strip_suffix(&format!("/{}", &realm_name))
+        .unwrap_or(&base_url);
 
     let is_preview = op_state.borrow().borrow::<CrdtContext>().preview;
 
     Ok(PbRealmInfo {
         base_url: base_url.to_owned(),
-        realm_name: config.realm_name.unwrap_or_default(),
+        realm_name,
         network_id: config.network_id.unwrap_or_default() as i32,
         comms_adapter: info
             .comms
-            .and_then(|c| c.adapter.or(c.fixed_adapter))
-            .unwrap_or_default(),
+            .as_ref()
+            .and_then(|comms| comms.adapter.clone())
+            .unwrap_or("offline".to_owned()),
         is_preview,
         room: None,
         is_connected_scene_room: Some(false),
