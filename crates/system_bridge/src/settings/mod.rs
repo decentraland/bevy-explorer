@@ -20,7 +20,7 @@ use common::structs::SsaoSetting;
 use common::{
     sets::SceneSets,
     structs::{
-        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, SettingsTab, ShadowSetting,
+        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, ShadowSetting,
         WindowSetting,
     },
 };
