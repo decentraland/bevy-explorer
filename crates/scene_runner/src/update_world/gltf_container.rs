@@ -234,7 +234,7 @@ fn update_gltf(
             continue;
         };
 
-        let immediate_upload = active_scenes.contains(&scene_ent.root) || true;
+        let immediate_upload = active_scenes.contains(&scene_ent.root);
         let h_gltf = ipfas.load_content_file_with_settings::<Gltf, GltfLoaderSettings>(
             &gltf.0.src,
             &scene_def.id,
