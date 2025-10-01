@@ -33,13 +33,13 @@ function populateInputsFromQueryParams() {
   if (locationInput && locationParam) {
     locationInput.value = decodeURIComponent(locationParam);
   } else if (locationInput) {
-    locationInput.value = "0,0";
+    locationInput.value = "";
   }
   const systemSceneParam = queryParams.get("systemScene");
   if (systemSceneInput && systemSceneParam) {
     systemSceneInput.value = decodeURIComponent(systemSceneParam);
   } else if (systemSceneInput) {
-    systemSceneInput.value = "";
+    systemSceneInput.value = "https://dclexplorer.github.io/bevy-ui-scene/BevyUiScene";
   }
 
   initialRealmInput.disabled = !autoStart;

@@ -81,7 +81,8 @@ fn main_inner(
         server: server.to_owned(),
         location: IVec2Arg::from_str(location)
             .map(|l| l.0)
-            .unwrap_or(IVec2::ZERO),
+            .unwrap_or(base_config.location),
+        max_concurrent_remotes: 8000,
         graphics: common::structs::GraphicsSettings {
             gpu_bytes_per_frame: rabpf,
             ..base_graphics
