@@ -23,21 +23,16 @@ use bevy::{
     transform::TransformSystem,
 };
 use common::{
-    anim_last_system,
-    structs::AppConfig,
-    util::{ModifyComponentExt, SceneSpawnerPlus},
+    anim_last_system, dynamics::PLAYER_COLLIDER_RADIUS, structs::{AppConfig, PrimaryPlayerRes}, util::{ModifyComponentExt, SceneSpawnerPlus}
 };
 use rapier3d_f64::prelude::*;
 use serde::Deserialize;
 
 use crate::{
-    initialize_scene::SceneEntityDefinitionHandle,
-    renderer_context::RendererSceneContext,
-    update_world::{
+    ContainerEntity, ContainingScene, SceneEntity, SceneSets, initialize_scene::SceneEntityDefinitionHandle, renderer_context::RendererSceneContext, update_world::{
         lights::LightSource,
-        material::{dcl_material_from_standard_material, BaseMaterial},
-    },
-    ContainerEntity, SceneEntity, SceneSets,
+        material::{BaseMaterial, dcl_material_from_standard_material},
+    }
 };
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
@@ -158,7 +153,11 @@ fn update_gltf(
     mut scene_spawner: ResMut<SceneSpawner>,
     mut contexts: Query<(Entity, &mut RendererSceneContext, Has<SceneResourceLookup>)>,
     mut instances_to_despawn_when_ready: Local<Vec<InstanceId>>,
+    active_scenes: ContainingScene,
+    player: Res<PrimaryPlayerRes>,
 ) {
+    let active_scenes = active_scenes.get_area(player.0, PLAYER_COLLIDER_RADIUS);
+
     // clean up old instances
     instances_to_despawn_when_ready.retain(|instance| {
         if scene_spawner.instance_is_ready(*instance) {
@@ -229,14 +228,16 @@ fn update_gltf(
             continue;
         };
 
+        let immediate_upload = active_scenes.contains(&scene_ent.root) || true;
         let h_gltf = ipfas.load_content_file_with_settings::<Gltf, GltfLoaderSettings>(
             &gltf.0.src,
             &scene_def.id,
-            |s| {
+            move |s| {
                 s.load_cameras = false;
                 s.load_lights = true;
                 s.load_materials = RenderAssetUsages::RENDER_WORLD;
                 s.include_source = true;
+                s.immediate_upload = immediate_upload;
             },
         );
 
