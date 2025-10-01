@@ -42,9 +42,9 @@ function populateInputsFromQueryParams() {
     systemSceneInput.value = "https://dclexplorer.github.io/bevy-ui-scene/BevyUiScene";
   }
 
-  initialRealmInput.disabled = !autoStart;
-  locationInput.disabled = !autoStart;
-  systemSceneInput.disabled = !autoStart;
+  initialRealmInput.disabled = autoStart;
+  locationInput.disabled = autoStart;
+  systemSceneInput.disabled = autoStart;
 }
 function hideHeader() {
   if (header) header.style.display = "none";
