@@ -489,7 +489,7 @@ pub struct ImposterSpecManager<'w, 's> {
     plugin: Res<'w, DclImposterPlugin>,
 }
 
-const MAX_ASSET_LOADS: usize = 40;
+const MAX_ASSET_LOADS: usize = 20;
 const MAX_ASSET_DOWNLOADS: usize = 10;
 
 impl<'w, 's> ImposterSpecManager<'w, 's> {

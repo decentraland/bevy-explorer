@@ -5,6 +5,7 @@ use bevy::{
     prelude::*,
     render::{renderer::RenderDevice, view::RenderLayers},
     tasks::{IoTaskPool, Task},
+    winit::{UpdateMode, WinitSettings},
 };
 use bevy_console::ConsoleCommand;
 use dcl_wasm::init_runtime;
@@ -245,6 +246,7 @@ fn main_inner(
         .insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER))
         .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
         .add_systems(Startup, setup.in_set(SetupSets::Init))
+        .add_systems(Update, update_winit_fps)
         .insert_resource(AmbientLight {
             color: Color::srgb(0.85, 0.85, 1.0),
             brightness: 575.0,
@@ -520,4 +522,18 @@ pub fn engine_run(
         with_thread_loader,
         rabpf,
     );
+}
+
+pub fn update_winit_fps(config: Res<AppConfig>, mut winit: ResMut<WinitSettings>) {
+    if config.is_changed() {
+        let target = config.graphics.fps_target;
+        let delay_micros = 1_000_000.0 / target as f32;
+        winit.focused_mode = UpdateMode::Reactive {
+            wait: std::time::Duration::from_micros((delay_micros) as u64),
+            react_to_device_events: false,
+            react_to_user_events: false,
+            react_to_window_events: false,
+        };
+        winit.unfocused_mode = winit.focused_mode;
+    }
 }
