@@ -6,14 +6,23 @@ const initialRealmInput = document.getElementById("initialRealm");
 const locationInput = document.getElementById("location");
 const systemSceneInput = document.getElementById("systemScene");
 const initButton = document.getElementById("initButton");
-const canvas = document.getElementById("mygame-canvas");
+const canvas = document.getElementById("canvas-parent");
+const header = document.getElementById("header");
 
 let initialRealmGroup = document.getElementById("initialRealm")?.parentElement;
 let locationGroup = document.getElementById("location")?.parentElement;
 let systemSceneGroup = document.getElementById("systemScene")?.parentElement;
 
+var autoStart = true;
+
 function populateInputsFromQueryParams() {
   const queryParams = new URLSearchParams(window.location.search);
+
+  const manualParams = queryParams.get("manualParams");
+  if (manualParams) {
+    autoStart = false;
+  }
+
   const initialRealmParam = queryParams.get("initialRealm");
   if (initialRealmInput && initialRealmParam) {
     initialRealmInput.value = decodeURIComponent(initialRealmParam);
@@ -24,20 +33,22 @@ function populateInputsFromQueryParams() {
   if (locationInput && locationParam) {
     locationInput.value = decodeURIComponent(locationParam);
   } else if (locationInput) {
-    locationInput.value = "0,0";
+    locationInput.value = "";
   }
   const systemSceneParam = queryParams.get("systemScene");
   if (systemSceneInput && systemSceneParam) {
     systemSceneInput.value = decodeURIComponent(systemSceneParam);
   } else if (systemSceneInput) {
-    systemSceneInput.value = "";
+    systemSceneInput.value = "https://dclexplorer.github.io/bevy-ui-scene/BevyUiScene";
   }
+
+  initialRealmInput.disabled = autoStart;
+  locationInput.disabled = autoStart;
+  systemSceneInput.disabled = autoStart;
 }
-function hideSettings() {
-  if (initialRealmGroup) initialRealmGroup.style.display = "none";
-  if (locationGroup) locationGroup.style.display = "none";
-  if (systemSceneGroup) systemSceneGroup.style.display = "none";
-  if (initButton) initButton.style.display = "none";
+function hideHeader() {
+  if (header) header.style.display = "none";
+  if (canvas) canvas.style.display = "block";
 }
 
 if ("serviceWorker" in navigator) {
@@ -94,7 +105,11 @@ async function initEngine() {
 
   if (initButton) {
     initButton.disabled = true;
-    initButton.textContent = "Loading...";
+    if (autoStart) {
+      initButton.textContent = "Autostarting .."
+    } else {
+      initButton.textContent = "Loading ..."
+    }
   }
 
   const wasmUrl = "./pkg/webgpu_build_bg.wasm";
@@ -232,14 +247,14 @@ async function initEngine() {
   }
 }
 
-initButton.onclick = () => {
+function start() {
   const initialRealm = initialRealmInput.value;
   const location = locationInput.value;
   const systemScene = systemSceneInput.value;
   console.log(
     `[Main JS] "Go" button clicked. Initial Realm: "${initialRealm}", Location: "${location}", System Scene: "${systemScene}"`
   );
-  hideSettings();
+  hideHeader();
 
   const platform = (() => {
     if (navigator.userAgent.includes("Mac")) return "macos";
@@ -249,12 +264,18 @@ initButton.onclick = () => {
   })();
 
   engine_run(platform, initialRealm, location, systemScene, true, 1e6);
-};
+}
+
+initButton.onclick = start;
 
 Promise.all([initEngine(), initGpuCache()])
   .then(() => {
-    initButton.disabled = false;
-    initButton.textContent = "Go";
+    if (autoStart) {
+      start()
+    } else {
+      initButton.disabled = false;
+      initButton.textContent = "Go";
+    }
   })
   .catch((e) => {
     console.log("error", e);

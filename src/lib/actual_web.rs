@@ -82,7 +82,8 @@ fn main_inner(
         server: server.to_owned(),
         location: IVec2Arg::from_str(location)
             .map(|l| l.0)
-            .unwrap_or(IVec2::ZERO),
+            .unwrap_or(base_config.location),
+        max_concurrent_remotes: 8000,
         graphics: common::structs::GraphicsSettings {
             gpu_bytes_per_frame: rabpf,
             ..base_graphics
@@ -156,9 +157,8 @@ fn main_inner(
                 })
                 .set(WindowPlugin {
                     primary_window: Some(Window {
-                        // provide the ID selector string here
                         canvas: Some("#mygame-canvas".into()),
-                        // ... any other window properties ...
+                        fit_canvas_to_parent: true,
                         ..default()
                     }),
                     ..Default::default()
