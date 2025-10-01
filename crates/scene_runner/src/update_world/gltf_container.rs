@@ -23,16 +23,22 @@ use bevy::{
     transform::TransformSystem,
 };
 use common::{
-    anim_last_system, dynamics::PLAYER_COLLIDER_RADIUS, structs::{AppConfig, PrimaryPlayerRes}, util::{ModifyComponentExt, SceneSpawnerPlus}
+    anim_last_system,
+    dynamics::PLAYER_COLLIDER_RADIUS,
+    structs::{AppConfig, PrimaryPlayerRes},
+    util::{ModifyComponentExt, SceneSpawnerPlus},
 };
 use rapier3d_f64::prelude::*;
 use serde::Deserialize;
 
 use crate::{
-    ContainerEntity, ContainingScene, SceneEntity, SceneSets, initialize_scene::SceneEntityDefinitionHandle, renderer_context::RendererSceneContext, update_world::{
+    initialize_scene::SceneEntityDefinitionHandle,
+    renderer_context::RendererSceneContext,
+    update_world::{
         lights::LightSource,
-        material::{BaseMaterial, dcl_material_from_standard_material},
-    }
+        material::{dcl_material_from_standard_material, BaseMaterial},
+    },
+    ContainerEntity, ContainingScene, SceneEntity, SceneSets,
 };
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
