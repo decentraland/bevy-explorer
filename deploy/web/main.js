@@ -13,8 +13,16 @@ let initialRealmGroup = document.getElementById("initialRealm")?.parentElement;
 let locationGroup = document.getElementById("location")?.parentElement;
 let systemSceneGroup = document.getElementById("systemScene")?.parentElement;
 
+var autoStart = true;
+
 function populateInputsFromQueryParams() {
   const queryParams = new URLSearchParams(window.location.search);
+
+  const manualParams = queryParams.get("manualParams");
+  if (manualParams) {
+    autoStart = false;
+  }
+
   const initialRealmParam = queryParams.get("initialRealm");
   if (initialRealmInput && initialRealmParam) {
     initialRealmInput.value = decodeURIComponent(initialRealmParam);
@@ -33,6 +41,10 @@ function populateInputsFromQueryParams() {
   } else if (systemSceneInput) {
     systemSceneInput.value = "";
   }
+
+  initialRealmInput.disabled = !autoStart;
+  locationInput.disabled = !autoStart;
+  systemSceneInput.disabled = !autoStart;
 }
 function hideHeader() {
   if (header) header.style.display = "none";
@@ -60,7 +72,11 @@ async function initEngine() {
 
   if (initButton) {
     initButton.disabled = true;
-    initButton.textContent = "Loading...";
+    if (autoStart) {
+      initButton.textContent = "Autostarting .."
+    } else {
+      initButton.textContent = "Loading ..."
+    }
   }
 
   const wasmUrl = "./pkg/webgpu_build_bg.wasm";
@@ -198,7 +214,7 @@ async function initEngine() {
   }
 }
 
-initButton.onclick = () => {
+function start() {
   const initialRealm = initialRealmInput.value;
   const location = locationInput.value;
   const systemScene = systemSceneInput.value;
@@ -215,12 +231,18 @@ initButton.onclick = () => {
   })();
 
   engine_run(platform, initialRealm, location, systemScene, true, 1e6);
-};
+}
+
+initButton.onclick = start;
 
 Promise.all([initEngine(), initGpuCache()])
   .then(() => {
-    initButton.disabled = false;
-    initButton.textContent = "Go";
+    if (autoStart) {
+      start()
+    } else {
+      initButton.disabled = false;
+      initButton.textContent = "Go";
+    }
   })
   .catch((e) => {
     console.log("error", e);
