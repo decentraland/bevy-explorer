@@ -1,4 +1,8 @@
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  release:
+    types: [published]
 
 name: Continuous integration
 
@@ -173,7 +177,7 @@ jobs:
 
   build-deploy-web:
     name: Build and Deploy Web
-    # needs: [check, test, fmt, clippy]
+    needs: [check, test, fmt, clippy]
     runs-on: ubuntu-latest
 
     permissions:
@@ -215,6 +219,7 @@ jobs:
             --checksum-algorithm=CRC32
 
       - name: Publish
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'release'
         uses: decentraland/oddish-action@master
         with:
           cwd: './deploy/web'
