@@ -173,6 +173,7 @@ jobs:
 
   build-deploy-web:
     name: Build and Deploy Web
+    needs: [check, test, fmt, clippy]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -196,7 +197,8 @@ jobs:
         run: |
           cp -r ./assets ./deploy/web/assets/
           wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="wasm livekit"
-      - name: Deploy
+      
+      - name: Deploy [OLD]
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.S3_WEB_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_WEB_SECRET_ACCESS_KEY }}
@@ -206,3 +208,15 @@ jobs:
           aws s3 cp ./deploy/web/ s3://bevy-web/$COMMIT_HASH/ --recursive \
             --endpoint-url ${{ secrets.S3_WEB_ENDPOINT }} \
             --checksum-algorithm=CRC32
+
+      - name: Publish
+        uses: decentraland/oddish-action@master
+        with:
+          cwd: './deploy/web'
+          deterministic-snapshot: true
+          registry-url: 'https://registry.npmjs.org'
+          access: public
+          gitlab-token: ${{ secrets.GITLAB_CDN_DEPLOYER_TOKEN }}
+          gitlab-pipeline-url: ${{ secrets.GITLAB_CDN_DEPLOYER_URL }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
