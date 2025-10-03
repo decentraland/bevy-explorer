@@ -1,8 +1,6 @@
 on:
   push:
   pull_request:
-  release:
-    types: [published]
 
 name: Continuous integration
 
@@ -208,16 +206,16 @@ jobs:
           wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="wasm livekit"
           rm -f ./deploy/web/pkg/.gitignore
 
-      # - name: Deploy [OLD]
-      #   env:
-      #     AWS_ACCESS_KEY_ID: ${{ secrets.S3_WEB_ACCESS_KEY_ID }}
-      #     AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_WEB_SECRET_ACCESS_KEY }}
-      #     AWS_DEFAULT_REGION: auto
-      #     COMMIT_HASH: ${{ github.sha }}
-      #   run: |
-      #     aws s3 cp ./deploy/web/ s3://bevy-web/$COMMIT_HASH/ --recursive \
-      #       --endpoint-url ${{ secrets.S3_WEB_ENDPOINT }} \
-      #       --checksum-algorithm=CRC32
+      - name: Deploy [OLD]
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_WEB_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_WEB_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          COMMIT_HASH: ${{ github.sha }}
+        run: |
+          aws s3 cp ./deploy/web/ s3://bevy-web/$COMMIT_HASH/ --recursive \
+            --endpoint-url ${{ secrets.S3_WEB_ENDPOINT }} \
+            --checksum-algorithm=CRC32
 
       - name: Publish
         if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'release'
