@@ -4,5 +4,10 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/decentraland/bevy-explorer.git"
-  }
+  },
+  "files": [
+    "**/*",
+    "pkg/",
+    "assets/"
+  ]
 }
