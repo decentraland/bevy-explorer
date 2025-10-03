@@ -1,4 +1,8 @@
 {
   "name": "@dcl-regenesislabs/bevy-explorer-web",
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/decentraland/bevy-explorer.git"
+  }
 }

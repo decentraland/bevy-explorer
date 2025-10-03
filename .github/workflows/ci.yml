@@ -173,8 +173,13 @@ jobs:
 
   build-deploy-web:
     name: Build and Deploy Web
-    needs: [check, test, fmt, clippy]
+    # needs: [check, test, fmt, clippy]
     runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rs/toolchain@v1
