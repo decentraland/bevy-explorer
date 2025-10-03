@@ -204,9 +204,10 @@ jobs:
         run: sudo apt install -y --no-install-recommends clang curl
       - name: Build WASM package
         run: |
-          cp -r ./assets ./deploy/web/assets/ 
+          cp -r ./assets ./deploy/web/assets/
           wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="wasm livekit"
-      
+          rm -f ./deploy/web/pkg/.gitignore
+
       # - name: Deploy [OLD]
       #   env:
       #     AWS_ACCESS_KEY_ID: ${{ secrets.S3_WEB_ACCESS_KEY_ID }}
