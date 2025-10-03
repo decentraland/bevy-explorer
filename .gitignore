@@ -8,3 +8,6 @@ config.json
 /deploy/web/assets
 /deploy/web/modules
 /deploy/web/pkg
+/deploy/web/.env
+/deploy/web/package-lock.json
+/deploy/web/node_modules
