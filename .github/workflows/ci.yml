@@ -205,7 +205,6 @@ jobs:
           cp -r ./assets ./deploy/web/assets/
           wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="wasm livekit"
           rm -f ./deploy/web/pkg/.gitignore
-
       - name: Deploy [OLD]
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.S3_WEB_ACCESS_KEY_ID }}
@@ -216,7 +215,13 @@ jobs:
           aws s3 cp ./deploy/web/ s3://bevy-web/$COMMIT_HASH/ --recursive \
             --endpoint-url ${{ secrets.S3_WEB_ENDPOINT }} \
             --checksum-algorithm=CRC32
-
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install
+        run: npm i
+        working-directory: deploy/web
       - name: Publish
         if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'release'
         uses: decentraland/oddish-action@master

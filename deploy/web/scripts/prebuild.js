@@ -1,15 +1,8 @@
 const fs = require("fs");
-const dotenv = require("dotenv");
 
 let ENV_CONTENT = {};
 
-if (fs.existsSync(".env")) {
-  Object.assign(ENV_CONTENT, dotenv.parse(fs.readFileSync(".env")));
-}
-
 const packageJson = JSON.parse(fs.readFileSync("./package.json").toString());
-
-ENV_CONTENT["REACT_APP_WEBSITE_VERSION"] = packageJson.version;
 
 Object.assign(ENV_CONTENT, getPublicUrls());
 
@@ -35,8 +28,11 @@ fs.writeFileSync(
 fs.writeFileSync("./package.json", JSON.stringify(packageJson, null, 2));
 
 function getPublicUrls() {
+  console.log('Get public urls')
   if (!process.env.GEN_STATIC_LOCAL) {
+    console.log('Get public urls 1')
     if (process.env.CI) {
+      console.log('Get public urls 2', `https://cdn.decentraland.org/${packageJson.name}/${packageJson.version}`)
       return {
         PUBLIC_URL: `https://cdn.decentraland.org/${packageJson.name}/${packageJson.version}`,
       };

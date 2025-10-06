@@ -8,8 +8,5 @@
     "type": "git",
     "url": "git+https://github.com/decentraland/bevy-explorer.git"
   },
-  "devDependencies": {
-    "dotenv": "^17.2.3"
-  },
   "homepage": ""
 }
