@@ -271,6 +271,7 @@ pub struct SettingInfo {
     pub named_variants: Vec<NamedVariant>,
     pub step_size: f32,
     pub value: f32,
+    pub default: f32,
 }
 
 pub struct Setting {
@@ -334,6 +335,7 @@ impl Settings {
                 max_value: (S::min() as f32 * S::scale()).max(S::max() as f32 * S::scale()),
                 named_variants: Default::default(),
                 value: value.value() as f32 * S::scale(),
+                default: S::load(&AppConfig::default()).value() as f32 * S::scale(),
                 step_size: S::scale().abs(),
             },
             apply: Some(Box::new(
@@ -353,6 +355,13 @@ impl Settings {
             .find(|(_, s)| **s == value)
             .map(|(ix, _)| ix)
             .unwrap_or(0);
+        let default_value = S::load(&AppConfig::default());
+        let default_index = S::variants()
+            .iter()
+            .enumerate()
+            .find(|(_, s)| **s == default_value)
+            .map(|(ix, _)| ix)
+            .unwrap_or(0);
         self.inner.write().unwrap().settings.push(Setting {
             info: SettingInfo {
                 name: S::title(),
@@ -368,6 +377,7 @@ impl Settings {
                     })
                     .collect(),
                 value: index as f32,
+                default: default_index as f32,
                 step_size: 1.0,
             },
             apply: Some(Box::new(

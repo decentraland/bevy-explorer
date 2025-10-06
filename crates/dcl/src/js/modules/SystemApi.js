@@ -72,6 +72,7 @@ module.exports.logout = function() {
 //   maxValue: number, 
 //   namedVariants: [(variantName: string, variantDescription: string)]
 //   value: number,
+//   default: number,
 // }
 module.exports.getSettings = async function() {
     return await op_settings();
