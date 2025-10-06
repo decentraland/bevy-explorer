@@ -42,6 +42,8 @@ if (fs.existsSync(htmlPath)) {
 
   fs.writeFileSync(htmlPath, htmlContent);
   console.log(`Updated ${htmlPath} with script path: ${scriptPath}`);
+} else {
+  console.error(`index.html not found`);
 }
 
 function getPublicUrls() {
