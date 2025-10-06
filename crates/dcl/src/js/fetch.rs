@@ -1,14 +1,17 @@
 use std::{cell::RefCell, rc::Rc};
 
 use anyhow::anyhow;
-use bevy::log::{debug, tracing};
+use bevy::log::debug;
 use common::structs::SceneMeta;
 use http::Uri;
 use ipfs::IpfsResource;
 use serde::Serialize;
-use wallet::{Wallet, sign_request};
+use wallet::{sign_request, Wallet};
 
-use crate::{interface::crdt_context::CrdtContext, js::{State, runtime::realm_information}};
+use crate::{
+    interface::crdt_context::CrdtContext,
+    js::{runtime::realm_information, State},
+};
 
 #[derive(Serialize, Default, Debug)]
 #[serde(rename_all = "camelCase")]

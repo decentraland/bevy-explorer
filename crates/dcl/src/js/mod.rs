@@ -28,10 +28,10 @@ pub mod adaption_layer_helper;
 pub mod comms;
 pub mod ethereum_controller;
 pub mod events;
+pub mod fetch;
 pub mod player;
 pub mod system_api;
 pub mod testing;
-pub mod fetch;
 
 // marker to indicate shutdown has been triggered
 pub struct ShuttingDown;
