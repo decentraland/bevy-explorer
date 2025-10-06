@@ -27,6 +27,23 @@ fs.writeFileSync(
 
 fs.writeFileSync("./package.json", JSON.stringify(packageJson, null, 2));
 
+// Update HTML file to include PUBLIC_URL in script src
+const htmlPath = "index.html";
+if (fs.existsSync(htmlPath)) {
+  let htmlContent = fs.readFileSync(htmlPath).toString();
+  const publicUrl = ENV_CONTENT["PUBLIC_URL"];
+  const scriptPath = publicUrl ? `${publicUrl}/main.js` : "main.js";
+
+  // Replace the main.js script src
+  htmlContent = htmlContent.replace(
+    /<script type="module" src="main\.js"><\/script>/,
+    `<script type="module" src="${scriptPath}"></script>`
+  );
+
+  fs.writeFileSync(htmlPath, htmlContent);
+  console.log(`Updated ${htmlPath} with script path: ${scriptPath}`);
+}
+
 function getPublicUrls() {
   console.log('Get public urls')
   if (!process.env.GEN_STATIC_LOCAL) {
