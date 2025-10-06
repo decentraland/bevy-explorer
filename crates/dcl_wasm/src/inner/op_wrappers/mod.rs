@@ -3,6 +3,7 @@ pub mod comms;
 pub mod engine;
 pub mod ethereum_controller;
 pub mod events;
+pub mod fetch;
 pub mod player;
 pub mod portables;
 pub mod restricted_actions;

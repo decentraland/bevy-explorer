@@ -31,6 +31,7 @@ pub mod events;
 pub mod player;
 pub mod system_api;
 pub mod testing;
+pub mod fetch;
 
 // marker to indicate shutdown has been triggered
 pub struct ShuttingDown;
