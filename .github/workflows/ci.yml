@@ -191,6 +191,7 @@ jobs:
       - name: Set package.json version
         uses: decentraland/oddish-action@master
         with:
+          cwd: './deploy/web'
           deterministic-snapshot: true
           only-update-versions: true
       - uses: actions-rs/toolchain@v1
