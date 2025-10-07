@@ -34,6 +34,13 @@ if (fs.existsSync(htmlPath)) {
   const publicUrl = ENV_CONTENT["PUBLIC_URL"];
   const scriptPath = publicUrl ? `${publicUrl}/main.js` : "main.js";
 
+  // Inject PUBLIC_URL as a global variable
+  const publicUrlScript = `<script>window.PUBLIC_URL = ${JSON.stringify(publicUrl)};</script>`;
+  htmlContent = htmlContent.replace(
+    /<\/head>/,
+    `  ${publicUrlScript}\n  </head>`
+  );
+
   // Replace the main.js script src
   htmlContent = htmlContent.replace(
     /<script type="module" src="main\.js"><\/script>/,

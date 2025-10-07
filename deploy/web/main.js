@@ -53,8 +53,10 @@ function hideHeader() {
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
+    const publicUrl = window.PUBLIC_URL || ".";
+    const serviceWorkerPath = `${publicUrl}/service_worker.js`
     navigator.serviceWorker
-      .register("service_worker.js")
+      .register(serviceWorkerPath)
       .then((registration) => {
         console.log(
           "Page: Service Worker registered successfully with scope: ",
@@ -112,7 +114,8 @@ async function initEngine() {
     }
   }
 
-  const wasmUrl = "./pkg/webgpu_build_bg.wasm";
+  const publicUrl = window.PUBLIC_URL || ".";
+  const wasmUrl = `${publicUrl}/pkg/webgpu_build_bg.wasm`;
 
   try {
     const compiledModule = await WebAssembly.compileStreaming(fetch(wasmUrl));
