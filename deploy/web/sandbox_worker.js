@@ -255,24 +255,24 @@ self.onmessage = async (event) => {
         
     // add listener to clean up on unhandled rejections
     self.addEventListener("unhandledrejection", (event) => {
-      // Prevent the default browser action (logging to console)
+      // Prevent the default browser action
       event.preventDefault();
 
       console.error(
-        "[Sandbox worker] FATAL: Unhandled Promise Rejection in Worker:",
+        "[Sandbox worker] Unhandled Promise Rejection in Worker:",
         event.reason
       );
 
-      try {
-        wasm_init.__wbindgen_thread_destroy();
-      } catch (cleanupError) {
-        console.error(
-          "[Sandbox worker] Error during WASM cleanup:",
-          cleanupError
-        );
-      }
+      // try {
+      //   wasm_init.__wbindgen_thread_destroy();
+      // } catch (cleanupError) {
+      //   console.error(
+      //     "[Sandbox worker] Error during WASM cleanup:",
+      //     cleanupError
+      //   );
+      // }
 
-      self.close();
+      // self.close();
     });
 
     var wasmContext;
