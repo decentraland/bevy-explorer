@@ -53,8 +53,7 @@ function hideHeader() {
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    const publicUrl = window.PUBLIC_URL || ".";
-    const serviceWorkerPath = `${publicUrl}/service_worker.js`
+    const serviceWorkerPath = new URL('./service_worker.js', import.meta.url);
     navigator.serviceWorker
       .register(serviceWorkerPath)
       .then((registration) => {
