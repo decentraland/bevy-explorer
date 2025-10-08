@@ -151,10 +151,6 @@ fn main_inner(
         .insert_resource(final_config.audio.clone())
         .add_plugins(
             DefaultPlugins
-                .set(AssetPlugin {
-                    wasm_loader_handle,
-                    ..default()
-                })
                 .set(WindowPlugin {
                     primary_window: Some(Window {
                         canvas: Some("#mygame-canvas".into()),
@@ -163,12 +159,13 @@ fn main_inner(
                     }),
                     ..Default::default()
                 })
-                .set(bevy::asset::AssetPlugin {
+                .set(AssetPlugin {
                     // we manage asset server loads via ipfs module, so we don't need this protection
+                    wasm_loader_handle,
                     unapproved_path_mode: bevy::asset::UnapprovedPathMode::Allow,
                     ..Default::default()
                 })
-                .add_before::<bevy::asset::AssetPlugin>(IpfsIoPlugin {
+                .add_before::<AssetPlugin>(IpfsIoPlugin {
                     preview: is_preview,
                     starting_realm: Some(final_config.server.clone()),
                     content_server_override,
