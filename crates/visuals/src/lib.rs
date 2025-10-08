@@ -3,7 +3,7 @@ mod nishita_cloud;
 
 use bevy::{
     core_pipeline::dof::{DepthOfField, DepthOfFieldMode},
-    pbr::{wireframe::WireframePlugin, CascadeShadowConfigBuilder, DirectionalLightShadowMap},
+    pbr::{wireframe::WireframePlugin, DirectionalLightShadowMap},
     prelude::*,
     render::{
         render_asset::RenderAssetBytesPerFrame,
@@ -25,7 +25,7 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, DofConfig, FogSetting, PrimaryCamera, PrimaryCameraRes, PrimaryUser,
-        SceneGlobalLight, SceneLoadDistance, ShadowSetting, TimeOfDay, GROUND_RENDERLAYER,
+        SceneGlobalLight, SceneLoadDistance, TimeOfDay, GROUND_RENDERLAYER,
         PRIMARY_AVATAR_LIGHT_LAYER,
     },
 };
@@ -253,31 +253,10 @@ fn apply_global_light(
             layer = layer.union(&PRIMARY_AVATAR_LIGHT_LAYER);
         }
 
-        let (shadows_enabled, cascade_shadow_config) = match config.graphics.shadow_settings {
-            ShadowSetting::Off => (false, Default::default()),
-            ShadowSetting::Low => (
-                true,
-                CascadeShadowConfigBuilder {
-                    num_cascades: 1,
-                    minimum_distance: 0.1,
-                    maximum_distance: config.graphics.shadow_distance,
-                    first_cascade_far_bound: config.graphics.shadow_distance,
-                    overlap_proportion: 0.2,
-                }
-                .build(),
-            ),
-            ShadowSetting::High => (
-                true,
-                CascadeShadowConfigBuilder {
-                    num_cascades: 4,
-                    minimum_distance: 0.1,
-                    maximum_distance: config.graphics.shadow_distance,
-                    first_cascade_far_bound: config.graphics.shadow_distance / 15.0,
-                    overlap_proportion: 0.2,
-                }
-                .build(),
-            ),
-        };
+        let (shadows_enabled, cascade_shadow_config) = config
+            .graphics
+            .shadow_settings
+            .to_shadow_config(config.graphics.shadow_distance);
 
         commands.spawn((
             DirectionalLight {

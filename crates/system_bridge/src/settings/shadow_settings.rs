@@ -3,7 +3,7 @@ use bevy::{
         lifetimeless::{SQuery, SRes, Write},
         SystemParamItem,
     },
-    pbr::{CascadeShadowConfig, CascadeShadowConfigBuilder, ShadowFilteringMethod},
+    pbr::{CascadeShadowConfig, ShadowFilteringMethod},
     platform::collections::HashSet,
     prelude::*,
 };
@@ -71,33 +71,10 @@ impl AppSetting for ShadowSetting {
         };
 
         for (mut light, mut cascades) in lights.iter_mut() {
-            match value {
-                ShadowSetting::Off => {
-                    light.shadows_enabled = false;
-                }
-                ShadowSetting::Low => {
-                    light.shadows_enabled = true;
-                    *cascades = CascadeShadowConfigBuilder {
-                        num_cascades: 1,
-                        minimum_distance: 0.1,
-                        maximum_distance: config.graphics.shadow_distance,
-                        first_cascade_far_bound: config.graphics.shadow_distance,
-                        overlap_proportion: 0.2,
-                    }
-                    .build()
-                }
-                ShadowSetting::High => {
-                    light.shadows_enabled = true;
-                    *cascades = CascadeShadowConfigBuilder {
-                        num_cascades: 4,
-                        minimum_distance: 0.1,
-                        maximum_distance: config.graphics.shadow_distance,
-                        first_cascade_far_bound: config.graphics.shadow_distance / 15.0,
-                        overlap_proportion: 0.2,
-                    }
-                    .build()
-                }
-            }
+            let (shadows_enabled, cascade_config) =
+                value.to_shadow_config(config.graphics.shadow_distance);
+            light.shadows_enabled = shadows_enabled;
+            *cascades = cascade_config;
         }
 
         let res = &(config, cam_res, lights);

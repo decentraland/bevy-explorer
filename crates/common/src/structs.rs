@@ -1,6 +1,7 @@
 use std::{f32::consts::PI, num::ParseIntError, ops::Range, str::FromStr, sync::Arc};
 
 use bevy::{
+    pbr::{CascadeShadowConfig, CascadeShadowConfigBuilder},
     platform::collections::{HashMap, HashSet},
     prelude::*,
     render::view::RenderLayers,
@@ -454,6 +455,46 @@ pub enum ShadowSetting {
     Off,
     Low,
     High,
+}
+
+impl ShadowSetting {
+    /// Creates cascade shadow configuration based on shadow setting and distance.
+    ///
+    /// Returns a tuple of (shadows_enabled, cascade_shadow_config).
+    ///
+    /// # Arguments
+    /// * `shadow_distance` - Maximum distance for shadow rendering
+    ///
+    /// # Returns
+    /// * `bool` - Whether shadows are enabled
+    /// * `CascadeShadowConfig` - The cascade shadow configuration
+    pub fn to_shadow_config(&self, shadow_distance: f32) -> (bool, CascadeShadowConfig) {
+        match self {
+            ShadowSetting::Off => (false, Default::default()),
+            ShadowSetting::Low => (
+                true,
+                CascadeShadowConfigBuilder {
+                    num_cascades: 1,
+                    minimum_distance: 0.1,
+                    maximum_distance: shadow_distance,
+                    first_cascade_far_bound: shadow_distance,
+                    overlap_proportion: 0.2,
+                }
+                .build(),
+            ),
+            ShadowSetting::High => (
+                true,
+                CascadeShadowConfigBuilder {
+                    num_cascades: 4,
+                    minimum_distance: 0.1,
+                    maximum_distance: shadow_distance,
+                    first_cascade_far_bound: shadow_distance / 15.0,
+                    overlap_proportion: 0.2,
+                }
+                .build(),
+            ),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
