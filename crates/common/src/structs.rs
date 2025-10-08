@@ -454,13 +454,14 @@ impl AudioSettings {
 pub enum ShadowSetting {
     Off,
     Low,
+    Middle,
     High,
 }
 
 impl ShadowSetting {
-    /// Creates cascade shadow configuration based on shadow setting and distance.
+    /// Creates complete shadow configuration including cascade settings and map resolution.
     ///
-    /// Returns a tuple of (shadows_enabled, cascade_shadow_config).
+    /// Returns a tuple of (shadows_enabled, cascade_shadow_config, shadow_map_size).
     ///
     /// # Arguments
     /// * `shadow_distance` - Maximum distance for shadow rendering
@@ -468,9 +469,10 @@ impl ShadowSetting {
     /// # Returns
     /// * `bool` - Whether shadows are enabled
     /// * `CascadeShadowConfig` - The cascade shadow configuration
-    pub fn to_shadow_config(&self, shadow_distance: f32) -> (bool, CascadeShadowConfig) {
+    /// * `usize` - The recommended shadow map resolution
+    pub fn to_shadow_config(&self, shadow_distance: f32) -> (bool, CascadeShadowConfig, usize) {
         match self {
-            ShadowSetting::Off => (false, Default::default()),
+            ShadowSetting::Off => (false, Default::default(), 512),
             ShadowSetting::Low => (
                 true,
                 CascadeShadowConfigBuilder {
@@ -481,6 +483,19 @@ impl ShadowSetting {
                     overlap_proportion: 0.2,
                 }
                 .build(),
+                512, // Performance-focused resolution
+            ),
+            ShadowSetting::Middle => (
+                true,
+                CascadeShadowConfigBuilder {
+                    num_cascades: 2,
+                    minimum_distance: 0.1,
+                    maximum_distance: shadow_distance,
+                    first_cascade_far_bound: shadow_distance / 8.0, // Optimized for better near-distance quality
+                    overlap_proportion: 0.2,
+                }
+                .build(),
+                1024, // Balanced quality/performance resolution
             ),
             ShadowSetting::High => (
                 true,
@@ -492,6 +507,7 @@ impl ShadowSetting {
                     overlap_proportion: 0.2,
                 }
                 .build(),
+                4096, // Quality-focused resolution
             ),
         }
     }

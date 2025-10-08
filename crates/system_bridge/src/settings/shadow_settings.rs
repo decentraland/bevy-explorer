@@ -1,9 +1,9 @@
 use bevy::{
     ecs::system::{
-        lifetimeless::{SQuery, SRes, Write},
+        lifetimeless::{SQuery, SRes, SResMut, Write},
         SystemParamItem,
     },
-    pbr::{CascadeShadowConfig, ShadowFilteringMethod},
+    pbr::{CascadeShadowConfig, DirectionalLightShadowMap, ShadowFilteringMethod},
     platform::collections::HashSet,
     prelude::*,
 };
@@ -13,13 +13,14 @@ use super::{AppSetting, EnumAppSetting, IntAppSetting};
 
 impl EnumAppSetting for ShadowSetting {
     fn variants() -> Vec<Self> {
-        vec![Self::Off, Self::Low, Self::High]
+        vec![Self::Off, Self::Low, Self::Middle, Self::High]
     }
 
     fn name(&self) -> String {
         match self {
             ShadowSetting::Off => "Off",
             ShadowSetting::Low => "Low",
+            ShadowSetting::Middle => "Middle",
             ShadowSetting::High => "High",
         }
         .to_owned()
@@ -31,6 +32,7 @@ impl AppSetting for ShadowSetting {
         SRes<AppConfig>,
         SRes<PrimaryCameraRes>,
         SQuery<(Write<DirectionalLight>, Write<CascadeShadowConfig>)>,
+        SResMut<DirectionalLightShadowMap>,
     );
 
     fn title() -> String {
@@ -38,11 +40,12 @@ impl AppSetting for ShadowSetting {
     }
 
     fn description(&self) -> String {
-        format!("How shadows are rendered in the world.\n\n{}", 
+        format!("How shadows are rendered in the world.\n\n{}",
         match self {
-            ShadowSetting::Off => "Off: No shadows are rendered. Fastest",
-            ShadowSetting::Low => "Low: Low quality shadows. Uses a single pass shadow map and low quality hardward 2x2 filtering. Gives blocky shadow outlines, particularly with high shadow draw distances, but is pretty fast.",
-            ShadowSetting::High => "High: Higher quality shadows. Uses a set of cascaded shadow maps and higher quality filtering for softer shadow outlines and better quality at higher shadow draw distances, but is more GPU intensive.",
+            ShadowSetting::Off => "Off: No shadows are rendered. Fastest performance.",
+            ShadowSetting::Low => "Low: Basic shadows with 512px resolution. Uses a single cascade shadow map and hardware 2x2 filtering. Fast but blocky shadows at distance.",
+            ShadowSetting::Middle => "Middle: Balanced shadows with 1024px resolution. Uses 2 cascade shadow maps and Gaussian filtering. Good quality/performance balance.",
+            ShadowSetting::High => "High: Premium shadows with 4096px resolution. Uses 4 cascade shadow maps and Gaussian filtering. Best quality but GPU intensive.",
         })
     }
 
@@ -60,7 +63,7 @@ impl AppSetting for ShadowSetting {
 
     fn apply(
         &self,
-        (config, cam_res, mut lights): SystemParamItem<Self::Param>,
+        (config, cam_res, mut lights, mut shadow_map): SystemParamItem<Self::Param>,
         mut commands: Commands,
         cameras: &HashSet<Entity>,
     ) {
@@ -71,13 +74,15 @@ impl AppSetting for ShadowSetting {
         };
 
         for (mut light, mut cascades) in lights.iter_mut() {
-            let (shadows_enabled, cascade_config) =
+            let (shadows_enabled, cascade_config, shadow_map_size) =
                 value.to_shadow_config(config.graphics.shadow_distance);
             light.shadows_enabled = shadows_enabled;
             *cascades = cascade_config;
+            // Update shadow map resolution based on quality setting
+            shadow_map.size = shadow_map_size;
         }
 
-        let res = &(config, cam_res, lights);
+        let res = &(config, cam_res, lights, shadow_map);
         for &cam in cameras {
             self.apply_to_camera(res, commands.reborrow(), cam);
         }
@@ -97,8 +102,11 @@ impl AppSetting for ShadowSetting {
             ShadowSetting::Low => {
                 cmds.insert(ShadowFilteringMethod::Hardware2x2);
             }
+            ShadowSetting::Middle => {
+                cmds.insert(ShadowFilteringMethod::Gaussian); // Balanced performance
+            }
             ShadowSetting::High => {
-                cmds.insert(ShadowFilteringMethod::Gaussian);
+                cmds.insert(ShadowFilteringMethod::Gaussian); // Best quality
             }
         }
     }

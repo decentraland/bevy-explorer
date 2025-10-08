@@ -38,7 +38,8 @@ pub struct VisualsPlugin {
 
 impl Plugin for VisualsPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(DirectionalLightShadowMap { size: 4096 })
+        // Initialize with default shadow map size - will be updated by shadow settings
+        app.insert_resource(DirectionalLightShadowMap { size: 1024 })
             .init_resource::<SceneGlobalLight>()
             .insert_resource(TimeOfDay {
                 time: 10.0 * 3600.0,
@@ -176,6 +177,7 @@ fn apply_global_light(
     mut prev: Local<(f32, SceneGlobalLight)>,
     config: Res<AppConfig>,
     mut cloud_dt: Local<f32>,
+    mut shadow_map: ResMut<DirectionalLightShadowMap>,
 ) {
     let next_light = if prev.0 >= TRANSITION_TIME && prev.1.source == scene_global_light.source {
         scene_global_light.clone()
@@ -253,10 +255,13 @@ fn apply_global_light(
             layer = layer.union(&PRIMARY_AVATAR_LIGHT_LAYER);
         }
 
-        let (shadows_enabled, cascade_shadow_config) = config
+        let (shadows_enabled, cascade_shadow_config, shadow_map_size) = config
             .graphics
             .shadow_settings
             .to_shadow_config(config.graphics.shadow_distance);
+
+        // Update shadow map resolution based on current shadow settings
+        shadow_map.size = shadow_map_size;
 
         commands.spawn((
             DirectionalLight {
