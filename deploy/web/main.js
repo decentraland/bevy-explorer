@@ -225,7 +225,7 @@ async function initEngine() {
     // start asset loader thread
     await new Promise((resolve, _reject) => {
       const basePath = window.location.pathname.replace(/\/$/, ''); // removes trailing slash if present
-      const assetLoaderPath = new URL(`${basePath}/service_worker.js`, window.location.origin);
+      const assetLoaderPath = new URL(`${basePath}/asset_loader.js`, window.location.origin);
   
       const assetLoader = new Worker(assetLoaderPath, { type: "module" });
       assetLoader.onmessage = (workerEvent) => {
