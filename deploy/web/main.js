@@ -53,8 +53,9 @@ function hideHeader() {
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    const serviceWorkerPath = new URL('./service_worker.js', window.location.href);
-    console.log({ serviceWorkerPath })
+    const basePath = window.location.pathname.replace(/\/$/, ''); // removes trailing slash if present
+    const serviceWorkerPath = new URL(`${basePath}/service_worker.js`, window.location.origin);
+
     navigator.serviceWorker
       .register(serviceWorkerPath)
       .then((registration) => {
@@ -223,8 +224,10 @@ async function initEngine() {
 
     // start asset loader thread
     await new Promise((resolve, _reject) => {
-      const url = new URL('./asset_loader.js', window.location.href)
-      const assetLoader = new Worker(url, { type: "module" });
+      const basePath = window.location.pathname.replace(/\/$/, ''); // removes trailing slash if present
+      const assetLoaderPath = new URL(`${basePath}/service_worker.js`, window.location.origin);
+  
+      const assetLoader = new Worker(assetLoaderPath, { type: "module" });
       assetLoader.onmessage = (workerEvent) => {
         if (workerEvent.data.type === "READY") {
           assetLoader.postMessage({
