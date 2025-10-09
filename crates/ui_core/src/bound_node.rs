@@ -128,7 +128,7 @@ pub struct BoundedImageMaterial {
 
 impl UiMaterial for BoundedImageMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/bound_node.wgsl".into()
+        "embedded://shaders/bound_node.wgsl".into()
     }
 }
 

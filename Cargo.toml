@@ -49,6 +49,7 @@ members = ["crates/*"]
 [workspace.dependencies]
 analytics = { path="crates/analytics" }
 common = { path="crates/common" }
+assets = { path="crates/assets" }
 avatar = { path="crates/avatar" }
 comms = { path="crates/comms" }
 input_manager = { path="crates/input_manager" }
@@ -167,6 +168,7 @@ copypwasmta = { git = "https://github.com/robtfm/copypwasmta" }
 web-fs = "0.2.6"
 
 [dependencies]
+assets = { workspace = true }
 analytics = { workspace = true }
 common = { workspace = true }
 avatar = { workspace = true }

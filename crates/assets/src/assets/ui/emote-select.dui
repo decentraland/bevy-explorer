@@ -41,5 +41,5 @@
 </define-template>
 
 <define-template id="emote-button">
-    <div style="position-type: absolute; width: 100%; height: 100%;" image="images/emote-button-background.png" />
+    <div style="position-type: absolute; width: 100%; height: 100%;" image="embedded://images/emote-button-background.png" />
 </define-template>

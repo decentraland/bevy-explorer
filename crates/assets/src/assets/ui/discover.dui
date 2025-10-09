@@ -56,9 +56,9 @@
         </bounded>
         <div style="position-type: absolute; bottom: 8vmin; right: 0.5vmin; background-color: #000000aa;">
             <div style="flex-direction: row; align-items: center;">
-                <div style="width: 2vmin; height: 2vmin; margin: 0px 0.1vmin 0px 1vmin;" image="images/discover/eye.png" />
+                <div style="width: 2vmin; height: 2vmin; margin: 0px 0.1vmin 0px 1vmin;" image="embedded://images/discover/eye.png" />
                 <med-text text="@views" />
-                <div style="width: 2vmin; height: 2vmin; margin: 0px 0.1vmin 0px 1vmin;" image="images/discover/thumbsup.png" />
+                <div style="width: 2vmin; height: 2vmin; margin: 0px 0.1vmin 0px 1vmin;" image="embedded://images/discover/thumbsup.png" />
                 <med-text text="@likes" />
                 <div style="margin: 0px 0.1vmin 0px 1vmin;" />
             </div>
@@ -82,7 +82,7 @@
             color="#aa1fc1bb"
         >
             <div style="justify-content: flex-end;">
-                <button img="images/redx.png" onclick="@close" image-width="4.4vmin" image-height="4.4vmin" />
+                <button img="embedded://images/redx.png" onclick="@close" image-width="4.4vmin" image-height="4.4vmin" />
             </div>
             <div style="justify-content: space-around;">
                 <bounds style="width: 30vmin; height: 20vmin; margin: 1vmin;" bound-image="@img" corner-size="2vmin"             blend-size="0vmin"
@@ -96,7 +96,7 @@
                         <med-text style="color: black; margin: 1vmin" text="@author" />
                     </div>
                     <div>
-                        <div style="width: 2vmin; height: 2vmin; margin: 0.5vmin" image="images/discover/thumbsup.png" />
+                        <div style="width: 2vmin; height: 2vmin; margin: 0.5vmin" image="embedded://images/discover/thumbsup.png" />
                         <med-text text="@likes" />
                     </div>
                     <button label="Jump In" onclick="@jump-in" />

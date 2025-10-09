@@ -431,6 +431,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "assets"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+]
+
+[[package]]
 name = "assign"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2009,7 +2016,7 @@ dependencies = [
  "bitflags 2.9.1",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.12.1",
  "lazy_static",
  "lazycell",
  "log",
@@ -2223,7 +2230,7 @@ version = "0.1.1"
 source = "git+https://github.com/robtfm/boimp?branch=0.3#fc77ee54d44a074e4990f82800688b3b9809d592"
 dependencies = [
  "anyhow",
- "async-channel 1.9.0",
+ "async-channel 2.3.1",
  "bevy",
  "bytemuck",
  "crossbeam-channel",
@@ -3523,6 +3530,7 @@ name = "decentra-bevy"
 version = "0.1.0"
 dependencies = [
  "analytics",
+ "assets",
  "av",
  "avatar",
  "bevy",

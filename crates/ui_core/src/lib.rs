@@ -112,36 +112,37 @@ fn setup(
     mut dui: ResMut<DuiRegistry>,
 ) {
     // tracker.load_asset(asset_server.load_folder("ui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/app_settings.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/avatar.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/button.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/change-realm.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/chat.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/combo.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/dialog.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/discover.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/emote-select.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/emote.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/foreign-profile-dialog.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/fullscreen-block.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/login.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/map.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/minimap.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/motd.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/nft-dialog.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/oow.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/permissions-dialog.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/permissions.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/profile-detail.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/profile.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/spinner.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/toast.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/tracker.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/update.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/utils.dui"));
-    tracker.load_asset(asset_server.load::<DuiNodeList>("ui/wearables.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/app_settings.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/avatar.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/button.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/change-realm.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/chat.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/combo.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/dialog.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/discover.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/emote-select.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/emote.dui"));
+    tracker
+        .load_asset(asset_server.load::<DuiNodeList>("embedded://ui/foreign-profile-dialog.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/fullscreen-block.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/login.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/map.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/minimap.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/motd.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/nft-dialog.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/oow.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/permissions-dialog.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/permissions.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/profile-detail.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/profile.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/spinner.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/toast.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/tracker.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/update.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/utils.dui"));
+    tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/wearables.dui"));
 
-    // tracker.load_asset(asset_server.load_folder("images"));
+    // tracker.load_asset(asset_server.load_folder("embedded://images"));
 
     dui.register_template("button", DuiButtonTemplate);
     dui.register_template("button-set", DuiButtonSetTemplate);
@@ -154,45 +155,51 @@ fn setup(
             .set(HashMap::from_iter([
                 (
                     (Mono, Regular),
-                    asset_server.load("fonts/NotoSansMono-Regular.ttf"),
+                    asset_server.load("embedded://fonts/NotoSansMono-Regular.ttf"),
                 ),
                 (
                     (Mono, Bold),
-                    asset_server.load("fonts/NotoSansMono-Bold.ttf"),
+                    asset_server.load("embedded://fonts/NotoSansMono-Bold.ttf"),
                 ),
                 (
                     (Mono, Italic),
-                    asset_server.load("fonts/NotoSansMono-Regular.ttf"),
+                    asset_server.load("embedded://fonts/NotoSansMono-Regular.ttf"),
                 ),
                 (
                     (Mono, BoldItalic),
-                    asset_server.load("fonts/NotoSansMono-Bold.ttf"),
+                    asset_server.load("embedded://fonts/NotoSansMono-Bold.ttf"),
                 ),
                 (
                     (Sans, Regular),
-                    asset_server.load("fonts/NotoSans-Regular.ttf"),
+                    asset_server.load("embedded://fonts/NotoSans-Regular.ttf"),
                 ),
-                ((Sans, Bold), asset_server.load("fonts/NotoSans-Bold.ttf")),
+                (
+                    (Sans, Bold),
+                    asset_server.load("embedded://fonts/NotoSans-Bold.ttf"),
+                ),
                 (
                     (Sans, Italic),
-                    asset_server.load("fonts/NotoSans-Italic.ttf"),
+                    asset_server.load("embedded://fonts/NotoSans-Italic.ttf"),
                 ),
                 (
                     (Sans, BoldItalic),
-                    asset_server.load("fonts/NotoSans-BoldItalic.ttf"),
+                    asset_server.load("embedded://fonts/NotoSans-BoldItalic.ttf"),
                 ),
                 (
                     (Serif, Regular),
-                    asset_server.load("fonts/NotoSerif-Regular.ttf"),
+                    asset_server.load("embedded://fonts/NotoSerif-Regular.ttf"),
                 ),
-                ((Serif, Bold), asset_server.load("fonts/NotoSerif-Bold.ttf")),
+                (
+                    (Serif, Bold),
+                    asset_server.load("embedded://fonts/NotoSerif-Bold.ttf"),
+                ),
                 (
                     (Serif, Italic),
-                    asset_server.load("fonts/NotoSerif-Italic.ttf"),
+                    asset_server.load("embedded://fonts/NotoSerif-Italic.ttf"),
                 ),
                 (
                     (Serif, BoldItalic),
-                    asset_server.load("fonts/NotoSerif-BoldItalic.ttf"),
+                    asset_server.load("embedded://fonts/NotoSerif-BoldItalic.ttf"),
                 ),
             ]))
             .unwrap();
@@ -201,7 +208,7 @@ fn setup(
     TITLE_TEXT_STYLE
         .set((
             TextFont {
-                font: asset_server.load("fonts/NotoSans-Bold.ttf"),
+                font: asset_server.load("embedded://fonts/NotoSans-Bold.ttf"),
                 font_size: 35.0 / 1.3,
                 ..Default::default()
             },
@@ -211,7 +218,7 @@ fn setup(
     BODY_TEXT_STYLE
         .set((
             TextFont {
-                font: asset_server.load("fonts/NotoSans-Regular.ttf"),
+                font: asset_server.load("embedded://fonts/NotoSans-Regular.ttf"),
                 font_size: 25.0 / 1.3,
                 ..Default::default()
             },
@@ -224,7 +231,7 @@ fn setup(
                 .map(|i| {
                     (
                         TextFont {
-                            font: asset_server.load("fonts/NotoSans-Bold.ttf"),
+                            font: asset_server.load("embedded://fonts/NotoSans-Bold.ttf"),
                             font_size: 25.0 / 1.3,
                             ..Default::default()
                         },

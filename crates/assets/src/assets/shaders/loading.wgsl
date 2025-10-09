@@ -2,7 +2,7 @@
     forward_io::{VertexOutput, FragmentOutput},
     mesh_view_bindings::globals,
 }
-#import "shaders/simplex.wgsl"::simplex_noise_3d
+#import "embedded://shaders/simplex.wgsl"::simplex_noise_3d
 
 struct LoadingData {
     player_pos_and_render: vec4<f32>,

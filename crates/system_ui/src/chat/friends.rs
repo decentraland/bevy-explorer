@@ -133,7 +133,9 @@ pub fn show_conversation(
 
     if let Ok(mut style) = container.single_mut() {
         if style.display == Display::None {
-            commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+            commands.send_event(SystemAudio(
+                "embedded://sounds/ui/toggle_enable.wav".to_owned(),
+            ));
             style.display = Display::Flex;
         };
     }

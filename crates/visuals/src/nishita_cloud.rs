@@ -206,7 +206,7 @@ impl bevy_atmosphere::model::RegisterAtmosphereModel for NishitaCloud {
         app.register_type::<Self>();
         let asset_server = app.world().resource::<AssetServer>();
 
-        let handle = asset_server.load("shaders/nishita_cloud.wgsl");
+        let handle = asset_server.load("embedded://shaders/nishita_cloud.wgsl");
         // let handle = {
         //     let handle: Handle<Shader> = Handle::weak_from_u128(2735577752830981861u64 as u128);
         //     let internal_handle = handle.clone();

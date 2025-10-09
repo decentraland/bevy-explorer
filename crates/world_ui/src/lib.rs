@@ -282,11 +282,11 @@ pub use decl::*;
 
 impl MaterialExtension for TextQuad {
     fn vertex_shader() -> bevy::render::render_resource::ShaderRef {
-        ShaderRef::Path("shaders/text_quad_vertex.wgsl".into())
+        ShaderRef::Path("embedded://shaders/text_quad_vertex.wgsl".into())
     }
 
     fn prepass_vertex_shader() -> ShaderRef {
-        ShaderRef::Path("shaders/text_quad_vertex.wgsl".into())
+        ShaderRef::Path("embedded://shaders/text_quad_vertex.wgsl".into())
     }
 }
 

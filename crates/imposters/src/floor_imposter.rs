@@ -17,25 +17,25 @@ pub struct FloorMaterialExt {
 
 impl MaterialExtension for FloorMaterialExt {
     fn vertex_shader() -> bevy::render::render_resource::ShaderRef {
-        "shaders/floor_vertex.wgsl".into()
+        "embedded://shaders/floor_vertex.wgsl".into()
     }
 
     fn prepass_vertex_shader() -> bevy::render::render_resource::ShaderRef {
-        "shaders/floor_vertex.wgsl".into()
+        "embedded://shaders/floor_vertex.wgsl".into()
     }
 
     fn fragment_shader() -> bevy::render::render_resource::ShaderRef {
-        "shaders/floor_fragment.wgsl".into()
+        "embedded://shaders/floor_fragment.wgsl".into()
     }
 
     fn prepass_fragment_shader() -> bevy::render::render_resource::ShaderRef {
-        "shaders/floor_fragment.wgsl".into()
+        "embedded://shaders/floor_fragment.wgsl".into()
     }
 }
 
 impl ImposterBakeMaterialExtension for FloorMaterialExt {
     fn imposter_fragment_shader() -> bevy::render::render_resource::ShaderRef {
-        "shaders/floor_bake.wgsl".into()
+        "embedded://shaders/floor_bake.wgsl".into()
     }
 }
 

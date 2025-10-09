@@ -156,7 +156,7 @@ impl ConversationManager<'_, '_> {
                     .entity(components.named("image"))
                     .insert(ImageNode::new(
                         self.asset_server
-                            .load("images/backpack/wearable_categories/hat.png"),
+                            .load("embedded://images/backpack/wearable_categories/hat.png"),
                     ));
             }
         }

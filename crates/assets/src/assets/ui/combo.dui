@@ -4,7 +4,7 @@
             <div id="text" text="@selection" />
             <space />
             <div>
-                <bounds style="height: 80%; width: auto; aspect-ratio: 1.0; top: 10%; right: 10%" bound-image="images/left-arrow.png" />
+                <bounds style="height: 80%; width: auto; aspect-ratio: 1.0; top: 10%; right: 10%" bound-image="embedded://images/left-arrow.png" />
             </div>
         </div>
     </div>

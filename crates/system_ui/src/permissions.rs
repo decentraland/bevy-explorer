@@ -165,7 +165,7 @@ fn set_permission_settings_content(
             props
                 .with_prop(
                     format!("{label}-image"),
-                    asset_server.load::<Image>(format!("images/{image}")),
+                    asset_server.load::<Image>(format!("embedded://images/{image}")),
                 )
                 .with_prop(format!("{label}-enabled"), enabled)
                 .with_prop(
@@ -225,7 +225,8 @@ fn set_permission_settings_content(
                                 dict.remove(&ty);
                             }
 
-                            let new_image = asset_server.load::<Image>(format!("images/{image}"));
+                            let new_image =
+                                asset_server.load::<Image>(format!("embedded://images/{image}"));
                             commands.entity(caller.0).modify_component(
                                 move |node: &mut BoundedNode| {
                                     node.image = Some(new_image);

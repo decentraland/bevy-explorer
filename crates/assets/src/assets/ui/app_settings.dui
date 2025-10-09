@@ -24,7 +24,7 @@
             <large-text text="@title" style="color: black" />
         </div>
         <div style="width: 50%; flex-direction: row; align-items: center; margin: 1vmin">
-            <div><button img="images/left-arrow.png" onclick="@prev" image-width="5vmin" image-height="5vmin" /></div>
+            <div><button img="embedded://images/left-arrow.png" onclick="@prev" image-width="5vmin" image-height="5vmin" /></div>
             <bounds 
                 style="flex-grow: 1; padding: 1vmin; justify-content: center;"
                 corner-size="2vmin"
@@ -36,7 +36,7 @@
             >
                 <large-text id="setting-label" text="@label-initial" style="color: #222222;" />
             </bounds>
-            <div><button img="images/right-arrow.png" onclick="@next" image-width="5vmin" image-height="5vmin" /></div>
+            <div><button img="embedded://images/right-arrow.png" onclick="@next" image-width="5vmin" image-height="5vmin" /></div>
         </div>
     </div>
 </define-template>
@@ -47,7 +47,7 @@
             <large-text text="@title" style="color: black" />
         </div>
         <div style="width: 50%; flex-direction: row; align-items: center; margin: 1vmin">
-            <div><button img="images/left-arrow.png" onclickrepeat="@prev" image-width="5vmin" image-height="5vmin" /></div>
+            <div><button img="embedded://images/left-arrow.png" onclickrepeat="@prev" image-width="5vmin" image-height="5vmin" /></div>
             <div style="flex-direction: column; flex-grow: 1; align-items: center;">
                 <med-text text="@label-initial" id="setting-label" />
                 <div style="flex-direction: row; width: 100%;">
@@ -71,13 +71,13 @@
                                 border-color="#7f569e"
                                 color="#b2a1bf"
                             >
-                                <bounded style="width: 100%; height: 100%" bound-image="images/grip.png" />
+                                <bounded style="width: 100%; height: 100%" bound-image="embedded://images/grip.png" />
                             </bounds>
                         </div>
                     </bounds>
                 </div>
             </div>
-            <div><button img="images/right-arrow.png" onclickrepeat="@next" image-width="5vmin" image-height="5vmin" /></div>
+            <div><button img="embedded://images/right-arrow.png" onclickrepeat="@next" image-width="5vmin" image-height="5vmin" /></div>
         </div>
     </div>
 </define-template>

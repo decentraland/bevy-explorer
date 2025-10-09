@@ -57,7 +57,7 @@ fn setup(
     // emote button
     let button = commands
         .spawn((
-            ImageNode::new(asset_server.load("images/emote_button.png")),
+            ImageNode::new(asset_server.load("embedded://images/emote_button.png")),
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::VMin(BUTTON_SCALE * 2.5),
@@ -269,7 +269,9 @@ fn show_emote_ui(
 
     if let Some(ev) = ev {
         for ent in existing.iter() {
-            commands.send_event(SystemAudio("sounds/ui/widget_emotes_close.wav".to_owned()));
+            commands.send_event(SystemAudio(
+                "embedded://sounds/ui/widget_emotes_close.wav".to_owned(),
+            ));
             commands.entity(ent).despawn();
 
             for (button, interact) in &buttons {
@@ -307,7 +309,7 @@ fn show_emote_ui(
             // we will remove the empty slots later
             props.insert_prop(
                 format!("image_{i}"),
-                asset_server.load::<Image>("images/redx.png"),
+                asset_server.load::<Image>("embedded://images/redx.png"),
             );
         }
 
@@ -329,7 +331,7 @@ fn show_emote_ui(
                 .map(|anim| anim.thumbnail.clone())
                 .unwrap_or_else(|| {
                     debug!("didn't find {}", emote.urn);
-                    asset_server.load("images/redx.png")
+                    asset_server.load("embedded://images/redx.png")
                 });
             props.insert_prop(format!("image_{}", emote.slot), h_thumb.clone())
         }
@@ -339,7 +341,9 @@ fn show_emote_ui(
             return;
         }
 
-        commands.send_event(SystemAudio("sounds/ui/widget_emotes_open.wav".to_owned()));
+        commands.send_event(SystemAudio(
+            "embedded://sounds/ui/widget_emotes_open.wav".to_owned(),
+        ));
 
         let buttons = commands
             .spawn((
@@ -376,7 +380,7 @@ fn show_emote_ui(
                           mut color: Query<&mut ImageNode>,
                           mut text: Query<(&mut Text, &mut TextLayout)>| {
                         commands.send_event(SystemAudio(
-                            "sounds/ui/widget_emotes_highlight.wav".to_owned(),
+                            "embedded://sounds/ui/widget_emotes_highlight.wav".to_owned(),
                         ));
                         if let Ok(mut img) = color.get_mut(button) {
                             img.color = Color::srgb(1.0, 1.0, 1.50);

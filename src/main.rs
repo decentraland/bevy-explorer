@@ -1,6 +1,7 @@
 #![cfg_attr(not(feature = "console"), windows_subsystem = "windows")]
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+use assets::EmbedAssetsPlugin;
 #[cfg(not(debug_assertions))]
 use build_time::build_time_utc;
 
@@ -368,6 +369,8 @@ fn main() {
                 })
                 .add_before::<IpfsIoPlugin>(NftReaderPlugin),
         );
+
+    app.add_plugins(EmbedAssetsPlugin);
 
     if final_config.graphics.log_fps || is_preview {
         app.add_plugins(FrameTimeDiagnosticsPlugin::default());
