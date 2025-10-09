@@ -295,7 +295,7 @@ fn set_wearables_content(
 
         let empty_img = ipfas
             .asset_server()
-            .load::<Image>("images/backpack/empty.png");
+            .load::<Image>("embedded://images/backpack/empty.png");
         let category_tabs: Vec<_> = WearableCategory::iter()
             .map(|category| {
                 let wearable_img = wearable_settings
@@ -312,7 +312,7 @@ fn set_wearables_content(
                             .with_prop(
                                 "category-img",
                                 ipfas.asset_server().load::<Image>(format!(
-                                    "images/backpack/wearable_categories/{}.png",
+                                    "embedded://images/backpack/wearable_categories/{}.png",
                                     category.slot
                                 )),
                             )
@@ -836,7 +836,7 @@ fn update_wearables_list(
                     }),
                     ..Default::default()
                 }),
-                image: Some(asset_server.load("images/backpack/item_bg.png")),
+                image: Some(asset_server.load("embedded://images/backpack/item_bg.png")),
                 children: Some(content),
                 ..Default::default()
             }
@@ -940,9 +940,9 @@ fn update_wearable_item(
                                     DuiProps::new()
                                         .with_prop(
                                             "img",
-                                            ipfas
-                                                .asset_server()
-                                                .load::<Image>("images/backback/empty.png"),
+                                            ipfas.asset_server().load::<Image>(
+                                                "embedded://images/backback/empty.png",
+                                            ),
                                         )
                                         .with_prop("rarity-color", entry.rarity.color()),
                                 )
@@ -995,9 +995,9 @@ fn update_wearable_item(
                                     DuiProps::new()
                                         .with_prop(
                                             "img",
-                                            ipfas
-                                                .asset_server()
-                                                .load::<Image>("images/backback/empty.png"),
+                                            ipfas.asset_server().load::<Image>(
+                                                "embedded://images/backback/empty.png",
+                                            ),
                                         )
                                         .with_prop("rarity-color", rarity_color)
                                         .with_prop("img-color", image_color),
@@ -1159,7 +1159,7 @@ fn update_selected_item(
 
                 let empty_img = ipfas
                     .asset_server()
-                    .load::<Image>("images/backpack/empty.png");
+                    .load::<Image>("embedded://images/backpack/empty.png");
                 let wearable_img = wearable_settings
                     .current_wearables
                     .get(&category)
@@ -1251,7 +1251,10 @@ fn update_selected_item(
                     "wearable-hides",
                     DuiProps::new().with_prop(
                         "img",
-                        format!("images/backpack/wearable_categories/{}.png", category.slot),
+                        format!(
+                            "embedded://images/backpack/wearable_categories/{}.png",
+                            category.slot
+                        ),
                     ),
                 )
                 .unwrap()

@@ -96,31 +96,31 @@ fn load_animations(
     match &mut *state {
         AnimLoadState::Init => {
             *state = AnimLoadState::WaitingForGltfs(vec![
-                asset_server.load("animations/clap.glb"),
-                asset_server.load("animations/Dance_Female.glb"),
-                asset_server.load("animations/Dance_Male.glb"),
-                asset_server.load("animations/disco_dance.glb"),
-                asset_server.load("animations/dont_wanna_see.glb"),
-                asset_server.load("animations/F_FistPump.glb"),
-                asset_server.load("animations/f_head_explode.glb"),
-                asset_server.load("animations/F_RobotDance.glb"),
-                asset_server.load("animations/Hands_Air.glb"),
-                asset_server.load("animations/idle.glb"),
-                asset_server.load("animations/jump2.glb"),
-                asset_server.load("animations/kiss.glb"),
-                asset_server.load("animations/mchammer-dance.glb"),
-                asset_server.load("animations/M_FistPump.glb"),
-                asset_server.load("animations/m_head_explode.glb"),
-                asset_server.load("animations/M_RobotDance.glb"),
-                asset_server.load("animations/Raise_Hand.glb"),
-                asset_server.load("animations/run.glb"),
-                asset_server.load("animations/shrug.glb"),
-                asset_server.load("animations/tektonik-dance.glb"),
-                asset_server.load("animations/Throw Money-Emote.glb"),
-                asset_server.load("animations/tik-tok-dance.glb"),
-                asset_server.load("animations/walk.glb"),
-                asset_server.load("animations/Wave_Female.glb"),
-                asset_server.load("animations/Wave_Male.glb"),
+                asset_server.load("embedded://animations/clap.glb"),
+                asset_server.load("embedded://animations/Dance_Female.glb"),
+                asset_server.load("embedded://animations/Dance_Male.glb"),
+                asset_server.load("embedded://animations/disco_dance.glb"),
+                asset_server.load("embedded://animations/dont_wanna_see.glb"),
+                asset_server.load("embedded://animations/F_FistPump.glb"),
+                asset_server.load("embedded://animations/f_head_explode.glb"),
+                asset_server.load("embedded://animations/F_RobotDance.glb"),
+                asset_server.load("embedded://animations/Hands_Air.glb"),
+                asset_server.load("embedded://animations/idle.glb"),
+                asset_server.load("embedded://animations/jump2.glb"),
+                asset_server.load("embedded://animations/kiss.glb"),
+                asset_server.load("embedded://animations/mchammer-dance.glb"),
+                asset_server.load("embedded://animations/M_FistPump.glb"),
+                asset_server.load("embedded://animations/m_head_explode.glb"),
+                asset_server.load("embedded://animations/M_RobotDance.glb"),
+                asset_server.load("embedded://animations/Raise_Hand.glb"),
+                asset_server.load("embedded://animations/run.glb"),
+                asset_server.load("embedded://animations/shrug.glb"),
+                asset_server.load("embedded://animations/tektonik-dance.glb"),
+                asset_server.load("embedded://animations/Throw Money-Emote.glb"),
+                asset_server.load("embedded://animations/tik-tok-dance.glb"),
+                asset_server.load("embedded://animations/walk.glb"),
+                asset_server.load("embedded://animations/Wave_Female.glb"),
+                asset_server.load("embedded://animations/Wave_Male.glb"),
             ]);
         }
         AnimLoadState::WaitingForGltfs(ref mut h_gltfs) => {
@@ -188,7 +188,9 @@ fn load_animations(
                                         *t,
                                         fs.iter()
                                             .map(|f| {
-                                                asset_server.load(format!("sounds/avatar/{f}.wav"))
+                                                asset_server.load(format!(
+                                                    "embedded://sounds/avatar/{f}.wav"
+                                                ))
                                             })
                                             .collect(),
                                     )
@@ -216,9 +218,9 @@ fn load_animations(
                                     urn: urn.as_str().to_string(),
                                     thumbnail: if register_base {
                                         asset_server.load(format!(
-                                            "animations/thumbnails/{network_name}.png"
+                                            "embedded://animations/thumbnails/{network_name}.png"
                                         ))
-                                        // asset_server.load("images/redx.png")
+                                        // asset_server.load("embedded://images/redx.png")
                                     } else {
                                         Handle::default()
                                     },

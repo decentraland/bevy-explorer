@@ -24,9 +24,9 @@
             color="#aa1fc166"
         >
             <large-text style="margin: 2.8vmin; text-align: center; color: black;">Bevy Explorer</large-text>
-            <div style="align-self: center; height: 100%; min-height: 1%, background-color: #00ff00;"><div image="images/dcl-godot-bevy.png" /></div>
+            <div style="align-self: center; height: 100%; min-height: 1%, background-color: #00ff00;"><div image="embedded://images/dcl-godot-bevy.png" /></div>
             <small-text style="text-align: center; color: black;">Powered by</small-text>
-            <div image="images/dao_small.png" style="width: 28vmin; height: 4.2vmin; align-self: center;" />
+            <div image="embedded://images/dao_small.png" style="width: 28vmin; height: 4.2vmin; align-self: center;" />
             <button id="reuse" label="Reuse Last Login" onclick="@reuse" enabled="@allow-reuse" />
             <button id="connect" label="Connect External Wallet" onclick="@connect" />
             <button id="guest" label="Play as Guest" onclick="@guest" />

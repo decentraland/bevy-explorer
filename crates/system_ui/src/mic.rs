@@ -31,9 +31,9 @@ impl Plugin for MicUiPlugin {
 
         let asset_server = app.world().resource::<AssetServer>();
         app.insert_resource(MicImages {
-            inactive: asset_server.load("images/mic_button_inactive.png"),
-            on: asset_server.load("images/mic_button_on.png"),
-            off: asset_server.load("images/mic_button_off.png"),
+            inactive: asset_server.load("embedded://images/mic_button_inactive.png"),
+            on: asset_server.load("embedded://images/mic_button_on.png"),
+            off: asset_server.load("embedded://images/mic_button_off.png"),
         });
     }
 }
@@ -56,9 +56,13 @@ fn setup(mut commands: Commands, images: Res<MicImages>, ui_root: Res<SystemUiRo
             On::<Click>::new(|mut commands: Commands, mut mic_state: ResMut<MicState>| {
                 mic_state.enabled = !mic_state.enabled;
                 if mic_state.enabled {
-                    commands.send_event(SystemAudio("sounds/ui/voice_chat_mic_on.wav".to_owned()));
+                    commands.send_event(SystemAudio(
+                        "embedded://sounds/ui/voice_chat_mic_on.wav".to_owned(),
+                    ));
                 } else {
-                    commands.send_event(SystemAudio("sounds/ui/voice_chat_mic_off.wav".to_owned()));
+                    commands.send_event(SystemAudio(
+                        "embedded://sounds/ui/voice_chat_mic_off.wav".to_owned(),
+                    ));
                 }
             }),
             On::<HoverEnter>::new(
@@ -121,9 +125,13 @@ fn update_mic_ui(
     let active = mic_available && mic_state.enabled && transport_available;
     if active != *prev_active {
         if active {
-            commands.send_event(SystemAudio("sounds/ui/voice_chat_mic_on.wav".to_owned()));
+            commands.send_event(SystemAudio(
+                "embedded://sounds/ui/voice_chat_mic_on.wav".to_owned(),
+            ));
         } else {
-            commands.send_event(SystemAudio("sounds/ui/voice_chat_mic_off.wav".to_owned()));
+            commands.send_event(SystemAudio(
+                "embedded://sounds/ui/voice_chat_mic_off.wav".to_owned(),
+            ));
         }
         *prev_active = active;
     }

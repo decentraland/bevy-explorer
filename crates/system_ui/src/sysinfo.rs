@@ -115,7 +115,7 @@ pub(crate) fn setup(
                         height: Val::VMin(3.0),
                         ..Default::default()
                     },
-                    ImageNode::new(asset_server.load("images/crosshair.png"))
+                    ImageNode::new(asset_server.load("embedded://images/crosshair.png"))
                         .with_color(Color::srgba(1.0, 1.0, 1.0, 0.7)),
                     CrossHair,
                 ));

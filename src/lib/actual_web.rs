@@ -1,4 +1,5 @@
 use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
+use assets::EmbedAssetsPlugin;
 use bevy::{
     app::Propagate,
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
@@ -174,6 +175,8 @@ fn main_inner(
                 })
                 .add_before::<IpfsIoPlugin>(NftReaderPlugin),
         );
+
+    app.add_plugins(EmbedAssetsPlugin);
 
     app.insert_resource(InputMap {
         inputs: final_config.inputs.0.clone().into_iter().collect(),

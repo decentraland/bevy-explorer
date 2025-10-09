@@ -18,8 +18,8 @@
         color="#aa1fc166"
     >
         <div style="position-type: absolute; right: 0vmin; top: 0vmin;">
-            <button img="images/FriendsIcon.png" tooltip="Toggle Friends" onclick="@friends" image-width="3.3vmin" image-height="3.3vmin" />
-            <button img="images/redx.png" tooltip="Hide Chat Panel" onclick="@close" image-width="3.3vmin" image-height="3.3vmin" />
+            <button img="embedded://images/FriendsIcon.png" tooltip="Toggle Friends" onclick="@friends" image-width="3.3vmin" image-height="3.3vmin" />
+            <button img="embedded://images/redx.png" tooltip="Hide Chat Panel" onclick="@close" image-width="3.3vmin" image-height="3.3vmin" />
         </div>
         <div style="flex-direction: row; max-height: 100%;">
             <div style="flex-direction: column; flex-grow: 1; max-width: 44.4vmin; padding: 1vmin 0px 1vmin 1vmin; justify-content: flex-end;">
@@ -78,8 +78,8 @@
     >
         <med-text id="name" text="@name" style="color: black;" />
         <space />
-        <button img="images/chat_button.png" tooltip="Open Chat" onclick="@chat" image-width="3.3vmin" image-height="3.3vmin"/>
-        <button img="images/person_button.png" tooltip="View Profile" onclick="@profile" image-width="3.3vmin" image-height="3.3vmin"/>
+        <button img="embedded://images/chat_button.png" tooltip="Open Chat" onclick="@chat" image-width="3.3vmin" image-height="3.3vmin"/>
+        <button img="embedded://images/person_button.png" tooltip="View Profile" onclick="@profile" image-width="3.3vmin" image-height="3.3vmin"/>
     </bounds>
 </define-template>
 
@@ -94,9 +94,9 @@
     >
         <med-text id="name" text="@name" />
         <space />
-        <button img="images/person_button.png" tooltip="View Profile" onclick="@profile" image-width="3.3vmin" image-height="3.3vmin"/>
-        <button img="images/tick.png" tooltip="Accept Request" onclick="@accept" image-width="3.3vmin" image-height="3.3vmin"/>
-        <button img="images/redx.png" tooltip="Reject Request" onclick="@reject" image-width="3.3vmin" image-height="3.3vmin"/>
+        <button img="embedded://images/person_button.png" tooltip="View Profile" onclick="@profile" image-width="3.3vmin" image-height="3.3vmin"/>
+        <button img="embedded://images/tick.png" tooltip="Accept Request" onclick="@accept" image-width="3.3vmin" image-height="3.3vmin"/>
+        <button img="embedded://images/redx.png" tooltip="Reject Request" onclick="@reject" image-width="3.3vmin" image-height="3.3vmin"/>
     </bounds>
 </define-template>
 
@@ -111,15 +111,15 @@
     >
         <med-text id="name" text="@name" />
         <space />
-        <button img="images/person_button.png" tooltip="View Profile" onclick="@profile" image-width="3.3vmin" image-height="3.3vmin"/>
-        <button img="images/redx.png" tooltip="Cancel Request" onclick="@cancel" image-width="3.3vmin" image-height="3.3vmin" />
+        <button img="embedded://images/person_button.png" tooltip="View Profile" onclick="@profile" image-width="3.3vmin" image-height="3.3vmin"/>
+        <button img="embedded://images/redx.png" tooltip="Cancel Request" onclick="@cancel" image-width="3.3vmin" image-height="3.3vmin" />
     </bounds>
 </define-template>
 
 <define-template id="direct-chat-button">
     <div style="flex-direction: row; align-items: center;">
         <smallish-text id="name" text="@name" style="text-align: center; color: black;"/>
-        <button img="images/redx.png" tooltip="Close Chat" onclick="@close" image-width="3.3vmin" image-height="3.3vmin" />
+        <button img="embedded://images/redx.png" tooltip="Close Chat" onclick="@close" image-width="3.3vmin" image-height="3.3vmin" />
     </div>
 </define-template>
 
@@ -135,7 +135,7 @@
             <div id="content" style="flex-grow: 1; align-self: center; flex-direction: column;" />
             <div style="flex-direction: column; align-items: flex-end;">
                 <space />
-                <div id="image" style="width: 5vmin; height: 5vmin; margin: 1vmin;" image="images/unknown_person.png" />
+                <div id="image" style="width: 5vmin; height: 5vmin; margin: 1vmin;" image="embedded://images/unknown_person.png" />
             </div>
         </bounds>
 </define-template>
@@ -151,7 +151,7 @@
         >
             <div style="flex-direction: column; align-items: flex-end;">
                 <space />
-                <div id="image" style="width: 5vmin; height: 5vmin; margin: 1vmin;" image="images/unknown_person.png" interact="true" focus="block" />
+                <div id="image" style="width: 5vmin; height: 5vmin; margin: 1vmin;" image="embedded://images/unknown_person.png" interact="true" focus="block" />
             </div>
             <div id="content" style="flex-grow: 1; align-self: center; flex-direction: column;" />
         </bounds>
@@ -160,7 +160,7 @@
 <define-template id="chat-content-me">
     <div style="align-items: center;">
         <div style="min-width: 4.7vmin; position-type: absolute; left: -4vmin;">
-            <button img="images/copy.png" tooltip="Copy Message" onclick="@copy" image-width="3.3vmin" image-height="3.3vmin" />
+            <button img="embedded://images/copy.png" tooltip="Copy Message" onclick="@copy" image-width="3.3vmin" image-height="3.3vmin" />
         </div>
         <space />
         <div style="min-height: 3.3vmin; align-items: center;">
@@ -176,7 +176,7 @@
         </div>
         <space />
         <div style="min-width: 4.7vmin; position-type: absolute; right: -4vmin;">
-            <button img="images/copy.png" tooltip="Copy Message" onclick="@copy" image-width="3.3vmin" image-height="3.3vmin" />
+            <button img="embedded://images/copy.png" tooltip="Copy Message" onclick="@copy" image-width="3.3vmin" image-height="3.3vmin" />
         </div>
     </div>
 </define-template>

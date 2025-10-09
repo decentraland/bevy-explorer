@@ -149,7 +149,7 @@ struct NineSliceMaterial {
 
 impl UiMaterial for NineSliceMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/nineslice_material.wgsl".into()
+        "embedded://shaders/nineslice_material.wgsl".into()
     }
 }
 

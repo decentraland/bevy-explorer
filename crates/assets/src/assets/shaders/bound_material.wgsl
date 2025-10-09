@@ -7,8 +7,8 @@
     mesh_view_bindings::{globals, view},
     pbr_types,
 }
-#import "shaders/simplex.wgsl"::simplex_noise_3d
-#import "shaders/outline.wgsl"::apply_outline
+#import "embedded://shaders/simplex.wgsl"::simplex_noise_3d
+#import "embedded://shaders/outline.wgsl"::apply_outline
 
 struct Bounds {
     min: u32,

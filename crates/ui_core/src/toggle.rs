@@ -41,9 +41,9 @@ impl DuiTemplate for ToggleTemplate {
                 ..Default::default()
             },
             ImageNode::new(ctx.asset_server().load(if on {
-                "images/toggle-on.png"
+                "embedded://images/toggle-on.png"
             } else {
-                "images/toggle-off.png"
+                "embedded://images/toggle-off.png"
             })),
             FocusPolicy::Block,
             Interaction::default(),
@@ -58,12 +58,16 @@ impl DuiTemplate for ToggleTemplate {
 
                     if toggle.0 {
                         toggle.0 = false;
-                        image.image = asset_server.load("images/toggle-off.png");
-                        commands.send_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
+                        image.image = asset_server.load("embedded://images/toggle-off.png");
+                        commands.send_event(SystemAudio(
+                            "embedded://sounds/ui/toggle_disable.wav".to_owned(),
+                        ));
                     } else {
                         toggle.0 = true;
-                        image.image = asset_server.load("images/toggle-on.png");
-                        commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+                        image.image = asset_server.load("embedded://images/toggle-on.png");
+                        commands.send_event(SystemAudio(
+                            "embedded://sounds/ui/toggle_enable.wav".to_owned(),
+                        ));
                     }
 
                     commands.entity(id).try_insert(DataChanged);

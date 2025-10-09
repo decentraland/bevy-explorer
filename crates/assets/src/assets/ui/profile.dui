@@ -17,7 +17,7 @@
             <space />
             <div id="wallet">
                 <button id="connect-wallet-button" label="Connect wallet" onclick="@connect-wallet" />
-                <button img="images/redx.png" onclick="@close-settings" image-width="4.4vmin" image-height="4.4vmin" />
+                <button img="embedded://images/redx.png" onclick="@close-settings" image-width="4.4vmin" image-height="4.4vmin" />
             </div>
         </div>
         <hr-thin />

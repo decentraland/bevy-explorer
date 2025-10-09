@@ -580,7 +580,7 @@ fn play_current_emote(
                         data: CollectibleData::<Emote> {
                             hash: hash.to_owned(),
                             urn: active_emote.urn.as_str().to_owned(),
-                            thumbnail: ipfas.asset_server().load("images/redx.png"),
+                            thumbnail: ipfas.asset_server().load("embedded://images/redx.png"),
                             available_representations: HashSet::from_iter([bodyshape.to_owned()]),
                             name: active_emote.urn.to_string(),
                             description: active_emote.urn.to_string(),

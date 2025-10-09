@@ -7,7 +7,7 @@
 }
 #import bevy_render::globals::Globals;
 
-#import "shaders/simplex.wgsl"::simplex_noise_3d
+#import "embedded://shaders/simplex.wgsl"::simplex_noise_3d
 
 @group(0) @binding(1) var<uniform> globals: Globals;
 

@@ -331,7 +331,7 @@ fn render_map(
                     .spawn(BoundedNodeBundle {
                         z_index: ZIndex(8),
                         bounded: BoundedNode {
-                            image: Some(asset_server.load("images/cursor.png")),
+                            image: Some(asset_server.load("embedded://images/cursor.png")),
                             ..Default::default()
                         },
                         ..Default::default()
@@ -353,7 +353,7 @@ fn render_map(
                     .spawn(BoundedNodeBundle {
                         z_index: ZIndex(7),
                         bounded: BoundedNode {
-                            image: Some(asset_server.load("images/you_are_here.png")),
+                            image: Some(asset_server.load("embedded://images/you_are_here.png")),
                             ..Default::default()
                         },
                         ..Default::default()

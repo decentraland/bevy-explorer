@@ -121,7 +121,7 @@ async function initEngine() {
   try {
     const compiledModule = await WebAssembly.compileStreaming(fetch(wasmUrl));
 
-    const initialMemoryPages = 640; // setting initial memory high causes malloc failures
+    const initialMemoryPages = 1280; // setting initial memory high causes malloc failures
     const maximumMemoryPages = 65536;
     const sharedMemory = new WebAssembly.Memory({
       initial: initialMemoryPages,

@@ -1334,7 +1334,7 @@ fn animate_ready_scene(
                     .scaled_by(Vec3::splat(PARCEL_SIZE)),
             ),
             materials.add(StandardMaterial {
-                base_color_texture: Some(asset_server.load("images/grid.png")),
+                base_color_texture: Some(asset_server.load("embedded://images/grid.png")),
                 ..Default::default()
             }),
         ));
@@ -1488,7 +1488,7 @@ pub struct LoadingMaterial {
 
 impl Material for LoadingMaterial {
     fn fragment_shader() -> bevy::render::render_resource::ShaderRef {
-        ShaderRef::Path("shaders/loading.wgsl".into())
+        ShaderRef::Path("embedded://shaders/loading.wgsl".into())
     }
 
     fn alpha_mode(&self) -> AlphaMode {

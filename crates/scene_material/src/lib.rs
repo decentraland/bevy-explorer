@@ -238,11 +238,11 @@ mod test {
 
 impl MaterialExtension for SceneBound {
     fn fragment_shader() -> bevy::render::render_resource::ShaderRef {
-        ShaderRef::Path("shaders/bound_material.wgsl".into())
+        ShaderRef::Path("embedded://shaders/bound_material.wgsl".into())
     }
 
     fn prepass_fragment_shader() -> ShaderRef {
-        ShaderRef::Path("shaders/bound_prepass.wgsl".into())
+        ShaderRef::Path("embedded://shaders/bound_prepass.wgsl".into())
     }
 
     fn specialize(
@@ -267,7 +267,7 @@ impl MaterialExtension for SceneBound {
 
 impl ImposterBakeMaterialExtension for SceneBound {
     fn imposter_fragment_shader() -> bevy::render::render_resource::ShaderRef {
-        "shaders/bound_material_baker.wgsl".into()
+        "embedded://shaders/bound_material_baker.wgsl".into()
     }
 }
 pub struct SceneBoundPlugin;

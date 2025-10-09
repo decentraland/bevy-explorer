@@ -95,7 +95,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, ui_root: Res<Sy
     // profile button
     let button = commands
         .spawn((
-            ImageNode::new(asset_server.load("images/chat_button.png")),
+            ImageNode::new(asset_server.load("embedded://images/chat_button.png")),
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::VMin(BUTTON_SCALE * 3.5),
@@ -110,12 +110,14 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, ui_root: Res<Sy
                 |mut commands: Commands, mut q: Query<&mut Node, With<ChatboxContainer>>| {
                     if let Ok(mut style) = q.single_mut() {
                         style.display = if style.display == Display::Flex {
-                            commands
-                                .send_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
+                            commands.send_event(SystemAudio(
+                                "embedded://sounds/ui/toggle_disable.wav".to_owned(),
+                            ));
                             Display::None
                         } else {
-                            commands
-                                .send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+                            commands.send_event(SystemAudio(
+                                "embedded://sounds/ui/toggle_enable.wav".to_owned(),
+                            ));
                             Display::Flex
                         };
                     }
@@ -145,7 +147,9 @@ fn keyboard_popup(
     if input_manager.just_down(SystemAction::Chat, InputPriority::None) {
         if let Ok(mut style) = container.single_mut() {
             if style.display == Display::None {
-                commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+                commands.send_event(SystemAudio(
+                    "embedded://sounds/ui/toggle_enable.wav".to_owned(),
+                ));
                 style.display = Display::Flex;
             };
         }
@@ -237,7 +241,9 @@ fn setup_chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<Du
             return;
         };
         style.display = Display::None;
-        commands.send_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
+        commands.send_event(SystemAudio(
+            "embedded://sounds/ui/toggle_disable.wav".to_owned(),
+        ));
     };
 
     let props = DuiProps::new()
@@ -362,7 +368,7 @@ fn make_log(commands: &mut Commands, asset_server: &AssetServer, log: SceneLogMe
             FontSize(0.0175),
             Text::new(message),
             TextFont {
-                font: asset_server.load("fonts/NotoSans-Bold.ttf"),
+                font: asset_server.load("embedded://fonts/NotoSans-Bold.ttf"),
                 font_size: 15.0,
                 ..Default::default()
             },
@@ -577,7 +583,7 @@ pub fn broadcast_nearby_chats(
         .filter(|ev| !ev.message.starts_with("/"))
     {
         commands.send_event(SystemAudio(
-            "sounds/ui/widget_chat_message_private_send.wav".to_owned(),
+            "embedded://sounds/ui/widget_chat_message_private_send.wav".to_owned(),
         ));
 
         for transport in transports.iter() {

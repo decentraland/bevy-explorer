@@ -57,7 +57,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, ui_root: Res<Sy
     // profile button
     let button = commands
         .spawn((
-            ImageNode::new(asset_server.load("images/profile_button.png")),
+            ImageNode::new(asset_server.load("embedded://images/profile_button.png")),
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::VMin(BUTTON_SCALE * 0.5),
@@ -74,7 +74,10 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, ui_root: Res<Sy
                     target.ty = None;
                 })
                 .pipe(ShowSettingsEvent(SettingsTab::Discover).send_value())
-                .pipe(SystemAudio("sounds/ui/mainmenu_widget_open.wav".to_owned()).send_value()),
+                .pipe(
+                    SystemAudio("embedded://sounds/ui/mainmenu_widget_open.wav".to_owned())
+                        .send_value(),
+                ),
             ),
         ))
         .id();
@@ -293,10 +296,14 @@ pub fn close_settings(
             Some(OnCloseEvent::ChangeRealm(cr_ev, rpc_ev)) => {
                 cr.write(cr_ev.clone());
                 rpc.write(rpc_ev.clone());
-                commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+                commands.send_event(SystemAudio(
+                    "embedded://sounds/ui/toggle_enable.wav".to_owned(),
+                ));
             }
             _ => {
-                commands.send_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
+                commands.send_event(SystemAudio(
+                    "embedded://sounds/ui/toggle_disable.wav".to_owned(),
+                ));
             }
         }
     }

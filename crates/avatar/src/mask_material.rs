@@ -15,7 +15,7 @@ impl Plugin for MaskMaterialPlugin {
 
 impl Material for MaskMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/mask_material.wgsl".into()
+        "embedded://shaders/mask_material.wgsl".into()
     }
 
     fn alpha_mode(&self) -> AlphaMode {

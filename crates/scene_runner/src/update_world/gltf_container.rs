@@ -538,7 +538,7 @@ fn update_ready_gltfs(
                             // animation_roots.insert((spawned_ent, name.clone()));
                             has_animations = true;
                             commands.entity(spawned_ent).remove::<AnimationPlayer>();
-                            *tracker.0.entry("Animations").or_default() += 1;
+                            *tracker.0.entry("embedded://animations").or_default() += 1;
                         }
                     }
 
