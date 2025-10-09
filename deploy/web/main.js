@@ -176,8 +176,9 @@ async function initEngine() {
     window.spawn_and_init_sandbox = async () => {
       var timeoutId;
       return new Promise((resolve, _reject) => {
-        // var sandboxWorker = new Worker(sandboxJs, { type: "module" });
-        var sandboxWorker = new Worker("sandbox_worker.js", { type: "module" });
+        const basePath = window.location.pathname.replace(/\/$/, ''); // removes trailing slash if present
+        const sandboxWorkerPath = new URL(`${basePath}/sandbox_worker.js`, window.location.origin);
+        var sandboxWorker = new Worker(sandboxWorkerPath, { type: "module" });
 
         var timeoutCount = 0;
         let logTimeout = () => {
