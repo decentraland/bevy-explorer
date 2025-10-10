@@ -848,6 +848,21 @@ fn layout_scene_ui(
                     None
                 } else if link.scroll_entity.is_some() == ui_transform.scroll {
                     debug!("{scene_id} reuse linked {:?}", link.ui_entity);
+                    if let Some(scroll_entity) = link.scroll_entity {
+                        commands.entity(scroll_entity).insert(
+                            Scrollable::new()
+                                .with_direction(ScrollDirection::Both(
+                                    StartPosition::Explicit(0.0),
+                                    StartPosition::Explicit(0.0),
+                                ))
+                                .with_drag(true)
+                                .with_wheel(true)
+                                .with_bars_visible(
+                                    ui_transform.scroll_h_visible,
+                                    ui_transform.scroll_v_visible,
+                                ),
+                        );
+                    }
                     Some(link)
                 } else {
                     // queue to despawn
@@ -1010,6 +1025,7 @@ fn layout_scene_ui(
                 // update inner style
                 if link.content_entity != link.ui_entity {
                     let new_style = style.clone();
+                    let padding = std::mem::take(&mut style.padding);
                     commands.entity(link.content_entity).modify_component(
                         move |style: &mut Node| {
                             style.align_content = new_style.align_content;
@@ -1018,14 +1034,9 @@ fn layout_scene_ui(
                             style.flex_direction = new_style.flex_direction;
                             style.justify_content = new_style.justify_content;
                             style.overflow = new_style.overflow;
+                            style.padding = padding;
                         },
                     );
-                    let padding = std::mem::take(&mut style.padding);
-                    commands
-                        .entity(link.scroll_entity.unwrap())
-                        .modify_component(move |style: &mut Node| {
-                            style.padding = padding;
-                        });
                 }
 
                 let mut cmds = commands.entity(link.ui_entity);
