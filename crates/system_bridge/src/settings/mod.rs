@@ -277,7 +277,7 @@ pub struct SettingInfo {
 pub struct Setting {
     pub info: SettingInfo,
     apply: Option<
-        Box<dyn Fn(&mut AppConfig, f32) -> Result<(), anyhow::Error> + Send + Sync + 'static>,
+        Box<dyn Fn(&mut AppConfig, f32) -> Result<f32, anyhow::Error> + Send + Sync + 'static>,
     >,
 }
 
@@ -313,15 +313,17 @@ impl Settings {
             .apply
             .take()
             .unwrap();
-        let res = (apply)(&mut inner.config_copy, value);
-        inner
+        let res = (apply)(&mut inner.config_copy, value)?;
+        let setting = inner
             .settings
             .iter_mut()
             .find(|s| s.info.name == name)
-            .unwrap()
-            .apply = Some(apply);
+            .unwrap();
+
+        setting.apply = Some(apply);
+        setting.info.value = res;
         inner.updated = true;
-        res
+        Ok(())
     }
 
     pub fn add_int_setting<S: IntAppSetting>(&mut self) {
@@ -339,9 +341,10 @@ impl Settings {
                 step_size: S::scale().abs(),
             },
             apply: Some(Box::new(
-                |config: &mut AppConfig, value: f32| -> Result<(), anyhow::Error> {
-                    S::from_int((value / S::scale()) as i32).save(config);
-                    Ok(())
+                |config: &mut AppConfig, value: f32| -> Result<f32, anyhow::Error> {
+                    let new_value = S::from_int((value / S::scale()) as i32);
+                    new_value.save(config);
+                    Ok(new_value.value() as f32 * S::scale())
                 },
             )),
         });
@@ -381,12 +384,12 @@ impl Settings {
                 step_size: 1.0,
             },
             apply: Some(Box::new(
-                |config: &mut AppConfig, value: f32| -> Result<(), anyhow::Error> {
+                |config: &mut AppConfig, value: f32| -> Result<f32, anyhow::Error> {
                     S::variants()
                         .get(value as usize)
                         .ok_or(anyhow::anyhow!("invalid variant index"))?
                         .save(config);
-                    Ok(())
+                    Ok(value as usize as f32)
                 },
             )),
         });
