@@ -289,3 +289,14 @@ pub fn op_get_permission_types(_: &WorkerContext) -> js_sys::Array {
         .map(|v| serde_wasm_bindgen::to_value(&v).unwrap())
         .collect()
 }
+
+#[wasm_bindgen]
+pub fn op_set_interactable_area(
+    state: &WorkerContext,
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+) {
+    dcl::js::system_api::op_set_interactable_area(state.rc(), left, top, right, bottom);
+}

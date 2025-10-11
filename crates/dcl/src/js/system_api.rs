@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use bevy::log::debug;
+use bevy::{log::debug, math::Vec4};
 use common::{
     inputs::{Action, BindingsData, InputIdentifier, SystemActionEvent},
     profile::SerializedProfile,
@@ -640,4 +640,19 @@ pub fn op_get_permission_types() -> Vec<PermissionTypeDetail> {
             active: ty.active().to_owned(),
         })
         .collect()
+}
+
+pub fn op_set_interactable_area(
+    state: Rc<RefCell<impl State>>,
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+) {
+    let _ = state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::SetInteractableArea(Vec4::new(
+            left, top, right, bottom,
+        )));
 }

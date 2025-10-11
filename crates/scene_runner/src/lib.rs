@@ -5,6 +5,7 @@ use std::{
     time::Duration,
 };
 
+use system_bridge::SystemApi;
 use web_time::SystemTime;
 
 use bevy::{
@@ -208,6 +209,19 @@ pub struct SceneLoopSchedule {
     sleeper: SpinSleeper,
 }
 
+// left px, top px, right px, bottom px
+#[derive(Default, Resource)]
+pub struct InteractableArea(pub Option<Vec4>);
+
+impl InteractableArea {
+    pub fn get_or_default(&self, width: f32, height: f32) -> Vec4 {
+        self.0.unwrap_or_else(|| {
+            let vmin = width.min(height);
+            Vec4::new(vmin * 0.27, vmin * 0.06, vmin * 0.12, vmin * 0.06)
+        })
+    }
+}
+
 #[derive(ScheduleLabel, Hash, PartialEq, Eq, Clone, Copy, Debug)]
 pub struct SceneLoopLabel;
 
@@ -217,6 +231,7 @@ impl Plugin for SceneRunnerPlugin {
         app.init_resource::<DebugInfo>();
         app.init_resource::<Toasts>();
         app.init_resource::<TestingData>();
+        app.init_resource::<InteractableArea>();
 
         let (sender, receiver) = sync_channel(1000);
         app.insert_resource(SceneUpdates {
@@ -287,6 +302,7 @@ impl Plugin for SceneRunnerPlugin {
 
         app.add_systems(Update, update_scene_room.in_set(SceneSets::PostLoop));
         app.add_systems(Update, log_app_errors.in_set(SceneSets::PostLoop));
+        app.add_systems(Update, set_ui_constraints.in_set(SceneSets::PostLoop));
     }
 }
 
@@ -643,6 +659,7 @@ fn send_scene_updates(
         &mut RendererSceneContext,
         &SceneThreadHandle,
         &GlobalTransform,
+        Has<SuperUserScene>,
     )>,
     mut updates: ResMut<SceneUpdates>,
     time: Res<Time>,
@@ -652,6 +669,7 @@ fn send_scene_updates(
     window: Query<&Window, With<PrimaryWindow>>,
     realm: Res<CurrentRealm>,
     data_channel: Res<SceneRoomConnection>,
+    interactable_area: Res<InteractableArea>,
 ) {
     let updates = &mut *updates;
 
@@ -663,7 +681,7 @@ fn send_scene_updates(
         return;
     };
 
-    let (_, mut context, handle, scene_transform) = scenes.get_mut(ent).unwrap();
+    let (_, mut context, handle, scene_transform, is_super) = scenes.get_mut(ent).unwrap();
 
     // collect components
 
@@ -755,14 +773,16 @@ fn send_scene_updates(
 
     // add canvas info
     let canvas_info = if let Ok(window) = window.single() {
-        let vmin = window.resolution.width().min(window.resolution.height());
+        let width = window.resolution.width();
+        let height = window.resolution.height();
+        let interactable = interactable_area.get_or_default(width, height);
 
-        if config.constrain_scene_ui {
+        if config.constrain_scene_ui && !is_super {
             // we optionally misreport window size and constrain scene ui directly as nobody uses this info properly
             PbUiCanvasInformation {
                 device_pixel_ratio: window.resolution.scale_factor(),
-                width: (window.resolution.width() - 0.39 * vmin) as i32,
-                height: (window.resolution.height() - 0.12 * vmin) as i32,
+                width: (width - interactable.x - interactable.z) as i32,
+                height: (height - interactable.y - interactable.w) as i32,
                 interactable_area: Some(BorderRect {
                     top: 0.0,
                     left: 0.0,
@@ -773,13 +793,13 @@ fn send_scene_updates(
         } else {
             PbUiCanvasInformation {
                 device_pixel_ratio: window.resolution.scale_factor(),
-                width: (window.resolution.width()) as i32,
-                height: (window.resolution.height()) as i32,
+                width: width as i32,
+                height: height as i32,
                 interactable_area: Some(BorderRect {
-                    top: 0.06 * vmin,
-                    left: 0.27 * vmin,  // minimap
-                    right: 0.12 * vmin, // icons
-                    bottom: 0.06 * vmin,
+                    top: interactable.x,
+                    left: interactable.y,
+                    right: interactable.z,
+                    bottom: interactable.w,
                 }),
             }
         }
@@ -1021,5 +1041,16 @@ fn update_scene_room(
 fn log_app_errors(mut toaster: Toaster, mut errors: EventReader<AppError>, frame: Res<FrameCount>) {
     for (i, error) in errors.read().enumerate() {
         toaster.add_toast(format!("app-error {}-{i}", frame.0), format!("{error:?}"));
+    }
+}
+
+fn set_ui_constraints(
+    mut events: EventReader<SystemApi>,
+    mut interactable_area: ResMut<InteractableArea>,
+) {
+    for ev in events.read() {
+        if let SystemApi::SetInteractableArea(area) = ev {
+            interactable_area.0 = Some(*area);
+        }
     }
 }

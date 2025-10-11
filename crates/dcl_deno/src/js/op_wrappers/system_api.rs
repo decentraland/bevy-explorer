@@ -54,6 +54,7 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_set_permanent_permission(),
             op_get_permanent_permissions(),
             op_get_permission_types(),
+            op_set_interactable_area(),
         ]
     } else {
         Vec::default()
@@ -318,4 +319,15 @@ pub async fn op_get_permanent_permissions(
 #[serde]
 pub fn op_get_permission_types() -> Vec<PermissionTypeDetail> {
     dcl::js::system_api::op_get_permission_types()
+}
+
+#[op2(fast)]
+pub fn op_set_interactable_area(
+    state: Rc<RefCell<OpState>>,
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+) {
+    dcl::js::system_api::op_set_interactable_area(state, left, top, right, bottom);
 }
