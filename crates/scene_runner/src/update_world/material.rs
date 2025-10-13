@@ -91,25 +91,23 @@ impl MaterialDefinition {
                     AlphaMode::Opaque
                 };
 
-                let inner_texture = unlit
-                    .texture
-                    .as_ref()
-                    .and_then(|t| t.tex.as_ref())
-                    .and_then(|t| match t {
-                        texture_union::Tex::Texture(texture) => Some(texture),
-                        _ => None,
-                    });
-                let uv_transform = Affine2 {
-                    matrix2: Mat2::from_diagonal(
-                        inner_texture
-                            .and_then(|t| t.tiling)
-                            .map(|t| Vec2::from(&t))
-                            .unwrap_or(Vec2::ONE),
-                    ),
-                    translation: inner_texture
-                        .and_then(|t| t.offset)
-                        .map(|o| Vec2::from(&o) * Vec2::new(1.0, -1.0))
-                        .unwrap_or(Vec2::ZERO),
+                let uv_transform = match &unlit.texture {
+                    Some(TextureUnion {
+                        tex: Some(texture_union::Tex::Texture(inner_texture)),
+                        ..
+                    }) => Affine2 {
+                        matrix2: Mat2::from_diagonal(
+                            inner_texture
+                                .tiling
+                                .map(|t| Vec2::from(&t))
+                                .unwrap_or(Vec2::ONE),
+                        ),
+                        translation: inner_texture
+                            .offset
+                            .map(|o| Vec2::from(&o) * Vec2::new(1.0, -1.0))
+                            .unwrap_or(Vec2::ZERO),
+                    },
+                    _ => Affine2::IDENTITY,
                 };
 
                 (
@@ -175,6 +173,25 @@ impl MaterialDefinition {
                     Color::BLACK.to_linear()
                 };
 
+                let uv_transform = match &pbr.texture {
+                    Some(TextureUnion {
+                        tex: Some(texture_union::Tex::Texture(inner_texture)),
+                        ..
+                    }) => Affine2 {
+                        matrix2: Mat2::from_diagonal(
+                            inner_texture
+                                .tiling
+                                .map(|t| Vec2::from(&t))
+                                .unwrap_or(Vec2::ONE),
+                        ),
+                        translation: inner_texture
+                            .offset
+                            .map(|o| Vec2::from(&o) * Vec2::new(1.0, -1.0))
+                            .unwrap_or(Vec2::ZERO),
+                    },
+                    _ => Affine2::IDENTITY,
+                };
+
                 (
                     StandardMaterial {
                         base_color,
@@ -184,6 +201,7 @@ impl MaterialDefinition {
                         perceptual_roughness: pbr.roughness.unwrap_or(base.perceptual_roughness),
                         // TODO specular intensity
                         alpha_mode,
+                        uv_transform,
                         ..base.clone()
                     },
                     pbr.texture.clone(),
