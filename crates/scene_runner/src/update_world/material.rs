@@ -22,7 +22,10 @@ use crate::{
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
-        common::{texture_union, TextureFilterMode, TextureUnion, TextureWrapMode, Vector2},
+        common::{
+            texture_union::{self, Tex},
+            TextureFilterMode, TextureUnion, TextureWrapMode, Vector2,
+        },
         sdk::components::{pb_material, MaterialTransparencyMode, PbMaterial},
         Color3BevyToDcl, Color3DclToBevy, Color4BevyToDcl, Color4DclToBevy,
     },
@@ -60,6 +63,20 @@ impl From<PbMaterial> for PbMaterialComponent {
 }
 
 static DEFAULT_BASE: OnceLock<StandardMaterial> = OnceLock::new();
+
+fn tex_is_present(tex: &Option<TextureUnion>) -> bool {
+    tex.as_ref().is_some_and(|tex| {
+        match &tex.tex {
+            Some(Tex::Texture(inner_texture)) => {
+                // creator hub likes to emit textures with empty sources,
+                // then we have to pretend they are not specified
+                !inner_texture.src.is_empty()
+            }
+            Some(_) => true,
+            None => false,
+        }
+    })
+}
 
 impl MaterialDefinition {
     pub fn from_base_and_material(base: Option<&BaseMaterial>, pb_material: &PbMaterial) -> Self {
@@ -124,8 +141,8 @@ impl MaterialDefinition {
                 )
             }
             Some(pb_material::Material::Pbr(pbr)) => {
-                if pbr.alpha_texture.is_some()
-                    && pbr.texture.is_some()
+                if tex_is_present(&pbr.alpha_texture)
+                    && tex_is_present(&pbr.texture)
                     && pbr.alpha_texture != pbr.texture
                 {
                     debug!("separate alpha texture not supported");
@@ -154,7 +171,7 @@ impl MaterialDefinition {
                         AlphaMode::Blend
                     }
                     Some(MaterialTransparencyMode::MtmAuto) | None => {
-                        if base_color.alpha() < 1.0 || pbr.alpha_texture.is_some() {
+                        if base_color.alpha() < 1.0 || tex_is_present(&pbr.alpha_texture) {
                             AlphaMode::Blend
                         } else if let Some(test) = pbr.alpha_test {
                             AlphaMode::Mask(test)
