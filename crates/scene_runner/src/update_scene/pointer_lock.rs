@@ -124,7 +124,7 @@ pub fn update_pointer_lock(
         let [left, top, right, bottom] = if config.constrain_scene_ui {
             interactable_area.get_or_default(real_window_size.x, real_window_size.y)
         } else {
-            Vec4::new(0.0, 0.0, real_window_size.x, real_window_size.y)
+            Vec4::ZERO
         }
         .to_array();
 
