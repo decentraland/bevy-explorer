@@ -12,6 +12,7 @@ use bevy::{
     prelude::*,
     render::render_resource::Extent3d,
     ui::{CameraCursorPosition, FocusPolicy},
+    window::PrimaryWindow,
 };
 use bevy_console::ConsoleCommand;
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
@@ -26,7 +27,7 @@ use crate::{
     initialize_scene::{LiveScenes, SuperUserScene},
     renderer_context::RendererSceneContext,
     update_world::scene_ui::ui_pointer::manage_scene_ui_interact,
-    ContainerEntity, ContainingScene, SceneEntity, SceneSets,
+    ContainerEntity, ContainingScene, InteractableArea, SceneEntity, SceneSets,
 };
 use common::{
     rpc::RpcCall,
@@ -562,8 +563,26 @@ fn create_ui_roots(
     )>,
     images: ResMut<Assets<Image>>,
     hidden_uis: Res<HiddenSceneUis>,
+    interactable_area: Res<InteractableArea>,
+    window: Query<&Window, With<PrimaryWindow>>,
 ) {
     let images = images.into_inner();
+
+    let (width, height) = window
+        .single()
+        .map(|w| (w.width(), w.height()))
+        .unwrap_or_default();
+    let interactable_area_px = interactable_area.get_or_default(width, height);
+
+    let constrained_root_style = Node {
+        position_type: PositionType::Absolute,
+        left: Val::Px(interactable_area_px.x),
+        top: Val::Px(interactable_area_px.y),
+        right: Val::Px(interactable_area_px.z),
+        bottom: Val::Px(interactable_area_px.w),
+        overflow: Overflow::clip(),
+        ..Default::default()
+    };
 
     let current_scenes = player
         .single()
@@ -589,7 +608,9 @@ fn create_ui_roots(
             ZOrder::SceneUi
         };
 
-        if current_scenes.contains(&ent) && (maybe_link.is_none() || config.is_changed()) {
+        if current_scenes.contains(&ent)
+            && (maybe_link.is_none() || config.is_changed() || interactable_area.is_changed())
+        {
             let display = if maybe_super.is_some()
                 || hidden_uis
                     .scenes
@@ -602,16 +623,10 @@ fn create_ui_roots(
                 Display::None
             };
 
-            let root_style = if config.constrain_scene_ui {
+            let root_style = if config.constrain_scene_ui && maybe_super.is_none() {
                 Node {
                     display,
-                    position_type: PositionType::Absolute,
-                    left: Val::VMin(27.0),
-                    right: Val::VMin(12.0),
-                    top: Val::VMin(6.0),
-                    bottom: Val::VMin(6.0),
-                    overflow: Overflow::clip(),
-                    ..Default::default()
+                    ..constrained_root_style.clone()
                 }
             } else {
                 Node {

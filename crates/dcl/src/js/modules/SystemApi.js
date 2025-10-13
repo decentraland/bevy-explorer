@@ -302,3 +302,7 @@ module.exports.getPermanentPermissions = async function(body) {
 module.exports.getPermissionTypes = function() {
     return Deno.core.ops.getPermissionTypes();
 }
+
+module.exports.setInteractableArea = function(body) {
+    Deno.core.ops.op_set_interactable_area(body.left, body.top, body.right, body.bottom);
+}

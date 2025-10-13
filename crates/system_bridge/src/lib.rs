@@ -6,6 +6,7 @@ use bevy::{
     app::{AppExit, Plugin, Update},
     ecs::{event::EventReader, system::Local},
     log::debug,
+    math::Vec4,
     prelude::{Event, EventWriter, ResMut, Resource},
 };
 use bevy_console::{ConsoleCommandEntered, PrintConsoleLine};
@@ -109,6 +110,7 @@ pub enum SystemApi {
         PermissionLevel,
         RpcResultSender<Vec<PermanentPermissionItem>>,
     ),
+    SetInteractableArea(Vec4),
 }
 
 #[derive(Serialize, Deserialize, Clone)]
