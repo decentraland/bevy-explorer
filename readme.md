@@ -4,7 +4,7 @@ A forward-looking implementation of the Decentraland protocol.
 
 visit our [Releases](https://github.com/decentraland/bevy-explorer/releases/latest) page for the latest client downloads.
 
-![screenshots](assets/images/screenshots/montage.png)
+![screenshots](montage.png)
 
 This implementation uses [rust](https://www.rust-lang.org/) and the [Bevy](https://bevyengine.org) engine, and targets desktop clients.
 
