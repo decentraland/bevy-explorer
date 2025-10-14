@@ -8,7 +8,6 @@ use bevy::{
     },
     math::Affine2,
     pbr::NotShadowCaster,
-    platform::collections::HashSet,
     prelude::*,
     render::primitives::Aabb,
 };
@@ -259,7 +258,7 @@ impl Plugin for MaterialDefinitionPlugin {
 
         app.add_systems(
             Update,
-            (update_materials, update_bias, fix_failed_materials)
+            (update_materials, update_bias, update_loading_materials)
                 .chain()
                 .in_set(SceneSets::PostLoop)
                 // we must run after update_mesh as that inserts a default material if none is present
@@ -421,6 +420,9 @@ impl TextureResolver<'_, '_> {
     }
 }
 
+#[derive(Component)]
+pub struct MeshMaterial3dLoading(Handle<SceneMaterial>);
+
 #[allow(clippy::type_complexity)]
 fn update_materials(
     mut commands: Commands,
@@ -540,7 +542,7 @@ fn update_materials(
         let mut commands = commands.entity(ent);
         commands
             .remove::<RetryMaterial>()
-            .try_insert(MeshMaterial3d(
+            .try_insert(MeshMaterial3dLoading(
                 materials.add(SceneMaterial {
                     base: StandardMaterial {
                         base_color_texture: base_color_texture
@@ -595,24 +597,16 @@ fn update_materials(
     }
 }
 
-fn fix_failed_materials(
+fn update_loading_materials(
+    mut commands: Commands,
     mut mats: ResMut<Assets<SceneMaterial>>,
     asset_server: Res<AssetServer>,
-    mut events: EventReader<AssetEvent<SceneMaterial>>,
-    mut pending: Local<HashSet<AssetId<SceneMaterial>>>,
+    q: Query<(Entity, &MeshMaterial3dLoading)>,
 ) {
-    for ev in events.read() {
-        debug!("event: {ev:?}");
-        let id = match ev {
-            AssetEvent::Added { id } | AssetEvent::Modified { id } => id,
-            _ => continue,
-        };
-        pending.insert(*id);
-    }
-
-    pending.retain(|h_mat| {
-        let Some(mat) = mats.get(*h_mat) else {
-            return false;
+    for (entity, loading) in q.iter() {
+        let h_mat = loading.0.id();
+        let Some(mat) = mats.get(h_mat) else {
+            continue;
         };
 
         #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -643,13 +637,11 @@ fn fix_failed_materials(
         .reduce(State::max)
         .unwrap();
 
-        debug!("{:?} -> {:?}", h_mat, state);
-
-        match state {
-            State::Ok => false,
-            State::Pending => true,
+        let ready = match state {
+            State::Ok => true,
+            State::Pending => false,
             State::Failed => {
-                let mat = mats.get_mut(*h_mat).unwrap();
+                let mat = mats.get_mut(h_mat).unwrap();
 
                 for item in [
                     &mut mat.base.base_color_texture,
@@ -673,8 +665,16 @@ fn fix_failed_materials(
                 }
                 true
             }
+        };
+
+        if ready {
+            if let Ok(mut commands) = commands.get_entity(entity) {
+                commands
+                    .remove::<MeshMaterial3dLoading>()
+                    .insert(MeshMaterial3d(loading.0.clone()));
+            }
         }
-    });
+    }
 }
 
 #[allow(clippy::type_complexity)]
