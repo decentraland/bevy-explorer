@@ -255,7 +255,7 @@ where
                 file_path.push_str(stripped_file_name);
                 Ok(IpfsType::ContentFile {
                     content_hash,
-                    file_path: file_path,
+                    file_path,
                 })
             }
             "$entity" => {
