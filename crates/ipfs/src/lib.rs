@@ -122,7 +122,7 @@ impl EntityDefinitionLoader {
         };
         let content =
             ContentMap(HashMap::from_iter(definition_json.content.into_iter().map(
-                |ipfs| (normalize_path(&ipfs.file), ipfs.hash),
+                |ipfs| (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash),
             )));
         let id = definition_json.id.unwrap_or_else(id_fn);
 
@@ -200,7 +200,7 @@ pub struct ContentMap(HashMap<String, String>);
 
 impl ContentMap {
     pub fn hash<'a>(&'a self, file: &str) -> Option<Cow<'a, str>> {
-        self.0.get(file).map(Into::into)
+        self.0.get(file.to_lowercase().as_str()).map(Into::into)
     }
 
     pub fn files(&self) -> impl Iterator<Item = &String> {
@@ -216,7 +216,7 @@ impl ContentMap {
     }
 
     pub fn with(mut self, file: String, hash: String) -> Self {
-        self.0.insert(file, hash);
+        self.0.insert(file.to_lowercase(), hash);
         self
     }
 }
@@ -964,7 +964,7 @@ impl IpfsIo {
                             metadata: entity.metadata,
                             content: ContentMap(HashMap::from_iter(
                                 entity.content.into_iter().map(|ipfs| {
-                                    (normalize_path(&ipfs.file), ipfs.hash)
+                                    (normalize_path(&ipfs.file).to_lowercase(), ipfs.hash)
                                 }),
                             )),
                         });
