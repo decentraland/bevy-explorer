@@ -8,6 +8,7 @@ use bevy::{
     },
     math::Affine2,
     pbr::NotShadowCaster,
+    platform::collections::HashSet,
     prelude::*,
     render::primitives::Aabb,
 };
@@ -258,7 +259,7 @@ impl Plugin for MaterialDefinitionPlugin {
 
         app.add_systems(
             Update,
-            (update_materials, update_bias)
+            (update_materials, update_bias, fix_failed_materials)
                 .chain()
                 .in_set(SceneSets::PostLoop)
                 // we must run after update_mesh as that inserts a default material if none is present
@@ -592,6 +593,88 @@ fn update_materials(
             materials.get_mut(touch);
         }
     }
+}
+
+fn fix_failed_materials(
+    mut mats: ResMut<Assets<SceneMaterial>>,
+    asset_server: Res<AssetServer>,
+    mut events: EventReader<AssetEvent<SceneMaterial>>,
+    mut pending: Local<HashSet<AssetId<SceneMaterial>>>,
+) {
+    for ev in events.read() {
+        debug!("event: {ev:?}");
+        let id = match ev {
+            AssetEvent::Added { id } | AssetEvent::Modified { id } => id,
+            _ => continue,
+        };
+        pending.insert(*id);
+    }
+
+    pending.retain(|h_mat| {
+        let Some(mat) = mats.get(*h_mat) else {
+            return false;
+        };
+
+        #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+        pub enum State {
+            Ok,
+            Failed,
+            Pending,
+        }
+
+        let state = [
+            &mat.base.base_color_texture,
+            &mat.base.normal_map_texture,
+            &mat.base.metallic_roughness_texture,
+            &mat.base.emissive_texture,
+        ]
+        .into_iter()
+        .map(|maybe_texture| {
+            let Some(h_texture) = maybe_texture.as_ref() else {
+                return State::Ok;
+            };
+            match asset_server.load_state(h_texture.id()) {
+                bevy::asset::LoadState::NotLoaded => State::Pending, // video or avatar texture
+                bevy::asset::LoadState::Loading => State::Pending,
+                bevy::asset::LoadState::Loaded => State::Ok,
+                bevy::asset::LoadState::Failed(_) => State::Failed,
+            }
+        })
+        .reduce(State::max)
+        .unwrap();
+
+        debug!("{:?} -> {:?}", h_mat, state);
+
+        match state {
+            State::Ok => false,
+            State::Pending => true,
+            State::Failed => {
+                let mat = mats.get_mut(*h_mat).unwrap();
+
+                for item in [
+                    &mut mat.base.base_color_texture,
+                    &mut mat.base.normal_map_texture,
+                    &mut mat.base.metallic_roughness_texture,
+                    &mut mat.base.emissive_texture,
+                ]
+                .into_iter()
+                {
+                    let Some(h_texture) = item.as_ref() else {
+                        continue;
+                    };
+                    if asset_server.load_state(h_texture.id()).is_failed() {
+                        warn!(
+                            "{:?} removing missing texture {:?}",
+                            h_mat,
+                            asset_server.get_path(h_texture)
+                        );
+                        *item = None;
+                    }
+                }
+                true
+            }
+        }
+    });
 }
 
 #[allow(clippy::type_complexity)]
