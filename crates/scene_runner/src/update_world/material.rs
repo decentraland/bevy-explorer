@@ -258,7 +258,7 @@ impl Plugin for MaterialDefinitionPlugin {
 
         app.add_systems(
             Update,
-            (update_materials, update_bias)
+            (update_materials, update_bias, update_loading_materials)
                 .chain()
                 .in_set(SceneSets::PostLoop)
                 // we must run after update_mesh as that inserts a default material if none is present
@@ -420,6 +420,9 @@ impl TextureResolver<'_, '_> {
     }
 }
 
+#[derive(Component)]
+pub struct MeshMaterial3dLoading(Handle<SceneMaterial>);
+
 #[allow(clippy::type_complexity)]
 fn update_materials(
     mut commands: Commands,
@@ -539,7 +542,7 @@ fn update_materials(
         let mut commands = commands.entity(ent);
         commands
             .remove::<RetryMaterial>()
-            .try_insert(MeshMaterial3d(
+            .try_insert(MeshMaterial3dLoading(
                 materials.add(SceneMaterial {
                     base: StandardMaterial {
                         base_color_texture: base_color_texture
@@ -590,6 +593,86 @@ fn update_materials(
             commands.entity(ent).insert(RetryMaterial(Vec::default()));
         } else {
             materials.get_mut(touch);
+        }
+    }
+}
+
+fn update_loading_materials(
+    mut commands: Commands,
+    mut mats: ResMut<Assets<SceneMaterial>>,
+    asset_server: Res<AssetServer>,
+    q: Query<(Entity, &MeshMaterial3dLoading)>,
+) {
+    for (entity, loading) in q.iter() {
+        let h_mat = loading.0.id();
+        let Some(mat) = mats.get(h_mat) else {
+            continue;
+        };
+
+        #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+        pub enum State {
+            Ok,
+            Failed,
+            Pending,
+        }
+
+        let state = [
+            &mat.base.base_color_texture,
+            &mat.base.normal_map_texture,
+            &mat.base.metallic_roughness_texture,
+            &mat.base.emissive_texture,
+        ]
+        .into_iter()
+        .map(|maybe_texture| {
+            let Some(h_texture) = maybe_texture.as_ref() else {
+                return State::Ok;
+            };
+            match asset_server.load_state(h_texture.id()) {
+                bevy::asset::LoadState::NotLoaded => State::Pending, // video or avatar texture
+                bevy::asset::LoadState::Loading => State::Pending,
+                bevy::asset::LoadState::Loaded => State::Ok,
+                bevy::asset::LoadState::Failed(_) => State::Failed,
+            }
+        })
+        .reduce(State::max)
+        .unwrap();
+
+        let ready = match state {
+            State::Ok => true,
+            State::Pending => false,
+            State::Failed => {
+                let mat = mats.get_mut(h_mat).unwrap();
+
+                for item in [
+                    &mut mat.base.base_color_texture,
+                    &mut mat.base.normal_map_texture,
+                    &mut mat.base.metallic_roughness_texture,
+                    &mut mat.base.emissive_texture,
+                ]
+                .into_iter()
+                {
+                    let Some(h_texture) = item.as_ref() else {
+                        continue;
+                    };
+                    if asset_server.load_state(h_texture.id()).is_failed() {
+                        warn!(
+                            "{:?} removing missing texture {:?}",
+                            h_mat,
+                            asset_server.get_path(h_texture)
+                        );
+                        *item = None;
+                    }
+                }
+                true
+            }
+        };
+
+        if ready {
+            if let Ok(mut commands) = commands.get_entity(entity) {
+                commands
+                    .remove::<MeshMaterial3dLoading>()
+                    .insert(MeshMaterial3d(loading.0.clone()));
+            }
         }
     }
 }
