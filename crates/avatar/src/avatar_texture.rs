@@ -5,6 +5,7 @@ use bevy::{
     app::Propagate,
     diagnostic::FrameCount,
     ecs::system::SystemParam,
+    math::FloatOrd,
     prelude::*,
     render::{
         camera::RenderTarget,
@@ -17,7 +18,6 @@ use bevy::{
             RenderLayers,
         },
     },
-    window::{EnabledButtons, WindowLevel, WindowRef, WindowResolution},
 };
 use bevy_dui::{DuiRegistry, DuiTemplate};
 use collectibles::{urn::CollectibleUrn, Emote};
@@ -91,11 +91,9 @@ impl PhotoBooth<'_, '_> {
             .id();
 
         let pending_target = if snapshot {
-            self.commands.entity(avatar).try_insert(SnapshotTimer(
-                self.frame.0 + SNAPSHOT_FRAMES,
-                None,
-                None,
-            ));
+            self.commands
+                .entity(avatar)
+                .try_insert(SnapshotTimer(self.frame.0 + SNAPSHOT_FRAMES));
             Some((
                 self.images.add(Image::default()),
                 self.images.add(Image::default()),
@@ -130,7 +128,7 @@ impl PhotoBooth<'_, '_> {
             if instance.pending_target.is_some() {
                 self.commands
                     .entity(*instance.avatar)
-                    .try_insert(SnapshotTimer(self.frame.0 + SNAPSHOT_FRAMES, None, None));
+                    .try_insert(SnapshotTimer(self.frame.0 + SNAPSHOT_FRAMES));
             }
         } else {
             error!("no booth avatar to update?");
@@ -301,7 +299,6 @@ fn update_booth_image(
 
 struct SnapshotResult {
     image: Image,
-    window: Entity,
     camera: Entity,
     target: Handle<Image>,
     source: Entity,
@@ -312,7 +309,7 @@ struct SnapshotResult {
 fn snapshot(
     mut commands: Commands,
     mut booths: Query<&mut BoothInstance>,
-    mut avatars: Query<(Entity, &mut SnapshotTimer, &AvatarSelection, &RenderLayers)>,
+    avatars: Query<(Entity, &SnapshotTimer, &AvatarSelection, &RenderLayers)>,
     frame: Res<FrameCount>,
     mut local_sender: Local<Option<tokio::sync::mpsc::Sender<SnapshotResult>>>,
     mut local_receiver: Local<Option<tokio::sync::mpsc::Receiver<SnapshotResult>>>,
@@ -325,82 +322,58 @@ fn snapshot(
     }
 
     // take any pending shots
-    for (ent, mut timer, _selection, render_layers) in avatars.iter_mut() {
+    for (ent, timer, _selection, render_layers) in avatars.iter() {
         if frame.0 >= timer.0 {
-            if timer.1.is_none() {
-                // Spawn secondary windows
-                let mut window = || {
-                    commands
-                        .spawn(Window {
-                            title: "snapshot window".to_owned(),
-                            resolution: WindowResolution::new(256.0, 256.0)
-                                .with_scale_factor_override(1.0),
-                            resizable: false,
-                            enabled_buttons: EnabledButtons {
-                                minimize: false,
-                                maximize: false,
-                                close: false,
-                            },
-                            decorations: false,
-                            focused: false,
-                            prevent_default_event_handling: true,
-                            ime_enabled: false,
-                            visible: false,
-                            window_level: WindowLevel::AlwaysOnBottom,
-                            ..Default::default()
-                        })
-                        .id()
-                };
+            let mut cam = |transform: Transform| -> (Entity, Handle<Image>) {
+                let mut image = Image::new_fill(
+                    Extent3d {
+                        width: 256,
+                        height: 256,
+                        depth_or_array_layers: 1,
+                    },
+                    TextureDimension::D2,
+                    &[0, 0, 0, 0],
+                    TextureFormat::bevy_default(),
+                    RenderAssetUsages::all(),
+                );
+                image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
+                let image = images.add(image);
 
-                let face_window = window();
-                let body_window = window();
-
-                timer.1 = Some(face_window);
-                timer.2 = Some(body_window);
-                // wait a frame after spawning, else it fails
-                continue;
-            }
-
-            let mut cam = |window: Entity, transform: Transform| {
-                commands
+                let cam = commands
                     .spawn((
                         Camera3d::default(),
                         transform,
                         Camera {
                             clear_color: ClearColorConfig::Custom(Color::NONE),
-                            target: RenderTarget::Window(WindowRef::Entity(window)),
+                            target: RenderTarget::Image(bevy::render::camera::ImageRenderTarget {
+                                handle: image.clone(),
+                                scale_factor: FloatOrd(1.0),
+                            }),
                             ..default()
                         },
                         render_layers.clone(),
                     ))
-                    .id()
+                    .id();
+                (cam, image)
             };
-
-            // second window cameras
-            let face_window = timer.1.take().unwrap();
-            let face_cam = cam(
-                face_window,
-                Transform::from_translation(Vec3::new(0.0, 1.7, -1.0))
-                    .looking_at(Vec3::Y * 1.7, Vec3::Y),
-            );
-
-            let body_window = timer.2.take().unwrap();
-            let body_cam = cam(
-                body_window,
-                Transform::from_translation(Vec3::new(0.0, 0.9, -3.0))
-                    .looking_at(Vec3::Y * 0.9, Vec3::Y),
-            );
 
             // find matching instance
             if let Some(instance) = booths.iter().find(|b| *b.avatar == ent) {
+                let (face_cam, face_image) =
+                    cam(Transform::from_translation(Vec3::new(0.0, 1.7, -1.0))
+                        .looking_at(Vec3::Y * 1.7, Vec3::Y));
+
+                let (body_cam, body_image) =
+                    cam(Transform::from_translation(Vec3::new(0.0, 0.9, -3.0))
+                        .looking_at(Vec3::Y * 0.9, Vec3::Y));
+
                 // snap face
                 let sender = local_sender.as_ref().unwrap().clone();
                 let target = instance.pending_target.as_ref().unwrap().0.clone();
-                commands.spawn(Screenshot::window(face_window)).observe(
+                commands.spawn(Screenshot::image(face_image)).observe(
                     move |mut trigger: Trigger<ScreenshotCaptured>| {
                         let _ = sender.blocking_send(SnapshotResult {
                             image: std::mem::take(&mut trigger.0),
-                            window: face_window,
                             camera: face_cam,
                             target: target.clone(),
                             source: ent,
@@ -412,11 +385,10 @@ fn snapshot(
                 // snap body
                 let sender = local_sender.as_ref().unwrap().clone();
                 let target = instance.pending_target.as_ref().unwrap().1.clone();
-                commands.spawn(Screenshot::window(body_window)).observe(
+                commands.spawn(Screenshot::image(body_image)).observe(
                     move |mut trigger: Trigger<ScreenshotCaptured>| {
                         let _ = sender.blocking_send(SnapshotResult {
                             image: std::mem::take(&mut trigger.0),
-                            window: body_window,
                             camera: body_cam,
                             target: target.clone(),
                             source: ent,
@@ -435,14 +407,12 @@ fn snapshot(
     // process taken shots
     while let Ok(SnapshotResult {
         image,
-        window,
         camera,
         target,
         source,
         index,
     }) = local_receiver.as_mut().unwrap().try_recv()
     {
-        commands.entity(window).despawn();
         commands.entity(camera).despawn();
 
         let Some(target_img) = images.get_mut(&target) else {
@@ -467,7 +437,7 @@ fn snapshot(
 pub struct BoothImage;
 
 #[derive(Component)]
-pub struct SnapshotTimer(u32, Option<Entity>, Option<Entity>);
+pub struct SnapshotTimer(u32);
 
 pub struct DuiBooth;
 impl DuiTemplate for DuiBooth {
