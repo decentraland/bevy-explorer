@@ -42,7 +42,7 @@ use scene_runner::{
     update_world::mesh_collider::GroundCollider, OutOfWorld, SceneRunnerPlugin,
 };
 
-use ipfs::{CurrentRealm, IpfsIoPlugin, map_realm_name};
+use ipfs::{map_realm_name, CurrentRealm, IpfsIoPlugin};
 use system_bridge::SystemBridgePlugin;
 use ui_core::{scrollable::ScrollTargetEvent, UiCorePlugin};
 use wallet::Wallet;
