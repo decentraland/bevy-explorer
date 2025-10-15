@@ -796,8 +796,8 @@ fn send_scene_updates(
                 width: width as i32,
                 height: height as i32,
                 interactable_area: Some(BorderRect {
-                    top: interactable.x,
-                    left: interactable.y,
+                    left: interactable.x,
+                    top: interactable.y,
                     right: interactable.z,
                     bottom: interactable.w,
                 }),
