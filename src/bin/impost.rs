@@ -42,7 +42,7 @@ use scene_runner::{
     update_world::mesh_collider::GroundCollider, OutOfWorld, SceneRunnerPlugin,
 };
 
-use ipfs::{CurrentRealm, IpfsIoPlugin};
+use ipfs::{CurrentRealm, IpfsIoPlugin, map_realm_name};
 use system_bridge::SystemBridgePlugin;
 use ui_core::{scrollable::ScrollTargetEvent, UiCorePlugin};
 use wallet::Wallet;
@@ -200,7 +200,7 @@ fn main() {
             })
             .add_before::<bevy::asset::AssetPlugin>(IpfsIoPlugin {
                 preview: false,
-                starting_realm: Some(final_config.server.clone()),
+                starting_realm: Some(map_realm_name(&final_config.server)),
                 content_server_override,
                 assets_root: Default::default(),
                 num_slots: final_config.max_concurrent_remotes,

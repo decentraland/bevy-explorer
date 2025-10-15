@@ -605,18 +605,21 @@ pub fn change_realm(
         let ipfs = ipfs.clone();
         let request = change_realm_requests.read().last().unwrap();
 
-        let new_realm = &request.new_realm;
-        let new_realm = if new_realm.ends_with(".dcl.eth") && !new_realm.starts_with("https://") {
-            format!("https://worlds-content-server.decentraland.org/world/{new_realm}")
-        } else {
-            new_realm.to_owned()
-        };
+        let new_realm = map_realm_name(&request.new_realm);
         let content_server_override = request.content_server_override.to_owned();
         IoTaskPool::get()
             .spawn_compat(async move {
                 ipfs.set_realm(new_realm, content_server_override).await;
             })
             .detach();
+    }
+}
+
+pub fn map_realm_name(request: &str) -> String {
+    if request.ends_with(".dcl.eth") && !request.starts_with("https://") {
+        format!("https://worlds-content-server.decentraland.org/world/{request}")
+    } else {
+        request.to_owned()
     }
 }
 

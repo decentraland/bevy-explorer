@@ -41,7 +41,7 @@ use comms::{
 use console::{ConsolePlugin, DoAddConsoleCommand};
 use futures_lite::io::AsyncReadExt;
 use input_manager::InputManagerPlugin;
-use ipfs::{IpfsAssetServer, IpfsIoPlugin};
+use ipfs::{map_realm_name, IpfsAssetServer, IpfsIoPlugin};
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use platform::default_camera_components;
 use social::SocialPlugin;
@@ -168,7 +168,7 @@ fn main_inner(
                 })
                 .add_before::<AssetPlugin>(IpfsIoPlugin {
                     preview: is_preview,
-                    starting_realm: Some(final_config.server.clone()),
+                    starting_realm: Some(map_realm_name(&final_config.server)),
                     content_server_override,
                     assets_root: Default::default(),
                     num_slots: final_config.max_concurrent_remotes,
@@ -191,7 +191,7 @@ fn main_inner(
     ));
 
     app.insert_resource(PreviewMode {
-        server: is_preview.then_some(final_config.server.clone()),
+        server: is_preview.then_some(map_realm_name(&final_config.server)),
         is_preview,
     });
 
