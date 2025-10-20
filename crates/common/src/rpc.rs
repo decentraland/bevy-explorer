@@ -225,7 +225,7 @@ pub enum RpcCall {
     },
     SetUiFocus {
         scene: Entity,
-        element_id: String,
+        element_id: Option<String>,
         response: RpcResultSender<Result<(), String>>,
     },
     CopyToClipboard {
