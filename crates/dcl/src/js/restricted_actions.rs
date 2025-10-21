@@ -200,6 +200,12 @@ pub async fn op_set_ui_focus(
         let context = state.borrow::<CrdtContext>();
         let scene = context.scene_id.0;
 
+        let element_id = if element_id.is_empty() {
+            None
+        } else {
+            Some(element_id)
+        };
+
         state.borrow_mut::<RpcCalls>().push(RpcCall::SetUiFocus {
             scene,
             element_id,

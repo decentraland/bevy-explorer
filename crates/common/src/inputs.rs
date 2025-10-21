@@ -395,7 +395,10 @@ impl Default for InputMap {
                 ),
                 (
                     Action::System(SystemAction::RollLeft),
-                    vec![InputIdentifier::Key(KeyCode::KeyT)],
+                    vec![
+                        InputIdentifier::Key(KeyCode::KeyT),
+                        InputIdentifier::Mouse(MouseButton::Middle),
+                    ],
                 ),
                 (
                     Action::System(SystemAction::RollRight),
@@ -480,7 +483,7 @@ impl Default for InputMap {
                 (
                     Action::System(SystemAction::ShowProfile),
                     vec![
-                        InputIdentifier::Mouse(MouseButton::Middle),
+                        // InputIdentifier::Mouse(MouseButton::Middle),
                         InputIdentifier::Gamepad(GamepadButton::North),
                     ],
                 ),

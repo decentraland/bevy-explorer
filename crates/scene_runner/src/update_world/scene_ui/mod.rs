@@ -521,6 +521,9 @@ pub struct UiLink {
     interactors: HashSet<&'static str>,
 }
 
+#[derive(Component)]
+pub struct LinkedScene(Entity);
+
 impl Default for UiLink {
     fn default() -> Self {
         Self {
@@ -916,6 +919,7 @@ fn layout_scene_ui(
                     Node::default(),
                     DespawnWith(bevy_entity),
                     ChildOf(parent_link.content_entity),
+                    LinkedScene(scene_root),
                 ));
                 let ui_entity = ent_cmds.id();
                 debug!("{scene_id} create linked {:?}", ui_entity);
@@ -1331,8 +1335,10 @@ fn set_ui_focus(
     containing_scene: ContainingScene,
     player: Res<PrimaryPlayerRes>,
     ui_data: Query<&SceneUiData>,
+    currently_focused: Query<Entity, With<Focus>>,
+    scene_hierarchy: Query<(Option<&LinkedScene>, Option<&ChildOf>)>,
 ) {
-    for (scene, element, response) in events.read().flat_map(|ev| {
+    'event: for (scene, maybe_element, response) in events.read().flat_map(|ev| {
         let RpcCall::SetUiFocus {
             scene,
             element_id,
@@ -1354,20 +1360,49 @@ fn set_ui_focus(
             continue;
         };
 
-        let Some(target) = ui_data.named_nodes.get(element) else {
-            response.send(Err(format!(
-                "couldn't find element {element} - existing named elements are: {:?}",
-                ui_data.named_nodes.keys()
-            )));
-            continue;
-        };
+        match maybe_element {
+            Some(element) => {
+                let Some(target) = ui_data.named_nodes.get(element) else {
+                    response.send(Err(format!(
+                        "couldn't find element {element} - existing named elements are: {:?}",
+                        ui_data.named_nodes.keys()
+                    )));
+                    continue;
+                };
 
-        let Ok(mut commands) = commands.get_entity(*target) else {
-            response.send(Err(format!("element {element} destroyed",)));
-            continue;
-        };
+                let Ok(mut commands) = commands.get_entity(*target) else {
+                    response.send(Err(format!("element {element} destroyed",)));
+                    continue;
+                };
 
-        commands.insert(Focus);
-        response.send(Ok(()));
+                commands.insert(Focus);
+                response.send(Ok(()));
+            }
+            None => {
+                // find existing focus
+                for focused in currently_focused.iter() {
+                    let mut maybe_parent = Some(focused);
+
+                    while let Some(parent) = maybe_parent {
+                        let (maybe_linked_scene, maybe_next_parent) =
+                            scene_hierarchy.get(parent).unwrap_or_default();
+                        if let Some(linked_scene) = maybe_linked_scene {
+                            if &linked_scene.0 == scene {
+                                commands.entity(focused).remove::<Focus>();
+                                response.send(Ok(()));
+                                break 'event;
+                            } else {
+                                maybe_parent = None;
+                                continue;
+                            }
+                        } else {
+                            maybe_parent = maybe_next_parent.map(|p| p.parent());
+                        }
+                    }
+                }
+
+                response.send(Err("Not currently focused".to_string()));
+            }
+        }
     }
 }
