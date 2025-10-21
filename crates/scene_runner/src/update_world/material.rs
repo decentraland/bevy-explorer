@@ -628,7 +628,7 @@ fn update_loading_materials(
                 return State::Ok;
             };
             match asset_server.load_state(h_texture.id()) {
-                bevy::asset::LoadState::NotLoaded => State::Pending, // video or avatar texture
+                bevy::asset::LoadState::NotLoaded => State::Ok, // video or avatar texture
                 bevy::asset::LoadState::Loading => State::Pending,
                 bevy::asset::LoadState::Loaded => State::Ok,
                 bevy::asset::LoadState::Failed(_) => State::Failed,
