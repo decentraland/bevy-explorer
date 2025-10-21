@@ -429,6 +429,7 @@ pub fn update_av_players(
                         image.texture_descriptor.usage = TextureUsages::COPY_DST
                             | TextureUsages::TEXTURE_BINDING
                             | TextureUsages::RENDER_ATTACHMENT;
+                        image.immediate_upload = true;
                         images.add(image)
                     }
                     Some(texture) => texture.0.clone(),
@@ -603,9 +604,18 @@ fn perform_video_copies(
             warn!("missing gpu image");
             continue;
         };
+        let video = request.video.into_inner();
+        let source_size = (video.video_width(), video.video_height());
+        let target_size = (gpu_image.size.width, gpu_image.size.height);
+
+        if source_size != target_size {
+            warn!("skip frame {source_size:?} != {target_size:?}");
+            continue;
+        }
+
         render_queue.copy_external_image_to_texture(
             &wgpu::CopyExternalImageSourceInfo {
-                source: wgpu::ExternalImageSource::HTMLVideoElement(request.video.into_inner()),
+                source: wgpu::ExternalImageSource::HTMLVideoElement(video),
                 origin: wgpu::Origin2d::ZERO,
                 flip_y: false,
             },
