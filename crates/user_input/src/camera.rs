@@ -14,8 +14,7 @@ use common::{
 use dcl_component::proto_components::sdk::components::common::camera_transition::TransitionMode;
 use input_manager::{InputManager, InputPriority};
 use scene_runner::{
-    renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
-    ContainingScene,
+    ContainingScene, OutOfWorld, renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData
 };
 use tween::SystemTween;
 
@@ -172,19 +171,20 @@ pub fn update_camera_position(
         &mut Projection,
         Option<&mut SystemTween>,
     )>,
-    mut player: Query<
-        (&Transform, &AvatarDynamicState),
+    player: Query<
+        (&Transform, &AvatarDynamicState, Has<OutOfWorld>),
         (With<PrimaryUser>, Without<PrimaryCamera>),
     >,
     containing_scene: ContainingScene,
     mut scene_colliders: Query<(&RendererSceneContext, &mut SceneColliderData)>,
     mut prev_override: Local<Option<CameraOverride>>,
+    mut prev_oow: Local<bool>,
     gt_helper: TransformHelper,
 ) {
     let (
-        Ok((player_transform, dynamic_state)),
+        Ok((player_transform, dynamic_state, is_oow)),
         Ok((camera_ent, camera_transform, options, mut projection, maybe_tween)),
-    ) = (player.single_mut(), camera.single_mut())
+    ) = (player.single(), camera.single_mut())
     else {
         return;
     };
@@ -192,7 +192,9 @@ pub fn update_camera_position(
     let mut target_transform = *camera_transform;
     let mut target_transition = TransitionMode::Time(TRANSITION_TIME);
 
-    if let Some(CameraOverride::Cinematic(cine)) = options.scene_override.as_ref() {
+    if is_oow {
+        target_transform = Transform::from_translation(player_transform.translation + Vec3::new(15.0, 75.0, 100.0)).looking_at(player_transform.translation, Vec3::Y);
+    } else if let Some(CameraOverride::Cinematic(cine)) = options.scene_override.as_ref() {
         let Ok(origin) = gt_helper.compute_global_transform(cine.origin) else {
             warn!("failed to get gt");
             return;
@@ -323,11 +325,13 @@ pub fn update_camera_position(
     let changed = (prev_override.is_some() != options.scene_override.is_some())
         || prev_override
             .as_ref()
-            .is_some_and(|prev| !prev.effectively_equals(options.scene_override.as_ref().unwrap()));
+            .is_some_and(|prev| !prev.effectively_equals(options.scene_override.as_ref().unwrap()))
+        || *prev_oow != is_oow;
 
     if changed {
         debug!("changed cam to {:?}", options.scene_override);
         prev_override.clone_from(&options.scene_override);
+        *prev_oow = is_oow;
         let time = match target_transition {
             TransitionMode::Time(t) => t,
             TransitionMode::Speed(s) => {
