@@ -295,6 +295,7 @@ deno_webstorage = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfi
 # deno_websocket = { path = "../deno/ext/websocket" }
 # deno_webstorage = { path = "../deno/ext/webstorage" }
 
+winit = { git = "https://github.com/robtfm/winit", branch = "v0.30.x" }
 
 # [patch."https://github.com/robtfm/bevy"]
 # bevy = { path = "../bevy" }
@@ -310,4 +311,3 @@ deno_webstorage = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfi
 
 # [patch."https://github.com/robtfm/bevy_atmosphere"]
 # bevy_atmosphere = { path = "../bevy_atmosphere" }
-
