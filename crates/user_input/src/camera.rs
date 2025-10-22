@@ -14,7 +14,8 @@ use common::{
 use dcl_component::proto_components::sdk::components::common::camera_transition::TransitionMode;
 use input_manager::{InputManager, InputPriority};
 use scene_runner::{
-    ContainingScene, OutOfWorld, renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData
+    renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
+    ContainingScene, OutOfWorld,
 };
 use tween::SystemTween;
 
@@ -193,7 +194,10 @@ pub fn update_camera_position(
     let mut target_transition = TransitionMode::Time(TRANSITION_TIME);
 
     if is_oow {
-        target_transform = Transform::from_translation(player_transform.translation + Vec3::new(15.0, 75.0, 100.0)).looking_at(player_transform.translation, Vec3::Y);
+        target_transform = Transform::from_translation(
+            player_transform.translation + Vec3::new(15.0, 75.0, 100.0),
+        )
+        .looking_at(player_transform.translation, Vec3::Y);
     } else if let Some(CameraOverride::Cinematic(cine)) = options.scene_override.as_ref() {
         let Ok(origin) = gt_helper.compute_global_transform(cine.origin) else {
             warn!("failed to get gt");
