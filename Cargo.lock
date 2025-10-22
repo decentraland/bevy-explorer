@@ -4010,9 +4010,8 @@ checksum = "ea8a8b81cacc08888170eef4d13b775126db426d0b348bee9d18c2c1eaf123cf"
 
 [[package]]
 name = "dpi"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
+version = "0.1.1"
+source = "git+https://github.com/robtfm/winit?branch=v0.30.x#a8c6812b563f9c0974a17226f566705bbc9ee674"
 
 [[package]]
 name = "dtoa"
@@ -13346,9 +13345,8 @@ checksum = "271414315aff87387382ec3d271b52d7ae78726f5d44ac98b4f4030c91880486"
 
 [[package]]
 name = "winit"
-version = "0.30.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4409c10174df8779dc29a4788cac85ed84024ccbc1743b776b21a520ee1aaf4"
+version = "0.30.12"
+source = "git+https://github.com/robtfm/winit?branch=v0.30.x#a8c6812b563f9c0974a17226f566705bbc9ee674"
 dependencies = [
  "ahash",
  "android-activity",
