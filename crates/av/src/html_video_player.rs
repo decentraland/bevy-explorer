@@ -11,7 +11,7 @@ use bevy::{
     color::palettes::basic,
     diagnostic::FrameCount,
     math::FloatOrd,
-    platform::collections::HashSet,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
         render_asset::{RenderAssetUsages, RenderAssets},
@@ -96,7 +96,6 @@ pub struct FrameCopyReceiveQueue(tokio::sync::mpsc::UnboundedReceiver<FrameCopyR
 pub struct FrameCopyRequest {
     video: WgpuWrapper<HtmlVideoElement>,
     target: AssetId<Image>,
-    size: Extent3d,
 }
 
 #[derive(Component, Debug)]
@@ -534,11 +533,6 @@ pub fn update_av_players(
                         let _ = send_queue.0.send(FrameCopyRequest {
                             video: WgpuWrapper::new(video),
                             target: image_id,
-                            size: wgpu::Extent3d {
-                                width: video_size.0,
-                                height: video_size.1,
-                                depth_or_array_layers: 1,
-                            },
                         });
 
                         av.current_time = new_time;
@@ -599,7 +593,13 @@ fn perform_video_copies(
     images: Res<RenderAssets<GpuImage>>,
     render_queue: Res<RenderQueue>,
 ) {
+    let mut latest_requests = HashMap::new();
+
     while let Ok(request) = requests.0.try_recv() {
+        latest_requests.insert(request.target, request);
+    }
+
+    for (_, request) in latest_requests.drain() {
         let Some(gpu_image) = images.get(request.target) else {
             warn!("missing gpu image");
             continue;
@@ -627,7 +627,11 @@ fn perform_video_copies(
                 premultiplied_alpha: false, // Video frames are not typically premultiplied.
                 color_space: wgpu::PredefinedColorSpace::Srgb,
             },
-            request.size,
+            Extent3d {
+                width: source_size.0,
+                height: source_size.1,
+                depth_or_array_layers: 1,
+            },
         );
     }
 }
