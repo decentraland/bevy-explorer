@@ -41,10 +41,9 @@ use scene_runner::{
 use wasm_bindgen::prelude::wasm_bindgen;
 use web_sys::{
     js_sys::{self, Reflect},
-    wasm_bindgen::{prelude::Closure, JsValue},
-    HtmlMediaElement,
+    wasm_bindgen::{prelude::Closure, JsCast, JsValue},
+    HtmlMediaElement, HtmlVideoElement, VideoFrame,
 };
-use web_sys::{wasm_bindgen::JsCast, HtmlVideoElement};
 
 pub struct VideoPlayerPlugin;
 
@@ -94,7 +93,7 @@ pub struct FrameCopyRequestQueue(tokio::sync::mpsc::UnboundedSender<FrameCopyReq
 pub struct FrameCopyReceiveQueue(tokio::sync::mpsc::UnboundedReceiver<FrameCopyRequest>);
 
 pub struct FrameCopyRequest {
-    video: WgpuWrapper<HtmlVideoElement>,
+    video_frame: WgpuWrapper<VideoFrame>,
     target: AssetId<Image>,
 }
 
@@ -510,9 +509,14 @@ pub fn update_av_players(
                         // new frame is ready
                         let new_time = f32::from_bits(new_time);
                         debug!("got new frame -> {new_time}");
+
+                        let Ok(frame) = VideoFrame::new_with_html_video_element(video) else {
+                            warn!("failed to extract frame");
+                            continue;
+                        };
+
                         let image_id = av.image.as_ref().unwrap().id();
-                        let video_size = (video.video_width(), video.video_height());
-                        let video = video.clone();
+                        let video_size = (frame.coded_width(), frame.coded_height());
 
                         // check size
                         if av.size.is_none_or(|sz| sz != video_size) {
@@ -531,7 +535,7 @@ pub fn update_av_players(
 
                         // queue copy
                         let _ = send_queue.0.send(FrameCopyRequest {
-                            video: WgpuWrapper::new(video),
+                            video_frame: WgpuWrapper::new(frame),
                             target: image_id,
                         });
 
@@ -604,8 +608,8 @@ fn perform_video_copies(
             warn!("missing gpu image");
             continue;
         };
-        let video = request.video.into_inner();
-        let source_size = (video.video_width(), video.video_height());
+        let frame = request.video_frame.into_inner();
+        let source_size = (frame.coded_width(), frame.coded_height());
         let target_size = (gpu_image.size.width, gpu_image.size.height);
 
         if source_size != target_size {
@@ -615,7 +619,7 @@ fn perform_video_copies(
 
         render_queue.copy_external_image_to_texture(
             &wgpu::CopyExternalImageSourceInfo {
-                source: wgpu::ExternalImageSource::HTMLVideoElement(video),
+                source: wgpu::ExternalImageSource::VideoFrame(frame),
                 origin: wgpu::Origin2d::ZERO,
                 flip_y: false,
             },
