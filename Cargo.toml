@@ -296,6 +296,9 @@ deno_webstorage = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfi
 # deno_webstorage = { path = "../deno/ext/webstorage" }
 
 winit = { git = "https://github.com/robtfm/winit", branch = "v0.30.x" }
+wgpu = { git = "https://github.com/robtfm/wgpu", branch = "24.0.5-dcl" }
+wgpu-types = { git = "https://github.com/robtfm/wgpu", branch = "24.0.5-dcl" }
+naga = { git = "https://github.com/robtfm/wgpu", branch = "24.0.5-dcl" }
 
 # [patch."https://github.com/robtfm/bevy"]
 # bevy = { path = "../bevy" }
