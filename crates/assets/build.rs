@@ -12,7 +12,7 @@ fn visit_dirs(writer: &mut BufWriter<File>, dir: &Path, base_dir: &Path) -> std:
                 visit_dirs(writer, &path, base_dir)?;
             } else if path.is_file() {
                 let relative_path = path.strip_prefix(base_dir).unwrap();
-                let relative_path = relative_path.to_string_lossy().replace('\\', "\\\\");
+                let relative_path = relative_path.to_string_lossy().replace('\\', "/");
                 let full_path = path.canonicalize()?;
                 let full_path = full_path.to_string_lossy().replace('\\', "\\\\");
 

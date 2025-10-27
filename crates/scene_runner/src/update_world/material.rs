@@ -442,6 +442,10 @@ fn update_materials(
     >,
     mut materials: ResMut<Assets<SceneMaterial>>,
     sourced: Query<(Entity, &MeshMaterial3d<SceneMaterial>, &MaterialSource)>,
+    sources: Query<(
+        Option<Ref<VideoTextureOutput>>,
+        Option<Ref<UiTextureOutput>>,
+    )>,
     mut resolver: TextureResolver,
     mut scenes: Query<&mut RendererSceneContext>,
     config: Res<AppConfig>,
@@ -589,7 +593,15 @@ fn update_materials(
     }
 
     for (ent, touch, source) in sourced.iter() {
-        if commands.get_entity(source.0).is_err() {
+        let changed = sources
+            .get(source.0)
+            .map(|(maybe_video, maybe_ui)| {
+                maybe_video.is_some_and(|v| v.is_changed())
+                    || maybe_ui.is_some_and(|ui| ui.is_changed())
+            })
+            .unwrap_or(true);
+
+        if changed {
             commands.entity(ent).insert(RetryMaterial(Vec::default()));
         } else {
             materials.get_mut(touch);
