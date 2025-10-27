@@ -517,7 +517,9 @@ pub fn update_av_players(
                         };
 
                         let image_id = av.image.as_ref().unwrap().id();
-                        let video_size = (frame.coded_width(), frame.coded_height());
+                        let visible_rect = frame.visible_rect().unwrap();
+                        let video_size =
+                            (visible_rect.width() as u32, visible_rect.height() as u32);
 
                         // check size
                         if av.size.is_none_or(|sz| sz != video_size) {
@@ -539,19 +541,20 @@ pub fn update_av_players(
                             image.data = None;
                             let image = images.add(image);
                             av.size = Some(video_size);
-                            commands.entity(ent).insert(VideoTextureOutput(image.clone()));
+                            commands
+                                .entity(ent)
+                                .insert(VideoTextureOutput(image.clone()));
                             av.image = Some(image);
 
-                            debug!("skipping a frame due to change to {:?}", video_size);
-                            frame.close();
-                        } else {
-                            // queue copy
-                            debug!("queue frame {:?}", video_size);
-                            let _ = send_queue.0.send(FrameCopyRequest {
-                                video_frame: WgpuWrapper::new(frame),
-                                target: image_id,
-                            });
+                            debug!("queue resized frame {:?}", video_size);
                         }
+
+                        // queue copy
+                        debug!("queue frame {:?}", video_size);
+                        let _ = send_queue.0.send(FrameCopyRequest {
+                            video_frame: WgpuWrapper::new(frame),
+                            target: image_id,
+                        });
 
                         av.current_time = new_time;
                     } else {
@@ -617,7 +620,7 @@ fn perform_video_copies(
         frame.close();
     }
 
-    let mut latest_requests: HashMap::<AssetId::<Image>, FrameCopyRequest> = HashMap::new();
+    let mut latest_requests: HashMap<AssetId<Image>, FrameCopyRequest> = HashMap::new();
 
     while let Ok(request) = requests.0.try_recv() {
         if let Some(prev) = latest_requests.get(&request.target) {
@@ -633,8 +636,8 @@ fn perform_video_copies(
             continue;
         };
         let frame = request.video_frame.into_inner();
-
-        let source_size = (frame.coded_width(), frame.coded_height());
+        let visible_rect = frame.visible_rect().unwrap();
+        let source_size = (visible_rect.width() as u32, visible_rect.height() as u32);
         let target_size = (gpu_image.size.width, gpu_image.size.height);
 
         if source_size != target_size {
@@ -642,12 +645,18 @@ fn perform_video_copies(
             continue;
         }
 
-        debug!("{:?}/{:?} perform {:?} -> {:?}", request.target, gpu_image.texture_view, source_size, target_size);
+        debug!(
+            "{:?}/{:?} perform {:?} -> {:?}",
+            request.target, gpu_image.texture_view, source_size, target_size
+        );
 
         render_queue.copy_external_image_to_texture(
             &wgpu::CopyExternalImageSourceInfo {
                 source: wgpu::ExternalImageSource::VideoFrame(frame),
-                origin: wgpu::Origin2d::ZERO,
+                origin: wgpu::Origin2d {
+                    x: visible_rect.x() as u32,
+                    y: visible_rect.y() as u32,
+                },
                 flip_y: false,
             },
             wgpu::CopyExternalImageDestInfo {
