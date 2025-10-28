@@ -11,7 +11,7 @@ use std::{
 use bevy::{log::tracing::span::EnteredSpan, tasks::IoTaskPool};
 use dcl::{
     interface::CrdtComponentInterfaces,
-    js::{ShuttingDown, SuperUserScene},
+    js::{CommunicatedWithRenderer, ShuttingDown, SuperUserScene},
     RendererResponse, SceneId, SceneResponse,
 };
 use gotham_state::GothamState;
@@ -232,6 +232,11 @@ impl From<WasmError> for JsValue {
 #[wasm_bindgen]
 pub fn op_continue_running(state: &WorkerContext) -> bool {
     !state.state.borrow().has::<ShuttingDown>()
+}
+
+#[wasm_bindgen]
+pub fn op_communicated_with_renderer(state: &WorkerContext) -> bool {
+    state.state.borrow_mut().try_take::<CommunicatedWithRenderer>().is_some()
 }
 
 #[wasm_bindgen]

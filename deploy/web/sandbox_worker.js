@@ -5,7 +5,7 @@ import init, * as wasm_bindgen_exports from "./pkg/webgpu_build.js";
 
 // self.WebSocket = {}
 
-console.log("[Scene Worker] Starting");
+console.log("[Sandbox Worker] Starting");
 
 const allowListES2020 = [
   "Array",
@@ -252,7 +252,7 @@ self.onmessage = async (event) => {
     }
 
     postMessage({ type: `INIT_COMPLETE` });
-        
+
     // add listener to clean up on unhandled rejections
     self.addEventListener("unhandledrejection", (event) => {
       // Prevent the default browser action
@@ -282,7 +282,7 @@ self.onmessage = async (event) => {
       console.error("[Scene Worker] Error during scene construction:", e);
       try {
         wasm_init.drop_context(wasmContext);
-      } catch (e) {}
+      } catch (e) { }
       wasm_init.__wbindgen_thread_destroy();
       self.close();
       return;
@@ -308,21 +308,47 @@ self.onmessage = async (event) => {
       var prevElapsed = 0;
       var elapsed = 0;
       var count = 0;
+      var reportedErrors = 0;
+      var consecutiveErrorsWithoutInteraction = 0;
       while (ops.op_continue_running()) {
         const dt = (elapsed - prevElapsed) / 1000;
-        await module.onUpdate(dt);
+        try {
+          await module.onUpdate(dt);
+          consecutiveErrorsWithoutInteraction = 0;
+        } catch (e) {
+          reportedErrors += 1;
+          consecutiveErrorsWithoutInteraction += 1;
+          if (reportedErrors <= 10) {
+            console.error(
+              "[Sandbox worker] Error running onUpdate:",
+              e
+            );
+
+            if (reportedErrors == 10) {
+              console.error("[Sandbox worker] not logging any further uncaught errors.");
+            }
+          }
+
+          if (ops.op_communicated_with_renderer()) {
+            consecutiveErrorsWithoutInteraction = 0;
+          }
+
+          if (consecutiveErrorsWithoutInteraction >= 10) {
+            throw "[Sandbox worker] too many errors without renderer interaction: shutting down";
+          }
+        }
         prevElapsed = elapsed;
         elapsed = new Date() - startTime;
         count += 1;
       }
-      console.log("[Scene Worker] exiting gracefully");
+      console.log("[Sandbox Worker] Exiting gracefully");
     } catch (e) {
-      console.error("[Scene Worker] Error during scene execution:", e);
+      console.error("[Sandbox Worker] Error during scene execution:", e);
     }
 
     try {
       wasm_init.drop_context(wasmContext);
-    } catch (e) {}
+    } catch (e) { }
     wasm_init.__wbindgen_thread_destroy();
     self.close();
   }
