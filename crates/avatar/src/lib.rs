@@ -870,6 +870,8 @@ pub struct AvatarMaterials(pub HashSet<AssetId<SceneMaterial>>);
 #[derive(Component, Debug)]
 pub struct PreviousAvatar(Entity);
 
+const AVATAR_EMISSIVE_MULTIPLIER: f32 = 4.0;
+
 // update materials and hide base parts
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn process_avatar(
@@ -1030,9 +1032,24 @@ fn process_avatar(
                         mat.base_color
                     };
 
+                    let emissive_color_specified = mat.emissive.red != 0.0
+                        || mat.emissive.green != 0.0
+                        || mat.emissive.blue != 0.0;
+                    let new_emissive = if emissive_color_specified {
+                        LinearRgba {
+                            red: mat.emissive.red * AVATAR_EMISSIVE_MULTIPLIER,
+                            green: mat.emissive.green * AVATAR_EMISSIVE_MULTIPLIER,
+                            blue: mat.emissive.blue * AVATAR_EMISSIVE_MULTIPLIER,
+                            alpha: mat.emissive.alpha,
+                        }
+                    } else {
+                        mat.emissive
+                    };
+
                     let new_mat = SceneMaterial {
                         base: StandardMaterial {
                             base_color,
+                            emissive: new_emissive,
                             ..mat.clone()
                         },
                         extension: SceneBound::new_outlined(
@@ -1270,9 +1287,24 @@ fn process_avatar(
                             mat.base_color
                         };
 
+                        let emissive_color_specified = mat.emissive.red != 0.0
+                            || mat.emissive.green != 0.0
+                            || mat.emissive.blue != 0.0;
+                        let new_emissive = if emissive_color_specified {
+                            LinearRgba {
+                                red: mat.emissive.red * AVATAR_EMISSIVE_MULTIPLIER,
+                                green: mat.emissive.green * AVATAR_EMISSIVE_MULTIPLIER,
+                                blue: mat.emissive.blue * AVATAR_EMISSIVE_MULTIPLIER,
+                                alpha: mat.emissive.alpha,
+                            }
+                        } else {
+                            mat.emissive
+                        };
+
                         let new_mat = SceneMaterial {
                             base: StandardMaterial {
                                 base_color,
+                                emissive: new_emissive,
                                 ..mat.clone()
                             },
                             extension: SceneBound::new_outlined(
