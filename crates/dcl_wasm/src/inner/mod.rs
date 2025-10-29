@@ -236,7 +236,11 @@ pub fn op_continue_running(state: &WorkerContext) -> bool {
 
 #[wasm_bindgen]
 pub fn op_communicated_with_renderer(state: &WorkerContext) -> bool {
-    state.state.borrow_mut().try_take::<CommunicatedWithRenderer>().is_some()
+    state
+        .state
+        .borrow_mut()
+        .try_take::<CommunicatedWithRenderer>()
+        .is_some()
 }
 
 #[wasm_bindgen]
