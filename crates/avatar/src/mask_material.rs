@@ -21,6 +21,10 @@ impl Material for MaskMaterial {
     fn alpha_mode(&self) -> AlphaMode {
         AlphaMode::Blend
     }
+
+    fn depth_bias(&self) -> f32 {
+        10000.0
+    }
 }
 
 mod decl {
