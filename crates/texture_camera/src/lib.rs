@@ -2,6 +2,7 @@ use std::f32::consts::FRAC_PI_4;
 
 use bevy::{
     app::{HierarchyPropagatePlugin, Propagate, PropagateStop},
+    diagnostic::FrameCount,
     platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
@@ -217,6 +218,7 @@ fn update_texture_cameras(
     layers: Res<SceneLayerProperties>,
     mut layer_cache: ResMut<TextureLayersCache>,
     scene_distance: Res<SceneLoadDistance>,
+    tick: Res<FrameCount>,
 ) {
     let active_scenes = player
         .single()
@@ -254,7 +256,7 @@ fn update_texture_cameras(
                 Some(existing) => {
                     let prev = images.get_mut(existing.0.id()).unwrap();
                     if prev.texture_descriptor.size != image_size {
-                        prev.resize(image_size);
+                        prev.texture_descriptor.size = image_size;
                     }
                     existing.0.clone()
                 }
@@ -266,7 +268,7 @@ fn update_texture_cameras(
                         TextureFormat::bevy_default(),
                         RenderAssetUsages::all(), // RENDER_WORLD alone doesn't work..?
                     );
-
+                    image.data = None;
                     image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
                     images.add(image)
                 }
@@ -280,7 +282,7 @@ fn update_texture_cameras(
             };
             debug!("create with layers {render_layers:?}");
 
-            let far = texture_cam.0.far_plane.unwrap_or(100_000.0);
+            let far = texture_cam.0.far_plane.unwrap_or(240.0);
             let projection: Projection = match &texture_cam.0.mode {
                 None => {
                     PerspectiveProjection {
