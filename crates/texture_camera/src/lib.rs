@@ -2,7 +2,6 @@ use std::f32::consts::FRAC_PI_4;
 
 use bevy::{
     app::{HierarchyPropagatePlugin, Propagate, PropagateStop},
-    diagnostic::FrameCount,
     platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
@@ -218,7 +217,6 @@ fn update_texture_cameras(
     layers: Res<SceneLayerProperties>,
     mut layer_cache: ResMut<TextureLayersCache>,
     scene_distance: Res<SceneLoadDistance>,
-    tick: Res<FrameCount>,
 ) {
     let active_scenes = player
         .single()
