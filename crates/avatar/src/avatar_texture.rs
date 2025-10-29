@@ -235,6 +235,7 @@ fn add_booth_camera(
         ..default()
     };
     avatar_texture.resize(size);
+    avatar_texture.data = None;
     let avatar_texture = images.add(avatar_texture);
 
     let mut camera = None;
@@ -288,11 +289,12 @@ fn update_booth_image(
             images
                 .get_mut(h_image.image.id())
                 .unwrap()
-                .resize(Extent3d {
-                    width: (node_size.x as u32).max(16),
-                    height: (node_size.y as u32).max(16),
-                    ..Default::default()
-                });
+                .texture_descriptor
+                .size = Extent3d {
+                width: (node_size.x as u32).max(16),
+                height: (node_size.y as u32).max(16),
+                ..Default::default()
+            };
         }
     }
 }

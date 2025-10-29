@@ -690,11 +690,11 @@ fn create_ui_roots(
                     ));
                     debug!("create texture root {:?} -> {:?}", ent, root);
 
-                    images.get_mut(&ui_texture).unwrap().resize(Extent3d {
+                    images.get_mut(&ui_texture).unwrap().texture_descriptor.size = Extent3d {
                         width: canvas_info.width,
                         height: canvas_info.height,
                         depth_or_array_layers: 1,
-                    });
+                    };
 
                     commands.entity(ent).try_insert(UiTextureOutput {
                         camera: root,
@@ -720,11 +720,12 @@ fn create_ui_roots(
                     images
                         .get_mut(texture.image.id())
                         .unwrap()
-                        .resize(Extent3d {
-                            width: canvas_info.width,
-                            height: canvas_info.height,
-                            depth_or_array_layers: 1,
-                        });
+                        .texture_descriptor
+                        .size = Extent3d {
+                        width: canvas_info.width,
+                        height: canvas_info.height,
+                        depth_or_array_layers: 1,
+                    };
                     texture.texture_size = UVec2::new(canvas_info.width, canvas_info.height);
                 }
             }

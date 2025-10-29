@@ -556,7 +556,6 @@ fn update_render_avatar(
                 match wearable_loader.get_representation(&wearable, body_urn.as_str()) {
                     Ok(data) => Some((data.category, (data.clone(), wearable))),
                     Err(CollectibleError::Loading) => {
-                        commands.entity(entity).try_insert(RetryRenderAvatar);
                         debug!("waiting for wearable {wearable:?}");
                         all_loaded = false;
                         None
@@ -583,6 +582,7 @@ fn update_render_avatar(
                 match wearable_loader.get_representation(default.base(), body_urn.as_str()) {
                     Ok(data) => Some((data.clone(), default.base().to_owned())),
                     _ => {
+                        debug!("waiting for {default:?}");
                         all_loaded = false;
                         None
                     }
@@ -591,11 +591,13 @@ fn update_render_avatar(
             .collect();
 
         if !all_loaded {
+            commands.entity(entity).try_insert(RetryRenderAvatar);
             continue;
         }
 
         for (default, default_urn) in defaults {
             if !wearables.contains_key(&default.category) {
+                debug!("adding default {default:?}");
                 wearables.insert(default.category, (default, default_urn));
             }
         }
@@ -1050,6 +1052,7 @@ fn process_avatar(
                         base: StandardMaterial {
                             base_color,
                             emissive: new_emissive,
+                            depth_bias: -10000.0, // make base model appear under any wearables at the same position, like skinpaint
                             ..mat.clone()
                         },
                         extension: SceneBound::new_outlined(

@@ -73,6 +73,7 @@ pub fn spawn_world_ui_view(
             TextureFormat::Bgra8UnormSrgb,
             RenderAssetUsages::all(),
         );
+        image.data = None;
         image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
         images.add(image)
     });
@@ -241,11 +242,11 @@ pub fn update_worldui_materials(
                 }
                 let req_size = req_size.min(max_size).max(image.size());
                 debug!("resized to {}", req_size);
-                images.get_mut(id).unwrap().resize(Extent3d {
+                images.get_mut(id).unwrap().texture_descriptor.size = Extent3d {
                     width: req_size.x,
                     height: req_size.y,
                     depth_or_array_layers: 1,
-                });
+                };
             }
 
             Some(id)

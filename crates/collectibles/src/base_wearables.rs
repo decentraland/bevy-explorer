@@ -312,26 +312,26 @@ pub const BASE_URL: &str = "https://peer.decentraland.org/content";
 
 pub fn default_wearables(body_shape: &WearableUrn) -> impl Iterator<Item = WearableInstance> {
     match body_shape.as_str() {
-        "urn:decentraland:off-chain:base-avatars:base_female" => {
+        "urn:decentraland:off-chain:base-avatars:basefemale" => {
             vec![
                 "urn:decentraland:off-chain:base-avatars:f_eyes_00",
                 "urn:decentraland:off-chain:base-avatars:f_eyebrows_00",
                 "urn:decentraland:off-chain:base-avatars:f_mouth_00",
-                "urn:decentraland:off-chain:base-avatars:standard_hair",
-                "urn:decentraland:off-chain:base-avatars:f_simple_yellow_tshirt",
-                "urn:decentraland:off-chain:base-avatars:f_brown_trousers",
-                "urn:decentraland:off-chain:base-avatars:bun_shoes",
+                // "urn:decentraland:off-chain:base-avatars:standard_hair",
+                // "urn:decentraland:off-chain:base-avatars:f_simple_yellow_tshirt",
+                // "urn:decentraland:off-chain:base-avatars:f_brown_trousers",
+                // "urn:decentraland:off-chain:base-avatars:bun_shoes",
             ]
         }
-        "urn:decentraland:off-chain:base-avatars:base_male" => {
+        "urn:decentraland:off-chain:base-avatars:basemale" => {
             vec![
                 "urn:decentraland:off-chain:base-avatars:eyes_00",
                 "urn:decentraland:off-chain:base-avatars:eyebrows_00",
                 "urn:decentraland:off-chain:base-avatars:mouth_00",
-                "urn:decentraland:off-chain:base-avatars:standard_hair",
-                "urn:decentraland:off-chain:base-avatars:simple_blue_tshirt",
-                "urn:decentraland:off-chain:base-avatars:distressed_black_Jeans",
-                "urn:decentraland:off-chain:base-avatars:citycomfortableshoes",
+                // "urn:decentraland:off-chain:base-avatars:standard_hair",
+                // "urn:decentraland:off-chain:base-avatars:simple_blue_tshirt",
+                // "urn:decentraland:off-chain:base-avatars:distressed_black_Jeans",
+                // "urn:decentraland:off-chain:base-avatars:citycomfortableshoes",
             ]
         }
         _ => Vec::default(),
