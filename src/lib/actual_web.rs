@@ -84,7 +84,6 @@ fn main_inner(
         location: IVec2Arg::from_str(location)
             .map(|l| l.0)
             .unwrap_or(base_config.location),
-        max_concurrent_remotes: 8000,
         graphics: common::structs::GraphicsSettings {
             gpu_bytes_per_frame: rabpf,
             ..base_graphics
