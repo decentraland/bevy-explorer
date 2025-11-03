@@ -197,7 +197,7 @@ pub async fn op_settings(
 ) -> Result<Vec<SettingInfo>, anyhow::Error> {
     debug!("op_settings");
     load_settings(state.clone()).await?;
-    Ok(state.borrow().borrow::<Settings>().get())
+    Ok(state.borrow().borrow::<Settings>().get().await)
 }
 
 pub async fn op_set_setting(
@@ -211,6 +211,7 @@ pub async fn op_set_setting(
         .borrow_mut()
         .borrow_mut::<Settings>()
         .set_value(&name, val)
+        .await
 }
 
 pub async fn op_kernel_fetch_headers(

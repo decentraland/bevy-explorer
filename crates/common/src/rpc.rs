@@ -1,10 +1,8 @@
 use bevy::prelude::*;
 use ethers_core::types::H160;
+use platform::AsyncRwLock;
 use serde::{Deserialize, Serialize};
-use std::{
-    any::Any,
-    sync::{Arc, RwLock},
-};
+use std::{any::Any, sync::Arc};
 
 use crate::{profile::SerializedProfile, structs::PermissionType};
 
@@ -13,7 +11,7 @@ pub trait DynRpcResult: std::any::Any + std::fmt::Debug + Send + Sync + 'static 
 }
 
 #[derive(Clone)]
-pub struct RpcResultSender<T>(Arc<RwLock<Option<tokio::sync::oneshot::Sender<T>>>>);
+pub struct RpcResultSender<T>(Arc<AsyncRwLock<Option<tokio::sync::oneshot::Sender<T>>>>);
 
 impl<T> std::fmt::Debug for RpcResultSender<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -23,25 +21,24 @@ impl<T> std::fmt::Debug for RpcResultSender<T> {
 
 impl<T: 'static> Default for RpcResultSender<T> {
     fn default() -> Self {
-        Self(Arc::new(RwLock::new(None)))
+        Self(Arc::new(AsyncRwLock::new(None)))
     }
 }
 
 impl<T: 'static> RpcResultSender<T> {
     pub fn new(sender: tokio::sync::oneshot::Sender<T>) -> Self {
-        Self(Arc::new(RwLock::new(Some(sender))))
+        Self(Arc::new(AsyncRwLock::new(Some(sender))))
     }
 
     pub fn send(&self, result: T) {
-        if let Ok(mut guard) = self.0.write() {
-            if let Some(response) = guard.take() {
-                let _ = response.send(result);
-            }
+        let mut guard = self.0.blocking_write();
+        if let Some(response) = guard.take() {
+            let _ = response.send(result);
         }
     }
 
     pub fn take(&self) -> tokio::sync::oneshot::Sender<T> {
-        self.0.write().unwrap().take().unwrap()
+        self.0.blocking_write().take().unwrap()
     }
 }
 
