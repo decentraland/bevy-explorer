@@ -4,7 +4,7 @@ use attach::AttachPlugin;
 use avatar_texture::AvatarTexturePlugin;
 use bevy::{
     animation::{AnimationTarget, AnimationTargetId},
-    asset::{io::AssetReader, AsyncReadExt},
+    asset::{io::AssetReader, AsyncReadExt, RenderAssetUsages},
     gltf::Gltf,
     platform::collections::{HashMap, HashSet},
     prelude::*,
@@ -1009,15 +1009,15 @@ fn process_avatar(
                     commands.entity(scene_ent).try_insert(Visibility::Hidden);
                 }
 
-                if let Some(mesh_data) = meshes.get(h_mesh) {
-                    let is_skinned = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
-                    if is_skinned {
-                        commands.entity(scene_ent).try_insert(NoFrustumCulling);
+                if let Some(mesh) = meshes.get(h_mesh) {
+                    if mesh.asset_usage == RenderAssetUsages::MAIN_WORLD {
+                        if let Some(mesh_data) = meshes.get_mut(h_mesh) {
+                            mesh_data.normalize_joint_weights();
+                            mesh_data.asset_usage = RenderAssetUsages::RENDER_WORLD;
+                        }
                     }
-                } else {
-                    warn!("missing mesh for wearable, removing frustum culling just in case");
-                    commands.entity(scene_ent).try_insert(NoFrustumCulling);
                 }
+                commands.entity(scene_ent).try_insert(NoFrustumCulling);
             }
 
             if let Some(h_mat) = maybe_h_mat {
@@ -1263,17 +1263,15 @@ fn process_avatar(
                 }
 
                 if let Some(h_mesh) = maybe_h_mesh {
-                    if let Some(mesh_data) = meshes.get_mut(h_mesh) {
-                        mesh_data.normalize_joint_weights();
-                        let is_skinned =
-                            mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
-                        if is_skinned {
-                            commands.entity(scene_ent).try_insert(NoFrustumCulling);
+                    if let Some(mesh) = meshes.get(h_mesh) {
+                        if mesh.asset_usage == RenderAssetUsages::MAIN_WORLD {
+                            if let Some(mesh_data) = meshes.get_mut(h_mesh) {
+                                mesh_data.normalize_joint_weights();
+                                mesh_data.asset_usage = RenderAssetUsages::RENDER_WORLD;
+                            }
                         }
-                    } else {
-                        warn!("missing mesh for wearable, removing frustum culling just in case");
-                        commands.entity(scene_ent).try_insert(NoFrustumCulling);
                     }
+                    commands.entity(scene_ent).try_insert(NoFrustumCulling);
                 }
 
                 if let Some(h_mat) = maybe_h_mat {

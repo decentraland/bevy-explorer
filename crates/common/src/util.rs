@@ -7,7 +7,9 @@ use bevy::{
     ecs::{
         component::{Component, Mutable},
         schedule::IntoScheduleConfigs,
-        system::{Commands, EntityCommand, EntityCommands, Query, ScheduleSystem, SystemParam},
+        system::{
+            Commands, EntityCommand, EntityCommands, Query, ResMut, ScheduleSystem, SystemParam,
+        },
         world::EntityWorldMut,
     },
     math::Vec3,
@@ -531,7 +533,7 @@ impl TaskCompat for IoTaskPool {
 #[allow(clippy::type_complexity)]
 #[derive(SystemParam)]
 pub struct SceneSpawnerPlus<'w, 's> {
-    scene_spawner: Res<'w, SceneSpawner>,
+    scene_spawner: ResMut<'w, SceneSpawner>,
     asset_server: Res<'w, AssetServer>,
     query: Query<
         'w,
@@ -548,6 +550,12 @@ impl std::ops::Deref for SceneSpawnerPlus<'_, '_> {
 
     fn deref(&self) -> &Self::Target {
         &self.scene_spawner
+    }
+}
+
+impl std::ops::DerefMut for SceneSpawnerPlus<'_, '_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.scene_spawner
     }
 }
 
