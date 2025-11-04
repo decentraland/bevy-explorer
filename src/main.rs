@@ -330,8 +330,7 @@ fn main() {
                     primary_window: Some(Window {
                         title: "Decentraland Bevy Explorer".to_owned(),
                         present_mode,
-                        resolution: WindowResolution::new(1280.0, 720.0)
-                            .with_scale_factor_override(1.0),
+                        resolution: WindowResolution::new(1280.0, 720.0),
                         ..Default::default()
                     }),
                     ..Default::default()

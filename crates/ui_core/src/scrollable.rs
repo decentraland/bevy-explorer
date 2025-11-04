@@ -280,12 +280,11 @@ fn update_scrollables(
     let Ok(window) = window.single() else {
         return;
     };
+    let scale_factor = window.scale_factor();
 
     let bar_width = (window.width().min(window.height()) * 0.02).ceil();
 
-    let Some(window_cursor_position) = window.cursor_position() else {
-        return;
-    };
+    let window_cursor_position = window.cursor_position().unwrap_or(Vec2::NEG_ONE);
     let manual_cursor_positions: HashMap<_, _> = cursors.iter().collect();
     let cursor_position = |camera: Option<&UiTargetCamera>| -> Option<Vec2> {
         if let Some(camera) = camera {
@@ -294,7 +293,7 @@ fn update_scrollables(
             }
         }
 
-        Some(window_cursor_position)
+        Some(window_cursor_position * scale_factor)
     };
 
     if input_manager.just_up(CommonInputAction::IaPointer) {
@@ -325,8 +324,8 @@ fn update_scrollables(
 
         let cursor_position = cursor_position(maybe_target_camera);
 
-        let child_size = child_node.size();
-        let parent_size = node.size();
+        let child_size = child_node.size() / scale_factor;
+        let parent_size = node.size() / scale_factor;
         let ratio = parent_size / child_size;
         let ui_position = transform.translation().truncate() - parent_size * 0.5;
         let slide_amount = child_size - parent_size;
@@ -391,8 +390,9 @@ fn update_scrollables(
                 // - check all children for interaction (yuck)
                 // - add some context to FocusPolicy (e.g. FocusPolicy::Block(HashSet<Buttons>))
                 // - add another system to manage "container" focus based on child focus
+                let logical_ui_position = transform.translation().truncate() - node.size() * 0.5;
                 if clicked_scrollable.is_none_or(|(prev_entity, _)| prev_entity == entity)
-                    && cursor_position.clamp(ui_position, ui_position + parent_size)
+                    && cursor_position.clamp(logical_ui_position, logical_ui_position + node.size())
                         == cursor_position
                 {
                     for &action in SCROLL_SET.actions.iter().flatten() {
@@ -554,7 +554,7 @@ fn update_scrollables(
         {
             // jump the slider to the clicked position
             let Vec2 { x: left, y: top } = transform.translation().xy() - node.size() * 0.5;
-            let relative_position = cursor_position - Vec2::new(left, top);
+            let relative_position = (cursor_position - Vec2::new(left, top)) / scale_factor;
             let slider_len = (info.length * info.ratio).max(bar_width);
             let position = if bar.vertical {
                 (relative_position.y - slider_len * 0.5) / (info.length - slider_len)
