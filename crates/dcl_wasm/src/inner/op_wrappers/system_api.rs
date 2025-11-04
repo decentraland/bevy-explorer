@@ -302,16 +302,12 @@ pub fn op_set_interactable_area(
 }
 
 #[wasm_bindgen]
-pub async fn op_get_mic_state(
-    state: &WorkerContext,
-) {
-    dcl::js::system_api::op_get_mic_state(state.rc()).await;
+pub async fn op_get_mic_state(state: &WorkerContext) -> JsValue {
+    let state = dcl::js::system_api::op_get_mic_state(state.rc()).await;
+    serde_wasm_bindgen::to_value(&state).unwrap()
 }
 
 #[wasm_bindgen]
-pub async fn op_set_mic_enabled(
-    state: &WorkerContext,
-    enabled: bool,
-) {
+pub async fn op_set_mic_enabled(state: &WorkerContext, enabled: bool) {
     dcl::js::system_api::op_set_mic_enabled(state.rc(), enabled).await;
 }

@@ -336,16 +336,11 @@ pub fn op_set_interactable_area(
 
 #[op2(async)]
 #[serde]
-pub async fn op_get_mic_state(
-    state: Rc<RefCell<OpState>>,
-) -> MicStateInner {
+pub async fn op_get_mic_state(state: Rc<RefCell<OpState>>) -> MicStateInner {
     dcl::js::system_api::op_get_mic_state(state).await
 }
 
 #[op2(async)]
-pub async fn op_set_mic_enabled(
-    state: Rc<RefCell<OpState>>,
-    enabled: bool,
-) {
+pub async fn op_set_mic_enabled(state: Rc<RefCell<OpState>>, enabled: bool) {
     dcl::js::system_api::op_set_mic_enabled(state, enabled).await;
 }

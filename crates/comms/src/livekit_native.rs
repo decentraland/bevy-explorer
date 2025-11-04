@@ -9,12 +9,15 @@ use tokio::sync::{
     Mutex,
 };
 
-use common::{structs::{AudioDecoderError, MicState}, util::AsH160};
+use common::{
+    structs::{AudioDecoderError, MicState},
+    util::AsH160,
+};
 use dcl_component::proto_components::kernel::comms::rfc4;
 
 use crate::{
     global_crdt::{
-        GlobalCrdtState, LocalAudioFrame, LocalAudioSource,  PlayerMessage, PlayerUpdate,
+        GlobalCrdtState, LocalAudioFrame, LocalAudioSource, PlayerMessage, PlayerUpdate,
     },
     livekit_room::{LivekitConnection, LivekitTransport},
     NetworkMessage,

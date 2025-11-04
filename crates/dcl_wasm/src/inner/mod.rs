@@ -9,6 +9,7 @@ use std::{
 };
 
 use bevy::{log::tracing::span::EnteredSpan, tasks::IoTaskPool};
+use common::structs::MicState;
 use dcl::{
     interface::CrdtComponentInterfaces,
     js::{CommunicatedWithRenderer, ShuttingDown, SuperUserScene},
@@ -33,6 +34,7 @@ pub struct SceneInitializationData {
     pub global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     pub ipfs: IpfsResource,
     pub wallet: Wallet,
+    pub mic: MicState,
     pub id: SceneId,
     pub storage_root: String,
     pub inspect: bool,
@@ -59,6 +61,7 @@ pub fn spawn_scene(
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     ipfs: IpfsResource,
     wallet: Wallet,
+    mic: MicState,
     id: SceneId,
     storage_root: String,
     inspect: bool,
@@ -86,6 +89,7 @@ pub fn spawn_scene(
                     global_update_receiver,
                     ipfs,
                     wallet,
+                    mic,
                     id,
                     storage_root,
                     inspect,
@@ -136,6 +140,7 @@ pub async fn wasm_init_scene() -> Result<WorkerContext, JsValue> {
         scene_initialization_data.global_update_receiver,
         scene_initialization_data.ipfs,
         scene_initialization_data.wallet,
+        scene_initialization_data.mic,
         scene_initialization_data.inspect,
         scene_initialization_data.testing,
         scene_initialization_data.preview,

@@ -9,6 +9,7 @@ edition = "2021"
 default = []
 
 [dependencies]
+common = { workspace = true }
 dcl = { workspace = true }
 ipfs = { workspace = true }
 wallet = { workspace = true }
