@@ -190,12 +190,6 @@ impl LocalAudioSource {
     }
 }
 
-#[derive(Resource, Default)]
-pub struct MicState {
-    pub available: bool,
-    pub enabled: bool,
-}
-
 #[derive(Serialize, Deserialize, Component, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ForeignMetaData {

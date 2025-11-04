@@ -9,12 +9,12 @@ use tokio::sync::{
     Mutex,
 };
 
-use common::{structs::AudioDecoderError, util::AsH160};
+use common::{structs::{AudioDecoderError, MicState}, util::AsH160};
 use dcl_component::proto_components::kernel::comms::rfc4;
 
 use crate::{
     global_crdt::{
-        GlobalCrdtState, LocalAudioFrame, LocalAudioSource, MicState, PlayerMessage, PlayerUpdate,
+        GlobalCrdtState, LocalAudioFrame, LocalAudioSource,  PlayerMessage, PlayerUpdate,
     },
     livekit_room::{LivekitConnection, LivekitTransport},
     NetworkMessage,
@@ -49,8 +49,9 @@ pub fn update_mic(
     mic: Res<LocalAudioSource>,
     mut last_name: Local<String>,
     mut stream: NonSendMut<MicStream>,
-    mut mic_state: ResMut<MicState>,
+    mic_state: Res<MicState>,
 ) {
+    let mut mic_state = mic_state.inner.blocking_write();
     let default_host = cpal::default_host();
     let default_input = default_host.default_input_device();
     if let Some(input) = default_input {

@@ -2,10 +2,10 @@ use bevy::prelude::*;
 use common::{
     inputs::SystemAction,
     sets::SetupSets,
-    structs::{SystemAudio, ToolTips, TooltipSource},
+    structs::{MicState, SystemAudio, ToolTips, TooltipSource},
     util::TryPushChildrenEx,
 };
-use comms::{global_crdt::MicState, Transport, TransportType};
+use comms::{Transport, TransportType};
 use input_manager::{InputManager, InputPriority};
 use ui_core::ui_actions::{Click, HoverEnter, HoverExit, On};
 
@@ -53,7 +53,8 @@ fn setup(mut commands: Commands, images: Res<MicImages>, ui_root: Res<SystemUiRo
             },
             bevy::ui::FocusPolicy::Block,
             Interaction::default(),
-            On::<Click>::new(|mut commands: Commands, mut mic_state: ResMut<MicState>| {
+            On::<Click>::new(|mut commands: Commands, mic_state: Res<MicState>| {
+                let mut mic_state = mic_state.inner.blocking_write();
                 mic_state.enabled = !mic_state.enabled;
                 if mic_state.enabled {
                     commands.send_event(SystemAudio(
@@ -68,7 +69,8 @@ fn setup(mut commands: Commands, images: Res<MicImages>, ui_root: Res<SystemUiRo
             On::<HoverEnter>::new(
                 |mut tooltip: ResMut<ToolTips>,
                  transport: Query<&Transport>,
-                 state: Res<MicState>| {
+                 mic_state: Res<MicState>| {
+                    let mic_state = mic_state.inner.blocking_read();
                     let transport_available = transport
                         .iter()
                         .any(|t| t.transport_type == TransportType::Livekit);
@@ -76,7 +78,7 @@ fn setup(mut commands: Commands, images: Res<MicImages>, ui_root: Res<SystemUiRo
                         TooltipSource::Label("mic"),
                         vec![(
                             "LCtrl : Push to talk".to_owned(),
-                            transport_available && state.available,
+                            transport_available && mic_state.available,
                         )],
                     );
                 },
@@ -94,7 +96,7 @@ fn setup(mut commands: Commands, images: Res<MicImages>, ui_root: Res<SystemUiRo
 #[allow(clippy::too_many_arguments)]
 fn update_mic_ui(
     mut commands: Commands,
-    mut mic_state: ResMut<MicState>,
+    mic_state: Res<MicState>,
     transport: Query<&Transport>,
     mut button: Query<&mut ImageNode, With<MicUiMarker>>,
     mut pressed: Local<bool>,
@@ -102,6 +104,7 @@ fn update_mic_ui(
     mic_images: Res<MicImages>,
     mut prev_active: Local<bool>,
 ) {
+    let mut mic_state = mic_state.inner.blocking_write();
     let mic_available = mic_state.available;
     let transport_available = transport
         .iter()

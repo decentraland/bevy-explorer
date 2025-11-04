@@ -12,7 +12,7 @@ use bevy::{
 };
 
 use common::{
-    structs::{AppConfig, AppError, IVec2Arg, SceneLoadDistance, SceneMeta},
+    structs::{AppConfig, AppError, IVec2Arg, MicState, SceneLoadDistance, SceneMeta},
     util::{TaskExt, TryPushChildrenEx},
 };
 use comms::{global_crdt::GlobalCrdtState, preview::PreviewMode};
@@ -543,6 +543,7 @@ pub(crate) fn initialize_scene(
     testing_data: Res<TestingData>,
     preview_mode: Res<PreviewMode>,
     su_bridge: Res<SystemBridge>,
+    mic: Res<MicState>,
 ) {
     for (root, mut state, h_code, mut context, super_user) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript(_)) || context.tick_number != 1 {
@@ -601,6 +602,7 @@ pub(crate) fn initialize_scene(
             global_updates,
             ipfs.clone(),
             wallet.clone(),
+            mic.clone(),
             scene_id,
             context.storage_root.clone(),
             inspected,

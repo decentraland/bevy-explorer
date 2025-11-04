@@ -7,6 +7,7 @@ use bevy::{
 };
 use dcl_component::proto_components::sdk::components::common::CameraTransition;
 use ethers_core::abi::Address;
+use platform::AsyncRwLock;
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -1024,4 +1025,15 @@ impl ZOrder {
 #[derive(Event, Debug)]
 pub enum AppError {
     NetworkFailure(anyhow::Error),
+}
+
+#[derive(Resource, Default, Clone)]
+pub struct MicState {
+    pub inner: Arc<AsyncRwLock<MicStateInner>>,
+}
+
+#[derive(Default, Serialize, Deserialize, Clone)]
+pub struct MicStateInner {
+    pub available: bool,
+    pub enabled: bool,
 }
