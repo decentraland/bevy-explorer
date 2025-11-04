@@ -10,11 +10,11 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use crate::{
-    global_crdt::{GlobalCrdtState, MicState, PlayerMessage, PlayerUpdate},
+    global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
     livekit_room::{LivekitConnection, LivekitTransport},
     NetworkMessage,
 };
-use common::util::AsH160;
+use common::{structs::MicState, util::AsH160};
 use dcl_component::proto_components::kernel::comms::rfc4;
 
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
@@ -89,10 +89,11 @@ impl Plugin for MicPlugin {
 }
 
 fn update_mic_state(
-    mut mic_state: ResMut<MicState>,
+    mic_state: Res<MicState>,
     mut last_enabled: Local<Option<bool>>,
     mut last_available: Local<Option<bool>>,
 ) {
+    let mut mic_state = mic_state.inner.blocking_write();
     // Check if microphone is available in the browser
     let current_available = is_microphone_available().unwrap_or(false);
 

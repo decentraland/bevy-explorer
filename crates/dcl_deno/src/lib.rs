@@ -6,6 +6,7 @@ use std::{
 };
 
 use bevy::{log::error, platform::collections::HashMap};
+use common::structs::MicState;
 use deno_core::v8::IsolateHandle;
 use once_cell::sync::Lazy;
 use system_bridge::SystemApi;
@@ -35,6 +36,7 @@ pub fn spawn_scene(
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     ipfs: IpfsResource,
     wallet: Wallet,
+    mic: MicState,
     id: SceneId,
     storage_root: String,
     inspect: bool,
@@ -60,6 +62,7 @@ pub fn spawn_scene(
                     global_update_receiver,
                     ipfs,
                     wallet,
+                    mic,
                     inspect,
                     testing,
                     preview,

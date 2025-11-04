@@ -2,6 +2,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
 
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use bevy::log::{debug, error, info_span};
+use common::structs::MicState;
 use dcl::{
     interface::CrdtComponentInterfaces,
     js::{
@@ -193,6 +194,7 @@ pub(crate) fn scene_thread(
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     ipfs: IpfsResource,
     wallet: Wallet,
+    mic: MicState,
     inspect: bool,
     testing: bool,
     preview: bool,
@@ -219,6 +221,7 @@ pub(crate) fn scene_thread(
         global_update_receiver,
         ipfs,
         wallet,
+        mic,
         inspect,
         testing,
         preview,

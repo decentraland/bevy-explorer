@@ -5,6 +5,7 @@ use std::{
 };
 
 use bevy::log::debug;
+use common::structs::MicState;
 use ipfs::{IpfsResource, SceneJsFile};
 use system_bridge::SystemApi;
 use tokio::sync::{mpsc::Receiver, Mutex};
@@ -111,6 +112,7 @@ pub fn init_state(
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     ipfs: IpfsResource,
     wallet: Wallet,
+    mic: MicState,
     _inspect: bool,
     testing: bool,
     preview: bool,
@@ -126,6 +128,7 @@ pub fn init_state(
     state.put(global_update_receiver);
     state.put(ipfs);
     state.put(wallet);
+    state.put(mic);
     state.put(CrdtStore::default());
     state.put(RpcCalls::default());
     state.put(RendererStore(CrdtStore::default()));

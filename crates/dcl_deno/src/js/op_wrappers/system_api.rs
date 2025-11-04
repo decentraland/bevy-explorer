@@ -1,6 +1,6 @@
 use common::{
     inputs::SystemActionEvent,
-    structs::{PermissionType, PermissionUsed, PermissionValue},
+    structs::{MicStateInner, PermissionType, PermissionUsed, PermissionValue},
 };
 use dcl::js::system_api::{JsBindingsData, PermissionTypeDetail};
 use dcl_component::proto_components::{
@@ -55,6 +55,8 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_get_permanent_permissions(),
             op_get_permission_types(),
             op_set_interactable_area(),
+            op_get_mic_state(),
+            op_set_mic_enabled(),
         ]
     } else {
         Vec::default()
@@ -330,4 +332,15 @@ pub fn op_set_interactable_area(
     bottom: f32,
 ) {
     dcl::js::system_api::op_set_interactable_area(state, left, top, right, bottom);
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_mic_state(state: Rc<RefCell<OpState>>) -> MicStateInner {
+    dcl::js::system_api::op_get_mic_state(state).await
+}
+
+#[op2(async)]
+pub async fn op_set_mic_enabled(state: Rc<RefCell<OpState>>, enabled: bool) {
+    dcl::js::system_api::op_set_mic_enabled(state, enabled).await;
 }

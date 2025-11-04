@@ -5,9 +5,8 @@ use tokio::sync::mpsc::Receiver;
 
 use dcl_component::proto_components::kernel::comms::rfc4;
 
-use crate::{
-    global_crdt::MicState, profile::CurrentUserProfile, NetworkMessage, Transport, TransportType,
-};
+use crate::{profile::CurrentUserProfile, NetworkMessage, Transport, TransportType};
+use common::structs::MicState;
 
 // main.rs or lib.rs
 

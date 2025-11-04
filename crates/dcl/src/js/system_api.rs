@@ -5,7 +5,8 @@ use common::{
     profile::SerializedProfile,
     rpc::RpcCall,
     structs::{
-        PermissionLevel, PermissionStrings, PermissionType, PermissionUsed, PermissionValue,
+        MicState, MicStateInner, PermissionLevel, PermissionStrings, PermissionType,
+        PermissionUsed, PermissionValue,
     },
 };
 use dcl_component::proto_components::{
@@ -654,4 +655,19 @@ pub fn op_set_interactable_area(
         .send(SystemApi::SetInteractableArea(Vec4::new(
             left, top, right, bottom,
         )));
+}
+
+pub async fn op_set_mic_enabled(state: Rc<RefCell<impl State>>, enabled: bool) {
+    let mic_state = state.borrow().borrow::<MicState>().inner.clone();
+    let mut mic_state = mic_state.write().await;
+
+    if mic_state.available {
+        mic_state.enabled = enabled;
+    }
+}
+
+pub async fn op_get_mic_state(state: Rc<RefCell<impl State>>) -> MicStateInner {
+    let mic_state = state.borrow().borrow::<MicState>().inner.clone();
+    let result = mic_state.read().await.clone();
+    result
 }

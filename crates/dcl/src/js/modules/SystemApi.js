@@ -306,3 +306,11 @@ module.exports.getPermissionTypes = function() {
 module.exports.setInteractableArea = function(body) {
     Deno.core.ops.op_set_interactable_area(body.left, body.top, body.right, body.bottom);
 }
+
+module.exports.getMicState = function() {
+    return Deno.core.ops.op_get_mic_state();
+}
+
+module.exports.setMicEnabled = function(enabled) {
+    Deno.core.ops.op_set_mic_enabled(enabled);
+}
