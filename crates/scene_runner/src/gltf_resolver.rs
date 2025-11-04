@@ -35,6 +35,7 @@ impl GltfResolver<'_, '_> {
                     |s| {
                         s.load_cameras = false;
                         s.load_lights = false;
+                        s.load_meshes = RenderAssetUsages::all();
                         s.load_materials = RenderAssetUsages::RENDER_WORLD;
                         s.include_source = true;
                     },

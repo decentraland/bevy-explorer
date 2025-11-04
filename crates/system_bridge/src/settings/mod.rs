@@ -1,7 +1,5 @@
-use std::{
-    fmt::Display,
-    sync::{Arc, RwLock},
-};
+use platform::AsyncRwLock;
+use std::{fmt::Display, sync::Arc};
 
 use ambient_brightness_setting::AmbientSetting;
 use anyhow::anyhow;
@@ -117,7 +115,7 @@ impl Plugin for SettingBridgePlugin {
 
         let config_copy = app.world().resource::<AppConfig>().clone();
         let mut settings = Settings {
-            inner: Arc::new(RwLock::new(SettingsInner {
+            inner: Arc::new(AsyncRwLock::new(SettingsInner {
                 settings: Vec::default(),
                 config_copy,
                 updated: false,
@@ -289,22 +287,22 @@ pub struct SettingsInner {
 
 #[derive(Resource, Clone)]
 pub struct Settings {
-    pub inner: Arc<RwLock<SettingsInner>>,
+    pub inner: Arc<AsyncRwLock<SettingsInner>>,
 }
 
 impl Settings {
-    pub fn get(&self) -> Vec<SettingInfo> {
+    pub async fn get(&self) -> Vec<SettingInfo> {
         self.inner
             .read()
-            .unwrap()
+            .await
             .settings
             .iter()
             .map(|s| s.info.clone())
             .collect()
     }
 
-    pub fn set_value(&self, name: &str, value: f32) -> Result<(), anyhow::Error> {
-        let mut inner = self.inner.write().unwrap();
+    pub async fn set_value(&self, name: &str, value: f32) -> Result<(), anyhow::Error> {
+        let mut inner = self.inner.write().await;
         let apply = inner
             .settings
             .iter_mut()
@@ -327,8 +325,8 @@ impl Settings {
     }
 
     pub fn add_int_setting<S: IntAppSetting>(&mut self) {
-        let value = S::load(&self.inner.read().unwrap().config_copy);
-        self.inner.write().unwrap().settings.push(Setting {
+        let value = S::load(&self.inner.blocking_read().config_copy);
+        self.inner.blocking_write().settings.push(Setting {
             info: SettingInfo {
                 name: S::title(),
                 category: S::category().to_string(),
@@ -351,7 +349,7 @@ impl Settings {
     }
 
     pub fn add_enum_setting<S: EnumAppSetting>(&mut self) {
-        let value = S::load(&self.inner.read().unwrap().config_copy);
+        let value = S::load(&self.inner.blocking_read().config_copy);
         let index = S::variants()
             .iter()
             .enumerate()
@@ -365,7 +363,7 @@ impl Settings {
             .find(|(_, s)| **s == default_value)
             .map(|(ix, _)| ix)
             .unwrap_or(0);
-        self.inner.write().unwrap().settings.push(Setting {
+        self.inner.blocking_write().settings.push(Setting {
             info: SettingInfo {
                 name: S::title(),
                 category: S::category().to_string(),
@@ -396,12 +394,12 @@ impl Settings {
     }
 
     pub fn sync_settings_object(settings: Res<Self>, mut config: ResMut<AppConfig>) {
-        if settings.inner.read().unwrap().updated {
-            let mut write = settings.inner.write().unwrap();
+        if settings.inner.blocking_read().updated {
+            let mut write = settings.inner.blocking_write();
             *config = write.config_copy.clone();
             write.updated = false;
         } else if config.is_changed() {
-            let mut write = settings.inner.write().unwrap();
+            let mut write = settings.inner.blocking_write();
             write.config_copy = config.clone();
         }
     }

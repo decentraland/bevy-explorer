@@ -372,6 +372,7 @@ impl AssetLoader for WearableLoader {
                     .with_settings::<GltfLoaderSettings>(|s| {
                         s.load_cameras = false;
                         s.load_lights = false;
+                        s.load_meshes = RenderAssetUsages::MAIN_WORLD;
                         s.load_materials = RenderAssetUsages::RENDER_WORLD;
                     })
                     .load(path);

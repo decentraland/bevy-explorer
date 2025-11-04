@@ -243,6 +243,7 @@ fn update_gltf(
             move |s| {
                 s.load_cameras = false;
                 s.load_lights = true;
+                s.load_meshes = RenderAssetUsages::MAIN_WORLD; // we'll modify then upload
                 s.load_materials = RenderAssetUsages::RENDER_WORLD;
                 s.include_source = true;
                 s.immediate_upload = immediate_upload;
@@ -328,9 +329,12 @@ fn update_gltf(
 #[derive(Component, Debug)]
 pub struct GltfMaterialName(String);
 
+#[derive(Clone)]
 pub struct CachedMeshData {
     pub mesh_id: AssetId<Mesh>,
-    maybe_collider: Option<Handle<Mesh>>,
+    pub is_skinned: bool,
+    pub shape: SharedShape,
+    pub maybe_collider: Option<Handle<Mesh>>,
 }
 
 #[derive(Component, Default)]
@@ -373,7 +377,7 @@ fn update_ready_gltfs(
         ResMut<Assets<AnimationGraph>>,
         ResMut<Assets<Mesh>>,
     ),
-    scene_spawner: SceneSpawnerPlus,
+    mut scene_spawner: SceneSpawnerPlus,
     mut contexts: Query<(
         &mut RendererSceneContext,
         &mut SceneResourceLookup,
@@ -391,7 +395,11 @@ fn update_ready_gltfs(
     gltfs: Res<Assets<Gltf>>,
     animation_clips: Res<Assets<AnimationClip>>,
 ) {
-    for (bevy_scene_entity, dcl_scene_entity, loaded, definition, h_gltf) in ready_gltfs.iter() {
+    let mut failed = Vec::default();
+
+    'outer: for (bevy_scene_entity, dcl_scene_entity, loaded, definition, h_gltf) in
+        ready_gltfs.iter()
+    {
         if loaded.0.is_none() {
             // nothing to process
             commands
@@ -547,19 +555,10 @@ fn update_ready_gltfs(
                         continue;
                     };
 
-                    let Some(mut read_only_mesh_data) = meshes.get(h_gltf_mesh) else {
+                    let Some(read_only_mesh_data) = meshes.get(h_gltf_mesh) else {
                         error!("gltf contained mesh not loaded?!");
                         continue;
                     };
-
-                    let has_joints = read_only_mesh_data
-                        .attribute(Mesh::ATTRIBUTE_JOINT_INDEX)
-                        .is_some();
-                    let has_weights = read_only_mesh_data
-                        .attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT)
-                        .is_some();
-                    let has_skin = maybe_skin.is_some();
-                    let is_skinned = has_skin && has_joints && has_weights;
 
                     // get or create hash
                     // note we must use the handle lookup rather than recomputing the hash as we may modify the mesh on first load,
@@ -575,10 +574,20 @@ fn update_ready_gltfs(
                                 .entry(h_gltf_mesh.id())
                                 .or_insert_with(|| {
                                     let hasher = &mut std::hash::DefaultHasher::new();
+
                                     for (attr, data) in read_only_mesh_data.attributes() {
                                         attr.id.hash(hasher);
                                         data.get_bytes().hash(hasher);
                                     }
+
+                                    let has_joints = read_only_mesh_data
+                                        .attribute(Mesh::ATTRIBUTE_JOINT_INDEX)
+                                        .is_some();
+                                    let has_weights = read_only_mesh_data
+                                        .attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT)
+                                        .is_some();
+                                    let has_skin = maybe_skin.is_some();
+                                    let is_skinned = has_skin && has_joints && has_weights;
 
                                     is_skinned.hash(hasher);
 
@@ -593,55 +602,101 @@ fn update_ready_gltfs(
                         )
                     };
 
-                    // try and get existing mesh/collider pair from hash
-                    let existing_pair = maybe_hash
+                    // try and get existing mesh/collider data from hash
+                    let existing_data = maybe_hash
                         .and_then(|hash| resource_lookup.meshes_by_hash.get(&hash))
                         .and_then(|data| {
-                            asset_server
-                                .get_id_handle(data.mesh_id)
-                                .map(|h| (h, data.maybe_collider.clone()))
+                            asset_server.get_id_handle(data.mesh_id).map(|h| (h, data))
                         });
 
-                    let (h_mesh, cached_collider) =
-                        if let Some((h_mesh, cached_collider)) = existing_pair {
-                            if h_mesh.id() != h_gltf_mesh.0.id() {
-                                // overwrite with cached handle
-                                commands.entity(spawned_ent).insert(Mesh3d(h_mesh.clone()));
-                            }
-                            (h_mesh, cached_collider)
+                    let (h_mesh, data) = if let Some((h_mesh, cached_data)) = existing_data {
+                        if h_mesh.id() != h_gltf_mesh.0.id() {
+                            // overwrite with cached handle
+                            commands.entity(spawned_ent).insert(Mesh3d(h_mesh.clone()));
+                        }
+                        (h_mesh, cached_data.clone())
+                    } else {
+                        // fix up the mesh
+                        let mesh_data = meshes.get_mut(h_gltf_mesh.0.id()).unwrap();
+                        mesh_data.normalize_joint_weights();
+
+                        if maybe_hash.is_some() {
+                            // if we won't need the mesh data again, we can push it only to gpu
+                            mesh_data.asset_usage = RenderAssetUsages::RENDER_WORLD;
                         } else {
-                            // fix up the mesh
-                            let mesh_data = meshes.get_mut(h_gltf_mesh.0.id()).unwrap();
-                            mesh_data.normalize_joint_weights();
+                            // if we can't make a hash to reuse the mesh, we need to keep the data cpu-side as well,
+                            // to rebuild everything next time
+                            mesh_data.asset_usage |= RenderAssetUsages::RENDER_WORLD;
+                        }
 
-                            if !is_skinned {
-                                // bevy crashes if unskinned models have joints and weights, or if skinned models don't
-                                if has_joints {
-                                    mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_INDEX);
-                                }
-                                if has_weights {
-                                    mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT);
-                                }
-                            }
+                        let has_joints = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_INDEX).is_some();
+                        let has_weights =
+                            mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
+                        let has_skin = maybe_skin.is_some();
+                        let is_skinned = has_skin && has_joints && has_weights;
 
-                            if let Some(hash) = maybe_hash {
-                                // and store it for next time
-                                resource_lookup.meshes_by_hash.insert(
-                                    hash,
-                                    CachedMeshData {
-                                        mesh_id: h_gltf_mesh.id(),
-                                        maybe_collider: None,
-                                    },
-                                );
+                        if !is_skinned {
+                            // bevy crashes if unskinned models have joints and weights, or if skinned models don't
+                            if has_joints {
+                                mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_INDEX);
                             }
-                            *tracker.0.entry("Unique Meshes").or_default() += 1;
-                            read_only_mesh_data = &*mesh_data;
-                            (h_gltf_mesh.0.clone(), None)
+                            if has_weights {
+                                mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT);
+                            }
+                        }
+
+                        let shape = mesh_to_parry_shape(mesh_data);
+
+                        let maybe_collider = if is_skinned {
+                            let mut new_mesh = Mesh::new(
+                                mesh_data.primitive_topology(),
+                                RenderAssetUsages::RENDER_WORLD,
+                            );
+                            if let Some(indices) = mesh_data.indices().cloned() {
+                                new_mesh.insert_indices(indices);
+                            }
+                            for (attribute, data) in mesh_data.attributes() {
+                                let attribute = match attribute.id {
+                                    id if id == Mesh::ATTRIBUTE_JOINT_INDEX.id => continue,
+                                    id if id == Mesh::ATTRIBUTE_JOINT_WEIGHT.id => continue,
+                                    id if id == Mesh::ATTRIBUTE_POSITION.id => {
+                                        Mesh::ATTRIBUTE_POSITION
+                                    }
+                                    id if id == Mesh::ATTRIBUTE_NORMAL.id => Mesh::ATTRIBUTE_NORMAL,
+                                    id if id == Mesh::ATTRIBUTE_UV_0.id => Mesh::ATTRIBUTE_UV_0,
+                                    id if id == Mesh::ATTRIBUTE_UV_1.id => Mesh::ATTRIBUTE_UV_1,
+                                    id if id == Mesh::ATTRIBUTE_TANGENT.id => {
+                                        Mesh::ATTRIBUTE_TANGENT
+                                    }
+                                    id if id == Mesh::ATTRIBUTE_COLOR.id => Mesh::ATTRIBUTE_COLOR,
+                                    _ => continue,
+                                };
+
+                                new_mesh.insert_attribute(attribute, data.clone());
+                            }
+                            Some(meshes.add(new_mesh))
+                        } else {
+                            None
                         };
+
+                        let data = CachedMeshData {
+                            mesh_id: h_gltf_mesh.id(),
+                            is_skinned,
+                            shape,
+                            maybe_collider,
+                        };
+
+                        if let Some(hash) = maybe_hash {
+                            // and store it for next time
+                            resource_lookup.meshes_by_hash.insert(hash, data.clone());
+                        }
+                        *tracker.0.entry("Unique Meshes").or_default() += 1;
+                        (h_gltf_mesh.0.clone(), data)
+                    };
 
                     *tracker.0.entry("Total Meshes").or_default() += 1;
 
-                    if is_skinned {
+                    if data.is_skinned {
                         // bevy doesn't calculate culling correctly for skinned entities
                         commands.entity(spawned_ent).try_insert(NoFrustumCulling);
                     } else if maybe_skin.is_some() {
@@ -673,7 +728,11 @@ fn update_ready_gltfs(
                             h_scene_material.clone()
                         } else {
                             let Some(base) = base_mats.get(h_material) else {
-                                panic!();
+                                warn!(
+                                    "error acquiring gltf material; retrying full gltf next frame"
+                                );
+                                failed.push((bevy_scene_entity, instance));
+                                break 'outer;
                             };
                             let h_scene_material = bound_mats.add(ExtendedMaterial {
                                 base: base.clone(),
@@ -740,7 +799,7 @@ fn update_ready_gltfs(
                                     if is_collider {
                                         definition.0.invisible_meshes_collision_mask.unwrap_or(
                                             // colliders default to physics + pointers
-                                            if is_skinned {
+                                            if data.is_skinned {
                                                 // if skinned, maybe foundation uses 0 default?
                                                 0
                                             } else {
@@ -760,73 +819,19 @@ fn update_ready_gltfs(
                     if collider_bits != 0
                     /* && !is_skinned */
                     {
-                        let shape = mesh_to_parry_shape(read_only_mesh_data);
-
                         let index = collider_counter
                             .entry(collider_base_name.to_owned())
                             .or_default();
                         *index += 1u32;
 
-                        let h_collider = if is_skinned {
-                            match cached_collider {
-                                Some(collider) => collider,
-                                None => {
-                                    let mut new_mesh = Mesh::new(
-                                        read_only_mesh_data.primitive_topology(),
-                                        RenderAssetUsages::RENDER_WORLD,
-                                    );
-                                    if let Some(indices) = read_only_mesh_data.indices().cloned() {
-                                        new_mesh.insert_indices(indices);
-                                    }
-                                    for (attribute, data) in read_only_mesh_data.attributes() {
-                                        let attribute = match attribute.id {
-                                            id if id == Mesh::ATTRIBUTE_JOINT_INDEX.id => continue,
-                                            id if id == Mesh::ATTRIBUTE_JOINT_WEIGHT.id => continue,
-                                            id if id == Mesh::ATTRIBUTE_POSITION.id => {
-                                                Mesh::ATTRIBUTE_POSITION
-                                            }
-                                            id if id == Mesh::ATTRIBUTE_NORMAL.id => {
-                                                Mesh::ATTRIBUTE_NORMAL
-                                            }
-                                            id if id == Mesh::ATTRIBUTE_UV_0.id => {
-                                                Mesh::ATTRIBUTE_UV_0
-                                            }
-                                            id if id == Mesh::ATTRIBUTE_UV_1.id => {
-                                                Mesh::ATTRIBUTE_UV_1
-                                            }
-                                            id if id == Mesh::ATTRIBUTE_TANGENT.id => {
-                                                Mesh::ATTRIBUTE_TANGENT
-                                            }
-                                            id if id == Mesh::ATTRIBUTE_COLOR.id => {
-                                                Mesh::ATTRIBUTE_COLOR
-                                            }
-                                            _ => {
-                                                warn!(
-                                                    "unrecognised vertex attribute {attribute:?}"
-                                                );
-                                                continue;
-                                            }
-                                        };
-
-                                        new_mesh.insert_attribute(attribute, data.clone());
-                                    }
-                                    let h_collider = meshes.add(new_mesh);
-
-                                    if let Some(data) = maybe_hash.and_then(|hash| {
-                                        resource_lookup.meshes_by_hash.get_mut(&hash)
-                                    }) {
-                                        data.maybe_collider = Some(h_collider.clone());
-                                    }
-
-                                    h_collider
-                                }
-                            }
+                        let h_collider = if data.is_skinned {
+                            data.maybe_collider.clone().unwrap()
                         } else {
                             h_mesh.clone()
                         };
 
                         commands.entity(spawned_ent).try_insert(MeshCollider {
-                            shape: MeshColliderShape::Shape(shape, h_collider),
+                            shape: MeshColliderShape::Shape(data.shape.clone(), h_collider),
                             collision_mask: collider_bits,
                             mesh_name: collider_base_name.map(ToOwned::to_owned),
                             index: *index,
@@ -943,6 +948,11 @@ fn update_ready_gltfs(
                 .filter(|(_, data)| meshes.get(data.mesh_id).is_some())
                 .count();
         }
+    }
+
+    for (bevy_scene_entity, instance) in failed {
+        commands.entity(bevy_scene_entity).remove::<()>();
+        scene_spawner.despawn_instance(*instance);
     }
 }
 
