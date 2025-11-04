@@ -202,12 +202,7 @@ pub fn show_conversation(
             None,
             button,
             false,
-            Some(UiRect::new(
-                Val::Px(1.0),
-                Val::Px(1.0),
-                Val::Px(1.0),
-                Val::Px(0.0),
-            )),
+            Some(Vec4::new(1.0, 1.0, 1.0, 0.0)),
         )
         .unwrap()
         .root;

@@ -16,7 +16,7 @@ pub struct NodeBounds {
     pub corner_size: Val,
     pub corner_blend_size: Val,
     pub border_size: Val,
-    pub edge_scale: UiRect,
+    pub edge_scale: Vec4, // left, top, right, bottom
     pub border_color: Color,
 }
 
@@ -26,7 +26,7 @@ impl Default for NodeBounds {
             corner_size: Default::default(),
             corner_blend_size: Default::default(),
             border_size: Default::default(),
-            edge_scale: UiRect::all(Val::Auto),
+            edge_scale: Vec4::ONE,
             border_color: Default::default(),
         }
     }
@@ -183,15 +183,10 @@ fn update_bounded_nodes(
         let resolve = |v: Val| {
             v.resolve(node.unrounded_size().min_element(), window)
                 .unwrap_or(1.0)
-                * node.inverse_scale_factor()
+                / node.inverse_scale_factor()
         };
 
-        mat.bounds.edge_scale = Vec4::new(
-            resolve(bounds.edge_scale.left),
-            resolve(bounds.edge_scale.top),
-            resolve(bounds.edge_scale.right),
-            resolve(bounds.edge_scale.bottom),
-        );
+        mat.bounds.edge_scale = bounds.edge_scale;
         mat.bounds.corner_size = resolve(bounds.corner_size);
         mat.bounds.corner_blend_size = resolve(bounds.corner_blend_size);
         mat.bounds.border_size = resolve(bounds.border_size);
@@ -295,7 +290,19 @@ impl DuiTemplate for DuiNodeBounds {
             corner_blend_size: props.take_as::<Val>(ctx, "blend-size")?.unwrap_or_default(),
             edge_scale: props
                 .take_as::<UiRect>(ctx, "edge-scale")?
-                .unwrap_or(UiRect::all(Val::Auto)),
+                .map(|rect| {
+                    let UiRect {
+                        left: Val::Px(left),
+                        top: Val::Px(top),
+                        right: Val::Px(right),
+                        bottom: Val::Px(bottom),
+                    } = rect
+                    else {
+                        panic!();
+                    };
+                    Vec4::new(left, top, right, bottom)
+                })
+                .unwrap_or(Vec4::ONE),
             border_size: props
                 .take_as::<Val>(ctx, "border-size")?
                 .unwrap_or_default(),

@@ -402,7 +402,7 @@ impl TabManager<'_, '_> {
         ix: Option<usize>,
         button: DuiButton,
         toggle: bool,
-        edge_scale: Option<UiRect>,
+        edge_scale: Option<Vec4>,
     ) -> Result<DuiEntities, anyhow::Error> {
         let Ok(mut tab) = self.tabs.get_mut(tab_entity) else {
             warn!("no tab");
@@ -436,7 +436,7 @@ impl TabSelection {
         ix: Option<usize>,
         button: DuiButton,
         toggle: bool,
-        edge_scale: Option<UiRect>,
+        edge_scale: Option<Vec4>,
     ) -> Result<&DuiEntities, anyhow::Error> {
         let id = self.entity;
         let ix = ix.unwrap_or(self.active_entities.len());
@@ -514,7 +514,18 @@ impl DuiTemplate for DuiTabGroupTemplate {
             .take::<On<DataChanged>>("onchanged")?
             .ok_or(anyhow!("no action for tabgroup"))?;
         let toggle = props.take_as::<bool>(ctx, "toggle")?.unwrap_or(false);
-        let edge_scale = props.take_as::<UiRect>(ctx, "edge-scale")?;
+        let edge_scale = props.take_as::<UiRect>(ctx, "edge-scale")?.map(|rect| {
+            let UiRect {
+                left: Val::Px(left),
+                top: Val::Px(top),
+                right: Val::Px(right),
+                bottom: Val::Px(bottom),
+            } = rect
+            else {
+                panic!();
+            };
+            Vec4::new(left, top, right, bottom)
+        });
 
         let mut selection = TabSelection {
             entity: id,
