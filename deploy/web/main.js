@@ -302,7 +302,6 @@ Promise.all([initEngine(), initGpuCache()])
   });
 
 window.set_url_params = (x, y, server, system_scene, preview) => {
-  console.log(`set url params: (${x},${y}), ${server}, ${system_scene}, ${preview}`);
   try {
     const urlParams = new URLSearchParams(window.location.search);
 
@@ -327,10 +326,8 @@ window.set_url_params = (x, y, server, system_scene, preview) => {
     }
 
     const newPath = window.location.pathname + '?' + urlParams.toString(); 
-    console.log(`replacing state`);
     history.replaceState(null, '', newPath);
-    console.log(`set url params done`);
   } catch (e) {
-    console.log(`set failed: ${e}`);
+    console.log(`set url params failed: ${e}`);
   }
 }
