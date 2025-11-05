@@ -37,11 +37,11 @@ use common::{
     inputs::InputMap,
     rpc::RpcCall,
     structs::{
-        AppConfig, CursorLocks, GraphicsSettings, PermissionUsed, PrimaryCamera, PrimaryPlayerRes,
-        SceneGlobalLight, SceneLoadDistance, TimeOfDay, ToolTips,
+        AppConfig, CursorLocks, GraphicsSettings, PermissionUsed, PreviewMode, PrimaryCamera,
+        PrimaryPlayerRes, SceneGlobalLight, SceneLoadDistance, TimeOfDay, ToolTips,
     },
 };
-use comms::{preview::PreviewMode, CommsPlugin};
+use comms::CommsPlugin;
 use console::{self, ConsolePlugin};
 use dcl::{
     crdt::lww::CrdtLWWState,

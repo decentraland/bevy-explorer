@@ -275,7 +275,11 @@ pub struct SceneBoundPlugin;
 impl Plugin for SceneBoundPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MaterialPlugin::<SceneMaterial>::default());
-        if !app.world().resource::<PreviewMode>().is_preview {
+        let preview_mode = app
+            .world()
+            .get_resource::<PreviewMode>()
+            .is_some_and(|p| p.is_preview);
+        if !preview_mode {
             app.add_plugins(ImposterBakeMaterialPlugin::<SceneMaterial>::default());
         }
 
