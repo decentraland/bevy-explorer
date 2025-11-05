@@ -12,6 +12,9 @@ const header = document.getElementById("header");
 
 var autoStart = true;
 
+const DEFAULT_SERVER = "https://realm-provider-ea.decentraland.org/main"
+const DEFAULT_SYSTEMSCENE = "https://dclexplorer.github.io/bevy-ui-scene/BevyUiScene"
+
 function populateInputsFromQueryParams() {
   const queryParams = new URLSearchParams(window.location.search);
 
@@ -24,7 +27,7 @@ function populateInputsFromQueryParams() {
   if (initialRealmInput && initialRealmParam) {
     initialRealmInput.value = decodeURIComponent(initialRealmParam);
   } else if (initialRealmInput) {
-    initialRealmInput.value = "https://realm-provider-ea.decentraland.org/main";
+    initialRealmInput.value = DEFAULT_SERVER;
   }
 
   const locationParam = queryParams.get("location");
@@ -38,7 +41,7 @@ function populateInputsFromQueryParams() {
   if (systemSceneInput && systemSceneParam) {
     systemSceneInput.value = decodeURIComponent(systemSceneParam);
   } else if (systemSceneInput) {
-    systemSceneInput.value = "https://dclexplorer.github.io/bevy-ui-scene/BevyUiScene";
+    systemSceneInput.value = DEFAULT_SYSTEMSCENE;
   }
 
   const previewParam = queryParams.get("preview");
@@ -234,7 +237,7 @@ async function initEngine() {
     await new Promise((resolve, _reject) => {
       const basePath = window.location.pathname.replace(/\/$/, ''); // removes trailing slash if present
       const assetLoaderPath = new URL(`${basePath}/asset_loader.js`, window.location.origin);
-  
+
       const assetLoader = new Worker(assetLoaderPath, { type: "module" });
       assetLoader.onmessage = (workerEvent) => {
         if (workerEvent.data.type === "READY") {
@@ -298,3 +301,36 @@ Promise.all([initEngine(), initGpuCache()])
     initButton.textContent = "Load Failed";
   });
 
+window.set_url_params = (x, y, server, system_scene, preview) => {
+  console.log(`set url params: (${x},${y}), ${server}, ${system_scene}, ${preview}`);
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+
+    urlParams.set("location", `${x},${y}`);
+
+    if (server != DEFAULT_SERVER) {
+      urlParams.set("initialServer", realm);
+    } else {
+      urlParams.delete("initialServer");
+    }
+
+    if (system_scene != DEFAULT_SYSTEMSCENE) {
+      urlParams.set("systemScene", system_scene);
+    } else {
+      urlParams.delete("systemScene");
+    }
+  
+    if (preview) {
+      urlParams.set("preview", true);
+    } else {
+      urlParams.delete("preview");
+    }
+
+    const newPath = window.location.pathname + '?' + urlParams.toString(); 
+    console.log(`replacing state`);
+    history.replaceState(null, '', newPath);
+    console.log(`set url params done`);
+  } catch (e) {
+    console.log(`set failed: ${e}`);
+  }
+}

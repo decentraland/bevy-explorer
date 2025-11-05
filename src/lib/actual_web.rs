@@ -29,7 +29,7 @@ use scene_material::SceneBoundPlugin;
 use scene_runner::{
     initialize_scene::{PortableScenes, PortableSource, TestingData},
     update_world::mesh_collider::GroundCollider,
-    OutOfWorld, SceneRunnerPlugin,
+    vec3_to_parcel, OutOfWorld, SceneRunnerPlugin,
 };
 
 use av::AudioPlugin;
@@ -38,7 +38,7 @@ use comms::{preview::handle_preview_socket, CommsPlugin};
 use console::{ConsolePlugin, DoAddConsoleCommand};
 use futures_lite::io::AsyncReadExt;
 use input_manager::InputManagerPlugin;
-use ipfs::{map_realm_name, IpfsAssetServer, IpfsIoPlugin};
+use ipfs::{map_realm_name, CurrentRealm, IpfsAssetServer, IpfsIoPlugin};
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use platform::default_camera_components;
 use social::SocialPlugin;
@@ -255,6 +255,7 @@ fn main_inner(
         .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
         .add_systems(Startup, setup.in_set(SetupSets::Init))
         .add_systems(Update, update_winit_fps)
+        .add_systems(Update, update_url_params)
         .insert_resource(AmbientLight {
             color: Color::srgb(0.85, 0.85, 1.0),
             brightness: 575.0,
@@ -545,5 +546,59 @@ pub fn update_winit_fps(config: Res<AppConfig>, mut winit: ResMut<WinitSettings>
             react_to_window_events: false,
         };
         winit.unfocused_mode = winit.focused_mode;
+    }
+}
+
+// This block imports the global JS function we defined in main.js
+#[wasm_bindgen(js_namespace = window)]
+extern "C" {
+    #[wasm_bindgen(js_name = set_url_params)]
+    fn set_url_params(
+        x: i32,
+        y: i32,
+        realm: String,
+        system_scene: Option<String>,
+        is_preview: bool,
+    );
+}
+
+#[derive(PartialEq, Default, Clone)]
+struct UrlParams {
+    parcel: IVec2,
+    server: String,
+    system_scene: Option<String>,
+    preview: bool,
+}
+
+fn update_url_params(
+    player: Query<&GlobalTransform, With<PrimaryUser>>,
+    current_realm: Res<CurrentRealm>,
+    system_scene: Option<Res<SystemScene>>,
+    preview: Res<PreviewMode>,
+    mut prev: Local<UrlParams>,
+) {
+    let parcel = vec3_to_parcel(player.single().map(|p| p.translation()).unwrap_or_default());
+    let Some(server) = current_realm.about_url.strip_suffix("/about") else {
+        return;
+    };
+    let system_scene = system_scene.and_then(|s| s.source.clone());
+    let preview = preview.is_preview;
+
+    let params = UrlParams {
+        parcel,
+        server: server.to_owned(),
+        system_scene,
+        preview,
+    };
+
+    if params != *prev {
+        *prev = params.clone();
+        set_url_params(
+            params.parcel.x,
+            params.parcel.y,
+            params.server,
+            params.system_scene,
+            params.preview,
+        );
     }
 }

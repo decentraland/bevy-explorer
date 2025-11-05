@@ -42,7 +42,9 @@ fn connect_preview_server(
         *task = None;
     }
 
-    if &current_realm.address != server {
+    if &current_realm.address != server
+        && current_realm.about_url.strip_suffix("/about") != Some(server)
+    {
         preview.is_preview = false;
         return;
     }
