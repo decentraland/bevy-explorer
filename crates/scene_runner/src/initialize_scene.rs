@@ -12,10 +12,10 @@ use bevy::{
 };
 
 use common::{
-    structs::{AppConfig, AppError, IVec2Arg, MicState, SceneLoadDistance, SceneMeta},
+    structs::{AppConfig, AppError, IVec2Arg, MicState, PreviewMode, SceneLoadDistance, SceneMeta},
     util::{TaskExt, TryPushChildrenEx},
 };
-use comms::{global_crdt::GlobalCrdtState, preview::PreviewMode};
+use comms::global_crdt::GlobalCrdtState;
 use dcl::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
     SceneElapsedTime, SceneId, SceneResponse,

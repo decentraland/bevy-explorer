@@ -4,7 +4,7 @@ use bevy::{
     render::render_resource::{AsBindGroup, ShaderRef},
 };
 use boimp::bake::{ImposterBakeMaterialExtension, ImposterBakeMaterialPlugin};
-use comms::preview::PreviewMode;
+use common::structs::PreviewMode;
 
 pub type SceneMaterial = ExtendedMaterial<StandardMaterial, SceneBound>;
 
@@ -274,11 +274,12 @@ pub struct SceneBoundPlugin;
 
 impl Plugin for SceneBoundPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((
-            MaterialPlugin::<SceneMaterial>::default(),
-            ImposterBakeMaterialPlugin::<SceneMaterial>::default(),
-        ))
-        .add_systems(Update, update_show_outside);
+        app.add_plugins(MaterialPlugin::<SceneMaterial>::default());
+        if !app.world().resource::<PreviewMode>().is_preview {
+            app.add_plugins(ImposterBakeMaterialPlugin::<SceneMaterial>::default());
+        }
+
+        app.add_systems(Update, update_show_outside);
     }
 }
 

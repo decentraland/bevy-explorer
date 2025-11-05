@@ -1037,3 +1037,9 @@ pub struct MicStateInner {
     pub available: bool,
     pub enabled: bool,
 }
+
+#[derive(Resource, Default)]
+pub struct PreviewMode {
+    pub server: Option<String>,
+    pub is_preview: bool,
+}

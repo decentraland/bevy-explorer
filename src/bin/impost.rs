@@ -1,7 +1,6 @@
 use std::{fs::File, io::Write, sync::OnceLock};
 
 use comms::{
-    preview::PreviewMode,
     profile::{CurrentUserProfile, ProfileCache, UserProfile},
     CommsPlugin,
 };
@@ -28,8 +27,8 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, AppError, AvatarDynamicState, CursorLocks, GraphicsSettings, IVec2Arg,
-        PermissionUsed, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, SceneGlobalLight,
-        SceneImposterBake, SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips,
+        PermissionUsed, PreviewMode, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes,
+        SceneGlobalLight, SceneImposterBake, SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips,
     },
     util::UtilsPlugin,
 };

@@ -1,6 +1,10 @@
 use platform::AsyncRwLock;
 use std::{fmt::Display, sync::Arc};
 
+use crate::{
+    settings::{imposter_settings::ImposterSetting, sensitivity::*},
+    SystemApi,
+};
 use ambient_brightness_setting::AmbientSetting;
 use anyhow::anyhow;
 use bevy::{
@@ -18,7 +22,8 @@ use common::structs::SsaoSetting;
 use common::{
     sets::SceneSets,
     structs::{
-        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, ShadowSetting, WindowSetting,
+        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, PreviewMode, ShadowSetting,
+        WindowSetting,
     },
 };
 use constrain_ui::ConstrainUiSetting;
@@ -38,11 +43,6 @@ use video_threads::VideoThreadsSetting;
 use volume_settings::{
     AvatarVolumeSetting, MasterVolumeSetting, SceneVolumeSetting, SystemVolumeSetting,
     VoiceVolumeSetting,
-};
-
-use crate::{
-    settings::{imposter_settings::ImposterSetting, sensitivity::*},
-    SystemApi,
 };
 
 pub mod aa_settings;
@@ -74,6 +74,8 @@ pub struct NewCameraEvent(pub Entity);
 
 impl Plugin for SettingBridgePlugin {
     fn build(&self, app: &mut App) {
+        let is_preview = app.world().resource::<PreviewMode>().is_preview;
+
         fn apply_to_camera<S: AppSetting>(
             mut commands: Commands,
             config: Res<AppConfig>,
@@ -145,8 +147,12 @@ impl Plugin for SettingBridgePlugin {
         add_enum_setting::<AaSetting>(app, &mut settings, &mut schedule);
         add_int_setting::<AmbientSetting>(app, &mut settings, &mut schedule);
         add_enum_setting::<WindowSetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<LoadDistanceSetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<UnloadDistanceSetting>(app, &mut settings, &mut schedule);
+
+        if !is_preview {
+            add_int_setting::<LoadDistanceSetting>(app, &mut settings, &mut schedule);
+            add_int_setting::<UnloadDistanceSetting>(app, &mut settings, &mut schedule);
+        }
+
         add_enum_setting::<FpsTargetSetting>(app, &mut settings, &mut schedule);
         add_int_setting::<SceneThreadsSetting>(app, &mut settings, &mut schedule);
         add_int_setting::<MaxAvatarsSetting>(app, &mut settings, &mut schedule);

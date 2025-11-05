@@ -5,13 +5,10 @@ import init, { engine_init, engine_run } from "./pkg/webgpu_build.js"; // Ensure
 const initialRealmInput = document.getElementById("initialRealm");
 const locationInput = document.getElementById("location");
 const systemSceneInput = document.getElementById("systemScene");
+const previewInput = document.getElementById("preview");
 const initButton = document.getElementById("initButton");
 const canvas = document.getElementById("canvas-parent");
 const header = document.getElementById("header");
-
-let initialRealmGroup = document.getElementById("initialRealm")?.parentElement;
-let locationGroup = document.getElementById("location")?.parentElement;
-let systemSceneGroup = document.getElementById("systemScene")?.parentElement;
 
 var autoStart = true;
 
@@ -29,12 +26,14 @@ function populateInputsFromQueryParams() {
   } else if (initialRealmInput) {
     initialRealmInput.value = "https://realm-provider-ea.decentraland.org/main";
   }
+
   const locationParam = queryParams.get("location");
   if (locationInput && locationParam) {
     locationInput.value = decodeURIComponent(locationParam);
   } else if (locationInput) {
     locationInput.value = "";
   }
+
   const systemSceneParam = queryParams.get("systemScene");
   if (systemSceneInput && systemSceneParam) {
     systemSceneInput.value = decodeURIComponent(systemSceneParam);
@@ -42,9 +41,17 @@ function populateInputsFromQueryParams() {
     systemSceneInput.value = "https://dclexplorer.github.io/bevy-ui-scene/BevyUiScene";
   }
 
+  const previewParam = queryParams.get("preview");
+  if (previewInput && previewParam) {
+    previewInput.checked = true;
+  } else if (previewInput) {
+    previewInput.checked = false;
+  }
+
   initialRealmInput.disabled = autoStart;
   locationInput.disabled = autoStart;
   systemSceneInput.disabled = autoStart;
+  previewInput.disabled = autoStart;
 }
 function hideHeader() {
   if (header) header.style.display = "none";
@@ -259,6 +266,7 @@ function start() {
   const initialRealm = initialRealmInput.value;
   const location = locationInput.value;
   const systemScene = systemSceneInput.value;
+  const preview = previewInput.checked;
   console.log(
     `[Main JS] "Go" button clicked. Initial Realm: "${initialRealm}", Location: "${location}", System Scene: "${systemScene}"`
   );
@@ -271,7 +279,7 @@ function start() {
     return "unknown";
   })();
 
-  engine_run(platform, initialRealm, location, systemScene, true, 1e6);
+  engine_run(platform, initialRealm, location, systemScene, true, preview, 1e6);
 }
 
 initButton.onclick = start;

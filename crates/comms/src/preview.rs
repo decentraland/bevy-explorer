@@ -5,15 +5,12 @@ use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
-use common::{structs::PreviewCommand, util::TaskExt};
+use common::{
+    structs::{PreviewCommand, PreviewMode},
+    util::TaskExt,
+};
 use ipfs::CurrentRealm;
 use platform::IntoClientRequest;
-
-#[derive(Resource, Default)]
-pub struct PreviewMode {
-    pub server: Option<String>,
-    pub is_preview: bool,
-}
 
 pub struct PreviewPlugin;
 
