@@ -5,15 +5,15 @@ import init, { engine_init, engine_run } from "./pkg/webgpu_build.js"; // Ensure
 const initialRealmInput = document.getElementById("initialRealm");
 const locationInput = document.getElementById("location");
 const systemSceneInput = document.getElementById("systemScene");
+const previewInput = document.getElementById("preview");
 const initButton = document.getElementById("initButton");
 const canvas = document.getElementById("canvas-parent");
 const header = document.getElementById("header");
 
-let initialRealmGroup = document.getElementById("initialRealm")?.parentElement;
-let locationGroup = document.getElementById("location")?.parentElement;
-let systemSceneGroup = document.getElementById("systemScene")?.parentElement;
-
 var autoStart = true;
+
+const DEFAULT_SERVER = "https://realm-provider-ea.decentraland.org/main"
+const DEFAULT_SYSTEMSCENE = "https://dclexplorer.github.io/bevy-ui-scene/BevyUiScene"
 
 function populateInputsFromQueryParams() {
   const queryParams = new URLSearchParams(window.location.search);
@@ -27,24 +27,34 @@ function populateInputsFromQueryParams() {
   if (initialRealmInput && initialRealmParam) {
     initialRealmInput.value = decodeURIComponent(initialRealmParam);
   } else if (initialRealmInput) {
-    initialRealmInput.value = "https://realm-provider-ea.decentraland.org/main";
+    initialRealmInput.value = DEFAULT_SERVER;
   }
+
   const locationParam = queryParams.get("location");
   if (locationInput && locationParam) {
     locationInput.value = decodeURIComponent(locationParam);
   } else if (locationInput) {
     locationInput.value = "";
   }
+
   const systemSceneParam = queryParams.get("systemScene");
   if (systemSceneInput && systemSceneParam) {
     systemSceneInput.value = decodeURIComponent(systemSceneParam);
   } else if (systemSceneInput) {
-    systemSceneInput.value = "https://dclexplorer.github.io/bevy-ui-scene/BevyUiScene";
+    systemSceneInput.value = DEFAULT_SYSTEMSCENE;
+  }
+
+  const previewParam = queryParams.get("preview");
+  if (previewInput && previewParam) {
+    previewInput.checked = true;
+  } else if (previewInput) {
+    previewInput.checked = false;
   }
 
   initialRealmInput.disabled = autoStart;
   locationInput.disabled = autoStart;
   systemSceneInput.disabled = autoStart;
+  previewInput.disabled = autoStart;
 }
 function hideHeader() {
   if (header) header.style.display = "none";
@@ -227,7 +237,7 @@ async function initEngine() {
     await new Promise((resolve, _reject) => {
       const basePath = window.location.pathname.replace(/\/$/, ''); // removes trailing slash if present
       const assetLoaderPath = new URL(`${basePath}/asset_loader.js`, window.location.origin);
-  
+
       const assetLoader = new Worker(assetLoaderPath, { type: "module" });
       assetLoader.onmessage = (workerEvent) => {
         if (workerEvent.data.type === "READY") {
@@ -259,6 +269,7 @@ function start() {
   const initialRealm = initialRealmInput.value;
   const location = locationInput.value;
   const systemScene = systemSceneInput.value;
+  const preview = previewInput.checked;
   console.log(
     `[Main JS] "Go" button clicked. Initial Realm: "${initialRealm}", Location: "${location}", System Scene: "${systemScene}"`
   );
@@ -271,7 +282,7 @@ function start() {
     return "unknown";
   })();
 
-  engine_run(platform, initialRealm, location, systemScene, true, 1e6);
+  engine_run(platform, initialRealm, location, systemScene, true, preview, 1e6);
 }
 
 initButton.onclick = start;
@@ -290,3 +301,33 @@ Promise.all([initEngine(), initGpuCache()])
     initButton.textContent = "Load Failed";
   });
 
+window.set_url_params = (x, y, server, system_scene, preview) => {
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+
+    urlParams.set("location", `${x},${y}`);
+
+    if (server != DEFAULT_SERVER) {
+      urlParams.set("initialServer", realm);
+    } else {
+      urlParams.delete("initialServer");
+    }
+
+    if (system_scene != DEFAULT_SYSTEMSCENE) {
+      urlParams.set("systemScene", system_scene);
+    } else {
+      urlParams.delete("systemScene");
+    }
+  
+    if (preview) {
+      urlParams.set("preview", true);
+    } else {
+      urlParams.delete("preview");
+    }
+
+    const newPath = window.location.pathname + '?' + urlParams.toString(); 
+    history.replaceState(null, '', newPath);
+  } catch (e) {
+    console.log(`set url params failed: ${e}`);
+  }
+}

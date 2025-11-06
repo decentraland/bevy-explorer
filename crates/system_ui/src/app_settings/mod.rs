@@ -4,8 +4,8 @@ use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiR
 use common::structs::SsaoSetting;
 use common::{
     structs::{
-        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, SettingsTab, ShadowSetting,
-        WindowSetting,
+        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, PreviewMode, SettingsTab,
+        ShadowSetting, WindowSetting,
     },
     util::TryPushChildrenEx,
 };
@@ -65,6 +65,7 @@ fn set_app_settings_content(
     current_settings: Res<AppConfig>,
     mut prev_tab: Local<Option<SettingsTab>>,
     dui: Res<DuiRegistry>,
+    preview_mode: Option<Res<PreviewMode>>,
 ) {
     if dialog.is_empty() {
         *prev_tab = None;
@@ -100,7 +101,7 @@ fn set_app_settings_content(
             .apply_template(&dui, "settings-tab", DuiProps::new())
             .unwrap();
 
-        let children = vec![
+        let mut children = vec![
             commands
                 .spawn_template(
                     &dui,
@@ -132,8 +133,16 @@ fn set_app_settings_content(
                 )
                 .unwrap()
                 .root,
-            spawn_int_setting_template::<LoadDistanceSetting>(&mut commands, &dui, &config),
-            spawn_int_setting_template::<UnloadDistanceSetting>(&mut commands, &dui, &config),
+        ];
+
+        if preview_mode.is_none() {
+            children.extend(vec![
+                spawn_int_setting_template::<LoadDistanceSetting>(&mut commands, &dui, &config),
+                spawn_int_setting_template::<UnloadDistanceSetting>(&mut commands, &dui, &config),
+            ]);
+        }
+
+        children.extend(vec![
             spawn_enum_setting_template::<FpsTargetSetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<SceneThreadsSetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<VideoThreadsSetting>(&mut commands, &dui, &config),
@@ -184,7 +193,7 @@ fn set_app_settings_content(
             spawn_int_setting_template::<ScrollSensitivitySetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<MovementSensitivitySetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<CameraSensitivitySetting>(&mut commands, &dui, &config),
-        ];
+        ]);
 
         commands
             .entity(components.named("settings"))

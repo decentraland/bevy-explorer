@@ -33,8 +33,8 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, AttachPoints, AvatarDynamicState, GraphicsSettings, IVec2Arg, PreviewCommand,
-        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneImposterBake,
-        SceneLoadDistance, SystemScene, Version, GROUND_RENDERLAYER,
+        PreviewMode, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser,
+        SceneImposterBake, SceneLoadDistance, SystemScene, Version, GROUND_RENDERLAYER,
     },
     util::{TaskCompat, TaskExt, TryPushChildrenEx, UtilsPlugin},
 };
@@ -49,10 +49,7 @@ use scene_runner::{
 
 use av::AudioPlugin;
 use avatar::AvatarPlugin;
-use comms::{
-    preview::{handle_preview_socket, PreviewMode},
-    CommsPlugin,
-};
+use comms::{preview::handle_preview_socket, CommsPlugin};
 use console::{ConsolePlugin, DoAddConsoleCommand};
 use input_manager::InputManagerPlugin;
 use ipfs::{map_realm_name, IpfsAssetServer, IpfsIoPlugin};
@@ -397,8 +394,16 @@ fn main() {
     });
 
     app.insert_resource(SceneLoadDistance {
-        load: final_config.scene_load_distance,
-        unload: final_config.scene_unload_extra_distance,
+        load: if is_preview {
+            1.0
+        } else {
+            final_config.scene_load_distance
+        },
+        unload: if is_preview {
+            0.0
+        } else {
+            final_config.scene_unload_extra_distance
+        },
         load_imposter: final_config
             .scene_imposter_distances
             .last()
@@ -408,7 +413,8 @@ fn main() {
                     (1 << (final_config.scene_imposter_distances.len() - 1)) as f32 * 16.0;
                 last + (2.0 * mip_size * mip_size).sqrt()
             })
-            .unwrap_or(0.0),
+            .unwrap_or(0.0)
+            * if is_preview { 0.0 } else { 1.0 },
     });
 
     app.insert_resource(final_config);
@@ -434,12 +440,15 @@ fn main() {
         .add_plugins(TweenPlugin)
         .add_plugins(CollectiblesPlugin)
         .add_plugins(WorldUiPlugin)
-        .add_plugins(DclImposterPlugin {
-            zip_output: None,
-            download: true,
-        })
         .add_plugins(TextureCameraPlugin)
         .add_plugins(SystemBridgePlugin { bare: false });
+
+    if !is_preview {
+        app.add_plugins(DclImposterPlugin {
+            zip_output: None,
+            download: true,
+        });
+    }
 
     if let Some(crashed) = crash_file {
         app.add_plugins(CrashReportPlugin {

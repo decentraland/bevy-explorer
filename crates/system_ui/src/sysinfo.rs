@@ -15,12 +15,12 @@ use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     sets::{SceneSets, SetupSets},
     structs::{
-        AppConfig, CursorLocks, PreviewCommand, PrimaryUser, SettingsTab, ShowSettingsEvent,
-        SystemScene, Version, ZOrder,
+        AppConfig, CursorLocks, PreviewCommand, PreviewMode, PrimaryUser, SettingsTab,
+        ShowSettingsEvent, SystemScene, Version, ZOrder,
     },
     util::ModifyComponentExt,
 };
-use comms::{global_crdt::ForeignPlayer, preview::PreviewMode, Transport};
+use comms::{global_crdt::ForeignPlayer, Transport};
 use console::DoAddConsoleCommand;
 use ipfs::CurrentRealm;
 use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE};
@@ -340,22 +340,36 @@ fn setup_minimap(
     let components = commands
         .spawn_template(&dui, "minimap", Default::default())
         .unwrap();
-    commands
-        .entity(root.0)
-        .insert_children(0, &[components.root]);
 
-    commands
-        .entity(components.root)
-        .insert((Minimap, ZOrder::Minimap.default()));
-    commands.entity(components.named("map-node")).insert((
-        MapTexture {
-            center: Default::default(),
-            parcels_per_vmin: 100.0,
-            icon_min_size_vmin: 0.03,
-        },
-        Interaction::default(),
-        ShowSettingsEvent(SettingsTab::Map).send_value_on::<Click>(),
-    ));
+    if system_scene.is_none() {
+        commands
+            .entity(root.0)
+            .insert_children(0, &[components.root]);
+        commands
+            .entity(components.root)
+            .insert((Minimap, ZOrder::Minimap.default()));
+        commands.entity(components.named("map-node")).insert((
+            MapTexture {
+                center: Default::default(),
+                parcels_per_vmin: 100.0,
+                icon_min_size_vmin: 0.03,
+            },
+            Interaction::default(),
+            ShowSettingsEvent(SettingsTab::Map).send_value_on::<Click>(),
+        ));
+    } else {
+        commands.entity(components.named("map-container")).despawn();
+        commands
+            .entity(components.root)
+            .modify_component(|style: &mut Node| {
+                style.position_type = PositionType::Absolute;
+                style.right = Val::Percent(1.0);
+                style.bottom = Val::Percent(5.0);
+                style.top = Val::Auto;
+                style.left = Val::Auto;
+            })
+            .insert(ZOrder::Minimap.default());
+    }
 
     if preview.server.is_some() || system_scene.as_ref().is_some_and(|ss| ss.preview) {
         let tracker = commands
@@ -508,7 +522,7 @@ fn update_tracker(
         return;
     };
 
-    let scenes = containing_scene.get(player);
+    let scenes = containing_scene.get_parcel(player);
     let Some(scene) = scenes.iter().next() else {
         return;
     };

@@ -18,9 +18,9 @@ use common::{
     inputs::InputMap,
     sets::SetupSets,
     structs::{
-        AppConfig, AttachPoints, AvatarDynamicState, IVec2Arg, PreviewCommand, PrimaryCamera,
-        PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneLoadDistance, SystemScene, Version,
-        GROUND_RENDERLAYER,
+        AppConfig, AttachPoints, AvatarDynamicState, IVec2Arg, PreviewCommand, PreviewMode,
+        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneLoadDistance,
+        SystemScene, Version, GROUND_RENDERLAYER,
     },
     util::{TaskCompat, TaskExt, TryPushChildrenEx, UtilsPlugin},
 };
@@ -29,19 +29,16 @@ use scene_material::SceneBoundPlugin;
 use scene_runner::{
     initialize_scene::{PortableScenes, PortableSource, TestingData},
     update_world::mesh_collider::GroundCollider,
-    OutOfWorld, SceneRunnerPlugin,
+    vec3_to_parcel, OutOfWorld, SceneRunnerPlugin,
 };
 
 use av::AudioPlugin;
 use avatar::AvatarPlugin;
-use comms::{
-    preview::{handle_preview_socket, PreviewMode},
-    CommsPlugin,
-};
+use comms::{preview::handle_preview_socket, CommsPlugin};
 use console::{ConsolePlugin, DoAddConsoleCommand};
 use futures_lite::io::AsyncReadExt;
 use input_manager::InputManagerPlugin;
-use ipfs::{map_realm_name, IpfsAssetServer, IpfsIoPlugin};
+use ipfs::{map_realm_name, CurrentRealm, IpfsAssetServer, IpfsIoPlugin};
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use platform::default_camera_components;
 use social::SocialPlugin;
@@ -62,6 +59,7 @@ fn main_inner(
     location: &str,
     system_scene: &str,
     with_thread_loader: bool,
+    is_preview: bool,
     rabpf: usize,
 ) {
     // warnings before log init must be stored and replayed later
@@ -102,7 +100,6 @@ fn main_inner(
     });
 
     let no_fog = false;
-    let is_preview = false;
 
     let ui_scene = if system_scene.is_empty() {
         None
@@ -195,8 +192,16 @@ fn main_inner(
     });
 
     app.insert_resource(SceneLoadDistance {
-        load: final_config.scene_load_distance,
-        unload: final_config.scene_unload_extra_distance,
+        load: if is_preview {
+            1.0
+        } else {
+            final_config.scene_load_distance
+        },
+        unload: if is_preview {
+            0.0
+        } else {
+            final_config.scene_unload_extra_distance
+        },
         load_imposter: final_config
             .scene_imposter_distances
             .last()
@@ -206,7 +211,8 @@ fn main_inner(
                     (1 << (final_config.scene_imposter_distances.len() - 1)) as f32 * 16.0;
                 last + (2.0 * mip_size * mip_size).sqrt()
             })
-            .unwrap_or(0.0),
+            .unwrap_or(0.0)
+            * if is_preview { 0.0 } else { 1.0 },
     });
 
     app.insert_resource(final_config);
@@ -231,12 +237,15 @@ fn main_inner(
         .add_plugins(TweenPlugin)
         .add_plugins(CollectiblesPlugin)
         .add_plugins(WorldUiPlugin)
-        .add_plugins(DclImposterPlugin {
-            zip_output: None,
-            download: true,
-        })
         .add_plugins(TextureCameraPlugin)
         .add_plugins(SystemBridgePlugin { bare: false });
+
+    if !is_preview {
+        app.add_plugins(DclImposterPlugin {
+            zip_output: None,
+            download: true,
+        });
+    }
 
     app.add_plugins(AvatarPlugin);
 
@@ -246,6 +255,7 @@ fn main_inner(
         .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
         .add_systems(Startup, setup.in_set(SetupSets::Init))
         .add_systems(Update, update_winit_fps)
+        .add_systems(Update, update_url_params)
         .insert_resource(AmbientLight {
             color: Color::srgb(0.85, 0.85, 1.0),
             brightness: 575.0,
@@ -511,6 +521,7 @@ pub fn engine_run(
     location: &str,
     system_scene: &str,
     with_thread_loader: bool,
+    preview: bool,
     rabpf: usize,
 ) {
     main_inner(
@@ -519,6 +530,7 @@ pub fn engine_run(
         location,
         system_scene,
         with_thread_loader,
+        preview,
         rabpf,
     );
 }
@@ -534,5 +546,59 @@ pub fn update_winit_fps(config: Res<AppConfig>, mut winit: ResMut<WinitSettings>
             react_to_window_events: false,
         };
         winit.unfocused_mode = winit.focused_mode;
+    }
+}
+
+// This block imports the global JS function we defined in main.js
+#[wasm_bindgen(js_namespace = window)]
+extern "C" {
+    #[wasm_bindgen(js_name = set_url_params)]
+    fn set_url_params(
+        x: i32,
+        y: i32,
+        realm: String,
+        system_scene: Option<String>,
+        is_preview: bool,
+    );
+}
+
+#[derive(PartialEq, Default, Clone)]
+struct UrlParams {
+    parcel: IVec2,
+    server: String,
+    system_scene: Option<String>,
+    preview: bool,
+}
+
+fn update_url_params(
+    player: Query<&GlobalTransform, With<PrimaryUser>>,
+    current_realm: Res<CurrentRealm>,
+    system_scene: Option<Res<SystemScene>>,
+    preview: Res<PreviewMode>,
+    mut prev: Local<UrlParams>,
+) {
+    let parcel = vec3_to_parcel(player.single().map(|p| p.translation()).unwrap_or_default());
+    let Some(server) = current_realm.about_url.strip_suffix("/about") else {
+        return;
+    };
+    let system_scene = system_scene.and_then(|s| s.source.clone());
+    let preview = preview.is_preview;
+
+    let params = UrlParams {
+        parcel,
+        server: server.to_owned(),
+        system_scene,
+        preview,
+    };
+
+    if params != *prev {
+        *prev = params.clone();
+        set_url_params(
+            params.parcel.x,
+            params.parcel.y,
+            params.server,
+            params.system_scene,
+            params.preview,
+        );
     }
 }
