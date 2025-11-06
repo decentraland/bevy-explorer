@@ -104,6 +104,10 @@ pub fn move_player(
     containing_scene: ContainingScene,
     mut perms: Permission<(Entity, Vec3, Option<Vec3>)>,
 ) {
+    let Ok((player_entity, _, _)) = player.single() else {
+        return;
+    };
+
     for (root, translation, looking_at) in events.read().filter_map(|ev| match ev {
         RpcCall::MovePlayer {
             scene,
@@ -112,6 +116,14 @@ pub fn move_player(
         } => Some((scene, to, looking_at)),
         _ => None,
     }) {
+        let current_scenes = containing_scene.get(player_entity);
+        if !current_scenes.contains(root) {
+            warn!(
+                "move player request from {root:?} was requested with player outside scene bounds"
+            );
+            continue;
+        }
+
         perms.check(
             PermissionType::MovePlayer,
             *root,
