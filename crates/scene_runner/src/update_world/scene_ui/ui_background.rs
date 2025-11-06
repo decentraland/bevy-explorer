@@ -297,7 +297,8 @@ pub fn set_ui_background(
 
             commands.insert_children(0, &[background_entity]);
         } else if let Some(color) = background.color {
-            commands.insert(BackgroundColor(color));
+            let background_color = color.with_alpha(color.alpha() * link.opacity.0);
+            commands.insert(BackgroundColor(background_color));
         }
     }
 
