@@ -1064,9 +1064,14 @@ fn layout_scene_ui(
 
                 if ui_transform.border_color != BorderColor::DEFAULT {
                     let mut border_color = ui_transform.border_color;
-                    for edge in [&mut border_color.left, &mut border_color.top, &mut border_color.right, &mut border_color.bottom] {
+                    for edge in [
+                        &mut border_color.left,
+                        &mut border_color.top,
+                        &mut border_color.right,
+                        &mut border_color.bottom,
+                    ] {
                         let mut srgba = edge.to_srgba();
-                        srgba.a *= link.opacity.0;
+                        srgba.alpha *= link.opacity.0;
                     }
                     cmds.try_insert(border_color);
                 } else {
