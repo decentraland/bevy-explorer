@@ -95,15 +95,22 @@ impl MaterialDefinition {
             .material
         {
             Some(pb_material::Material::Unlit(unlit)) => {
+                if tex_is_present(&unlit.alpha_texture)
+                    && tex_is_present(&unlit.texture)
+                    && unlit.alpha_texture != unlit.texture
+                {
+                    debug!("separate alpha texture not supported");
+                }
+
                 let base_color = unlit
                     .diffuse_color
                     .map(Color4DclToBevy::convert_linear_rgba)
                     .unwrap_or(base.base_color);
 
-                let alpha_mode = if base_color.alpha() < 1.0 {
-                    AlphaMode::Blend
-                } else if let Some(test) = unlit.alpha_test {
+                let alpha_mode = if let Some(test) = unlit.alpha_test {
                     AlphaMode::Mask(test)
+                } else if base_color.alpha() < 1.0 || tex_is_present(&unlit.alpha_texture) {
+                    AlphaMode::Blend
                 } else {
                     AlphaMode::Opaque
                 };
@@ -171,10 +178,10 @@ impl MaterialDefinition {
                         AlphaMode::Blend
                     }
                     Some(MaterialTransparencyMode::MtmAuto) | None => {
-                        if base_color.alpha() < 1.0 || tex_is_present(&pbr.alpha_texture) {
-                            AlphaMode::Blend
-                        } else if let Some(test) = pbr.alpha_test {
+                        if let Some(test) = pbr.alpha_test {
                             AlphaMode::Mask(test)
+                        } else if base_color.alpha() < 1.0 || tex_is_present(&pbr.alpha_texture) {
+                            AlphaMode::Blend
                         } else {
                             AlphaMode::Opaque
                         }
@@ -756,19 +763,26 @@ pub fn dcl_material_from_standard_material(
         None
     };
 
+    let alpha_texture = if AlphaMode::Blend == base.alpha_mode {
+        base.base_color_texture.as_ref().map(dcl_texture)
+    } else {
+        None
+    };
+
     if base.unlit {
         pb_material::Material::Unlit(pb_material::UnlitMaterial {
             texture: base.base_color_texture.as_ref().map(dcl_texture),
             alpha_test,
             cast_shadows: Some(true),
             diffuse_color: Some(base.base_color.convert_linear_rgba()),
+            alpha_texture,
         })
     } else {
         pb_material::Material::Pbr(pb_material::PbrMaterial {
             texture: base.base_color_texture.as_ref().map(dcl_texture),
             alpha_test,
             cast_shadows: Some(true),
-            alpha_texture: base.base_color_texture.as_ref().map(dcl_texture),
+            alpha_texture,
             emissive_texture: base.emissive_texture.as_ref().map(dcl_texture),
             bump_texture: base.normal_map_texture.as_ref().map(dcl_texture),
             albedo_color: Some(base.base_color.convert_linear_rgba()),
