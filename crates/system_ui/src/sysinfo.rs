@@ -341,13 +341,27 @@ fn setup_minimap(
         .spawn_template(&dui, "minimap", Default::default())
         .unwrap();
 
-    if system_scene.is_none() {
+    commands
+        .entity(components.root)
+        .insert((Minimap, ZOrder::Minimap.default()));
+
+    if preview.server.is_some() {
+        commands
+            .entity(components.root)
+            .modify_component(|style: &mut Node| {
+                style.position_type = PositionType::Absolute;
+                style.right = Val::Percent(1.0);
+                style.bottom = Val::Percent(5.0);
+                style.top = Val::Auto;
+                style.left = Val::Auto;
+            });
+    } else {
         commands
             .entity(root.0)
             .insert_children(0, &[components.root]);
-        commands
-            .entity(components.root)
-            .insert((Minimap, ZOrder::Minimap.default()));
+    }
+
+    if system_scene.is_none() {
         commands.entity(components.named("map-node")).insert((
             MapTexture {
                 center: Default::default(),
@@ -359,16 +373,6 @@ fn setup_minimap(
         ));
     } else {
         commands.entity(components.named("map-container")).despawn();
-        commands
-            .entity(components.root)
-            .modify_component(|style: &mut Node| {
-                style.position_type = PositionType::Absolute;
-                style.right = Val::Percent(1.0);
-                style.bottom = Val::Percent(5.0);
-                style.top = Val::Auto;
-                style.left = Val::Auto;
-            })
-            .insert(ZOrder::Minimap.default());
     }
 
     if preview.server.is_some() || system_scene.as_ref().is_some_and(|ss| ss.preview) {
