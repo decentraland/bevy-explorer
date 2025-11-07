@@ -622,7 +622,7 @@ fn update_ready_gltfs(
 
                         if maybe_hash.is_some() {
                             // if we won't need the mesh data again, we can push it only to gpu
-                            mesh_data.asset_usage = RenderAssetUsages::RENDER_WORLD;
+                            mesh_data.asset_usage |= RenderAssetUsages::RENDER_WORLD;
                         } else {
                             // if we can't make a hash to reuse the mesh, we need to keep the data cpu-side as well,
                             // to rebuild everything next time

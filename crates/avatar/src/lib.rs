@@ -1013,7 +1013,7 @@ fn process_avatar(
                     if mesh.asset_usage == RenderAssetUsages::MAIN_WORLD {
                         if let Some(mesh_data) = meshes.get_mut(h_mesh) {
                             mesh_data.normalize_joint_weights();
-                            mesh_data.asset_usage = RenderAssetUsages::RENDER_WORLD;
+                            mesh_data.asset_usage |= RenderAssetUsages::RENDER_WORLD;
                         }
                     }
                 }
@@ -1267,7 +1267,7 @@ fn process_avatar(
                         if mesh.asset_usage == RenderAssetUsages::MAIN_WORLD {
                             if let Some(mesh_data) = meshes.get_mut(h_mesh) {
                                 mesh_data.normalize_joint_weights();
-                                mesh_data.asset_usage = RenderAssetUsages::RENDER_WORLD;
+                                mesh_data.asset_usage |= RenderAssetUsages::RENDER_WORLD;
                             }
                         }
                     }
