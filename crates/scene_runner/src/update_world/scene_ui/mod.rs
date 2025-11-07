@@ -30,7 +30,7 @@ use crate::{
     ContainerEntity, ContainingScene, InteractableArea, SceneEntity, SceneSets,
 };
 use common::{
-    rpc::RpcCall,
+    rpc::{RpcCall, RpcUiFocusAction},
     structs::{AppConfig, PrimaryPlayerRes, PrimaryUser, ZOrder},
     util::{DespawnWith, ModifyComponentExt},
 };
@@ -522,7 +522,10 @@ pub struct UiLink {
 }
 
 #[derive(Component)]
-pub struct LinkedScene(Entity);
+pub struct LinkedScene {
+    scene: Entity,
+    element_id: Option<String>,
+}
 
 impl Default for UiLink {
     fn default() -> Self {
@@ -894,9 +897,14 @@ fn layout_scene_ui(
 
             let existing = if let Some(link) = existing_link {
                 // update parent (always, so the child order is correct)
-                commands
-                    .entity(link.ui_entity)
-                    .insert(ChildOf(parent_link.content_entity));
+                commands.entity(link.ui_entity).insert((
+                    ChildOf(parent_link.content_entity),
+                    LinkedScene {
+                        scene: scene_root,
+                        element_id: ui_transform.element_id.clone(),
+                    },
+                ));
+
                 let mut updated = UiLink {
                     opacity: FloatOrd(parent_link.opacity.0 * ui_transform.opacity),
                     is_window_ui: bevy_ui_root.is_window_ui,
@@ -920,7 +928,10 @@ fn layout_scene_ui(
                     Node::default(),
                     DespawnWith(bevy_entity),
                     ChildOf(parent_link.content_entity),
-                    LinkedScene(scene_root),
+                    LinkedScene {
+                        scene: scene_root,
+                        element_id: ui_transform.element_id.clone(),
+                    },
                 ));
                 let ui_entity = ent_cmds.id();
                 debug!("{scene_id} create linked {:?}", ui_entity);
@@ -1349,17 +1360,17 @@ fn set_ui_focus(
     currently_focused: Query<Entity, With<Focus>>,
     scene_hierarchy: Query<(Option<&LinkedScene>, Option<&ChildOf>)>,
 ) {
-    'event: for (scene, maybe_element, response) in events.read().flat_map(|ev| {
-        let RpcCall::SetUiFocus {
+    'event: for (scene, action, response) in events.read().flat_map(|ev| {
+        let RpcCall::UiFocus {
             scene,
-            element_id,
+            action,
             response,
         } = ev
         else {
             return None;
         };
 
-        Some((scene, element_id, response))
+        Some((scene, action, response))
     }) {
         if !containing_scene.get(player.0).contains(scene) {
             response.send(Err("scene is not active".into()));
@@ -1371,25 +1382,25 @@ fn set_ui_focus(
             continue;
         };
 
-        match maybe_element {
-            Some(element) => {
-                let Some(target) = ui_data.named_nodes.get(element) else {
+        match action {
+            RpcUiFocusAction::Focus { element_id } => {
+                let Some(target) = ui_data.named_nodes.get(element_id) else {
                     response.send(Err(format!(
-                        "couldn't find element {element} - existing named elements are: {:?}",
+                        "couldn't find element {element_id} - existing named elements are: {:?}",
                         ui_data.named_nodes.keys()
                     )));
                     continue;
                 };
 
                 let Ok(mut commands) = commands.get_entity(*target) else {
-                    response.send(Err(format!("element {element} destroyed",)));
+                    response.send(Err(format!("element {element_id} destroyed",)));
                     continue;
                 };
 
                 commands.insert(Focus);
-                response.send(Ok(()));
+                response.send(Ok(Some(element_id.clone())));
             }
-            None => {
+            RpcUiFocusAction::GetFocus | RpcUiFocusAction::Defocus => {
                 // find existing focus
                 for focused in currently_focused.iter() {
                     let mut maybe_parent = Some(focused);
@@ -1398,9 +1409,13 @@ fn set_ui_focus(
                         let (maybe_linked_scene, maybe_next_parent) =
                             scene_hierarchy.get(parent).unwrap_or_default();
                         if let Some(linked_scene) = maybe_linked_scene {
-                            if &linked_scene.0 == scene {
-                                commands.entity(focused).remove::<Focus>();
-                                response.send(Ok(()));
+                            if &linked_scene.scene == scene {
+                                if let RpcUiFocusAction::Defocus = action {
+                                    // defocus if required
+                                    commands.entity(focused).remove::<Focus>();
+                                };
+                                // send element id
+                                response.send(Ok(linked_scene.element_id.clone()));
                                 break 'event;
                             } else {
                                 maybe_parent = None;
@@ -1412,7 +1427,7 @@ fn set_ui_focus(
                     }
                 }
 
-                response.send(Err("Not currently focused".to_string()));
+                response.send(Ok(None));
             }
         }
     }
