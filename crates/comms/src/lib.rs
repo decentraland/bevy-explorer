@@ -175,7 +175,7 @@ pub struct GatekeeperResponse {
 }
 
 #[derive(Component)]
-pub struct SceneRoom;
+pub struct SceneRoom(pub String);
 
 #[derive(Resource, Default)]
 pub struct SceneRoomConnection(pub Option<(SetCurrentScene, String, Entity)>);
@@ -234,8 +234,8 @@ fn connect_scene_room(
             Some(Ok((adapter, ev))) => {
                 if let Some(ent) = manager.connect(&adapter) {
                     warn!("added scene channel {ev:?}");
+                    commands.entity(ent).insert(SceneRoom(ev.scene_id.clone()));
                     current.0 = Some((ev, adapter, ent));
-                    commands.entity(ent).insert(SceneRoom);
                 }
             }
         }

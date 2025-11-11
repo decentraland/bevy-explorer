@@ -20,7 +20,7 @@ use strum::IntoEnumIterator;
 use system_bridge::{
     settings::{SettingInfo, Settings},
     ChatMessage, HomeScene, LiveSceneInfo, PermanentPermissionItem, PermissionRequest,
-    SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi,
+    SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
 };
 use tokio::sync::mpsc::UnboundedReceiver;
 use wallet::{sign_request, Wallet};
@@ -670,4 +670,38 @@ pub async fn op_get_mic_state(state: Rc<RefCell<impl State>>) -> MicStateInner {
     let mic_state = state.borrow().borrow::<MicState>().inner.clone();
     let result = mic_state.read().await.clone();
     result
+}
+
+pub async fn op_get_voice_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
+    state.borrow_mut().put(rx);
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetVoiceStream(sx))
+        .unwrap();
+
+    2
+}
+
+pub async fn op_read_voice_stream(
+    state: Rc<RefCell<impl State>>,
+    _rid: u32,
+) -> Result<Option<VoiceMessage>, anyhow::Error> {
+    let Some(mut receiver) = state
+        .borrow_mut()
+        .try_take::<UnboundedReceiver<VoiceMessage>>()
+    else {
+        return Ok(None);
+    };
+
+    let res = match receiver.recv().await {
+        Some(data) => Ok(Some(data)),
+        None => Ok(None),
+    };
+
+    state.borrow_mut().put(receiver);
+
+    res
 }

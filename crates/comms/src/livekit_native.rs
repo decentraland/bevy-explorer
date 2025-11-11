@@ -4,9 +4,12 @@ use bevy::{platform::collections::HashMap, prelude::*};
 use futures_lite::StreamExt;
 use http::Uri;
 use prost::Message;
-use tokio::sync::{
-    mpsc::{error::TryRecvError, Receiver, Sender},
-    Mutex,
+use tokio::{
+    sync::{
+        mpsc::{error::TryRecvError, Receiver, Sender},
+        Mutex,
+    },
+    task::JoinHandle,
 };
 
 use common::{
@@ -246,6 +249,8 @@ fn livekit_handler_inner(
             }
         });
 
+        let mut track_tasks: HashMap<TrackSid, JoinHandle<()>> = HashMap::new();
+
         let mut app_rx = app_rx.lock().await;
         'stream: loop {
             tokio::select!(
@@ -285,10 +290,11 @@ fn livekit_handler_inner(
                         },
                         livekit::RoomEvent::TrackSubscribed { track, publication: _, participant } => {
                             if let Some(address) = participant.identity().0.as_str().as_h160() {
+                                let sid = track.sid();
                                 match track {
                                     livekit::track::RemoteTrack::Audio(audio) => {
                                         let sender = sender.clone();
-                                        rt2.spawn(async move {
+                                        let handle = rt2.spawn(async move {
                                             let mut x = livekit::webrtc::audio_stream::native::NativeAudioStream::new(audio.rtc_track(), 48_000, 1);
 
                                             // get first frame to set sample rate
@@ -305,7 +311,7 @@ fn livekit_handler_inner(
                                                 receiver: frame_receiver,
                                             };
 
-                                            println!("recced with {} / {}", frame.sample_rate, frame.num_channels);
+                                            debug!("recced with {} / {}", frame.sample_rate, frame.num_channels);
 
                                             let sound_data = kira::sound::streaming::StreamingSoundData::from_decoder(
                                                 bridge,
@@ -313,7 +319,7 @@ fn livekit_handler_inner(
 
                                             let _ = sender.send(PlayerUpdate {
                                                 transport_id,
-                                                message: PlayerMessage::AudioStream(Box::new(sound_data)),
+                                                message: PlayerMessage::AudioStream{ stream: Box::new(sound_data), transport: transport_id },
                                                 address,
                                             }).await;
 
@@ -333,9 +339,16 @@ fn livekit_handler_inner(
 
                                             warn!("track ended, exiting task");
                                         });
+                                        track_tasks.insert(sid, handle);
+
                                     },
                                     _ => warn!("not processing video tracks"),
                                 }
+                            }
+                        }
+                        livekit::RoomEvent::TrackUnsubscribed{ track, .. } => {
+                            if let Some(handle) = track_tasks.remove(&track.sid()) {
+                                handle.abort();
                             }
                         }
                         livekit::RoomEvent::ParticipantConnected(participant) => {

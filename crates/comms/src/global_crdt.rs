@@ -76,7 +76,10 @@ impl Plugin for GlobalCrdtPlugin {
 pub enum PlayerMessage {
     MetaData(String),
     PlayerData(rfc4::packet::Message),
-    AudioStream(Box<StreamingSoundData<AudioDecoderError>>),
+    AudioStream{
+        stream: Box<StreamingSoundData<AudioDecoderError>>, 
+        transport: Entity,
+    },
 }
 
 impl std::fmt::Debug for PlayerMessage {
@@ -84,7 +87,7 @@ impl std::fmt::Debug for PlayerMessage {
         let var_name = match self {
             Self::MetaData(arg0) => f.debug_tuple("MetaData").field(arg0).finish(),
             Self::PlayerData(arg0) => f.debug_tuple("PlayerData").field(arg0).finish(),
-            Self::AudioStream(_) => f.debug_tuple("AudioStream").finish(),
+            Self::AudioStream{ transport, .. } => f.debug_tuple("AudioStream").field(transport).finish(),
         };
         var_name
     }
@@ -164,11 +167,14 @@ pub struct ForeignPlayer {
     pub last_update: f32,
     pub scene_id: SceneEntityId,
     pub profile_version: u32,
-    audio_sender: mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
+    audio_sender: mpsc::Sender<(StreamingSoundData<AudioDecoderError>, Entity)>,
 }
 
 #[derive(Component)]
-pub struct ForeignAudioSource(pub mpsc::Receiver<StreamingSoundData<AudioDecoderError>>);
+pub struct ForeignAudioSource{
+    pub receiver: mpsc::Receiver<(StreamingSoundData<AudioDecoderError>, Entity)>,
+    pub active_transport: Option<Entity>,
+}
 
 // TODO: I should avoid the clone on recv somehow
 #[derive(Clone)]
@@ -265,7 +271,7 @@ pub fn process_transport_updates(
         (
             Entity,
             SceneEntityId,
-            mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
+            mpsc::Sender<(StreamingSoundData<AudioDecoderError>, Entity)>,
         ),
     > = HashMap::new();
 
@@ -299,7 +305,7 @@ pub fn process_transport_updates(
                     },
                 );
 
-                let (audio_sender, audio_receiver) = mpsc::channel(10);
+                let (audio_sender, audio_receiver) = mpsc::channel::<(StreamingSoundData<AudioDecoderError>, Entity)>(10);
 
                 let attach_points = AttachPoints::new(&mut commands);
 
@@ -315,7 +321,7 @@ pub fn process_transport_updates(
                             profile_version: 0,
                             audio_sender: audio_sender.clone(),
                         },
-                        ForeignAudioSource(audio_receiver),
+                        ForeignAudioSource{ receiver: audio_receiver, active_transport: None },
                         Propagate(RenderLayers::default()),
                     ))
                     .try_push_children(&attach_points.entities())
@@ -345,9 +351,9 @@ pub fn process_transport_updates(
                         .insert(update.address, meta.lambdas_endpoint);
                 }
             }
-            PlayerMessage::AudioStream(audio) => {
+            PlayerMessage::AudioStream{ stream, transport } => {
                 // pass through
-                let _ = audio_channel.try_send(*audio);
+                let _ = audio_channel.try_send((*stream, transport));
             }
             PlayerMessage::PlayerData(Message::Position(pos)) => {
                 let dcl_transform = DclTransformAndParent {
