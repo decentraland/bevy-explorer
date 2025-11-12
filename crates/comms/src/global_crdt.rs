@@ -15,7 +15,7 @@ use common::{
 use ethers_core::types::Address;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, oneshot};
 
 use dcl::{
     crdt::{append_component, delete_entity, put_component},
@@ -32,7 +32,7 @@ use dcl_component::{
     DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter,
 };
 
-use crate::{movement_compressed::MovementCompressed, profile::ProfileMetaCache};
+use crate::{Transport, movement_compressed::MovementCompressed, profile::ProfileMetaCache};
 
 #[cfg(not(target_arch = "wasm32"))]
 use kira::sound::streaming::StreamingSoundData;
@@ -67,6 +67,7 @@ impl Plugin for GlobalCrdtPlugin {
 
         app.add_systems(Update, process_transport_updates);
         app.add_systems(Update, despawn_players);
+        app.add_systems(Update, handle_foreign_audio);
         app.add_event::<PlayerPositionEvent>();
         app.add_event::<ProfileEvent>();
         app.add_event::<ChatEvent>();
@@ -76,10 +77,8 @@ impl Plugin for GlobalCrdtPlugin {
 pub enum PlayerMessage {
     MetaData(String),
     PlayerData(rfc4::packet::Message),
-    AudioStream{
-        stream: Box<StreamingSoundData<AudioDecoderError>>, 
-        transport: Entity,
-    },
+    AudioStreamAvailable { transport: Entity },
+    AudioStreamUnavailable { transport: Entity },
 }
 
 impl std::fmt::Debug for PlayerMessage {
@@ -87,7 +86,14 @@ impl std::fmt::Debug for PlayerMessage {
         let var_name = match self {
             Self::MetaData(arg0) => f.debug_tuple("MetaData").field(arg0).finish(),
             Self::PlayerData(arg0) => f.debug_tuple("PlayerData").field(arg0).finish(),
-            Self::AudioStream{ transport, .. } => f.debug_tuple("AudioStream").field(transport).finish(),
+            Self::AudioStreamAvailable { transport } => f
+                .debug_tuple("AudioStreamAvailable")
+                .field(transport)
+                .finish(),
+            Self::AudioStreamUnavailable { transport } => f
+                .debug_tuple("AudioStreamUnavailable")
+                .field(transport)
+                .finish(),
         };
         var_name
     }
@@ -167,13 +173,26 @@ pub struct ForeignPlayer {
     pub last_update: f32,
     pub scene_id: SceneEntityId,
     pub profile_version: u32,
-    audio_sender: mpsc::Sender<(StreamingSoundData<AudioDecoderError>, Entity)>,
+    audio_sender: mpsc::Sender<ForeignAudioData>,
+}
+
+pub enum ChannelControl {
+    Subscribe(Address, tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>),
+    Unsubscribe(Address),
+}
+
+pub enum ForeignAudioData {
+    TransportAvailable(Entity),
+    TransportUnavailable(Entity),
 }
 
 #[derive(Component)]
-pub struct ForeignAudioSource{
-    pub receiver: mpsc::Receiver<(StreamingSoundData<AudioDecoderError>, Entity)>,
-    pub active_transport: Option<Entity>,
+pub struct ForeignAudioSource {
+    audio_available_receiver: mpsc::Receiver<ForeignAudioData>,
+    available_transports: HashSet<Entity>,
+    pub current_transport: Option<Entity>,
+    pub audio_receiver:
+        Option<tokio::sync::oneshot::Receiver<StreamingSoundData<AudioDecoderError>>>,
 }
 
 // TODO: I should avoid the clone on recv somehow
@@ -268,11 +287,7 @@ pub fn process_transport_updates(
 
     let mut created_this_frame: HashMap<
         Address,
-        (
-            Entity,
-            SceneEntityId,
-            mpsc::Sender<(StreamingSoundData<AudioDecoderError>, Entity)>,
-        ),
+        (Entity, SceneEntityId, mpsc::Sender<ForeignAudioData>),
     > = HashMap::new();
 
     while let Ok(update) = state.ext_receiver.try_recv() {
@@ -305,7 +320,7 @@ pub fn process_transport_updates(
                     },
                 );
 
-                let (audio_sender, audio_receiver) = mpsc::channel::<(StreamingSoundData<AudioDecoderError>, Entity)>(10);
+                let (audio_sender, audio_receiver) = mpsc::channel::<ForeignAudioData>(10);
 
                 let attach_points = AttachPoints::new(&mut commands);
 
@@ -321,7 +336,12 @@ pub fn process_transport_updates(
                             profile_version: 0,
                             audio_sender: audio_sender.clone(),
                         },
-                        ForeignAudioSource{ receiver: audio_receiver, active_transport: None },
+                        ForeignAudioSource {
+                            audio_available_receiver: audio_receiver,
+                            audio_receiver: None,
+                            available_transports: Default::default(),
+                            current_transport: None,
+                        },
                         Propagate(RenderLayers::default()),
                     ))
                     .try_push_children(&attach_points.entities())
@@ -351,9 +371,15 @@ pub fn process_transport_updates(
                         .insert(update.address, meta.lambdas_endpoint);
                 }
             }
-            PlayerMessage::AudioStream{ stream, transport } => {
+            PlayerMessage::AudioStreamAvailable { transport } => {
                 // pass through
-                let _ = audio_channel.try_send((*stream, transport));
+                error!("{transport} available for {entity}!");
+                let _ = audio_channel.try_send(ForeignAudioData::TransportAvailable(transport));
+            }
+            PlayerMessage::AudioStreamUnavailable { transport } => {
+                // pass through
+                error!("{transport} not available for {entity}!");
+                let _ = audio_channel.try_send(ForeignAudioData::TransportUnavailable(transport));
             }
             PlayerMessage::PlayerData(Message::Position(pos)) => {
                 let dcl_transform = DclTransformAndParent {
@@ -572,6 +598,64 @@ fn despawn_players(
 
             state.delete_entity(player.scene_id);
             state.lookup.remove_by_right(&entity);
+        }
+    }
+}
+
+fn handle_foreign_audio(
+    transports: Query<(Entity, &Transport)>,
+    mut q: Query<(&mut ForeignAudioSource, &ForeignPlayer)>,
+) {
+    let transports = transports
+        .iter()
+        .filter_map(|(e, transport)| transport.control.as_ref().map(|t| (e, t)))
+        .collect::<HashMap<_, _>>();
+
+    for (mut source, player) in q.iter_mut() {
+        let prev_available = source.available_transports.clone();
+        let prev_transport = source.current_transport.clone();
+
+        // handle publish/unpublish
+        while let Ok(event) = source.audio_available_receiver.try_recv() {
+            match event {
+                ForeignAudioData::TransportAvailable(entity) => {
+                    source.available_transports.insert(entity);
+                }
+                ForeignAudioData::TransportUnavailable(entity) => {
+                    source.available_transports.remove(&entity);
+                }
+            }
+        }
+
+        // validate available transports
+        source.available_transports.retain(|t| transports.contains_key(t));
+
+        // validate current source
+        if source
+            .current_transport
+            .is_some_and(|current| !source.available_transports.contains(&current))
+        {
+            source.current_transport = None;
+            source.audio_receiver = None;
+        }
+
+        // request a new source
+        if source.current_transport.is_none() {
+            if let Some(entity) = source.available_transports.iter().next() {
+                let control = transports.get(entity).unwrap();
+                let (sx, rx) = oneshot::channel();
+                if let Ok(()) = control.try_send(ChannelControl::Subscribe(player.address, sx)) {
+                    source.current_transport = Some(*entity);
+                    source.audio_receiver = Some(rx);
+                }
+            }
+        }
+
+        if source.available_transports != prev_available {
+            error!("available: {:?} -> {:?}", prev_available, source.available_transports);
+        }
+        if source.current_transport != prev_transport {
+            error!("current: {:?} -> {:?}", prev_transport, source.current_transport);
         }
     }
 }

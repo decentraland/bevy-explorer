@@ -4,7 +4,7 @@ use common::{
     util::VolumePanning,
 };
 use comms::{SceneRoom, global_crdt::{ForeignAudioSource, ForeignPlayer}};
-use kira::{manager::backend::DefaultBackend, sound::streaming::StreamingSoundData, tween::Tween};
+use kira::{manager::backend::DefaultBackend, sound::{PlaybackState, streaming::StreamingSoundData}, tween::Tween};
 use scene_runner::{ContainingScene, SceneEntity};
 use system_bridge::{SystemApi, VoiceMessage};
 use tokio::sync::mpsc::error::TryRecvError;
@@ -125,8 +125,14 @@ pub fn spawn_and_locate_foreign_streams(
 
     for (ent, emitter_transform, render_layers, mut stream, mut maybe_spawned) in streams.iter_mut()
     {
-        match stream.receiver.try_recv() {
-            Ok((sound_data, channel)) => {
+        if let Some(spawned) = maybe_spawned.as_mut() {
+            if spawned.0.as_ref().is_some_and(|h| !matches!(h.state(), PlaybackState::Playing)) {
+                spawned.0 = None;
+            }
+        }
+
+        match stream.audio_receiver.as_mut().and_then(|rx| rx.try_recv().ok()) {
+            Some(sound_data) => {
                 info!("{ent:?} received foreign sound data!");
                 let handle = audio_manager
                     .manager
@@ -136,10 +142,8 @@ pub fn spawn_and_locate_foreign_streams(
                     .unwrap();
 
                 commands.entity(ent).try_insert(AudioSpawned(Some(handle)));
-                stream.active_transport = Some(channel);
-            }
-            Err(TryRecvError::Disconnected) => (),
-            Err(TryRecvError::Empty) => (),
+            },
+            None => (),
         }
 
         if let Some(handle) = maybe_spawned.as_mut().and_then(|a| a.0.as_mut()) {
@@ -176,8 +180,8 @@ pub fn pipe_voice_to_scene(
         let Some(handle) = spawned.0.as_ref() else {
             continue;
         };
-        if handle.state() == kira::sound::PlaybackState::Playing {
-            let channel = match audio.active_transport.and_then(|t| rooms.get(t).ok()) {
+        if handle.state() == PlaybackState::Playing {
+            let channel = match audio.current_transport.and_then(|t| rooms.get(t).ok()) {
                 Some(room) => room.0.clone(),
                 None => "Nearby".to_string(),
             };

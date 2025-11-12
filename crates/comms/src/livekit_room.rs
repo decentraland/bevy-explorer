@@ -5,7 +5,7 @@ use tokio::sync::mpsc::Receiver;
 
 use dcl_component::proto_components::kernel::comms::rfc4;
 
-use crate::{profile::CurrentUserProfile, NetworkMessage, Transport, TransportType};
+use crate::{ChannelControl, NetworkMessage, Transport, TransportType, profile::CurrentUserProfile};
 use common::structs::MicState;
 
 // main.rs or lib.rs
@@ -37,6 +37,7 @@ pub struct StartLivekit {
 pub struct LivekitTransport {
     pub address: String,
     pub receiver: Option<Receiver<NetworkMessage>>,
+    pub control_receiver: Option<Receiver<ChannelControl>>,
     pub retries: usize,
 }
 
@@ -51,6 +52,7 @@ pub fn start_livekit(
     if let Some(ev) = room_events.read().last() {
         info!("starting livekit protocol");
         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
+        let (control_sender, control_receiver) = tokio::sync::mpsc::channel(10);
 
         let Some(current_profile) = current_profile.profile.as_ref() else {
             return;
@@ -71,11 +73,13 @@ pub fn start_livekit(
             Transport {
                 transport_type: TransportType::Livekit,
                 sender,
+                control: Some(control_sender),
                 foreign_aliases: Default::default(),
             },
             LivekitTransport {
                 address: ev.address.to_owned(),
                 receiver: Some(receiver),
+                control_receiver: Some(control_receiver),
                 retries: 0,
             },
         ));

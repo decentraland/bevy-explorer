@@ -37,6 +37,8 @@ use dcl_component::{DclWriter, ToDclWriter};
 use ipfs::{CurrentRealm, IpfsAssetServer};
 use wallet::{sign_request, Wallet};
 
+use crate::global_crdt::ChannelControl;
+
 use self::{
     archipelago::{ArchipelagoPlugin, StartArchipelago},
     broadcast_position::BroadcastPositionPlugin,
@@ -126,6 +128,7 @@ impl NetworkMessage {
 pub struct Transport {
     pub transport_type: TransportType,
     pub sender: Sender<NetworkMessage>,
+    pub control: Option<Sender<ChannelControl>>,
     pub foreign_aliases: BiMap<u32, Address>,
 }
 
