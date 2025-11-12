@@ -10,14 +10,27 @@ export async function connect_room(url, token) {
         adaptiveStream: false,
         dynacast: false,
     });
-    
+
     await room.connect(url, token);
-    
+
     // Add to active rooms set
     activeRooms.add(room);
-    
-    // Don't automatically set up microphone - let it be controlled by the mic state
-    
+
+    // set up microphone
+    if (currentMicTrack) {
+        console.log(`sub ${room.name}`);
+        const audioTrack = await LivekitClient.createLocalAudioTrack({
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+        });
+        await room.localParticipant.publishTrack(audioTrack, {
+            source: LivekitClient.Track.Source.Microphone,
+        }).catch(error => {
+            console.error(`Failed to publish to room: ${error}`);
+        })
+    }
+
     return room;
 }
 
@@ -26,7 +39,7 @@ export function set_microphone_enabled(enabled) {
         console.warn('No rooms available for microphone control');
         return;
     }
-    
+
     if (enabled) {
         // Enable microphone
         if (!currentMicTrack) {
@@ -34,6 +47,7 @@ export function set_microphone_enabled(enabled) {
 
             // Publish to all active rooms
             const publishPromises = Array.from(activeRooms).map(async (room) => {
+                console.log(`sub ${room.name}`);
                 const audioTrack = await LivekitClient.createLocalAudioTrack({
                     echoCancellation: true,
                     noiseSuppression: true,
@@ -62,6 +76,7 @@ export function set_microphone_enabled(enabled) {
                 const roomSpecificPromises = audioPubs.map(pub => {
                     try {
                         room.localParticipant.unpublishTrack(pub.track);
+                        console.log(`unsub ${room.name}`);
                     } catch (error) {
                         console.error(`Failed to unpublish ${pub} from room ${room.name}:`, error);
                     }
@@ -118,10 +133,15 @@ export async function close_room(room) {
     // Remove from active rooms set
     activeRooms.delete(room);
 
-    // If this was the last room and mic is active, clean up
-    if (activeRooms.size === 0 && currentMicTrack) {
-        currentMicTrack.stop();
-        currentMicTrack = null;
+    // If mic is active, clean up
+    if (currentMicTrack) {
+        const audioPubs = Array.from(room.localParticipant.trackPublications.values())
+            .filter(pub => pub.kind === 'audio');
+
+        for (const pub of audioPubs) {
+            console.log(`stop ${room.name} on exit`);
+            pub.track.stop();
+        }
     }
 
     await room.disconnect();
