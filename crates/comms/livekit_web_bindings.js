@@ -24,11 +24,16 @@ export async function connect_room(url, token) {
             noiseSuppression: true,
             autoGainControl: true,
         });
-        await room.localParticipant.publishTrack(audioTrack, {
+        const pub = await room.localParticipant.publishTrack(audioTrack, {
             source: LivekitClient.Track.Source.Microphone,
         }).catch(error => {
             console.error(`Failed to publish to room: ${error}`);
         })
+
+        // avoid race
+        if (!currentMicTrack) {
+            await room.localParticipant.unpublishTrack(pub.track);
+        }
     }
 
     return room;
@@ -53,11 +58,16 @@ export function set_microphone_enabled(enabled) {
                     noiseSuppression: true,
                     autoGainControl: true,
                 });
-                return room.localParticipant.publishTrack(audioTrack, {
+                let pub = await room.localParticipant.publishTrack(audioTrack, {
                     source: LivekitClient.Track.Source.Microphone,
                 }).catch(error => {
                     console.error(`Failed to publish to room: ${error}`);
-                })
+                });
+
+                // avoid race
+                if (!currentMicTrack) {
+                    await room.localParticipant.unpublishTrack(pub.track);
+                }
             });
 
             Promise.all(publishPromises).then(() => {
