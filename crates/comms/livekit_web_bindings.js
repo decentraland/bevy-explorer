@@ -49,6 +49,9 @@ export async function connect_room(url, token) {
         }
     }
 
+    // check existing streams
+    
+
     return room;
 }
 

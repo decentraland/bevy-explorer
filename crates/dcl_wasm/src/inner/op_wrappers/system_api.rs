@@ -311,3 +311,14 @@ pub async fn op_get_mic_state(state: &WorkerContext) -> JsValue {
 pub async fn op_set_mic_enabled(state: &WorkerContext, enabled: bool) {
     dcl::js::system_api::op_set_mic_enabled(state.rc(), enabled).await;
 }
+
+#[wasm_bindgen]
+pub async fn op_get_voice_stream(state: &WorkerContext) -> u32 {
+    dcl::js::system_api::op_get_voice_stream(state.rc()).await
+}
+
+#[wasm_bindgen]
+pub async fn op_read_voice_stream(state: &WorkerContext, rid: u32) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_read_voice_stream(state.rc(), rid).await)
+}
+
