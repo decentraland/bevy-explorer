@@ -147,6 +147,7 @@ pub struct NativeUi {
     pub chat: bool,
     pub permissions: bool,
     pub profile: bool,
+    pub nametags: bool,
 }
 
 #[derive(Resource)]

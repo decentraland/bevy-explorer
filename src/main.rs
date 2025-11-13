@@ -255,6 +255,7 @@ fn main() {
             chat: !args.contains("--no-chat"),
             permissions: !args.contains("--no-perms"),
             profile: !args.contains("--no-profile"),
+            nametags: !args.contains("--no-nametags"),
         });
         app.insert_resource(SystemScene {
             source: Some(source),
@@ -269,6 +270,7 @@ fn main() {
             chat: true,
             permissions: true,
             profile: true,
+            nametags: true,
         });
     }
 
