@@ -33,7 +33,9 @@ use dcl_component::{
     DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter,
 };
 
-use crate::{SceneRoom, Transport, movement_compressed::MovementCompressed, profile::ProfileMetaCache};
+use crate::{
+    movement_compressed::MovementCompressed, profile::ProfileMetaCache, SceneRoom, Transport,
+};
 
 #[cfg(not(target_arch = "wasm32"))]
 use kira::sound::streaming::StreamingSoundData;
@@ -179,7 +181,10 @@ pub struct ForeignPlayer {
 }
 
 pub enum ChannelControl {
-    Subscribe(Address, tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>),
+    Subscribe(
+        Address,
+        tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
+    ),
     Unsubscribe(Address),
 }
 
@@ -615,7 +620,7 @@ fn handle_foreign_audio(
 
     for (mut source, player) in q.iter_mut() {
         let prev_available = source.available_transports.clone();
-        let prev_transport = source.current_transport.clone();
+        let prev_transport = source.current_transport;
 
         // handle publish/unpublish
         while let Ok(event) = source.audio_available_receiver.try_recv() {
@@ -630,7 +635,9 @@ fn handle_foreign_audio(
         }
 
         // validate available transports
-        source.available_transports.retain(|t| transports.contains_key(t));
+        source
+            .available_transports
+            .retain(|t| transports.contains_key(t));
 
         // validate current source
         if source
@@ -654,10 +661,16 @@ fn handle_foreign_audio(
         }
 
         if source.available_transports != prev_available {
-            error!("available: {:?} -> {:?}", prev_available, source.available_transports);
+            error!(
+                "available: {:?} -> {:?}",
+                prev_available, source.available_transports
+            );
         }
         if source.current_transport != prev_transport {
-            error!("current: {:?} -> {:?}", prev_transport, source.current_transport);
+            error!(
+                "current: {:?} -> {:?}",
+                prev_transport, source.current_transport
+            );
         }
     }
 }
@@ -682,7 +695,7 @@ pub fn pipe_voice_to_scene(
     let mut prev_active = std::mem::take(&mut *current_active);
 
     for (source, audio) in sources.iter() {
-        if let Some(transport) =  audio.current_transport {
+        if let Some(transport) = audio.current_transport {
             let channel = match scene_rooms.get(transport).ok() {
                 Some(room) => room.0.clone(),
                 None => "Nearby".to_string(),

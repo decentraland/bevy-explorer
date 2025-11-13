@@ -21,16 +21,22 @@ use common::{
 use dcl_component::proto_components::kernel::comms::rfc4;
 
 use crate::{
-    ChannelControl, NetworkMessage, global_crdt::{
+    global_crdt::{
         GlobalCrdtState, LocalAudioFrame, LocalAudioSource, PlayerMessage, PlayerUpdate,
-    }, livekit_room::{LivekitConnection, LivekitTransport}
+    },
+    livekit_room::{LivekitConnection, LivekitTransport},
+    ChannelControl, NetworkMessage,
 };
 
 use livekit::{
-    RoomOptions, id::{ParticipantIdentity, TrackSid}, options::TrackPublishOptions, track::{LocalAudioTrack, LocalTrack, TrackKind, TrackSource}, webrtc::{
+    id::{ParticipantIdentity, TrackSid},
+    options::TrackPublishOptions,
+    track::{LocalAudioTrack, LocalTrack, TrackKind, TrackSource},
+    webrtc::{
         audio_source::native::NativeAudioSource,
         prelude::{AudioFrame, AudioSourceOptions, RtcAudioSource},
-    }
+    },
+    RoomOptions,
 };
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -142,7 +148,14 @@ pub fn connect_livekit(
 
         let subscription = mic.subscribe();
         std::thread::spawn(move || {
-            livekit_handler(transport_id, remote_address, receiver, control_receiver, sender, subscription)
+            livekit_handler(
+                transport_id,
+                remote_address,
+                receiver,
+                control_receiver,
+                sender,
+                subscription,
+            )
         });
 
         commands.entity(transport_id).try_insert(LivekitConnection);
@@ -204,7 +217,10 @@ fn livekit_handler_inner(
     debug!("{params:?}");
     let token = params.get("access_token").cloned().unwrap_or_default();
 
-    let mut audio_channels: HashMap<H160, tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>> = HashMap::new();
+    let mut audio_channels: HashMap<
+        H160,
+        tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
+    > = HashMap::new();
 
     let rt = Arc::new(
         tokio::runtime::Builder::new_multi_thread()
@@ -455,7 +471,7 @@ fn livekit_handler_inner(
                     };
 
                     let publications = participant.track_publications();
-                    let Some(track) = publications.values().find(|track| 
+                    let Some(track) = publications.values().find(|track|
                         matches!(track.kind(), TrackKind::Audio)
                     ) else {
                         warn!("no audio for {address:#x?}");

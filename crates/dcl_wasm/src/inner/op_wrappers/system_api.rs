@@ -321,4 +321,3 @@ pub async fn op_get_voice_stream(state: &WorkerContext) -> u32 {
 pub async fn op_read_voice_stream(state: &WorkerContext, rid: u32) -> Result<JsValue, WasmError> {
     serde_result!(dcl::js::system_api::op_read_voice_stream(state.rc(), rid).await)
 }
-
