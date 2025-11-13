@@ -66,7 +66,6 @@ use scene_runner::{
     util::ConsoleRelay,
     ContainingScene, SceneEntity,
 };
-use system_bridge::NativeUi;
 use world_ui::{spawn_world_ui_view, WorldUi};
 
 use crate::animate::AvatarAnimPlayer;
@@ -896,7 +895,7 @@ fn process_avatar(
     mut meshes: ResMut<Assets<Mesh>>,
     gltfs: Res<Assets<Gltf>>,
     attach_points: Query<&AttachPoints>,
-    (ui_view, dui, config, native_ui): (Res<AvatarWorldUi>, Res<DuiRegistry>, Res<AppConfig>, Res<NativeUi>),
+    (ui_view, dui, config): (Res<AvatarWorldUi>, Res<DuiRegistry>, Res<AppConfig>),
     mut emote_loader: CollectibleManager<Emote>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
     (names, previous_avatar, scene_ent, previous_animator, mut contexts): (
@@ -1363,42 +1362,40 @@ fn process_avatar(
                 instance_scene_materials.values().map(|h| h.id()).collect(),
             ));
 
-        // add nametag (only if nametags are enabled)
-        if native_ui.nametags {
-            if let Some(label) = def.label.as_ref() {
-                debug!("spawn avatar label for {label}");
-                let label_ui = commands
-                    .entity(ui_view.ui_root)
-                    .spawn_template(
-                        &dui,
-                        "avatar-nametag",
-                        DuiProps::new().with_prop("name", label.to_string()),
-                    )
-                    .unwrap()
-                    .root;
+        // add nametag
+        if let Some(label) = def.label.as_ref() {
+            debug!("spawn avatar label for {label}");
+            let label_ui = commands
+                .entity(ui_view.ui_root)
+                .spawn_template(
+                    &dui,
+                    "avatar-nametag",
+                    DuiProps::new().with_prop("name", label.to_string()),
+                )
+                .unwrap()
+                .root;
 
-                debug!("{:?} as child of {:?}", label_ui, ui_view.view);
-                commands.entity(label_ui).insert(DespawnWith(avatar_ent));
+            debug!("{:?} as child of {:?}", label_ui, ui_view.view);
+            commands.entity(label_ui).insert(DespawnWith(avatar_ent));
 
-                commands.entity(avatar_ent).with_children(|commands| {
-                    commands.spawn((
-                        Transform::from_translation(Vec3::Y * 2.2),
-                        Visibility::default(),
-                        WorldUi {
-                            dbg: label.clone(),
-                            pix_per_m: 200.0,
-                            valign: 0.0,
-                            halign: 0.0,
-                            add_y_pix: 0.0,
-                            bounds: def.bounds.clone(),
-                            view: ui_view.view,
-                            ui_node: label_ui,
-                            vertex_billboard: true,
-                            blend_mode: AlphaMode::Mask(0.5),
-                        },
-                    ));
-                });
-            }
+            commands.entity(avatar_ent).with_children(|commands| {
+                commands.spawn((
+                    Transform::from_translation(Vec3::Y * 2.2),
+                    Visibility::default(),
+                    WorldUi {
+                        dbg: label.clone(),
+                        pix_per_m: 200.0,
+                        valign: 0.0,
+                        halign: 0.0,
+                        add_y_pix: 0.0,
+                        bounds: def.bounds.clone(),
+                        view: ui_view.view,
+                        ui_node: label_ui,
+                        vertex_billboard: true,
+                        blend_mode: AlphaMode::Mask(0.5),
+                    },
+                ));
+            });
         }
 
         // remove previous
