@@ -1,25 +1,37 @@
-let currentMicTrack = null;
+function log(...args) {
+    console.log("[livekit]", ...args)
+}
+function warn(...args) {
+    console.warn("[livekit]", ...args)
+}
+function error(...args) {
+    console.error("[livekit]", ...args)
+}
+
+let currentMicTrack = false;
 const activeRooms = new Set();
 
 // Store audio elements and panner nodes for spatial audio
-const participantAudioNodes = new Map();
+const audioRigs = new WeakMap();
+const participantAudioElements = new Map();
 var audioContext = null;
 
 export async function connect_room(url, token) {
     const room = new LivekitClient.Room({
-        autoSubscribe: false,
         adaptiveStream: false,
         dynacast: false,
     });
 
-    await room.connect(url, token);
+    await room.connect(url, token, {
+        autoSubscribe: false,
+    });
 
     // Add to active rooms set
     activeRooms.add(room);
 
     // set up microphone
     if (currentMicTrack) {
-        console.log(`sub ${room.name}`);
+        log(`sub ${room.name}`);
         const audioTrack = await LivekitClient.createLocalAudioTrack({
             echoCancellation: true,
             noiseSuppression: true,
@@ -28,7 +40,7 @@ export async function connect_room(url, token) {
         const pub = await room.localParticipant.publishTrack(audioTrack, {
             source: LivekitClient.Track.Source.Microphone,
         }).catch(error => {
-            console.error(`Failed to publish to room: ${error}`);
+            error(`Failed to publish to room: ${error}`);
         })
 
         // avoid race
@@ -41,11 +53,6 @@ export async function connect_room(url, token) {
 }
 
 export function set_microphone_enabled(enabled) {
-    if (activeRooms.size === 0) {
-        console.warn('No rooms available for microphone control');
-        return;
-    }
-
     if (enabled) {
         // Enable microphone
         if (!currentMicTrack) {
@@ -53,7 +60,7 @@ export function set_microphone_enabled(enabled) {
 
             // Publish to all active rooms
             const publishPromises = Array.from(activeRooms).map(async (room) => {
-                console.log(`sub ${room.name}`);
+                log(`publish ${room.name}`);
                 const audioTrack = await LivekitClient.createLocalAudioTrack({
                     echoCancellation: true,
                     noiseSuppression: true,
@@ -62,7 +69,7 @@ export function set_microphone_enabled(enabled) {
                 let pub = await room.localParticipant.publishTrack(audioTrack, {
                     source: LivekitClient.Track.Source.Microphone,
                 }).catch(error => {
-                    console.error(`Failed to publish to room: ${error}`);
+                    error(`Failed to publish to room: ${error}`);
                 });
 
                 // avoid race
@@ -72,9 +79,9 @@ export function set_microphone_enabled(enabled) {
             });
 
             Promise.all(publishPromises).then(() => {
-                console.log('Microphone enabled successfully for all rooms');
+                log('Microphone enabled successfully for all rooms');
             }).catch(error => {
-                console.error('Failed to enable microphone:', error);
+                error('Failed to enable microphone:', error);
             });
         }
     } else {
@@ -87,22 +94,22 @@ export function set_microphone_enabled(enabled) {
                 const roomSpecificPromises = audioPubs.map(pub => {
                     try {
                         room.localParticipant.unpublishTrack(pub.track);
-                        console.log(`unsub ${room.name}`);
+                        log(`unpublish ${room.name}`);
                     } catch (error) {
-                        console.error(`Failed to unpublish ${pub} from room ${room.name}:`, error);
+                        error(`Failed to unpublish ${pub} from room ${room.name}:`, error);
                     }
                 });
 
                 try {
                     await Promise.all(roomSpecificPromises);
                 } catch (error) {
-                    console.error(`Failed to unpublish audio from room ${room.name}:`, error);
+                    error(`Failed to unpublish audio from room ${room.name}:`, error);
                 }
             });
 
             Promise.all(allRoomUnpublishPromises)
                 .catch(error => {
-                    console.error('A critical error occurred during the unpublish-all process:', error);
+                    error('A critical error occurred during the unpublish-all process:', error);
                 })
                 .finally(() => {
                     currentMicTrack = false;
@@ -150,7 +157,7 @@ export async function close_room(room) {
             .filter(pub => pub.kind === 'audio');
 
         for (const pub of audioPubs) {
-            console.log(`stop ${room.name} on exit`);
+            log(`stop ${room.name} on exit`);
             pub.track.stop();
         }
     }
@@ -171,7 +178,7 @@ export function set_room_event_handler(room, handler) {
     });
 
     room.on(LivekitClient.RoomEvent.TrackPublished, (publication, participant) => {
-        console.error("rec pub");
+        log(`${room.name} ${participant.identity} rec pub ${publication.kind}`);
         handler({
             type: 'trackPublished',
             kind: publication.kind,
@@ -183,7 +190,7 @@ export function set_room_event_handler(room, handler) {
     });
 
     room.on(LivekitClient.RoomEvent.TrackUnpublished, (publication, participant) => {
-        console.error("rec unpub");
+        log(`${room.name} ${participant.identity} rec unpub ${publication.kind}`);
         handler({
             type: 'trackUnpublished',
             kind: publication.kind,
@@ -195,21 +202,22 @@ export function set_room_event_handler(room, handler) {
     });
 
     room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
+        log(`${room.name} ${participant.identity} rec sub ${publication.kind} (track sid ${track.sid})`);
         // For audio tracks, set up spatial audio
         if (track.kind === 'audio') {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
 
-            let nodes = participantAudioNodes.get(participant.identity);
+            const audioElement = track.attach();
 
-            if (!nodes) {
-                // Create Web Audio API nodes for spatial audio
-                if (!audioContext) {
-                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                }
+            if (!audioRigs.has(audioElement)) {
+                log("create nodes for", audioElement);
 
-                const audioElement = track.attach();
                 const source = audioContext.createMediaElementSource(audioElement);
                 const pannerNode = audioContext.createStereoPanner();
                 const gainNode = audioContext.createGain();
+                gainNode.gain.value = 100;
 
                 // Connect the audio graph: source -> panner -> gain -> destination
                 source.connect(pannerNode);
@@ -217,19 +225,19 @@ export function set_room_event_handler(room, handler) {
                 gainNode.connect(audioContext.destination);
 
                 // Store the nodes for later control
-                participantAudioNodes.set(participant.identity, {
-                    audioElement,
+                audioRigs.set(audioElement, {
                     source,
                     pannerNode,
                     gainNode,
-                    track
                 });
-
-                // Start playing
-                audioElement.play().catch(e => console.warn('Failed to play audio:', e));
-            } else {
-                track.attach(nodes.audioElement);
             }
+
+            audioElement.play().catch(e => ('Failed to play audio:', e));
+            // mute audio direct to speakers?
+            audioElement.volume = 0.01;
+
+            log(`set rig for ${participant.identity}`, audioElement);
+            participantAudioElements.set(participant.identity, { room: room.name, audio: audioElement })
         }
 
         handler({
@@ -242,12 +250,18 @@ export function set_room_event_handler(room, handler) {
     });
 
     room.on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+        log(`${room.name} ${participant.identity} rec unsub ${publication.kind} (track sid ${track.sid})`);
         // Clean up spatial audio nodes
         if (track.kind === 'audio') {
-            const nodes = participantAudioNodes.get(participant.identity);
-            if (nodes) {
-                track.detach(nodes.audioElement);
-            }
+            track.attachedElements.forEach(audioElement => {
+                track.detach(audioElement);
+                audioElement.pause();
+
+                if (participantAudioElements.get(participant.identity)?.room === room.name) {
+                    log(`delete audioElement lookup for ${participant.identity}`);
+                    participantAudioElements.delete(participant.identity);
+                }
+            });
         }
 
         handler({
@@ -270,18 +284,7 @@ export function set_room_event_handler(room, handler) {
     });
 
     room.on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
-        // Clean up any audio nodes when participant disconnects
-        const nodes = participantAudioNodes.get(participant.identity);
-        if (nodes) {
-            nodes.source.disconnect();
-            nodes.pannerNode.disconnect();
-            nodes.gainNode.disconnect();
-            nodes.audioElement.pause();
-            nodes.audioElement.srcObject = null;
-            nodes.audioElement.remove();
-            participantAudioNodes.delete(participant.identity);
-        }
-
+        participantAudioElements.delete(participant.identity);
         handler({
             type: 'participantDisconnected',
             participant: {
@@ -294,67 +297,48 @@ export function set_room_event_handler(room, handler) {
 
 // Spatial audio control functions
 export function set_participant_spatial_audio(participantIdentity, pan, volume) {
-    const nodes = participantAudioNodes.get(participantIdentity);
-    if (nodes) {
-        // Pan value should be between -1 (left) and 1 (right)
-        nodes.pannerNode.pan.value = Math.max(-1, Math.min(1, pan));
-        // Volume should be between 0 and 1 (or higher for boost)
-        nodes.gainNode.gain.value = Math.max(0, volume);
-
-        console.log(`Set spatial audio for ${participantIdentity}: pan=${pan}, volume=${volume}`);
+    const participantAudio = participantAudioElements.get(participantIdentity);
+    if (!participantAudio) {
+        log(`no rig for ${participantIdentity}`)
+        return;
     }
-}
 
-// Set pan value only (-1 to 1, where -1 is left, 0 is center, 1 is right)
-export function set_participant_pan(participantIdentity, pan) {
-    const nodes = participantAudioNodes.get(participantIdentity);
-    if (nodes) {
-        nodes.pannerNode.pan.value = Math.max(-1, Math.min(1, pan));
+    const nodes = audioRigs.get(participantAudio.audio);
+    if (!nodes) {
+        error(`no nodes for participant ${participantIdentity}, this should never happen`, audio);
+        error("rigs:", audioRigs);
+        return;
     }
-}
 
-// Set volume only (0 to 1, or higher for boost)
-export function set_participant_volume(participantIdentity, volume) {
-    const nodes = participantAudioNodes.get(participantIdentity);
-    if (nodes) {
-        nodes.gainNode.gain.value = Math.max(0, volume);
-    }
+    // Pan value should be between -1 (left) and 1 (right)
+    nodes.pannerNode.pan.value = Math.max(-1, Math.min(1, pan));
+    // Volume should be between 0 and 1 (or higher for boost)
+    nodes.gainNode.gain.value = Math.max(0, volume * 100.0);
+
+    log(`[${audioContext.state}] Set spatial audio for ${participantIdentity} : pan=${nodes.pannerNode.pan.value}, volume=${nodes.gainNode.gain.value}`);
 }
 
 // Get all active participant identities with audio
 export function get_audio_participants() {
-    return Array.from(participantAudioNodes.keys());
-}
-
-// Helper function to clean up audio resources
-export function cleanup_audio_track(track) {
-    if (track._audioContext) {
-        track._audioContext.close();
-    }
-    if (track._scriptNode) {
-        track._scriptNode.disconnect();
-    }
-    if (track._audioElement) {
-        track.detach(track._audioElement);
-    }
+    return Array.from(participantAudioElements.keys());
 }
 
 export function subscribe_channel(roomName, participantId, subscribe) {
     const room = Array.from(activeRooms).find(room => room.name === roomName);
     if (!room) {
-        console.warn(`couldn't find room ${roomName} for subscription`);
+        warn(`couldn't find room ${roomName} for subscription`);
         return;
     }
 
     const participant = room.remoteParticipants.get(participantId);
     if (!participant) {
-        console.warn(`couldn't find participant ${participantId} in room ${roomName} for subscription`);
+        warn(`couldn't find participant ${participantId} in room ${roomName} for subscription`);
         return;
     }
 
     const pub = Array.from(participant.trackPublications.values()).find(pub => pub.kind === "audio");
     if (!pub) {
-        console.warn(`participant ${participantId} in room ${roomName} has no audio tracks`);
+        warn(`participant ${participantId} in room ${roomName} has no audio tracks`);
     }
 
     pub.setSubscribed(subscribe);

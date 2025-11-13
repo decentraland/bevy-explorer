@@ -95,6 +95,7 @@ impl Plugin for MicPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MicState>();
         app.add_systems(Update, update_mic_state);
+        app.add_systems(Update, locate_foreign_streams);
     }
 }
 
@@ -464,5 +465,35 @@ pub fn update_participant_pan(participant_identity: &str, pan: f32) {
 pub fn update_participant_volume(participant_identity: &str, volume: f32) {
     if let Err(e) = set_participant_volume(participant_identity, volume) {
         warn!("Failed to set volume for {}: {:?}", participant_identity, e);
+    }
+}
+
+use crate::global_crdt::{ForeignAudioSource, ForeignPlayer};
+use bevy::render::view::RenderLayers;
+use common::{structs::AudioSettings, util::VolumePanning};
+
+#[allow(clippy::type_complexity)]
+pub fn locate_foreign_streams(
+    mut streams: Query<(
+        &GlobalTransform,
+        Option<&RenderLayers>,
+        &ForeignAudioSource,
+        &ForeignPlayer,
+    )>,
+    pan: VolumePanning,
+    settings: Res<AudioSettings>,
+) {
+    for (emitter_transform, render_layers, source, player) in streams.iter_mut() {
+        if source.current_transport.is_some() {
+            let (volume, panning) =
+                pan.volume_and_panning(emitter_transform.translation(), render_layers);
+            let volume = volume * settings.voice();
+
+            update_participant_spatial_audio(
+                &format!("{:#x}", player.address),
+                -1.0 + 2.0 * panning,
+                volume,
+            );
+        }
     }
 }
