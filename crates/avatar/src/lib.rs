@@ -642,21 +642,24 @@ fn update_render_avatar(
                 Transform::from_rotation(Quat::from_rotation_y(PI)),
                 Visibility::default(),
                 AvatarDefinition {
-                    label: native_ui.nametags.then(|| {
-                        selection.shape.0.name.as_ref().and_then(|name| {
-                            (!name.is_empty()).then_some(format!(
-                                "{}#{}",
-                                name,
-                                selection
-                                    .shape
-                                    .0
-                                    .id
-                                    .chars()
-                                    .skip(selection.shape.0.id.len().saturating_sub(4))
-                                    .collect::<String>()
-                            ))
+                    label: native_ui
+                        .nametags
+                        .then(|| {
+                            selection.shape.0.name.as_ref().and_then(|name| {
+                                (!name.is_empty()).then_some(format!(
+                                    "{}#{}",
+                                    name,
+                                    selection
+                                        .shape
+                                        .0
+                                        .id
+                                        .chars()
+                                        .skip(selection.shape.0.id.len().saturating_sub(4))
+                                        .collect::<String>()
+                                ))
+                            })
                         })
-                    }).flatten(),
+                        .flatten(),
                     body,
                     body_shape: body_urn.as_str().to_owned(),
                     wearables,
