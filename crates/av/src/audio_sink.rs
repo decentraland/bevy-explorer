@@ -1,12 +1,11 @@
-use bevy::{platform::collections::HashMap, prelude::*, render::view::RenderLayers};
+use bevy::{prelude::*, render::view::RenderLayers};
 use common::{
     structs::{AudioDecoderError, AudioSettings, PrimaryUser},
     util::VolumePanning,
 };
-use comms::{SceneRoom, global_crdt::{ForeignAudioSource, ForeignPlayer}};
+use comms::global_crdt::ForeignAudioSource;
 use kira::{manager::backend::DefaultBackend, sound::{PlaybackState, streaming::StreamingSoundData}, tween::Tween};
 use scene_runner::{ContainingScene, SceneEntity};
-use system_bridge::{SystemApi, VoiceMessage};
 use tokio::sync::mpsc::error::TryRecvError;
 
 use crate::stream_processor::AVCommand;
@@ -153,59 +152,6 @@ pub fn spawn_and_locate_foreign_streams(
 
             handle.set_volume(volume as f64, Tween::default());
             handle.set_panning(panning as f64, Tween::default());
-        }
-    }
-}
-
-pub fn pipe_voice_to_scene(
-    mut requests: EventReader<SystemApi>,
-    sources: Query<(&ForeignPlayer, &ForeignAudioSource, &AudioSpawned), With<ForeignAudioSource>>,
-    mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<VoiceMessage>>>,
-    mut current_active: Local<HashMap<ethers_core::types::Address, String>>,
-    rooms: Query<&SceneRoom>,
-) {
-    senders.extend(requests.read().filter_map(|ev| {
-        if let SystemApi::GetVoiceStream(sender) = ev {
-            Some(sender.clone())
-        } else {
-            None
-        }
-    }));
-
-    senders.retain(|s| !s.is_closed());
-
-    let mut prev_active = std::mem::take(&mut *current_active);
-
-    for (source, audio, spawned) in sources.iter() {
-        let Some(handle) = spawned.0.as_ref() else {
-            continue;
-        };
-        if handle.state() == PlaybackState::Playing {
-            let channel = match audio.current_transport.and_then(|t| rooms.get(t).ok()) {
-                Some(room) => room.0.clone(),
-                None => "Nearby".to_string(),
-            };
-            if prev_active.remove(&source.address).as_ref() != Some(&channel) {
-                for sender in senders.iter() {
-                    let _ = sender.send(VoiceMessage {
-                        sender_address: format!("{:#x}", source.address),
-                        channel: channel.clone(),
-                        active: true,
-                    });
-                }
-            }
-
-            current_active.insert(source.address, channel);
-        }
-    }
-
-    for (address, channel) in prev_active.drain() {
-        for sender in senders.iter() {
-            let _ = sender.send(VoiceMessage {
-                sender_address: format!("{address:#x}"),
-                channel: channel.clone(),
-                active: false,
-            });
         }
     }
 }

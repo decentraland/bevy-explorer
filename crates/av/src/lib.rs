@@ -31,7 +31,7 @@ use audio_source_wasm::AudioSourcePluginImpl;
 
 // foreign players
 #[cfg(feature = "ffmpeg")]
-use audio_sink::{pipe_voice_to_scene, spawn_and_locate_foreign_streams, spawn_audio_streams};
+use audio_sink::{spawn_and_locate_foreign_streams, spawn_audio_streams};
 
 // video
 #[cfg(feature = "ffmpeg")]
@@ -56,12 +56,7 @@ impl Plugin for AudioPlugin {
         #[cfg(feature = "ffmpeg")]
         app.add_systems(
             PostUpdate,
-            (
-                spawn_audio_streams,
-                spawn_and_locate_foreign_streams,
-                pipe_voice_to_scene,
-            )
-                .chain(),
+            (spawn_audio_streams, spawn_and_locate_foreign_streams).chain(),
         );
     }
 }

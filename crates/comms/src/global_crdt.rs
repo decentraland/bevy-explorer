@@ -15,6 +15,7 @@ use common::{
 use ethers_core::types::Address;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use system_bridge::{SystemApi, VoiceMessage};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 use dcl::{
@@ -32,7 +33,7 @@ use dcl_component::{
     DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter,
 };
 
-use crate::{Transport, movement_compressed::MovementCompressed, profile::ProfileMetaCache};
+use crate::{SceneRoom, Transport, movement_compressed::MovementCompressed, profile::ProfileMetaCache};
 
 #[cfg(not(target_arch = "wasm32"))]
 use kira::sound::streaming::StreamingSoundData;
@@ -68,6 +69,7 @@ impl Plugin for GlobalCrdtPlugin {
         app.add_systems(Update, process_transport_updates);
         app.add_systems(Update, despawn_players);
         app.add_systems(Update, handle_foreign_audio);
+        app.add_systems(Update, pipe_voice_to_scene);
         app.add_event::<PlayerPositionEvent>();
         app.add_event::<ProfileEvent>();
         app.add_event::<ChatEvent>();
@@ -656,6 +658,56 @@ fn handle_foreign_audio(
         }
         if source.current_transport != prev_transport {
             error!("current: {:?} -> {:?}", prev_transport, source.current_transport);
+        }
+    }
+}
+
+pub fn pipe_voice_to_scene(
+    mut requests: EventReader<SystemApi>,
+    sources: Query<(&ForeignPlayer, &ForeignAudioSource)>,
+    mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<VoiceMessage>>>,
+    mut current_active: Local<HashMap<ethers_core::types::Address, String>>,
+    scene_rooms: Query<&SceneRoom>,
+) {
+    senders.extend(requests.read().filter_map(|ev| {
+        if let SystemApi::GetVoiceStream(sender) = ev {
+            Some(sender.clone())
+        } else {
+            None
+        }
+    }));
+
+    senders.retain(|s| !s.is_closed());
+
+    let mut prev_active = std::mem::take(&mut *current_active);
+
+    for (source, audio) in sources.iter() {
+        if let Some(transport) =  audio.current_transport {
+            let channel = match scene_rooms.get(transport).ok() {
+                Some(room) => room.0.clone(),
+                None => "Nearby".to_string(),
+            };
+            if prev_active.remove(&source.address).as_ref() != Some(&channel) {
+                for sender in senders.iter() {
+                    let _ = sender.send(VoiceMessage {
+                        sender_address: format!("{:#x}", source.address),
+                        channel: channel.clone(),
+                        active: true,
+                    });
+                }
+            }
+
+            current_active.insert(source.address, channel);
+        }
+    }
+
+    for (address, channel) in prev_active.drain() {
+        for sender in senders.iter() {
+            let _ = sender.send(VoiceMessage {
+                sender_address: format!("{address:#x}"),
+                channel: channel.clone(),
+                active: false,
+            });
         }
     }
 }

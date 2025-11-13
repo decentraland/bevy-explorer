@@ -3,10 +3,11 @@ const activeRooms = new Set();
 
 // Store audio elements and panner nodes for spatial audio
 const participantAudioNodes = new Map();
+var audioContext = null;
 
 export async function connect_room(url, token) {
     const room = new LivekitClient.Room({
-        autoSubscribe: true,
+        autoSubscribe: false,
         adaptiveStream: false,
         dynacast: false,
     });
@@ -169,34 +170,66 @@ export function set_room_event_handler(room, handler) {
         });
     });
 
+    room.on(LivekitClient.RoomEvent.TrackPublished, (publication, participant) => {
+        console.error("rec pub");
+        handler({
+            type: 'trackPublished',
+            kind: publication.kind,
+            participant: {
+                identity: participant.identity,
+                metadata: participant.metadata || ''
+            }
+        })
+    });
+
+    room.on(LivekitClient.RoomEvent.TrackUnpublished, (publication, participant) => {
+        console.error("rec unpub");
+        handler({
+            type: 'trackUnpublished',
+            kind: publication.kind,
+            participant: {
+                identity: participant.identity,
+                metadata: participant.metadata || ''
+            }
+        })
+    });
+
     room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
         // For audio tracks, set up spatial audio
         if (track.kind === 'audio') {
-            const audioElement = track.attach();
 
-            // Create Web Audio API nodes for spatial audio
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const source = audioContext.createMediaElementSource(audioElement);
-            const pannerNode = audioContext.createStereoPanner();
-            const gainNode = audioContext.createGain();
+            let nodes = participantAudioNodes.get(participant.identity);
 
-            // Connect the audio graph: source -> panner -> gain -> destination
-            source.connect(pannerNode);
-            pannerNode.connect(gainNode);
-            gainNode.connect(audioContext.destination);
+            if (!nodes) {
+                // Create Web Audio API nodes for spatial audio
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
 
-            // Store the nodes for later control
-            participantAudioNodes.set(participant.identity, {
-                audioElement,
-                audioContext,
-                source,
-                pannerNode,
-                gainNode,
-                track
-            });
+                const audioElement = track.attach();
+                const source = audioContext.createMediaElementSource(audioElement);
+                const pannerNode = audioContext.createStereoPanner();
+                const gainNode = audioContext.createGain();
 
-            // Start playing
-            audioElement.play().catch(e => console.warn('Failed to play audio:', e));
+                // Connect the audio graph: source -> panner -> gain -> destination
+                source.connect(pannerNode);
+                pannerNode.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+
+                // Store the nodes for later control
+                participantAudioNodes.set(participant.identity, {
+                    audioElement,
+                    source,
+                    pannerNode,
+                    gainNode,
+                    track
+                });
+
+                // Start playing
+                audioElement.play().catch(e => console.warn('Failed to play audio:', e));
+            } else {
+                track.attach(nodes.audioElement);
+            }
         }
 
         handler({
@@ -213,12 +246,7 @@ export function set_room_event_handler(room, handler) {
         if (track.kind === 'audio') {
             const nodes = participantAudioNodes.get(participant.identity);
             if (nodes) {
-                nodes.source.disconnect();
-                nodes.pannerNode.disconnect();
-                nodes.gainNode.disconnect();
-                nodes.audioContext.close();
                 track.detach(nodes.audioElement);
-                participantAudioNodes.delete(participant.identity);
             }
         }
 
@@ -248,7 +276,9 @@ export function set_room_event_handler(room, handler) {
             nodes.source.disconnect();
             nodes.pannerNode.disconnect();
             nodes.gainNode.disconnect();
-            nodes.audioContext.close();
+            nodes.audioElement.pause();
+            nodes.audioElement.srcObject = null;
+            nodes.audioElement.remove();
             participantAudioNodes.delete(participant.identity);
         }
 
@@ -307,4 +337,29 @@ export function cleanup_audio_track(track) {
     if (track._audioElement) {
         track.detach(track._audioElement);
     }
+}
+
+export function subscribe_channel(roomName, participantId, subscribe) {
+    const room = Array.from(activeRooms).find(room => room.name === roomName);
+    if (!room) {
+        console.warn(`couldn't find room ${roomName} for subscription`);
+        return;
+    }
+
+    const participant = room.remoteParticipants.get(participantId);
+    if (!participant) {
+        console.warn(`couldn't find participant ${participantId} in room ${roomName} for subscription`);
+        return;
+    }
+
+    const pub = Array.from(participant.trackPublications.values()).find(pub => pub.kind === "audio");
+    if (!pub) {
+        console.warn(`participant ${participantId} in room ${roomName} has no audio tracks`);
+    }
+
+    pub.setSubscribed(subscribe);
+}
+
+export function room_name(room) {
+    return room.name
 }

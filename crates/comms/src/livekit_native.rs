@@ -66,6 +66,13 @@ pub fn update_mic(
 
             // drop old stream
             stream.0 = None;
+            // send termination frame
+            let _ = mic.sender.send(LocalAudioFrame {
+                data: Default::default(),
+                sample_rate: 0,
+                num_channels: 0,
+                samples_per_channel: 0,
+            });
 
             if !mic_state.enabled {
                 "disabled".clone_into(&mut last_name);
@@ -225,8 +232,14 @@ fn livekit_handler_inner(
                         if let Err(e) = local_participant.unpublish_track(&sid).await {
                             warn!("error unpublishing previous mic track: {e}");
                         }
-                        warn!("unpub");
+                        debug!("unpub mic");
                     }
+
+                    if frame.num_channels == 0 {
+                        native_source = None;
+                        continue;
+                    }
+
                     let new_source = native_source.insert(NativeAudioSource::new(
                         AudioSourceOptions{
                             echo_cancellation: true,
