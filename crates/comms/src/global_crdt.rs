@@ -380,12 +380,12 @@ pub fn process_transport_updates(
             }
             PlayerMessage::AudioStreamAvailable { transport } => {
                 // pass through
-                error!("{transport} available for {entity}!");
+                debug!("{transport} available for {entity}!");
                 let _ = audio_channel.try_send(ForeignAudioData::TransportAvailable(transport));
             }
             PlayerMessage::AudioStreamUnavailable { transport } => {
                 // pass through
-                error!("{transport} not available for {entity}!");
+                debug!("{transport} not available for {entity}!");
                 let _ = audio_channel.try_send(ForeignAudioData::TransportUnavailable(transport));
             }
             PlayerMessage::PlayerData(Message::Position(pos)) => {
@@ -661,13 +661,13 @@ fn handle_foreign_audio(
         }
 
         if source.available_transports != prev_available {
-            error!(
+            debug!(
                 "available: {:?} -> {:?}",
                 prev_available, source.available_transports
             );
         }
         if source.current_transport != prev_transport {
-            error!(
+            debug!(
                 "current: {:?} -> {:?}",
                 prev_transport, source.current_transport
             );

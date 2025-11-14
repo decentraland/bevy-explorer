@@ -309,7 +309,7 @@ async fn connect_and_handle_session(
                 if let Err(e) = subscribe_channel(&room_name, &format!("{address:#x}"), subscribe) {
                     warn!("Failed to (un)subscribe to {address:?}: {e:?}");
                 } else {
-                    error!("sub to {address:?}: {subscribe}");
+                    debug!("sub to {address:?}: {subscribe}");
                 }
             }
         );
@@ -385,7 +385,7 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                 }
             }
             RoomEvent::TrackPublished { participant, kind } => {
-                error!("pub {} {}", participant.identity, kind);
+                debug!("pub {} {}", participant.identity, kind);
                 if let Some(address) = participant.identity.as_h160() {
                     if kind == "audio" {
                         let _ = sender
@@ -401,7 +401,7 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                 }
             }
             RoomEvent::TrackUnpublished { participant, kind } => {
-                error!("unpub {} {}", participant.identity, kind);
+                debug!("unpub {} {}", participant.identity, kind);
                 if let Some(address) = participant.identity.as_h160() {
                     if kind == "audio" {
                         let _ = sender
@@ -417,10 +417,10 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                 }
             }
             RoomEvent::TrackSubscribed { participant: _p } => {
-                error!("Track subscribed event - audio is handled in JavaScript");
+                debug!("Track subscribed event - audio is handled in JavaScript");
             }
             RoomEvent::TrackUnsubscribed { participant: _p } => {
-                error!("Track unsubscribed event");
+                debug!("Track unsubscribed event");
             }
             RoomEvent::ParticipantConnected { participant } => {
                 if let Some(address) = participant.identity.as_h160() {

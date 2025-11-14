@@ -268,7 +268,7 @@ fn livekit_handler_inner(
                     ));
                     let mic_track = LocalTrack::Audio(LocalAudioTrack::create_audio_track("mic", RtcAudioSource::Native(new_source.clone())));
                     mic_sid = Some(local_participant.publish_track(mic_track, TrackPublishOptions{ source: TrackSource::Microphone, ..Default::default() }).await.unwrap().sid());
-                    warn!("set sid");
+                    debug!("set sid");
                 }
                 if let Err(e) = native_source.as_mut().unwrap().capture_frame(&AudioFrame {
                     data,
@@ -299,7 +299,7 @@ fn livekit_handler_inner(
                             for (participant, publications) in participants_with_tracks {
                                 if let Some(address) = participant.identity().0.as_str().as_h160() {
                                     for publication in publications {
-                                        error!("initial pub: {publication:?}");
+                                        debug!("initial pub: {publication:?}");
                                         if matches!(publication.kind(), TrackKind::Audio) {
                                             let _ = sender.send(PlayerUpdate {
                                                 transport_id,
@@ -338,7 +338,7 @@ fn livekit_handler_inner(
                             }
                         },
                         livekit::RoomEvent::TrackPublished { publication, participant } => {
-                            error!("pub: {publication:?}");
+                            debug!("pub: {publication:?}");
                             if let Some(address) = participant.identity().0.as_str().as_h160() {
                                 // publication.
                                 if matches!(publication.kind(), TrackKind::Audio) {
@@ -351,7 +351,7 @@ fn livekit_handler_inner(
                             }
                         }
                         livekit::RoomEvent::TrackUnpublished { publication, participant } => {
-                            error!("unpub: {publication:?}");
+                            debug!("unpub: {publication:?}");
                             if let Some(address) = participant.identity().0.as_str().as_h160() {
                                 if matches!(publication.kind(), TrackKind::Audio) {
                                     let _ = sender.send(PlayerUpdate {
@@ -496,7 +496,7 @@ fn livekit_handler_inner(
 
                     let subscribe = channel.is_some();
                     track.set_subscribed(subscribe);
-                    error!("setsub: {subscribe}");
+                    debug!("setsub: {subscribe}");
                     if let Some(channel) = channel {
                         audio_channels.insert(address, channel);
                     } else {
