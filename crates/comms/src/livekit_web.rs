@@ -20,7 +20,11 @@ use dcl_component::proto_components::kernel::comms::rfc4;
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
 extern "C" {
     #[wasm_bindgen(catch)]
-    async fn connect_room(url: &str, token: &str, handler: &Closure<dyn FnMut(JsValue)>) -> Result<JsValue, JsValue>;
+    async fn connect_room(
+        url: &str,
+        token: &str,
+        handler: &Closure<dyn FnMut(JsValue)>,
+    ) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen]
     fn room_name(room: &JsValue) -> String;
