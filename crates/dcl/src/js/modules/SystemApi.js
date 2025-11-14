@@ -314,3 +314,22 @@ module.exports.getMicState = function() {
 module.exports.setMicEnabled = function(enabled) {
     Deno.core.ops.op_set_mic_enabled(enabled);
 }
+
+// get voice stream / mic activations as a stream
+// type MicActivation = {
+//   senderAddress: string,
+//   active: bool,
+// }
+module.exports.getVoiceStream = async function() {
+  const rid = await Deno.core.ops.op_get_voice_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_voice_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}

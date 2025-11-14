@@ -4,7 +4,11 @@ use common::{
     util::VolumePanning,
 };
 use comms::global_crdt::ForeignAudioSource;
-use kira::{manager::backend::DefaultBackend, sound::streaming::StreamingSoundData, tween::Tween};
+use kira::{
+    manager::backend::DefaultBackend,
+    sound::{streaming::StreamingSoundData, PlaybackState},
+    tween::Tween,
+};
 use scene_runner::{ContainingScene, SceneEntity};
 use tokio::sync::mpsc::error::TryRecvError;
 
@@ -124,19 +128,30 @@ pub fn spawn_and_locate_foreign_streams(
 
     for (ent, emitter_transform, render_layers, mut stream, mut maybe_spawned) in streams.iter_mut()
     {
-        match stream.0.try_recv() {
-            Ok(sound_data) => {
-                info!("{ent:?} received foreign sound data!");
-                let handle = audio_manager
-                    .manager
-                    .as_mut()
-                    .unwrap()
-                    .play(sound_data)
-                    .unwrap();
-                commands.entity(ent).try_insert(AudioSpawned(Some(handle)));
+        if let Some(spawned) = maybe_spawned.as_mut() {
+            if spawned
+                .0
+                .as_ref()
+                .is_some_and(|h| !matches!(h.state(), PlaybackState::Playing))
+            {
+                spawned.0 = None;
             }
-            Err(TryRecvError::Disconnected) => (),
-            Err(TryRecvError::Empty) => (),
+        }
+
+        if let Some(sound_data) = stream
+            .audio_receiver
+            .as_mut()
+            .and_then(|rx| rx.try_recv().ok())
+        {
+            info!("{ent:?} received foreign sound data!");
+            let handle = audio_manager
+                .manager
+                .as_mut()
+                .unwrap()
+                .play(sound_data)
+                .unwrap();
+
+            commands.entity(ent).try_insert(AudioSpawned(Some(handle)));
         }
 
         if let Some(handle) = maybe_spawned.as_mut().and_then(|a| a.0.as_mut()) {

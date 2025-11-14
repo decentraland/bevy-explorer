@@ -81,6 +81,7 @@ pub fn start_ws_room(
             Transport {
                 transport_type: TransportType::WebsocketRoom,
                 sender,
+                control: None,
                 foreign_aliases: Default::default(),
             },
             WebsocketRoomTransport {

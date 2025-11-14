@@ -56,7 +56,7 @@ impl Plugin for AudioPlugin {
         #[cfg(feature = "ffmpeg")]
         app.add_systems(
             PostUpdate,
-            (spawn_audio_streams, spawn_and_locate_foreign_streams),
+            (spawn_audio_streams, spawn_and_locate_foreign_streams).chain(),
         );
     }
 }

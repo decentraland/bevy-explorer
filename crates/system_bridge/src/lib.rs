@@ -76,6 +76,13 @@ pub struct ChatMessage {
     pub channel: String,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct VoiceMessage {
+    pub sender_address: String,
+    pub channel: String,
+    pub active: bool,
+}
+
 #[derive(Event, Clone, Debug)]
 pub enum SystemApi {
     ConsoleCommand(String, Vec<String>, RpcResultSender<Result<String, String>>),
@@ -100,6 +107,7 @@ pub enum SystemApi {
     SetHomeScene(HomeScene),
     GetSystemActionStream(tokio::sync::mpsc::UnboundedSender<SystemActionEvent>),
     GetChatStream(tokio::sync::mpsc::UnboundedSender<ChatMessage>),
+    GetVoiceStream(tokio::sync::mpsc::UnboundedSender<VoiceMessage>),
     SendChat(String, String),
     Quit,
     GetPermissionRequestStream(tokio::sync::mpsc::UnboundedSender<PermissionRequest>),

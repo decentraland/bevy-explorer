@@ -11,7 +11,7 @@ use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
     settings::SettingInfo, ChatMessage, HomeScene, LiveSceneInfo, PermanentPermissionItem,
-    PermissionRequest,
+    PermissionRequest, VoiceMessage,
 };
 
 // list of op declarations
@@ -57,6 +57,8 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_set_interactable_area(),
             op_get_mic_state(),
             op_set_mic_enabled(),
+            op_get_voice_stream(),
+            op_read_voice_stream(),
         ]
     } else {
         Vec::default()
@@ -343,4 +345,18 @@ pub async fn op_get_mic_state(state: Rc<RefCell<OpState>>) -> MicStateInner {
 #[op2(async)]
 pub async fn op_set_mic_enabled(state: Rc<RefCell<OpState>>, enabled: bool) {
     dcl::js::system_api::op_set_mic_enabled(state, enabled).await;
+}
+
+#[op2(async)]
+pub async fn op_get_voice_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_voice_stream(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_voice_stream(
+    state: Rc<RefCell<OpState>>,
+    rid: u32,
+) -> Result<Option<VoiceMessage>, deno_core::anyhow::Error> {
+    dcl::js::system_api::op_read_voice_stream(state, rid).await
 }

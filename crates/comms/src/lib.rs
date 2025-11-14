@@ -37,6 +37,8 @@ use dcl_component::{DclWriter, ToDclWriter};
 use ipfs::{CurrentRealm, IpfsAssetServer};
 use wallet::{sign_request, Wallet};
 
+use crate::global_crdt::ChannelControl;
+
 use self::{
     archipelago::{ArchipelagoPlugin, StartArchipelago},
     broadcast_position::BroadcastPositionPlugin,
@@ -126,6 +128,7 @@ impl NetworkMessage {
 pub struct Transport {
     pub transport_type: TransportType,
     pub sender: Sender<NetworkMessage>,
+    pub control: Option<Sender<ChannelControl>>,
     pub foreign_aliases: BiMap<u32, Address>,
 }
 
@@ -175,7 +178,7 @@ pub struct GatekeeperResponse {
 }
 
 #[derive(Component)]
-pub struct SceneRoom;
+pub struct SceneRoom(pub String);
 
 #[derive(Resource, Default)]
 pub struct SceneRoomConnection(pub Option<(SetCurrentScene, String, Entity)>);
@@ -234,8 +237,8 @@ fn connect_scene_room(
             Some(Ok((adapter, ev))) => {
                 if let Some(ent) = manager.connect(&adapter) {
                     warn!("added scene channel {ev:?}");
+                    commands.entity(ent).insert(SceneRoom(ev.scene_id.clone()));
                     current.0 = Some((ev, adapter, ent));
-                    commands.entity(ent).insert(SceneRoom);
                 }
             }
         }

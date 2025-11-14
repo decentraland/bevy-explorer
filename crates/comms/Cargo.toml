@@ -15,6 +15,7 @@ dcl_component = { workspace = true }
 ipfs = { workspace = true }
 wallet = { workspace = true }
 platform = { workspace = true }
+system_bridge = { workspace = true }
 
 bevy = { workspace = true }
 bimap = { workspace = true }
