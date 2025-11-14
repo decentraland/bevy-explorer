@@ -114,6 +114,7 @@ fn main_inner(
             chat: false,
             permissions: false,
             profile: false,
+            nametags: false,
         });
         app.insert_resource(SystemScene {
             source: Some(source),
@@ -128,6 +129,7 @@ fn main_inner(
             chat: true,
             permissions: true,
             profile: true,
+            nametags: true,
         });
     }
 
