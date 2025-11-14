@@ -220,14 +220,21 @@ pub enum RpcCall {
         urn: String,
         r#loop: bool,
     },
-    SetUiFocus {
+    UiFocus {
         scene: Entity,
-        element_id: Option<String>,
-        response: RpcResultSender<Result<(), String>>,
+        action: RpcUiFocusAction,
+        response: RpcResultSender<Result<Option<String>, String>>,
     },
     CopyToClipboard {
         scene: Entity,
         text: String,
         response: RpcResultSender<Result<(), String>>,
     },
+}
+
+#[derive(Clone, Debug)]
+pub enum RpcUiFocusAction {
+    Focus { element_id: String },
+    Defocus,
+    GetFocus,
 }

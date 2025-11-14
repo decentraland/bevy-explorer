@@ -4,7 +4,7 @@ use bevy::{
     math::{IVec2, Vec3},
     transform::components::Transform,
 };
-use common::rpc::RpcCall;
+use common::rpc::{RpcCall, RpcUiFocusAction};
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
@@ -188,27 +188,29 @@ pub async fn op_open_nft_dialog(
     rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))
 }
 
-pub async fn op_set_ui_focus(
+pub async fn op_ui_focus(
     op_state: Rc<RefCell<impl State>>,
-    element_id: String,
-) -> Result<(), anyhow::Error> {
-    debug!("op_set_ui_focus");
-    let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+    apply: bool,
+    element_id: Option<String>,
+) -> Result<Option<String>, anyhow::Error> {
+    debug!("op_ui_focus");
+    let (sx, rx) = tokio::sync::oneshot::channel::<Result<Option<String>, String>>();
 
     {
         let mut state = op_state.borrow_mut();
         let context = state.borrow::<CrdtContext>();
         let scene = context.scene_id.0;
 
-        let element_id = if element_id.is_empty() {
-            None
-        } else {
-            Some(element_id)
+        let element_id = element_id.unwrap_or_default();
+        let action = match (apply, element_id.is_empty()) {
+            (true, true) => RpcUiFocusAction::Defocus,
+            (true, false) => RpcUiFocusAction::Focus { element_id },
+            (false, _) => RpcUiFocusAction::GetFocus,
         };
 
-        state.borrow_mut::<RpcCalls>().push(RpcCall::SetUiFocus {
+        state.borrow_mut::<RpcCalls>().push(RpcCall::UiFocus {
             scene,
-            element_id,
+            action,
             response: sx.into(),
         });
     }

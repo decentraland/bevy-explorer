@@ -271,6 +271,7 @@ impl From<&UserProfile> for AvatarShape {
                 .force_render
                 .clone()
                 .unwrap_or_default(),
+            show_only_wearables: None,
         })
     }
 }

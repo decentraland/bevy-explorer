@@ -11,7 +11,7 @@ pub fn ops() -> Vec<OpDecl> {
         op_emote(),
         op_scene_emote(),
         op_open_nft_dialog(),
-        op_set_ui_focus(),
+        op_ui_focus(),
         op_copy_to_clipboard(),
     ]
 }
@@ -90,11 +90,13 @@ async fn op_open_nft_dialog(
 }
 
 #[op2(async)]
-async fn op_set_ui_focus(
+#[string]
+async fn op_ui_focus(
     op_state: Rc<RefCell<OpState>>,
-    #[string] element_id: String,
-) -> Result<(), AnyError> {
-    dcl::js::restricted_actions::op_set_ui_focus(op_state, element_id).await
+    apply: bool,
+    #[string] element_id: Option<String>,
+) -> Result<Option<String>, AnyError> {
+    dcl::js::restricted_actions::op_ui_focus(op_state, apply, element_id).await
 }
 
 #[op2(async)]

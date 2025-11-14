@@ -5,7 +5,7 @@ package decentraland.sdk.components;
 import "decentraland/sdk/components/common/id.proto";
 import "decentraland/common/colors.proto";
 
-option (common.ecs_component_id) = 1210;
+option (common.ecs_component_id) = 1211;
 
 message PBCameraLayer {
     // layer to which these settings apply. must be > 0
