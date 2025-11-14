@@ -295,6 +295,22 @@ fn livekit_handler_inner(
                     };
 
                     match incoming {
+                        livekit::RoomEvent::Connected { participants_with_tracks } => {
+                            for (participant, publications) in participants_with_tracks {
+                                if let Some(address) = participant.identity().0.as_str().as_h160() {
+                                    for publication in publications {
+                                        error!("initial pub: {publication:?}");
+                                        if matches!(publication.kind(), TrackKind::Audio) {
+                                            let _ = sender.send(PlayerUpdate {
+                                                transport_id,
+                                                message: PlayerMessage::AudioStreamAvailable { transport: transport_id },
+                                                address,
+                                            }).await;
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         livekit::RoomEvent::DataReceived { payload, participant, .. } => {
                             if let Some(participant) = participant {
                                 if let Some(address) = participant.identity().0.as_str().as_h160() {

@@ -20,7 +20,7 @@ use dcl_component::proto_components::kernel::comms::rfc4;
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
 extern "C" {
     #[wasm_bindgen(catch)]
-    async fn connect_room(url: &str, token: &str) -> Result<JsValue, JsValue>;
+    async fn connect_room(url: &str, token: &str, handler: &Closure<dyn FnMut(JsValue)>) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen]
     fn room_name(room: &JsValue) -> String;
@@ -248,12 +248,7 @@ async fn connect_and_handle_session(
     control_rx: &mut Receiver<ChannelControl>,
     sender: &Sender<PlayerUpdate>,
 ) -> Result<(), anyhow::Error> {
-    let room = connect_room(address, token)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to connect room: {:?}", e))?;
-
     let sender_clone = sender.clone();
-    let room_name = room_name(&room);
 
     // Set up event handler
     let event_handler = Closure::wrap(Box::new(move |event: JsValue| {
@@ -264,10 +259,10 @@ async fn connect_and_handle_session(
         });
     }) as Box<dyn FnMut(JsValue)>);
 
-    set_room_event_handler(&room, &event_handler)
-        .map_err(|e| anyhow::anyhow!("Failed to set event handler: {:?}", e))?;
-
-    // Microphone is handled entirely in JavaScript
+    let room = connect_room(address, token, &event_handler)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to connect room: {:?}", e))?;
+    let room_name = room_name(&room);
 
     // Handle outgoing messages
     'stream: loop {

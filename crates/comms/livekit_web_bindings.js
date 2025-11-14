@@ -16,11 +16,13 @@ const trackRigs = new Map();
 const participantAudioSids = new Map();
 var audioContext = null;
 
-export async function connect_room(url, token) {
+export async function connect_room(url, token, handler) {
     const room = new LivekitClient.Room({
         adaptiveStream: false,
         dynacast: false,
     });
+
+    set_room_event_handler(room, handler)
 
     await room.connect(url, token, {
         autoSubscribe: false,
@@ -50,7 +52,22 @@ export async function connect_room(url, token) {
     }
 
     // check existing streams
-    
+    const participants = Array.from(room.remoteParticipants.values());
+    for (const participant of participants) {
+        const audioPubs = Array.from(participant.trackPublications.values())
+            .filter(pub => pub.kind === 'audio');
+        for (const publication of audioPubs) {
+            log(`found initial pub for ${participant}`);
+            handler({
+                type: 'trackPublished',
+                kind: publication.kind,
+                participant: {
+                    identity: participant.identity,
+                    metadata: participant.metadata || ''
+                }
+            })
+        }
+    }
 
     return room;
 }
