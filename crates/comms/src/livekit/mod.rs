@@ -1,3 +1,8 @@
+#[cfg(not(target_arch = "wasm32"))]
+pub mod native;
+#[cfg(target_arch = "wasm32")]
+pub mod web;
+
 // --server https://worlds-content-server.decentraland.org/world/shibu.dcl.eth --location 1,1
 
 use bevy::prelude::*;
@@ -12,11 +17,10 @@ use common::structs::MicState;
 
 // main.rs or lib.rs
 
-#[cfg(target_arch = "wasm32")]
-pub use crate::livekit_web::{connect_livekit, MicPlugin};
-
 #[cfg(not(target_arch = "wasm32"))]
-pub use crate::livekit_native::{connect_livekit, MicPlugin};
+use crate::livekit::native::{connect_livekit, MicPlugin};
+#[cfg(target_arch = "wasm32")]
+use crate::livekit::web::{connect_livekit, MicPlugin};
 
 pub struct LivekitPlugin;
 
@@ -46,7 +50,7 @@ pub struct LivekitTransport {
 #[derive(Component)]
 pub struct LivekitConnection;
 
-pub fn start_livekit(
+fn start_livekit(
     mut commands: Commands,
     mut room_events: EventReader<StartLivekit>,
     current_profile: Res<CurrentUserProfile>,
