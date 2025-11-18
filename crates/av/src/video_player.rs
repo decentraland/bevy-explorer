@@ -268,19 +268,21 @@ pub fn update_video_players(
         .skip(config.max_videos)
         .map(|(_, _, ent)| *ent);
 
-    for ent in should_be_playing {
+    for (ent, _, _, maybe_sink, _, _) in video_players.iter_many(should_be_playing) {
         if let Some(maybe_new_sender) = previously_stopped.get(&ent) {
-            let sender = maybe_new_sender
+            if let Some(sender) = maybe_new_sender
                 .as_ref()
-                .unwrap_or_else(|| &video_players.get(ent).unwrap().3.unwrap().command_sender);
-            debug!("starting {ent:?}");
-            let _ = sender.try_send(AVCommand::Play);
+                .or_else(|| maybe_sink.map(|sink| &sink.command_sender))
+            {
+                debug!("starting {ent:?}");
+                let _ = sender.try_send(AVCommand::Play);
+            }
         }
     }
 
-    for ent in should_be_stopped {
+    for (ent, _, _, maybe_sink, _, _) in video_players.iter_many(should_be_stopped) {
         if !previously_stopped.contains_key(&ent) {
-            if let Some(sink) = video_players.get(ent).unwrap().3 {
+            if let Some(sink) = maybe_sink {
                 info!("system stopping {ent:?}");
                 let _ = sink.command_sender.try_send(AVCommand::Pause);
             }
