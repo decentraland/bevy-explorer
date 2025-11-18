@@ -1,4 +1,5 @@
 use crate::{
+    audio_sink::AudioSink,
     stream_processor::AVCommand,
     video_context::{VideoData, VideoInfo},
     video_stream::{ffmpeg_av_sinks, VideoSink},
@@ -201,25 +202,30 @@ pub fn update_video_players(
                 continue;
             };
 
-            let (video_sink, audio_sink) = ffmpeg_av_sinks(
-                ipfs.clone(),
-                player.source.src.clone(),
-                context.hash.clone(),
-                image_handle,
-                player.source.volume.unwrap_or(1.0),
-                false,
-                player.source.r#loop.unwrap_or(false),
-            );
-            debug!(
-                "spawned av thread for scene @ {} (playing={})",
-                context.base,
-                player.source.playing.unwrap_or(true)
-            );
-            previously_stopped.insert(ent, Some(video_sink.command_sender.clone()));
-            let video_output = VideoTextureOutput(video_sink.image.clone());
-            commands
-                .entity(ent)
-                .try_insert((video_sink, video_output, audio_sink));
+            if player.source.src.starts_with("https://") {
+                let (video_sink, audio_sink) = ffmpeg_av_sinks(
+                    ipfs.clone(),
+                    player.source.src.clone(),
+                    context.hash.clone(),
+                    image_handle,
+                    player.source.volume.unwrap_or(1.0),
+                    false,
+                    player.source.r#loop.unwrap_or(false),
+                );
+                debug!(
+                    "spawned av thread for scene @ {} (playing={})",
+                    context.base,
+                    player.source.playing.unwrap_or(true)
+                );
+                previously_stopped.insert(ent, Some(video_sink.command_sender.clone()));
+                let video_output = VideoTextureOutput(video_sink.image.clone());
+                commands
+                    .entity(ent)
+                    .try_insert((video_sink, video_output, audio_sink));
+            } else {
+                debug!("source had unknown protocol");
+                commands.entity(ent).try_remove::<(VideoSink, AudioSink)>();
+            }
             debug!("{ent:?} has {}", player.source.src);
         } else if player.is_changed() {
             let sink = maybe_sink.as_ref().unwrap();
