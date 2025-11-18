@@ -300,6 +300,8 @@ fn livekit_handler_inner(
                             for (participant, publications) in participants_with_tracks {
                                 if let Some(address) = participant.identity().0.as_str().as_h160() {
                                     h160_track_publications(address, &publications, &sender, transport_id).await;
+                                } else if participant.identity().0.as_str().ends_with("-streamer") {
+                                    streamer_track_publications(&publications).await;
                                 }
                             }
                         }
@@ -332,6 +334,8 @@ fn livekit_handler_inner(
                         livekit::RoomEvent::TrackPublished { publication, participant } => {
                             if let Some(address) = participant.identity().0.as_str().as_h160() {
                                 h160_track_publications(address, [&publication], & sender, transport_id).await;
+                            } else if participant.identity().0.as_str().ends_with("-streamer") {
+                                streamer_track_publications([&publication]).await;
                             }
                         }
                         livekit::RoomEvent::TrackUnpublished { publication, participant } => {
@@ -572,5 +576,19 @@ async fn h160_track_publications(
                 })
                 .await;
         }
+    }
+}
+
+async fn streamer_track_publications(
+    publications: impl IntoIterator<Item = &RemoteTrackPublication>,
+) {
+    for publication in publications.into_iter() {
+        debug!(
+            "streamer pub: {:?} {:?} {:?}",
+            publication.sid(),
+            publication.kind(),
+            publication.source()
+        );
+        publication.set_subscribed(true);
     }
 }
