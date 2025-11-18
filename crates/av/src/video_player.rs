@@ -1,7 +1,7 @@
 use crate::{
     stream_processor::AVCommand,
     video_context::{VideoData, VideoInfo},
-    video_stream::{av_sinks, VideoSink},
+    video_stream::{ffmpeg_av_sinks, VideoSink},
 };
 use bevy::{
     color::palettes::basic,
@@ -201,7 +201,7 @@ pub fn update_video_players(
                 continue;
             };
 
-            let (video_sink, audio_sink) = av_sinks(
+            let (video_sink, audio_sink) = ffmpeg_av_sinks(
                 ipfs.clone(),
                 player.source.src.clone(),
                 context.hash.clone(),

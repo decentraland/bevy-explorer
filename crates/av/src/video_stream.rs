@@ -27,7 +27,7 @@ pub struct VideoSink {
     pub rate: Option<f64>,
 }
 
-pub fn av_sinks(
+pub fn ffmpeg_av_sinks(
     ipfs: IpfsResource,
     source: String,
     hash: String,
@@ -40,7 +40,7 @@ pub fn av_sinks(
     let (video_sender, video_receiver) = tokio::sync::mpsc::channel(10);
     let (audio_sender, audio_receiver) = tokio::sync::mpsc::channel(10);
 
-    spawn_av_thread(
+    spawn_ffmpeg_av_thread(
         ipfs,
         command_receiver,
         video_sender,
@@ -71,7 +71,7 @@ pub fn av_sinks(
     )
 }
 
-pub fn spawn_av_thread(
+pub fn spawn_ffmpeg_av_thread(
     ipfs: IpfsResource,
     commands: tokio::sync::mpsc::Receiver<AVCommand>,
     frames: tokio::sync::mpsc::Sender<VideoData>,
@@ -79,10 +79,10 @@ pub fn spawn_av_thread(
     path: String,
     hash: String,
 ) {
-    std::thread::spawn(move || av_thread(ipfs, commands, frames, audio, path, hash));
+    std::thread::spawn(move || ffmpeg_av_thread(ipfs, commands, frames, audio, path, hash));
 }
 
-fn av_thread(
+fn ffmpeg_av_thread(
     ipfs: IpfsResource,
     commands: tokio::sync::mpsc::Receiver<AVCommand>,
     frames: tokio::sync::mpsc::Sender<VideoData>,
@@ -91,11 +91,11 @@ fn av_thread(
     hash: String,
 ) {
     info!(
-        "spawned av thread {:?}, path {path}",
+        "spawned ffmpeg av thread {:?}, path {path}",
         std::thread::current().id()
     );
     let _span = bevy::log::tracing::info_span!("av-thread").entered();
-    if let Err(e) = av_thread_inner(&ipfs, commands, frames.clone(), audio, path, hash) {
+    if let Err(e) = ffmpeg_av_thread_inner(&ipfs, commands, frames.clone(), audio, path, hash) {
         let _ = frames.blocking_send(VideoData::State(VideoState::VsError));
         warn!("av error: {e}");
     } else {
@@ -103,7 +103,7 @@ fn av_thread(
     }
 }
 
-pub fn av_thread_inner(
+pub fn ffmpeg_av_thread_inner(
     ipfas: &IpfsIo,
     commands: tokio::sync::mpsc::Receiver<AVCommand>,
     video: tokio::sync::mpsc::Sender<VideoData>,
@@ -112,7 +112,7 @@ pub fn av_thread_inner(
     hash: String,
 ) -> Result<(), anyhow::Error> {
     let _ = video.blocking_send(VideoData::State(VideoState::VsLoading));
-    debug!("av thread spawned for {path} ...");
+    debug!("ffmpeg av thread spawned for {path} ...");
     let download = |url: &str| -> Result<String, anyhow::Error> {
         let local_folder = ipfas.cache_path().unwrap().join("video_downloads");
         let local_path = local_folder.join(Path::new(urlencoding::encode(url).as_ref()));
