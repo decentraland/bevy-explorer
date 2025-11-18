@@ -31,6 +31,7 @@ use crate::{
 use livekit::{
     id::{ParticipantIdentity, TrackSid},
     options::TrackPublishOptions,
+    prelude::RemoteTrackPublication,
     track::{LocalAudioTrack, LocalTrack, TrackKind, TrackSource},
     webrtc::{
         audio_source::native::NativeAudioSource,
@@ -298,16 +299,7 @@ fn livekit_handler_inner(
                         livekit::RoomEvent::Connected { participants_with_tracks } => {
                             for (participant, publications) in participants_with_tracks {
                                 if let Some(address) = participant.identity().0.as_str().as_h160() {
-                                    for publication in publications {
-                                        debug!("initial pub: {publication:?}");
-                                        if matches!(publication.kind(), TrackKind::Audio) {
-                                            let _ = sender.send(PlayerUpdate {
-                                                transport_id,
-                                                message: PlayerMessage::AudioStreamAvailable { transport: transport_id },
-                                                address,
-                                            }).await;
-                                        }
-                                    }
+                                    h160_track_publications(address, &publications, &sender, transport_id).await;
                                 }
                             }
                         }
@@ -338,16 +330,8 @@ fn livekit_handler_inner(
                             }
                         },
                         livekit::RoomEvent::TrackPublished { publication, participant } => {
-                            debug!("pub: {publication:?}");
                             if let Some(address) = participant.identity().0.as_str().as_h160() {
-                                // publication.
-                                if matches!(publication.kind(), TrackKind::Audio) {
-                                    let _ = sender.send(PlayerUpdate {
-                                        transport_id,
-                                        message: PlayerMessage::AudioStreamAvailable { transport: transport_id },
-                                        address,
-                                    }).await;
-                                }
+                                h160_track_publications(address, [&publication], & sender, transport_id).await;
                             }
                         }
                         livekit::RoomEvent::TrackUnpublished { publication, participant } => {
@@ -565,5 +549,28 @@ impl kira::sound::streaming::Decoder for LivekitKiraBridge {
         Err(AudioDecoderError::Other(format!(
             "Can't seek (requested {seek})"
         )))
+    }
+}
+
+async fn h160_track_publications(
+    address: H160,
+    publications: impl IntoIterator<Item = &RemoteTrackPublication>,
+    player_update_sender: &Sender<PlayerUpdate>,
+    transport_id: Entity,
+) {
+    for publication in publications.into_iter() {
+        debug!("pub: {publication:?}");
+
+        if matches!(publication.kind(), TrackKind::Audio) {
+            let _ = player_update_sender
+                .send(PlayerUpdate {
+                    transport_id,
+                    message: PlayerMessage::AudioStreamAvailable {
+                        transport: transport_id,
+                    },
+                    address,
+                })
+                .await;
+        }
     }
 }
