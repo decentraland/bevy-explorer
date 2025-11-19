@@ -85,14 +85,15 @@ impl LivekitTransport {
 #[derive(Component)]
 struct LivekitRoom {
     room: Room,
+    runtime: Runtime,
     thread: std::thread::JoinHandle<()>,
 }
 
 /// A task to connect to a Livekit Room.
 #[derive(Component)]
 struct ConnectingLivekitRoom {
-    task: JoinHandle<RoomResult<LivekitRoom>>,
-    runtime: Runtime,
+    task: JoinHandle<RoomResult<Room>>,
+    runtime: Option<Runtime>,
 }
 
 impl ConnectingLivekitRoom {
@@ -135,13 +136,13 @@ impl ConnectingLivekitRoom {
             )
             .await;
 
-            room_connection.map(|(room, room_rx)| LivekitRoom {
-                room,
-                thread: std::thread::spawn(|| ()),
-            })
+            room_connection.map(|(room, _room_rx)| room)
         });
 
-        Self { task, runtime }
+        Self {
+            task,
+            runtime: Some(runtime),
+        }
     }
 }
 
@@ -156,6 +157,9 @@ fn poll_connecting_livekit_rooms(
     for (entity, mut connecting_room) in connecting_live_kit_rooms.into_inner() {
         if connecting_room.task.is_finished() {
             let ConnectingLivekitRoom { task, runtime } = connecting_room.as_mut();
+            let Some(runtime) = runtime.take() else {
+                unreachable!("A ConnectingLivekitRoom should never have a None runtime.");
+            };
             let result = runtime.block_on(task).unwrap();
 
             let mut entity_commands = commands.entity(entity);
@@ -163,8 +167,12 @@ fn poll_connecting_livekit_rooms(
 
             match result {
                 Ok(livekit_room) => {
-                    debug!("Connected to livekit room {}.", livekit_room.room.name());
-                    entity_commands.insert(livekit_room);
+                    debug!("Connected to livekit room {}.", livekit_room.name());
+                    entity_commands.insert(LivekitRoom {
+                        room: livekit_room,
+                        runtime,
+                        thread: std::thread::spawn(|| ()),
+                    });
                 }
                 Err(room_err) => {
                     error!("Failed to connect to livekit room due to {room_err}.");
