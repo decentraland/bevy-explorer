@@ -43,7 +43,17 @@ use livekit::{
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
-pub struct MicPlugin;
+pub(super) struct NativeLivekitPlugin;
+
+impl Plugin for NativeLivekitPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins(MicPlugin);
+
+        app.add_systems(Update, connect_livekit);
+    }
+}
+
+struct MicPlugin;
 
 impl Plugin for MicPlugin {
     fn build(&self, app: &mut App) {
@@ -53,9 +63,9 @@ impl Plugin for MicPlugin {
 }
 
 #[derive(Default)]
-pub struct MicStream(Option<cpal::Stream>);
+struct MicStream(Option<cpal::Stream>);
 
-pub fn update_mic(
+fn update_mic(
     mic: Res<LocalAudioSource>,
     mut last_name: Local<String>,
     mut stream: NonSendMut<MicStream>,
@@ -135,7 +145,7 @@ pub fn update_mic(
 }
 
 #[allow(clippy::type_complexity)]
-pub fn connect_livekit(
+fn connect_livekit(
     mut commands: Commands,
     mut new_livekits: Query<(Entity, &mut LivekitTransport), Without<LivekitConnection>>,
     player_state: Res<GlobalCrdtState>,

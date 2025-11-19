@@ -17,19 +17,18 @@ use common::structs::MicState;
 
 // main.rs or lib.rs
 
-#[cfg(not(target_arch = "wasm32"))]
-use crate::livekit::native::{connect_livekit, MicPlugin};
-#[cfg(target_arch = "wasm32")]
-use crate::livekit::web::{connect_livekit, MicPlugin};
-
 pub struct LivekitPlugin;
 
 impl Plugin for LivekitPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (connect_livekit, start_livekit));
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_plugins(native::NativeLivekitPlugin);
+        #[cfg(target_arch = "wasm32")]
+        app.add_plugins(web::WebLivekitPlugin);
+
+        app.add_systems(Update, start_livekit);
         app.add_event::<StartLivekit>();
         app.init_resource::<MicState>();
-        app.add_plugins(MicPlugin);
     }
 }
 

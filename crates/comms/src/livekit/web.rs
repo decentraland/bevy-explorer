@@ -93,7 +93,17 @@ extern "C" {
     ) -> Result<(), JsValue>;
 }
 
-pub struct MicPlugin;
+pub(super) struct WebLivekitPlugin;
+
+impl Plugin for WebLivekitPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins(MicPlugin);
+
+        app.add_systems(Update, connect_livekit);
+    }
+}
+
+struct MicPlugin;
 
 impl Plugin for MicPlugin {
     fn build(&self, app: &mut App) {
@@ -128,7 +138,7 @@ fn update_mic_state(
 }
 
 #[allow(clippy::type_complexity)]
-pub fn connect_livekit(
+fn connect_livekit(
     mut commands: Commands,
     mut new_livekits: Query<(Entity, &mut LivekitTransport), Without<LivekitConnection>>,
     player_state: Res<GlobalCrdtState>,
@@ -446,7 +456,7 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
 }
 
 // Public API for spatial audio control
-pub fn update_participant_spatial_audio(participant_identity: &str, pan: f32, volume: f32) {
+fn update_participant_spatial_audio(participant_identity: &str, pan: f32, volume: f32) {
     if let Err(e) = set_participant_spatial_audio(participant_identity, pan, volume) {
         warn!(
             "Failed to set spatial audio for {}: {:?}",
@@ -455,13 +465,13 @@ pub fn update_participant_spatial_audio(participant_identity: &str, pan: f32, vo
     }
 }
 
-pub fn update_participant_pan(participant_identity: &str, pan: f32) {
+fn update_participant_pan(participant_identity: &str, pan: f32) {
     if let Err(e) = set_participant_pan(participant_identity, pan) {
         warn!("Failed to set pan for {}: {:?}", participant_identity, e);
     }
 }
 
-pub fn update_participant_volume(participant_identity: &str, volume: f32) {
+fn update_participant_volume(participant_identity: &str, volume: f32) {
     if let Err(e) = set_participant_volume(participant_identity, volume) {
         warn!("Failed to set volume for {}: {:?}", participant_identity, e);
     }
@@ -472,7 +482,7 @@ use bevy::render::view::RenderLayers;
 use common::{structs::AudioSettings, util::VolumePanning};
 
 #[allow(clippy::type_complexity)]
-pub fn locate_foreign_streams(
+fn locate_foreign_streams(
     mut streams: Query<(
         &GlobalTransform,
         Option<&RenderLayers>,
