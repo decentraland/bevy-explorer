@@ -31,7 +31,7 @@ use crate::{
 use livekit::{
     id::{ParticipantIdentity, TrackSid},
     options::TrackPublishOptions,
-    prelude::RemoteTrackPublication,
+    prelude::{LocalParticipant, RemoteTrackPublication},
     track::{LocalAudioTrack, LocalTrack, RemoteAudioTrack, TrackKind, TrackSource},
     webrtc::{
         audio_source::native::NativeAudioSource,
@@ -199,7 +199,7 @@ fn livekit_handler_inner(
     app_rx: Arc<Mutex<Receiver<NetworkMessage>>>,
     control_rx: Arc<Mutex<Receiver<ChannelControl>>>,
     sender: Sender<PlayerUpdate>,
-    mut mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
+    mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
 ) -> Result<(), anyhow::Error> {
     debug!(">> lk connect async : {remote_address}");
 
@@ -235,52 +235,8 @@ fn livekit_handler_inner(
 
     let task = rt.spawn(async move {
         let (room, mut network_rx) = livekit::prelude::Room::connect(&address, &token, RoomOptions{ auto_subscribe: false, adaptive_stream: false, dynacast: false, ..Default::default() }).await.unwrap();
-        let local_participant = room.local_participant();
 
-        let mut native_source: Option<NativeAudioSource> = None;
-        let mut mic_sid: Option<TrackSid> = None;
-
-        rt2.spawn(async move {
-            while let Ok(frame) = mic.recv().await {
-                let data = frame.data.iter().map(|f| (f * i16::MAX as f32) as i16).collect();
-                if native_source.as_ref().is_none_or(|ns| ns.sample_rate() != frame.sample_rate || ns.num_channels() != frame.num_channels) {
-                    // update track
-                    if let Some(sid) = mic_sid.take() {
-                        if let Err(e) = local_participant.unpublish_track(&sid).await {
-                            warn!("error unpublishing previous mic track: {e}");
-                        }
-                        debug!("unpub mic");
-                    }
-
-                    if frame.num_channels == 0 {
-                        native_source = None;
-                        continue;
-                    }
-
-                    let new_source = native_source.insert(NativeAudioSource::new(
-                        AudioSourceOptions{
-                            echo_cancellation: true,
-                            noise_suppression: true,
-                            auto_gain_control: true,
-                        },
-                        frame.sample_rate,
-                        frame.num_channels,
-                        None
-                    ));
-                    let mic_track = LocalTrack::Audio(LocalAudioTrack::create_audio_track("mic", RtcAudioSource::Native(new_source.clone())));
-                    mic_sid = Some(local_participant.publish_track(mic_track, TrackPublishOptions{ source: TrackSource::Microphone, ..Default::default() }).await.unwrap().sid());
-                    debug!("set sid");
-                }
-                if let Err(e) = native_source.as_mut().unwrap().capture_frame(&AudioFrame {
-                    data,
-                    sample_rate: frame.sample_rate,
-                    num_channels: frame.num_channels,
-                    samples_per_channel: frame.data.len() as u32 / frame.num_channels,
-                }).await {
-                    warn!("failed to capture from mic: {e}");
-                };
-            }
-        });
+        rt2.spawn(mic_consumer_thread(mic, room.local_participant()));
 
         let mut track_tasks: HashMap<TrackSid, JoinHandle<()>> = HashMap::new();
 
@@ -544,6 +500,80 @@ async fn streamer_track_publications(
             publication.source()
         );
         publication.set_subscribed(true);
+    }
+}
+
+async fn mic_consumer_thread(
+    mut mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
+    local_participant: LocalParticipant,
+) {
+    let mut native_source: Option<NativeAudioSource> = None;
+    let mut mic_sid: Option<TrackSid> = None;
+
+    while let Ok(frame) = mic.recv().await {
+        let data = frame
+            .data
+            .iter()
+            .map(|f| (f * i16::MAX as f32) as i16)
+            .collect();
+        if native_source.as_ref().is_none_or(|ns| {
+            ns.sample_rate() != frame.sample_rate || ns.num_channels() != frame.num_channels
+        }) {
+            // update track
+            if let Some(sid) = mic_sid.take() {
+                if let Err(e) = local_participant.unpublish_track(&sid).await {
+                    warn!("error unpublishing previous mic track: {e}");
+                }
+                debug!("unpub mic");
+            }
+
+            if frame.num_channels == 0 {
+                native_source = None;
+                continue;
+            }
+
+            let new_source = native_source.insert(NativeAudioSource::new(
+                AudioSourceOptions {
+                    echo_cancellation: true,
+                    noise_suppression: true,
+                    auto_gain_control: true,
+                },
+                frame.sample_rate,
+                frame.num_channels,
+                None,
+            ));
+            let mic_track = LocalTrack::Audio(LocalAudioTrack::create_audio_track(
+                "mic",
+                RtcAudioSource::Native(new_source.clone()),
+            ));
+            mic_sid = Some(
+                local_participant
+                    .publish_track(
+                        mic_track,
+                        TrackPublishOptions {
+                            source: TrackSource::Microphone,
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .unwrap()
+                    .sid(),
+            );
+            debug!("set sid");
+        }
+        if let Err(e) = native_source
+            .as_mut()
+            .unwrap()
+            .capture_frame(&AudioFrame {
+                data,
+                sample_rate: frame.sample_rate,
+                num_channels: frame.num_channels,
+                samples_per_channel: frame.data.len() as u32 / frame.num_channels,
+            })
+            .await
+        {
+            warn!("failed to capture from mic: {e}");
+        };
     }
 }
 
