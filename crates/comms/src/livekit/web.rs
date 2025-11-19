@@ -104,11 +104,11 @@ impl Plugin for WebLivekitPlugin {
 }
 
 impl LivekitTransport {
-    pub fn new(
+    pub fn build_transport(
         address: String,
         receiver: Receiver<NetworkMessage>,
         control_receiver: Receiver<ChannelControl>,
-    ) -> Self {
+    ) -> impl Bundle {
         Self {
             address,
             receiver: Some(receiver),

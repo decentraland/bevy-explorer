@@ -76,13 +76,14 @@ fn start_livekit(
         let _ = sender.try_send(NetworkMessage::reliable(&response));
 
         commands.entity(ev.entity).try_insert((
+            Name::new("LivekitTransport"),
             Transport {
                 transport_type: TransportType::Livekit,
                 sender,
                 control: Some(control_sender),
                 foreign_aliases: Default::default(),
             },
-            LivekitTransport::new(ev.address.to_owned(), receiver, control_receiver),
+            LivekitTransport::build_transport(ev.address.to_owned(), receiver, control_receiver),
         ));
     }
 }

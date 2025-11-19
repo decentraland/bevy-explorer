@@ -38,32 +38,131 @@ use livekit::{
         audio_source::native::NativeAudioSource,
         prelude::{AudioFrame, AudioSourceOptions, RtcAudioSource},
     },
-    Room, RoomOptions,
+    Room, RoomOptions, RoomResult,
 };
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
+/// Plugin for Livekit connectivity on the native client.
 pub(super) struct NativeLivekitPlugin;
 
 impl Plugin for NativeLivekitPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MicPlugin);
 
-        app.add_systems(Update, connect_livekit);
+        app.add_systems(Update, (connect_livekit, poll_connecting_livekit_rooms));
     }
 }
 
 impl LivekitTransport {
-    pub fn new(
+    /// Builds the [`LivekitTransport`] and spawns a task
+    /// to connect to the Livekit Room.
+    pub fn build_transport(
         address: String,
         receiver: Receiver<NetworkMessage>,
         control_receiver: Receiver<ChannelControl>,
+    ) -> impl Bundle {
+        (
+            Self {
+                address: address.to_owned(),
+                receiver: Some(receiver),
+                control_receiver: Some(control_receiver),
+                retries: 0,
+            },
+            ConnectingLivekitRoom::new(&address),
+        )
+    }
+}
+
+/// The room connection from the [`LivekitTransport`].
+#[derive(Component)]
+struct LivekitRoom {
+    room: Room,
+    thread: std::thread::JoinHandle<()>,
+}
+
+/// A task to connect to a Livekit Room.
+#[derive(Component)]
+struct ConnectingLivekitRoom {
+    task: JoinHandle<RoomResult<LivekitRoom>>,
+    runtime: Runtime,
+}
+
+impl ConnectingLivekitRoom {
+    fn new(
+        remote_address: &str,
+        // receiver: Receiver<NetworkMessage>,
+        // control_receiver: Receiver<ChannelControl>,
     ) -> Self {
-        Self {
-            address,
-            receiver: Some(receiver),
-            control_receiver: Some(control_receiver),
-            retries: 0,
+        let url = Uri::try_from(remote_address).unwrap();
+        let address = format!(
+            "{}://{}{}",
+            url.scheme_str().unwrap_or_default(),
+            url.host().unwrap_or_default(),
+            url.path()
+        );
+        let params: HashMap<_, _, bevy::platform::hash::FixedHasher> =
+            HashMap::from_iter(url.query().unwrap_or_default().split('&').flat_map(|par| {
+                par.split_once('=')
+                    .map(|(a, b)| (a.to_owned(), b.to_owned()))
+            }));
+        debug!("{params:?}");
+        let token = params.get("access_token").cloned().unwrap_or_default();
+
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let task = runtime.spawn(async move {
+            let room_connection = livekit::prelude::Room::connect(
+                &address,
+                &token,
+                RoomOptions {
+                    auto_subscribe: false,
+                    adaptive_stream: false,
+                    dynacast: false,
+                    ..Default::default()
+                },
+            )
+            .await;
+
+            room_connection.map(|(room, room_rx)| LivekitRoom {
+                room,
+                thread: std::thread::spawn(|| ()),
+            })
+        });
+
+        Self { task, runtime }
+    }
+}
+
+/// Poll the connections to a Livekit Room.
+///
+/// When the connection is established, the [`LivekitRoom`] component
+/// is added to the entity with [`LivekitTransport`].
+fn poll_connecting_livekit_rooms(
+    mut commands: Commands,
+    connecting_live_kit_rooms: Populated<(Entity, &mut ConnectingLivekitRoom)>,
+) {
+    for (entity, mut connecting_room) in connecting_live_kit_rooms.into_inner() {
+        if connecting_room.task.is_finished() {
+            let ConnectingLivekitRoom { task, runtime } = connecting_room.as_mut();
+            let result = runtime.block_on(task).unwrap();
+
+            let mut entity_commands = commands.entity(entity);
+            entity_commands.remove::<ConnectingLivekitRoom>();
+
+            match result {
+                Ok(livekit_room) => {
+                    debug!("Connected to livekit room {}.", livekit_room.room.name());
+                    entity_commands.insert(livekit_room);
+                }
+                Err(room_err) => {
+                    error!("Failed to connect to livekit room due to {room_err}.");
+                }
+            }
         }
     }
 }
