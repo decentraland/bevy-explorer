@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
-use bevy::{platform::collections::HashMap, prelude::*};
+use bevy::{platform::collections::HashMap, prelude::*, time::common_conditions::on_timer};
 use ethers_core::types::H160;
 use futures_lite::StreamExt;
 use http::Uri;
@@ -50,7 +50,14 @@ impl Plugin for NativeLivekitPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MicPlugin);
 
-        app.add_systems(Update, (connect_livekit, poll_connecting_livekit_rooms));
+        app.add_systems(
+            Update,
+            (
+                connect_livekit,
+                poll_connecting_livekit_rooms,
+                room_connection_health.run_if(on_timer(Duration::from_secs(1))),
+            ),
+        );
     }
 }
 
@@ -163,6 +170,19 @@ fn poll_connecting_livekit_rooms(
                     error!("Failed to connect to livekit room due to {room_err}.");
                 }
             }
+        }
+    }
+}
+
+/// Verify if the worker thread of a [`LivekitRoom`] is still running.
+fn room_connection_health(mut commands: Commands, rooms: Query<(Entity, &LivekitRoom)>) {
+    for (entity, room) in rooms {
+        if room.thread.is_finished() {
+            warn!(
+                "The worker thread of Room {} has finished.",
+                room.room.name()
+            );
+            commands.entity(entity).remove::<LivekitRoom>();
         }
     }
 }
