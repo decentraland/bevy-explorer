@@ -32,7 +32,7 @@ use livekit::{
     id::{ParticipantIdentity, TrackSid},
     options::TrackPublishOptions,
     prelude::RemoteTrackPublication,
-    track::{LocalAudioTrack, LocalTrack, TrackKind, TrackSource},
+    track::{LocalAudioTrack, LocalTrack, RemoteAudioTrack, TrackKind, TrackSource},
     webrtc::{
         audio_source::native::NativeAudioSource,
         prelude::{AudioFrame, AudioSourceOptions, RtcAudioSource},
@@ -360,53 +360,7 @@ fn livekit_handler_inner(
                                             publication.set_subscribed(false);
                                             continue;
                                         };
-                                        let handle = rt2.spawn(async move {
-                                            let mut stream = livekit::webrtc::audio_stream::native::NativeAudioStream::new(audio.rtc_track(), 48_000, 1);
-
-                                            // get first frame to set sample rate
-                                            let Some(frame) = stream.next().await else {
-                                                warn!("dropped audio track without samples");
-                                                return;
-                                            };
-
-                                            let (frame_sender, frame_receiver) = tokio::sync::mpsc::channel(1000);
-
-                                            let bridge = LivekitKiraBridge {
-                                                started: false,
-                                                sample_rate: frame.sample_rate,
-                                                receiver: frame_receiver,
-                                            };
-
-                                            debug!("recced with {} / {}", frame.sample_rate, frame.num_channels);
-
-                                            let sound_data = kira::sound::streaming::StreamingSoundData::from_decoder(
-                                                bridge,
-                                            );
-
-                                            let res = channel.send(sound_data);
-
-                                            if res.is_err() {
-                                                warn!("failed to send subscribed audio data");
-                                                publication.set_subscribed(false);
-                                                return;
-                                            }
-
-                                            while let Some(frame) = stream.next().await {
-                                                match frame_sender.try_send(frame) {
-                                                    Ok(()) => (),
-                                                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                                                        warn!("livekit audio receiver buffer full, dropping frame");
-                                                        return;
-                                                    },
-                                                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                                                        warn!("livekit audio receiver dropped, exiting task");
-                                                        return;
-                                                    },
-                                                }
-                                            }
-
-                                            warn!("track ended, exiting task");
-                                        });
+                                        let handle = rt2.spawn(subscribe_remote_track_audio(audio, channel, publication));
                                         track_tasks.insert(sid, handle);
 
                                     },
@@ -591,4 +545,55 @@ async fn streamer_track_publications(
         );
         publication.set_subscribed(true);
     }
+}
+
+async fn subscribe_remote_track_audio(
+    audio: RemoteAudioTrack,
+    channel: tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
+    publication: RemoteTrackPublication,
+) {
+    let mut stream =
+        livekit::webrtc::audio_stream::native::NativeAudioStream::new(audio.rtc_track(), 48_000, 1);
+
+    // get first frame to set sample rate
+    let Some(frame) = stream.next().await else {
+        warn!("dropped audio track without samples");
+        return;
+    };
+
+    let (frame_sender, frame_receiver) = tokio::sync::mpsc::channel(1000);
+
+    let bridge = LivekitKiraBridge {
+        started: false,
+        sample_rate: frame.sample_rate,
+        receiver: frame_receiver,
+    };
+
+    debug!("recced with {} / {}", frame.sample_rate, frame.num_channels);
+
+    let sound_data = kira::sound::streaming::StreamingSoundData::from_decoder(bridge);
+
+    let res = channel.send(sound_data);
+
+    if res.is_err() {
+        warn!("failed to send subscribed audio data");
+        publication.set_subscribed(false);
+        return;
+    }
+
+    while let Some(frame) = stream.next().await {
+        match frame_sender.try_send(frame) {
+            Ok(()) => (),
+            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                warn!("livekit audio receiver buffer full, dropping frame");
+                return;
+            }
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                warn!("livekit audio receiver dropped, exiting task");
+                return;
+            }
+        }
+    }
+
+    warn!("track ended, exiting task");
 }
