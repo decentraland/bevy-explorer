@@ -38,7 +38,7 @@ use livekit::{
         audio_source::native::NativeAudioSource,
         prelude::{AudioFrame, AudioSourceOptions, RtcAudioSource},
     },
-    RoomOptions,
+    Room, RoomOptions,
 };
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -632,4 +632,41 @@ async fn subscribe_remote_track_audio(
     }
 
     warn!("track ended, exiting task");
+}
+
+fn address_channel_control_handler(
+    address: H160,
+    channel: Option<tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>>,
+    room: &Room,
+    audio_channels: &mut HashMap<
+        H160,
+        tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
+    >,
+) {
+    let participants = room.remote_participants();
+    let Some(participant) = participants.get(&ParticipantIdentity(format!("{address:#x}"))) else {
+        warn!(
+            "no participant {address:?}! available: {:?}",
+            room.remote_participants().keys().collect::<Vec<_>>()
+        );
+        return;
+    };
+
+    let publications = participant.track_publications();
+    let Some(track) = publications
+        .values()
+        .find(|track| matches!(track.kind(), TrackKind::Audio))
+    else {
+        warn!("no audio for {address:#x?}");
+        return;
+    };
+
+    let subscribe = channel.is_some();
+    track.set_subscribed(subscribe);
+    debug!("setsub: {subscribe}");
+    if let Some(channel) = channel {
+        audio_channels.insert(address, channel);
+    } else {
+        audio_channels.remove(&address);
+    }
 }
