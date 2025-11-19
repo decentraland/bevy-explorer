@@ -53,6 +53,21 @@ impl Plugin for NativeLivekitPlugin {
     }
 }
 
+impl LivekitTransport {
+    pub fn new(
+        address: String,
+        receiver: Receiver<NetworkMessage>,
+        control_receiver: Receiver<ChannelControl>,
+    ) -> Self {
+        Self {
+            address,
+            receiver: Some(receiver),
+            control_receiver: Some(control_receiver),
+            retries: 0,
+        }
+    }
+}
+
 struct MicPlugin;
 
 impl Plugin for MicPlugin {

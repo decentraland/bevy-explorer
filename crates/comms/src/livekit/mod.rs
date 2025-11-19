@@ -81,12 +81,7 @@ fn start_livekit(
                 control: Some(control_sender),
                 foreign_aliases: Default::default(),
             },
-            LivekitTransport {
-                address: ev.address.to_owned(),
-                receiver: Some(receiver),
-                control_receiver: Some(control_receiver),
-                retries: 0,
-            },
+            LivekitTransport::new(ev.address.to_owned(), receiver, control_receiver),
         ));
     }
 }
