@@ -7,6 +7,7 @@ use http::Uri;
 use kira::sound::streaming::StreamingSoundData;
 use prost::Message;
 use tokio::{
+    runtime::Runtime,
     sync::{
         mpsc::{error::TryRecvError, Receiver, Sender},
         Mutex,
@@ -203,26 +204,6 @@ fn livekit_handler_inner(
 ) -> Result<(), anyhow::Error> {
     debug!(">> lk connect async : {remote_address}");
 
-    let url = Uri::try_from(remote_address).unwrap();
-    let address = format!(
-        "{}://{}{}",
-        url.scheme_str().unwrap_or_default(),
-        url.host().unwrap_or_default(),
-        url.path()
-    );
-    let params: HashMap<_, _, bevy::platform::hash::FixedHasher> =
-        HashMap::from_iter(url.query().unwrap_or_default().split('&').flat_map(|par| {
-            par.split_once('=')
-                .map(|(a, b)| (a.to_owned(), b.to_owned()))
-        }));
-    debug!("{params:?}");
-    let token = params.get("access_token").cloned().unwrap_or_default();
-
-    let mut audio_channels: HashMap<
-        H160,
-        tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
-    > = HashMap::new();
-
     let rt = Arc::new(
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)
@@ -231,181 +212,15 @@ fn livekit_handler_inner(
             .unwrap(),
     );
 
-    let rt2 = rt.clone();
-
-    let task = rt.spawn(async move {
-        let (room, mut network_rx) = livekit::prelude::Room::connect(&address, &token, RoomOptions{ auto_subscribe: false, adaptive_stream: false, dynacast: false, ..Default::default() }).await.unwrap();
-
-        rt2.spawn(mic_consumer_thread(mic, room.local_participant()));
-
-        let mut track_tasks: HashMap<TrackSid, JoinHandle<()>> = HashMap::new();
-
-        let mut app_rx = app_rx.lock().await;
-        let mut control_rx = control_rx.lock().await;
-        'stream: loop {
-            tokio::select!(
-                incoming = network_rx.recv() => {
-                    debug!("in: {:?}", incoming);
-                    let Some(incoming) = incoming else {
-                        debug!("network pipe broken, exiting loop");
-                        break 'stream;
-                    };
-
-                    match incoming {
-                        livekit::RoomEvent::Connected { participants_with_tracks } => {
-                            for (participant, publications) in participants_with_tracks {
-                                if let Some(address) = participant.identity().0.as_str().as_h160() {
-                                    h160_track_publications(address, &publications, &sender, transport_id).await;
-                                } else if participant.identity().0.as_str().ends_with("-streamer") {
-                                    streamer_track_publications(&publications).await;
-                                }
-                            }
-                        }
-                        livekit::RoomEvent::DataReceived { payload, participant, .. } => {
-                            if let Some(participant) = participant {
-                                if let Some(address) = participant.identity().0.as_str().as_h160() {
-                                    let packet = match rfc4::Packet::decode(payload.as_slice()) {
-                                        Ok(packet) => packet,
-                                        Err(e) => {
-                                            warn!("unable to parse packet body: {e}");
-                                            continue;
-                                        }
-                                    };
-                                    let Some(message) = packet.message else {
-                                        warn!("received empty packet body");
-                                        continue;
-                                    };
-                                    debug!("[{}] received [{}] packet {message:?} from {address}", transport_id, packet.protocol_version);
-                                    if let Err(e) = sender.send(PlayerUpdate {
-                                        transport_id,
-                                        message: PlayerMessage::PlayerData(message),
-                                        address,
-                                    }).await {
-                                        warn!("app pipe broken ({e}), existing loop");
-                                        break 'stream;
-                                    }
-                                }
-                            }
-                        },
-                        livekit::RoomEvent::TrackPublished { publication, participant } => {
-                            if let Some(address) = participant.identity().0.as_str().as_h160() {
-                                h160_track_publications(address, [&publication], & sender, transport_id).await;
-                            } else if participant.identity().0.as_str().ends_with("-streamer") {
-                                streamer_track_publications([&publication]).await;
-                            }
-                        }
-                        livekit::RoomEvent::TrackUnpublished { publication, participant } => {
-                            debug!("unpub: {publication:?}");
-                            if let Some(address) = participant.identity().0.as_str().as_h160() {
-                                if matches!(publication.kind(), TrackKind::Audio) {
-                                    let _ = sender.send(PlayerUpdate {
-                                        transport_id,
-                                        message: PlayerMessage::AudioStreamUnavailable { transport: transport_id },
-                                        address,
-                                    }).await;
-                                }
-                            }
-                        }
-                        livekit::RoomEvent::TrackSubscribed { track, publication, participant } => {
-                            if let Some(address) = participant.identity().0.as_str().as_h160() {
-                                let sid = track.sid();
-                                match track {
-                                    livekit::track::RemoteTrack::Audio(audio) => {
-                                        let Some(channel) = audio_channels.remove(&address) else {
-                                            warn!("no channel for subscribed audio");
-                                            publication.set_subscribed(false);
-                                            continue;
-                                        };
-                                        let handle = rt2.spawn(subscribe_remote_track_audio(audio, channel, publication));
-                                        track_tasks.insert(sid, handle);
-
-                                    },
-                                    _ => warn!("not processing video tracks"),
-                                }
-                            }
-                        }
-                        livekit::RoomEvent::TrackUnsubscribed{ track, .. } => {
-                            if let Some(handle) = track_tasks.remove(&track.sid()) {
-                                handle.abort();
-                            }
-                        }
-                        livekit::RoomEvent::ParticipantConnected(participant) => {
-                            let meta = participant.metadata();
-                            if !meta.is_empty() {
-                                if let Some(address) = participant.identity().0.as_str().as_h160() {
-                                    if let Err(e) = sender.send(PlayerUpdate {
-                                        transport_id,
-                                        message: PlayerMessage::MetaData(meta),
-                                        address,
-                                    }).await {
-                                        warn!("app pipe broken ({e}), existing loop");
-                                        break 'stream;
-                                    }
-                                }
-                            }
-                        }
-                        _ => { debug!("Event: {:?}", incoming); }
-                    };
-                }
-                outgoing = app_rx.recv() => {
-                    let Some(outgoing) = outgoing else {
-                        debug!("app pipe broken, exiting loop");
-                        break 'stream;
-                    };
-
-                    let destination_identities = if let Some(address) = outgoing.recipient {
-                        vec![ParticipantIdentity(format!("{address:#x}"))]
-                    } else {
-                        default()
-                    };
-
-                    let packet = livekit::DataPacket { payload: outgoing.data, topic: None, reliable: !outgoing.unreliable, destination_identities };
-                    if let Err(_e) = room.local_participant().publish_data(packet).await {
-                        // debug!("outgoing failed: {_e}; not exiting loop though since it often fails at least once or twice at the start...");
-                        break 'stream;
-                    };
-                }
-                control = control_rx.recv() => {
-                    let Some(control) = control else {
-                        debug!("app pipe broken, exiting loop");
-                        break 'stream;
-                    };
-
-                    let (address, channel) = match control {
-                        ChannelControl::Subscribe(address, sender) => {
-                            (address, Some(sender))
-                        },
-                        ChannelControl::Unsubscribe(address) => (address, None),
-                    };
-
-                    let participants = room.remote_participants();
-                    let Some(participant) = participants.get(&ParticipantIdentity(format!("{address:#x}"))) else {
-                        warn!("no participant {address:?}! available: {:?}", room.remote_participants().keys().collect::<Vec<_>>());
-                        continue;
-                    };
-
-                    let publications = participant.track_publications();
-                    let Some(track) = publications.values().find(|track|
-                        matches!(track.kind(), TrackKind::Audio)
-                    ) else {
-                        warn!("no audio for {address:#x?}");
-                        continue;
-                    };
-
-                    let subscribe = channel.is_some();
-                    track.set_subscribed(subscribe);
-                    debug!("setsub: {subscribe}");
-                    if let Some(channel) = channel {
-                        audio_channels.insert(address, channel);
-                    } else {
-                        audio_channels.remove(&address);
-                    }
-                }
-            );
-        }
-
-        room.close().await.unwrap();
-    });
+    let task = rt.spawn(livekit_handler_thread(
+        rt.clone(),
+        transport_id,
+        remote_address.to_owned(),
+        mic,
+        sender,
+        app_rx,
+        control_rx,
+    ));
 
     rt.block_on(task).unwrap();
     Ok(())
@@ -501,6 +316,197 @@ async fn streamer_track_publications(
         );
         publication.set_subscribed(true);
     }
+}
+
+async fn livekit_handler_thread(
+    runtime: Arc<Runtime>,
+    transport_id: Entity,
+    remote_address: String,
+    mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
+    sender: Sender<PlayerUpdate>,
+    app_rx: Arc<Mutex<Receiver<NetworkMessage>>>,
+    control_rx: Arc<Mutex<Receiver<ChannelControl>>>,
+) {
+    let url = Uri::try_from(remote_address).unwrap();
+    let address = format!(
+        "{}://{}{}",
+        url.scheme_str().unwrap_or_default(),
+        url.host().unwrap_or_default(),
+        url.path()
+    );
+    let params: HashMap<_, _, bevy::platform::hash::FixedHasher> =
+        HashMap::from_iter(url.query().unwrap_or_default().split('&').flat_map(|par| {
+            par.split_once('=')
+                .map(|(a, b)| (a.to_owned(), b.to_owned()))
+        }));
+    debug!("{params:?}");
+    let token = params.get("access_token").cloned().unwrap_or_default();
+
+    let mut audio_channels: HashMap<
+        H160,
+        tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
+    > = HashMap::new();
+
+    let (room, mut network_rx) = livekit::prelude::Room::connect(
+        &address,
+        &token,
+        RoomOptions {
+            auto_subscribe: false,
+            adaptive_stream: false,
+            dynacast: false,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    runtime.spawn(mic_consumer_thread(mic, room.local_participant()));
+
+    let mut track_tasks: HashMap<TrackSid, JoinHandle<()>> = HashMap::new();
+
+    let mut app_rx = app_rx.lock().await;
+    let mut control_rx = control_rx.lock().await;
+    'stream: loop {
+        tokio::select!(
+            incoming = network_rx.recv() => {
+                debug!("in: {:?}", incoming);
+                let Some(incoming) = incoming else {
+                    debug!("network pipe broken, exiting loop");
+                    break 'stream;
+                };
+
+                match incoming {
+                    livekit::RoomEvent::Connected { participants_with_tracks } => {
+                        for (participant, publications) in participants_with_tracks {
+                            if let Some(address) = participant.identity().0.as_str().as_h160() {
+                                h160_track_publications(address, &publications, &sender, transport_id).await;
+                            } else if participant.identity().0.as_str().ends_with("-streamer") {
+                                streamer_track_publications(&publications).await;
+                            }
+                        }
+                    }
+                    livekit::RoomEvent::DataReceived { payload, participant, .. } => {
+                        if let Some(participant) = participant {
+                            if let Some(address) = participant.identity().0.as_str().as_h160() {
+                                let packet = match rfc4::Packet::decode(payload.as_slice()) {
+                                    Ok(packet) => packet,
+                                    Err(e) => {
+                                        warn!("unable to parse packet body: {e}");
+                                        continue;
+                                    }
+                                };
+                                let Some(message) = packet.message else {
+                                    warn!("received empty packet body");
+                                    continue;
+                                };
+                                debug!("[{}] received [{}] packet {message:?} from {address}", transport_id, packet.protocol_version);
+                                if let Err(e) = sender.send(PlayerUpdate {
+                                    transport_id,
+                                    message: PlayerMessage::PlayerData(message),
+                                    address,
+                                }).await {
+                                    warn!("app pipe broken ({e}), existing loop");
+                                    break 'stream;
+                                }
+                            }
+                        }
+                    },
+                    livekit::RoomEvent::TrackPublished { publication, participant } => {
+                        if let Some(address) = participant.identity().0.as_str().as_h160() {
+                            h160_track_publications(address, [&publication], & sender, transport_id).await;
+                        } else if participant.identity().0.as_str().ends_with("-streamer") {
+                            streamer_track_publications([&publication]).await;
+                        }
+                    }
+                    livekit::RoomEvent::TrackUnpublished { publication, participant } => {
+                        debug!("unpub: {publication:?}");
+                        if let Some(address) = participant.identity().0.as_str().as_h160() {
+                            if matches!(publication.kind(), TrackKind::Audio) {
+                                let _ = sender.send(PlayerUpdate {
+                                    transport_id,
+                                    message: PlayerMessage::AudioStreamUnavailable { transport: transport_id },
+                                    address,
+                                }).await;
+                            }
+                        }
+                    }
+                    livekit::RoomEvent::TrackSubscribed { track, publication, participant } => {
+                        if let Some(address) = participant.identity().0.as_str().as_h160() {
+                            let sid = track.sid();
+                            match track {
+                                livekit::track::RemoteTrack::Audio(audio) => {
+                                    let Some(channel) = audio_channels.remove(&address) else {
+                                        warn!("no channel for subscribed audio");
+                                        publication.set_subscribed(false);
+                                        continue;
+                                    };
+                                    let handle = runtime.spawn(subscribe_remote_track_audio(audio, channel, publication));
+                                    track_tasks.insert(sid, handle);
+
+                                },
+                                _ => warn!("not processing video tracks"),
+                            }
+                        }
+                    }
+                    livekit::RoomEvent::TrackUnsubscribed{ track, .. } => {
+                        if let Some(handle) = track_tasks.remove(&track.sid()) {
+                            handle.abort();
+                        }
+                    }
+                    livekit::RoomEvent::ParticipantConnected(participant) => {
+                        let meta = participant.metadata();
+                        if !meta.is_empty() {
+                            if let Some(address) = participant.identity().0.as_str().as_h160() {
+                                if let Err(e) = sender.send(PlayerUpdate {
+                                    transport_id,
+                                    message: PlayerMessage::MetaData(meta),
+                                    address,
+                                }).await {
+                                    warn!("app pipe broken ({e}), existing loop");
+                                    break 'stream;
+                                }
+                            }
+                        }
+                    }
+                    _ => { debug!("Event: {:?}", incoming); }
+                };
+            }
+            outgoing = app_rx.recv() => {
+                let Some(outgoing) = outgoing else {
+                    debug!("app pipe broken, exiting loop");
+                    break 'stream;
+                };
+
+                let destination_identities = if let Some(address) = outgoing.recipient {
+                    vec![ParticipantIdentity(format!("{address:#x}"))]
+                } else {
+                    default()
+                };
+
+                let packet = livekit::DataPacket { payload: outgoing.data, topic: None, reliable: !outgoing.unreliable, destination_identities };
+                if let Err(_e) = room.local_participant().publish_data(packet).await {
+                    // debug!("outgoing failed: {_e}; not exiting loop though since it often fails at least once or twice at the start...");
+                    break 'stream;
+                };
+            }
+            control = control_rx.recv() => {
+                let Some(control) = control else {
+                    debug!("app pipe broken, exiting loop");
+                    break 'stream;
+                };
+
+                match control {
+                    ChannelControl::Subscribe(address, sender) => address_channel_control_handler(address, Some(sender), &room, &mut audio_channels),
+                    ChannelControl::Unsubscribe(address) => address_channel_control_handler(address, None, &room, &mut audio_channels),
+                    ChannelControl::StreamerSubscribe(streamer, sender) => (),
+                    ChannelControl::StreamerUnsubscribe(streamer) => (),
+                };
+
+            }
+        );
+    }
+
+    room.close().await.unwrap();
 }
 
 async fn mic_consumer_thread(
