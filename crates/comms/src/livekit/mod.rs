@@ -40,10 +40,11 @@ pub struct StartLivekit {
 
 #[derive(Component)]
 pub struct LivekitTransport {
-    pub address: String,
-    pub receiver: Option<Receiver<NetworkMessage>>,
-    pub control_receiver: Option<Receiver<ChannelControl>>,
-    pub retries: usize,
+    address: String,
+    receiver: Option<Receiver<NetworkMessage>>,
+    control_receiver: Option<Receiver<ChannelControl>>,
+    #[expect(dead_code, reason = "Will be used eventually")]
+    retries: usize,
 }
 
 #[derive(Component)]
