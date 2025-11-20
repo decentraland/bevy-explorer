@@ -691,8 +691,8 @@ fn create_ui_roots(
                     debug!("create texture root {:?} -> {:?}", ent, root);
 
                     images.get_mut(&ui_texture).unwrap().texture_descriptor.size = Extent3d {
-                        width: canvas_info.width,
-                        height: canvas_info.height,
+                        width: canvas_info.width.max(16),
+                        height: canvas_info.height.max(16),
                         depth_or_array_layers: 1,
                     };
 
@@ -722,8 +722,8 @@ fn create_ui_roots(
                         .unwrap()
                         .texture_descriptor
                         .size = Extent3d {
-                        width: canvas_info.width,
-                        height: canvas_info.height,
+                        width: canvas_info.width.max(16),
+                        height: canvas_info.height.max(16),
                         depth_or_array_layers: 1,
                     };
                     texture.texture_size = UVec2::new(canvas_info.width, canvas_info.height);
