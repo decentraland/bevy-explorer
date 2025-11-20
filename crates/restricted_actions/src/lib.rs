@@ -6,11 +6,7 @@ use std::{
 };
 
 use bevy::{
-    asset::LoadState,
-    math::Vec3Swizzles,
-    platform::collections::{HashMap, HashSet},
-    prelude::*,
-    tasks::{IoTaskPool, Task},
+    asset::LoadState, math::Vec3Swizzles, platform::collections::{HashMap, HashSet}, prelude::*, render::view::NoFrustumCulling, tasks::{IoTaskPool, Task}
 };
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
@@ -94,6 +90,7 @@ impl Plugin for RestrictedActionsPlugin {
         app.init_resource::<PendingPortableCommands>();
         app.add_console_command::<SpawnPortableCommand, _>(spawn_portable_command);
         app.add_console_command::<KillPortableCommand, _>(kill_portable_command);
+        app.add_console_command::<FCullCommand, _>(remove_fcull);
     }
 }
 
@@ -1400,4 +1397,24 @@ fn handle_spawned_command(
             true
         }
     })
+}
+
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/fcull")]
+struct FCullCommand {}
+
+fn remove_fcull(
+    q: Query<Entity, With<NoFrustumCulling>>,
+    mut commands: Commands,
+    mut input: ConsoleCommand<FCullCommand>,
+) {
+    if let Some(Ok(_)) = input.take() {
+        let mut count = 0;
+        for ent in q.iter() {
+            commands.entity(ent).remove::<NoFrustumCulling>();
+            count += 1;
+        }
+
+        error!("added {count} frusta");
+    }
 }
