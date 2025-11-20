@@ -1,15 +1,20 @@
-use std::{sync::Arc, time::Duration};
+pub mod participant;
+pub mod track;
 
-use bevy::{platform::collections::HashMap, prelude::*, time::common_conditions::on_timer};
+use std::sync::Arc;
+
+use bevy::{platform::collections::HashMap, prelude::*};
 use ethers_core::types::H160;
-use futures_lite::StreamExt;
 use http::Uri;
 use kira::sound::streaming::StreamingSoundData;
-use prost::Message;
+use prost::{DecodeError, Message};
 use tokio::{
     runtime::Runtime,
     sync::{
-        mpsc::{error::TryRecvError, Receiver, Sender},
+        mpsc::{
+            error::{TryRecvError, TrySendError},
+            Receiver, Sender, UnboundedReceiver,
+        },
         Mutex,
     },
     task::JoinHandle,
@@ -25,7 +30,13 @@ use crate::{
     global_crdt::{
         GlobalCrdtState, LocalAudioFrame, LocalAudioSource, PlayerMessage, PlayerUpdate,
     },
-    livekit::{LivekitConnection, LivekitTransport},
+    livekit::{
+        native::{
+            participant::{Participant, Participants, PublishingTracks},
+            track::{Track, Tracks},
+        },
+        Connected, Disconnected, LivekitTransport, Reconnecting, Transporting,
+    },
     ChannelControl, NetworkMessage,
 };
 
@@ -38,7 +49,7 @@ use livekit::{
         audio_source::native::NativeAudioSource,
         prelude::{AudioFrame, AudioSourceOptions, RtcAudioSource},
     },
-    Room, RoomOptions, RoomResult,
+    ConnectionState, Room, RoomEvent, RoomOptions, RoomResult,
 };
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -48,17 +59,27 @@ pub(super) struct NativeLivekitPlugin;
 
 impl Plugin for NativeLivekitPlugin {
     fn build(&self, app: &mut App) {
+        app.configure_sets(Update, NativeLivekitSystems::PollReceivers);
+
+        app.add_plugins(participant::ParticipantPlugin);
+        app.add_plugins(track::TrackPlugin);
         app.add_plugins(MicPlugin);
 
         app.add_systems(
             Update,
             (
-                connect_livekit,
                 poll_connecting_livekit_rooms,
-                room_connection_health.run_if(on_timer(Duration::from_secs(1))),
+                publish_local_participant_mic,
+                (poll_room_events, poll_outgoing_data, poll_control_messages)
+                    .in_set(NativeLivekitSystems::PollReceivers),
             ),
         );
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SystemSet)]
+enum NativeLivekitSystems {
+    PollReceivers,
 }
 
 impl LivekitTransport {
@@ -72,8 +93,8 @@ impl LivekitTransport {
         (
             Self {
                 address: address.to_owned(),
-                receiver: Some(receiver),
-                control_receiver: Some(control_receiver),
+                receiver,
+                control_receiver,
                 retries: 0,
             },
             ConnectingLivekitRoom::new(&address),
@@ -85,23 +106,25 @@ impl LivekitTransport {
 #[derive(Component)]
 struct LivekitRoom {
     room: Room,
-    runtime: Runtime,
-    thread: std::thread::JoinHandle<()>,
+    room_event_receiver: UnboundedReceiver<RoomEvent>,
 }
+
+/// Async runtime for tasks of this [`LivekitRoom`].
+#[derive(Component, Deref)]
+struct LivekitRuntime(Runtime);
 
 /// A task to connect to a Livekit Room.
 #[derive(Component)]
 struct ConnectingLivekitRoom {
-    task: JoinHandle<RoomResult<Room>>,
+    task: JoinHandle<RoomResult<(Room, UnboundedReceiver<RoomEvent>)>>,
+    /// Tokio [`Runtime`] where the tasks of this room will run on.
+    ///
+    /// Wrapped in an [`Option`] so that it can be [`Option::take`].
     runtime: Option<Runtime>,
 }
 
 impl ConnectingLivekitRoom {
-    fn new(
-        remote_address: &str,
-        // receiver: Receiver<NetworkMessage>,
-        // control_receiver: Receiver<ChannelControl>,
-    ) -> Self {
+    fn new(remote_address: &str) -> Self {
         let url = Uri::try_from(remote_address).unwrap();
         let address = format!(
             "{}://{}{}",
@@ -124,7 +147,9 @@ impl ConnectingLivekitRoom {
             .unwrap();
 
         let task = runtime.spawn(async move {
-            let room_connection = livekit::prelude::Room::connect(
+            // Inside an async closure so that `address` and `token`
+            // are captured
+            livekit::prelude::Room::connect(
                 &address,
                 &token,
                 RoomOptions {
@@ -134,9 +159,7 @@ impl ConnectingLivekitRoom {
                     ..Default::default()
                 },
             )
-            .await;
-
-            room_connection.map(|(room, _room_rx)| room)
+            .await
         });
 
         Self {
@@ -145,6 +168,10 @@ impl ConnectingLivekitRoom {
         }
     }
 }
+
+/// Track that the local participant has published on this [`LivekitRoom`].
+#[derive(Component)]
+struct LocalParticipantPublishedTrack(JoinHandle<()>);
 
 /// Poll the connections to a Livekit Room.
 ///
@@ -156,7 +183,7 @@ fn poll_connecting_livekit_rooms(
 ) {
     for (entity, mut connecting_room) in connecting_live_kit_rooms.into_inner() {
         if connecting_room.task.is_finished() {
-            let ConnectingLivekitRoom { task, runtime } = connecting_room.as_mut();
+            let ConnectingLivekitRoom { task, runtime, .. } = connecting_room.as_mut();
             let Some(runtime) = runtime.take() else {
                 unreachable!("A ConnectingLivekitRoom should never have a None runtime.");
             };
@@ -166,13 +193,15 @@ fn poll_connecting_livekit_rooms(
             entity_commands.remove::<ConnectingLivekitRoom>();
 
             match result {
-                Ok(livekit_room) => {
-                    debug!("Connected to livekit room {}.", livekit_room.name());
-                    entity_commands.insert(LivekitRoom {
-                        room: livekit_room,
-                        runtime,
-                        thread: std::thread::spawn(|| ()),
-                    });
+                Ok((room, room_event_receiver)) => {
+                    debug!("Connected to livekit room {}.", room.name());
+                    entity_commands.insert((
+                        LivekitRoom {
+                            room,
+                            room_event_receiver,
+                        },
+                        LivekitRuntime(runtime),
+                    ));
                 }
                 Err(room_err) => {
                     error!("Failed to connect to livekit room due to {room_err}.");
@@ -182,15 +211,278 @@ fn poll_connecting_livekit_rooms(
     }
 }
 
-/// Verify if the worker thread of a [`LivekitRoom`] is still running.
-fn room_connection_health(mut commands: Commands, rooms: Query<(Entity, &LivekitRoom)>) {
-    for (entity, room) in rooms {
-        if room.thread.is_finished() {
-            warn!(
-                "The worker thread of Room {} has finished.",
-                room.room.name()
-            );
-            commands.entity(entity).remove::<LivekitRoom>();
+fn publish_local_participant_mic(
+    mut commands: Commands,
+    rooms: Populated<
+        (Entity, &LivekitRoom, &LivekitRuntime),
+        Without<LocalParticipantPublishedTrack>,
+    >,
+    mic: Res<crate::global_crdt::LocalAudioSource>,
+) {
+    for (entity, room, runtime) in rooms.into_inner() {
+        let LivekitRoom { room, .. } = &room;
+        let task = runtime.spawn(mic_consumer_thread(
+            mic.subscribe(),
+            room.local_participant(),
+        ));
+        commands
+            .entity(entity)
+            .insert(LocalParticipantPublishedTrack(task));
+    }
+}
+
+fn poll_room_events(
+    mut commands: Commands,
+    rooms: Query<(Entity, &mut LivekitRoom, &LivekitRuntime)>,
+    player_state: Res<GlobalCrdtState>,
+    mut participants: Participants,
+    mut tracks: Tracks,
+) {
+    for (entity, mut room, runtime) in rooms {
+        let LivekitRoom {
+            room_event_receiver,
+            ..
+        } = room.as_mut();
+        match room_event_receiver.try_recv() {
+            Ok(event) => {
+                trace!("in: {:?}", event);
+                match event {
+                    livekit::RoomEvent::Connected {
+                        participants_with_tracks,
+                    } => {
+                        for (participant, publications) in participants_with_tracks {
+                            let participant = participants.new_participant(entity, participant);
+                            for publication in publications {
+                                tracks.track_published(participant, entity, publication.clone());
+                                tracks.subscribe(publication);
+                            }
+                        }
+                    }
+                    livekit::RoomEvent::ParticipantConnected(participant) => {
+                        let meta = participant.metadata();
+                        let identity = participant.identity();
+
+                        participants.new_participant(entity, participant);
+
+                        if !meta.is_empty() {
+                            if let Some(address) = identity.0.as_str().as_h160() {
+                                let sender = player_state.get_sender();
+                                runtime.spawn(async move {
+                                    if let Err(e) = sender
+                                        .send(PlayerUpdate {
+                                            transport_id: entity,
+                                            message: PlayerMessage::MetaData(meta),
+                                            address,
+                                        })
+                                        .await
+                                    {
+                                        warn!("app pipe broken ({e}), existing loop");
+                                    }
+                                });
+                            }
+                        }
+                    }
+                    livekit::RoomEvent::ParticipantDisconnected(participant) => {
+                        participants.participant_disconnected(participant);
+                    }
+                    livekit::RoomEvent::DataReceived {
+                        payload,
+                        participant,
+                        ..
+                    } => {
+                        if let Some(address) = participant
+                            .and_then(|participant| participant.identity().0.as_str().as_h160())
+                        {
+                            let sender = player_state.get_sender();
+
+                            match send_data_packet(entity, address, sender, payload.as_slice()) {
+                                Ok(_) => (),
+                                Err(e) => {
+                                    error!("{e}");
+                                    // TODO how to react?
+                                }
+                            };
+                        }
+                    }
+                    livekit::RoomEvent::TrackPublished {
+                        publication,
+                        participant,
+                    } => {
+                        if let Some(participant_id) = participants.get(&participant) {
+                            tracks.track_published(participant_id, entity, publication.clone());
+                            tracks.subscribe(publication);
+                        } else {
+                            error!(
+                                "Received a publication from {} ({}) but it is not mapped.",
+                                participant.identity(),
+                                participant.sid()
+                            );
+                        }
+                    }
+                    livekit::RoomEvent::TrackUnpublished { publication, .. } => {
+                        tracks.track_unpublished(publication);
+                        // debug!("unpub: {publication:?}");
+                        // if let Some(address) = participant.identity().0.as_str().as_h160() {
+                        //     if matches!(publication.kind(), TrackKind::Audio) {
+                        //         let _ = sender
+                        //             .send(PlayerUpdate {
+                        //                 transport_id,
+                        //                 message: PlayerMessage::AudioStreamUnavailable {
+                        //                     transport: transport_id,
+                        //                 },
+                        //                 address,
+                        //             })
+                        //             .await;
+                        //     }
+                        // }
+                    }
+                    livekit::RoomEvent::TrackSubscribed {
+                        track, publication, ..
+                    } => {
+                        tracks.subscribed(track, publication);
+                        // if let Some(address) = participant.identity().0.as_str().as_h160() {
+                        //     let sid = track.sid();
+                        //     match track {
+                        //         livekit::track::RemoteTrack::Audio(audio) => {
+                        //             let Some(channel) = audio_channels.remove(&address) else {
+                        //                 warn!("no channel for subscribed audio");
+                        //                 publication.set_subscribed(false);
+                        //                 continue;
+                        //             };
+                        //             let handle = runtime.spawn(subscribe_remote_track_audio(
+                        //                 audio,
+                        //                 channel,
+                        //                 publication,
+                        //             ));
+                        //             track_tasks.insert(sid, handle);
+                        //         }
+                        //         _ => warn!("not processing video tracks"),
+                        //     }
+                        // }
+                    }
+                    livekit::RoomEvent::TrackUnsubscribed { publication, .. } => {
+                        tracks.unsubscribed(publication);
+                    }
+                    livekit::RoomEvent::ConnectionStateChanged(ConnectionState::Connected) => {
+                        commands.entity(entity).insert(Connected);
+                    }
+                    livekit::RoomEvent::ConnectionStateChanged(ConnectionState::Reconnecting) => {
+                        commands.entity(entity).insert(Reconnecting);
+                    }
+                    livekit::RoomEvent::ConnectionStateChanged(ConnectionState::Disconnected) => {
+                        commands.entity(entity).insert(Disconnected);
+                    }
+                    _ => {
+                        trace!("Event: {:?}", event);
+                    }
+                };
+            }
+            Err(TryRecvError::Disconnected) => {
+                error!("RoomEvent channel has disconnected.");
+                // TODO how to react?
+            }
+            Err(TryRecvError::Empty) => {
+                // Do nothing
+            }
+        }
+    }
+}
+
+/// Poll messages to be published by the local participant into the [`LivekitTransport`].
+fn poll_outgoing_data(rooms: Query<(&mut LivekitTransport, &LivekitRoom, &LivekitRuntime)>) {
+    for (mut transport, room, runtime) in rooms {
+        let LivekitRoom { room, .. } = &room;
+
+        match transport.receiver.try_recv() {
+            Ok(message) => {
+                let local_participant = room.local_participant();
+                trace!(
+                    "{} is publishing data to {}",
+                    local_participant.sid(),
+                    room.name()
+                );
+
+                let destination_identities = if let Some(address) = message.recipient {
+                    vec![ParticipantIdentity(format!("{address:#x}"))]
+                } else {
+                    default()
+                };
+
+                let packet = livekit::DataPacket {
+                    payload: message.data,
+                    topic: None,
+                    reliable: !message.unreliable,
+                    destination_identities,
+                };
+
+                runtime.spawn(async move {
+                    if let Err(e) = local_participant.publish_data(packet).await {
+                        error!("An outgoing message was lost due to {e}.");
+                    };
+                });
+            }
+            Err(TryRecvError::Disconnected) => {
+                error!("Outgoing message channel is disconnected.");
+                // TODO how to respond.
+            }
+            Err(TryRecvError::Empty) => {
+                // do nothing
+            }
+        }
+    }
+}
+
+fn poll_control_messages(
+    rooms: Query<(&mut LivekitTransport, &Transporting)>,
+    participants: Query<(&Participant, &PublishingTracks)>,
+    mut tracks: Tracks,
+) {
+    for (mut transport, transporting) in rooms {
+        match transport.control_receiver.try_recv() {
+            Ok(message) => {
+                match message {
+                    ChannelControl::Subscribe(address, sender) => {
+                        let Some((_, published_tracks)) = participants
+                            .iter_many(transporting.collection())
+                            .find(|(participant, _)| {
+                                participant
+                                    .identity()
+                                    .as_str()
+                                    .as_h160()
+                                    .filter(|h160| h160 == &address)
+                                    .is_some()
+                            })
+                        else {
+                            error!("Could not find participant {} in transport.", address);
+                            continue;
+                        };
+
+                        let Some((_, track, _, _, _)) = tracks
+                            .iter_many(published_tracks.collection())
+                            .find(|(_, track, _, _, _)| track.kind() == TrackKind::Audio)
+                        else {
+                            error!("Participant {} did not publish any audio track.", address);
+                            continue;
+                        };
+
+                        let remote_publication = (*track).clone();
+                        tracks.attach_sender_to_audio_track(remote_publication, sender);
+                    }
+                    ChannelControl::Unsubscribe(address) => {
+                        debug!("unsubscribe");
+                        // address_channel_control_handler(address, None, &room, &mut audio_channels);
+                    }
+                    ChannelControl::StreamerSubscribe(streamer, sender) => (),
+                    ChannelControl::StreamerUnsubscribe(streamer) => (),
+                };
+            }
+            Err(TryRecvError::Disconnected) => {
+                error!("Control channel is disconnected.");
+                // TODO how to respond?
+            }
+            Err(TryRecvError::Empty) => {
+                // Do nothing
+            }
         }
     }
 }
@@ -286,35 +578,35 @@ fn update_mic(
     mic_state.available = false;
 }
 
-#[allow(clippy::type_complexity)]
-fn connect_livekit(
-    mut commands: Commands,
-    mut new_livekits: Query<(Entity, &mut LivekitTransport), Without<LivekitConnection>>,
-    player_state: Res<GlobalCrdtState>,
-    mic: Res<crate::global_crdt::LocalAudioSource>,
-) {
-    for (transport_id, mut new_transport) in new_livekits.iter_mut() {
-        debug!("spawn lk connect");
-        let remote_address = new_transport.address.to_owned();
-        let receiver = new_transport.receiver.take().unwrap();
-        let control_receiver = new_transport.control_receiver.take().unwrap();
-        let sender = player_state.get_sender();
+// #[allow(clippy::type_complexity)]
+// fn connect_livekit(
+//     mut commands: Commands,
+//     mut new_livekits: Query<(Entity, &mut LivekitTransport), Without<LivekitConnection>>,
+//     player_state: Res<GlobalCrdtState>,
+//     mic: Res<crate::global_crdt::LocalAudioSource>,
+// ) {
+//     for (transport_id, mut new_transport) in new_livekits.iter_mut() {
+//         debug!("spawn lk connect");
+//         let remote_address = new_transport.address.to_owned();
+//         let receiver = new_transport.receiver.take().unwrap();
+//         let control_receiver = new_transport.control_receiver.take().unwrap();
+//         let sender = player_state.get_sender();
 
-        let subscription = mic.subscribe();
-        std::thread::spawn(move || {
-            livekit_handler(
-                transport_id,
-                remote_address,
-                receiver,
-                control_receiver,
-                sender,
-                subscription,
-            )
-        });
+//         let subscription = mic.subscribe();
+//         std::thread::spawn(move || {
+//             livekit_handler(
+//                 transport_id,
+//                 remote_address,
+//                 receiver,
+//                 control_receiver,
+//                 sender,
+//                 subscription,
+//             )
+//         });
 
-        commands.entity(transport_id).try_insert(LivekitConnection);
-    }
-}
+//         commands.entity(transport_id).try_insert(LivekitConnection);
+//     }
+// }
 
 fn livekit_handler(
     transport_id: Entity,
@@ -435,29 +727,27 @@ impl kira::sound::streaming::Decoder for LivekitKiraBridge {
 
 async fn h160_track_publications(
     address: H160,
-    publications: impl IntoIterator<Item = &RemoteTrackPublication>,
+    publication: &RemoteTrackPublication,
     player_update_sender: &Sender<PlayerUpdate>,
     transport_id: Entity,
 ) {
-    for publication in publications.into_iter() {
-        debug!("pub: {publication:?}");
+    debug!("pub: {publication:?}");
 
-        if matches!(publication.kind(), TrackKind::Audio) {
-            let _ = player_update_sender
-                .send(PlayerUpdate {
-                    transport_id,
-                    message: PlayerMessage::AudioStreamAvailable {
-                        transport: transport_id,
-                    },
-                    address,
-                })
-                .await;
-        }
+    if matches!(publication.kind(), TrackKind::Audio) {
+        let _ = player_update_sender
+            .send(PlayerUpdate {
+                transport_id,
+                message: PlayerMessage::AudioStreamAvailable {
+                    transport: transport_id,
+                },
+                address,
+            })
+            .await;
     }
 }
 
-async fn streamer_track_publications(
-    publications: impl IntoIterator<Item = &RemoteTrackPublication>,
+fn streamer_track_publications<'a>(
+    publications: impl IntoIterator<Item = &'a RemoteTrackPublication>,
 ) {
     for publication in publications.into_iter() {
         debug!(
@@ -531,9 +821,9 @@ async fn livekit_handler_thread(
                     livekit::RoomEvent::Connected { participants_with_tracks } => {
                         for (participant, publications) in participants_with_tracks {
                             if let Some(address) = participant.identity().0.as_str().as_h160() {
-                                h160_track_publications(address, &publications, &sender, transport_id).await;
+                                // h160_track_publications(address, &publications, &sender, transport_id);
                             } else if participant.identity().0.as_str().ends_with("-streamer") {
-                                streamer_track_publications(&publications).await;
+                                streamer_track_publications(&publications);
                             }
                         }
                     }
@@ -565,9 +855,9 @@ async fn livekit_handler_thread(
                     },
                     livekit::RoomEvent::TrackPublished { publication, participant } => {
                         if let Some(address) = participant.identity().0.as_str().as_h160() {
-                            h160_track_publications(address, [&publication], & sender, transport_id).await;
+                            // h160_track_publications(address, [&publication], & sender, transport_id);
                         } else if participant.identity().0.as_str().ends_with("-streamer") {
-                            streamer_track_publications([&publication]).await;
+                            streamer_track_publications([&publication]);
                         }
                     }
                     livekit::RoomEvent::TrackUnpublished { publication, participant } => {
@@ -592,8 +882,8 @@ async fn livekit_handler_thread(
                                         publication.set_subscribed(false);
                                         continue;
                                     };
-                                    let handle = runtime.spawn(subscribe_remote_track_audio(audio, channel, publication));
-                                    track_tasks.insert(sid, handle);
+                                    // let handle = runtime.spawn(subscribe_remote_track_audio(audio, channel, publication));
+                                    // track_tasks.insert(sid, handle);
 
                                 },
                                 _ => warn!("not processing video tracks"),
@@ -735,57 +1025,6 @@ async fn mic_consumer_thread(
     }
 }
 
-async fn subscribe_remote_track_audio(
-    audio: RemoteAudioTrack,
-    channel: tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
-    publication: RemoteTrackPublication,
-) {
-    let mut stream =
-        livekit::webrtc::audio_stream::native::NativeAudioStream::new(audio.rtc_track(), 48_000, 1);
-
-    // get first frame to set sample rate
-    let Some(frame) = stream.next().await else {
-        warn!("dropped audio track without samples");
-        return;
-    };
-
-    let (frame_sender, frame_receiver) = tokio::sync::mpsc::channel(1000);
-
-    let bridge = LivekitKiraBridge {
-        started: false,
-        sample_rate: frame.sample_rate,
-        receiver: frame_receiver,
-    };
-
-    debug!("recced with {} / {}", frame.sample_rate, frame.num_channels);
-
-    let sound_data = kira::sound::streaming::StreamingSoundData::from_decoder(bridge);
-
-    let res = channel.send(sound_data);
-
-    if res.is_err() {
-        warn!("failed to send subscribed audio data");
-        publication.set_subscribed(false);
-        return;
-    }
-
-    while let Some(frame) = stream.next().await {
-        match frame_sender.try_send(frame) {
-            Ok(()) => (),
-            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                warn!("livekit audio receiver buffer full, dropping frame");
-                return;
-            }
-            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                warn!("livekit audio receiver dropped, exiting task");
-                return;
-            }
-        }
-    }
-
-    warn!("track ended, exiting task");
-}
-
 fn address_channel_control_handler(
     address: H160,
     channel: Option<tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>>,
@@ -821,4 +1060,63 @@ fn address_channel_control_handler(
     } else {
         audio_channels.remove(&address);
     }
+}
+
+#[derive(Debug)]
+pub enum SendDataPacketError {
+    Decode(DecodeError),
+    Empty,
+    Closed,
+    Full,
+}
+
+impl From<TrySendError<PlayerUpdate>> for SendDataPacketError {
+    fn from(value: TrySendError<PlayerUpdate>) -> Self {
+        match value {
+            TrySendError::Full(_) => Self::Full,
+            TrySendError::Closed(_) => Self::Closed,
+        }
+    }
+}
+
+impl std::fmt::Display for SendDataPacketError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Decode(e) => writeln!(f, "{e}"),
+            Self::Empty => writeln!(f, "Payload was empty."),
+            Self::Closed => writeln!(f, "PlayerUpdate channel was closed."),
+            Self::Full => writeln!(f, "PlayerUpdate channel was full."),
+        }
+    }
+}
+
+impl std::error::Error for SendDataPacketError {}
+
+fn send_data_packet(
+    transport: Entity,
+    address: H160,
+    sender: Sender<PlayerUpdate>,
+    payload: &[u8],
+) -> Result<(), SendDataPacketError> {
+    let packet = match rfc4::Packet::decode(payload) {
+        Ok(packet) => packet,
+        Err(e) => {
+            return Err(SendDataPacketError::Decode(e));
+        }
+    };
+    let Some(message) = packet.message else {
+        return Err(SendDataPacketError::Empty);
+    };
+    trace!(
+        "[{}] received [{}] packet {message:?} from {address}",
+        transport,
+        packet.protocol_version
+    );
+    sender
+        .try_send(PlayerUpdate {
+            transport_id: transport,
+            message: PlayerMessage::PlayerData(message),
+            address,
+        })
+        .map_err(SendDataPacketError::from)
 }

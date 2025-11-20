@@ -1,11 +1,14 @@
 #[cfg(not(target_arch = "wasm32"))]
-pub mod native;
+mod native;
 #[cfg(target_arch = "wasm32")]
-pub mod web;
+mod web;
 
 // --server https://worlds-content-server.decentraland.org/world/shibu.dcl.eth --location 1,1
 
-use bevy::prelude::*;
+use bevy::{
+    ecs::{component::HookContext, world::DeferredWorld},
+    prelude::*,
+};
 use tokio::sync::mpsc::Receiver;
 
 use dcl_component::proto_components::kernel::comms::rfc4;
@@ -29,6 +32,9 @@ impl Plugin for LivekitPlugin {
         app.add_systems(Update, start_livekit);
         app.add_event::<StartLivekit>();
         app.init_resource::<MicState>();
+
+        app.register_type::<Transporting>();
+        app.register_type::<TransportedBy>();
     }
 }
 
@@ -40,15 +46,44 @@ pub struct StartLivekit {
 
 #[derive(Component)]
 pub struct LivekitTransport {
+    #[expect(dead_code, reason = "Will be used eventually")]
     address: String,
-    receiver: Option<Receiver<NetworkMessage>>,
-    control_receiver: Option<Receiver<ChannelControl>>,
+    receiver: Receiver<NetworkMessage>,
+    control_receiver: Receiver<ChannelControl>,
     #[expect(dead_code, reason = "Will be used eventually")]
     retries: usize,
 }
 
+/// Indicates that the [`LivekitTransport`] is connected.
 #[derive(Component)]
-pub struct LivekitConnection;
+#[component(on_insert = on_insert_connected)]
+struct Connected;
+
+/// Indicates that the [`LivekitTransport`] is reconnecting.
+#[derive(Component)]
+#[component(on_insert = on_insert_reconnecting)]
+struct Reconnecting;
+
+/// Indicates that the [`LivekitTransport`] is disconnected.
+#[derive(Component)]
+#[component(on_insert = on_insert_disconnected)]
+struct Disconnected;
+
+/// Entities connected through this transport.
+///
+/// Can be either participants, or their tracks.
+#[derive(Reflect, Component)]
+#[reflect(Component)]
+#[relationship_target(relationship = TransportedBy)]
+pub struct Transporting(Vec<Entity>);
+
+/// Transport this entity is connected through.
+///
+/// This can be either participants, or their tracks.
+#[derive(Reflect, Component)]
+#[reflect(Component)]
+#[relationship(relationship_target = Transporting)]
+pub struct TransportedBy(Entity);
 
 fn start_livekit(
     mut commands: Commands,
@@ -86,4 +121,31 @@ fn start_livekit(
             LivekitTransport::build_transport(ev.address.to_owned(), receiver, control_receiver),
         ));
     }
+}
+
+/// Hook to remove [`Reconnecting`] and [`Disconnected`]
+/// when [`Connected`] is inserted.
+fn on_insert_connected(mut world: DeferredWorld, hook_context: HookContext) {
+    world
+        .commands()
+        .entity(hook_context.entity)
+        .remove::<(Reconnecting, Disconnected)>();
+}
+
+/// Hook to remove [`Connected`] and [`Disconnected`]
+/// when [`Reconnecting`] is inserted.
+fn on_insert_reconnecting(mut world: DeferredWorld, hook_context: HookContext) {
+    world
+        .commands()
+        .entity(hook_context.entity)
+        .remove::<(Connected, Disconnected)>();
+}
+
+/// Hook to remove [`Connected`] and [`Reconnecting`]
+/// when [`Disconnected`] is inserted.
+fn on_insert_disconnected(mut world: DeferredWorld, hook_context: HookContext) {
+    world
+        .commands()
+        .entity(hook_context.entity)
+        .remove::<(Connected, Reconnecting)>();
 }
