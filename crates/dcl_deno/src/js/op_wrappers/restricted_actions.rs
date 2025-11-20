@@ -1,3 +1,4 @@
+use dcl::js::restricted_actions::UiFocusResult;
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
 
@@ -90,12 +91,12 @@ async fn op_open_nft_dialog(
 }
 
 #[op2(async)]
-#[string]
+#[serde]
 async fn op_ui_focus(
     op_state: Rc<RefCell<OpState>>,
     apply: bool,
     #[string] element_id: Option<String>,
-) -> Result<Option<String>, AnyError> {
+) -> Result<UiFocusResult, AnyError> {
     dcl::js::restricted_actions::op_ui_focus(op_state, apply, element_id).await
 }
 

@@ -5,6 +5,7 @@ use bevy::{
     transform::components::Transform,
 };
 use common::rpc::{RpcCall, RpcUiFocusAction};
+use serde::Serialize;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
@@ -188,11 +189,16 @@ pub async fn op_open_nft_dialog(
     rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))
 }
 
+#[derive(Serialize)]
+pub struct UiFocusResult {
+    element_id: Option<String>,
+}
+
 pub async fn op_ui_focus(
     op_state: Rc<RefCell<impl State>>,
     apply: bool,
     element_id: Option<String>,
-) -> Result<Option<String>, anyhow::Error> {
+) -> Result<UiFocusResult, anyhow::Error> {
     debug!("op_ui_focus");
     let (sx, rx) = tokio::sync::oneshot::channel::<Result<Option<String>, String>>();
 
@@ -215,7 +221,10 @@ pub async fn op_ui_focus(
         });
     }
 
-    rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))
+    rx.await
+        .map_err(|e| anyhow!(e))?
+        .map(|element_id| UiFocusResult { element_id })
+        .map_err(|e| anyhow!(e))
 }
 
 pub async fn op_copy_to_clipboard(
