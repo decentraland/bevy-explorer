@@ -33,7 +33,10 @@ impl Plugin for TrackPlugin {
         app.init_resource::<TrackMapper>();
 
         app.add_observer(request_subscription);
+        app.add_observer(request_unsubscription);
         app.add_observer(subscription_received);
+        app.add_observer(unsubscription_received);
+        app.add_observer(abort_attached_audio);
 
         app.register_type::<PublishedBy>();
         app.register_type::<TrackMapper>();
@@ -90,7 +93,7 @@ pub struct Subscribing;
 pub struct Unsubscribing;
 
 /// Handle to the task that consume an audio track.
-#[derive(Component)]
+#[derive(Component, Deref, DerefMut)]
 pub struct AttachedAudio(JoinHandle<()>);
 
 #[derive(Reflect, Component)]
@@ -173,6 +176,8 @@ impl<'w, 's> Tracks<'w, 's> {
         }
     }
 
+    /// Creates a task to consume the audio frames from the [`RemoteAudioTrack`]
+    /// and send it into the [`Sender`](tokio::sync::oneshot::Sender).
     pub fn attach_sender_to_audio_track(
         &mut self,
         publication: RemoteTrackPublication,
@@ -239,6 +244,29 @@ fn request_subscription(
     });
 }
 
+/// On inserting [`Unsubscribing`], trigger a task to send the unsubscription
+/// request.
+fn request_unsubscription(
+    trigger: Trigger<OnInsert, Unsubscribing>,
+    tracks: Query<(&Track, &TransportedBy)>,
+    transports: Query<&LivekitRuntime>,
+) {
+    let Ok((track, transported_by)) = tracks.get(trigger.target()) else {
+        error!("Unsubscribing added to an entity that is not a Track.");
+        return;
+    };
+
+    let Ok(transport) = transports.get(transported_by.get()) else {
+        unreachable!("Relationship must be valid.");
+    };
+
+    let track = (*track).clone();
+    transport.spawn(async move {
+        track.set_subscribed(false);
+    });
+}
+
+/// Sends a [`PlayerUpdate`] informing that an audio track became available
 fn subscription_received(
     trigger: Trigger<OnInsert, Subscribed>,
     tracks: Query<(&Track, &PublishedBy, &TransportedBy)>,
@@ -277,6 +305,59 @@ fn subscription_received(
     }
 }
 
+/// Send a [`PlayerUpdate`] informing that the audio track has been
+/// unsubscribed.
+fn unsubscription_received(
+    trigger: Trigger<OnInsert, Unsubscribed>,
+    tracks: Query<(&Track, &PublishedBy, &TransportedBy)>,
+    transports: Query<&LivekitRuntime>,
+    participants: Query<&Participant>,
+    player_state: Res<GlobalCrdtState>,
+) {
+    let Ok((track, published_by, transported_by)) = tracks.get(trigger.target()) else {
+        error!("Subscribing added to an entity that is not a Track.");
+        return;
+    };
+
+    let Ok(participant) = participants.get(published_by.get()) else {
+        unreachable!("Relationship must be valid.");
+    };
+    let Ok(transport) = transports.get(transported_by.get()) else {
+        unreachable!("Relationship must be valid.");
+    };
+
+    if let Some(address) = participant.identity().as_str().as_h160() {
+        let sender = player_state.get_sender();
+        if matches!(track.kind(), TrackKind::Audio) {
+            let transport_id = transported_by.get();
+            transport.spawn(async move {
+                let _ = sender
+                    .send(PlayerUpdate {
+                        transport_id,
+                        message: PlayerMessage::AudioStreamUnavailable {
+                            transport: transport_id,
+                        },
+                        address,
+                    })
+                    .await;
+            });
+        }
+    }
+}
+
+/// Aborts a dropped [`AttachedAudio`] stream.
+fn abort_attached_audio(
+    trigger: Trigger<OnReplace, AttachedAudio>,
+    tracks: Query<(&Track, &AttachedAudio)>,
+) {
+    let Ok((track, attached_audio)) = tracks.get(trigger.target()) else {
+        unreachable!("Track entity should be well-formed.");
+    };
+
+    debug!("Aborting attached audio task of track {}.", track.sid());
+    attached_audio.abort();
+}
+
 /// Hook that runs when [`Unsubscribing`] is inserted on an entity.
 ///
 /// Removes [`Subscribed`] and [`Unsubscribed`].
@@ -291,10 +372,12 @@ fn on_insert_subscribed(mut world: DeferredWorld, hook_context: HookContext) {
 ///
 /// Removes [`Subscribed`] and [`Unsubscribing`].
 fn on_insert_unsubscribed(mut world: DeferredWorld, hook_context: HookContext) {
-    world
-        .commands()
-        .entity(hook_context.entity)
-        .remove::<(Subscribed, Subscribing, Unsubscribing)>();
+    world.commands().entity(hook_context.entity).remove::<(
+        Subscribed,
+        Subscribing,
+        Unsubscribing,
+        AttachedAudio,
+    )>();
 }
 
 /// Hook that runs when [`Unsubscribing`] is inserted on an entity.
