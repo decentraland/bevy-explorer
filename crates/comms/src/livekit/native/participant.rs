@@ -19,7 +19,16 @@ pub struct Participants<'w, 's> {
     commands: Commands<'w, 's>,
     participant_mapper: ResMut<'w, ParticipantMapper>,
     #[deref]
-    participants: Query<'w, 's, (NameOrEntity, &'static Participant)>,
+    participants: Query<
+        'w,
+        's,
+        (
+            NameOrEntity,
+            &'static Participant,
+            &'static TransportedBy,
+            Option<&'static PublishingTracks>,
+        ),
+    >,
 }
 
 /// Maps between [`ParticipantIdentity`](livekit::room::id::ParticipantIdentity)/[`ParticipantSuid`](livekit::room::id::ParticipantSid)
