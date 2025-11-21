@@ -1,7 +1,8 @@
 use crate::{
+    audio_sink::AudioSink,
     stream_processor::AVCommand,
     video_context::{VideoData, VideoInfo},
-    video_stream::{av_sinks, VideoSink},
+    video_stream::{ffmpeg_av_sinks, livekit_av_sinks, VideoSink},
 };
 use bevy::{
     color::palettes::basic,
@@ -17,6 +18,10 @@ use bevy::{
 use common::{
     sets::SceneSets,
     structs::{AppConfig, PrimaryUser},
+};
+use comms::{
+    livekit::{LivekitRuntime, Participants, Tracks, Transporting},
+    SceneRoom,
 };
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
@@ -172,6 +177,9 @@ pub fn update_video_players(
     mut system_paused: Local<HashMap<Entity, Option<tokio::sync::mpsc::Sender<AVCommand>>>>,
     containing_scene: ContainingScene,
     user: Query<&GlobalTransform, With<PrimaryUser>>,
+    scene_rooms: Query<(&Transporting, &LivekitRuntime), With<SceneRoom>>,
+    participants: Participants,
+    mut tracks: Tracks,
 ) {
     let mut previously_stopped = std::mem::take(&mut *system_paused);
 
@@ -201,26 +209,57 @@ pub fn update_video_players(
                 continue;
             };
 
-            let (video_sink, audio_sink) = av_sinks(
-                ipfs.clone(),
-                player.source.src.clone(),
-                context.hash.clone(),
-                image_handle,
-                player.source.volume.unwrap_or(1.0),
-                false,
-                player.source.r#loop.unwrap_or(false),
-            );
-            debug!(
-                "spawned av thread for scene @ {} (playing={})",
-                context.base,
-                player.source.playing.unwrap_or(true)
-            );
-            previously_stopped.insert(ent, Some(video_sink.command_sender.clone()));
-            let video_output = VideoTextureOutput(video_sink.image.clone());
-            commands
-                .entity(ent)
-                .try_insert((video_sink, video_output, audio_sink));
-            debug!("{ent:?} has {}", player.source.src);
+            if player.source.src.starts_with("https://") {
+                let (video_sink, audio_sink) = ffmpeg_av_sinks(
+                    ipfs.clone(),
+                    player.source.src.clone(),
+                    context.hash.clone(),
+                    image_handle,
+                    player.source.volume.unwrap_or(1.0),
+                    false,
+                    player.source.r#loop.unwrap_or(false),
+                );
+                debug!(
+                    "spawned av thread for scene @ {} (playing={})",
+                    context.base,
+                    player.source.playing.unwrap_or(true)
+                );
+                previously_stopped.insert(ent, Some(video_sink.command_sender.clone()));
+                let video_output = VideoTextureOutput(video_sink.image.clone());
+                commands
+                    .entity(ent)
+                    .try_insert((video_sink, video_output, audio_sink));
+                debug!("{ent:?} has {}", player.source.src);
+            } else if player.source.src.starts_with("livekit-video://") {
+                let Some((video_sink, audio_sink)) = livekit_av_sinks(
+                    &scene_rooms,
+                    &participants,
+                    &mut tracks,
+                    player.source.src.clone(),
+                    image_handle,
+                    player.source.volume.unwrap_or(1.0),
+                    false,
+                    player.source.r#loop.unwrap_or(false),
+                ) else {
+                    continue;
+                };
+                debug!(
+                    "spawned livekit av thread for scene @ {} (playing={})",
+                    context.base,
+                    player.source.playing.unwrap_or(true)
+                );
+                previously_stopped.insert(ent, Some(video_sink.command_sender.clone()));
+                let video_output = VideoTextureOutput(video_sink.image.clone());
+                commands
+                    .entity(ent)
+                    .try_insert((video_sink, video_output, audio_sink));
+                debug!("{ent:?} has {}", player.source.src);
+            } else {
+                if !player.source.src.is_empty() {
+                    debug!("source had unknown protocol");
+                }
+                commands.entity(ent).try_remove::<(VideoSink, AudioSink)>();
+            }
         } else if player.is_changed() {
             let sink = maybe_sink.as_ref().unwrap();
             if player.source.playing.unwrap_or(true) {
@@ -268,19 +307,21 @@ pub fn update_video_players(
         .skip(config.max_videos)
         .map(|(_, _, ent)| *ent);
 
-    for ent in should_be_playing {
+    for (ent, _, _, maybe_sink, _, _) in video_players.iter_many(should_be_playing) {
         if let Some(maybe_new_sender) = previously_stopped.get(&ent) {
-            let sender = maybe_new_sender
+            if let Some(sender) = maybe_new_sender
                 .as_ref()
-                .unwrap_or_else(|| &video_players.get(ent).unwrap().3.unwrap().command_sender);
-            debug!("starting {ent:?}");
-            let _ = sender.try_send(AVCommand::Play);
+                .or_else(|| maybe_sink.map(|sink| &sink.command_sender))
+            {
+                debug!("starting {ent:?}");
+                let _ = sender.try_send(AVCommand::Play);
+            }
         }
     }
 
-    for ent in should_be_stopped {
+    for (ent, _, _, maybe_sink, _, _) in video_players.iter_many(should_be_stopped) {
         if !previously_stopped.contains_key(&ent) {
-            if let Some(sink) = video_players.get(ent).unwrap().3 {
+            if let Some(sink) = maybe_sink {
                 info!("system stopping {ent:?}");
                 let _ = sink.command_sender.try_send(AVCommand::Pause);
             }

@@ -2,6 +2,10 @@ use std::path::Path;
 
 use bevy::prelude::*;
 use common::structs::AudioDecoderError;
+use comms::{
+    livekit::{LivekitRuntime, Participants, Tracks, Transporting},
+    SceneRoom,
+};
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::format::input;
 use ipfs::{IpfsIo, IpfsResource};
@@ -27,7 +31,7 @@ pub struct VideoSink {
     pub rate: Option<f64>,
 }
 
-pub fn av_sinks(
+pub fn ffmpeg_av_sinks(
     ipfs: IpfsResource,
     source: String,
     hash: String,
@@ -40,7 +44,7 @@ pub fn av_sinks(
     let (video_sender, video_receiver) = tokio::sync::mpsc::channel(10);
     let (audio_sender, audio_receiver) = tokio::sync::mpsc::channel(10);
 
-    spawn_av_thread(
+    spawn_ffmpeg_av_thread(
         ipfs,
         command_receiver,
         video_sender,
@@ -71,7 +75,7 @@ pub fn av_sinks(
     )
 }
 
-pub fn spawn_av_thread(
+pub fn spawn_ffmpeg_av_thread(
     ipfs: IpfsResource,
     commands: tokio::sync::mpsc::Receiver<AVCommand>,
     frames: tokio::sync::mpsc::Sender<VideoData>,
@@ -79,10 +83,10 @@ pub fn spawn_av_thread(
     path: String,
     hash: String,
 ) {
-    std::thread::spawn(move || av_thread(ipfs, commands, frames, audio, path, hash));
+    std::thread::spawn(move || ffmpeg_av_thread(ipfs, commands, frames, audio, path, hash));
 }
 
-fn av_thread(
+fn ffmpeg_av_thread(
     ipfs: IpfsResource,
     commands: tokio::sync::mpsc::Receiver<AVCommand>,
     frames: tokio::sync::mpsc::Sender<VideoData>,
@@ -91,11 +95,11 @@ fn av_thread(
     hash: String,
 ) {
     info!(
-        "spawned av thread {:?}, path {path}",
+        "spawned ffmpeg av thread {:?}, path {path}",
         std::thread::current().id()
     );
     let _span = bevy::log::tracing::info_span!("av-thread").entered();
-    if let Err(e) = av_thread_inner(&ipfs, commands, frames.clone(), audio, path, hash) {
+    if let Err(e) = ffmpeg_av_thread_inner(&ipfs, commands, frames.clone(), audio, path, hash) {
         let _ = frames.blocking_send(VideoData::State(VideoState::VsError));
         warn!("av error: {e}");
     } else {
@@ -103,7 +107,7 @@ fn av_thread(
     }
 }
 
-pub fn av_thread_inner(
+pub fn ffmpeg_av_thread_inner(
     ipfas: &IpfsIo,
     commands: tokio::sync::mpsc::Receiver<AVCommand>,
     video: tokio::sync::mpsc::Sender<VideoData>,
@@ -112,7 +116,7 @@ pub fn av_thread_inner(
     hash: String,
 ) -> Result<(), anyhow::Error> {
     let _ = video.blocking_send(VideoData::State(VideoState::VsLoading));
-    debug!("av thread spawned for {path} ...");
+    debug!("ffmpeg av thread spawned for {path} ...");
     let download = |url: &str| -> Result<String, anyhow::Error> {
         let local_folder = ipfas.cache_path().unwrap().join("video_downloads");
         let local_path = local_folder.join(Path::new(urlencoding::encode(url).as_ref()));
@@ -180,4 +184,87 @@ pub fn av_thread_inner(
             process_streams(input_context, &mut [&mut vc, &mut ac], commands)
         }
     }
+}
+
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+pub fn livekit_av_sinks(
+    scene_rooms: &Query<(&Transporting, &LivekitRuntime), With<SceneRoom>>,
+    participants: &Participants,
+    tracks: &mut Tracks,
+    source: String,
+    image: Handle<Image>,
+    volume: f32,
+    playing: bool,
+    repeat: bool,
+) -> Option<(VideoSink, AudioSink)> {
+    debug!("Trying to create livekit av sink");
+    let Ok((transporting, runtime)) = scene_rooms.single() else {
+        error!("Can't get stream because there are more than one SceneRoom.");
+        return None;
+    };
+
+    let Some((_, participant, _, maybe_publishing)) = participants
+        .iter_many(transporting.collection())
+        .find(|(_, participant, _, _)| participant.identity().as_str().ends_with("-streamer"))
+    else {
+        error!("No streamer participant.");
+        return None;
+    };
+
+    let Some(publishing) = maybe_publishing else {
+        error!(
+            "Streamer {} is not publishing any tracks.",
+            participant.identity()
+        );
+        return None;
+    };
+
+    let (command_sender, command_receiver) = tokio::sync::mpsc::channel(10);
+    let (video_sender, video_receiver) = tokio::sync::mpsc::channel(10);
+    let (audio_sender, audio_receiver) = tokio::sync::mpsc::channel(10);
+    let (audio_sender_2, audio_receiver_2) = tokio::sync::oneshot::channel();
+
+    if let Some((_, track, _, _, _, _)) = tracks
+        .iter_many(publishing.collection())
+        .find(|(_, _, kind, _, _, _)| kind.0.is_some())
+    {
+        tracks.attach_sender_to_audio_track((*track).clone(), audio_sender_2);
+        runtime.spawn(async move {
+            let Ok(streaming_data) = audio_receiver_2.await else {
+                error!("Failed to attach to streaming audio.");
+                return;
+            };
+            if let Err(e) = audio_sender.send(streaming_data).await {
+                error!("Failed to forward audio streaming data with: {e}.");
+            }
+        });
+    }
+    if let Some((_, track, _, _, _, _)) = tracks
+        .iter_many(publishing.collection())
+        .find(|(_, _, kind, _, _, _)| kind.1.is_some())
+    {
+        let remote_track = (*track).clone();
+        tracks.attach_sender_to_video_track(remote_track.clone());
+    }
+
+    if playing {
+        command_sender.blocking_send(AVCommand::Play).unwrap();
+    }
+    command_sender
+        .blocking_send(AVCommand::Repeat(repeat))
+        .unwrap();
+
+    Some((
+        VideoSink {
+            source,
+            command_sender: command_sender.clone(),
+            video_receiver,
+            image,
+            current_time: -1.0,
+            last_reported_time: -1.0,
+            length: None,
+            rate: None,
+        },
+        AudioSink::new(volume, command_sender, audio_receiver),
+    ))
 }

@@ -13,6 +13,7 @@ use common::{
     util::TryPushChildrenEx,
 };
 use ethers_core::types::Address;
+use livekit::id::ParticipantIdentity;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use system_bridge::{SystemApi, VoiceMessage};
@@ -186,6 +187,11 @@ pub enum ChannelControl {
         tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
     ),
     Unsubscribe(Address),
+    StreamerSubscribe(
+        ParticipantIdentity,
+        tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
+    ),
+    StreamerUnsubscribe(ParticipantIdentity),
 }
 
 pub enum ForeignAudioData {
