@@ -10,6 +10,7 @@ use common::{structs::AudioDecoderError, util::AsH160};
 use futures_lite::StreamExt;
 use kira::sound::streaming::StreamingSoundData;
 use livekit::{
+    id::TrackSid,
     prelude::RemoteTrackPublication,
     track::{RemoteAudioTrack, RemoteTrack, RemoteVideoTrack, TrackKind},
 };
@@ -167,7 +168,11 @@ impl<'w, 's> Tracks<'w, 's> {
     /// Unsubscribed from a track
     pub fn unsubscribed(&mut self, remote_track: RemoteTrackPublication) {
         let sid = remote_track.sid();
+        self.unsubscribed_track_sid(sid);
+    }
 
+    /// Unsubscribed from a track
+    pub fn unsubscribed_track_sid(&mut self, sid: TrackSid) {
         if let Some(track_id) = self.track_mapper.get(sid.as_str()).copied() {
             debug!("Track {} unsubscribed.", sid);
             self.commands.entity(track_id).insert(Unsubscribed);

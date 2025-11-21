@@ -363,6 +363,15 @@ fn poll_room_events(
                     livekit::RoomEvent::TrackUnsubscribed { publication, .. } => {
                         tracks.unsubscribed(publication);
                     }
+                    livekit::RoomEvent::TrackSubscriptionFailed {
+                        error, track_sid, ..
+                    } => {
+                        error!(
+                            "Failed to subscribe to track {} with: {}.",
+                            track_sid, error
+                        );
+                        tracks.unsubscribed_track_sid(track_sid);
+                    }
                     livekit::RoomEvent::ConnectionStateChanged(ConnectionState::Connected) => {
                         commands.entity(entity).insert(Connected);
                     }
