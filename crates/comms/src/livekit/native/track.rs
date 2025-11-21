@@ -121,16 +121,20 @@ impl<'w, 's> Tracks<'w, 's> {
     ) {
         debug!("{} published {}.", participant, publication.sid());
         let publication_sid = publication.sid();
-        let publication_id = self
-            .commands
-            .spawn((
-                Name::new(publication.sid().to_string()),
-                Track(publication),
-                Unsubscribed,
-                PublishedBy(participant),
-                TransportedBy(transport),
-            ))
-            .id();
+        let publication_kind = publication.kind();
+        let mut publication_cmd = self.commands.spawn((
+            Name::new(publication.sid().to_string()),
+            Track(publication),
+            Unsubscribed,
+            PublishedBy(participant),
+            TransportedBy(transport),
+        ));
+        if publication_kind == TrackKind::Audio {
+            publication_cmd.insert(Audio);
+        } else {
+            publication_cmd.insert(Video);
+        }
+        let publication_id = publication_cmd.id();
         self.track_mapper
             .insert(publication_sid.to_string(), publication_id);
     }
