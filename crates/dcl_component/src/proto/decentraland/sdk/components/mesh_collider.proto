@@ -52,7 +52,7 @@ enum ColliderLayer {
   CL_NONE = 0;           // no collisions
   CL_POINTER = 1;        // collisions with the player's pointer ray (e.g. mouse cursor hovering)
   CL_PHYSICS = 2;        // collision affecting your player's physics i.e. walls, floor, moving platfroms
-  CL_RESERVED1 = 4;
+  CL_PLAYER = 4;
   CL_RESERVED2 = 8;
   CL_RESERVED3 = 16;
   CL_RESERVED4 = 32;

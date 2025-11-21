@@ -128,7 +128,7 @@ impl SceneComponentId {
     pub const TEXTURE_CAMERA: SceneComponentId = SceneComponentId(1207);
     pub const CAMERA_LAYERS: SceneComponentId = SceneComponentId(1208);
     pub const PRIMARY_POINTER_INFO: SceneComponentId = SceneComponentId(1209);
-    pub const CAMERA_LAYER: SceneComponentId = SceneComponentId(1210);
+    pub const CAMERA_LAYER: SceneComponentId = SceneComponentId(1211);
 
     pub const REALM_INFO: SceneComponentId = SceneComponentId(1106);
 }

@@ -46,9 +46,14 @@ module.exports.setCommunicationsAdapter = async function (body) {
     return {} 
 }
 module.exports.setUiFocus = async function(body) {
-    return await Deno.core.ops.op_set_ui_focus(body.elementId);
+    return await Deno.core.ops.op_ui_focus(true, body.elementId);
 }
-
+module.exports.clearUiFocus = async function(body) {
+    return await Deno.core.ops.op_ui_focus(true);
+}
+module.exports.getUiFocus = async function() {
+    return await Deno.core.ops.op_ui_focus(false);
+}
 module.exports.copyToClipboard = async function(body) {
     return await Deno.core.ops.op_copy_to_clipboard(body.text);
 }
