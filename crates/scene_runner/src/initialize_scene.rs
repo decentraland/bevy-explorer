@@ -960,7 +960,9 @@ fn load_active_entities(
             return;
         };
 
-        let focus_parcel = (focus.translation().xz() * Vec2::new(1.0 / 16.0, -1.0 / 16.0)).floor().as_ivec2();
+        let focus_parcel = (focus.translation().xz() * Vec2::new(1.0 / 16.0, -1.0 / 16.0))
+            .floor()
+            .as_ivec2();
 
         if focus_parcel != stored_parcels.0 {
             let mut required_parcels: Vec<_> = parcels_in_range(
@@ -981,10 +983,12 @@ fn load_active_entities(
             required_parcels.sort_by_key(|(distance, _)| FloatOrd(-distance));
             *stored_parcels = (focus_parcel, required_parcels);
         }
-        
+
         // limit to 5000 per request
         let stored_len = stored_parcels.1.len();
-        let required_parcels = stored_parcels.1.split_off(stored_len.saturating_sub(5000))
+        let required_parcels = stored_parcels
+            .1
+            .split_off(stored_len.saturating_sub(5000))
             .into_iter()
             .map(|(_, parcel)| parcel)
             .collect::<HashSet<_>>();
