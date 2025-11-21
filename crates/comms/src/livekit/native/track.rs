@@ -168,6 +168,18 @@ impl<'w, 's> Tracks<'w, 's> {
         }
     }
 
+    /// Attempt to unsubscribe to a track
+    pub fn unsubscribe(&mut self, remote_track: RemoteTrackPublication) {
+        let sid = remote_track.sid();
+
+        if let Some(track_id) = self.track_mapper.get(sid.as_str()).copied() {
+            debug!("Unsubscribing to track {}.", sid);
+            self.commands.entity(track_id).insert(Unsubscribing);
+        } else {
+            error!("Track {} is not mapped.", sid);
+        }
+    }
+
     /// Subscribed to a track
     pub fn subscribed(&mut self, track: RemoteTrack, remote_track: RemoteTrackPublication) {
         let sid = remote_track.sid();
@@ -416,6 +428,7 @@ fn on_insert_unsubscribed(mut world: DeferredWorld, hook_context: HookContext) {
         Subscribing,
         Unsubscribing,
         AttachedAudio,
+        AttachedVideo,
     )>();
 }
 
