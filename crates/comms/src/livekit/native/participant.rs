@@ -14,10 +14,11 @@ impl Plugin for ParticipantPlugin {
     }
 }
 
-#[derive(SystemParam)]
+#[derive(SystemParam, Deref, DerefMut)]
 pub struct Participants<'w, 's> {
     commands: Commands<'w, 's>,
     participant_mapper: ResMut<'w, ParticipantMapper>,
+    #[deref]
     participants: Query<'w, 's, (NameOrEntity, &'static Participant)>,
 }
 
