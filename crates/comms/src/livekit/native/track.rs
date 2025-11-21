@@ -236,6 +236,7 @@ impl<'w, 's> Tracks<'w, 's> {
             remote_track_publication,
         ));
 
+        debug!("Attached to audio track {}.", sid);
         self.commands
             .entity(*entity)
             .insert(AttachedAudio(attached_audio));
