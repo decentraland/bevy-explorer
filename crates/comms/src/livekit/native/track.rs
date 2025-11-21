@@ -45,6 +45,7 @@ impl Plugin for TrackPlugin {
 }
 
 #[derive(SystemParam, Deref, DerefMut)]
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
 pub struct Tracks<'w, 's> {
     commands: Commands<'w, 's>,
     track_mapper: ResMut<'w, TrackMapper>,
@@ -55,6 +56,7 @@ pub struct Tracks<'w, 's> {
         (
             NameOrEntity,
             &'static Track,
+            AnyOf<(&'static Audio, &'static Video)>,
             &'static PublishedBy,
             &'static TransportedBy,
             Option<&'static Subscribed>,
@@ -70,6 +72,14 @@ struct TrackMapper(HashMap<String, Entity>);
 
 #[derive(Component, Deref, DerefMut)]
 pub struct Track(RemoteTrackPublication);
+
+/// This is an Audio track
+#[derive(Component)]
+pub struct Audio;
+
+/// This is an Video track
+#[derive(Component)]
+pub struct Video;
 
 /// Marks that this track is subscribed.
 #[derive(Component)]
@@ -194,7 +204,8 @@ impl<'w, 's> Tracks<'w, 's> {
             return;
         };
 
-        let Ok((_, track, _, transported_by, maybe_subscribed)) = self.tracks.get(*entity) else {
+        let Ok((_, track, _, _, transported_by, maybe_subscribed)) = self.tracks.get(*entity)
+        else {
             error!("Track {} was mapped but did not return from query.", sid);
             return;
         };

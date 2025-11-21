@@ -466,9 +466,9 @@ fn poll_control_messages(
                             continue;
                         };
 
-                        let Some((_, track, _, _, _)) = tracks
+                        let Some((_, track, _, _, _, _)) = tracks
                             .iter_many(published_tracks.collection())
-                            .find(|(_, track, _, _, _)| track.kind() == TrackKind::Audio)
+                            .find(|(_, track, _, _, _, _)| track.kind() == TrackKind::Audio)
                         else {
                             error!("Participant {} did not publish any audio track.", address);
                             continue;
