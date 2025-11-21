@@ -38,6 +38,7 @@ impl Plugin for TrackPlugin {
         app.add_observer(subscription_received);
         app.add_observer(unsubscription_received);
         app.add_observer(abort_attached_audio);
+        app.add_observer(abort_attached_video);
 
         app.register_type::<PublishedBy>();
         app.register_type::<TrackMapper>();
@@ -106,6 +107,10 @@ pub struct Unsubscribing;
 /// Handle to the task that consume an audio track.
 #[derive(Component, Deref, DerefMut)]
 pub struct AttachedAudio(JoinHandle<()>);
+
+/// Handle to the task that consume a video track.
+#[derive(Component, Deref, DerefMut)]
+pub struct AttachedVideo(JoinHandle<()>);
 
 #[derive(Reflect, Component)]
 #[reflect(Component)]
@@ -376,6 +381,19 @@ fn abort_attached_audio(
     };
 
     debug!("Aborting attached audio task of track {}.", track.sid());
+    attached_audio.abort();
+}
+
+/// Aborts a dropped [`AttachedVideo`] stream.
+fn abort_attached_video(
+    trigger: Trigger<OnReplace, AttachedVideo>,
+    tracks: Query<(&Track, &AttachedVideo)>,
+) {
+    let Ok((track, attached_audio)) = tracks.get(trigger.target()) else {
+        unreachable!("Track entity should be well-formed.");
+    };
+
+    debug!("Aborting attached video task of track {}.", track.sid());
     attached_audio.abort();
 }
 
