@@ -239,6 +239,13 @@ pub fn livekit_av_sinks(
             }
         });
     }
+    if let Some((_, track, _, _, _, _)) = tracks
+        .iter_many(publishing.collection())
+        .find(|(_, _, kind, _, _, _)| kind.1.is_some())
+    {
+        let remote_track = (*track).clone();
+        tracks.attach_sender_to_video_track(remote_track.clone());
+    }
 
     if playing {
         command_sender.blocking_send(AVCommand::Play).unwrap();
