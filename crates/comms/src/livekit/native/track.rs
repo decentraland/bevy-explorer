@@ -258,6 +258,49 @@ impl<'w, 's> Tracks<'w, 's> {
             .entity(*entity)
             .insert(AttachedAudio(attached_audio));
     }
+
+    /// Creates a task to consume the video frames from the [`RemoteVideoTrack`]
+    /// and send it into the [`Sender`](tokio::sync::oneshot::Sender).
+    pub fn attach_sender_to_video_track(&mut self, publication: RemoteTrackPublication) {
+        let sid = publication.sid();
+        let Some(entity) = self.track_mapper.get(sid.as_str()) else {
+            error!("Track {} is not mapped.", sid);
+            return;
+        };
+
+        let Ok((_, track, _, _, transported_by, maybe_subscribed)) = self.tracks.get(*entity)
+        else {
+            error!("Track {} was mapped but did not return from query.", sid);
+            return;
+        };
+
+        let Ok(livekit_runtime) = self.transports.get(transported_by.get()) else {
+            unreachable!("Relationship must be valid.");
+        };
+
+        let Some(subscribed) = maybe_subscribed else {
+            error!("Track {} was not subscribed to.", sid);
+            return;
+        };
+
+        let Subscribed::Video(video_track) = subscribed else {
+            error!("Track {} was not an video track.", sid);
+            return;
+        };
+
+        let remote_track_publication = track.0.clone();
+        let remote_track = video_track.clone();
+        let attached_video = livekit_runtime.spawn(subscribe_remote_track_video(
+            remote_track,
+            // sender,
+            remote_track_publication,
+        ));
+
+        debug!("Attached to video track {}.", sid);
+        self.commands
+            .entity(*entity)
+            .insert(AttachedVideo(attached_video));
+    }
 }
 
 /// On inserting [`Subscribing`], trigger a task to send the subscription
@@ -501,4 +544,30 @@ async fn subscribe_remote_track_audio(
     }
 
     warn!("track ended, exiting task");
+}
+
+async fn subscribe_remote_track_video(
+    video: RemoteVideoTrack,
+    // channel: tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
+    publication: RemoteTrackPublication,
+) {
+    let mut stream =
+        livekit::webrtc::video_stream::native::NativeVideoStream::new(video.rtc_track());
+    debug!("{} {:?}", stream.track().enabled(), stream.track().state());
+
+    while let Some(frame) = stream.next().await {
+        debug!(
+            "{:?} ({}): {} {} {} {} {} {} {}",
+            frame.buffer.buffer_type(),
+            frame.timestamp_us,
+            frame.buffer.as_i010().is_some(),
+            frame.buffer.as_i420().is_some(),
+            frame.buffer.as_i420a().is_some(),
+            frame.buffer.as_i422().is_some(),
+            frame.buffer.as_i444().is_some(),
+            frame.buffer.as_native().is_some(),
+            frame.buffer.as_nv12().is_some(),
+        );
+    }
+    debug!("Video track {} ended.", publication.sid());
 }
