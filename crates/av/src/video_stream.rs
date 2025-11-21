@@ -2,6 +2,10 @@ use std::path::Path;
 
 use bevy::prelude::*;
 use common::structs::AudioDecoderError;
+use comms::{
+    livekit::{LivekitRuntime, Participants, Tracks, Transporting},
+    SceneRoom,
+};
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::format::input;
 use ipfs::{IpfsIo, IpfsResource};
@@ -180,4 +184,80 @@ pub fn ffmpeg_av_thread_inner(
             process_streams(input_context, &mut [&mut vc, &mut ac], commands)
         }
     }
+}
+
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+pub fn livekit_av_sinks(
+    scene_rooms: &Query<(&Transporting, &LivekitRuntime), With<SceneRoom>>,
+    participants: &Participants,
+    tracks: &mut Tracks,
+    source: String,
+    image: Handle<Image>,
+    volume: f32,
+    playing: bool,
+    repeat: bool,
+) -> Option<(VideoSink, AudioSink)> {
+    debug!("Trying to create livekit av sink");
+    let Ok((transporting, runtime)) = scene_rooms.single() else {
+        error!("Can't get stream because there are more than one SceneRoom.");
+        return None;
+    };
+
+    let Some((_, participant, _, maybe_publishing)) = participants
+        .iter_many(transporting.collection())
+        .find(|(_, participant, _, _)| participant.identity().as_str().ends_with("-streamer"))
+    else {
+        error!("No streamer participant.");
+        return None;
+    };
+
+    let Some(publishing) = maybe_publishing else {
+        error!(
+            "Streamer {} is not publishing any tracks.",
+            participant.identity()
+        );
+        return None;
+    };
+
+    let (command_sender, command_receiver) = tokio::sync::mpsc::channel(10);
+    let (video_sender, video_receiver) = tokio::sync::mpsc::channel(10);
+    let (audio_sender, audio_receiver) = tokio::sync::mpsc::channel(10);
+    let (audio_sender_2, audio_receiver_2) = tokio::sync::oneshot::channel();
+
+    if let Some((_, track, _, _, _, _)) = tracks
+        .iter_many(publishing.collection())
+        .find(|(_, _, kind, _, _, _)| kind.0.is_some())
+    {
+        tracks.attach_sender_to_audio_track((*track).clone(), audio_sender_2);
+        runtime.spawn(async move {
+            let Ok(streaming_data) = audio_receiver_2.await else {
+                error!("Failed to attach to streaming audio.");
+                return;
+            };
+            if let Err(e) = audio_sender.send(streaming_data).await {
+                error!("Failed to forward audio streaming data with: {e}.");
+            }
+        });
+    }
+
+    if playing {
+        command_sender.blocking_send(AVCommand::Play).unwrap();
+    }
+    command_sender
+        .blocking_send(AVCommand::Repeat(repeat))
+        .unwrap();
+
+    Some((
+        VideoSink {
+            source,
+            command_sender: command_sender.clone(),
+            video_receiver,
+            image,
+            current_time: -1.0,
+            last_reported_time: -1.0,
+            length: None,
+            rate: None,
+        },
+        AudioSink::new(volume, command_sender, audio_receiver),
+    ))
 }

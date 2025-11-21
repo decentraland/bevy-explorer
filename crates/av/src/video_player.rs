@@ -2,7 +2,7 @@ use crate::{
     audio_sink::AudioSink,
     stream_processor::AVCommand,
     video_context::{VideoData, VideoInfo},
-    video_stream::{ffmpeg_av_sinks, VideoSink},
+    video_stream::{ffmpeg_av_sinks, livekit_av_sinks, VideoSink},
 };
 use bevy::{
     color::palettes::basic,
@@ -18,6 +18,10 @@ use bevy::{
 use common::{
     sets::SceneSets,
     structs::{AppConfig, PrimaryUser},
+};
+use comms::{
+    livekit::{LivekitRuntime, Participants, Tracks, Transporting},
+    SceneRoom,
 };
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
@@ -173,6 +177,9 @@ pub fn update_video_players(
     mut system_paused: Local<HashMap<Entity, Option<tokio::sync::mpsc::Sender<AVCommand>>>>,
     containing_scene: ContainingScene,
     user: Query<&GlobalTransform, With<PrimaryUser>>,
+    scene_rooms: Query<(&Transporting, &LivekitRuntime), With<SceneRoom>>,
+    participants: Participants,
+    mut tracks: Tracks,
 ) {
     let mut previously_stopped = std::mem::take(&mut *system_paused);
 
@@ -214,6 +221,30 @@ pub fn update_video_players(
                 );
                 debug!(
                     "spawned av thread for scene @ {} (playing={})",
+                    context.base,
+                    player.source.playing.unwrap_or(true)
+                );
+                previously_stopped.insert(ent, Some(video_sink.command_sender.clone()));
+                let video_output = VideoTextureOutput(video_sink.image.clone());
+                commands
+                    .entity(ent)
+                    .try_insert((video_sink, video_output, audio_sink));
+                debug!("{ent:?} has {}", player.source.src);
+            } else if player.source.src.starts_with("livekit-video://") {
+                let Some((video_sink, audio_sink)) = livekit_av_sinks(
+                    &scene_rooms,
+                    &participants,
+                    &mut tracks,
+                    player.source.src.clone(),
+                    image_handle,
+                    player.source.volume.unwrap_or(1.0),
+                    false,
+                    player.source.r#loop.unwrap_or(false),
+                ) else {
+                    continue;
+                };
+                debug!(
+                    "spawned livekit av thread for scene @ {} (playing={})",
                     context.base,
                     player.source.playing.unwrap_or(true)
                 );
