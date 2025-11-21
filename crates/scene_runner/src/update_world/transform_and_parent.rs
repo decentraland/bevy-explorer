@@ -14,7 +14,8 @@ use dcl::{crdt::lww::CrdtLWWState, interface::ComponentPosition};
 
 use crate::{
     initialize_scene::process_scene_lifecycle, primary_entities::PrimaryEntities,
-    DeletedSceneEntities, RendererSceneContext, SceneEntity, SceneLoopSchedule, TargetParent,
+    update_world::billboard::update_billboards, DeletedSceneEntities, RendererSceneContext,
+    SceneEntity, SceneLoopSchedule, TargetParent,
 };
 use common::sets::SceneLoopSets;
 use dcl_component::{
@@ -43,13 +44,15 @@ impl Plugin for TransformAndParentPlugin {
                     .after(anim_last_system!())
                     .after(GltfLinkSet)
                     .before(TransformSystem::TransformPropagate)
-                    .before(process_scene_lifecycle),
+                    .before(process_scene_lifecycle)
+                    .before(update_billboards),
                 parent_position_sync::<SceneProxyStage>
                     .after(anim_last_system!())
                     .after(GltfLinkSet)
                     .after(parent_position_sync::<AvatarAttachStage>)
                     .before(TransformSystem::TransformPropagate)
-                    .before(process_scene_lifecycle),
+                    .before(process_scene_lifecycle)
+                    .before(update_billboards),
             ),
         );
     }
