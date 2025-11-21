@@ -111,7 +111,7 @@ struct LivekitRoom {
 
 /// Async runtime for tasks of this [`LivekitRoom`].
 #[derive(Component, Deref)]
-struct LivekitRuntime(Runtime);
+pub struct LivekitRuntime(Runtime);
 
 /// A task to connect to a Livekit Room.
 #[derive(Component)]

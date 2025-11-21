@@ -19,7 +19,7 @@ use crate::{
 use common::structs::MicState;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use native::{participant::Participants, track::Tracks};
+pub use native::{participant::Participants, track::Tracks, LivekitRuntime};
 
 // main.rs or lib.rs
 
