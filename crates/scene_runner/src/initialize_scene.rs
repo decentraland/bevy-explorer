@@ -907,10 +907,14 @@ fn load_active_entities(
     mut global_crdt: ResMut<GlobalCrdtState>,
     mut consecutive_fetch_fail_count: Local<usize>,
     mut commands: Commands,
+    mut stored_parcels: Local<(IVec2, Vec<(f32, IVec2)>)>,
 ) {
     if current_realm.is_changed() {
         // drop current request
         *pointer_request = None;
+        // clear stored parcels
+        *stored_parcels = (IVec2::MAX, Vec::default());
+
         // set current realm and clear
         // take map bounds
         let (mut bounds_min, mut bounds_max) = current_realm
@@ -956,26 +960,36 @@ fn load_active_entities(
             return;
         };
 
-        let mut required_parcels: Vec<_> = parcels_in_range(
-            focus,
-            range.load.max(range.load_imposter),
-            pointers.min(),
-            pointers.max(),
-        )
-        .into_iter()
-        .filter_map(|(parcel, distance)| match pointers.get(parcel) {
-            Some(PointerResult::Exists { realm, .. }) => {
-                (realm != &current_realm.address).then_some((distance, parcel))
-            }
-            Some(PointerResult::Nothing) => None,
-            _ => Some((distance, parcel)),
-        })
-        .collect();
-        // limit to 5000 per request
-        required_parcels.sort_by_key(|(distance, _)| FloatOrd(*distance));
-        let required_parcels = required_parcels
+        let focus_parcel = (focus.translation().xz() * Vec2::new(1.0 / 16.0, -1.0 / 16.0))
+            .floor()
+            .as_ivec2();
+
+        if focus_parcel != stored_parcels.0 {
+            let mut required_parcels: Vec<_> = parcels_in_range(
+                focus,
+                range.load.max(range.load_imposter),
+                pointers.min(),
+                pointers.max(),
+            )
             .into_iter()
-            .take(5000)
+            .filter_map(|(parcel, distance)| match pointers.get(parcel) {
+                Some(PointerResult::Exists { realm, .. }) => {
+                    (realm != &current_realm.address).then_some((distance, parcel))
+                }
+                Some(PointerResult::Nothing) => None,
+                _ => Some((distance, parcel)),
+            })
+            .collect();
+            required_parcels.sort_by_key(|(distance, _)| FloatOrd(-distance));
+            *stored_parcels = (focus_parcel, required_parcels);
+        }
+
+        // limit to 5000 per request
+        let stored_len = stored_parcels.1.len();
+        let required_parcels = stored_parcels
+            .1
+            .split_off(stored_len.saturating_sub(5000))
+            .into_iter()
             .map(|(_, parcel)| parcel)
             .collect::<HashSet<_>>();
 
