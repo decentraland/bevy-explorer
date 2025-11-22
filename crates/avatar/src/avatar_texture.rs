@@ -222,7 +222,11 @@ fn add_booth_camera(
     let mut avatar_texture = Image {
         texture_descriptor: TextureDescriptor {
             label: None,
-            size,
+            size: Extent3d {
+                width: size.width.max(16),
+                height: size.height.max(16),
+                ..size
+            },
             dimension: TextureDimension::D2,
             format: TextureFormat::Bgra8UnormSrgb,
             mip_level_count: 1,
@@ -234,7 +238,11 @@ fn add_booth_camera(
         },
         ..default()
     };
-    avatar_texture.resize(size);
+    avatar_texture.resize(Extent3d {
+        width: size.width.max(16),
+        height: size.height.max(16),
+        ..size
+    });
     avatar_texture.data = None;
     let avatar_texture = images.add(avatar_texture);
 
