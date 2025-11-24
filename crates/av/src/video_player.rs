@@ -1,7 +1,7 @@
 use crate::{
     stream_processor::AVCommand,
     video_context::{VideoData, VideoInfo},
-    video_stream::{av_sinks, VideoSink},
+    video_stream::{av_sinks, noop_sinks, VideoSink},
 };
 use bevy::{
     color::palettes::basic,
@@ -201,25 +201,43 @@ pub fn update_video_players(
                 continue;
             };
 
-            let (video_sink, audio_sink) = av_sinks(
-                ipfs.clone(),
-                player.source.src.clone(),
-                context.hash.clone(),
-                image_handle,
-                player.source.volume.unwrap_or(1.0),
-                false,
-                player.source.r#loop.unwrap_or(false),
-            );
-            debug!(
-                "spawned av thread for scene @ {} (playing={})",
-                context.base,
-                player.source.playing.unwrap_or(true)
-            );
-            previously_stopped.insert(ent, Some(video_sink.command_sender.clone()));
-            let video_output = VideoTextureOutput(video_sink.image.clone());
-            commands
-                .entity(ent)
-                .try_insert((video_sink, video_output, audio_sink));
+            if player.source.src.starts_with("https://") {
+                let (video_sink, audio_sink) = av_sinks(
+                    ipfs.clone(),
+                    player.source.src.clone(),
+                    context.hash.clone(),
+                    image_handle,
+                    player.source.volume.unwrap_or(1.0),
+                    false,
+                    player.source.r#loop.unwrap_or(false),
+                );
+                debug!(
+                    "spawned av thread for scene @ {} (playing={})",
+                    context.base,
+                    player.source.playing.unwrap_or(true)
+                );
+                previously_stopped.insert(ent, Some(video_sink.command_sender.clone()));
+                let video_output = VideoTextureOutput(video_sink.image.clone());
+                commands
+                    .entity(ent)
+                    .try_insert((video_sink, video_output, audio_sink));
+            } else {
+                let (video_sink, audio_sink) = noop_sinks(
+                    player.source.src.clone(),
+                    image_handle,
+                    player.source.volume.unwrap_or(1.0),
+                );
+                debug!(
+                    "spawned noop sink for scene @ {} (playing={})",
+                    context.base,
+                    player.source.playing.unwrap_or(true)
+                );
+                previously_stopped.insert(ent, Some(video_sink.command_sender.clone()));
+                let video_output = VideoTextureOutput(video_sink.image.clone());
+                commands
+                    .entity(ent)
+                    .try_insert((video_sink, video_output, audio_sink));
+            }
             debug!("{ent:?} has {}", player.source.src);
         } else if player.is_changed() {
             let sink = maybe_sink.as_ref().unwrap();
