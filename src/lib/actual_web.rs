@@ -221,7 +221,7 @@ fn main_inner(
     app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));
 
     app.add_plugins(FrameTimeDiagnosticsPlugin::default());
-    app.add_plugins(LogDiagnosticsPlugin::default());
+    // app.add_plugins(LogDiagnosticsPlugin::default());
 
     app.add_plugins(UtilsPlugin)
         .add_plugins(InputManagerPlugin)
