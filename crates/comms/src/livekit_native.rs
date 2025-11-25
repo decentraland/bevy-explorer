@@ -440,7 +440,8 @@ fn livekit_handler_inner(
                             participant_audio_subscribe(&room, address, Some(sender), &mut audio_channels).await
                         },
                         ChannelControl::Unsubscribe(address) => participant_audio_subscribe(&room, address, None, &mut audio_channels).await,
-                        ChannelControl::StreamerSubscribe(audio) => streamer_audio_subscribe(&room, Some(audio), &mut streamer_audio_channel).await
+                        ChannelControl::StreamerSubscribe(audio) => streamer_audio_subscribe(&room, Some(audio), &mut streamer_audio_channel).await,
+                        ChannelControl::StreamerUnsubscribe => streamer_audio_subscribe(&room, None, &mut streamer_audio_channel).await,
                     };
                 }
             );
