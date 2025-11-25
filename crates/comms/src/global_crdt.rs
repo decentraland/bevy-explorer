@@ -190,6 +190,10 @@ pub enum ChannelControl {
     StreamerSubscribe(tokio::sync::mpsc::Sender<StreamingSoundData<AudioDecoderError>>),
     #[cfg(not(target_arch = "wasm32"))]
     StreamerUnsubscribe,
+    #[cfg(target_arch = "wasm32")]
+    StreamerSubscribe(bool, bool),
+    #[cfg(target_arch = "wasm32")]
+    StreamerUnsubscribe,
 }
 
 pub enum ForeignAudioData {

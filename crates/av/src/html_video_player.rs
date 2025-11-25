@@ -25,6 +25,7 @@ use common::{
     sets::SceneSets,
     structs::{AppConfig, PrimaryUser},
 };
+use comms::{global_crdt::ChannelControl, livekit_room::LivekitTransport, SceneRoom, Transport};
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::sdk::components::{
@@ -38,6 +39,7 @@ use scene_runner::{
     update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt},
     ContainerEntity, ContainingScene,
 };
+use tokio::sync::mpsc::Sender;
 use wasm_bindgen::prelude::wasm_bindgen;
 use web_sys::{
     js_sys::{self, Reflect},
@@ -327,6 +329,35 @@ impl HtmlMediaEntity {
         slf
     }
 
+    pub fn new_stream(
+        url: &str,
+        source: String,
+        image: Handle<Image>,
+        channel_control: Sender<ChannelControl>,
+    ) -> Self {
+        let media = web_sys::window()
+            .unwrap()
+            .document()
+            .and_then(|doc| {
+                let container = doc
+                    .get_element_by_id(VIDEO_CONTAINER_ID)
+                    .expect("streamer video container should exist");
+                let video = doc.create_element("video").unwrap();
+                container.append_child(&video).unwrap();
+                video.dyn_into::<HtmlMediaElement>().ok()
+            })
+            .expect("Couldn't create streamer video element");
+
+        channel_control
+            .blocking_send(ChannelControl::StreamerSubscribe(true, true))
+            .unwrap();
+
+        let mut slf = Self::common_init(source, media);
+        slf.video = None;
+        slf.image = Some(image);
+        slf
+    }
+
     pub fn new_noop(source: String, image: Handle<Image>) -> Self {
         let media = web_sys::window()
             .unwrap()
@@ -409,6 +440,7 @@ pub fn update_av_players(
     mut images: ResMut<Assets<Image>>,
     ipfs: Res<IpfsResource>,
     mut scenes: Query<&mut RendererSceneContext>,
+    mut scene_rooms: Query<&mut Transport, (With<LivekitTransport>, With<SceneRoom>)>,
     config: Res<AppConfig>,
     containing_scene: ContainingScene,
     user: Query<&GlobalTransform, With<PrimaryUser>>,
@@ -460,6 +492,26 @@ pub fn update_av_players(
                         player.source.src.clone(),
                         image_handle.clone(),
                     )
+                } else if player.source.src.starts_with("livekit-video://") {
+                    if let Ok(transport) = scene_rooms.single_mut() {
+                        if let Some(channel_control) = transport.control.clone() {
+                            HtmlMediaEntity::new_stream(
+                                &source,
+                                player.source.src.clone(),
+                                image_handle.clone(),
+                                channel_control,
+                            )
+                        } else {
+                            error!("Transport did not have ChannelControl channel.");
+                            HtmlMediaEntity::new_noop(
+                                player.source.src.clone(),
+                                image_handle.clone(),
+                            )
+                        }
+                    } else {
+                        error!("Could not determinate the scene of the AvPlayer.");
+                        HtmlMediaEntity::new_noop(player.source.src.clone(), image_handle.clone())
+                    }
                 } else {
                     HtmlMediaEntity::new_noop(player.source.src.clone(), image_handle.clone())
                 };
