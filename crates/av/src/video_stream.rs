@@ -2,10 +2,12 @@ use std::path::Path;
 
 use bevy::prelude::*;
 use common::structs::AudioDecoderError;
+use comms::global_crdt::ChannelControl;
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::format::input;
 use ipfs::{IpfsIo, IpfsResource};
 use kira::sound::streaming::StreamingSoundData;
+use tokio::sync::mpsc::Sender;
 
 use crate::{
     audio_context::{AudioContext, AudioError},
@@ -180,6 +182,35 @@ pub fn av_thread_inner(
             process_streams(input_context, &mut [&mut vc, &mut ac], commands)
         }
     }
+}
+
+pub fn streamer_sinks(
+    control_channel: Sender<ChannelControl>,
+    source: String,
+    image: Handle<Image>,
+    volume: f32,
+) -> (VideoSink, AudioSink) {
+    let (command_sender, _command_receiver) = tokio::sync::mpsc::channel(10);
+    let (_video_sender, video_receiver) = tokio::sync::mpsc::channel(10);
+    let (audio_sender, audio_receiver) = tokio::sync::mpsc::channel(10);
+
+    control_channel
+        .blocking_send(ChannelControl::StreamerSubscribe(audio_sender))
+        .unwrap();
+
+    (
+        VideoSink {
+            source,
+            command_sender: command_sender.clone(),
+            video_receiver,
+            image,
+            current_time: -1.0,
+            last_reported_time: -1.0,
+            length: None,
+            rate: None,
+        },
+        AudioSink::new(volume, command_sender, audio_receiver),
+    )
 }
 
 pub fn noop_sinks(source: String, image: Handle<Image>, volume: f32) -> (VideoSink, AudioSink) {

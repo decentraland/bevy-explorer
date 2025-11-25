@@ -31,12 +31,13 @@ use crate::{
 use livekit::{
     id::{ParticipantIdentity, TrackSid},
     options::TrackPublishOptions,
-    track::{LocalAudioTrack, LocalTrack, TrackKind, TrackSource},
+    prelude::RemoteTrackPublication,
+    track::{LocalAudioTrack, LocalTrack, RemoteAudioTrack, RemoteTrack, TrackKind, TrackSource},
     webrtc::{
         audio_source::native::NativeAudioSource,
         prelude::{AudioFrame, AudioSourceOptions, RtcAudioSource},
     },
-    RoomOptions,
+    Room, RoomOptions,
 };
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -221,6 +222,7 @@ fn livekit_handler_inner(
         H160,
         tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
     > = HashMap::new();
+    let mut streamer_audio_channel: Option<JoinHandle<()>> = None;
 
     let rt = Arc::new(
         tokio::runtime::Builder::new_multi_thread()
@@ -308,6 +310,10 @@ fn livekit_handler_inner(
                                             }).await;
                                         }
                                     }
+                                } else if participant.identity().as_str().ends_with("-streamer") {
+                                    for publication in publications {
+                                        publication.set_subscribed(true);
+                                    }
                                 }
                             }
                         }
@@ -348,6 +354,8 @@ fn livekit_handler_inner(
                                         address,
                                     }).await;
                                 }
+                            } else if participant.identity().as_str().ends_with("-streamer") {
+                                publication.set_subscribed(true);
                             }
                         }
                         livekit::RoomEvent::TrackUnpublished { publication, participant } => {
@@ -372,53 +380,7 @@ fn livekit_handler_inner(
                                             publication.set_subscribed(false);
                                             continue;
                                         };
-                                        let handle = rt2.spawn(async move {
-                                            let mut stream = livekit::webrtc::audio_stream::native::NativeAudioStream::new(audio.rtc_track(), 48_000, 1);
-
-                                            // get first frame to set sample rate
-                                            let Some(frame) = stream.next().await else {
-                                                warn!("dropped audio track without samples");
-                                                return;
-                                            };
-
-                                            let (frame_sender, frame_receiver) = tokio::sync::mpsc::channel(1000);
-
-                                            let bridge = LivekitKiraBridge {
-                                                started: false,
-                                                sample_rate: frame.sample_rate,
-                                                receiver: frame_receiver,
-                                            };
-
-                                            debug!("recced with {} / {}", frame.sample_rate, frame.num_channels);
-
-                                            let sound_data = kira::sound::streaming::StreamingSoundData::from_decoder(
-                                                bridge,
-                                            );
-
-                                            let res = channel.send(sound_data);
-
-                                            if res.is_err() {
-                                                warn!("failed to send subscribed audio data");
-                                                publication.set_subscribed(false);
-                                                return;
-                                            }
-
-                                            while let Some(frame) = stream.next().await {
-                                                match frame_sender.try_send(frame) {
-                                                    Ok(()) => (),
-                                                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                                                        warn!("livekit audio receiver buffer full, dropping frame");
-                                                        return;
-                                                    },
-                                                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                                                        warn!("livekit audio receiver dropped, exiting task");
-                                                        return;
-                                                    },
-                                                }
-                                            }
-
-                                            warn!("track ended, exiting task");
-                                        });
+                                        let handle = rt2.spawn(kira_thread(audio, publication, channel));
                                         track_tasks.insert(sid, handle);
 
                                     },
@@ -473,35 +435,13 @@ fn livekit_handler_inner(
                         break 'stream;
                     };
 
-                    let (address, channel) = match control {
+                    match control {
                         ChannelControl::Subscribe(address, sender) => {
-                            (address, Some(sender))
+                            participant_audio_subscribe(&room, address, Some(sender), &mut audio_channels).await
                         },
-                        ChannelControl::Unsubscribe(address) => (address, None),
+                        ChannelControl::Unsubscribe(address) => participant_audio_subscribe(&room, address, None, &mut audio_channels).await,
+                        ChannelControl::StreamerSubscribe(audio) => streamer_audio_subscribe(&room, Some(audio), &mut streamer_audio_channel).await
                     };
-
-                    let participants = room.remote_participants();
-                    let Some(participant) = participants.get(&ParticipantIdentity(format!("{address:#x}"))) else {
-                        warn!("no participant {address:?}! available: {:?}", room.remote_participants().keys().collect::<Vec<_>>());
-                        continue;
-                    };
-
-                    let publications = participant.track_publications();
-                    let Some(track) = publications.values().find(|track|
-                        matches!(track.kind(), TrackKind::Audio)
-                    ) else {
-                        warn!("no audio for {address:#x?}");
-                        continue;
-                    };
-
-                    let subscribe = channel.is_some();
-                    track.set_subscribed(subscribe);
-                    debug!("setsub: {subscribe}");
-                    if let Some(channel) = channel {
-                        audio_channels.insert(address, channel);
-                    } else {
-                        audio_channels.remove(&address);
-                    }
                 }
             );
         }
@@ -565,5 +505,140 @@ impl kira::sound::streaming::Decoder for LivekitKiraBridge {
         Err(AudioDecoderError::Other(format!(
             "Can't seek (requested {seek})"
         )))
+    }
+}
+
+async fn kira_thread(
+    audio: RemoteAudioTrack,
+    publication: RemoteTrackPublication,
+    channel: tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
+) {
+    let mut stream =
+        livekit::webrtc::audio_stream::native::NativeAudioStream::new(audio.rtc_track(), 48_000, 1);
+
+    // get first frame to set sample rate
+    let Some(frame) = stream.next().await else {
+        warn!("dropped audio track without samples");
+        return;
+    };
+
+    let (frame_sender, frame_receiver) = tokio::sync::mpsc::channel(1000);
+
+    let bridge = LivekitKiraBridge {
+        started: false,
+        sample_rate: frame.sample_rate,
+        receiver: frame_receiver,
+    };
+
+    debug!("recced with {} / {}", frame.sample_rate, frame.num_channels);
+
+    let sound_data = kira::sound::streaming::StreamingSoundData::from_decoder(bridge);
+
+    let res = channel.send(sound_data);
+
+    if res.is_err() {
+        warn!("failed to send subscribed audio data");
+        publication.set_subscribed(false);
+        return;
+    }
+
+    while let Some(frame) = stream.next().await {
+        match frame_sender.try_send(frame) {
+            Ok(()) => (),
+            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                warn!("livekit audio receiver buffer full, dropping frame");
+                return;
+            }
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                warn!("livekit audio receiver dropped, exiting task");
+                return;
+            }
+        }
+    }
+
+    warn!("track ended, exiting task");
+}
+
+async fn participant_audio_subscribe(
+    room: &Room,
+    address: H160,
+    channel: Option<tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>>,
+    audio_channels: &mut HashMap<
+        H160,
+        tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
+    >,
+) {
+    let participants = room.remote_participants();
+    let Some(participant) = participants.get(&ParticipantIdentity(format!("{address:#x}"))) else {
+        warn!(
+            "no participant {address:?}! available: {:?}",
+            room.remote_participants().keys().collect::<Vec<_>>()
+        );
+        return;
+    };
+
+    let publications = participant.track_publications();
+    let Some(track) = publications
+        .values()
+        .find(|track| matches!(track.kind(), TrackKind::Audio))
+    else {
+        warn!("no audio for {address:#x?}");
+        return;
+    };
+
+    let subscribe = channel.is_some();
+    track.set_subscribed(subscribe);
+    debug!("setsub: {subscribe}");
+    if let Some(channel) = channel {
+        audio_channels.insert(address, channel);
+    } else {
+        audio_channels.remove(&address);
+    }
+}
+
+async fn streamer_audio_subscribe(
+    room: &Room,
+    mut channel: Option<Sender<StreamingSoundData<AudioDecoderError>>>,
+    audio_thread: &mut Option<JoinHandle<()>>,
+) {
+    let participants = room.remote_participants();
+    let Some((participant_identity, participant)) = participants
+        .iter()
+        .find(|(participant_identity, _)| participant_identity.as_str().ends_with("-streamer"))
+    else {
+        warn!(
+            "no streamer participant available: {:?}",
+            room.remote_participants().keys().collect::<Vec<_>>()
+        );
+        return;
+    };
+
+    let publications = participant.track_publications();
+    let Some((publication, audio)) = publications.values().find_map(|track| {
+        if let Some(RemoteTrack::Audio(audio)) = dbg!(dbg!(track).track()) {
+            Some((track.clone(), audio))
+        } else {
+            None
+        }
+    }) else {
+        warn!("no audio for {:#x?}", participant_identity.as_str());
+        return;
+    };
+
+    let subscribe = channel.is_some();
+    publication.set_subscribed(subscribe);
+    debug!("setsub: {subscribe}");
+    if let Some(old_thread) = audio_thread.take() {
+        old_thread.abort();
+    }
+    if let Some(new_channel) = channel.take() {
+        *audio_thread = Some(tokio::spawn(async move {
+            let (sender, receiver) = tokio::sync::oneshot::channel();
+
+            tokio::spawn(kira_thread(audio, publication, sender));
+
+            let data = receiver.await.unwrap();
+            new_channel.send(data).await.unwrap();
+        }));
     }
 }

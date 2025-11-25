@@ -1,7 +1,7 @@
 use crate::{
     stream_processor::AVCommand,
     video_context::{VideoData, VideoInfo},
-    video_stream::{av_sinks, noop_sinks, VideoSink},
+    video_stream::{av_sinks, noop_sinks, streamer_sinks, VideoSink},
 };
 use bevy::{
     color::palettes::basic,
@@ -18,6 +18,7 @@ use common::{
     sets::SceneSets,
     structs::{AppConfig, PrimaryUser},
 };
+use comms::{livekit_room::LivekitTransport, SceneRoom, Transport};
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::sdk::components::{PbAudioStream, PbVideoEvent, PbVideoPlayer, VideoState},
@@ -168,6 +169,7 @@ pub fn update_video_players(
     mut images: ResMut<Assets<Image>>,
     ipfs: Res<IpfsResource>,
     scenes: Query<&RendererSceneContext>,
+    mut scene_rooms: Query<&mut Transport, (With<LivekitTransport>, With<SceneRoom>)>,
     config: Res<AppConfig>,
     mut system_paused: Local<HashMap<Entity, Option<tokio::sync::mpsc::Sender<AVCommand>>>>,
     containing_scene: ContainingScene,
@@ -201,7 +203,7 @@ pub fn update_video_players(
                 continue;
             };
 
-            if player.source.src.starts_with("https://") {
+            let (video_sink, audio_sink) = if player.source.src.starts_with("https://") {
                 let (video_sink, audio_sink) = av_sinks(
                     ipfs.clone(),
                     player.source.src.clone(),
@@ -216,11 +218,38 @@ pub fn update_video_players(
                     context.base,
                     player.source.playing.unwrap_or(true)
                 );
-                previously_stopped.insert(ent, Some(video_sink.command_sender.clone()));
-                let video_output = VideoTextureOutput(video_sink.image.clone());
-                commands
-                    .entity(ent)
-                    .try_insert((video_sink, video_output, audio_sink));
+                (video_sink, audio_sink)
+            } else if player.source.src.starts_with("livekit-video://") {
+                if let Ok(transport) = scene_rooms.single_mut() {
+                    if let Some(control_channel) = transport.control.clone() {
+                        let (video_sink, audio_sink) = streamer_sinks(
+                            control_channel,
+                            player.source.src.clone(),
+                            image_handle,
+                            player.source.volume.unwrap_or(1.0),
+                        );
+                        debug!(
+                            "spawned streamer thread for scene @ {} (playing={})",
+                            context.base,
+                            player.source.playing.unwrap_or(true)
+                        );
+                        (video_sink, audio_sink)
+                    } else {
+                        error!("Transport did not have ChannelControl channel.");
+                        noop_sinks(
+                            player.source.src.clone(),
+                            image_handle,
+                            player.source.volume.unwrap_or(1.0),
+                        )
+                    }
+                } else {
+                    error!("Could not determinate the scene of the AvPlayer.");
+                    noop_sinks(
+                        player.source.src.clone(),
+                        image_handle,
+                        player.source.volume.unwrap_or(1.0),
+                    )
+                }
             } else {
                 let (video_sink, audio_sink) = noop_sinks(
                     player.source.src.clone(),
@@ -232,12 +261,13 @@ pub fn update_video_players(
                     context.base,
                     player.source.playing.unwrap_or(true)
                 );
-                previously_stopped.insert(ent, Some(video_sink.command_sender.clone()));
-                let video_output = VideoTextureOutput(video_sink.image.clone());
-                commands
-                    .entity(ent)
-                    .try_insert((video_sink, video_output, audio_sink));
-            }
+                (video_sink, audio_sink)
+            };
+            previously_stopped.insert(ent, Some(video_sink.command_sender.clone()));
+            let video_output = VideoTextureOutput(video_sink.image.clone());
+            commands
+                .entity(ent)
+                .try_insert((video_sink, video_output, audio_sink));
             debug!("{ent:?} has {}", player.source.src);
         } else if player.is_changed() {
             let sink = maybe_sink.as_ref().unwrap();

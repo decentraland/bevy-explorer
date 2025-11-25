@@ -186,6 +186,7 @@ pub enum ChannelControl {
         tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
     ),
     Unsubscribe(Address),
+    StreamerSubscribe(tokio::sync::mpsc::Sender<StreamingSoundData<AudioDecoderError>>),
 }
 
 pub enum ForeignAudioData {
