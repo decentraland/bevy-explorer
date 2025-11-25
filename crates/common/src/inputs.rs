@@ -10,6 +10,8 @@ pub enum SystemAction {
     CameraLock,
     Emote,
     HideUi,
+    ShowDebugUi,
+    HideNames,
     RollLeft,
     RollRight,
     Microphone,
@@ -391,7 +393,15 @@ impl Default for InputMap {
                 ),
                 (
                     Action::System(SystemAction::HideUi),
+                    vec![InputIdentifier::Key(KeyCode::KeyU)],
+                ),
+                (
+                    Action::System(SystemAction::ShowDebugUi),
                     vec![InputIdentifier::Key(KeyCode::PageUp)],
+                ),
+                (
+                    Action::System(SystemAction::HideNames),
+                    vec![InputIdentifier::Key(KeyCode::KeyN)],
                 ),
                 (
                     Action::System(SystemAction::RollLeft),

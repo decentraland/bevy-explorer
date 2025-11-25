@@ -123,7 +123,7 @@ fn toggle_system_ui(
     input_manager: InputManager,
     mut root: Query<&mut Node, With<UiRoot>>,
 ) {
-    if input_manager.just_down(SystemAction::HideUi, InputPriority::None) {
+    if input_manager.just_down(SystemAction::ShowDebugUi, InputPriority::None) {
         let Ok(mut root) = root.single_mut() else {
             warn!("no root");
             return;
