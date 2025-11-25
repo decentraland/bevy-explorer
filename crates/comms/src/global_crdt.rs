@@ -186,7 +186,9 @@ pub enum ChannelControl {
         tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
     ),
     Unsubscribe(Address),
+    #[cfg(not(target_arch = "wasm32"))]
     StreamerSubscribe(tokio::sync::mpsc::Sender<StreamingSoundData<AudioDecoderError>>),
+    #[cfg(not(target_arch = "wasm32"))]
     StreamerUnsubscribe,
 }
 
