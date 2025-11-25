@@ -616,7 +616,7 @@ async fn streamer_audio_subscribe(
 
     let publications = participant.track_publications();
     let Some((publication, audio)) = publications.values().find_map(|track| {
-        if let Some(RemoteTrack::Audio(audio)) = dbg!(dbg!(track).track()) {
+        if let Some(RemoteTrack::Audio(audio)) = track.track() {
             Some((track.clone(), audio))
         } else {
             None
