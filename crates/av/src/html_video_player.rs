@@ -327,6 +327,26 @@ impl HtmlMediaEntity {
         slf
     }
 
+    pub fn new_noop(source: String, image: Handle<Image>) -> Self {
+        let media = web_sys::window()
+            .unwrap()
+            .document()
+            .and_then(|doc| {
+                let container = doc
+                    .get_element_by_id(VIDEO_CONTAINER_ID)
+                    .expect("video container should exist");
+                let video = doc.create_element("video").unwrap();
+                container.append_child(&video).unwrap();
+                video.dyn_into::<HtmlMediaElement>().ok()
+            })
+            .expect("Couldn't create video element");
+
+        let mut slf = Self::common_init(source, media);
+        slf.video = None;
+        slf.image = Some(image);
+        slf
+    }
+
     pub fn set_loop(&mut self, looping: bool) {
         self.media.set_loop(looping)
     }
@@ -434,11 +454,15 @@ pub fn update_av_players(
                     Some(texture) => texture.0.clone(),
                 };
 
-                let mut video = HtmlMediaEntity::new_video(
-                    &source,
-                    player.source.src.clone(),
-                    image_handle.clone(),
-                );
+                let mut video = if player.source.src.starts_with("https://") {
+                    HtmlMediaEntity::new_video(
+                        &source,
+                        player.source.src.clone(),
+                        image_handle.clone(),
+                    )
+                } else {
+                    HtmlMediaEntity::new_noop(player.source.src.clone(), image_handle.clone())
+                };
 
                 video.set_loop(player.source.r#loop.unwrap_or(false));
                 video.set_volume(player.source.volume.unwrap_or(1.0));
