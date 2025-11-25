@@ -12,7 +12,7 @@ name = "webgpu_build"
 # - copy ./assets to deploy/web/assets
 # - copy ./crates/dcl/src/js/modules to deploy/web/modules
 # - rustup default nightly # (tested with 2025-06-03)
-# - wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="wasm" && npx serve deploy/web
+# - wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="wasm, livekit" && npx serve deploy/web
 
 [features]
 default = ["livekit", "ffmpeg", "inspect", "social"]
@@ -207,6 +207,7 @@ web-time = { workspace = true }
 
 pico-args = "0.5.0"
 chrono = { workspace = true }
+tracing = { version = "0.1", features = ["release_max_level_info"] }
 tracing-appender = "0.2.3"
 log-panics = { version = "2.1.0", features = ["with-backtrace"] }
 
