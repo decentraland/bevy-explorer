@@ -633,13 +633,11 @@ async fn streamer_audio_subscribe(
         old_thread.abort();
     }
     if let Some(new_channel) = channel.take() {
-        *audio_thread = Some(tokio::spawn(async move {
-            let (sender, receiver) = tokio::sync::oneshot::channel();
+        let (sender, receiver) = tokio::sync::oneshot::channel();
 
-            tokio::spawn(kira_thread(audio, publication, sender));
+        *audio_thread = Some(tokio::spawn(kira_thread(audio, publication, sender)));
 
-            let data = receiver.await.unwrap();
-            new_channel.send(data).await.unwrap();
-        }));
+        let data = receiver.await.unwrap();
+        new_channel.send(data).await.unwrap();
     }
 }
