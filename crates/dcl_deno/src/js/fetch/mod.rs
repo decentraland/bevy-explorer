@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 mod fetch_response_body_resource;
 
 use bevy::{asset::AsyncReadExt, prelude::debug};
-use common::rpc::RpcCall;
+use common::rpc::{RpcCall, RpcResultSender};
 use deno_core::{
     anyhow,
     error::{type_error, AnyError},
@@ -22,7 +22,6 @@ use ipfs::IpfsResource;
 use serde::{Deserialize, Serialize};
 
 use fetch_response_body_resource::FetchResponseBodyResource;
-use tokio::sync::oneshot::channel;
 
 use dcl::{interface::crdt_context::CrdtContext, RpcCalls};
 
@@ -220,7 +219,7 @@ pub async fn op_fetch_send(
         .expect("multiple op_fetch_send ongoing");
 
     let scene = state.borrow_mut().borrow::<CrdtContext>().scene_id.0;
-    let (sx, rx) = channel();
+    let (sx, rx) = RpcResultSender::channel();
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
@@ -228,7 +227,7 @@ pub async fn op_fetch_send(
             scene,
             ty: common::structs::PermissionType::Fetch,
             message: Some(url.clone()),
-            response: sx.into(),
+            response: sx,
         });
     let permit = rx.await?;
     if !permit {

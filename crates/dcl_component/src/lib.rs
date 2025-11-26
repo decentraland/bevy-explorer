@@ -9,9 +9,10 @@ pub mod transform_and_parent;
 pub mod writer;
 
 pub use reader::{DclReader, DclReaderError, FromDclReader};
+use serde::{Deserialize, Serialize};
 pub use writer::{DclWriter, ToDclWriter};
 
-#[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy, Default)]
+#[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct SceneEntityId {
     pub id: u16,
     pub generation: u16,
@@ -49,7 +50,7 @@ impl SceneEntityId {
     }
 }
 
-#[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SceneComponentId(pub u32);
 
 impl SceneComponentId {
@@ -133,7 +134,7 @@ impl SceneComponentId {
     pub const REALM_INFO: SceneComponentId = SceneComponentId(1106);
 }
 
-#[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy, Default)]
+#[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct SceneCrdtTimestamp(pub u32);
 
 impl FromDclReader for Vec3 {

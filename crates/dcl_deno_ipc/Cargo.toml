@@ -1,0 +1,30 @@
+[package]
+name = "dcl_deno_ipc"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+common = { workspace = true }
+dcl = { workspace = true }
+dcl_component = { workspace = true }
+ipfs = { workspace = true }
+wallet = { workspace = true }
+system_bridge = { workspace = true }
+platform = { workspace = true }
+
+bevy = { workspace = true }
+tokio = { workspace = true }
+once_cell = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+http = { workspace = true }
+base64 = { workspace = true }
+multihash-codetable = { workspace = true }
+ethers-core = { workspace = true }
+anyhow = { workspace = true }
+
+interprocess = "2.0"
+bincode = "1.3"

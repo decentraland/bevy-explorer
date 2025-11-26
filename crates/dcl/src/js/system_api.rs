@@ -2,8 +2,7 @@ use anyhow::anyhow;
 use bevy::{log::debug, math::Vec4};
 use common::{
     inputs::{Action, BindingsData, InputIdentifier, SystemActionEvent},
-    profile::SerializedProfile,
-    rpc::RpcCall,
+    rpc::{RpcCall, RpcResultReceiver, RpcResultSender},
     structs::{
         MicState, MicStateInner, PermissionLevel, PermissionStrings, PermissionType,
         PermissionUsed, PermissionValue,
@@ -18,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, rc::Rc};
 use strum::IntoEnumIterator;
 use system_bridge::{
-    settings::{SettingInfo, Settings},
+    settings::SettingInfo,
     ChatMessage, HomeScene, LiveSceneInfo, PermanentPermissionItem, PermissionRequest,
     SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
 };
@@ -33,12 +32,11 @@ pub async fn op_check_for_update(
     state: Rc<RefCell<impl State>>,
 ) -> Result<(String, String), anyhow::Error> {
     debug!("op_check_for_update");
-    let (sx, rx) = tokio::sync::oneshot::channel();
-
+    let (sx, rx) = RpcResultSender::channel();
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::CheckForUpdate(sx.into()))?;
+        .send(SystemApi::CheckForUpdate(sx))?;
 
     Ok(rx
         .await
@@ -48,12 +46,12 @@ pub async fn op_check_for_update(
 
 pub async fn op_motd(state: Rc<RefCell<impl State>>) -> Result<String, anyhow::Error> {
     debug!("op_motd");
-    let (sx, rx) = tokio::sync::oneshot::channel();
+    let (sx, rx) = RpcResultSender::channel();
 
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::MOTD(sx.into()))?;
+        .send(SystemApi::MOTD(sx))?;
 
     rx.await.map_err(|e| anyhow::anyhow!(e))
 }
@@ -69,24 +67,24 @@ pub async fn op_get_previous_login(
     state: Rc<RefCell<impl State>>,
 ) -> Result<Option<String>, anyhow::Error> {
     debug!("op_get_previous_login");
-    let (sx, rx) = tokio::sync::oneshot::channel();
+    let (sx, rx) = RpcResultSender::channel();
 
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::GetPreviousLogin(sx.into()))?;
+        .send(SystemApi::GetPreviousLogin(sx))?;
 
     rx.await.map_err(|e| anyhow::anyhow!(e))
 }
 
 pub async fn op_login_previous(state: Rc<RefCell<impl State>>) -> Result<(), anyhow::Error> {
     debug!("op_login_previous");
-    let (sx, rx) = tokio::sync::oneshot::channel();
+    let (sx, rx) = RpcResultSender::channel();
 
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::LoginPrevious(sx.into()))?;
+        .send(SystemApi::LoginPrevious(sx))?;
 
     rx.await
         .map_err(|e| anyhow::anyhow!(e))?
@@ -95,8 +93,8 @@ pub async fn op_login_previous(state: Rc<RefCell<impl State>>) -> Result<(), any
 
 #[derive(Default)]
 pub struct NewLogin {
-    code: Option<tokio::sync::oneshot::Receiver<Result<Option<i32>, String>>>,
-    result: Option<tokio::sync::oneshot::Receiver<Result<(), String>>>,
+    code: Option<RpcResultReceiver<Result<Option<i32>, String>>>,
+    result: Option<RpcResultReceiver<Result<(), String>>>,
 }
 
 pub fn new_login(state: &mut impl State) -> &mut NewLogin {
@@ -107,11 +105,11 @@ pub fn new_login(state: &mut impl State) -> &mut NewLogin {
     let mut login = state.take::<NewLogin>();
 
     if login.code.is_none() && login.result.is_none() {
-        let (sc, code) = tokio::sync::oneshot::channel();
-        let (sx, result) = tokio::sync::oneshot::channel();
+        let (sc, code) = RpcResultSender::channel();
+        let (sx, result) = RpcResultSender::channel();
         state
             .borrow_mut::<SuperUserScene>()
-            .send(SystemApi::LoginNew(sc.into(), sx.into()))
+            .send(SystemApi::LoginNew(sc.into(), sx))
             .unwrap();
 
         login.code = Some(code);
@@ -177,29 +175,19 @@ pub fn op_logout(state: &mut impl State) {
         .unwrap();
 }
 
-pub async fn load_settings(state: Rc<RefCell<impl State>>) -> Result<(), anyhow::Error> {
-    if !state.borrow().has::<Settings>() {
-        let (sx, rx) = tokio::sync::oneshot::channel();
-
-        state
-            .borrow_mut()
-            .borrow_mut::<SuperUserScene>()
-            .send(SystemApi::GetSettings(sx.into()))?;
-
-        let settings = rx.await.map_err(|e| anyhow::anyhow!(e))?;
-        state.borrow_mut().put(settings);
-    }
-
-    Ok(())
-}
-
 pub async fn op_settings(
     state: Rc<RefCell<impl State>>,
 ) -> Result<Vec<SettingInfo>, anyhow::Error> {
     debug!("op_settings");
-    load_settings(state.clone()).await?;
-    let settings = state.borrow().borrow::<Settings>().clone();
-    Ok(settings.get().await)
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetSettings(sx))?;
+
+    let res = rx.await?;
+    Ok(res)
 }
 
 pub async fn op_set_setting(
@@ -208,9 +196,13 @@ pub async fn op_set_setting(
     val: f32,
 ) -> Result<(), anyhow::Error> {
     debug!("op_set_setting");
-    load_settings(state.clone()).await?;
-    let settings = state.borrow().borrow::<Settings>().clone();
-    settings.set_value(&name, val).await
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::SetSetting(name, val))?;
+
+    Ok(())
 }
 
 pub async fn op_kernel_fetch_headers(
@@ -251,7 +243,7 @@ pub async fn op_set_avatar(
     has_claimed_name: Option<bool>,
     profile_extras: Option<std::collections::HashMap<String, serde_json::Value>>,
 ) -> Result<u32, anyhow::Error> {
-    let (sx, rx) = tokio::sync::oneshot::channel();
+    let (sx, rx) = RpcResultSender::channel();
 
     state
         .borrow_mut()
@@ -263,19 +255,19 @@ pub async fn op_set_avatar(
                 has_claimed_name,
                 profile_extras,
             },
-            sx.into(),
+            sx,
         ))?;
 
     rx.await?.map_err(|e| anyhow::anyhow!(e))
 }
 
 pub async fn op_native_input(state: Rc<RefCell<impl State>>) -> String {
-    let (sx, rx) = tokio::sync::oneshot::channel();
+    let (sx, rx) = RpcResultSender::channel();
 
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::GetNativeInput(sx.into()))
+        .send(SystemApi::GetNativeInput(sx))
         .unwrap();
 
     let identifier = rx.await.unwrap();
@@ -296,12 +288,12 @@ pub struct JsBindingsData {
 pub async fn op_get_bindings(
     state: Rc<RefCell<impl State>>,
 ) -> Result<JsBindingsData, anyhow::Error> {
-    let (sx, rx) = tokio::sync::oneshot::channel();
+    let (sx, rx) = RpcResultSender::channel();
 
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::GetBindings(sx.into()))
+        .send(SystemApi::GetBindings(sx))
         .unwrap();
 
     rx.await.map_err(|e| anyhow::anyhow!(e)).map(|bd| {
@@ -315,7 +307,7 @@ pub async fn op_set_bindings(
     state: Rc<RefCell<impl State>>,
     bindings: JsBindingsData,
 ) -> Result<(), anyhow::Error> {
-    let (sx, rx) = tokio::sync::oneshot::channel();
+    let (sx, rx) = RpcResultSender::channel();
 
     let bindings = BindingsData {
         bindings: bindings.bindings.into_iter().collect(),
@@ -324,7 +316,7 @@ pub async fn op_set_bindings(
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::SetBindings(bindings, sx.into()))
+        .send(SystemApi::SetBindings(bindings, sx))
         .unwrap();
 
     rx.await.map_err(|e| anyhow::anyhow!(e))
@@ -335,7 +327,7 @@ pub async fn op_console_command(
     cmd: String,
     args: Vec<String>,
 ) -> Result<String, anyhow::Error> {
-    let (sx, rx) = tokio::sync::oneshot::channel();
+    let (sx, rx) = RpcResultSender::channel();
 
     state
         .borrow_mut()
@@ -343,7 +335,7 @@ pub async fn op_console_command(
         .send(SystemApi::ConsoleCommand(
             format!("/{cmd}"),
             args,
-            sx.into(),
+            sx,
         ))
         .unwrap();
 
@@ -355,24 +347,24 @@ pub async fn op_console_command(
 pub async fn op_live_scene_info(
     state: Rc<RefCell<impl State>>,
 ) -> Result<Vec<LiveSceneInfo>, anyhow::Error> {
-    let (sx, rx) = tokio::sync::oneshot::channel();
+    let (sx, rx) = RpcResultSender::channel();
 
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::LiveSceneInfo(sx.into()))
+        .send(SystemApi::LiveSceneInfo(sx))
         .unwrap();
 
     rx.await.map_err(|e| anyhow::anyhow!(e))
 }
 
 pub async fn op_get_home_scene(state: Rc<RefCell<impl State>>) -> Result<HomeScene, anyhow::Error> {
-    let (sx, rx) = tokio::sync::oneshot::channel();
+    let (sx, rx) = RpcResultSender::channel();
 
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::GetHomeScene(sx.into()))
+        .send(SystemApi::GetHomeScene(sx))
         .unwrap();
 
     rx.await.map_err(|e| anyhow::anyhow!(e))
@@ -465,7 +457,7 @@ pub fn op_send_chat(state: Rc<RefCell<impl State>>, message: String, channel: St
 pub async fn op_get_profile_extras(
     state: Rc<RefCell<impl State>>,
 ) -> Result<std::collections::HashMap<String, serde_json::Value>, anyhow::Error> {
-    let (sx, rx) = tokio::sync::oneshot::channel::<Result<SerializedProfile, ()>>();
+    let (sx, rx) = RpcResultSender::channel();
 
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
     debug!("[{scene:?}] -> op_get_profile_extras");
@@ -476,7 +468,7 @@ pub async fn op_get_profile_extras(
         .push(RpcCall::GetUserData {
             user: None, // current user
             scene,
-            response: sx.into(),
+            response: sx,
         });
 
     let profile = rx
@@ -614,11 +606,11 @@ pub async fn op_get_permanent_permissions(
     value: Option<String>,
 ) -> Result<Vec<PermanentPermissionItem>, anyhow::Error> {
     let level = get_permanent_level(level, value)?;
-    let (sx, result) = tokio::sync::oneshot::channel();
+    let (sx, result) = RpcResultSender::channel();
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::GetPermanentPermissions(level, sx.into()))?;
+        .send(SystemApi::GetPermanentPermissions(level, sx))?;
 
     Ok(result.await?)
 }

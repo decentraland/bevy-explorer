@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use bevy::log::{debug, warn};
-use common::rpc::RpcCall;
+use common::rpc::{RpcCall, RpcEventSender, RpcStreamReceiver};
 use serde::Serialize;
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
@@ -9,7 +9,7 @@ use crate::{interface::crdt_context::CrdtContext, RpcCalls};
 use super::State;
 
 struct EventReceiver<T: EventType> {
-    inner: tokio::sync::mpsc::UnboundedReceiver<String>,
+    inner: RpcStreamReceiver<String>,
     _p: PhantomData<fn() -> T>,
 }
 
@@ -48,7 +48,7 @@ pub fn op_subscribe(state: &mut impl State, id: &str) {
                     // already subscribed
                     return;
                 }
-                let (sx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+                let (sx, rx) = RpcEventSender::channel();
 
                 #[allow(clippy::redundant_closure_call)]
                 state.borrow_mut::<RpcCalls>().push($call(sx));

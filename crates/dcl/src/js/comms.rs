@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use bevy::log::debug;
-use common::{rpc::RpcCall, util::AsH160};
+use common::{rpc::{RpcCall, RpcStreamReceiver, RpcStreamSender}, util::AsH160};
 use serde::{Deserialize, Serialize};
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
@@ -21,7 +21,7 @@ pub struct MessageBusMessage {
     data: Vec<u8>,
 }
 
-struct BinaryBusReceiver(tokio::sync::mpsc::UnboundedReceiver<(String, Vec<u8>)>);
+struct BinaryBusReceiver(RpcStreamReceiver<(String, Vec<u8>)>);
 
 pub async fn op_comms_send_string(state: Rc<RefCell<impl State>>, message: String) {
     debug!("op_comms_send_string");
@@ -74,7 +74,7 @@ pub async fn op_comms_recv_binary(
     let mut results = Vec::default();
 
     if !state.has::<BinaryBusReceiver>() {
-        let (sx, rx) = tokio::sync::mpsc::unbounded_channel::<(String, Vec<u8>)>();
+        let (sx, rx) = RpcStreamSender::<(String, Vec<u8>)>::channel();
         state
             .borrow_mut::<RpcCalls>()
             .push(RpcCall::SubscribeBinaryBus { hash, sender: sx });
