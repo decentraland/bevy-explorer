@@ -64,6 +64,7 @@ console = { path="crates/console" }
 av = { path="crates/av" }
 dcl = { path="crates/dcl" }
 dcl_deno = { path="crates/dcl_deno" }
+dcl_deno_ipc = { path="crates/dcl_deno_ipc" }
 dcl_wasm = { path="crates/dcl_wasm" }
 dcl_component = { path="crates/dcl_component" }
 restricted_actions = { path="crates/restricted_actions" }

@@ -366,7 +366,7 @@ pub async fn lookup_portable(
     ))
 }
 
-type SpawnResponseChannel = Option<tokio::sync::oneshot::Sender<Result<SpawnResponse, String>>>;
+type SpawnResponseChannel = Option<RpcResultSender<Result<SpawnResponse, String>>>;
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn spawn_portable(
@@ -440,7 +440,7 @@ fn spawn_portable(
                         super_user: false,
                     },
                 );
-                pending_responses.insert(hash, Some(response.take()));
+                pending_responses.insert(hash, Some(response.clone()));
             }
             PortableLocation::Ens(ens) => {
                 let ens = ens.clone();
@@ -450,7 +450,7 @@ fn spawn_portable(
                         ens,
                         ipfas.ipfs().clone(),
                     )),
-                    Some(response.take()),
+                    Some(response.clone()),
                 ));
             }
         }

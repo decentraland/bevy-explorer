@@ -8,7 +8,7 @@ use bevy::{
 };
 use bimap::BiMap;
 use common::{
-    rpc::{RpcCall, RpcEventSender},
+    rpc::{RpcCall, RpcEventSender, RpcStreamSender},
     structs::{AttachPoints, AudioDecoderError, EmoteCommand},
     util::TryPushChildrenEx,
 };
@@ -283,7 +283,7 @@ pub fn process_transport_updates(
     mut chat_events: EventWriter<ChatEvent>,
     mut string_senders: Local<HashMap<String, RpcEventSender>>,
     mut binary_senders: Local<
-        HashMap<String, tokio::sync::mpsc::UnboundedSender<(String, Vec<u8>)>>,
+        HashMap<String, RpcStreamSender<(String, Vec<u8>)>>,
     >,
     mut subscribers: EventReader<RpcCall>,
     mut profile_meta_cache: ResMut<ProfileMetaCache>,

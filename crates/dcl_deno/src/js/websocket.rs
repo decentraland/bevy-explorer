@@ -1,9 +1,8 @@
 use std::{cell::RefCell, rc::Rc};
 
-use common::rpc::RpcCall;
+use common::rpc::{RpcCall, RpcResultSender};
 use deno_core::{anyhow, error::AnyError, op2, ByteString, OpDecl, OpState, ResourceId};
 use deno_websocket::{CreateResponse, WebSocketPermissions};
-use tokio::sync::oneshot::channel;
 
 use dcl::{interface::crdt_context::CrdtContext, RpcCalls};
 
@@ -48,7 +47,7 @@ where
 {
     // check permission
     let scene = state.borrow_mut().borrow::<CrdtContext>().scene_id.0;
-    let (sx, rx) = channel();
+    let (sx, rx) = RpcResultSender::channel();
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
@@ -56,7 +55,7 @@ where
             scene,
             ty: common::structs::PermissionType::Websocket,
             message: Some(url.clone()),
-            response: sx.into(),
+            response: sx,
         });
     let permit = rx.await?;
     if !permit {

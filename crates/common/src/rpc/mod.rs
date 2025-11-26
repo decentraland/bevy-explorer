@@ -1,60 +1,77 @@
-use bevy::prelude::*;
-use ethers_core::types::H160;
-use platform::AsyncRwLock;
-use serde::{Deserialize, Serialize};
-use std::{any::Any, sync::Arc};
+mod result_sender;
+mod stream_sender;
 
+use bevy::{platform::collections::HashMap, prelude::*};
+use ethers_core::types::H160;
+use serde::{Deserialize, Serialize};
+use tokio_util::sync::CancellationToken;
+use std::cell::RefCell;
 use crate::{profile::SerializedProfile, structs::PermissionType};
 
-pub trait DynRpcResult: std::any::Any + std::fmt::Debug + Send + Sync + 'static {
-    fn as_any(&mut self) -> &mut dyn Any;
+pub use result_sender::{RpcResultSender, RpcResultReceiver};
+pub use stream_sender::{RpcStreamSender, RpcStreamReceiver};
+
+pub trait IpcEndpoint: Send {
+    fn send(&mut self, raw_bytes: Vec<u8>);
 }
 
-#[derive(Clone)]
-pub struct RpcResultSender<T>(Arc<AsyncRwLock<Option<tokio::sync::oneshot::Sender<T>>>>);
+pub(crate) fn ipc_register<T: IpcEndpoint + 'static>(endpoint: T) -> (u64, tokio::sync::mpsc::UnboundedSender<u64>) {
+    SCENE_CONTEXT.with(|cell| {
+        let mut ctx = cell.borrow_mut();
+        let ctx = ctx.as_mut().unwrap();
 
-impl<T> std::fmt::Debug for RpcResultSender<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("RpcResultSender").finish()
-    }
+        ctx.next_id += 1;
+        let id = ctx.next_id;
+
+        ctx.registry.insert(id, Box::new(endpoint));
+        (id, ctx.close_sender.clone())
+    })
 }
 
-impl<T: 'static> Default for RpcResultSender<T> {
-    fn default() -> Self {
-        Self(Arc::new(AsyncRwLock::new(None)))
-    }
+pub(crate) fn ipc_router(id: u64) -> (tokio::sync::mpsc::UnboundedSender<(u64, IpcMessage)>, CancellationToken) {
+    ENGINE_CONTEXT.with(|cell| {
+        let mut ctx = cell.borrow_mut();
+        let ctx = ctx.as_mut().unwrap();
+
+        let token = CancellationToken::new();
+        ctx.registry.insert(id, token.clone());
+        (ctx.router.clone(), token)
+    })
 }
 
-impl<T: 'static> RpcResultSender<T> {
-    pub fn new(sender: tokio::sync::oneshot::Sender<T>) -> Self {
-        Self(Arc::new(AsyncRwLock::new(Some(sender))))
-    }
 
-    pub fn send(&self, result: T) {
-        let mut guard = self.0.blocking_write();
-        if let Some(response) = guard.take() {
-            let _ = response.send(result);
-        }
-    }
 
-    pub fn take(&self) -> tokio::sync::oneshot::Sender<T> {
-        self.0.blocking_write().take().unwrap()
-    }
+
+struct RequestContext {
+    registry: HashMap<u64, Box<dyn IpcEndpoint>>,
+    close_sender: tokio::sync::mpsc::UnboundedSender<u64>,
+    next_id: u64,
 }
 
-impl<T: 'static> From<tokio::sync::oneshot::Sender<T>> for RpcResultSender<T> {
-    fn from(value: tokio::sync::oneshot::Sender<T>) -> Self {
-        RpcResultSender::new(value)
-    }
+struct ResponseContext {
+    registry: HashMap<u64, CancellationToken>,
+    router: tokio::sync::mpsc::UnboundedSender<(u64, IpcMessage)>,
 }
 
-#[derive(Debug, Clone)]
+pub enum IpcMessage {
+    Data(Vec<u8>),
+    Closed,
+}
+
+thread_local! {
+    // Context for Serialization
+    static SCENE_CONTEXT: RefCell<Option<RequestContext>> = RefCell::new(None);
+    // Context for Deserialization
+    static ENGINE_CONTEXT: RefCell<Option<ResponseContext>> = RefCell::new(None);
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PortableLocation {
     Urn(String),
     Ens(String),
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SpawnResponse {
     pub pid: String,
@@ -63,7 +80,7 @@ pub struct SpawnResponse {
     pub ens: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompareSnapshot {
     pub scene: Entity,
     pub camera_position: [f32; 3],
@@ -73,7 +90,7 @@ pub struct CompareSnapshot {
     pub response: RpcResultSender<CompareSnapshotResult>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompareSnapshotResult {
     pub error: Option<String>,
     pub found: bool,
@@ -86,9 +103,9 @@ pub struct RPCSendableMessage {
     pub params: Vec<serde_json::Value>, // Using serde_json::Value for unknown[]
 }
 
-pub type RpcEventSender = tokio::sync::mpsc::UnboundedSender<String>;
+pub type RpcEventSender = RpcStreamSender<String>;
 
-#[derive(Event, Debug, Clone)]
+#[derive(Event, Debug, Clone, Serialize, Deserialize)]
 pub enum RpcCall {
     ChangeRealm {
         scene: Entity,
@@ -186,7 +203,7 @@ pub enum RpcCall {
     },
     SubscribeBinaryBus {
         hash: String,
-        sender: tokio::sync::mpsc::UnboundedSender<(String, Vec<u8>)>,
+        sender: RpcStreamSender<(String, Vec<u8>)>,
     },
     TestPlan {
         scene: Entity,
@@ -232,7 +249,7 @@ pub enum RpcCall {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum RpcUiFocusAction {
     Focus { element_id: String },
     Defocus,

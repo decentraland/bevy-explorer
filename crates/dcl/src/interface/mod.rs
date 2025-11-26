@@ -13,6 +13,7 @@ use dcl_component::{
     DclReader, DclReaderError, DclWriter, SceneComponentId, SceneCrdtTimestamp, SceneEntityId,
     ToDclWriter,
 };
+use serde::{Deserialize, Serialize};
 
 use self::crdt_context::CrdtContext;
 
@@ -68,7 +69,7 @@ impl ToDclWriter for CrdtMessageType {
     }
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct CrdtStore {
     pub lww: HashMap<SceneComponentId, CrdtLWWState>,
     pub go: HashMap<SceneComponentId, CrdtGOState>,

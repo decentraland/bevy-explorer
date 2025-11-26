@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use bevy::log::debug;
-use common::{profile::SerializedProfile, rpc::RpcCall};
+use common::{profile::SerializedProfile, rpc::{RpcCall, RpcResultSender}};
 use serde::Serialize;
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
@@ -41,7 +41,7 @@ pub struct UserData {
 pub struct UserEthAddress(pub String);
 
 pub async fn op_get_user_data(state: Rc<RefCell<impl State>>) -> Result<UserData, anyhow::Error> {
-    let (sx, rx) = tokio::sync::oneshot::channel::<Result<SerializedProfile, ()>>();
+    let (sx, rx) = RpcResultSender::<Result<SerializedProfile, ()>>::channel();
 
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
     debug!("[{scene:?}] -> op_get_user_data");
@@ -52,7 +52,7 @@ pub async fn op_get_user_data(state: Rc<RefCell<impl State>>) -> Result<UserData
         .push(RpcCall::GetUserData {
             user: None, // current user
             scene,
-            response: sx.into(),
+            response: sx,
         });
 
     let profile = rx
@@ -74,7 +74,7 @@ pub async fn op_get_player_data(
     state: Rc<RefCell<impl State>>,
     id: String,
 ) -> Result<UserData, anyhow::Error> {
-    let (sx, rx) = tokio::sync::oneshot::channel::<Result<SerializedProfile, ()>>();
+    let (sx, rx) = RpcResultSender::<Result<SerializedProfile, ()>>::channel();
 
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
     debug!("[{scene:?}] -> op_get_player_data");
@@ -85,7 +85,7 @@ pub async fn op_get_player_data(
         .push(RpcCall::GetUserData {
             user: Some(id),
             scene,
-            response: sx.into(),
+            response: sx,
         });
 
     rx.await

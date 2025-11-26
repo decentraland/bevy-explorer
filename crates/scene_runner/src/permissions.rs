@@ -4,11 +4,11 @@ use crate::{renderer_context::RendererSceneContext, ContainingScene};
 use bevy::{ecs::system::SystemParam, prelude::*};
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
-    rpc::RpcResultSender,
+    rpc::{RpcResultReceiver, RpcResultSender},
     structs::{AppConfig, PermissionType, PermissionUsed, PrimaryPlayerRes, SystemScene},
 };
 use ipfs::CurrentRealm;
-use tokio::sync::oneshot::{channel, error::TryRecvError, Receiver};
+use tokio::sync::oneshot::error::TryRecvError;
 
 pub struct PermissionRequest {
     pub realm: String,
@@ -32,14 +32,14 @@ impl PermissionManager {
         scene: Entity,
         is_portable: bool,
         additional: Option<String>,
-    ) -> Receiver<bool> {
-        let (sender, receiver) = channel();
+    ) -> RpcResultReceiver<bool> {
+        let (sender, receiver) = RpcResultSender::channel();
         self.pending.push_back(PermissionRequest {
             realm,
             scene,
             is_portable,
             ty,
-            sender: RpcResultSender::new(sender),
+            sender,
             additional,
         });
         receiver
@@ -51,7 +51,7 @@ impl PermissionManager {
 pub struct Permission<'w, 's, T: Send + Sync + 'static> {
     pub success: Local<'s, Vec<(T, PermissionType, Option<String>, Entity)>>,
     pub fail: Local<'s, Vec<(T, PermissionType, Entity)>>,
-    pub pending: Local<'s, Vec<(T, PermissionType, Entity, Option<String>, Receiver<bool>)>>,
+    pub pending: Local<'s, Vec<(T, PermissionType, Entity, Option<String>, RpcResultReceiver<bool>)>>,
     config: Res<'w, AppConfig>,
     realm: Res<'w, CurrentRealm>,
     containing_scenes: ContainingScene<'w, 's>,

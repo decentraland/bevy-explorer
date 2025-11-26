@@ -20,7 +20,9 @@ use dcl_component::proto_components::{
     sdk::components::{PbAvatarBase, PbAvatarEquippedData},
 };
 use serde::{Deserialize, Serialize};
-use settings::{SettingBridgePlugin, Settings};
+use settings::SettingBridgePlugin;
+
+use crate::settings::SettingInfo;
 
 pub struct SystemBridgePlugin {
     pub bare: bool,
@@ -97,7 +99,8 @@ pub enum SystemApi {
     LoginGuest,
     LoginCancel,
     Logout,
-    GetSettings(RpcResultSender<Settings>),
+    GetSettings(RpcResultSender<Vec<SettingInfo>>),
+    SetSetting(String, f32),
     SetAvatar(SetAvatarData, RpcResultSender<Result<u32, String>>),
     GetNativeInput(RpcResultSender<InputIdentifier>),
     GetBindings(RpcResultSender<BindingsData>),
