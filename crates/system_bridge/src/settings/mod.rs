@@ -1,5 +1,4 @@
-use platform::AsyncRwLock;
-use std::{fmt::Display, sync::Arc};
+use std::fmt::Display;
 
 use crate::{
     settings::{imposter_settings::ImposterSetting, sensitivity::*},
@@ -93,8 +92,9 @@ impl Plugin for SettingBridgePlugin {
             app: &mut App,
             settings: &mut Settings,
             schedule: &mut Schedule,
+            config: &AppConfig,
         ) {
-            settings.add_int_setting::<T>();
+            settings.add_int_setting::<T>(config);
             schedule.add_systems(apply_setting::<T>);
             app.add_systems(
                 Update,
@@ -106,8 +106,9 @@ impl Plugin for SettingBridgePlugin {
             app: &mut App,
             settings: &mut Settings,
             schedule: &mut Schedule,
+            config: &AppConfig,
         ) {
-            settings.add_enum_setting::<T>();
+            settings.add_enum_setting::<T>(config);
             schedule.add_systems(apply_setting::<T>);
             app.add_systems(
                 Update,
@@ -115,70 +116,66 @@ impl Plugin for SettingBridgePlugin {
             );
         }
 
-        let config_copy = app.world().resource::<AppConfig>().clone();
         let mut settings = Settings {
-            inner: Arc::new(AsyncRwLock::new(SettingsInner {
-                settings: Vec::default(),
-                config_copy,
-                updated: false,
-            })),
+            settings: Vec::default(),
         };
         app.add_event::<NewCameraEvent>();
-        app.add_systems(Update, (Settings::sync_settings_object, send_settings));
+        app.add_systems(Update, (send_settings, receive_settings));
 
         let mut schedule = Schedule::new(ApplyAppSettingsLabel);
+        let config = app.world().resource::<AppConfig>().clone();
 
-        add_int_setting::<ShadowDistanceSetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<ShadowCasterCountSetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<ShadowDistanceSetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<ShadowCasterCountSetting>(app, &mut settings, &mut schedule, &config);
 
         // special case for ordering
-        settings.add_enum_setting::<ShadowSetting>();
+        settings.add_enum_setting::<ShadowSetting>(&config);
         schedule.add_systems(
             apply_setting::<ShadowSetting>.after(apply_setting::<ShadowDistanceSetting>),
         );
 
-        add_enum_setting::<ImposterSetting>(app, &mut settings, &mut schedule);
-        add_enum_setting::<FogSetting>(app, &mut settings, &mut schedule);
-        add_enum_setting::<BloomSetting>(app, &mut settings, &mut schedule);
-        add_enum_setting::<DofSetting>(app, &mut settings, &mut schedule);
+        add_enum_setting::<ImposterSetting>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<FogSetting>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<BloomSetting>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<DofSetting>(app, &mut settings, &mut schedule, &config);
         #[cfg(not(target_arch = "wasm32"))]
-        add_enum_setting::<SsaoSetting>(app, &mut settings, &mut schedule);
-        add_enum_setting::<OobSetting>(app, &mut settings, &mut schedule);
-        add_enum_setting::<AaSetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<AmbientSetting>(app, &mut settings, &mut schedule);
-        add_enum_setting::<WindowSetting>(app, &mut settings, &mut schedule);
+        add_enum_setting::<SsaoSetting>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<OobSetting>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<AaSetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<AmbientSetting>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<WindowSetting>(app, &mut settings, &mut schedule, &config);
 
         if !is_preview {
-            add_int_setting::<LoadDistanceSetting>(app, &mut settings, &mut schedule);
-            add_int_setting::<UnloadDistanceSetting>(app, &mut settings, &mut schedule);
+            add_int_setting::<LoadDistanceSetting>(app, &mut settings, &mut schedule, &config);
+            add_int_setting::<UnloadDistanceSetting>(app, &mut settings, &mut schedule, &config);
         }
 
-        add_enum_setting::<FpsTargetSetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<SceneThreadsSetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<MaxAvatarsSetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<MasterVolumeSetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<SceneVolumeSetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<VoiceVolumeSetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<SystemVolumeSetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<AvatarVolumeSetting>(app, &mut settings, &mut schedule);
+        add_enum_setting::<FpsTargetSetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<SceneThreadsSetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<MaxAvatarsSetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<MasterVolumeSetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<SceneVolumeSetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<VoiceVolumeSetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<SystemVolumeSetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<AvatarVolumeSetting>(app, &mut settings, &mut schedule, &config);
 
-        add_enum_setting::<ConstrainUiSetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<RunSpeedSetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<WalkSpeedSetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<FrictionSetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<JumpSetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<GravitySetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<FallSpeedSetting>(app, &mut settings, &mut schedule);
+        add_enum_setting::<ConstrainUiSetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<RunSpeedSetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<WalkSpeedSetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<FrictionSetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<JumpSetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<GravitySetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<FallSpeedSetting>(app, &mut settings, &mut schedule, &config);
 
-        add_int_setting::<PointerSensitivitySetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<CameraZoomSensitivitySetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<ScrollSensitivitySetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<MovementSensitivitySetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<CameraSensitivitySetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<PointerSensitivitySetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<CameraZoomSensitivitySetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<ScrollSensitivitySetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<MovementSensitivitySetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<CameraSensitivitySetting>(app, &mut settings, &mut schedule, &config);
 
-        add_int_setting::<VideoThreadsSetting>(app, &mut settings, &mut schedule);
-        add_int_setting::<MaxDownloadsSetting>(app, &mut settings, &mut schedule);
-        add_enum_setting::<CacheSizeSetting>(app, &mut settings, &mut schedule);
+        add_int_setting::<VideoThreadsSetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<MaxDownloadsSetting>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<CacheSizeSetting>(app, &mut settings, &mut schedule, &config);
 
         app.insert_resource(settings);
         app.insert_resource(ApplyAppSettingsSchedule(schedule));
@@ -285,31 +282,23 @@ pub struct Setting {
     >,
 }
 
-pub struct SettingsInner {
-    pub settings: Vec<Setting>,
-    pub config_copy: AppConfig,
-    pub updated: bool,
-}
-
-#[derive(Resource, Clone)]
+#[derive(Resource)]
 pub struct Settings {
-    pub inner: Arc<AsyncRwLock<SettingsInner>>,
+    pub settings: Vec<Setting>,
 }
 
 impl Settings {
-    pub async fn get(&self) -> Vec<SettingInfo> {
-        self.inner
-            .read()
-            .await
-            .settings
-            .iter()
-            .map(|s| s.info.clone())
-            .collect()
+    pub fn get(&self) -> Vec<SettingInfo> {
+        self.settings.iter().map(|s| s.info.clone()).collect()
     }
 
-    pub async fn set_value(&self, name: &str, value: f32) -> Result<(), anyhow::Error> {
-        let mut inner = self.inner.write().await;
-        let apply = inner
+    pub fn set_value(
+        &mut self,
+        config: &mut AppConfig,
+        name: &str,
+        value: f32,
+    ) -> Result<(), anyhow::Error> {
+        let apply = self
             .settings
             .iter_mut()
             .find(|s| s.info.name == name)
@@ -317,8 +306,8 @@ impl Settings {
             .apply
             .take()
             .unwrap();
-        let res = (apply)(&mut inner.config_copy, value)?;
-        let setting = inner
+        let res = (apply)(config, value)?;
+        let setting = self
             .settings
             .iter_mut()
             .find(|s| s.info.name == name)
@@ -326,13 +315,12 @@ impl Settings {
 
         setting.apply = Some(apply);
         setting.info.value = res;
-        inner.updated = true;
         Ok(())
     }
 
-    pub fn add_int_setting<S: IntAppSetting>(&mut self) {
-        let value = S::load(&self.inner.blocking_read().config_copy);
-        self.inner.blocking_write().settings.push(Setting {
+    pub fn add_int_setting<S: IntAppSetting>(&mut self, config: &AppConfig) {
+        let value = S::load(config);
+        self.settings.push(Setting {
             info: SettingInfo {
                 name: S::title(),
                 category: S::category().to_string(),
@@ -354,8 +342,8 @@ impl Settings {
         });
     }
 
-    pub fn add_enum_setting<S: EnumAppSetting>(&mut self) {
-        let value = S::load(&self.inner.blocking_read().config_copy);
+    pub fn add_enum_setting<S: EnumAppSetting>(&mut self, config: &AppConfig) {
+        let value = S::load(config);
         let index = S::variants()
             .iter()
             .enumerate()
@@ -369,7 +357,7 @@ impl Settings {
             .find(|(_, s)| **s == default_value)
             .map(|(ix, _)| ix)
             .unwrap_or(0);
-        self.inner.blocking_write().settings.push(Setting {
+        self.settings.push(Setting {
             info: SettingInfo {
                 name: S::title(),
                 category: S::category().to_string(),
@@ -398,23 +386,22 @@ impl Settings {
             )),
         });
     }
-
-    pub fn sync_settings_object(settings: Res<Self>, mut config: ResMut<AppConfig>) {
-        if settings.inner.blocking_read().updated {
-            let mut write = settings.inner.blocking_write();
-            *config = write.config_copy.clone();
-            write.updated = false;
-        } else if config.is_changed() {
-            let mut write = settings.inner.blocking_write();
-            write.config_copy = config.clone();
-        }
-    }
 }
 
 fn send_settings(mut ev: EventReader<SystemApi>, settings: Res<Settings>) {
     for ev in ev.read() {
         if let SystemApi::GetSettings(sender) = ev {
-            sender.send(settings.clone());
+            sender.send(settings.settings.iter().map(|s| s.info.clone()).collect());
+        }
+    }
+}
+
+fn receive_settings(mut ev: EventReader<SystemApi>, mut config: ResMut<AppConfig>, mut settings: ResMut<Settings>) {
+    for ev in ev.read() {
+        if let SystemApi::SetSetting(name, val) = ev {
+             if let Err(e) = settings.set_value(&mut config, name, *val) {
+                error!("Error setting {name}: {e}");
+             }
         }
     }
 }

@@ -3,15 +3,16 @@ use std::cmp::Ordering;
 use bevy::platform::collections::{hash_map::Entry, HashMap, HashSet};
 
 use dcl_component::{DclReader, SceneCrdtTimestamp, SceneEntityId};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LWWEntry {
     pub timestamp: SceneCrdtTimestamp,
     pub is_some: bool,
     pub data: Vec<u8>,
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct CrdtLWWState {
     pub last_write: HashMap<SceneEntityId, LWWEntry>,
     pub updates: HashSet<SceneEntityId>,
