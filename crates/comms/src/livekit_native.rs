@@ -32,10 +32,13 @@ use livekit::{
     id::{ParticipantIdentity, TrackSid},
     options::TrackPublishOptions,
     prelude::RemoteTrackPublication,
-    track::{LocalAudioTrack, LocalTrack, RemoteAudioTrack, RemoteTrack, TrackKind, TrackSource},
+    track::{
+        LocalAudioTrack, LocalTrack, RemoteAudioTrack, RemoteTrack, RemoteVideoTrack, TrackKind,
+        TrackSource,
+    },
     webrtc::{
         audio_source::native::NativeAudioSource,
-        prelude::{AudioFrame, AudioSourceOptions, RtcAudioSource},
+        prelude::{AudioFrame, AudioSourceOptions, I420Buffer, RtcAudioSource},
     },
     Room, RoomOptions,
 };
@@ -223,6 +226,7 @@ fn livekit_handler_inner(
         tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
     > = HashMap::new();
     let mut streamer_audio_channel: Option<JoinHandle<()>> = None;
+    let mut streamer_video_channel: Option<JoinHandle<()>> = None;
 
     let rt = Arc::new(
         tokio::runtime::Builder::new_multi_thread()
@@ -440,8 +444,15 @@ fn livekit_handler_inner(
                             participant_audio_subscribe(&room, address, Some(sender), &mut audio_channels).await
                         },
                         ChannelControl::Unsubscribe(address) => participant_audio_subscribe(&room, address, None, &mut audio_channels).await,
-                        ChannelControl::StreamerSubscribe(audio) => streamer_audio_subscribe(&room, Some(audio), &mut streamer_audio_channel).await,
-                        ChannelControl::StreamerUnsubscribe => streamer_audio_subscribe(&room, None, &mut streamer_audio_channel).await,
+                        ChannelControl::StreamerSubscribe(audio) => {
+                            let (sender, _receiver) = tokio::sync::mpsc::channel(10);
+                            streamer_audio_subscribe(&room, Some(audio), &mut streamer_audio_channel).await;
+                            streamer_video_subscribe(&room, Some(sender), &mut streamer_video_channel).await;
+                        }
+                        ChannelControl::StreamerUnsubscribe => {
+                            streamer_audio_subscribe(&room, None, &mut streamer_audio_channel).await;
+                            streamer_video_subscribe(&room, None, &mut streamer_video_channel).await;
+                        }
                     };
                 }
             );
@@ -560,6 +571,27 @@ async fn kira_thread(
     warn!("track ended, exiting task");
 }
 
+async fn livekit_video_thread(
+    video: RemoteVideoTrack,
+    publication: RemoteTrackPublication,
+    channel: Sender<I420Buffer>,
+) {
+    let mut stream =
+        livekit::webrtc::video_stream::native::NativeVideoStream::new(video.rtc_track());
+
+    warn!(
+        "livekit track {:?} {} {:?}",
+        publication.sid(),
+        stream.track().enabled(),
+        stream.track().state()
+    );
+    while let Some(frame) = stream.next().await {
+        warn!("frame {:?}", frame.buffer.buffer_type());
+    }
+
+    warn!("video track {:?} ended, exiting task", publication.sid());
+}
+
 async fn participant_audio_subscribe(
     room: &Room,
     address: H160,
@@ -639,5 +671,49 @@ async fn streamer_audio_subscribe(
 
         let data = receiver.await.unwrap();
         new_channel.send(data).await.unwrap();
+    }
+}
+
+async fn streamer_video_subscribe(
+    room: &Room,
+    mut channel: Option<Sender<I420Buffer>>,
+    video_thread: &mut Option<JoinHandle<()>>,
+) {
+    let participants = room.remote_participants();
+    let Some((participant_identity, participant)) = participants
+        .iter()
+        .find(|(participant_identity, _)| participant_identity.as_str().ends_with("-streamer"))
+    else {
+        warn!(
+            "no streamer participant available: {:?}",
+            room.remote_participants().keys().collect::<Vec<_>>()
+        );
+        return;
+    };
+
+    let publications = participant.track_publications();
+    let Some((publication, video)) = publications.values().find_map(|track| {
+        if let Some(RemoteTrack::Video(video)) = track.track() {
+            Some((track.clone(), video))
+        } else {
+            None
+        }
+    }) else {
+        warn!("no video for {:#x?}", participant_identity.as_str());
+        return;
+    };
+
+    let subscribe = channel.is_some();
+    publication.set_subscribed(subscribe);
+    debug!("video setsub: {subscribe}");
+    if let Some(old_thread) = video_thread.take() {
+        old_thread.abort();
+    }
+    if let Some(new_channel) = channel.take() {
+        *video_thread = Some(tokio::spawn(livekit_video_thread(
+            video,
+            publication,
+            new_channel,
+        )));
     }
 }
