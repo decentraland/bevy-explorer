@@ -53,13 +53,8 @@ multipart = { version = "0.18.0", default-features = false, features = [
 image = "0.25"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-livekit = { version = "=0.5.3", features = [
-    "tokio",
-    "native-tls",
-], optional = true }
-livekit-api = { version = "=0.4.0", features = [
-    "services-tokio",
-], optional = true }
+livekit = { version = "=0.5.3", features = ["native-tls"], optional = true }
+livekit-api = { version = "=0.4.0", default-features = false, optional = true }
 livekit-protocol = { version = "=0.3.5", optional = true }
 livekit-runtime = { version = "=0.3.0", optional = true }
 libwebrtc = { version = "=0.3.7", optional = true }

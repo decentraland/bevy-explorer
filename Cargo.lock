@@ -4432,7 +4432,7 @@ dependencies = [
  "hashers",
  "http 0.2.12",
  "instant",
- "jsonwebtoken 8.3.0",
+ "jsonwebtoken",
  "once_cell",
  "pin-project",
  "reqwest 0.11.27",
@@ -6332,19 +6332,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "jsonwebtoken"
-version = "9.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a87cc7a48537badeae96744432de36f4be2b4a34a05a5ef32e9dd8a1c169dde"
-dependencies = [
- "base64 0.22.1",
- "js-sys",
- "ring 0.17.14",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "k256"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6651,10 +6638,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3bac65512605856963cc12243cd1be80e02941f5f9b11a7b53846dd37a65617"
 dependencies = [
  "async-tungstenite",
- "base64 0.21.7",
  "futures-util",
  "http 0.2.12",
- "jsonwebtoken 9.3.1",
  "livekit-protocol",
  "livekit-runtime",
  "log",
@@ -6663,7 +6648,6 @@ dependencies = [
  "reqwest 0.11.27",
  "scopeguard",
  "serde",
- "serde_json",
  "sha2",
  "thiserror 1.0.69",
  "tokio",
