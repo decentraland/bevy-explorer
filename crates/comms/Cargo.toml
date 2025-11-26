@@ -6,7 +6,15 @@ edition = "2021"
 [lib]
 
 [features]
-livekit = ["dep:livekit"]
+livekit = [
+    "dep:livekit",
+    "dep:livekit-api",
+    "dep:livekit-protocol",
+    "dep:livekit-runtime",
+    "dep:libwebrtc",
+    "dep:webrtc-sys",
+    "dep:webrtc-sys-build",
+]
 
 [dependencies]
 common = { workspace = true }
@@ -38,11 +46,25 @@ web-time = { workspace = true }
 modular-bitfield = "0.11"
 
 cid = "0.11.0"
-multipart = { version = "0.18.0", default-features = false, features = ["client", "lazy_static"] }
+multipart = { version = "0.18.0", default-features = false, features = [
+    "client",
+    "lazy_static",
+] }
 image = "0.25"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-livekit = { git = "https://github.com/robtfm/client-sdk-rust", rev = "3a97ae8c8f86a86ec628325e9b53b31b06c5f31d", features=["native-tls"], optional = true }
+livekit = { version = "=0.5.3", features = [
+    "tokio",
+    "native-tls",
+], optional = true }
+livekit-api = { version = "=0.4.0", features = [
+    "services-tokio",
+], optional = true }
+livekit-protocol = { version = "=0.3.5", optional = true }
+livekit-runtime = { version = "=0.3.0", optional = true }
+libwebrtc = { version = "=0.3.7", optional = true }
+webrtc-sys = { version = "=0.3.5", optional = true }
+webrtc-sys-build = { version = "=0.3.5", optional = true }
 cpal = "0.15.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
