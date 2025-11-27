@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, time::Duration};
 
 mod fetch_response_body_resource;
 
@@ -18,7 +18,6 @@ use http::{
     header::{ACCEPT_ENCODING, CONTENT_LENGTH, HOST, RANGE},
     HeaderName, HeaderValue, Method,
 };
-use ipfs::IpfsResource;
 use serde::{Deserialize, Serialize};
 
 use fetch_response_body_resource::FetchResponseBodyResource;
@@ -112,7 +111,21 @@ where
         let r = state.resource_table.get::<ClientResource>(rid)?;
         r.0.clone()
     } else {
-        state.borrow::<IpfsResource>().client()
+        match state.try_borrow::<reqwest::Client>() {
+            Some(client) => client,
+            None => {
+                state.put(
+                    reqwest::Client::builder()
+                        .connect_timeout(Duration::from_secs(5))
+                        .use_native_tls()
+                        .user_agent("DCLExplorer/0.1")
+                        .build()
+                        .unwrap(),
+                );
+                state.borrow::<reqwest::Client>()
+            }
+        }
+        .clone()
     };
 
     if method.len() > 50 {
@@ -234,8 +247,6 @@ pub async fn op_fetch_send(
         anyhow::bail!("User denied fetch request");
     }
 
-    let ipfs = state.borrow_mut().borrow_mut::<IpfsResource>().clone();
-
     let async_req = if let Some(body_id) = request_body_rid {
         let body = state.borrow_mut().resource_table.take_any(body_id)?;
         let mut buf = Vec::new();
@@ -244,13 +255,13 @@ pub async fn op_fetch_send(
             .read_to_end(&mut buf)
             .await?;
         let request = request.body(buf).build()?;
-        ipfs.async_request(request, client).await
+        client.execute(request).await
     } else if let Some(body) = body_bytes {
         let request = request.body(body).build()?;
-        ipfs.async_request(request, client).await
+        client.execute(request).await
     } else {
         let request = request.build()?;
-        ipfs.async_request(request, client).await
+        client.execute(request).await
     };
 
     let res = match async_req {

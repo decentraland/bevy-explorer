@@ -2,7 +2,6 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
 
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use bevy::log::{debug, error, info_span};
-use common::structs::MicState;
 use dcl::{
     interface::CrdtComponentInterfaces,
     js::{
@@ -22,8 +21,7 @@ use platform::project_directories;
 use system_bridge::SystemApi;
 use tokio::sync::mpsc::Receiver;
 
-use ipfs::{IpfsResource, SceneJsFile};
-use wallet::Wallet;
+use ipfs::SceneJsFile;
 
 #[cfg(feature = "inspect")]
 use crate::js::inspector::InspectorServer;
@@ -192,9 +190,6 @@ pub(crate) fn scene_thread(
     thread_sx: SyncSender<SceneResponse>,
     thread_rx: Receiver<RendererResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
-    ipfs: IpfsResource,
-    wallet: Wallet,
-    mic: MicState,
     inspect: bool,
     testing: bool,
     preview: bool,
@@ -219,9 +214,6 @@ pub(crate) fn scene_thread(
         thread_sx,
         thread_rx,
         global_update_receiver,
-        ipfs,
-        wallet,
-        mic,
         inspect,
         testing,
         preview,

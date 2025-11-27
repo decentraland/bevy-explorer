@@ -238,18 +238,17 @@ impl SignedLoginMeta {
     }
 }
 
-pub async fn sign_request<META: Serialize>(
+pub async fn sign_request(
     method: &str,
     uri: &Uri,
     wallet: &Wallet,
-    meta: META,
+    meta: String,
 ) -> Result<Vec<(String, String)>, anyhow::Error> {
     let unix_time = web_time::SystemTime::now()
         .duration_since(web_time::UNIX_EPOCH)
         .unwrap()
         .as_millis();
 
-    let meta = serde_json::to_string(&meta).unwrap();
     let payload = format!("{}:{}:{}:{}", method, uri.path(), unix_time, meta).to_lowercase();
     let auth_chain = wallet.sign_message(payload).await?;
 

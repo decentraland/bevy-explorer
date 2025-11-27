@@ -4,27 +4,25 @@ use common::{
     inputs::{Action, BindingsData, InputIdentifier, SystemActionEvent},
     rpc::{RpcCall, RpcResultReceiver, RpcResultSender},
     structs::{
-        MicState, MicStateInner, PermissionLevel, PermissionStrings, PermissionType,
-        PermissionUsed, PermissionValue,
+        MicState, PermissionLevel, PermissionStrings, PermissionType, PermissionUsed,
+        PermissionValue,
     },
 };
 use dcl_component::proto_components::{
     common::Vector2,
     sdk::components::{PbAvatarBase, PbAvatarEquippedData},
 };
-use http::Uri;
 use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, rc::Rc};
 use strum::IntoEnumIterator;
 use system_bridge::{
-    settings::SettingInfo,
-    ChatMessage, HomeScene, LiveSceneInfo, PermanentPermissionItem, PermissionRequest,
-    SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
+    settings::SettingInfo, ChatMessage, HomeScene, LiveSceneInfo, PermanentPermissionItem,
+    PermissionRequest, SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi,
+    VoiceMessage,
 };
 use tokio::sync::mpsc::UnboundedReceiver;
-use wallet::{sign_request, Wallet};
 
-use crate::{interface::crdt_context::CrdtContext, RpcCalls};
+use crate::{interface::crdt_context::CrdtContext, js::player_identity, RpcCalls};
 
 use super::{State, SuperUserScene};
 
@@ -56,11 +54,10 @@ pub async fn op_motd(state: Rc<RefCell<impl State>>) -> Result<String, anyhow::E
     rx.await.map_err(|e| anyhow::anyhow!(e))
 }
 
-pub fn op_get_current_login(state: &mut impl State) -> Option<String> {
-    state
-        .borrow::<Wallet>()
-        .address()
-        .map(|h160| format!("{h160:#x}"))
+pub fn op_get_current_login(state: &impl State) -> Option<String> {
+    player_identity(state)
+        .map(|id| Some(id.address))
+        .unwrap_or(None)
 }
 
 pub async fn op_get_previous_login(
@@ -213,27 +210,19 @@ pub async fn op_kernel_fetch_headers(
 ) -> Result<Vec<(String, String)>, anyhow::Error> {
     debug!("op_kernel_fetch_headers");
 
-    let wallet = state.borrow().borrow::<Wallet>().clone();
+    let (sx, rx) = RpcResultSender::channel();
 
-    if let Some(meta) = meta {
-        let meta: serde_json::Value = serde_json::from_str(&meta)?;
-
-        sign_request(
-            method.as_deref().unwrap_or("get"),
-            &Uri::try_from(uri)?,
-            &wallet,
+    state
+        .borrow_mut()
+        .borrow_mut::<RpcCalls>()
+        .push(RpcCall::SignRequest {
+            method: method.unwrap_or_else(|| String::from("get")),
+            uri,
             meta,
-        )
-        .await
-    } else {
-        sign_request(
-            method.as_deref().unwrap_or("get"),
-            &Uri::try_from(uri)?,
-            &wallet,
-            (),
-        )
-        .await
-    }
+            response: sx,
+        });
+
+    rx.await?.map_err(|e| anyhow!(e))
 }
 
 pub async fn op_set_avatar(
@@ -332,11 +321,7 @@ pub async fn op_console_command(
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::ConsoleCommand(
-            format!("/{cmd}"),
-            args,
-            sx,
-        ))
+        .send(SystemApi::ConsoleCommand(format!("/{cmd}"), args, sx))
         .unwrap();
 
     rx.await
@@ -650,18 +635,23 @@ pub fn op_set_interactable_area(
 }
 
 pub async fn op_set_mic_enabled(state: Rc<RefCell<impl State>>, enabled: bool) {
-    let mic_state = state.borrow().borrow::<MicState>().inner.clone();
-    let mut mic_state = mic_state.write().await;
-
-    if mic_state.available {
-        mic_state.enabled = enabled;
-    }
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::SetMicEnabled(enabled))
+        .unwrap();
 }
 
-pub async fn op_get_mic_state(state: Rc<RefCell<impl State>>) -> MicStateInner {
-    let mic_state = state.borrow().borrow::<MicState>().inner.clone();
-    let result = mic_state.read().await.clone();
-    result
+pub async fn op_get_mic_state(state: Rc<RefCell<impl State>>) -> Result<MicState, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetMicState(sx))
+        .unwrap();
+
+    Ok(rx.await?)
 }
 
 pub async fn op_get_voice_stream(state: Rc<RefCell<impl State>>) -> u32 {

@@ -6,14 +6,12 @@ use std::{
 };
 
 use bevy::{log::error, platform::collections::HashMap};
-use common::structs::MicState;
 use deno_core::v8::IsolateHandle;
 use once_cell::sync::Lazy;
 use system_bridge::SystemApi;
 use tokio::sync::mpsc::Sender;
 
-use ipfs::{IpfsResource, SceneJsFile};
-use wallet::Wallet;
+use ipfs::SceneJsFile;
 
 use dcl::{interface::CrdtComponentInterfaces, RendererResponse, SceneId, SceneResponse};
 
@@ -34,9 +32,6 @@ pub fn spawn_scene(
     crdt_component_interfaces: CrdtComponentInterfaces,
     renderer_sender: SyncSender<SceneResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
-    ipfs: IpfsResource,
-    wallet: Wallet,
-    mic: MicState,
     id: SceneId,
     storage_root: String,
     inspect: bool,
@@ -60,9 +55,6 @@ pub fn spawn_scene(
                     renderer_sender,
                     thread_rx,
                     global_update_receiver,
-                    ipfs,
-                    wallet,
-                    mic,
                     inspect,
                     testing,
                     preview,

@@ -1,4 +1,5 @@
-use dcl::js::runtime::{ReadFileResponse, SceneInfoResponse};
+use common::rpc::ReadFileResponse;
+use dcl::js::runtime::SceneInfoResponse;
 use dcl_component::proto_components::sdk::components::PbRealmInfo;
 use deno_core::{error::AnyError, op2, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};

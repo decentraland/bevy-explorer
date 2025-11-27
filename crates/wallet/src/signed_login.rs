@@ -17,7 +17,7 @@ pub async fn signed_login(
     wallet: Wallet,
     meta: SignedLoginMeta,
 ) -> Result<SignedLoginResponse, anyhow::Error> {
-    let auth_chain = sign_request("post", &uri, &wallet, meta).await?;
+    let auth_chain = sign_request("post", &uri, &wallet, serde_json::to_string(&meta)?).await?;
 
     let mut request = reqwest_client().post(uri.to_string());
 

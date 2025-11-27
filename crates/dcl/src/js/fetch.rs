@@ -2,15 +2,17 @@ use std::{cell::RefCell, rc::Rc};
 
 use anyhow::anyhow;
 use bevy::log::debug;
-use common::structs::SceneMeta;
+use common::{
+    rpc::{RpcCall, RpcResultSender},
+    structs::SceneMeta,
+};
 use http::Uri;
-use ipfs::IpfsResource;
 use serde::Serialize;
-use wallet::{sign_request, Wallet};
 
 use crate::{
     interface::crdt_context::CrdtContext,
-    js::{runtime::realm_information, State},
+    js::{player_identity, runtime::realm_information, State},
+    RpcCalls,
 };
 
 #[derive(Serialize, Default, Debug)]
@@ -49,16 +51,23 @@ pub async fn op_signed_fetch_headers(
     }
 
     let realm_info = realm_information(state.clone()).await?;
-    let wallet = state.borrow().borrow::<Wallet>().clone();
+
+    let player_identity = player_identity(&*state.borrow())?;
+
     let urn = state.borrow().borrow::<CrdtContext>().hash.clone();
-    let ipfs = state.borrow().borrow::<IpfsResource>().clone();
-    let scene_meta = ipfs
-        .entity_definition(&urn)
-        .await
-        .and_then(|(entity, _)| {
-            serde_json::from_str::<SceneMeta>(&entity.metadata.unwrap_or_default()).ok()
-        })
-        .ok_or(anyhow!("failed to parse scene metadata"))?;
+
+    let (sx, rx) = RpcResultSender::channel();
+    state
+        .borrow_mut()
+        .borrow_mut::<RpcCalls>()
+        .push(RpcCall::EntityDefinition {
+            urn: urn.clone(),
+            response: sx,
+        });
+
+    let entity_definition = rx.await?.ok_or_else(|| anyhow!("no entity definition"))?;
+
+    let scene_meta = serde_json::from_str::<SceneMeta>(&entity_definition.metadata.unwrap_or_default())?;
 
     let meta = SignedFetchMeta {
         origin: Some(realm_info.base_url.clone()),
@@ -66,7 +75,7 @@ pub async fn op_signed_fetch_headers(
         parcel: Some(scene_meta.scene.base.clone()),
         tld: Some("org".to_owned()),
         network: Some("mainnet".to_owned()),
-        is_guest: Some(wallet.is_guest()),
+        is_guest: Some(player_identity.is_guest),
         realm: SignedFetchMetaRealm {
             hostname: realm_info.base_url,
             protocol: "v3".to_owned(),
@@ -77,11 +86,17 @@ pub async fn op_signed_fetch_headers(
 
     debug!("signed fetch meta {:?}", meta);
 
-    sign_request(
-        method.as_deref().unwrap_or("get"),
-        &Uri::try_from(uri)?,
-        &wallet,
-        meta,
-    )
-    .await
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<RpcCalls>()
+        .push(RpcCall::SignRequest {
+            method: method.unwrap_or_else(|| String::from("get")),
+            uri,
+            meta: Some(serde_json::to_string(&meta).unwrap()),
+            response: sx,
+        });
+
+    rx.await?.map_err(|e| anyhow!(e))
 }
