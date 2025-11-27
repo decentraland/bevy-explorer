@@ -3444,7 +3444,6 @@ dependencies = [
  "system_bridge",
  "tokio",
  "uuid 1.17.0",
- "wallet",
 ]
 
 [[package]]
