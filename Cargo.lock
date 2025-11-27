@@ -2745,7 +2745,11 @@ dependencies = [
  "ipfs",
  "js-sys",
  "kira",
+ "libwebrtc",
  "livekit",
+ "livekit-api",
+ "livekit-protocol",
+ "livekit-runtime",
  "modular-bitfield",
  "multihash-codetable",
  "multipart",
@@ -2763,6 +2767,8 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-time",
+ "webrtc-sys",
+ "webrtc-sys-build",
 ]
 
 [[package]]
@@ -4654,8 +4660,7 @@ dependencies = [
 [[package]]
 name = "ffmpeg-sys-next"
 version = "6.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2529ad916d08c3562c754c21bc9b17a26c7882c0f5706cc2cd69472175f1620"
+source = "git+https://github.com/robtfm/rust-ffmpeg-sys?branch=6.1.0-dcl#9ad942118cb76a87c53d77da6655b4880b309731"
 dependencies = [
  "bindgen 0.64.0",
  "cc",
@@ -6543,8 +6548,9 @@ dependencies = [
 
 [[package]]
 name = "libwebrtc"
-version = "0.3.6"
-source = "git+https://github.com/robtfm/client-sdk-rust?rev=3a97ae8c8f86a86ec628325e9b53b31b06c5f31d#3a97ae8c8f86a86ec628325e9b53b31b06c5f31d"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "961f160df306191a1de8dfbc2d9c81e250bff09c3e37636812647279cb9158c7"
 dependencies = [
  "cxx",
  "jni",
@@ -6605,8 +6611,9 @@ checksum = "b4ce301924b7887e9d637144fdade93f9dfff9b60981d4ac161db09720d39aa5"
 
 [[package]]
 name = "livekit"
-version = "0.5.2"
-source = "git+https://github.com/robtfm/client-sdk-rust?rev=3a97ae8c8f86a86ec628325e9b53b31b06c5f31d#3a97ae8c8f86a86ec628325e9b53b31b06c5f31d"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23c1198a224d3ecfbb840efff3a80d5e85845a222389f6db9c782f28482aad97"
 dependencies = [
  "futures-util",
  "lazy_static",
@@ -6626,7 +6633,8 @@ dependencies = [
 [[package]]
 name = "livekit-api"
 version = "0.4.0"
-source = "git+https://github.com/robtfm/client-sdk-rust?rev=3a97ae8c8f86a86ec628325e9b53b31b06c5f31d#3a97ae8c8f86a86ec628325e9b53b31b06c5f31d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3bac65512605856963cc12243cd1be80e02941f5f9b11a7b53846dd37a65617"
 dependencies = [
  "async-tungstenite",
  "futures-util",
@@ -6649,7 +6657,8 @@ dependencies = [
 [[package]]
 name = "livekit-protocol"
 version = "0.3.5"
-source = "git+https://github.com/robtfm/client-sdk-rust?rev=3a97ae8c8f86a86ec628325e9b53b31b06c5f31d#3a97ae8c8f86a86ec628325e9b53b31b06c5f31d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d05c1253e9781eea3e31d39eea3412e5ca74999204133b4f0f2d992ce4012e38"
 dependencies = [
  "futures-util",
  "livekit-runtime",
@@ -6666,7 +6675,8 @@ dependencies = [
 [[package]]
 name = "livekit-runtime"
 version = "0.3.0"
-source = "git+https://github.com/robtfm/client-sdk-rust?rev=3a97ae8c8f86a86ec628325e9b53b31b06c5f31d#3a97ae8c8f86a86ec628325e9b53b31b06c5f31d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a83b0056f661ab04b7f3279135ea3b038bb3531f05897671b874b32022cfb272"
 dependencies = [
  "tokio",
  "tokio-stream",
@@ -12619,8 +12629,9 @@ dependencies = [
 
 [[package]]
 name = "webrtc-sys"
-version = "0.3.4"
-source = "git+https://github.com/robtfm/client-sdk-rust?rev=3a97ae8c8f86a86ec628325e9b53b31b06c5f31d#3a97ae8c8f86a86ec628325e9b53b31b06c5f31d"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60509019dae3c99475d1c31ed0fc011846e20be099fd245f80570bb0dcc1cbed"
 dependencies = [
  "cc",
  "cxx",
@@ -12632,8 +12643,9 @@ dependencies = [
 
 [[package]]
 name = "webrtc-sys-build"
-version = "0.3.4"
-source = "git+https://github.com/robtfm/client-sdk-rust?rev=3a97ae8c8f86a86ec628325e9b53b31b06c5f31d#3a97ae8c8f86a86ec628325e9b53b31b06c5f31d"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b59531e6df3b5627b4276859b32aca7e886b8ba1766ec5f690898f81b83e30f"
 dependencies = [
  "fs2",
  "regex",

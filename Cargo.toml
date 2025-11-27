@@ -272,6 +272,7 @@ bevy_platform = { git = "https://github.com/robtfm/bevy", branch = "release-0.16
 # bevy_platform = { path="../bevy/crates/bevy_platform" }
 
 ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-linesize-0-6.1" }
+ffmpeg-sys-next = { git = "https://github.com/robtfm/rust-ffmpeg-sys", branch = "6.1.0-dcl" }
 parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "bugfix-project-local-point" }
 # rapier3d-f64 = { git = "https://github.com/robtfm/rapier", branch = "master" }
 deno_core = { git = "https://github.com/robtfm/deno_core", branch = "0_307_hotfix" }

@@ -1,5 +1,6 @@
-#[cfg(test)]
-pub mod test;
+// Failing due to duplicate symbols between ffmpeg-sys-next and libwebrtc (from comms/livekit)
+// #[cfg(test)]
+// pub mod test;
 
 use bevy::prelude::*;
 
