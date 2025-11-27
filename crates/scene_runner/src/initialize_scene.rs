@@ -12,7 +12,7 @@ use bevy::{
 };
 
 use common::{
-    structs::{AppConfig, AppError, IVec2Arg, MicState, PreviewMode, SceneLoadDistance, SceneMeta},
+    structs::{AppConfig, AppError, IVec2Arg, PreviewMode, SceneLoadDistance, SceneMeta},
     util::{TaskExt, TryPushChildrenEx},
 };
 use comms::global_crdt::GlobalCrdtState;
@@ -26,11 +26,10 @@ use dcl_component::{
 };
 use ipfs::{
     ipfs_path::IpfsPath, ActiveEntityTask, CurrentRealm, EntityDefinition, IpfsAssetServer,
-    IpfsResource, SceneIpfsLocation, SceneJsFile,
+    SceneIpfsLocation, SceneJsFile,
 };
 use scene_material::BoundRegion;
 use system_bridge::{LiveSceneInfo, SystemApi, SystemBridge};
-use wallet::Wallet;
 
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets, SceneUpdates};
 use crate::{
@@ -538,12 +537,9 @@ pub(crate) fn initialize_scene(
     )>,
     scene_js_files: Res<Assets<SceneJsFile>>,
     asset_server: Res<AssetServer>,
-    ipfs: Res<IpfsResource>,
-    wallet: Res<Wallet>,
     testing_data: Res<TestingData>,
     preview_mode: Res<PreviewMode>,
     su_bridge: Res<SystemBridge>,
-    mic: Res<MicState>,
 ) {
     for (root, mut state, h_code, mut context, super_user) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript(_)) || context.tick_number != 1 {
@@ -600,9 +596,6 @@ pub(crate) fn initialize_scene(
             crdt_component_interfaces,
             thread_sx,
             global_updates,
-            ipfs.clone(),
-            wallet.clone(),
-            mic.clone(),
             scene_id,
             context.storage_root.clone(),
             inspected,

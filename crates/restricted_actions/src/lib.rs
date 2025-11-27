@@ -5,8 +5,9 @@ use std::{
     sync::Arc,
 };
 
+use anyhow::anyhow;
 use bevy::{
-    asset::LoadState,
+    asset::{AsyncReadExt, LoadState, io::AssetReader},
     math::Vec3Swizzles,
     platform::collections::{HashMap, HashSet},
     prelude::*,
@@ -17,8 +18,7 @@ use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::SerializedProfile,
     rpc::{
-        PortableLocation, RPCSendableMessage, RpcCall, RpcEventSender, RpcResultSender,
-        SpawnResponse,
+        EntityDefinitionResponse, PortableLocation, RPCSendableMessage, ReadFileResponse, RpcCall, RpcEventSender, RpcResultSender, SpawnResponse
     },
     sets::SceneSets,
     structs::{AvatarDynamicState, PermissionType, PrimaryCamera, PrimaryUser, ZOrder},
@@ -33,8 +33,9 @@ use console::DoAddConsoleCommand;
 use copypwasmta::{ClipboardContext, ClipboardProvider};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use ethers_core::types::Address;
+use http::Uri;
 use ipfs::{
-    ipfs_path::IpfsPath, ChangeRealmEvent, EntityDefinition, IpfsAssetServer, IpfsIo, ServerAbout,
+    ChangeRealmEvent, EntityDefinition, IpfsAssetServer, IpfsIo, ServerAbout, ipfs_path::{IpfsPath, IpfsType}
 };
 use nft::asset_source::Nft;
 use reqwest::StatusCode;
@@ -50,7 +51,7 @@ use scene_runner::{
 use serde_json::{json, Value};
 use teleport::{handle_out_of_world, teleport_player};
 use ui_core::button::DuiButton;
-use wallet::{browser_auth::remote_send_async, Wallet};
+use wallet::{Wallet, browser_auth::remote_send_async, sign_request};
 
 pub struct RestrictedActionsPlugin;
 
@@ -87,6 +88,9 @@ impl Plugin for RestrictedActionsPlugin {
                     handle_generic_perm,
                     handle_spawned_command,
                     handle_copy_to_clipboard,
+                    handle_sign_request,
+                    handle_entity_definition,
+                    handle_read_file,
                 ),
             )
                 .in_set(SceneSets::RestrictedActions),
@@ -1401,3 +1405,109 @@ fn handle_spawned_command(
         }
     })
 }
+
+fn handle_sign_request(
+    mut events: EventReader<RpcCall>,   
+    mut tasks: Local<Vec<(RpcResultSender<Result<Vec<(String, String)>, String>>, Task<Result<Vec<(String, String)>, anyhow::Error>>)>>,
+    wallet: Res<Wallet>,
+) {
+    for ev in events.read() {
+        if let RpcCall::SignRequest { method, uri, meta, response } = ev {
+            let Ok(uri) = Uri::try_from(uri) else {
+                response.send(Err(format!("failed to parse uri: {uri}")));
+                continue;
+            };
+            let method = method.clone();
+            let meta = meta.to_owned().unwrap_or_default();
+            let wallet = wallet.clone();
+            let task = IoTaskPool::get().spawn_compat(async move {
+                sign_request(&method, &uri, &wallet, meta).await
+            });
+            tasks.push((response.clone(), task));
+        }
+    }
+
+    tasks.retain_mut(|(sx, task)| {
+        if let Some(result) = task.complete() {
+            sx.send(result.map_err(|e| format!("{e}")));
+            false
+        } else {
+            true
+        }
+    })
+}
+
+fn handle_read_file(
+    mut events: EventReader<RpcCall>,   
+    mut tasks: Local<Vec<(RpcResultSender<Result<ReadFileResponse, String>>, Task<Result<ReadFileResponse, anyhow::Error>>)>>,
+    ipfs: IpfsAssetServer,
+) {
+    for ev in events.read() {
+        if let RpcCall::ReadFile { scene_hash, filename, response } = ev {
+
+            let ipfs_path = IpfsPath::new(IpfsType::new_content_file(scene_hash.to_owned(), filename.to_owned()));
+            let ipfs_pathbuf = PathBuf::from(&ipfs_path);
+            let ipfs = ipfs.ipfs().clone();
+
+            let future = async move {
+                let mut reader = ipfs.read(&ipfs_pathbuf).await.map_err(|e| anyhow!(e))?;
+                let mut content = Vec::default();
+                reader.read_to_end(&mut content).await?;
+
+                let hash = ipfs.ipfs_hash(&ipfs_path).await.unwrap_or_default();
+
+                Ok(ReadFileResponse { content, hash })
+            };
+
+            let task = IoTaskPool::get().spawn(future);
+
+            tasks.push((response.clone(), task));
+        }
+    }
+
+    tasks.retain_mut(|(sx, task)| {
+        if let Some(result) = task.complete() {
+            sx.send(result.map_err(|e| format!("{e}")));
+            false
+        } else {
+            true
+        }
+    })
+}
+
+fn handle_entity_definition(
+    mut events: EventReader<RpcCall>,   
+    mut tasks: Local<Vec<(RpcResultSender<Option<EntityDefinitionResponse>>, Task<Option<EntityDefinitionResponse>>)>>,
+    ipfs: IpfsAssetServer,
+) {
+    for ev in events.read() {
+        if let RpcCall::EntityDefinition { urn, response } = ev {
+
+            let ipfs = ipfs.ipfs().clone();
+            let urn = urn.to_owned();
+
+            let future = async move {
+                let def = ipfs.entity_definition(&urn).await;
+                def.map(|def| EntityDefinitionResponse {
+                    collection: def.0.collection.0,
+                    metadata: def.0.metadata,
+                    base_url: def.1,
+                })
+            };
+
+            let task = IoTaskPool::get().spawn(future);
+
+            tasks.push((response.clone(), task));
+        }
+    }
+
+    tasks.retain_mut(|(sx, task)| {
+        if let Some(result) = task.complete() {
+            sx.send(result);
+            false
+        } else {
+            true
+        }
+    })
+}
+

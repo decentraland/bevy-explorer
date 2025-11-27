@@ -247,6 +247,21 @@ pub enum RpcCall {
         text: String,
         response: RpcResultSender<Result<(), String>>,
     },
+    SignRequest {
+        method: String,
+        uri: String,
+        meta: Option<String>,
+        response: RpcResultSender<Result<Vec<(String, String)>, String>>,
+    },
+    ReadFile {
+        scene_hash: String,
+        filename: String,
+        response: RpcResultSender<Result<ReadFileResponse, String>>,
+    },
+    EntityDefinition {
+        urn: String,
+        response: RpcResultSender<Option<EntityDefinitionResponse>>,
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -254,4 +269,19 @@ pub enum RpcUiFocusAction {
     Focus { element_id: String },
     Defocus,
     GetFocus,
+}
+
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadFileResponse {
+    pub content: Vec<u8>,
+    pub hash: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct EntityDefinitionResponse {
+    pub collection: HashMap<String, String>,
+    pub metadata: Option<String>,
+    pub base_url: String,
 }

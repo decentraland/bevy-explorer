@@ -196,7 +196,7 @@ impl AssetLoader for SceneJsLoader {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct ContentMap(HashMap<String, String>);
+pub struct ContentMap(pub HashMap<String, String>);
 
 impl ContentMap {
     pub fn hash<'a>(&'a self, file: &str) -> Option<Cow<'a, str>> {

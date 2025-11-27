@@ -3377,7 +3377,6 @@ dependencies = [
  "strum 0.27.1",
  "system_bridge",
  "tokio",
- "wallet",
 ]
 
 [[package]]
@@ -9427,6 +9426,8 @@ dependencies = [
  "copypwasmta",
  "dcl_component",
  "ethers-core",
+ "futures-lite 1.13.0",
+ "http 1.3.1",
  "ipfs",
  "nft",
  "opener",

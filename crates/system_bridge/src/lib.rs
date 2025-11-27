@@ -13,7 +13,7 @@ use bevy_console::{ConsoleCommandEntered, PrintConsoleLine};
 use common::{
     inputs::{BindingsData, InputIdentifier, SystemActionEvent},
     rpc::RpcResultSender,
-    structs::{AppConfig, PermissionLevel, PermissionType, PermissionUsed, PermissionValue},
+    structs::{AppConfig, MicState, PermissionLevel, PermissionType, PermissionUsed, PermissionValue},
 };
 use dcl_component::proto_components::{
     common::Vector2,
@@ -122,6 +122,8 @@ pub enum SystemApi {
         RpcResultSender<Vec<PermanentPermissionItem>>,
     ),
     SetInteractableArea(Vec4),
+    GetMicState(RpcResultSender<MicState>),
+    SetMicEnabled(bool),
 }
 
 #[derive(Serialize, Deserialize, Clone)]

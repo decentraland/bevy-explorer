@@ -4,17 +4,15 @@ use std::{
     sync::{mpsc::SyncSender, Arc},
 };
 
+use anyhow::anyhow;
 use bevy::log::debug;
-use common::structs::MicState;
-use ipfs::{IpfsResource, SceneJsFile};
+use dcl_component::{DclReader, FromDclReader, SceneComponentId, SceneEntityId, proto_components::sdk::components::PbPlayerIdentityData};
+use ipfs::SceneJsFile;
 use system_bridge::SystemApi;
 use tokio::sync::{mpsc::Receiver, Mutex};
-use wallet::Wallet;
 
 use crate::{
-    interface::{crdt_context::CrdtContext, CrdtComponentInterfaces},
-    RendererResponse, RpcCalls, SceneElapsedTime, SceneId, SceneLogLevel, SceneLogMessage,
-    SceneResponse,
+    RendererResponse, RpcCalls, SceneElapsedTime, SceneId, SceneLogLevel, SceneLogMessage, SceneResponse, interface::{CrdtComponentInterfaces, CrdtType, crdt_context::CrdtContext}
 };
 
 use super::interface::CrdtStore;
@@ -110,9 +108,6 @@ pub fn init_state(
     thread_sx: SyncSender<SceneResponse>,
     thread_rx: Receiver<RendererResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
-    ipfs: IpfsResource,
-    wallet: Wallet,
-    mic: MicState,
     _inspect: bool,
     testing: bool,
     preview: bool,
@@ -126,9 +121,6 @@ pub fn init_state(
     state.put(thread_sx);
     state.put(Arc::new(Mutex::new(thread_rx)));
     state.put(global_update_receiver);
-    state.put(ipfs);
-    state.put(wallet);
-    state.put(mic);
     state.put(CrdtStore::default());
     state.put(RpcCalls::default());
     state.put(RendererStore(CrdtStore::default()));
@@ -163,4 +155,17 @@ pub fn op_error(state: Rc<RefCell<impl State>>, message: String) {
             level: SceneLogLevel::SceneError,
             message,
         })
+}
+
+pub fn player_identity(state: &impl State) -> Result<PbPlayerIdentityData, anyhow::Error> {
+    let renderer_store = state.borrow::<RendererStore>();
+    let Some(player_identity) = renderer_store.0.get(
+        SceneComponentId::PLAYER_IDENTITY_DATA,
+        CrdtType::LWW_ANY,
+        SceneEntityId::PLAYER,
+    ) else {
+        anyhow::bail!("no player identity!");
+    };
+    PbPlayerIdentityData::from_reader(&mut DclReader::new(player_identity))
+        .map_err(|e| anyhow!(format!("{e:?}")))
 }
