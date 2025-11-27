@@ -9,21 +9,19 @@ use std::{
 };
 
 use bevy::{log::tracing::span::EnteredSpan, tasks::IoTaskPool};
-use common::structs::MicState;
 use dcl::{
     interface::CrdtComponentInterfaces,
     js::{CommunicatedWithRenderer, ShuttingDown, SuperUserScene},
     RendererResponse, SceneId, SceneResponse,
 };
 use gotham_state::GothamState;
-use ipfs::{IpfsResource, SceneJsFile};
+use ipfs::SceneJsFile;
 use once_cell::sync::OnceCell;
 use system_bridge::SystemApi;
 use tokio::sync::{
     mpsc::{channel, Receiver, Sender},
     Mutex,
 };
-use wallet::Wallet;
 
 pub struct SceneInitializationData {
     pub thread_rx: Receiver<RendererResponse>,
@@ -32,9 +30,6 @@ pub struct SceneInitializationData {
     pub crdt_component_interfaces: CrdtComponentInterfaces,
     pub renderer_sender: SyncSender<SceneResponse>,
     pub global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
-    pub ipfs: IpfsResource,
-    pub wallet: Wallet,
-    pub mic: MicState,
     pub id: SceneId,
     pub storage_root: String,
     pub inspect: bool,
@@ -59,9 +54,6 @@ pub fn spawn_scene(
     crdt_component_interfaces: CrdtComponentInterfaces,
     renderer_sender: SyncSender<SceneResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
-    ipfs: IpfsResource,
-    wallet: Wallet,
-    mic: MicState,
     id: SceneId,
     storage_root: String,
     inspect: bool,
@@ -87,9 +79,6 @@ pub fn spawn_scene(
                     crdt_component_interfaces,
                     renderer_sender,
                     global_update_receiver,
-                    ipfs,
-                    wallet,
-                    mic,
                     id,
                     storage_root,
                     inspect,
@@ -138,9 +127,6 @@ pub async fn wasm_init_scene() -> Result<WorkerContext, JsValue> {
         scene_initialization_data.renderer_sender,
         scene_initialization_data.thread_rx,
         scene_initialization_data.global_update_receiver,
-        scene_initialization_data.ipfs,
-        scene_initialization_data.wallet,
-        scene_initialization_data.mic,
         scene_initialization_data.inspect,
         scene_initialization_data.testing,
         scene_initialization_data.preview,

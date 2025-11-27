@@ -1,4 +1,4 @@
-use common::{rpc::IpcMessage, structs::MicState};
+/*use common::{rpc::IpcMessage, structs::MicState};
 use dcl::{RendererResponse, SceneId, SceneResponse, interface::CrdtComponentInterfaces};
 use interprocess::{local_socket::{GenericFilePath, ListenerOptions, ToFsName, traits::Listener}};
 use ipfs::SceneJsFile;
@@ -66,4 +66,4 @@ pub fn init_client() -> anyhow::Result<()> {
     });
 
     Ok(())
-}
+}*/
