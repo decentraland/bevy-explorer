@@ -147,6 +147,7 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
     op_state.put(renderer_state);
     op_state.put(entity_map);
     op_state.put(writers);
+    op_state.put(global_update_receiver);
     op_state.put(CommunicatedWithRenderer);
 
     results

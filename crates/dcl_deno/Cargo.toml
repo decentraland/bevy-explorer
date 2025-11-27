@@ -14,7 +14,6 @@ common = { workspace = true }
 dcl_component = { workspace = true }
 dcl = { workspace = true, features = ["span_scene_loop"] }
 ipfs = { workspace = true }
-wallet = { workspace = true }
 system_bridge = { workspace = true }
 platform = { workspace = true }
 
