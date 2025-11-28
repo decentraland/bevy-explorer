@@ -210,8 +210,6 @@ pub(crate) fn load_scene_json(
             definition.metadata.as_ref().map(|v| v.to_string()),
         );
 
-        error!("scene: {definition:#?}");
-
         let crdt = definition.content.hash("main.crdt").map(|_| {
             ipfas
                 .load_content_file("main.crdt", &definition.id)
@@ -906,9 +904,11 @@ fn load_active_entities(
     mut global_crdt: ResMut<GlobalCrdtState>,
     mut consecutive_fetch_fail_count: Local<usize>,
     mut commands: Commands,
+    mut fetch_count: Local<usize>,
     mut stored_parcels: Local<(IVec2, Vec<(f32, IVec2)>)>,
 ) {
     if current_realm.is_changed() {
+        *fetch_count = 100;
         // drop current request
         *pointer_request = None;
         // clear stored parcels
@@ -983,11 +983,11 @@ fn load_active_entities(
             *stored_parcels = (focus_parcel, required_parcels);
         }
 
-        // limit to 5000 per request
+        // limit per request
         let stored_len = stored_parcels.1.len();
         let required_parcels = stored_parcels
             .1
-            .split_off(stored_len.saturating_sub(5000))
+            .split_off(stored_len.saturating_sub(*fetch_count))
             .into_iter()
             .map(|(_, parcel)| parcel)
             .collect::<HashSet<_>>();
@@ -1076,12 +1076,16 @@ fn load_active_entities(
         let retrieved_parcels = match task_result {
             Ok(res) => {
                 *consecutive_fetch_fail_count = 0;
+                *fetch_count = (*fetch_count * 2).min(3200);
                 res
             }
             Err(e) => {
                 warn!("failed to retrieve active scenes, will retry");
                 warn!("error: {e:?}");
-                *consecutive_fetch_fail_count += 1;
+                *fetch_count = (*fetch_count / 2).max(100);
+                if *fetch_count == 100 {
+                    *consecutive_fetch_fail_count += 1;
+                }
                 if *consecutive_fetch_fail_count == 10 {
                     warn!("failed to retrieve active scenes 10 times, aborting");
                     commands.send_event(AppError::NetworkFailure(e));
