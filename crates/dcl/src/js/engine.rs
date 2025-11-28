@@ -83,10 +83,7 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
 
 
     let mut entity_map = op_state.take::<CrdtContext>();
-    let mut renderer_state = match op_state.try_take::<RendererStore>() {
-        Some(state) => state,
-        None => RendererStore(Default::default()),
-    };
+    let mut renderer_state = op_state.take::<RendererStore>();
     let writers = op_state.take::<CrdtComponentInterfaces>();
 
     let mut results = match response {

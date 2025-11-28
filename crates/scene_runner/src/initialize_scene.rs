@@ -21,8 +21,7 @@ use dcl::{
     SceneElapsedTime, SceneId, SceneResponse,
 };
 use dcl_component::{
-    proto_components::sdk::components::PbMainCamera, transform_and_parent::DclTransformAndParent,
-    DclReader, DclWriter, SceneComponentId, SceneEntityId,
+    DclReader, DclWriter, SceneComponentId, SceneEntityId, proto_components::sdk::components::{PbMainCamera, PbRealmInfo}, transform_and_parent::DclTransformAndParent
 };
 use ipfs::{
     ipfs_path::IpfsPath, ActiveEntityTask, CurrentRealm, EntityDefinition, IpfsAssetServer,
@@ -234,6 +233,7 @@ pub(crate) fn load_scene_javascript(
     mut scene_updates: ResMut<SceneUpdates>,
     global_scene: Res<GlobalCrdtState>,
     portable_scenes: Res<PortableScenes>,
+    realm: Res<CurrentRealm>,
 ) {
     for (root, state, h_scene) in loading_scenes
         .iter()
@@ -397,6 +397,33 @@ pub(crate) fn load_scene_javascript(
             SceneComponentId::TRANSFORM,
             CrdtType::LWW_ANY,
             SceneEntityId::WORLD_ORIGIN,
+            Some(&mut DclReader::new(&buf)),
+        );
+
+        // set initial realm info
+        let base_url = realm
+            .about_url
+            .strip_suffix("/about")
+            .unwrap_or(&realm.about_url);
+        let realm_info = PbRealmInfo {
+            base_url: base_url.to_owned(),
+            realm_name: realm.config.realm_name.clone().unwrap_or_default(),
+            network_id: realm.config.network_id.unwrap_or_default() as i32,
+            comms_adapter: realm
+                .comms
+                .as_ref()
+                .and_then(|comms| comms.adapter.clone())
+                .unwrap_or("offline".to_owned()),
+            is_preview: false,
+            room: None,
+            is_connected_scene_room: None,
+        };
+        buf.clear();
+        DclWriter::new(&mut buf).write(&realm_info);
+        initial_crdt.force_update(
+            SceneComponentId::REALM_INFO,
+            CrdtType::LWW_ANY,
+            SceneEntityId::ROOT,
             Some(&mut DclReader::new(&buf)),
         );
 
@@ -595,6 +622,7 @@ pub(crate) fn initialize_scene(
             .is_some_and(|inspect_hash| inspect_hash == &context.hash);
 
         let main_sx = spawn_scene(
+            context.crdt_store.clone(),
             context.hash.clone(),
             js_file.clone(),
             crdt_component_interfaces,

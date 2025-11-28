@@ -100,6 +100,7 @@ impl State for deno_core::OpState {
 #[allow(clippy::too_many_arguments)]
 pub fn init_state(
     state: &mut impl State,
+    initial_crdt_store: CrdtStore,
     scene_hash: String,
     scene_id: SceneId,
     storage_root: String,
@@ -123,7 +124,7 @@ pub fn init_state(
     state.put(global_update_receiver);
     state.put(CrdtStore::default());
     state.put(RpcCalls::default());
-    state.put(RendererStore(CrdtStore::default()));
+    state.put(RendererStore(initial_crdt_store));
     state.put(Vec::<SceneLogMessage>::default());
     state.put(SceneElapsedTime(0.0));
     if let Some(super_user) = super_user {
