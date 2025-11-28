@@ -83,7 +83,7 @@ impl LivekitVideoFrame {
         let height = self.buffer.height();
         let stride = width * 4;
 
-        let (stride_y, stride_u, stride_v) = dbg!(self.buffer.strides());
+        let (stride_y, stride_u, stride_v) = self.buffer.strides();
         let (data_y, data_u, data_v) = self.buffer.data();
 
         let mut dst = vec![0; (width * height * 4) as usize];
