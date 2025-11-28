@@ -114,8 +114,8 @@ fn play_videos(
                     let extent = image.size();
                     let width = frame.width();
                     let height = frame.height();
-                    debug!("resize {width} {height}");
                     if extent.x != width || extent.y != height {
+                        debug!("resize {width} {height}");
                         image.resize(Extent3d {
                             width: width.max(16),
                             height: height.max(16),
