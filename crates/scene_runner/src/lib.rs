@@ -885,11 +885,12 @@ fn receive_scene_updates(
                 SceneResponse::Ok(scene_id, census, mut crdt, runtime, messages, rpc_calls) => {
                     let root = updates.scene_ids.get(&scene_id).unwrap();
                     debug!(
-                        "scene {:?}/{:?} received updates! [+{}, -{}]",
+                        "scene {:?}/{:?} received updates! [+{}, -{}, {} rpc",
                         census.scene_id,
                         root,
                         census.born.len(),
-                        census.died.len()
+                        census.died.len(),
+                        rpc_calls.len(),
                     );
                     if let Ok(mut context) = scenes.get_mut(*root) {
                         context.tick_number = context.tick_number.wrapping_add(1);
@@ -919,6 +920,11 @@ fn receive_scene_updates(
                         );
                     }
                     Some(*root)
+                }
+                SceneResponse::ImmediateRpcCall(rpc_call) => {
+                    debug!("immediate rpc: {rpc_call:?}");
+                    rpc_call_events.write(rpc_call);
+                    None
                 }
             },
             Err(TryRecvError::Empty) => return,

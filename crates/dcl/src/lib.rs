@@ -49,6 +49,7 @@ pub enum SceneResponse {
         Vec<SceneLogMessage>,
         RpcCalls,
     ),
+    ImmediateRpcCall(RpcCall),
     WaitingForInspector,
     CompareSnapshot(CompareSnapshot),
 }
