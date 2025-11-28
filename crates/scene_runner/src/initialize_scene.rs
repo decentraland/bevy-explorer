@@ -210,8 +210,6 @@ pub(crate) fn load_scene_json(
             definition.metadata.as_ref().map(|v| v.to_string()),
         );
 
-        error!("scene: {definition:#?}");
-
         let crdt = definition.content.hash("main.crdt").map(|_| {
             ipfas
                 .load_content_file("main.crdt", &definition.id)
@@ -906,8 +904,10 @@ fn load_active_entities(
     mut global_crdt: ResMut<GlobalCrdtState>,
     mut consecutive_fetch_fail_count: Local<usize>,
     mut commands: Commands,
+    mut fetch_count: Local<usize>,
 ) {
     if current_realm.is_changed() {
+        *fetch_count = 100;
         // drop current request
         *pointer_request = None;
         // set current realm and clear
@@ -970,11 +970,11 @@ fn load_active_entities(
             _ => Some((distance, parcel)),
         })
         .collect();
-        // limit to 5000 per request
+        // limit per request
         required_parcels.sort_by_key(|(distance, _)| FloatOrd(*distance));
         let required_parcels = required_parcels
             .into_iter()
-            .take(5000)
+            .take(*fetch_count)
             .map(|(_, parcel)| parcel)
             .collect::<HashSet<_>>();
 
@@ -1062,12 +1062,16 @@ fn load_active_entities(
         let retrieved_parcels = match task_result {
             Ok(res) => {
                 *consecutive_fetch_fail_count = 0;
+                *fetch_count = (*fetch_count * 2).min(3200);
                 res
             }
             Err(e) => {
                 warn!("failed to retrieve active scenes, will retry");
                 warn!("error: {e:?}");
-                *consecutive_fetch_fail_count += 1;
+                *fetch_count = (*fetch_count / 2).max(100);
+                if *fetch_count == 100 {
+                    *consecutive_fetch_fail_count += 1;
+                }
                 if *consecutive_fetch_fail_count == 10 {
                     warn!("failed to retrieve active scenes 10 times, aborting");
                     commands.send_event(AppError::NetworkFailure(e));
