@@ -13,7 +13,7 @@ use tokio::sync::mpsc::Sender;
 
 use ipfs::SceneJsFile;
 
-use dcl::{RendererResponse, SceneId, SceneResponse, interface::CrdtComponentInterfaces};
+use dcl::{RendererResponse, SceneId, SceneResponse, interface::{CrdtComponentInterfaces, CrdtStore}};
 
 use crate::js::scene_thread;
 
@@ -27,6 +27,7 @@ pub fn init_runtime() {
 
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_scene(
+    initial_crdt_store: CrdtStore,
     scene_hash: String,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
@@ -47,6 +48,7 @@ pub fn spawn_scene(
         .spawn(move || {
             let thread_result = panic::catch_unwind(AssertUnwindSafe(|| {
                 scene_thread(
+                    initial_crdt_store,
                     scene_hash,
                     id,
                     storage_root,
