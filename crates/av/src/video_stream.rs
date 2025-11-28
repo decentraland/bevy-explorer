@@ -191,12 +191,27 @@ pub fn streamer_sinks(
     volume: f32,
 ) -> (VideoSink, AudioSink) {
     let (command_sender, _command_receiver) = tokio::sync::mpsc::channel(10);
-    let (_video_sender, video_receiver) = tokio::sync::mpsc::channel(10);
+    let (video_sender, video_receiver) = tokio::sync::mpsc::channel(10);
+    let (stream_sender, stream_receiver) = tokio::sync::mpsc::channel(10);
     let (audio_sender, audio_receiver) = tokio::sync::mpsc::channel(10);
 
     control_channel
-        .blocking_send(ChannelControl::StreamerSubscribe(audio_sender))
+        .blocking_send(ChannelControl::StreamerSubscribe(
+            audio_sender,
+            stream_sender,
+        ))
         .unwrap();
+
+    std::thread::spawn(move || {
+        let mut stream_receiver = stream_receiver;
+
+        while let Some(frame) = stream_receiver.blocking_recv() {
+            if let Err(err) = video_sender.blocking_send(VideoData::from(frame)) {
+                error!("Streamer sink channel failed: {err}.");
+                break;
+            };
+        }
+    });
 
     (
         VideoSink {

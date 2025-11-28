@@ -106,8 +106,25 @@ fn play_videos(
                     sink.rate = Some(rate);
                 }
                 Ok(VideoData::Frame(frame, time)) => {
-                    last_frame_received = Some(frame);
+                    last_frame_received = Some(frame.data(0).to_vec());
                     sink.current_time = time;
+                }
+                Ok(VideoData::LivekitFrame(frame)) => {
+                    let image = images.get_mut(&sink.image).unwrap();
+                    let extent = image.size();
+                    let width = frame.width();
+                    let height = frame.height();
+                    debug!("resize {width} {height}");
+                    if extent.x != width || extent.y != height {
+                        image.resize(Extent3d {
+                            width: width.max(16),
+                            height: height.max(16),
+                            depth_or_array_layers: 1,
+                        });
+                    }
+
+                    last_frame_received = Some(frame.rgba_data());
+                    sink.current_time = frame.timestamp() as f64;
                 }
                 Ok(VideoData::State(state)) => new_state = Some(state),
                 Err(_) => break,
@@ -122,7 +139,7 @@ fn play_videos(
                 .data
                 .as_mut()
                 .unwrap()
-                .copy_from_slice(frame.data(0));
+                .copy_from_slice(frame.as_slice());
         }
 
         const VIDEO_REPORT_FREQUENCY: f64 = 1.0;

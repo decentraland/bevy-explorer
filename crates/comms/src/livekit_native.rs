@@ -5,6 +5,7 @@ use ethers_core::types::H160;
 use futures_lite::StreamExt;
 use http::Uri;
 use kira::sound::streaming::StreamingSoundData;
+use libwebrtc::{native::yuv_helper, prelude::VideoBuffer};
 use prost::Message;
 use tokio::{
     sync::{
@@ -56,6 +57,53 @@ impl Plugin for MicPlugin {
 
 #[derive(Default)]
 pub struct MicStream(Option<cpal::Stream>);
+
+#[derive(Deref)]
+pub struct LivekitVideoFrame {
+    #[deref]
+    buffer: I420Buffer,
+    timestamp: i64,
+}
+
+impl LivekitVideoFrame {
+    pub fn timestamp(&self) -> i64 {
+        self.timestamp
+    }
+
+    pub fn width(&self) -> u32 {
+        self.buffer.width()
+    }
+
+    pub fn height(&self) -> u32 {
+        self.buffer.height()
+    }
+
+    pub fn rgba_data(&self) -> Vec<u8> {
+        let width = self.buffer.width();
+        let height = self.buffer.height();
+        let stride = width * 4;
+
+        let (stride_y, stride_u, stride_v) = dbg!(self.buffer.strides());
+        let (data_y, data_u, data_v) = self.buffer.data();
+
+        let mut dst = vec![0; (width * height * 4) as usize];
+
+        yuv_helper::i420_to_abgr(
+            data_y,
+            stride_y,
+            data_u,
+            stride_u,
+            data_v,
+            stride_v,
+            &mut dst,
+            stride,
+            width as i32,
+            height as i32,
+        );
+
+        dst
+    }
+}
 
 pub fn update_mic(
     mic: Res<LocalAudioSource>,
@@ -444,10 +492,9 @@ fn livekit_handler_inner(
                             participant_audio_subscribe(&room, address, Some(sender), &mut audio_channels).await
                         },
                         ChannelControl::Unsubscribe(address) => participant_audio_subscribe(&room, address, None, &mut audio_channels).await,
-                        ChannelControl::StreamerSubscribe(audio) => {
-                            let (sender, _receiver) = tokio::sync::mpsc::channel(10);
+                        ChannelControl::StreamerSubscribe(audio, video) => {
                             streamer_audio_subscribe(&room, Some(audio), &mut streamer_audio_channel).await;
-                            streamer_video_subscribe(&room, Some(sender), &mut streamer_video_channel).await;
+                            streamer_video_subscribe(&room, Some(video), &mut streamer_video_channel).await;
                         }
                         ChannelControl::StreamerUnsubscribe => {
                             streamer_audio_subscribe(&room, None, &mut streamer_audio_channel).await;
@@ -574,7 +621,7 @@ async fn kira_thread(
 async fn livekit_video_thread(
     video: RemoteVideoTrack,
     publication: RemoteTrackPublication,
-    channel: Sender<I420Buffer>,
+    channel: Sender<LivekitVideoFrame>,
 ) {
     let mut stream =
         livekit::webrtc::video_stream::native::NativeVideoStream::new(video.rtc_track());
@@ -586,7 +633,19 @@ async fn livekit_video_thread(
         stream.track().state()
     );
     while let Some(frame) = stream.next().await {
-        warn!("frame {:?}", frame.buffer.buffer_type());
+        let buffer = frame.buffer.to_i420();
+        let Err(err) = channel
+            .send(LivekitVideoFrame {
+                buffer,
+                timestamp: frame.timestamp_us,
+            })
+            .await
+        else {
+            continue;
+        };
+
+        error!("Livekit video channel errored: {err}.");
+        break;
     }
 
     warn!("video track {:?} ended, exiting task", publication.sid());
@@ -676,7 +735,7 @@ async fn streamer_audio_subscribe(
 
 async fn streamer_video_subscribe(
     room: &Room,
-    mut channel: Option<Sender<I420Buffer>>,
+    mut channel: Option<Sender<LivekitVideoFrame>>,
     video_thread: &mut Option<JoinHandle<()>>,
 ) {
     let participants = room.remote_participants();
