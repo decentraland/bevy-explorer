@@ -5,7 +5,7 @@ use ethers_core::types::H160;
 use futures_lite::StreamExt;
 use http::Uri;
 use kira::sound::streaming::StreamingSoundData;
-use libwebrtc::{native::yuv_helper, prelude::VideoBuffer};
+use livekit::webrtc::{native::yuv_helper, prelude::VideoBuffer};
 use prost::Message;
 use tokio::{
     sync::{
