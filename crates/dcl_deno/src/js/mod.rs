@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use bevy::log::{debug, error, info_span};
 use dcl::{
-    RendererResponse, RpcCalls, SceneElapsedTime, SceneId, SceneResponse, interface::CrdtComponentInterfaces, js::{
+    RendererResponse, RpcCalls, SceneElapsedTime, SceneId, SceneResponse, interface::{CrdtComponentInterfaces, CrdtStore}, js::{
         CommunicatedWithRenderer, ShuttingDown, SuperUserScene, engine::crdt_send_to_renderer, init_state
     }
 };
@@ -179,6 +179,7 @@ pub struct StorageRoot(pub String);
 // main scene processing thread - constructs an isolate and runs the scene
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn scene_thread(
+    initial_crdt_store: CrdtStore,
     scene_hash: String,
     scene_id: SceneId,
     storage_root: String,
@@ -203,6 +204,7 @@ pub(crate) fn scene_thread(
     let state = runtime.op_state();
     init_state(
         &mut *state.borrow_mut(),
+        initial_crdt_store,
         scene_hash,
         scene_id,
         storage_root,
