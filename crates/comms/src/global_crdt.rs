@@ -33,6 +33,8 @@ use dcl_component::{
     DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::livekit_native::LivekitVideoFrame;
 use crate::{
     movement_compressed::MovementCompressed, profile::ProfileMetaCache, SceneRoom, Transport,
 };
@@ -183,9 +185,20 @@ pub struct ForeignPlayer {
 pub enum ChannelControl {
     Subscribe(
         Address,
-        tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
+        oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
     ),
     Unsubscribe(Address),
+    #[cfg(not(target_arch = "wasm32"))]
+    StreamerSubscribe(
+        mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
+        mpsc::Sender<LivekitVideoFrame>,
+    ),
+    #[cfg(not(target_arch = "wasm32"))]
+    StreamerUnsubscribe,
+    #[cfg(target_arch = "wasm32")]
+    StreamerSubscribe(bool, bool),
+    #[cfg(target_arch = "wasm32")]
+    StreamerUnsubscribe,
 }
 
 pub enum ForeignAudioData {
@@ -198,8 +211,7 @@ pub struct ForeignAudioSource {
     audio_available_receiver: mpsc::Receiver<ForeignAudioData>,
     available_transports: HashSet<Entity>,
     pub current_transport: Option<Entity>,
-    pub audio_receiver:
-        Option<tokio::sync::oneshot::Receiver<StreamingSoundData<AudioDecoderError>>>,
+    pub audio_receiver: Option<oneshot::Receiver<StreamingSoundData<AudioDecoderError>>>,
 }
 
 // TODO: I should avoid the clone on recv somehow

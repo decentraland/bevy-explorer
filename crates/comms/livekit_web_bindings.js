@@ -402,6 +402,37 @@ export function subscribe_channel(roomName, participantId, subscribe) {
     }
 }
 
+export function streamer_subscribe_channel(roomName, subscribe_audio, subscribe_video) {
+    const room = Array.from(activeRooms).find(room => room.name === roomName);
+    if (!room) {
+        warn(`couldn't find room ${roomName} for subscription`);
+        return;
+    }
+
+    console.log(typeof room.remoteParticipants);
+    const participant = room.remoteParticipants.values().find(participant => participant.identity.endsWith("-streamer"));
+    if (!participant) {
+        warn(`couldn't find streamer participant in room ${roomName} for subscription`);
+        return;
+    }
+
+    const audioPubs = Array.from(participant.trackPublications.values())
+        .filter(pub => pub.kind === 'audio');
+    const videoPubs = Array.from(participant.trackPublications.values())
+        .filter(pub => pub.kind === 'video');
+
+    log(`subscribing to ${audioPubs.length} audio tracks and to ${videoPubs.length} video tracks`);
+
+    for (const pub of audioPubs) {
+        log(`sub ${roomName}-${participant.identity}`);
+        pub.setSubscribed(subscribe_audio);
+    }
+    for (const pub of videoPubs) {
+        log(`video sub ${roomName}-${participant.identity}`);
+        pub.setSubscribed(subscribe_video);
+    }
+}
+
 export function room_name(room) {
     return room.name
 }
