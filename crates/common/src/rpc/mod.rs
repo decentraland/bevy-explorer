@@ -272,7 +272,7 @@ pub enum RpcUiFocusAction {
 }
 
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadFileResponse {
     pub content: Vec<u8>,

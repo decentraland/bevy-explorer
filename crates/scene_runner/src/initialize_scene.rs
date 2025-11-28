@@ -123,7 +123,9 @@ pub enum SceneLoading {
 pub struct SceneEntityDefinitionHandle(pub Handle<EntityDefinition>);
 
 #[derive(Component)]
-pub struct SceneJsHandle(pub Handle<SceneJsFile>);
+pub struct SceneInitialData {
+    pub js: Handle<SceneJsFile>,
+}
 
 pub(crate) fn load_scene_entity(
     mut commands: Commands,
@@ -208,6 +210,8 @@ pub(crate) fn load_scene_json(
             definition.metadata.as_ref().map(|v| v.to_string()),
         );
 
+        error!("scene: {definition:#?}");
+
         let crdt = definition.content.hash("main.crdt").map(|_| {
             ipfas
                 .load_content_file("main.crdt", &definition.id)
@@ -260,11 +264,11 @@ pub(crate) fn load_scene_javascript(
             fail("definition was dropped");
             continue;
         };
-        let Some(meta) = &definition.metadata else {
+        let Some(raw_meta) = &definition.metadata else {
             fail("definition didn't contain metadata");
             continue;
         };
-        let Ok(meta) = serde_json::from_value::<SceneMeta>(meta.clone()) else {
+        let Ok(meta) = serde_json::from_value::<SceneMeta>(raw_meta.clone()) else {
             fail("scene.json did not resolve to expected format");
             continue;
         };
@@ -470,7 +474,9 @@ pub(crate) fn load_scene_javascript(
         ));
 
         commands.entity(root).try_insert((
-            SceneJsHandle(h_code),
+            SceneInitialData {
+                js: h_code,
+            },
             SceneLoading::Javascript(Some(global_updates)),
         ));
     }
@@ -531,7 +537,7 @@ pub(crate) fn initialize_scene(
     mut loading_scenes: Query<(
         Entity,
         &mut SceneLoading,
-        &SceneJsHandle,
+        &SceneInitialData,
         &mut RendererSceneContext,
         Option<&SuperUserScene>,
     )>,
@@ -541,7 +547,7 @@ pub(crate) fn initialize_scene(
     preview_mode: Res<PreviewMode>,
     su_bridge: Res<SystemBridge>,
 ) {
-    for (root, mut state, h_code, mut context, super_user) in loading_scenes.iter_mut() {
+    for (root, mut state, initial_data, mut context, super_user) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript(_)) || context.tick_number != 1 {
             continue;
         }
@@ -552,7 +558,7 @@ pub(crate) fn initialize_scene(
             commands.entity(root).try_insert(SceneLoading::Failed);
         };
 
-        match asset_server.load_state(h_code.0.id()) {
+        match asset_server.load_state(initial_data.js.id()) {
             bevy::asset::LoadState::Loaded => (),
             bevy::asset::LoadState::Failed(_) => {
                 fail("main js could not be loaded");
@@ -561,7 +567,7 @@ pub(crate) fn initialize_scene(
             _ => continue,
         }
 
-        let Some(js_file) = scene_js_files.get(h_code.0.id()) else {
+        let Some(js_file) = scene_js_files.get(initial_data.js.id()) else {
             fail("main js did not resolve to expected format");
             continue;
         };

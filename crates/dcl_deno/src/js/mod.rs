@@ -3,12 +3,9 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use bevy::log::{debug, error, info_span};
 use dcl::{
-    interface::CrdtComponentInterfaces,
-    js::{
-        engine::crdt_send_to_renderer, init_state, CommunicatedWithRenderer, ShuttingDown,
-        SuperUserScene,
-    },
-    RendererResponse, RpcCalls, SceneElapsedTime, SceneId, SceneResponse,
+    RendererResponse, RpcCalls, SceneElapsedTime, SceneId, SceneResponse, interface::CrdtComponentInterfaces, js::{
+        CommunicatedWithRenderer, ShuttingDown, SuperUserScene, engine::crdt_send_to_renderer, init_state
+    }
 };
 use deno_core::{
     ascii_str,

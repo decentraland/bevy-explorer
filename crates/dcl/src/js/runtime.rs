@@ -6,12 +6,12 @@ use dcl_component::{
     SceneEntityId,
 };
 use serde::Serialize;
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, sync::mpsc::SyncSender};
 
 use crate::{
     interface::{crdt_context::CrdtContext, CrdtType},
     js::RendererStore,
-    RpcCalls,
+    RpcCalls, SceneResponse,
 };
 
 use super::State;
@@ -20,33 +20,26 @@ pub async fn op_read_file(
     op_state: Rc<RefCell<impl State>>,
     filename: String,
 ) -> Result<ReadFileResponse, anyhow::Error> {
-    debug!("op_read_file");
+    debug!("op_read_file {filename}");
 
     let scene_hash = op_state.borrow_mut().borrow::<CrdtContext>().hash.clone();
     let (sx, rx) = RpcResultSender::channel();
 
     op_state
         .borrow_mut()
-        .borrow_mut::<RpcCalls>()
-        .push(RpcCall::ReadFile {
+        .borrow_mut::<SyncSender<SceneResponse>>()
+        .send(SceneResponse::ImmediateRpcCall(RpcCall::ReadFile {
             scene_hash,
             filename,
             response: sx,
-        });
+        }))
+        .unwrap();
 
-    rx.await?.map_err(|e| anyhow!(e))
+    let res = rx.await;
 
-    // let ipfs = op_state.borrow_mut().borrow::<IpfsResource>().clone();
-    // let ipfs_path = IpfsPath::new(IpfsType::new_content_file(hash, filename));
-    // let ipfs_pathbuf = PathBuf::from(&ipfs_path);
+    debug!("op_read_file -> {res:?}");
 
-    // let mut reader = ipfs.read(&ipfs_pathbuf).await.map_err(|e| anyhow!(e))?;
-    // let hash = ipfs.ipfs_hash(&ipfs_path).await.unwrap_or_default();
-
-    // let mut content = Vec::default();
-    // reader.read_to_end(&mut content).await?;
-
-    // Ok(ReadFileResponse { content, hash })
+    res?.map_err(|e| anyhow!(e))
 }
 
 #[derive(Serialize)]
