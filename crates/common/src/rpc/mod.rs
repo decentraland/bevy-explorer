@@ -53,6 +53,7 @@ struct ResponseContext {
     router: tokio::sync::mpsc::UnboundedSender<(u64, IpcMessage)>,
 }
 
+#[derive(Serialize, Deserialize)]
 pub enum IpcMessage {
     Data(Vec<u8>),
     Closed,

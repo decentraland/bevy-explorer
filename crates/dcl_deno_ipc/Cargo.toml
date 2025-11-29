@@ -26,5 +26,5 @@ multihash-codetable = { workspace = true }
 ethers-core = { workspace = true }
 anyhow = { workspace = true }
 
-interprocess = "2.0"
+interprocess = { version = "2.0", features = ["tokio"] }
 bincode = "1.3"
