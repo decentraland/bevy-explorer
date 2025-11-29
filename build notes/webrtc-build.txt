@@ -1,5 +1,7 @@
+we need to remap webrtc symbols to avoid collisions with ffmpeg. below explains how to do it for livekit 0.5.2 (the "webrtc-dac8015-5" tag name should be the only change for later versions)
+
 download the platform zip from https://github.com/livekit/rust-sdks/releases/tag/webrtc-dac8015-5
-extract and navigate to lib folder, rename with below then upload to the release referenced by webrtc-sys/build/src/lib.rs WEBRTC_TAG
+extract and navigate to lib folder, rename symbols with below then zip and upload to the release referenced by webrtc-sys/build/src/lib.rs WEBRTC_TAG. i used "h264-true-prefixed" in the 0.5.2 livekit branch (h264-true-prefixed).
 
 ### win powershell:
 
