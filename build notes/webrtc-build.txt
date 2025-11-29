@@ -1,0 +1,24 @@
+download the platform zip from https://github.com/livekit/rust-sdks/releases/tag/webrtc-dac8015-5
+extract and navigate to lib folder, rename with below then upload to the release referenced by webrtc-sys/build/src/lib.rs WEBRTC_TAG
+
+### win powershell:
+
+# find all defined external symbols starting with av_, sws_, ssl_
+$symbols = llvm-nm --defined-only --extern-only webrtc.lib | 
+    Select-String " (av_|sws_|ssl_)" | 
+    ForEach-Object { $_.ToString().Split(" ")[-1].Trim() } | 
+    Sort-Object | Get-Unique
+
+Write-Host "Found $($symbols.Count) symbols to rename." -ForegroundColor Green
+
+# write to map    
+$symbols | ForEach-Object { "$_ webrtc_$_" } | Out-File -Encoding ascii symbols.map
+    
+Write-Host "Generated symbols.map"
+
+# rewrite lib
+llvm-objcopy.exe --redefine-syms=symbols.map webrtc.lib webrtc_prefixed.lib
+
+### macos/linux bash:
+
+use remap.sh
