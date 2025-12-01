@@ -51,6 +51,8 @@ export async function connect_room(url, token, handler) {
         }
     }
 
+    const room_name = room.name;
+
     // check existing streams
     const participants = Array.from(room.remoteParticipants.values());
     for (const participant of participants) {
@@ -60,6 +62,7 @@ export async function connect_room(url, token, handler) {
             log(`found initial pub for ${participant}`);
             handler({
                 type: 'trackPublished',
+                room_name: room_name,
                 kind: publication.kind,
                 participant: {
                     identity: participant.identity,
