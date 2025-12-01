@@ -331,27 +331,34 @@ async fn connect_and_handle_session(
 #[serde(tag = "type", rename_all = "camelCase")]
 enum RoomEvent {
     DataReceived {
+        room_name: String,
         participant: Participant,
         payload: serde_bytes::ByteBuf,
     },
     TrackPublished {
+        room_name: String,
         kind: String,
         participant: Participant,
     },
     TrackUnpublished {
+        room_name: String,
         kind: String,
         participant: Participant,
     },
     TrackSubscribed {
+        room_name: String,
         participant: Participant,
     },
     TrackUnsubscribed {
+        room_name: String,
         participant: Participant,
     },
     ParticipantConnected {
+        room_name: String,
         participant: Participant,
     },
     ParticipantDisconnected {
+        room_name: String,
         participant: Participant,
     },
 }
@@ -373,6 +380,7 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
             RoomEvent::DataReceived {
                 payload,
                 participant,
+                ..
             } => {
                 if let Some(address) = participant.identity.as_h160() {
                     if let Ok(packet) = rfc4::Packet::decode(payload.as_slice()) {
@@ -388,7 +396,9 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                     }
                 }
             }
-            RoomEvent::TrackPublished { participant, kind } => {
+            RoomEvent::TrackPublished {
+                participant, kind, ..
+            } => {
                 debug!("pub {} {}", participant.identity, kind);
                 if let Some(address) = participant.identity.as_h160() {
                     if kind == "audio" {
@@ -404,7 +414,9 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                     }
                 }
             }
-            RoomEvent::TrackUnpublished { participant, kind } => {
+            RoomEvent::TrackUnpublished {
+                participant, kind, ..
+            } => {
                 debug!("unpub {} {}", participant.identity, kind);
                 if let Some(address) = participant.identity.as_h160() {
                     if kind == "audio" {
@@ -420,13 +432,13 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                     }
                 }
             }
-            RoomEvent::TrackSubscribed { participant: _p } => {
+            RoomEvent::TrackSubscribed { .. } => {
                 debug!("Track subscribed event - audio is handled in JavaScript");
             }
-            RoomEvent::TrackUnsubscribed { participant: _p } => {
+            RoomEvent::TrackUnsubscribed { .. } => {
                 debug!("Track unsubscribed event");
             }
-            RoomEvent::ParticipantConnected { participant } => {
+            RoomEvent::ParticipantConnected { participant, .. } => {
                 if let Some(address) = participant.identity.as_h160() {
                     if !participant.metadata.is_empty() {
                         let _ = sender
@@ -439,7 +451,7 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                     }
                 }
             }
-            RoomEvent::ParticipantDisconnected { participant: _p } => {
+            RoomEvent::ParticipantDisconnected { .. } => {
                 debug!("Participant disconnected");
             }
         },

@@ -186,9 +186,12 @@ export async function close_room(room) {
 }
 
 export function set_room_event_handler(room, handler) {
+    const room_name = room.name;
+
     room.on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
         handler({
             type: 'dataReceived',
+            room_name: room_name,
             payload,
             participant: {
                 identity: participant.identity,
@@ -201,6 +204,7 @@ export function set_room_event_handler(room, handler) {
         log(`${room.name} ${participant.identity} rec pub ${publication.kind}`);
         handler({
             type: 'trackPublished',
+            room_name: room_name,
             kind: publication.kind,
             participant: {
                 identity: participant.identity,
@@ -229,6 +233,7 @@ export function set_room_event_handler(room, handler) {
 
         handler({
             type: 'trackUnpublished',
+            room_name: room_name,
             kind: publication.kind,
             participant: {
                 identity: participant.identity,
@@ -284,6 +289,7 @@ export function set_room_event_handler(room, handler) {
 
         handler({
             type: 'trackSubscribed',
+            room_name: room_name,
             participant: {
                 identity: participant.identity,
                 metadata: participant.metadata || ''
@@ -310,6 +316,7 @@ export function set_room_event_handler(room, handler) {
 
         handler({
             type: 'trackUnsubscribed',
+            room_name: room_name,
             participant: {
                 identity: participant.identity,
                 metadata: participant.metadata || ''
@@ -320,6 +327,7 @@ export function set_room_event_handler(room, handler) {
     room.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
         handler({
             type: 'participantConnected',
+            room_name: room_name,
             participant: {
                 identity: participant.identity,
                 metadata: participant.metadata || ''
@@ -331,6 +339,7 @@ export function set_room_event_handler(room, handler) {
         participantAudioSids.delete(participant.identity);
         handler({
             type: 'participantDisconnected',
+            room_name: room_name,
             participant: {
                 identity: participant.identity,
                 metadata: participant.metadata || ''
