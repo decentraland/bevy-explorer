@@ -96,6 +96,7 @@ extern "C" {
     #[wasm_bindgen(catch)]
     fn streamer_subscribe_channel(
         room_name: &str,
+        streamer_identity: &str,
         subscribe_audio: bool,
         subscribe_video: bool,
     ) -> Result<(), JsValue>;
@@ -395,7 +396,9 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                 }
             }
             RoomEvent::TrackPublished {
-                participant, kind, ..
+                room_name,
+                participant,
+                kind,
             } => {
                 debug!("pub {} {}", participant.identity, kind);
                 if let Some(address) = participant.identity.as_h160() {
@@ -409,6 +412,12 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                                 address,
                             })
                             .await;
+                    }
+                } else if participant.identity.ends_with("-streamer") {
+                    if let Err(err) =
+                        streamer_subscribe_channel(&room_name, &participant.identity, true, true)
+                    {
+                        error!("{err:?}");
                     }
                 }
             }

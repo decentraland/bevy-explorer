@@ -411,15 +411,14 @@ export function subscribe_channel(roomName, participantId, subscribe) {
     }
 }
 
-export function streamer_subscribe_channel(roomName, subscribe_audio, subscribe_video) {
+export function streamer_subscribe_channel(roomName, streamerIdentity, subscribe_audio, subscribe_video) {
     const room = Array.from(activeRooms).find(room => room.name === roomName);
     if (!room) {
         warn(`couldn't find room ${roomName} for subscription`);
         return;
     }
 
-    console.log(typeof room.remoteParticipants);
-    const participant = room.remoteParticipants.values().find(participant => participant.identity.endsWith("-streamer"));
+    const participant = room.remoteParticipants.get(streamerIdentity);
     if (!participant) {
         warn(`couldn't find streamer participant in room ${roomName} for subscription`);
         return;
