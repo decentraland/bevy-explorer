@@ -338,33 +338,75 @@ impl HtmlMediaEntity {
         slf
     }
 
-    pub fn new_stream(
-        url: &str,
-        source: String,
-        image: Handle<Image>,
-        channel_control: Sender<ChannelControl>,
-    ) -> Self {
-        let media = web_sys::window()
-            .unwrap()
-            .document()
-            .and_then(|doc| {
-                let container = doc
-                    .get_element_by_id(VIDEO_CONTAINER_ID)
-                    .expect("streamer video container should exist");
-                let video = doc.create_element("video").unwrap();
-                container.append_child(&video).unwrap();
-                video.dyn_into::<HtmlMediaElement>().ok()
-            })
-            .expect("Couldn't create streamer video element");
+    pub fn new_stream(url: &str, source: String, image: Handle<Image>) -> Option<Self> {
+        let media = web_sys::window().unwrap().document().and_then(|doc| {
+            let container = doc
+                .get_element_by_id(STREAM_CONTAINER_ID)
+                .expect("streamer video container should exist");
+            let video = container
+                .get_elements_by_tag_name("video")
+                .get_with_index(0)?;
+            video.dyn_into::<HtmlMediaElement>().ok()
+        })?;
 
-        channel_control
-            .blocking_send(ChannelControl::StreamerSubscribe(true, true))
+        let video = media.clone().dyn_into::<HtmlVideoElement>().unwrap();
+
+        let frame_time = Arc::new(AtomicU32::default());
+
+        // video frame callback - no wasm_bindgen for this!
+        let rvc_prop = Reflect::get(&video, &"requestVideoFrameCallback".into()).unwrap();
+        if rvc_prop.is_undefined() {
+            panic!("no requestVideoFrameCallback");
+        }
+        let rvc_fn = rvc_prop.dyn_into::<web_sys::js_sys::Function>().unwrap();
+
+        let callback: Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>> =
+            Rc::new(RefCell::new(None));
+        let callback_handle: Rc<RefCell<Option<u32>>> = Rc::new(RefCell::new(None));
+        let callback_clone = callback.clone();
+        let handle_clone = callback_handle.clone();
+        let frame_time_clone = frame_time.clone();
+        let rvc_clone = rvc_fn.clone();
+
+        *callback.borrow_mut() = Some(Closure::wrap(Box::new({
+            let video = video.clone();
+            move |_now: f64, metadata: JsValue| {
+                debug!("stream frame received");
+                if let Some(media_time) = Reflect::get(&metadata, &"mediaTime".into())
+                    .ok()
+                    .and_then(|mt| mt.as_f64())
+                {
+                    debug!("stream frame received -> {media_time}");
+                    frame_time_clone.store(
+                        (media_time as f32).to_bits(),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                };
+
+                if let Some(cb) = callback_clone.borrow().as_ref() {
+                    if let Ok(new_handle) = rvc_clone.call1(&video, cb.as_ref().unchecked_ref()) {
+                        *handle_clone.borrow_mut() = new_handle.as_f64().map(|f| f as u32);
+                    }
+                } else {
+                    warn!("no stream cb - dropping");
+                }
+            }
+        }) as Box<dyn FnMut(f64, JsValue)>));
+        let initial_handle = rvc_fn
+            .call1(
+                &video,
+                callback.borrow().as_ref().unwrap().as_ref().unchecked_ref(),
+            )
             .unwrap();
+        *callback_handle.borrow_mut() = initial_handle.as_f64().map(|f| f as u32);
 
         let mut slf = Self::common_init(source, media);
-        slf.video = None;
+        slf.video = Some(video);
         slf.image = Some(image);
-        slf
+        slf.new_frame_time = frame_time;
+        slf.frame_closure = callback;
+        slf.frame_callback_handle = callback_handle;
+        Some(slf)
     }
 
     pub fn new_noop(source: String, image: Handle<Image>) -> Self {
@@ -502,25 +544,15 @@ pub fn update_av_players(
                         image_handle.clone(),
                     )
                 } else if player.source.src.starts_with("livekit-video://") {
-                    if let Ok(transport) = scene_rooms.single_mut() {
-                        if let Some(channel_control) = transport.control.clone() {
-                            HtmlMediaEntity::new_stream(
-                                &source,
-                                player.source.src.clone(),
-                                image_handle.clone(),
-                                channel_control,
-                            )
-                        } else {
-                            error!("Transport did not have ChannelControl channel.");
-                            HtmlMediaEntity::new_noop(
-                                player.source.src.clone(),
-                                image_handle.clone(),
-                            )
-                        }
-                    } else {
-                        error!("Could not determinate the scene of the AvPlayer.");
-                        HtmlMediaEntity::new_noop(player.source.src.clone(), image_handle.clone())
-                    }
+                    let Some(video) = HtmlMediaEntity::new_stream(
+                        &source,
+                        player.source.src.clone(),
+                        image_handle.clone(),
+                    ) else {
+                        error!("No streamer HtmlMediaElement");
+                        continue;
+                    };
+                    video
                 } else {
                     HtmlMediaEntity::new_noop(player.source.src.clone(), image_handle.clone())
                 };

@@ -14,6 +14,7 @@ const activeRooms = new Set();
 // Store audio elements and panner nodes for spatial audio
 const trackRigs = new Map();
 const participantAudioSids = new Map();
+const participantVideoSids = new Map();
 var audioContext = null;
 
 export async function connect_room(url, token, handler) {
@@ -289,11 +290,21 @@ export function set_room_event_handler(room, handler) {
             log(`set rig for ${participant.identity}`, key);
             participantAudioSids.set(participant.identity, { room: room.name, audio: key })
         } else if (track.kind === "video") {
-            const parentElement = window.document.querySelector("#stream-player-container");
-            if (parentElement) {
-                const element = track.attach();
-                parentElement.appendChild(element);
+            const key = track.sid;
+
+            if (!trackRigs.get(key)) {
+                log("create video nodes for", key);
+                const parentElement = window.document.querySelector("#stream-player-container");
+                if (parentElement) {
+                    const element = track.attach();
+                    parentElement.appendChild(element);
+                    trackRigs.set(key, {
+                        videoElement: element,
+                    });
+                }
             }
+
+            participantVideoSids.set(participant.identity, { room: room.name, video: key })
         }
 
         handler({
@@ -312,15 +323,25 @@ export function set_room_event_handler(room, handler) {
             log(`delete lookup for ${participant.identity}`);
             participantAudioSids.delete(participant.identity);
         }
+        if (participantVideoSids.get(participant.identity)?.room === room.name) {
+            log(`delete video lookup for ${participant.identity}`);
+            participantVideoSids.delete(participant.identity);
+        }
 
         const key = track.sid;
 
         if (trackRigs.has(key)) {
-            log(`detach and pause audioElement for ${key}`)
             const audioElement = trackRigs.get(key).audioElement;
             if (audioElement) {
+                log(`detach and pause audioElement for ${key}`)
                 track.detach(audioElement);
                 audioElement.pause();
+            }
+            const videoElement = trackRigs.get(key).videoElement;
+            if (videoElement) {
+                log(`detach videoElement for ${key}`)
+                track.detach(videoElement);
+                videoElement.remove();
             }
             trackRigs.delete(key);
         }
@@ -349,6 +370,7 @@ export function set_room_event_handler(room, handler) {
 
     room.on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
         participantAudioSids.delete(participant.identity);
+        participantVideoSids.delete(participant.identity);
         handler({
             type: 'participantDisconnected',
             room_name: room_name,
