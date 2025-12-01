@@ -50,6 +50,7 @@ use web_sys::{
 pub struct VideoPlayerPlugin;
 
 const VIDEO_CONTAINER_ID: &str = "video-player-container";
+const STREAM_CONTAINER_ID: &str = "stream-player-container";
 
 impl Plugin for VideoPlayerPlugin {
     fn build(&self, app: &mut App) {
@@ -58,6 +59,14 @@ impl Plugin for VideoPlayerPlugin {
                 if document.get_element_by_id(VIDEO_CONTAINER_ID).is_none() {
                     let container = document.create_element("div").unwrap();
                     container.set_id(VIDEO_CONTAINER_ID);
+                    let style = container.dyn_ref::<web_sys::HtmlElement>().unwrap().style();
+                    style.set_property("display", "none").unwrap();
+
+                    document.body().unwrap().append_child(&container).unwrap();
+                }
+                if document.get_element_by_id(STREAM_CONTAINER_ID).is_none() {
+                    let container = document.create_element("div").unwrap();
+                    container.set_id(STREAM_CONTAINER_ID);
                     let style = container.dyn_ref::<web_sys::HtmlElement>().unwrap().style();
                     style.set_property("display", "none").unwrap();
 
