@@ -16,11 +16,9 @@ use bevy::{
 
 use common::{
     inputs::{
-        Action, AxisIdentifier, BindingsData, CommonInputAction, InputDirection,
-        InputDirectionalSet, InputIdentifier, InputMap, InputMapSerialized, SystemAction,
-        SystemActionEvent, POINTER_SET,
+        Action, AxisIdentifier, BindingsData, CommonInputAction, InputDirection, InputDirectionalSet, InputIdentifier, InputMap, InputMapSerialized, POINTER_SET, SystemAction, SystemActionEvent
     },
-    rpc::RpcResultSender,
+    rpc::{RpcResultSender, RpcStreamSender},
     structs::{AppConfig, CursorLocks, PlayerModifiers},
 };
 use system_bridge::SystemApi;
@@ -658,7 +656,7 @@ fn handle_set_bindings(
 
 fn handle_system_input_stream(
     mut events: EventReader<SystemApi>,
-    mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<SystemActionEvent>>>,
+    mut senders: Local<Vec<RpcStreamSender<SystemActionEvent>>>,
     input_manager: InputManager,
     mut pressed: Local<HashSet<SystemAction>>,
     modifiers: Query<&PlayerModifiers>,

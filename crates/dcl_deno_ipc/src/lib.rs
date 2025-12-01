@@ -34,7 +34,7 @@ pub struct NewSceneInfo {
     pub inspect: bool,
     pub testing: bool,
     pub preview: bool,
-    pub super_user: bool,
+    pub is_super: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -48,11 +48,13 @@ pub enum EngineToScene {
 #[derive(Serialize, Deserialize)]
 pub enum SceneToEngine {
     SceneResponse(SceneResponse),
+    SystemApi(SystemApi),
     IpcMessage(u64, IpcMessage),
 }
 
 thread_local! {
     static RENDERER_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<SceneResponse>>> = RefCell::new(None);
+    static SYSTEM_API_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>> = RefCell::new(None);
 }
 
 pub static NEW_SCENE_SENDER: Lazy<
@@ -215,6 +217,14 @@ pub async fn renderer_ipc_in(mut stream: RecvHalf) {
                         token.cancel();
                     }
                 })
+            },
+            SceneToEngine::SystemApi(system_command) => {
+                SYSTEM_API_SENDER.with(|sender| {
+                    let mut sender = sender.borrow_mut();
+                    let sender = sender.as_mut().unwrap();
+
+                    let _ = sender.send(system_command);
+                });
             }
         }
     }
@@ -236,6 +246,13 @@ pub fn spawn_scene(
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
 ) -> tokio::sync::mpsc::Sender<RendererResponse> {
     RENDERER_SENDER.set(Some(renderer_sender));
+
+    let is_super = super_user.is_some();
+
+    if let Some(super_user) = super_user {
+        SYSTEM_API_SENDER.set(Some(super_user));
+    }
+
     let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
 
     let ipc_out = NEW_SCENE_SENDER.read().unwrap();
@@ -254,7 +271,7 @@ pub fn spawn_scene(
                 inspect,
                 testing,
                 preview,
-                super_user: super_user.is_some(),
+                is_super,
             },
             thread_rx,
             global_update_receiver,

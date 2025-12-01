@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
-    rpc::{RpcResultReceiver, RpcResultSender},
+    rpc::{RpcResultReceiver, RpcResultSender, RpcStreamSender},
     structs::{
         ActiveDialog, AppConfig, PermissionLevel, PermissionStrings, PermissionTarget,
         PermissionUsed, PermissionValue, PrimaryPlayerRes, SettingsTab, ShowSettingsEvent, ZOrder,
@@ -341,9 +341,9 @@ pub fn handle_scene_permissions(
     mut config: ResMut<AppConfig>,
     mut system_events: EventReader<SystemApi>,
     mut requests_streams: Local<
-        Vec<tokio::sync::mpsc::UnboundedSender<system_bridge::PermissionRequest>>,
+        Vec<RpcStreamSender<system_bridge::PermissionRequest>>,
     >,
-    mut used_streams: Local<Vec<tokio::sync::mpsc::UnboundedSender<PermissionUsed>>>,
+    mut used_streams: Local<Vec<RpcStreamSender<PermissionUsed>>>,
     // corresponds to the items in the manager deque
     mut permission_ids: Local<Vec<usize>>,
     mut inc: Local<usize>,

@@ -2,7 +2,7 @@ use crate::rpc::*;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use tokio_util::sync::CancellationToken;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum RpcStreamSender<T> {
     Local {
         channel: tokio::sync::mpsc::UnboundedSender<T>,
@@ -14,6 +14,12 @@ pub enum RpcStreamSender<T> {
         receiver_dropped: CancellationToken,
         sender_alive: tokio::sync::mpsc::Sender<()>,
     },
+}
+
+impl<T> std::fmt::Debug for RpcStreamSender<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("RpcStreamSender").finish()
+    }
 }
 
 pub struct RpcStreamReceiver<T> {
