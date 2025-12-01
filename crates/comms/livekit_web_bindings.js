@@ -315,11 +315,14 @@ export function set_room_event_handler(room, handler) {
 
         const key = track.sid;
 
-        if (!trackRigs.has(key)) {
+        if (trackRigs.has(key)) {
             log(`detach and pause audioElement for ${key}`)
-            const audioElement = trackRigs(key).audioElement;
-            track.detach(audioElement);
-            audioElement.pause();
+            const audioElement = trackRigs.get(key).audioElement;
+            if (audioElement) {
+                track.detach(audioElement);
+                audioElement.pause();
+            }
+            trackRigs.delete(key);
         }
 
 
