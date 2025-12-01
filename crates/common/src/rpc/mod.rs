@@ -16,7 +16,7 @@ pub trait IpcEndpoint: Send {
 }
 
 pub(crate) fn ipc_register<T: IpcEndpoint + 'static>(endpoint: T) -> (u64, tokio::sync::mpsc::UnboundedSender<u64>) {
-    SCENE_CONTEXT.with(|cell| {
+    SCENE_IPC_CONTEXT.with(|cell| {
         let mut ctx = cell.borrow_mut();
         let ctx = ctx.as_mut().unwrap();
 
@@ -29,13 +29,13 @@ pub(crate) fn ipc_register<T: IpcEndpoint + 'static>(endpoint: T) -> (u64, tokio
 }
 
 pub(crate) fn ipc_router(id: u64) -> (tokio::sync::mpsc::UnboundedSender<(u64, IpcMessage)>, CancellationToken) {
-    ENGINE_CONTEXT.with(|cell| {
+    ENGINE_IPC_CONTEXT.with(|cell| {
         let mut ctx = cell.borrow_mut();
         let ctx = ctx.as_mut().unwrap();
 
         let token = CancellationToken::new();
-        ctx.registry.insert(id, token.clone());
-        (ctx.router.clone(), token)
+        ctx.ipc_channel_registry.insert(id, token.clone());
+        (ctx.ipc_router.clone(), token)
     })
 }
 
@@ -43,14 +43,14 @@ pub(crate) fn ipc_router(id: u64) -> (tokio::sync::mpsc::UnboundedSender<(u64, I
 
 
 struct RequestContext {
-    registry: HashMap<u64, Box<dyn IpcEndpoint>>,
-    close_sender: tokio::sync::mpsc::UnboundedSender<u64>,
-    next_id: u64,
+    pub registry: HashMap<u64, Box<dyn IpcEndpoint>>,
+    pub close_sender: tokio::sync::mpsc::UnboundedSender<u64>,
+    pub next_id: u64,
 }
 
-struct ResponseContext {
-    registry: HashMap<u64, CancellationToken>,
-    router: tokio::sync::mpsc::UnboundedSender<(u64, IpcMessage)>,
+pub struct ResponseContext {
+    pub ipc_channel_registry: HashMap<u64, CancellationToken>,
+    pub ipc_router: tokio::sync::mpsc::UnboundedSender<(u64, IpcMessage)>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -61,9 +61,9 @@ pub enum IpcMessage {
 
 thread_local! {
     // Context for Serialization
-    static SCENE_CONTEXT: RefCell<Option<RequestContext>> = RefCell::new(None);
+    pub static SCENE_IPC_CONTEXT: RefCell<Option<RequestContext>> = RefCell::new(None);
     // Context for Deserialization
-    static ENGINE_CONTEXT: RefCell<Option<ResponseContext>> = RefCell::new(None);
+    pub static ENGINE_IPC_CONTEXT: RefCell<Option<ResponseContext>> = RefCell::new(None);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

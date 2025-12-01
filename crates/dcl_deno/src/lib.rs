@@ -2,14 +2,14 @@ pub mod js;
 
 use std::{
     panic::{self, AssertUnwindSafe},
-    sync::{mpsc::SyncSender, Mutex},
+    sync::Mutex,
 };
 
 use bevy::{log::error, platform::collections::HashMap};
 use deno_core::v8::IsolateHandle;
 use once_cell::sync::Lazy;
 use system_bridge::SystemApi;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::{Sender, UnboundedSender};
 
 use ipfs::SceneJsFile;
 
@@ -31,7 +31,7 @@ pub fn spawn_scene(
     scene_hash: String,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
-    renderer_sender: SyncSender<SceneResponse>,
+    renderer_sender: UnboundedSender<SceneResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     id: SceneId,
     storage_root: String,

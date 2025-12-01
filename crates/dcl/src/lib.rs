@@ -38,7 +38,7 @@ pub type RpcCalls = Vec<RpcCall>;
 
 #[allow(clippy::large_enum_variant)] // we don't care since the error case is very rare
 // data from scene to renderer
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum SceneResponse {
     Error(SceneId, String),
     Ok(

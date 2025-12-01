@@ -185,7 +185,7 @@ pub(crate) fn scene_thread(
     storage_root: String,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
-    thread_sx: SyncSender<SceneResponse>,
+    thread_sx: tokio::sync::mpsc::UnboundedSender<SceneResponse>,
     thread_rx: Receiver<RendererResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     inspect: bool,
