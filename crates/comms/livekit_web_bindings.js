@@ -288,6 +288,12 @@ export function set_room_event_handler(room, handler) {
 
             log(`set rig for ${participant.identity}`, key);
             participantAudioSids.set(participant.identity, { room: room.name, audio: key })
+        } else if (track.kind === "video") {
+            const parentElement = window.document.querySelector("#stream-player-container");
+            if (parentElement) {
+                const element = track.attach();
+                parentElement.appendChild(element);
+            }
         }
 
         handler({
