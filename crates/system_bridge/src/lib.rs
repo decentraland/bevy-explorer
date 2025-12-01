@@ -12,7 +12,7 @@ use bevy::{
 use bevy_console::{ConsoleCommandEntered, PrintConsoleLine};
 use common::{
     inputs::{BindingsData, InputIdentifier, SystemActionEvent},
-    rpc::RpcResultSender,
+    rpc::{RpcResultSender, RpcStreamSender},
     structs::{AppConfig, MicState, PermissionLevel, PermissionType, PermissionUsed, PermissionValue},
 };
 use dcl_component::proto_components::{
@@ -71,21 +71,21 @@ pub struct HomeScene {
     pub parcel: Vector2,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub sender_address: String,
     pub message: String,
     pub channel: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct VoiceMessage {
     pub sender_address: String,
     pub channel: String,
     pub active: bool,
 }
 
-#[derive(Event, Clone, Debug)]
+#[derive(Event, Clone, Debug, Serialize, Deserialize)]
 pub enum SystemApi {
     ConsoleCommand(String, Vec<String>, RpcResultSender<Result<String, String>>),
     CheckForUpdate(RpcResultSender<Option<(String, String)>>),
@@ -108,15 +108,15 @@ pub enum SystemApi {
     LiveSceneInfo(RpcResultSender<Vec<LiveSceneInfo>>),
     GetHomeScene(RpcResultSender<HomeScene>),
     SetHomeScene(HomeScene),
-    GetSystemActionStream(tokio::sync::mpsc::UnboundedSender<SystemActionEvent>),
-    GetChatStream(tokio::sync::mpsc::UnboundedSender<ChatMessage>),
-    GetVoiceStream(tokio::sync::mpsc::UnboundedSender<VoiceMessage>),
+    GetSystemActionStream(RpcStreamSender<SystemActionEvent>),
+    GetChatStream(RpcStreamSender<ChatMessage>),
+    GetVoiceStream(RpcStreamSender<VoiceMessage>),
     SendChat(String, String),
     Quit,
-    GetPermissionRequestStream(tokio::sync::mpsc::UnboundedSender<PermissionRequest>),
+    GetPermissionRequestStream(RpcStreamSender<PermissionRequest>),
     SetSinglePermission(SetSinglePermission),
     SetPermanentPermission(SetPermanentPermission),
-    GetPermissionUsedStream(tokio::sync::mpsc::UnboundedSender<PermissionUsed>),
+    GetPermissionUsedStream(RpcStreamSender<PermissionUsed>),
     GetPermanentPermissions(
         PermissionLevel,
         RpcResultSender<Vec<PermanentPermissionItem>>,
@@ -140,13 +140,13 @@ pub struct PermissionRequest {
     pub id: usize,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SetSinglePermission {
     pub id: usize,
     pub allow: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SetPermanentPermission {
     pub ty: PermissionType,
     pub level: PermissionLevel,

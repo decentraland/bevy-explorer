@@ -763,7 +763,7 @@ impl PermissionStrings for PermissionType {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PermissionLevel {
     Scene(String),
     Realm(String),

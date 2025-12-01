@@ -8,6 +8,7 @@ use interprocess::local_socket::{
     traits::tokio::Stream as _,
     GenericFilePath, ToFsName,
 };
+use system_bridge::SystemApi;
 use std::{env, sync::Arc};
 use tokio::io::AsyncReadExt;
 
@@ -33,14 +34,15 @@ fn main() -> Result<()> {
     // init context
     let (close_sx, close_rx) = tokio::sync::mpsc::unbounded_channel();
     let (scene_sx, scene_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (system_api_sx, system_api_rx) = tokio::sync::mpsc::unbounded_channel();
     SCENE_IPC_CONTEXT.set(Some(RequestContext {
         registry: Default::default(),
         close_sender: close_sx,
         next_id: 1,
     }));
 
-    let f_in = rt.spawn(scene_ipc_in(recv_half, scene_sx));
-    let f_out = rt.spawn(scene_ipc_out(send_half, scene_rx, close_rx));
+    let f_in = rt.spawn(scene_ipc_in(recv_half, scene_sx, system_api_sx));
+    let f_out = rt.spawn(scene_ipc_out(send_half, scene_rx, close_rx, system_api_rx));
 
     let _ = rt.block_on(async move { tokio::join!(f_in, f_out) });
 
@@ -51,6 +53,7 @@ async fn scene_ipc_out(
     mut stream: SendHalf,
     mut scene_rx: tokio::sync::mpsc::UnboundedReceiver<SceneResponse>,
     mut close_rx: tokio::sync::mpsc::UnboundedReceiver<u64>,
+    mut system_api_rx: tokio::sync::mpsc::UnboundedReceiver<SystemApi>,
 ) {
     tokio::select! {
         scene_rx = scene_rx.recv() => {
@@ -75,6 +78,13 @@ async fn scene_ipc_out(
             if was_open {
                 write_msg(&mut stream, &SceneToEngine::IpcMessage(close_id, IpcMessage::Closed)).await;                
             }
+        },
+        system_api_rx = system_api_rx.recv() => {
+            let Some(system_api) = system_api_rx else {
+                warn!("scene_ipc_out exit on system_api_rx closed");
+                return;
+            };
+            write_msg(&mut stream, &SceneToEngine::SystemApi(system_api)).await;
         }
     }
 }
@@ -82,6 +92,7 @@ async fn scene_ipc_out(
 async fn scene_ipc_in(
     mut stream: RecvHalf,
     scene_sx: tokio::sync::mpsc::UnboundedSender<SceneResponse>,
+    system_api_sx: tokio::sync::mpsc::UnboundedSender<SystemApi>,
 ) {
     let mut renderer_senders = HashMap::new();
 
@@ -106,7 +117,7 @@ async fn scene_ipc_in(
                     new_scene_info.inspect,
                     new_scene_info.testing,
                     new_scene_info.preview,
-                    None, /* TODO */
+                    new_scene_info.is_super.then(|| system_api_sx.clone()),
                 );
 
                 renderer_senders.insert(id, response_sx);

@@ -691,7 +691,7 @@ fn handle_foreign_audio(
 pub fn pipe_voice_to_scene(
     mut requests: EventReader<SystemApi>,
     sources: Query<(&ForeignPlayer, &ForeignAudioSource)>,
-    mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<VoiceMessage>>>,
+    mut senders: Local<Vec<RpcStreamSender<VoiceMessage>>>,
     mut current_active: Local<HashMap<ethers_core::types::Address, String>>,
     scene_rooms: Query<&SceneRoom>,
 ) {

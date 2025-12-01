@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use bevy::{log::debug, math::Vec4};
 use common::{
     inputs::{Action, BindingsData, InputIdentifier, SystemActionEvent},
-    rpc::{RpcCall, RpcResultReceiver, RpcResultSender},
+    rpc::{RpcCall, RpcResultReceiver, RpcResultSender, RpcStreamSender},
     structs::{
         MicState, PermissionLevel, PermissionStrings, PermissionType, PermissionUsed,
         PermissionValue,
@@ -364,7 +364,7 @@ pub fn op_set_home_scene(state: Rc<RefCell<impl State>>, realm: String, parcel: 
 }
 
 pub async fn op_get_system_action_stream(state: Rc<RefCell<impl State>>) -> u32 {
-    let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let (sx, rx) = RpcStreamSender::channel();
     state.borrow_mut().put(rx);
 
     state
@@ -398,7 +398,7 @@ pub async fn op_read_system_action_stream(
 }
 
 pub async fn op_get_chat_stream(state: Rc<RefCell<impl State>>) -> u32 {
-    let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let (sx, rx) = RpcStreamSender::channel();
     state.borrow_mut().put(rx);
 
     state
@@ -473,7 +473,7 @@ pub fn op_quit(state: Rc<RefCell<impl State>>) {
 }
 
 pub async fn op_get_permission_request_stream(state: Rc<RefCell<impl State>>) -> u32 {
-    let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let (sx, rx) = RpcStreamSender::channel();
     state.borrow_mut().put(rx);
 
     state
@@ -507,7 +507,7 @@ pub async fn op_read_permission_request_stream(
 }
 
 pub async fn op_get_permission_used_stream(state: Rc<RefCell<impl State>>) -> u32 {
-    let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let (sx, rx) = RpcStreamSender::channel();
     state.borrow_mut().put(rx);
 
     state
@@ -655,7 +655,7 @@ pub async fn op_get_mic_state(state: Rc<RefCell<impl State>>) -> Result<MicState
 }
 
 pub async fn op_get_voice_stream(state: Rc<RefCell<impl State>>) -> u32 {
-    let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let (sx, rx) = RpcStreamSender::channel();
     state.borrow_mut().put(rx);
 
     state
