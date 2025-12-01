@@ -312,8 +312,6 @@ async fn connect_and_handle_session(
                 match control {
                     ChannelControl::Subscribe(address, _) => participant_audio_subscribe(&room_name, address, true),
                     ChannelControl::Unsubscribe(address) => participant_audio_subscribe(&room_name, address, false),
-                    ChannelControl::StreamerSubscribe(audio, video) => streamer_subscribe(&room_name, audio, video),
-                    ChannelControl::StreamerUnsubscribe => streamer_subscribe(&room_name, false, false),
                 };
             }
         );
@@ -518,13 +516,5 @@ fn participant_audio_subscribe(room_name: &str, address: H160, subscribe: bool) 
         warn!("Failed to (un)subscribe to {address:?}: {e:?}");
     } else {
         debug!("sub to {address:?}: {subscribe}");
-    }
-}
-
-fn streamer_subscribe(room_name: &str, subscribe_audio: bool, subscribe_video: bool) {
-    if let Err(e) = streamer_subscribe_channel(room_name, subscribe_audio, subscribe_video) {
-        warn!("Failed to (un)subscribe to streamer: {e:?}");
-    } else {
-        debug!("sub streamer: audio {subscribe_audio} video {subscribe_video}");
     }
 }
