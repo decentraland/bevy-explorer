@@ -42,7 +42,7 @@ pub(crate) fn ipc_router(id: u64) -> (tokio::sync::mpsc::UnboundedSender<(u64, I
 
 
 
-struct RequestContext {
+pub struct RequestContext {
     pub registry: HashMap<u64, Box<dyn IpcEndpoint>>,
     pub close_sender: tokio::sync::mpsc::UnboundedSender<u64>,
     pub next_id: u64,

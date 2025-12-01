@@ -25,16 +25,16 @@ use tokio::{
 
 #[derive(Serialize, Deserialize)]
 pub struct NewSceneInfo {
-    initial_crdt_store: CrdtStore,
-    scene_hash: String,
-    scene_js: String,
-    crdt_component_interfaces: CrdtComponentInterfaces,
-    id: SceneId,
-    storage_root: String,
-    inspect: bool,
-    testing: bool,
-    preview: bool,
-    super_user: bool,
+    pub initial_crdt_store: CrdtStore,
+    pub scene_hash: String,
+    pub scene_js: String,
+    pub crdt_component_interfaces: CrdtComponentInterfaces,
+    pub id: SceneId,
+    pub storage_root: String,
+    pub inspect: bool,
+    pub testing: bool,
+    pub preview: bool,
+    pub super_user: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -141,15 +141,6 @@ pub async fn renderer_ipc_out(
     mut ipc_router: tokio::sync::mpsc::UnboundedReceiver<(u64, IpcMessage)>,
 ) {
     let (renderer_sx, mut renderer_rx) = tokio::sync::mpsc::unbounded_channel();
-
-    async fn write_msg<T: Serialize>(stream: &mut SendHalf, value: &T) {
-        let bytes = bincode::serialize(value).unwrap();
-        stream
-            .write_all(&(bytes.len() as u64).to_le_bytes())
-            .await
-            .unwrap();
-        stream.write_all(&bytes).await.unwrap();
-    }
 
     let (_dummy_global_sx, mut global_rx) = tokio::sync::broadcast::channel(0);
 
@@ -271,4 +262,13 @@ pub fn spawn_scene(
         .unwrap();
 
     main_sx
+}
+
+pub async fn write_msg<T: Serialize>(stream: &mut SendHalf, value: &T) {
+    let bytes = bincode::serialize(value).unwrap();
+    stream
+        .write_all(&(bytes.len() as u64).to_le_bytes())
+        .await
+        .unwrap();
+    stream.write_all(&bytes).await.unwrap();
 }
