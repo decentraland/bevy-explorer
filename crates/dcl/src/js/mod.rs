@@ -1,7 +1,7 @@
 use std::{
     cell::RefCell,
     rc::Rc,
-    sync::{mpsc::SyncSender, Arc},
+    sync::Arc,
 };
 
 use anyhow::anyhow;
@@ -9,7 +9,7 @@ use bevy::log::debug;
 use dcl_component::{DclReader, FromDclReader, SceneComponentId, SceneEntityId, proto_components::sdk::components::PbPlayerIdentityData};
 use ipfs::SceneJsFile;
 use system_bridge::SystemApi;
-use tokio::sync::{mpsc::Receiver, Mutex};
+use tokio::sync::{Mutex, mpsc::{Receiver, UnboundedSender}};
 
 use crate::{
     RendererResponse, RpcCalls, SceneElapsedTime, SceneId, SceneLogLevel, SceneLogMessage, SceneResponse, interface::{CrdtComponentInterfaces, CrdtType, crdt_context::CrdtContext}
@@ -106,7 +106,7 @@ pub fn init_state(
     storage_root: String,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
-    thread_sx: SyncSender<SceneResponse>,
+    thread_sx: UnboundedSender<SceneResponse>,
     thread_rx: Receiver<RendererResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     _inspect: bool,
