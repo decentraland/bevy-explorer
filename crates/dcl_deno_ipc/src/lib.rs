@@ -81,12 +81,13 @@ pub fn init_runtime() -> anyhow::Result<()> {
             .build()
             .unwrap();
 
+        let process_id = std::process::id();
         let name_str = if cfg!(windows) {
-            "bevy_explorer_ipc"
+            format!("bevy_explorer_ipc_{process_id:x}")
         } else {
-            "/tmp/bevy_explorer_ipc.sock"
+            format!("/tmp/bevy_explorer_ipc_{process_id:x}.sock")
         };
-        let name = name_str.to_fs_name::<GenericFilePath>().unwrap();
+        let name = name_str.clone().to_fs_name::<GenericFilePath>().unwrap();
 
         let listener = rt.block_on(async { ListenerOptions::new().name(name).create_tokio() });
         let listener = match listener {
@@ -122,7 +123,7 @@ pub fn init_runtime() -> anyhow::Result<()> {
             .stderr(Stdio::inherit())
             .spawn()
             .unwrap_or_else(|_| panic!("failed to spawn deno binary at {target:?}"));
-        
+
         let (ipc_inbound, ipc_outbound) = stream.split();
 
         let (new_scene_sx, new_scene_rx) = tokio::sync::mpsc::unbounded_channel();
