@@ -282,9 +282,7 @@ pub fn process_transport_updates(
     mut position_events: EventWriter<PlayerPositionEvent>,
     mut chat_events: EventWriter<ChatEvent>,
     mut string_senders: Local<HashMap<String, RpcEventSender>>,
-    mut binary_senders: Local<
-        HashMap<String, RpcStreamSender<(String, Vec<u8>)>>,
-    >,
+    mut binary_senders: Local<HashMap<String, RpcStreamSender<(String, Vec<u8>)>>>,
     mut subscribers: EventReader<RpcCall>,
     mut profile_meta_cache: ResMut<ProfileMetaCache>,
     mut duplicate_chat_filter: Local<HashMap<Entity, f64>>,

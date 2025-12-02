@@ -13,7 +13,10 @@ use tokio::sync::mpsc::{Sender, UnboundedSender};
 
 use ipfs::SceneJsFile;
 
-use dcl::{RendererResponse, SceneId, SceneResponse, interface::{CrdtComponentInterfaces, CrdtStore}};
+use dcl::{
+    interface::{CrdtComponentInterfaces, CrdtStore},
+    RendererResponse, SceneId, SceneResponse,
+};
 
 use crate::js::scene_thread;
 

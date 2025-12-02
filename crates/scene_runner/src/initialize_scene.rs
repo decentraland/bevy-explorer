@@ -21,7 +21,9 @@ use dcl::{
     SceneElapsedTime, SceneId, SceneResponse,
 };
 use dcl_component::{
-    DclReader, DclWriter, SceneComponentId, SceneEntityId, proto_components::sdk::components::{PbMainCamera, PbRealmInfo}, transform_and_parent::DclTransformAndParent
+    proto_components::sdk::components::{PbMainCamera, PbRealmInfo},
+    transform_and_parent::DclTransformAndParent,
+    DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
 use ipfs::{
     ipfs_path::IpfsPath, ActiveEntityTask, CurrentRealm, EntityDefinition, IpfsAssetServer,
@@ -499,9 +501,7 @@ pub(crate) fn load_scene_javascript(
         ));
 
         commands.entity(root).try_insert((
-            SceneInitialData {
-                js: h_code,
-            },
+            SceneInitialData { js: h_code },
             SceneLoading::Javascript(Some(global_updates)),
         ));
     }

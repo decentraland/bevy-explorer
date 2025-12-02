@@ -211,7 +211,9 @@ fn connect_scene_room(
             let uri = Uri::try_from(GATEKEEPER_URL).unwrap();
             let client = ipfs.ipfs().client();
             *gatekeeper_task = Some(IoTaskPool::get().spawn_compat(async move {
-                let headers = sign_request("POST", &uri, &wallet, serde_json::to_string(&ev).unwrap()).await?;
+                let headers =
+                    sign_request("POST", &uri, &wallet, serde_json::to_string(&ev).unwrap())
+                        .await?;
 
                 let mut request = client
                     .post(uri.to_string())

@@ -8,8 +8,8 @@ use interprocess::local_socket::{
     traits::tokio::Stream as _,
     GenericFilePath, ToFsName,
 };
-use system_bridge::SystemApi;
 use std::{env, sync::Arc};
+use system_bridge::SystemApi;
 use tokio::io::AsyncReadExt;
 
 fn main() -> Result<()> {
@@ -76,7 +76,7 @@ async fn scene_ipc_out(
             });
 
             if was_open {
-                write_msg(&mut stream, &SceneToEngine::IpcMessage(close_id, IpcMessage::Closed)).await;                
+                write_msg(&mut stream, &SceneToEngine::IpcMessage(close_id, IpcMessage::Closed)).await;
             }
         },
         system_api_rx = system_api_rx.recv() => {

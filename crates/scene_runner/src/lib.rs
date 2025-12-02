@@ -1,8 +1,4 @@
-use std::{
-    collections::VecDeque,
-    marker::PhantomData,
-    time::Duration,
-};
+use std::{collections::VecDeque, marker::PhantomData, time::Duration};
 
 use system_bridge::SystemApi;
 use tokio::sync::mpsc::error::TryRecvError;

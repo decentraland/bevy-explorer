@@ -67,7 +67,8 @@ pub async fn op_signed_fetch_headers(
 
     let entity_definition = rx.await?.ok_or_else(|| anyhow!("no entity definition"))?;
 
-    let scene_meta = serde_json::from_str::<SceneMeta>(&entity_definition.metadata.unwrap_or_default())?;
+    let scene_meta =
+        serde_json::from_str::<SceneMeta>(&entity_definition.metadata.unwrap_or_default())?;
 
     let meta = SignedFetchMeta {
         origin: Some(realm_info.base_url.clone()),

@@ -16,7 +16,9 @@ use bevy::{
 
 use common::{
     inputs::{
-        Action, AxisIdentifier, BindingsData, CommonInputAction, InputDirection, InputDirectionalSet, InputIdentifier, InputMap, InputMapSerialized, POINTER_SET, SystemAction, SystemActionEvent
+        Action, AxisIdentifier, BindingsData, CommonInputAction, InputDirection,
+        InputDirectionalSet, InputIdentifier, InputMap, InputMapSerialized, SystemAction,
+        SystemActionEvent, POINTER_SET,
     },
     rpc::{RpcResultSender, RpcStreamSender},
     structs::{AppConfig, CursorLocks, PlayerModifiers},

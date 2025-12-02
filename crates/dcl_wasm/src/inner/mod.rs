@@ -2,11 +2,7 @@ pub mod gotham_state;
 pub mod local_storage;
 pub mod op_wrappers;
 
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::Arc,
-};
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use bevy::{log::tracing::span::EnteredSpan, tasks::IoTaskPool};
 use dcl::{

@@ -1,18 +1,22 @@
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::Arc,
-};
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use anyhow::anyhow;
 use bevy::log::debug;
-use dcl_component::{DclReader, FromDclReader, SceneComponentId, SceneEntityId, proto_components::sdk::components::PbPlayerIdentityData};
+use dcl_component::{
+    proto_components::sdk::components::PbPlayerIdentityData, DclReader, FromDclReader,
+    SceneComponentId, SceneEntityId,
+};
 use ipfs::SceneJsFile;
 use system_bridge::SystemApi;
-use tokio::sync::{Mutex, mpsc::{Receiver, UnboundedSender}};
+use tokio::sync::{
+    mpsc::{Receiver, UnboundedSender},
+    Mutex,
+};
 
 use crate::{
-    RendererResponse, RpcCalls, SceneElapsedTime, SceneId, SceneLogLevel, SceneLogMessage, SceneResponse, interface::{CrdtComponentInterfaces, CrdtType, crdt_context::CrdtContext}
+    interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
+    RendererResponse, RpcCalls, SceneElapsedTime, SceneId, SceneLogLevel, SceneLogMessage,
+    SceneResponse,
 };
 
 use super::interface::CrdtStore;

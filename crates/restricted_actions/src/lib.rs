@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::anyhow;
 use bevy::{
-    asset::{AsyncReadExt, LoadState, io::AssetReader},
+    asset::{io::AssetReader, AsyncReadExt, LoadState},
     math::Vec3Swizzles,
     platform::collections::{HashMap, HashSet},
     prelude::*,
@@ -18,7 +18,8 @@ use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::SerializedProfile,
     rpc::{
-        EntityDefinitionResponse, PortableLocation, RPCSendableMessage, ReadFileResponse, RpcCall, RpcEventSender, RpcResultSender, SpawnResponse
+        EntityDefinitionResponse, PortableLocation, RPCSendableMessage, ReadFileResponse, RpcCall,
+        RpcEventSender, RpcResultSender, SpawnResponse,
     },
     sets::SceneSets,
     structs::{AvatarDynamicState, PermissionType, PrimaryCamera, PrimaryUser, ZOrder},
@@ -35,7 +36,8 @@ use dcl_component::proto_components::kernel::comms::rfc4;
 use ethers_core::types::Address;
 use http::Uri;
 use ipfs::{
-    ChangeRealmEvent, EntityDefinition, IpfsAssetServer, IpfsIo, ServerAbout, ipfs_path::{IpfsPath, IpfsType}
+    ipfs_path::{IpfsPath, IpfsType},
+    ChangeRealmEvent, EntityDefinition, IpfsAssetServer, IpfsIo, ServerAbout,
 };
 use nft::asset_source::Nft;
 use reqwest::StatusCode;
@@ -51,7 +53,7 @@ use scene_runner::{
 use serde_json::{json, Value};
 use teleport::{handle_out_of_world, teleport_player};
 use ui_core::button::DuiButton;
-use wallet::{Wallet, browser_auth::remote_send_async, sign_request};
+use wallet::{browser_auth::remote_send_async, sign_request, Wallet};
 
 pub struct RestrictedActionsPlugin;
 
@@ -473,7 +475,7 @@ fn spawn_portable(
                     pending_responses.insert(hash, response.take());
                 }
                 Err(e) => {
-                    let _ = response
+                    response
                         .take()
                         .unwrap()
                         .send(Err(format!("failed to lookup ens: {e}")));
@@ -487,7 +489,7 @@ fn spawn_portable(
 
     pending_responses.retain(|hash, sender| {
         let mut fail = |msg: String| -> bool {
-            let _ = sender.take().unwrap().send(Err(msg));
+            sender.take().unwrap().send(Err(msg));
             failed_portables.insert(hash.clone());
             false
         };
@@ -508,14 +510,14 @@ fn spawn_portable(
 
         if let Some(context) = maybe_context {
             if let Some(source) = current_portables.0.get(hash) {
-                let _ = sender.take().unwrap().send(Ok(SpawnResponse {
+                sender.take().unwrap().send(Ok(SpawnResponse {
                     pid: source.pid.clone(),
                     parent_cid: source.parent_scene.clone().unwrap_or_default(),
                     name: context.title.clone(),
                     ens: source.ens.clone(),
                 }));
             } else {
-                let _ = sender
+                sender
                     .take()
                     .unwrap()
                     .send(Err("killed before load completed".to_owned()));
@@ -1406,13 +1408,25 @@ fn handle_spawned_command(
     })
 }
 
+#[allow(clippy::type_complexity)]
 fn handle_sign_request(
-    mut events: EventReader<RpcCall>,   
-    mut tasks: Local<Vec<(RpcResultSender<Result<Vec<(String, String)>, String>>, Task<Result<Vec<(String, String)>, anyhow::Error>>)>>,
+    mut events: EventReader<RpcCall>,
+    mut tasks: Local<
+        Vec<(
+            RpcResultSender<Result<Vec<(String, String)>, String>>,
+            Task<Result<Vec<(String, String)>, anyhow::Error>>,
+        )>,
+    >,
     wallet: Res<Wallet>,
 ) {
     for ev in events.read() {
-        if let RpcCall::SignRequest { method, uri, meta, response } = ev {
+        if let RpcCall::SignRequest {
+            method,
+            uri,
+            meta,
+            response,
+        } = ev
+        {
             let Ok(uri) = Uri::try_from(uri) else {
                 response.send(Err(format!("failed to parse uri: {uri}")));
                 continue;
@@ -1420,9 +1434,8 @@ fn handle_sign_request(
             let method = method.clone();
             let meta = meta.to_owned().unwrap_or_default();
             let wallet = wallet.clone();
-            let task = IoTaskPool::get().spawn_compat(async move {
-                sign_request(&method, &uri, &wallet, meta).await
-            });
+            let task = IoTaskPool::get()
+                .spawn_compat(async move { sign_request(&method, &uri, &wallet, meta).await });
             tasks.push((response.clone(), task));
         }
     }
@@ -1437,15 +1450,28 @@ fn handle_sign_request(
     })
 }
 
+#[allow(clippy::type_complexity)]
 fn handle_read_file(
-    mut events: EventReader<RpcCall>,   
-    mut tasks: Local<Vec<(RpcResultSender<Result<ReadFileResponse, String>>, Task<Result<ReadFileResponse, anyhow::Error>>)>>,
+    mut events: EventReader<RpcCall>,
+    mut tasks: Local<
+        Vec<(
+            RpcResultSender<Result<ReadFileResponse, String>>,
+            Task<Result<ReadFileResponse, anyhow::Error>>,
+        )>,
+    >,
     ipfs: IpfsAssetServer,
 ) {
     for ev in events.read() {
-        if let RpcCall::ReadFile { scene_hash, filename, response } = ev {
-
-            let ipfs_path = IpfsPath::new(IpfsType::new_content_file(scene_hash.to_owned(), filename.to_owned()));
+        if let RpcCall::ReadFile {
+            scene_hash,
+            filename,
+            response,
+        } = ev
+        {
+            let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
+                scene_hash.to_owned(),
+                filename.to_owned(),
+            ));
             let ipfs_pathbuf = PathBuf::from(&ipfs_path);
             let ipfs = ipfs.ipfs().clone();
 
@@ -1475,14 +1501,19 @@ fn handle_read_file(
     })
 }
 
+#[allow(clippy::type_complexity)]
 fn handle_entity_definition(
-    mut events: EventReader<RpcCall>,   
-    mut tasks: Local<Vec<(RpcResultSender<Option<EntityDefinitionResponse>>, Task<Option<EntityDefinitionResponse>>)>>,
+    mut events: EventReader<RpcCall>,
+    mut tasks: Local<
+        Vec<(
+            RpcResultSender<Option<EntityDefinitionResponse>>,
+            Task<Option<EntityDefinitionResponse>>,
+        )>,
+    >,
     ipfs: IpfsAssetServer,
 ) {
     for ev in events.read() {
         if let RpcCall::EntityDefinition { urn, response } = ev {
-
             let ipfs = ipfs.ipfs().clone();
             let urn = urn.to_owned();
 
@@ -1510,4 +1541,3 @@ fn handle_entity_definition(
         }
     })
 }
-

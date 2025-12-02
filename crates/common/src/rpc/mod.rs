@@ -1,21 +1,23 @@
 mod result_sender;
 mod stream_sender;
 
+use crate::{profile::SerializedProfile, structs::PermissionType};
 use bevy::{platform::collections::HashMap, prelude::*};
 use ethers_core::types::H160;
 use serde::{Deserialize, Serialize};
-use tokio_util::sync::CancellationToken;
 use std::cell::RefCell;
-use crate::{profile::SerializedProfile, structs::PermissionType};
+use tokio_util::sync::CancellationToken;
 
-pub use result_sender::{RpcResultSender, RpcResultReceiver};
-pub use stream_sender::{RpcStreamSender, RpcStreamReceiver};
+pub use result_sender::{RpcResultReceiver, RpcResultSender};
+pub use stream_sender::{RpcStreamReceiver, RpcStreamSender};
 
 pub trait IpcEndpoint: Send {
     fn send(&mut self, raw_bytes: Vec<u8>);
 }
 
-pub(crate) fn ipc_register<T: IpcEndpoint + 'static>(endpoint: T) -> (u64, tokio::sync::mpsc::UnboundedSender<u64>) {
+pub(crate) fn ipc_register<T: IpcEndpoint + 'static>(
+    endpoint: T,
+) -> (u64, tokio::sync::mpsc::UnboundedSender<u64>) {
     SCENE_IPC_CONTEXT.with(|cell| {
         let mut ctx = cell.borrow_mut();
         let ctx = ctx.as_mut().unwrap();
@@ -28,7 +30,12 @@ pub(crate) fn ipc_register<T: IpcEndpoint + 'static>(endpoint: T) -> (u64, tokio
     })
 }
 
-pub(crate) fn ipc_router(id: u64) -> (tokio::sync::mpsc::UnboundedSender<(u64, IpcMessage)>, CancellationToken) {
+pub(crate) fn ipc_router(
+    id: u64,
+) -> (
+    tokio::sync::mpsc::UnboundedSender<(u64, IpcMessage)>,
+    CancellationToken,
+) {
     ENGINE_IPC_CONTEXT.with(|cell| {
         let mut ctx = cell.borrow_mut();
         let ctx = ctx.as_mut().unwrap();
@@ -38,9 +45,6 @@ pub(crate) fn ipc_router(id: u64) -> (tokio::sync::mpsc::UnboundedSender<(u64, I
         (ctx.ipc_router.clone(), token)
     })
 }
-
-
-
 
 pub struct RequestContext {
     pub registry: HashMap<u64, Box<dyn IpcEndpoint>>,
@@ -61,9 +65,9 @@ pub enum IpcMessage {
 
 thread_local! {
     // Context for Serialization
-    pub static SCENE_IPC_CONTEXT: RefCell<Option<RequestContext>> = RefCell::new(None);
+    pub static SCENE_IPC_CONTEXT: RefCell<Option<RequestContext>> = const { RefCell::new(None) };
     // Context for Deserialization
-    pub static ENGINE_IPC_CONTEXT: RefCell<Option<ResponseContext>> = RefCell::new(None);
+    pub static ENGINE_IPC_CONTEXT: RefCell<Option<ResponseContext>> = const { RefCell::new(None) };
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -262,7 +266,7 @@ pub enum RpcCall {
     EntityDefinition {
         urn: String,
         response: RpcResultSender<Option<EntityDefinitionResponse>>,
-    }
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -271,7 +275,6 @@ pub enum RpcUiFocusAction {
     Defocus,
     GetFocus,
 }
-
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]

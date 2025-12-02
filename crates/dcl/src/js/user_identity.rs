@@ -1,7 +1,10 @@
 use std::{cell::RefCell, rc::Rc};
 
 use bevy::log::debug;
-use common::{profile::SerializedProfile, rpc::{RpcCall, RpcResultSender}};
+use common::{
+    profile::SerializedProfile,
+    rpc::{RpcCall, RpcResultSender},
+};
 use serde::Serialize;
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
