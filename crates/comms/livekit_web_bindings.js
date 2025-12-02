@@ -466,11 +466,11 @@ export function streamer_subscribe_channel(roomName, subscribe_audio, subscribe_
     log(`subscribing to ${audioPubs.length} audio tracks and to ${videoPubs.length} video tracks`);
 
     for (const pub of audioPubs) {
-        log(`sub ${roomName}-${participant.identity}`);
+        log(`sub(${subscribe_video}) ${roomName}-${participant.identity}`);
         pub.setSubscribed(subscribe_audio);
     }
     for (const pub of videoPubs) {
-        log(`video sub ${roomName}-${participant.identity}`);
+        log(`video sub(${subscribe_video}) ${roomName}-${participant.identity}`);
         pub.setSubscribed(subscribe_video);
     }
 }
