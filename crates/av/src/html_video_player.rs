@@ -491,7 +491,6 @@ pub fn update_av_players(
     mut images: ResMut<Assets<Image>>,
     ipfs: Res<IpfsResource>,
     mut scenes: Query<&mut RendererSceneContext>,
-    mut scene_rooms: Query<&mut Transport, (With<LivekitTransport>, With<SceneRoom>)>,
     config: Res<AppConfig>,
     containing_scene: ContainingScene,
     user: Query<&GlobalTransform, With<PrimaryUser>>,
@@ -500,7 +499,9 @@ pub fn update_av_players(
 ) {
     for (ent, container, player, mut maybe_av, maybe_texture, _) in av_players.iter_mut() {
         if let Some(av) = maybe_av.as_mut().filter(|p| p.source == player.source.src) {
-            if player.is_changed() {
+            if av.state() == VideoState::VsError {
+                av.source = String::new();
+            } else if player.is_changed() {
                 av.set_loop(player.source.r#loop.unwrap_or(false));
                 av.set_volume(player.source.volume.unwrap_or(1.0));
             }
@@ -549,7 +550,6 @@ pub fn update_av_players(
                         player.source.src.clone(),
                         image_handle.clone(),
                     ) else {
-                        error!("No streamer HtmlMediaElement");
                         continue;
                     };
                     video
