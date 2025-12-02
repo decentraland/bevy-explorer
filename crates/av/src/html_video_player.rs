@@ -11,7 +11,7 @@ use bevy::{
     color::palettes::basic,
     diagnostic::FrameCount,
     math::FloatOrd,
-    platform::collections::{HashMap, HashSet},
+    platform::collections::HashMap,
     prelude::*,
     render::{
         render_asset::{RenderAssetUsages, RenderAssets},
@@ -84,7 +84,11 @@ impl Plugin for VideoPlayerPlugin {
         );
         app.add_systems(
             Update,
-            (rebuild_html_media_entities, update_av_players)
+            (
+                rebuild_html_media_entities,
+                av_player_should_be_playing,
+                update_av_players,
+            )
                 .chain()
                 .in_set(SceneSets::PostLoop),
         );
@@ -112,6 +116,10 @@ pub struct FrameCopyRequest {
     video_frame: WgpuWrapper<VideoFrame>,
     target: AssetId<Image>,
 }
+
+/// Marks whether an [`AVPlayer`] should be playing
+#[derive(Debug, Component)]
+struct ShouldBePlaying;
 
 #[derive(Component, Debug)]
 #[component(immutable)]
@@ -588,35 +596,22 @@ fn rebuild_html_media_entities(
     }
 }
 
-#[allow(clippy::type_complexity, clippy::too_many_arguments)]
-pub fn update_av_players(
+fn av_player_should_be_playing(
     mut commands: Commands,
-    mut av_players: Query<(
-        Entity,
-        &ContainerEntity,
-        Ref<AVPlayer>,
-        Option<&mut HtmlMediaEntity>,
-        Option<&VideoTextureOutput>,
-        &GlobalTransform,
-    )>,
-    mut images: ResMut<Assets<Image>>,
-    mut scenes: Query<&mut RendererSceneContext>,
-    config: Res<AppConfig>,
-    containing_scene: ContainingScene,
+    av_players: Query<(Entity, &ContainerEntity, Ref<AVPlayer>, &GlobalTransform)>,
     user: Query<&GlobalTransform, With<PrimaryUser>>,
-    send_queue: Res<FrameCopyRequestQueue>,
-    frame: Res<FrameCount>,
+    containing_scene: ContainingScene,
+    config: Res<AppConfig>,
 ) {
     // disable distant av
     let Ok(user) = user.single() else {
         return;
     };
-
     let containing_scenes = containing_scene.get_position(user.translation());
 
     let mut sorted_players = av_players
         .iter()
-        .filter_map(|(ent, container, player, _, _, transform)| {
+        .filter_map(|(ent, container, player, transform)| {
             if player.source.playing.unwrap_or(true) {
                 let in_scene = containing_scenes.contains(&container.root);
                 let distance = transform.translation().distance(user.translation());
@@ -630,16 +625,41 @@ pub fn update_av_players(
     // prioritise av in current scene (false < true), then by distance
     sorted_players.sort_by_key(|(in_scene, distance, _)| (!in_scene, FloatOrd(*distance)));
 
-    let should_be_playing = sorted_players
+    // Removing first for better Trigger ordering
+    for ent in sorted_players
+        .iter()
+        .skip(config.max_videos)
+        .map(|(_, _, ent)| *ent)
+    {
+        commands.entity(ent).try_remove::<ShouldBePlaying>();
+    }
+
+    for ent in sorted_players
         .iter()
         .take(config.max_videos)
         .map(|(_, _, ent)| *ent)
-        .collect::<HashSet<_>>();
+    {
+        commands.entity(ent).try_insert(ShouldBePlaying);
+    }
+}
 
-    for (ent, container, player, maybe_av, _, _) in av_players.iter_mut() {
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+fn update_av_players(
+    mut commands: Commands,
+    mut av_players: Query<(
+        Entity,
+        &ContainerEntity,
+        Ref<AVPlayer>,
+        Option<&mut HtmlMediaEntity>,
+        Has<ShouldBePlaying>,
+    )>,
+    mut images: ResMut<Assets<Image>>,
+    mut scenes: Query<&mut RendererSceneContext>,
+    send_queue: Res<FrameCopyRequestQueue>,
+    frame: Res<FrameCount>,
+) {
+    for (ent, container, player, maybe_av, should_be_playing) in av_players.iter_mut() {
         let Some(mut av) = maybe_av else { continue };
-
-        let should_be_playing = should_be_playing.contains(&ent);
 
         let state = av.state();
 
