@@ -87,6 +87,7 @@ impl Plugin for VideoPlayerPlugin {
             Update,
             (
                 rebuild_html_media_entities,
+                av_player_is_in_scene,
                 av_player_should_be_playing,
                 update_av_players,
             )
@@ -123,6 +124,10 @@ pub struct FrameCopyRequest {
 /// Marks whether an [`AVPlayer`] should be playing
 #[derive(Debug, Component)]
 struct ShouldBePlaying;
+
+/// Marks whether an [`AVPlayer`] is in the same scene as the [`PrimaryUser`]
+#[derive(Debug, Component)]
+struct InScene;
 
 #[derive(Component, Debug)]
 #[component(immutable)]
@@ -599,12 +604,11 @@ fn rebuild_html_media_entities(
     }
 }
 
-fn av_player_should_be_playing(
+fn av_player_is_in_scene(
     mut commands: Commands,
-    av_players: Query<(Entity, &ContainerEntity, &AVPlayer, &GlobalTransform)>,
+    av_players: Query<(Entity, &ContainerEntity, &AVPlayer)>,
     user: Query<&GlobalTransform, With<PrimaryUser>>,
     containing_scene: ContainingScene,
-    config: Res<AppConfig>,
 ) {
     // disable distant av
     let Ok(user) = user.single() else {
@@ -612,11 +616,33 @@ fn av_player_should_be_playing(
     };
     let containing_scenes = containing_scene.get_position(user.translation());
 
+    for (ent, container, _) in av_players
+        .iter()
+        .filter(|(_, _, player)| player.source.playing.unwrap_or(true))
+    {
+        if containing_scenes.contains(&container.root) {
+            commands.entity(ent).try_insert(InScene);
+        } else {
+            commands.entity(ent).try_remove::<InScene>();
+        }
+    }
+}
+
+fn av_player_should_be_playing(
+    mut commands: Commands,
+    av_players: Query<(Entity, &AVPlayer, Has<InScene>, &GlobalTransform)>,
+    user: Query<&GlobalTransform, With<PrimaryUser>>,
+    config: Res<AppConfig>,
+) {
+    // disable distant av
+    let Ok(user) = user.single() else {
+        return;
+    };
+
     let mut sorted_players = av_players
         .iter()
-        .filter_map(|(ent, container, player, transform)| {
+        .filter_map(|(ent, player, in_scene, transform)| {
             if player.source.playing.unwrap_or(true) {
-                let in_scene = containing_scenes.contains(&container.root);
                 let distance = transform.translation().distance(user.translation());
                 Some((in_scene, distance, ent))
             } else {
@@ -859,7 +885,7 @@ fn perform_video_copies(
 
 fn unsubscribe_to_streamer(
     trigger: Trigger<OnRemove, ShouldBePlaying>,
-    av_players: Query<&AVPlayer>,
+    av_players: Query<&AVPlayer, With<InScene>>,
     mut scene_rooms: Query<&mut Transport, With<SceneRoom>>,
 ) {
     let Ok(av_player) = av_players.get(trigger.target()) else {
@@ -885,7 +911,7 @@ fn unsubscribe_to_streamer(
 
 fn subscribe_to_streamer(
     trigger: Trigger<OnAdd, ShouldBePlaying>,
-    av_players: Query<&AVPlayer>,
+    av_players: Query<&AVPlayer, With<InScene>>,
     mut scene_rooms: Query<&mut Transport, With<SceneRoom>>,
 ) {
     let Ok(av_player) = av_players.get(trigger.target()) else {
