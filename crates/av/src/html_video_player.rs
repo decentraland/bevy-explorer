@@ -25,7 +25,6 @@ use common::{
     sets::SceneSets,
     structs::{AppConfig, PrimaryUser},
 };
-use comms::{global_crdt::ChannelControl, livekit_room::LivekitTransport, SceneRoom, Transport};
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::sdk::components::{
@@ -39,7 +38,6 @@ use scene_runner::{
     update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt},
     ContainerEntity, ContainingScene,
 };
-use tokio::sync::mpsc::Sender;
 use wasm_bindgen::prelude::wasm_bindgen;
 use web_sys::{
     js_sys::{self, Reflect},
@@ -338,7 +336,7 @@ impl HtmlMediaEntity {
         slf
     }
 
-    pub fn new_stream(url: &str, source: String, image: Handle<Image>) -> Option<Self> {
+    pub fn new_stream(source: String, image: Handle<Image>) -> Option<Self> {
         let media = web_sys::window().unwrap().document().and_then(|doc| {
             let container = doc
                 .get_element_by_id(STREAM_CONTAINER_ID)
@@ -546,7 +544,6 @@ pub fn update_av_players(
                     )
                 } else if player.source.src.starts_with("livekit-video://") {
                     let Some(video) = HtmlMediaEntity::new_stream(
-                        &source,
                         player.source.src.clone(),
                         image_handle.clone(),
                     ) else {
