@@ -16,7 +16,7 @@ pub async fn op_motd(state: &WorkerContext) -> Result<String, WasmError> {
 
 #[wasm_bindgen]
 pub fn op_get_current_login(state: &WorkerContext) -> Option<String> {
-    dcl::js::system_api::op_get_current_login(&mut *state.state.borrow_mut())
+    dcl::js::system_api::op_get_current_login(&*state.state.borrow())
 }
 
 #[wasm_bindgen]
@@ -302,9 +302,8 @@ pub fn op_set_interactable_area(
 }
 
 #[wasm_bindgen]
-pub async fn op_get_mic_state(state: &WorkerContext) -> JsValue {
-    let state = dcl::js::system_api::op_get_mic_state(state.rc()).await;
-    serde_wasm_bindgen::to_value(&state).unwrap()
+pub async fn op_get_mic_state(state: &WorkerContext) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_get_mic_state(state.rc()).await)
 }
 
 #[wasm_bindgen]

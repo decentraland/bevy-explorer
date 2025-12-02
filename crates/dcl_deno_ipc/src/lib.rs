@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use bevy::log::{debug, error, info, warn};
+use bevy::log::{debug, error, warn};
 use common::rpc::{rmp_encode, IpcMessage, ResponseContext, ENGINE_IPC_CONTEXT};
 use dcl::{
     interface::{CrdtComponentInterfaces, CrdtStore},
@@ -98,6 +98,15 @@ pub fn init_runtime() -> anyhow::Result<()> {
             }
         };
 
+        let stream = match rt.block_on(async { listener.accept().await }) {
+            Ok(stream) => stream,
+            Err(e) => {
+                error!("runtime initialization failed: {e}");
+                let _ = init_sx.send(Err(e.into()));
+                return;
+            }
+        };
+
         let mut target = std::env::current_exe()
             .unwrap()
             .parent()
@@ -107,26 +116,13 @@ pub fn init_runtime() -> anyhow::Result<()> {
             target.set_extension("exe");
         }
 
-        let mut _child = Command::new(&target)
+        let mut child = Command::new(&target)
             .arg(name_str)
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .spawn()
-            .expect(&format!("failed to spawn deno binary at {:?}", target));
-
-        info!("[Host] Waiting for worker connection...");
-
-        info!("waiting for scene runtime initialization");
-        let stream = match rt.block_on(async { listener.accept().await }) {
-            Ok(stream) => stream,
-            Err(e) => {
-                error!("runtime initialization failed: {e}");
-                let _ = init_sx.send(Err(e.into()));
-                return;
-            }
-        };
-        info!("scene runtime initialized");
-
+            .unwrap_or_else(|_| panic!("failed to spawn deno binary at {target:?}"));
+        
         let (ipc_inbound, ipc_outbound) = stream.split();
 
         let (new_scene_sx, new_scene_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -144,6 +140,8 @@ pub fn init_runtime() -> anyhow::Result<()> {
         let _ = init_sx.send(Ok(()));
 
         let _ = rt.block_on(async move { tokio::join!(f_out, f_in) });
+
+        child.wait().unwrap();
     });
 
     init_rx.blocking_recv()?

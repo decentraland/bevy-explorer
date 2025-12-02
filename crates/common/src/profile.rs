@@ -54,7 +54,7 @@ pub struct LambdaProfiles {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all="camelCase")]
+#[serde(rename_all = "camelCase")]
 pub struct SerializedProfile {
     pub user_id: Option<String>,
     pub name: String,

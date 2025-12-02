@@ -1,9 +1,8 @@
 use super::WorkerContext;
 use bevy::{log::warn, platform::collections::HashMap};
-use dcl::interface::crdt_context::CrdtContext;
+use dcl::{interface::crdt_context::CrdtContext, js::player_identity};
 use futures_lite::io::{AsyncReadExt, AsyncWriteExt};
 use serde::{Deserialize, Serialize};
-use wallet::Wallet;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
@@ -52,13 +51,11 @@ fn write(state: &WorkerContext) {
 }
 
 fn address(state: &WorkerContext) -> String {
-    state
-        .state
-        .borrow()
-        .borrow::<Wallet>()
-        .address()
-        .map(|a| format!("{a:#x}"))
-        .unwrap_or_default()
+    let address = player_identity(&*state.state.borrow())
+        .map(|id| id.address)
+        .unwrap_or_default();
+    println!("local storage address: {address:?}");
+    address
 }
 
 fn strip_prefix(key: &mut String) {
