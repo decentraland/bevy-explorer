@@ -326,6 +326,7 @@ async fn connect_and_handle_session(
 }
 
 // Define structures for the events coming from JavaScript
+#[expect(dead_code, reason = "Some fields exist for consistency")]
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 enum RoomEvent {
