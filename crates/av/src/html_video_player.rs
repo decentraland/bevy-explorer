@@ -896,11 +896,11 @@ fn unsubscribe_to_streamer(
     }
 
     let Ok(mut transport) = scene_rooms.single_mut() else {
-        debug!("No SceneRoom transport.");
+        error!("No SceneRoom transport.");
         return;
     };
     let Some(channel) = transport.control.as_mut() else {
-        debug!("SceneRoom transport has not control channel.");
+        error!("SceneRoom transport has not control channel.");
         return;
     };
 
