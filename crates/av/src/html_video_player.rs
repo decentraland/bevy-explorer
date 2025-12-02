@@ -568,20 +568,20 @@ fn rebuild_html_media_entities(
                 Some(texture) => texture.0.clone(),
             };
 
-            let mut video = if player.source.src.starts_with("https://") {
-                warn!("https video {}", player.source.src);
-                HtmlMediaEntity::new_video(&source, player.source.src.clone(), image_handle.clone())
-            } else if player.source.src.starts_with("livekit-video://") {
+            let mut video = if player.source.src.starts_with("livekit-video://") {
                 let Some(video) =
                     HtmlMediaEntity::new_stream(player.source.src.clone(), image_handle.clone())
                 else {
                     continue;
                 };
-                warn!("stream video {}", player.source.src);
+                debug!("stream video {}", player.source.src);
                 video
-            } else {
-                warn!("noop video {}", player.source.src);
+            } else if player.source.src.is_empty() {
+                debug!("noop video {}", player.source.src);
                 HtmlMediaEntity::new_noop(player.source.src.clone(), image_handle.clone())
+            } else {
+                debug!("https video {}", player.source.src);
+                HtmlMediaEntity::new_video(&source, player.source.src.clone(), image_handle.clone())
             };
 
             video.set_loop(player.source.r#loop.unwrap_or(false));
