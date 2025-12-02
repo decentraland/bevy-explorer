@@ -1,6 +1,6 @@
 use anyhow::anyhow;
-use bevy::log::{error, info, warn};
-use common::rpc::{IpcMessage, ResponseContext, ENGINE_IPC_CONTEXT};
+use bevy::log::{debug, error, info, warn};
+use common::rpc::{rmp_encode, IpcMessage, ResponseContext, ENGINE_IPC_CONTEXT};
 use dcl::{
     interface::{CrdtComponentInterfaces, CrdtStore},
     RendererResponse, SceneId, SceneResponse,
@@ -205,7 +205,7 @@ pub async fn renderer_ipc_out(
                     warn!("renderer_ipc_out exit on router closed");
                     return;
                 };
-                info!("ipc {} -> {}", ipc.0, !matches!(ipc.1, IpcMessage::Closed));
+                debug!("ipc {} -> {}", ipc.0, !matches!(ipc.1, IpcMessage::Closed));
                 write_msg(&mut stream, &EngineToScene::IpcMessage(ipc.0, ipc.1)).await;
             }
         }
@@ -216,7 +216,7 @@ pub async fn renderer_ipc_in(mut stream: RecvHalf) {
     while let Ok(len) = stream.read_u64_le().await {
         let mut buffer = vec![0u8; len as usize];
         stream.read_exact(&mut buffer).await.unwrap();
-        let msg: SceneToEngine = bincode::deserialize(&buffer).unwrap();
+        let msg: SceneToEngine = rmp_serde::from_slice(&buffer).unwrap();
 
         match msg {
             SceneToEngine::SceneResponse(scene_response) => RENDERER_SENDER.with(|sender| {
@@ -298,7 +298,7 @@ pub fn spawn_scene(
 }
 
 pub async fn write_msg<T: Serialize>(stream: &mut SendHalf, value: &T) {
-    let bytes = bincode::serialize(value).unwrap();
+    let bytes = rmp_encode(value).unwrap();
     stream
         .write_all(&(bytes.len() as u64).to_le_bytes())
         .await

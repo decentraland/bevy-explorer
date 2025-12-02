@@ -1,6 +1,7 @@
 use anyhow::Result;
 use bevy::{
     log::{
+        debug,
         info,
         tracing_subscriber::{self, EnvFilter},
         warn,
@@ -100,9 +101,7 @@ async fn scene_ipc_out(
                     warn!("scene_ipc_out exit on system_api_rx closed");
                     return;
                 };
-                info!("sysapi out: {system_api:?}");
                 write_msg(&mut stream, &SceneToEngine::SystemApi(system_api)).await;
-                info!("sysapi out done");
             }
         }
     }
@@ -120,7 +119,7 @@ async fn scene_ipc_in(
     while let Ok(len) = stream.read_u64_le().await {
         let mut buffer = vec![0u8; len as usize];
         stream.read_exact(&mut buffer).await.unwrap();
-        let msg: EngineToScene = bincode::deserialize(&buffer).unwrap();
+        let msg: EngineToScene = rmp_serde::from_slice(&buffer).unwrap();
 
         match msg {
             EngineToScene::NewScene(id, new_scene_info) => {
@@ -157,17 +156,15 @@ async fn scene_ipc_in(
                     let mut ctx = ctx.borrow_mut();
                     let ctx = ctx.as_mut().unwrap();
 
-                    info!("ipc response {} -> {}", id, !matches!(ipc_message, IpcMessage::Closed));
+                    debug!("ipc response {} -> {}", id, !matches!(ipc_message, IpcMessage::Closed));
 
                     match ipc_message {
                         common::rpc::IpcMessage::Data(data) => {
                             if let Some(endpoint) = ctx.registry.get_mut(&id) {
-                                info!("sent ipc response {}", id);
                                 endpoint.send(data);
                             }
                         }
                         common::rpc::IpcMessage::Closed => {
-                            info!("removed ipc response {}", id);
                             let _ = ctx.registry.remove(&id);
                         }
                     }

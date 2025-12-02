@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use dcl_component::proto_components::common::Color3;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct AvatarSnapshots {
@@ -53,7 +53,7 @@ pub struct LambdaProfiles {
     pub avatars: Vec<SerializedProfile>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SerializedProfile {
     pub user_id: Option<String>,
     pub name: String,
@@ -62,131 +62,8 @@ pub struct SerializedProfile {
     pub has_claimed_name: bool,
     pub has_connected_web3: Option<bool>,
     pub avatar: AvatarWireFormat,
-    pub extra_fields: HashMap<String, serde_json::Value>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ProfileJsonRef<'a> {
-    pub user_id: &'a Option<String>,
-    pub name: &'a String,
-    pub version: i64,
-    pub eth_address: &'a String,
-    pub has_claimed_name: bool,
-    pub has_connected_web3: Option<bool>,
-    pub avatar: &'a AvatarWireFormat,
-    #[serde(flatten)]
-    pub extra_fields: &'a HashMap<String, serde_json::Value>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ProfileBinaryRef<'a> {
-    pub user_id: &'a Option<String>,
-    pub name: &'a String,
-    pub version: i64,
-    pub eth_address: &'a String,
-    pub has_claimed_name: bool,
-    pub has_connected_web3: Option<bool>,
-    pub avatar: &'a AvatarWireFormat,
-    pub extra_fields: &'a String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ProfileJsonOwned {
-    pub user_id: Option<String>,
-    pub name: String,
-    pub version: i64,
-    pub eth_address: String,
-    pub has_claimed_name: bool,
-    pub has_connected_web3: Option<bool>,
-    pub avatar: AvatarWireFormat,
     #[serde(flatten)]
     pub extra_fields: HashMap<String, serde_json::Value>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ProfileBinaryOwned {
-    pub user_id: Option<String>,
-    pub name: String,
-    pub version: i64,
-    pub eth_address: String,
-    pub has_claimed_name: bool,
-    pub has_connected_web3: Option<bool>,
-    pub avatar: AvatarWireFormat,
-    pub extra_fields: String,
-}
-
-impl Serialize for SerializedProfile {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        if serializer.is_human_readable() {
-            // JSON -> use flattened reference shadow
-            let shadow = ProfileJsonRef {
-                user_id: &self.user_id,
-                name: &self.name,
-                version: self.version,
-                eth_address: &self.eth_address,
-                has_claimed_name: self.has_claimed_name,
-                has_connected_web3: self.has_connected_web3,
-                avatar: &self.avatar,
-                extra_fields: &self.extra_fields,
-            };
-            shadow.serialize(serializer)
-        } else {
-            // bincode -> use nested reference shadow
-            let shadow = ProfileBinaryRef {
-                user_id: &self.user_id,
-                name: &self.name,
-                version: self.version,
-                eth_address: &self.eth_address,
-                has_claimed_name: self.has_claimed_name,
-                has_connected_web3: self.has_connected_web3,
-                avatar: &self.avatar,
-                extra_fields: &serde_json::to_string(&self.extra_fields).unwrap_or_default(),
-            };
-            shadow.serialize(serializer)
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for SerializedProfile {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        if deserializer.is_human_readable() {
-            // JSON -> deserialize into flattened shadow
-            let shadow = ProfileJsonOwned::deserialize(deserializer)?;
-            Ok(SerializedProfile {
-                user_id: shadow.user_id,
-                name: shadow.name,
-                version: shadow.version,
-                eth_address: shadow.eth_address,
-                has_claimed_name: shadow.has_claimed_name,
-                has_connected_web3: shadow.has_connected_web3,
-                avatar: shadow.avatar,
-                extra_fields: shadow.extra_fields,
-            })
-        } else {
-            // bincode -> deserialize into nested shadow
-            let shadow = ProfileBinaryOwned::deserialize(deserializer)?;
-            Ok(SerializedProfile {
-                user_id: shadow.user_id,
-                name: shadow.name,
-                version: shadow.version,
-                eth_address: shadow.eth_address,
-                has_claimed_name: shadow.has_claimed_name,
-                has_connected_web3: shadow.has_connected_web3,
-                avatar: shadow.avatar,
-                extra_fields: serde_json::from_str(&shadow.extra_fields).unwrap_or_default(),
-            })
-        }
-    }
 }
 
 impl Default for SerializedProfile {

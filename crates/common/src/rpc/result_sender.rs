@@ -125,7 +125,7 @@ impl<T: Serialize + 'static> RpcResultSender<T> {
             RpcResultSender::Remote { id, router, .. } => {
                 let mut guard = router.blocking_write();
                 if let Some(response) = guard.take() {
-                    let data = bincode::serialize(&result).unwrap();
+                    let data = rmp_encode(&result).unwrap();
                     let _ = response.send((*id, IpcMessage::Data(data)));
                 }
             }
@@ -139,12 +139,12 @@ struct IpcResultCallback<T: DeserializeOwned + Send + 'static> {
 
 impl<T: DeserializeOwned + Send + 'static> IpcEndpoint for IpcResultCallback<T> {
     fn send(&mut self, raw_bytes: Vec<u8>) {
-        if let Ok(val) = bincode::deserialize::<T>(&raw_bytes) {
+        if let Ok(val) = rmp_serde::from_slice::<T>(&raw_bytes) {
             if let Some(sx) = self.sender.take() {
                 let _ = sx.send(val);
             }
         } else {
-            let _ = bincode::deserialize::<T>(&raw_bytes).unwrap();
+            let _ = rmp_serde::from_slice::<T>(&raw_bytes).unwrap();
         }
     }
 }
@@ -168,7 +168,7 @@ impl<T: 'static + Serialize + DeserializeOwned + Send> Serialize for RpcResultSe
                 cancel.cancelled().await;
                 let _ = close_sender.send(id);
             });
-            info!("created sender {id} -> {}", std::any::type_name::<T>());
+            debug!("created sender {id} -> {}", std::any::type_name::<T>());
             id
         });
 
@@ -188,7 +188,7 @@ impl<'de, T> Deserialize<'de> for RpcResultSender<T> {
         let cancel_router = router.clone();
         tokio::spawn(async move {
             rx.recv().await; // block till all senders are dropped
-            info!("last dropped {id} - {}", std::any::type_name::<T>());
+            debug!("last dropped {id} - {}", std::any::type_name::<T>());
             let _ = cancel_router.send((id, IpcMessage::Closed));
         });
 

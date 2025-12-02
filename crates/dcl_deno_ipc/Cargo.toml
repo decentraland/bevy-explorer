@@ -28,4 +28,4 @@ ethers-core = { workspace = true }
 anyhow = { workspace = true }
 
 interprocess = { version = "2.0", features = ["tokio"] }
-bincode = "1.3"
+rmp-serde = "1.3"

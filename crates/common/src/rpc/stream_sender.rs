@@ -100,7 +100,7 @@ impl<T: Serialize> RpcStreamSender<T> {
                 if receiver_dropped.is_cancelled() {
                     return Err(tokio::sync::mpsc::error::SendError(val));
                 }
-                let data = bincode::serialize(&val).unwrap();
+                let data = rmp_encode(&val).unwrap();
                 router
                     .send((*id, IpcMessage::Data(data)))
                     .map_err(|_| tokio::sync::mpsc::error::SendError(val))
@@ -130,7 +130,7 @@ struct IpcStreamCallback<T: DeserializeOwned + Send + 'static> {
 
 impl<T: DeserializeOwned + Send + 'static> IpcEndpoint for IpcStreamCallback<T> {
     fn send(&mut self, raw_bytes: Vec<u8>) {
-        if let Ok(val) = bincode::deserialize::<T>(&raw_bytes) {
+        if let Ok(val) = rmp_serde::from_slice::<T>(&raw_bytes) {
             let _ = self.sender.send(val);
         }
     }
