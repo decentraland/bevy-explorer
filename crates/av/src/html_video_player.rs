@@ -601,7 +601,7 @@ fn rebuild_html_media_entities(
 
 fn av_player_should_be_playing(
     mut commands: Commands,
-    av_players: Query<(Entity, &ContainerEntity, Ref<AVPlayer>, &GlobalTransform)>,
+    av_players: Query<(Entity, &ContainerEntity, AVPlayer, &GlobalTransform)>,
     user: Query<&GlobalTransform, With<PrimaryUser>>,
     containing_scene: ContainingScene,
     config: Res<AppConfig>,
@@ -652,7 +652,7 @@ fn update_av_players(
     mut av_players: Query<(
         Entity,
         &ContainerEntity,
-        Ref<AVPlayer>,
+        AVPlayer,
         Option<&mut HtmlMediaEntity>,
         Has<ShouldBePlaying>,
     )>,
