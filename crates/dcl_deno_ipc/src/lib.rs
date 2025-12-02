@@ -99,15 +99,6 @@ pub fn init_runtime() -> anyhow::Result<()> {
             }
         };
 
-        let stream = match rt.block_on(async { listener.accept().await }) {
-            Ok(stream) => stream,
-            Err(e) => {
-                error!("runtime initialization failed: {e}");
-                let _ = init_sx.send(Err(e.into()));
-                return;
-            }
-        };
-
         let mut target = std::env::current_exe()
             .unwrap()
             .parent()
@@ -123,6 +114,15 @@ pub fn init_runtime() -> anyhow::Result<()> {
             .stderr(Stdio::inherit())
             .spawn()
             .unwrap_or_else(|_| panic!("failed to spawn deno binary at {target:?}"));
+
+        let stream = match rt.block_on(async { listener.accept().await }) {
+            Ok(stream) => stream,
+            Err(e) => {
+                error!("runtime initialization failed: {e}");
+                let _ = init_sx.send(Err(e.into()));
+                return;
+            }
+        };
 
         let (ipc_inbound, ipc_outbound) = stream.split();
 
