@@ -220,23 +220,7 @@ pub fn update_video_players(
                 continue;
             };
 
-            let (video_sink, audio_sink) = if player.source.src.starts_with("https://") {
-                let (video_sink, audio_sink) = av_sinks(
-                    ipfs.clone(),
-                    player.source.src.clone(),
-                    context.hash.clone(),
-                    image_handle,
-                    player.source.volume.unwrap_or(1.0),
-                    false,
-                    player.source.r#loop.unwrap_or(false),
-                );
-                debug!(
-                    "spawned av thread for scene @ {} (playing={})",
-                    context.base,
-                    player.source.playing.unwrap_or(true)
-                );
-                (video_sink, audio_sink)
-            } else if player.source.src.starts_with("livekit-video://") {
+            let (video_sink, audio_sink) = if player.source.src.starts_with("livekit-video://") {
                 if let Ok(transport) = scene_rooms.single_mut() {
                     if let Some(control_channel) = transport.control.clone() {
                         let (video_sink, audio_sink) = streamer_sinks(
@@ -267,7 +251,7 @@ pub fn update_video_players(
                         player.source.volume.unwrap_or(1.0),
                     )
                 }
-            } else {
+            } else if player.source.src.is_empty() {
                 let (video_sink, audio_sink) = noop_sinks(
                     player.source.src.clone(),
                     image_handle,
@@ -275,6 +259,22 @@ pub fn update_video_players(
                 );
                 debug!(
                     "spawned noop sink for scene @ {} (playing={})",
+                    context.base,
+                    player.source.playing.unwrap_or(true)
+                );
+                (video_sink, audio_sink)
+            } else {
+                let (video_sink, audio_sink) = av_sinks(
+                    ipfs.clone(),
+                    player.source.src.clone(),
+                    context.hash.clone(),
+                    image_handle,
+                    player.source.volume.unwrap_or(1.0),
+                    false,
+                    player.source.r#loop.unwrap_or(false),
+                );
+                debug!(
+                    "spawned av thread for scene @ {} (playing={})",
                     context.base,
                     player.source.playing.unwrap_or(true)
                 );
