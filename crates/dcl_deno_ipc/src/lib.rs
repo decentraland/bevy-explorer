@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use bevy::log::{error, info, warn};
 use common::rpc::{IpcMessage, ResponseContext, ENGINE_IPC_CONTEXT};
 use dcl::{
@@ -57,40 +58,21 @@ thread_local! {
     static SYSTEM_API_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>> = const { RefCell::new(None) };
 }
 
+pub struct NewSceneCommand {
+    id: u64,
+    info: NewSceneInfo,
+    renderer_channel: tokio::sync::mpsc::Receiver<RendererResponse>,
+    global_channel: tokio::sync::broadcast::Receiver<Vec<u8>>,
+    response_channel: tokio::sync::mpsc::UnboundedSender<SceneResponse>,
+    system_api_sender: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
+}
+
 #[allow(clippy::type_complexity)]
 pub static NEW_SCENE_SENDER: Lazy<
-    RwLock<
-        Option<
-            tokio::sync::mpsc::UnboundedSender<(
-                u64,
-                NewSceneInfo,
-                tokio::sync::mpsc::Receiver<RendererResponse>,
-                tokio::sync::broadcast::Receiver<Vec<u8>>,
-            )>,
-        >,
-    >,
+    RwLock<Option<tokio::sync::mpsc::UnboundedSender<NewSceneCommand>>>,
 > = Lazy::new(Default::default);
 
 pub fn init_runtime() -> anyhow::Result<()> {
-    let name_str = if cfg!(windows) {
-        "bevy_explorer_ipc"
-    } else {
-        "/tmp/bevy_explorer_ipc.sock"
-    };
-    let name = name_str.to_fs_name::<GenericFilePath>()?;
-
-    // 2. Bind the Listener
-    let listener = ListenerOptions::new().name(name).create_tokio()?;
-
-    // 3. Spawn Worker
-    let mut _child = Command::new("target/release/dcl_deno_ipc")
-        .arg(name_str)
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()?;
-
-    info!("[Host] Waiting for worker connection...");
-
     let (init_sx, init_rx) = tokio::sync::oneshot::channel::<anyhow::Result<()>>();
 
     std::thread::spawn(move || {
@@ -99,7 +81,41 @@ pub fn init_runtime() -> anyhow::Result<()> {
             .build()
             .unwrap();
 
-        // 4. Accept Connection
+        let name_str = if cfg!(windows) {
+            "bevy_explorer_ipc"
+        } else {
+            "/tmp/bevy_explorer_ipc.sock"
+        };
+        let name = name_str.to_fs_name::<GenericFilePath>().unwrap();
+
+        let listener = rt.block_on(async { ListenerOptions::new().name(name).create_tokio() });
+        let listener = match listener {
+            Ok(l) => l,
+            Err(e) => {
+                error!("failed to create listener: {e}");
+                let _ = init_sx.send(Err(anyhow!(e)));
+                return;
+            }
+        };
+
+        let mut target = std::env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("dcl_deno_ipc");
+        if cfg!(windows) {
+            target.set_extension("exe");
+        }
+
+        let mut _child = Command::new(&target)
+            .arg(name_str)
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .expect(&format!("failed to spawn deno binary at {:?}", target));
+
+        info!("[Host] Waiting for worker connection...");
+
         info!("waiting for scene runtime initialization");
         let stream = match rt.block_on(async { listener.accept().await }) {
             Ok(stream) => stream,
@@ -136,33 +152,34 @@ pub fn init_runtime() -> anyhow::Result<()> {
 #[allow(clippy::type_complexity)]
 pub async fn renderer_ipc_out(
     mut stream: SendHalf,
-    mut new_scene: tokio::sync::mpsc::UnboundedReceiver<(
-        u64,
-        NewSceneInfo,
-        tokio::sync::mpsc::Receiver<RendererResponse>,
-        tokio::sync::broadcast::Receiver<Vec<u8>>,
-    )>,
+    mut new_scene: tokio::sync::mpsc::UnboundedReceiver<NewSceneCommand>,
     mut ipc_router: tokio::sync::mpsc::UnboundedReceiver<(u64, IpcMessage)>,
 ) {
     let (renderer_sx, mut renderer_rx) = tokio::sync::mpsc::unbounded_channel();
 
-    let (_dummy_global_sx, mut global_rx) = tokio::sync::broadcast::channel(0);
+    let (_dummy_global_sx, mut global_rx) = tokio::sync::broadcast::channel(1);
 
     loop {
         tokio::select! {
             new_scene = new_scene.recv() => {
-                let Some((id, info, mut channel, new_global_rx)) = new_scene else {
+                let Some(NewSceneCommand{id,info,mut renderer_channel, global_channel, response_channel, system_api_sender }) = new_scene else {
                     warn!("renderer_ipc_out exit on new scene closed");
                     return;
                 };
 
+                RENDERER_SENDER.set(Some(response_channel));
+
+                if let Some(system_api_sender) = system_api_sender {
+                    SYSTEM_API_SENDER.set(Some(system_api_sender));
+                }
+
                 // might cause a couple of duplicated global messages for old scenes
-                global_rx = new_global_rx;
+                global_rx = global_channel;
 
                 // spawn connector
                 let renderer_sender = renderer_sx.clone();
                 tokio::spawn(async move {
-                    while let Some(renderer_response) = channel.recv().await {
+                    while let Some(renderer_response) = renderer_channel.recv().await {
                         renderer_sender.send((id, renderer_response)).unwrap();
                     }
                 });
@@ -188,6 +205,7 @@ pub async fn renderer_ipc_out(
                     warn!("renderer_ipc_out exit on router closed");
                     return;
                 };
+                info!("ipc {} -> {}", ipc.0, !matches!(ipc.1, IpcMessage::Closed));
                 write_msg(&mut stream, &EngineToScene::IpcMessage(ipc.0, ipc.1)).await;
             }
         }
@@ -247,13 +265,7 @@ pub fn spawn_scene(
     preview: bool,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
 ) -> tokio::sync::mpsc::Sender<RendererResponse> {
-    RENDERER_SENDER.set(Some(renderer_sender));
-
     let is_super = super_user.is_some();
-
-    if let Some(super_user) = super_user {
-        SYSTEM_API_SENDER.set(Some(super_user));
-    }
 
     let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
 
@@ -261,9 +273,9 @@ pub fn spawn_scene(
     let ipc_out = ipc_out.as_ref().unwrap();
 
     ipc_out
-        .send((
-            id.0.to_bits(),
-            NewSceneInfo {
+        .send(NewSceneCommand {
+            id: id.0.to_bits(),
+            info: NewSceneInfo {
                 initial_crdt_store,
                 scene_hash,
                 scene_js: scene_js.0.to_string(),
@@ -275,9 +287,11 @@ pub fn spawn_scene(
                 preview,
                 is_super,
             },
-            thread_rx,
-            global_update_receiver,
-        ))
+            renderer_channel: thread_rx,
+            global_channel: global_update_receiver,
+            response_channel: renderer_sender,
+            system_api_sender: super_user,
+        })
         .unwrap();
 
     main_sx

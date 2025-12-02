@@ -1,11 +1,32 @@
+use std::sync::{Arc, Mutex};
+
 use crate::rpc::*;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
+pub enum LocalChannel<T> {
+    Channel(tokio::sync::mpsc::UnboundedSender<T>),
+    Serialized(u64),
+}
+
+impl<T> LocalChannel<T> {
+    fn serialize_with<F: FnOnce(tokio::sync::mpsc::UnboundedSender::<T>) -> u64>(&mut self, f: F) -> u64 {        
+        let id = match std::mem::replace(self, LocalChannel::Serialized(u64::MAX)) {
+            LocalChannel::Channel(sender) => (f)(sender),
+            LocalChannel::Serialized(id) => id,
+        };
+
+        *self = LocalChannel::Serialized(id);
+        id
+    }
+}
+
+
+#[derive(Clone)]
 pub enum RpcStreamSender<T> {
     Local {
-        channel: tokio::sync::mpsc::UnboundedSender<T>,
+        channel: Arc<Mutex<LocalChannel<T>>>,
         cancel: CancellationToken,
     },
     Remote {
@@ -52,7 +73,7 @@ impl<T: Serialize> RpcStreamSender<T> {
 
         (
             Self::Local {
-                channel: sx,
+                channel: Arc::new(Mutex::new(LocalChannel::Channel(sx))),
                 cancel: cancel.clone(),
             },
             RpcStreamReceiver {
@@ -64,7 +85,12 @@ impl<T: Serialize> RpcStreamSender<T> {
 
     pub fn send(&self, val: T) -> Result<(), tokio::sync::mpsc::error::SendError<T>> {
         match self {
-            RpcStreamSender::Local { channel, .. } => channel.send(val),
+            RpcStreamSender::Local { channel, .. } => {
+                match &*channel.lock().unwrap() {
+                    LocalChannel::Channel(unbounded_sender) => unbounded_sender.send(val),
+                    LocalChannel::Serialized(_) => panic!(),
+                }
+            }
             RpcStreamSender::Remote {
                 id,
                 router,
@@ -84,7 +110,12 @@ impl<T: Serialize> RpcStreamSender<T> {
 
     pub fn is_closed(&self) -> bool {
         match self {
-            RpcStreamSender::Local { channel, .. } => channel.is_closed(),
+            RpcStreamSender::Local { channel, .. } => {
+                match &*channel.lock().unwrap() {
+                    LocalChannel::Channel(unbounded_sender) => unbounded_sender.is_closed(),
+                    LocalChannel::Serialized(_) => panic!(),
+                }
+            }
             RpcStreamSender::Remote {
                 receiver_dropped: close_token,
                 ..
@@ -114,15 +145,19 @@ impl<T: 'static + Serialize + DeserializeOwned + Send> Serialize for RpcStreamSe
             panic!();
         };
 
-        let endpoint = IpcStreamCallback {
-            sender: channel.clone(),
-        };
-        let (id, close_sender) = ipc_register(endpoint);
+        let id = channel.lock().unwrap().serialize_with(|sender| {
+            let endpoint = IpcStreamCallback {
+                sender,
+            };
+            let (id, close_sender) = ipc_register(endpoint);
 
-        let cancel = cancel.clone();
-        tokio::spawn(async move {
-            cancel.cancelled().await;
-            let _ = close_sender.send(id);
+            let cancel = cancel.clone();
+            tokio::spawn(async move {
+                cancel.cancelled().await;
+                let _ = close_sender.send(id);
+            });
+
+            id
         });
 
         serializer.serialize_u64(id)

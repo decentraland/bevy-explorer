@@ -679,6 +679,7 @@ fn get_user_data(
                         // force scene to wait till user data is available
                         ctx.blocked.insert("get_user_data");
                     }
+                    info!("cloning response");
                     pending_primary_requests.push((*scene, response.clone()))
                 }
             },
@@ -714,6 +715,7 @@ fn get_user_data(
     if !pending_primary_requests.is_empty() {
         if let Some(profile) = profile.profile.as_ref() {
             for (scene, sender) in pending_primary_requests.drain(..) {
+                info!("replying on cloned response");
                 if let Ok(mut ctx) = scenes.get_mut(scene) {
                     ctx.blocked.remove("get_user_data");
                 }

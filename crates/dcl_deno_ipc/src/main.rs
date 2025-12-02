@@ -1,5 +1,12 @@
 use anyhow::Result;
-use bevy::{log::warn, platform::collections::HashMap};
+use bevy::{
+    log::{
+        info,
+        tracing_subscriber::{self, EnvFilter},
+        warn,
+    },
+    platform::collections::HashMap,
+};
 use common::rpc::{IpcMessage, RequestContext, SCENE_IPC_CONTEXT};
 use dcl::SceneResponse;
 use dcl_deno_ipc::{write_msg, EngineToScene, SceneToEngine};
@@ -13,6 +20,12 @@ use system_bridge::SystemApi;
 use tokio::io::AsyncReadExt;
 
 fn main() -> Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("info")))
+        .init();
+
+    info!("IPC scene host initializing");
+
     // spawn runtime
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -44,6 +57,8 @@ fn main() -> Result<()> {
     let f_in = rt.spawn(scene_ipc_in(recv_half, scene_sx, system_api_sx));
     let f_out = rt.spawn(scene_ipc_out(send_half, scene_rx, close_rx, system_api_rx));
 
+    info!("IPC scene host running");
+
     let _ = rt.block_on(async move { tokio::join!(f_in, f_out) });
 
     Ok(())
@@ -55,36 +70,40 @@ async fn scene_ipc_out(
     mut close_rx: tokio::sync::mpsc::UnboundedReceiver<u64>,
     mut system_api_rx: tokio::sync::mpsc::UnboundedReceiver<SystemApi>,
 ) {
-    tokio::select! {
-        scene_rx = scene_rx.recv() => {
-            let Some(scene_rx) = scene_rx else {
-                warn!("scene_ipc_out exit on scene_rx closed");
-                return;
-            };
-            write_msg(&mut stream, &SceneToEngine::SceneResponse(scene_rx)).await;
-        }
-        close_rx = close_rx.recv() => {
-            let Some(close_id) = close_rx else {
-                warn!("scene_ipc_out exit on close_rx closed");
-                return;
-            };
-
-            let was_open = SCENE_IPC_CONTEXT.with(|ctx| {
-                let mut ctx = ctx.borrow_mut();
-                let ctx = ctx.as_mut().unwrap();
-                ctx.registry.remove(&close_id).is_some()
-            });
-
-            if was_open {
-                write_msg(&mut stream, &SceneToEngine::IpcMessage(close_id, IpcMessage::Closed)).await;
+    loop {
+        tokio::select! {
+            scene_rx = scene_rx.recv() => {
+                let Some(scene_rx) = scene_rx else {
+                    warn!("scene_ipc_out exit on scene_rx closed");
+                    return;
+                };
+                write_msg(&mut stream, &SceneToEngine::SceneResponse(scene_rx)).await;
             }
-        },
-        system_api_rx = system_api_rx.recv() => {
-            let Some(system_api) = system_api_rx else {
-                warn!("scene_ipc_out exit on system_api_rx closed");
-                return;
-            };
-            write_msg(&mut stream, &SceneToEngine::SystemApi(system_api)).await;
+            close_rx = close_rx.recv() => {
+                let Some(close_id) = close_rx else {
+                    warn!("scene_ipc_out exit on close_rx closed");
+                    return;
+                };
+
+                let was_open = SCENE_IPC_CONTEXT.with(|ctx| {
+                    let mut ctx = ctx.borrow_mut();
+                    let ctx = ctx.as_mut().unwrap();
+                    ctx.registry.remove(&close_id).is_some()
+                });
+
+                if was_open {
+                    write_msg(&mut stream, &SceneToEngine::IpcMessage(close_id, IpcMessage::Closed)).await;
+                }
+            },
+            system_api_rx = system_api_rx.recv() => {
+                let Some(system_api) = system_api_rx else {
+                    warn!("scene_ipc_out exit on system_api_rx closed");
+                    return;
+                };
+                info!("sysapi out: {system_api:?}");
+                write_msg(&mut stream, &SceneToEngine::SystemApi(system_api)).await;
+                info!("sysapi out done");
+            }
         }
     }
 }
@@ -138,13 +157,17 @@ async fn scene_ipc_in(
                     let mut ctx = ctx.borrow_mut();
                     let ctx = ctx.as_mut().unwrap();
 
+                    info!("ipc response {} -> {}", id, !matches!(ipc_message, IpcMessage::Closed));
+
                     match ipc_message {
                         common::rpc::IpcMessage::Data(data) => {
                             if let Some(endpoint) = ctx.registry.get_mut(&id) {
+                                info!("sent ipc response {}", id);
                                 endpoint.send(data);
                             }
                         }
                         common::rpc::IpcMessage::Closed => {
+                            info!("removed ipc response {}", id);
                             let _ = ctx.registry.remove(&id);
                         }
                     }

@@ -221,6 +221,7 @@ bevy_simple_text_input = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dcl_deno = { workspace = true }
+dcl_deno_ipc = { workspace = true }
 mimalloc = { version = "*", default-features = false }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

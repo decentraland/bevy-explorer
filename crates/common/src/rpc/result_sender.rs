@@ -9,10 +9,37 @@ use std::{
 };
 use tokio_util::sync::CancellationToken;
 
+pub enum LocalChannel<T> {
+    Channel(tokio::sync::oneshot::Sender<T>),
+    Serialized(u64),
+    Used,
+}
+
+impl<T> LocalChannel<T> {
+    fn serialize_with<F: FnOnce(tokio::sync::oneshot::Sender::<T>) -> u64>(&mut self, f: F) -> u64 {        
+        let id = match std::mem::replace(self, LocalChannel::Used) {
+            LocalChannel::Channel(sender) => (f)(sender),
+            LocalChannel::Serialized(id) => id,
+            LocalChannel::Used => panic!(),
+        };
+
+        *self = LocalChannel::Serialized(id);
+        id
+    }
+
+    fn take(&mut self) -> Option<tokio::sync::oneshot::Sender<T>> {
+        match std::mem::replace(self, LocalChannel::Used) {
+            LocalChannel::Channel(sender) => Some(sender),
+            LocalChannel::Serialized(_) => panic!(),
+            LocalChannel::Used => None,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum RpcResultSender<T> {
     Local {
-        channel: Arc<AsyncRwLock<Option<tokio::sync::oneshot::Sender<T>>>>,
+        channel: Arc<AsyncRwLock<LocalChannel<T>>>,
         cancel: CancellationToken,
     },
     Remote {
@@ -64,7 +91,7 @@ impl<T> std::fmt::Debug for RpcResultSender<T> {
 impl<T: 'static> Default for RpcResultSender<T> {
     fn default() -> Self {
         Self::Local {
-            channel: Arc::new(AsyncRwLock::new(None)),
+            channel: Arc::new(AsyncRwLock::new(LocalChannel::Used)),
             cancel: CancellationToken::new(),
         }
     }
@@ -77,7 +104,7 @@ impl<T: Serialize + 'static> RpcResultSender<T> {
 
         (
             Self::Local {
-                channel: Arc::new(AsyncRwLock::new(Some(sx))),
+                channel: Arc::new(AsyncRwLock::new(LocalChannel::Channel(sx))),
                 cancel: cancel.clone(),
             },
             RpcResultReceiver {
@@ -116,6 +143,8 @@ impl<T: DeserializeOwned + Send + 'static> IpcEndpoint for IpcResultCallback<T> 
             if let Some(sx) = self.sender.take() {
                 let _ = sx.send(val);
             }
+        } else {
+            let _ = bincode::deserialize::<T>(&raw_bytes).unwrap();
         }
     }
 }
@@ -129,17 +158,18 @@ impl<T: 'static + Serialize + DeserializeOwned + Send> Serialize for RpcResultSe
             panic!();
         };
 
-        let sender = channel.blocking_write().take().unwrap();
-
-        let endpoint = IpcResultCallback {
-            sender: Some(sender),
-        };
-        let (id, close_sender) = ipc_register(endpoint);
-
-        let cancel = cancel.clone();
-        tokio::spawn(async move {
-            cancel.cancelled().await;
-            let _ = close_sender.send(id);
+        let id = channel.try_write().unwrap().serialize_with(|sender| {
+            let endpoint = IpcResultCallback {
+                sender: Some(sender),
+            };
+            let (id, close_sender) = ipc_register(endpoint);
+            let cancel = cancel.clone();
+            tokio::spawn(async move {
+                cancel.cancelled().await;
+                let _ = close_sender.send(id);
+            });
+            info!("created sender {id} -> {}", std::any::type_name::<T>());
+            id
         });
 
         serializer.serialize_u64(id)
@@ -158,6 +188,7 @@ impl<'de, T> Deserialize<'de> for RpcResultSender<T> {
         let cancel_router = router.clone();
         tokio::spawn(async move {
             rx.recv().await; // block till all senders are dropped
+            info!("last dropped {id} - {}", std::any::type_name::<T>());
             let _ = cancel_router.send((id, IpcMessage::Closed));
         });
 

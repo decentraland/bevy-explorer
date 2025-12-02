@@ -40,7 +40,7 @@ use crate::{
 };
 
 #[cfg(not(target_arch = "wasm32"))]
-use dcl_deno::spawn_scene;
+use dcl_deno_ipc::spawn_scene;
 
 #[cfg(target_arch = "wasm32")]
 use dcl_wasm::spawn_scene;
