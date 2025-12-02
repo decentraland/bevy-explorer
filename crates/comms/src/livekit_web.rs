@@ -414,12 +414,6 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                             })
                             .await;
                     }
-                } else if participant.identity.ends_with("-streamer") {
-                    if let Err(err) =
-                        streamer_subscribe_channel(&room_name, &participant.identity, true, true)
-                    {
-                        error!("{err:?}");
-                    }
                 }
             }
             RoomEvent::TrackUnpublished {
