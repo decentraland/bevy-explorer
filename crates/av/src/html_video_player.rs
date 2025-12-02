@@ -497,7 +497,7 @@ pub fn update_av_players(
 ) {
     for (ent, container, player, mut maybe_av, maybe_texture, _) in av_players.iter_mut() {
         if let Some(av) = maybe_av.as_mut().filter(|p| p.source == player.source.src) {
-            if av.state() == VideoState::VsError {
+            if av.source.starts_with("livekit-video://") && av.state() == VideoState::VsError {
                 av.source = String::new();
             } else if player.is_changed() {
                 av.set_loop(player.source.r#loop.unwrap_or(false));
