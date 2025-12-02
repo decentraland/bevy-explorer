@@ -1060,7 +1060,7 @@ fn process_avatar(
                         base: StandardMaterial {
                             base_color,
                             emissive: new_emissive,
-                            depth_bias: -10000.0, // make base model appear under any wearables at the same position, like skinpaint
+                            depth_bias: -5000.0, // make base model appear under any wearables at the same position, like skinpaint
                             ..mat.clone()
                         },
                         extension: SceneBound::new_outlined(

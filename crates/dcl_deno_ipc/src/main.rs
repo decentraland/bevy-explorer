@@ -1,8 +1,7 @@
 use anyhow::Result;
 use bevy::{
     log::{
-        debug,
-        info,
+        debug, info,
         tracing_subscriber::{self, EnvFilter},
         warn,
     },
@@ -156,7 +155,11 @@ async fn scene_ipc_in(
                     let mut ctx = ctx.borrow_mut();
                     let ctx = ctx.as_mut().unwrap();
 
-                    debug!("ipc response {} -> {}", id, !matches!(ipc_message, IpcMessage::Closed));
+                    debug!(
+                        "ipc response {} -> {}",
+                        id,
+                        !matches!(ipc_message, IpcMessage::Closed)
+                    );
 
                     match ipc_message {
                         common::rpc::IpcMessage::Data(data) => {

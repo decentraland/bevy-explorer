@@ -6,7 +6,7 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use bevy::{log::tracing::span::EnteredSpan, tasks::IoTaskPool};
 use dcl::{
-    interface::CrdtComponentInterfaces,
+    interface::{CrdtComponentInterfaces, CrdtStore},
     js::{CommunicatedWithRenderer, ShuttingDown, SuperUserScene},
     RendererResponse, SceneId, SceneResponse,
 };
@@ -20,6 +20,7 @@ use tokio::sync::{
 };
 
 pub struct SceneInitializationData {
+    pub initial_crdt_store: CrdtStore,
     pub thread_rx: Receiver<RendererResponse>,
     pub scene_hash: String,
     pub scene_js: SceneJsFile,
@@ -45,6 +46,7 @@ pub fn init_runtime() {
 
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_scene(
+    initial_crdt_store: CrdtStore,
     scene_hash: String,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
@@ -69,6 +71,7 @@ pub fn spawn_scene(
                 .lock()
                 .await
                 .push(SceneInitializationData {
+                    initial_crdt_store,
                     thread_rx,
                     scene_hash,
                     scene_js,
@@ -115,6 +118,7 @@ pub async fn wasm_init_scene() -> Result<WorkerContext, JsValue> {
 
     dcl::js::init_state(
         &mut *context.state.borrow_mut(),
+        scene_initialization_data.initial_crdt_store,
         scene_initialization_data.scene_hash,
         scene_initialization_data.id,
         scene_initialization_data.storage_root,

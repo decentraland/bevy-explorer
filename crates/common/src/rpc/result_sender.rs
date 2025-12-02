@@ -16,7 +16,7 @@ pub enum LocalChannel<T> {
 }
 
 impl<T> LocalChannel<T> {
-    fn serialize_with<F: FnOnce(tokio::sync::oneshot::Sender::<T>) -> u64>(&mut self, f: F) -> u64 {        
+    fn serialize_with<F: FnOnce(tokio::sync::oneshot::Sender<T>) -> u64>(&mut self, f: F) -> u64 {
         let id = match std::mem::replace(self, LocalChannel::Used) {
             LocalChannel::Channel(sender) => (f)(sender),
             LocalChannel::Serialized(id) => id,

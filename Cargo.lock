@@ -3470,7 +3470,6 @@ dependencies = [
  "serde_json",
  "system_bridge",
  "tokio",
- "wallet",
 ]
 
 [[package]]
@@ -3491,7 +3490,6 @@ dependencies = [
  "serde_json",
  "system_bridge",
  "tokio",
- "wallet",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-fs",
