@@ -82,11 +82,18 @@ impl Plugin for VideoPlayerPlugin {
             SceneComponentId::AUDIO_STREAM,
             ComponentPosition::EntityOnly,
         );
-        app.add_systems(Update, update_av_players.in_set(SceneSets::PostLoop));
+        app.add_systems(
+            Update,
+            (rebuild_html_media_entities, update_av_players)
+                .chain()
+                .in_set(SceneSets::PostLoop),
+        );
 
         let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
 
         app.insert_resource(FrameCopyRequestQueue(sx));
+
+        app.add_observer(av_player_on_insert);
 
         let render_app = app.sub_app_mut(RenderApp);
         render_app
@@ -107,6 +114,7 @@ pub struct FrameCopyRequest {
 }
 
 #[derive(Component, Debug)]
+#[component(immutable)]
 pub struct AVPlayer {
     // note we reuse PbVideoPlayer for audio as well
     pub source: PbVideoPlayer,
@@ -475,6 +483,106 @@ impl Drop for HtmlMediaEntity {
     }
 }
 
+fn av_player_on_insert(
+    trigger: Trigger<OnInsert, AVPlayer>,
+    mut commands: Commands,
+    mut av_players: Query<(&AVPlayer, &mut HtmlMediaEntity)>,
+) {
+    let Ok((av_player, mut html_media_entity)) = av_players.get_mut(trigger.target()) else {
+        return;
+    };
+
+    if av_player.source.src == html_media_entity.source {
+        debug!("Updating html media entity.");
+        html_media_entity.set_loop(av_player.source.r#loop.unwrap_or(false));
+        html_media_entity.set_volume(av_player.source.volume.unwrap_or(1.0));
+    } else {
+        debug!("Removing html media entity due to diverging source.");
+        commands
+            .entity(trigger.target())
+            .try_remove::<HtmlMediaEntity>();
+    }
+}
+
+fn rebuild_html_media_entities(
+    mut commands: Commands,
+    av_players: Populated<
+        (
+            Entity,
+            &ContainerEntity,
+            &AVPlayer,
+            Option<&VideoTextureOutput>,
+        ),
+        Without<HtmlMediaEntity>,
+    >,
+    scenes: Query<&RendererSceneContext>,
+    ipfs: Res<IpfsResource>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    for (ent, container, player, maybe_texture) in av_players.iter() {
+        let Ok(context) = scenes.get(container.root) else {
+            continue;
+        };
+
+        let source = ipfs
+            .content_url(&player.source.src, &context.hash)
+            .unwrap_or_else(|| player.source.src.clone());
+
+        if player.has_video {
+            let image_handle = match maybe_texture {
+                None => {
+                    let mut image = Image::new_fill(
+                        bevy::render::render_resource::Extent3d {
+                            width: 8,
+                            height: 8,
+                            depth_or_array_layers: 1,
+                        },
+                        TextureDimension::D2,
+                        &basic::FUCHSIA.to_u8_array(),
+                        TextureFormat::Rgba8UnormSrgb,
+                        RenderAssetUsages::all(),
+                    );
+                    image.texture_descriptor.usage = TextureUsages::COPY_DST
+                        | TextureUsages::TEXTURE_BINDING
+                        | TextureUsages::RENDER_ATTACHMENT;
+                    image.immediate_upload = true;
+                    image.data = None;
+                    images.add(image)
+                }
+                Some(texture) => texture.0.clone(),
+            };
+
+            let mut video = if player.source.src.starts_with("https://") {
+                warn!("https video {}", player.source.src);
+                HtmlMediaEntity::new_video(&source, player.source.src.clone(), image_handle.clone())
+            } else if player.source.src.starts_with("livekit-video://") {
+                let Some(video) =
+                    HtmlMediaEntity::new_stream(player.source.src.clone(), image_handle.clone())
+                else {
+                    continue;
+                };
+                warn!("stream video {}", player.source.src);
+                video
+            } else {
+                warn!("noop video {}", player.source.src);
+                HtmlMediaEntity::new_noop(player.source.src.clone(), image_handle.clone())
+            };
+
+            video.set_loop(player.source.r#loop.unwrap_or(false));
+            video.set_volume(player.source.volume.unwrap_or(1.0));
+            let video_output = VideoTextureOutput(image_handle);
+
+            commands.entity(ent).try_insert((video, video_output));
+        } else {
+            let mut audio = HtmlMediaEntity::new_audio(&source, player.source.src.clone());
+            audio.set_loop(player.source.r#loop.unwrap_or(false));
+            audio.set_volume(player.source.volume.unwrap_or(1.0));
+
+            commands.entity(ent).try_insert(audio);
+        }
+    }
+}
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn update_av_players(
     mut commands: Commands,
@@ -487,7 +595,6 @@ pub fn update_av_players(
         &GlobalTransform,
     )>,
     mut images: ResMut<Assets<Image>>,
-    ipfs: Res<IpfsResource>,
     mut scenes: Query<&mut RendererSceneContext>,
     config: Res<AppConfig>,
     containing_scene: ContainingScene,
@@ -495,80 +602,6 @@ pub fn update_av_players(
     send_queue: Res<FrameCopyRequestQueue>,
     frame: Res<FrameCount>,
 ) {
-    for (ent, container, player, mut maybe_av, maybe_texture, _) in av_players.iter_mut() {
-        if let Some(av) = maybe_av.as_mut().filter(|p| p.source == player.source.src) {
-            if av.source.starts_with("livekit-video://") && av.state() == VideoState::VsError {
-                av.source = String::new();
-            } else if player.is_changed() {
-                av.set_loop(player.source.r#loop.unwrap_or(false));
-                av.set_volume(player.source.volume.unwrap_or(1.0));
-            }
-        } else {
-            let Ok(context) = scenes.get(container.root) else {
-                continue;
-            };
-
-            let source = ipfs
-                .content_url(&player.source.src, &context.hash)
-                .unwrap_or_else(|| player.source.src.clone());
-
-            if player.has_video {
-                let image_handle = match maybe_texture {
-                    None => {
-                        let mut image = Image::new_fill(
-                            bevy::render::render_resource::Extent3d {
-                                width: 8,
-                                height: 8,
-                                depth_or_array_layers: 1,
-                            },
-                            TextureDimension::D2,
-                            &basic::FUCHSIA.to_u8_array(),
-                            TextureFormat::Rgba8UnormSrgb,
-                            RenderAssetUsages::all(),
-                        );
-                        image.texture_descriptor.usage = TextureUsages::COPY_DST
-                            | TextureUsages::TEXTURE_BINDING
-                            | TextureUsages::RENDER_ATTACHMENT;
-                        image.immediate_upload = true;
-                        image.data = None;
-                        images.add(image)
-                    }
-                    Some(texture) => texture.0.clone(),
-                };
-
-                let mut video = if player.source.src.starts_with("https://") {
-                    HtmlMediaEntity::new_video(
-                        &source,
-                        player.source.src.clone(),
-                        image_handle.clone(),
-                    )
-                } else if player.source.src.starts_with("livekit-video://") {
-                    let Some(video) = HtmlMediaEntity::new_stream(
-                        player.source.src.clone(),
-                        image_handle.clone(),
-                    ) else {
-                        continue;
-                    };
-                    video
-                } else {
-                    HtmlMediaEntity::new_noop(player.source.src.clone(), image_handle.clone())
-                };
-
-                video.set_loop(player.source.r#loop.unwrap_or(false));
-                video.set_volume(player.source.volume.unwrap_or(1.0));
-                let video_output = VideoTextureOutput(image_handle);
-
-                commands.entity(ent).try_insert((video, video_output));
-            } else {
-                let mut audio = HtmlMediaEntity::new_audio(&source, player.source.src.clone());
-                audio.set_loop(player.source.r#loop.unwrap_or(false));
-                audio.set_volume(player.source.volume.unwrap_or(1.0));
-
-                commands.entity(ent).try_insert(audio);
-            }
-        }
-    }
-
     // disable distant av
     let Ok(user) = user.single() else {
         return;
