@@ -25,6 +25,7 @@ use common::{
     sets::SceneSets,
     structs::{AppConfig, PrimaryUser},
 };
+use comms::{global_crdt::ChannelControl, SceneRoom, Transport};
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::sdk::components::{
@@ -98,6 +99,8 @@ impl Plugin for VideoPlayerPlugin {
         app.insert_resource(FrameCopyRequestQueue(sx));
 
         app.add_observer(av_player_on_insert);
+        app.add_observer(unsubscribe_to_streamer);
+        app.add_observer(subscribe_to_streamer);
 
         let render_app = app.sub_app_mut(RenderApp);
         render_app
@@ -852,4 +855,56 @@ fn perform_video_copies(
             },
         );
     }
+}
+
+fn unsubscribe_to_streamer(
+    trigger: Trigger<OnRemove, ShouldBePlaying>,
+    av_players: Query<&AVPlayer>,
+    mut scene_rooms: Query<&mut Transport, With<SceneRoom>>,
+) {
+    let Ok(av_player) = av_players.get(trigger.target()) else {
+        unreachable!("ShouldBePlaying should only be present on a AVPlayer.");
+    };
+    if !av_player.source.src.starts_with("livekit-video://") {
+        return;
+    }
+
+    let Ok(mut transport) = scene_rooms.single_mut() else {
+        debug!("No SceneRoom transport.");
+        return;
+    };
+    let Some(channel) = transport.control.as_mut() else {
+        debug!("SceneRoom transport has not control channel.");
+        return;
+    };
+
+    channel
+        .blocking_send(ChannelControl::StreamerUnsubscribe)
+        .unwrap();
+}
+
+fn subscribe_to_streamer(
+    trigger: Trigger<OnAdd, ShouldBePlaying>,
+    av_players: Query<&AVPlayer>,
+    mut scene_rooms: Query<&mut Transport, With<SceneRoom>>,
+) {
+    let Ok(av_player) = av_players.get(trigger.target()) else {
+        unreachable!("ShouldBePlaying should only be present on a AVPlayer.");
+    };
+    if !av_player.source.src.starts_with("livekit-video://") {
+        return;
+    }
+
+    let Ok(mut transport) = scene_rooms.single_mut() else {
+        debug!("No SceneRoom transport.");
+        return;
+    };
+    let Some(channel) = transport.control.as_mut() else {
+        debug!("SceneRoom transport has not control channel.");
+        return;
+    };
+
+    channel
+        .blocking_send(ChannelControl::StreamerSubscribe)
+        .unwrap();
 }
