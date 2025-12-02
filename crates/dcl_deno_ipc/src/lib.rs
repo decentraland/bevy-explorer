@@ -120,6 +120,7 @@ pub fn init_runtime() -> anyhow::Result<()> {
             Err(e) => {
                 error!("runtime initialization failed: {e}");
                 let _ = init_sx.send(Err(e.into()));
+                child.wait().unwrap();
                 return;
             }
         };
