@@ -96,7 +96,6 @@ extern "C" {
     #[wasm_bindgen(catch)]
     fn streamer_subscribe_channel(
         room_name: &str,
-        streamer_identity: &str,
         subscribe_audio: bool,
         subscribe_video: bool,
     ) -> Result<(), JsValue>;
@@ -313,6 +312,12 @@ async fn connect_and_handle_session(
                 match control {
                     ChannelControl::Subscribe(address, _) => participant_audio_subscribe(&room_name, address, true),
                     ChannelControl::Unsubscribe(address) => participant_audio_subscribe(&room_name, address, false),
+                    ChannelControl::StreamerSubscribe => if let Err(err) = streamer_subscribe_channel(&room_name, true, true) {
+                        error!("{err:?}");
+                    },
+                    ChannelControl::StreamerUnsubscribe => if let Err(err) = streamer_subscribe_channel(&room_name, false, false) {
+                        error!("{err:?}");
+                    },
                 };
             }
         );

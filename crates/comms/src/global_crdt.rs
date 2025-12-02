@@ -195,6 +195,10 @@ pub enum ChannelControl {
     ),
     #[cfg(not(target_arch = "wasm32"))]
     StreamerUnsubscribe,
+    #[cfg(target_arch = "wasm32")]
+    StreamerSubscribe,
+    #[cfg(target_arch = "wasm32")]
+    StreamerUnsubscribe,
 }
 
 pub enum ForeignAudioData {
