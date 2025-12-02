@@ -412,6 +412,11 @@ impl HtmlMediaEntity {
         slf.new_frame_time = frame_time;
         slf.frame_closure = callback;
         slf.frame_callback_handle = callback_handle;
+
+        // Hack to force a callback trigger
+        slf.stop();
+        slf.play();
+
         Some(slf)
     }
 
@@ -637,6 +642,12 @@ pub fn update_av_players(
         let should_be_playing = should_be_playing.contains(&ent);
 
         let state = av.state();
+
+        if av.source.starts_with("livekit-video://") && state == VideoState::VsError {
+            error!("Stream is erroring, retrying.");
+            commands.entity(ent).try_remove::<HtmlMediaEntity>();
+            continue;
+        }
 
         let is_playing = state == VideoState::VsPlaying;
         let can_play = match state {
