@@ -289,3 +289,10 @@ pub struct EntityDefinitionResponse {
     pub metadata: Option<String>,
     pub base_url: String,
 }
+
+// rmp can't handle #[serde(flatten)] and json::Value without using named vec.
+// the message format is much larger but flattens and values are rare in our ipc api, 
+// so we default try to encode without
+pub fn rmp_encode<T: Serialize>(value: &T) -> Result<Vec<u8>, rmp_serde::encode::Error> {
+    rmp_serde::to_vec(value).or_else(|_| rmp_serde::to_vec_named(value))
+}
