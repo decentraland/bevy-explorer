@@ -402,9 +402,7 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                 }
             }
             RoomEvent::TrackPublished {
-                room_name,
-                participant,
-                kind,
+                participant, kind, ..
             } => {
                 debug!("pub {} {}", participant.identity, kind);
                 if let Some(address) = participant.identity.as_h160() {
