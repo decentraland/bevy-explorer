@@ -7,9 +7,9 @@ use bevy::log::{info_span, tracing::span::EnteredSpan};
 use std::{
     cell::RefCell,
     rc::Rc,
-    sync::{mpsc::SyncSender, Arc},
+    sync::Arc,
 };
-use tokio::sync::{broadcast::error::TryRecvError, mpsc::Receiver, Mutex};
+use tokio::sync::{broadcast::error::TryRecvError, mpsc::{Receiver, UnboundedSender}, Mutex};
 
 use crate::{
     crdt::{append_component, put_component},
@@ -42,7 +42,7 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
 
     let rpc_calls = std::mem::take(op_state.borrow_mut::<RpcCalls>());
 
-    let sender = op_state.borrow_mut::<SyncSender<SceneResponse>>();
+    let sender = op_state.borrow_mut::<UnboundedSender<SceneResponse>>();
     sender
         .send(SceneResponse::Ok(
             entity_map.scene_id,

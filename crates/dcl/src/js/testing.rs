@@ -1,4 +1,4 @@
-use std::{sync::mpsc::SyncSender, time::Duration};
+use std::time::Duration;
 
 use bevy::log::debug;
 use common::rpc::{CompareSnapshot, CompareSnapshotResult, RpcCall, RpcResultSender};
@@ -98,7 +98,7 @@ pub fn op_take_and_compare_snapshot(
     let snapshot_size = [snapshot_size.0, snapshot_size.1];
 
     let scene = state.borrow::<CrdtContext>().scene_id.0;
-    let sender = state.borrow_mut::<SyncSender<SceneResponse>>();
+    let sender = state.borrow_mut::<tokio::sync::mpsc::UnboundedSender<SceneResponse>>();
 
     if method.grey_pixel_diff.is_none() {
         anyhow::bail!("unsupported comparison format");
