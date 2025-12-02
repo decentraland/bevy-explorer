@@ -396,12 +396,16 @@ fn send_settings(mut ev: EventReader<SystemApi>, settings: Res<Settings>) {
     }
 }
 
-fn receive_settings(mut ev: EventReader<SystemApi>, mut config: ResMut<AppConfig>, mut settings: ResMut<Settings>) {
+fn receive_settings(
+    mut ev: EventReader<SystemApi>,
+    mut config: ResMut<AppConfig>,
+    mut settings: ResMut<Settings>,
+) {
     for ev in ev.read() {
         if let SystemApi::SetSetting(name, val) = ev {
-             if let Err(e) = settings.set_value(&mut config, name, *val) {
+            if let Err(e) = settings.set_value(&mut config, name, *val) {
                 error!("Error setting {name}: {e}");
-             }
+            }
         }
     }
 }

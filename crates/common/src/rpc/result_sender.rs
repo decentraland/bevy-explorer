@@ -1,18 +1,23 @@
-use platform::AsyncRwLock;
-use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
-use tokio_util::sync::CancellationToken;
-use std::{future::Future, sync::Arc, task::{Context, Poll}};
 use crate::rpc::*;
 use pin_project::{pin_project, pinned_drop};
+use platform::AsyncRwLock;
+use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
+use std::{
+    future::Future,
+    sync::Arc,
+    task::{Context, Poll},
+};
+use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
 pub enum RpcResultSender<T> {
     Local {
-        channel: Arc<AsyncRwLock<Option<tokio::sync::oneshot::Sender<T>>>>, 
+        channel: Arc<AsyncRwLock<Option<tokio::sync::oneshot::Sender<T>>>>,
         cancel: CancellationToken,
     },
     Remote {
         id: u64,
+        #[allow(clippy::type_complexity)]
         router: Arc<AsyncRwLock<Option<tokio::sync::mpsc::UnboundedSender<(u64, IpcMessage)>>>>,
         receiver_dropped: CancellationToken,
         sender_alive: tokio::sync::mpsc::Sender<()>,
@@ -29,7 +34,7 @@ pub struct RpcResultReceiver<T> {
 impl<T> RpcResultReceiver<T> {
     pub fn try_recv(&mut self) -> Result<T, tokio::sync::oneshot::error::TryRecvError> {
         self.channel.try_recv()
-    } 
+    }
 }
 
 impl<T> Future for RpcResultReceiver<T> {
@@ -71,11 +76,14 @@ impl<T: Serialize + 'static> RpcResultSender<T> {
         let cancel = CancellationToken::new();
 
         (
-            Self::Local{
-                channel: Arc::new(AsyncRwLock::new(Some(sx))), 
+            Self::Local {
+                channel: Arc::new(AsyncRwLock::new(Some(sx))),
                 cancel: cancel.clone(),
             },
-            RpcResultReceiver{ channel: rx, cancel }
+            RpcResultReceiver {
+                channel: rx,
+                cancel,
+            },
         )
     }
 
@@ -117,7 +125,7 @@ impl<T: 'static + Serialize + DeserializeOwned + Send> Serialize for RpcResultSe
     where
         S: serde::Serializer,
     {
-        let RpcResultSender::Local{ channel, cancel } = self else {
+        let RpcResultSender::Local { channel, cancel } = self else {
             panic!();
         };
 

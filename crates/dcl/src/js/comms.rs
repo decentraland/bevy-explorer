@@ -1,7 +1,10 @@
 use std::{cell::RefCell, rc::Rc};
 
 use bevy::log::debug;
-use common::{rpc::{RpcCall, RpcStreamReceiver, RpcStreamSender}, util::AsH160};
+use common::{
+    rpc::{RpcCall, RpcStreamReceiver, RpcStreamSender},
+    util::AsH160,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};

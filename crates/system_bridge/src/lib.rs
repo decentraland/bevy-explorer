@@ -13,7 +13,9 @@ use bevy_console::{ConsoleCommandEntered, PrintConsoleLine};
 use common::{
     inputs::{BindingsData, InputIdentifier, SystemActionEvent},
     rpc::{RpcResultSender, RpcStreamSender},
-    structs::{AppConfig, MicState, PermissionLevel, PermissionType, PermissionUsed, PermissionValue},
+    structs::{
+        AppConfig, MicState, PermissionLevel, PermissionType, PermissionUsed, PermissionValue,
+    },
 };
 use dcl_component::proto_components::{
     common::Vector2,

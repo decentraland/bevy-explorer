@@ -63,9 +63,7 @@ pub async fn op_portable_list(state: Rc<RefCell<impl State>>) -> Vec<SpawnRespon
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
-        .push(RpcCall::ListPortables {
-            response: sx,
-        });
+        .push(RpcCall::ListPortables { response: sx });
 
     let res = rx.await.unwrap_or_default();
     bevy::log::debug!("portable list res: {res:?}");

@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 use common::{
-    inputs::SystemAction, sets::SetupSets, structs::{MicState, SystemAudio, ToolTips, TooltipSource}, util::TryPushChildrenEx
+    inputs::SystemAction,
+    sets::SetupSets,
+    structs::{MicState, SystemAudio, ToolTips, TooltipSource},
+    util::TryPushChildrenEx,
 };
 use comms::{Transport, TransportType};
 use input_manager::{InputManager, InputPriority};
@@ -135,18 +138,15 @@ fn update_mic_ui(
     }
 }
 
-fn handle_mic_requests(
-    mut events: EventReader<SystemApi>,
-    mut mic: ResMut<MicState>,
-) {
+fn handle_mic_requests(mut events: EventReader<SystemApi>, mut mic: ResMut<MicState>) {
     for ev in events.read() {
         match ev {
             SystemApi::GetMicState(rpc_result_sender) => {
                 rpc_result_sender.send(mic.clone());
-            },
+            }
             SystemApi::SetMicEnabled(enabled) => {
                 mic.enabled = mic.available && *enabled;
-            },
+            }
             _ => (),
         }
     }

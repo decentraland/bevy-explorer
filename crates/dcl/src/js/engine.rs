@@ -4,12 +4,12 @@ use bevy::log::{debug, info, warn};
 #[cfg(feature = "span_scene_loop")]
 use bevy::log::{info_span, tracing::span::EnteredSpan};
 
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::Arc,
+use std::{cell::RefCell, rc::Rc, sync::Arc};
+use tokio::sync::{
+    broadcast::error::TryRecvError,
+    mpsc::{Receiver, UnboundedSender},
+    Mutex,
 };
-use tokio::sync::{broadcast::error::TryRecvError, mpsc::{Receiver, UnboundedSender}, Mutex};
 
 use crate::{
     crdt::{append_component, put_component},
@@ -81,7 +81,6 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
     }
     op_state.put(receiver);
 
-
     let mut entity_map = op_state.take::<CrdtContext>();
     let mut renderer_state = op_state.take::<RendererStore>();
     let writers = op_state.take::<CrdtComponentInterfaces>();
@@ -129,7 +128,12 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
         match global_update_receiver.try_recv() {
             Ok(next) => {
                 let mut stream = DclReader::new(&next);
-                renderer_state.0.process_message_stream(&mut entity_map, &writers, &mut stream, false);
+                renderer_state.0.process_message_stream(
+                    &mut entity_map,
+                    &writers,
+                    &mut stream,
+                    false,
+                );
                 results.push(next);
             }
             Err(TryRecvError::Empty) => break,

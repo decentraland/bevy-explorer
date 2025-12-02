@@ -340,9 +340,7 @@ pub fn handle_scene_permissions(
     mut manager: ResMut<PermissionManager>,
     mut config: ResMut<AppConfig>,
     mut system_events: EventReader<SystemApi>,
-    mut requests_streams: Local<
-        Vec<RpcStreamSender<system_bridge::PermissionRequest>>,
-    >,
+    mut requests_streams: Local<Vec<RpcStreamSender<system_bridge::PermissionRequest>>>,
     mut used_streams: Local<Vec<RpcStreamSender<PermissionUsed>>>,
     // corresponds to the items in the manager deque
     mut permission_ids: Local<Vec<usize>>,

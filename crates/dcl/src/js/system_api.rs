@@ -105,7 +105,7 @@ pub fn new_login(state: &mut impl State) -> &mut NewLogin {
         let (sx, result) = RpcResultSender::channel();
         state
             .borrow_mut::<SuperUserScene>()
-            .send(SystemApi::LoginNew(sc.into(), sx))
+            .send(SystemApi::LoginNew(sc, sx))
             .unwrap();
 
         login.code = Some(code);

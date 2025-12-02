@@ -14,9 +14,7 @@ pub async fn op_get_connected_players(state: Rc<RefCell<impl State>>) -> Vec<Str
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
-        .push(RpcCall::GetConnectedPlayers {
-            response: sx,
-        });
+        .push(RpcCall::GetConnectedPlayers { response: sx });
 
     rx.await.unwrap_or_default()
 }

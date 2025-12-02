@@ -51,7 +51,16 @@ impl PermissionManager {
 pub struct Permission<'w, 's, T: Send + Sync + 'static> {
     pub success: Local<'s, Vec<(T, PermissionType, Option<String>, Entity)>>,
     pub fail: Local<'s, Vec<(T, PermissionType, Entity)>>,
-    pub pending: Local<'s, Vec<(T, PermissionType, Entity, Option<String>, RpcResultReceiver<bool>)>>,
+    pub pending: Local<
+        's,
+        Vec<(
+            T,
+            PermissionType,
+            Entity,
+            Option<String>,
+            RpcResultReceiver<bool>,
+        )>,
+    >,
     config: Res<'w, AppConfig>,
     realm: Res<'w, CurrentRealm>,
     containing_scenes: ContainingScene<'w, 's>,

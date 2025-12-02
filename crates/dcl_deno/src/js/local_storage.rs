@@ -16,7 +16,9 @@ pub fn override_ops() -> Vec<OpDecl> {
 }
 
 fn address(state: &OpState) -> String {
-    let address = player_identity(state).map(|id| id.address).unwrap_or_default();
+    let address = player_identity(state)
+        .map(|id| id.address)
+        .unwrap_or_default();
     println!("local storage address: {address:?}");
     address
 }

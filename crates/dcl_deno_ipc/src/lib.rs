@@ -53,10 +53,11 @@ pub enum SceneToEngine {
 }
 
 thread_local! {
-    static RENDERER_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<SceneResponse>>> = RefCell::new(None);
-    static SYSTEM_API_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>> = RefCell::new(None);
+    static RENDERER_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<SceneResponse>>> = const { RefCell::new(None) };
+    static SYSTEM_API_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>> = const { RefCell::new(None) };
 }
 
+#[allow(clippy::type_complexity)]
 pub static NEW_SCENE_SENDER: Lazy<
     RwLock<
         Option<
@@ -132,6 +133,7 @@ pub fn init_runtime() -> anyhow::Result<()> {
     init_rx.blocking_recv()?
 }
 
+#[allow(clippy::type_complexity)]
 pub async fn renderer_ipc_out(
     mut stream: SendHalf,
     mut new_scene: tokio::sync::mpsc::UnboundedReceiver<(
@@ -217,7 +219,7 @@ pub async fn renderer_ipc_in(mut stream: RecvHalf) {
                         token.cancel();
                     }
                 })
-            },
+            }
             SceneToEngine::SystemApi(system_command) => {
                 SYSTEM_API_SENDER.with(|sender| {
                     let mut sender = sender.borrow_mut();
