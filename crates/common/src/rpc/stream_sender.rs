@@ -31,6 +31,10 @@ impl<T> RpcStreamReceiver<T> {
     pub fn try_recv(&mut self) -> Result<T, tokio::sync::mpsc::error::TryRecvError> {
         self.channel.try_recv()
     }
+
+    pub async fn recv(&mut self) -> Option<T> {
+        self.channel.recv().await
+    }
 }
 
 impl<T> Drop for RpcStreamReceiver<T> {

@@ -6,7 +6,7 @@ use dcl_component::{
     SceneEntityId,
 };
 use serde::Serialize;
-use std::{cell::RefCell, rc::Rc, sync::mpsc::SyncSender};
+use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     interface::{crdt_context::CrdtContext, CrdtType},
@@ -27,7 +27,7 @@ pub async fn op_read_file(
 
     op_state
         .borrow_mut()
-        .borrow_mut::<SyncSender<SceneResponse>>()
+        .borrow_mut::<tokio::sync::mpsc::UnboundedSender<SceneResponse>>()
         .send(SceneResponse::ImmediateRpcCall(RpcCall::ReadFile {
             scene_hash,
             filename,

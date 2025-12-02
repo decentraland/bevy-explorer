@@ -5,7 +5,7 @@ pub mod op_wrappers;
 use std::{
     cell::RefCell,
     rc::Rc,
-    sync::{mpsc::SyncSender, Arc},
+    sync::Arc,
 };
 
 use bevy::{log::tracing::span::EnteredSpan, tasks::IoTaskPool};
@@ -28,7 +28,7 @@ pub struct SceneInitializationData {
     pub scene_hash: String,
     pub scene_js: SceneJsFile,
     pub crdt_component_interfaces: CrdtComponentInterfaces,
-    pub renderer_sender: SyncSender<SceneResponse>,
+    pub renderer_sender: tokio::sync::mpsc::UnboundedSender<SceneResponse>,
     pub global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     pub id: SceneId,
     pub storage_root: String,
@@ -52,7 +52,7 @@ pub fn spawn_scene(
     scene_hash: String,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
-    renderer_sender: SyncSender<SceneResponse>,
+    renderer_sender: tokio::sync::mpsc::UnboundedSender<SceneResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     id: SceneId,
     storage_root: String,

@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use bevy::{log::debug, math::Vec4};
 use common::{
     inputs::{Action, BindingsData, InputIdentifier, SystemActionEvent},
-    rpc::{RpcCall, RpcResultReceiver, RpcResultSender, RpcStreamSender},
+    rpc::{RpcCall, RpcResultReceiver, RpcResultSender, RpcStreamReceiver, RpcStreamSender},
     structs::{
         MicState, PermissionLevel, PermissionStrings, PermissionType, PermissionUsed,
         PermissionValue,
@@ -20,7 +20,6 @@ use system_bridge::{
     PermissionRequest, SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi,
     VoiceMessage,
 };
-use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::{interface::crdt_context::CrdtContext, js::player_identity, RpcCalls};
 
@@ -382,7 +381,7 @@ pub async fn op_read_system_action_stream(
 ) -> Result<Option<SystemActionEvent>, anyhow::Error> {
     let Some(mut receiver) = state
         .borrow_mut()
-        .try_take::<UnboundedReceiver<SystemActionEvent>>()
+        .try_take::<RpcStreamReceiver<SystemActionEvent>>()
     else {
         return Ok(None);
     };
@@ -416,7 +415,7 @@ pub async fn op_read_chat_stream(
 ) -> Result<Option<ChatMessage>, anyhow::Error> {
     let Some(mut receiver) = state
         .borrow_mut()
-        .try_take::<UnboundedReceiver<ChatMessage>>()
+        .try_take::<RpcStreamReceiver<ChatMessage>>()
     else {
         return Ok(None);
     };
@@ -473,6 +472,7 @@ pub fn op_quit(state: Rc<RefCell<impl State>>) {
 }
 
 pub async fn op_get_permission_request_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    debug!("op_get_permission_request_stream");
     let (sx, rx) = RpcStreamSender::channel();
     state.borrow_mut().put(rx);
 
@@ -489,9 +489,10 @@ pub async fn op_read_permission_request_stream(
     state: Rc<RefCell<impl State>>,
     _rid: u32,
 ) -> Result<Option<PermissionRequest>, anyhow::Error> {
+    debug!("op_read_permission_request_stream");
     let Some(mut receiver) = state
         .borrow_mut()
-        .try_take::<UnboundedReceiver<PermissionRequest>>()
+        .try_take::<RpcStreamReceiver<PermissionRequest>>()
     else {
         return Ok(None);
     };
@@ -525,7 +526,7 @@ pub async fn op_read_permission_used_stream(
 ) -> Result<Option<PermissionUsed>, anyhow::Error> {
     let Some(mut receiver) = state
         .borrow_mut()
-        .try_take::<UnboundedReceiver<PermissionUsed>>()
+        .try_take::<RpcStreamReceiver<PermissionUsed>>()
     else {
         return Ok(None);
     };
@@ -673,7 +674,7 @@ pub async fn op_read_voice_stream(
 ) -> Result<Option<VoiceMessage>, anyhow::Error> {
     let Some(mut receiver) = state
         .borrow_mut()
-        .try_take::<UnboundedReceiver<VoiceMessage>>()
+        .try_take::<RpcStreamReceiver<VoiceMessage>>()
     else {
         return Ok(None);
     };

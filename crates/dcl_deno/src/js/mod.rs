@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use bevy::log::{debug, error, info_span};
@@ -16,7 +16,7 @@ use deno_core::{
 use multihash_codetable::MultihashDigest;
 use platform::project_directories;
 use system_bridge::SystemApi;
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::{Receiver, UnboundedSender};
 
 use ipfs::SceneJsFile;
 
@@ -236,7 +236,7 @@ pub(crate) fn scene_thread(
     if inspector.is_some() {
         let _ = state
             .borrow_mut()
-            .borrow_mut::<SyncSender<SceneResponse>>()
+            .borrow_mut::<UnboundedSender<SceneResponse>>()
             .send(SceneResponse::WaitingForInspector);
 
         runtime
@@ -261,7 +261,7 @@ pub(crate) fn scene_thread(
             error!("[scene thread {scene_id:?}] script load error: {}", e);
             let _ = state
                 .borrow_mut()
-                .take::<SyncSender<SceneResponse>>()
+                .take::<UnboundedSender<SceneResponse>>()
                 .send(SceneResponse::Error(scene_id, format!("{e:?}")));
             return;
         }
@@ -290,7 +290,7 @@ pub(crate) fn scene_thread(
         error!("[{scene_id:?}] onStart err: {e:?}");
         let _ = state
             .borrow_mut()
-            .take::<SyncSender<SceneResponse>>()
+            .take::<UnboundedSender<SceneResponse>>()
             .send(SceneResponse::Error(scene_id, format!("{e:?}")));
         return;
     }
@@ -345,7 +345,7 @@ pub(crate) fn scene_thread(
                 );
                 let _ = state
                     .borrow_mut()
-                    .take::<SyncSender<SceneResponse>>()
+                    .take::<UnboundedSender<SceneResponse>>()
                     .send(SceneResponse::Error(scene_id, format!("{e:?}")));
                 rt.block_on(async move {
                     drop(runtime);
