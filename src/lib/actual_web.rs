@@ -2,7 +2,7 @@ use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
 use assets::EmbedAssetsPlugin;
 use bevy::{
     app::Propagate,
-    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
+    diagnostic::FrameTimeDiagnosticsPlugin,
     prelude::*,
     render::{renderer::RenderDevice, view::RenderLayers},
     tasks::{IoTaskPool, Task},
