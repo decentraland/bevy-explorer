@@ -885,13 +885,13 @@ fn perform_video_copies(
 
 fn unsubscribe_to_streamer(
     trigger: Trigger<OnRemove, ShouldBePlaying>,
-    av_players: Query<&AVPlayer, With<InScene>>,
+    av_players: Query<(&AVPlayer, Has<InScene>)>,
     mut scene_rooms: Query<&mut Transport, With<SceneRoom>>,
 ) {
-    let Ok(av_player) = av_players.get(trigger.target()) else {
+    let Ok((av_player, in_scene)) = av_players.get(trigger.target()) else {
         unreachable!("ShouldBePlaying should only be present on a AVPlayer.");
     };
-    if !av_player.source.src.starts_with("livekit-video://") {
+    if !in_scene || !av_player.source.src.starts_with("livekit-video://") {
         return;
     }
 
@@ -911,13 +911,13 @@ fn unsubscribe_to_streamer(
 
 fn subscribe_to_streamer(
     trigger: Trigger<OnAdd, ShouldBePlaying>,
-    av_players: Query<&AVPlayer, With<InScene>>,
+    av_players: Query<(&AVPlayer, Has<InScene>)>,
     mut scene_rooms: Query<&mut Transport, With<SceneRoom>>,
 ) {
-    let Ok(av_player) = av_players.get(trigger.target()) else {
+    let Ok((av_player, in_scene)) = av_players.get(trigger.target()) else {
         unreachable!("ShouldBePlaying should only be present on a AVPlayer.");
     };
-    if !av_player.source.src.starts_with("livekit-video://") {
+    if !in_scene || !av_player.source.src.starts_with("livekit-video://") {
         return;
     }
 
