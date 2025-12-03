@@ -938,7 +938,6 @@ fn subscribe_to_streamer(
 
 fn resubscribe_on_entering_room(
     trigger: Trigger<OnAdd, Transport>,
-    mut commands: Commands,
     av_players: Query<&AVPlayer, (With<ShouldBePlaying>, With<InScene>)>,
     mut scene_rooms: Query<&mut Transport, With<SceneRoom>>,
 ) {
