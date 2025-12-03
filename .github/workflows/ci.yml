@@ -111,7 +111,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --bin dcl_deno_ipc --release
+          args: --package dcl_deno_ipc --release
       - uses: actions-rs/cargo@v1
         if: runner.os == 'windows'
         with:
