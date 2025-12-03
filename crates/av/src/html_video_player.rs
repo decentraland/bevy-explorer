@@ -102,6 +102,7 @@ impl Plugin for VideoPlayerPlugin {
         app.add_observer(av_player_on_insert);
         app.add_observer(unsubscribe_to_streamer);
         app.add_observer(subscribe_to_streamer);
+        app.add_observer(resubscribe_on_entering_room);
 
         let render_app = app.sub_app_mut(RenderApp);
         render_app
@@ -933,4 +934,30 @@ fn subscribe_to_streamer(
     channel
         .blocking_send(ChannelControl::StreamerSubscribe)
         .unwrap();
+}
+
+fn resubscribe_on_entering_room(
+    trigger: Trigger<OnAdd, Transport>,
+    mut commands: Commands,
+    av_players: Query<&AVPlayer, (With<ShouldBePlaying>, With<InScene>)>,
+    mut scene_rooms: Query<&mut Transport, With<SceneRoom>>,
+) {
+    commands.entity(trigger.target()).log_components();
+    let Ok(mut transport) = scene_rooms.get_mut(trigger.target()) else {
+        return;
+    };
+    let Some(channel) = transport.control.as_mut() else {
+        error!("SceneRoom transport has not control channel.");
+        return;
+    };
+
+    if av_players
+        .iter()
+        .any(|av_player| av_player.source.src.starts_with("livekit-video://"))
+    {
+        debug!("An active AVPlayer is a stream. Resubscribing to streams.");
+        channel
+            .blocking_send(ChannelControl::StreamerSubscribe)
+            .unwrap();
+    }
 }
