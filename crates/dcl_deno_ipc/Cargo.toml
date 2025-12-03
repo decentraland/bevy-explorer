@@ -25,6 +25,7 @@ base64 = { workspace = true }
 multihash-codetable = { workspace = true }
 ethers-core = { workspace = true }
 anyhow = { workspace = true }
+fastrand = { workspace = true }
 
 interprocess = { version = "2.0", features = ["tokio"] }
 rmp-serde = "1.3"
