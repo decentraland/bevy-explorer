@@ -960,14 +960,6 @@ fn process_scene_entity_lifecycle(
             debug!("{:?}: death row: {:?}", root, context.death_row);
         }
 
-        for scene_entity_id in std::mem::take(&mut context.nascent) {
-            if context.bevy_entity(scene_entity_id).is_some() {
-                continue;
-            }
-
-            context.spawn_bevy_entity(&mut commands, root, scene_entity_id, &primaries);
-        }
-
         // update deleted entities list, used by crdt processors to filter results
         deleted_entities.0 = std::mem::take(&mut context.death_row);
 
@@ -991,6 +983,15 @@ fn process_scene_entity_lifecycle(
                 commands.entity(deleted_bevy_entity).despawn();
             }
             context.set_dead(*deleted_scene_entity);
+        }
+
+        // add any new entities
+        for scene_entity_id in std::mem::take(&mut context.nascent) {
+            if context.bevy_entity(scene_entity_id).is_some() {
+                continue;
+            }
+
+            context.spawn_bevy_entity(&mut commands, root, scene_entity_id, &primaries);
         }
     }
 }
