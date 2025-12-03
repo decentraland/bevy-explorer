@@ -488,10 +488,10 @@ fn livekit_handler_inner(
                     };
 
                     match control {
-                        ChannelControl::Subscribe(address, sender) => {
+                        ChannelControl::VoiceSubscribe(address, sender) => {
                             participant_audio_subscribe(&room, address, Some(sender), &mut audio_channels).await
                         },
-                        ChannelControl::Unsubscribe(address) => participant_audio_subscribe(&room, address, None, &mut audio_channels).await,
+                        ChannelControl::VoiceUnsubscribe(address) => participant_audio_subscribe(&room, address, None, &mut audio_channels).await,
                         ChannelControl::StreamerSubscribe(audio, video) => {
                             streamer_audio_subscribe(&room, Some(audio), &mut streamer_audio_channel).await;
                             streamer_video_subscribe(&room, Some(video), &mut streamer_video_channel).await;

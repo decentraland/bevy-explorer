@@ -310,8 +310,8 @@ async fn connect_and_handle_session(
                 };
 
                 match control {
-                    ChannelControl::Subscribe(address, _) => participant_audio_subscribe(&room_name, address, true),
-                    ChannelControl::Unsubscribe(address) => participant_audio_subscribe(&room_name, address, false),
+                    ChannelControl::VoiceSubscribe(address, _) => participant_audio_subscribe(&room_name, address, true),
+                    ChannelControl::VoiceUnsubscribe(address) => participant_audio_subscribe(&room_name, address, false),
                     ChannelControl::StreamerSubscribe => if let Err(err) = streamer_subscribe_channel(&room_name, true, true) {
                         error!("{err:?}");
                     },

@@ -183,11 +183,11 @@ pub struct ForeignPlayer {
 }
 
 pub enum ChannelControl {
-    Subscribe(
+    VoiceSubscribe(
         Address,
         oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
     ),
-    Unsubscribe(Address),
+    VoiceUnsubscribe(Address),
     #[cfg(not(target_arch = "wasm32"))]
     StreamerSubscribe(
         mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
@@ -665,7 +665,8 @@ fn handle_foreign_audio(
             if let Some(entity) = source.available_transports.iter().next() {
                 let control = transports.get(entity).unwrap();
                 let (sx, rx) = oneshot::channel();
-                if let Ok(()) = control.try_send(ChannelControl::Subscribe(player.address, sx)) {
+                if let Ok(()) = control.try_send(ChannelControl::VoiceSubscribe(player.address, sx))
+                {
                     source.current_transport = Some(*entity);
                     source.audio_receiver = Some(rx);
                 }
