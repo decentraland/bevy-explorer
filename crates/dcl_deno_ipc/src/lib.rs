@@ -82,10 +82,11 @@ pub fn init_runtime() -> anyhow::Result<()> {
             .unwrap();
 
         let process_id = std::process::id();
+        let random_id = fastrand::usize(0..0xffff);
         let name_str = if cfg!(windows) {
-            format!("bevy_explorer_ipc_{process_id:x}")
+            format!("bevy_explorer_ipc_{process_id:x}_{random_id}")
         } else {
-            format!("/tmp/bevy_explorer_ipc_{process_id:x}.sock")
+            format!("/tmp/bevy_explorer_ipc_{process_id:x}_{random_id}.sock")
         };
         let name = name_str.clone().to_fs_name::<GenericFilePath>().unwrap();
 
@@ -99,11 +100,15 @@ pub fn init_runtime() -> anyhow::Result<()> {
             }
         };
 
-        let mut target = std::env::current_exe()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("dcl_deno_ipc");
+        let mut target = std::env::current_exe().unwrap();
+        target.pop();
+
+        // pop an extra folder when running tests
+        if target.file_name().and_then(|s| s.to_str()) == Some("deps") {
+            target.pop();
+        }
+
+        let mut target = target.join("dcl_deno_ipc");
         if cfg!(windows) {
             target.set_extension("exe");
         }
