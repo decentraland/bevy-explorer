@@ -92,10 +92,17 @@ pub enum TransportType {
     SceneRoom,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum NetworkMessageRecipient {
+    All,
+    Peer(H160),
+    AuthServer,
+}
+
 pub struct NetworkMessage {
     pub data: Vec<u8>,
     pub unreliable: bool,
-    pub recipient: Option<H160>,
+    pub recipient: NetworkMessageRecipient,
 }
 
 impl NetworkMessage {
@@ -106,7 +113,7 @@ impl NetworkMessage {
         Self {
             data,
             unreliable: true,
-            recipient: None,
+            recipient: NetworkMessageRecipient::All,
         }
     }
 
@@ -117,7 +124,7 @@ impl NetworkMessage {
         }
     }
 
-    pub fn targetted_reliable<D: ToDclWriter>(message: &D, recipient: Option<H160>) -> Self {
+    pub fn targetted_reliable<D: ToDclWriter>(message: &D, recipient: NetworkMessageRecipient) -> Self {
         Self {
             unreliable: false,
             recipient,
