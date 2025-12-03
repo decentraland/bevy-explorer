@@ -84,7 +84,7 @@ pub fn init_runtime() -> anyhow::Result<()> {
         let process_id = std::process::id();
         let random_id = fastrand::usize(0..0xffff);
         let name_str = if cfg!(windows) {
-            format!("bevy_explorer_ipc_{process_id:x}_{random_id}")
+            format!(r"\\.\pipe\bevy_explorer_ipc_{process_id:x}_{random_id}")
         } else {
             format!("/tmp/bevy_explorer_ipc_{process_id:x}_{random_id}.sock")
         };

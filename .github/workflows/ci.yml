@@ -111,22 +111,22 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --bins --release
+          args: --bin dcl_deno_ipc --release
       - uses: actions-rs/cargo@v1
         if: runner.os == 'windows'
         with:
           command: test
-          args: --all --release -j8
+          args: --all --release -j8 --test-threads=1
       - uses: actions-rs/cargo@v1
         if: runner.os == 'linux'
         with:
           command: test
-          args: --all --release
+          args: --all --release -- --test-threads=1
       - uses: actions-rs/cargo@v1
         if: runner.os == 'macos'
         with:
           command: test
-          args: --all --release
+          args: --all --release --test-threads=1
       
   fmt:
     name: Rustfmt
