@@ -5,6 +5,7 @@ use std::{
         atomic::{AtomicU32, Ordering},
         Arc, Mutex,
     },
+    time::Duration,
 };
 
 use bevy::{
@@ -20,6 +21,7 @@ use bevy::{
         texture::GpuImage,
         Render, RenderApp, RenderSet,
     },
+    time::common_conditions::on_timer,
 };
 use common::{
     sets::SceneSets,
@@ -86,6 +88,7 @@ impl Plugin for VideoPlayerPlugin {
         app.add_systems(
             Update,
             (
+                try_subscription.run_if(on_timer(Duration::from_secs(5))),
                 rebuild_html_media_entities,
                 av_player_is_in_scene,
                 av_player_should_be_playing,
@@ -527,6 +530,37 @@ fn av_player_on_insert(
         commands
             .entity(trigger.target())
             .try_remove::<HtmlMediaEntity>();
+    }
+}
+
+/// Try subscribing to streamer if a stream is active
+fn try_subscription(
+    av_players: Populated<
+        &AVPlayer,
+        (
+            Without<HtmlMediaEntity>,
+            With<InScene>,
+            With<ShouldBePlaying>,
+        ),
+    >,
+    mut scene_rooms: Query<&mut Transport, With<SceneRoom>>,
+) {
+    let Ok(mut transport) = scene_rooms.single_mut() else {
+        error!("No SceneRoom transport.");
+        return;
+    };
+    let Some(channel) = transport.control.as_mut() else {
+        error!("SceneRoom transport has not control channel.");
+        return;
+    };
+
+    if av_players
+        .iter()
+        .any(|av_player| av_player.source.src.starts_with("livekit-video://"))
+    {
+        channel
+            .blocking_send(ChannelControl::StreamerSubscribe)
+            .unwrap();
     }
 }
 
