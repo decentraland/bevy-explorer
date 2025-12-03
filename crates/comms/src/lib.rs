@@ -51,6 +51,8 @@ use self::{
 use self::livekit_room::{LivekitPlugin, StartLivekit};
 
 const GATEKEEPER_URL: &str = "https://comms-gatekeeper.decentraland.org/get-scene-adapter";
+const PREVIEW_GATEKEEPER_URL: &str =
+    "https://comms-gatekeeper-local.decentraland.org/get-scene-adapter";
 
 pub mod chat_marker_things {
     pub const EMOTE: char = '␐';
@@ -208,7 +210,12 @@ fn connect_scene_room(
             *gatekeeper_task = None;
         } else {
             let wallet = wallet.clone();
-            let uri = Uri::try_from(GATEKEEPER_URL).unwrap();
+            let url = if ev.scene_id.starts_with("b64-") {
+                PREVIEW_GATEKEEPER_URL
+            } else {
+                GATEKEEPER_URL
+            };
+            let uri = Uri::try_from(url).unwrap();
             let client = ipfs.ipfs().client();
             *gatekeeper_task = Some(IoTaskPool::get().spawn_compat(async move {
                 let headers = sign_request("POST", &uri, &wallet, &ev).await?;
