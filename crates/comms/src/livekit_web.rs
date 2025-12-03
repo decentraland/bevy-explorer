@@ -283,17 +283,11 @@ async fn connect_and_handle_session(
                     NetworkMessageRecipient::AuthServer => js_sys::Array::of1(&JsValue::from_str("authoritative-server")),
                 };
 
-                let destinations = if let Some(address) = outgoing.recipient {
-                    js_sys::Array::of1(&JsValue::from_str(&format!("{:#x}", address)))
-                } else {
-                    js_sys::Array::new()
-                };
-
                 if let Err(e) = publish_data(
                     &room,
                     &outgoing.data,
                     !outgoing.unreliable,
-                    destinations.into(),
+                    destination_identities.into(),
                 )
                 .await
                 {
