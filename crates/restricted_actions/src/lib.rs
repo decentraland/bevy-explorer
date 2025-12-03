@@ -39,9 +39,7 @@ use ipfs::{
 use nft::asset_source::Nft;
 use reqwest::StatusCode;
 use scene_runner::{
-    initialize_scene::{
-        LiveScenes, PortableScenes, PortableSource, SceneLoading, PARCEL_SIZE,
-    },
+    initialize_scene::{LiveScenes, PortableScenes, PortableSource, SceneLoading, PARCEL_SIZE},
     permissions::Permission,
     renderer_context::RendererSceneContext,
     update_world::gltf_container::{GltfDefinition, GltfProcessed},

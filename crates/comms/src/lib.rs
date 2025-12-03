@@ -124,7 +124,10 @@ impl NetworkMessage {
         }
     }
 
-    pub fn targetted_reliable<D: ToDclWriter>(message: &D, recipient: NetworkMessageRecipient) -> Self {
+    pub fn targetted_reliable<D: ToDclWriter>(
+        message: &D,
+        recipient: NetworkMessageRecipient,
+    ) -> Self {
         Self {
             unreliable: false,
             recipient,

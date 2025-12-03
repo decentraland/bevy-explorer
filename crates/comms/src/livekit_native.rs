@@ -21,9 +21,11 @@ use common::{
 use dcl_component::proto_components::kernel::comms::rfc4;
 
 use crate::{
-    ChannelControl, NetworkMessage, NetworkMessageRecipient, global_crdt::{
+    global_crdt::{
         GlobalCrdtState, LocalAudioFrame, LocalAudioSource, PlayerMessage, PlayerUpdate,
-    }, livekit_room::{LivekitConnection, LivekitTransport}
+    },
+    livekit_room::{LivekitConnection, LivekitTransport},
+    ChannelControl, NetworkMessage, NetworkMessageRecipient,
 };
 
 use livekit::{
