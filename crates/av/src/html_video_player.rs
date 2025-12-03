@@ -510,16 +510,20 @@ fn av_player_on_insert(
     mut commands: Commands,
     mut av_players: Query<(&AVPlayer, &mut HtmlMediaEntity)>,
 ) {
-    let Ok((av_player, mut html_media_entity)) = av_players.get_mut(trigger.target()) else {
+    info!("AVPlayer updated.");
+    let entity = trigger.target();
+    let Ok((av_player, mut html_media_entity)) = av_players.get_mut(entity) else {
         return;
     };
 
+    // This forces an update on the entity
+    commands.entity(entity).try_remove::<ShouldBePlaying>();
     if av_player.source.src == html_media_entity.source {
-        debug!("Updating html media entity.");
+        debug!("Updating html media entity {entity}.");
         html_media_entity.set_loop(av_player.source.r#loop.unwrap_or(false));
         html_media_entity.set_volume(av_player.source.volume.unwrap_or(1.0));
     } else {
-        debug!("Removing html media entity due to diverging source.");
+        debug!("Removing html media entity {entity} due to diverging source.");
         commands
             .entity(trigger.target())
             .try_remove::<HtmlMediaEntity>();
