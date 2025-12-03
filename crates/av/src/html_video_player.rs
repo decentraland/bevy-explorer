@@ -942,7 +942,6 @@ fn resubscribe_on_entering_room(
     av_players: Query<&AVPlayer, (With<ShouldBePlaying>, With<InScene>)>,
     mut scene_rooms: Query<&mut Transport, With<SceneRoom>>,
 ) {
-    commands.entity(trigger.target()).log_components();
     let Ok(mut transport) = scene_rooms.get_mut(trigger.target()) else {
         return;
     };
