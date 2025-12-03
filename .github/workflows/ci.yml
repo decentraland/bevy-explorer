@@ -107,6 +107,11 @@ jobs:
           mv ffmpeg-*/* ffmpeg/
           Add-Content $env:GITHUB_ENV "FFMPEG_DIR=${pwd}\ffmpeg`n"
           Add-Content $env:GITHUB_PATH "${pwd}\ffmpeg\bin`n"          
+      - name: Build Release
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --bins --release
       - uses: actions-rs/cargo@v1
         if: runner.os == 'windows'
         with:
