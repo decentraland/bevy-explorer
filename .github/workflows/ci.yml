@@ -116,7 +116,7 @@ jobs:
         if: runner.os == 'windows'
         with:
           command: test
-          args: --all --release -j8 --test-threads=1
+          args: --all --release -j8 -- --test-threads=1
       - uses: actions-rs/cargo@v1
         if: runner.os == 'linux'
         with:
@@ -126,7 +126,7 @@ jobs:
         if: runner.os == 'macos'
         with:
           command: test
-          args: --all --release --test-threads=1
+          args: --all --release -- --test-threads=1
       
   fmt:
     name: Rustfmt
