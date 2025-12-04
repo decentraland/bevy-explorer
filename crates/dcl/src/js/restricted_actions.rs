@@ -190,6 +190,7 @@ pub async fn op_open_nft_dialog(
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UiFocusResult {
     element_id: Option<String>,
 }
