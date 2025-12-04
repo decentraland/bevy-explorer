@@ -38,7 +38,7 @@ use common::{
     rpc::RpcCall,
     structs::{
         AppConfig, CursorLocks, GraphicsSettings, PermissionUsed, PreviewMode, PrimaryCamera,
-        PrimaryPlayerRes, SceneGlobalLight, SceneLoadDistance, TimeOfDay, ToolTips,
+        PrimaryPlayerRes, SceneGlobalLight, SceneLoadDistance, TimeOfDay, ToolTips, UserClipping,
     },
 };
 use comms::CommsPlugin;
@@ -133,6 +133,7 @@ fn init_test_app(entity_json: &str) -> App {
     app.init_resource::<CumulativeAxisData>();
     app.init_resource::<ToolTips>();
     app.init_resource::<SceneGlobalLight>();
+    app.init_resource::<UserClipping>();
     app.insert_resource(TimeOfDay {
         time: 10.0 * 3600.0,
         target_time: None,
