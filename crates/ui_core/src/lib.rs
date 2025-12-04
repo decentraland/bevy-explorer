@@ -114,9 +114,9 @@ fn setup(
     mut font_system: ResMut<CosmicFontSystem>,
 ) {
     // Load emoji font as fallback for all text rendering
-    font_system.db_mut().load_font_data(
-        include_bytes!("../../assets/src/assets/fonts/NotoColorEmoji.ttf").to_vec(),
-    );
+    font_system
+        .db_mut()
+        .load_font_data(include_bytes!("NotoColorEmoji.ttf").to_vec());
 
     // tracker.load_asset(asset_server.load_folder("ui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/app_settings.dui"));
