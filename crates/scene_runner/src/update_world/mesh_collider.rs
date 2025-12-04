@@ -867,6 +867,10 @@ fn update_collider_transforms(
     }
 
     for (container, collider, global_transform) in changed_colliders.iter() {
+        if !containing_scenes.contains(&container.root) {
+            continue;
+        }
+
         let Ok(mut scene_data) = scene_data.get_mut(container.root) else {
             warn!("missing scene root for {container:?}");
             continue;
