@@ -24,6 +24,7 @@ use bevy::{
     platform::collections::{HashMap, HashSet},
     prelude::*,
     state::state::FreelyMutableState,
+    text::CosmicFontSystem,
 };
 use bevy_dui::{DuiNodeList, DuiPlugin, DuiRegistry};
 use bevy_egui::EguiPlugin;
@@ -110,7 +111,13 @@ fn setup(
     asset_server: Res<AssetServer>,
     mut tracker: ResMut<StateTracker<State>>,
     mut dui: ResMut<DuiRegistry>,
+    mut font_system: ResMut<CosmicFontSystem>,
 ) {
+    // Load emoji font as fallback for all text rendering
+    font_system.db_mut().load_font_data(
+        include_bytes!("../../assets/src/assets/fonts/NotoColorEmoji.ttf").to_vec(),
+    );
+
     // tracker.load_asset(asset_server.load_folder("ui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/app_settings.dui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/avatar.dui"));
