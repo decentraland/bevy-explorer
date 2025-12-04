@@ -2,6 +2,7 @@ use bevy::{
     platform::{collections::HashMap, hash::FixedHasher},
     prelude::*,
 };
+use ethers_core::types::H160;
 use http::Uri;
 use prost::Message;
 use serde::Deserialize;
@@ -90,6 +91,13 @@ extern "C" {
         room_name: &str,
         participant_identity: &str,
         subscribe: bool,
+    ) -> Result<(), JsValue>;
+
+    #[wasm_bindgen(catch)]
+    fn streamer_subscribe_channel(
+        room_name: &str,
+        subscribe_audio: bool,
+        subscribe_video: bool,
     ) -> Result<(), JsValue>;
 }
 
@@ -301,16 +309,16 @@ async fn connect_and_handle_session(
                     break 'stream;
                 };
 
-                let (address, subscribe) = match control {
-                    ChannelControl::Subscribe(address, _) => (address, true),
-                    ChannelControl::Unsubscribe(address) => (address, false),
+                match control {
+                    ChannelControl::VoiceSubscribe(address, _) => participant_audio_subscribe(&room_name, address, true),
+                    ChannelControl::VoiceUnsubscribe(address) => participant_audio_subscribe(&room_name, address, false),
+                    ChannelControl::StreamerSubscribe => if let Err(err) = streamer_subscribe_channel(&room_name, true, true) {
+                        error!("{err:?}");
+                    },
+                    ChannelControl::StreamerUnsubscribe => if let Err(err) = streamer_subscribe_channel(&room_name, false, false) {
+                        error!("{err:?}");
+                    },
                 };
-
-                if let Err(e) = subscribe_channel(&room_name, &format!("{address:#x}"), subscribe) {
-                    warn!("Failed to (un)subscribe to {address:?}: {e:?}");
-                } else {
-                    debug!("sub to {address:?}: {subscribe}");
-                }
             }
         );
     }
@@ -323,31 +331,39 @@ async fn connect_and_handle_session(
 }
 
 // Define structures for the events coming from JavaScript
+#[expect(dead_code, reason = "Some fields exist for consistency")]
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 enum RoomEvent {
     DataReceived {
+        room_name: String,
         participant: Participant,
         payload: serde_bytes::ByteBuf,
     },
     TrackPublished {
+        room_name: String,
         kind: String,
         participant: Participant,
     },
     TrackUnpublished {
+        room_name: String,
         kind: String,
         participant: Participant,
     },
     TrackSubscribed {
+        room_name: String,
         participant: Participant,
     },
     TrackUnsubscribed {
+        room_name: String,
         participant: Participant,
     },
     ParticipantConnected {
+        room_name: String,
         participant: Participant,
     },
     ParticipantDisconnected {
+        room_name: String,
         participant: Participant,
     },
 }
@@ -369,6 +385,7 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
             RoomEvent::DataReceived {
                 payload,
                 participant,
+                ..
             } => {
                 if let Some(address) = participant.identity.as_h160() {
                     if let Ok(packet) = rfc4::Packet::decode(payload.as_slice()) {
@@ -384,7 +401,9 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                     }
                 }
             }
-            RoomEvent::TrackPublished { participant, kind } => {
+            RoomEvent::TrackPublished {
+                participant, kind, ..
+            } => {
                 debug!("pub {} {}", participant.identity, kind);
                 if let Some(address) = participant.identity.as_h160() {
                     if kind == "audio" {
@@ -400,7 +419,9 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                     }
                 }
             }
-            RoomEvent::TrackUnpublished { participant, kind } => {
+            RoomEvent::TrackUnpublished {
+                participant, kind, ..
+            } => {
                 debug!("unpub {} {}", participant.identity, kind);
                 if let Some(address) = participant.identity.as_h160() {
                     if kind == "audio" {
@@ -416,13 +437,13 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                     }
                 }
             }
-            RoomEvent::TrackSubscribed { participant: _p } => {
+            RoomEvent::TrackSubscribed { .. } => {
                 debug!("Track subscribed event - audio is handled in JavaScript");
             }
-            RoomEvent::TrackUnsubscribed { participant: _p } => {
+            RoomEvent::TrackUnsubscribed { .. } => {
                 debug!("Track unsubscribed event");
             }
-            RoomEvent::ParticipantConnected { participant } => {
+            RoomEvent::ParticipantConnected { participant, .. } => {
                 if let Some(address) = participant.identity.as_h160() {
                     if !participant.metadata.is_empty() {
                         let _ = sender
@@ -435,7 +456,7 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                     }
                 }
             }
-            RoomEvent::ParticipantDisconnected { participant: _p } => {
+            RoomEvent::ParticipantDisconnected { .. } => {
                 debug!("Participant disconnected");
             }
         },
@@ -494,5 +515,13 @@ pub fn locate_foreign_streams(
                 volume,
             );
         }
+    }
+}
+
+fn participant_audio_subscribe(room_name: &str, address: H160, subscribe: bool) {
+    if let Err(e) = subscribe_channel(room_name, &format!("{address:#x}"), subscribe) {
+        warn!("Failed to (un)subscribe to {address:?}: {e:?}");
+    } else {
+        debug!("sub to {address:?}: {subscribe}");
     }
 }

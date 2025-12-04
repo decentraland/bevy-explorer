@@ -5,13 +5,14 @@ use std::{
         atomic::{AtomicU32, Ordering},
         Arc, Mutex,
     },
+    time::Duration,
 };
 
 use bevy::{
     color::palettes::basic,
     diagnostic::FrameCount,
     math::FloatOrd,
-    platform::collections::{HashMap, HashSet},
+    platform::collections::HashMap,
     prelude::*,
     render::{
         render_asset::{RenderAssetUsages, RenderAssets},
@@ -20,11 +21,13 @@ use bevy::{
         texture::GpuImage,
         Render, RenderApp, RenderSet,
     },
+    time::common_conditions::on_timer,
 };
 use common::{
     sets::SceneSets,
     structs::{AppConfig, PrimaryUser},
 };
+use comms::{global_crdt::ChannelControl, SceneRoom, Transport};
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::sdk::components::{
@@ -48,6 +51,7 @@ use web_sys::{
 pub struct VideoPlayerPlugin;
 
 const VIDEO_CONTAINER_ID: &str = "video-player-container";
+const STREAM_CONTAINER_ID: &str = "stream-player-container";
 
 impl Plugin for VideoPlayerPlugin {
     fn build(&self, app: &mut App) {
@@ -56,6 +60,14 @@ impl Plugin for VideoPlayerPlugin {
                 if document.get_element_by_id(VIDEO_CONTAINER_ID).is_none() {
                     let container = document.create_element("div").unwrap();
                     container.set_id(VIDEO_CONTAINER_ID);
+                    let style = container.dyn_ref::<web_sys::HtmlElement>().unwrap().style();
+                    style.set_property("display", "none").unwrap();
+
+                    document.body().unwrap().append_child(&container).unwrap();
+                }
+                if document.get_element_by_id(STREAM_CONTAINER_ID).is_none() {
+                    let container = document.create_element("div").unwrap();
+                    container.set_id(STREAM_CONTAINER_ID);
                     let style = container.dyn_ref::<web_sys::HtmlElement>().unwrap().style();
                     style.set_property("display", "none").unwrap();
 
@@ -73,11 +85,27 @@ impl Plugin for VideoPlayerPlugin {
             SceneComponentId::AUDIO_STREAM,
             ComponentPosition::EntityOnly,
         );
-        app.add_systems(Update, update_av_players.in_set(SceneSets::PostLoop));
+        app.add_systems(
+            Update,
+            (
+                try_subscription.run_if(on_timer(Duration::from_secs(5))),
+                rebuild_html_media_entities,
+                av_player_is_in_scene,
+                av_player_should_be_playing,
+                update_av_players,
+            )
+                .chain()
+                .in_set(SceneSets::PostLoop),
+        );
 
         let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
 
         app.insert_resource(FrameCopyRequestQueue(sx));
+
+        app.add_observer(av_player_on_insert);
+        app.add_observer(unsubscribe_to_streamer);
+        app.add_observer(subscribe_to_streamer);
+        app.add_observer(resubscribe_on_entering_room);
 
         let render_app = app.sub_app_mut(RenderApp);
         render_app
@@ -97,7 +125,16 @@ pub struct FrameCopyRequest {
     target: AssetId<Image>,
 }
 
+/// Marks whether an [`AVPlayer`] should be playing
+#[derive(Debug, Component)]
+struct ShouldBePlaying;
+
+/// Marks whether an [`AVPlayer`] is in the same scene as the [`PrimaryUser`]
+#[derive(Debug, Component)]
+struct InScene;
+
 #[derive(Component, Debug)]
+#[component(immutable)]
 pub struct AVPlayer {
     // note we reuse PbVideoPlayer for audio as well
     pub source: PbVideoPlayer,
@@ -327,6 +364,102 @@ impl HtmlMediaEntity {
         slf
     }
 
+    pub fn new_stream(source: String, image: Handle<Image>) -> Option<Self> {
+        let media = web_sys::window().unwrap().document().and_then(|doc| {
+            let container = doc
+                .get_element_by_id(STREAM_CONTAINER_ID)
+                .expect("streamer video container should exist");
+            let video = container
+                .get_elements_by_tag_name("video")
+                .get_with_index(0)?;
+            video.dyn_into::<HtmlMediaElement>().ok()
+        })?;
+
+        let video = media.clone().dyn_into::<HtmlVideoElement>().unwrap();
+
+        let frame_time = Arc::new(AtomicU32::default());
+
+        // video frame callback - no wasm_bindgen for this!
+        let rvc_prop = Reflect::get(&video, &"requestVideoFrameCallback".into()).unwrap();
+        if rvc_prop.is_undefined() {
+            panic!("no requestVideoFrameCallback");
+        }
+        let rvc_fn = rvc_prop.dyn_into::<web_sys::js_sys::Function>().unwrap();
+
+        let callback: Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>> =
+            Rc::new(RefCell::new(None));
+        let callback_handle: Rc<RefCell<Option<u32>>> = Rc::new(RefCell::new(None));
+        let callback_clone = callback.clone();
+        let handle_clone = callback_handle.clone();
+        let frame_time_clone = frame_time.clone();
+        let rvc_clone = rvc_fn.clone();
+
+        *callback.borrow_mut() = Some(Closure::wrap(Box::new({
+            let video = video.clone();
+            move |_now: f64, metadata: JsValue| {
+                debug!("stream frame received");
+                if let Some(media_time) = Reflect::get(&metadata, &"mediaTime".into())
+                    .ok()
+                    .and_then(|mt| mt.as_f64())
+                {
+                    debug!("stream frame received -> {media_time}");
+                    frame_time_clone.store(
+                        (media_time as f32).to_bits(),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+                };
+
+                if let Some(cb) = callback_clone.borrow().as_ref() {
+                    if let Ok(new_handle) = rvc_clone.call1(&video, cb.as_ref().unchecked_ref()) {
+                        *handle_clone.borrow_mut() = new_handle.as_f64().map(|f| f as u32);
+                    }
+                } else {
+                    warn!("no stream cb - dropping");
+                }
+            }
+        }) as Box<dyn FnMut(f64, JsValue)>));
+        let initial_handle = rvc_fn
+            .call1(
+                &video,
+                callback.borrow().as_ref().unwrap().as_ref().unchecked_ref(),
+            )
+            .unwrap();
+        *callback_handle.borrow_mut() = initial_handle.as_f64().map(|f| f as u32);
+
+        let mut slf = Self::common_init(source, media);
+        slf.video = Some(video);
+        slf.image = Some(image);
+        slf.new_frame_time = frame_time;
+        slf.frame_closure = callback;
+        slf.frame_callback_handle = callback_handle;
+
+        // Hack to force a callback trigger
+        slf.stop();
+        slf.play();
+
+        Some(slf)
+    }
+
+    pub fn new_noop(source: String, image: Handle<Image>) -> Self {
+        let media = web_sys::window()
+            .unwrap()
+            .document()
+            .and_then(|doc| {
+                let container = doc
+                    .get_element_by_id(VIDEO_CONTAINER_ID)
+                    .expect("video container should exist");
+                let video = doc.create_element("video").unwrap();
+                container.append_child(&video).unwrap();
+                video.dyn_into::<HtmlMediaElement>().ok()
+            })
+            .expect("Couldn't create video element");
+
+        let mut slf = Self::common_init(source, media);
+        slf.video = None;
+        slf.image = Some(image);
+        slf
+    }
+
     pub fn set_loop(&mut self, looping: bool) {
         self.media.set_loop(looping)
     }
@@ -375,98 +508,180 @@ impl Drop for HtmlMediaEntity {
     }
 }
 
-#[allow(clippy::type_complexity, clippy::too_many_arguments)]
-pub fn update_av_players(
+fn av_player_on_insert(
+    trigger: Trigger<OnInsert, AVPlayer>,
     mut commands: Commands,
-    mut av_players: Query<(
-        Entity,
-        &ContainerEntity,
-        Ref<AVPlayer>,
-        Option<&mut HtmlMediaEntity>,
-        Option<&VideoTextureOutput>,
-        &GlobalTransform,
-    )>,
-    mut images: ResMut<Assets<Image>>,
-    ipfs: Res<IpfsResource>,
-    mut scenes: Query<&mut RendererSceneContext>,
-    config: Res<AppConfig>,
-    containing_scene: ContainingScene,
-    user: Query<&GlobalTransform, With<PrimaryUser>>,
-    send_queue: Res<FrameCopyRequestQueue>,
-    frame: Res<FrameCount>,
+    mut av_players: Query<(&AVPlayer, &mut HtmlMediaEntity)>,
 ) {
-    for (ent, container, player, mut maybe_av, maybe_texture, _) in av_players.iter_mut() {
-        if let Some(av) = maybe_av.as_mut().filter(|p| p.source == player.source.src) {
-            if player.is_changed() {
-                av.set_loop(player.source.r#loop.unwrap_or(false));
-                av.set_volume(player.source.volume.unwrap_or(1.0));
-            }
-        } else {
-            let Ok(context) = scenes.get(container.root) else {
-                continue;
+    info!("AVPlayer updated.");
+    let entity = trigger.target();
+    let Ok((av_player, mut html_media_entity)) = av_players.get_mut(entity) else {
+        return;
+    };
+
+    // This forces an update on the entity
+    commands.entity(entity).try_remove::<ShouldBePlaying>();
+    if av_player.source.src == html_media_entity.source {
+        debug!("Updating html media entity {entity}.");
+        html_media_entity.set_loop(av_player.source.r#loop.unwrap_or(false));
+        html_media_entity.set_volume(av_player.source.volume.unwrap_or(1.0));
+    } else {
+        debug!("Removing html media entity {entity} due to diverging source.");
+        commands
+            .entity(trigger.target())
+            .try_remove::<HtmlMediaEntity>();
+    }
+}
+
+/// Try subscribing to streamer if a stream is active
+fn try_subscription(
+    av_players: Populated<
+        &AVPlayer,
+        (
+            Without<HtmlMediaEntity>,
+            With<InScene>,
+            With<ShouldBePlaying>,
+        ),
+    >,
+    mut scene_rooms: Query<&mut Transport, With<SceneRoom>>,
+) {
+    let Ok(mut transport) = scene_rooms.single_mut() else {
+        error!("No SceneRoom transport.");
+        return;
+    };
+    let Some(channel) = transport.control.as_mut() else {
+        error!("SceneRoom transport has not control channel.");
+        return;
+    };
+
+    if av_players
+        .iter()
+        .any(|av_player| av_player.source.src.starts_with("livekit-video://"))
+    {
+        channel
+            .blocking_send(ChannelControl::StreamerSubscribe)
+            .unwrap();
+    }
+}
+
+fn rebuild_html_media_entities(
+    mut commands: Commands,
+    av_players: Populated<
+        (
+            Entity,
+            &ContainerEntity,
+            &AVPlayer,
+            Option<&VideoTextureOutput>,
+        ),
+        Without<HtmlMediaEntity>,
+    >,
+    scenes: Query<&RendererSceneContext>,
+    ipfs: Res<IpfsResource>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    for (ent, container, player, maybe_texture) in av_players.iter() {
+        let Ok(context) = scenes.get(container.root) else {
+            continue;
+        };
+
+        let source = ipfs
+            .content_url(&player.source.src, &context.hash)
+            .unwrap_or_else(|| player.source.src.clone());
+
+        if player.has_video {
+            let image_handle = match maybe_texture {
+                None => {
+                    let mut image = Image::new_fill(
+                        bevy::render::render_resource::Extent3d {
+                            width: 8,
+                            height: 8,
+                            depth_or_array_layers: 1,
+                        },
+                        TextureDimension::D2,
+                        &basic::FUCHSIA.to_u8_array(),
+                        TextureFormat::Rgba8UnormSrgb,
+                        RenderAssetUsages::all(),
+                    );
+                    image.texture_descriptor.usage = TextureUsages::COPY_DST
+                        | TextureUsages::TEXTURE_BINDING
+                        | TextureUsages::RENDER_ATTACHMENT;
+                    image.immediate_upload = true;
+                    image.data = None;
+                    images.add(image)
+                }
+                Some(texture) => texture.0.clone(),
             };
 
-            let source = ipfs
-                .content_url(&player.source.src, &context.hash)
-                .unwrap_or_else(|| player.source.src.clone());
-
-            if player.has_video {
-                let image_handle = match maybe_texture {
-                    None => {
-                        let mut image = Image::new_fill(
-                            bevy::render::render_resource::Extent3d {
-                                width: 8,
-                                height: 8,
-                                depth_or_array_layers: 1,
-                            },
-                            TextureDimension::D2,
-                            &basic::FUCHSIA.to_u8_array(),
-                            TextureFormat::Rgba8UnormSrgb,
-                            RenderAssetUsages::all(),
-                        );
-                        image.texture_descriptor.usage = TextureUsages::COPY_DST
-                            | TextureUsages::TEXTURE_BINDING
-                            | TextureUsages::RENDER_ATTACHMENT;
-                        image.immediate_upload = true;
-                        image.data = None;
-                        images.add(image)
-                    }
-                    Some(texture) => texture.0.clone(),
+            let mut video = if player.source.src.starts_with("livekit-video://") {
+                let Some(video) =
+                    HtmlMediaEntity::new_stream(player.source.src.clone(), image_handle.clone())
+                else {
+                    continue;
                 };
-
-                let mut video = HtmlMediaEntity::new_video(
-                    &source,
-                    player.source.src.clone(),
-                    image_handle.clone(),
-                );
-
-                video.set_loop(player.source.r#loop.unwrap_or(false));
-                video.set_volume(player.source.volume.unwrap_or(1.0));
-                let video_output = VideoTextureOutput(image_handle);
-
-                commands.entity(ent).try_insert((video, video_output));
+                debug!("stream video {}", player.source.src);
+                video
+            } else if player.source.src.is_empty() {
+                debug!("noop video {}", player.source.src);
+                HtmlMediaEntity::new_noop(player.source.src.clone(), image_handle.clone())
             } else {
-                let mut audio = HtmlMediaEntity::new_audio(&source, player.source.src.clone());
-                audio.set_loop(player.source.r#loop.unwrap_or(false));
-                audio.set_volume(player.source.volume.unwrap_or(1.0));
+                debug!("https video {}", player.source.src);
+                HtmlMediaEntity::new_video(&source, player.source.src.clone(), image_handle.clone())
+            };
 
-                commands.entity(ent).try_insert(audio);
-            }
+            video.set_loop(player.source.r#loop.unwrap_or(false));
+            video.set_volume(player.source.volume.unwrap_or(1.0));
+            let video_output = VideoTextureOutput(image_handle);
+
+            commands.entity(ent).try_insert((video, video_output));
+        } else {
+            let mut audio = HtmlMediaEntity::new_audio(&source, player.source.src.clone());
+            audio.set_loop(player.source.r#loop.unwrap_or(false));
+            audio.set_volume(player.source.volume.unwrap_or(1.0));
+
+            commands.entity(ent).try_insert(audio);
         }
     }
+}
 
+fn av_player_is_in_scene(
+    mut commands: Commands,
+    av_players: Query<(Entity, &ContainerEntity, &AVPlayer)>,
+    user: Query<&GlobalTransform, With<PrimaryUser>>,
+    containing_scene: ContainingScene,
+) {
+    // disable distant av
+    let Ok(user) = user.single() else {
+        return;
+    };
+    let containing_scenes = containing_scene.get_position(user.translation());
+
+    for (ent, container, _) in av_players
+        .iter()
+        .filter(|(_, _, player)| player.source.playing.unwrap_or(true))
+    {
+        if containing_scenes.contains(&container.root) {
+            commands.entity(ent).try_insert(InScene);
+        } else {
+            commands.entity(ent).try_remove::<InScene>();
+        }
+    }
+}
+
+fn av_player_should_be_playing(
+    mut commands: Commands,
+    av_players: Query<(Entity, &AVPlayer, Has<InScene>, &GlobalTransform)>,
+    user: Query<&GlobalTransform, With<PrimaryUser>>,
+    config: Res<AppConfig>,
+) {
     // disable distant av
     let Ok(user) = user.single() else {
         return;
     };
 
-    let containing_scenes = containing_scene.get_position(user.translation());
-
     let mut sorted_players = av_players
         .iter()
-        .filter_map(|(ent, container, player, _, _, transform)| {
+        .filter_map(|(ent, player, in_scene, transform)| {
             if player.source.playing.unwrap_or(true) {
-                let in_scene = containing_scenes.contains(&container.root);
                 let distance = transform.translation().distance(user.translation());
                 Some((in_scene, distance, ent))
             } else {
@@ -478,18 +693,49 @@ pub fn update_av_players(
     // prioritise av in current scene (false < true), then by distance
     sorted_players.sort_by_key(|(in_scene, distance, _)| (!in_scene, FloatOrd(*distance)));
 
-    let should_be_playing = sorted_players
+    // Removing first for better Trigger ordering
+    for ent in sorted_players
+        .iter()
+        .skip(config.max_videos)
+        .map(|(_, _, ent)| *ent)
+    {
+        commands.entity(ent).try_remove::<ShouldBePlaying>();
+    }
+
+    for ent in sorted_players
         .iter()
         .take(config.max_videos)
         .map(|(_, _, ent)| *ent)
-        .collect::<HashSet<_>>();
+    {
+        commands.entity(ent).try_insert(ShouldBePlaying);
+    }
+}
 
-    for (ent, container, player, maybe_av, _, _) in av_players.iter_mut() {
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+fn update_av_players(
+    mut commands: Commands,
+    mut av_players: Query<(
+        Entity,
+        &ContainerEntity,
+        &AVPlayer,
+        Option<&mut HtmlMediaEntity>,
+        Has<ShouldBePlaying>,
+    )>,
+    mut images: ResMut<Assets<Image>>,
+    mut scenes: Query<&mut RendererSceneContext>,
+    send_queue: Res<FrameCopyRequestQueue>,
+    frame: Res<FrameCount>,
+) {
+    for (ent, container, player, maybe_av, should_be_playing) in av_players.iter_mut() {
         let Some(mut av) = maybe_av else { continue };
 
-        let should_be_playing = should_be_playing.contains(&ent);
-
         let state = av.state();
+
+        if av.source.starts_with("livekit-video://") && state == VideoState::VsError {
+            error!("Stream is erroring, retrying.");
+            commands.entity(ent).try_remove::<HtmlMediaEntity>();
+            continue;
+        }
 
         let is_playing = state == VideoState::VsPlaying;
         let can_play = match state {
@@ -673,5 +919,81 @@ fn perform_video_copies(
                 depth_or_array_layers: 1,
             },
         );
+    }
+}
+
+fn unsubscribe_to_streamer(
+    trigger: Trigger<OnRemove, ShouldBePlaying>,
+    av_players: Query<(&AVPlayer, Has<InScene>)>,
+    mut scene_rooms: Query<&mut Transport, With<SceneRoom>>,
+) {
+    let Ok((av_player, in_scene)) = av_players.get(trigger.target()) else {
+        unreachable!("ShouldBePlaying should only be present on a AVPlayer.");
+    };
+    if !in_scene || !av_player.source.src.starts_with("livekit-video://") {
+        return;
+    }
+
+    let Ok(mut transport) = scene_rooms.single_mut() else {
+        error!("No SceneRoom transport.");
+        return;
+    };
+    let Some(channel) = transport.control.as_mut() else {
+        error!("SceneRoom transport has not control channel.");
+        return;
+    };
+
+    channel
+        .blocking_send(ChannelControl::StreamerUnsubscribe)
+        .unwrap();
+}
+
+fn subscribe_to_streamer(
+    trigger: Trigger<OnAdd, ShouldBePlaying>,
+    av_players: Query<(&AVPlayer, Has<InScene>)>,
+    mut scene_rooms: Query<&mut Transport, With<SceneRoom>>,
+) {
+    let Ok((av_player, in_scene)) = av_players.get(trigger.target()) else {
+        unreachable!("ShouldBePlaying should only be present on a AVPlayer.");
+    };
+    if !in_scene || !av_player.source.src.starts_with("livekit-video://") {
+        return;
+    }
+
+    let Ok(mut transport) = scene_rooms.single_mut() else {
+        error!("No SceneRoom transport.");
+        return;
+    };
+    let Some(channel) = transport.control.as_mut() else {
+        error!("SceneRoom transport has not control channel.");
+        return;
+    };
+
+    channel
+        .blocking_send(ChannelControl::StreamerSubscribe)
+        .unwrap();
+}
+
+fn resubscribe_on_entering_room(
+    trigger: Trigger<OnAdd, Transport>,
+    av_players: Query<&AVPlayer, (With<ShouldBePlaying>, With<InScene>)>,
+    mut scene_rooms: Query<&mut Transport, With<SceneRoom>>,
+) {
+    let Ok(mut transport) = scene_rooms.get_mut(trigger.target()) else {
+        return;
+    };
+    let Some(channel) = transport.control.as_mut() else {
+        error!("SceneRoom transport has not control channel.");
+        return;
+    };
+
+    if av_players
+        .iter()
+        .any(|av_player| av_player.source.src.starts_with("livekit-video://"))
+    {
+        debug!("An active AVPlayer is a stream. Resubscribing to streams.");
+        channel
+            .blocking_send(ChannelControl::StreamerSubscribe)
+            .unwrap();
     }
 }

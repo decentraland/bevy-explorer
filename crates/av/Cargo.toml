@@ -34,6 +34,7 @@ thiserror = "1.0"
 web-sys = { workspace = true, optional = true, features = [
     "HtmlMediaElement", 
     "HtmlVideoElement",
+    "HtmlCollection",
     "AudioContext",
     "AudioBuffer",
     "AudioBufferSourceNode",

@@ -14,6 +14,7 @@ const activeRooms = new Set();
 // Store audio elements and panner nodes for spatial audio
 const trackRigs = new Map();
 const participantAudioSids = new Map();
+const participantVideoSids = new Map();
 var audioContext = null;
 
 export async function connect_room(url, token, handler) {
@@ -51,6 +52,8 @@ export async function connect_room(url, token, handler) {
         }
     }
 
+    const room_name = room.name;
+
     // check existing streams
     const participants = Array.from(room.remoteParticipants.values());
     for (const participant of participants) {
@@ -60,6 +63,7 @@ export async function connect_room(url, token, handler) {
             log(`found initial pub for ${participant}`);
             handler({
                 type: 'trackPublished',
+                room_name: room_name,
                 kind: publication.kind,
                 participant: {
                     identity: participant.identity,
@@ -186,9 +190,12 @@ export async function close_room(room) {
 }
 
 export function set_room_event_handler(room, handler) {
+    const room_name = room.name;
+
     room.on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
         handler({
             type: 'dataReceived',
+            room_name: room_name,
             payload,
             participant: {
                 identity: participant.identity,
@@ -201,6 +208,7 @@ export function set_room_event_handler(room, handler) {
         log(`${room.name} ${participant.identity} rec pub ${publication.kind}`);
         handler({
             type: 'trackPublished',
+            room_name: room_name,
             kind: publication.kind,
             participant: {
                 identity: participant.identity,
@@ -229,6 +237,7 @@ export function set_room_event_handler(room, handler) {
 
         handler({
             type: 'trackUnpublished',
+            room_name: room_name,
             kind: publication.kind,
             participant: {
                 identity: participant.identity,
@@ -280,10 +289,27 @@ export function set_room_event_handler(room, handler) {
 
             log(`set rig for ${participant.identity}`, key);
             participantAudioSids.set(participant.identity, { room: room.name, audio: key })
+        } else if (track.kind === "video") {
+            const key = track.sid;
+
+            if (!trackRigs.get(key)) {
+                log("create video nodes for", key);
+                const parentElement = window.document.querySelector("#stream-player-container");
+                if (parentElement) {
+                    const element = track.attach();
+                    parentElement.appendChild(element);
+                    trackRigs.set(key, {
+                        videoElement: element,
+                    });
+                }
+            }
+
+            participantVideoSids.set(participant.identity, { room: room.name, video: key })
         }
 
         handler({
             type: 'trackSubscribed',
+            room_name: room_name,
             participant: {
                 identity: participant.identity,
                 metadata: participant.metadata || ''
@@ -297,19 +323,33 @@ export function set_room_event_handler(room, handler) {
             log(`delete lookup for ${participant.identity}`);
             participantAudioSids.delete(participant.identity);
         }
+        if (participantVideoSids.get(participant.identity)?.room === room.name) {
+            log(`delete video lookup for ${participant.identity}`);
+            participantVideoSids.delete(participant.identity);
+        }
 
         const key = track.sid;
 
-        if (!trackRigs.has(key)) {
-            log(`detach and pause audioElement for ${key}`)
-            const audioElement = trackRigs(key).audioElement;
-            track.detach(audioElement);
-            audioElement.pause();
+        if (trackRigs.has(key)) {
+            const audioElement = trackRigs.get(key).audioElement;
+            if (audioElement) {
+                log(`detach and pause audioElement for ${key}`)
+                track.detach(audioElement);
+                audioElement.pause();
+            }
+            const videoElement = trackRigs.get(key).videoElement;
+            if (videoElement) {
+                log(`detach videoElement for ${key}`)
+                track.detach(videoElement);
+                videoElement.remove();
+            }
+            trackRigs.delete(key);
         }
 
 
         handler({
             type: 'trackUnsubscribed',
+            room_name: room_name,
             participant: {
                 identity: participant.identity,
                 metadata: participant.metadata || ''
@@ -320,6 +360,7 @@ export function set_room_event_handler(room, handler) {
     room.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
         handler({
             type: 'participantConnected',
+            room_name: room_name,
             participant: {
                 identity: participant.identity,
                 metadata: participant.metadata || ''
@@ -329,8 +370,10 @@ export function set_room_event_handler(room, handler) {
 
     room.on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
         participantAudioSids.delete(participant.identity);
+        participantVideoSids.delete(participant.identity);
         handler({
             type: 'participantDisconnected',
+            room_name: room_name,
             participant: {
                 identity: participant.identity,
                 metadata: participant.metadata || ''
@@ -399,6 +442,36 @@ export function subscribe_channel(roomName, participantId, subscribe) {
     for (const pub of audioPubs) {
         log(`sub ${roomName}-${participantId}`);
         pub.setSubscribed(subscribe);
+    }
+}
+
+export function streamer_subscribe_channel(roomName, subscribe_audio, subscribe_video) {
+    const room = Array.from(activeRooms).find(room => room.name === roomName);
+    if (!room) {
+        warn(`couldn't find room ${roomName} for subscription`);
+        return;
+    }
+
+    const participant = room.remoteParticipants.values().find(participant => participant.identity.endsWith("-streamer"));
+    if (!participant) {
+        warn(`couldn't find streamer participant in room ${roomName} for subscription`);
+        return;
+    }
+
+    const audioPubs = Array.from(participant.trackPublications.values())
+        .filter(pub => pub.kind === 'audio');
+    const videoPubs = Array.from(participant.trackPublications.values())
+        .filter(pub => pub.kind === 'video');
+
+    log(`subscribing to ${audioPubs.length} audio tracks and to ${videoPubs.length} video tracks`);
+
+    for (const pub of audioPubs) {
+        log(`sub(${subscribe_video}) ${roomName}-${participant.identity}`);
+        pub.setSubscribed(subscribe_audio);
+    }
+    for (const pub of videoPubs) {
+        log(`video sub(${subscribe_video}) ${roomName}-${participant.identity}`);
+        pub.setSubscribed(subscribe_video);
     }
 }
 

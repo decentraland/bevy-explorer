@@ -1,7 +1,7 @@
 use crate::{
     stream_processor::AVCommand,
     video_context::{VideoData, VideoInfo},
-    video_stream::{av_sinks, VideoSink},
+    video_stream::{av_sinks, noop_sinks, streamer_sinks, VideoSink},
 };
 use bevy::{
     color::palettes::basic,
@@ -18,6 +18,7 @@ use common::{
     sets::SceneSets,
     structs::{AppConfig, PrimaryUser},
 };
+use comms::{livekit_room::LivekitTransport, SceneRoom, Transport};
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::sdk::components::{PbAudioStream, PbVideoEvent, PbVideoPlayer, VideoState},
@@ -105,8 +106,25 @@ fn play_videos(
                     sink.rate = Some(rate);
                 }
                 Ok(VideoData::Frame(frame, time)) => {
-                    last_frame_received = Some(frame);
+                    last_frame_received = Some(frame.data(0).to_vec());
                     sink.current_time = time;
+                }
+                Ok(VideoData::LivekitFrame(frame)) => {
+                    let image = images.get_mut(&sink.image).unwrap();
+                    let extent = image.size();
+                    let width = frame.width();
+                    let height = frame.height();
+                    if extent.x != width || extent.y != height {
+                        debug!("resize {width} {height}");
+                        image.resize(Extent3d {
+                            width: width.max(16),
+                            height: height.max(16),
+                            depth_or_array_layers: 1,
+                        });
+                    }
+
+                    last_frame_received = Some(frame.rgba_data());
+                    sink.current_time = frame.timestamp() as f64;
                 }
                 Ok(VideoData::State(state)) => new_state = Some(state),
                 Err(_) => break,
@@ -121,7 +139,7 @@ fn play_videos(
                 .data
                 .as_mut()
                 .unwrap()
-                .copy_from_slice(frame.data(0));
+                .copy_from_slice(frame.as_slice());
         }
 
         const VIDEO_REPORT_FREQUENCY: f64 = 1.0;
@@ -168,6 +186,7 @@ pub fn update_video_players(
     mut images: ResMut<Assets<Image>>,
     ipfs: Res<IpfsResource>,
     scenes: Query<&RendererSceneContext>,
+    mut scene_rooms: Query<&mut Transport, (With<LivekitTransport>, With<SceneRoom>)>,
     config: Res<AppConfig>,
     mut system_paused: Local<HashMap<Entity, Option<tokio::sync::mpsc::Sender<AVCommand>>>>,
     containing_scene: ContainingScene,
@@ -201,20 +220,66 @@ pub fn update_video_players(
                 continue;
             };
 
-            let (video_sink, audio_sink) = av_sinks(
-                ipfs.clone(),
-                player.source.src.clone(),
-                context.hash.clone(),
-                image_handle,
-                player.source.volume.unwrap_or(1.0),
-                false,
-                player.source.r#loop.unwrap_or(false),
-            );
-            debug!(
-                "spawned av thread for scene @ {} (playing={})",
-                context.base,
-                player.source.playing.unwrap_or(true)
-            );
+            let (video_sink, audio_sink) = if player.source.src.starts_with("livekit-video://") {
+                if let Ok(transport) = scene_rooms.single_mut() {
+                    if let Some(control_channel) = transport.control.clone() {
+                        let (video_sink, audio_sink) = streamer_sinks(
+                            control_channel,
+                            player.source.src.clone(),
+                            image_handle,
+                            player.source.volume.unwrap_or(1.0),
+                        );
+                        debug!(
+                            "spawned streamer thread for scene @ {} (playing={})",
+                            context.base,
+                            player.source.playing.unwrap_or(true)
+                        );
+                        (video_sink, audio_sink)
+                    } else {
+                        error!("Transport did not have ChannelControl channel.");
+                        noop_sinks(
+                            player.source.src.clone(),
+                            image_handle,
+                            player.source.volume.unwrap_or(1.0),
+                        )
+                    }
+                } else {
+                    error!("Could not determinate the scene of the AvPlayer.");
+                    noop_sinks(
+                        player.source.src.clone(),
+                        image_handle,
+                        player.source.volume.unwrap_or(1.0),
+                    )
+                }
+            } else if player.source.src.is_empty() {
+                let (video_sink, audio_sink) = noop_sinks(
+                    player.source.src.clone(),
+                    image_handle,
+                    player.source.volume.unwrap_or(1.0),
+                );
+                debug!(
+                    "spawned noop sink for scene @ {} (playing={})",
+                    context.base,
+                    player.source.playing.unwrap_or(true)
+                );
+                (video_sink, audio_sink)
+            } else {
+                let (video_sink, audio_sink) = av_sinks(
+                    ipfs.clone(),
+                    player.source.src.clone(),
+                    context.hash.clone(),
+                    image_handle,
+                    player.source.volume.unwrap_or(1.0),
+                    false,
+                    player.source.r#loop.unwrap_or(false),
+                );
+                debug!(
+                    "spawned av thread for scene @ {} (playing={})",
+                    context.base,
+                    player.source.playing.unwrap_or(true)
+                );
+                (video_sink, audio_sink)
+            };
             previously_stopped.insert(ent, Some(video_sink.command_sender.clone()));
             let video_output = VideoTextureOutput(video_sink.image.clone());
             commands
