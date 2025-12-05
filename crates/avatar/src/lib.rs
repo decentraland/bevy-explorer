@@ -1042,7 +1042,7 @@ fn process_avatar(
                 commands.entity(scene_ent).try_insert(calculate_local_aabb(
                     aabb_bounds.0,
                     aabb_bounds.1,
-                    &gt,
+                    gt,
                 ));
             }
 
@@ -1300,7 +1300,7 @@ fn process_avatar(
                     commands.entity(scene_ent).try_insert(calculate_local_aabb(
                         aabb_bounds.0,
                         aabb_bounds.1,
-                        &gt,
+                        gt,
                     ));
                 }
 
