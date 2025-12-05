@@ -26,6 +26,7 @@ use crate::{
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
     sets::SceneLoopSets,
+    structs::UserClipping,
 };
 use console::DoAddConsoleCommand;
 use dcl::interface::ComponentPosition;
@@ -825,84 +826,51 @@ fn propagate_disabled(
 
 #[allow(clippy::type_complexity)]
 fn update_collider_transforms(
-    changed_colliders: Query<
-        (&ContainerEntity, &HasCollider, &GlobalTransform),
-        (
-            Or<(Changed<GlobalTransform>, Changed<HasCollider>)>, // needs updating
-        ),
-    >,
+    changed_colliders: Query<(&ContainerEntity, &HasCollider, &GlobalTransform)>,
     mut scene_data: Query<&mut SceneColliderData>,
     containing_scene: ContainingScene,
     mut player: Query<(Entity, &mut Transform), With<PrimaryUser>>,
+    clip: Res<UserClipping>,
+    mut last_position: Local<Vec3>,
 ) {
     let mut containing_scenes = HashSet::new();
     let mut player_transform = None;
 
     if let Ok((player, transform)) = player.single_mut() {
+        let last_dir = *last_position - transform.translation;
+        if last_dir.length() > 0.1 {
+            *last_position = transform.translation + last_dir.normalize() * 0.1;
+        }
+
         player_transform = Some(transform);
         containing_scenes.extend(containing_scene.get_area(player, PLAYER_COLLIDER_RADIUS));
     }
 
     let mut player_collider_set = ColliderSet::default();
-    player_collider_set.insert(
-        ColliderBuilder::new(SharedShape::capsule_y(
-            (PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS) as f64,
-            (PLAYER_COLLIDER_RADIUS - PLAYER_COLLIDER_OVERLAP) as f64,
-        ))
-        .position(Isometry::from_parts(
-            player_transform
-                .as_ref()
-                .map(|t| t.translation + PLAYER_COLLIDER_HEIGHT * 0.5 * Vec3::Y)
-                .unwrap_or_default()
-                .as_dvec3()
-                .into(),
-            Default::default(),
-        ))
-        .build(),
-    );
-
-    // closure to generate vector to (attempt to) fix a penetration with a scene collider
-    // TODO perhaps store last collider position and move this to player dynamics?
-    // not sure ... that would be better for colliders vs other stuff than player
-    // but currently it uses pretty intimate knowledge of scene collider data
-    let depenetration_vector =
-        |scene_data: &mut SceneColliderData, translation: Vec3, toi: &ShapeCastHit| -> Vec3 {
-            // just use the bottom sphere of the player collider
-            let base_of_sphere = translation + PLAYER_COLLIDER_RADIUS * Vec3::Y;
-            let closest_point = match toi.status {
-                ShapeCastStatus::OutOfIterations | ShapeCastStatus::Converged => {
-                    DVec3::from(toi.witness1).as_vec3()
-                }
-                ShapeCastStatus::Failed | ShapeCastStatus::PenetratingOrWithinTargetDist => {
-                    scene_data.force_update();
-                    match scene_data.query_state.as_ref().unwrap().project_point(
-                        &scene_data.dummy_rapier_structs.1,
-                        &scene_data.collider_set,
-                        &base_of_sphere.as_dvec3().into(),
-                        true,
-                        QueryFilter::default().predicate(&|h, _| scene_data.collider_enabled(h)),
-                    ) {
-                        Some((_, point)) => DVec3::from(point.point).as_vec3(),
-                        None => translation,
-                    }
-                }
-            };
-            let fix_dir = base_of_sphere - closest_point;
-            let distance = (PLAYER_COLLIDER_RADIUS - fix_dir.length()).clamp(0.00, 1.0);
-            debug!(
-                "closest point: {}, dir: {fix_dir}, len: {distance}",
-                closest_point
-            );
-            (fix_dir.normalize_or_zero() * distance)
-                // constrain resulting position to above ground
-                .max(Vec3::new(
-                    f32::NEG_INFINITY,
-                    -translation.y,
-                    f32::NEG_INFINITY,
-                ))
-        };
+    if clip.0 {
+        player_collider_set.insert(
+            ColliderBuilder::new(SharedShape::capsule_y(
+                (PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS) as f64,
+                (PLAYER_COLLIDER_RADIUS - PLAYER_COLLIDER_OVERLAP) as f64,
+            ))
+            .position(Isometry::from_parts(
+                player_transform
+                    .as_ref()
+                    .map(|t| t.translation + PLAYER_COLLIDER_HEIGHT * 0.5 * Vec3::Y)
+                    .unwrap_or_default()
+                    .as_dvec3()
+                    .into(),
+                Default::default(),
+            ))
+            .build(),
+        );
+    }
 
     for (container, collider, global_transform) in changed_colliders.iter() {
+        if !containing_scenes.contains(&container.root) {
+            continue;
+        }
+
         let Ok(mut scene_data) = scene_data.get_mut(container.root) else {
             warn!("missing scene root for {container:?}");
             continue;
@@ -918,22 +886,12 @@ fn update_collider_transforms(
             },
         );
 
+        let mut penetrating = false;
         if let Some(original_transform) = maybe_original_transform {
             if let Some(toi) = maybe_toi {
                 match toi.status {
                     ShapeCastStatus::PenetratingOrWithinTargetDist => {
-                        // penetrating collider - use closest point to infer fix/depen direction
-                        debug!(
-                            "don't skip pen, player: {:?} [moving {:?}]",
-                            player_transform.as_ref().unwrap().translation,
-                            (&container.root, &collider.0),
-                        );
-                        let fix_vector = depenetration_vector(
-                            &mut scene_data,
-                            player_transform.as_ref().unwrap().translation,
-                            &toi,
-                        );
-                        player_transform.as_mut().unwrap().translation += fix_vector;
+                        penetrating = true;
                     }
                     _ => {
                         // get contact point at toi
@@ -960,7 +918,7 @@ fn update_collider_transforms(
                             global_transform.transform_point(relative_hit_point) / new_scale;
 
                         // add diff as velocity or as motion?
-                        let req_translation = contact_at_end - contact_at_toi;
+                        let mut req_translation = contact_at_end - contact_at_toi;
                         let dot_w_normal1 = req_translation
                             .normalize_or_zero()
                             .dot(DVec3::from(toi.normal1).as_vec3());
@@ -970,8 +928,8 @@ fn update_collider_transforms(
                         if req_translation.length() > 1.0 {
                             // disregard too large deltas as the collider probably just warped
                             // TODO we could check this before updating based on translation?
-                            warn!("disregarding push due to large delta: {}, toi: {}, normal dot1: {}, 2: {}", req_translation, toi.time_of_impact, dot_w_normal1, dot_w_normal2);
-                            continue;
+                            warn!("clamp push due to large delta: {}, toi: {}, normal dot1: {}, 2: {}", req_translation, toi.time_of_impact, dot_w_normal1, dot_w_normal2);
+                            req_translation = req_translation.normalize() * 1.0;
                         }
                         // add extra 0.01 due to character controller offset / collider size difference
                         debug!(
@@ -1010,23 +968,19 @@ fn update_collider_transforms(
                             )
                             .1;
 
-                        if let Some(new_toi) = new_toi {
-                            debug!(
-                                "update toi - can we fix it?: {:?}, player: {}",
-                                new_toi,
-                                player_transform.as_ref().unwrap().translation
-                            );
-                            let fix_vector = depenetration_vector(
-                                &mut scene_data,
-                                player_transform.as_ref().unwrap().translation,
-                                &new_toi,
-                            );
-                            debug!("fix: {fix_vector}");
-                            player_transform.as_mut().unwrap().translation += fix_vector;
+                        if new_toi.is_some() {
+                            penetrating = true;
                         }
                     }
                 }
             }
+        }
+
+        if penetrating {
+            let translation = player_transform.as_ref().unwrap().translation;
+            let fix = (*last_position - translation + Vec3::Y * 0.1).normalize() * 0.1;
+            player_transform.as_mut().unwrap().translation += fix;
+            *last_position += fix;
         }
     }
 }

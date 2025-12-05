@@ -56,7 +56,7 @@ use common::{
         MAX_CLIMBABLE_INCLINE, MAX_STEP_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS,
         PLAYER_GROUND_THRESHOLD,
     },
-    structs::{AvatarDynamicState, PlayerModifiers, PrimaryUser},
+    structs::{AvatarDynamicState, PlayerModifiers, PrimaryUser, UserClipping},
 };
 
 use scene_runner::{
@@ -64,9 +64,6 @@ use scene_runner::{
     update_world::mesh_collider::{ColliderId, GroundCollider, SceneColliderData},
     ContainingScene, OutOfWorld,
 };
-
-#[derive(Resource)]
-pub struct UserClipping(pub bool);
 
 const TICK_TIME: f32 = 1.0 / 720.0;
 

@@ -15,13 +15,12 @@ use common::{
     anim_last_system,
     sets::SceneSets,
     structs::{
-        CursorLocks, PlayerModifiers, PrimaryCamera, PrimaryUser, PRIMARY_AVATAR_LIGHT_LAYER_INDEX,
+        CursorLocks, PlayerModifiers, PrimaryCamera, PrimaryUser, UserClipping,
+        PRIMARY_AVATAR_LIGHT_LAYER_INDEX,
     },
 };
 use console::DoAddConsoleCommand;
-use dynamics::{
-    jump_cmd, no_clip, speed_cmd, JumpCommand, NoClipCommand, SpeedCommand, UserClipping,
-};
+use dynamics::{jump_cmd, no_clip, speed_cmd, JumpCommand, NoClipCommand, SpeedCommand};
 use scene_runner::{
     update_scene::pointer_lock::update_pointer_lock,
     update_world::{
