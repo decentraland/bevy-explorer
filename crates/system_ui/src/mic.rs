@@ -7,6 +7,7 @@ use common::{
 };
 use comms::{Transport, TransportType};
 use input_manager::{InputManager, InputPriority};
+use system_bridge::SystemApi;
 use ui_core::ui_actions::{Click, HoverEnter, HoverExit, On};
 
 use crate::{chat::BUTTON_SCALE, SystemUiRoot};
@@ -27,7 +28,7 @@ impl Plugin for MicUiPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup.in_set(SetupSets::Main));
 
-        app.add_systems(Update, update_mic_ui);
+        app.add_systems(Update, (update_mic_ui, handle_mic_requests));
 
         let asset_server = app.world().resource::<AssetServer>();
         app.insert_resource(MicImages {
@@ -53,8 +54,7 @@ fn setup(mut commands: Commands, images: Res<MicImages>, ui_root: Res<SystemUiRo
             },
             bevy::ui::FocusPolicy::Block,
             Interaction::default(),
-            On::<Click>::new(|mut commands: Commands, mic_state: Res<MicState>| {
-                let mut mic_state = mic_state.inner.blocking_write();
+            On::<Click>::new(|mut commands: Commands, mut mic_state: ResMut<MicState>| {
                 mic_state.enabled = !mic_state.enabled;
                 if mic_state.enabled {
                     commands.send_event(SystemAudio(
@@ -69,8 +69,7 @@ fn setup(mut commands: Commands, images: Res<MicImages>, ui_root: Res<SystemUiRo
             On::<HoverEnter>::new(
                 |mut tooltip: ResMut<ToolTips>,
                  transport: Query<&Transport>,
-                 mic_state: Res<MicState>| {
-                    let mic_state = mic_state.inner.blocking_read();
+                 mic_state: ResMut<MicState>| {
                     let transport_available = transport
                         .iter()
                         .any(|t| t.transport_type == TransportType::Livekit);
@@ -96,7 +95,7 @@ fn setup(mut commands: Commands, images: Res<MicImages>, ui_root: Res<SystemUiRo
 #[allow(clippy::too_many_arguments)]
 fn update_mic_ui(
     mut commands: Commands,
-    mic_state: Res<MicState>,
+    mut mic_state: ResMut<MicState>,
     transport: Query<&Transport>,
     mut button: Query<&mut ImageNode, With<MicUiMarker>>,
     mut pressed: Local<bool>,
@@ -104,7 +103,6 @@ fn update_mic_ui(
     mic_images: Res<MicImages>,
     mut prev_active: Local<bool>,
 ) {
-    let mut mic_state = mic_state.inner.blocking_write();
     let mic_available = mic_state.available;
     let transport_available = transport
         .iter()
@@ -137,5 +135,19 @@ fn update_mic_ui(
             ));
         }
         *prev_active = active;
+    }
+}
+
+fn handle_mic_requests(mut events: EventReader<SystemApi>, mut mic: ResMut<MicState>) {
+    for ev in events.read() {
+        match ev {
+            SystemApi::GetMicState(rpc_result_sender) => {
+                rpc_result_sender.send(mic.clone());
+            }
+            SystemApi::SetMicEnabled(enabled) => {
+                mic.enabled = mic.available && *enabled;
+            }
+            _ => (),
+        }
     }
 }

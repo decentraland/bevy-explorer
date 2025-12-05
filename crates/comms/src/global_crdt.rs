@@ -8,7 +8,7 @@ use bevy::{
 };
 use bimap::BiMap;
 use common::{
-    rpc::{RpcCall, RpcEventSender},
+    rpc::{RpcCall, RpcEventSender, RpcStreamSender},
     structs::{AttachPoints, AudioDecoderError, EmoteCommand},
     util::TryPushChildrenEx,
 };
@@ -282,9 +282,7 @@ pub fn process_transport_updates(
     mut position_events: EventWriter<PlayerPositionEvent>,
     mut chat_events: EventWriter<ChatEvent>,
     mut string_senders: Local<HashMap<String, RpcEventSender>>,
-    mut binary_senders: Local<
-        HashMap<String, tokio::sync::mpsc::UnboundedSender<(String, Vec<u8>)>>,
-    >,
+    mut binary_senders: Local<HashMap<String, RpcStreamSender<(String, Vec<u8>)>>>,
     mut subscribers: EventReader<RpcCall>,
     mut profile_meta_cache: ResMut<ProfileMetaCache>,
     mut duplicate_chat_filter: Local<HashMap<Entity, f64>>,
@@ -691,7 +689,7 @@ fn handle_foreign_audio(
 pub fn pipe_voice_to_scene(
     mut requests: EventReader<SystemApi>,
     sources: Query<(&ForeignPlayer, &ForeignAudioSource)>,
-    mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<VoiceMessage>>>,
+    mut senders: Local<Vec<RpcStreamSender<VoiceMessage>>>,
     mut current_active: Local<HashMap<ethers_core::types::Address, String>>,
     scene_rooms: Query<&SceneRoom>,
 ) {

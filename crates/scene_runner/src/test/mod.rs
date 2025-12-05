@@ -16,6 +16,7 @@ use bevy::{
     time::TimePlugin,
 };
 use bevy_dui::DuiPlugin;
+use dcl_deno_ipc::init_runtime;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use scene_material::SceneBoundPlugin;
@@ -107,6 +108,7 @@ impl PluginGroup for TestPlugins {
 }
 
 fn init_test_app(entity_json: &str) -> App {
+    init_runtime().unwrap();
     let mut app = App::new();
 
     // Add our systems

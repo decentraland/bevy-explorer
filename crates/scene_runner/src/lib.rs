@@ -1,11 +1,7 @@
-use std::{
-    collections::VecDeque,
-    marker::PhantomData,
-    sync::mpsc::{sync_channel, Receiver, SyncSender, TryRecvError},
-    time::Duration,
-};
+use std::{collections::VecDeque, marker::PhantomData, time::Duration};
 
 use system_bridge::SystemApi;
+use tokio::sync::mpsc::error::TryRecvError;
 use web_time::SystemTime;
 
 use bevy::{
@@ -75,8 +71,8 @@ pub mod util;
 // bookkeeping struct for javascript execution of scenes
 #[derive(Resource)]
 pub struct SceneUpdates {
-    pub sender: SyncSender<SceneResponse>,
-    receiver: Receiver<SceneResponse>,
+    pub sender: tokio::sync::mpsc::UnboundedSender<SceneResponse>,
+    receiver: tokio::sync::mpsc::UnboundedReceiver<SceneResponse>,
     pub scene_ids: HashMap<SceneId, Entity>,
     pub jobs_in_flight: HashSet<Entity>,
     pub update_deadline: SystemTime,
@@ -91,8 +87,8 @@ unsafe impl Sync for SceneUpdates {}
 unsafe impl Send for SceneUpdates {}
 
 impl SceneUpdates {
-    pub fn receiver(&mut self) -> &Receiver<SceneResponse> {
-        &self.receiver
+    pub fn receiver(&mut self) -> &mut tokio::sync::mpsc::UnboundedReceiver<SceneResponse> {
+        &mut self.receiver
     }
 }
 
@@ -233,7 +229,7 @@ impl Plugin for SceneRunnerPlugin {
         app.init_resource::<TestingData>();
         app.init_resource::<InteractableArea>();
 
-        let (sender, receiver) = sync_channel(1000);
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         app.insert_resource(SceneUpdates {
             sender,
             receiver,
@@ -885,11 +881,12 @@ fn receive_scene_updates(
                 SceneResponse::Ok(scene_id, census, mut crdt, runtime, messages, rpc_calls) => {
                     let root = updates.scene_ids.get(&scene_id).unwrap();
                     debug!(
-                        "scene {:?}/{:?} received updates! [+{}, -{}]",
+                        "scene {:?}/{:?} received updates! [+{}, -{}, {} rpc",
                         census.scene_id,
                         root,
                         census.born.len(),
-                        census.died.len()
+                        census.died.len(),
+                        rpc_calls.len(),
                     );
                     if let Ok(mut context) = scenes.get_mut(*root) {
                         context.tick_number = context.tick_number.wrapping_add(1);
@@ -919,6 +916,11 @@ fn receive_scene_updates(
                         );
                     }
                     Some(*root)
+                }
+                SceneResponse::ImmediateRpcCall(rpc_call) => {
+                    debug!("immediate rpc: {rpc_call:?}");
+                    rpc_call_events.write(rpc_call);
+                    None
                 }
             },
             Err(TryRecvError::Empty) => return,

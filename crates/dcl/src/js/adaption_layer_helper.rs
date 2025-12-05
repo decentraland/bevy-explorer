@@ -1,8 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use anyhow::anyhow;
-use bevy::math::Vec2;
-use common::rpc::RpcCall;
+use common::rpc::{RpcCall, RpcResultSender};
 use serde::Serialize;
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
@@ -16,7 +15,7 @@ pub struct TextureSize {
 }
 
 pub async fn op_get_texture_size(state: Rc<RefCell<impl State>>, src: String) -> TextureSize {
-    let (sx, rx) = tokio::sync::oneshot::channel::<Result<Vec2, String>>();
+    let (sx, rx) = RpcResultSender::channel();
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
 
     state
@@ -25,7 +24,7 @@ pub async fn op_get_texture_size(state: Rc<RefCell<impl State>>, src: String) ->
         .push(RpcCall::GetTextureSize {
             scene,
             src,
-            response: sx.into(),
+            response: sx,
         });
 
     let Ok(result) = rx.await.map_err(|e| anyhow::anyhow!(e)) else {

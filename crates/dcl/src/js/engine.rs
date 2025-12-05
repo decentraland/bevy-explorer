@@ -4,12 +4,12 @@ use bevy::log::{debug, info, warn};
 #[cfg(feature = "span_scene_loop")]
 use bevy::log::{info_span, tracing::span::EnteredSpan};
 
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{mpsc::SyncSender, Arc},
+use std::{cell::RefCell, rc::Rc, sync::Arc};
+use tokio::sync::{
+    broadcast::error::TryRecvError,
+    mpsc::{Receiver, UnboundedSender},
+    Mutex,
 };
-use tokio::sync::{broadcast::error::TryRecvError, mpsc::Receiver, Mutex};
 
 use crate::{
     crdt::{append_component, put_component},
@@ -42,7 +42,7 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
 
     let rpc_calls = std::mem::take(op_state.borrow_mut::<RpcCalls>());
 
-    let sender = op_state.borrow_mut::<SyncSender<SceneResponse>>();
+    let sender = op_state.borrow_mut::<UnboundedSender<SceneResponse>>();
     sender
         .send(SceneResponse::Ok(
             entity_map.scene_id,
@@ -81,6 +81,10 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
     }
     op_state.put(receiver);
 
+    let mut entity_map = op_state.take::<CrdtContext>();
+    let mut renderer_state = op_state.take::<RendererStore>();
+    let writers = op_state.take::<CrdtComponentInterfaces>();
+
     let mut results = match response {
         Some(RendererResponse::Ok(updates)) => {
             let mut results = Vec::new();
@@ -104,13 +108,6 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
             }
 
             // store the updates
-            let renderer_state = match op_state.try_borrow_mut::<RendererStore>() {
-                Some(state) => state,
-                None => {
-                    op_state.put(RendererStore(Default::default()));
-                    op_state.borrow_mut::<RendererStore>()
-                }
-            };
             renderer_state.0.update_from(updates);
 
             results
@@ -126,10 +123,19 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
         }
     };
 
-    let global_update_receiver = op_state.borrow_mut::<tokio::sync::broadcast::Receiver<Vec<u8>>>();
+    let mut global_update_receiver = op_state.take::<tokio::sync::broadcast::Receiver<Vec<u8>>>();
     loop {
         match global_update_receiver.try_recv() {
-            Ok(next) => results.push(next),
+            Ok(next) => {
+                let mut stream = DclReader::new(&next);
+                renderer_state.0.process_message_stream(
+                    &mut entity_map,
+                    &writers,
+                    &mut stream,
+                    false,
+                );
+                results.push(next);
+            }
             Err(TryRecvError::Empty) => break,
             Err(TryRecvError::Lagged(_)) => (), // continue on with whatever we can still get
             Err(TryRecvError::Closed) => {
@@ -139,6 +145,10 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
         }
     }
 
+    op_state.put(renderer_state);
+    op_state.put(entity_map);
+    op_state.put(writers);
+    op_state.put(global_update_receiver);
     op_state.put(CommunicatedWithRenderer);
 
     results

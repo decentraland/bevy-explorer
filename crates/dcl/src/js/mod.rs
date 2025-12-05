@@ -1,18 +1,20 @@
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{mpsc::SyncSender, Arc},
+use std::{cell::RefCell, rc::Rc, sync::Arc};
+
+use anyhow::anyhow;
+use bevy::log::debug;
+use dcl_component::{
+    proto_components::sdk::components::PbPlayerIdentityData, DclReader, FromDclReader,
+    SceneComponentId, SceneEntityId,
+};
+use ipfs::SceneJsFile;
+use system_bridge::SystemApi;
+use tokio::sync::{
+    mpsc::{Receiver, UnboundedSender},
+    Mutex,
 };
 
-use bevy::log::debug;
-use common::structs::MicState;
-use ipfs::{IpfsResource, SceneJsFile};
-use system_bridge::SystemApi;
-use tokio::sync::{mpsc::Receiver, Mutex};
-use wallet::Wallet;
-
 use crate::{
-    interface::{crdt_context::CrdtContext, CrdtComponentInterfaces},
+    interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
     RendererResponse, RpcCalls, SceneElapsedTime, SceneId, SceneLogLevel, SceneLogMessage,
     SceneResponse,
 };
@@ -102,17 +104,15 @@ impl State for deno_core::OpState {
 #[allow(clippy::too_many_arguments)]
 pub fn init_state(
     state: &mut impl State,
+    initial_crdt_store: CrdtStore,
     scene_hash: String,
     scene_id: SceneId,
     storage_root: String,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
-    thread_sx: SyncSender<SceneResponse>,
+    thread_sx: UnboundedSender<SceneResponse>,
     thread_rx: Receiver<RendererResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
-    ipfs: IpfsResource,
-    wallet: Wallet,
-    mic: MicState,
     _inspect: bool,
     testing: bool,
     preview: bool,
@@ -126,12 +126,9 @@ pub fn init_state(
     state.put(thread_sx);
     state.put(Arc::new(Mutex::new(thread_rx)));
     state.put(global_update_receiver);
-    state.put(ipfs);
-    state.put(wallet);
-    state.put(mic);
     state.put(CrdtStore::default());
     state.put(RpcCalls::default());
-    state.put(RendererStore(CrdtStore::default()));
+    state.put(RendererStore(initial_crdt_store));
     state.put(Vec::<SceneLogMessage>::default());
     state.put(SceneElapsedTime(0.0));
     if let Some(super_user) = super_user {
@@ -163,4 +160,17 @@ pub fn op_error(state: Rc<RefCell<impl State>>, message: String) {
             level: SceneLogLevel::SceneError,
             message,
         })
+}
+
+pub fn player_identity(state: &impl State) -> Result<PbPlayerIdentityData, anyhow::Error> {
+    let renderer_store = state.borrow::<RendererStore>();
+    let Some(player_identity) = renderer_store.0.get(
+        SceneComponentId::PLAYER_IDENTITY_DATA,
+        CrdtType::LWW_ANY,
+        SceneEntityId::PLAYER,
+    ) else {
+        anyhow::bail!("no player identity!");
+    };
+    PbPlayerIdentityData::from_reader(&mut DclReader::new(player_identity))
+        .map_err(|e| anyhow!(format!("{e:?}")))
 }
