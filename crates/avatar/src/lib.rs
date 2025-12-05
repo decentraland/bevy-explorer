@@ -8,10 +8,7 @@ use bevy::{
     gltf::Gltf,
     platform::collections::{HashMap, HashSet},
     prelude::*,
-    render::{
-        mesh::skinning::SkinnedMesh,
-        view::{NoFrustumCulling, RenderLayers},
-    },
+    render::{mesh::skinning::SkinnedMesh, primitives::Aabb, view::RenderLayers},
     scene::InstanceId,
     tasks::{IoTaskPool, Task},
 };
@@ -886,11 +883,21 @@ const AVATAR_EMISSIVE_MULTIPLIER: f32 = 4.0;
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn process_avatar(
     mut commands: Commands,
-    query: Query<(Entity, &AvatarDefinition, &AvatarLoaded, &ChildOf), Without<AvatarProcessed>>,
+    query: Query<
+        (
+            Entity,
+            &GlobalTransform,
+            &AvatarDefinition,
+            &AvatarLoaded,
+            &ChildOf,
+        ),
+        Without<AvatarProcessed>,
+    >,
     scene_spawner: SceneSpawnerPlus,
     mut instance_ents: Query<(
         &mut Visibility,
         &ChildOf,
+        &GlobalTransform,
         Option<&MeshMaterial3d<StandardMaterial>>,
         Option<&Mesh3d>,
         Option<&AnimationPlayer>,
@@ -922,7 +929,7 @@ fn process_avatar(
         Query<&mut RendererSceneContext>,
     ),
 ) {
-    for (avatar_ent, def, loaded_avatar, root_player_entity) in query.iter() {
+    for (avatar_ent, root_gt, def, loaded_avatar, root_player_entity) in query.iter() {
         let not_loaded = !scene_spawner.instance_is_really_ready(loaded_avatar.body_instance)
             || loaded_avatar
                 .wearable_instances
@@ -936,6 +943,12 @@ fn process_avatar(
             debug!("not loaded...");
             continue;
         }
+
+        // https://docs.decentraland.org/creator/wearables/creating-wearables/#max-width-height-and-depth-dimension-of-the-wearables
+        let aabb_bounds = (
+            Vec3::new(-1.24, 0.0, -0.7) + root_gt.translation(),
+            Vec3::new(1.24, 2.42, 0.7) + root_gt.translation(),
+        );
 
         let mut instance_scene_materials = HashMap::new();
         let mut armature_node = None;
@@ -979,7 +992,7 @@ fn process_avatar(
 
         // hide and colour the base model
         for scene_ent in scene_spawner.iter_instance_entities(loaded_avatar.body_instance) {
-            let Ok((mut vis, parent, maybe_h_mat, maybe_h_mesh, maybe_player)) =
+            let Ok((mut vis, parent, gt, maybe_h_mat, maybe_h_mesh, maybe_player)) =
                 instance_ents.get_mut(scene_ent)
             else {
                 continue;
@@ -1025,7 +1038,12 @@ fn process_avatar(
                         }
                     }
                 }
-                commands.entity(scene_ent).try_insert(NoFrustumCulling);
+
+                commands.entity(scene_ent).try_insert(calculate_local_aabb(
+                    aabb_bounds.0,
+                    aabb_bounds.1,
+                    gt,
+                ));
             }
 
             if let Some(h_mat) = maybe_h_mat {
@@ -1234,7 +1252,7 @@ fn process_avatar(
             let mut armature_map = HashMap::new();
 
             for scene_ent in scene_spawner.iter_instance_entities(*instance) {
-                let Ok((_, parent, maybe_h_mat, maybe_h_mesh, maybe_player)) =
+                let Ok((_, parent, gt, maybe_h_mat, maybe_h_mesh, maybe_player)) =
                     instance_ents.get_mut(scene_ent)
                 else {
                     continue;
@@ -1279,7 +1297,11 @@ fn process_avatar(
                             }
                         }
                     }
-                    commands.entity(scene_ent).try_insert(NoFrustumCulling);
+                    commands.entity(scene_ent).try_insert(calculate_local_aabb(
+                        aabb_bounds.0,
+                        aabb_bounds.1,
+                        gt,
+                    ));
                 }
 
                 if let Some(h_mat) = maybe_h_mat {
@@ -1431,6 +1453,43 @@ fn process_avatar(
                 );
             }
         }
+    }
+}
+
+fn calculate_local_aabb(
+    global_min: Vec3,
+    global_max: Vec3,
+    global_transform: &GlobalTransform,
+) -> Aabb {
+    let transform_matrix = global_transform.compute_matrix();
+    let inverse_transform = transform_matrix.inverse();
+
+    let corners = [
+        Vec3::new(global_min.x, global_min.y, global_min.z),
+        Vec3::new(global_max.x, global_min.y, global_min.z),
+        Vec3::new(global_min.x, global_max.y, global_min.z),
+        Vec3::new(global_max.x, global_max.y, global_min.z),
+        Vec3::new(global_min.x, global_min.y, global_max.z),
+        Vec3::new(global_max.x, global_min.y, global_max.z),
+        Vec3::new(global_min.x, global_max.y, global_max.z),
+        Vec3::new(global_max.x, global_max.y, global_max.z),
+    ];
+
+    let mut local_min = Vec3::splat(f32::MAX);
+    let mut local_max = Vec3::splat(f32::MIN);
+
+    for corner in corners {
+        let local_point = inverse_transform.transform_point3(corner);
+        local_min = local_min.min(local_point);
+        local_max = local_max.max(local_point);
+    }
+
+    let center = (local_min + local_max) * 0.5;
+    let half_extents = (local_max - local_min) * 0.5;
+
+    Aabb {
+        center: center.into(),
+        half_extents: half_extents.into(),
     }
 }
 
