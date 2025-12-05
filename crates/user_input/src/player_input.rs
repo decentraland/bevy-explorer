@@ -40,7 +40,8 @@ pub(crate) fn update_user_velocity(
         let jump_velocity = (user.jump_height * -user.gravity * 2.0).sqrt();
         if dynamic_state.ground_height < PLAYER_GROUND_THRESHOLD // grounded
             && dynamic_state.velocity.y <= jump_velocity * 0.1 // not already jumping
-            && !user.block_jump // scene allowed to jump
+            && !user.block_jump
+        // scene allowed to jump
         {
             dynamic_state.velocity.y = (user.jump_height * -user.gravity * 2.0).sqrt();
             dynamic_state.jump_time = time.elapsed_secs();
