@@ -42,6 +42,7 @@ pub struct NewSceneInfo {
 pub enum EngineToScene {
     NewScene(u64, NewSceneInfo),
     SceneUpdate(u64, RendererResponse),
+    KillScene(u64),
     GlobalUpdate(Vec<u8>),
     IpcMessage(u64, IpcMessage),
 }
@@ -185,18 +186,19 @@ pub async fn renderer_ipc_out(
                 let renderer_sender = renderer_sx.clone();
                 tokio::spawn(async move {
                     while let Some(renderer_response) = renderer_channel.recv().await {
-                        renderer_sender.send((id, renderer_response)).unwrap();
+                        let _ = renderer_sender.send(EngineToScene::SceneUpdate(id, renderer_response));
                     }
+                    let _ = renderer_sender.send(EngineToScene::KillScene(id));
                 });
 
                 write_msg(&mut stream, &EngineToScene::NewScene(id, info)).await;
             }
             renderer_update = renderer_rx.recv() => {
-                let Some((id, response)) = renderer_update else {
+                let Some(engine_to_scene) = renderer_update else {
                     warn!("renderer_ipc_out exit on inbound closed");
                     return;
                 };
-                write_msg(&mut stream, &EngineToScene::SceneUpdate(id, response)).await;
+                write_msg(&mut stream, &engine_to_scene).await;
             }
             global_rx = global_rx.recv() => {
                 let Ok(data) = global_rx else {
