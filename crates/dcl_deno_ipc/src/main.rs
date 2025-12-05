@@ -139,6 +139,9 @@ async fn scene_ipc_in(
 
                 renderer_senders.insert(id, response_sx);
             }
+            EngineToScene::KillScene(id) => {
+                renderer_senders.remove(&id);
+            }
             EngineToScene::SceneUpdate(id, renderer_response) => {
                 let Some(sender) = renderer_senders.get(&id) else {
                     warn!("no sender with id {id}");
