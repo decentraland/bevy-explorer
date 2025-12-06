@@ -379,6 +379,7 @@ pub(crate) fn load_scene_javascript(
             config.scene_log_to_console,
             if is_sdk7 { "sdk7" } else { "sdk6" },
             false,
+            meta.authoritative_multiplayer.unwrap_or_default(),
         );
 
         scene_updates.scene_ids.insert(scene_id, root);
