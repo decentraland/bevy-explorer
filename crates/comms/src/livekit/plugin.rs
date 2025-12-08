@@ -5,7 +5,7 @@ use dcl_component::proto_components::kernel::comms::rfc4;
 #[cfg(not(target_arch = "wasm32"))]
 pub use crate::livekit::native::{connect_livekit, MicPlugin};
 #[cfg(target_arch = "wasm32")]
-pub use crate::livekit_web::{connect_livekit, MicPlugin};
+pub use crate::livekit::web::{connect_livekit, MicPlugin};
 use crate::{
     livekit::{LivekitTransport, StartLivekit},
     profile::CurrentUserProfile,

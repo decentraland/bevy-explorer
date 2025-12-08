@@ -12,7 +12,7 @@ use wasm_bindgen_futures::spawn_local;
 
 use crate::{
     global_crdt::{ChannelControl, GlobalCrdtState, PlayerMessage, PlayerUpdate},
-    livekit_room::{LivekitConnection, LivekitTransport},
+    livekit::{LivekitConnection, LivekitTransport},
     NetworkMessage,
 };
 use common::{structs::MicState, util::AsH160};
