@@ -1,6 +1,7 @@
-use std::sync::Arc;
-
-use bevy::{platform::collections::HashMap, prelude::*};
+use bevy::{
+    platform::{collections::HashMap, sync::Arc},
+    prelude::*,
+};
 use ethers_core::types::H160;
 use futures_lite::StreamExt;
 use http::Uri;
@@ -8,6 +9,7 @@ use kira::sound::streaming::StreamingSoundData;
 use livekit::webrtc::{native::yuv_helper, prelude::VideoBuffer};
 use prost::Message;
 use tokio::{
+    runtime::Runtime,
     sync::{
         mpsc::{error::TryRecvError, Receiver, Sender},
         Mutex,
@@ -25,7 +27,7 @@ use crate::{
     global_crdt::{
         GlobalCrdtState, LocalAudioFrame, LocalAudioSource, PlayerMessage, PlayerUpdate,
     },
-    livekit::{LivekitConnection, LivekitTransport},
+    livekit::{LivekitConnection, LivekitRuntime, LivekitTransport},
     ChannelControl, NetworkMessage,
 };
 
@@ -185,18 +187,22 @@ pub fn update_mic(
 }
 
 #[allow(clippy::type_complexity)]
-pub fn connect_livekit(
+pub(super) fn connect_livekit(
     mut commands: Commands,
-    mut new_livekits: Query<(Entity, &mut LivekitTransport), Without<LivekitConnection>>,
+    mut new_livekits: Query<
+        (Entity, &mut LivekitTransport, &LivekitRuntime),
+        Without<LivekitConnection>,
+    >,
     player_state: Res<GlobalCrdtState>,
     mic: Res<crate::global_crdt::LocalAudioSource>,
 ) {
-    for (transport_id, mut new_transport) in new_livekits.iter_mut() {
+    for (transport_id, mut new_transport, livekit_runtime) in new_livekits.iter_mut() {
         debug!("spawn lk connect");
         let remote_address = new_transport.address.to_owned();
         let receiver = new_transport.receiver.take().unwrap();
         let control_receiver = new_transport.control_receiver.take().unwrap();
         let sender = player_state.get_sender();
+        let runtime = (*livekit_runtime).clone();
 
         let subscription = mic.subscribe();
         std::thread::spawn(move || {
@@ -207,6 +213,7 @@ pub fn connect_livekit(
                 control_receiver,
                 sender,
                 subscription,
+                runtime,
             )
         });
 
@@ -221,6 +228,7 @@ fn livekit_handler(
     control_receiver: Receiver<ChannelControl>,
     sender: Sender<PlayerUpdate>,
     mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
+    runtime: Arc<Runtime>,
 ) {
     let receiver = Arc::new(Mutex::new(receiver));
     let control_receiver = Arc::new(Mutex::new(control_receiver));
@@ -233,6 +241,7 @@ fn livekit_handler(
             control_receiver.clone(),
             sender.clone(),
             mic.resubscribe(),
+            runtime.clone(),
         ) {
             warn!("livekit error: {e}");
         }
@@ -251,6 +260,7 @@ fn livekit_handler_inner(
     control_rx: Arc<Mutex<Receiver<ChannelControl>>>,
     sender: Sender<PlayerUpdate>,
     mut mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
+    runtime: Arc<Runtime>,
 ) -> Result<(), anyhow::Error> {
     debug!(">> lk connect async : {remote_address}");
 
@@ -276,17 +286,9 @@ fn livekit_handler_inner(
     let mut streamer_audio_channel: Option<JoinHandle<()>> = None;
     let mut streamer_video_channel: Option<JoinHandle<()>> = None;
 
-    let rt = Arc::new(
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
-            .enable_all()
-            .build()
-            .unwrap(),
-    );
+    let rt2 = runtime.clone();
 
-    let rt2 = rt.clone();
-
-    let task = rt.spawn(async move {
+    let task = runtime.spawn(async move {
         let (room, mut network_rx) = livekit::prelude::Room::connect(&address, &token, RoomOptions{ auto_subscribe: false, adaptive_stream: false, dynacast: false, ..Default::default() }).await.unwrap();
         let local_participant = room.local_participant();
 
@@ -508,7 +510,7 @@ fn livekit_handler_inner(
         room.close().await.unwrap();
     });
 
-    rt.block_on(task).unwrap();
+    runtime.block_on(task).unwrap();
     Ok(())
 }
 

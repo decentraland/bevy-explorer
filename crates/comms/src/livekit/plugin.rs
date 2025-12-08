@@ -1,11 +1,17 @@
+#[cfg(not(target_arch = "wasm32"))]
+use bevy::platform::sync::Arc;
 use bevy::prelude::*;
 use common::structs::MicState;
 use dcl_component::proto_components::kernel::comms::rfc4;
+#[cfg(not(target_arch = "wasm32"))]
+use tokio::runtime::Builder;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use crate::livekit::native::{connect_livekit, MicPlugin};
+use crate::livekit::native::{connect_livekit, MicPlugin};
 #[cfg(target_arch = "wasm32")]
-pub use crate::livekit::web::{connect_livekit, MicPlugin};
+use crate::livekit::web::{connect_livekit, MicPlugin};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::livekit::LivekitRuntime;
 use crate::{
     livekit::{LivekitTransport, StartLivekit},
     profile::CurrentUserProfile,
@@ -48,6 +54,15 @@ pub fn start_livekit(
         };
         let _ = sender.try_send(NetworkMessage::reliable(&response));
 
+        #[cfg(not(target_arch = "wasm32"))]
+        let runtime = Arc::new(
+            Builder::new_multi_thread()
+                .worker_threads(1)
+                .enable_all()
+                .build()
+                .unwrap(),
+        );
+
         commands.entity(ev.entity).try_insert((
             Transport {
                 transport_type: TransportType::Livekit,
@@ -61,6 +76,8 @@ pub fn start_livekit(
                 control_receiver: Some(control_receiver),
                 retries: 0,
             },
+            #[cfg(not(target_arch = "wasm32"))]
+            LivekitRuntime(runtime),
         ));
     }
 }
