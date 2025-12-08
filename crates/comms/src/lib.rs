@@ -2,12 +2,8 @@ pub mod archipelago;
 pub mod broadcast_position;
 pub mod global_crdt;
 
-#[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
-pub mod livekit_native;
 #[cfg(feature = "livekit")]
-pub mod livekit_room;
-#[cfg(all(feature = "livekit", target_arch = "wasm32"))]
-pub mod livekit_web;
+pub mod livekit;
 
 pub mod movement_compressed;
 pub mod preview;
@@ -48,7 +44,7 @@ use self::{
 };
 
 #[cfg(feature = "livekit")]
-use self::livekit_room::{LivekitPlugin, StartLivekit};
+use self::livekit::{LivekitPlugin, StartLivekit};
 
 const GATEKEEPER_URL: &str = "https://comms-gatekeeper.decentraland.org/get-scene-adapter";
 

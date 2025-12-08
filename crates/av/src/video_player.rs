@@ -18,7 +18,7 @@ use common::{
     sets::SceneSets,
     structs::{AppConfig, PrimaryUser},
 };
-use comms::{livekit_room::LivekitTransport, SceneRoom, Transport};
+use comms::{livekit::LivekitTransport, SceneRoom, Transport};
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::sdk::components::{PbAudioStream, PbVideoEvent, PbVideoPlayer, VideoState},

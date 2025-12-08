@@ -1,5 +1,10 @@
 // --server https://worlds-content-server.decentraland.org/world/shibu.dcl.eth --location 1,1
 
+#[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
+pub mod native;
+#[cfg(all(feature = "livekit", target_arch = "wasm32"))]
+pub mod web;
+
 use bevy::prelude::*;
 use tokio::sync::mpsc::Receiver;
 
@@ -16,7 +21,7 @@ use common::structs::MicState;
 pub use crate::livekit_web::{connect_livekit, MicPlugin};
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use crate::livekit_native::{connect_livekit, MicPlugin};
+pub use crate::livekit::native::{connect_livekit, MicPlugin};
 
 pub struct LivekitPlugin;
 

@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use bevy::prelude::*;
-use comms::livekit_native::LivekitVideoFrame;
+use comms::livekit::native::LivekitVideoFrame;
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::ffi::AVPixelFormat;
 use ffmpeg_next::format::Pixel;

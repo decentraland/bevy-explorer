@@ -25,7 +25,7 @@ use crate::{
     global_crdt::{
         GlobalCrdtState, LocalAudioFrame, LocalAudioSource, PlayerMessage, PlayerUpdate,
     },
-    livekit_room::{LivekitConnection, LivekitTransport},
+    livekit::{LivekitConnection, LivekitTransport},
     ChannelControl, NetworkMessage,
 };
 

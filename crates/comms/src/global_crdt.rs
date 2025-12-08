@@ -34,7 +34,7 @@ use dcl_component::{
 };
 
 #[cfg(not(target_arch = "wasm32"))]
-use crate::livekit_native::LivekitVideoFrame;
+use crate::livekit::native::LivekitVideoFrame;
 use crate::{
     movement_compressed::MovementCompressed, profile::ProfileMetaCache, SceneRoom, Transport,
 };
