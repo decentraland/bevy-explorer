@@ -44,7 +44,7 @@ use self::{
 };
 
 #[cfg(feature = "livekit")]
-use self::livekit::{LivekitPlugin, StartLivekit};
+use self::livekit::{plugin::LivekitPlugin, StartLivekit};
 
 const GATEKEEPER_URL: &str = "https://comms-gatekeeper.decentraland.org/get-scene-adapter";
 
