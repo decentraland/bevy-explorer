@@ -34,7 +34,7 @@ pub fn start_livekit(
     mut room_events: EventReader<StartLivekit>,
     current_profile: Res<CurrentUserProfile>,
 ) {
-    if let Some(ev) = room_events.read().last() {
+    for ev in room_events.read() {
         info!("starting livekit protocol");
         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
         let (control_sender, control_receiver) = tokio::sync::mpsc::channel(10);
