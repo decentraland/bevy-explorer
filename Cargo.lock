@@ -776,7 +776,7 @@ dependencies = [
  "input_manager",
  "ipfs",
  "platform",
- "rapier3d-f64",
+ "rapier3d",
  "scene_material",
  "scene_runner",
  "serde_json",
@@ -8216,7 +8216,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "parry3d-f64"
+name = "parry3d"
 version = "0.20.1"
 source = "git+https://github.com/robtfm/parry?branch=bugfix-project-local-point#2454ba05183ae9a48e3d6bf086d498b2df2285c1"
 dependencies = [
@@ -9046,10 +9046,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f60fcc7d6849342eff22c4350c8b9a989ee8ceabc4b481253e8946b9fe83d684"
 
 [[package]]
-name = "rapier3d-f64"
+name = "rapier3d"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a04eab286a82bd2e89e686e4fcfb83ece27ebd72dfcf575404b03d081e7cd51"
+checksum = "a35ec3d01c4f918675411442024a1fbfb7eafdd878a6e82479ff6e461a9092fc"
 dependencies = [
  "approx",
  "arrayvec",
@@ -9062,7 +9062,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "ordered-float 5.0.0",
- "parry3d-f64",
+ "parry3d",
  "profiling",
  "rustc-hash 2.1.1",
  "simba",
@@ -10038,7 +10038,7 @@ dependencies = [
  "petgraph 0.6.5",
  "platform",
  "rand 0.8.5",
- "rapier3d-f64",
+ "rapier3d",
  "scene_material",
  "serde",
  "serde_json",
@@ -12096,7 +12096,7 @@ dependencies = [
  "console",
  "dcl_component",
  "input_manager",
- "rapier3d-f64",
+ "rapier3d",
  "scene_runner",
  "tween",
 ]

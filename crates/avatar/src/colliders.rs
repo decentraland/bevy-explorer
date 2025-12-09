@@ -13,7 +13,7 @@ use common::{
 };
 use comms::{global_crdt::ForeignPlayer, profile::UserProfile};
 use input_manager::{InputManager, InputPriority, InputType};
-use rapier3d_f64::{
+use rapier3d::{
     na::Isometry,
     prelude::{ColliderBuilder, SharedShape},
 };
@@ -75,17 +75,17 @@ fn update_avatar_colliders(
         } else {
             // collider didn't exist, make a new one
             let collider = ColliderBuilder::new(SharedShape::capsule_y(
-                (PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS) as f64,
-                (PLAYER_COLLIDER_RADIUS - PLAYER_COLLIDER_OVERLAP) as f64,
+                PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS,
+                PLAYER_COLLIDER_RADIUS - PLAYER_COLLIDER_OVERLAP,
             ))
             .position(Isometry::from_parts(
-                (transform.translation() + PLAYER_COLLIDER_HEIGHT * 0.5 * Vec3::Y)
-                    .as_dvec3()
-                    .into(),
+                (transform.translation() + PLAYER_COLLIDER_HEIGHT * 0.5 * Vec3::Y).into(),
                 Default::default(),
             ))
             .build();
-            colliders.collider_data.set_collider(&id, collider, ent);
+            colliders
+                .collider_data
+                .set_collider(&id, collider, Some(ent));
             colliders.lookup.insert(id, ent);
         }
     }
