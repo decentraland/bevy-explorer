@@ -9,7 +9,7 @@ function error(...args) {
 }
 
 let currentMicTrack = false;
-const activeRooms = new Set();
+const activeRooms = new Map();
 
 // Store audio elements and panner nodes for spatial audio
 const trackRigs = new Map();
@@ -29,8 +29,9 @@ export async function connect_room(url, token, handler) {
         autoSubscribe: false,
     });
 
+    const room_name = room.name;
     // Add to active rooms set
-    activeRooms.add(room);
+    activeRooms.set(room_name, room);
 
     // set up microphone
     if (currentMicTrack) {
@@ -52,8 +53,6 @@ export async function connect_room(url, token, handler) {
         }
     }
 
-    const room_name = room.name;
-
     // check existing streams
     const participants = Array.from(room.remoteParticipants.values());
     for (const participant of participants) {
@@ -73,7 +72,11 @@ export async function connect_room(url, token, handler) {
         }
     }
 
-    return room;
+    return room.name;
+}
+
+export function get_room(room_name) {
+    return activeRooms.get(room_name);
 }
 
 export function set_microphone_enabled(enabled) {
@@ -83,7 +86,7 @@ export function set_microphone_enabled(enabled) {
             currentMicTrack = true;
 
             // Publish to all active rooms
-            const publishPromises = Array.from(activeRooms).map(async (room) => {
+            const publishPromises = activeRooms.forEach(async (room_name, room, map) => {
                 log(`publish ${room.name}`);
                 const audioTrack = await LivekitClient.createLocalAudioTrack({
                     echoCancellation: true,
@@ -111,7 +114,7 @@ export function set_microphone_enabled(enabled) {
     } else {
         // Disable microphone
         if (currentMicTrack) {
-            const allRoomUnpublishPromises = Array.from(activeRooms).map(async (room) => {
+            const allRoomUnpublishPromises = activeRooms.forEach(async (room_name, room, map) => {
                 const audioPubs = Array.from(room.localParticipant.trackPublications.values())
                     .filter(pub => pub.kind === 'audio');
 
@@ -173,7 +176,9 @@ export async function unpublish_track(room, sid) {
 
 export async function close_room(room) {
     // Remove from active rooms set
-    activeRooms.delete(room);
+    if (!activeRooms.delete(room)) {
+        error("Room ", room.name, "not an active room");
+    }
 
     // If mic is active, clean up
     if (currentMicTrack) {
@@ -422,7 +427,7 @@ export function get_audio_participants() {
 }
 
 export function subscribe_channel(roomName, participantId, subscribe) {
-    const room = Array.from(activeRooms).find(room => room.name === roomName);
+    const room = activeRooms.get(room.name);
     if (!room) {
         warn(`couldn't find room ${roomName} for subscription`);
         return;
@@ -446,7 +451,7 @@ export function subscribe_channel(roomName, participantId, subscribe) {
 }
 
 export function streamer_subscribe_channel(roomName, subscribe_audio, subscribe_video) {
-    const room = Array.from(activeRooms).find(room => room.name === roomName);
+    const room = activeRooms.get(room.name);
     if (!room) {
         warn(`couldn't find room ${roomName} for subscription`);
         return;

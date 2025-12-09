@@ -28,6 +28,9 @@ extern "C" {
     ) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen]
+    fn get_room(room_name: &str) -> JsValue;
+
+    #[wasm_bindgen]
     fn room_name(room: &JsValue) -> String;
 
     #[wasm_bindgen(catch)]
@@ -271,10 +274,11 @@ async fn connect_and_handle_session(
         });
     }) as Box<dyn FnMut(JsValue)>);
 
-    let room = connect_room(address, token, &event_handler)
+    let room_name = connect_room(address, token, &event_handler)
         .await
+        .map(|room_name| room_name.as_string().unwrap())
         .map_err(|e| anyhow::anyhow!("Failed to connect room: {:?}", e))?;
-    let room_name = room_name(&room);
+    let room = get_room(&room_name);
 
     // Handle outgoing messages
     'stream: loop {
