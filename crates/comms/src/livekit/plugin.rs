@@ -4,15 +4,12 @@ use common::structs::MicState;
 use dcl_component::proto_components::kernel::comms::rfc4;
 use tokio::runtime::Builder;
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::livekit::native::{connect_livekit, MicPlugin};
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::{connect_livekit, MicPlugin};
-#[cfg(not(target_arch = "wasm32"))]
-use crate::livekit::{
-    native::{connect_livekit, MicPlugin},
-    LivekitRuntime,
-};
 use crate::{
-    livekit::{room::LivekitRoomPlugin, LivekitTransport, StartLivekit},
+    livekit::{room::LivekitRoomPlugin, LivekitRuntime, LivekitTransport, StartLivekit},
     profile::CurrentUserProfile,
     NetworkMessage, Transport, TransportType,
 };

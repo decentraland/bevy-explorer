@@ -286,7 +286,7 @@ async fn connect_and_handle_session(
 }
 
 // Define structures for the events coming from JavaScript
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum RoomEvent {
     DataReceived {
@@ -342,7 +342,7 @@ impl OptionFromWasmAbi for RoomEvent {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Participant {
     pub identity: String,

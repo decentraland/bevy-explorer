@@ -6,27 +6,21 @@ use ethers_core::types::H160;
 use futures_lite::StreamExt;
 use kira::sound::streaming::StreamingSoundData;
 use livekit::webrtc::{native::yuv_helper, prelude::VideoBuffer};
-use prost::Message;
 use tokio::{
     sync::{
-        mpsc::{error::TryRecvError, Receiver, Sender},
+        mpsc::{Receiver, Sender},
         Mutex,
     },
     task::JoinHandle,
 };
 
-use common::{
-    structs::{AudioDecoderError, MicState},
-    util::AsH160,
-};
-use dcl_component::proto_components::kernel::comms::rfc4;
+use common::structs::{AudioDecoderError, MicState};
 
 use crate::{
     global_crdt::{LocalAudioFrame, LocalAudioSource},
     livekit::{
         kira_bridge::kira_thread, LivekitConnection, LivekitRoom, LivekitRuntime, LivekitTransport,
     },
-    livekit::{LivekitConnection, LivekitRoom, LivekitRuntime, LivekitTransport},
     ChannelControl, NetworkMessage,
 };
 
@@ -34,10 +28,7 @@ use livekit::{
     id::{ParticipantIdentity, TrackSid},
     options::TrackPublishOptions,
     prelude::RemoteTrackPublication,
-    track::{
-        LocalAudioTrack, LocalTrack, RemoteAudioTrack, RemoteTrack, RemoteVideoTrack, TrackKind,
-        TrackSource,
-    },
+    track::{LocalAudioTrack, LocalTrack, RemoteTrack, RemoteVideoTrack, TrackKind, TrackSource},
     webrtc::{
         audio_source::native::NativeAudioSource,
         prelude::{AudioFrame, AudioSourceOptions, I420Buffer, RtcAudioSource},
@@ -191,7 +182,6 @@ pub(super) fn connect_livekit(
         (Entity, &mut LivekitTransport, &LivekitRoom, &LivekitRuntime),
         Without<LivekitConnection>,
     >,
-    player_state: Res<GlobalCrdtState>,
     mic: Res<crate::global_crdt::LocalAudioSource>,
 ) {
     for (transport_id, mut new_transport, livekit_room, livekit_runtime) in new_livekits.iter_mut()
@@ -199,17 +189,14 @@ pub(super) fn connect_livekit(
         debug!("spawn lk connect");
         let receiver = new_transport.receiver.take().unwrap();
         let control_receiver = new_transport.control_receiver.take().unwrap();
-        let sender = player_state.get_sender();
         let livekit_room = livekit_room.get_room();
         let livekit_runtime = livekit_runtime.clone();
 
         let subscription = mic.subscribe();
         std::thread::spawn(move || {
             livekit_handler(
-                transport_id,
                 receiver,
                 control_receiver,
-                sender,
                 subscription,
                 livekit_room,
                 livekit_runtime,
@@ -221,10 +208,8 @@ pub(super) fn connect_livekit(
 }
 
 fn livekit_handler(
-    transport_id: Entity,
     receiver: Receiver<NetworkMessage>,
     control_receiver: Receiver<ChannelControl>,
-    sender: Sender<PlayerUpdate>,
     mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
     room: Arc<Room>,
     runtime: LivekitRuntime,
@@ -234,10 +219,8 @@ fn livekit_handler(
 
     loop {
         if let Err(e) = livekit_handler_inner(
-            transport_id,
             receiver.clone(),
             control_receiver.clone(),
-            sender.clone(),
             mic.resubscribe(),
             room.clone(),
             runtime.clone(),
@@ -253,10 +236,8 @@ fn livekit_handler(
 }
 
 fn livekit_handler_inner(
-    transport_id: Entity,
     app_rx: Arc<Mutex<Receiver<NetworkMessage>>>,
     control_rx: Arc<Mutex<Receiver<ChannelControl>>>,
-    sender: Sender<PlayerUpdate>,
     mut mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
     livekit_room: Arc<Room>,
     runtime: LivekitRuntime,
@@ -271,7 +252,6 @@ fn livekit_handler_inner(
     let rt2 = runtime.clone();
 
     let task = runtime.spawn(async move {
-        let mut network_rx = livekit_room.subscribe();
         let local_participant = livekit_room.local_participant();
 
         let mut native_source: Option<NativeAudioSource> = None;
@@ -319,134 +299,11 @@ fn livekit_handler_inner(
             }
         });
 
-        let mut track_tasks: HashMap<TrackSid, JoinHandle<()>> = HashMap::new();
 
         let mut app_rx = app_rx.lock().await;
         let mut control_rx = control_rx.lock().await;
         'stream: loop {
             tokio::select!(
-                incoming = network_rx.recv() => {
-                    debug!("in: {:?}", incoming);
-                    let Some(incoming) = incoming else {
-                        debug!("network pipe broken, exiting loop");
-                        break 'stream;
-                    };
-
-                    match incoming {
-                        livekit::RoomEvent::Connected { participants_with_tracks } => {
-                            for (participant, publications) in participants_with_tracks {
-                                if let Some(address) = participant.identity().0.as_str().as_h160() {
-                                    for publication in publications {
-                                        debug!("initial pub: {publication:?}");
-                                        if matches!(publication.kind(), TrackKind::Audio) {
-                                            let _ = sender.send(PlayerUpdate {
-                                                transport_id,
-                                                message: PlayerMessage::AudioStreamAvailable { transport: transport_id },
-                                                address,
-                                            }).await;
-                                        }
-                                    }
-                                } else if participant.identity().as_str().ends_with("-streamer") {
-                                    for publication in publications {
-                                        publication.set_subscribed(true);
-                                    }
-                                }
-                            }
-                        }
-                        livekit::RoomEvent::DataReceived { payload, participant, .. } => {
-                            if let Some(participant) = participant {
-                                if let Some(address) = participant.identity().0.as_str().as_h160() {
-                                    let packet = match rfc4::Packet::decode(payload.as_slice()) {
-                                        Ok(packet) => packet,
-                                        Err(e) => {
-                                            warn!("unable to parse packet body: {e}");
-                                            continue;
-                                        }
-                                    };
-                                    let Some(message) = packet.message else {
-                                        warn!("received empty packet body");
-                                        continue;
-                                    };
-                                    debug!("[{}] received [{}] packet {message:?} from {address}", transport_id, packet.protocol_version);
-                                    if let Err(e) = sender.send(PlayerUpdate {
-                                        transport_id,
-                                        message: PlayerMessage::PlayerData(message),
-                                        address,
-                                    }).await {
-                                        warn!("app pipe broken ({e}), existing loop");
-                                        break 'stream;
-                                    }
-                                }
-                            }
-                        },
-                        livekit::RoomEvent::TrackPublished { publication, participant } => {
-                            debug!("pub: {publication:?}");
-                            if let Some(address) = participant.identity().0.as_str().as_h160() {
-                                // publication.
-                                if matches!(publication.kind(), TrackKind::Audio) {
-                                    let _ = sender.send(PlayerUpdate {
-                                        transport_id,
-                                        message: PlayerMessage::AudioStreamAvailable { transport: transport_id },
-                                        address,
-                                    }).await;
-                                }
-                            } else if participant.identity().as_str().ends_with("-streamer") {
-                                publication.set_subscribed(true);
-                            }
-                        }
-                        livekit::RoomEvent::TrackUnpublished { publication, participant } => {
-                            debug!("unpub: {publication:?}");
-                            if let Some(address) = participant.identity().0.as_str().as_h160() {
-                                if matches!(publication.kind(), TrackKind::Audio) {
-                                    let _ = sender.send(PlayerUpdate {
-                                        transport_id,
-                                        message: PlayerMessage::AudioStreamUnavailable { transport: transport_id },
-                                        address,
-                                    }).await;
-                                }
-                            }
-                        }
-                        livekit::RoomEvent::TrackSubscribed { track, publication, participant } => {
-                            if let Some(address) = participant.identity().0.as_str().as_h160() {
-                                let sid = track.sid();
-                                match track {
-                                    livekit::track::RemoteTrack::Audio(audio) => {
-                                        let Some(channel) = audio_channels.remove(&address) else {
-                                            warn!("no channel for subscribed audio");
-                                            publication.set_subscribed(false);
-                                            continue;
-                                        };
-                                        let handle = rt2.spawn(kira_thread(audio, publication, channel));
-                                        track_tasks.insert(sid, handle);
-
-                                    },
-                                    _ => warn!("not processing video tracks"),
-                                }
-                            }
-                        }
-                        livekit::RoomEvent::TrackUnsubscribed{ track, .. } => {
-                            if let Some(handle) = track_tasks.remove(&track.sid()) {
-                                handle.abort();
-                            }
-                        }
-                        livekit::RoomEvent::ParticipantConnected(participant) => {
-                            let meta = participant.metadata();
-                            if !meta.is_empty() {
-                                if let Some(address) = participant.identity().0.as_str().as_h160() {
-                                    if let Err(e) = sender.send(PlayerUpdate {
-                                        transport_id,
-                                        message: PlayerMessage::MetaData(meta),
-                                        address,
-                                    }).await {
-                                        warn!("app pipe broken ({e}), existing loop");
-                                        break 'stream;
-                                    }
-                                }
-                            }
-                        }
-                        _ => { debug!("Event: {:?}", incoming); }
-                    };
-                }
                 outgoing = app_rx.recv() => {
                     let Some(outgoing) = outgoing else {
                         debug!("app pipe broken, exiting loop");
