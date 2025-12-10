@@ -63,6 +63,14 @@ pub fn start_livekit(
                 .build()
                 .unwrap(),
         );
+        #[cfg(target_arch = "wasm32")]
+        let runtime = Arc::new(
+            Builder::new_current_thread()
+                .worker_threads(1)
+                .enable_all()
+                .build()
+                .unwrap(),
+        );
 
         commands.entity(ev.entity).try_insert((
             Transport {
@@ -77,7 +85,6 @@ pub fn start_livekit(
                 control_receiver: Some(control_receiver),
                 retries: 0,
             },
-            #[cfg(not(target_arch = "wasm32"))]
             LivekitRuntime(runtime),
         ));
     }
