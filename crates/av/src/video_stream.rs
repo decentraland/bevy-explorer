@@ -2,12 +2,12 @@ use std::path::Path;
 
 use bevy::prelude::*;
 use common::structs::AudioDecoderError;
-use comms::global_crdt::ChannelControl;
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::format::input;
 use ipfs::{IpfsIo, IpfsResource};
 use kira::sound::streaming::StreamingSoundData;
-use tokio::sync::mpsc::Sender;
+#[cfg(feature = "livekit")]
+use {comms::global_crdt::ChannelControl, tokio::sync::mpsc::Sender};
 
 use crate::{
     audio_context::{AudioContext, AudioError},
@@ -184,6 +184,7 @@ pub fn av_thread_inner(
     }
 }
 
+#[cfg(feature = "livekit")]
 pub fn streamer_sinks(
     control_channel: Sender<ChannelControl>,
     source: String,
