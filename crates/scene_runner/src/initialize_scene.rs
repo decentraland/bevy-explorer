@@ -26,7 +26,7 @@ use dcl_component::{
 };
 use ipfs::{
     ipfs_path::IpfsPath, ActiveEntityTask, CurrentRealm, EntityDefinition, IpfsAssetServer,
-    IpfsResource, SceneIpfsLocation, SceneJsFile,
+    IpfsResource, RealmInitialLocation, SceneIpfsLocation, SceneJsFile,
 };
 use scene_material::BoundRegion;
 use system_bridge::{LiveSceneInfo, SystemApi, SystemBridge};
@@ -35,8 +35,8 @@ use wallet::Wallet;
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets, SceneUpdates};
 use crate::{
     bounds_calc::scene_regions, renderer_context::RendererSceneContext,
-    update_world::ComponentTracker, ContainerEntity, DeletedSceneEntities, SceneEntity,
-    SceneThreadHandle,
+    update_world::ComponentTracker, vec3_to_parcel, ContainerEntity, DeletedSceneEntities,
+    OutOfWorld, SceneEntity, SceneThreadHandle,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -838,12 +838,23 @@ pub fn parcels_in_range(
 }
 
 pub fn process_realm_change(
+    mut commands: Commands,
     current_realm: Res<CurrentRealm>,
     mut live_scenes: ResMut<LiveScenes>,
     mut segment_config: Option<ResMut<SegmentConfig>>,
     scenes: Query<&RendererSceneContext>,
+    player: Query<Entity, With<PrimaryUser>>,
 ) {
     if current_realm.is_changed() {
+        // move to oow on realm change
+        if let Some(mut commands) = player
+            .single()
+            .ok()
+            .and_then(|p| commands.get_entity(p).ok())
+        {
+            commands.try_insert(OutOfWorld);
+        }
+
         info!(
             "realm change `{}` / `{}`! purging scenes",
             current_realm.address, current_realm.about_url
@@ -899,7 +910,7 @@ pub fn process_realm_change(
 #[allow(clippy::type_complexity)]
 fn load_active_entities(
     current_realm: Res<CurrentRealm>,
-    focus: Query<&GlobalTransform, With<PrimaryUser>>,
+    player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
     range: Res<SceneLoadDistance>,
     mut pointers: ResMut<ScenePointers>,
     mut pointer_request: Local<Option<(HashSet<IVec2>, HashMap<String, String>, ActiveEntityTask)>>,
@@ -908,7 +919,20 @@ fn load_active_entities(
     mut consecutive_fetch_fail_count: Local<usize>,
     mut commands: Commands,
     mut stored_parcels: Local<(IVec2, Vec<(f32, IVec2)>)>,
+    mut teleport_target: ResMut<RealmInitialLocation>,
+    mut pending_teleport: Local<bool>,
 ) {
+    let teleport_components = |parcel: IVec2| -> (Transform, OutOfWorld) {
+        (
+            Transform::from_translation(Vec3::new(
+                (parcel.x as f32 + 0.5) * 16.0,
+                0.0,
+                (parcel.y as f32 + 0.5) * -16.0,
+            )),
+            OutOfWorld,
+        )
+    };
+
     if current_realm.is_changed() {
         // drop current request
         *pointer_request = None;
@@ -944,7 +968,66 @@ fn load_active_entities(
         }
         pointers.set_realm(bounds_min, bounds_max);
         global_crdt.set_bounds(bounds_min, bounds_max);
+
+        if !current_realm.about_url.is_empty() && *teleport_target == RealmInitialLocation::Base {
+            let has_scene_urns = !current_realm
+                .config
+                .scenes_urn
+                .as_ref()
+                .is_none_or(Vec::is_empty);
+
+            if !has_scene_urns {
+                // we want to go to base but there are no specific parcels
+                // take nearest parcel to current that is within map bounds
+                if let Ok((player_entity, player_transform)) = player.single() {
+                    if let Ok(mut commands) = commands.get_entity(player_entity) {
+                        let initial_parcel = vec3_to_parcel(player_transform.translation());
+                        let parcel = initial_parcel.clamp(bounds_min, bounds_max);
+                        commands.insert(teleport_components(parcel));
+                        debug!(
+                            "change to no scene realm -> none ({} in {}/{} = {})",
+                            vec3_to_parcel(player_transform.translation()),
+                            bounds_min,
+                            bounds_max,
+                            parcel
+                        );
+                        *teleport_target = RealmInitialLocation::None;
+                    }
+                }
+            } else {
+                // we will take first given scene when it is resolved
+                debug!("set to base, with scenes -> pending");
+                *pending_teleport = true;
+            }
+        }
     }
+
+    let Ok((player_entity, focus)) = player.single() else {
+        return;
+    };
+
+    let teleport_on_resolve = match *teleport_target {
+        RealmInitialLocation::None => {
+            *pending_teleport = false;
+            None
+        }
+        RealmInitialLocation::Base => {
+            if *pending_teleport {
+                error!("pending ...");
+                Some(
+                    current_realm
+                        .config
+                        .scenes_urn
+                        .as_ref()
+                        .and_then(|urns| urns.first())
+                        .cloned()
+                        .unwrap_or(String::default()),
+                )
+            } else {
+                None
+            }
+        }
+    };
 
     if pointer_request.is_none()
         && !current_realm.address.is_empty()
@@ -955,10 +1038,6 @@ fn load_active_entities(
             .scenes_urn
             .as_ref()
             .is_none_or(Vec::is_empty);
-
-        let Ok(focus) = focus.single() else {
-            return;
-        };
 
         let focus_parcel = (focus.translation().xz() * Vec2::new(1.0 / 16.0, -1.0 / 16.0))
             .floor()
@@ -1017,17 +1096,32 @@ fn load_active_entities(
             let available_hashes = pointers
                 .pointers
                 .iter()
-                .flat_map(|(_, ptr)| match ptr {
+                .flat_map(|(parcel, ptr)| match ptr {
                     PointerResult::Nothing => None,
                     PointerResult::Exists { realm, hash, .. } => {
                         if realm == &current_realm.address {
-                            Some(hash)
+                            Some((hash, *parcel))
                         } else {
                             None
                         }
                     }
                 })
-                .collect::<HashSet<_>>();
+                .collect::<HashMap<_, _>>();
+
+            // make sure we still teleport even if we already have the hash
+            if let Some(teleport_on_resolve) = teleport_on_resolve.as_ref() {
+                if let Some(parcel) = available_hashes.get(teleport_on_resolve) {
+                    if let Some(mut commands) = player
+                        .single()
+                        .ok()
+                        .and_then(|(p, _)| commands.get_entity(p).ok())
+                    {
+                        commands.insert(teleport_components(*parcel));
+                        debug!("already got the hash -> none");
+                        *teleport_target = RealmInitialLocation::None;
+                    }
+                }
+            }
 
             let required_hashes_and_urns = current_realm
                 .config
@@ -1044,7 +1138,7 @@ fn load_active_entities(
                                 .map(|hash| (hash, path, urn))
                         })
                 })
-                .filter(|(hash, ..)| !available_hashes.contains(hash))
+                .filter(|(hash, ..)| !available_hashes.contains_key(hash))
                 .collect::<Vec<_>>();
 
             let required_paths = required_hashes_and_urns
@@ -1121,12 +1215,34 @@ fn load_active_entities(
                 }
             }
 
-            for parcel in meta.scene.parcels.iter().filter_map(|pointer| {
-                let (x, y) = pointer.split_once(',').unwrap();
-                let x = x.parse::<i32>().ok()?;
-                let y = y.parse::<i32>().ok()?;
-                Some(IVec2::new(x, y))
-            }) {
+            let parcels = meta
+                .scene
+                .parcels
+                .iter()
+                .filter_map(|pointer| {
+                    let (x, y) = pointer.split_once(',').unwrap();
+                    let x = x.parse::<i32>().ok()?;
+                    let y = y.parse::<i32>().ok()?;
+                    Some(IVec2::new(x, y))
+                })
+                .collect::<Vec<_>>();
+
+            // jump to target if we just resolved it
+            if teleport_on_resolve
+                .as_ref()
+                .is_some_and(|t| t.contains(&active_entity.id))
+            {
+                if let Ok(mut commands) = commands.get_entity(player_entity) {
+                    let parcel = parcels.first().copied().unwrap_or_default();
+                    commands.insert(teleport_components(parcel));
+                    debug!("resolved the target -> none (@ {parcel})");
+                }
+                *teleport_target = RealmInitialLocation::None;
+            } else if let Some(target) = teleport_on_resolve.as_ref() {
+                debug!("resolved {} != target {}", active_entity.id, target);
+            }
+
+            for parcel in parcels {
                 requested_parcels.remove(&parcel);
                 if let Some(new_bounds) = pointers.insert(
                     parcel,
