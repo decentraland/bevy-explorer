@@ -17,13 +17,13 @@ const participantAudioSids = new Map();
 const participantVideoSids = new Map();
 var audioContext = null;
 
-export async function connect_room(url, token, handler) {
+export async function connect_room(url, token) {
     const room = new LivekitClient.Room({
         adaptiveStream: false,
         dynacast: false,
     });
 
-    set_room_event_handler(room, handler)
+    set_room_event_handler(room)
 
     await room.connect(url, token, {
         autoSubscribe: false,
@@ -72,11 +72,15 @@ export async function connect_room(url, token, handler) {
         }
     }
 
-    return room.name;
+    return room_name;
 }
 
 export function get_room(room_name) {
     return activeRooms.get(room_name);
+}
+
+export function recv_room_event(room) {
+    return room.room_event_queue.shift();
 }
 
 export function set_microphone_enabled(enabled) {
@@ -194,11 +198,13 @@ export async function close_room(room) {
     await room.disconnect();
 }
 
-export function set_room_event_handler(room, handler) {
+export function set_room_event_handler(room) {
     const room_name = room.name;
+    room.room_event_queue = Array();
+    const room_event_queue_pointer = room.room_event_queue;
 
     room.on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
-        handler({
+        room_event_queue_pointer.push({
             type: 'dataReceived',
             room_name: room_name,
             payload,
@@ -208,10 +214,9 @@ export function set_room_event_handler(room, handler) {
             }
         });
     });
-
     room.on(LivekitClient.RoomEvent.TrackPublished, (publication, participant) => {
         log(`${room.name} ${participant.identity} rec pub ${publication.kind}`);
-        handler({
+        room_event_queue_pointer.push({
             type: 'trackPublished',
             room_name: room_name,
             kind: publication.kind,
@@ -219,9 +224,8 @@ export function set_room_event_handler(room, handler) {
                 identity: participant.identity,
                 metadata: participant.metadata || ''
             }
-        })
+        });
     });
-
     room.on(LivekitClient.RoomEvent.TrackUnpublished, (publication, participant) => {
         log(`${room.name} ${participant.identity} rec unpub ${publication.kind}`);
 
@@ -240,7 +244,7 @@ export function set_room_event_handler(room, handler) {
             log(`no cleanup for ${key}`);
         }
 
-        handler({
+        room_event_queue_pointer.push({
             type: 'trackUnpublished',
             room_name: room_name,
             kind: publication.kind,
@@ -248,9 +252,8 @@ export function set_room_event_handler(room, handler) {
                 identity: participant.identity,
                 metadata: participant.metadata || ''
             }
-        })
+        });
     });
-
     room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
         log(`${room.name} ${participant.identity} rec sub ${publication.kind} (track sid ${track.sid})`);
         // For audio tracks, set up spatial audio
@@ -312,7 +315,7 @@ export function set_room_event_handler(room, handler) {
             participantVideoSids.set(participant.identity, { room: room.name, video: key })
         }
 
-        handler({
+        room_event_queue_pointer.push({
             type: 'trackSubscribed',
             room_name: room_name,
             participant: {
@@ -321,7 +324,6 @@ export function set_room_event_handler(room, handler) {
             }
         });
     });
-
     room.on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
         log(`${room.name} ${participant.identity} rec unsub ${publication.kind} (track sid ${track.sid})`);
         if (participantAudioSids.get(participant.identity)?.room === room.name) {
@@ -351,8 +353,7 @@ export function set_room_event_handler(room, handler) {
             trackRigs.delete(key);
         }
 
-
-        handler({
+        room_event_queue_pointer.push({
             type: 'trackUnsubscribed',
             room_name: room_name,
             participant: {
@@ -361,9 +362,8 @@ export function set_room_event_handler(room, handler) {
             }
         });
     });
-
     room.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
-        handler({
+        room_event_queue_pointer.push({
             type: 'participantConnected',
             room_name: room_name,
             participant: {
@@ -372,11 +372,10 @@ export function set_room_event_handler(room, handler) {
             }
         });
     });
-
     room.on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
         participantAudioSids.delete(participant.identity);
         participantVideoSids.delete(participant.identity);
-        handler({
+        room_event_queue_pointer.push({
             type: 'participantDisconnected',
             room_name: room_name,
             participant: {

@@ -1,18 +1,17 @@
-use bevy::{
-    platform::{collections::HashMap, hash::FixedHasher},
-    prelude::*,
-};
+use bevy::prelude::*;
 use ethers_core::types::H160;
-use http::Uri;
 use prost::Message;
 use serde::Deserialize;
 use tokio::sync::mpsc::{Receiver, Sender};
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::{
+    convert::{FromWasmAbi, IntoWasmAbi, OptionFromWasmAbi},
+    prelude::*,
+};
 use wasm_bindgen_futures::spawn_local;
 
 use crate::{
     global_crdt::{ChannelControl, GlobalCrdtState, PlayerMessage, PlayerUpdate},
-    livekit::{LivekitConnection, LivekitTransport},
+    livekit::{LivekitConnection, LivekitRoom, LivekitTransport},
     NetworkMessage,
 };
 use common::{structs::MicState, util::AsH160};
@@ -21,17 +20,16 @@ use dcl_component::proto_components::kernel::comms::rfc4;
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
 extern "C" {
     #[wasm_bindgen(catch)]
-    async fn connect_room(
-        url: &str,
-        token: &str,
-        handler: &Closure<dyn FnMut(JsValue)>,
-    ) -> Result<JsValue, JsValue>;
+    pub async fn connect_room(url: &str, token: &str) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen]
-    fn get_room(room_name: &str) -> JsValue;
+    pub fn get_room(room_name: &str) -> JsValue;
 
     #[wasm_bindgen]
     fn room_name(room: &JsValue) -> String;
+
+    #[wasm_bindgen]
+    pub fn recv_room_event(room: &JsValue) -> Option<RoomEvent>;
 
     #[wasm_bindgen(catch)]
     async fn publish_data(
@@ -111,6 +109,7 @@ impl Plugin for MicPlugin {
         app.init_resource::<MicState>();
         app.add_systems(Update, update_mic_state);
         app.add_systems(Update, locate_foreign_streams);
+        app.add_systems(Update, pull_room_events);
     }
 }
 
@@ -141,20 +140,21 @@ fn update_mic_state(
 #[allow(clippy::type_complexity)]
 pub fn connect_livekit(
     mut commands: Commands,
-    mut new_livekits: Query<(Entity, &mut LivekitTransport), Without<LivekitConnection>>,
+    mut new_livekits: Query<
+        (Entity, &mut LivekitTransport, &LivekitRoom),
+        Without<LivekitConnection>,
+    >,
     player_state: Res<GlobalCrdtState>,
 ) {
-    for (transport_id, mut new_transport) in new_livekits.iter_mut() {
+    for (transport_id, mut new_transport, livekit_room) in new_livekits.iter_mut() {
         debug!("spawn lk connect");
-        let remote_address = new_transport.address.to_owned();
         let receiver = new_transport.receiver.take().unwrap();
         let control_receiver = new_transport.control_receiver.take().unwrap();
         let sender = player_state.get_sender();
 
         // For WASM, we directly call the handler which will spawn the async task
         if let Err(e) = livekit_handler_inner(
-            transport_id,
-            &remote_address,
+            livekit_room.room_name.clone(),
             receiver,
             control_receiver,
             sender,
@@ -167,34 +167,14 @@ pub fn connect_livekit(
 }
 
 fn livekit_handler_inner(
-    transport_id: Entity,
-    remote_address: &str,
+    room_name: String,
     app_rx: Receiver<NetworkMessage>,
     control_rx: Receiver<ChannelControl>,
     sender: Sender<PlayerUpdate>,
 ) -> Result<(), anyhow::Error> {
-    debug!(">> lk connect async : {}", remote_address);
-
-    let url = Uri::try_from(remote_address).unwrap();
-    let address = format!(
-        "{}://{}{}",
-        url.scheme_str().unwrap_or_default(),
-        url.host().unwrap_or_default(),
-        url.path()
-    );
-    let params: HashMap<_, _, FixedHasher> =
-        HashMap::from_iter(url.query().unwrap_or_default().split('&').flat_map(|par| {
-            par.split_once('=')
-                .map(|(a, b)| (a.to_owned(), b.to_owned()))
-        }));
-    debug!("{:?}", params);
-    let token = params.get("access_token").cloned().unwrap_or_default();
-
     // In WASM, we can't block or create threads, so we just spawn the async task
     spawn_local(async move {
-        if let Err(e) =
-            run_livekit_session(transport_id, &address, &token, app_rx, control_rx, sender).await
-        {
+        if let Err(e) = run_livekit_session(room_name, app_rx, control_rx, sender).await {
             error!("LiveKit session error: {:?}", e);
         }
     });
@@ -203,9 +183,7 @@ fn livekit_handler_inner(
 }
 
 async fn run_livekit_session(
-    transport_id: Entity,
-    address: &str,
-    token: &str,
+    room_name: String,
     mut app_rx: Receiver<NetworkMessage>,
     mut control_rx: Receiver<ChannelControl>,
     sender: Sender<PlayerUpdate>,
@@ -217,16 +195,7 @@ async fn run_livekit_session(
             break;
         }
 
-        match connect_and_handle_session(
-            transport_id,
-            address,
-            token,
-            &mut app_rx,
-            &mut control_rx,
-            &sender,
-        )
-        .await
-        {
+        match connect_and_handle_session(room_name.clone(), &mut app_rx, &mut control_rx).await {
             Ok(_) => {
                 debug!("LiveKit session ended normally");
                 // Check if we should reconnect
@@ -256,28 +225,10 @@ async fn run_livekit_session(
 }
 
 async fn connect_and_handle_session(
-    transport_id: Entity,
-    address: &str,
-    token: &str,
+    room_name: String,
     app_rx: &mut Receiver<NetworkMessage>,
     control_rx: &mut Receiver<ChannelControl>,
-    sender: &Sender<PlayerUpdate>,
 ) -> Result<(), anyhow::Error> {
-    let sender_clone = sender.clone();
-
-    // Set up event handler
-    let event_handler = Closure::wrap(Box::new(move |event: JsValue| {
-        let sender = sender_clone.clone();
-
-        spawn_local(async move {
-            handle_room_event(event, transport_id, sender).await;
-        });
-    }) as Box<dyn FnMut(JsValue)>);
-
-    let room_name = connect_room(address, token, &event_handler)
-        .await
-        .map(|room_name| room_name.as_string().unwrap())
-        .map_err(|e| anyhow::anyhow!("Failed to connect room: {:?}", e))?;
     let room = get_room(&room_name);
 
     // Handle outgoing messages
@@ -335,10 +286,9 @@ async fn connect_and_handle_session(
 }
 
 // Define structures for the events coming from JavaScript
-#[expect(dead_code, reason = "Some fields exist for consistency")]
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
-enum RoomEvent {
+pub enum RoomEvent {
     DataReceived {
         room_name: String,
         participant: Participant,
@@ -372,100 +322,130 @@ enum RoomEvent {
     },
 }
 
+impl wasm_bindgen::describe::WasmDescribe for RoomEvent {
+    fn describe() {
+        JsValue::describe()
+    }
+}
+
+impl FromWasmAbi for RoomEvent {
+    type Abi = <JsValue as IntoWasmAbi>::Abi;
+
+    unsafe fn from_abi(abi: Self::Abi) -> Self {
+        serde_wasm_bindgen::from_value(JsValue::from_abi(abi)).unwrap()
+    }
+}
+
+impl OptionFromWasmAbi for RoomEvent {
+    fn is_none(abi: &Self::Abi) -> bool {
+        [0, JsValue::NULL.into_abi(), JsValue::UNDEFINED.into_abi()].contains(abi)
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Participant {
-    identity: String,
+    pub identity: String,
     #[serde(default)]
-    metadata: String,
+    pub metadata: String,
 }
 
-async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<PlayerUpdate>) {
-    // Try to deserialize the event using serde_wasm_bindgen
-    let event_result: Result<RoomEvent, _> = serde_wasm_bindgen::from_value(event);
+fn pull_room_events(
+    livekit_rooms: Query<(Entity, &LivekitRoom)>,
+    player_state: Res<GlobalCrdtState>,
+) {
+    let player_sender = player_state.get_sender();
 
-    match event_result {
-        Ok(room_event) => match room_event {
-            RoomEvent::DataReceived {
-                payload,
-                participant,
-                ..
-            } => {
-                if let Some(address) = participant.identity.as_h160() {
-                    if let Ok(packet) = rfc4::Packet::decode(payload.as_slice()) {
-                        if let Some(message) = packet.message {
-                            let _ = sender
-                                .send(PlayerUpdate {
-                                    transport_id,
-                                    message: PlayerMessage::PlayerData(message),
-                                    address,
-                                })
-                                .await;
-                        }
-                    }
-                }
+    for (entity, livekit_room) in livekit_rooms {
+        let room_name = livekit_room.room_name.clone();
+        let sender = player_sender.clone();
+        spawn_local(async move {
+            let room = get_room(&room_name);
+            while let Some(room_event) = recv_room_event(&room) {
+                handle_room_event(room_event, entity, &sender).await;
             }
-            RoomEvent::TrackPublished {
-                participant, kind, ..
-            } => {
-                debug!("pub {} {}", participant.identity, kind);
-                if let Some(address) = participant.identity.as_h160() {
-                    if kind == "audio" {
+        });
+    }
+}
+
+async fn handle_room_event(event: RoomEvent, transport_id: Entity, sender: &Sender<PlayerUpdate>) {
+    match event {
+        RoomEvent::DataReceived {
+            payload,
+            participant,
+            ..
+        } => {
+            if let Some(address) = participant.identity.as_h160() {
+                if let Ok(packet) = rfc4::Packet::decode(payload.as_slice()) {
+                    if let Some(message) = packet.message {
                         let _ = sender
                             .send(PlayerUpdate {
                                 transport_id,
-                                message: PlayerMessage::AudioStreamAvailable {
-                                    transport: transport_id,
-                                },
+                                message: PlayerMessage::PlayerData(message),
                                 address,
                             })
                             .await;
                     }
                 }
             }
-            RoomEvent::TrackUnpublished {
-                participant, kind, ..
-            } => {
-                debug!("unpub {} {}", participant.identity, kind);
-                if let Some(address) = participant.identity.as_h160() {
-                    if kind == "audio" {
-                        let _ = sender
-                            .send(PlayerUpdate {
-                                transport_id,
-                                message: PlayerMessage::AudioStreamUnavailable {
-                                    transport: transport_id,
-                                },
-                                address,
-                            })
-                            .await;
-                    }
+        }
+        RoomEvent::TrackPublished {
+            participant, kind, ..
+        } => {
+            debug!("pub {} {}", participant.identity, kind);
+            if let Some(address) = participant.identity.as_h160() {
+                if kind == "audio" {
+                    let _ = sender
+                        .send(PlayerUpdate {
+                            transport_id,
+                            message: PlayerMessage::AudioStreamAvailable {
+                                transport: transport_id,
+                            },
+                            address,
+                        })
+                        .await;
                 }
             }
-            RoomEvent::TrackSubscribed { .. } => {
-                debug!("Track subscribed event - audio is handled in JavaScript");
-            }
-            RoomEvent::TrackUnsubscribed { .. } => {
-                debug!("Track unsubscribed event");
-            }
-            RoomEvent::ParticipantConnected { participant, .. } => {
-                if let Some(address) = participant.identity.as_h160() {
-                    if !participant.metadata.is_empty() {
-                        let _ = sender
-                            .send(PlayerUpdate {
-                                transport_id,
-                                message: PlayerMessage::MetaData(participant.metadata),
-                                address,
-                            })
-                            .await;
-                    }
+        }
+        RoomEvent::TrackUnpublished {
+            participant, kind, ..
+        } => {
+            debug!("unpub {} {}", participant.identity, kind);
+            if let Some(address) = participant.identity.as_h160() {
+                if kind == "audio" {
+                    let _ = sender
+                        .send(PlayerUpdate {
+                            transport_id,
+                            message: PlayerMessage::AudioStreamUnavailable {
+                                transport: transport_id,
+                            },
+                            address,
+                        })
+                        .await;
                 }
             }
-            RoomEvent::ParticipantDisconnected { .. } => {
-                debug!("Participant disconnected");
+        }
+        RoomEvent::TrackSubscribed { .. } => {
+            debug!("Track subscribed event - audio is handled in JavaScript");
+        }
+        RoomEvent::TrackUnsubscribed { .. } => {
+            debug!("Track unsubscribed event");
+        }
+        RoomEvent::ParticipantConnected { participant, .. } => {
+            if let Some(address) = participant.identity.as_h160() {
+                if !participant.metadata.is_empty() {
+                    let _ = sender
+                        .send(PlayerUpdate {
+                            transport_id,
+                            message: PlayerMessage::MetaData(participant.metadata),
+                            address,
+                        })
+                        .await;
+                }
             }
-        },
-        Err(e) => {
-            warn!("Failed to parse room event: {:?}", e);
+        }
+        RoomEvent::ParticipantDisconnected { .. } => {
+            debug!("Participant disconnected");
         }
     }
 }

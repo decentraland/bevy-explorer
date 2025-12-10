@@ -4,12 +4,10 @@ use bevy::{
 };
 use ethers_core::types::H160;
 use futures_lite::StreamExt;
-use http::Uri;
 use kira::sound::streaming::StreamingSoundData;
 use livekit::webrtc::{native::yuv_helper, prelude::VideoBuffer};
 use prost::Message;
 use tokio::{
-    runtime::Runtime,
     sync::{
         mpsc::{error::TryRecvError, Receiver, Sender},
         Mutex,
@@ -27,7 +25,7 @@ use crate::{
     global_crdt::{
         GlobalCrdtState, LocalAudioFrame, LocalAudioSource, PlayerMessage, PlayerUpdate,
     },
-    livekit::{LivekitConnection, LivekitRuntime, LivekitTransport},
+    livekit::{LivekitConnection, LivekitRoom, LivekitRuntime, LivekitTransport},
     ChannelControl, NetworkMessage,
 };
 
@@ -43,7 +41,7 @@ use livekit::{
         audio_source::native::NativeAudioSource,
         prelude::{AudioFrame, AudioSourceOptions, I420Buffer, RtcAudioSource},
     },
-    Room, RoomOptions,
+    Room,
 };
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -186,34 +184,34 @@ pub fn update_mic(
     mic_state.available = false;
 }
 
-#[allow(clippy::type_complexity)]
 pub(super) fn connect_livekit(
     mut commands: Commands,
     mut new_livekits: Query<
-        (Entity, &mut LivekitTransport, &LivekitRuntime),
+        (Entity, &mut LivekitTransport, &LivekitRoom, &LivekitRuntime),
         Without<LivekitConnection>,
     >,
     player_state: Res<GlobalCrdtState>,
     mic: Res<crate::global_crdt::LocalAudioSource>,
 ) {
-    for (transport_id, mut new_transport, livekit_runtime) in new_livekits.iter_mut() {
+    for (transport_id, mut new_transport, livekit_room, livekit_runtime) in new_livekits.iter_mut()
+    {
         debug!("spawn lk connect");
-        let remote_address = new_transport.address.to_owned();
         let receiver = new_transport.receiver.take().unwrap();
         let control_receiver = new_transport.control_receiver.take().unwrap();
         let sender = player_state.get_sender();
-        let runtime = (*livekit_runtime).clone();
+        let livekit_room = livekit_room.get_room();
+        let livekit_runtime = livekit_runtime.clone();
 
         let subscription = mic.subscribe();
         std::thread::spawn(move || {
             livekit_handler(
                 transport_id,
-                remote_address,
                 receiver,
                 control_receiver,
                 sender,
                 subscription,
-                runtime,
+                livekit_room,
+                livekit_runtime,
             )
         });
 
@@ -223,12 +221,12 @@ pub(super) fn connect_livekit(
 
 fn livekit_handler(
     transport_id: Entity,
-    remote_address: String,
     receiver: Receiver<NetworkMessage>,
     control_receiver: Receiver<ChannelControl>,
     sender: Sender<PlayerUpdate>,
     mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
-    runtime: Arc<Runtime>,
+    room: Arc<Room>,
+    runtime: LivekitRuntime,
 ) {
     let receiver = Arc::new(Mutex::new(receiver));
     let control_receiver = Arc::new(Mutex::new(control_receiver));
@@ -236,11 +234,11 @@ fn livekit_handler(
     loop {
         if let Err(e) = livekit_handler_inner(
             transport_id,
-            &remote_address,
             receiver.clone(),
             control_receiver.clone(),
             sender.clone(),
             mic.resubscribe(),
+            room.clone(),
             runtime.clone(),
         ) {
             warn!("livekit error: {e}");
@@ -255,30 +253,13 @@ fn livekit_handler(
 
 fn livekit_handler_inner(
     transport_id: Entity,
-    remote_address: &str,
     app_rx: Arc<Mutex<Receiver<NetworkMessage>>>,
     control_rx: Arc<Mutex<Receiver<ChannelControl>>>,
     sender: Sender<PlayerUpdate>,
     mut mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
-    runtime: Arc<Runtime>,
+    livekit_room: Arc<Room>,
+    runtime: LivekitRuntime,
 ) -> Result<(), anyhow::Error> {
-    debug!(">> lk connect async : {remote_address}");
-
-    let url = Uri::try_from(remote_address).unwrap();
-    let address = format!(
-        "{}://{}{}",
-        url.scheme_str().unwrap_or_default(),
-        url.host().unwrap_or_default(),
-        url.path()
-    );
-    let params: HashMap<_, _, bevy::platform::hash::FixedHasher> =
-        HashMap::from_iter(url.query().unwrap_or_default().split('&').flat_map(|par| {
-            par.split_once('=')
-                .map(|(a, b)| (a.to_owned(), b.to_owned()))
-        }));
-    debug!("{params:?}");
-    let token = params.get("access_token").cloned().unwrap_or_default();
-
     let mut audio_channels: HashMap<
         H160,
         tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
@@ -289,8 +270,8 @@ fn livekit_handler_inner(
     let rt2 = runtime.clone();
 
     let task = runtime.spawn(async move {
-        let (room, mut network_rx) = livekit::prelude::Room::connect(&address, &token, RoomOptions{ auto_subscribe: false, adaptive_stream: false, dynacast: false, ..Default::default() }).await.unwrap();
-        let local_participant = room.local_participant();
+        let mut network_rx = livekit_room.subscribe();
+        let local_participant = livekit_room.local_participant();
 
         let mut native_source: Option<NativeAudioSource> = None;
         let mut mic_sid: Option<TrackSid> = None;
@@ -478,7 +459,7 @@ fn livekit_handler_inner(
                     };
 
                     let packet = livekit::DataPacket { payload: outgoing.data, topic: None, reliable: !outgoing.unreliable, destination_identities };
-                    if let Err(_e) = room.local_participant().publish_data(packet).await {
+                    if let Err(_e) = livekit_room.local_participant().publish_data(packet).await {
                         // debug!("outgoing failed: {_e}; not exiting loop though since it often fails at least once or twice at the start...");
                         break 'stream;
                     };
@@ -491,23 +472,23 @@ fn livekit_handler_inner(
 
                     match control {
                         ChannelControl::VoiceSubscribe(address, sender) => {
-                            participant_audio_subscribe(&room, address, Some(sender), &mut audio_channels).await
+                            participant_audio_subscribe(&livekit_room, address, Some(sender), &mut audio_channels).await
                         },
-                        ChannelControl::VoiceUnsubscribe(address) => participant_audio_subscribe(&room, address, None, &mut audio_channels).await,
+                        ChannelControl::VoiceUnsubscribe(address) => participant_audio_subscribe(&livekit_room, address, None, &mut audio_channels).await,
                         ChannelControl::StreamerSubscribe(audio, video) => {
-                            streamer_audio_subscribe(&room, Some(audio), &mut streamer_audio_channel).await;
-                            streamer_video_subscribe(&room, Some(video), &mut streamer_video_channel).await;
+                            streamer_audio_subscribe(&livekit_room, Some(audio), &mut streamer_audio_channel).await;
+                            streamer_video_subscribe(&livekit_room, Some(video), &mut streamer_video_channel).await;
                         }
                         ChannelControl::StreamerUnsubscribe => {
-                            streamer_audio_subscribe(&room, None, &mut streamer_audio_channel).await;
-                            streamer_video_subscribe(&room, None, &mut streamer_video_channel).await;
+                            streamer_audio_subscribe(&livekit_room, None, &mut streamer_audio_channel).await;
+                            streamer_video_subscribe(&livekit_room, None, &mut streamer_video_channel).await;
                         }
                     };
                 }
             );
         }
 
-        room.close().await.unwrap();
+        livekit_room.close().await.unwrap();
     });
 
     runtime.block_on(task).unwrap();

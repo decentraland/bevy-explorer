@@ -3,17 +3,15 @@
 #[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
 pub mod native;
 pub mod plugin;
+mod room;
 #[cfg(all(feature = "livekit", target_arch = "wasm32"))]
 pub mod web;
 
-#[cfg(not(target_arch = "wasm32"))]
 use bevy::platform::sync::Arc;
-
 use bevy::prelude::*;
-#[cfg(not(target_arch = "wasm32"))]
-use tokio::runtime::Runtime;
-use tokio::sync::mpsc::Receiver;
+use tokio::{runtime::Runtime, sync::mpsc::Receiver};
 
+pub use crate::livekit::room::LivekitRoom;
 use crate::{ChannelControl, NetworkMessage};
 
 #[derive(Event)]
@@ -30,8 +28,7 @@ pub struct LivekitTransport {
     pub retries: usize,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-#[derive(Component, Deref, DerefMut)]
+#[derive(Clone, Component, Deref, DerefMut)]
 struct LivekitRuntime(Arc<Runtime>);
 
 #[derive(Component)]
