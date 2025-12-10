@@ -344,7 +344,7 @@ impl OptionFromWasmAbi for RoomEvent {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Participant {
+pub struct Participant {
     pub identity: String,
     #[serde(default)]
     pub metadata: String,
