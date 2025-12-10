@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use bevy::prelude::*;
+#[cfg(feature = "livekit")]
 use comms::livekit_native::LivekitVideoFrame;
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::ffi::AVPixelFormat;
@@ -21,10 +22,12 @@ pub struct VideoInfo {
 pub enum VideoData {
     Info(VideoInfo),
     Frame(frame::Video, f64),
+    #[cfg(feature = "livekit")]
     LivekitFrame(LivekitVideoFrame),
     State(VideoState),
 }
 
+#[cfg(feature = "livekit")]
 impl From<LivekitVideoFrame> for VideoData {
     fn from(value: LivekitVideoFrame) -> Self {
         Self::LivekitFrame(value)
