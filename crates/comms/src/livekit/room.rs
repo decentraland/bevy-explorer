@@ -1,19 +1,19 @@
 use bevy::platform::collections::HashMap;
-#[cfg(not(target_arch = "wasm32"))]
-use bevy::platform::sync::Arc;
 use bevy::prelude::*;
 use common::util::AsH160;
 use dcl_component::proto_components::kernel::comms::rfc4;
 use http::Uri;
-#[cfg(not(target_arch = "wasm32"))]
-use livekit::{id::TrackSid, track::TrackKind, Room, RoomEvent, RoomOptions, RoomResult};
 use prost::Message;
-use tokio::{sync::mpsc, task::JoinHandle};
+use tokio::sync::mpsc;
+#[cfg(not(target_arch = "wasm32"))]
+use {
+    livekit::{id::TrackSid, track::TrackKind, Room, RoomEvent, RoomOptions, RoomResult},
+    {bevy::platform::sync::Arc, tokio::task::JoinHandle},
+};
 #[cfg(target_arch = "wasm32")]
 use {
     tokio::sync::oneshot,
     wasm_bindgen::{
-        closure::Closure,
         convert::{FromWasmAbi, IntoWasmAbi},
         JsValue,
     },
@@ -231,7 +231,7 @@ fn process_room_events(
         #[cfg(not(target_arch = "wasm32"))]
         let mut puller = || livekit_room.room_event_receiver.try_recv();
         #[cfg(target_arch = "wasm32")]
-        let mut puller = || {
+        let puller = || {
             let room = unsafe { JsValue::from_abi(livekit_room.room) };
             let head = recv_room_event(&room);
             let _ = room.into_abi();
@@ -387,6 +387,99 @@ fn process_room_events(
                         }
                     }
                 }
+                #[cfg(target_arch = "wasm32")]
+                RoomEvent::DataReceived {
+                    payload,
+                    participant,
+                    ..
+                } => {
+                    if let Some(address) = participant.identity.as_h160() {
+                        if let Ok(packet) = rfc4::Packet::decode(payload.as_slice()) {
+                            if let Some(message) = packet.message {
+                                let _ = sender
+                                    .try_send(PlayerUpdate {
+                                        transport_id: entity,
+                                        message: PlayerMessage::PlayerData(message),
+                                        address,
+                                    })
+                                    .inspect_err(|err| {
+                                        error!("Failed to send player update due to '{err}'")
+                                    });
+                            }
+                        }
+                    }
+                }
+                #[cfg(target_arch = "wasm32")]
+                RoomEvent::TrackPublished {
+                    participant, kind, ..
+                } => {
+                    debug!("pub {} {}", participant.identity, kind);
+                    if let Some(address) = participant.identity.as_h160() {
+                        if kind == "audio" {
+                            let _ = sender
+                                .try_send(PlayerUpdate {
+                                    transport_id: entity,
+                                    message: PlayerMessage::AudioStreamAvailable {
+                                        transport: entity,
+                                    },
+                                    address,
+                                })
+                                .inspect_err(|err| {
+                                    error!("Failed to send player update due to '{err}'")
+                                });
+                        }
+                    }
+                }
+                #[cfg(target_arch = "wasm32")]
+                RoomEvent::TrackUnpublished {
+                    participant, kind, ..
+                } => {
+                    debug!("unpub {} {}", participant.identity, kind);
+                    if let Some(address) = participant.identity.as_h160() {
+                        if kind == "audio" {
+                            let _ = sender
+                                .try_send(PlayerUpdate {
+                                    transport_id: entity,
+                                    message: PlayerMessage::AudioStreamUnavailable {
+                                        transport: entity,
+                                    },
+                                    address,
+                                })
+                                .inspect_err(|err| {
+                                    error!("Failed to send player update due to '{err}'")
+                                });
+                        }
+                    }
+                }
+                #[cfg(target_arch = "wasm32")]
+                RoomEvent::TrackSubscribed { .. } => {
+                    debug!("Track subscribed event - audio is handled in JavaScript");
+                }
+                #[cfg(target_arch = "wasm32")]
+                RoomEvent::TrackUnsubscribed { .. } => {
+                    debug!("Track unsubscribed event");
+                }
+                #[cfg(target_arch = "wasm32")]
+                RoomEvent::ParticipantConnected { participant, .. } => {
+                    if let Some(address) = participant.identity.as_h160() {
+                        if !participant.metadata.is_empty() {
+                            let _ = sender
+                                .try_send(PlayerUpdate {
+                                    transport_id: entity,
+                                    message: PlayerMessage::MetaData(participant.metadata),
+                                    address,
+                                })
+                                .inspect_err(|err| {
+                                    error!("Failed to send player update due to '{err}'")
+                                });
+                        }
+                    }
+                }
+                #[cfg(target_arch = "wasm32")]
+                RoomEvent::ParticipantDisconnected { .. } => {
+                    debug!("Participant disconnected");
+                }
+                #[cfg(not(target_arch = "wasm32"))]
                 _ => {
                     debug!("Event: {:?}", room_event);
                 }

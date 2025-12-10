@@ -1,6 +1,5 @@
 use bevy::prelude::*;
 use ethers_core::types::H160;
-use prost::Message;
 use serde::Deserialize;
 use tokio::sync::mpsc::{Receiver, Sender};
 use wasm_bindgen::{
@@ -10,12 +9,11 @@ use wasm_bindgen::{
 use wasm_bindgen_futures::spawn_local;
 
 use crate::{
-    global_crdt::{ChannelControl, GlobalCrdtState, PlayerMessage, PlayerUpdate},
+    global_crdt::{ChannelControl, GlobalCrdtState, PlayerUpdate},
     livekit::{LivekitConnection, LivekitRoom, LivekitTransport},
     NetworkMessage,
 };
-use common::{structs::MicState, util::AsH160};
-use dcl_component::proto_components::kernel::comms::rfc4;
+use common::structs::MicState;
 
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
 extern "C" {
@@ -109,7 +107,6 @@ impl Plugin for MicPlugin {
         app.init_resource::<MicState>();
         app.add_systems(Update, update_mic_state);
         app.add_systems(Update, locate_foreign_streams);
-        app.add_systems(Update, pull_room_events);
     }
 }
 
@@ -348,106 +345,6 @@ pub struct Participant {
     pub identity: String,
     #[serde(default)]
     pub metadata: String,
-}
-
-fn pull_room_events(
-    livekit_rooms: Query<(Entity, &LivekitRoom)>,
-    player_state: Res<GlobalCrdtState>,
-) {
-    let player_sender = player_state.get_sender();
-
-    for (entity, livekit_room) in livekit_rooms {
-        let room_name = livekit_room.room_name.clone();
-        let sender = player_sender.clone();
-        spawn_local(async move {
-            let room = get_room(&room_name);
-            while let Some(room_event) = recv_room_event(&room) {
-                handle_room_event(room_event, entity, &sender).await;
-            }
-        });
-    }
-}
-
-async fn handle_room_event(event: RoomEvent, transport_id: Entity, sender: &Sender<PlayerUpdate>) {
-    match event {
-        RoomEvent::DataReceived {
-            payload,
-            participant,
-            ..
-        } => {
-            if let Some(address) = participant.identity.as_h160() {
-                if let Ok(packet) = rfc4::Packet::decode(payload.as_slice()) {
-                    if let Some(message) = packet.message {
-                        let _ = sender
-                            .send(PlayerUpdate {
-                                transport_id,
-                                message: PlayerMessage::PlayerData(message),
-                                address,
-                            })
-                            .await;
-                    }
-                }
-            }
-        }
-        RoomEvent::TrackPublished {
-            participant, kind, ..
-        } => {
-            debug!("pub {} {}", participant.identity, kind);
-            if let Some(address) = participant.identity.as_h160() {
-                if kind == "audio" {
-                    let _ = sender
-                        .send(PlayerUpdate {
-                            transport_id,
-                            message: PlayerMessage::AudioStreamAvailable {
-                                transport: transport_id,
-                            },
-                            address,
-                        })
-                        .await;
-                }
-            }
-        }
-        RoomEvent::TrackUnpublished {
-            participant, kind, ..
-        } => {
-            debug!("unpub {} {}", participant.identity, kind);
-            if let Some(address) = participant.identity.as_h160() {
-                if kind == "audio" {
-                    let _ = sender
-                        .send(PlayerUpdate {
-                            transport_id,
-                            message: PlayerMessage::AudioStreamUnavailable {
-                                transport: transport_id,
-                            },
-                            address,
-                        })
-                        .await;
-                }
-            }
-        }
-        RoomEvent::TrackSubscribed { .. } => {
-            debug!("Track subscribed event - audio is handled in JavaScript");
-        }
-        RoomEvent::TrackUnsubscribed { .. } => {
-            debug!("Track unsubscribed event");
-        }
-        RoomEvent::ParticipantConnected { participant, .. } => {
-            if let Some(address) = participant.identity.as_h160() {
-                if !participant.metadata.is_empty() {
-                    let _ = sender
-                        .send(PlayerUpdate {
-                            transport_id,
-                            message: PlayerMessage::MetaData(participant.metadata),
-                            address,
-                        })
-                        .await;
-                }
-            }
-        }
-        RoomEvent::ParticipantDisconnected { .. } => {
-            debug!("Participant disconnected");
-        }
-    }
 }
 
 // Public API for spatial audio control
