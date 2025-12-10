@@ -22,8 +22,9 @@ use common::{
 use dcl_component::proto_components::kernel::comms::rfc4;
 
 use crate::{
-    global_crdt::{
-        GlobalCrdtState, LocalAudioFrame, LocalAudioSource, PlayerMessage, PlayerUpdate,
+    global_crdt::{LocalAudioFrame, LocalAudioSource},
+    livekit::{
+        kira_bridge::kira_thread, LivekitConnection, LivekitRoom, LivekitRuntime, LivekitTransport,
     },
     livekit::{LivekitConnection, LivekitRoom, LivekitRuntime, LivekitTransport},
     ChannelControl, NetworkMessage,
@@ -493,112 +494,6 @@ fn livekit_handler_inner(
 
     runtime.block_on(task).unwrap();
     Ok(())
-}
-
-struct LivekitKiraBridge {
-    started: bool,
-    sample_rate: u32,
-    receiver: tokio::sync::mpsc::Receiver<AudioFrame<'static>>,
-}
-
-impl kira::sound::streaming::Decoder for LivekitKiraBridge {
-    type Error = AudioDecoderError;
-
-    fn sample_rate(&self) -> u32 {
-        self.sample_rate
-    }
-
-    fn num_frames(&self) -> usize {
-        u32::MAX as usize
-    }
-
-    fn decode(&mut self) -> Result<Vec<kira::Frame>, Self::Error> {
-        let mut frames = Vec::default();
-
-        loop {
-            match self.receiver.try_recv() {
-                Ok(frame) => {
-                    if frame.sample_rate != self.sample_rate {
-                        warn!(
-                            "sample rate changed?! was {}, now {}",
-                            self.sample_rate, frame.sample_rate
-                        );
-                    }
-
-                    if frame.num_channels != 1 {
-                        warn!("frame has {} channels", frame.num_channels);
-                    }
-
-                    for i in 0..frame.samples_per_channel as usize {
-                        let sample = frame.data[i] as f32 / i16::MAX as f32;
-                        frames.push(kira::Frame::new(sample, sample));
-                    }
-                }
-                Err(TryRecvError::Disconnected) => return Err(AudioDecoderError::StreamClosed),
-                Err(TryRecvError::Empty) => return Ok(frames),
-            }
-        }
-    }
-
-    fn seek(&mut self, seek: usize) -> Result<usize, Self::Error> {
-        if !self.started && seek == 0 {
-            return Ok(0);
-        }
-        Err(AudioDecoderError::Other(format!(
-            "Can't seek (requested {seek})"
-        )))
-    }
-}
-
-async fn kira_thread(
-    audio: RemoteAudioTrack,
-    publication: RemoteTrackPublication,
-    channel: tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
-) {
-    let mut stream =
-        livekit::webrtc::audio_stream::native::NativeAudioStream::new(audio.rtc_track(), 48_000, 1);
-
-    // get first frame to set sample rate
-    let Some(frame) = stream.next().await else {
-        warn!("dropped audio track without samples");
-        return;
-    };
-
-    let (frame_sender, frame_receiver) = tokio::sync::mpsc::channel(1000);
-
-    let bridge = LivekitKiraBridge {
-        started: false,
-        sample_rate: frame.sample_rate,
-        receiver: frame_receiver,
-    };
-
-    debug!("recced with {} / {}", frame.sample_rate, frame.num_channels);
-
-    let sound_data = kira::sound::streaming::StreamingSoundData::from_decoder(bridge);
-
-    let res = channel.send(sound_data);
-
-    if res.is_err() {
-        warn!("failed to send subscribed audio data");
-        publication.set_subscribed(false);
-        return;
-    }
-
-    while let Some(frame) = stream.next().await {
-        match frame_sender.try_send(frame) {
-            Ok(()) => (),
-            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                warn!("livekit audio receiver buffer full, dropping frame");
-                return;
-            }
-            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                warn!("livekit audio receiver dropped, exiting task");
-                return;
-            }
-        }
-    }
-
-    warn!("track ended, exiting task");
 }
 
 async fn livekit_video_thread(

@@ -1,5 +1,7 @@
 // --server https://worlds-content-server.decentraland.org/world/shibu.dcl.eth --location 1,1
 
+#[cfg(not(target_arch = "wasm32"))]
+mod kira_bridge;
 #[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
 pub mod native;
 pub mod plugin;
