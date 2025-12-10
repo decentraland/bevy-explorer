@@ -8,6 +8,7 @@ edition = "2021"
 [features]
 ffmpeg = ["dep:ffmpeg-next"]
 html = ["dep:web-sys", "dep:wasm-bindgen"]
+livekit = ["comms/livekit"]
 
 [dependencies]
 common = { workspace = true }
