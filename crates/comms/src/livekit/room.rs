@@ -1,5 +1,6 @@
-use bevy::platform::collections::HashMap;
+use bevy::ecs::component::HookContext;
 use bevy::prelude::*;
+use bevy::{ecs::world::DeferredWorld, platform::collections::HashMap};
 use common::util::AsH160;
 use dcl_component::proto_components::kernel::comms::rfc4;
 use http::Uri;
@@ -58,6 +59,63 @@ impl Drop for LivekitRoom {
     }
 }
 
+/// Marks that a [`LivekitRoom`] as connected
+#[derive(Component)]
+#[component(on_add=Self::on_add, on_remove=Self::on_remove)]
+pub struct Connected;
+
+impl Connected {
+    pub fn on_add(mut deferred_world: DeferredWorld, hook_context: HookContext) {
+        let entity = hook_context.entity;
+        warn!("Room {entity} connected.");
+
+        deferred_world
+            .commands()
+            .entity(entity)
+            .remove::<Connecting>();
+    }
+
+    pub fn on_remove(mut deferred_world: DeferredWorld, hook_context: HookContext) {
+        let entity = hook_context.entity;
+
+        // This hook will also run on despawn
+        // so `try_remove` is used
+        deferred_world
+            .commands()
+            .entity(entity)
+            .try_remove::<LivekitRoom>();
+    }
+}
+
+/// Marks that a [`LivekitRoom`] as connecting or
+/// attempting to reconnect
+#[derive(Component)]
+#[component(on_add=Self::on_add, on_remove=Self::on_remove)]
+pub struct Connecting;
+
+impl Connecting {
+    pub fn on_add(mut deferred_world: DeferredWorld, hook_context: HookContext) {
+        let entity = hook_context.entity;
+        warn!("Room {entity} is connecting.");
+
+        deferred_world
+            .commands()
+            .entity(entity)
+            .remove::<Connected>();
+    }
+
+    pub fn on_remove(mut deferred_world: DeferredWorld, hook_context: HookContext) {
+        let entity = hook_context.entity;
+
+        // This hook will also run on despawn
+        // so `try_remove` is used
+        deferred_world
+            .commands()
+            .entity(entity)
+            .try_remove::<ConnectingLivekitRoom>();
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Default, Resource, Deref, DerefMut)]
 struct LivekitRoomTrackTask(HashMap<TrackSid, JoinHandle<()>>);
@@ -66,9 +124,31 @@ struct LivekitRoomTrackTask(HashMap<TrackSid, JoinHandle<()>>);
 #[derive(Component, Deref, DerefMut)]
 struct ConnectingLivekitRoom(JoinHandle<RoomResult<Room>>);
 
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for ConnectingLivekitRoom {
+    fn drop(&mut self) {
+        self.0.abort()
+    }
+}
+
 #[cfg(target_arch = "wasm32")]
 #[derive(Component, Deref, DerefMut)]
 struct ConnectingLivekitRoom(oneshot::Receiver<anyhow::Result<JsValueAbi>>);
+
+#[cfg(target_arch = "wasm32")]
+impl Drop for ConnectingLivekitRoom {
+    fn drop(&mut self) {
+        let (_, mut receiver) = oneshot::channel();
+        std::mem::swap(&mut receiver, &mut self.0);
+        if !receiver.is_terminated() {
+            spawn_local(async move {
+                if let Ok(Ok(js_value_abi)) = receiver.await {
+                    let _ = unsafe { JsValue::from_abi(js_value_abi) };
+                }
+            })
+        }
+    }
+}
 
 pub struct LivekitRoomPlugin;
 
@@ -77,14 +157,19 @@ impl Plugin for LivekitRoomPlugin {
         #[cfg(not(target_arch = "wasm32"))]
         app.init_resource::<LivekitRoomTrackTask>();
 
-        app.add_observer(connect_to_room_on_transport_creation);
+        app.add_observer(initiate_room_connection);
+        app.add_observer(connect_to_livekit_room);
 
         app.add_systems(Update, (poll_connecting_rooms, process_room_events).chain());
     }
 }
 
-fn connect_to_room_on_transport_creation(
-    trigger: Trigger<OnAdd, LivekitTransport>,
+fn initiate_room_connection(trigger: Trigger<OnAdd, LivekitTransport>, mut commands: Commands) {
+    commands.entity(trigger.target()).insert(Connecting);
+}
+
+fn connect_to_livekit_room(
+    trigger: Trigger<OnAdd, Connecting>,
     mut commands: Commands,
     livekit_transports: Query<(&LivekitTransport, &LivekitRuntime)>,
 ) {
@@ -157,11 +242,14 @@ fn poll_connecting_rooms(
 
                     commands
                         .entity(entity)
-                        .insert(LivekitRoom {
-                            room_name: poll_content.name(),
-                            room: Arc::new(poll_content),
-                            room_event_receiver,
-                        })
+                        .insert((
+                            LivekitRoom {
+                                room_name: poll_content.name(),
+                                room: Arc::new(poll_content),
+                                room_event_receiver,
+                            },
+                            Connected,
+                        ))
                         .remove::<ConnectingLivekitRoom>();
                 }
                 #[cfg(target_arch = "wasm32")]
@@ -172,7 +260,7 @@ fn poll_connecting_rooms(
                     let _ = js_room.into_abi();
                     commands
                         .entity(entity)
-                        .insert(LivekitRoom { room_name, room })
+                        .insert((LivekitRoom { room_name, room }, Connected))
                         .remove::<ConnectingLivekitRoom>();
                 }
                 Err(err) => {
