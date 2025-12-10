@@ -26,7 +26,7 @@ extern "C" {
     pub fn get_room(room_name: &str) -> JsValue;
 
     #[wasm_bindgen]
-    fn room_name(room: &JsValue) -> String;
+    pub fn room_name(room: &JsValue) -> String;
 
     #[wasm_bindgen]
     pub fn recv_room_event(room: &JsValue) -> Option<RoomEvent>;

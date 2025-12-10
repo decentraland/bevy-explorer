@@ -72,7 +72,7 @@ export async function connect_room(url, token) {
         }
     }
 
-    return room_name;
+    return room;
 }
 
 export function get_room(room_name) {

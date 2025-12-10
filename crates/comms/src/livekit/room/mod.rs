@@ -8,19 +8,32 @@ use livekit::{Room, RoomEvent, RoomOptions, RoomResult};
 use tokio::{sync::mpsc, task::JoinHandle};
 #[cfg(target_arch = "wasm32")]
 use {
-    common::util::AsH160, dcl_component::proto_components::kernel::comms::rfc4, prost::Message,
-    tokio::sync::oneshot, wasm_bindgen::closure::Closure, wasm_bindgen_futures::spawn_local,
+    common::util::AsH160,
+    dcl_component::proto_components::kernel::comms::rfc4,
+    prost::Message,
+    tokio::sync::oneshot,
+    wasm_bindgen::{
+        closure::Closure,
+        convert::{FromWasmAbi, IntoWasmAbi},
+        JsValue,
+    },
+    wasm_bindgen_futures::spawn_local,
 };
 
 #[cfg(target_arch = "wasm32")]
-use crate::livekit::web::{connect_room, RoomEvent};
+use crate::livekit::web::{connect_room, room_name, RoomEvent};
 use crate::livekit::{LivekitRuntime, LivekitTransport};
+
+#[cfg(target_arch = "wasm32")]
+type JsValueAbi = <JsValue as IntoWasmAbi>::Abi;
 
 #[derive(Component)]
 pub struct LivekitRoom {
     pub room_name: String,
     #[cfg(not(target_arch = "wasm32"))]
     pub room: Arc<Room>,
+    #[cfg(target_arch = "wasm32")]
+    pub room: JsValueAbi,
     #[cfg(not(target_arch = "wasm32"))]
     pub room_event_receiver: mpsc::UnboundedReceiver<RoomEvent>,
 }
@@ -32,13 +45,21 @@ impl LivekitRoom {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+impl Drop for LivekitRoom {
+    fn drop(&mut self) {
+        // Build the value to drop the Abi memory
+        let _ = unsafe { JsValue::from_abi(self.room) };
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Component, Deref, DerefMut)]
 struct ConnectingLivekitRoom(JoinHandle<RoomResult<Room>>);
 
 #[cfg(target_arch = "wasm32")]
 #[derive(Component, Deref, DerefMut)]
-struct ConnectingLivekitRoom(oneshot::Receiver<anyhow::Result<String>>);
+struct ConnectingLivekitRoom(oneshot::Receiver<anyhow::Result<JsValueAbi>>);
 
 pub struct LivekitRoomPlugin;
 
@@ -132,10 +153,14 @@ fn poll_connecting_rooms(
                         .remove::<ConnectingLivekitRoom>();
                 }
                 #[cfg(target_arch = "wasm32")]
-                Ok(room_name) => {
+                Ok(room) => {
+                    let js_room = unsafe { JsValue::from_abi(room) };
+                    let room_name = room_name(&js_room);
+                    // This prevents the memory for the object from being freed
+                    let _ = js_room.into_abi();
                     commands
                         .entity(entity)
-                        .insert(LivekitRoom { room_name })
+                        .insert(LivekitRoom { room_name, room })
                         .remove::<ConnectingLivekitRoom>();
                 }
                 Err(err) => {
@@ -167,11 +192,11 @@ async fn connect_to_room(address: String, token: String) -> RoomResult<Room> {
 async fn connect_to_room(
     address: String,
     token: String,
-    sender: oneshot::Sender<anyhow::Result<String>>,
+    sender: oneshot::Sender<anyhow::Result<JsValueAbi>>,
 ) {
     let res = connect_room(&address, &token)
         .await
-        .map(|room_name| room_name.as_string().unwrap())
+        .map(IntoWasmAbi::into_abi)
         .map_err(|e| anyhow::anyhow!("Failed to connect room: {:?}", e));
 
     sender.send(res).unwrap();
