@@ -491,10 +491,11 @@ fn update_materials(
         mat.0.hash(hasher);
         let hash = hasher.finish();
 
-        let cached_data = cache
-            .0
-            .get(&hash)
-            .and_then(|(cached_handle, defn)| resolver.ipfas.asset_server().get_id_handle(*cached_handle).map(|h| (h, defn)));
+        let cached_data = cache.0.get(&hash).and_then(|(cached_handle, defn)| {
+            materials
+                .get_strong_handle(*cached_handle)
+                .map(|h| (h, defn))
+        });
 
         let (material, defn) = match cached_data {
             Some(data) => data,
