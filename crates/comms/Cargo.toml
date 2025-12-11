@@ -18,6 +18,7 @@ platform = { workspace = true }
 system_bridge = { workspace = true }
 
 bevy = { workspace = true }
+disqualified = { workspace = true }
 bimap = { workspace = true }
 ethers-core = { workspace = true }
 tokio = { workspace = true }
