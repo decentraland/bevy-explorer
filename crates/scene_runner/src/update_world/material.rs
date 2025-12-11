@@ -4,6 +4,7 @@ use std::{
 };
 
 use bevy::{
+    asset::RenderAssetUsages,
     ecs::system::SystemParam,
     image::{
         ImageAddressMode, ImageFilterMode, ImageLoaderSettings, ImageSampler,
@@ -364,7 +365,8 @@ impl TextureResolver<'_, '_> {
                                     min_filter: filter_mode,
                                     mipmap_filter: filter_mode,
                                     ..default()
-                                })
+                                });
+                                s.asset_usage = RenderAssetUsages::RENDER_WORLD;
                             },
                         )
                         .unwrap(),
