@@ -23,10 +23,10 @@ use {
     wasm_bindgen_futures::spawn_local,
 };
 
-#[cfg(not(target_arch = "wasm32"))]
-use crate::livekit::kira_bridge::kira_thread;
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::{connect_room, recv_room_event, room_name, RoomEvent};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::livekit::{kira_bridge::kira_thread, participant};
 use crate::{
     global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
     livekit::{LivekitRuntime, LivekitTransport},
@@ -239,6 +239,11 @@ fn poll_connecting_rooms(
             match poll {
                 #[cfg(not(target_arch = "wasm32"))]
                 Ok((room, room_event_receiver)) => {
+                    let local_participant = room.local_participant();
+                    commands.trigger(participant::ParticipantConnected {
+                        participant: local_participant.into(),
+                        room: entity,
+                    });
 
                     commands
                         .entity(entity)
@@ -305,6 +310,7 @@ async fn connect_to_room(
 }
 
 fn process_room_events(
+    mut commands: Commands,
     livekit_rooms: Query<(Entity, &mut LivekitRoom)>,
     #[cfg(not(target_arch = "wasm32"))] livekit_runtimes: Query<&LivekitRuntime>,
     player_state: Res<GlobalCrdtState>,
@@ -330,7 +336,7 @@ fn process_room_events(
         };
 
         while let Ok(room_event) = puller() {
-            debug!("in: {:?}", room_event);
+            trace!("in: {:?}", room_event);
 
             match room_event {
                 #[cfg(not(target_arch = "wasm32"))]
@@ -338,6 +344,10 @@ fn process_room_events(
                     participants_with_tracks,
                 } => {
                     for (participant, publications) in participants_with_tracks {
+                        commands.trigger(participant::ParticipantConnected {
+                            participant: participant.clone().into(),
+                            room: entity,
+                        });
                         if let Some(address) = participant.identity().0.as_str().as_h160() {
                             for publication in publications {
                                 debug!("initial pub: {publication:?}");
@@ -381,9 +391,10 @@ fn process_room_events(
                                 warn!("received empty packet body");
                                 continue;
                             };
-                            debug!(
+                            trace!(
                                 "[{}] received [{}] packet {message:?} from {address}",
-                                entity, packet.protocol_version
+                                entity,
+                                packet.protocol_version
                             );
                             if let Err(e) = sender.try_send(PlayerUpdate {
                                 transport_id: entity,
@@ -464,6 +475,10 @@ fn process_room_events(
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 RoomEvent::ParticipantConnected(participant) => {
+                    commands.trigger(participant::ParticipantConnected {
+                        participant: participant.clone().into(),
+                        room: entity,
+                    });
                     let meta = participant.metadata();
                     if !meta.is_empty() {
                         if let Some(address) = participant.identity().0.as_str().as_h160() {
@@ -477,6 +492,13 @@ fn process_room_events(
                             }
                         }
                     }
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                RoomEvent::ParticipantDisconnected(participant) => {
+                    commands.trigger(participant::ParticipantDisconnected {
+                        participant: participant.into(),
+                        room: entity,
+                    });
                 }
                 #[cfg(target_arch = "wasm32")]
                 RoomEvent::DataReceived {

@@ -5,6 +5,7 @@ mod kira_bridge;
 mod mic;
 #[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
 pub mod native;
+mod participant;
 pub mod plugin;
 mod room;
 #[cfg(all(feature = "livekit", target_arch = "wasm32"))]

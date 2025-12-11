@@ -14,10 +14,10 @@ use tokio::{
     task::JoinHandle,
 };
 
-use common::structs::{AudioDecoderError};
+use common::structs::AudioDecoderError;
 
 use crate::{
-    global_crdt::{LocalAudioFrame},
+    global_crdt::LocalAudioFrame,
     livekit::{
         kira_bridge::kira_thread, LivekitConnection, LivekitRoom, LivekitRuntime, LivekitTransport,
     },
@@ -35,7 +35,6 @@ use livekit::{
     },
     Room,
 };
-
 
 #[derive(Deref)]
 pub struct LivekitVideoFrame {
