@@ -509,7 +509,7 @@ fn update_render_avatar(
     for (entity, selection, maybe_children, maybe_attach_points, maybe_scene_ent, maybe_prev) in
         &query
     {
-        commands.entity(entity).remove::<RetryRenderAvatar>();
+        commands.entity(entity).try_remove::<RetryRenderAvatar>();
 
         debug!("updating render avatar");
         if let Some(attach_points) = maybe_attach_points {
