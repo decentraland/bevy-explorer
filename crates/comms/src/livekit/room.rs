@@ -7,6 +7,8 @@ use http::Uri;
 use prost::Message;
 use tokio::sync::mpsc;
 #[cfg(not(target_arch = "wasm32"))]
+use tokio::sync::mpsc::UnboundedReceiver;
+#[cfg(not(target_arch = "wasm32"))]
 use {
     livekit::{id::TrackSid, track::TrackKind, Room, RoomEvent, RoomOptions, RoomResult},
     {bevy::platform::sync::Arc, tokio::task::JoinHandle},
@@ -122,7 +124,7 @@ struct LivekitRoomTrackTask(HashMap<TrackSid, JoinHandle<()>>);
 
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Component, Deref, DerefMut)]
-struct ConnectingLivekitRoom(JoinHandle<RoomResult<Room>>);
+struct ConnectingLivekitRoom(JoinHandle<RoomResult<(Room, UnboundedReceiver<RoomEvent>)>>);
 
 #[cfg(not(target_arch = "wasm32"))]
 impl Drop for ConnectingLivekitRoom {
@@ -237,15 +239,14 @@ fn poll_connecting_rooms(
 
             match poll {
                 #[cfg(not(target_arch = "wasm32"))]
-                Ok(poll_content) => {
-                    let room_event_receiver = poll_content.subscribe();
+                Ok((room, room_event_receiver)) => {
 
                     commands
                         .entity(entity)
                         .insert((
                             LivekitRoom {
-                                room_name: poll_content.name(),
-                                room: Arc::new(poll_content),
+                                room_name: room.name(),
+                                room: Arc::new(room),
                                 room_event_receiver,
                             },
                             Connected,
@@ -273,7 +274,10 @@ fn poll_connecting_rooms(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-async fn connect_to_room(address: String, token: String) -> RoomResult<Room> {
+async fn connect_to_room(
+    address: String,
+    token: String,
+) -> RoomResult<(Room, UnboundedReceiver<RoomEvent>)> {
     livekit::prelude::Room::connect(
         &address,
         &token,
@@ -285,7 +289,6 @@ async fn connect_to_room(address: String, token: String) -> RoomResult<Room> {
         },
     )
     .await
-    .map(|(room, _)| room)
 }
 
 #[cfg(target_arch = "wasm32")]
