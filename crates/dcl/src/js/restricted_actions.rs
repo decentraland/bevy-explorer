@@ -137,6 +137,7 @@ pub async fn op_scene_emote(
     debug!("op_scene_emote");
     let scene_info = scene_information(op_state.clone()).await?;
 
+    let scene_hash = &scene_info.urn;
     let emote = emote.to_lowercase();
     let emote_hash = &scene_info
         .content
@@ -152,7 +153,8 @@ pub async fn op_scene_emote(
                 .collect::<Vec<_>>()
         ))?
         .hash;
-    let emote_urn = format!("urn:decentraland:off-chain:scene-emote:{emote_hash}-{looping}");
+    let emote_urn =
+        format!("urn:decentraland:off-chain:scene-emote:{scene_hash}-{emote_hash}-{looping}");
 
     send_emote(&mut *op_state.borrow_mut(), emote_urn, looping);
     Ok(())

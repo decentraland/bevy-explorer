@@ -531,7 +531,7 @@ fn play_current_emote(
 
         if let Some(scene_emote) = active_emote.urn.scene_emote() {
             debug!("got {scene_emote:?}");
-            let Some((hash, _)) = scene_emote.split_once('-') else {
+            let Some(hash) = scene_emote.split('-').nth(1) else {
                 debug!("failed to split scene emote {scene_emote:?}");
                 active_emote.finished = true;
                 continue;
