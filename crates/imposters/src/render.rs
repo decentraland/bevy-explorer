@@ -10,7 +10,7 @@ use bevy::{
     render::{
         mesh::{MeshAabb, VertexAttributeValues},
         primitives::Aabb,
-        view::{NoFrustumCulling, RenderLayers},
+        view::RenderLayers,
     },
     tasks::{IoTaskPool, Task},
 };
@@ -1209,7 +1209,6 @@ fn load_imposters(
                             ),
                         // ShowAabbGizmo { color },
                         aabb,
-                        NoFrustumCulling,
                         NotShadowCaster,
                         NotShadowReceiver,
                         layer.clone(),
