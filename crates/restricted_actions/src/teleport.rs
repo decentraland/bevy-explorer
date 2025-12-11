@@ -5,6 +5,7 @@ use common::{
 };
 use comms::global_crdt::ForeignPlayer;
 use ethers_core::rand::{seq::SliceRandom, thread_rng, Rng};
+use ipfs::RealmInitialLocation;
 use scene_runner::{
     initialize_scene::{
         LiveScenes, PointerResult, SceneHash, SceneLoading, ScenePointers, PARCEL_SIZE,
@@ -21,6 +22,7 @@ pub fn teleport_player(
     mut events: EventReader<RpcCall>,
     mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
     mut perms: Permission<(IVec2, RpcResultSender<Result<(), String>>)>,
+    mut realm_target: ResMut<RealmInitialLocation>,
 ) {
     let mut do_teleport = |to: IVec2, response: RpcResultSender<Result<(), String>>| {
         let Ok((ent, mut transform, mut dynamic_state)) = player.single_mut() else {
@@ -35,6 +37,9 @@ pub fn teleport_player(
         if let Ok(mut commands) = commands.get_entity(ent) {
             commands.try_insert(OutOfWorld);
         }
+
+        debug!("teleport -> none");
+        *realm_target = RealmInitialLocation::None;
 
         response.send(Ok(()));
         info!("teleported to {to}");
