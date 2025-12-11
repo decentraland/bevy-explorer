@@ -304,12 +304,22 @@ impl OptionFromWasmAbi for RoomEvent {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Participant {
     pub identity: String,
     #[serde(default)]
     pub metadata: String,
+}
+
+impl Participant {
+    pub fn identity(&self) -> String {
+        self.identity.clone()
+    }
+
+    pub fn name(&self) -> String {
+        "".to_owned()
+    }
 }
 
 pub fn update_participant_pan(participant_identity: &str, pan: f32) {
