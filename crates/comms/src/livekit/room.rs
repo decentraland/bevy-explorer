@@ -24,7 +24,7 @@ use {
 };
 
 #[cfg(target_arch = "wasm32")]
-use crate::livekit::web::{connect_room, recv_room_event, room_name, RoomEvent};
+use crate::livekit::web::{close_room, connect_room, recv_room_event, room_name, RoomEvent};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::{kira_bridge::kira_thread, participant};
 use crate::{
@@ -57,7 +57,13 @@ impl LivekitRoom {
 impl Drop for LivekitRoom {
     fn drop(&mut self) {
         // Build the value to drop the Abi memory
-        let _ = unsafe { JsValue::from_abi(self.room) };
+        let room = unsafe { JsValue::from_abi(self.room) };
+        spawn_local(async move {
+            let room = room;
+            // Just a bit of delay so that the call `close_room`
+            // has time to finish
+            futures_lite::future::yield_now().await;
+        });
     }
 }
 
@@ -160,6 +166,7 @@ impl Plugin for LivekitRoomPlugin {
 
         app.add_observer(initiate_room_connection);
         app.add_observer(connect_to_livekit_room);
+        app.add_observer(disconnect_from_room_on_replace);
 
         app.add_systems(Update, (poll_connecting_rooms, process_room_events).chain());
     }
@@ -598,5 +605,52 @@ fn process_room_events(
                 }
             };
         }
+    }
+}
+
+fn disconnect_from_room_on_replace(
+    trigger: Trigger<OnReplace, LivekitRoom>,
+    livekit_rooms: Query<(&LivekitRoom, Option<&LivekitRuntime>)>,
+) {
+    let entity = trigger.target();
+    #[cfg_attr(
+        target_arch = "wasm32",
+        expect(unused_variables, reason = "Runtime is used only on native")
+    )]
+    let Ok((livekit_room, maybe_livekit_runtime)) = livekit_rooms.get(entity) else {
+        unreachable!("Infallible query.");
+    };
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let room = livekit_room.room.clone();
+        debug!("Closing room {}.", room.name());
+        if let Some(runtime) = maybe_livekit_runtime {
+            runtime.spawn(async move {
+                if let Err(err) = room.close().await {
+                    error!("Error while closing room {}. '{err}'.", room.name());
+                }
+            });
+        } else {
+            warn!("Closing a room in blocking context because LivekitRoom does not have a LivekitRuntime.");
+            tokio::task::spawn_blocking(async move || {
+                if let Err(err) = room.close().await {
+                    error!("Error while closing room {}. '{err}'.", room.name());
+                }
+            });
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let room = unsafe { JsValue::from_abi(livekit_room.room) };
+        let room_name = room_name(&room);
+        debug!("Closing room {}.", room_name);
+        spawn_local(async move {
+            if let Err(err) = close_room(&room).await {
+                error!("Error while closing room {}. '{err:?}'.", room_name);
+            }
+            // Prevent the Javascript memory from being freed just yet
+            room.into_abi();
+        });
     }
 }

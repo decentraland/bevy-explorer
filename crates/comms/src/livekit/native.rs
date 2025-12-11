@@ -252,8 +252,6 @@ fn livekit_handler_inner(
                 }
             );
         }
-
-        livekit_room.close().await.unwrap();
     });
 
     runtime.block_on(task).unwrap();

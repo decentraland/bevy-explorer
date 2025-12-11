@@ -43,7 +43,7 @@ extern "C" {
     async fn unpublish_track(room: &JsValue, sid: &str) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch)]
-    async fn close_room(room: &JsValue) -> Result<(), JsValue>;
+    pub async fn close_room(room: &JsValue) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch)]
     fn create_audio_track(sample_rate: u32, num_channels: u32) -> Result<JsValue, JsValue>;
@@ -240,9 +240,7 @@ async fn connect_and_handle_session(
         );
     }
 
-    close_room(&room)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to close room: {:?}", e))?;
+    room.into_abi();
 
     Ok(())
 }
