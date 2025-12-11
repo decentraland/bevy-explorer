@@ -1,7 +1,7 @@
 use std::f32::consts::FRAC_PI_4;
 
 use bevy::{
-    app::{HierarchyPropagatePlugin, Propagate, PropagateStop},
+    app::{HierarchyPropagatePlugin, Propagate, PropagateSet, PropagateStop},
     platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
@@ -68,7 +68,9 @@ impl Plugin for TextureCameraPlugin {
                 update_camera_layers,
                 update_texture_cameras,
                 update_avatar_layers,
-                update_directional_light_layers.after(update_directional_light),
+                update_directional_light_layers
+                    .after(update_directional_light)
+                    .before(PropagateSet::<RenderLayers>::default()),
             )
                 .in_set(SceneSets::PostLoop),
         );
