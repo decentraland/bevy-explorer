@@ -327,7 +327,9 @@ impl std::hash::Hash for sdk::components::pb_material::Material {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         core::mem::discriminant(self).hash(state);
         match self {
-            sdk::components::pb_material::Material::Unlit(unlit_material) => unlit_material.hash(state),
+            sdk::components::pb_material::Material::Unlit(unlit_material) => {
+                unlit_material.hash(state)
+            }
             sdk::components::pb_material::Material::Pbr(pbr_material) => pbr_material.hash(state),
         }
     }
@@ -340,7 +342,9 @@ impl std::hash::Hash for common::texture_union::Tex {
             common::texture_union::Tex::Texture(texture) => texture.hash(state),
             common::texture_union::Tex::AvatarTexture(avatar_texture) => avatar_texture.hash(state),
             common::texture_union::Tex::VideoTexture(video_texture) => video_texture.hash(state),
-            common::texture_union::Tex::UiTexture(ui_canvas_texture) => ui_canvas_texture.hash(state),
+            common::texture_union::Tex::UiTexture(ui_canvas_texture) => {
+                ui_canvas_texture.hash(state)
+            }
         }
     }
 }
@@ -397,4 +401,3 @@ impl std::hash::Hash for sdk::components::pb_material::PbrMaterial {
         self.direct_intensity.map(FloatOrd).hash(state);
     }
 }
-

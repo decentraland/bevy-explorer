@@ -94,10 +94,7 @@ fn gen_sdk_components() -> Result<()> {
         "UiCanvasTexture",
     ];
     for component in hash_components {
-        config.type_attribute(
-            component,
-            "#[derive(Hash)]",
-        );
+        config.type_attribute(component, "#[derive(Hash)]");
     }
 
     config.compile_protos(&sources, &["src/proto/"])?;
