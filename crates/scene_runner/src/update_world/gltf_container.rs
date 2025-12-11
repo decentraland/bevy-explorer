@@ -27,7 +27,7 @@ use common::{
     structs::{AppConfig, PrimaryUser},
     util::{ModifyComponentExt, SceneSpawnerPlus},
 };
-use rapier3d_f64::prelude::*;
+use rapier3d::prelude::*;
 use serde::Deserialize;
 
 use crate::{
@@ -1084,7 +1084,7 @@ pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> SharedShape {
 
     let positions_parry: Vec<_> = positions_ref
         .iter()
-        .map(|pos| Point::from([pos[0] as f64, pos[1] as f64, pos[2] as f64]))
+        .map(|pos| Point::from([pos[0], pos[1], pos[2]]))
         .collect();
 
     let indices: Vec<u32> = match mesh_data.indices() {
