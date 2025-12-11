@@ -34,14 +34,29 @@ pub(crate) fn update_user_velocity(
         .unwrap_or_else(|| user.clone());
 
     // Handle key input
-    if (input.is_down(CommonInputAction::IaJump, InputPriority::Scene)
-        || input.just_down(CommonInputAction::IaJump, InputPriority::Scene))
-        && dynamic_state.ground_height < PLAYER_GROUND_THRESHOLD
-        && dynamic_state.velocity.y <= 0.0
-        && !user.block_jump
-    {
-        dynamic_state.velocity.y = (user.jump_height * -user.gravity * 2.0).sqrt();
-        dynamic_state.jump_time = time.elapsed_secs();
+    let jump_key = input.is_down(CommonInputAction::IaJump, InputPriority::Scene)
+        || input.just_down(CommonInputAction::IaJump, InputPriority::Scene);
+    if jump_key {
+        let jump_velocity = (user.jump_height * -user.gravity * 2.0).sqrt();
+        if dynamic_state.ground_height < PLAYER_GROUND_THRESHOLD // grounded
+            && dynamic_state.velocity.y <= jump_velocity * 0.1 // not already jumping
+            && !user.block_jump
+        // scene allowed to jump
+        {
+            dynamic_state.velocity.y = (user.jump_height * -user.gravity * 2.0).sqrt();
+            dynamic_state.jump_time = time.elapsed_secs();
+        } else {
+            debug!(
+                "jump failed:\nground height {} < {}? {}\ny velocity: {} < {}? {}, blocked: {}",
+                dynamic_state.ground_height,
+                PLAYER_GROUND_THRESHOLD,
+                dynamic_state.ground_height < PLAYER_GROUND_THRESHOLD,
+                dynamic_state.velocity.y,
+                (user.jump_height * -user.gravity * 2.0).sqrt() * 0.1,
+                dynamic_state.velocity.y <= (user.jump_height * -user.gravity * 2.0).sqrt() * 0.1,
+                user.block_jump
+            );
+        }
     }
 
     let axis_input = input.get_analog(MOVE_SET, InputPriority::Scene);
