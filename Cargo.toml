@@ -127,7 +127,7 @@ bimap = "0.6.3"
 prost = "0.11.8"
 clap = "4.1.10"
 once_cell = "1.16.0"
-rapier3d-f64 = "0.25"
+rapier3d = "0.25"
 urlencoding = "2.1.2"
 async-std = "1.12.0"
 reqwest = { version = "0.12", default-features = false, features = ["native-tls", "json", "blocking"] }
@@ -276,7 +276,7 @@ bevy_platform = { git = "https://github.com/robtfm/bevy", branch = "release-0.16
 # bevy_platform = { path="../bevy/crates/bevy_platform" }
 
 ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-linesize-0-6.1" }
-parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "bugfix-project-local-point" }
+parry3d = { git = "https://github.com/robtfm/parry", branch = "bugfix-project-local-point" }
 # rapier3d-f64 = { git = "https://github.com/robtfm/rapier", branch = "master" }
 deno_core = { git = "https://github.com/robtfm/deno_core", branch = "0_307_hotfix" }
 serde_v8 = { git = "https://github.com/robtfm/deno_core", branch = "0_307_hotfix" }
