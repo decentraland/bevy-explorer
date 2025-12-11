@@ -19,7 +19,8 @@ use common::structs::AudioDecoderError;
 use crate::{
     global_crdt::LocalAudioFrame,
     livekit::{
-        kira_bridge::kira_thread, LivekitConnection, LivekitRoom, LivekitRuntime, LivekitTransport,
+        kira_bridge::kira_thread, room::LivekitRoom, LivekitConnection, LivekitRuntime,
+        LivekitTransport,
     },
     ChannelControl, NetworkMessage,
 };

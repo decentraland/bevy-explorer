@@ -5,9 +5,9 @@ mod kira_bridge;
 mod mic;
 #[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
 pub mod native;
-mod participant;
+pub mod participant;
 pub mod plugin;
-mod room;
+pub mod room;
 #[cfg(all(feature = "livekit", target_arch = "wasm32"))]
 pub mod web;
 
@@ -15,7 +15,6 @@ use bevy::platform::sync::Arc;
 use bevy::prelude::*;
 use tokio::{runtime::Runtime, sync::mpsc::Receiver};
 
-pub use crate::livekit::room::LivekitRoom;
 use crate::{ChannelControl, NetworkMessage};
 
 #[derive(Event)]

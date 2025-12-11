@@ -59,7 +59,7 @@ impl Drop for LivekitRoom {
         // Build the value to drop the Abi memory
         let room = unsafe { JsValue::from_abi(self.room) };
         spawn_local(async move {
-            let room = room;
+            let _room = room;
             // Just a bit of delay so that the call `close_room`
             // has time to finish
             futures_lite::future::yield_now().await;
@@ -157,7 +157,7 @@ impl Drop for ConnectingLivekitRoom {
     }
 }
 
-pub struct LivekitRoomPlugin;
+pub(super) struct LivekitRoomPlugin;
 
 impl Plugin for LivekitRoomPlugin {
     fn build(&self, app: &mut App) {

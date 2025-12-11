@@ -5,9 +5,9 @@ use livekit::{
     prelude::{LocalParticipant, RemoteParticipant},
 };
 
+use crate::livekit::room::LivekitRoom;
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::Participant as LivekitParticipant;
-use crate::livekit::LivekitRoom;
 
 #[derive(Clone, Component, Deref)]
 pub struct Participant {
@@ -61,7 +61,7 @@ pub struct ParticipantDisconnected {
     pub room: Entity,
 }
 
-pub struct ParticipantPlugin;
+pub(super) struct ParticipantPlugin;
 
 impl Plugin for ParticipantPlugin {
     fn build(&self, app: &mut App) {
