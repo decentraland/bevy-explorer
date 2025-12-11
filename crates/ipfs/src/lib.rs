@@ -482,6 +482,7 @@ impl Plugin for IpfsIoPlugin {
         };
 
         app.insert_resource(IpfsResource { inner: ipfs_io });
+        app.insert_resource(RealmInitialLocation::Base);
 
         #[cfg(feature = "hot_reload")]
         app.register_asset_source(
@@ -525,6 +526,12 @@ impl Plugin for IpfsIoPlugin {
     }
 }
 
+#[derive(Resource, PartialEq, Debug)]
+pub enum RealmInitialLocation {
+    None,
+    Base,
+}
+
 /// Switch to a new realm
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/changerealm")]
@@ -536,8 +543,11 @@ struct ChangeRealmCommand {
 fn change_realm_command(
     mut input: ConsoleCommand<ChangeRealmCommand>,
     mut writer: EventWriter<ChangeRealmEvent>,
+    mut target: ResMut<RealmInitialLocation>,
 ) {
     if let Some(Ok(command)) = input.take() {
+        *target = RealmInitialLocation::Base;
+        debug!("change realm command -> base");
         writer.write(ChangeRealmEvent {
             new_realm: command.new_realm,
             content_server_override: command.content_server_override,

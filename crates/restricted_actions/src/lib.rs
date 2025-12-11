@@ -36,8 +36,7 @@ use dcl_component::proto_components::kernel::comms::rfc4;
 use ethers_core::types::Address;
 use http::Uri;
 use ipfs::{
-    ipfs_path::{IpfsPath, IpfsType},
-    ChangeRealmEvent, EntityDefinition, IpfsAssetServer, IpfsIo, ServerAbout,
+    ChangeRealmEvent, EntityDefinition, IpfsAssetServer, IpfsIo, RealmInitialLocation, ServerAbout, ipfs_path::{IpfsPath, IpfsType}
 };
 use nft::asset_source::Nft;
 use reqwest::StatusCode;
@@ -79,7 +78,7 @@ impl Plugin for RestrictedActionsPlugin {
                     event_player_moved_scene,
                     event_scene_ready,
                     send_scene_messages,
-                    teleport_player,
+                    teleport_player.after(change_realm),
                     handle_out_of_world,
                     open_nft_dialog,
                 ),
@@ -213,6 +212,7 @@ fn change_realm(
     mut commands: Commands,
     mut events: EventReader<RpcCall>,
     mut perms: Permission<(String, RpcResultSender<Result<(), String>>)>,
+    mut target: ResMut<RealmInitialLocation>,
 ) {
     for (scene, to, message, response) in events.read().filter_map(|ev| match ev {
         RpcCall::ChangeRealm {
@@ -233,6 +233,8 @@ fn change_realm(
     }
 
     for (new_realm, response) in perms.drain_success(PermissionType::ChangeRealm) {
+        debug!("change realm action -> base");
+        *target = RealmInitialLocation::Base;
         commands.send_event(ChangeRealmEvent {
             new_realm,
             content_server_override: None,
