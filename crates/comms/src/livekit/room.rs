@@ -10,7 +10,10 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedReceiver;
 #[cfg(not(target_arch = "wasm32"))]
 use {
-    livekit::{id::TrackSid, track::TrackKind, Room, RoomEvent, RoomOptions, RoomResult},
+    livekit::{
+        id::TrackSid, participant::ConnectionQuality, track::TrackKind, Room, RoomEvent,
+        RoomOptions, RoomResult,
+    },
     {bevy::platform::sync::Arc, tokio::task::JoinHandle},
 };
 #[cfg(target_arch = "wasm32")]
@@ -507,6 +510,40 @@ fn process_room_events(
                         room: entity,
                     });
                 }
+                #[cfg(not(target_arch = "wasm32"))]
+                RoomEvent::ConnectionQualityChanged {
+                    quality,
+                    participant,
+                } => match quality {
+                    ConnectionQuality::Excellent => {
+                        commands.trigger(participant::ParticipantConnectionQuality::new(
+                            participant.into(),
+                            entity,
+                            participant::connection_quality::Excellent,
+                        ));
+                    }
+                    ConnectionQuality::Good => {
+                        commands.trigger(participant::ParticipantConnectionQuality::new(
+                            participant.into(),
+                            entity,
+                            participant::connection_quality::Good,
+                        ));
+                    }
+                    ConnectionQuality::Poor => {
+                        commands.trigger(participant::ParticipantConnectionQuality::new(
+                            participant.into(),
+                            entity,
+                            participant::connection_quality::Poor,
+                        ));
+                    }
+                    ConnectionQuality::Lost => {
+                        commands.trigger(participant::ParticipantConnectionQuality::new(
+                            participant.into(),
+                            entity,
+                            participant::connection_quality::Lost,
+                        ));
+                    }
+                },
                 #[cfg(target_arch = "wasm32")]
                 RoomEvent::DataReceived {
                     payload,

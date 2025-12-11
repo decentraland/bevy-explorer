@@ -1,4 +1,9 @@
-use bevy::{ecs::relationship::Relationship, prelude::*};
+use std::marker::PhantomData;
+
+use bevy::{
+    ecs::{component::HookContext, relationship::Relationship, world::DeferredWorld},
+    prelude::*,
+};
 #[cfg(not(target_arch = "wasm32"))]
 use livekit::{
     participant::Participant as LivekitParticipant,
@@ -12,6 +17,13 @@ use crate::livekit::web::Participant as LivekitParticipant;
 #[derive(Clone, Component, Deref)]
 pub struct Participant {
     participant: LivekitParticipant,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<LivekitParticipant> for Participant {
+    fn from(participant: LivekitParticipant) -> Self {
+        Self { participant }
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -61,12 +73,70 @@ pub struct ParticipantDisconnected {
     pub room: Entity,
 }
 
+#[derive(Event)]
+pub struct ParticipantConnectionQuality<C: Component> {
+    participant: Participant,
+    room: Entity,
+    phantom_data: PhantomData<C>,
+}
+
+impl<C: Component> ParticipantConnectionQuality<C> {
+    #[expect(unused_variables, reason = "Parameter exists to help type inference")]
+    pub fn new(participant: Participant, room: Entity, connection_quality: C) -> Self {
+        Self {
+            participant,
+            room,
+            phantom_data: PhantomData,
+        }
+    }
+}
+
+pub mod connection_quality {
+    use super::*;
+
+    macro_rules! make_hooks {
+        ($inserted:ty, ($($to_remove:ty),+)) => {
+            impl $inserted {
+                fn on_add(mut deferred_world: DeferredWorld, hook_context: HookContext) {
+                    let entity = hook_context.entity;
+
+                    deferred_world.commands().entity(entity).try_remove::<($($to_remove),+)>();
+                }
+            }
+        };
+    }
+
+    #[derive(Default, Component)]
+    #[component(on_add=Self::on_add)]
+    pub struct Excellent;
+    make_hooks!(Excellent, (Good, Poor, Lost));
+
+    #[derive(Default, Component)]
+    #[component(on_add=Self::on_add)]
+    pub struct Good;
+    make_hooks!(Good, (Excellent, Poor, Lost));
+
+    #[derive(Default, Component)]
+    #[component(on_add=Self::on_add)]
+    pub struct Poor;
+    make_hooks!(Poor, (Excellent, Good, Lost));
+
+    #[derive(Default, Component)]
+    #[component(on_add=Self::on_add)]
+    pub struct Lost;
+    make_hooks!(Lost, (Excellent, Good, Poor));
+}
+
 pub(super) struct ParticipantPlugin;
 
 impl Plugin for ParticipantPlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(participant_connected);
         app.add_observer(participant_disconnected);
+        app.add_observer(participant_connection_quality_changed::<connection_quality::Excellent>);
+        app.add_observer(participant_connection_quality_changed::<connection_quality::Good>);
+        app.add_observer(participant_connection_quality_changed::<connection_quality::Poor>);
+        app.add_observer(participant_connection_quality_changed::<connection_quality::Lost>);
     }
 }
 
@@ -140,4 +210,47 @@ fn participant_disconnected(
     };
 
     commands.entity(entity).despawn();
+}
+
+fn participant_connection_quality_changed<C: Component + Default>(
+    trigger: Trigger<ParticipantConnectionQuality<C>>,
+    mut commands: Commands,
+    participants: Query<(Entity, &Participant)>,
+    rooms: Query<&HostingParticipants, With<LivekitRoom>>,
+) {
+    let ParticipantConnectionQuality {
+        participant, room, ..
+    } = trigger.event();
+    debug!(
+        "Participant '{}' ({}) connection quality with {room} changed to {}.",
+        participant.name(),
+        participant.identity(),
+        disqualified::ShortName::of::<C>(),
+    );
+
+    let Ok(hosting_participants) = rooms.get(*room) else {
+        error!("Room given to ParticipantDisconnected was invalid.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    let Some(entity) = participants
+        .iter_many(hosting_participants.collection())
+        .find_map(|(entity, ecs_participant)| {
+            if ecs_participant.identity() == participant.identity() {
+                Some(entity)
+            } else {
+                None
+            }
+        })
+    else {
+        error!(
+            "No entity referent to '{}' ({}).",
+            participant.name(),
+            participant.identity()
+        );
+        return;
+    };
+
+    commands.entity(entity).insert(C::default());
 }
