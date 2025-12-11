@@ -1,3 +1,5 @@
+use bevy::math::FloatOrd;
+
 use super::{FromDclReader, ToDclWriter};
 
 pub mod sdk {
@@ -318,5 +320,84 @@ pub trait RoughRoundExt {
 impl RoughRoundExt for bevy::math::Vec3 {
     fn round_at_pow2(self, pow2: i8) -> Self {
         (self * 2f32.powf(-pow2 as f32)).round() * 2f32.powf(pow2 as f32)
+    }
+}
+
+impl std::hash::Hash for sdk::components::pb_material::Material {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        core::mem::discriminant(self).hash(state);
+        match self {
+            sdk::components::pb_material::Material::Unlit(unlit_material) => {
+                unlit_material.hash(state)
+            }
+            sdk::components::pb_material::Material::Pbr(pbr_material) => pbr_material.hash(state),
+        }
+    }
+}
+
+impl std::hash::Hash for common::texture_union::Tex {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        core::mem::discriminant(self).hash(state);
+        match self {
+            common::texture_union::Tex::Texture(texture) => texture.hash(state),
+            common::texture_union::Tex::AvatarTexture(avatar_texture) => avatar_texture.hash(state),
+            common::texture_union::Tex::VideoTexture(video_texture) => video_texture.hash(state),
+            common::texture_union::Tex::UiTexture(ui_canvas_texture) => {
+                ui_canvas_texture.hash(state)
+            }
+        }
+    }
+}
+impl std::hash::Hash for sdk::components::pb_material::UnlitMaterial {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.texture.hash(state);
+        self.alpha_test.map(FloatOrd).hash(state);
+        self.cast_shadows.hash(state);
+        self.diffuse_color.hash(state);
+        self.alpha_texture.hash(state);
+    }
+}
+
+impl std::hash::Hash for common::Color4 {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        FloatOrd(self.r).hash(state);
+        FloatOrd(self.g).hash(state);
+        FloatOrd(self.b).hash(state);
+        FloatOrd(self.a).hash(state);
+    }
+}
+
+impl std::hash::Hash for common::Color3 {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        FloatOrd(self.r).hash(state);
+        FloatOrd(self.g).hash(state);
+        FloatOrd(self.b).hash(state);
+    }
+}
+
+impl std::hash::Hash for common::Vector2 {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        FloatOrd(self.x).hash(state);
+        FloatOrd(self.y).hash(state);
+    }
+}
+
+impl std::hash::Hash for sdk::components::pb_material::PbrMaterial {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.texture.hash(state);
+        self.alpha_test.map(FloatOrd).hash(state);
+        self.cast_shadows.hash(state);
+        self.alpha_texture.hash(state);
+        self.emissive_texture.hash(state);
+        self.bump_texture.hash(state);
+        self.albedo_color.hash(state);
+        self.emissive_color.hash(state);
+        self.reflectivity_color.hash(state);
+        self.transparency_mode.hash(state);
+        self.metallic.map(FloatOrd).hash(state);
+        self.roughness.map(FloatOrd).hash(state);
+        self.specular_intensity.map(FloatOrd).hash(state);
+        self.emissive_intensity.map(FloatOrd).hash(state);
+        self.direct_intensity.map(FloatOrd).hash(state);
     }
 }
