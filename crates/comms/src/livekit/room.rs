@@ -122,9 +122,12 @@ impl Connecting {
 #[derive(Default, Resource, Deref, DerefMut)]
 struct LivekitRoomTrackTask(HashMap<TrackSid, JoinHandle<()>>);
 
-#[cfg(not(target_arch = "wasm32"))]
 #[derive(Component, Deref, DerefMut)]
-struct ConnectingLivekitRoom(JoinHandle<RoomResult<(Room, UnboundedReceiver<RoomEvent>)>>);
+struct ConnectingLivekitRoom(
+    #[cfg(not(target_arch = "wasm32"))]
+    JoinHandle<RoomResult<(Room, UnboundedReceiver<RoomEvent>)>>,
+    #[cfg(target_arch = "wasm32")] oneshot::Receiver<anyhow::Result<JsValueAbi>>,
+);
 
 #[cfg(not(target_arch = "wasm32"))]
 impl Drop for ConnectingLivekitRoom {
@@ -132,10 +135,6 @@ impl Drop for ConnectingLivekitRoom {
         self.0.abort()
     }
 }
-
-#[cfg(target_arch = "wasm32")]
-#[derive(Component, Deref, DerefMut)]
-struct ConnectingLivekitRoom(oneshot::Receiver<anyhow::Result<JsValueAbi>>);
 
 #[cfg(target_arch = "wasm32")]
 impl Drop for ConnectingLivekitRoom {
