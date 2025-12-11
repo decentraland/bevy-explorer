@@ -1,8 +1,3 @@
-use crate::{
-    stream_processor::AVCommand,
-    video_context::{VideoData, VideoInfo},
-    video_stream::{av_sinks, noop_sinks, streamer_sinks, VideoSink},
-};
 use bevy::{
     color::palettes::basic,
     diagnostic::FrameCount,
@@ -18,6 +13,7 @@ use common::{
     sets::SceneSets,
     structs::{AppConfig, PrimaryUser},
 };
+#[cfg(feature = "livekit")]
 use comms::{livekit::LivekitTransport, SceneRoom, Transport};
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
@@ -29,6 +25,14 @@ use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt},
     ContainerEntity, ContainingScene,
+};
+
+#[cfg(feature = "livekit")]
+use crate::video_stream::streamer_sinks;
+use crate::{
+    stream_processor::AVCommand,
+    video_context::{VideoData, VideoInfo},
+    video_stream::{av_sinks, noop_sinks, VideoSink},
 };
 
 pub struct VideoPlayerPlugin;
@@ -109,6 +113,7 @@ fn play_videos(
                     last_frame_received = Some(frame.data(0).to_vec());
                     sink.current_time = time;
                 }
+                #[cfg(feature = "livekit")]
                 Ok(VideoData::LivekitFrame(frame)) => {
                     let image = images.get_mut(&sink.image).unwrap();
                     let extent = image.size();
@@ -186,7 +191,10 @@ pub fn update_video_players(
     mut images: ResMut<Assets<Image>>,
     ipfs: Res<IpfsResource>,
     scenes: Query<&RendererSceneContext>,
-    mut scene_rooms: Query<&mut Transport, (With<LivekitTransport>, With<SceneRoom>)>,
+    #[cfg(feature = "livekit")] mut scene_rooms: Query<
+        &mut Transport,
+        (With<LivekitTransport>, With<SceneRoom>),
+    >,
     config: Res<AppConfig>,
     mut system_paused: Local<HashMap<Entity, Option<tokio::sync::mpsc::Sender<AVCommand>>>>,
     containing_scene: ContainingScene,
@@ -221,6 +229,7 @@ pub fn update_video_players(
             };
 
             let (video_sink, audio_sink) = if player.source.src.starts_with("livekit-video://") {
+                #[cfg(feature = "livekit")]
                 if let Ok(transport) = scene_rooms.single_mut() {
                     if let Some(control_channel) = transport.control.clone() {
                         let (video_sink, audio_sink) = streamer_sinks(
@@ -251,6 +260,12 @@ pub fn update_video_players(
                         player.source.volume.unwrap_or(1.0),
                     )
                 }
+                #[cfg(not(feature = "livekit"))]
+                noop_sinks(
+                    player.source.src.clone(),
+                    image_handle,
+                    player.source.volume.unwrap_or(1.0),
+                )
             } else if player.source.src.is_empty() {
                 let (video_sink, audio_sink) = noop_sinks(
                     player.source.src.clone(),

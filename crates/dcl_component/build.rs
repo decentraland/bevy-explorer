@@ -67,6 +67,7 @@ fn gen_sdk_components() -> Result<()> {
     sources.push("src/proto/decentraland/kernel/comms/v3/archipelago.proto".into());
     sources.push("src/proto/decentraland/social/friendships/friendships.proto".into());
 
+    let mut config = prost_build::Config::new();
     let serde_components = [
         "Vector2",
         "Color3",
@@ -76,12 +77,24 @@ fn gen_sdk_components() -> Result<()> {
         "InputAction",
     ];
 
-    let mut config = prost_build::Config::new();
     for component in serde_components {
         config.type_attribute(
             component,
             "#[derive(serde::Serialize, serde::Deserialize)]\n#[serde(rename_all = \"camelCase\")]",
         );
+    }
+
+    let hash_components = [
+        "PBMaterial",
+        "GltfMaterial",
+        "TextureUnion",
+        "Texture",
+        "AvatarTexture",
+        "VideoTexture",
+        "UiCanvasTexture",
+    ];
+    for component in hash_components {
+        config.type_attribute(component, "#[derive(Hash)]");
     }
 
     config.compile_protos(&sources, &["src/proto/"])?;
