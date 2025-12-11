@@ -13,7 +13,6 @@ use crate::{
     livekit::{LivekitConnection, LivekitRoom, LivekitTransport},
     NetworkMessage,
 };
-use common::structs::MicState;
 
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
 extern "C" {
@@ -64,13 +63,13 @@ extern "C" {
     ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch)]
-    fn set_microphone_enabled(enabled: bool) -> Result<(), JsValue>;
+    pub fn set_microphone_enabled(enabled: bool) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch)]
-    fn is_microphone_available() -> Result<bool, JsValue>;
+    pub fn is_microphone_available() -> Result<bool, JsValue>;
 
     #[wasm_bindgen(catch)]
-    fn set_participant_spatial_audio(
+    pub fn set_participant_spatial_audio(
         participant_identity: &str,
         pan: f32,
         volume: f32,
@@ -98,40 +97,6 @@ extern "C" {
         subscribe_audio: bool,
         subscribe_video: bool,
     ) -> Result<(), JsValue>;
-}
-
-pub struct MicPlugin;
-
-impl Plugin for MicPlugin {
-    fn build(&self, app: &mut App) {
-        app.init_resource::<MicState>();
-        app.add_systems(Update, update_mic_state);
-        app.add_systems(Update, locate_foreign_streams);
-    }
-}
-
-fn update_mic_state(
-    mic_state: Res<MicState>,
-    mut last_enabled: Local<Option<bool>>,
-    mut last_available: Local<Option<bool>>,
-) {
-    let mut mic_state = mic_state.inner.blocking_write();
-    // Check if microphone is available in the browser
-    let current_available = is_microphone_available().unwrap_or(false);
-
-    // Only update availability if it changed
-    if last_available.is_none() || last_available.unwrap() != current_available {
-        mic_state.available = current_available;
-        *last_available = Some(current_available);
-    }
-
-    // Only update microphone enabled state if it changed
-    if last_enabled.is_none() || last_enabled.unwrap() != mic_state.enabled {
-        if let Err(e) = set_microphone_enabled(mic_state.enabled) {
-            warn!("Failed to set microphone state: {:?}", e);
-        }
-        *last_enabled = Some(mic_state.enabled);
-    }
 }
 
 #[allow(clippy::type_complexity)]
@@ -347,16 +312,6 @@ pub struct Participant {
     pub metadata: String,
 }
 
-// Public API for spatial audio control
-pub fn update_participant_spatial_audio(participant_identity: &str, pan: f32, volume: f32) {
-    if let Err(e) = set_participant_spatial_audio(participant_identity, pan, volume) {
-        warn!(
-            "Failed to set spatial audio for {}: {:?}",
-            participant_identity, e
-        );
-    }
-}
-
 pub fn update_participant_pan(participant_identity: &str, pan: f32) {
     if let Err(e) = set_participant_pan(participant_identity, pan) {
         warn!("Failed to set pan for {}: {:?}", participant_identity, e);
@@ -366,36 +321,6 @@ pub fn update_participant_pan(participant_identity: &str, pan: f32) {
 pub fn update_participant_volume(participant_identity: &str, volume: f32) {
     if let Err(e) = set_participant_volume(participant_identity, volume) {
         warn!("Failed to set volume for {}: {:?}", participant_identity, e);
-    }
-}
-
-use crate::global_crdt::{ForeignAudioSource, ForeignPlayer};
-use bevy::render::view::RenderLayers;
-use common::{structs::AudioSettings, util::VolumePanning};
-
-#[allow(clippy::type_complexity)]
-pub fn locate_foreign_streams(
-    mut streams: Query<(
-        &GlobalTransform,
-        Option<&RenderLayers>,
-        &ForeignAudioSource,
-        &ForeignPlayer,
-    )>,
-    pan: VolumePanning,
-    settings: Res<AudioSettings>,
-) {
-    for (emitter_transform, render_layers, source, player) in streams.iter_mut() {
-        if source.current_transport.is_some() {
-            let (volume, panning) =
-                pan.volume_and_panning(emitter_transform.translation(), render_layers);
-            let volume = volume * settings.voice();
-
-            update_participant_spatial_audio(
-                &format!("{:#x}", player.address),
-                -1.0 + 2.0 * panning,
-                volume,
-            );
-        }
     }
 }
 

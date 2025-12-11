@@ -309,6 +309,7 @@ fn process_room_events(
     #[cfg(not(target_arch = "wasm32"))] mut track_tasks: ResMut<LivekitRoomTrackTask>,
 ) {
     let sender = player_state.get_sender();
+    #[cfg_attr(target_arch = "wasm32", expect(unused_mut))]
     for (entity, mut livekit_room) in livekit_rooms {
         #[cfg(not(target_arch = "wasm32"))]
         let Ok(runtime) = livekit_runtimes.get(entity) else {

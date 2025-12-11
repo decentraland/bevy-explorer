@@ -1,15 +1,16 @@
 use bevy::platform::sync::Arc;
 use bevy::prelude::*;
-use common::structs::MicState;
 use dcl_component::proto_components::kernel::comms::rfc4;
 use tokio::runtime::Builder;
 
 #[cfg(not(target_arch = "wasm32"))]
-use crate::livekit::native::{connect_livekit, MicPlugin};
+use crate::livekit::native::connect_livekit;
 #[cfg(target_arch = "wasm32")]
-use crate::livekit::web::{connect_livekit, MicPlugin};
+use crate::livekit::web::connect_livekit;
 use crate::{
-    livekit::{room::LivekitRoomPlugin, LivekitRuntime, LivekitTransport, StartLivekit},
+    livekit::{
+        mic::MicPlugin, room::LivekitRoomPlugin, LivekitRuntime, LivekitTransport, StartLivekit,
+    },
     profile::CurrentUserProfile,
     NetworkMessage, Transport, TransportType,
 };
@@ -18,12 +19,11 @@ pub struct LivekitPlugin;
 
 impl Plugin for LivekitPlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(MicPlugin);
         app.add_plugins(LivekitRoomPlugin);
 
         app.add_systems(Update, (connect_livekit, start_livekit));
         app.add_event::<StartLivekit>();
-        app.init_resource::<MicState>();
-        app.add_plugins(MicPlugin);
     }
 }
 
