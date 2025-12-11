@@ -1083,6 +1083,7 @@ fn layout_scene_ui(
                     ] {
                         let mut srgba = edge.to_srgba();
                         srgba.alpha *= link.opacity.0;
+                        *edge = srgba.into();
                     }
                     cmds.try_insert(border_color);
                 } else {
