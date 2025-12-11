@@ -67,7 +67,7 @@ pub struct Connected;
 impl Connected {
     pub fn on_add(mut deferred_world: DeferredWorld, hook_context: HookContext) {
         let entity = hook_context.entity;
-        warn!("Room {entity} connected.");
+        debug!("Room {entity} connected.");
 
         deferred_world
             .commands()
@@ -96,7 +96,7 @@ pub struct Connecting;
 impl Connecting {
     pub fn on_add(mut deferred_world: DeferredWorld, hook_context: HookContext) {
         let entity = hook_context.entity;
-        warn!("Room {entity} is connecting.");
+        debug!("Room {entity} is connecting.");
 
         deferred_world
             .commands()
