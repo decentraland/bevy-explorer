@@ -28,6 +28,7 @@ use dcl_component::{
 use ipfs::{
     ipfs_path::IpfsPath, ActiveEntityTask, CurrentRealm, EntityDefinition, IpfsAssetServer,
     RealmInitialLocation, SceneIpfsLocation, SceneJsFile,
+    IpfsResource, RealmInitialLocation, SceneIpfsLocation, SceneJsFile,
 };
 use scene_material::BoundRegion;
 use system_bridge::{LiveSceneInfo, SystemApi, SystemBridge};
