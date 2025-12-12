@@ -1,57 +1,41 @@
-// --server https://worlds-content-server.decentraland.org/world/shibu.dcl.eth --location 1,1
-
+use bevy::platform::sync::Arc;
 use bevy::prelude::*;
-use tokio::sync::mpsc::Receiver;
-
 use dcl_component::proto_components::kernel::comms::rfc4;
-
-use crate::{
-    profile::CurrentUserProfile, ChannelControl, NetworkMessage, Transport, TransportType,
-};
-use common::structs::MicState;
-
-// main.rs or lib.rs
-
-#[cfg(target_arch = "wasm32")]
-pub use crate::livekit_web::{connect_livekit, MicPlugin};
+use tokio::runtime::Builder;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use crate::livekit_native::{connect_livekit, MicPlugin};
+use crate::livekit::native::connect_livekit;
+#[cfg(target_arch = "wasm32")]
+use crate::livekit::web::connect_livekit;
+use crate::{
+    livekit::{
+        mic::MicPlugin, participant::ParticipantPlugin, room::LivekitRoomPlugin,
+        track::LivekitTrackPlugin, LivekitRuntime, LivekitTransport, StartLivekit,
+    },
+    profile::CurrentUserProfile,
+    NetworkMessage, Transport, TransportType,
+};
 
 pub struct LivekitPlugin;
 
 impl Plugin for LivekitPlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(MicPlugin);
+        app.add_plugins(LivekitRoomPlugin);
+        app.add_plugins(ParticipantPlugin);
+        app.add_plugins(LivekitTrackPlugin);
+
         app.add_systems(Update, (connect_livekit, start_livekit));
         app.add_event::<StartLivekit>();
-        app.init_resource::<MicState>();
-        app.add_plugins(MicPlugin);
     }
 }
-
-#[derive(Event)]
-pub struct StartLivekit {
-    pub entity: Entity,
-    pub address: String,
-}
-
-#[derive(Component)]
-pub struct LivekitTransport {
-    pub address: String,
-    pub receiver: Option<Receiver<NetworkMessage>>,
-    pub control_receiver: Option<Receiver<ChannelControl>>,
-    pub retries: usize,
-}
-
-#[derive(Component)]
-pub struct LivekitConnection;
 
 pub fn start_livekit(
     mut commands: Commands,
     mut room_events: EventReader<StartLivekit>,
     current_profile: Res<CurrentUserProfile>,
 ) {
-    if let Some(ev) = room_events.read().last() {
+    for ev in room_events.read() {
         info!("starting livekit protocol");
         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
         let (control_sender, control_receiver) = tokio::sync::mpsc::channel(10);
@@ -71,6 +55,23 @@ pub fn start_livekit(
         };
         let _ = sender.try_send(NetworkMessage::reliable(&response));
 
+        #[cfg(not(target_arch = "wasm32"))]
+        let runtime = Arc::new(
+            Builder::new_multi_thread()
+                .worker_threads(1)
+                .enable_all()
+                .build()
+                .unwrap(),
+        );
+        #[cfg(target_arch = "wasm32")]
+        let runtime = Arc::new(
+            Builder::new_current_thread()
+                .worker_threads(1)
+                .enable_all()
+                .build()
+                .unwrap(),
+        );
+
         commands.entity(ev.entity).try_insert((
             Transport {
                 transport_type: TransportType::Livekit,
@@ -84,6 +85,7 @@ pub fn start_livekit(
                 control_receiver: Some(control_receiver),
                 retries: 0,
             },
+            LivekitRuntime(runtime),
         ));
     }
 }
