@@ -318,7 +318,7 @@ fn show_emote_ui(
         for emote in player_emotes {
             debug!("adding {}", emote.slot);
 
-            let h_thumb = EmoteUrn::new(&emote.urn)
+            let h_thumb: Handle<Image> = EmoteUrn::new(&emote.urn)
                 .ok()
                 .and_then(|emote_urn| match emote_loader.get_data(emote_urn) {
                     Ok(d) => Some(d),
@@ -328,12 +328,12 @@ fn show_emote_ui(
                     }
                     _ => None,
                 })
-                .map(|anim| anim.thumbnail.clone())
+                .map(|anim| asset_server.load(&anim.thumbnail))
                 .unwrap_or_else(|| {
                     debug!("didn't find {}", emote.urn);
                     asset_server.load("embedded://images/redx.png")
                 });
-            props.insert_prop(format!("image_{}", emote.slot), h_thumb.clone())
+            props.insert_prop(format!("image_{}", emote.slot), h_thumb)
         }
 
         if !all_loaded {
