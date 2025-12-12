@@ -6,40 +6,40 @@ use bevy::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 use livekit::{
-    participant::Participant as LivekitParticipant,
+    participant::Participant,
     prelude::{LocalParticipant, RemoteParticipant},
 };
 
 use crate::livekit::room::LivekitRoom;
 #[cfg(target_arch = "wasm32")]
-use crate::livekit::web::Participant as LivekitParticipant;
+use crate::livekit::web::Participant;
 
 #[derive(Clone, Component, Deref)]
-pub struct Participant {
-    participant: LivekitParticipant,
+pub struct LivekitParticipant {
+    participant: Participant,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-impl From<LivekitParticipant> for Participant {
-    fn from(participant: LivekitParticipant) -> Self {
+impl From<Participant> for LivekitParticipant {
+    fn from(participant: Participant) -> Self {
         Self { participant }
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-impl From<LocalParticipant> for Participant {
+impl From<LocalParticipant> for LivekitParticipant {
     fn from(participant: LocalParticipant) -> Self {
         Self {
-            participant: LivekitParticipant::Local(participant),
+            participant: Participant::Local(participant),
         }
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-impl From<RemoteParticipant> for Participant {
+impl From<RemoteParticipant> for LivekitParticipant {
     fn from(participant: RemoteParticipant) -> Self {
         Self {
-            participant: LivekitParticipant::Remote(participant),
+            participant: Participant::Remote(participant),
         }
     }
 }
@@ -63,26 +63,26 @@ pub struct HostingParticipants(Vec<Entity>);
 
 #[derive(Event)]
 pub struct ParticipantConnected {
-    pub participant: Participant,
+    pub participant: LivekitParticipant,
     pub room: Entity,
 }
 
 #[derive(Event)]
 pub struct ParticipantDisconnected {
-    pub participant: Participant,
+    pub participant: LivekitParticipant,
     pub room: Entity,
 }
 
 #[derive(Event)]
 pub struct ParticipantConnectionQuality<C: Component> {
-    participant: Participant,
+    participant: LivekitParticipant,
     room: Entity,
     phantom_data: PhantomData<C>,
 }
 
 impl<C: Component> ParticipantConnectionQuality<C> {
     #[expect(unused_variables, reason = "Parameter exists to help type inference")]
-    pub fn new(participant: Participant, room: Entity, connection_quality: C) -> Self {
+    pub fn new(participant: LivekitParticipant, room: Entity, connection_quality: C) -> Self {
         Self {
             participant,
             room,
@@ -150,7 +150,7 @@ fn participant_connected(trigger: Trigger<ParticipantConnected>, mut commands: C
     );
 
     #[cfg(not(target_arch = "wasm32"))]
-    let is_local = matches!(participant.participant, LivekitParticipant::Local(_));
+    let is_local = matches!(participant.participant, Participant::Local(_));
     #[cfg(target_arch = "wasm32")]
     let is_local = false;
 
@@ -174,7 +174,7 @@ fn participant_connected(trigger: Trigger<ParticipantConnected>, mut commands: C
 fn participant_disconnected(
     trigger: Trigger<ParticipantDisconnected>,
     mut commands: Commands,
-    participants: Query<(Entity, &Participant)>,
+    participants: Query<(Entity, &LivekitParticipant)>,
     rooms: Query<&HostingParticipants, With<LivekitRoom>>,
 ) {
     let ParticipantDisconnected { participant, room } = trigger.event();
@@ -215,7 +215,7 @@ fn participant_disconnected(
 fn participant_connection_quality_changed<C: Component + Default>(
     trigger: Trigger<ParticipantConnectionQuality<C>>,
     mut commands: Commands,
-    participants: Query<(Entity, &Participant)>,
+    participants: Query<(Entity, &LivekitParticipant)>,
     rooms: Query<&HostingParticipants, With<LivekitRoom>>,
 ) {
     let ParticipantConnectionQuality {
