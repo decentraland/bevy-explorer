@@ -10,9 +10,9 @@ use livekit::{
     prelude::{LocalParticipant, RemoteParticipant},
 };
 
-use crate::livekit::room::LivekitRoom;
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::Participant;
+use crate::{livekit::room::LivekitRoom, make_hooks};
 
 #[derive(Clone, Component, Deref)]
 pub struct LivekitParticipant {
@@ -93,18 +93,6 @@ impl<C: Component> ParticipantConnectionQuality<C> {
 
 pub mod connection_quality {
     use super::*;
-
-    macro_rules! make_hooks {
-        ($inserted:ty, ($($to_remove:ty),+)) => {
-            impl $inserted {
-                fn on_add(mut deferred_world: DeferredWorld, hook_context: HookContext) {
-                    let entity = hook_context.entity;
-
-                    deferred_world.commands().entity(entity).try_remove::<($($to_remove),+)>();
-                }
-            }
-        };
-    }
 
     #[derive(Default, Component)]
     #[component(on_add=Self::on_add)]

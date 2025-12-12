@@ -36,3 +36,16 @@ struct LivekitRuntime(Arc<Runtime>);
 
 #[derive(Component)]
 pub struct LivekitConnection;
+
+#[macro_export]
+macro_rules! make_hooks {
+    ($inserted:ty, ($($to_remove:ty),+)) => {
+        impl $inserted {
+            fn on_add(mut deferred_world: DeferredWorld, hook_context: HookContext) {
+                let entity = hook_context.entity;
+
+                deferred_world.commands().entity(entity).try_remove::<($($to_remove),+)>();
+            }
+        }
+    };
+}
