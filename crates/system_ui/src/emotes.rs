@@ -291,7 +291,7 @@ fn set_emotes_content(
                 let emote_img = emote_settings
                     .current_emotes
                     .get(&slot)
-                    .map(|(_, data)| data.thumbnail.clone())
+                    .map(|(_, data)| ipfas.asset_server().load::<Image>(&data.thumbnail))
                     .unwrap_or_else(|| empty_img.clone());
 
                 let content = commands
@@ -833,7 +833,9 @@ fn update_emote_item(
                                 .available_representations
                                 .contains(settings.body_shape.base().as_str());
 
-                            *state = EmoteItemState::PendingImage(data.thumbnail.clone());
+                            *state = EmoteItemState::PendingImage(
+                                ipfas.asset_server().load(&data.thumbnail),
+                            );
 
                             modified = true;
 
@@ -1074,7 +1076,7 @@ fn update_selected_item(
                 let emote_img = emote_settings
                     .current_emotes
                     .get(&selected_slot)
-                    .map(|(_, data)| data.thumbnail.clone())
+                    .map(|(_, data)| ipfas.asset_server().load::<Image>(&data.thumbnail))
                     .unwrap_or_else(|| empty_img.clone());
 
                 commands

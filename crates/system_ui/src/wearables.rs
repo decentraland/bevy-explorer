@@ -301,7 +301,7 @@ fn set_wearables_content(
                 let wearable_img = wearable_settings
                     .current_wearables
                     .get(category)
-                    .map(|(_, data)| data.thumbnail.clone())
+                    .map(|(_, data)| ipfas.asset_server().load::<Image>(&data.thumbnail))
                     .unwrap_or_else(|| empty_img.clone());
 
                 let content = commands
@@ -914,7 +914,9 @@ fn update_wearable_item(
                                     .available_representations
                                     .contains(settings.body_shape.base().as_str());
 
-                            *state = WearableItemState::PendingImage(data.thumbnail.clone());
+                            *state = WearableItemState::PendingImage(
+                                ipfas.asset_server().load(&data.thumbnail),
+                            );
 
                             modified = true;
 
@@ -1163,7 +1165,7 @@ fn update_selected_item(
                 let wearable_img = wearable_settings
                     .current_wearables
                     .get(&category)
-                    .map(|(_, data)| data.thumbnail.clone())
+                    .map(|(_, data)| ipfas.asset_server().load(&data.thumbnail))
                     .unwrap_or_else(|| empty_img.clone());
 
                 commands

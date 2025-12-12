@@ -71,7 +71,7 @@ pub struct Collectible<T: CollectibleType> {
 pub struct CollectibleData<T: CollectibleType> {
     pub hash: String,
     pub urn: String,
-    pub thumbnail: Handle<Image>,
+    pub thumbnail: String,
     pub available_representations: HashSet<String>,
     pub name: String,
     pub description: String,
