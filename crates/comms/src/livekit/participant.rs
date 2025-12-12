@@ -55,7 +55,28 @@ pub struct Streamer;
 
 #[derive(Component)]
 #[relationship(relationship_target=HostingParticipants)]
+#[component(on_remove=Self::on_remove)]
 pub struct HostedBy(Entity);
+
+impl HostedBy {
+    fn on_remove(mut deferred_world: DeferredWorld, hook_context: HookContext) {
+        let entity = hook_context.entity;
+
+        let Some(participant) = deferred_world.entity(entity).get::<LivekitParticipant>() else {
+            error!("Entity {entity} was not a participant.");
+            deferred_world.commands().send_event(AppExit::from_code(1));
+            return;
+        };
+
+        debug!(
+            "Room of {} ({}) was closed. Despawning.",
+            participant.sid(),
+            participant.identity()
+        );
+
+        deferred_world.commands().entity(entity).try_despawn();
+    }
+}
 
 #[derive(Component)]
 #[relationship_target(relationship=HostedBy)]
