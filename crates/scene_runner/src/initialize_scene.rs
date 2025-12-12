@@ -12,7 +12,7 @@ use bevy::{
 };
 
 use common::{
-    structs::{AppConfig, AppError, IVec2Arg, MicState, PreviewMode, SceneLoadDistance, SceneMeta},
+    structs::{AppConfig, AppError, IVec2Arg, PreviewMode, SceneLoadDistance, SceneMeta},
     util::{TaskExt, TryPushChildrenEx},
 };
 use comms::global_crdt::GlobalCrdtState;
@@ -21,16 +21,16 @@ use dcl::{
     SceneElapsedTime, SceneId, SceneResponse,
 };
 use dcl_component::{
-    proto_components::sdk::components::PbMainCamera, transform_and_parent::DclTransformAndParent,
+    proto_components::sdk::components::{PbMainCamera, PbRealmInfo},
+    transform_and_parent::DclTransformAndParent,
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
 use ipfs::{
     ipfs_path::IpfsPath, ActiveEntityTask, CurrentRealm, EntityDefinition, IpfsAssetServer,
-    IpfsResource, RealmInitialLocation, SceneIpfsLocation, SceneJsFile,
+    RealmInitialLocation, SceneIpfsLocation, SceneJsFile,
 };
 use scene_material::BoundRegion;
 use system_bridge::{LiveSceneInfo, SystemApi, SystemBridge};
-use wallet::Wallet;
 
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets, SceneUpdates};
 use crate::{
@@ -40,7 +40,7 @@ use crate::{
 };
 
 #[cfg(not(target_arch = "wasm32"))]
-use dcl_deno::spawn_scene;
+use dcl_deno_ipc::spawn_scene;
 
 #[cfg(target_arch = "wasm32")]
 use dcl_wasm::spawn_scene;
@@ -124,7 +124,9 @@ pub enum SceneLoading {
 pub struct SceneEntityDefinitionHandle(pub Handle<EntityDefinition>);
 
 #[derive(Component)]
-pub struct SceneJsHandle(pub Handle<SceneJsFile>);
+pub struct SceneInitialData {
+    pub js: Handle<SceneJsFile>,
+}
 
 pub(crate) fn load_scene_entity(
     mut commands: Commands,
@@ -233,6 +235,7 @@ pub(crate) fn load_scene_javascript(
     mut scene_updates: ResMut<SceneUpdates>,
     global_scene: Res<GlobalCrdtState>,
     portable_scenes: Res<PortableScenes>,
+    realm: Res<CurrentRealm>,
 ) {
     for (root, state, h_scene) in loading_scenes
         .iter()
@@ -261,11 +264,11 @@ pub(crate) fn load_scene_javascript(
             fail("definition was dropped");
             continue;
         };
-        let Some(meta) = &definition.metadata else {
+        let Some(raw_meta) = &definition.metadata else {
             fail("definition didn't contain metadata");
             continue;
         };
-        let Ok(meta) = serde_json::from_value::<SceneMeta>(meta.clone()) else {
+        let Ok(meta) = serde_json::from_value::<SceneMeta>(raw_meta.clone()) else {
             fail("scene.json did not resolve to expected format");
             continue;
         };
@@ -399,6 +402,33 @@ pub(crate) fn load_scene_javascript(
             Some(&mut DclReader::new(&buf)),
         );
 
+        // set initial realm info
+        let base_url = realm
+            .about_url
+            .strip_suffix("/about")
+            .unwrap_or(&realm.about_url);
+        let realm_info = PbRealmInfo {
+            base_url: base_url.to_owned(),
+            realm_name: realm.config.realm_name.clone().unwrap_or_default(),
+            network_id: realm.config.network_id.unwrap_or_default() as i32,
+            comms_adapter: realm
+                .comms
+                .as_ref()
+                .and_then(|comms| comms.adapter.clone())
+                .unwrap_or("offline".to_owned()),
+            is_preview: false,
+            room: None,
+            is_connected_scene_room: None,
+        };
+        buf.clear();
+        DclWriter::new(&mut buf).write(&realm_info);
+        initial_crdt.force_update(
+            SceneComponentId::REALM_INFO,
+            CrdtType::LWW_ANY,
+            SceneEntityId::ROOT,
+            Some(&mut DclReader::new(&buf)),
+        );
+
         if let Some(serialized_crdt) = maybe_serialized_crdt {
             // add main.crdt
             let mut context =
@@ -471,7 +501,7 @@ pub(crate) fn load_scene_javascript(
         ));
 
         commands.entity(root).try_insert((
-            SceneJsHandle(h_code),
+            SceneInitialData { js: h_code },
             SceneLoading::Javascript(Some(global_updates)),
         ));
     }
@@ -532,20 +562,17 @@ pub(crate) fn initialize_scene(
     mut loading_scenes: Query<(
         Entity,
         &mut SceneLoading,
-        &SceneJsHandle,
+        &SceneInitialData,
         &mut RendererSceneContext,
         Option<&SuperUserScene>,
     )>,
     scene_js_files: Res<Assets<SceneJsFile>>,
     asset_server: Res<AssetServer>,
-    ipfs: Res<IpfsResource>,
-    wallet: Res<Wallet>,
     testing_data: Res<TestingData>,
     preview_mode: Res<PreviewMode>,
     su_bridge: Res<SystemBridge>,
-    mic: Res<MicState>,
 ) {
-    for (root, mut state, h_code, mut context, super_user) in loading_scenes.iter_mut() {
+    for (root, mut state, initial_data, mut context, super_user) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript(_)) || context.tick_number != 1 {
             continue;
         }
@@ -556,7 +583,7 @@ pub(crate) fn initialize_scene(
             commands.entity(root).try_insert(SceneLoading::Failed);
         };
 
-        match asset_server.load_state(h_code.0.id()) {
+        match asset_server.load_state(initial_data.js.id()) {
             bevy::asset::LoadState::Loaded => (),
             bevy::asset::LoadState::Failed(_) => {
                 fail("main js could not be loaded");
@@ -565,7 +592,7 @@ pub(crate) fn initialize_scene(
             _ => continue,
         }
 
-        let Some(js_file) = scene_js_files.get(h_code.0.id()) else {
+        let Some(js_file) = scene_js_files.get(initial_data.js.id()) else {
             fail("main js did not resolve to expected format");
             continue;
         };
@@ -595,14 +622,12 @@ pub(crate) fn initialize_scene(
             .is_some_and(|inspect_hash| inspect_hash == &context.hash);
 
         let main_sx = spawn_scene(
+            context.crdt_store.clone(),
             context.hash.clone(),
             js_file.clone(),
             crdt_component_interfaces,
             thread_sx,
             global_updates,
-            ipfs.clone(),
-            wallet.clone(),
-            mic.clone(),
             scene_id,
             context.storage_root.clone(),
             inspected,
@@ -918,6 +943,7 @@ fn load_active_entities(
     mut global_crdt: ResMut<GlobalCrdtState>,
     mut consecutive_fetch_fail_count: Local<usize>,
     mut commands: Commands,
+    mut fetch_count: Local<usize>,
     mut stored_parcels: Local<(IVec2, Vec<(f32, IVec2)>)>,
     mut teleport_target: ResMut<RealmInitialLocation>,
     mut pending_teleport: Local<bool>,
@@ -934,6 +960,7 @@ fn load_active_entities(
     };
 
     if current_realm.is_changed() {
+        *fetch_count = 100;
         // drop current request
         *pointer_request = None;
         // clear stored parcels
@@ -1063,11 +1090,11 @@ fn load_active_entities(
             *stored_parcels = (focus_parcel, required_parcels);
         }
 
-        // limit to 5000 per request
+        // limit per request
         let stored_len = stored_parcels.1.len();
         let required_parcels = stored_parcels
             .1
-            .split_off(stored_len.saturating_sub(5000))
+            .split_off(stored_len.saturating_sub(*fetch_count))
             .into_iter()
             .map(|(_, parcel)| parcel)
             .collect::<HashSet<_>>();
@@ -1171,12 +1198,16 @@ fn load_active_entities(
         let retrieved_parcels = match task_result {
             Ok(res) => {
                 *consecutive_fetch_fail_count = 0;
+                *fetch_count = (*fetch_count * 2).min(3200);
                 res
             }
             Err(e) => {
                 warn!("failed to retrieve active scenes, will retry");
                 warn!("error: {e:?}");
-                *consecutive_fetch_fail_count += 1;
+                *fetch_count = (*fetch_count / 2).max(100);
+                if *fetch_count == 100 {
+                    *consecutive_fetch_fail_count += 1;
+                }
                 if *consecutive_fetch_fail_count == 10 {
                     warn!("failed to retrieve active scenes 10 times, aborting");
                     commands.send_event(AppError::NetworkFailure(e));

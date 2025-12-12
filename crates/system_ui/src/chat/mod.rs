@@ -9,6 +9,7 @@ use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     dcl_assert,
     inputs::SystemAction,
+    rpc::RpcStreamSender,
     sets::SetupSets,
     structs::{PrimaryPlayerRes, PrimaryUser, SystemAudio, ToolTips, TooltipSource},
     util::{AsH160, ModifyComponentExt, RingBuffer, RingBufferReceiver, TryPushChildrenEx},
@@ -652,7 +653,7 @@ pub(crate) fn select_chat_tab(
 fn pipe_chats_to_scene(
     mut chat_events: EventReader<ChatEvent>,
     mut requests: EventReader<SystemApi>,
-    mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<ChatMessage>>>,
+    mut senders: Local<Vec<RpcStreamSender<ChatMessage>>>,
     players: Query<&ForeignPlayer>,
     primary_player: Res<PrimaryPlayerRes>,
     wallet: Res<Wallet>,

@@ -1,16 +1,17 @@
 use bevy::platform::collections::HashMap;
 use dcl_component::{DclReader, SceneEntityId};
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
 const SET_SIZE: usize = 100;
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, Serialize, Deserialize)]
 pub struct CrdtGOEntry {
     // timestamp: SceneCrdtTimestamp,
     pub data: Vec<u8>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CrdtGOState(pub HashMap<SceneEntityId, VecDeque<CrdtGOEntry>>);
 
 impl CrdtGOState {

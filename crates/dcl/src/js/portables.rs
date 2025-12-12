@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use bevy::log::debug;
-use common::rpc::{PortableLocation, RpcCall, SpawnResponse};
+use common::rpc::{PortableLocation, RpcCall, RpcResultSender, SpawnResponse};
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
@@ -13,7 +13,7 @@ pub async fn op_portable_spawn(
     ens: Option<String>,
 ) -> Result<SpawnResponse, anyhow::Error> {
     debug!("op_portable_spawn");
-    let (sx, rx) = tokio::sync::oneshot::channel::<Result<SpawnResponse, String>>();
+    let (sx, rx) = RpcResultSender::channel();
 
     let location = match (pid, ens) {
         (Some(urn), None) => PortableLocation::Urn(urn.clone()),
@@ -29,7 +29,7 @@ pub async fn op_portable_spawn(
         .push(RpcCall::SpawnPortable {
             location,
             spawner: scene,
-            response: sx.into(),
+            response: sx,
         });
 
     rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))
@@ -40,7 +40,7 @@ pub async fn op_portable_kill(
     pid: String,
 ) -> Result<bool, anyhow::Error> {
     debug!("op_portable_kill");
-    let (sx, rx) = tokio::sync::oneshot::channel::<bool>();
+    let (sx, rx) = RpcResultSender::channel();
 
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
 
@@ -50,7 +50,7 @@ pub async fn op_portable_kill(
         .push(RpcCall::KillPortable {
             scene,
             location: PortableLocation::Urn(pid.clone()),
-            response: sx.into(),
+            response: sx,
         });
 
     rx.await.map_err(|e| anyhow::anyhow!(e))
@@ -58,14 +58,12 @@ pub async fn op_portable_kill(
 
 pub async fn op_portable_list(state: Rc<RefCell<impl State>>) -> Vec<SpawnResponse> {
     debug!("op_portable_list");
-    let (sx, rx) = tokio::sync::oneshot::channel::<Vec<SpawnResponse>>();
+    let (sx, rx) = RpcResultSender::channel();
 
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
-        .push(RpcCall::ListPortables {
-            response: sx.into(),
-        });
+        .push(RpcCall::ListPortables { response: sx });
 
     let res = rx.await.unwrap_or_default();
     bevy::log::debug!("portable list res: {res:?}");

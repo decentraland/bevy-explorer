@@ -5,7 +5,7 @@ use assets::EmbedAssetsPlugin;
 #[cfg(not(debug_assertions))]
 use build_time::build_time_utc;
 
-use dcl_deno::init_runtime;
+use dcl_deno_ipc::init_runtime;
 
 use mimalloc::MiMalloc;
 use platform::default_camera_components;
@@ -121,7 +121,7 @@ fn main() {
     println!("log file: {}", SESSION_LOG.get().unwrap());
 
     // initialize v8 runtime from main thread
-    init_runtime();
+    init_runtime().unwrap();
 
     // warnings before log init must be stored and replayed later
     let mut infos = Vec::default();

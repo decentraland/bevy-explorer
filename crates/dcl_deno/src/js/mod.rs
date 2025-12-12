@@ -1,10 +1,9 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc::SyncSender};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use bevy::log::{debug, error, info_span};
-use common::structs::MicState;
 use dcl::{
-    interface::CrdtComponentInterfaces,
+    interface::{CrdtComponentInterfaces, CrdtStore},
     js::{
         engine::crdt_send_to_renderer, init_state, CommunicatedWithRenderer, ShuttingDown,
         SuperUserScene,
@@ -20,10 +19,9 @@ use deno_core::{
 use multihash_codetable::MultihashDigest;
 use platform::project_directories;
 use system_bridge::SystemApi;
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::{Receiver, UnboundedSender};
 
-use ipfs::{IpfsResource, SceneJsFile};
-use wallet::Wallet;
+use ipfs::SceneJsFile;
 
 #[cfg(feature = "inspect")]
 use crate::js::inspector::InspectorServer;
@@ -184,17 +182,15 @@ pub struct StorageRoot(pub String);
 // main scene processing thread - constructs an isolate and runs the scene
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn scene_thread(
+    initial_crdt_store: CrdtStore,
     scene_hash: String,
     scene_id: SceneId,
     storage_root: String,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
-    thread_sx: SyncSender<SceneResponse>,
+    thread_sx: tokio::sync::mpsc::UnboundedSender<SceneResponse>,
     thread_rx: Receiver<RendererResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
-    ipfs: IpfsResource,
-    wallet: Wallet,
-    mic: MicState,
     inspect: bool,
     testing: bool,
     preview: bool,
@@ -211,6 +207,7 @@ pub(crate) fn scene_thread(
     let state = runtime.op_state();
     init_state(
         &mut *state.borrow_mut(),
+        initial_crdt_store,
         scene_hash,
         scene_id,
         storage_root,
@@ -219,9 +216,6 @@ pub(crate) fn scene_thread(
         thread_sx,
         thread_rx,
         global_update_receiver,
-        ipfs,
-        wallet,
-        mic,
         inspect,
         testing,
         preview,
@@ -245,7 +239,7 @@ pub(crate) fn scene_thread(
     if inspector.is_some() {
         let _ = state
             .borrow_mut()
-            .borrow_mut::<SyncSender<SceneResponse>>()
+            .borrow_mut::<UnboundedSender<SceneResponse>>()
             .send(SceneResponse::WaitingForInspector);
 
         runtime
@@ -270,7 +264,7 @@ pub(crate) fn scene_thread(
             error!("[scene thread {scene_id:?}] script load error: {}", e);
             let _ = state
                 .borrow_mut()
-                .take::<SyncSender<SceneResponse>>()
+                .take::<UnboundedSender<SceneResponse>>()
                 .send(SceneResponse::Error(scene_id, format!("{e:?}")));
             return;
         }
@@ -299,7 +293,7 @@ pub(crate) fn scene_thread(
         error!("[{scene_id:?}] onStart err: {e:?}");
         let _ = state
             .borrow_mut()
-            .take::<SyncSender<SceneResponse>>()
+            .take::<UnboundedSender<SceneResponse>>()
             .send(SceneResponse::Error(scene_id, format!("{e:?}")));
         return;
     }
@@ -354,7 +348,7 @@ pub(crate) fn scene_thread(
                 );
                 let _ = state
                     .borrow_mut()
-                    .take::<SyncSender<SceneResponse>>()
+                    .take::<UnboundedSender<SceneResponse>>()
                     .send(SceneResponse::Error(scene_id, format!("{e:?}")));
                 rt.block_on(async move {
                     drop(runtime);
