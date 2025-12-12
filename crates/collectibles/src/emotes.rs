@@ -40,7 +40,7 @@ pub type EmoteInstance = CollectibleInstance<Emote>;
 
 impl EmoteUrn {
     pub fn scene_emote(&self) -> Option<&str> {
-        self.skip_take(0, 5)
+        self.skip_take(0, 6)
             .rsplit_once(':')
             .filter(|(base, _)| *base == "urn:decentraland:off-chain:scene-emote")
             .map(|(_, emote)| emote)

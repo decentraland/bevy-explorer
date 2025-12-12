@@ -499,6 +499,7 @@ fn update_materials(
                 .map(|h| (h, defn))
         });
 
+        let uncached_defn;
         let (material, defn) = match cached_data {
             Some(data) => data,
             None => {
@@ -564,6 +565,8 @@ fn update_materials(
                     }
                 };
 
+                let mut can_cache = true;
+
                 if let Some(source) = textures
                     .iter()
                     .flatten()
@@ -571,6 +574,7 @@ fn update_materials(
                     .next()
                 {
                     commands.entity(ent).insert(MaterialSource(source));
+                    can_cache = false;
                 }
 
                 let [mut base_color_texture, emissive_texture, normal_map_texture]: [Option<
@@ -581,6 +585,7 @@ fn update_materials(
                 if let Some(bct) = base_color_texture.as_mut() {
                     if let Some(cursor) = bct.camera_target.take() {
                         commands.entity(ent).insert(cursor);
+                        can_cache = false;
                     }
                 }
 
@@ -602,9 +607,13 @@ fn update_materials(
                     extension: SceneBound::new(bounds, config.graphics.oob),
                 });
 
-                cache.0.insert(hash, (material.id(), defn));
-
-                (material, &cache.0.get(&hash).unwrap().1)
+                if can_cache {
+                    cache.0.insert(hash, (material.id(), defn));
+                    (material, &cache.0.get(&hash).unwrap().1)
+                } else {
+                    uncached_defn = defn;
+                    (material, &uncached_defn)
+                }
             }
         };
 

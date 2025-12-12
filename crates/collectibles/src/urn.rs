@@ -104,8 +104,8 @@ impl<T: CollectibleType> CollectibleUrn<T> {
         };
 
         let collection_segments = match *collection {
-            "base-avatars" | "base-emotes" | "scene-emote" => 4,
-            "collections-v1" | "collections-v2" => 5,
+            "base-avatars" | "base-emotes" => 4,
+            "collections-v1" | "collections-v2" | "scene-emote" => 5,
             "collections-thirdparty" => 6,
             _ => {
                 return Err(CollectibleUrnErr {

@@ -45,18 +45,18 @@
 
 use bevy::{
     diagnostic::FrameCount,
-    math::{DVec3, Vec3Swizzles},
+    math::{Vec3, Vec3Swizzles},
     prelude::*,
 };
 use bevy_console::ConsoleCommand;
-use rapier3d_f64::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
+use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 
 use common::{
     dynamics::{
         MAX_CLIMBABLE_INCLINE, MAX_STEP_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS,
         PLAYER_GROUND_THRESHOLD,
     },
-    structs::{AvatarDynamicState, PlayerModifiers, PrimaryUser, UserClipping},
+    structs::{AvatarDynamicState, PlayerModifiers, PrimaryUser},
 };
 
 use scene_runner::{
@@ -64,6 +64,9 @@ use scene_runner::{
     update_world::mesh_collider::{ColliderId, GroundCollider, SceneColliderData},
     ContainingScene, OutOfWorld,
 };
+
+#[derive(Resource)]
+pub struct UserClipping(pub bool);
 
 const TICK_TIME: f32 = 1.0 / 720.0;
 
@@ -178,15 +181,15 @@ pub fn update_user_position(
 
     // setup physics controller
     let mut controller = KinematicCharacterController {
-        offset: CharacterLength::Absolute(PLAYER_COLLIDER_OVERLAP as f64),
+        offset: CharacterLength::Absolute(PLAYER_COLLIDER_OVERLAP),
         slide: true,
         autostep: Some(CharacterAutostep {
-            max_height: CharacterLength::Absolute(MAX_STEP_HEIGHT as f64),
+            max_height: CharacterLength::Absolute(MAX_STEP_HEIGHT),
             min_width: CharacterLength::Relative(0.75),
             include_dynamic_bodies: true,
         }),
-        max_slope_climb_angle: MAX_CLIMBABLE_INCLINE as f64,
-        min_slope_slide_angle: MAX_CLIMBABLE_INCLINE as f64,
+        max_slope_climb_angle: MAX_CLIMBABLE_INCLINE,
+        min_slope_slide_angle: MAX_CLIMBABLE_INCLINE,
         snap_to_ground: Some(CharacterLength::Absolute(0.1)),
         ..Default::default()
     };
@@ -230,28 +233,27 @@ pub fn update_user_position(
                 }
 
                 // force update new collider
-                let prior_cpos = DVec3::from(
+                let prior_cpos = Vec3::from(
                     collider_data
                         .get_collider(&collider)
                         .unwrap()
                         .position()
                         .translation,
-                )
-                .as_vec3();
+                );
                 collider_data.update_collider_transform(&collider, &new_global_transform, None);
-                let new_cpos = DVec3::from(
+                let new_cpos = Vec3::from(
                     collider_data
                         .get_collider(&collider)
                         .unwrap()
                         .position()
                         .translation,
-                )
-                .as_vec3();
+                );
 
                 // adjust base motion wrt ground collider
                 if clip.0 {
                     let prior = target_motion;
                     target_motion = collider_data.move_character(
+                        dt,
                         ctx.last_update_frame,
                         transform.translation + platform_motion,
                         target_motion,
@@ -285,6 +287,24 @@ pub fn update_user_position(
         }
     }
 
+    // floor
+    target_motion.y = target_motion.y.max(-transform.translation.y);
+
+    // depentrate
+    if clip.0 {
+        for scene in containing_scenes.get_area(user_ent, PLAYER_COLLIDER_RADIUS) {
+            let Ok((context, mut collider_data)) = scene_datas.get_mut(scene) else {
+                continue;
+            };
+
+            if let Some(depen_vector) =
+                collider_data.depentrate_character(context.last_update_frame, transform.translation)
+            {
+                transform.translation += depen_vector;
+            }
+        }
+    }
+
     // check containing scenes
     for scene in containing_scenes.get_area(user_ent, PLAYER_COLLIDER_RADIUS) {
         let Ok((context, mut collider_data)) = scene_datas.get_mut(scene) else {
@@ -301,6 +321,7 @@ pub fn update_user_position(
         // get allowed motion for total motion wrt all but ground collider
         if clip.0 {
             target_motion = collider_data.move_character(
+                dt,
                 context.last_update_frame,
                 transform.translation,
                 target_motion,
@@ -334,10 +355,13 @@ pub fn update_user_position(
             if height < dynamic_state.ground_height {
                 dynamic_state.ground_height = height;
                 if height < PLAYER_GROUND_THRESHOLD {
-                    let entity = collider_data.get_collider_entity(&collider).unwrap();
-                    let gt = calc_global_transform(entity);
-                    ground_collider.0 = Some((scene, collider, gt));
-                    debug!("still on platform (@{height})");
+                    if let Some(entity) = collider_data.get_collider_entity(&collider) {
+                        let gt = calc_global_transform(entity);
+                        ground_collider.0 = Some((scene, collider, gt));
+                        debug!("still on platform (@{height})");
+                    } else {
+                        debug!("left platform (@{height}");
+                    }
                 } else {
                     debug!("left platform (@{height})");
                 }

@@ -276,7 +276,15 @@ fn update_text_shapes(
                 "textshape text truncated from {} to 2048 chars",
                 text_shape.0.text.len()
             );
-            &text_shape.0.text.as_str()[0..2048]
+            let end = text_shape
+                .0
+                .text
+                .as_str()
+                .char_indices()
+                .find(|(ix, _)| *ix >= 2048)
+                .map(|(ix, _)| ix)
+                .unwrap_or(text_shape.0.text.len());
+            &text_shape.0.text.as_str()[0..end]
         } else {
             text_shape.0.text.as_str()
         };

@@ -1043,6 +1043,3 @@ pub struct PreviewMode {
     pub server: Option<String>,
     pub is_preview: bool,
 }
-
-#[derive(Resource)]
-pub struct UserClipping(pub bool);

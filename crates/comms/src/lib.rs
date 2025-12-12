@@ -21,6 +21,8 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use bimap::BiMap;
+#[cfg(not(feature = "livekit"))]
+use common::structs::MicState;
 use common::util::{TaskCompat, TaskExt};
 use ethers_core::types::{Address, H160};
 use http::{StatusCode, Uri};
@@ -73,6 +75,8 @@ impl Plugin for CommsPlugin {
 
         #[cfg(feature = "livekit")]
         app.add_plugins(LivekitPlugin);
+        #[cfg(not(feature = "livekit"))]
+        app.init_resource::<MicState>();
 
         app.add_systems(Update, (process_realm_change, connect_scene_room));
     }
