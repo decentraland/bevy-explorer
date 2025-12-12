@@ -34,8 +34,8 @@ This project's goals are to:
       - set `FFMPEG_DIR` = `root folder where ffmpeg has been unzipped`
       - add `ffmpeg\bin` to your `PATH`
 4. Install [protoc](https://github.com/protocolbuffers/protobuf/releases) (Mac Homebrew users can do `brew install protobuf`)
-5. build dependencies: `cargo build --release --package dcl_deno_ipc`
-5. run: `cargo run --release`
+5. build scene engine: `cargo build --release --package dcl_deno_ipc`
+6. run renderer: `cargo run --release`
 
 We try to keep these instructions up to date, but the [github ci](.github/workflows/ci.yml) is the most accurate source of build information.
 
