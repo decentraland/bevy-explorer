@@ -11,8 +11,10 @@ use tokio::sync::mpsc::UnboundedReceiver;
 #[cfg(not(target_arch = "wasm32"))]
 use {
     livekit::{
-        id::TrackSid, participant::ConnectionQuality, track::TrackKind, Room, RoomEvent,
-        RoomOptions, RoomResult,
+        id::TrackSid,
+        participant::{ConnectionQuality, Participant},
+        track::TrackKind,
+        Room, RoomEvent, RoomOptions, RoomResult,
     },
     {bevy::platform::sync::Arc, tokio::task::JoinHandle},
 };
@@ -29,7 +31,7 @@ use {
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::{close_room, connect_room, recv_room_event, room_name, RoomEvent};
 #[cfg(not(target_arch = "wasm32"))]
-use crate::livekit::{kira_bridge::kira_thread, participant};
+use crate::livekit::{kira_bridge::kira_thread, participant, track};
 use crate::{
     global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
     livekit::{LivekitRuntime, LivekitTransport},
@@ -358,9 +360,14 @@ fn process_room_events(
                             participant: participant.clone().into(),
                             room: entity,
                         });
+                        for publication in &publications {
+                            commands.trigger(track::TrackPublished {
+                                participant: Participant::Remote(participant.clone()),
+                                track: publication.clone(),
+                            });
+                        }
                         if let Some(address) = participant.identity().0.as_str().as_h160() {
                             for publication in publications {
-                                debug!("initial pub: {publication:?}");
                                 if matches!(publication.kind(), TrackKind::Audio) {
                                     let _ = sender
                                         .try_send(PlayerUpdate {
@@ -374,10 +381,6 @@ fn process_room_events(
                                             error!("Failed to send player update due to '{err}'")
                                         });
                                 }
-                            }
-                        } else if participant.identity().as_str().ends_with("-streamer") {
-                            for publication in publications {
-                                publication.set_subscribed(true);
                             }
                         }
                     }
@@ -423,6 +426,10 @@ fn process_room_events(
                     participant,
                 } => {
                     debug!("pub: {publication:?}");
+                    commands.trigger(track::TrackPublished {
+                        participant: Participant::Remote(participant.clone()),
+                        track: publication.clone(),
+                    });
                     if let Some(address) = participant.identity().0.as_str().as_h160() {
                         // publication.
                         if matches!(publication.kind(), TrackKind::Audio) {
@@ -432,8 +439,6 @@ fn process_room_events(
                                 address,
                             });
                         }
-                    } else if participant.identity().as_str().ends_with("-streamer") {
-                        publication.set_subscribed(true);
                     }
                 }
                 #[cfg(not(target_arch = "wasm32"))]
@@ -442,6 +447,10 @@ fn process_room_events(
                     participant,
                 } => {
                     debug!("unpub: {publication:?}");
+                    commands.trigger(track::TrackUnpublished {
+                        participant: Participant::Remote(participant.clone()),
+                        track: publication.clone(),
+                    });
                     if let Some(address) = participant.identity().0.as_str().as_h160() {
                         if matches!(publication.kind(), TrackKind::Audio) {
                             let _ = sender.try_send(PlayerUpdate {

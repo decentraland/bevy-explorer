@@ -8,6 +8,7 @@ pub mod native;
 pub mod participant;
 pub mod plugin;
 pub mod room;
+pub mod track;
 #[cfg(all(feature = "livekit", target_arch = "wasm32"))]
 pub mod web;
 

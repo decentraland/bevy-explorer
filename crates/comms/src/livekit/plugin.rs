@@ -9,8 +9,8 @@ use crate::livekit::native::connect_livekit;
 use crate::livekit::web::connect_livekit;
 use crate::{
     livekit::{
-        mic::MicPlugin, participant::ParticipantPlugin, room::LivekitRoomPlugin, LivekitRuntime,
-        LivekitTransport, StartLivekit,
+        mic::MicPlugin, participant::ParticipantPlugin, room::LivekitRoomPlugin,
+        track::LivekitTrackPlugin, LivekitRuntime, LivekitTransport, StartLivekit,
     },
     profile::CurrentUserProfile,
     NetworkMessage, Transport, TransportType,
@@ -23,6 +23,7 @@ impl Plugin for LivekitPlugin {
         app.add_plugins(MicPlugin);
         app.add_plugins(LivekitRoomPlugin);
         app.add_plugins(ParticipantPlugin);
+        app.add_plugins(LivekitTrackPlugin);
 
         app.add_systems(Update, (connect_livekit, start_livekit));
         app.add_event::<StartLivekit>();
