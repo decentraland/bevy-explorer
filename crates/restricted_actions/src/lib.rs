@@ -36,7 +36,8 @@ use dcl_component::proto_components::kernel::comms::rfc4;
 use ethers_core::types::Address;
 use http::Uri;
 use ipfs::{
-    ChangeRealmEvent, EntityDefinition, IpfsAssetServer, IpfsIo, RealmInitialLocation, ServerAbout, ipfs_path::{IpfsPath, IpfsType}
+    ipfs_path::{IpfsPath, IpfsType},
+    ChangeRealmEvent, EntityDefinition, IpfsAssetServer, IpfsIo, RealmInitialLocation, ServerAbout,
 };
 use nft::asset_source::Nft;
 use reqwest::StatusCode;
