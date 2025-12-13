@@ -28,7 +28,7 @@ use common::{
 use comms::{
     global_crdt::ForeignPlayer,
     profile::{CurrentUserProfile, ProfileManager, UserProfile},
-    NetworkMessage, SceneRoom, Transport,
+    NetworkMessage, NetworkMessageRecipient, SceneRoom, Transport,
 };
 use console::DoAddConsoleCommand;
 use copypwasmta::{ClipboardContext, ClipboardProvider};
@@ -42,9 +42,7 @@ use ipfs::{
 use nft::asset_source::Nft;
 use reqwest::StatusCode;
 use scene_runner::{
-    initialize_scene::{
-        LiveScenes, PortableScenes, PortableSource, SceneHash, SceneLoading, PARCEL_SIZE,
-    },
+    initialize_scene::{LiveScenes, PortableScenes, PortableSource, SceneLoading, PARCEL_SIZE},
     permissions::Permission,
     renderer_context::RendererSceneContext,
     update_world::gltf_container::{GltfDefinition, GltfProcessed},
@@ -973,7 +971,7 @@ fn event_scene_ready(
 fn send_scene_messages(
     mut events: EventReader<RpcCall>,
     transports: Query<(&Transport, Option<&SceneRoom>)>,
-    scenes: Query<&SceneHash>,
+    scenes: Query<&RendererSceneContext>,
 ) {
     for (scene, data, recipient) in events.read().filter_map(|c| match c {
         RpcCall::SendMessageBus {
@@ -983,24 +981,36 @@ fn send_scene_messages(
         } => Some((scene, data, recipient)),
         _ => None,
     }) {
-        let Ok(hash) = scenes.get(*scene) else {
+        let Ok(ctx) = scenes.get(*scene) else {
             continue;
         };
+        let hash = &ctx.hash;
 
-        debug!("messagebus sent from scene {}: {:?}", &hash.0, data);
+        debug!(
+            "messagebus sent from scene {}: {:?} (auth = {})",
+            &hash, data, ctx.authoritative_multiplayer
+        );
         let message = rfc4::Packet {
             message: Some(rfc4::packet::Message::Scene(rfc4::Scene {
-                scene_id: hash.0.clone(),
+                scene_id: hash.clone(),
                 data: data.clone(),
             })),
             protocol_version: 100,
         };
 
+        let mut recipient = recipient
+            .map(NetworkMessageRecipient::Peer)
+            .unwrap_or(NetworkMessageRecipient::All);
+
+        if ctx.authoritative_multiplayer {
+            recipient = NetworkMessageRecipient::AuthServer;
+        }
+
         for (transport, scene_room) in transports.iter() {
             if scene_room.is_some() {
                 let _ = transport
                     .sender
-                    .try_send(NetworkMessage::targetted_reliable(&message, *recipient));
+                    .try_send(NetworkMessage::targetted_reliable(&message, recipient));
             }
         }
     }

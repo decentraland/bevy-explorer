@@ -22,7 +22,7 @@ module.exports.sendBinary = async function (body) {
                     await Deno.core.ops.op_comms_send_binary_single(new Uint8Array(buffer), null);
                 }
             }
-        }    
+        }
     }
 
     const data = (await Deno.core.ops.op_comms_recv_binary()).map((item) => new Uint8Array(item));

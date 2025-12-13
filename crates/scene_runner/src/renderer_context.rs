@@ -90,6 +90,9 @@ pub struct RendererSceneContext {
 
     // if an inspector is attached
     pub inspected: bool,
+
+    // does the scene use an authoritative multiplayer server
+    pub authoritative_multiplayer: bool,
 }
 
 pub const SCENE_LOG_BUFFER_SIZE: usize = 100;
@@ -111,6 +114,7 @@ impl RendererSceneContext {
         log_to_stdout: bool,
         sdk_version: &'static str,
         inspected: bool,
+        authoritative_multiplayer: bool,
     ) -> Self {
         let mut new_context = Self {
             scene_id,
@@ -142,6 +146,7 @@ impl RendererSceneContext {
             last_action_event: None,
             sdk_version,
             inspected,
+            authoritative_multiplayer,
         };
 
         new_context.live_entities[SceneEntityId::ROOT.id as usize] =

@@ -53,6 +53,8 @@ use self::{
 use self::livekit_room::{LivekitPlugin, StartLivekit};
 
 const GATEKEEPER_URL: &str = "https://comms-gatekeeper.decentraland.org/get-scene-adapter";
+const PREVIEW_GATEKEEPER_URL: &str =
+    "https://comms-gatekeeper-local.decentraland.org/get-scene-adapter";
 
 pub mod chat_marker_things {
     pub const EMOTE: char = '␐';
@@ -94,10 +96,17 @@ pub enum TransportType {
     SceneRoom,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum NetworkMessageRecipient {
+    All,
+    Peer(H160),
+    AuthServer,
+}
+
 pub struct NetworkMessage {
     pub data: Vec<u8>,
     pub unreliable: bool,
-    pub recipient: Option<H160>,
+    pub recipient: NetworkMessageRecipient,
 }
 
 impl NetworkMessage {
@@ -108,7 +117,7 @@ impl NetworkMessage {
         Self {
             data,
             unreliable: true,
-            recipient: None,
+            recipient: NetworkMessageRecipient::All,
         }
     }
 
@@ -119,7 +128,10 @@ impl NetworkMessage {
         }
     }
 
-    pub fn targetted_reliable<D: ToDclWriter>(message: &D, recipient: Option<H160>) -> Self {
+    pub fn targetted_reliable<D: ToDclWriter>(
+        message: &D,
+        recipient: NetworkMessageRecipient,
+    ) -> Self {
         Self {
             unreliable: false,
             recipient,
@@ -212,7 +224,12 @@ fn connect_scene_room(
             *gatekeeper_task = None;
         } else {
             let wallet = wallet.clone();
-            let uri = Uri::try_from(GATEKEEPER_URL).unwrap();
+            let url = if ev.scene_id.starts_with("b64-") {
+                PREVIEW_GATEKEEPER_URL
+            } else {
+                GATEKEEPER_URL
+            };
+            let uri = Uri::try_from(url).unwrap();
             let client = ipfs.ipfs().client();
             *gatekeeper_task = Some(IoTaskPool::get().spawn_compat(async move {
                 let headers =
