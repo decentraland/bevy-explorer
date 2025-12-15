@@ -26,7 +26,7 @@ use crate::{
         GlobalCrdtState, LocalAudioFrame, LocalAudioSource, PlayerMessage, PlayerUpdate,
     },
     livekit_room::{LivekitConnection, LivekitTransport},
-    ChannelControl, NetworkMessage,
+    ChannelControl, NetworkMessage, NetworkMessageRecipient,
 };
 
 use livekit::{
@@ -468,10 +468,10 @@ fn livekit_handler_inner(
                         break 'stream;
                     };
 
-                    let destination_identities = if let Some(address) = outgoing.recipient {
-                        vec![ParticipantIdentity(format!("{address:#x}"))]
-                    } else {
-                        default()
+                    let destination_identities = match outgoing.recipient {
+                        NetworkMessageRecipient::All => Vec::default(),
+                        NetworkMessageRecipient::Peer(address) => vec![ParticipantIdentity(format!("{address:#x}"))],
+                        NetworkMessageRecipient::AuthServer => vec![ParticipantIdentity("authoritative-server".to_string())],
                     };
 
                     let packet = livekit::DataPacket { payload: outgoing.data, topic: None, reliable: !outgoing.unreliable, destination_identities };
