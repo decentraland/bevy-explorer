@@ -252,10 +252,6 @@ fn poll_connecting_rooms(
                 #[cfg(not(target_arch = "wasm32"))]
                 Ok((room, room_event_receiver)) => {
                     let local_participant = room.local_participant();
-                    commands.trigger(participant::ParticipantConnected {
-                        participant: local_participant.into(),
-                        room: entity,
-                    });
 
                     commands
                         .entity(entity)
@@ -268,6 +264,11 @@ fn poll_connecting_rooms(
                             Connected,
                         ))
                         .remove::<ConnectingLivekitRoom>();
+
+                    commands.trigger(participant::ParticipantConnected {
+                        participant: local_participant.into(),
+                        room: entity,
+                    });
                 }
                 #[cfg(target_arch = "wasm32")]
                 Ok(room) => {
@@ -323,7 +324,7 @@ async fn connect_to_room(
 
 fn process_room_events(
     mut commands: Commands,
-    livekit_rooms: Query<(Entity, &mut LivekitRoom)>,
+    livekit_rooms: Query<(Entity, &mut LivekitRoom), With<Connected>>,
     #[cfg(not(target_arch = "wasm32"))] livekit_runtimes: Query<&LivekitRuntime>,
     player_state: Res<GlobalCrdtState>,
     #[cfg(not(target_arch = "wasm32"))] mut track_tasks: ResMut<LivekitRoomTrackTask>,
