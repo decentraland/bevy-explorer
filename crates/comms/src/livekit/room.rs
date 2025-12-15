@@ -33,7 +33,7 @@ use crate::livekit::web::{close_room, connect_room, recv_room_event, room_name, 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::{kira_bridge::kira_thread, participant, track};
 use crate::{
-    global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
+    global_crdt::GlobalCrdtState,
     livekit::{LivekitRuntime, LivekitTransport},
 };
 
