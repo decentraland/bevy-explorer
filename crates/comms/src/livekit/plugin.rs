@@ -1,13 +1,14 @@
 use bevy::platform::sync::Arc;
 use bevy::prelude::*;
 use dcl_component::proto_components::kernel::comms::rfc4;
-use tokio::runtime::Builder;
+use tokio::{runtime::Builder, sync::mpsc::error::SendError, task::JoinHandle};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::native::connect_livekit;
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::connect_livekit;
 use crate::{
+    global_crdt::PlayerUpdate,
     livekit::{
         mic::MicPlugin, participant::ParticipantPlugin, room::LivekitRoomPlugin,
         track::LivekitTrackPlugin, LivekitRuntime, LivekitTransport, StartLivekit,
@@ -20,14 +21,31 @@ pub struct LivekitPlugin;
 
 impl Plugin for LivekitPlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<GlobalCrdtStateTasks>();
+
         app.add_plugins(MicPlugin);
         app.add_plugins(LivekitRoomPlugin);
         app.add_plugins(ParticipantPlugin);
         app.add_plugins(LivekitTrackPlugin);
 
-        app.add_systems(Update, (connect_livekit, start_livekit));
+        app.add_systems(
+            Update,
+            (
+                connect_livekit,
+                start_livekit,
+                verify_global_crdt_state_tasks,
+            ),
+        );
         app.add_event::<StartLivekit>();
     }
+}
+
+#[derive(Default, Resource, Deref, DerefMut)]
+pub(super) struct GlobalCrdtStateTasks(Vec<GlobalCrdtStateTask>);
+
+pub(super) struct GlobalCrdtStateTask {
+    pub runtime: LivekitRuntime,
+    pub task: JoinHandle<Result<(), SendError<PlayerUpdate>>>,
 }
 
 pub fn start_livekit(
@@ -87,5 +105,43 @@ pub fn start_livekit(
             },
             LivekitRuntime(runtime),
         ));
+    }
+}
+
+fn verify_global_crdt_state_tasks(
+    mut commands: Commands,
+    mut global_crdt_state_tasks: ResMut<GlobalCrdtStateTasks>,
+) {
+    let mut done = vec![];
+    for (
+        i,
+        GlobalCrdtStateTask {
+            runtime,
+            ref mut task,
+        },
+    ) in global_crdt_state_tasks.iter_mut().enumerate()
+    {
+        if task.is_finished() {
+            done.push(i);
+            let res = runtime.block_on(task);
+            match res {
+                Ok(res) => {
+                    if res.is_err() {
+                        error!("Failed to send PlayerUpdate.");
+                        commands.send_event(AppExit::from_code(1));
+                        return;
+                    }
+                }
+                Err(err) => {
+                    error!("Failed to pull GlobalCrdtStateTask due to '{err}'.");
+                    commands.send_event(AppExit::from_code(1));
+                    return;
+                }
+            }
+        }
+    }
+
+    while let Some(i) = done.pop() {
+        global_crdt_state_tasks.remove(i);
     }
 }

@@ -7,7 +7,6 @@ use livekit::{
     prelude::{Participant, RemoteTrackPublication},
     track::{TrackKind, TrackSource},
 };
-use tokio::sync::mpsc::error::{SendError, TrySendError};
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::task::JoinHandle;
 
@@ -15,6 +14,7 @@ use crate::{
     global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
     livekit::{
         participant::{HostedBy, LivekitParticipant},
+        plugin::{GlobalCrdtStateTask, GlobalCrdtStateTasks},
         room::LivekitRoom,
         LivekitRuntime,
     },
@@ -66,14 +66,6 @@ pub struct Microphone;
 #[derive(Component)]
 pub struct Camera;
 
-#[derive(Default, Resource, Deref, DerefMut)]
-struct GlobalCrdtStateTasks(Vec<GlobalCrdtStateTask>);
-
-struct GlobalCrdtStateTask {
-    runtime: LivekitRuntime,
-    task: JoinHandle<Result<(), SendError<PlayerUpdate>>>,
-}
-
 #[derive(Event)]
 pub struct TrackPublished {
     pub participant: Participant,
@@ -100,14 +92,10 @@ pub(super) struct LivekitTrackPlugin;
 
 impl Plugin for LivekitTrackPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<GlobalCrdtStateTasks>();
-
         app.add_observer(track_published);
         app.add_observer(track_unpublished);
         app.add_observer(track_subscribed);
         app.add_observer(track_unsubscribed);
-
-        app.add_systems(Update, verify_global_crdt_state_tasks);
     }
 }
 
@@ -324,42 +312,4 @@ fn track_unsubscribed(
 
     debug!("Unsubscribed to track {}.", track.sid());
     commands.entity(entity).insert(Unsubscribed);
-}
-
-fn verify_global_crdt_state_tasks(
-    mut commands: Commands,
-    mut global_crdt_state_tasks: ResMut<GlobalCrdtStateTasks>,
-) {
-    let mut done = vec![];
-    for (
-        i,
-        GlobalCrdtStateTask {
-            runtime,
-            ref mut task,
-        },
-    ) in global_crdt_state_tasks.iter_mut().enumerate()
-    {
-        if task.is_finished() {
-            done.push(i);
-            let res = runtime.block_on(task);
-            match res {
-                Ok(res) => {
-                    if res.is_err() {
-                        error!("Failed to send PlayerUpdate.");
-                        commands.send_event(AppExit::from_code(1));
-                        return;
-                    }
-                }
-                Err(err) => {
-                    error!("Failed to pull GlobalCrdtStateTask due to '{err}'.");
-                    commands.send_event(AppExit::from_code(1));
-                    return;
-                }
-            }
-        }
-    }
-
-    while let Some(i) = done.pop() {
-        global_crdt_state_tasks.remove(i);
-    }
 }
