@@ -1,8 +1,13 @@
-use bevy::{ecs::relationship::Relationship, prelude::*};
+use bevy::{
+    ecs::{component::HookContext, relationship::Relationship, world::DeferredWorld},
+    prelude::*,
+};
 use livekit::{
     prelude::{Participant, RemoteTrackPublication},
     track::{TrackKind, TrackSource},
 };
+#[cfg(not(target_arch = "wasm32"))]
+use tokio::task::JoinHandle;
 
 use crate::{livekit::participant::LivekitParticipant, make_hooks};
 
@@ -18,6 +23,26 @@ pub struct PublishedBy(Entity);
 #[derive(Component)]
 #[relationship_target(relationship=PublishedBy, linked_spawn)]
 pub struct Publishing(Vec<Entity>);
+
+#[derive(Component)]
+#[component(on_add=Self::on_add)]
+pub struct Subscribed;
+make_hooks!(Subscribed, (Unsubscribed, Subscribing, Unsubscribing));
+
+#[derive(Component)]
+#[component(on_add=Self::on_add)]
+pub struct Unsubscribed;
+make_hooks!(Unsubscribed, (Subscribed, Subscribing, Unsubscribing));
+
+#[derive(Component)]
+#[component(on_add=Self::on_add)]
+pub struct Subscribing(#[cfg(not(target_arch = "wasm32"))] JoinHandle<()>);
+make_hooks!(Subscribing, (Subscribed, Unsubscribed, Unsubscribing));
+
+#[derive(Component)]
+#[component(on_add=Self::on_add)]
+pub struct Unsubscribing(#[cfg(not(target_arch = "wasm32"))] JoinHandle<()>);
+make_hooks!(Unsubscribing, (Subscribed, Unsubscribed, Subscribing));
 
 #[derive(Component)]
 pub struct Audio;
@@ -43,12 +68,24 @@ pub struct TrackUnpublished {
     pub track: RemoteTrackPublication,
 }
 
+#[derive(Event)]
+pub struct TrackSubscribed {
+    pub track: RemoteTrackPublication,
+}
+
+#[derive(Event)]
+pub struct TrackUnsubscribed {
+    pub track: RemoteTrackPublication,
+}
+
 pub(super) struct LivekitTrackPlugin;
 
 impl Plugin for LivekitTrackPlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(track_published);
         app.add_observer(track_unpublished);
+        app.add_observer(track_subscribed);
+        app.add_observer(track_unsubscribed);
     }
 }
 
@@ -86,6 +123,7 @@ fn track_published(
             track: track.clone(),
         },
         PublishedBy(entity),
+        Unsubscribed,
     ));
     match track.kind() {
         TrackKind::Audio => {
@@ -163,4 +201,44 @@ fn track_unpublished(
         participant.identity()
     );
     commands.entity(entity).despawn();
+}
+
+fn track_subscribed(
+    trigger: Trigger<TrackSubscribed>,
+    mut commands: Commands,
+    tracks: Query<(Entity, &LivekitTrack)>,
+) {
+    let TrackSubscribed { track } = trigger.event();
+
+    let Some((entity, _)) = tracks
+        .iter()
+        .find(|(_, subscribing)| subscribing.sid() == track.sid())
+    else {
+        error!("No subscribing track with sid {}.", track.sid());
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    debug!("Subscribed to track {}.", track.sid());
+    commands.entity(entity).insert(Subscribed);
+}
+
+fn track_unsubscribed(
+    trigger: Trigger<TrackUnsubscribed>,
+    mut commands: Commands,
+    tracks: Query<(Entity, &LivekitTrack)>,
+) {
+    let TrackUnsubscribed { track } = trigger.event();
+
+    let Some((entity, _)) = tracks
+        .iter()
+        .find(|(_, unsubscribing)| unsubscribing.sid() == track.sid())
+    else {
+        error!("No unsubscribing track with sid {}.", track.sid());
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    debug!("Unsubscribed to track {}.", track.sid());
+    commands.entity(entity).insert(Unsubscribed);
 }

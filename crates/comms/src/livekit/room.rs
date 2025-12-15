@@ -464,11 +464,8 @@ fn process_room_events(
                     }
                 }
                 #[cfg(not(target_arch = "wasm32"))]
-                RoomEvent::TrackSubscribed {
-                    track,
-                    publication,
-                    participant,
-                } => {
+                RoomEvent::TrackSubscribed { publication, .. } => {
+                    commands.trigger(track::TrackSubscribed { track: publication });
                     // if let Some(address) = participant.identity().0.as_str().as_h160() {
                     //     let sid = track.sid();
                     //     match track {
@@ -487,7 +484,10 @@ fn process_room_events(
                     // }
                 }
                 #[cfg(not(target_arch = "wasm32"))]
-                RoomEvent::TrackUnsubscribed { track, .. } => {
+                RoomEvent::TrackUnsubscribed {
+                    track, publication, ..
+                } => {
+                    commands.trigger(track::TrackUnsubscribed { track: publication });
                     if let Some(handle) = track_tasks.remove(&track.sid()) {
                         handle.abort();
                     }
