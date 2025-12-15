@@ -425,7 +425,6 @@ fn process_room_events(
                     publication,
                     participant,
                 } => {
-                    debug!("pub: {publication:?}");
                     commands.trigger(track::TrackPublished {
                         participant: Participant::Remote(participant.clone()),
                         track: publication.clone(),
@@ -446,7 +445,6 @@ fn process_room_events(
                     publication,
                     participant,
                 } => {
-                    debug!("unpub: {publication:?}");
                     commands.trigger(track::TrackUnpublished {
                         participant: Participant::Remote(participant.clone()),
                         track: publication.clone(),
