@@ -275,7 +275,6 @@ fn participant_metadata_changed(
 
     let Ok(runtime) = rooms.get(*room) else {
         error!("Room {room} does not have a runtime.");
-        commands.entity(*room).log_components();
         commands.send_event(AppExit::from_code(1));
         return;
     };
