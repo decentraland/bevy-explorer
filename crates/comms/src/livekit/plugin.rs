@@ -106,7 +106,7 @@ fn start_livekit(
 
 fn verify_player_update_tasks(
     mut commands: Commands,
-    mut global_crdt_state_tasks: ResMut<PlayerUpdateTasks>,
+    mut player_update_tasks: ResMut<PlayerUpdateTasks>,
 ) {
     let mut done = vec![];
     for (
@@ -115,7 +115,7 @@ fn verify_player_update_tasks(
             runtime,
             ref mut task,
         },
-    ) in global_crdt_state_tasks.iter_mut().enumerate()
+    ) in player_update_tasks.iter_mut().enumerate()
     {
         if task.is_finished() {
             done.push(i);
@@ -129,7 +129,7 @@ fn verify_player_update_tasks(
                     }
                 }
                 Err(err) => {
-                    error!("Failed to pull GlobalCrdtStateTask due to '{err}'.");
+                    error!("Failed to pull PlayerUpdateTask due to '{err}'.");
                     commands.send_event(AppExit::from_code(1));
                     return;
                 }
@@ -138,6 +138,6 @@ fn verify_player_update_tasks(
     }
 
     while let Some(i) = done.pop() {
-        global_crdt_state_tasks.remove(i);
+        player_update_tasks.remove(i);
     }
 }
