@@ -2229,10 +2229,10 @@ dependencies = [
 [[package]]
 name = "boimp"
 version = "0.1.1"
-source = "git+https://github.com/robtfm/boimp?branch=0.3#fc77ee54d44a074e4990f82800688b3b9809d592"
+source = "git+https://github.com/robtfm/boimp?branch=0.3#236a2c220c3b7b1d794794062bbd5937873c93ec"
 dependencies = [
  "anyhow",
- "async-channel 2.3.1",
+ "async-channel 1.9.0",
  "bevy",
  "bytemuck",
  "crossbeam-channel",

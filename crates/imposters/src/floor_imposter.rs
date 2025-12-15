@@ -1,5 +1,5 @@
 use bevy::{
-    asset::AssetLoader,
+    asset::{AssetLoader, RenderAssetUsages},
     pbr::{ExtendedMaterial, MaterialExtension},
     prelude::*,
     render::render_resource::AsBindGroup,
@@ -62,6 +62,7 @@ impl AssetLoader for FloorImposterLoader {
                     multisample: true,
                     alpha_blend: 0.5,
                     immediate_upload: true,
+                    asset_usages: RenderAssetUsages::RENDER_WORLD,
                     ..Default::default()
                 },
                 load_context,
