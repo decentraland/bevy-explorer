@@ -372,36 +372,17 @@ fn process_room_events(
                 #[cfg(not(target_arch = "wasm32"))]
                 RoomEvent::DataReceived {
                     payload,
-                    participant,
+                    participant: maybe_participant,
                     ..
                 } => {
-                    if let Some(participant) = participant {
-                        if let Some(address) = participant.identity().0.as_str().as_h160() {
-                            let packet = match rfc4::Packet::decode(payload.as_slice()) {
-                                Ok(packet) => packet,
-                                Err(e) => {
-                                    warn!("unable to parse packet body: {e}");
-                                    continue;
-                                }
-                            };
-                            let Some(message) = packet.message else {
-                                warn!("received empty packet body");
-                                continue;
-                            };
-                            trace!(
-                                "[{}] received [{}] packet {message:?} from {address}",
-                                entity,
-                                packet.protocol_version
-                            );
-                            if let Err(e) = sender.try_send(PlayerUpdate {
-                                transport_id: entity,
-                                message: PlayerMessage::PlayerData(message),
-                                address,
-                            }) {
-                                warn!("app pipe broken ({e}), existing loop");
-                                break;
-                            }
-                        }
+                    if let Some(participant) = maybe_participant {
+                        commands.trigger(participant::ParticipantPayload {
+                            room: entity,
+                            participant: participant.into(),
+                            payload,
+                        });
+                    } else {
+                        debug!("Owner-less payload received.");
                     }
                 }
                 #[cfg(not(target_arch = "wasm32"))]

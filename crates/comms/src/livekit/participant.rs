@@ -2,14 +2,17 @@ use std::marker::PhantomData;
 
 use bevy::{
     ecs::{component::HookContext, relationship::Relationship, world::DeferredWorld},
+    platform::sync::Arc,
     prelude::*,
 };
 use common::util::AsH160;
+use dcl_component::proto_components::kernel::comms::rfc4;
 #[cfg(not(target_arch = "wasm32"))]
 use livekit::{
     participant::Participant,
     prelude::{LocalParticipant, RemoteParticipant},
 };
+use prost::Message;
 
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::Participant;
@@ -101,6 +104,13 @@ impl<C: Component> ParticipantConnectionQuality<C> {
 }
 
 #[derive(Event)]
+pub struct ParticipantPayload {
+    pub room: Entity,
+    pub participant: LivekitParticipant,
+    pub payload: Arc<Vec<u8>>,
+}
+
+#[derive(Event)]
 pub struct ParticipantMetadataChanged {
     pub room: Entity,
     pub participant: LivekitParticipant,
@@ -140,6 +150,7 @@ impl Plugin for ParticipantPlugin {
         app.add_observer(participant_connection_quality_changed::<connection_quality::Good>);
         app.add_observer(participant_connection_quality_changed::<connection_quality::Poor>);
         app.add_observer(participant_connection_quality_changed::<connection_quality::Lost>);
+        app.add_observer(participant_payload);
         app.add_observer(participant_metadata_changed);
     }
 }
@@ -262,6 +273,76 @@ fn participant_connection_quality_changed<C: Component + Default>(
     };
 
     commands.entity(entity).insert(C::default());
+}
+
+fn participant_payload(
+    trigger: Trigger<ParticipantPayload>,
+    mut commands: Commands,
+    rooms: Query<&LivekitRuntime, With<LivekitRoom>>,
+    global_crdt_state: Res<GlobalCrdtState>,
+    mut player_update_tasks: ResMut<PlayerUpdateTasks>,
+) {
+    let ParticipantPayload {
+        room: room_entity,
+        participant,
+        payload,
+    } = trigger.event();
+
+    let Some(address) = participant.identity().as_str().as_h160() else {
+        debug!(
+            "Payload for non-player participant {} ({}) is ignored.",
+            participant.sid(),
+            participant.identity()
+        );
+        return;
+    };
+    let Ok(runtime) = rooms.get(*room_entity) else {
+        error!("Room {room_entity} does not have a runtime.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    let packet = match rfc4::Packet::decode(payload.as_slice()) {
+        Ok(packet) => packet,
+        Err(_) => {
+            warn!(
+                "Could not decode payload from participant {} ({}).",
+                participant.sid(),
+                participant.identity()
+            );
+            return;
+        }
+    };
+    let Some(message) = packet.message else {
+        warn!(
+            "Payload from {} ({}) had empty body.",
+            participant.sid(),
+            participant.identity()
+        );
+        return;
+    };
+
+    trace!(
+        "[{}] received [{}] packet {message:?} from {address}",
+        room_entity,
+        packet.protocol_version
+    );
+
+    let room = *room_entity;
+    let sender = global_crdt_state.get_sender();
+    let task = runtime.spawn(async move {
+        sender
+            .send(PlayerUpdate {
+                transport_id: room,
+                message: PlayerMessage::PlayerData(message),
+                address,
+            })
+            .await
+    });
+    player_update_tasks.push(PlayerUpdateTask {
+        runtime: runtime.clone(),
+        task,
+    });
 }
 
 fn participant_metadata_changed(
