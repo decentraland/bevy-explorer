@@ -4,6 +4,7 @@ use bevy::{
     ecs::{component::HookContext, relationship::Relationship, world::DeferredWorld},
     prelude::*,
 };
+use common::util::AsH160;
 #[cfg(not(target_arch = "wasm32"))]
 use livekit::{
     participant::Participant,
@@ -12,7 +13,15 @@ use livekit::{
 
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::Participant;
-use crate::{livekit::room::LivekitRoom, make_hooks};
+use crate::{
+    global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
+    livekit::{
+        plugin::{PlayerUpdateTask, PlayerUpdateTasks},
+        room::LivekitRoom,
+        LivekitRuntime,
+    },
+    make_hooks,
+};
 
 #[derive(Clone, Component, Deref)]
 pub struct LivekitParticipant {
@@ -91,6 +100,12 @@ impl<C: Component> ParticipantConnectionQuality<C> {
     }
 }
 
+#[derive(Event)]
+pub struct ParticipantMetadataChanged {
+    pub room: Entity,
+    pub participant: LivekitParticipant,
+}
+
 pub mod connection_quality {
     use super::*;
 
@@ -125,6 +140,7 @@ impl Plugin for ParticipantPlugin {
         app.add_observer(participant_connection_quality_changed::<connection_quality::Good>);
         app.add_observer(participant_connection_quality_changed::<connection_quality::Poor>);
         app.add_observer(participant_connection_quality_changed::<connection_quality::Lost>);
+        app.add_observer(participant_metadata_changed);
     }
 }
 
@@ -157,6 +173,11 @@ fn participant_connected(trigger: Trigger<ParticipantConnected>, mut commands: C
     } else {
         commands.spawn((participant.clone(), <HostedBy as Relationship>::from(*room)));
     }
+
+    commands.trigger(ParticipantMetadataChanged {
+        room: *room,
+        participant: participant.clone(),
+    });
 }
 
 fn participant_disconnected(
@@ -241,4 +262,47 @@ fn participant_connection_quality_changed<C: Component + Default>(
     };
 
     commands.entity(entity).insert(C::default());
+}
+
+fn participant_metadata_changed(
+    trigger: Trigger<ParticipantMetadataChanged>,
+    mut commands: Commands,
+    rooms: Query<&LivekitRuntime, With<LivekitRoom>>,
+    global_crdt_state: Res<GlobalCrdtState>,
+    mut player_update_tasks: ResMut<PlayerUpdateTasks>,
+) {
+    let ParticipantMetadataChanged { room, participant } = trigger.event();
+
+    let Ok(runtime) = rooms.get(*room) else {
+        error!("Room {room} does not have a runtime.");
+        commands.entity(*room).log_components();
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    let meta = participant.metadata();
+    if !meta.is_empty() {
+        debug!(
+            "Metadata of {} ({}) changed.",
+            participant.sid(),
+            participant.identity()
+        );
+        if let Some(address) = participant.identity().0.as_str().as_h160() {
+            let room = *room;
+            let sender = global_crdt_state.get_sender();
+            let task = runtime.spawn(async move {
+                sender
+                    .send(PlayerUpdate {
+                        transport_id: room,
+                        message: PlayerMessage::MetaData(meta),
+                        address,
+                    })
+                    .await
+            });
+            player_update_tasks.push(PlayerUpdateTask {
+                runtime: runtime.clone(),
+                task,
+            });
+        }
+    }
 }

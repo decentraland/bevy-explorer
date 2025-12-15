@@ -459,25 +459,19 @@ fn process_room_events(
                         participant: participant.clone().into(),
                         room: entity,
                     });
-                    let meta = participant.metadata();
-                    if !meta.is_empty() {
-                        if let Some(address) = participant.identity().0.as_str().as_h160() {
-                            if let Err(e) = sender.try_send(PlayerUpdate {
-                                transport_id: entity,
-                                message: PlayerMessage::MetaData(meta),
-                                address,
-                            }) {
-                                warn!("app pipe broken ({e}), existing loop");
-                                break;
-                            }
-                        }
-                    }
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 RoomEvent::ParticipantDisconnected(participant) => {
                     commands.trigger(participant::ParticipantDisconnected {
                         participant: participant.into(),
                         room: entity,
+                    });
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                RoomEvent::ParticipantMetadataChanged { participant, .. } => {
+                    commands.trigger(participant::ParticipantMetadataChanged {
+                        room: entity,
+                        participant: participant.into(),
                     });
                 }
                 #[cfg(not(target_arch = "wasm32"))]
