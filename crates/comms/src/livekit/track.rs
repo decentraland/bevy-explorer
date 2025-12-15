@@ -97,10 +97,10 @@ fn track_published(
     }
     match track.source() {
         TrackSource::Microphone => {
-            entity_cmd.insert(Audio);
+            entity_cmd.insert(Microphone);
         }
         TrackSource::Camera => {
-            entity_cmd.insert(Video);
+            entity_cmd.insert(Camera);
         }
         source => warn!("Track {} had {:?} source.", track.sid(), source),
     }
