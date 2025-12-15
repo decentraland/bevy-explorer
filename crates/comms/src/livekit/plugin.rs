@@ -21,7 +21,7 @@ pub struct LivekitPlugin;
 
 impl Plugin for LivekitPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<GlobalCrdtStateTasks>();
+        app.init_resource::<PlayerUpdateTasks>();
 
         app.add_plugins(MicPlugin);
         app.add_plugins(LivekitRoomPlugin);
@@ -30,20 +30,16 @@ impl Plugin for LivekitPlugin {
 
         app.add_systems(
             Update,
-            (
-                connect_livekit,
-                start_livekit,
-                verify_global_crdt_state_tasks,
-            ),
+            (connect_livekit, start_livekit, verify_player_update_tasks),
         );
         app.add_event::<StartLivekit>();
     }
 }
 
 #[derive(Default, Resource, Deref, DerefMut)]
-pub(super) struct GlobalCrdtStateTasks(Vec<GlobalCrdtStateTask>);
+pub(super) struct PlayerUpdateTasks(Vec<PlayerUpdateTask>);
 
-pub(super) struct GlobalCrdtStateTask {
+pub(super) struct PlayerUpdateTask {
     pub runtime: LivekitRuntime,
     pub task: JoinHandle<Result<(), SendError<PlayerUpdate>>>,
 }
@@ -108,14 +104,14 @@ pub fn start_livekit(
     }
 }
 
-fn verify_global_crdt_state_tasks(
+fn verify_player_update_tasks(
     mut commands: Commands,
-    mut global_crdt_state_tasks: ResMut<GlobalCrdtStateTasks>,
+    mut global_crdt_state_tasks: ResMut<PlayerUpdateTasks>,
 ) {
     let mut done = vec![];
     for (
         i,
-        GlobalCrdtStateTask {
+        PlayerUpdateTask {
             runtime,
             ref mut task,
         },

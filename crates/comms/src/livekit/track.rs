@@ -14,7 +14,7 @@ use crate::{
     global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
     livekit::{
         participant::{HostedBy, LivekitParticipant},
-        plugin::{GlobalCrdtStateTask, GlobalCrdtStateTasks},
+        plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
         LivekitRuntime,
     },
@@ -105,7 +105,7 @@ fn track_published(
     participants: Query<(Entity, &LivekitParticipant, &HostedBy)>,
     rooms: Query<&LivekitRuntime, With<LivekitRoom>>,
     player_state: Res<GlobalCrdtState>,
-    mut global_crdt_state_tasks: ResMut<GlobalCrdtStateTasks>,
+    mut global_crdt_state_tasks: ResMut<PlayerUpdateTasks>,
 ) {
     let TrackPublished { participant, track } = trigger.event();
 
@@ -177,7 +177,7 @@ fn track_published(
                 })
                 .await
         });
-        global_crdt_state_tasks.push(GlobalCrdtStateTask {
+        global_crdt_state_tasks.push(PlayerUpdateTask {
             runtime: runtime.clone(),
             task,
         });
@@ -191,7 +191,7 @@ fn track_unpublished(
     participants: Query<(Entity, &LivekitParticipant, &HostedBy)>,
     rooms: Query<&LivekitRuntime, With<LivekitRoom>>,
     player_state: Res<GlobalCrdtState>,
-    mut global_crdt_state_tasks: ResMut<GlobalCrdtStateTasks>,
+    mut global_crdt_state_tasks: ResMut<PlayerUpdateTasks>,
 ) {
     let TrackUnpublished { participant, track } = trigger.event();
 
@@ -267,7 +267,7 @@ fn track_unpublished(
                 .await
         });
 
-        global_crdt_state_tasks.push(GlobalCrdtStateTask {
+        global_crdt_state_tasks.push(PlayerUpdateTask {
             runtime: runtime.clone(),
             task,
         });
