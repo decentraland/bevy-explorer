@@ -1,7 +1,7 @@
 use bevy::{ecs::relationship::Relationship, prelude::*};
 use livekit::{
     prelude::{Participant, RemoteTrackPublication},
-    track::TrackKind,
+    track::{TrackKind, TrackSource},
 };
 
 use crate::{livekit::participant::LivekitParticipant, make_hooks};
@@ -24,6 +24,12 @@ pub struct Audio;
 
 #[derive(Component)]
 pub struct Video;
+
+#[derive(Component)]
+pub struct Microphone;
+
+#[derive(Component)]
+pub struct Camera;
 
 #[derive(Event)]
 pub struct TrackPublished {
@@ -88,6 +94,15 @@ fn track_published(
         TrackKind::Video => {
             entity_cmd.insert(Video);
         }
+    }
+    match track.source() {
+        TrackSource::Microphone => {
+            entity_cmd.insert(Audio);
+        }
+        TrackSource::Camera => {
+            entity_cmd.insert(Video);
+        }
+        source => warn!("Track {} had {:?} source.", track.sid(), source),
     }
 }
 
