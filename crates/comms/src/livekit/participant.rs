@@ -153,7 +153,7 @@ fn participant_connected(trigger: Trigger<ParticipantConnected>, mut commands: C
     let ParticipantConnected { participant, room } = trigger.event();
     debug!(
         "Participant '{}' ({}) connected to room {}.",
-        participant.name(),
+        participant.sid(),
         participant.identity(),
         room
     );
@@ -189,7 +189,7 @@ fn participant_disconnected(
     let ParticipantDisconnected { participant, room } = trigger.event();
     debug!(
         "Participant '{}' ({}) disconnected from room {}.",
-        participant.name(),
+        participant.sid(),
         participant.identity(),
         room
     );
@@ -212,7 +212,7 @@ fn participant_disconnected(
     else {
         error!(
             "No entity referent to '{}' ({}).",
-            participant.name(),
+            participant.sid(),
             participant.identity()
         );
         return;
@@ -232,7 +232,7 @@ fn participant_connection_quality_changed<C: Component + Default>(
     } = trigger.event();
     debug!(
         "Participant '{}' ({}) connection quality with {room} changed to {}.",
-        participant.name(),
+        participant.sid(),
         participant.identity(),
         disqualified::ShortName::of::<C>(),
     );
@@ -255,7 +255,7 @@ fn participant_connection_quality_changed<C: Component + Default>(
     else {
         error!(
             "No entity referent to '{}' ({}).",
-            participant.name(),
+            participant.sid(),
             participant.identity()
         );
         return;
