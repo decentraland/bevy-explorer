@@ -366,23 +366,6 @@ fn process_room_events(
                                 track: publication.clone(),
                             });
                         }
-                        if let Some(address) = participant.identity().0.as_str().as_h160() {
-                            for publication in publications {
-                                if matches!(publication.kind(), TrackKind::Audio) {
-                                    let _ = sender
-                                        .try_send(PlayerUpdate {
-                                            transport_id: entity,
-                                            message: PlayerMessage::AudioStreamAvailable {
-                                                transport: entity,
-                                            },
-                                            address,
-                                        })
-                                        .inspect_err(|err| {
-                                            error!("Failed to send player update due to '{err}'")
-                                        });
-                                }
-                            }
-                        }
                     }
                 }
                 #[cfg(not(target_arch = "wasm32"))]
@@ -429,16 +412,6 @@ fn process_room_events(
                         participant: Participant::Remote(participant.clone()),
                         track: publication.clone(),
                     });
-                    if let Some(address) = participant.identity().0.as_str().as_h160() {
-                        // publication.
-                        if matches!(publication.kind(), TrackKind::Audio) {
-                            let _ = sender.try_send(PlayerUpdate {
-                                transport_id: entity,
-                                message: PlayerMessage::AudioStreamAvailable { transport: entity },
-                                address,
-                            });
-                        }
-                    }
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 RoomEvent::TrackUnpublished {
@@ -449,17 +422,6 @@ fn process_room_events(
                         participant: Participant::Remote(participant.clone()),
                         track: publication.clone(),
                     });
-                    if let Some(address) = participant.identity().0.as_str().as_h160() {
-                        if matches!(publication.kind(), TrackKind::Audio) {
-                            let _ = sender.try_send(PlayerUpdate {
-                                transport_id: entity,
-                                message: PlayerMessage::AudioStreamUnavailable {
-                                    transport: entity,
-                                },
-                                address,
-                            });
-                        }
-                    }
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 RoomEvent::TrackSubscribed { publication, .. } => {
