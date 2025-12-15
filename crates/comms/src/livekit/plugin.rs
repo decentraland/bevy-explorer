@@ -1,7 +1,7 @@
 use bevy::platform::sync::Arc;
 use bevy::prelude::*;
 use dcl_component::proto_components::kernel::comms::rfc4;
-use tokio::{runtime::Builder, sync::mpsc::error::SendError, task::JoinHandle};
+use tokio::{runtime::Builder, sync::mpsc, task::JoinHandle};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::native::connect_livekit;
@@ -41,7 +41,7 @@ pub(super) struct PlayerUpdateTasks(Vec<PlayerUpdateTask>);
 
 pub(super) struct PlayerUpdateTask {
     pub runtime: LivekitRuntime,
-    pub task: JoinHandle<Result<(), SendError<PlayerUpdate>>>,
+    pub task: JoinHandle<Result<(), mpsc::error::SendError<PlayerUpdate>>>,
 }
 
 fn start_livekit(
