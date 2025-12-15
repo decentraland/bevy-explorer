@@ -112,11 +112,11 @@ fn track_published(
     };
 
     debug!(
-        "Published {:?} track {} of {} ({}).",
+        "{} ({}) published {:?} track {}.",
+        participant.sid(),
+        participant.identity(),
         track.kind(),
         track.sid(),
-        participant.sid(),
-        participant.identity()
     );
     let mut entity_cmd = commands.spawn((
         LivekitTrack {
@@ -194,11 +194,11 @@ fn track_unpublished(
     }
 
     debug!(
-        "Unpublished {:?} track {} of {} ({}).",
+        "{} ({}) unpublished {:?} track {}.",
+        participant.sid(),
+        participant.identity(),
         track.kind(),
         track.sid(),
-        participant.sid(),
-        participant.identity()
     );
     commands.entity(entity).despawn();
 }
