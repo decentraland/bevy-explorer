@@ -44,7 +44,7 @@ pub(super) struct PlayerUpdateTask {
     pub task: JoinHandle<Result<(), SendError<PlayerUpdate>>>,
 }
 
-pub fn start_livekit(
+fn start_livekit(
     mut commands: Commands,
     mut room_events: EventReader<StartLivekit>,
     current_profile: Res<CurrentUserProfile>,
