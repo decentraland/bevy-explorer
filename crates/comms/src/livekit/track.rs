@@ -16,7 +16,7 @@ pub struct LivekitTrack {
 pub struct PublishedBy(Entity);
 
 #[derive(Component)]
-#[relationship_target(relationship=PublishedBy)]
+#[relationship_target(relationship=PublishedBy, linked_spawn)]
 pub struct Publishing(Vec<Entity>);
 
 #[derive(Component)]
