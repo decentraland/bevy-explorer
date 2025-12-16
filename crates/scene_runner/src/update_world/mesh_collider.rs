@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use bevy::{
     math::Vec3,
     pbr::{wireframe::Wireframe, NotShadowCaster, NotShadowReceiver},
@@ -38,23 +40,45 @@ use super::AddCrdtInterfaceExt;
 
 pub struct MeshColliderPlugin;
 
-pub const COLLISION_MASK_COLLIDER: u32 = 1 << 31;
+pub trait ColliderType: Clone + 'static {
+    fn is_trigger() -> bool;
+    fn primitive_debug_color() -> Color;
+    fn gltf_debug_color() -> Color;
+}
+
+#[derive(Clone, Debug)]
+pub struct CtCollider;
+impl ColliderType for CtCollider {
+    fn is_trigger() -> bool {
+        false
+    }
+
+    fn primitive_debug_color() -> Color {
+        Color::srgba(1.0, 0.0, 0.0, 0.2)
+    }
+
+    fn gltf_debug_color() -> Color {
+        Color::srgba(0.0, 1.0, 0.0, 0.2)
+    }
+}
 
 #[derive(Component, Clone, Debug)]
-pub struct MeshCollider {
+pub struct MeshCollider<T: ColliderType> {
     pub shape: MeshColliderShape,
     pub collision_mask: u32,
     pub mesh_name: Option<String>,
     pub index: u32,
+    pub _p: PhantomData<fn() -> T>,
 }
 
-impl Default for MeshCollider {
+impl Default for MeshCollider<CtCollider> {
     fn default() -> Self {
         Self {
             shape: MeshColliderShape::Box,
             collision_mask: ColliderLayer::ClPointer as u32 | ColliderLayer::ClPhysics as u32,
             mesh_name: Default::default(),
             index: Default::default(),
+            _p: Default::default(),
         }
     }
 }
@@ -79,7 +103,7 @@ pub enum MeshColliderShape {
     },
 }
 
-impl From<PbMeshCollider> for MeshCollider {
+impl From<PbMeshCollider> for MeshCollider<CtCollider> {
     fn from(value: PbMeshCollider) -> Self {
         let shape = match value.mesh {
             Some(pb_mesh_collider::Mesh::Box(_)) => MeshColliderShape::Box,
@@ -109,24 +133,37 @@ impl From<PbMeshCollider> for MeshCollider {
     }
 }
 
+pub fn add_collider_systems<T: ColliderType>(app: &mut App) {
+    // collider components are created in SceneSets::Loop (by PbMeshCollider messages) and
+    // in SceneSets::PostLoop (by gltf processing).
+    // they are positioned in SceneSets::PostInit and
+    // they are used in SceneSets::Input (for raycasts).
+    // we want to avoid using CoreSet::PostUpdate as that's where we create/destroy scenes,
+    // so we use SceneSets::Init for adding colliders to the scene collider data (qbvh).
+    app.add_systems(Update, update_colliders::<T>.in_set(SceneSets::Init));
+
+    // update collider transforms before queries and scenes are run, but after global transforms are updated (at end of prior frame)
+    app.add_systems(
+        Update,
+        update_collider_transforms::<T>.in_set(SceneSets::PostInit),
+    );
+
+    // show debugs whenever
+    app.add_systems(Update, render_debug_colliders::<T>);
+}
+
 impl Plugin for MeshColliderPlugin {
     fn build(&self, app: &mut App) {
-        app.add_crdt_lww_component::<PbMeshCollider, MeshCollider>(
+        app.add_crdt_lww_component::<PbMeshCollider, MeshCollider<CtCollider>>(
             SceneComponentId::MESH_COLLIDER,
             ComponentPosition::EntityOnly,
         );
 
-        // collider components are created in SceneSets::Loop (by PbMeshCollider messages) and
-        // in SceneSets::PostLoop (by gltf processing).
-        // they are positioned in SceneSets::PostInit and
-        // they are used in SceneSets::Input (for raycasts).
-        // we want to avoid using CoreSet::PostUpdate as that's where we create/destroy scenes,
-        // so we use SceneSets::Init for adding colliders to the scene collider data (qbvh).
+        add_collider_systems::<CtCollider>(app);
+
         app.add_systems(
             Update,
-            (update_colliders, propagate_disabled)
-                .chain()
-                .in_set(SceneSets::Init),
+            propagate_disabled::<CtCollider>.in_set(SceneSets::Init),
         );
         app.add_systems(
             Update,
@@ -140,19 +177,12 @@ impl Plugin for MeshColliderPlugin {
             .schedule
             .add_systems(remove_deleted_colliders.in_set(SceneLoopSets::UpdateWorld));
 
-        // update collider transforms before queries and scenes are run, but after global transforms are updated (at end of prior frame)
-        app.add_systems(
-            Update,
-            update_collider_transforms.in_set(SceneSets::PostInit),
-        );
-
         app.init_resource::<DebugColliders>();
         app.add_console_command::<DebugColliderCommand, _>(debug_colliders);
-        app.add_systems(Update, render_debug_colliders);
     }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Default)]
 pub struct ColliderId {
     pub entity: SceneEntityId,
     pub name: Option<String>,
@@ -293,7 +323,9 @@ impl SceneColliderData {
                     new_scale = req_scale;
                     // colliders don't have a scale, we have to modify the shape directly when scale changes (significantly)
                     collider.set_shape(base_collider.shape().scale_ext(req_scale));
-                } else if self.disabled.contains(&handle) {
+                }
+
+                if self.disabled.contains(&handle) {
                     // don't shapecast
                 } else if let Some(colliders) = cast_with {
                     // if scale doesn't change then just shapecast to hit colliders
@@ -322,6 +354,7 @@ impl SceneColliderData {
                         )
                         .map(|(_, toi)| toi);
                 }
+
                 let initial_transform = Transform {
                     translation: *init_translation,
                     rotation: *init_rotation,
@@ -376,6 +409,8 @@ impl SceneColliderData {
         distance: f32,
         collision_mask: u32,
         skip_inside: bool,
+        include_sensors: bool,
+        specific_collider: Option<&ColliderId>,
     ) -> Option<RaycastResult> {
         let ray = rapier3d::prelude::Ray {
             origin: origin.into(),
@@ -402,6 +437,22 @@ impl SceneColliderData {
             );
         }
 
+        let specific_collider = specific_collider.and_then(|id| self.get_collider_handle(id));
+        let predicate =
+            |h, _: &_| !inside.contains(&h) && specific_collider.is_none_or(|sc| sc == h);
+        let filter = QueryFilter::default()
+            .groups(InteractionGroups::new(
+                Group::from_bits_truncate(collision_mask),
+                Group::from_bits_truncate(collision_mask),
+            ))
+            .predicate(&predicate);
+
+        let filter = if include_sensors {
+            filter
+        } else {
+            filter.exclude_sensors()
+        };
+
         self.query_state
             .as_ref()
             .unwrap()
@@ -411,12 +462,7 @@ impl SceneColliderData {
                 &ray,
                 distance,
                 true,
-                QueryFilter::default()
-                    .groups(InteractionGroups::new(
-                        Group::from_bits_truncate(collision_mask),
-                        Group::from_bits_truncate(collision_mask),
-                    ))
-                    .predicate(&|h, _| !inside.contains(&h)),
+                filter,
             )
             .map(|(handle, intersection)| RaycastResult {
                 id: self.get_id(handle).unwrap().clone(),
@@ -444,7 +490,9 @@ impl SceneColliderData {
                 stop_at_penetration: true,
                 compute_impact_geometry_on_penetration: true,
             },
-            QueryFilter::default().predicate(&|h, _| self.collider_enabled(h)),
+            QueryFilter::default()
+                .exclude_sensors()
+                .predicate(&|h, _| self.collider_enabled(h)),
         );
 
         contact.map(|(handle, toi)| (toi.time_of_impact, self.get_id(handle).unwrap().clone()))
@@ -474,10 +522,16 @@ impl SceneColliderData {
                 (PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS) * 0.85,
                 PLAYER_COLLIDER_RADIUS * 0.85,
             ),
-            QueryFilter::default().groups(InteractionGroups::new(
-                Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
-                Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
-            )),
+            QueryFilter::default()
+                .groups(InteractionGroups::new(
+                    Group::from_bits_truncate(
+                        ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK,
+                    ),
+                    Group::from_bits_truncate(
+                        ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK,
+                    ),
+                ))
+                .exclude_sensors(),
         );
         initial_intersection.map(|_| {
             // check nearby points and eject
@@ -526,10 +580,16 @@ impl SceneColliderData {
                                 PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS,
                                 PLAYER_COLLIDER_RADIUS,
                             ),
-                            QueryFilter::default().groups(InteractionGroups::new(
-                                Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
-                                Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
-                            )),
+                            QueryFilter::default()
+                                .groups(InteractionGroups::new(
+                                    Group::from_bits_truncate(
+                                        ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK,
+                                    ),
+                                    Group::from_bits_truncate(
+                                        ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK,
+                                    ),
+                                ))
+                                .exclude_sensors(),
                         )
                         .is_none()
                     {
@@ -577,9 +637,14 @@ impl SceneColliderData {
                     direction.into(),
                     QueryFilter::default()
                         .groups(InteractionGroups::new(
-                            Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
-                            Group::from_bits_truncate(ColliderLayer::ClPhysics as u32),
+                            Group::from_bits_truncate(
+                                ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK,
+                            ),
+                            Group::from_bits_truncate(
+                                ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK,
+                            ),
                         ))
+                        .exclude_sensors()
                         .predicate(&|h, _| {
                             ((specific_collider == Some(h)) == include_specific_collider)
                                 && !self.disabled.contains(&h)
@@ -614,10 +679,12 @@ impl SceneColliderData {
                 &self.collider_set,
                 &origin.into(),
                 &Ball::new(0.001),
-                QueryFilter::default().groups(InteractionGroups::new(
-                    Group::from_bits_truncate(collision_mask),
-                    Group::from_bits_truncate(collision_mask),
-                )),
+                QueryFilter::default()
+                    .groups(InteractionGroups::new(
+                        Group::from_bits_truncate(collision_mask),
+                        Group::from_bits_truncate(collision_mask),
+                    ))
+                    .exclude_sensors(),
                 |h| {
                     inside.insert(h);
                     true
@@ -636,6 +703,7 @@ impl SceneColliderData {
                     Group::from_bits_truncate(collision_mask),
                     Group::from_bits_truncate(collision_mask),
                 ))
+                .exclude_sensors()
                 .predicate(&|h, _| !inside.contains(&h)),
             |handle, intersection| {
                 results.push(RaycastResult {
@@ -696,12 +764,11 @@ impl SceneColliderData {
         self.query_state_valid_at = None;
     }
 
-    // TODO use map of maps to make this faster?
-    pub fn remove_colliders(&mut self, id: SceneEntityId) {
+    pub fn remove_colliders(&mut self, ids: &HashSet<SceneEntityId>) {
         let remove_keys = self
             .collider_state
             .keys()
-            .filter(|k| k.entity == id)
+            .filter(|k| ids.contains(&k.entity))
             .cloned()
             .collect::<Vec<_>>();
 
@@ -737,28 +804,20 @@ impl SceneColliderData {
         self.scaled_collider.left_values()
     }
 
-    pub fn intersect_shape(
-        &mut self,
-        scene_time: u32,
-        shape: &SharedShape,
-        transform: &GlobalTransform,
-        mask: u32,
-    ) -> Vec<ColliderId> {
-        self.update_pipeline(scene_time);
-
-        let (scale, rotation, translation) = transform.to_scale_rotation_translation();
-        let shape = shape.scale_ext(scale);
-
+    fn intersect_trigger_internal(&self, collider: &Collider, mask: u32) -> Vec<ColliderId> {
         let mut results = Vec::default();
+
         self.query_state.as_ref().unwrap().intersections_with_shape(
             &self.dummy_rapier_structs.1,
             &self.collider_set,
-            &Isometry::from_parts(translation.into(), rotation.into()),
-            shape.0.as_ref(),
-            QueryFilter::default().groups(InteractionGroups {
-                memberships: Group::from_bits_truncate(mask),
-                filter: Group::from_bits_truncate(mask),
-            }),
+            collider.position(),
+            collider.shape(),
+            QueryFilter::default()
+                .groups(InteractionGroups {
+                    memberships: Group::from_bits_truncate(mask),
+                    filter: Group::from_bits_truncate(mask),
+                })
+                .exclude_sensors(),
             |ch| {
                 let Some(collider) = self.get_id(ch) else {
                     warn!("missing collider for trigger intersection");
@@ -770,7 +829,29 @@ impl SceneColliderData {
         );
         results
     }
+
+    pub fn intersect_id(&mut self, scene_time: u32, id: &ColliderId, mask: u32) -> Vec<ColliderId> {
+        self.update_pipeline(scene_time);
+
+        let Some(collider) = self.get_collider(id) else {
+            return Vec::default();
+        };
+
+        self.intersect_trigger_internal(collider, mask)
+    }
+
+    pub fn intersect_collider(
+        &mut self,
+        scene_time: u32,
+        collider: &Collider,
+        mask: u32,
+    ) -> Vec<ColliderId> {
+        self.update_pipeline(scene_time);
+        self.intersect_trigger_internal(collider, mask)
+    }
 }
+
+pub const GROUND_COLLISION_MASK: u32 = 1 << 31;
 
 fn update_scene_collider_data(
     mut commands: Commands,
@@ -786,6 +867,10 @@ fn update_scene_collider_data(
                         .xzy()
                         .into(),
                 )
+                .collision_groups(InteractionGroups::new(
+                    Group::from_bits_truncate(GROUND_COLLISION_MASK),
+                    Group::from_bits_truncate(GROUND_COLLISION_MASK),
+                ))
                 .build();
             scene_data.set_collider(
                 &ColliderId {
@@ -803,22 +888,26 @@ fn update_scene_collider_data(
 
 // collider state component
 #[derive(Component)]
-pub struct HasCollider(pub ColliderId);
+pub struct HasCollider<T: ColliderType>(pub ColliderId, PhantomData<fn() -> T>);
+
+// collider state component
+#[derive(Component)]
+pub struct HasTrigger(pub ColliderId);
 
 #[allow(clippy::type_complexity)]
-fn update_colliders(
+fn update_colliders<T: ColliderType>(
     mut commands: Commands,
     // add colliders
     // any entity with a mesh collider that we're not already using, or where the mesh collider has changed
     new_colliders: Query<
-        (Entity, &MeshCollider, &ContainerEntity),
-        Or<(Changed<MeshCollider>, Without<HasCollider>)>,
+        (Entity, &MeshCollider<T>, &ContainerEntity),
+        Or<(Changed<MeshCollider<T>>, Without<HasCollider<T>>)>,
     >,
     // remove colliders
     // any entities with a live collider handle that don't have a mesh collider
     colliders_without_source: Query<
-        (Entity, &ContainerEntity, &HasCollider),
-        Without<MeshCollider>,
+        (Entity, &ContainerEntity, &HasCollider<T>),
+        Without<MeshCollider<T>>,
     >,
     mut scene_data: Query<(&RendererSceneContext, &mut SceneColliderData)>,
     mut gltf_mesh_resolver: GltfMeshResolver,
@@ -875,6 +964,7 @@ fn update_colliders(
             memberships: Group::from_bits_truncate(collider_def.collision_mask),
             filter: Group::from_bits_truncate(collider_def.collision_mask),
         })
+        .sensor(T::is_trigger())
         .build();
 
         let collider_id = ColliderId::new(
@@ -889,7 +979,9 @@ fn update_colliders(
         };
 
         scene_data.set_collider(&collider_id, collider, Some(ent));
-        commands.entity(ent).try_insert(HasCollider(collider_id));
+        commands
+            .entity(ent)
+            .try_insert(HasCollider::<T>(collider_id, Default::default()));
     }
 
     // remove colliders
@@ -901,7 +993,8 @@ fn update_colliders(
         };
 
         scene_data.remove_collider(&collider.0);
-        commands.entity(ent).remove::<HasCollider>();
+
+        commands.entity(ent).remove::<HasCollider<T>>();
     }
 }
 
@@ -909,9 +1002,7 @@ fn remove_deleted_colliders(
     mut scene_data: Query<(&mut SceneColliderData, &DeletedSceneEntities)>,
 ) {
     for (mut scene_data, deleted_entities) in &mut scene_data {
-        for deleted_entity in &deleted_entities.0 {
-            scene_data.remove_colliders(*deleted_entity);
-        }
+        scene_data.remove_colliders(&deleted_entities.0);
     }
 }
 
@@ -920,10 +1011,16 @@ fn remove_deleted_colliders(
 pub struct GroundCollider(pub Option<(Entity, ColliderId, GlobalTransform)>);
 
 #[allow(clippy::type_complexity)]
-fn propagate_disabled(
+fn propagate_disabled<T: ColliderType>(
     mut scene_datas: Query<(Entity, &mut SceneColliderData)>,
-    q: Query<(&ContainerEntity, Option<&HasCollider>, Option<&Children>), With<DisableCollisions>>,
-    r: Query<(Option<&HasCollider>, Option<&Children>), Or<(With<Children>, With<HasCollider>)>>,
+    q: Query<
+        (&ContainerEntity, Option<&HasCollider<T>>, Option<&Children>),
+        With<DisableCollisions>,
+    >,
+    r: Query<
+        (Option<&HasCollider<T>>, Option<&Children>),
+        Or<(With<Children>, With<HasCollider<T>>)>,
+    >,
 ) {
     let mut disable: HashMap<Entity, HashSet<&ColliderId>> = HashMap::new();
     for (container, maybe_collider, maybe_children) in q.iter() {
@@ -962,11 +1059,11 @@ fn propagate_disabled(
 }
 
 #[allow(clippy::type_complexity)]
-fn update_collider_transforms(
+fn update_collider_transforms<T: ColliderType>(
     changed_colliders: Query<
-        (&ContainerEntity, &HasCollider, &GlobalTransform),
+        (&ContainerEntity, &HasCollider<T>, &GlobalTransform),
         (
-            Or<(Changed<GlobalTransform>, Changed<HasCollider>)>, // needs updating
+            Or<(Changed<GlobalTransform>, Changed<HasCollider<T>>)>, // needs updating
         ),
     >,
     mut scene_data: Query<&mut SceneColliderData>,
@@ -1048,7 +1145,7 @@ fn update_collider_transforms(
         let (maybe_original_transform, maybe_toi) = scene_data.update_collider_transform(
             &collider.0,
             global_transform,
-            if containing_scenes.contains(&container.root) {
+            if !T::is_trigger() && containing_scenes.contains(&container.root) {
                 Some(&player_collider_set)
             } else {
                 None
@@ -1194,12 +1291,15 @@ fn debug_colliders(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn render_debug_colliders(
+fn render_debug_colliders<T: ColliderType>(
     mut commands: Commands,
     debug: Res<DebugColliders>,
     mut debug_entities: Local<HashMap<Entity, Entity>>,
-    with_collider: Query<(Entity, &MeshCollider, &ContainerEntity), With<HasCollider>>,
-    changed_collider: Query<Entity, Changed<MeshCollider>>,
+    with_collider: Query<
+        (Entity, &MeshCollider<T>, &ContainerEntity),
+        Or<(With<HasCollider<T>>, With<HasTrigger>)>,
+    >,
+    changed_collider: Query<Entity, Changed<MeshCollider<T>>>,
     player: Query<Entity, With<PrimaryUser>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -1221,14 +1321,14 @@ fn render_debug_colliders(
     if debug_materials.is_none() {
         *debug_materials = Some((
             materials.add(StandardMaterial {
-                base_color: Color::srgba(1.0, 0.0, 0.0, 0.1),
+                base_color: T::primitive_debug_color(),
                 alpha_mode: AlphaMode::Blend,
                 unlit: true,
                 depth_bias: 1000.0,
                 ..Default::default()
             }),
             materials.add(StandardMaterial {
-                base_color: Color::srgba(0.0, 10.0, 0.0, 0.1),
+                base_color: T::gltf_debug_color(),
                 alpha_mode: AlphaMode::Blend,
                 unlit: true,
                 depth_bias: 1000.0,

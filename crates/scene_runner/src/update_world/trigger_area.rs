@@ -1,4 +1,4 @@
-use bevy::{platform::collections::HashMap, prelude::*, render::mesh::VertexAttributeValues};
+use bevy::{diagnostic::FrameCount, platform::collections::HashMap, prelude::*};
 use common::sets::SceneSets;
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
@@ -9,45 +9,51 @@ use dcl_component::{
             TriggerAreaEventType, TriggerAreaMeshType,
         },
     },
-    SceneComponentId,
-};
-use rapier3d::{
-    math::Point,
-    prelude::{ColliderBuilder, SharedShape},
+    SceneComponentId, SceneEntityId,
 };
 
 use crate::{
-    gltf_resolver::GltfMeshResolver,
     renderer_context::RendererSceneContext,
+    update_scene::pointer_results::{AvatarColliders, PointerRay},
     update_world::{
-        gltf_container::mesh_to_parry_shape,
-        mesh_collider::{ColliderId, MeshCollider, MeshColliderShape, SceneColliderData},
-        mesh_renderer::truncated_cone::TruncatedCone,
+        mesh_collider::{
+            add_collider_systems, ColliderId, ColliderType, HasCollider, MeshCollider,
+            MeshColliderShape, SceneColliderData,
+        },
         AddCrdtInterfaceExt,
     },
     ContainerEntity,
 };
 
-#[derive(Component)]
-pub struct TriggerArea {
-    pub shape: MeshColliderShape,
-    pub trigger_mask: u32,
-    pub mesh_name: Option<String>,
-    pub index: u32,
+#[derive(Clone)]
+pub struct CtTrigger;
+impl ColliderType for CtTrigger {
+    fn is_trigger() -> bool {
+        true
+    }
+
+    fn primitive_debug_color() -> Color {
+        Color::srgba(1.0, 0.0, 1.0, 0.2)
+    }
+
+    fn gltf_debug_color() -> Color {
+        Color::srgba(0.0, 1.0, 1.0, 0.2)
+    }
 }
 
-impl Default for TriggerArea {
+impl Default for MeshCollider<CtTrigger> {
     fn default() -> Self {
         Self {
             shape: MeshColliderShape::Box,
-            trigger_mask: ColliderLayer::ClPlayer as u32,
+            collision_mask: ColliderLayer::ClPlayer as u32,
             mesh_name: Default::default(),
             index: Default::default(),
+            _p: Default::default(),
         }
     }
 }
 
-impl From<PbTriggerArea> for TriggerArea {
+impl From<PbTriggerArea> for MeshCollider<CtTrigger> {
     fn from(value: PbTriggerArea) -> Self {
         let shape = match value.mesh() {
             TriggerAreaMeshType::TamtBox => MeshColliderShape::Box,
@@ -56,7 +62,7 @@ impl From<PbTriggerArea> for TriggerArea {
 
         Self {
             shape,
-            trigger_mask: value
+            collision_mask: value
                 .collision_mask
                 .unwrap_or(ColliderLayer::ClPlayer as u32),
             ..Default::default()
@@ -68,204 +74,233 @@ pub struct TriggerAreaPlugin;
 
 impl Plugin for TriggerAreaPlugin {
     fn build(&self, app: &mut App) {
-        app.add_crdt_lww_component::<PbTriggerArea, TriggerArea>(
+        app.add_crdt_lww_component::<PbTriggerArea, MeshCollider<CtTrigger>>(
             SceneComponentId::TRIGGER_AREA,
             ComponentPosition::EntityOnly,
         );
 
-        app.add_systems(
-            Update,
-            (update_trigger_shapes, update_triggers)
-                .chain()
-                .in_set(SceneSets::Input),
-        );
+        add_collider_systems::<CtTrigger>(app);
+
+        app.add_systems(Update, (update_triggers).chain().in_set(SceneSets::Input));
     }
 }
 
 #[derive(Component)]
-pub struct TriggerShape(SharedShape);
-
-fn update_trigger_shapes(
-    mut commands: Commands,
-    changed_triggers: Query<(Entity, &ContainerEntity, &TriggerArea), Changed<TriggerArea>>,
-    scenes: Query<&RendererSceneContext>,
-    mut gltf_mesh_resolver: GltfMeshResolver,
-    meshes: Res<Assets<Mesh>>,
-) {
-    for (entity, container, area) in changed_triggers.iter() {
-        let shape = match &area.shape {
-            MeshColliderShape::Box => ColliderBuilder::cuboid(0.5, 0.5, 0.5),
-            MeshColliderShape::Cylinder {
-                radius_top,
-                radius_bottom,
-            } => {
-                // TODO we could use explicit support points to make queries faster
-                let mesh: Mesh = TruncatedCone {
-                    base_radius: *radius_bottom,
-                    tip_radius: *radius_top,
-                    ..Default::default()
-                }
-                .into();
-                let VertexAttributeValues::Float32x3(positions) =
-                    mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap()
-                else {
-                    panic!()
-                };
-                ColliderBuilder::convex_hull(
-                    &positions
-                        .iter()
-                        .map(|p| Point::from([p[0], p[1], p[2]]))
-                        .collect::<Vec<_>>(),
-                )
-                .unwrap()
-            }
-            MeshColliderShape::Plane => ColliderBuilder::cuboid(0.5, 0.5, 0.005),
-            MeshColliderShape::Sphere => ColliderBuilder::ball(0.5),
-            MeshColliderShape::Shape(shape, _) => ColliderBuilder::new(shape.clone()),
-            MeshColliderShape::GltfShape { gltf_src, name } => {
-                let Ok(scene) = scenes.get(container.root) else {
-                    continue;
-                };
-                let Ok(Some(h_mesh)) = gltf_mesh_resolver.resolve_mesh(gltf_src, &scene.hash, name)
-                else {
-                    continue;
-                };
-                let mesh = meshes.get(&h_mesh).unwrap();
-                let shape = mesh_to_parry_shape(mesh);
-                ColliderBuilder::new(shape)
-            }
-        }
-        .build()
-        .shared_shape()
-        .clone();
-
-        commands.entity(entity).try_insert(TriggerShape(shape));
-    }
+pub struct ActiveTriggers {
+    pub scene: HashMap<ColliderId, u32>,
+    pub avatars: HashMap<ColliderId, u32>,
+    pub pointer: HashMap<ColliderId, u32>,
 }
-
-#[derive(Component)]
-pub struct ActiveTriggers(pub HashMap<ColliderId, u32>);
 
 fn update_triggers(
     mut commands: Commands,
     trigger_areas: Query<(
         Entity,
         &ContainerEntity,
-        Ref<TriggerArea>,
-        Option<&ActiveTriggers>,
-        &TriggerShape,
+        Ref<MeshCollider<CtTrigger>>,
+        &HasCollider<CtTrigger>,
         &GlobalTransform,
+        Option<&ActiveTriggers>,
     )>,
     mut scenes: Query<(&mut RendererSceneContext, &mut SceneColliderData)>,
-    triggers: Query<(&MeshCollider, &GlobalTransform)>,
+    mut avatar_colliders: ResMut<AvatarColliders>,
+    triggers: Query<(&MeshCollider<CtTrigger>, &GlobalTransform)>,
+    frame: Res<FrameCount>,
+    pointer_ray: Res<PointerRay>,
 ) {
-    for (entity, container, trigger, maybe_active, shape, gt) in trigger_areas.iter() {
+    let make_trigger = |colliders: &SceneColliderData, collider_id: &ColliderId| -> Trigger {
+        colliders
+            .get_collider_entity(collider_id)
+            .and_then(|e| triggers.get(e).ok())
+            .map(|(collider, gt)| {
+                let (s, r, t) = gt.to_scale_rotation_translation();
+                Trigger {
+                    entity: collider_id.entity.as_proto_u32().unwrap(),
+                    layers: collider.collision_mask,
+                    position: Some(Vector3::world_vec_from_vec3(&t)),
+                    rotation: Some(r.into()),
+                    scale: Some(Vector3::abs_vec_from_vec3(&s)),
+                }
+            })
+            .unwrap_or_else(|| Trigger {
+                entity: collider_id.entity.as_proto_u32().unwrap(),
+                layers: 0,
+                position: None,
+                rotation: None,
+                scale: None,
+            })
+    };
+
+    let make_result = |colliders: &SceneColliderData,
+                       container: &ContainerEntity,
+                       translation: Vec3,
+                       rotation: Quat,
+                       timestamp: u32,
+                       collider_id: &ColliderId,
+                       ty: TriggerAreaEventType|
+     -> PbTriggerAreaResult {
+        PbTriggerAreaResult {
+            triggered_entity: container.container_id.as_proto_u32().unwrap(),
+            triggered_entity_position: Some(Vector3::world_vec_from_vec3(&translation)),
+            triggered_entity_rotation: Some(rotation.into()),
+            event_type: ty as i32,
+            timestamp,
+            trigger: Some(make_trigger(colliders, collider_id)),
+        }
+    };
+
+    let make_events = |colliders: &SceneColliderData,
+                       active_colliders: &HashMap<ColliderId, u32>,
+                       new_colliders: &Vec<ColliderId>,
+                       container: &ContainerEntity,
+                       translation: Vec3,
+                       rotation: Quat,
+                       timestamp: u32|
+     -> Vec<(SceneEntityId, PbTriggerAreaResult)> {
+        let mut results = Vec::default();
+
+        for (prev_collider, prev_frame) in active_colliders {
+            if new_colliders.contains(prev_collider) {
+                if prev_frame != &timestamp {
+                    // send only 1 stay per scene tick
+                    results.push((
+                        container.container_id,
+                        make_result(
+                            colliders,
+                            container,
+                            translation,
+                            rotation,
+                            timestamp,
+                            prev_collider,
+                            TriggerAreaEventType::TaetStay,
+                        ),
+                    ));
+                }
+            } else {
+                results.push((
+                    container.container_id,
+                    make_result(
+                        colliders,
+                        container,
+                        translation,
+                        rotation,
+                        timestamp,
+                        prev_collider,
+                        TriggerAreaEventType::TaetExit,
+                    ),
+                ));
+            }
+        }
+
+        for new_collider in new_colliders {
+            if !active_colliders.contains_key(new_collider) {
+                results.push((
+                    container.container_id,
+                    make_result(
+                        colliders,
+                        container,
+                        translation,
+                        rotation,
+                        timestamp,
+                        new_collider,
+                        TriggerAreaEventType::TaetEnter,
+                    ),
+                ));
+            }
+        }
+
+        results
+    };
+
+    for (entity, container, trigger_def, collider, gt, maybe_active) in trigger_areas.iter() {
         let Ok((mut scene, mut colliders)) = scenes.get_mut(container.root) else {
             continue;
         };
 
-        let timestamp = scene.last_update_frame;
-
-        // get intersecting colliders
-        let new_colliders =
-            colliders.intersect_shape(scene.last_update_frame, &shape.0, gt, trigger.trigger_mask);
         let (_, rotation, translation) = gt.to_scale_rotation_translation();
 
-        let mut results = Vec::default();
-        if let Some(prev_active) = maybe_active.as_ref() {
-            for (prev_collider, prev_frame) in &prev_active.0 {
-                let trigger = colliders
-                    .get_collider_entity(prev_collider)
-                    .and_then(|e| triggers.get(e).ok())
-                    .map(|(collider, gt)| {
-                        let (s, r, t) = gt.to_scale_rotation_translation();
-                        Trigger {
-                            entity: prev_collider.entity.as_proto_u32().unwrap(),
-                            layers: collider.collision_mask,
-                            position: Some(Vector3::world_vec_from_vec3(&t)),
-                            rotation: Some(r.into()),
-                            scale: Some(Vector3::abs_vec_from_vec3(&s)),
-                        }
-                    })
-                    .unwrap_or_else(|| Trigger {
-                        entity: prev_collider.entity.as_proto_u32().unwrap(),
-                        layers: 0,
-                        position: None,
-                        rotation: None,
-                        scale: None,
-                    });
+        // get intersecting colliders
+        let new_colliders = colliders.intersect_id(
+            scene.last_update_frame,
+            &collider.0,
+            trigger_def.collision_mask,
+        );
 
-                if new_colliders.contains(prev_collider) {
-                    if prev_frame != &timestamp {
-                        // send only 1 stay per scene tick
-                        results.push((
-                            container.container_id,
-                            PbTriggerAreaResult {
-                                triggered_entity: container.container_id.as_proto_u32().unwrap(),
-                                triggered_entity_position: Some(Vector3::world_vec_from_vec3(
-                                    &translation,
-                                )),
-                                triggered_entity_rotation: Some(rotation.into()),
-                                event_type: TriggerAreaEventType::TaetStay as i32,
-                                timestamp,
-                                trigger: Some(trigger.clone()),
-                            },
-                        ));
-                    }
-                } else {
-                    results.push((
-                        container.container_id,
-                        PbTriggerAreaResult {
-                            triggered_entity: container.container_id.as_proto_u32().unwrap(),
-                            triggered_entity_position: Some(Vector3::world_vec_from_vec3(
-                                &translation,
-                            )),
-                            triggered_entity_rotation: Some(rotation.into()),
-                            event_type: TriggerAreaEventType::TaetExit as i32,
-                            timestamp,
-                            trigger: Some(trigger.clone()),
-                        },
-                    ));
-                }
-            }
+        let empty_active = HashMap::default();
+        let mut results = make_events(
+            &colliders,
+            maybe_active
+                .as_ref()
+                .map(|a| &a.scene)
+                .unwrap_or(&empty_active),
+            &new_colliders,
+            container,
+            translation,
+            rotation,
+            scene.last_update_frame,
+        );
+
+        // get avatar colliders
+        let mut new_avatars = Default::default();
+        if trigger_def.collision_mask & (ColliderLayer::ClPlayer as u32) != 0 {
+            new_avatars = colliders
+                .get_collider(&collider.0)
+                .map(|c| {
+                    avatar_colliders.collider_data.intersect_collider(
+                        frame.0,
+                        c,
+                        trigger_def.collision_mask,
+                    )
+                })
+                .unwrap_or_default();
+            results.extend(make_events(
+                &avatar_colliders.collider_data,
+                maybe_active
+                    .as_ref()
+                    .map(|a| &a.avatars)
+                    .unwrap_or(&empty_active),
+                &new_avatars,
+                container,
+                translation,
+                rotation,
+                scene.last_update_frame,
+            ));
+        } else {
+            Default::default()
         }
 
-        for new_collider in &new_colliders {
-            if maybe_active
-                .as_ref()
-                .is_none_or(|prev_active| !prev_active.0.contains_key(new_collider))
-            {
-                let trigger = colliders
-                    .get_collider_entity(new_collider)
-                    .and_then(|e| triggers.get(e).ok())
-                    .map(|(collider, gt)| {
-                        let (s, r, t) = gt.to_scale_rotation_translation();
-                        Trigger {
-                            entity: new_collider.entity.as_proto_u32().unwrap(),
-                            layers: collider.collision_mask,
-                            position: Some(Vector3::world_vec_from_vec3(&t)),
-                            rotation: Some(r.into()),
-                            scale: Some(Vector3::abs_vec_from_vec3(&s)),
-                        }
-                    })
-                    .unwrap_or_else(|| Trigger {
-                        entity: new_collider.entity.as_proto_u32().unwrap(),
-                        layers: 0,
-                        position: None,
-                        rotation: None,
-                        scale: None,
-                    });
+        // get pointer ray
+        let mut new_pointers = Default::default();
+        if trigger_def.collision_mask & (ColliderLayer::ClPointer as u32) != 0 {
+            if let Some(ray) = pointer_ray.0 {
+                let pointer_hit = colliders.cast_ray_nearest(
+                    scene.last_update_frame,
+                    ray.origin,
+                    ray.direction.as_vec3(),
+                    f32::MAX,
+                    ColliderLayer::ClPointer as u32,
+                    false,
+                    true,
+                    Some(&collider.0),
+                );
 
-                results.push((
-                    container.container_id,
-                    PbTriggerAreaResult {
-                        triggered_entity: container.container_id.as_proto_u32().unwrap(),
-                        triggered_entity_position: Some(Vector3::world_vec_from_vec3(&translation)),
-                        triggered_entity_rotation: Some(rotation.into()),
-                        event_type: TriggerAreaEventType::TaetEnter as i32,
-                        timestamp,
-                        trigger: Some(trigger.clone()),
-                    },
+                new_pointers = if pointer_hit.is_some() {
+                    vec![ColliderId::default()]
+                } else {
+                    Vec::default()
+                };
+
+                results.extend(make_events(
+                    &colliders,
+                    maybe_active
+                        .as_ref()
+                        .map(|a| &a.pointer)
+                        .unwrap_or(&empty_active),
+                    &new_pointers,
+                    container,
+                    translation,
+                    rotation,
+                    scene.last_update_frame,
                 ));
             }
         }
@@ -279,8 +314,19 @@ fn update_triggers(
             );
         }
 
-        commands.entity(entity).try_insert(ActiveTriggers(
-            new_colliders.into_iter().map(|c| (c, timestamp)).collect(),
-        ));
+        commands.entity(entity).try_insert(ActiveTriggers {
+            scene: new_colliders
+                .into_iter()
+                .map(|c| (c, scene.last_update_frame))
+                .collect(),
+            avatars: new_avatars
+                .into_iter()
+                .map(|c| (c, scene.last_update_frame))
+                .collect(),
+            pointer: new_pointers
+                .into_iter()
+                .map(|c| (c, scene.last_update_frame))
+                .collect(),
+        });
     }
 }
