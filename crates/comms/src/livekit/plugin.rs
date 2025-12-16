@@ -1,6 +1,7 @@
 use bevy::platform::sync::Arc;
 use bevy::prelude::*;
 use dcl_component::proto_components::kernel::comms::rfc4;
+use livekit::RoomError;
 use tokio::{runtime::Builder, sync::mpsc, task::JoinHandle};
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -23,6 +24,7 @@ pub struct LivekitPlugin;
 impl Plugin for LivekitPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PlayerUpdateTasks>();
+        app.init_resource::<RoomTasks>();
 
         app.add_plugins(MicPlugin);
         app.add_plugins(LivekitRoomPlugin);
@@ -31,7 +33,12 @@ impl Plugin for LivekitPlugin {
 
         app.add_systems(
             Update,
-            (connect_livekit, start_livekit, verify_player_update_tasks),
+            (
+                connect_livekit,
+                start_livekit,
+                verify_player_update_tasks,
+                verify_room_tasks,
+            ),
         );
         app.add_event::<StartLivekit>();
     }
@@ -43,6 +50,14 @@ pub(super) struct PlayerUpdateTasks(Vec<PlayerUpdateTask>);
 pub(super) struct PlayerUpdateTask {
     pub runtime: LivekitRuntime,
     pub task: JoinHandle<Result<(), mpsc::error::SendError<PlayerUpdate>>>,
+}
+
+#[derive(Default, Resource, Deref, DerefMut)]
+pub(super) struct RoomTasks(Vec<RoomTask>);
+
+pub(super) struct RoomTask {
+    pub runtime: LivekitRuntime,
+    pub task: JoinHandle<Result<(), RoomError>>,
 }
 
 fn start_livekit(
@@ -142,5 +157,40 @@ fn verify_player_update_tasks(
 
     while let Some(i) = done.pop() {
         player_update_tasks.remove(i);
+    }
+}
+
+fn verify_room_tasks(mut commands: Commands, mut network_message_tasks: ResMut<RoomTasks>) {
+    let mut done = vec![];
+    for (
+        i,
+        RoomTask {
+            runtime,
+            ref mut task,
+        },
+    ) in network_message_tasks.iter_mut().enumerate()
+    {
+        if task.is_finished() {
+            done.push(i);
+            let res = runtime.block_on(task);
+            match res {
+                Ok(res) => {
+                    if res.is_err() {
+                        error!("Failed to send PlayerUpdate.");
+                        commands.send_event(AppExit::from_code(1));
+                        return;
+                    }
+                }
+                Err(err) => {
+                    error!("Failed to pull PlayerUpdateTask due to '{err}'.");
+                    commands.send_event(AppExit::from_code(1));
+                    return;
+                }
+            }
+        }
+    }
+
+    while let Some(i) = done.pop() {
+        network_message_tasks.remove(i);
     }
 }
