@@ -6,7 +6,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use bevy::{
-    asset::AssetLoader,
+    asset::{AssetEvents, AssetLoader},
     diagnostic::FrameCount,
     gltf::{Gltf, GltfLoaderSettings},
     image::ImageLoaderSettings,
@@ -28,7 +28,8 @@ impl Plugin for WearablePlugin {
             .init_resource::<WearableCollections>();
         app.register_asset_loader(WearableLoader);
         app.register_asset_loader(WearableMetaLoader);
-        app.add_systems(Update, (load_collections, retain_wearables, clean_images));
+        app.add_systems(Update, (load_collections, retain_wearables));
+        app.add_systems(PostUpdate, clean_images.before(AssetEvents));
     }
 }
 
@@ -567,10 +568,28 @@ impl AssetLoader for WearableMetaLoader {
     }
 }
 
-fn clean_images(mut ev: EventReader<AssetEvent<Image>>, mut images: ResMut<Assets<Image>>) {
+fn clean_images(
+    mut ev: EventReader<AssetEvent<Image>>,
+    mut images: ResMut<Assets<Image>>,
+    mut retry: Local<Vec<AssetId<Image>>>,
+) {
+    for id in retry.drain(..) {
+        let Some(image) = images.get(id) else {
+            continue;
+        };
+        if image.asset_usage.intersects(RenderAssetUsages::MAIN_WORLD) {
+            let image = images.get_mut(id).unwrap();
+            image.asset_usage = RenderAssetUsages::RENDER_WORLD;
+        }
+    }
+
     for ev in ev.read() {
         if let AssetEvent::LoadedWithDependencies { id } = ev {
-            let image = images.get(*id).unwrap();
+            let Some(image) = images.get(*id) else {
+                // retry once next frame
+                retry.push(*id);
+                continue;
+            };
             if image.asset_usage.intersects(RenderAssetUsages::MAIN_WORLD) {
                 let image = images.get_mut(*id).unwrap();
                 image.asset_usage = RenderAssetUsages::RENDER_WORLD;
