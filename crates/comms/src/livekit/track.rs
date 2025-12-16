@@ -21,7 +21,7 @@ use crate::{
     make_hooks,
 };
 
-#[derive(Component, Deref, DerefMut)]
+#[derive(Clone, Component, Deref, DerefMut)]
 pub struct LivekitTrack {
     track: RemoteTrackPublication,
 }
