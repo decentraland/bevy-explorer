@@ -782,7 +782,7 @@ fn subscribe_to_voice(
 
     if let Some(track_entity) = tracks.iter_many(publishing.collection()).next() {
         commands.trigger_targets(
-            track::SubscribeToTrack {
+            track::SubscribeToAudioTrack {
                 runtime: runtime.clone(),
                 sender,
             },

@@ -104,7 +104,7 @@ impl Unsubscribing {
 }
 
 #[derive(Component)]
-struct OpenSender {
+struct OpenAudioSender {
     runtime: LivekitRuntime,
     sender: oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
 }
@@ -144,7 +144,7 @@ pub struct TrackUnsubscribed {
 }
 
 #[derive(Event)]
-pub struct SubscribeToTrack {
+pub struct SubscribeToAudioTrack {
     pub runtime: LivekitRuntime,
     pub sender: oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
 }
@@ -162,7 +162,7 @@ impl Plugin for LivekitTrackPlugin {
         app.add_observer(track_unpublished);
         app.add_observer(track_subscribed);
         app.add_observer(track_unsubscribed);
-        app.add_observer(subscribe_to_track);
+        app.add_observer(subscribe_to_audio_track);
         app.add_observer(unsubscribe_to_track);
 
         app.add_systems(Update, subscribed_audio_track_with_open_sender);
@@ -384,16 +384,18 @@ fn track_unsubscribed(
     commands.entity(entity).insert(Unsubscribed);
 }
 
-fn subscribe_to_track(
-    mut trigger: Trigger<SubscribeToTrack>,
+fn subscribe_to_audio_track(
+    mut trigger: Trigger<SubscribeToAudioTrack>,
     mut commands: Commands,
-    tracks: Query<&LivekitTrack>,
+    tracks: Query<&LivekitTrack, With<Audio>>,
 ) {
     let entity = trigger.target();
-    let SubscribeToTrack { runtime, sender } = trigger.event_mut();
+    let SubscribeToAudioTrack { runtime, sender } = trigger.event_mut();
 
     if entity == Entity::PLACEHOLDER {
-        error!("SubscribeToTrack is an entity event. Call it with 'Commands::trigger_targets'.");
+        error!(
+            "SubscribeToAudioTrack is an entity event. Call it with 'Commands::trigger_targets'."
+        );
         return;
     }
     let Ok(track) = tracks.get(entity) else {
@@ -405,13 +407,13 @@ fn subscribe_to_track(
     let (mut snatcher_sender, _) = oneshot::channel();
     std::mem::swap(&mut snatcher_sender, sender);
 
-    debug!("Subscribing to track {}", track.sid());
+    debug!("Subscribing to audio track {}", track.sid());
     let task = runtime.spawn(async move {
         track.set_subscribed(true);
     });
     commands.entity(entity).insert((
         Subscribing { task },
-        OpenSender {
+        OpenAudioSender {
             runtime: runtime.clone(),
             sender: snatcher_sender,
         },
@@ -448,7 +450,7 @@ fn unsubscribe_to_track(
 fn subscribed_audio_track_with_open_sender(
     mut commands: Commands,
     mut tracks: Populated<
-        (Entity, &LivekitTrack, &mut OpenSender),
+        (Entity, &LivekitTrack, &mut OpenAudioSender),
         (With<Audio>, With<Subscribed>),
     >,
 ) {
@@ -469,6 +471,6 @@ fn subscribed_audio_track_with_open_sender(
         commands
             .entity(entity)
             .insert(LivekitTrackTask(handle))
-            .remove::<OpenSender>();
+            .remove::<OpenAudioSender>();
     }
 }
