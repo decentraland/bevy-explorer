@@ -33,7 +33,7 @@ pub struct LivekitTransport {
 }
 
 #[derive(Clone, Component, Deref, DerefMut)]
-struct LivekitRuntime(Arc<Runtime>);
+pub struct LivekitRuntime(Arc<Runtime>);
 
 #[derive(Component)]
 pub struct LivekitConnection;
