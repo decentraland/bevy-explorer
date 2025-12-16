@@ -14,7 +14,7 @@ pub mod web;
 
 use bevy::platform::sync::Arc;
 use bevy::prelude::*;
-use tokio::{runtime::Runtime, sync::mpsc::Receiver};
+use tokio::{runtime::Runtime, sync::mpsc};
 
 use crate::{ChannelControl, NetworkMessage};
 
@@ -27,9 +27,13 @@ pub struct StartLivekit {
 #[derive(Component)]
 pub struct LivekitTransport {
     pub address: String,
-    pub receiver: Option<Receiver<NetworkMessage>>,
-    pub control_receiver: Option<Receiver<ChannelControl>>,
+    pub receiver: Option<mpsc::Receiver<NetworkMessage>>,
     pub retries: usize,
+}
+
+#[derive(Component, Deref, DerefMut)]
+pub struct LivekitChannelControl {
+    receiver: mpsc::Receiver<ChannelControl>,
 }
 
 #[derive(Clone, Component, Deref, DerefMut)]

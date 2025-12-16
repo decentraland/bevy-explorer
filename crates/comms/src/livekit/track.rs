@@ -2,17 +2,20 @@ use bevy::{
     ecs::{component::HookContext, relationship::Relationship, world::DeferredWorld},
     prelude::*,
 };
-use common::util::AsH160;
+use common::{structs::AudioDecoderError, util::AsH160};
+use kira::sound::streaming::StreamingSoundData;
 use livekit::{
     prelude::{Participant, RemoteTrackPublication},
-    track::{TrackKind, TrackSource},
+    track::{RemoteTrack, TrackKind, TrackSource},
 };
+use tokio::sync::oneshot;
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::task::JoinHandle;
 
 use crate::{
     global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
     livekit::{
+        kira_bridge::kira_thread,
         participant::{HostedBy, LivekitParticipant},
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
@@ -24,6 +27,22 @@ use crate::{
 #[derive(Clone, Component, Deref, DerefMut)]
 pub struct LivekitTrack {
     track: RemoteTrackPublication,
+}
+
+#[derive(Component)]
+#[component(on_replace=Self::on_replace)]
+struct LivekitTrackTask(JoinHandle<()>);
+
+impl LivekitTrackTask {
+    fn on_replace(mut deferred_world: DeferredWorld, hook_context: HookContext) {
+        let entity = hook_context.entity;
+
+        let mut entity_mut = deferred_world.entity_mut(entity);
+        let task = entity_mut
+            .get_mut::<LivekitTrackTask>()
+            .expect("LivekitTrackTask must be valid inside its own hook.");
+        task.0.abort();
+    }
 }
 
 #[derive(Component)]
@@ -45,14 +64,50 @@ pub struct Unsubscribed;
 make_hooks!(Unsubscribed, (Subscribed, Subscribing, Unsubscribing));
 
 #[derive(Component)]
-#[component(on_add=Self::on_add)]
-pub struct Subscribing(#[cfg(not(target_arch = "wasm32"))] JoinHandle<()>);
+#[component(on_add=Self::on_add, on_replace=Self::on_replace)]
+pub struct Subscribing {
+    #[cfg(not(target_arch = "wasm32"))]
+    task: JoinHandle<()>,
+}
 make_hooks!(Subscribing, (Subscribed, Unsubscribed, Unsubscribing));
 
+impl Subscribing {
+    fn on_replace(mut deferred_world: DeferredWorld, hook_context: HookContext) {
+        let entity = hook_context.entity;
+
+        let mut entity_mut = deferred_world.entity_mut(entity);
+        let task = entity_mut
+            .get_mut::<Subscribing>()
+            .expect("Subscribing must be valid inside its own hook.");
+        task.task.abort();
+    }
+}
+
 #[derive(Component)]
-#[component(on_add=Self::on_add)]
-pub struct Unsubscribing(#[cfg(not(target_arch = "wasm32"))] JoinHandle<()>);
+#[component(on_add=Self::on_add, on_replace=Self::on_replace)]
+pub struct Unsubscribing {
+    #[cfg(not(target_arch = "wasm32"))]
+    task: JoinHandle<()>,
+}
 make_hooks!(Unsubscribing, (Subscribed, Unsubscribed, Subscribing));
+
+impl Unsubscribing {
+    fn on_replace(mut deferred_world: DeferredWorld, hook_context: HookContext) {
+        let entity = hook_context.entity;
+
+        let mut entity_mut = deferred_world.entity_mut(entity);
+        let task = entity_mut
+            .get_mut::<Unsubscribing>()
+            .expect("Unsubscribing must be valid inside its own hook.");
+        task.task.abort();
+    }
+}
+
+#[derive(Component)]
+struct OpenSender {
+    runtime: LivekitRuntime,
+    sender: oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
+}
 
 #[derive(Component)]
 pub struct Audio;
@@ -88,6 +143,17 @@ pub struct TrackUnsubscribed {
     pub track: RemoteTrackPublication,
 }
 
+#[derive(Event)]
+pub struct SubscribeToTrack {
+    pub runtime: LivekitRuntime,
+    pub sender: oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
+}
+
+#[derive(Event)]
+pub struct UnsubscribeToTrack {
+    pub runtime: LivekitRuntime,
+}
+
 pub(super) struct LivekitTrackPlugin;
 
 impl Plugin for LivekitTrackPlugin {
@@ -96,6 +162,10 @@ impl Plugin for LivekitTrackPlugin {
         app.add_observer(track_unpublished);
         app.add_observer(track_subscribed);
         app.add_observer(track_unsubscribed);
+        app.add_observer(subscribe_to_track);
+        app.add_observer(unsubscribe_to_track);
+
+        app.add_systems(Update, subscribed_audio_track_with_open_sender);
     }
 }
 
@@ -312,4 +382,93 @@ fn track_unsubscribed(
 
     debug!("Unsubscribed to track {}.", track.sid());
     commands.entity(entity).insert(Unsubscribed);
+}
+
+fn subscribe_to_track(
+    mut trigger: Trigger<SubscribeToTrack>,
+    mut commands: Commands,
+    tracks: Query<&LivekitTrack>,
+) {
+    let entity = trigger.target();
+    let SubscribeToTrack { runtime, sender } = trigger.event_mut();
+
+    if entity == Entity::PLACEHOLDER {
+        error!("SubscribeToTrack is an entity event. Call it with 'Commands::trigger_targets'.");
+        return;
+    }
+    let Ok(track) = tracks.get(entity) else {
+        error!("Can't subscribe to {} because it is not a track.", entity);
+        return;
+    };
+
+    let track = track.clone();
+    let (mut snatcher_sender, _) = oneshot::channel();
+    std::mem::swap(&mut snatcher_sender, sender);
+
+    debug!("Subscribing to track {}", track.sid());
+    let task = runtime.spawn(async move {
+        track.set_subscribed(true);
+    });
+    commands.entity(entity).insert((
+        Subscribing { task },
+        OpenSender {
+            runtime: runtime.clone(),
+            sender: snatcher_sender,
+        },
+    ));
+}
+
+fn unsubscribe_to_track(
+    mut trigger: Trigger<UnsubscribeToTrack>,
+    mut commands: Commands,
+    tracks: Query<&LivekitTrack>,
+) {
+    let entity = trigger.target();
+    let UnsubscribeToTrack { runtime } = trigger.event_mut();
+
+    if entity == Entity::PLACEHOLDER {
+        error!("UnsubscribeToTrack is an entity event. Call it with 'Commands::trigger_targets'.");
+        return;
+    }
+    let Ok(track) = tracks.get(entity) else {
+        error!("Can't unsubscribe to {} because it is not a track.", entity);
+        return;
+    };
+
+    let track = track.clone();
+
+    debug!("Unsubscribing to track {}", track.sid());
+    let task = runtime.spawn(async move {
+        track.set_subscribed(false);
+    });
+    commands.entity(entity).insert(Unsubscribing { task });
+}
+
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
+fn subscribed_audio_track_with_open_sender(
+    mut commands: Commands,
+    mut tracks: Populated<
+        (Entity, &LivekitTrack, &mut OpenSender),
+        (With<Audio>, With<Subscribed>),
+    >,
+) {
+    for (entity, track, mut sender) in tracks.iter_mut() {
+        let runtime = sender.runtime.clone();
+        let publication = track.track.clone();
+
+        let Some(RemoteTrack::Audio(audio)) = track.track() else {
+            error!("A subscribed audio track did not have a audio RemoteTrack.");
+            commands.send_event(AppExit::from_code(1));
+            return;
+        };
+
+        let (mut snatcher_sender, _) = oneshot::channel();
+        std::mem::swap(&mut snatcher_sender, &mut sender.sender);
+
+        let handle = runtime.spawn(kira_thread(audio, publication, snatcher_sender));
+        commands
+            .entity(entity)
+            .insert(LivekitTrackTask(handle))
+            .remove::<OpenSender>();
+    }
 }

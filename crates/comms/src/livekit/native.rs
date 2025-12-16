@@ -96,19 +96,12 @@ pub(super) fn connect_livekit(
     {
         debug!("spawn lk connect");
         let receiver = new_transport.receiver.take().unwrap();
-        let control_receiver = new_transport.control_receiver.take().unwrap();
         let livekit_room = livekit_room.get_room();
         let livekit_runtime = livekit_runtime.clone();
 
         let subscription = mic.subscribe();
         std::thread::spawn(move || {
-            livekit_handler(
-                receiver,
-                control_receiver,
-                subscription,
-                livekit_room,
-                livekit_runtime,
-            )
+            livekit_handler(receiver, subscription, livekit_room, livekit_runtime)
         });
 
         commands.entity(transport_id).try_insert(LivekitConnection);
@@ -117,18 +110,15 @@ pub(super) fn connect_livekit(
 
 fn livekit_handler(
     receiver: Receiver<NetworkMessage>,
-    control_receiver: Receiver<ChannelControl>,
     mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
     room: Arc<Room>,
     runtime: LivekitRuntime,
 ) {
     let receiver = Arc::new(Mutex::new(receiver));
-    let control_receiver = Arc::new(Mutex::new(control_receiver));
 
     loop {
         if let Err(e) = livekit_handler_inner(
             receiver.clone(),
-            control_receiver.clone(),
             mic.resubscribe(),
             room.clone(),
             runtime.clone(),
@@ -145,7 +135,6 @@ fn livekit_handler(
 
 fn livekit_handler_inner(
     app_rx: Arc<Mutex<Receiver<NetworkMessage>>>,
-    control_rx: Arc<Mutex<Receiver<ChannelControl>>>,
     mut mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
     livekit_room: Arc<Room>,
     runtime: LivekitRuntime,
@@ -209,7 +198,6 @@ fn livekit_handler_inner(
 
 
         let mut app_rx = app_rx.lock().await;
-        let mut control_rx = control_rx.lock().await;
         'stream: loop {
             tokio::select!(
                 outgoing = app_rx.recv() => {
@@ -228,27 +216,6 @@ fn livekit_handler_inner(
                     if let Err(_e) = livekit_room.local_participant().publish_data(packet).await {
                         // debug!("outgoing failed: {_e}; not exiting loop though since it often fails at least once or twice at the start...");
                         break 'stream;
-                    };
-                }
-                control = control_rx.recv() => {
-                    let Some(control) = control else {
-                        debug!("app pipe broken, exiting loop");
-                        break 'stream;
-                    };
-
-                    match control {
-                        ChannelControl::VoiceSubscribe(address, sender) => {
-                            participant_audio_subscribe(&livekit_room, address, Some(sender), &mut audio_channels).await
-                        },
-                        ChannelControl::VoiceUnsubscribe(address) => participant_audio_subscribe(&livekit_room, address, None, &mut audio_channels).await,
-                        ChannelControl::StreamerSubscribe(audio, video) => {
-                            streamer_audio_subscribe(&livekit_room, Some(audio), &mut streamer_audio_channel).await;
-                            streamer_video_subscribe(&livekit_room, Some(video), &mut streamer_video_channel).await;
-                        }
-                        ChannelControl::StreamerUnsubscribe => {
-                            streamer_audio_subscribe(&livekit_room, None, &mut streamer_audio_channel).await;
-                            streamer_video_subscribe(&livekit_room, None, &mut streamer_video_channel).await;
-                        }
                     };
                 }
             );
@@ -290,43 +257,6 @@ async fn livekit_video_thread(
     }
 
     warn!("video track {:?} ended, exiting task", publication.sid());
-}
-
-async fn participant_audio_subscribe(
-    room: &Room,
-    address: H160,
-    channel: Option<tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>>,
-    audio_channels: &mut HashMap<
-        H160,
-        tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
-    >,
-) {
-    let participants = room.remote_participants();
-    let Some(participant) = participants.get(&ParticipantIdentity(format!("{address:#x}"))) else {
-        warn!(
-            "no participant {address:?}! available: {:?}",
-            room.remote_participants().keys().collect::<Vec<_>>()
-        );
-        return;
-    };
-
-    let publications = participant.track_publications();
-    let Some(track) = publications
-        .values()
-        .find(|track| matches!(track.kind(), TrackKind::Audio))
-    else {
-        warn!("no audio for {address:#x?}");
-        return;
-    };
-
-    let subscribe = channel.is_some();
-    track.set_subscribed(subscribe);
-    debug!("setsub: {subscribe}");
-    if let Some(channel) = channel {
-        audio_channels.insert(address, channel);
-    } else {
-        audio_channels.remove(&address);
-    }
 }
 
 async fn streamer_audio_subscribe(
