@@ -1,6 +1,8 @@
 use bevy::{
+    asset::RenderAssetUsages,
     ecs::{component::HookContext, relationship::Relationship, world::DeferredWorld},
     prelude::*,
+    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 use common::{structs::AudioDecoderError, util::AsH160};
 use kira::sound::streaming::StreamingSoundData;
@@ -8,7 +10,7 @@ use livekit::{
     prelude::{Participant, RemoteTrackPublication},
     track::{RemoteTrack, TrackKind, TrackSource},
 };
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::task::JoinHandle;
 
@@ -16,6 +18,7 @@ use crate::{
     global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
     livekit::{
         kira_bridge::kira_thread,
+        livekit_video_bridge::{livekit_video_thread, LivekitVideoFrame},
         participant::{HostedBy, LivekitParticipant},
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
@@ -110,6 +113,12 @@ struct OpenAudioSender {
 }
 
 #[derive(Component)]
+struct OpenVideoSender {
+    runtime: LivekitRuntime,
+    sender: mpsc::Sender<LivekitVideoFrame>,
+}
+
+#[derive(Component)]
 pub struct Audio;
 
 #[derive(Component)]
@@ -120,6 +129,11 @@ pub struct Microphone;
 
 #[derive(Component)]
 pub struct Camera;
+
+#[derive(Component)]
+pub struct LivekitFrame {
+    pub handle: Handle<Image>,
+}
 
 #[derive(Event)]
 pub struct TrackPublished {
@@ -150,6 +164,12 @@ pub struct SubscribeToAudioTrack {
 }
 
 #[derive(Event)]
+pub struct SubscribeToVideoTrack {
+    pub runtime: LivekitRuntime,
+    pub sender: mpsc::Sender<LivekitVideoFrame>,
+}
+
+#[derive(Event)]
 pub struct UnsubscribeToTrack {
     pub runtime: LivekitRuntime,
 }
@@ -163,9 +183,16 @@ impl Plugin for LivekitTrackPlugin {
         app.add_observer(track_subscribed);
         app.add_observer(track_unsubscribed);
         app.add_observer(subscribe_to_audio_track);
+        app.add_observer(subscribe_to_video_track);
         app.add_observer(unsubscribe_to_track);
 
-        app.add_systems(Update, subscribed_audio_track_with_open_sender);
+        app.add_systems(
+            Update,
+            (
+                subscribed_audio_track_with_open_sender,
+                subscribed_video_track_with_open_sender,
+            ),
+        );
     }
 }
 
@@ -176,6 +203,7 @@ fn track_published(
     rooms: Query<&LivekitRuntime, With<LivekitRoom>>,
     player_state: Res<GlobalCrdtState>,
     mut player_update_tasks: ResMut<PlayerUpdateTasks>,
+    mut images: ResMut<Assets<Image>>,
 ) {
     let TrackPublished { participant, track } = trigger.event();
 
@@ -214,7 +242,24 @@ fn track_published(
             entity_cmd.insert(Audio);
         }
         TrackKind::Video => {
-            entity_cmd.insert(Video);
+            let image = Image::new_fill(
+                Extent3d {
+                    width: 8,
+                    height: 8,
+                    depth_or_array_layers: 1,
+                },
+                TextureDimension::D2,
+                &[255, 0, 255, 255],
+                TextureFormat::Rgba8UnormSrgb,
+                RenderAssetUsages::all(),
+            );
+
+            entity_cmd.insert((
+                Video,
+                LivekitFrame {
+                    handle: images.add(image),
+                },
+            ));
         }
     }
     match track.source() {
@@ -420,6 +465,42 @@ fn subscribe_to_audio_track(
     ));
 }
 
+fn subscribe_to_video_track(
+    mut trigger: Trigger<SubscribeToVideoTrack>,
+    mut commands: Commands,
+    tracks: Query<&LivekitTrack, With<Video>>,
+) {
+    let entity = trigger.target();
+    let SubscribeToVideoTrack { runtime, sender } = trigger.event_mut();
+
+    if entity == Entity::PLACEHOLDER {
+        error!(
+            "SubscribeToVideoTrack is an entity event. Call it with 'Commands::trigger_targets'."
+        );
+        return;
+    }
+    let Ok(track) = tracks.get(entity) else {
+        error!("Can't subscribe to {} because it is not a track.", entity);
+        return;
+    };
+
+    let track = track.clone();
+    let (mut snatcher_sender, _) = mpsc::channel(1);
+    std::mem::swap(&mut snatcher_sender, sender);
+
+    debug!("Subscribing to audio track {}", track.sid());
+    let task = runtime.spawn(async move {
+        track.set_subscribed(true);
+    });
+    commands.entity(entity).insert((
+        Subscribing { task },
+        OpenVideoSender {
+            runtime: runtime.clone(),
+            sender: snatcher_sender,
+        },
+    ));
+}
+
 fn unsubscribe_to_track(
     mut trigger: Trigger<UnsubscribeToTrack>,
     mut commands: Commands,
@@ -472,5 +553,34 @@ fn subscribed_audio_track_with_open_sender(
             .entity(entity)
             .insert(LivekitTrackTask(handle))
             .remove::<OpenAudioSender>();
+    }
+}
+
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
+fn subscribed_video_track_with_open_sender(
+    mut commands: Commands,
+    mut tracks: Populated<
+        (Entity, &LivekitTrack, &mut OpenVideoSender),
+        (With<Video>, With<Subscribed>),
+    >,
+) {
+    for (entity, track, mut sender) in tracks.iter_mut() {
+        let runtime = sender.runtime.clone();
+        let publication = track.track.clone();
+
+        let Some(RemoteTrack::Video(video)) = track.track() else {
+            error!("A subscribed video track did not have a audio RemoteTrack.");
+            commands.send_event(AppExit::from_code(1));
+            return;
+        };
+
+        let (mut snatcher_sender, _) = mpsc::channel(1);
+        std::mem::swap(&mut snatcher_sender, &mut sender.sender);
+
+        let handle = runtime.spawn(livekit_video_thread(video, publication, snatcher_sender));
+        commands
+            .entity(entity)
+            .insert(LivekitTrackTask(handle))
+            .remove::<OpenVideoSender>();
     }
 }

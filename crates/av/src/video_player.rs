@@ -233,6 +233,7 @@ pub fn update_video_players(
                 if let Ok(transport) = scene_rooms.single_mut() {
                     if let Some(control_channel) = transport.control.clone() {
                         let (video_sink, audio_sink) = streamer_sinks(
+                            ent,
                             control_channel,
                             player.source.src.clone(),
                             image_handle,

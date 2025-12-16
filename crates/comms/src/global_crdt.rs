@@ -34,7 +34,7 @@ use dcl_component::{
 };
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "livekit"))]
-use crate::livekit::native::LivekitVideoFrame;
+use crate::livekit::livekit_video_bridge::LivekitVideoFrame;
 use crate::{
     movement_compressed::MovementCompressed, profile::ProfileMetaCache, SceneRoom, Transport,
 };
@@ -190,11 +190,12 @@ pub enum ChannelControl {
     VoiceUnsubscribe(Address),
     #[cfg(all(not(target_arch = "wasm32"), feature = "livekit"))]
     StreamerSubscribe(
+        Entity,
         mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
         mpsc::Sender<LivekitVideoFrame>,
     ),
     #[cfg(all(not(target_arch = "wasm32"), feature = "livekit"))]
-    StreamerUnsubscribe,
+    StreamerUnsubscribe(Entity),
     #[cfg(target_arch = "wasm32")]
     StreamerSubscribe,
     #[cfg(target_arch = "wasm32")]

@@ -1,8 +1,9 @@
-use bevy::ecs::component::HookContext;
-use bevy::prelude::*;
-use bevy::{ecs::world::DeferredWorld, platform::collections::HashMap};
-use common::structs::AudioDecoderError;
-use common::util::AsH160;
+use bevy::{
+    ecs::{component::HookContext, relationship::Relationship, world::DeferredWorld},
+    platform::collections::HashMap,
+    prelude::*,
+};
+use common::{structs::AudioDecoderError, util::AsH160};
 use ethers_core::types::H160;
 use http::Uri;
 use kira::sound::streaming::StreamingSoundData;
@@ -29,17 +30,21 @@ use {
     wasm_bindgen_futures::spawn_local,
 };
 
-use crate::global_crdt::ChannelControl;
-use crate::livekit::participant::{HostingParticipants, LivekitParticipant};
-use crate::livekit::plugin::{RoomTask, RoomTasks};
-use crate::livekit::track::{Microphone, Publishing};
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::{close_room, connect_room, recv_room_event, room_name, RoomEvent};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::{participant, track};
-use crate::livekit::{LivekitChannelControl, LivekitNetworkMessage};
-use crate::livekit::{LivekitRuntime, LivekitTransport};
-use crate::NetworkMessageRecipient;
+use crate::{
+    global_crdt::ChannelControl,
+    livekit::{
+        livekit_video_bridge::LivekitVideoFrame,
+        participant::{HostingParticipants, LivekitParticipant, ReceivingStream, Streamer},
+        plugin::{RoomTask, RoomTasks},
+        track::{Audio, Microphone, Publishing, Video},
+        LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime, LivekitTransport,
+    },
+    NetworkMessageRecipient,
+};
 
 #[cfg(target_arch = "wasm32")]
 type JsValueAbi = <JsValue as IntoWasmAbi>::Abi;
@@ -593,40 +598,16 @@ fn process_channel_control(
                             commands
                                 .run_system_cached_with(unsubscribe_to_voice, (entity, address));
                         }
-                        // ChannelControl::StreamerSubscribe(audio, video) => {
-                        //     streamer_audio_subscribe(
-                        //         &livekit_room,
-                        //         Some(audio),
-                        //         &mut streamer_audio_channel,
-                        //     )
-                        //     .await;
-                        //     streamer_video_subscribe(
-                        //         &livekit_room,
-                        //         Some(video),
-                        //         &mut streamer_video_channel,
-                        //     )
-                        //     .await;
-                        // }
-                        // ChannelControl::StreamerUnsubscribe => {
-                        //     streamer_audio_subscribe(
-                        //         &livekit_room,
-                        //         None,
-                        //         &mut streamer_audio_channel,
-                        //     )
-                        //     .await;
-                        //     streamer_video_subscribe(
-                        //         &livekit_room,
-                        //         None,
-                        //         &mut streamer_video_channel,
-                        //     )
-                        //     .await;
-                        // }
-                        _ => continue,
+                        ChannelControl::StreamerSubscribe(subscriber, audio, video) => {
+                            commands.run_system_cached_with(
+                                subscribe_to_streamer,
+                                (entity, subscriber, audio, video),
+                            );
+                        }
+                        ChannelControl::StreamerUnsubscribe(subscriber) => {
+                            commands.run_system_cached_with(unsubscribe_to_streamer, subscriber);
+                        }
                     };
-                    // channel_control_tasks.push(ChannelControlTask {
-                    //     runtime: runtime.clone(),
-                    //     task,
-                    // });
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
@@ -851,4 +832,86 @@ fn unsubscribe_to_voice(
             participant.identity()
         );
     }
+}
+
+#[expect(clippy::type_complexity, reason = "Many inputs")]
+fn subscribe_to_streamer(
+    In((room_entity, subscriber, audio, video)): In<(
+        Entity,
+        Entity,
+        mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
+        mpsc::Sender<LivekitVideoFrame>,
+    )>,
+    mut commands: Commands,
+    rooms: Query<(&LivekitRoom, &LivekitRuntime, Option<&HostingParticipants>)>,
+    participants: Query<(Entity, &LivekitParticipant, &Publishing), With<Streamer>>,
+    audio_tracks: Query<Entity, With<Audio>>,
+    video_tracks: Query<Entity, With<Video>>,
+) {
+    let Ok((room, runtime, maybe_hosting)) = rooms.get(room_entity) else {
+        error!("LivekitRoom did not have runtime.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    let Some(hosting) = maybe_hosting else {
+        error!(
+            "Trying to subscribe to voice in room {}, but there are not participants.",
+            room.room_name
+        );
+        return;
+    };
+
+    let Some((participant_entity, participant, publishing)) =
+        participants.iter_many(hosting.collection()).next()
+    else {
+        error!("No streamer participant in room {}.", room.room_name);
+        return;
+    };
+
+    commands
+        .entity(subscriber)
+        .insert(<ReceivingStream as Relationship>::from(participant_entity));
+
+    if let Some(track_entity) = audio_tracks.iter_many(publishing.collection()).next() {
+        let (bypass_sender, bypass_receiver) = oneshot::channel();
+
+        commands.trigger_targets(
+            track::SubscribeToAudioTrack {
+                runtime: runtime.clone(),
+                sender: bypass_sender,
+            },
+            track_entity,
+        );
+        runtime.spawn(async move {
+            let frame = bypass_receiver.await.unwrap();
+            audio.send(frame).await.unwrap();
+        });
+    } else {
+        error!(
+            "No audio track for {} ({}).",
+            participant.sid(),
+            participant.identity()
+        );
+    }
+
+    if let Some(track_entity) = video_tracks.iter_many(publishing.collection()).next() {
+        commands.trigger_targets(
+            track::SubscribeToVideoTrack {
+                runtime: runtime.clone(),
+                sender: video,
+            },
+            track_entity,
+        );
+    } else {
+        error!(
+            "No video track for {} ({}).",
+            participant.sid(),
+            participant.identity()
+        );
+    }
+}
+
+fn unsubscribe_to_streamer(In(subscriber): In<Entity>, mut commands: Commands) {
+    commands.entity(subscriber).try_remove::<ReceivingStream>();
 }

@@ -21,6 +21,7 @@ use crate::{
     livekit::{
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
+        track::{Publishing, UnsubscribeToTrack},
         LivekitRuntime,
     },
     make_hooks,
@@ -65,6 +66,12 @@ pub struct Local;
 #[derive(Component)]
 pub struct Streamer;
 
+/// Marks an entity as a receiver of stream data.
+///
+/// Usable on video players.
+#[derive(Component)]
+pub struct StreamReceiver;
+
 #[derive(Component)]
 #[relationship(relationship_target=HostingParticipants)]
 pub struct HostedBy(Entity);
@@ -72,6 +79,14 @@ pub struct HostedBy(Entity);
 #[derive(Component)]
 #[relationship_target(relationship=HostedBy, linked_spawn)]
 pub struct HostingParticipants(Vec<Entity>);
+
+#[derive(Component)]
+#[relationship(relationship_target=TransmittingTo)]
+pub struct ReceivingStream(Entity);
+
+#[derive(Component)]
+#[relationship_target(relationship=ReceivingStream)]
+pub struct TransmittingTo(Vec<Entity>);
 
 #[derive(Event)]
 pub struct ParticipantConnected {
@@ -152,6 +167,7 @@ impl Plugin for ParticipantPlugin {
         app.add_observer(participant_connection_quality_changed::<connection_quality::Lost>);
         app.add_observer(participant_payload);
         app.add_observer(participant_metadata_changed);
+        app.add_observer(streamer_has_no_watchers);
     }
 }
 
@@ -384,5 +400,34 @@ fn participant_metadata_changed(
                 task,
             });
         }
+    }
+}
+
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
+fn streamer_has_no_watchers(
+    trigger: Trigger<OnRemove, TransmittingTo>,
+    mut commands: Commands,
+    rooms: Query<&LivekitRuntime, With<LivekitRoom>>,
+    participants: Populated<(&HostedBy, &Publishing), (With<Streamer>, Without<TransmittingTo>)>,
+) {
+    let entity = trigger.target();
+    let Ok((hosted_by, publishing)) = participants.get(entity) else {
+        error!("An entity that is not a participant had TransmittingTo.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+    let Ok(runtime) = rooms.get(hosted_by.get()) else {
+        error!("HostedBy relationship was broken.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    for track in publishing.iter() {
+        commands.trigger_targets(
+            UnsubscribeToTrack {
+                runtime: runtime.clone(),
+            },
+            track,
+        );
     }
 }

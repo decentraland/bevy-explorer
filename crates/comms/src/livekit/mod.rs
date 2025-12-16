@@ -2,6 +2,8 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 mod kira_bridge;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod livekit_video_bridge;
 mod mic;
 #[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
 pub mod native;

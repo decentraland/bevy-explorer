@@ -1,99 +1,26 @@
-use bevy::{
-    platform::{collections::HashMap, sync::Arc},
-    prelude::*,
-};
-use ethers_core::types::H160;
-use futures_lite::StreamExt;
-use kira::sound::streaming::StreamingSoundData;
-use livekit::webrtc::{native::yuv_helper, prelude::VideoBuffer};
-use tokio::{
-    sync::{
-        mpsc::{Receiver, Sender},
-        Mutex,
-    },
-    task::JoinHandle,
-};
-
-use common::structs::AudioDecoderError;
-
-use crate::{
-    global_crdt::LocalAudioFrame,
-    livekit::{
-        kira_bridge::kira_thread, room::LivekitRoom, LivekitConnection, LivekitRuntime,
-        LivekitTransport,
-    },
-    ChannelControl, NetworkMessage,
-};
-
+use bevy::{platform::sync::Arc, prelude::*};
 use livekit::{
-    id::{ParticipantIdentity, TrackSid},
+    id::TrackSid,
     options::TrackPublishOptions,
-    prelude::RemoteTrackPublication,
-    track::{LocalAudioTrack, LocalTrack, RemoteTrack, RemoteVideoTrack, TrackKind, TrackSource},
+    track::{LocalAudioTrack, LocalTrack, TrackSource},
     webrtc::{
         audio_source::native::NativeAudioSource,
-        prelude::{AudioFrame, AudioSourceOptions, I420Buffer, RtcAudioSource},
+        prelude::{AudioFrame, AudioSourceOptions, RtcAudioSource},
     },
     Room,
 };
 
-#[derive(Deref)]
-pub struct LivekitVideoFrame {
-    #[deref]
-    buffer: I420Buffer,
-    timestamp: i64,
-}
-
-impl LivekitVideoFrame {
-    pub fn timestamp(&self) -> i64 {
-        self.timestamp
-    }
-
-    pub fn width(&self) -> u32 {
-        self.buffer.width()
-    }
-
-    pub fn height(&self) -> u32 {
-        self.buffer.height()
-    }
-
-    pub fn rgba_data(&self) -> Vec<u8> {
-        let width = self.buffer.width();
-        let height = self.buffer.height();
-        let stride = width * 4;
-
-        let (stride_y, stride_u, stride_v) = self.buffer.strides();
-        let (data_y, data_u, data_v) = self.buffer.data();
-
-        let mut dst = vec![0; (width * height * 4) as usize];
-
-        yuv_helper::i420_to_abgr(
-            data_y,
-            stride_y,
-            data_u,
-            stride_u,
-            data_v,
-            stride_v,
-            &mut dst,
-            stride,
-            width as i32,
-            height as i32,
-        );
-
-        dst
-    }
-}
+use crate::{
+    global_crdt::LocalAudioFrame,
+    livekit::{room::LivekitRoom, LivekitConnection, LivekitRuntime},
+};
 
 pub(super) fn connect_livekit(
     mut commands: Commands,
-    mut new_livekits: Query<
-        (Entity, &mut LivekitTransport, &LivekitRoom, &LivekitRuntime),
-        Without<LivekitConnection>,
-    >,
+    mut new_livekits: Query<(Entity, &LivekitRoom, &LivekitRuntime), Without<LivekitConnection>>,
     mic: Res<crate::global_crdt::LocalAudioSource>,
 ) {
-    for (transport_id, mut new_transport, livekit_room, livekit_runtime) in new_livekits.iter_mut()
-    {
+    for (transport_id, livekit_room, livekit_runtime) in new_livekits.iter_mut() {
         debug!("spawn lk connect");
         let livekit_room = livekit_room.get_room();
         let livekit_runtime = livekit_runtime.clone();
@@ -114,6 +41,9 @@ fn livekit_handler(
         if let Err(e) = livekit_handler_inner(mic.resubscribe(), room.clone(), runtime.clone()) {
             warn!("livekit error: {e}");
         }
+        if mic.is_closed() {
+            break;
+        }
         warn!("livekit connection dropped, reconnecting");
     }
 }
@@ -123,13 +53,6 @@ fn livekit_handler_inner(
     livekit_room: Arc<Room>,
     runtime: LivekitRuntime,
 ) -> Result<(), anyhow::Error> {
-    let mut audio_channels: HashMap<
-        H160,
-        tokio::sync::oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
-    > = HashMap::new();
-    let mut streamer_audio_channel: Option<JoinHandle<()>> = None;
-    let mut streamer_video_channel: Option<JoinHandle<()>> = None;
-
     let rt2 = runtime.clone();
 
     let task = runtime.spawn(async move {
@@ -210,126 +133,4 @@ fn livekit_handler_inner(
 
     runtime.block_on(task).unwrap();
     Ok(())
-}
-
-async fn livekit_video_thread(
-    video: RemoteVideoTrack,
-    publication: RemoteTrackPublication,
-    channel: Sender<LivekitVideoFrame>,
-) {
-    let mut stream =
-        livekit::webrtc::video_stream::native::NativeVideoStream::new(video.rtc_track());
-
-    warn!(
-        "livekit track {:?} {} {:?}",
-        publication.sid(),
-        stream.track().enabled(),
-        stream.track().state()
-    );
-    while let Some(frame) = stream.next().await {
-        let buffer = frame.buffer.to_i420();
-        let Err(err) = channel
-            .send(LivekitVideoFrame {
-                buffer,
-                timestamp: frame.timestamp_us,
-            })
-            .await
-        else {
-            continue;
-        };
-
-        error!("Livekit video channel errored: {err}.");
-        break;
-    }
-
-    warn!("video track {:?} ended, exiting task", publication.sid());
-}
-
-async fn streamer_audio_subscribe(
-    room: &Room,
-    mut channel: Option<Sender<StreamingSoundData<AudioDecoderError>>>,
-    audio_thread: &mut Option<JoinHandle<()>>,
-) {
-    let participants = room.remote_participants();
-    let Some((participant_identity, participant)) = participants
-        .iter()
-        .find(|(participant_identity, _)| participant_identity.as_str().ends_with("-streamer"))
-    else {
-        warn!(
-            "no streamer participant available: {:?}",
-            room.remote_participants().keys().collect::<Vec<_>>()
-        );
-        return;
-    };
-
-    let publications = participant.track_publications();
-    let Some((publication, audio)) = publications.values().find_map(|track| {
-        if let Some(RemoteTrack::Audio(audio)) = track.track() {
-            Some((track.clone(), audio))
-        } else {
-            None
-        }
-    }) else {
-        warn!("no audio for {:#x?}", participant_identity.as_str());
-        return;
-    };
-
-    let subscribe = channel.is_some();
-    publication.set_subscribed(subscribe);
-    debug!("setsub: {subscribe}");
-    if let Some(old_thread) = audio_thread.take() {
-        old_thread.abort();
-    }
-    if let Some(new_channel) = channel.take() {
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-
-        *audio_thread = Some(tokio::spawn(kira_thread(audio, publication, sender)));
-
-        let data = receiver.await.unwrap();
-        new_channel.send(data).await.unwrap();
-    }
-}
-
-async fn streamer_video_subscribe(
-    room: &Room,
-    mut channel: Option<Sender<LivekitVideoFrame>>,
-    video_thread: &mut Option<JoinHandle<()>>,
-) {
-    let participants = room.remote_participants();
-    let Some((participant_identity, participant)) = participants
-        .iter()
-        .find(|(participant_identity, _)| participant_identity.as_str().ends_with("-streamer"))
-    else {
-        warn!(
-            "no streamer participant available: {:?}",
-            room.remote_participants().keys().collect::<Vec<_>>()
-        );
-        return;
-    };
-
-    let publications = participant.track_publications();
-    let Some((publication, video)) = publications.values().find_map(|track| {
-        if let Some(RemoteTrack::Video(video)) = track.track() {
-            Some((track.clone(), video))
-        } else {
-            None
-        }
-    }) else {
-        warn!("no video for {:#x?}", participant_identity.as_str());
-        return;
-    };
-
-    let subscribe = channel.is_some();
-    publication.set_subscribed(subscribe);
-    debug!("video setsub: {subscribe}");
-    if let Some(old_thread) = video_thread.take() {
-        old_thread.abort();
-    }
-    if let Some(new_channel) = channel.take() {
-        *video_thread = Some(tokio::spawn(livekit_video_thread(
-            video,
-            publication,
-            new_channel,
-        )));
-    }
 }
