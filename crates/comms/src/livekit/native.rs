@@ -95,46 +95,30 @@ pub(super) fn connect_livekit(
     for (transport_id, mut new_transport, livekit_room, livekit_runtime) in new_livekits.iter_mut()
     {
         debug!("spawn lk connect");
-        let receiver = new_transport.receiver.take().unwrap();
         let livekit_room = livekit_room.get_room();
         let livekit_runtime = livekit_runtime.clone();
 
         let subscription = mic.subscribe();
-        std::thread::spawn(move || {
-            livekit_handler(receiver, subscription, livekit_room, livekit_runtime)
-        });
+        std::thread::spawn(move || livekit_handler(subscription, livekit_room, livekit_runtime));
 
         commands.entity(transport_id).try_insert(LivekitConnection);
     }
 }
 
 fn livekit_handler(
-    receiver: Receiver<NetworkMessage>,
     mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
     room: Arc<Room>,
     runtime: LivekitRuntime,
 ) {
-    let receiver = Arc::new(Mutex::new(receiver));
-
     loop {
-        if let Err(e) = livekit_handler_inner(
-            receiver.clone(),
-            mic.resubscribe(),
-            room.clone(),
-            runtime.clone(),
-        ) {
+        if let Err(e) = livekit_handler_inner(mic.resubscribe(), room.clone(), runtime.clone()) {
             warn!("livekit error: {e}");
-        }
-        if receiver.blocking_lock().is_closed() {
-            // caller closed the channel
-            return;
         }
         warn!("livekit connection dropped, reconnecting");
     }
 }
 
 fn livekit_handler_inner(
-    app_rx: Arc<Mutex<Receiver<NetworkMessage>>>,
     mut mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
     livekit_room: Arc<Room>,
     runtime: LivekitRuntime,
@@ -154,10 +138,16 @@ fn livekit_handler_inner(
         let mut native_source: Option<NativeAudioSource> = None;
         let mut mic_sid: Option<TrackSid> = None;
 
-        rt2.spawn(async move {
+        let task = rt2.spawn(async move {
             while let Ok(frame) = mic.recv().await {
-                let data = frame.data.iter().map(|f| (f * i16::MAX as f32) as i16).collect();
-                if native_source.as_ref().is_none_or(|ns| ns.sample_rate() != frame.sample_rate || ns.num_channels() != frame.num_channels) {
+                let data = frame
+                    .data
+                    .iter()
+                    .map(|f| (f * i16::MAX as f32) as i16)
+                    .collect();
+                if native_source.as_ref().is_none_or(|ns| {
+                    ns.sample_rate() != frame.sample_rate || ns.num_channels() != frame.num_channels
+                }) {
                     // update track
                     if let Some(sid) = mic_sid.take() {
                         if let Err(e) = local_participant.unpublish_track(&sid).await {
@@ -172,54 +162,50 @@ fn livekit_handler_inner(
                     }
 
                     let new_source = native_source.insert(NativeAudioSource::new(
-                        AudioSourceOptions{
+                        AudioSourceOptions {
                             echo_cancellation: true,
                             noise_suppression: true,
                             auto_gain_control: true,
                         },
                         frame.sample_rate,
                         frame.num_channels,
-                        None
+                        None,
                     ));
-                    let mic_track = LocalTrack::Audio(LocalAudioTrack::create_audio_track("mic", RtcAudioSource::Native(new_source.clone())));
-                    mic_sid = Some(local_participant.publish_track(mic_track, TrackPublishOptions{ source: TrackSource::Microphone, ..Default::default() }).await.unwrap().sid());
+                    let mic_track = LocalTrack::Audio(LocalAudioTrack::create_audio_track(
+                        "mic",
+                        RtcAudioSource::Native(new_source.clone()),
+                    ));
+                    mic_sid = Some(
+                        local_participant
+                            .publish_track(
+                                mic_track,
+                                TrackPublishOptions {
+                                    source: TrackSource::Microphone,
+                                    ..Default::default()
+                                },
+                            )
+                            .await
+                            .unwrap()
+                            .sid(),
+                    );
                     debug!("set sid");
                 }
-                if let Err(e) = native_source.as_mut().unwrap().capture_frame(&AudioFrame {
-                    data,
-                    sample_rate: frame.sample_rate,
-                    num_channels: frame.num_channels,
-                    samples_per_channel: frame.data.len() as u32 / frame.num_channels,
-                }).await {
+                if let Err(e) = native_source
+                    .as_mut()
+                    .unwrap()
+                    .capture_frame(&AudioFrame {
+                        data,
+                        sample_rate: frame.sample_rate,
+                        num_channels: frame.num_channels,
+                        samples_per_channel: frame.data.len() as u32 / frame.num_channels,
+                    })
+                    .await
+                {
                     warn!("failed to capture from mic: {e}");
                 };
             }
         });
-
-
-        let mut app_rx = app_rx.lock().await;
-        'stream: loop {
-            tokio::select!(
-                outgoing = app_rx.recv() => {
-                    let Some(outgoing) = outgoing else {
-                        debug!("app pipe broken, exiting loop");
-                        break 'stream;
-                    };
-
-                    let destination_identities = if let Some(address) = outgoing.recipient {
-                        vec![ParticipantIdentity(format!("{address:#x}"))]
-                    } else {
-                        default()
-                    };
-
-                    let packet = livekit::DataPacket { payload: outgoing.data, topic: None, reliable: !outgoing.unreliable, destination_identities };
-                    if let Err(_e) = livekit_room.local_participant().publish_data(packet).await {
-                        // debug!("outgoing failed: {_e}; not exiting loop though since it often fails at least once or twice at the start...");
-                        break 'stream;
-                    };
-                }
-            );
-        }
+        task.await.unwrap();
     });
 
     runtime.block_on(task).unwrap();

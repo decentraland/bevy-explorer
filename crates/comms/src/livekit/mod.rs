@@ -27,13 +27,17 @@ pub struct StartLivekit {
 #[derive(Component)]
 pub struct LivekitTransport {
     pub address: String,
-    pub receiver: Option<mpsc::Receiver<NetworkMessage>>,
     pub retries: usize,
 }
 
 #[derive(Component, Deref, DerefMut)]
 pub struct LivekitChannelControl {
     receiver: mpsc::Receiver<ChannelControl>,
+}
+
+#[derive(Component, Deref, DerefMut)]
+pub struct LivekitNetworkMessage {
+    receiver: mpsc::Receiver<NetworkMessage>,
 }
 
 #[derive(Clone, Component, Deref, DerefMut)]

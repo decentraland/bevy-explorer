@@ -12,8 +12,8 @@ use crate::{
     global_crdt::PlayerUpdate,
     livekit::{
         mic::MicPlugin, participant::ParticipantPlugin, room::LivekitRoomPlugin,
-        track::LivekitTrackPlugin, LivekitChannelControl, LivekitRuntime, LivekitTransport,
-        StartLivekit,
+        track::LivekitTrackPlugin, LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime,
+        LivekitTransport, StartLivekit,
     },
     profile::CurrentUserProfile,
     NetworkMessage, Transport, TransportType,
@@ -111,12 +111,12 @@ fn start_livekit(
             },
             LivekitTransport {
                 address: ev.address.to_owned(),
-                receiver: Some(receiver),
                 retries: 0,
             },
             LivekitChannelControl {
                 receiver: control_receiver,
             },
+            LivekitNetworkMessage { receiver },
             LivekitRuntime(runtime),
         ));
     }

@@ -6,6 +6,7 @@ use common::util::AsH160;
 use ethers_core::types::H160;
 use http::Uri;
 use kira::sound::streaming::StreamingSoundData;
+use livekit::id::ParticipantIdentity;
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::{mpsc, oneshot};
@@ -30,12 +31,13 @@ use {
 
 use crate::global_crdt::ChannelControl;
 use crate::livekit::participant::{HostingParticipants, LivekitParticipant};
+use crate::livekit::plugin::{RoomTask, RoomTasks};
 use crate::livekit::track::{Microphone, Publishing};
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::{close_room, connect_room, recv_room_event, room_name, RoomEvent};
-use crate::livekit::LivekitChannelControl;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::{participant, track};
+use crate::livekit::{LivekitChannelControl, LivekitNetworkMessage};
 use crate::livekit::{LivekitRuntime, LivekitTransport};
 
 #[cfg(target_arch = "wasm32")]
@@ -178,8 +180,11 @@ impl Plugin for LivekitRoomPlugin {
             Update,
             (
                 poll_connecting_rooms,
-                process_room_events,
-                process_channel_control,
+                (
+                    process_room_events,
+                    process_channel_control,
+                    process_network_message,
+                ),
             )
                 .chain(),
         );
@@ -625,6 +630,52 @@ fn process_channel_control(
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
                     error!("Channel control of {entity} was closed.");
+                    commands.send_event(AppExit::from_code(1));
+                    return;
+                }
+            }
+        }
+    }
+}
+
+fn process_network_message(
+    mut commands: Commands,
+    rooms: Query<(
+        Entity,
+        &LivekitRoom,
+        &LivekitRuntime,
+        &mut LivekitNetworkMessage,
+    )>,
+    mut room_tasks: ResMut<RoomTasks>,
+) {
+    for (entity, room, runtime, mut network_message) in rooms {
+        loop {
+            match network_message.try_recv() {
+                Ok(outgoing) => {
+                    let destination_identities = if let Some(address) = outgoing.recipient {
+                        vec![ParticipantIdentity(format!("{address:#x}"))]
+                    } else {
+                        default()
+                    };
+
+                    let packet = livekit::DataPacket {
+                        payload: outgoing.data,
+                        topic: None,
+                        reliable: !outgoing.unreliable,
+                        destination_identities,
+                    };
+
+                    let local_participant = room.room.local_participant();
+                    let task =
+                        runtime.spawn(async move { local_participant.publish_data(packet).await });
+                    room_tasks.push(RoomTask {
+                        runtime: runtime.clone(),
+                        task,
+                    });
+                }
+                Err(mpsc::error::TryRecvError::Empty) => break,
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    error!("Network message of {entity} was closed.");
                     commands.send_event(AppExit::from_code(1));
                     return;
                 }
