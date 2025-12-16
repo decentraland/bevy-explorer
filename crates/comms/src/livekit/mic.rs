@@ -41,9 +41,8 @@ fn update_mic(
     mic: Res<LocalAudioSource>,
     mut last_name: Local<String>,
     mut stream: NonSendMut<MicStream>,
-    mic_state: Res<MicState>,
+    mut mic_state: ResMut<MicState>,
 ) {
-    let mut mic_state = mic_state.inner.blocking_write();
     let default_host = cpal::default_host();
     let default_input = default_host.default_input_device();
     if let Some(input) = default_input {

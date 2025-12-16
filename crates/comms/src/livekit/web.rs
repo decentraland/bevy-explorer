@@ -202,17 +202,17 @@ async fn connect_and_handle_session(
                     break 'stream;
                 };
 
-                let destinations = if let Some(address) = outgoing.recipient {
-                    js_sys::Array::of1(&JsValue::from_str(&format!("{:#x}", address)))
-                } else {
-                    js_sys::Array::new()
+                let destination_identities = match outgoing.recipient {
+                    NetworkMessageRecipient::All => js_sys::Array::new(),
+                    NetworkMessageRecipient::Peer(address) => js_sys::Array::of1(&JsValue::from_str(&format!("{:#x}", address))),
+                    NetworkMessageRecipient::AuthServer => js_sys::Array::of1(&JsValue::from_str("authoritative-server")),
                 };
 
                 if let Err(e) = publish_data(
                     &room,
                     &outgoing.data,
                     !outgoing.unreliable,
-                    destinations.into(),
+                    destination_identities.into(),
                 )
                 .await
                 {

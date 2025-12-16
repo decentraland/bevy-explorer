@@ -1,6 +1,6 @@
 use common::{
     inputs::SystemActionEvent,
-    structs::{MicStateInner, PermissionType, PermissionUsed, PermissionValue},
+    structs::{MicState, PermissionType, PermissionUsed, PermissionValue},
 };
 use dcl::js::system_api::{JsBindingsData, PermissionTypeDetail};
 use dcl_component::proto_components::{
@@ -338,7 +338,7 @@ pub fn op_set_interactable_area(
 
 #[op2(async)]
 #[serde]
-pub async fn op_get_mic_state(state: Rc<RefCell<OpState>>) -> MicStateInner {
+pub async fn op_get_mic_state(state: Rc<RefCell<OpState>>) -> Result<MicState, anyhow::Error> {
     dcl::js::system_api::op_get_mic_state(state).await
 }
 

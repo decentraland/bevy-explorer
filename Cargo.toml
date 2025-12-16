@@ -2,6 +2,7 @@
 name = "decentra-bevy"
 version = "0.1.0"
 edition = "2021"
+default-run = "decentra-bevy"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -64,6 +65,7 @@ console = { path="crates/console" }
 av = { path="crates/av" }
 dcl = { path="crates/dcl" }
 dcl_deno = { path="crates/dcl_deno" }
+dcl_deno_ipc = { path="crates/dcl_deno_ipc" }
 dcl_wasm = { path="crates/dcl_wasm" }
 dcl_component = { path="crates/dcl_component" }
 restricted_actions = { path="crates/restricted_actions" }
@@ -222,6 +224,7 @@ bevy_simple_text_input = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dcl_deno = { workspace = true }
+dcl_deno_ipc = { workspace = true }
 mimalloc = { version = "*", default-features = false }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

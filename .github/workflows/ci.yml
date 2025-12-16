@@ -107,21 +107,26 @@ jobs:
           mv ffmpeg-*/* ffmpeg/
           Add-Content $env:GITHUB_ENV "FFMPEG_DIR=${pwd}\ffmpeg`n"
           Add-Content $env:GITHUB_PATH "${pwd}\ffmpeg\bin`n"          
+      - name: Build Release
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --package dcl_deno_ipc --release
       - uses: actions-rs/cargo@v1
         if: runner.os == 'windows'
         with:
           command: test
-          args: --all --release -j8
+          args: --all --release -j8 -- --test-threads=1
       - uses: actions-rs/cargo@v1
         if: runner.os == 'linux'
         with:
           command: test
-          args: --all --release
+          args: --all --release -- --test-threads=1
       - uses: actions-rs/cargo@v1
         if: runner.os == 'macos'
         with:
           command: test
-          args: --all --release
+          args: --all --release -- --test-threads=1
       
   fmt:
     name: Rustfmt

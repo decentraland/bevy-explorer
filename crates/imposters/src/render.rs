@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use bevy::{
+    asset::RenderAssetUsages,
     diagnostic::FrameCount,
     ecs::system::SystemParam,
     math::FloatOrd,
@@ -947,6 +948,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                                         alpha_blend: 0.0, // blend
                                         multisample_amount: 0.0,
                                         immediate_upload: true,
+                                        asset_usages: RenderAssetUsages::RENDER_WORLD,
                                     }
                                 },
                             )

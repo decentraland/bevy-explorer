@@ -7,7 +7,6 @@ use bevy::{
 };
 use dcl_component::proto_components::sdk::components::common::CameraTransition;
 use ethers_core::abi::Address;
-use platform::AsyncRwLock;
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -628,6 +627,7 @@ pub struct SceneMeta {
     pub scene: SceneMetaScene,
     pub runtime_version: Option<String>,
     pub spawn_points: Option<Vec<SpawnPoint>>,
+    pub authoritative_multiplayer: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -764,7 +764,7 @@ impl PermissionStrings for PermissionType {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PermissionLevel {
     Scene(String),
     Realm(String),
@@ -1027,13 +1027,8 @@ pub enum AppError {
     NetworkFailure(anyhow::Error),
 }
 
-#[derive(Resource, Default, Clone)]
+#[derive(Resource, Default, Serialize, Deserialize, Clone)]
 pub struct MicState {
-    pub inner: Arc<AsyncRwLock<MicStateInner>>,
-}
-
-#[derive(Default, Serialize, Deserialize, Clone)]
-pub struct MicStateInner {
     pub available: bool,
     pub enabled: bool,
 }

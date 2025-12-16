@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use bevy::log::debug;
-use common::rpc::{RPCSendableMessage, RpcCall};
+use common::rpc::{RPCSendableMessage, RpcCall, RpcResultSender};
 use ethers_providers::{Provider, Ws};
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 use tokio::sync::Mutex;
@@ -21,7 +21,7 @@ pub async fn op_send_async(
 
     match method.as_str() {
         "eth_sendTransaction" | "eth_signTypedData_v4" => {
-            let (sx, rx) = tokio::sync::oneshot::channel::<Result<serde_json::Value, String>>();
+            let (sx, rx) = RpcResultSender::<Result<serde_json::Value, String>>::channel();
 
             let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
 
@@ -31,7 +31,7 @@ pub async fn op_send_async(
                 .push(RpcCall::SendAsync {
                     body: RPCSendableMessage { method, params },
                     scene,
-                    response: sx.into(),
+                    response: sx,
                 });
 
             rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))

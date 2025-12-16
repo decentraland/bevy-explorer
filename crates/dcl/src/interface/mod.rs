@@ -13,6 +13,7 @@ use dcl_component::{
     DclReader, DclReaderError, DclWriter, SceneComponentId, SceneCrdtTimestamp, SceneEntityId,
     ToDclWriter,
 };
+use serde::{Deserialize, Serialize};
 
 use self::crdt_context::CrdtContext;
 
@@ -20,14 +21,14 @@ use super::crdt::{growonly::CrdtGOState, lww::CrdtLWWState};
 
 pub mod crdt_context;
 
-#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum ComponentPosition {
     RootOnly,
     EntityOnly,
     Any,
 }
 
-#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum CrdtType {
     LWW(ComponentPosition),
     GO(ComponentPosition),
@@ -48,7 +49,7 @@ impl CrdtType {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct CrdtComponentInterfaces(pub HashMap<SceneComponentId, CrdtType>);
 
 const CRDT_HEADER_SIZE: usize = 8;
@@ -68,7 +69,7 @@ impl ToDclWriter for CrdtMessageType {
     }
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct CrdtStore {
     pub lww: HashMap<SceneComponentId, CrdtLWWState>,
     pub go: HashMap<SceneComponentId, CrdtGOState>,

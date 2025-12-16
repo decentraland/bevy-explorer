@@ -39,6 +39,7 @@ use crate::livekit::web::{close_room, connect_room, recv_room_event, room_name, 
 use crate::livekit::{participant, track};
 use crate::livekit::{LivekitChannelControl, LivekitNetworkMessage};
 use crate::livekit::{LivekitRuntime, LivekitTransport};
+use crate::NetworkMessageRecipient;
 
 #[cfg(target_arch = "wasm32")]
 type JsValueAbi = <JsValue as IntoWasmAbi>::Abi;
@@ -652,10 +653,14 @@ fn process_network_message(
         loop {
             match network_message.try_recv() {
                 Ok(outgoing) => {
-                    let destination_identities = if let Some(address) = outgoing.recipient {
-                        vec![ParticipantIdentity(format!("{address:#x}"))]
-                    } else {
-                        default()
+                    let destination_identities = match outgoing.recipient {
+                        NetworkMessageRecipient::All => Vec::default(),
+                        NetworkMessageRecipient::Peer(address) => {
+                            vec![ParticipantIdentity(format!("{address:#x}"))]
+                        }
+                        NetworkMessageRecipient::AuthServer => {
+                            vec![ParticipantIdentity("authoritative-server".to_string())]
+                        }
                     };
 
                     let packet = livekit::DataPacket {

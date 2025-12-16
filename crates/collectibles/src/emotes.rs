@@ -217,12 +217,11 @@ fn load_animations(
                                     hash: Default::default(),
                                     urn: urn.as_str().to_string(),
                                     thumbnail: if register_base {
-                                        asset_server.load(format!(
+                                        format!(
                                             "embedded://animations/thumbnails/{network_name}.png"
-                                        ))
-                                        // asset_server.load("embedded://images/redx.png")
+                                        )
                                     } else {
-                                        Handle::default()
+                                        "embedded://images/redx.png".to_owned()
                                     },
                                     available_representations: representations
                                         .keys()
@@ -561,8 +560,13 @@ impl AssetLoader for EmoteLoader {
         debug!("meta: {metadata:#?}");
         let meta = serde_json::from_value::<EmoteMeta>(metadata)?;
 
-        let thumbnail =
-            load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
+        let thumbnail = load_context
+            .path()
+            .parent()
+            .unwrap()
+            .join(&meta.thumbnail)
+            .to_string_lossy()
+            .into_owned();
 
         let mut representations = HashMap::new();
 
@@ -630,8 +634,13 @@ impl AssetLoader for EmoteMetaLoader {
         debug!("meta: {metadata:#?}");
         let meta = serde_json::from_value::<EmoteMeta>(metadata)?;
 
-        let thumbnail =
-            load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
+        let thumbnail = load_context
+            .path()
+            .parent()
+            .unwrap()
+            .join(&meta.thumbnail)
+            .to_string_lossy()
+            .into_owned();
 
         let available_representations = meta
             .emote_extended_data

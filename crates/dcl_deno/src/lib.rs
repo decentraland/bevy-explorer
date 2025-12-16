@@ -2,20 +2,21 @@ pub mod js;
 
 use std::{
     panic::{self, AssertUnwindSafe},
-    sync::{mpsc::SyncSender, Mutex},
+    sync::Mutex,
 };
 
 use bevy::{log::error, platform::collections::HashMap};
-use common::structs::MicState;
 use deno_core::v8::IsolateHandle;
 use once_cell::sync::Lazy;
 use system_bridge::SystemApi;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::{Sender, UnboundedSender};
 
-use ipfs::{IpfsResource, SceneJsFile};
-use wallet::Wallet;
+use ipfs::SceneJsFile;
 
-use dcl::{interface::CrdtComponentInterfaces, RendererResponse, SceneId, SceneResponse};
+use dcl::{
+    interface::{CrdtComponentInterfaces, CrdtStore},
+    RendererResponse, SceneId, SceneResponse,
+};
 
 use crate::js::scene_thread;
 
@@ -29,14 +30,12 @@ pub fn init_runtime() {
 
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_scene(
+    initial_crdt_store: CrdtStore,
     scene_hash: String,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
-    renderer_sender: SyncSender<SceneResponse>,
+    renderer_sender: UnboundedSender<SceneResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
-    ipfs: IpfsResource,
-    wallet: Wallet,
-    mic: MicState,
     id: SceneId,
     storage_root: String,
     inspect: bool,
@@ -52,6 +51,7 @@ pub fn spawn_scene(
         .spawn(move || {
             let thread_result = panic::catch_unwind(AssertUnwindSafe(|| {
                 scene_thread(
+                    initial_crdt_store,
                     scene_hash,
                     id,
                     storage_root,
@@ -60,9 +60,6 @@ pub fn spawn_scene(
                     renderer_sender,
                     thread_rx,
                     global_update_receiver,
-                    ipfs,
-                    wallet,
-                    mic,
                     inspect,
                     testing,
                     preview,
