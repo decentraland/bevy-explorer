@@ -36,6 +36,7 @@ use crate::{
     update_world::{
         lights::LightSource,
         material::{dcl_material_from_standard_material, BaseMaterial},
+        trigger_area::TriggerArea,
     },
     ContainerEntity, ContainingScene, OutOfWorld, SceneEntity, SceneSets,
 };
@@ -759,7 +760,6 @@ fn update_ready_gltfs(
                     let mut collider_base_name = maybe_name
                         .map(Name::as_str)
                         .filter(|name| name.to_ascii_lowercase().contains("_collider"));
-
                     if collider_base_name.is_none() {
                         // check parent name also
                         collider_base_name = gltf_spawned_entities
@@ -771,7 +771,22 @@ fn update_ready_gltfs(
                     }
                     let is_collider = collider_base_name.is_some();
 
-                    if is_collider {
+                    // process trigger
+                    let mut trigger_base_name = maybe_name
+                        .map(Name::as_str)
+                        .filter(|name| name.to_ascii_lowercase().contains("_trigger"));
+                    if trigger_base_name.is_none() {
+                        // check parent name also
+                        trigger_base_name = gltf_spawned_entities
+                            .get(parent.parent())
+                            .ok()
+                            .and_then(|(name, ..)| name)
+                            .map(|name| name.as_str())
+                            .filter(|name| name.to_ascii_lowercase().contains("_trigger"))
+                    }
+                    let is_trigger = trigger_base_name.is_some();
+
+                    if is_collider || is_trigger {
                         // make invisible by removing mesh handle
                         // TODO - this will break with toggling, we need to store the handle somewhere
                         commands.entity(spawned_ent).remove::<Mesh3d>();
@@ -784,7 +799,7 @@ fn update_ready_gltfs(
                             serde_json::from_str::<DclNodeExtras>(&extras.value).ok()
                         })
                         .and_then(|extras| extras.dcl_collision_mask)
-                        .unwrap_or_else(|| {
+                        .or_else(|| {
                             // then try parent node
                             gltf_spawned_entities
                                 .get(parent.parent())
@@ -793,32 +808,32 @@ fn update_ready_gltfs(
                                 .and_then(|extras| {
                                     serde_json::from_str::<DclNodeExtras>(&extras.value).ok()
                                 })
-                                .and_then(|extras| extras.dcl_collision_mask)
+                                .map(|extras| extras.dcl_collision_mask)
                                 .unwrap_or({
                                     //fall back to container-specified default
-                                    if is_collider {
-                                        definition.0.invisible_meshes_collision_mask.unwrap_or(
+                                    if is_collider || is_trigger {
+                                        definition.0.invisible_meshes_collision_mask.or(
                                             // colliders default to physics + pointers
                                             if data.is_skinned {
                                                 // if skinned, maybe foundation uses 0 default?
-                                                0
+                                                Some(0)
                                             } else {
-                                                ColliderLayer::ClPhysics as u32
-                                                    | ColliderLayer::ClPointer as u32
+                                                None
                                             },
                                         )
                                     } else {
-                                        definition.0.visible_meshes_collision_mask.unwrap_or(
+                                        definition.0.visible_meshes_collision_mask.or(
                                             // non-colliders default to nothing
-                                            0,
+                                            Some(0),
                                         )
                                     }
                                 })
                         });
 
-                    if collider_bits != 0
-                    /* && !is_skinned */
-                    {
+                    if is_collider && collider_bits != Some(0) {
+                        let collider_bits = collider_bits.unwrap_or(
+                            ColliderLayer::ClPhysics as u32 | ColliderLayer::ClPointer as u32,
+                        );
                         let index = collider_counter
                             .entry(collider_base_name.to_owned())
                             .or_default();
@@ -833,6 +848,27 @@ fn update_ready_gltfs(
                         commands.entity(spawned_ent).try_insert(MeshCollider {
                             shape: MeshColliderShape::Shape(data.shape.clone(), h_collider),
                             collision_mask: collider_bits,
+                            mesh_name: collider_base_name.map(ToOwned::to_owned),
+                            index: *index,
+                        });
+                    }
+
+                    if is_trigger && collider_bits != Some(0) {
+                        let collider_bits = collider_bits.unwrap_or(ColliderLayer::ClPlayer as u32);
+                        let index = collider_counter
+                            .entry(collider_base_name.to_owned())
+                            .or_default();
+                        *index += 1u32;
+
+                        let h_collider = if data.is_skinned {
+                            data.maybe_collider.clone().unwrap()
+                        } else {
+                            h_mesh.clone()
+                        };
+
+                        commands.entity(spawned_ent).try_insert(TriggerArea {
+                            shape: MeshColliderShape::Shape(data.shape.clone(), h_collider),
+                            trigger_mask: collider_bits,
                             mesh_name: collider_base_name.map(ToOwned::to_owned),
                             index: *index,
                         });

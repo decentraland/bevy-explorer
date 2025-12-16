@@ -38,6 +38,8 @@ use super::AddCrdtInterfaceExt;
 
 pub struct MeshColliderPlugin;
 
+pub const COLLISION_MASK_COLLIDER: u32 = 1 << 31;
+
 #[derive(Component, Clone, Debug)]
 pub struct MeshCollider {
     pub shape: MeshColliderShape,
@@ -60,15 +62,21 @@ impl Default for MeshCollider {
 #[derive(Component)]
 pub struct DisableCollisions;
 
-// #[derive(Debug)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum MeshColliderShape {
+    #[default]
     Box,
-    Cylinder { radius_top: f32, radius_bottom: f32 },
+    Cylinder {
+        radius_top: f32,
+        radius_bottom: f32,
+    },
     Plane,
     Sphere,
     Shape(SharedShape, Handle<Mesh>),
-    GltfShape { gltf_src: String, name: String },
+    GltfShape {
+        gltf_src: String,
+        name: String,
+    },
 }
 
 impl From<PbMeshCollider> for MeshCollider {
@@ -727,6 +735,40 @@ impl SceneColliderData {
 
     pub fn iter(&self) -> impl Iterator<Item = &ColliderId> {
         self.scaled_collider.left_values()
+    }
+
+    pub fn intersect_shape(
+        &mut self,
+        scene_time: u32,
+        shape: &SharedShape,
+        transform: &GlobalTransform,
+        mask: u32,
+    ) -> Vec<ColliderId> {
+        self.update_pipeline(scene_time);
+
+        let (scale, rotation, translation) = transform.to_scale_rotation_translation();
+        let shape = shape.scale_ext(scale);
+
+        let mut results = Vec::default();
+        self.query_state.as_ref().unwrap().intersections_with_shape(
+            &self.dummy_rapier_structs.1,
+            &self.collider_set,
+            &Isometry::from_parts(translation.into(), rotation.into()),
+            shape.0.as_ref(),
+            QueryFilter::default().groups(InteractionGroups {
+                memberships: Group::from_bits_truncate(mask),
+                filter: Group::from_bits_truncate(mask),
+            }),
+            |ch| {
+                let Some(collider) = self.get_id(ch) else {
+                    warn!("missing collider for trigger intersection");
+                    return true;
+                };
+                results.push(collider.clone());
+                true
+            },
+        );
+        results
     }
 }
 

@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package decentraland.sdk.components;
+
+import "decentraland/sdk/components/common/id.proto";
+
+option (common.ecs_component_id) = 1060;
+
+// The PBTriggerArea component is used to raise collision triggering events (through the TriggerAreaResult component)
+// when entities enter this component's defined area.
+//
+// ADR: https://github.com/decentraland/adr/blob/2b30a5e2b4f359a7c22a68fb827db282f6e5f887/content/ADR-258-trigger-areas.md
+//
+// The area size and rotation is defined by the Entity's Transform.
+message PBTriggerArea {
+  optional TriggerAreaMeshType mesh = 1;         // default: MT_BOX
+  optional uint32 collision_mask = 2; // default: CL_PLAYER
+}
+
+enum TriggerAreaMeshType {
+  TAMT_BOX = 0;
+  TAMT_SPHERE = 1;
+}
