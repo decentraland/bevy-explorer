@@ -47,7 +47,7 @@ use scene_runner::{
     OutOfWorld, SceneRunnerPlugin,
 };
 
-use av::AudioPlugin;
+use av::AVPlayerPlugin;
 use avatar::AvatarPlugin;
 use comms::{preview::handle_preview_socket, CommsPlugin};
 use console::{ConsolePlugin, DoAddConsoleCommand};
