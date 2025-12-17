@@ -29,10 +29,11 @@ use scene_runner::{
 #[cfg(feature = "livekit")]
 use crate::video_stream::streamer_sinks;
 use crate::{
+    audio_sink::AudioSink,
     stream_processor::AVCommand,
     video_context::{VideoData, VideoInfo},
     video_stream::{av_sinks, noop_sinks, VideoSink},
-    AVPlayer,
+    AVPlayer, ShouldBePlaying,
 };
 
 pub struct VideoPlayerPlugin;
@@ -42,12 +43,59 @@ impl Plugin for VideoPlayerPlugin {
         app.add_systems(Startup, init_ffmpeg);
         app.add_systems(Update, play_videos);
         app.add_systems(Update, update_video_players.in_set(SceneSets::PostLoop));
+        app.add_observer(av_player_on_insert);
     }
 }
 
 fn init_ffmpeg() {
     ffmpeg_next::init().unwrap();
     ffmpeg_next::log::set_level(ffmpeg_next::log::Level::Error);
+}
+
+fn av_player_on_insert(
+    trigger: Trigger<OnInsert, AVPlayer>,
+    mut commands: Commands,
+    mut av_players: Query<(&AVPlayer, Option<&mut AudioSink>, Option<&mut VideoSink>)>,
+) {
+    info!("AVPlayer updated.");
+    let entity = trigger.target();
+    let Ok((av_player, maybe_audio_sink, maybe_video_sink)) = av_players.get_mut(entity) else {
+        return;
+    };
+
+    // This forces an update on the entity
+    commands.entity(entity).try_remove::<ShouldBePlaying>();
+    if !av_player.source.src.is_empty()
+        && maybe_video_sink
+            .as_ref()
+            .filter(|video_sink| av_player.source.src == video_sink.source)
+            .is_some()
+    {
+        debug!("Updating sinks {}.", av_player.source.src);
+        if let Some(video_sink) = maybe_video_sink {
+            if video_sink
+                .command_sender
+                .try_send(AVCommand::Repeat(av_player.source.r#loop.unwrap_or(false)))
+                .is_err()
+            {
+                commands.send_event(AppExit::from_code(1));
+                return;
+            }
+        }
+        if let Some(mut audio_sink) = maybe_audio_sink {
+            audio_sink.volume = av_player.source.volume.unwrap_or(1.0);
+        }
+    } else {
+        if let Some(video_sink) = maybe_video_sink {
+            debug!(
+                "Removing sinks {} due to diverging source.",
+                video_sink.source
+            );
+        }
+        commands
+            .entity(trigger.target())
+            .try_remove::<(AudioSink, VideoSink)>();
+    }
 }
 
 fn play_videos(
