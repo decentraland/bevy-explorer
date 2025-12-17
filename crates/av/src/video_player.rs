@@ -1,18 +1,13 @@
 use bevy::{
     color::palettes::basic,
     diagnostic::FrameCount,
-    math::FloatOrd,
-    platform::collections::HashMap,
     prelude::*,
     render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
     },
 };
-use common::{
-    sets::SceneSets,
-    structs::{AppConfig, PrimaryUser},
-};
+use common::sets::SceneSets;
 #[cfg(feature = "livekit")]
 use comms::{livekit_room::LivekitTransport, SceneRoom, Transport};
 use dcl::interface::CrdtType;
@@ -23,13 +18,14 @@ use dcl_component::{
 use ipfs::IpfsResource;
 use scene_runner::{
     renderer_context::RendererSceneContext, update_world::material::VideoTextureOutput,
-    ContainerEntity, ContainingScene,
+    ContainerEntity,
 };
 
 #[cfg(feature = "livekit")]
 use crate::video_stream::streamer_sinks;
 use crate::{
     audio_sink::AudioSink,
+    av_player_is_in_scene,
     stream_processor::AVCommand,
     video_context::{VideoData, VideoInfo},
     video_stream::{av_sinks, noop_sinks, VideoSink},
@@ -42,8 +38,16 @@ impl Plugin for VideoPlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, init_ffmpeg);
         app.add_systems(Update, play_videos);
-        app.add_systems(Update, update_video_players.in_set(SceneSets::PostLoop));
+        app.add_systems(
+            Update,
+            rebuild_sinks
+                .before(av_player_is_in_scene)
+                .in_set(SceneSets::PostLoop),
+        );
+
         app.add_observer(av_player_on_insert);
+        app.add_observer(av_player_should_be_playing_on_add);
+        app.add_observer(av_player_should_be_playing_on_remove);
     }
 }
 
@@ -72,23 +76,82 @@ fn av_player_on_insert(
     {
         debug!("Updating sinks of {entity}.");
         if let Some(video_sink) = maybe_video_sink {
-            if video_sink
+            let _ = video_sink
                 .command_sender
-                .try_send(AVCommand::Repeat(av_player.source.r#loop.unwrap_or(false)))
-                .is_err()
-            {
-                commands.send_event(AppExit::from_code(1));
-                return;
+                .try_send(AVCommand::Repeat(av_player.source.r#loop.unwrap_or(false)));
+
+            if av_player.source.playing.unwrap_or(true) {
+                debug!("scene requesting start of video for {entity}");
+                let _ = video_sink.command_sender.try_send(AVCommand::Play);
+            } else {
+                debug!("scene stopping video {entity}");
+                let _ = video_sink.command_sender.try_send(AVCommand::Pause);
             }
         }
         if let Some(mut audio_sink) = maybe_audio_sink {
             audio_sink.volume = av_player.source.volume.unwrap_or(1.0);
+
+            if av_player.source.playing.unwrap_or(true) {
+                debug!("scene requesting start of audio for {entity}");
+                let _ = audio_sink.command_sender.try_send(AVCommand::Play);
+            } else {
+                debug!("scene stopping audio {entity}");
+                let _ = audio_sink.command_sender.try_send(AVCommand::Pause);
+            }
         }
     } else {
-        debug!("Removing sinks of {entity} due to diverging source.");
+        if maybe_audio_sink.is_some() || maybe_video_sink.is_some() {
+            debug!("Removing sinks of {entity} due to diverging source.");
+        }
+        if let Some(video_sink) = maybe_video_sink {
+            let _ = video_sink.command_sender.try_send(AVCommand::Dispose);
+        }
+        if let Some(audio_sink) = maybe_audio_sink {
+            let _ = audio_sink.command_sender.try_send(AVCommand::Dispose);
+        }
         commands
             .entity(trigger.target())
             .try_remove::<(AudioSink, VideoSink)>();
+    }
+}
+
+fn av_player_should_be_playing_on_add(
+    trigger: Trigger<OnAdd, ShouldBePlaying>,
+    mut commands: Commands,
+    av_players: Query<(Option<&AudioSink>, Option<&VideoSink>)>,
+) {
+    let entity = trigger.target();
+    let Ok((maybe_audio_sink, maybe_video_sink)) = av_players.get(entity) else {
+        error!("ShouldBePlaying added to something that is not an AVPlayer.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    if let Some(audio_sink) = maybe_audio_sink {
+        let _ = audio_sink.command_sender.try_send(AVCommand::Play);
+    }
+    if let Some(video_sink) = maybe_video_sink {
+        let _ = video_sink.command_sender.try_send(AVCommand::Play);
+    }
+}
+
+fn av_player_should_be_playing_on_remove(
+    trigger: Trigger<OnRemove, ShouldBePlaying>,
+    mut commands: Commands,
+    av_players: Query<(Option<&AudioSink>, Option<&VideoSink>)>,
+) {
+    let entity = trigger.target();
+    let Ok((maybe_audio_sink, maybe_video_sink)) = av_players.get(entity) else {
+        error!("ShouldBePlaying added to something that is not an AVPlayer.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    if let Some(audio_sink) = maybe_audio_sink {
+        let _ = audio_sink.command_sender.try_send(AVCommand::Pause);
+    }
+    if let Some(video_sink) = maybe_video_sink {
+        let _ = video_sink.command_sender.try_send(AVCommand::Pause);
     }
 }
 
@@ -186,194 +249,124 @@ fn play_videos(
     }
 }
 
-#[allow(clippy::type_complexity, clippy::too_many_arguments)]
-pub fn update_video_players(
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
+fn rebuild_sinks(
     mut commands: Commands,
-    video_players: Query<(
-        Entity,
-        &ContainerEntity,
-        Ref<AVPlayer>,
-        Option<&VideoSink>,
-        Option<&VideoTextureOutput>,
-        &GlobalTransform,
-    )>,
-    mut images: ResMut<Assets<Image>>,
-    ipfs: Res<IpfsResource>,
-    scenes: Query<&RendererSceneContext>,
+    video_players: Query<
+        (
+            Entity,
+            &ContainerEntity,
+            &AVPlayer,
+            Option<&VideoTextureOutput>,
+            &GlobalTransform,
+        ),
+        (Without<AudioSink>, Without<VideoSink>),
+    >,
     #[cfg(feature = "livekit")] mut scene_rooms: Query<
         &mut Transport,
         (With<LivekitTransport>, With<SceneRoom>),
     >,
-    config: Res<AppConfig>,
-    mut system_paused: Local<HashMap<Entity, Option<tokio::sync::mpsc::Sender<AVCommand>>>>,
-    containing_scene: ContainingScene,
-    user: Query<&GlobalTransform, With<PrimaryUser>>,
+    scenes: Query<&RendererSceneContext>,
+    ipfs: Res<IpfsResource>,
+    mut images: ResMut<Assets<Image>>,
 ) {
-    let mut previously_stopped = std::mem::take(&mut *system_paused);
+    for (ent, container, player, maybe_texture, _) in video_players.iter() {
+        debug!("Rebuilding sinks for {}.", ent);
+        let image_handle = match maybe_texture {
+            None => {
+                let mut image = Image::new_fill(
+                    bevy::render::render_resource::Extent3d {
+                        width: 8,
+                        height: 8,
+                        depth_or_array_layers: 1,
+                    },
+                    TextureDimension::D2,
+                    &basic::FUCHSIA.to_u8_array(),
+                    TextureFormat::Rgba8UnormSrgb,
+                    RenderAssetUsages::all(),
+                );
+                image.texture_descriptor.usage =
+                    TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING;
+                images.add(image)
+            }
+            Some(texture) => texture.0.clone(),
+        };
 
-    for (ent, container, player, maybe_sink, maybe_texture, _) in video_players.iter() {
-        if maybe_sink.map(|sink| &sink.source) != Some(&player.source.src) {
-            let image_handle = match maybe_texture {
-                None => {
-                    let mut image = Image::new_fill(
-                        bevy::render::render_resource::Extent3d {
-                            width: 8,
-                            height: 8,
-                            depth_or_array_layers: 1,
-                        },
-                        TextureDimension::D2,
-                        &basic::FUCHSIA.to_u8_array(),
-                        TextureFormat::Rgba8UnormSrgb,
-                        RenderAssetUsages::all(),
+        let Ok(context) = scenes.get(container.root) else {
+            continue;
+        };
+
+        let (video_sink, audio_sink) = if player.source.src.starts_with("livekit-video://") {
+            #[cfg(feature = "livekit")]
+            if let Ok(transport) = scene_rooms.single_mut() {
+                if let Some(control_channel) = transport.control.clone() {
+                    let (video_sink, audio_sink) = streamer_sinks(
+                        control_channel,
+                        player.source.src.clone(),
+                        image_handle,
+                        player.source.volume.unwrap_or(1.0),
                     );
-                    image.texture_descriptor.usage =
-                        TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING;
-                    images.add(image)
-                }
-                Some(texture) => texture.0.clone(),
-            };
-
-            let Ok(context) = scenes.get(container.root) else {
-                continue;
-            };
-
-            let (video_sink, audio_sink) = if player.source.src.starts_with("livekit-video://") {
-                #[cfg(feature = "livekit")]
-                if let Ok(transport) = scene_rooms.single_mut() {
-                    if let Some(control_channel) = transport.control.clone() {
-                        let (video_sink, audio_sink) = streamer_sinks(
-                            control_channel,
-                            player.source.src.clone(),
-                            image_handle,
-                            player.source.volume.unwrap_or(1.0),
-                        );
-                        debug!(
-                            "spawned streamer thread for scene @ {} (playing={})",
-                            context.base,
-                            player.source.playing.unwrap_or(true)
-                        );
-                        (video_sink, audio_sink)
-                    } else {
-                        error!("Transport did not have ChannelControl channel.");
-                        noop_sinks(
-                            player.source.src.clone(),
-                            image_handle,
-                            player.source.volume.unwrap_or(1.0),
-                        )
-                    }
+                    debug!(
+                        "spawned streamer thread for scene @ {} (playing={})",
+                        context.base,
+                        player.source.playing.unwrap_or(true)
+                    );
+                    (video_sink, audio_sink)
                 } else {
-                    error!("Could not determinate the scene of the AvPlayer.");
+                    error!("Transport did not have ChannelControl channel.");
                     noop_sinks(
                         player.source.src.clone(),
                         image_handle,
                         player.source.volume.unwrap_or(1.0),
                     )
                 }
-                #[cfg(not(feature = "livekit"))]
+            } else {
+                error!("Could not determinate the scene of the AvPlayer.");
                 noop_sinks(
                     player.source.src.clone(),
                     image_handle,
                     player.source.volume.unwrap_or(1.0),
                 )
-            } else if player.source.src.is_empty() {
-                let (video_sink, audio_sink) = noop_sinks(
-                    player.source.src.clone(),
-                    image_handle,
-                    player.source.volume.unwrap_or(1.0),
-                );
-                debug!(
-                    "spawned noop sink for scene @ {} (playing={})",
-                    context.base,
-                    player.source.playing.unwrap_or(true)
-                );
-                (video_sink, audio_sink)
-            } else {
-                let (video_sink, audio_sink) = av_sinks(
-                    ipfs.clone(),
-                    player.source.src.clone(),
-                    context.hash.clone(),
-                    image_handle,
-                    player.source.volume.unwrap_or(1.0),
-                    false,
-                    player.source.r#loop.unwrap_or(false),
-                );
-                debug!(
-                    "spawned av thread for scene @ {} (playing={})",
-                    context.base,
-                    player.source.playing.unwrap_or(true)
-                );
-                (video_sink, audio_sink)
-            };
-            previously_stopped.insert(ent, Some(video_sink.command_sender.clone()));
-            let video_output = VideoTextureOutput(video_sink.image.clone());
-            commands
-                .entity(ent)
-                .try_insert((video_sink, video_output, audio_sink));
-            debug!("{ent:?} has {}", player.source.src);
-        } else if player.is_changed() {
-            let sink = maybe_sink.as_ref().unwrap();
-            if player.source.playing.unwrap_or(true) {
-                debug!("scene requesting start for {ent:?}");
-                previously_stopped.insert(ent, None);
-            } else {
-                debug!("scene stopping {ent:?}");
-                let _ = sink.command_sender.try_send(AVCommand::Pause);
             }
-            let _ = sink
-                .command_sender
-                .try_send(AVCommand::Repeat(player.source.r#loop.unwrap_or(false)));
-        }
-    }
-
-    // disable distant av
-    let Ok(user) = user.single() else {
-        return;
-    };
-
-    let containing_scenes = containing_scene.get_position(user.translation());
-
-    let mut sorted_players = video_players
-        .iter()
-        .filter_map(|(ent, container, player, _, _, transform)| {
-            if player.source.playing.unwrap_or(true) {
-                let in_scene = containing_scenes.contains(&container.root);
-                let distance = transform.translation().distance(user.translation());
-                Some((in_scene, distance, ent))
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-
-    // prioritise av in current scene (false < true), then by distance
-    sorted_players.sort_by_key(|(in_scene, distance, _)| (!in_scene, FloatOrd(*distance)));
-
-    let should_be_playing = sorted_players
-        .iter()
-        .take(config.max_videos)
-        .map(|(_, _, ent)| *ent);
-    let should_be_stopped = sorted_players
-        .iter()
-        .skip(config.max_videos)
-        .map(|(_, _, ent)| *ent);
-
-    for ent in should_be_playing {
-        if let Some(maybe_new_sender) = previously_stopped.get(&ent) {
-            let sender = maybe_new_sender
-                .as_ref()
-                .unwrap_or_else(|| &video_players.get(ent).unwrap().3.unwrap().command_sender);
-            debug!("starting {ent:?}");
-            let _ = sender.try_send(AVCommand::Play);
-        }
-    }
-
-    for ent in should_be_stopped {
-        if !previously_stopped.contains_key(&ent) {
-            if let Some(sink) = video_players.get(ent).unwrap().3 {
-                info!("system stopping {ent:?}");
-                let _ = sink.command_sender.try_send(AVCommand::Pause);
-            }
-        }
-        system_paused.insert(ent, None);
+            #[cfg(not(feature = "livekit"))]
+            noop_sinks(
+                player.source.src.clone(),
+                image_handle,
+                player.source.volume.unwrap_or(1.0),
+            )
+        } else if player.source.src.is_empty() {
+            let (video_sink, audio_sink) = noop_sinks(
+                player.source.src.clone(),
+                image_handle,
+                player.source.volume.unwrap_or(1.0),
+            );
+            debug!(
+                "spawned noop sink for scene @ {} (playing={})",
+                context.base,
+                player.source.playing.unwrap_or(true)
+            );
+            (video_sink, audio_sink)
+        } else {
+            let (video_sink, audio_sink) = av_sinks(
+                ipfs.clone(),
+                player.source.src.clone(),
+                context.hash.clone(),
+                image_handle,
+                player.source.volume.unwrap_or(1.0),
+                false,
+                player.source.r#loop.unwrap_or(false),
+            );
+            debug!(
+                "spawned av thread for scene @ {} (playing={})",
+                context.base,
+                player.source.playing.unwrap_or(true)
+            );
+            (video_sink, audio_sink)
+        };
+        let video_output = VideoTextureOutput(video_sink.image.clone());
+        commands
+            .entity(ent)
+            .try_insert((video_sink, video_output, audio_sink));
+        debug!("{ent:?} has {}", player.source.src);
     }
 }
