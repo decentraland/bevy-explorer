@@ -176,6 +176,7 @@ pub fn change_audio_sink_volume(
     mut audio_sinks: Query<(Mut<AudioSink>, Option<&mut AudioSpawned>, &SceneEntity)>,
     containing_scene: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
+    audio_settings: Res<AudioSettings>,
 ) {
     let entity = trigger.target();
     if entity == Entity::PLACEHOLDER {
@@ -206,7 +207,7 @@ pub fn change_audio_sink_volume(
     if let Some(mut audio_spawned) = maybe_audio_spawned {
         if let Some(handle) = audio_spawned.0.as_mut() {
             if containing_scenes.contains(&scene_entity.root) {
-                handle.set_volume(*volume as f64, Tween::default());
+                handle.set_volume((volume * audio_settings.scene()) as f64, Tween::default());
             } else {
                 handle.set_volume(0.0, Tween::default());
             }
