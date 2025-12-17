@@ -11,9 +11,9 @@ use crate::livekit::web::connect_livekit;
 use crate::{
     global_crdt::PlayerUpdate,
     livekit::{
-        mic::MicPlugin, participant::ParticipantPlugin, room::plugin::LivekitRoomPlugin,
-        track::LivekitTrackPlugin, LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime,
-        LivekitTransport, StartLivekit,
+        mic::MicPlugin, participant::plugin::LivekitParticipantPlugin,
+        room::plugin::LivekitRoomPlugin, track::LivekitTrackPlugin, LivekitChannelControl,
+        LivekitNetworkMessage, LivekitRuntime, LivekitTransport, StartLivekit,
     },
     profile::CurrentUserProfile,
     NetworkMessage, Transport, TransportType,
@@ -28,7 +28,7 @@ impl Plugin for LivekitPlugin {
 
         app.add_plugins(MicPlugin);
         app.add_plugins(LivekitRoomPlugin);
-        app.add_plugins(ParticipantPlugin);
+        app.add_plugins(LivekitParticipantPlugin);
         app.add_plugins(LivekitTrackPlugin);
 
         app.add_systems(
