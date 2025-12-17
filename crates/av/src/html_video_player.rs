@@ -46,6 +46,8 @@ use web_sys::{
 
 use crate::{av_player_is_in_scene, av_player_should_be_playing, InScene, ShouldBePlaying};
 
+type RcClosure = Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>>;
+
 pub struct VideoPlayerPlugin;
 
 const VIDEO_CONTAINER_ID: &str = "video-player-container";
@@ -165,7 +167,7 @@ pub struct HtmlMediaEntity {
     new_frame_time: Arc<AtomicU32>,
     state: Arc<Mutex<VideoState>>,
     _closures: Vec<Closure<dyn FnMut()>>,
-    frame_closure: Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>>,
+    frame_closure: RcClosure,
     frame_callback_handle: Rc<RefCell<Option<u32>>>,
 }
 
@@ -301,8 +303,7 @@ impl HtmlMediaEntity {
         }
         let rvc_fn = rvc_prop.dyn_into::<web_sys::js_sys::Function>().unwrap();
 
-        let callback: Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>> =
-            Rc::new(RefCell::new(None));
+        let callback: RcClosure = Rc::new(RefCell::new(None));
         let callback_handle: Rc<RefCell<Option<u32>>> = Rc::new(RefCell::new(None));
         let callback_clone = callback.clone();
         let handle_clone = callback_handle.clone();
@@ -374,8 +375,7 @@ impl HtmlMediaEntity {
         }
         let rvc_fn = rvc_prop.dyn_into::<web_sys::js_sys::Function>().unwrap();
 
-        let callback: Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>> =
-            Rc::new(RefCell::new(None));
+        let callback: RcClosure = Rc::new(RefCell::new(None));
         let callback_handle: Rc<RefCell<Option<u32>>> = Rc::new(RefCell::new(None));
         let callback_clone = callback.clone();
         let handle_clone = callback_handle.clone();
@@ -477,11 +477,11 @@ impl Drop for HtmlMediaEntity {
         if let (Some(video), Some(handle)) =
             (&self.video, self.frame_callback_handle.borrow_mut().take())
         {
-            Reflect::get(&video, &"cancelVideoFrameCallback".into())
+            Reflect::get(video, &"cancelVideoFrameCallback".into())
                 .unwrap()
                 .dyn_into::<web_sys::js_sys::Function>()
                 .unwrap()
-                .call1(&video, &JsValue::from(handle))
+                .call1(video, &JsValue::from(handle))
                 .unwrap();
         }
         self.frame_closure.take();
@@ -522,6 +522,7 @@ fn av_player_on_insert(
 }
 
 /// Try subscribing to streamer if a stream is active
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn try_subscription(
     av_players: Populated<
         &AVPlayer,
@@ -658,10 +659,7 @@ fn update_av_players(
         }
 
         let is_playing = state == VideoState::VsPlaying;
-        let can_play = match state {
-            VideoState::VsReady | VideoState::VsPaused => true,
-            _ => false,
-        };
+        let can_play = matches!(state, VideoState::VsReady | VideoState::VsPaused);
 
         if !is_playing && should_be_playing && can_play {
             av.play()
