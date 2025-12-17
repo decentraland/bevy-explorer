@@ -729,6 +729,10 @@ async fn streamer_audio_subscribe(
 
         let data = receiver.await.unwrap();
         new_channel.send(data).await.unwrap();
+
+        // keep new_channel alive
+        new_channel.closed().await;
+        debug!("new_channel closed");
     }
 }
 
