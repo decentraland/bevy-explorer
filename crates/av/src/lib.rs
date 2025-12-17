@@ -33,7 +33,12 @@ use audio_source::AudioSourcePlugin;
 use audio_source_native::AudioSourcePluginImpl;
 use bevy::{math::FloatOrd, prelude::*};
 use common::structs::{AppConfig, PrimaryUser};
-use scene_runner::{ContainerEntity, ContainingScene};
+use dcl::interface::ComponentPosition;
+use dcl_component::{
+    proto_components::sdk::components::{PbAudioStream, PbVideoPlayer},
+    SceneComponentId,
+};
+use scene_runner::{update_world::AddCrdtInterfaceExt, ContainerEntity, ContainingScene};
 #[cfg(feature = "ffmpeg")]
 use {
     audio_sink::{spawn_and_locate_foreign_streams, spawn_audio_streams},
@@ -46,10 +51,39 @@ use {
     html_video_player::VideoPlayerPlugin,
 };
 
-#[cfg(target_arch = "wasm32")]
-use crate::html_video_player::AVPlayer;
-#[cfg(not(target_arch = "wasm32"))]
-use crate::video_player::AVPlayer;
+#[derive(Component, Debug)]
+#[component(immutable)]
+pub struct AVPlayer {
+    // note we reuse PbVideoPlayer for audio as well
+    pub source: PbVideoPlayer,
+    #[cfg(feature = "html")]
+    pub has_video: bool,
+}
+
+impl From<PbVideoPlayer> for AVPlayer {
+    fn from(value: PbVideoPlayer) -> Self {
+        Self {
+            source: value,
+            #[cfg(feature = "html")]
+            has_video: true,
+        }
+    }
+}
+
+impl From<PbAudioStream> for AVPlayer {
+    fn from(value: PbAudioStream) -> Self {
+        Self {
+            source: PbVideoPlayer {
+                src: value.url,
+                playing: value.playing,
+                volume: value.volume,
+                ..Default::default()
+            },
+            #[cfg(feature = "html")]
+            has_video: false,
+        }
+    }
+}
 
 /// Marks whether an [`AVPlayer`] should be playing
 #[derive(Debug, Component)]
@@ -66,15 +100,23 @@ impl Plugin for AVPlayerPlugin {
     fn build(&self, app: &mut App) {
         #[cfg(any(feature = "ffmpeg", feature = "html"))]
         app.add_plugins(VideoPlayerPlugin);
-
         app.add_plugins(AudioSourcePlugin);
         app.add_plugins(AudioSourcePluginImpl);
+
+        app.add_crdt_lww_component::<PbVideoPlayer, AVPlayer>(
+            SceneComponentId::VIDEO_PLAYER,
+            ComponentPosition::EntityOnly,
+        );
+        app.add_crdt_lww_component::<PbAudioStream, AVPlayer>(
+            SceneComponentId::AUDIO_STREAM,
+            ComponentPosition::EntityOnly,
+        );
+
         #[cfg(feature = "ffmpeg")]
         app.add_systems(
             PostUpdate,
             (spawn_audio_streams, spawn_and_locate_foreign_streams).chain(),
         );
-
         app.add_systems(Update, (av_player_is_in_scene, av_player_should_be_playing));
     }
 }

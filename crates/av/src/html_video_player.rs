@@ -24,17 +24,14 @@ use bevy::{
 };
 use common::sets::SceneSets;
 use comms::{global_crdt::ChannelControl, SceneRoom, Transport};
-use dcl::interface::{ComponentPosition, CrdtType};
+use dcl::interface::CrdtType;
 use dcl_component::{
-    proto_components::sdk::components::{
-        PbAudioEvent, PbAudioStream, PbVideoEvent, PbVideoPlayer, VideoState,
-    },
+    proto_components::sdk::components::{PbAudioEvent, PbVideoEvent, VideoState},
     SceneComponentId,
 };
 use ipfs::IpfsResource;
 use scene_runner::{
-    renderer_context::RendererSceneContext,
-    update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt},
+    renderer_context::RendererSceneContext, update_world::material::VideoTextureOutput,
     ContainerEntity,
 };
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -44,7 +41,9 @@ use web_sys::{
     HtmlMediaElement, HtmlVideoElement, VideoFrame,
 };
 
-use crate::{av_player_is_in_scene, av_player_should_be_playing, InScene, ShouldBePlaying};
+use crate::{
+    av_player_is_in_scene, av_player_should_be_playing, AVPlayer, InScene, ShouldBePlaying,
+};
 
 type RcClosure = Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>>;
 
@@ -76,15 +75,6 @@ impl Plugin for VideoPlayerPlugin {
             }
         }
 
-        app.add_crdt_lww_component::<PbVideoPlayer, AVPlayer>(
-            SceneComponentId::VIDEO_PLAYER,
-            ComponentPosition::EntityOnly,
-        );
-
-        app.add_crdt_lww_component::<PbAudioStream, AVPlayer>(
-            SceneComponentId::AUDIO_STREAM,
-            ComponentPosition::EntityOnly,
-        );
         app.add_systems(
             Update,
             (
@@ -121,37 +111,6 @@ pub struct FrameCopyReceiveQueue(tokio::sync::mpsc::UnboundedReceiver<FrameCopyR
 pub struct FrameCopyRequest {
     video_frame: WgpuWrapper<VideoFrame>,
     target: AssetId<Image>,
-}
-
-#[derive(Component, Debug)]
-#[component(immutable)]
-pub struct AVPlayer {
-    // note we reuse PbVideoPlayer for audio as well
-    pub source: PbVideoPlayer,
-    pub has_video: bool,
-}
-
-impl From<PbVideoPlayer> for AVPlayer {
-    fn from(value: PbVideoPlayer) -> Self {
-        Self {
-            source: value,
-            has_video: true,
-        }
-    }
-}
-
-impl From<PbAudioStream> for AVPlayer {
-    fn from(value: PbAudioStream) -> Self {
-        Self {
-            source: PbVideoPlayer {
-                src: value.url,
-                playing: value.playing,
-                volume: value.volume,
-                ..Default::default()
-            },
-            has_video: false,
-        }
-    }
 }
 
 #[derive(Component)]
