@@ -3,6 +3,7 @@ use bevy::log::{debug, error, warn};
 use common::rpc::{rmp_encode, IpcMessage, ResponseContext, ENGINE_IPC_CONTEXT};
 use dcl::{
     interface::{CrdtComponentInterfaces, CrdtStore},
+    js::SceneResponseSender,
     RendererResponse, SceneId, SceneResponse,
 };
 use interprocess::local_socket::{
@@ -19,10 +20,7 @@ use std::{
     sync::RwLock,
 };
 use system_bridge::SystemApi;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    sync::mpsc::UnboundedSender,
-};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[derive(Serialize, Deserialize)]
 pub struct NewSceneInfo {
@@ -55,7 +53,7 @@ pub enum SceneToEngine {
 }
 
 thread_local! {
-    static RENDERER_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<SceneResponse>>> = const { RefCell::new(None) };
+    static RENDERER_SENDER: RefCell<Option<SceneResponseSender>> = const { RefCell::new(None) };
     static SYSTEM_API_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>> = const { RefCell::new(None) };
 }
 
@@ -64,7 +62,7 @@ pub struct NewSceneCommand {
     info: NewSceneInfo,
     renderer_channel: tokio::sync::mpsc::Receiver<RendererResponse>,
     global_channel: tokio::sync::broadcast::Receiver<Vec<u8>>,
-    response_channel: tokio::sync::mpsc::UnboundedSender<SceneResponse>,
+    response_channel: SceneResponseSender,
     system_api_sender: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
 }
 
@@ -229,7 +227,7 @@ pub async fn renderer_ipc_in(mut stream: RecvHalf) {
             SceneToEngine::SceneResponse(scene_response) => RENDERER_SENDER.with(|sender| {
                 let mut sender = sender.borrow_mut();
                 let sender = sender.as_mut().unwrap();
-                sender.send(scene_response).unwrap();
+                sender.try_send(scene_response).unwrap();
             }),
             SceneToEngine::IpcMessage(id, ipc_message) => {
                 let IpcMessage::Closed = ipc_message else {
@@ -263,7 +261,7 @@ pub fn spawn_scene(
     scene_hash: String,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
-    renderer_sender: UnboundedSender<SceneResponse>,
+    renderer_sender: SceneResponseSender,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     id: SceneId,
     storage_root: String,

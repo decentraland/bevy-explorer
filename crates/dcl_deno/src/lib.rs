@@ -9,13 +9,14 @@ use bevy::{log::error, platform::collections::HashMap};
 use deno_core::v8::IsolateHandle;
 use once_cell::sync::Lazy;
 use system_bridge::SystemApi;
-use tokio::sync::mpsc::{Sender, UnboundedSender};
+use tokio::sync::mpsc::Sender;
 
 use ipfs::SceneJsFile;
 
 use dcl::{
     interface::{CrdtComponentInterfaces, CrdtStore},
-    RendererResponse, SceneId, SceneResponse,
+    js::SceneResponseSender,
+    RendererResponse, SceneId,
 };
 
 use crate::js::scene_thread;
@@ -34,7 +35,7 @@ pub fn spawn_scene(
     scene_hash: String,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
-    renderer_sender: UnboundedSender<SceneResponse>,
+    renderer_sender: SceneResponseSender,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     id: SceneId,
     storage_root: String,

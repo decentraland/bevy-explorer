@@ -8,10 +8,7 @@ use dcl_component::{
 };
 use ipfs::SceneJsFile;
 use system_bridge::SystemApi;
-use tokio::sync::{
-    mpsc::{Receiver, UnboundedSender},
-    Mutex,
-};
+use tokio::sync::{mpsc::Receiver, Mutex};
 
 use crate::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
@@ -35,6 +32,32 @@ pub mod fetch;
 pub mod player;
 pub mod system_api;
 pub mod testing;
+
+#[cfg(target_arch = "wasm32")]
+mod response_channel {
+    // wasm randomly freezes if we use tokio channels here. no idea why.
+    pub type SceneResponseSender = std::sync::mpsc::SyncSender<super::SceneResponse>;
+    pub type SceneResponseReceiver = std::sync::mpsc::Receiver<super::SceneResponse>;
+    pub type TryRecvError = std::sync::mpsc::TryRecvError;
+
+    pub fn scene_response_channel() -> (super::SceneResponseSender, super::SceneResponseReceiver) {
+        std::sync::mpsc::sync_channel(1000)
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+mod response_channel {
+    // we can't use std channels here because the IPC layer wants to select on multiple tokio sources
+    pub type SceneResponseSender = tokio::sync::mpsc::Sender<super::SceneResponse>;
+    pub type SceneResponseReceiver = tokio::sync::mpsc::Receiver<super::SceneResponse>;
+    pub type TryRecvError = tokio::sync::mpsc::error::TryRecvError;
+
+    pub fn scene_response_channel() -> (super::SceneResponseSender, super::SceneResponseReceiver) {
+        tokio::sync::mpsc::channel(1000)
+    }
+}
+
+pub use response_channel::*;
 
 // marker to indicate shutdown has been triggered
 pub struct ShuttingDown;
@@ -110,7 +133,7 @@ pub fn init_state(
     storage_root: String,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
-    thread_sx: UnboundedSender<SceneResponse>,
+    thread_sx: SceneResponseSender,
     thread_rx: Receiver<RendererResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     _inspect: bool,

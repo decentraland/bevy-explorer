@@ -5,7 +5,9 @@ use common::rpc::{CompareSnapshot, CompareSnapshotResult, RpcCall, RpcResultSend
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot::error::TryRecvError;
 
-use crate::{interface::crdt_context::CrdtContext, RpcCalls, SceneResponse};
+use crate::{
+    interface::crdt_context::CrdtContext, js::SceneResponseSender, RpcCalls, SceneResponse,
+};
 
 use super::State;
 
@@ -98,7 +100,7 @@ pub fn op_take_and_compare_snapshot(
     let snapshot_size = [snapshot_size.0, snapshot_size.1];
 
     let scene = state.borrow::<CrdtContext>().scene_id.0;
-    let sender = state.borrow_mut::<tokio::sync::mpsc::UnboundedSender<SceneResponse>>();
+    let sender = state.borrow_mut::<SceneResponseSender>();
 
     if method.grey_pixel_diff.is_none() {
         anyhow::bail!("unsupported comparison format");
@@ -107,7 +109,7 @@ pub fn op_take_and_compare_snapshot(
     let (sx, mut rx) = RpcResultSender::channel();
 
     sender
-        .send(SceneResponse::CompareSnapshot(CompareSnapshot {
+        .try_send(SceneResponse::CompareSnapshot(CompareSnapshot {
             scene,
             camera_position,
             camera_target,

@@ -5,8 +5,8 @@ use bevy::log::{debug, error, info_span};
 use dcl::{
     interface::{CrdtComponentInterfaces, CrdtStore},
     js::{
-        engine::crdt_send_to_renderer, init_state, CommunicatedWithRenderer, ShuttingDown,
-        SuperUserScene,
+        engine::crdt_send_to_renderer, init_state, CommunicatedWithRenderer, SceneResponseSender,
+        ShuttingDown, SuperUserScene,
     },
     RendererResponse, RpcCalls, SceneElapsedTime, SceneId, SceneResponse,
 };
@@ -19,7 +19,7 @@ use deno_core::{
 use multihash_codetable::MultihashDigest;
 use platform::project_directories;
 use system_bridge::SystemApi;
-use tokio::sync::mpsc::{Receiver, UnboundedSender};
+use tokio::sync::mpsc::Receiver;
 
 use ipfs::SceneJsFile;
 
@@ -188,7 +188,7 @@ pub(crate) fn scene_thread(
     storage_root: String,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
-    thread_sx: tokio::sync::mpsc::UnboundedSender<SceneResponse>,
+    thread_sx: SceneResponseSender,
     thread_rx: Receiver<RendererResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
     inspect: bool,
@@ -239,7 +239,7 @@ pub(crate) fn scene_thread(
     if inspector.is_some() {
         let _ = state
             .borrow_mut()
-            .borrow_mut::<UnboundedSender<SceneResponse>>()
+            .borrow_mut::<SceneResponseSender>()
             .send(SceneResponse::WaitingForInspector);
 
         runtime
@@ -264,7 +264,7 @@ pub(crate) fn scene_thread(
             error!("[scene thread {scene_id:?}] script load error: {}", e);
             let _ = state
                 .borrow_mut()
-                .take::<UnboundedSender<SceneResponse>>()
+                .take::<SceneResponseSender>()
                 .send(SceneResponse::Error(scene_id, format!("{e:?}")));
             return;
         }
@@ -293,7 +293,7 @@ pub(crate) fn scene_thread(
         error!("[{scene_id:?}] onStart err: {e:?}");
         let _ = state
             .borrow_mut()
-            .take::<UnboundedSender<SceneResponse>>()
+            .take::<SceneResponseSender>()
             .send(SceneResponse::Error(scene_id, format!("{e:?}")));
         return;
     }
@@ -348,7 +348,7 @@ pub(crate) fn scene_thread(
                 );
                 let _ = state
                     .borrow_mut()
-                    .take::<UnboundedSender<SceneResponse>>()
+                    .take::<SceneResponseSender>()
                     .send(SceneResponse::Error(scene_id, format!("{e:?}")));
                 rt.block_on(async move {
                     drop(runtime);
