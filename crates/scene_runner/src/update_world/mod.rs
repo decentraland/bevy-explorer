@@ -18,7 +18,7 @@ use dcl::{
 use dcl_component::{DclReader, FromDclReader, SceneComponentId};
 use scene_material::SceneMaterial;
 
-use crate::ContainerEntity;
+use crate::{update_world::trigger_area::TriggerAreaPlugin, ContainerEntity};
 
 use self::{
     animation::AnimatorPlugin, avatar_modifier_area::AvatarModifierAreaPlugin,
@@ -46,6 +46,7 @@ pub mod raycast;
 pub mod scene_ui;
 pub mod text_shape;
 pub mod transform_and_parent;
+pub mod trigger_area;
 pub mod visibility;
 
 #[derive(Component, Default)]
@@ -156,6 +157,7 @@ impl Plugin for SceneOutputPlugin {
         app.add_plugins(MeshDefinitionPlugin);
         app.add_plugins(MaterialDefinitionPlugin);
         app.add_plugins(MeshColliderPlugin);
+        app.add_plugins(TriggerAreaPlugin);
 
         if !app
             .world()

@@ -87,6 +87,9 @@ impl SceneComponentId {
     pub const CANVAS_INFO: SceneComponentId = SceneComponentId(1054);
     pub const UI_CANVAS: SceneComponentId = SceneComponentId(1203);
 
+    pub const TRIGGER_AREA: SceneComponentId = SceneComponentId(1060);
+    pub const TRIGGER_AREA_RESULT: SceneComponentId = SceneComponentId(1061);
+
     pub const POINTER_EVENTS: SceneComponentId = SceneComponentId(1062);
     pub const POINTER_RESULT: SceneComponentId = SceneComponentId(1063);
 

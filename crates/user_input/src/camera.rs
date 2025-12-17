@@ -309,6 +309,8 @@ pub fn update_camera_position(
                         1.0,
                         u32::MAX,
                         false,
+                        false,
+                        None,
                     ) {
                         offset_distances[ix] =
                             FloatOrd(offset_distances[ix].0.min(hit.toi).max(0.0));
