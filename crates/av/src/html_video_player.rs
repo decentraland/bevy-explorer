@@ -48,6 +48,8 @@ use web_sys::{
     HtmlMediaElement, HtmlVideoElement, VideoFrame,
 };
 
+use crate::{ShouldBePlaying, InScene, av_player_is_in_scene, av_player_should_be_playing};
+
 pub struct VideoPlayerPlugin;
 
 const VIDEO_CONTAINER_ID: &str = "video-player-container";
@@ -89,10 +91,8 @@ impl Plugin for VideoPlayerPlugin {
             Update,
             (
                 try_subscription.run_if(on_timer(Duration::from_secs(5))),
-                rebuild_html_media_entities,
-                av_player_is_in_scene,
-                av_player_should_be_playing,
-                update_av_players,
+                rebuild_html_media_entities.before(av_player_is_in_scene),
+                update_av_players.after(av_player_should_be_playing),
             )
                 .chain()
                 .in_set(SceneSets::PostLoop),
@@ -124,14 +124,6 @@ pub struct FrameCopyRequest {
     video_frame: WgpuWrapper<VideoFrame>,
     target: AssetId<Image>,
 }
-
-/// Marks whether an [`AVPlayer`] should be playing
-#[derive(Debug, Component)]
-struct ShouldBePlaying;
-
-/// Marks whether an [`AVPlayer`] is in the same scene as the [`PrimaryUser`]
-#[derive(Debug, Component)]
-struct InScene;
 
 #[derive(Component, Debug)]
 #[component(immutable)]
@@ -640,74 +632,6 @@ fn rebuild_html_media_entities(
 
             commands.entity(ent).try_insert(audio);
         }
-    }
-}
-
-fn av_player_is_in_scene(
-    mut commands: Commands,
-    av_players: Query<(Entity, &ContainerEntity, &AVPlayer)>,
-    user: Query<&GlobalTransform, With<PrimaryUser>>,
-    containing_scene: ContainingScene,
-) {
-    // disable distant av
-    let Ok(user) = user.single() else {
-        return;
-    };
-    let containing_scenes = containing_scene.get_position(user.translation());
-
-    for (ent, container, _) in av_players
-        .iter()
-        .filter(|(_, _, player)| player.source.playing.unwrap_or(true))
-    {
-        if containing_scenes.contains(&container.root) {
-            commands.entity(ent).try_insert(InScene);
-        } else {
-            commands.entity(ent).try_remove::<InScene>();
-        }
-    }
-}
-
-fn av_player_should_be_playing(
-    mut commands: Commands,
-    av_players: Query<(Entity, &AVPlayer, Has<InScene>, &GlobalTransform)>,
-    user: Query<&GlobalTransform, With<PrimaryUser>>,
-    config: Res<AppConfig>,
-) {
-    // disable distant av
-    let Ok(user) = user.single() else {
-        return;
-    };
-
-    let mut sorted_players = av_players
-        .iter()
-        .filter_map(|(ent, player, in_scene, transform)| {
-            if player.source.playing.unwrap_or(true) {
-                let distance = transform.translation().distance(user.translation());
-                Some((in_scene, distance, ent))
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-
-    // prioritise av in current scene (false < true), then by distance
-    sorted_players.sort_by_key(|(in_scene, distance, _)| (!in_scene, FloatOrd(*distance)));
-
-    // Removing first for better Trigger ordering
-    for ent in sorted_players
-        .iter()
-        .skip(config.max_videos)
-        .map(|(_, _, ent)| *ent)
-    {
-        commands.entity(ent).try_remove::<ShouldBePlaying>();
-    }
-
-    for ent in sorted_players
-        .iter()
-        .take(config.max_videos)
-        .map(|(_, _, ent)| *ent)
-    {
-        commands.entity(ent).try_insert(ShouldBePlaying);
     }
 }
 
