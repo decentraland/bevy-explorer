@@ -11,7 +11,6 @@ use std::{
 use bevy::{
     color::palettes::basic,
     diagnostic::FrameCount,
-    math::FloatOrd,
     platform::collections::HashMap,
     prelude::*,
     render::{
@@ -23,10 +22,7 @@ use bevy::{
     },
     time::common_conditions::on_timer,
 };
-use common::{
-    sets::SceneSets,
-    structs::{AppConfig, PrimaryUser},
-};
+use common::sets::SceneSets;
 use comms::{global_crdt::ChannelControl, SceneRoom, Transport};
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
@@ -39,7 +35,7 @@ use ipfs::IpfsResource;
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt},
-    ContainerEntity, ContainingScene,
+    ContainerEntity,
 };
 use wasm_bindgen::prelude::wasm_bindgen;
 use web_sys::{
@@ -48,7 +44,7 @@ use web_sys::{
     HtmlMediaElement, HtmlVideoElement, VideoFrame,
 };
 
-use crate::{ShouldBePlaying, InScene, av_player_is_in_scene, av_player_should_be_playing};
+use crate::{av_player_is_in_scene, av_player_should_be_playing, InScene, ShouldBePlaying};
 
 pub struct VideoPlayerPlugin;
 
