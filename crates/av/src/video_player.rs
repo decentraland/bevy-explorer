@@ -24,7 +24,7 @@ use scene_runner::{
 #[cfg(feature = "livekit")]
 use crate::video_stream::streamer_sinks;
 use crate::{
-    audio_sink::AudioSink,
+    audio_sink::{AudioSink, ChangeAudioSinkVolume},
     av_player_is_in_scene,
     stream_processor::AVCommand,
     video_context::{VideoData, VideoInfo},
@@ -59,7 +59,7 @@ fn init_ffmpeg() {
 fn av_player_on_insert(
     trigger: Trigger<OnInsert, AVPlayer>,
     mut commands: Commands,
-    mut av_players: Query<(&AVPlayer, Option<&mut AudioSink>, Option<&mut VideoSink>)>,
+    mut av_players: Query<(&AVPlayer, Option<&AudioSink>, Option<&VideoSink>)>,
 ) {
     let entity = trigger.target();
     let Ok((av_player, maybe_audio_sink, maybe_video_sink)) = av_players.get_mut(entity) else {
@@ -88,8 +88,13 @@ fn av_player_on_insert(
                 let _ = video_sink.command_sender.try_send(AVCommand::Pause);
             }
         }
-        if let Some(mut audio_sink) = maybe_audio_sink {
-            audio_sink.volume = av_player.source.volume.unwrap_or(1.0);
+        if let Some(audio_sink) = maybe_audio_sink {
+            commands.trigger_targets(
+                ChangeAudioSinkVolume {
+                    volume: av_player.source.volume.unwrap_or(1.),
+                },
+                entity,
+            );
 
             if av_player.source.playing.unwrap_or(true) {
                 debug!("scene requesting start of audio for {entity}");

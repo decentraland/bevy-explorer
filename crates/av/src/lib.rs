@@ -118,6 +118,9 @@ impl Plugin for AVPlayerPlugin {
             (spawn_audio_streams, spawn_and_locate_foreign_streams).chain(),
         );
         app.add_systems(Update, (av_player_is_in_scene, av_player_should_be_playing));
+
+        #[cfg(feature = "ffmpeg")]
+        app.add_observer(audio_sink::change_audio_sink_volume);
     }
 }
 

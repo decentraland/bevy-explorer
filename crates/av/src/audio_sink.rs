@@ -50,6 +50,11 @@ impl Drop for AudioSpawned {
     }
 }
 
+#[derive(Event)]
+pub struct ChangeAudioSinkVolume {
+    pub volume: f32,
+}
+
 // TODO integrate better with bevy_kira_audio to avoid logic on a main-thread system (NonSendMut forces this system to the main thread)
 pub fn spawn_audio_streams(
     mut commands: Commands,
@@ -161,6 +166,50 @@ pub fn spawn_and_locate_foreign_streams(
 
             handle.set_volume(volume as f64, Tween::default());
             handle.set_panning(panning as f64, Tween::default());
+        }
+    }
+}
+
+pub fn change_audio_sink_volume(
+    trigger: Trigger<ChangeAudioSinkVolume>,
+    mut commands: Commands,
+    mut audio_sinks: Query<(Mut<AudioSink>, Option<&mut AudioSpawned>, &SceneEntity)>,
+    containing_scene: ContainingScene,
+    player: Query<Entity, With<PrimaryUser>>,
+) {
+    let entity = trigger.target();
+    if entity == Entity::PLACEHOLDER {
+        error!("ChangeAudioSinkVolume is an entity event. Trigger it with `Commands::trigger_targets`.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    }
+    let ChangeAudioSinkVolume { volume } = trigger.event();
+
+    let Ok((mut audio_sink, maybe_audio_spawned, scene_entity)) = audio_sinks.get_mut(entity)
+    else {
+        error!("{entity} is not an AudioSink.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    let containing_scenes = player
+        .single()
+        .ok()
+        .map(|player| containing_scene.get(player))
+        .unwrap_or_default();
+
+    // AudioSink is causing problems with change detection
+    // so we bypass it here
+    let audio_sink = audio_sink.bypass_change_detection();
+    audio_sink.volume = *volume;
+
+    if let Some(mut audio_spawned) = maybe_audio_spawned {
+        if let Some(handle) = audio_spawned.0.as_mut() {
+            if containing_scenes.contains(&scene_entity.root) {
+                handle.set_volume(*volume as f64, Tween::default());
+            } else {
+                handle.set_volume(0.0, Tween::default());
+            }
         }
     }
 }
