@@ -60,9 +60,9 @@ pub struct ShouldBePlaying;
 pub struct InScene;
 
 #[derive(Default)]
-pub struct AudioPlugin;
+pub struct AVPlayerPlugin;
 
-impl Plugin for AudioPlugin {
+impl Plugin for AVPlayerPlugin {
     fn build(&self, app: &mut App) {
         #[cfg(any(feature = "ffmpeg", feature = "html"))]
         app.add_plugins(VideoPlayerPlugin);
