@@ -5,16 +5,12 @@ use bevy::log::{debug, info, warn};
 use bevy::log::{info_span, tracing::span::EnteredSpan};
 
 use std::{cell::RefCell, rc::Rc, sync::Arc};
-use tokio::sync::{
-    broadcast::error::TryRecvError,
-    mpsc::{Receiver, UnboundedSender},
-    Mutex,
-};
+use tokio::sync::{broadcast::error::TryRecvError, Mutex};
 
 use crate::{
     crdt::{append_component, put_component},
     interface::crdt_context::CrdtContext,
-    js::{CommunicatedWithRenderer, RendererStore, ShuttingDown},
+    js::{CommunicatedWithRenderer, RendererStore, SceneResponseSender, ShuttingDown},
     CrdtComponentInterfaces, CrdtStore, RendererResponse, RpcCalls, SceneElapsedTime,
     SceneLogMessage, SceneResponse,
 };
@@ -42,9 +38,9 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
 
     let rpc_calls = std::mem::take(op_state.borrow_mut::<RpcCalls>());
 
-    let sender = op_state.borrow_mut::<UnboundedSender<SceneResponse>>();
+    let sender = op_state.borrow_mut::<SceneResponseSender>();
     sender
-        .send(SceneResponse::Ok(
+        .try_send(SceneResponse::Ok(
             entity_map.scene_id,
             census,
             updates,
@@ -69,7 +65,7 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
     debug!("op_crdt_recv_from_renderer");
     let receiver = op_state
         .borrow_mut()
-        .borrow_mut::<Arc<Mutex<Receiver<RendererResponse>>>>()
+        .borrow_mut::<Arc<Mutex<tokio::sync::mpsc::Receiver<RendererResponse>>>>()
         .clone();
     let response = receiver.lock().await.recv().await;
 

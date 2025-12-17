@@ -447,7 +447,7 @@ pub(crate) fn load_scene_javascript(
             initial_crdt.clean_up(&census.died);
             let updates = initial_crdt.clone().take_updates();
 
-            if let Err(e) = scene_updates.sender.send(SceneResponse::Ok(
+            if let Err(e) = scene_updates.sender.try_send(SceneResponse::Ok(
                 context.scene_id,
                 census,
                 updates,
