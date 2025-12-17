@@ -240,7 +240,7 @@ pub(crate) fn scene_thread(
         let _ = state
             .borrow_mut()
             .borrow_mut::<SceneResponseSender>()
-            .send(SceneResponse::WaitingForInspector);
+            .try_send(SceneResponse::WaitingForInspector);
 
         runtime
             .inspector()
@@ -265,7 +265,7 @@ pub(crate) fn scene_thread(
             let _ = state
                 .borrow_mut()
                 .take::<SceneResponseSender>()
-                .send(SceneResponse::Error(scene_id, format!("{e:?}")));
+                .try_send(SceneResponse::Error(scene_id, format!("{e:?}")));
             return;
         }
         Ok(script) => script,
@@ -294,7 +294,7 @@ pub(crate) fn scene_thread(
         let _ = state
             .borrow_mut()
             .take::<SceneResponseSender>()
-            .send(SceneResponse::Error(scene_id, format!("{e:?}")));
+            .try_send(SceneResponse::Error(scene_id, format!("{e:?}")));
         return;
     }
 
@@ -349,7 +349,7 @@ pub(crate) fn scene_thread(
                 let _ = state
                     .borrow_mut()
                     .take::<SceneResponseSender>()
-                    .send(SceneResponse::Error(scene_id, format!("{e:?}")));
+                    .try_send(SceneResponse::Error(scene_id, format!("{e:?}")));
                 rt.block_on(async move {
                     drop(runtime);
                 });
