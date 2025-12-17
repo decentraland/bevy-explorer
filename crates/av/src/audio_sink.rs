@@ -91,7 +91,7 @@ pub fn spawn_audio_streams(
                     commands.entity(ent).try_insert(AudioSpawned(None));
                 }
                 Err(TryRecvError::Empty) => {
-                    debug!("{ent:?} waiting for sound data");
+                    trace!("{ent:?} waiting for sound data");
                     commands.entity(ent).remove::<AudioSpawned>();
                 }
             }

@@ -57,7 +57,6 @@ fn av_player_on_insert(
     mut commands: Commands,
     mut av_players: Query<(&AVPlayer, Option<&mut AudioSink>, Option<&mut VideoSink>)>,
 ) {
-    info!("AVPlayer updated.");
     let entity = trigger.target();
     let Ok((av_player, maybe_audio_sink, maybe_video_sink)) = av_players.get_mut(entity) else {
         return;
@@ -71,7 +70,7 @@ fn av_player_on_insert(
             .filter(|video_sink| av_player.source.src == video_sink.source)
             .is_some()
     {
-        debug!("Updating sinks {}.", av_player.source.src);
+        debug!("Updating sinks of {entity}.");
         if let Some(video_sink) = maybe_video_sink {
             if video_sink
                 .command_sender
@@ -86,12 +85,7 @@ fn av_player_on_insert(
             audio_sink.volume = av_player.source.volume.unwrap_or(1.0);
         }
     } else {
-        if let Some(video_sink) = maybe_video_sink {
-            debug!(
-                "Removing sinks {} due to diverging source.",
-                video_sink.source
-            );
-        }
+        debug!("Removing sinks of {entity} due to diverging source.");
         commands
             .entity(trigger.target())
             .try_remove::<(AudioSink, VideoSink)>();
@@ -152,7 +146,7 @@ fn play_videos(
         }
 
         if let Some(frame) = last_frame_received {
-            debug!("set frame on {:?}", sink.image);
+            trace!("set frame on {:?}", sink.image);
             images
                 .get_mut(&sink.image)
                 .unwrap()
@@ -172,7 +166,7 @@ fn play_videos(
 
         if let Some(state) = new_state {
             if let Ok(mut context) = scenes.get_mut(container.root) {
-                debug!("send current time = {}", sink.current_time);
+                trace!("send current time = {}", sink.current_time);
                 let event = PbVideoEvent {
                     timestamp: frame.0,
                     tick_number: context.tick_number,
