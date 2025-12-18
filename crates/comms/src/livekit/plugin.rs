@@ -12,7 +12,7 @@ use crate::{
     global_crdt::PlayerUpdate,
     livekit::{
         mic::MicPlugin, participant::plugin::LivekitParticipantPlugin,
-        room::plugin::LivekitRoomPlugin, track::LivekitTrackPlugin, LivekitChannelControl,
+        room::plugin::LivekitRoomPlugin, track::plugin::LivekitTrackPlugin, LivekitChannelControl,
         LivekitNetworkMessage, LivekitRuntime, LivekitTransport, StartLivekit,
     },
     profile::CurrentUserProfile,
