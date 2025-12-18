@@ -117,11 +117,10 @@ fn update_mic(
 
 #[cfg(target_arch = "wasm32")]
 fn update_mic(
-    mic_state: Res<MicState>,
+    mut mic_state: ResMut<MicState>,
     mut last_enabled: Local<Option<bool>>,
     mut last_available: Local<Option<bool>>,
 ) {
-    let mut mic_state = mic_state.inner.blocking_write();
     // Check if microphone is available in the browser
     let current_available = is_microphone_available().unwrap_or(false);
 
