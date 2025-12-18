@@ -453,9 +453,6 @@ fn init_cache(
     }
 }
 
-#[derive(Component)]
-pub struct CheckThis;
-
 #[allow(clippy::type_complexity)]
 fn update_materials(
     mut commands: Commands,
@@ -466,7 +463,6 @@ fn update_materials(
             &ContainerEntity,
             Option<&SceneEntity>,
             Option<&BaseMaterial>,
-            Option<&CheckThis>,
         ),
         Or<(
             Changed<PbMaterialComponent>,
@@ -488,10 +484,7 @@ fn update_materials(
 ) {
     gltf_resolver.begin_frame();
 
-    for (ent, mat, container, maybe_scene_ent, base, check) in new_materials.iter_mut() {
-        if check.is_some() {
-            error!("ok adding material");
-        }
+    for (ent, mat, container, maybe_scene_ent, base) in new_materials.iter_mut() {
         let Ok((mut scene, mut cache)) = scenes.get_mut(container.root) else {
             continue;
         };

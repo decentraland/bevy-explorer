@@ -35,9 +35,7 @@ use crate::{
     renderer_context::RendererSceneContext,
     update_world::{
         lights::LightSource,
-        material::{
-            dcl_material_from_standard_material, BaseMaterial, CheckThis, PbMaterialComponent,
-        },
+        material::{dcl_material_from_standard_material, BaseMaterial, PbMaterialComponent},
         mesh_collider::{ColliderType, CtCollider},
         trigger_area::CtTrigger,
     },
@@ -1225,7 +1223,7 @@ fn debug_modifiers(
                     }
                     commands
                         .entity(*child)
-                        .try_insert((PbMaterialComponent(material.clone()), CheckThis));
+                        .try_insert(PbMaterialComponent(material.clone()));
                 }
             } else {
                 commands
@@ -1237,7 +1235,7 @@ fn debug_modifiers(
             }
         }
 
-        error!("applying (found = {found}): {modifiers:?}");
+        debug!("applying GltfNodeModifiers (found a path match = {found}): {modifiers:?}");
     }
 
     for removed in removed_components.read() {
