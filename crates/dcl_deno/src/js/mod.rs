@@ -412,7 +412,9 @@ async fn run_script(
     if result.is_err() {
         debug!("rerunning event loop");
         for _ in 0..100 {
-            let x = runtime.run_event_loop(PollEventLoopOptions::default()).await;
+            let x = runtime
+                .run_event_loop(PollEventLoopOptions::default())
+                .await;
             if x.is_err() {
                 error!("repeat error: {x:?}");
             } else {
