@@ -11,7 +11,7 @@ use bevy::{
     animation::AnimationTarget,
     asset::LoadState,
     gltf::{Gltf, GltfExtras, GltfLoaderSettings},
-    pbr::ExtendedMaterial,
+    pbr::{ExtendedMaterial, NotShadowCaster},
     platform::collections::HashMap,
     prelude::*,
     render::{
@@ -31,15 +31,12 @@ use rapier3d::prelude::*;
 use serde::Deserialize;
 
 use crate::{
-    initialize_scene::SceneEntityDefinitionHandle,
-    renderer_context::RendererSceneContext,
-    update_world::{
+    ContainerEntity, ContainingScene, OutOfWorld, SceneEntity, SceneSets, initialize_scene::SceneEntityDefinitionHandle, renderer_context::RendererSceneContext, update_world::{
         lights::LightSource,
-        material::{dcl_material_from_standard_material, BaseMaterial},
+        material::{BaseMaterial, CheckThis, PbMaterialComponent, dcl_material_from_standard_material},
         mesh_collider::{ColliderType, CtCollider},
         trigger_area::CtTrigger,
-    },
-    ContainerEntity, ContainingScene, OutOfWorld, SceneEntity, SceneSets,
+    }
 };
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
@@ -47,7 +44,8 @@ use dcl_component::{
         sdk::components::{
             common::LoadingState, pb_light_source, pb_material, pb_mesh_collider, pb_mesh_renderer,
             ColliderLayer, GltfNodeStateValue, PbGltfContainer, PbGltfContainerLoadingState,
-            PbGltfNode, PbGltfNodeState, PbLightSource, PbMaterial, PbMeshCollider, PbMeshRenderer,
+            PbGltfNode, PbGltfNodeModifiers, PbGltfNodeState, PbLightSource, PbMaterial,
+            PbMeshCollider, PbMeshRenderer,
         },
         Color3BevyToDcl,
     },
@@ -91,6 +89,11 @@ impl Plugin for GltfDefinitionPlugin {
             ComponentPosition::EntityOnly,
         );
 
+        app.add_crdt_lww_component::<PbGltfNodeModifiers, GltfNodeModifiers>(
+            SceneComponentId::GLTF_NODE_MODIFIERS,
+            ComponentPosition::EntityOnly,
+        );
+
         app.add_systems(Update, update_gltf.in_set(SceneSets::PostLoop));
         app.add_systems(SpawnScene, update_ready_gltfs.after(scene_spawner_system));
         app.add_systems(Update, check_gltfs_ready.in_set(SceneSets::PostInit));
@@ -107,6 +110,7 @@ impl Plugin for GltfDefinitionPlugin {
                 .after(anim_last_system!())
                 .before(TransformSystem::TransformPropagate),
         );
+        app.add_systems(Update, debug_modifiers);
     }
 }
 
@@ -1141,6 +1145,110 @@ pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> SharedShape {
         .collect();
 
     SharedShape::trimesh_with_flags(positions_parry, indices_parry, TriMeshFlags::empty()).unwrap()
+}
+
+#[derive(Component, Debug)]
+pub struct GltfNodeModifiers(PbGltfNodeModifiers);
+
+#[derive(Component)]
+pub struct RetryNodeModifiers;
+
+impl From<PbGltfNodeModifiers> for GltfNodeModifiers {
+    fn from(value: PbGltfNodeModifiers) -> Self {
+        Self(value)
+    }
+}
+
+fn debug_modifiers(
+    mut commands: Commands,
+    q: Query<
+        (&GltfNodeModifiers, &GltfProcessed),
+        Or<(Changed<GltfNodeModifiers>, Changed<GltfProcessed>)>,
+    >,
+    child_nodes: Query<
+        (
+            Option<&MeshMaterial3d<SceneMaterial>>,
+            Option<&HiddenMaterial>,
+        ),
+        With<Mesh3d>,
+    >,
+    removed_q: Query<&GltfProcessed>,
+    mut removed_components: RemovedComponents<GltfNodeModifiers>,
+) {
+    for (modifiers, processed) in q {
+        let modifiers = modifiers
+            .0
+            .modifiers
+            .iter()
+            .map(|modifier| {
+                let path = if modifier.path.is_empty() {
+                    None
+                } else {
+                    Some(modifier.path.as_str())
+                };
+
+                (
+                    path,
+                    (modifier.cast_shadows.unwrap_or(true), &modifier.material),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        let mut found = false;
+
+        for (path, child) in processed.named_nodes.iter() {
+            let Ok((existing_material, _)) = child_nodes.get(*child) else {
+                continue;
+            };
+
+            found = true;
+
+            let maybe_path_modifiers = modifiers
+                .get(&Some(path.as_str()))
+                .or_else(|| modifiers.get(&None));
+
+            if let Some((shadows, maybe_material)) = maybe_path_modifiers {
+                if !shadows {
+                    commands.entity(*child).try_insert(NotShadowCaster);
+                }
+
+                if let Some(material) = maybe_material {
+                    if let Some(existing) = existing_material {
+                        commands
+                            .entity(*child)
+                            .try_insert(HiddenMaterial(existing.clone()));
+                    }
+                    commands
+                        .entity(*child)
+                        .try_insert((PbMaterialComponent(material.clone()), CheckThis));
+                }
+            } else {
+                commands
+                    .entity(*child)
+                    .try_remove::<(NotShadowCaster, HiddenMaterial, PbMaterialComponent)>();
+                if let Ok((_, Some(prev_material))) = child_nodes.get(*child) {
+                    commands.entity(*child).try_insert(prev_material.0.clone());
+                }
+            }
+        }
+
+        error!("applying (found = {found}): {modifiers:?}");
+    }
+
+    for removed in removed_components.read() {
+        let Ok(processed) = removed_q.get(removed) else {
+            continue;
+        };
+
+        for (_, child) in processed.named_nodes.iter() {
+            commands
+                .entity(*child)
+                .try_remove::<(NotShadowCaster, HiddenMaterial, PbMaterialComponent)>();
+            if let Ok((_, Some(prev_material))) = child_nodes.get(*child) {
+                commands.entity(*child).try_insert(prev_material.0.clone());
+            }
+        }
+    }
 }
 
 #[derive(Component)]
