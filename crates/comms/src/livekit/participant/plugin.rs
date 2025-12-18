@@ -248,7 +248,7 @@ fn participant_metadata_changed(
             participant.sid(),
             participant.identity()
         );
-        if let Some(address) = participant.identity().0.as_str().as_h160() {
+        if let Some(address) = participant.identity().as_str().as_h160() {
             let room = *room;
             let sender = global_crdt_state.get_sender();
             let task = runtime.spawn(async move {
