@@ -1,12 +1,8 @@
 use bevy::prelude::*;
 use common::structs::MicState;
-#[cfg(target_arch = "wasm32")]
-use {
-    bevy::render::view::RenderLayers,
-    common::{structs::AudioSettings, util::VolumePanning},
-};
 #[cfg(all(not(target_arch = "wasm32"), feature = "livekit"))]
 use {
+    bevy::ecs::relationship::Relationship,
     cpal::traits::{DeviceTrait, HostTrait, StreamTrait},
     livekit::{
         id::TrackSid,
@@ -20,12 +16,17 @@ use {
     },
     tokio::{sync::broadcast, task::JoinHandle},
 };
+#[cfg(target_arch = "wasm32")]
+use {
+    bevy::render::view::RenderLayers,
+    common::{structs::AudioSettings, util::VolumePanning},
+};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::global_crdt::{LocalAudioFrame, LocalAudioSource};
 #[cfg(all(not(target_arch = "wasm32"), feature = "livekit"))]
 use crate::livekit::{
-    participant::{LivekitParticipant, Local as LivekitLocalParticipant},
+    participant::{HostedBy, LivekitParticipant, Local as LivekitLocalParticipant},
     room::LivekitRoom,
     LivekitRuntime,
 };
@@ -148,13 +149,13 @@ fn create_mic_thread(
     mut commands: Commands,
     rooms: Query<(&LivekitRoom, &LivekitRuntime)>,
     participants: Populated<
-        (Entity, &LivekitParticipant),
+        (Entity, &LivekitParticipant, &HostedBy),
         (With<LivekitLocalParticipant>, Without<MicWorker>),
     >,
     local_audio_source: Res<LocalAudioSource>,
 ) {
-    for (entity, participant) in participants.into_inner() {
-        let Ok((room, runtime)) = rooms.get(entity) else {
+    for (entity, participant, hosted_by) in participants.into_inner() {
+        let Ok((room, runtime)) = rooms.get(hosted_by.get()) else {
             error!("Room {entity} does not have a runtime.");
             commands.send_event(AppExit::from_code(1));
             return;
