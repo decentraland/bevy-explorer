@@ -341,7 +341,7 @@ fn subscribe_to_video_track(
     let (mut snatcher_sender, _) = mpsc::channel(1);
     std::mem::swap(&mut snatcher_sender, sender);
 
-    debug!("Subscribing to audio track {}", track.sid());
+    debug!("Subscribing to video track {}", track.sid());
     let task = runtime.spawn(async move {
         track.set_subscribed(true);
     });
