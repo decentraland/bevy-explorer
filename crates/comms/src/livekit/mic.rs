@@ -1,15 +1,34 @@
 use bevy::prelude::*;
 use common::structs::MicState;
-#[cfg(not(target_arch = "wasm32"))]
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 #[cfg(target_arch = "wasm32")]
 use {
     bevy::render::view::RenderLayers,
     common::{structs::AudioSettings, util::VolumePanning},
 };
+#[cfg(all(not(target_arch = "wasm32"), feature = "livekit"))]
+use {
+    cpal::traits::{DeviceTrait, HostTrait, StreamTrait},
+    livekit::{
+        id::TrackSid,
+        options::TrackPublishOptions,
+        participant::LocalParticipant,
+        track::{LocalAudioTrack, LocalTrack, TrackSource},
+        webrtc::{
+            audio_source::native::NativeAudioSource,
+            prelude::{AudioFrame, AudioSourceOptions, RtcAudioSource},
+        },
+    },
+    tokio::{sync::broadcast, task::JoinHandle},
+};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::global_crdt::{LocalAudioFrame, LocalAudioSource};
+#[cfg(all(not(target_arch = "wasm32"), feature = "livekit"))]
+use crate::livekit::{
+    participant::{LivekitParticipant, Local as LivekitLocalParticipant},
+    room::LivekitRoom,
+    LivekitRuntime,
+};
 #[cfg(target_arch = "wasm32")]
 use crate::{
     global_crdt::{ForeignAudioSource, ForeignPlayer},
@@ -27,9 +46,17 @@ impl Plugin for MicPlugin {
         app.init_resource::<MicState>();
 
         app.add_systems(Update, update_mic);
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_systems(Update, (create_mic_thread, verify_health_of_mic_worker));
         #[cfg(target_arch = "wasm32")]
         app.add_systems(Update, locate_foreign_streams);
     }
+}
+
+#[derive(Component)]
+struct MicWorker {
+    #[cfg(not(target_arch = "wasm32"))]
+    task: JoinHandle<()>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -113,6 +140,134 @@ fn update_mic(
     stream.0 = None;
     "no device".clone_into(&mut last_name);
     mic_state.available = false;
+}
+
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
+#[cfg(all(not(target_arch = "wasm32"), feature = "livekit"))]
+fn create_mic_thread(
+    mut commands: Commands,
+    rooms: Query<(&LivekitRoom, &LivekitRuntime)>,
+    participants: Populated<
+        (Entity, &LivekitParticipant),
+        (With<LivekitLocalParticipant>, Without<MicWorker>),
+    >,
+    local_audio_source: Res<LocalAudioSource>,
+) {
+    for (entity, participant) in participants.into_inner() {
+        let Ok((room, runtime)) = rooms.get(entity) else {
+            error!("Room {entity} does not have a runtime.");
+            commands.send_event(AppExit::from_code(1));
+            return;
+        };
+
+        let local_participant = room.room.local_participant();
+        debug_assert_eq!(participant.sid(), local_participant.sid());
+
+        debug!(
+            "Starting mic thread for {} ({}) in room {}.",
+            participant.sid(),
+            participant.identity(),
+            room.room.name()
+        );
+        let task = runtime.spawn(mic_thread(
+            local_participant,
+            local_audio_source.subscribe(),
+        ));
+        commands.entity(entity).insert(MicWorker { task });
+    }
+}
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "livekit"))]
+fn verify_health_of_mic_worker(
+    mut commands: Commands,
+    participants: Populated<(Entity, &LivekitParticipant, &mut MicWorker)>,
+) {
+    for (entity, participant, mic_worker) in participants.into_inner() {
+        if mic_worker.task.is_finished() {
+            warn!(
+                "Mic worker of {} ({}) has exited.",
+                participant.sid(),
+                participant.identity()
+            );
+            commands.entity(entity).try_remove::<MicWorker>();
+        }
+    }
+}
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "livekit"))]
+async fn mic_thread(
+    local_participant: LocalParticipant,
+    mut mic: broadcast::Receiver<LocalAudioFrame>,
+) {
+    let mut native_source: Option<NativeAudioSource> = None;
+    let mut mic_sid: Option<TrackSid> = None;
+
+    while let Ok(frame) = mic.recv().await {
+        let data = frame
+            .data
+            .iter()
+            .map(|f| (f * i16::MAX as f32) as i16)
+            .collect();
+        if native_source.as_ref().is_none_or(|ns| {
+            ns.sample_rate() != frame.sample_rate || ns.num_channels() != frame.num_channels
+        }) {
+            // update track
+
+            if let Some(sid) = mic_sid.take() {
+                if let Err(e) = local_participant.unpublish_track(&sid).await {
+                    warn!("error unpublishing previous mic track: {e}");
+                }
+                debug!("unpub mic");
+            }
+
+            if frame.num_channels == 0 {
+                native_source = None;
+                continue;
+            }
+
+            let new_source = native_source.insert(NativeAudioSource::new(
+                AudioSourceOptions {
+                    echo_cancellation: true,
+                    noise_suppression: true,
+                    auto_gain_control: true,
+                },
+                frame.sample_rate,
+                frame.num_channels,
+                None,
+            ));
+            let mic_track = LocalTrack::Audio(LocalAudioTrack::create_audio_track(
+                "mic",
+                RtcAudioSource::Native(new_source.clone()),
+            ));
+            mic_sid = Some(
+                local_participant
+                    .publish_track(
+                        mic_track,
+                        TrackPublishOptions {
+                            source: TrackSource::Microphone,
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .unwrap()
+                    .sid(),
+            );
+            debug!("set sid");
+        }
+        if let Err(e) = native_source
+            .as_mut()
+            .unwrap()
+            .capture_frame(&AudioFrame {
+                data,
+                sample_rate: frame.sample_rate,
+                num_channels: frame.num_channels,
+                samples_per_channel: frame.data.len() as u32 / frame.num_channels,
+            })
+            .await
+        {
+            warn!("failed to capture from mic: {e}");
+        };
+    }
 }
 
 #[cfg(target_arch = "wasm32")]

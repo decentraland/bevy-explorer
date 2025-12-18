@@ -4,8 +4,6 @@ use dcl_component::proto_components::kernel::comms::rfc4;
 use livekit::RoomError;
 use tokio::{runtime::Builder, sync::mpsc, task::JoinHandle};
 
-#[cfg(not(target_arch = "wasm32"))]
-use crate::livekit::native::connect_livekit;
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::connect_livekit;
 use crate::{
@@ -34,6 +32,7 @@ impl Plugin for LivekitPlugin {
         app.add_systems(
             Update,
             (
+                #[cfg(target_arch = "wasm32")]
                 connect_livekit,
                 start_livekit,
                 verify_player_update_tasks,
