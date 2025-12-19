@@ -217,7 +217,7 @@ jobs:
         run: sudo apt install -y --no-install-recommends clang curl
       - name: Build WASM package
         run: |
-          wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="wasm livekit"
+          wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="livekit"
           rm -f ./deploy/web/pkg/.gitignore
       - name: Install
         run: npm i
