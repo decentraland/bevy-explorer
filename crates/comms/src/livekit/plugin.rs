@@ -1,11 +1,12 @@
 use bevy::platform::sync::Arc;
 use bevy::prelude::*;
 use dcl_component::proto_components::kernel::comms::rfc4;
+#[cfg(not(target_arch = "wasm32"))]
 use livekit::RoomError;
 use tokio::{runtime::Builder, sync::mpsc, task::JoinHandle};
 
 #[cfg(target_arch = "wasm32")]
-use crate::livekit::web::connect_livekit;
+use crate::livekit::web::{connect_livekit, RoomError};
 use crate::{
     global_crdt::PlayerUpdate,
     livekit::{

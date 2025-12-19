@@ -5,14 +5,17 @@ use bevy::{
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 use common::util::AsH160;
+#[cfg(not(target_arch = "wasm32"))]
 use livekit::track::{RemoteTrack, TrackKind, TrackSource};
 use tokio::sync::{mpsc, oneshot};
 
+#[cfg(target_arch = "wasm32")]
+use crate::livekit::web::{RemoteTrack, TrackKind, TrackSource};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::livekit::{kira_bridge::kira_thread, livekit_video_bridge::livekit_video_thread};
 use crate::{
     global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
     livekit::{
-        kira_bridge::kira_thread,
-        livekit_video_bridge::livekit_video_thread,
         participant::{HostedBy, LivekitParticipant},
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
@@ -288,7 +291,11 @@ fn subscribe_to_audio_track(
     tracks: Query<&LivekitTrack, With<Audio>>,
 ) {
     let entity = trigger.target();
-    let SubscribeToAudioTrack { runtime, sender } = trigger.event_mut();
+    let SubscribeToAudioTrack {
+        runtime,
+        #[cfg(not(target_arch = "wasm32"))]
+        sender,
+    } = trigger.event_mut();
 
     if entity == Entity::PLACEHOLDER {
         error!(
@@ -301,21 +308,25 @@ fn subscribe_to_audio_track(
         return;
     };
 
-    let track = track.clone();
-    let (mut snatcher_sender, _) = oneshot::channel();
-    std::mem::swap(&mut snatcher_sender, sender);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let track = track.clone();
+        let (mut snatcher_sender, _) = oneshot::channel();
+        std::mem::swap(&mut snatcher_sender, sender);
 
-    debug!("Subscribing to audio track {}", track.sid());
-    let task = runtime.spawn(async move {
-        track.set_subscribed(true);
-    });
-    commands.entity(entity).insert((
-        Subscribing { task },
-        OpenAudioSender {
-            runtime: runtime.clone(),
-            sender: snatcher_sender,
-        },
-    ));
+        debug!("Subscribing to audio track {}", track.sid());
+        let task = runtime.spawn(async move {
+            track.set_subscribed(true);
+        });
+        commands.entity(entity).insert((
+            Subscribing { task },
+            OpenAudioSender {
+                runtime: runtime.clone(),
+                #[cfg(not(target_arch = "wasm32"))]
+                sender: snatcher_sender,
+            },
+        ));
+    }
 }
 
 fn subscribe_to_video_track(
@@ -324,7 +335,11 @@ fn subscribe_to_video_track(
     tracks: Query<&LivekitTrack, With<Video>>,
 ) {
     let entity = trigger.target();
-    let SubscribeToVideoTrack { runtime, sender } = trigger.event_mut();
+    let SubscribeToVideoTrack {
+        runtime,
+        #[cfg(not(target_arch = "wasm32"))]
+        sender,
+    } = trigger.event_mut();
 
     if entity == Entity::PLACEHOLDER {
         error!(
@@ -337,21 +352,25 @@ fn subscribe_to_video_track(
         return;
     };
 
-    let track = track.clone();
-    let (mut snatcher_sender, _) = mpsc::channel(1);
-    std::mem::swap(&mut snatcher_sender, sender);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let track = track.clone();
+        let (mut snatcher_sender, _) = mpsc::channel(1);
+        std::mem::swap(&mut snatcher_sender, sender);
 
-    debug!("Subscribing to video track {}", track.sid());
-    let task = runtime.spawn(async move {
-        track.set_subscribed(true);
-    });
-    commands.entity(entity).insert((
-        Subscribing { task },
-        OpenVideoSender {
-            runtime: runtime.clone(),
-            sender: snatcher_sender,
-        },
-    ));
+        debug!("Subscribing to video track {}", track.sid());
+        let task = runtime.spawn(async move {
+            track.set_subscribed(true);
+        });
+        commands.entity(entity).insert((
+            Subscribing { task },
+            OpenVideoSender {
+                runtime: runtime.clone(),
+                #[cfg(not(target_arch = "wasm32"))]
+                sender: snatcher_sender,
+            },
+        ));
+    }
 }
 
 fn unsubscribe_to_track(
@@ -398,14 +417,17 @@ fn subscribed_audio_track_with_open_sender(
             return;
         };
 
-        let (mut snatcher_sender, _) = oneshot::channel();
-        std::mem::swap(&mut snatcher_sender, &mut sender.sender);
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let (mut snatcher_sender, _) = oneshot::channel();
+            std::mem::swap(&mut snatcher_sender, &mut sender.sender);
 
-        let handle = runtime.spawn(kira_thread(audio, publication, snatcher_sender));
-        commands
-            .entity(entity)
-            .insert(LivekitTrackTask(handle))
-            .remove::<OpenAudioSender>();
+            let handle = runtime.spawn(kira_thread(audio, publication, snatcher_sender));
+            commands
+                .entity(entity)
+                .insert(LivekitTrackTask(handle))
+                .remove::<OpenAudioSender>();
+        }
     }
 }
 
@@ -427,13 +449,16 @@ fn subscribed_video_track_with_open_sender(
             return;
         };
 
-        let (mut snatcher_sender, _) = mpsc::channel(1);
-        std::mem::swap(&mut snatcher_sender, &mut sender.sender);
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let (mut snatcher_sender, _) = mpsc::channel(1);
+            std::mem::swap(&mut snatcher_sender, &mut sender.sender);
 
-        let handle = runtime.spawn(livekit_video_thread(video, publication, snatcher_sender));
-        commands
-            .entity(entity)
-            .insert(LivekitTrackTask(handle))
-            .remove::<OpenVideoSender>();
+            let handle = runtime.spawn(livekit_video_thread(video, publication, snatcher_sender));
+            commands
+                .entity(entity)
+                .insert(LivekitTrackTask(handle))
+                .remove::<OpenVideoSender>();
+        }
     }
 }

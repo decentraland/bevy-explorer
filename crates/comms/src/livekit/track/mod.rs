@@ -5,16 +5,21 @@ use bevy::{
     prelude::*,
 };
 use common::structs::AudioDecoderError;
-use kira::sound::streaming::StreamingSoundData;
-use livekit::prelude::{Participant, RemoteTrackPublication};
-use tokio::sync::{mpsc, oneshot};
-#[cfg(not(target_arch = "wasm32"))]
-use tokio::task::JoinHandle;
-
-use crate::{
-    livekit::{livekit_video_bridge::LivekitVideoFrame, LivekitRuntime},
-    make_hooks,
+use tokio::{
+    sync::{mpsc, oneshot},
+    task::JoinHandle,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use {
+    kira::sound::streaming::StreamingSoundData,
+    livekit::prelude::{Participant, RemoteTrackPublication},
+};
+
+#[cfg(not(target_arch = "wasm32"))]
+use crate::livekit::livekit_video_bridge::LivekitVideoFrame;
+#[cfg(target_arch = "wasm32")]
+use crate::livekit::web::{Participant, RemoteTrackPublication};
+use crate::{livekit::LivekitRuntime, make_hooks};
 
 #[derive(Clone, Component, Deref, DerefMut)]
 pub struct LivekitTrack {
@@ -58,7 +63,6 @@ make_hooks!(Unsubscribed, (Subscribed, Subscribing, Unsubscribing));
 #[derive(Component)]
 #[component(on_add=Self::on_add, on_replace=Self::on_replace)]
 pub struct Subscribing {
-    #[cfg(not(target_arch = "wasm32"))]
     task: JoinHandle<()>,
 }
 make_hooks!(Subscribing, (Subscribed, Unsubscribed, Unsubscribing));
@@ -78,7 +82,6 @@ impl Subscribing {
 #[derive(Component)]
 #[component(on_add=Self::on_add, on_replace=Self::on_replace)]
 pub struct Unsubscribing {
-    #[cfg(not(target_arch = "wasm32"))]
     task: JoinHandle<()>,
 }
 make_hooks!(Unsubscribing, (Subscribed, Unsubscribed, Subscribing));
@@ -98,12 +101,14 @@ impl Unsubscribing {
 #[derive(Component)]
 struct OpenAudioSender {
     runtime: LivekitRuntime,
+    #[cfg(not(target_arch = "wasm32"))]
     sender: oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
 }
 
 #[derive(Component)]
 struct OpenVideoSender {
     runtime: LivekitRuntime,
+    #[cfg(not(target_arch = "wasm32"))]
     sender: mpsc::Sender<LivekitVideoFrame>,
 }
 
@@ -149,12 +154,14 @@ pub struct TrackUnsubscribed {
 #[derive(Event)]
 pub struct SubscribeToAudioTrack {
     pub runtime: LivekitRuntime,
+    #[cfg(not(target_arch = "wasm32"))]
     pub sender: oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
 }
 
 #[derive(Event)]
 pub struct SubscribeToVideoTrack {
     pub runtime: LivekitRuntime,
+    #[cfg(not(target_arch = "wasm32"))]
     pub sender: mpsc::Sender<LivekitVideoFrame>,
 }
 

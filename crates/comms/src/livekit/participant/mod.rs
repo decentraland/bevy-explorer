@@ -14,7 +14,7 @@ use livekit::{
 };
 
 #[cfg(target_arch = "wasm32")]
-use crate::livekit::web::Participant;
+use crate::livekit::web::{LocalParticipant, Participant, RemoteParticipant};
 use crate::make_hooks;
 
 #[derive(Clone, Component, Deref)]
@@ -22,14 +22,12 @@ pub struct LivekitParticipant {
     participant: Participant,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl From<Participant> for LivekitParticipant {
     fn from(participant: Participant) -> Self {
         Self { participant }
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl From<LocalParticipant> for LivekitParticipant {
     fn from(participant: LocalParticipant) -> Self {
         Self {
@@ -38,7 +36,6 @@ impl From<LocalParticipant> for LivekitParticipant {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl From<RemoteParticipant> for LivekitParticipant {
     fn from(participant: RemoteParticipant) -> Self {
         Self {

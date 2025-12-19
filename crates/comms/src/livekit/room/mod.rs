@@ -2,18 +2,15 @@ pub(super) mod plugin;
 
 use bevy::{
     ecs::{component::HookContext, world::DeferredWorld},
-    platform::sync::Arc,
+    platform::{collections::HashMap, sync::Arc},
     prelude::*,
 };
-use tokio::{sync::mpsc, task::JoinHandle};
 #[cfg(not(target_arch = "wasm32"))]
-use {
-    bevy::platform::collections::HashMap,
-    livekit::{id::TrackSid, Room, RoomEvent, RoomResult},
-};
+use livekit::{id::TrackSid, Room, RoomEvent, RoomResult};
+use tokio::{sync::mpsc, task::JoinHandle};
 
 #[cfg(target_arch = "wasm32")]
-use crate::livekit::web::{Room, RoomEvent, RoomResult};
+use crate::livekit::web::{Room, RoomEvent, RoomResult, TrackSid};
 
 #[derive(Component, Deref)]
 pub struct LivekitRoom {
@@ -79,7 +76,6 @@ impl Connecting {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 #[derive(Default, Resource, Deref, DerefMut)]
 struct LivekitRoomTrackTask(HashMap<TrackSid, JoinHandle<()>>);
 

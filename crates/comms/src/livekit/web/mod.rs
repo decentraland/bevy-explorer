@@ -1,3 +1,5 @@
+mod room;
+
 use std::{
     error::Error,
     fmt::{Display, Formatter},
@@ -19,6 +21,8 @@ use crate::{
     NetworkMessage, NetworkMessageRecipient,
 };
 
+pub use room::Room;
+
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
 extern "C" {
     #[wasm_bindgen(catch)]
@@ -26,9 +30,6 @@ extern "C" {
 
     #[wasm_bindgen]
     pub fn get_room(room_name: &str) -> JsValue;
-
-    #[wasm_bindgen]
-    pub fn room_name(room: &JsValue) -> String;
 
     #[wasm_bindgen]
     pub fn recv_room_event(room: &JsValue) -> Option<RoomEvent>;
@@ -106,10 +107,20 @@ extern "C" {
 
 type JsValueAbi = <JsValue as IntoWasmAbi>::Abi;
 
+#[macro_export]
 macro_rules! make_js_version {
     ($name:ident) => {
         struct $name {
             abi: JsValueAbi,
+        }
+
+        impl std::fmt::Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                let js = unsafe { JsValue::from_abi(self.abi) };
+                let res = writeln!(f, "{js:?}");
+                js.into_abi();
+                res
+            }
         }
 
         impl Drop for $name {
@@ -120,30 +131,17 @@ macro_rules! make_js_version {
     };
 }
 
-#[derive(Clone, Deref)]
-pub struct Room {
-    room: Arc<JsRoom>,
-}
-make_js_version!(JsRoom);
-
-impl Room {
-    pub async fn close(&self) -> RoomResult<()> {
-        todo!()
-    }
-
-    pub fn name(&self) -> String {
-        let js_room = unsafe { JsValue::from_abi(self.room.abi) };
-        let name = room_name(&js_room);
-        js_room.into_abi();
-        name
-    }
-
-    pub fn local_participant(&self) -> LocalParticipant {
-        todo!()
-    }
-}
-
 pub type RoomResult<T> = Result<T, RoomError>;
+
+#[derive(Debug, Default, Clone)]
+pub struct RoomOptions {
+    pub auto_subscribe: bool,
+    pub adaptive_stream: bool,
+    pub dynacast: bool,
+    // pub e2ee: Option<E2eeOptions>,
+    // pub rtc_config: RtcConfiguration,
+    // pub join_retries: u32,
+}
 
 #[derive(Debug)]
 pub enum RoomError {
@@ -308,34 +306,34 @@ async fn connect_and_handle_session(
 pub enum RoomEvent {
     DataReceived {
         room_name: String,
-        participant: Participant,
+        participant: RemoteParticipant,
         payload: serde_bytes::ByteBuf,
     },
     TrackPublished {
         room_name: String,
         kind: String,
-        participant: Participant,
+        participant: RemoteParticipant,
     },
     TrackUnpublished {
         room_name: String,
         kind: String,
-        participant: Participant,
+        participant: RemoteParticipant,
     },
     TrackSubscribed {
         room_name: String,
-        participant: Participant,
+        participant: RemoteParticipant,
     },
     TrackUnsubscribed {
         room_name: String,
-        participant: Participant,
+        participant: RemoteParticipant,
     },
     ParticipantConnected {
         room_name: String,
-        participant: Participant,
+        participant: RemoteParticipant,
     },
     ParticipantDisconnected {
         room_name: String,
-        participant: Participant,
+        participant: RemoteParticipant,
     },
 }
 
@@ -359,31 +357,165 @@ impl OptionFromWasmAbi for RoomEvent {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum Participant {
+    Local(LocalParticipant),
+    Remote(RemoteParticipant),
+}
+
+impl Participant {
+    pub fn identity(&self) -> ParticipantIdentity {
+        match self {
+            Self::Local(l) => l.identity(),
+            Self::Remote(r) => r.identity(),
+        }
+    }
+
+    pub fn sid(&self) -> String {
+        match self {
+            Self::Local(l) => l.sid(),
+            Self::Remote(r) => r.sid(),
+        }
+    }
+
+    pub fn metadata(&self) -> String {
+        match self {
+            Self::Local(l) => l.metadata(),
+            Self::Remote(r) => r.metadata(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Participant {
+pub struct RemoteParticipant {
     pub identity: String,
     #[serde(default)]
     pub metadata: String,
 }
 
-impl Participant {
-    pub fn identity(&self) -> String {
-        self.identity.clone()
+impl RemoteParticipant {
+    pub fn identity(&self) -> ParticipantIdentity {
+        ParticipantIdentity(self.identity.clone())
     }
 
     pub fn name(&self) -> String {
         "".to_owned()
     }
+
+    pub fn metadata(&self) -> String {
+        "".to_owned()
+    }
+
+    pub fn sid(&self) -> String {
+        "".to_owned()
+    }
 }
 
+#[derive(Debug, Clone)]
 pub struct LocalParticipant {
     participant: Arc<JsLocalParticipant>,
 }
 make_js_version!(JsLocalParticipant);
 
 impl LocalParticipant {
-    pub async fn publish_data<T>(&self, data: T) {}
+    pub async fn publish_data<T>(&self, data: T) -> RoomResult<()> {
+        todo!()
+    }
+
+    pub fn identity(&self) -> ParticipantIdentity {
+        todo!()
+    }
+
+    pub fn sid(&self) -> String {
+        todo!()
+    }
+
+    pub fn metadata(&self) -> String {
+        todo!()
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TrackSid;
+
+#[derive(Debug, Clone)]
+pub struct DataPacket {
+    pub payload: Vec<u8>,
+    pub topic: Option<String>,
+    pub reliable: bool,
+    pub destination_identities: Vec<ParticipantIdentity>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deref)]
+pub struct ParticipantIdentity(pub String);
+
+impl std::fmt::Display for ParticipantIdentity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}", self.0)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum RemoteTrack {
+    Audio(RemoteAudioTrack),
+    Video(RemoteVideoTrack),
+}
+
+impl RemoteTrack {
+    pub fn sid(&self) -> String {
+        todo!()
+    }
+}
+
+#[derive(Clone)]
+pub struct RemoteTrackPublication {
+    abi: JsValueAbi,
+}
+
+impl RemoteTrackPublication {
+    pub fn sid(&self) -> String {
+        todo!()
+    }
+
+    pub fn kind(&self) -> TrackKind {
+        todo!()
+    }
+
+    pub fn source(&self) -> TrackSource {
+        todo!()
+    }
+
+    pub fn track(&self) -> Option<RemoteTrack> {
+        todo!()
+    }
+
+    pub fn set_subscribed(&self, switch: bool) {}
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrackKind {
+    Audio,
+    Video,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrackSource {
+    Unknown,
+    Camera,
+    Microphone,
+    Screenshare,
+    ScreenshareAudio,
+}
+
+#[derive(Debug, Clone)]
+pub struct RemoteAudioTrack {
+    abi: JsValueAbi,
+}
+
+#[derive(Debug, Clone)]
+pub struct RemoteVideoTrack {
+    abi: JsValueAbi,
 }
 
 pub fn update_participant_pan(participant_identity: &str, pan: f32) {
