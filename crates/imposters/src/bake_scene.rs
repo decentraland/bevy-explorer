@@ -19,7 +19,7 @@ use boimp::{
 };
 use common::{
     sets::SceneSets,
-    structs::{AppConfig, PrimaryUser, SceneImposterBake},
+    structs::{AppConfig, DebugInfo, PrimaryUser, SceneImposterBake},
 };
 use crc::CRC_32_CKSUM;
 use ipfs::{CurrentRealm, IpfsAssetServer};
@@ -30,7 +30,6 @@ use scene_runner::{
         CurrentImposterScene, LiveScenes, PointerResult, ScenePointers, PARCEL_SIZE,
     },
     renderer_context::RendererSceneContext,
-    DebugInfo,
 };
 use zip::{write::SimpleFileOptions, ZipWriter};
 

@@ -40,6 +40,8 @@ impl AssetLoader for SvgLoader {
         let png = pixmap.encode_png().map_err(|_| "encode png failed")?;
         #[allow(unused_mut)]
         let mut image = Image::from_buffer(
+            #[cfg(debug_assertions)]
+            "an image".to_owned(),
             &png,
             ImageType::Extension("png"),
             CompressedImageFormats::default(),

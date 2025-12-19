@@ -78,6 +78,7 @@ imposters = { path="crates/imposters" }
 system_bridge = { path="crates/system_bridge" }
 texture_camera = { path="crates/texture_camera" }
 platform = { path="crates/platform" }
+image_processing = { path="crates/image_processing" }
 
 bevy = { version = "0.16.1", default-features = false, features=[
     "animation",
@@ -98,6 +99,8 @@ bevy = { version = "0.16.1", default-features = false, features=[
     "jpeg",
     "hdr",
     "x11",
+    "dds",
+    "webp",
     "bevy_gizmos",
     "tonemapping_luts",
     "default_font",
@@ -195,6 +198,7 @@ imposters = { workspace = true }
 system_bridge = { workspace = true }
 texture_camera = { workspace = true }
 platform = { workspace = true }
+image_processing = { workspace = true }
 
 bevy = { workspace = true }
 wgpu = { workspace = true }
