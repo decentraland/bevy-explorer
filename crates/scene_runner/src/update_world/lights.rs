@@ -68,6 +68,10 @@ pub struct LightSource {
 
 impl From<PbLightSource> for LightSource {
     fn from(value: PbLightSource) -> Self {
+        if let Some(pb_light_source::Type::Spot(spot)) = &value.r#type {
+                println!("{:?}, {:?}", spot.inner_angle, spot.outer_angle);
+        }
+
         Self {
             enabled: value.active.unwrap_or(true),
             intensity: value.intensity,
@@ -291,8 +295,8 @@ fn update_point_lights(
                     range,
                     radius: 0.0,
                     shadows_enabled: light.shadow.unwrap_or(false),
-                    outer_angle: angles.1.clamp(0.0, 179.0) * TAU / 360.0,
-                    inner_angle: angles.0.clamp(0.0, angles.1.min(179.0)) * TAU / 360.0,
+                    outer_angle: angles.1.clamp(0.0, 179.0) * PI / 360.0,
+                    inner_angle: angles.0.clamp(0.0, angles.1.min(179.0)) * PI / 360.0,
                     ..Default::default()
                 });
 
