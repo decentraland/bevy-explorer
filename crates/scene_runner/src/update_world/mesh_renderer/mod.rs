@@ -217,9 +217,10 @@ pub fn update_mesh(
         commands.entity(ent).remove::<RetryMeshDefinition>();
         let handle = match prim {
             MeshDefinition::Box { uvs } => {
-                if uvs.len() != 24 {
+                if uvs.len() == 0 {
                     defaults.boxx.clone()
                 } else {
+                    let len = uvs.len();
                     let mut mesh = Mesh::from(bevy::math::primitives::Cuboid::default());
                     let Some(VertexAttributeValues::Float32x2(mesh_uvs)) =
                         mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0)
@@ -252,8 +253,8 @@ pub fn update_mesh(
                         (22, 1),
                         (23, 0),
                     ] {
-                        mesh_uvs[to][0] = uvs[from][0];
-                        mesh_uvs[to][1] = 1.0 - uvs[from][1];
+                        mesh_uvs[to][0] = uvs[from % len][0];
+                        mesh_uvs[to][1] = 1.0 - uvs[from % len][1];
                     }
                     meshes.add(mesh)
                 }
@@ -273,9 +274,10 @@ pub fn update_mesh(
                 }
             }
             MeshDefinition::Plane { uvs } => {
-                if uvs.len() != 8 {
+                if uvs.is_empty() {
                     defaults.plane.clone()
                 } else {
+                    let len = uvs.len();
                     let mut mesh = Cuboid::default()
                         .mesh()
                         .build()
@@ -295,8 +297,8 @@ pub fn update_mesh(
                         (6, 4),
                         (7, 7),
                     ] {
-                        mesh_uvs[to][0] = uvs[from][0];
-                        mesh_uvs[to][1] = 1.0 - uvs[from][1];
+                        mesh_uvs[to][0] = uvs[from % len][0];
+                        mesh_uvs[to][1] = 1.0 - uvs[from % len][1];
                     }
                     meshes.add(mesh)
                 }
