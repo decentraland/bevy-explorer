@@ -334,7 +334,7 @@ fn animate(
 
                 // send to scenes
                 let broadcast_urn = given_urn.unwrap();
-                error!("broadcasting emote to scenes: {:?}", broadcast_urn);
+                debug!("broadcasting emote to scenes: {:?}", broadcast_urn);
 
                 let (scene, scene_id) = match (maybe_foreign, maybe_primary, maybe_container) {
                     (Some(f), ..) => (None, f.scene_id),
