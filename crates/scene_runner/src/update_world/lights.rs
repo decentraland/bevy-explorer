@@ -69,7 +69,7 @@ pub struct LightSource {
 impl From<PbLightSource> for LightSource {
     fn from(value: PbLightSource) -> Self {
         if let Some(pb_light_source::Type::Spot(spot)) = &value.r#type {
-                println!("{:?}, {:?}", spot.inner_angle, spot.outer_angle);
+            println!("{:?}, {:?}", spot.inner_angle, spot.outer_angle);
         }
 
         Self {

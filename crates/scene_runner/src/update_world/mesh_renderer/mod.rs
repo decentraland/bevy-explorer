@@ -217,7 +217,7 @@ pub fn update_mesh(
         commands.entity(ent).remove::<RetryMeshDefinition>();
         let handle = match prim {
             MeshDefinition::Box { uvs } => {
-                if uvs.len() == 0 {
+                if uvs.is_empty() {
                     defaults.boxx.clone()
                 } else {
                     let len = uvs.len();

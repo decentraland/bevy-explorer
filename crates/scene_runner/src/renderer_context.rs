@@ -272,8 +272,12 @@ impl RendererSceneContext {
     ) {
         let mut buf = Vec::new();
         DclWriter::new(&mut buf).write(data);
-        self.crdt_store
-            .update_if_different(component_id, crdt_type, id, Some(&mut DclReader::new(&buf)));
+        self.crdt_store.update_if_different(
+            component_id,
+            crdt_type,
+            id,
+            Some(&mut DclReader::new(&buf)),
+        );
     }
 
     #[allow(dead_code)]
