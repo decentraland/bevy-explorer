@@ -161,14 +161,14 @@ fn create_mic_thread(
             return;
         };
 
-        let local_participant = room.room.local_participant();
+        let local_participant = room.local_participant();
         debug_assert_eq!(participant.sid(), local_participant.sid());
 
         debug!(
             "Starting mic thread for {} ({}) in room {}.",
             participant.sid(),
             participant.identity(),
-            room.room.name()
+            room.name()
         );
         let task = runtime.spawn(mic_thread(
             local_participant,

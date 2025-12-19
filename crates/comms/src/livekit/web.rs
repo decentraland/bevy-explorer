@@ -1,4 +1,9 @@
-use bevy::prelude::*;
+use std::{
+    error::Error,
+    fmt::{Display, Formatter},
+};
+
+use bevy::{platform::sync::Arc, prelude::*};
 use ethers_core::types::H160;
 use serde::Deserialize;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -11,7 +16,7 @@ use wasm_bindgen_futures::spawn_local;
 use crate::{
     global_crdt::{ChannelControl, GlobalCrdtState, PlayerUpdate},
     livekit::{room::LivekitRoom, LivekitConnection, LivekitTransport},
-    NetworkMessage,
+    NetworkMessage, NetworkMessageRecipient,
 };
 
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
@@ -99,6 +104,61 @@ extern "C" {
     ) -> Result<(), JsValue>;
 }
 
+type JsValueAbi = <JsValue as IntoWasmAbi>::Abi;
+
+macro_rules! make_js_version {
+    ($name:ident) => {
+        struct $name {
+            abi: JsValueAbi,
+        }
+
+        impl Drop for $name {
+            fn drop(&mut self) {
+                let _ = unsafe { JsValue::from_abi(self.abi) };
+            }
+        }
+    };
+}
+
+#[derive(Clone, Deref)]
+pub struct Room {
+    room: Arc<JsRoom>,
+}
+make_js_version!(JsRoom);
+
+impl Room {
+    pub async fn close(&self) -> RoomResult<()> {
+        todo!()
+    }
+
+    pub fn name(&self) -> String {
+        let js_room = unsafe { JsValue::from_abi(self.room.abi) };
+        let name = room_name(&js_room);
+        js_room.into_abi();
+        name
+    }
+
+    pub fn local_participant(&self) -> LocalParticipant {
+        todo!()
+    }
+}
+
+pub type RoomResult<T> = Result<T, RoomError>;
+
+#[derive(Debug)]
+pub enum RoomError {
+    Other(String),
+}
+
+impl Display for RoomError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{self:?}")?;
+        Ok(())
+    }
+}
+
+impl Error for RoomError {}
+
 #[allow(clippy::type_complexity)]
 pub fn connect_livekit(
     mut commands: Commands,
@@ -115,12 +175,9 @@ pub fn connect_livekit(
         let sender = player_state.get_sender();
 
         // For WASM, we directly call the handler which will spawn the async task
-        if let Err(e) = livekit_handler_inner(
-            livekit_room.room_name.clone(),
-            receiver,
-            control_receiver,
-            sender,
-        ) {
+        if let Err(e) =
+            livekit_handler_inner(livekit_room.name(), receiver, control_receiver, sender)
+        {
             warn!("Failed to start livekit connection: {e}");
         }
 
@@ -318,6 +375,15 @@ impl Participant {
     pub fn name(&self) -> String {
         "".to_owned()
     }
+}
+
+pub struct LocalParticipant {
+    participant: Arc<JsLocalParticipant>,
+}
+make_js_version!(JsLocalParticipant);
+
+impl LocalParticipant {
+    pub async fn publish_data<T>(&self, data: T) {}
 }
 
 pub fn update_participant_pan(participant_identity: &str, pan: f32) {

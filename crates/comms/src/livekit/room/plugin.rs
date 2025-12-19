@@ -1,8 +1,4 @@
-use bevy::{
-    ecs::relationship::Relationship,
-    platform::{collections::HashMap, sync::Arc},
-    prelude::*,
-};
+use bevy::{ecs::relationship::Relationship, platform::collections::HashMap, prelude::*};
 use common::{structs::AudioDecoderError, util::AsH160};
 use ethers_core::types::H160;
 use http::Uri;
@@ -11,28 +7,37 @@ use livekit::id::ParticipantIdentity;
 use tokio::sync::{mpsc, oneshot};
 #[cfg(not(target_arch = "wasm32"))]
 use {
+    bevy::platform::sync::Arc,
     livekit::{
         participant::{ConnectionQuality, Participant},
         Room, RoomEvent, RoomOptions, RoomResult,
     },
     tokio::sync::mpsc::UnboundedReceiver,
 };
+#[cfg(target_arch = "wasm32")]
+use {dcl_component::proto_components::kernel::comms::rfc4, wasm_bindge::JsValue};
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::livekit::participant::{
+    connection_quality::{Excellent, Good, Lost, Poor},
+    ParticipantConnected, ParticipantConnectionQuality, ParticipantDisconnected,
+    ParticipantMetadataChanged, ParticipantPayload,
+};
 use crate::{
     global_crdt::ChannelControl,
     livekit::{
         livekit_video_bridge::LivekitVideoFrame,
-        participant::{
-            connection_quality::{Excellent, Good, Lost, Poor},
-            HostingParticipants, LivekitParticipant, ParticipantConnected,
-            ParticipantConnectionQuality, ParticipantDisconnected, ParticipantMetadataChanged,
-            ParticipantPayload, ReceivingStream, Streamer,
-        },
+        participant::{HostingParticipants, LivekitParticipant, ReceivingStream, Streamer},
         plugin::{RoomTask, RoomTasks},
         room::{Connected, Connecting, ConnectingLivekitRoom, LivekitRoom, LivekitRoomTrackTask},
         track, LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime, LivekitTransport,
     },
     NetworkMessageRecipient,
+};
+#[cfg(target_arch = "wasm32")]
+use crate::{
+    global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
+    livekit::web::{connect_room, recv_room_event, RoomEvent},
 };
 
 pub struct LivekitRoomPlugin;
@@ -119,12 +124,7 @@ fn poll_connecting_rooms(
     livekit_rooms: Populated<(Entity, &LivekitRuntime, &mut ConnectingLivekitRoom)>,
 ) {
     for (entity, livekit_runtime, mut connecting_livekit_room) in livekit_rooms.into_inner() {
-        #[cfg(not(target_arch = "wasm32"))]
-        let finished = connecting_livekit_room.is_finished();
-        #[cfg(target_arch = "wasm32")]
-        let finished = !connecting_livekit_room.is_empty();
-
-        if finished {
+        if connecting_livekit_room.is_finished() {
             let Ok(poll) =
                 livekit_runtime.block_on(connecting_livekit_room.as_deref_mut().as_mut())
             else {
@@ -133,7 +133,6 @@ fn poll_connecting_rooms(
             };
 
             match poll {
-                #[cfg(not(target_arch = "wasm32"))]
                 Ok((room, room_event_receiver)) => {
                     let local_participant = room.local_participant();
 
@@ -141,7 +140,6 @@ fn poll_connecting_rooms(
                         .entity(entity)
                         .insert((
                             LivekitRoom {
-                                room_name: room.name(),
                                 room: Arc::new(room),
                                 room_event_receiver,
                             },
@@ -154,17 +152,6 @@ fn poll_connecting_rooms(
                         room: entity,
                     });
                 }
-                #[cfg(target_arch = "wasm32")]
-                Ok(room) => {
-                    let js_room = unsafe { JsValue::from_abi(room) };
-                    let room_name = room_name(&js_room);
-                    // This prevents the memory for the object from being freed
-                    let _ = js_room.into_abi();
-                    commands
-                        .entity(entity)
-                        .insert((LivekitRoom { room_name, room }, Connected))
-                        .remove::<ConnectingLivekitRoom>();
-                }
                 Err(err) => {
                     error!("Failed to connect to room due to '{err}'.");
                     commands.entity(entity).remove::<ConnectingLivekitRoom>();
@@ -174,12 +161,11 @@ fn poll_connecting_rooms(
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 async fn connect_to_room(
     address: String,
     token: String,
 ) -> RoomResult<(Room, UnboundedReceiver<RoomEvent>)> {
-    livekit::prelude::Room::connect(
+    Room::connect(
         &address,
         &token,
         RoomOptions {
@@ -192,24 +178,14 @@ async fn connect_to_room(
     .await
 }
 
-#[cfg(target_arch = "wasm32")]
-async fn connect_to_room(
-    address: String,
-    token: String,
-    sender: oneshot::Sender<anyhow::Result<JsValueAbi>>,
-) {
-    let res = connect_room(&address, &token)
-        .await
-        .map(IntoWasmAbi::into_abi)
-        .map_err(|e| anyhow::anyhow!("Failed to connect room: {:?}", e));
-
-    sender.send(res).unwrap();
-}
-
 fn process_room_events(
     mut commands: Commands,
     livekit_rooms: Query<(Entity, &mut LivekitRoom), With<Connected>>,
+    #[cfg(target_arch = "wasm32")] player_state: Res<GlobalCrdtState>,
 ) {
+    #[cfg(target_arch = "wasm32")]
+    let sender = player_state.get_sender();
+
     #[cfg_attr(target_arch = "wasm32", expect(unused_mut))]
     for (entity, mut livekit_room) in livekit_rooms {
         #[cfg(not(target_arch = "wasm32"))]
@@ -462,15 +438,19 @@ fn process_channel_control(
                             commands
                                 .run_system_cached_with(unsubscribe_to_voice, (entity, address));
                         }
+                        #[cfg(not(target_arch = "wasm32"))]
                         ChannelControl::StreamerSubscribe(subscriber, audio, video) => {
                             commands.run_system_cached_with(
                                 subscribe_to_streamer,
                                 (entity, subscriber, audio, video),
                             );
                         }
+                        #[cfg(not(target_arch = "wasm32"))]
                         ChannelControl::StreamerUnsubscribe(subscriber) => {
                             commands.run_system_cached_with(unsubscribe_to_streamer, subscriber);
                         }
+                        #[cfg(target_arch = "wasm32")]
+                        _ => (),
                     };
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
@@ -515,7 +495,7 @@ fn process_network_message(
                         destination_identities,
                     };
 
-                    let local_participant = room.room.local_participant();
+                    let local_participant = room.local_participant();
                     let task =
                         runtime.spawn(async move { local_participant.publish_data(packet).await });
                     room_tasks.push(RoomTask {
@@ -536,49 +516,26 @@ fn process_network_message(
 
 fn disconnect_from_room_on_replace(
     trigger: Trigger<OnReplace, LivekitRoom>,
+    mut commands: Commands,
     livekit_rooms: Query<(&LivekitRoom, Option<&LivekitRuntime>)>,
 ) {
     let entity = trigger.target();
-    #[cfg_attr(
-        target_arch = "wasm32",
-        expect(unused_variables, reason = "Runtime is used only on native")
-    )]
     let Ok((livekit_room, maybe_livekit_runtime)) = livekit_rooms.get(entity) else {
         unreachable!("Infallible query.");
     };
+    let Some(livekit_runtime) = maybe_livekit_runtime.as_ref() else {
+        error!("Room {} does not have a runtime.", livekit_room.name());
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
 
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let room = livekit_room.room.clone();
-        debug!("Closing room {}.", room.name());
-        if let Some(runtime) = maybe_livekit_runtime {
-            runtime.spawn(async move {
-                if let Err(err) = room.close().await {
-                    error!("Error while closing room {}. '{err}'.", room.name());
-                }
-            });
-        } else {
-            warn!("Closing a room in blocking context because LivekitRoom does not have a LivekitRuntime.");
-            tokio::task::spawn_blocking(async move || {
-                if let Err(err) = room.close().await {
-                    error!("Error while closing room {}. '{err}'.", room.name());
-                }
-            });
+    let room = livekit_room.room.clone();
+    debug!("Closing room {}.", room.name());
+    livekit_runtime.spawn(async move {
+        if let Err(err) = room.close().await {
+            error!("Error while closing room {}. '{err}'.", room.name());
         }
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        let room = unsafe { JsValue::from_abi(livekit_room.room) };
-        let room_name = room_name(&room);
-        debug!("Closing room {}.", room_name);
-        spawn_local(async move {
-            if let Err(err) = close_room(&room).await {
-                error!("Error while closing room {}. '{err:?}'.", room_name);
-            }
-            // Prevent the Javascript memory from being freed just yet
-            room.into_abi();
-        });
-    }
+    });
 }
 
 fn subscribe_to_voice(
@@ -601,7 +558,7 @@ fn subscribe_to_voice(
     let Some(hosting) = maybe_hosting else {
         error!(
             "Trying to subscribe to voice in room {}, but there are not participants.",
-            room.room_name
+            room.name()
         );
         return;
     };
@@ -620,7 +577,8 @@ fn subscribe_to_voice(
     else {
         error!(
             "No participant with address {} in room {}.",
-            address, room.room_name
+            address,
+            room.name()
         );
         return;
     };
@@ -658,7 +616,7 @@ fn unsubscribe_to_voice(
     let Some(hosting) = maybe_hosting else {
         error!(
             "Trying to subscribe to voice in room {}, but there are not participants.",
-            room.room_name
+            room.name()
         );
         return;
     };
@@ -677,7 +635,8 @@ fn unsubscribe_to_voice(
     else {
         error!(
             "No participant with address {} in room {}.",
-            address, room.room_name
+            address,
+            room.name()
         );
         return;
     };
@@ -721,7 +680,7 @@ fn subscribe_to_streamer(
     let Some(hosting) = maybe_hosting else {
         error!(
             "Trying to subscribe to voice in room {}, but there are not participants.",
-            room.room_name
+            room.name()
         );
         return;
     };
@@ -729,7 +688,7 @@ fn subscribe_to_streamer(
     let Some((participant_entity, participant, publishing)) =
         participants.iter_many(hosting.collection()).next()
     else {
-        error!("No streamer participant in room {}.", room.room_name);
+        error!("No streamer participant in room {}.", room.name());
         return;
     };
 
