@@ -98,7 +98,7 @@ extern "C" {
     ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch)]
-    fn streamer_subscribe_channel(
+    pub fn streamer_subscribe_channel(
         room_name: &str,
         subscribe_audio: bool,
         subscribe_video: bool,
@@ -169,13 +169,10 @@ pub fn connect_livekit(
     for (transport_id, mut new_transport, livekit_room) in new_livekits.iter_mut() {
         debug!("spawn lk connect");
         let receiver = new_transport.receiver.take().unwrap();
-        let control_receiver = new_transport.control_receiver.take().unwrap();
         let sender = player_state.get_sender();
 
         // For WASM, we directly call the handler which will spawn the async task
-        if let Err(e) =
-            livekit_handler_inner(livekit_room.name(), receiver, control_receiver, sender)
-        {
+        if let Err(e) = livekit_handler_inner(livekit_room.name(), receiver, sender) {
             warn!("Failed to start livekit connection: {e}");
         }
 
@@ -186,12 +183,11 @@ pub fn connect_livekit(
 fn livekit_handler_inner(
     room_name: String,
     app_rx: Receiver<NetworkMessage>,
-    control_rx: Receiver<ChannelControl>,
     sender: Sender<PlayerUpdate>,
 ) -> Result<(), anyhow::Error> {
     // In WASM, we can't block or create threads, so we just spawn the async task
     spawn_local(async move {
-        if let Err(e) = run_livekit_session(room_name, app_rx, control_rx, sender).await {
+        if let Err(e) = run_livekit_session(room_name, app_rx, sender).await {
             error!("LiveKit session error: {:?}", e);
         }
     });
@@ -202,7 +198,6 @@ fn livekit_handler_inner(
 async fn run_livekit_session(
     room_name: String,
     mut app_rx: Receiver<NetworkMessage>,
-    mut control_rx: Receiver<ChannelControl>,
     sender: Sender<PlayerUpdate>,
 ) -> Result<(), anyhow::Error> {
     loop {
@@ -212,7 +207,7 @@ async fn run_livekit_session(
             break;
         }
 
-        match connect_and_handle_session(room_name.clone(), &mut app_rx, &mut control_rx).await {
+        match connect_and_handle_session(room_name.clone(), &mut app_rx).await {
             Ok(_) => {
                 debug!("LiveKit session ended normally");
                 // Check if we should reconnect
@@ -244,7 +239,6 @@ async fn run_livekit_session(
 async fn connect_and_handle_session(
     room_name: String,
     app_rx: &mut Receiver<NetworkMessage>,
-    control_rx: &mut Receiver<ChannelControl>,
 ) -> Result<(), anyhow::Error> {
     let room = get_room(&room_name);
 
@@ -274,23 +268,6 @@ async fn connect_and_handle_session(
                     warn!("Failed to publish data: {:?}", e);
                     break 'stream;
                 }
-            }
-            control = control_rx.recv() => {
-                let Some(control) = control else {
-                    debug!("app pipe broken, exiting loop");
-                    break 'stream;
-                };
-
-                match control {
-                    ChannelControl::VoiceSubscribe(address, _) => participant_audio_subscribe(&room_name, address, true),
-                    ChannelControl::VoiceUnsubscribe(address) => participant_audio_subscribe(&room_name, address, false),
-                    ChannelControl::StreamerSubscribe => if let Err(err) = streamer_subscribe_channel(&room_name, true, true) {
-                        error!("{err:?}");
-                    },
-                    ChannelControl::StreamerUnsubscribe => if let Err(err) = streamer_subscribe_channel(&room_name, false, false) {
-                        error!("{err:?}");
-                    },
-                };
             }
         );
     }
@@ -530,7 +507,7 @@ pub fn update_participant_volume(participant_identity: &str, volume: f32) {
     }
 }
 
-fn participant_audio_subscribe(room_name: &str, address: H160, subscribe: bool) {
+pub fn participant_audio_subscribe(room_name: &str, address: H160, subscribe: bool) {
     if let Err(e) = subscribe_channel(room_name, &format!("{address:#x}"), subscribe) {
         warn!("Failed to (un)subscribe to {address:?}: {e:?}");
     } else {

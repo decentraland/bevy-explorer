@@ -48,7 +48,10 @@ use crate::{
 #[cfg(target_arch = "wasm32")]
 use crate::{
     global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
-    livekit::web::{DataPacket, ParticipantIdentity, Room, RoomEvent, RoomOptions, RoomResult},
+    livekit::web::{
+        participant_audio_subscribe, streamer_subscribe_channel, DataPacket, ParticipantIdentity,
+        Room, RoomEvent, RoomOptions, RoomResult,
+    },
 };
 
 pub struct LivekitRoomPlugin;
@@ -407,12 +410,14 @@ fn process_room_events(
 
 fn process_channel_control(
     mut commands: Commands,
-    rooms: Query<(Entity, &mut LivekitChannelControl)>,
+    rooms: Query<(Entity, &LivekitRoom, &mut LivekitChannelControl)>,
 ) {
-    for (entity, mut channel_control) in rooms {
+    #[cfg_attr(not(target_arch = "wasm32"), expect(unused_variables))]
+    for (entity, livekit_room, mut channel_control) in rooms {
         loop {
             match channel_control.try_recv() {
                 Ok(channel_control) => {
+                    #[cfg(not(target_arch = "wasm32"))]
                     match channel_control {
                         ChannelControl::VoiceSubscribe(address, sender) => {
                             #[cfg(not(target_arch = "wasm32"))]
@@ -425,20 +430,41 @@ fn process_channel_control(
                             commands
                                 .run_system_cached_with(unsubscribe_to_voice, (entity, address));
                         }
-                        #[cfg(not(target_arch = "wasm32"))]
                         ChannelControl::StreamerSubscribe(subscriber, audio, video) => {
                             commands.run_system_cached_with(
                                 subscribe_to_streamer,
                                 (entity, subscriber, audio, video),
                             );
                         }
-                        #[cfg(not(target_arch = "wasm32"))]
                         ChannelControl::StreamerUnsubscribe(subscriber) => {
                             commands.run_system_cached_with(unsubscribe_to_streamer, subscriber);
                         }
-                        #[cfg(target_arch = "wasm32")]
-                        _ => (),
                     };
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        let room_name = livekit_room.name();
+                        match channel_control {
+                            ChannelControl::VoiceSubscribe(address, _) => {
+                                participant_audio_subscribe(&room_name, address, true)
+                            }
+                            ChannelControl::VoiceUnsubscribe(address) => {
+                                participant_audio_subscribe(&room_name, address, false)
+                            }
+                            ChannelControl::StreamerSubscribe => {
+                                if let Err(err) = streamer_subscribe_channel(&room_name, true, true)
+                                {
+                                    error!("{err:?}");
+                                }
+                            }
+                            ChannelControl::StreamerUnsubscribe => {
+                                if let Err(err) =
+                                    streamer_subscribe_channel(&room_name, false, false)
+                                {
+                                    error!("{err:?}");
+                                }
+                            }
+                        };
+                    }
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
