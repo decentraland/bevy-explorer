@@ -334,7 +334,7 @@ fn animate(
 
                 // send to scenes
                 let broadcast_urn = given_urn.unwrap();
-                debug!("broadcasting emote to scenes: {:?}", broadcast_urn);
+                error!("broadcasting emote to scenes: {:?}", broadcast_urn);
 
                 let (scene, scene_id) = match (maybe_foreign, maybe_primary, maybe_container) {
                     (Some(f), ..) => (None, f.scene_id),
@@ -531,7 +531,15 @@ fn play_current_emote(
 
         if let Some(scene_emote) = active_emote.urn.scene_emote() {
             debug!("got {scene_emote:?}");
-            let Some(hash) = scene_emote.split('-').nth(1) else {
+            let mut split = scene_emote.split('-');
+            let maybe_hash = if split.next() == Some("b64") {
+                // stupid to have "-" as a separator and also part of the hash itself for local hashes
+                let parts = split.skip(1).take(2).collect::<Vec<_>>();
+                (parts.len() == 2).then_some(parts.join("-"))
+            } else {
+                split.next().map(ToOwned::to_owned)
+            };
+            let Some(hash) = maybe_hash.as_ref() else {
                 debug!("failed to split scene emote {scene_emote:?}");
                 active_emote.finished = true;
                 continue;
