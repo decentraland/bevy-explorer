@@ -14,7 +14,10 @@ use common::{
     structs::{AppConfig, PrimaryUser},
 };
 #[cfg(feature = "livekit")]
-use comms::{livekit::LivekitTransport, SceneRoom, Transport};
+use comms::{
+    livekit::{room::LivekitRoom, LivekitTransport},
+    SceneRoom, Transport,
+};
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::sdk::components::{PbAudioStream, PbVideoEvent, PbVideoPlayer, VideoState},
@@ -193,7 +196,7 @@ pub fn update_video_players(
     scenes: Query<&RendererSceneContext>,
     #[cfg(feature = "livekit")] mut scene_rooms: Query<
         &mut Transport,
-        (With<LivekitTransport>, With<SceneRoom>),
+        (With<LivekitTransport>, With<LivekitRoom>, With<SceneRoom>),
     >,
     config: Res<AppConfig>,
     mut system_paused: Local<HashMap<Entity, Option<tokio::sync::mpsc::Sender<AVCommand>>>>,
@@ -254,12 +257,8 @@ pub fn update_video_players(
                         )
                     }
                 } else {
-                    error!("Could not determinate the scene of the AvPlayer.");
-                    noop_sinks(
-                        player.source.src.clone(),
-                        image_handle,
-                        player.source.volume.unwrap_or(1.0),
-                    )
+                    trace!("Could not determinate the scene of the AvPlayer.");
+                    continue;
                 }
                 #[cfg(not(feature = "livekit"))]
                 noop_sinks(
