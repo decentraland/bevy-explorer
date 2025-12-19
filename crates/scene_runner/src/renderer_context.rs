@@ -263,6 +263,19 @@ impl RendererSceneContext {
             .force_update(component_id, crdt_type, id, Some(&mut DclReader::new(&buf)));
     }
 
+    pub fn update_crdt_if_different(
+        &mut self,
+        component_id: SceneComponentId,
+        crdt_type: CrdtType,
+        id: SceneEntityId,
+        data: &impl ToDclWriter,
+    ) {
+        let mut buf = Vec::new();
+        DclWriter::new(&mut buf).write(data);
+        self.crdt_store
+            .update_if_different(component_id, crdt_type, id, Some(&mut DclReader::new(&buf)));
+    }
+
     #[allow(dead_code)]
     pub fn clear_crdt(
         &mut self,
