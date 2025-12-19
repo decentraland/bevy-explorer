@@ -171,6 +171,12 @@ fn hover_text(
                     None
                 })
                 .collect::<Vec<_>>();
+            // make unique
+            texts = texts
+                .into_iter()
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect();
         }
     }
 

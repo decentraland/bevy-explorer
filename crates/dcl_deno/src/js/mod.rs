@@ -404,10 +404,27 @@ async fn run_script(
     };
 
     let f = runtime.resolve(promise);
-    runtime
+    let result = runtime
         .with_event_loop_promise(f, PollEventLoopOptions::default())
         .await
-        .map(|_| ())
+        .map(|_| ());
+
+    if result.is_err() {
+        debug!("rerunning event loop");
+        for _ in 0..100 {
+            let x = runtime
+                .run_event_loop(PollEventLoopOptions::default())
+                .await;
+            if x.is_err() {
+                error!("repeat error: {x:?}");
+            } else {
+                break;
+            }
+        }
+        debug!("done rerunning event loop");
+    }
+
+    result
 }
 
 // synchronously returns a string containing JS code from the file system

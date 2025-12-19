@@ -81,7 +81,7 @@ impl<T: CollectibleType> CollectibleUrn<T> {
                 value: String::default(),
             });
         }
-        let mut urn = value.to_lowercase();
+        let mut urn = value.to_owned();
         let count = urn.chars().filter(|c| *c == ':').count();
         if count == 0 {
             let Some(base) = T::base_collection() else {
@@ -116,7 +116,17 @@ impl<T: CollectibleType> CollectibleUrn<T> {
         };
 
         let mut iter = parts.into_iter();
-        let urn = iter.by_ref().take(collection_segments + 1).join(":");
+        let urn = iter
+            .by_ref()
+            .take(collection_segments + 1)
+            .map(|segment| {
+                if segment.starts_with("b64-") {
+                    segment.to_owned()
+                } else {
+                    segment.to_ascii_lowercase()
+                }
+            })
+            .join(":");
 
         let token = iter.join(":").to_owned();
         let token = if token.is_empty() { None } else { Some(token) };
