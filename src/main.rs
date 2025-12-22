@@ -47,7 +47,7 @@ use scene_runner::{
     OutOfWorld, SceneRunnerPlugin,
 };
 
-use av::AudioPlugin;
+use av::AVPlayerPlugin;
 use avatar::AvatarPlugin;
 use comms::{preview::handle_preview_socket, CommsPlugin};
 use console::{ConsolePlugin, DoAddConsoleCommand};
@@ -466,7 +466,7 @@ fn main() {
         app.add_plugins(AutomaticTestingPlugin);
     }
 
-    app.add_plugins(AudioPlugin)
+    app.add_plugins(AVPlayerPlugin)
         .add_plugins(RestrictedActionsPlugin)
         .insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER))
         .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))

@@ -32,7 +32,7 @@ use scene_runner::{
     vec3_to_parcel, OutOfWorld, SceneRunnerPlugin,
 };
 
-use av::AudioPlugin;
+use av::AVPlayerPlugin;
 use avatar::AvatarPlugin;
 use comms::{preview::handle_preview_socket, CommsPlugin};
 use console::{ConsolePlugin, DoAddConsoleCommand};
@@ -251,7 +251,7 @@ fn main_inner(
 
     app.add_plugins(AvatarPlugin);
 
-    app.add_plugins(AudioPlugin)
+    app.add_plugins(AVPlayerPlugin)
         .add_plugins(RestrictedActionsPlugin)
         .insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER))
         .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))

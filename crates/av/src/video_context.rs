@@ -172,7 +172,7 @@ impl FfmpegContext for VideoContext {
     }
 
     fn send_frame(&mut self) {
-        debug!(
+        trace!(
             "send video frame {:?} [{} in buffer]",
             self.current_frame,
             self.buffer.len()

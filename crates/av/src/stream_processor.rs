@@ -1,5 +1,8 @@
 use anyhow::bail;
-use bevy::{log::info, prelude::debug};
+use bevy::{
+    log::{info, trace},
+    prelude::debug,
+};
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::Packet;
 use std::time::{Duration, Instant};
@@ -148,7 +151,7 @@ pub fn process_streams(
             let next_frame_time = play_instant + Duration::from_secs_f64(next_frame_time);
 
             if tick % 25 == 0 {
-                debug!(
+                trace!(
                     "[{:?}] next frame time: {next_frame_time:?}/ now: {now:?}",
                     std::thread::current().id()
                 );
