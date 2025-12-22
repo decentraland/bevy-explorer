@@ -5,17 +5,16 @@ use assets::EmbedAssetsPlugin;
 use bevy::{
     app::Propagate,
     diagnostic::FrameTimeDiagnosticsPlugin,
+    log::LogPlugin,
     prelude::*,
     render::{renderer::RenderDevice, view::RenderLayers},
     tasks::{IoTaskPool, Task},
     winit::{UpdateMode, WinitSettings},
-    log::LogPlugin
 };
 use bevy_console::ConsoleCommand;
 use dcl_wasm::init_runtime;
 use tracing::Level;
 
-use imposters::DclImposterPlugin;
 use collectibles::CollectiblesPlugin;
 use common::{
     inputs::InputMap,
@@ -27,6 +26,7 @@ use common::{
     },
     util::{TaskCompat, TaskExt, TryPushChildrenEx, UtilsPlugin},
 };
+use imposters::DclImposterPlugin;
 use restricted_actions::{lookup_portable, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
@@ -170,9 +170,8 @@ fn main_inner(
                 .set(LogPlugin {
                     level: Level::INFO,
                     filter: std::option_env!("RUST_LOG").unwrap_or("").to_string(),
-                    custom_layer: |_| None
-                }
-                )
+                    custom_layer: |_| None,
+                })
                 .add_before::<AssetPlugin>(IpfsIoPlugin {
                     preview: is_preview,
                     starting_realm: Some(map_realm_name(&final_config.server)),
