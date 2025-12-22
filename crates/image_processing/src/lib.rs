@@ -1,5 +1,6 @@
 use std::{collections::VecDeque, io::Write, path::PathBuf};
 
+use base64::{engine::general_purpose, Engine as _};
 use bevy_console::ConsoleCommand;
 use block_compression::BC7Settings;
 use common::structs::DebugInfo;
@@ -10,10 +11,7 @@ use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use bevy::{
-    asset::AssetPath,
-    image::TextureFormatPixelInfo,
-    platform::collections::{HashMap, HashSet},
-    prelude::*,
+    asset::AssetPath, diagnostic::FrameCount, image::TextureFormatPixelInfo, platform::collections::{HashMap, HashSet}, prelude::*
 };
 
 #[derive(Clone, Copy)]
@@ -190,13 +188,21 @@ fn pipe_events(
     std_mats: Res<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut processing_gltfs: Local<HashMap<Handle<Gltf>, AssetId<Gltf>>>,
+    mut last_good: Local<u32>,
+    mut max_bad: Local<u32>,
+    tick: Res<FrameCount>,
 ) {
     for event in events.read() {
         stats.started += 1;
         let _ = channels.req_sx.send(event.clone());
     }
 
+    if stats.started == 0 {
+        *last_good = tick.0;
+    }
+
     while let Ok(res) = channels.resp_rx.try_recv() {
+        *last_good = tick.0;
         match res {
             Ok(req) => {
                 stats.processed += 1;
@@ -216,6 +222,11 @@ fn pipe_events(
                 stats.failed += 1;
             }
         }
+    }
+
+    if tick.0 - *last_good > *max_bad {
+        *max_bad = tick.0 - *last_good;
+        error!("max bad: {}", *max_bad);
     }
 
     debug_info.info.insert("processing", format!("{:?}", stats));
@@ -411,7 +422,7 @@ impl From<ImageProcessError> for GltfProcessError {
 }
 
 fn process_gltf(raw_bytes: &[u8]) -> Result<Vec<u8>, GltfProcessError> {
-    let (mut root, old_bin): (gltf_json::Root, Vec<u8>) = if raw_bytes.starts_with(b"glTF") {
+    let (mut root, mut old_bin): (gltf_json::Root, Vec<u8>) = if raw_bytes.starts_with(b"glTF") {
         let glb = Glb::from_slice(raw_bytes).unwrap();
         (
             gltf_json::deserialize::from_slice(&glb.json).unwrap(),
@@ -425,6 +436,30 @@ fn process_gltf(raw_bytes: &[u8]) -> Result<Vec<u8>, GltfProcessError> {
     } else {
         return Err(GltfProcessError::InvalidHeader);
     };
+
+    // Pre-pass: Absorb Data URI Buffers into the Binary Chunk
+    if let Some(first_buffer) = root.buffers.first_mut() {
+        if let Some(uri) = &first_buffer.uri {
+            if uri.starts_with("data:") {
+                // This is a .gltf with embedded binary.
+                // We should decode it and make it the "real" binary chunk.
+                let parts: Vec<&str> = uri.split(',').collect();
+                let decoded = general_purpose::STANDARD.decode(parts[1]).unwrap();
+
+                // If we already had a binary chunk (from a GLB), append this.
+                // If we came from JSON, 'old_bin' was empty, so this becomes the start.
+                // (But usually, valid GLTF/GLB is mutually exclusive on this).
+                if old_bin.is_empty() {
+                    // This is our new base binary!
+                    // We treat this decoded data as the "old_bin" for the rest of the logic.
+                    old_bin = decoded;
+                }
+
+                // Clear the URI so it becomes a valid GLB buffer
+                first_buffer.uri = None;
+            }
+        }
+    }
 
     // A. Collect all Raw Image Data first
     // We store them in a temp vector so we can safely mutate the JSON later.
@@ -522,8 +557,6 @@ fn extract_pixels_safe(
     views: &[gltf_json::buffer::View],
     bin: &[u8],
 ) -> Option<Vec<u8>> {
-    use base64::{engine::general_purpose, Engine as _};
-
     if let Some(uri) = &img.uri {
         if uri.starts_with("data:") {
             let parts: Vec<&str> = uri.split(',').collect();
