@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
 use assets::EmbedAssetsPlugin;
 use bevy::{
@@ -7,12 +9,13 @@ use bevy::{
     render::{renderer::RenderDevice, view::RenderLayers},
     tasks::{IoTaskPool, Task},
     winit::{UpdateMode, WinitSettings},
+    log::LogPlugin
 };
 use bevy_console::ConsoleCommand;
 use dcl_wasm::init_runtime;
-use imposters::DclImposterPlugin;
-use std::str::FromStr;
+use tracing::Level;
 
+use imposters::DclImposterPlugin;
 use collectibles::CollectiblesPlugin;
 use common::{
     inputs::InputMap,
@@ -164,6 +167,12 @@ fn main_inner(
                     unapproved_path_mode: bevy::asset::UnapprovedPathMode::Allow,
                     ..Default::default()
                 })
+                .set(LogPlugin {
+                    level: Level::INFO,
+                    filter: std::option_env!("RUST_LOG").unwrap_or("").to_string(),
+                    custom_layer: |_| None
+                }
+                )
                 .add_before::<AssetPlugin>(IpfsIoPlugin {
                     preview: is_preview,
                     starting_realm: Some(map_realm_name(&final_config.server)),
