@@ -491,7 +491,6 @@ pub fn init_asset_load_thread() {
 #[wasm_bindgen]
 pub async fn engine_init() -> Result<JsValue, JsValue> {
     console_error_panic_hook::set_once();
-    let _ = console_log::init_with_level(log::Level::Info);
 
     let mut file = match web_fs::File::open("config.json").await {
         Ok(f) => f,

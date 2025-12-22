@@ -235,7 +235,6 @@ bevy = { workspace = true, features = [
 uuid = { workspace = true, features = ["js"] }
 dcl_wasm = { workspace = true }
 console_error_panic_hook = "0.1.7"
-console_log = "1.0"
 log = "0.4"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 wasm-bindgen = { workspace = true }
