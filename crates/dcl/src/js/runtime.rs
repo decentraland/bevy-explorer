@@ -10,7 +10,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     interface::{crdt_context::CrdtContext, CrdtType},
-    js::RendererStore,
+    js::{RendererStore, SceneResponseSender},
     RpcCalls, SceneResponse,
 };
 
@@ -27,8 +27,8 @@ pub async fn op_read_file(
 
     op_state
         .borrow_mut()
-        .borrow_mut::<tokio::sync::mpsc::UnboundedSender<SceneResponse>>()
-        .send(SceneResponse::ImmediateRpcCall(RpcCall::ReadFile {
+        .borrow_mut::<SceneResponseSender>()
+        .try_send(SceneResponse::ImmediateRpcCall(RpcCall::ReadFile {
             scene_hash,
             filename,
             response: sx,

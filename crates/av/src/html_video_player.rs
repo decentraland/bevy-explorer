@@ -11,7 +11,6 @@ use std::{
 use bevy::{
     color::palettes::basic,
     diagnostic::FrameCount,
-    math::FloatOrd,
     platform::collections::HashMap,
     prelude::*,
     render::{
@@ -23,23 +22,17 @@ use bevy::{
     },
     time::common_conditions::on_timer,
 };
-use common::{
-    sets::SceneSets,
-    structs::{AppConfig, PrimaryUser},
-};
+use common::sets::SceneSets;
 use comms::{global_crdt::ChannelControl, SceneRoom, Transport};
-use dcl::interface::{ComponentPosition, CrdtType};
+use dcl::interface::CrdtType;
 use dcl_component::{
-    proto_components::sdk::components::{
-        PbAudioEvent, PbAudioStream, PbVideoEvent, PbVideoPlayer, VideoState,
-    },
+    proto_components::sdk::components::{PbAudioEvent, PbVideoEvent, VideoState},
     SceneComponentId,
 };
 use ipfs::IpfsResource;
 use scene_runner::{
-    renderer_context::RendererSceneContext,
-    update_world::{material::VideoTextureOutput, AddCrdtInterfaceExt},
-    ContainerEntity, ContainingScene,
+    renderer_context::RendererSceneContext, update_world::material::VideoTextureOutput,
+    ContainerEntity,
 };
 use wasm_bindgen::prelude::wasm_bindgen;
 use web_sys::{
@@ -47,6 +40,12 @@ use web_sys::{
     wasm_bindgen::{prelude::Closure, JsCast, JsValue},
     HtmlMediaElement, HtmlVideoElement, VideoFrame,
 };
+
+use crate::{
+    av_player_is_in_scene, av_player_should_be_playing, AVPlayer, InScene, ShouldBePlaying,
+};
+
+type RcClosure = Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>>;
 
 pub struct VideoPlayerPlugin;
 
@@ -76,23 +75,12 @@ impl Plugin for VideoPlayerPlugin {
             }
         }
 
-        app.add_crdt_lww_component::<PbVideoPlayer, AVPlayer>(
-            SceneComponentId::VIDEO_PLAYER,
-            ComponentPosition::EntityOnly,
-        );
-
-        app.add_crdt_lww_component::<PbAudioStream, AVPlayer>(
-            SceneComponentId::AUDIO_STREAM,
-            ComponentPosition::EntityOnly,
-        );
         app.add_systems(
             Update,
             (
                 try_subscription.run_if(on_timer(Duration::from_secs(5))),
-                rebuild_html_media_entities,
-                av_player_is_in_scene,
-                av_player_should_be_playing,
-                update_av_players,
+                rebuild_html_media_entities.before(av_player_is_in_scene),
+                update_av_players.after(av_player_should_be_playing),
             )
                 .chain()
                 .in_set(SceneSets::PostLoop),
@@ -125,45 +113,6 @@ pub struct FrameCopyRequest {
     target: AssetId<Image>,
 }
 
-/// Marks whether an [`AVPlayer`] should be playing
-#[derive(Debug, Component)]
-struct ShouldBePlaying;
-
-/// Marks whether an [`AVPlayer`] is in the same scene as the [`PrimaryUser`]
-#[derive(Debug, Component)]
-struct InScene;
-
-#[derive(Component, Debug)]
-#[component(immutable)]
-pub struct AVPlayer {
-    // note we reuse PbVideoPlayer for audio as well
-    pub source: PbVideoPlayer,
-    pub has_video: bool,
-}
-
-impl From<PbVideoPlayer> for AVPlayer {
-    fn from(value: PbVideoPlayer) -> Self {
-        Self {
-            source: value,
-            has_video: true,
-        }
-    }
-}
-
-impl From<PbAudioStream> for AVPlayer {
-    fn from(value: PbAudioStream) -> Self {
-        Self {
-            source: PbVideoPlayer {
-                src: value.url,
-                playing: value.playing,
-                volume: value.volume,
-                ..Default::default()
-            },
-            has_video: false,
-        }
-    }
-}
-
 #[derive(Component)]
 pub struct HtmlMediaEntity {
     source: String,
@@ -177,7 +126,7 @@ pub struct HtmlMediaEntity {
     new_frame_time: Arc<AtomicU32>,
     state: Arc<Mutex<VideoState>>,
     _closures: Vec<Closure<dyn FnMut()>>,
-    frame_closure: Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>>,
+    frame_closure: RcClosure,
     frame_callback_handle: Rc<RefCell<Option<u32>>>,
 }
 
@@ -313,8 +262,7 @@ impl HtmlMediaEntity {
         }
         let rvc_fn = rvc_prop.dyn_into::<web_sys::js_sys::Function>().unwrap();
 
-        let callback: Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>> =
-            Rc::new(RefCell::new(None));
+        let callback: RcClosure = Rc::new(RefCell::new(None));
         let callback_handle: Rc<RefCell<Option<u32>>> = Rc::new(RefCell::new(None));
         let callback_clone = callback.clone();
         let handle_clone = callback_handle.clone();
@@ -386,8 +334,7 @@ impl HtmlMediaEntity {
         }
         let rvc_fn = rvc_prop.dyn_into::<web_sys::js_sys::Function>().unwrap();
 
-        let callback: Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>> =
-            Rc::new(RefCell::new(None));
+        let callback: RcClosure = Rc::new(RefCell::new(None));
         let callback_handle: Rc<RefCell<Option<u32>>> = Rc::new(RefCell::new(None));
         let callback_clone = callback.clone();
         let handle_clone = callback_handle.clone();
@@ -489,11 +436,11 @@ impl Drop for HtmlMediaEntity {
         if let (Some(video), Some(handle)) =
             (&self.video, self.frame_callback_handle.borrow_mut().take())
         {
-            Reflect::get(&video, &"cancelVideoFrameCallback".into())
+            Reflect::get(video, &"cancelVideoFrameCallback".into())
                 .unwrap()
                 .dyn_into::<web_sys::js_sys::Function>()
                 .unwrap()
-                .call1(&video, &JsValue::from(handle))
+                .call1(video, &JsValue::from(handle))
                 .unwrap();
         }
         self.frame_closure.take();
@@ -534,6 +481,7 @@ fn av_player_on_insert(
 }
 
 /// Try subscribing to streamer if a stream is active
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn try_subscription(
     av_players: Populated<
         &AVPlayer,
@@ -643,74 +591,6 @@ fn rebuild_html_media_entities(
     }
 }
 
-fn av_player_is_in_scene(
-    mut commands: Commands,
-    av_players: Query<(Entity, &ContainerEntity, &AVPlayer)>,
-    user: Query<&GlobalTransform, With<PrimaryUser>>,
-    containing_scene: ContainingScene,
-) {
-    // disable distant av
-    let Ok(user) = user.single() else {
-        return;
-    };
-    let containing_scenes = containing_scene.get_position(user.translation());
-
-    for (ent, container, _) in av_players
-        .iter()
-        .filter(|(_, _, player)| player.source.playing.unwrap_or(true))
-    {
-        if containing_scenes.contains(&container.root) {
-            commands.entity(ent).try_insert(InScene);
-        } else {
-            commands.entity(ent).try_remove::<InScene>();
-        }
-    }
-}
-
-fn av_player_should_be_playing(
-    mut commands: Commands,
-    av_players: Query<(Entity, &AVPlayer, Has<InScene>, &GlobalTransform)>,
-    user: Query<&GlobalTransform, With<PrimaryUser>>,
-    config: Res<AppConfig>,
-) {
-    // disable distant av
-    let Ok(user) = user.single() else {
-        return;
-    };
-
-    let mut sorted_players = av_players
-        .iter()
-        .filter_map(|(ent, player, in_scene, transform)| {
-            if player.source.playing.unwrap_or(true) {
-                let distance = transform.translation().distance(user.translation());
-                Some((in_scene, distance, ent))
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-
-    // prioritise av in current scene (false < true), then by distance
-    sorted_players.sort_by_key(|(in_scene, distance, _)| (!in_scene, FloatOrd(*distance)));
-
-    // Removing first for better Trigger ordering
-    for ent in sorted_players
-        .iter()
-        .skip(config.max_videos)
-        .map(|(_, _, ent)| *ent)
-    {
-        commands.entity(ent).try_remove::<ShouldBePlaying>();
-    }
-
-    for ent in sorted_players
-        .iter()
-        .take(config.max_videos)
-        .map(|(_, _, ent)| *ent)
-    {
-        commands.entity(ent).try_insert(ShouldBePlaying);
-    }
-}
-
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn update_av_players(
     mut commands: Commands,
@@ -738,10 +618,7 @@ fn update_av_players(
         }
 
         let is_playing = state == VideoState::VsPlaying;
-        let can_play = match state {
-            VideoState::VsReady | VideoState::VsPaused => true,
-            _ => false,
-        };
+        let can_play = matches!(state, VideoState::VsReady | VideoState::VsPaused);
 
         if !is_playing && should_be_playing && can_play {
             av.play()

@@ -11,7 +11,7 @@ use bevy::{
     animation::AnimationTarget,
     asset::LoadState,
     gltf::{Gltf, GltfExtras, GltfLoaderSettings},
-    pbr::ExtendedMaterial,
+    pbr::{ExtendedMaterial, NotShadowCaster},
     platform::collections::HashMap,
     prelude::*,
     render::{
@@ -35,7 +35,9 @@ use crate::{
     renderer_context::RendererSceneContext,
     update_world::{
         lights::LightSource,
-        material::{dcl_material_from_standard_material, BaseMaterial},
+        material::{dcl_material_from_standard_material, BaseMaterial, PbMaterialComponent},
+        mesh_collider::{ColliderType, CtCollider},
+        trigger_area::CtTrigger,
     },
     ContainerEntity, ContainingScene, OutOfWorld, SceneEntity, SceneSets,
 };
@@ -45,7 +47,8 @@ use dcl_component::{
         sdk::components::{
             common::LoadingState, pb_light_source, pb_material, pb_mesh_collider, pb_mesh_renderer,
             ColliderLayer, GltfNodeStateValue, PbGltfContainer, PbGltfContainerLoadingState,
-            PbGltfNode, PbGltfNodeState, PbLightSource, PbMaterial, PbMeshCollider, PbMeshRenderer,
+            PbGltfNode, PbGltfNodeModifiers, PbGltfNodeState, PbLightSource, PbMaterial,
+            PbMeshCollider, PbMeshRenderer,
         },
         Color3BevyToDcl,
     },
@@ -89,6 +92,11 @@ impl Plugin for GltfDefinitionPlugin {
             ComponentPosition::EntityOnly,
         );
 
+        app.add_crdt_lww_component::<PbGltfNodeModifiers, GltfNodeModifiers>(
+            SceneComponentId::GLTF_NODE_MODIFIERS,
+            ComponentPosition::EntityOnly,
+        );
+
         app.add_systems(Update, update_gltf.in_set(SceneSets::PostLoop));
         app.add_systems(SpawnScene, update_ready_gltfs.after(scene_spawner_system));
         app.add_systems(Update, check_gltfs_ready.in_set(SceneSets::PostInit));
@@ -105,6 +113,7 @@ impl Plugin for GltfDefinitionPlugin {
                 .after(anim_last_system!())
                 .before(TransformSystem::TransformPropagate),
         );
+        app.add_systems(Update, debug_modifiers);
     }
 }
 
@@ -759,7 +768,6 @@ fn update_ready_gltfs(
                     let mut collider_base_name = maybe_name
                         .map(Name::as_str)
                         .filter(|name| name.to_ascii_lowercase().contains("_collider"));
-
                     if collider_base_name.is_none() {
                         // check parent name also
                         collider_base_name = gltf_spawned_entities
@@ -771,7 +779,22 @@ fn update_ready_gltfs(
                     }
                     let is_collider = collider_base_name.is_some();
 
-                    if is_collider {
+                    // process trigger
+                    let mut trigger_base_name = maybe_name
+                        .map(Name::as_str)
+                        .filter(|name| name.to_ascii_lowercase().contains("_trigger"));
+                    if trigger_base_name.is_none() {
+                        // check parent name also
+                        trigger_base_name = gltf_spawned_entities
+                            .get(parent.parent())
+                            .ok()
+                            .and_then(|(name, ..)| name)
+                            .map(|name| name.as_str())
+                            .filter(|name| name.to_ascii_lowercase().contains("_trigger"))
+                    }
+                    let is_trigger = trigger_base_name.is_some();
+
+                    if is_collider || is_trigger {
                         // make invisible by removing mesh handle
                         // TODO - this will break with toggling, we need to store the handle somewhere
                         commands.entity(spawned_ent).remove::<Mesh3d>();
@@ -784,7 +807,7 @@ fn update_ready_gltfs(
                             serde_json::from_str::<DclNodeExtras>(&extras.value).ok()
                         })
                         .and_then(|extras| extras.dcl_collision_mask)
-                        .unwrap_or_else(|| {
+                        .or_else(|| {
                             // then try parent node
                             gltf_spawned_entities
                                 .get(parent.parent())
@@ -793,32 +816,32 @@ fn update_ready_gltfs(
                                 .and_then(|extras| {
                                     serde_json::from_str::<DclNodeExtras>(&extras.value).ok()
                                 })
-                                .and_then(|extras| extras.dcl_collision_mask)
+                                .map(|extras| extras.dcl_collision_mask)
                                 .unwrap_or({
                                     //fall back to container-specified default
-                                    if is_collider {
-                                        definition.0.invisible_meshes_collision_mask.unwrap_or(
+                                    if is_collider || is_trigger {
+                                        definition.0.invisible_meshes_collision_mask.or(
                                             // colliders default to physics + pointers
                                             if data.is_skinned {
                                                 // if skinned, maybe foundation uses 0 default?
-                                                0
+                                                Some(0)
                                             } else {
-                                                ColliderLayer::ClPhysics as u32
-                                                    | ColliderLayer::ClPointer as u32
+                                                None
                                             },
                                         )
                                     } else {
-                                        definition.0.visible_meshes_collision_mask.unwrap_or(
+                                        definition.0.visible_meshes_collision_mask.or(
                                             // non-colliders default to nothing
-                                            0,
+                                            Some(0),
                                         )
                                     }
                                 })
                         });
 
-                    if collider_bits != 0
-                    /* && !is_skinned */
-                    {
+                    if is_collider && collider_bits != Some(0) {
+                        let collider_bits = collider_bits.unwrap_or(
+                            ColliderLayer::ClPhysics as u32 | ColliderLayer::ClPointer as u32,
+                        );
                         let index = collider_counter
                             .entry(collider_base_name.to_owned())
                             .or_default();
@@ -830,12 +853,39 @@ fn update_ready_gltfs(
                             h_mesh.clone()
                         };
 
-                        commands.entity(spawned_ent).try_insert(MeshCollider {
-                            shape: MeshColliderShape::Shape(data.shape.clone(), h_collider),
-                            collision_mask: collider_bits,
-                            mesh_name: collider_base_name.map(ToOwned::to_owned),
-                            index: *index,
-                        });
+                        commands
+                            .entity(spawned_ent)
+                            .try_insert(MeshCollider::<CtCollider> {
+                                shape: MeshColliderShape::Shape(data.shape.clone(), h_collider),
+                                collision_mask: collider_bits,
+                                mesh_name: collider_base_name.map(ToOwned::to_owned),
+                                index: *index,
+                                _p: Default::default(),
+                            });
+                    }
+
+                    if is_trigger && collider_bits != Some(0) {
+                        let collider_bits = collider_bits.unwrap_or(ColliderLayer::ClPlayer as u32);
+                        let index = collider_counter
+                            .entry(collider_base_name.to_owned())
+                            .or_default();
+                        *index += 1u32;
+
+                        let h_collider = if data.is_skinned {
+                            data.maybe_collider.clone().unwrap()
+                        } else {
+                            h_mesh.clone()
+                        };
+
+                        commands
+                            .entity(spawned_ent)
+                            .try_insert(MeshCollider::<CtTrigger> {
+                                shape: MeshColliderShape::Shape(data.shape.clone(), h_collider),
+                                collision_mask: collider_bits,
+                                mesh_name: collider_base_name.map(ToOwned::to_owned),
+                                index: *index,
+                                _p: Default::default(),
+                            });
                     }
                 }
             }
@@ -1100,6 +1150,110 @@ pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> SharedShape {
     SharedShape::trimesh_with_flags(positions_parry, indices_parry, TriMeshFlags::empty()).unwrap()
 }
 
+#[derive(Component, Debug)]
+pub struct GltfNodeModifiers(PbGltfNodeModifiers);
+
+#[derive(Component)]
+pub struct RetryNodeModifiers;
+
+impl From<PbGltfNodeModifiers> for GltfNodeModifiers {
+    fn from(value: PbGltfNodeModifiers) -> Self {
+        Self(value)
+    }
+}
+
+fn debug_modifiers(
+    mut commands: Commands,
+    q: Query<
+        (&GltfNodeModifiers, &GltfProcessed),
+        Or<(Changed<GltfNodeModifiers>, Changed<GltfProcessed>)>,
+    >,
+    child_nodes: Query<
+        (
+            Option<&MeshMaterial3d<SceneMaterial>>,
+            Option<&HiddenMaterial>,
+        ),
+        With<Mesh3d>,
+    >,
+    removed_q: Query<&GltfProcessed>,
+    mut removed_components: RemovedComponents<GltfNodeModifiers>,
+) {
+    for (modifiers, processed) in q {
+        let modifiers = modifiers
+            .0
+            .modifiers
+            .iter()
+            .map(|modifier| {
+                let path = if modifier.path.is_empty() {
+                    None
+                } else {
+                    Some(modifier.path.as_str())
+                };
+
+                (
+                    path,
+                    (modifier.cast_shadows.unwrap_or(true), &modifier.material),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        let mut found = false;
+
+        for (path, child) in processed.named_nodes.iter() {
+            let Ok((existing_material, _)) = child_nodes.get(*child) else {
+                continue;
+            };
+
+            found = true;
+
+            let maybe_path_modifiers = modifiers
+                .get(&Some(path.as_str()))
+                .or_else(|| modifiers.get(&None));
+
+            if let Some((shadows, maybe_material)) = maybe_path_modifiers {
+                if !shadows {
+                    commands.entity(*child).try_insert(NotShadowCaster);
+                }
+
+                if let Some(material) = maybe_material {
+                    if let Some(existing) = existing_material {
+                        commands
+                            .entity(*child)
+                            .try_insert(HiddenMaterial(existing.clone()));
+                    }
+                    commands
+                        .entity(*child)
+                        .try_insert(PbMaterialComponent(material.clone()));
+                }
+            } else {
+                commands
+                    .entity(*child)
+                    .try_remove::<(NotShadowCaster, HiddenMaterial, PbMaterialComponent)>();
+                if let Ok((_, Some(prev_material))) = child_nodes.get(*child) {
+                    commands.entity(*child).try_insert(prev_material.0.clone());
+                }
+            }
+        }
+
+        debug!("applying GltfNodeModifiers (found a path match = {found}): {modifiers:?}");
+    }
+
+    for removed in removed_components.read() {
+        let Ok(processed) = removed_q.get(removed) else {
+            continue;
+        };
+
+        for (_, child) in processed.named_nodes.iter() {
+            commands
+                .entity(*child)
+                .try_remove::<(NotShadowCaster, HiddenMaterial, PbMaterialComponent)>();
+            if let Ok((_, Some(prev_material))) = child_nodes.get(*child) {
+                commands.entity(*child).try_insert(prev_material.0.clone());
+            }
+        }
+    }
+}
+
 #[derive(Component)]
 pub struct GltfNodeRequest(String);
 
@@ -1136,7 +1290,7 @@ pub enum GltfLinkState<'a> {
 pub struct HiddenMaterial(MeshMaterial3d<SceneMaterial>);
 
 #[derive(Component)]
-pub struct HiddenCollider(MeshCollider);
+pub struct HiddenCollider<T: ColliderType>(MeshCollider<T>);
 
 #[derive(Component)]
 pub struct HiddenPointLight(PointLight);
@@ -1169,7 +1323,8 @@ fn expose_gltfs(
         Option<&GltfMaterialName>,
         Option<&Mesh3d>,
         Option<&SkinnedMesh>,
-        Option<&MeshCollider>,
+        Option<&MeshCollider<CtCollider>>,
+        Option<&MeshCollider<CtTrigger>>,
         Option<&Name>,
         Option<&PointLight>,
         Option<&SpotLight>,
@@ -1331,6 +1486,7 @@ fn expose_gltfs(
                     maybe_mesh,
                     maybe_skin,
                     maybe_collider,
+                    maybe_trigger,
                     maybe_name,
                     maybe_point,
                     maybe_spot,
@@ -1363,8 +1519,8 @@ fn expose_gltfs(
                     // hide
                     commands
                         .entity(gltf_entity)
-                        .remove::<MeshCollider>()
-                        .insert(HiddenCollider(collider.clone()));
+                        .remove::<MeshCollider<CtCollider>>()
+                        .insert(HiddenCollider::<CtCollider>(collider.clone()));
                     // copy
                     commands.entity(ent).insert(collider.clone());
                     // write to scene
@@ -1383,6 +1539,34 @@ fn expose_gltfs(
                             })),
                         },
                     )
+                }
+                if let Some(trigger) = maybe_trigger {
+                    debug!("link trigger");
+                    // hide
+                    commands
+                        .entity(gltf_entity)
+                        .remove::<MeshCollider<CtTrigger>>()
+                        .insert(HiddenCollider::<CtTrigger>(trigger.clone()));
+                    // copy
+                    commands.entity(ent).insert(trigger.clone());
+                    // write to scene
+                    // TODO: extend protocol to allow Gltf type for triggers
+
+                    // scene.update_crdt(
+                    //     SceneComponentId::TRIGGER_AREA,
+                    //     CrdtType::LWW_ANY,
+                    //     scene_ent.id,
+                    //     &PbMeshCollider {
+                    //         collision_mask: Some(trigger.collision_mask),
+                    //         mesh: Some(pb_mesh_collider::Mesh::Gltf(pb_mesh_collider::GltfMesh {
+                    //             gltf_src: src.to_owned(),
+                    //             name: trigger
+                    //                 .mesh_name
+                    //                 .clone()
+                    //                 .unwrap_or_else(|| "???".to_owned()),
+                    //         })),
+                    //     },
+                    // )
                 }
                 if let Some(material) = maybe_material {
                     debug!("link material ({} / {:?})", src, maybe_mat_name);
@@ -1507,7 +1691,8 @@ fn update_gltf_linked_transforms(
         &ContainerEntity,
         &ChildOf,
         Option<&HiddenMaterial>,
-        Option<&HiddenCollider>,
+        Option<&HiddenCollider<CtCollider>>,
+        Option<&HiddenCollider<CtTrigger>>,
         Option<&HiddenPointLight>,
         Option<&HiddenSpotLight>,
     )>,
@@ -1546,6 +1731,7 @@ fn update_gltf_linked_transforms(
         parent,
         maybe_hidden_material,
         maybe_hidden_collider,
+        maybe_hidden_trigger,
         maybe_hidden_point,
         maybe_hidden_spot,
     ) in gltf_nodes.iter()
@@ -1563,7 +1749,13 @@ fn update_gltf_linked_transforms(
             if let Some(hidden) = maybe_hidden_collider {
                 commands
                     .entity(gltf_entity)
-                    .remove::<HiddenCollider>()
+                    .remove::<HiddenCollider<CtCollider>>()
+                    .insert(hidden.0.clone());
+            }
+            if let Some(hidden) = maybe_hidden_trigger {
+                commands
+                    .entity(gltf_entity)
+                    .remove::<HiddenCollider<CtTrigger>>()
                     .insert(hidden.0.clone());
             }
             if let Some(hidden) = maybe_hidden_point {

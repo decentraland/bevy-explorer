@@ -55,6 +55,9 @@ fn gen_sdk_components() -> Result<()> {
         "virtual_camera",
         "main_camera",
         "input_modifier",
+        "trigger_area",
+        "trigger_area_result",
+        "gltf_node_modifiers",
     ];
 
     let mut sources = components

@@ -15,7 +15,9 @@ use console::DoAddConsoleCommand;
 use crate::{
     gltf_resolver::GltfMeshResolver,
     update_world::{
-        mesh_collider::{ColliderId, MeshCollider, MeshColliderShape, SceneColliderData},
+        mesh_collider::{
+            ColliderId, CtCollider, MeshCollider, MeshColliderShape, SceneColliderData,
+        },
         pointer_events::PointerEvents,
         scene_ui::UiLink,
     },
@@ -97,6 +99,7 @@ pub struct PointerResultPlugin;
 impl Plugin for PointerResultPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PointerTarget>()
+            .init_resource::<PointerRay>()
             .init_resource::<PointerDragTarget>()
             .init_resource::<UiPointerTarget>()
             .init_resource::<WorldPointerTarget>()
@@ -190,6 +193,9 @@ pub struct AvatarColliders {
 #[derive(Default, Debug, Resource, Clone, PartialEq)]
 pub struct WorldPointerTarget(Option<PointerTargetInfo>);
 
+#[derive(Resource, Default)]
+pub struct PointerRay(pub Option<Ray3d>);
+
 #[allow(clippy::too_many_arguments)]
 fn update_pointer_target(
     camera: Query<(&Camera, &GlobalTransform), With<PrimaryCamera>>,
@@ -200,7 +206,10 @@ fn update_pointer_target(
     mut avatar_colliders: ResMut<AvatarColliders>,
     frame: Res<FrameCount>,
     mut world_target: ResMut<WorldPointerTarget>,
+    mut pointer_ray: ResMut<PointerRay>,
 ) {
+    pointer_ray.0 = None;
+
     let Ok((camera, camera_position)) = camera.single() else {
         // can't do much without a camera
         return;
@@ -231,6 +240,8 @@ fn update_pointer_target(
         return;
     };
 
+    pointer_ray.0 = Some(ray);
+
     let containing_scenes = containing_scenes.get_area(player, PLAYER_COLLIDER_RADIUS);
     let maybe_nearest_hit = scenes
         .iter_mut()
@@ -245,6 +256,8 @@ fn update_pointer_target(
                     f32::MAX,
                     ColliderLayer::ClPointer as u32,
                     true,
+                    false,
+                    None,
                 );
 
                 match (maybe_nearest, maybe_prior_nearest) {
@@ -270,6 +283,8 @@ fn update_pointer_target(
             .unwrap_or(f32::MAX),
         u32::MAX,
         true,
+        false,
+        None,
     );
 
     world_target.0 = None;
@@ -329,7 +344,7 @@ fn update_manual_cursor(
     world_target: Res<WorldPointerTarget>,
     uis: Query<(
         &GlobalTransform,
-        &MeshCollider,
+        &MeshCollider<CtCollider>,
         &Mesh3d,
         &ResolveCursor,
         &ContainerEntity,
@@ -594,7 +609,7 @@ fn debug_pointer(
     pointer_target: Res<PointerTarget>,
     target: Query<&ContainerEntity>,
     scene: Query<&RendererSceneContext>,
-    colliders: Query<&MeshCollider>,
+    colliders: Query<&MeshCollider<CtCollider>>,
 ) {
     if debug.0 {
         let info = if let UiPointerTargetValue::Primary(ui_ent, mesh) = &ui_target.0 {

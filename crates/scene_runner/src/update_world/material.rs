@@ -461,7 +461,7 @@ fn update_materials(
             Entity,
             Ref<PbMaterialComponent>,
             &ContainerEntity,
-            &SceneEntity,
+            Option<&SceneEntity>,
             Option<&BaseMaterial>,
         ),
         Or<(
@@ -484,7 +484,7 @@ fn update_materials(
 ) {
     gltf_resolver.begin_frame();
 
-    for (ent, mat, container, scene_ent, base) in new_materials.iter_mut() {
+    for (ent, mat, container, maybe_scene_ent, base) in new_materials.iter_mut() {
         let Ok((mut scene, mut cache)) = scenes.get_mut(container.root) else {
             continue;
         };
@@ -629,19 +629,21 @@ fn update_materials(
 
         // write material back if required
         if mat.0.material.is_none() {
-            if let Some(base) = base.as_ref() {
-                scene.update_crdt(
-                    SceneComponentId::MATERIAL,
-                    CrdtType::LWW_ANY,
-                    scene_ent.id,
-                    &PbMaterial {
-                        material: Some(dcl_material_from_standard_material(
-                            &base.material,
-                            &images,
-                        )),
-                        gltf: mat.0.gltf.clone(),
-                    },
-                );
+            if let Some(scene_ent) = maybe_scene_ent {
+                if let Some(base) = base.as_ref() {
+                    scene.update_crdt(
+                        SceneComponentId::MATERIAL,
+                        CrdtType::LWW_ANY,
+                        scene_ent.id,
+                        &PbMaterial {
+                            material: Some(dcl_material_from_standard_material(
+                                &base.material,
+                                &images,
+                            )),
+                            gltf: mat.0.gltf.clone(),
+                        },
+                    );
+                }
             }
         }
     }

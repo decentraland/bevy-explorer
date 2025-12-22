@@ -171,7 +171,7 @@ impl kira::sound::streaming::Decoder for FfmpegKiraBridge {
                     // maybe worth trying, but it just sleeps for 1ms anyway. we can do better by sleeping
                     // until a new frame arrives (typically 50ms+).
                     if frames.is_empty() {
-                        debug!(
+                        trace!(
                             "[{:?} waiting for frames [step {}], sleep {}s",
                             std::thread::current().id(),
                             self.step,
@@ -327,7 +327,7 @@ impl FfmpegContext for AudioContext {
 
     fn send_frame(&mut self) {
         if !self.dead {
-            debug!(
+            trace!(
                 "send audio frame {:?} [{} in buffer]",
                 self.current_frame,
                 self.buffer.len()

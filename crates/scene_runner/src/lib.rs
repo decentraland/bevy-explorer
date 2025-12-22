@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, marker::PhantomData, time::Duration};
 
+use dcl::js::TryRecvError;
 use system_bridge::SystemApi;
-use tokio::sync::mpsc::error::TryRecvError;
 use web_time::SystemTime;
 
 use bevy::{
@@ -23,7 +23,9 @@ use common::{
 };
 use comms::{SceneRoomConnection, SetCurrentScene};
 use dcl::{
-    interface::CrdtType, RendererResponse, SceneId, SceneLogLevel, SceneLogMessage, SceneResponse,
+    interface::CrdtType,
+    js::{scene_response_channel, SceneResponseReceiver, SceneResponseSender},
+    RendererResponse, SceneId, SceneLogLevel, SceneLogMessage, SceneResponse,
 };
 use dcl_component::{
     proto_components::{
@@ -71,8 +73,8 @@ pub mod util;
 // bookkeeping struct for javascript execution of scenes
 #[derive(Resource)]
 pub struct SceneUpdates {
-    pub sender: tokio::sync::mpsc::UnboundedSender<SceneResponse>,
-    receiver: tokio::sync::mpsc::UnboundedReceiver<SceneResponse>,
+    pub sender: SceneResponseSender,
+    receiver: SceneResponseReceiver,
     pub scene_ids: HashMap<SceneId, Entity>,
     pub jobs_in_flight: HashSet<Entity>,
     pub update_deadline: SystemTime,
@@ -87,7 +89,7 @@ unsafe impl Sync for SceneUpdates {}
 unsafe impl Send for SceneUpdates {}
 
 impl SceneUpdates {
-    pub fn receiver(&mut self) -> &mut tokio::sync::mpsc::UnboundedReceiver<SceneResponse> {
+    pub fn receiver(&mut self) -> &mut SceneResponseReceiver {
         &mut self.receiver
     }
 }
@@ -229,7 +231,8 @@ impl Plugin for SceneRunnerPlugin {
         app.init_resource::<TestingData>();
         app.init_resource::<InteractableArea>();
 
-        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        // let (sender, receiver) = tokio::sync::mpsc::channel(1000);
+        let (sender, receiver) = scene_response_channel();
         app.insert_resource(SceneUpdates {
             sender,
             receiver,

@@ -27,7 +27,6 @@ hot_reload = ["bevy/file_watcher", "ipfs/hot_reload"]
 livekit = ["av/livekit", "comms/livekit", "system_ui/livekit"]
 ffmpeg = ["av/ffmpeg"]
 social = ["social/social"]
-wasm = ["uuid/js", "getrandom/wasm_js", "bevy/webgpu", "bevy/wasm_threaded_asset_loader", "bevy/reduce_image_sizes", "av/html"]
 
 [profile.release]
 codegen-units = 1
@@ -228,11 +227,18 @@ dcl_deno_ipc = { workspace = true }
 mimalloc = { version = "*", default-features = false }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+av = { workspace = true, features = ["html"] }
+bevy = { workspace = true, features = [
+    "webgpu",
+    "wasm_threaded_asset_loader",
+    "reduce_image_sizes",
+] }
+uuid = { workspace = true, features = ["js"] }
 dcl_wasm = { workspace = true }
 console_error_panic_hook = "0.1.7"
 console_log = "1.0"
 log = "0.4"
-getrandom = "0.3"
+getrandom = { version = "0.3", features = ["wasm_js"] }
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 once_cell = { workspace = true }

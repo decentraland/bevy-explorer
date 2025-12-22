@@ -8,7 +8,7 @@ use bevy::{
     platform::collections::HashMap,
 };
 use common::rpc::{IpcMessage, RequestContext, SCENE_IPC_CONTEXT};
-use dcl::SceneResponse;
+use dcl::js::{SceneResponseReceiver, SceneResponseSender};
 use dcl_deno_ipc::{write_msg, EngineToScene, SceneToEngine};
 use interprocess::local_socket::{
     tokio::{RecvHalf, SendHalf, Stream},
@@ -46,7 +46,7 @@ fn main() -> Result<()> {
 
     // init context
     let (close_sx, close_rx) = tokio::sync::mpsc::unbounded_channel();
-    let (scene_sx, scene_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (scene_sx, scene_rx) = tokio::sync::mpsc::channel(1000);
     let (system_api_sx, system_api_rx) = tokio::sync::mpsc::unbounded_channel();
     SCENE_IPC_CONTEXT.set(Some(RequestContext {
         registry: Default::default(),
@@ -66,7 +66,7 @@ fn main() -> Result<()> {
 
 async fn scene_ipc_out(
     mut stream: SendHalf,
-    mut scene_rx: tokio::sync::mpsc::UnboundedReceiver<SceneResponse>,
+    mut scene_rx: SceneResponseReceiver,
     mut close_rx: tokio::sync::mpsc::UnboundedReceiver<u64>,
     mut system_api_rx: tokio::sync::mpsc::UnboundedReceiver<SystemApi>,
 ) {
@@ -108,7 +108,7 @@ async fn scene_ipc_out(
 
 async fn scene_ipc_in(
     mut stream: RecvHalf,
-    scene_sx: tokio::sync::mpsc::UnboundedSender<SceneResponse>,
+    scene_sx: SceneResponseSender,
     system_api_sx: tokio::sync::mpsc::UnboundedSender<SystemApi>,
 ) {
     let mut renderer_senders = HashMap::new();

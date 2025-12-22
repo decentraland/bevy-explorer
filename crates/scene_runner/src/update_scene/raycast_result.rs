@@ -152,6 +152,8 @@ fn run_raycasts(
                     raycast.max_distance,
                     mask,
                     true,
+                    false,
+                    None,
                 )
                 .map(|hit| vec![(scene_ent.root, hit)])
                 .unwrap_or_default(),
@@ -189,6 +191,8 @@ fn run_raycasts(
                         raycast.max_distance,
                         mask,
                         true,
+                        false,
+                        None,
                     ) {
                         if best_result.as_ref().is_none_or(|(_, b)| b.toi > result.toi) {
                             best_result = Some((scene, result));

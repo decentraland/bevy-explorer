@@ -120,6 +120,9 @@ impl DclProtoComponent for sdk::components::PbRealmInfo {}
 impl DclProtoComponent for sdk::components::PbVirtualCamera {}
 impl DclProtoComponent for sdk::components::PbMainCamera {}
 impl DclProtoComponent for sdk::components::PbInputModifier {}
+impl DclProtoComponent for sdk::components::PbTriggerArea {}
+impl DclProtoComponent for sdk::components::PbTriggerAreaResult {}
+impl DclProtoComponent for sdk::components::PbGltfNodeModifiers {}
 
 // VECTOR2 conversions
 impl Copy for common::Vector2 {}
@@ -197,6 +200,17 @@ impl Copy for common::Quaternion {}
 impl From<common::Quaternion> for bevy::math::Quat {
     fn from(q: common::Quaternion) -> Self {
         bevy::math::Quat::from_xyzw(q.x, q.y, -q.z, -q.w)
+    }
+}
+
+impl From<bevy::math::Quat> for common::Quaternion {
+    fn from(q: bevy::math::Quat) -> Self {
+        common::Quaternion {
+            x: q.x,
+            y: q.y,
+            z: -q.z,
+            w: -q.w,
+        }
     }
 }
 

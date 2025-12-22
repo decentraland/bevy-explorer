@@ -69,6 +69,7 @@ impl SceneComponentId {
 
     pub const GLTF_CONTAINER: SceneComponentId = SceneComponentId(1041);
     pub const ANIMATOR: SceneComponentId = SceneComponentId(1042);
+    pub const GLTF_NODE_MODIFIERS: SceneComponentId = SceneComponentId(1099);
 
     pub const VIDEO_PLAYER: SceneComponentId = SceneComponentId(1043);
     pub const VIDEO_EVENT: SceneComponentId = SceneComponentId(1044);
@@ -86,6 +87,9 @@ impl SceneComponentId {
 
     pub const CANVAS_INFO: SceneComponentId = SceneComponentId(1054);
     pub const UI_CANVAS: SceneComponentId = SceneComponentId(1203);
+
+    pub const TRIGGER_AREA: SceneComponentId = SceneComponentId(1060);
+    pub const TRIGGER_AREA_RESULT: SceneComponentId = SceneComponentId(1061);
 
     pub const POINTER_EVENTS: SceneComponentId = SceneComponentId(1062);
     pub const POINTER_RESULT: SceneComponentId = SceneComponentId(1063);

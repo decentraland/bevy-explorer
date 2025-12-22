@@ -206,7 +206,7 @@ fn manage_audio_sources(
                     // reuse existing only if same source AND still playing
                     Some(&mut audio.graphs.entry(ent).insert((id, instance)).into_mut().1)
                 } else {
-                    let _ = instance.stop(now);
+                    instance.stop(now);
                     None
                 }
             }
@@ -282,6 +282,7 @@ fn manage_audio_sources(
 #[derive(Component)]
 pub struct SystemSound;
 
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn play_system_audio(
     mut commands: Commands,
     mut events: EventReader<SystemAudio>,

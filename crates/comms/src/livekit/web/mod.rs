@@ -253,7 +253,7 @@ async fn connect_and_handle_session(
 
                 let destination_identities = match outgoing.recipient {
                     NetworkMessageRecipient::All => js_sys::Array::new(),
-                    NetworkMessageRecipient::Peer(address) => js_sys::Array::of1(&JsValue::from_str(&format!("{:#x}", address))),
+                    NetworkMessageRecipient::Peer(address) => js_sys::Array::of1(&JsValue::from_str(&format!("{address:#x}"))),
                     NetworkMessageRecipient::AuthServer => js_sys::Array::of1(&JsValue::from_str("authoritative-server")),
                 };
 
