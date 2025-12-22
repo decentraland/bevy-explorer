@@ -5281,10 +5281,13 @@ version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3ce1918195723ce6ac74e80542c5a96a40c2b26162c1957a5cd70799b8cacf7"
 dependencies = [
+ "base64 0.13.1",
  "byteorder",
  "gltf-json",
+ "image",
  "lazy_static",
  "serde_json",
+ "urlencoding",
 ]
 
 [[package]]
@@ -5992,6 +5995,8 @@ dependencies = [
  "ddsfile",
  "futures-io",
  "futures-lite 1.13.0",
+ "gltf",
+ "gltf-json",
  "image",
  "ipfs",
  "multihash-codetable",
