@@ -3,12 +3,16 @@ mod room;
 use std::{
     error::Error,
     fmt::{Display, Formatter},
+    future::Future,
 };
 
 use bevy::{platform::sync::Arc, prelude::*};
 use ethers_core::types::H160;
 use serde::Deserialize;
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::{
+    mpsc::{Receiver, Sender},
+    oneshot,
+};
 use wasm_bindgen::{
     convert::{FromWasmAbi, IntoWasmAbi, OptionFromWasmAbi},
     prelude::*,
@@ -156,126 +160,6 @@ impl Display for RoomError {
 }
 
 impl Error for RoomError {}
-
-#[allow(clippy::type_complexity)]
-pub fn connect_livekit(
-    mut commands: Commands,
-    mut new_livekits: Query<
-        (Entity, &mut LivekitTransport, &LivekitRoom),
-        Without<LivekitConnection>,
-    >,
-    player_state: Res<GlobalCrdtState>,
-) {
-    for (transport_id, mut new_transport, livekit_room) in new_livekits.iter_mut() {
-        debug!("spawn lk connect");
-        let receiver = new_transport.receiver.take().unwrap();
-        let sender = player_state.get_sender();
-
-        // For WASM, we directly call the handler which will spawn the async task
-        if let Err(e) = livekit_handler_inner(livekit_room.name(), receiver, sender) {
-            warn!("Failed to start livekit connection: {e}");
-        }
-
-        commands.entity(transport_id).try_insert(LivekitConnection);
-    }
-}
-
-fn livekit_handler_inner(
-    room_name: String,
-    app_rx: Receiver<NetworkMessage>,
-    sender: Sender<PlayerUpdate>,
-) -> Result<(), anyhow::Error> {
-    // In WASM, we can't block or create threads, so we just spawn the async task
-    spawn_local(async move {
-        if let Err(e) = run_livekit_session(room_name, app_rx, sender).await {
-            error!("LiveKit session error: {:?}", e);
-        }
-    });
-
-    Ok(())
-}
-
-async fn run_livekit_session(
-    room_name: String,
-    mut app_rx: Receiver<NetworkMessage>,
-    sender: Sender<PlayerUpdate>,
-) -> Result<(), anyhow::Error> {
-    loop {
-        // Check if sender is closed (indicates we should stop)
-        if sender.is_closed() {
-            debug!("Sender closed, stopping LiveKit connection attempts");
-            break;
-        }
-
-        match connect_and_handle_session(room_name.clone(), &mut app_rx).await {
-            Ok(_) => {
-                debug!("LiveKit session ended normally");
-                // Check if we should reconnect
-                if app_rx.is_closed() {
-                    break;
-                }
-                // Session ended but receiver still open, might need to reconnect
-                // Wait a bit before reconnecting
-                gloo_timers::future::TimeoutFuture::new(1000).await;
-            }
-            Err(e) => {
-                error!("LiveKit session error: {:?}", e);
-
-                // Check again if receiver is closed before retrying
-                if app_rx.is_closed() {
-                    debug!("Sender closed during error, stopping LiveKit connection attempts");
-                    break;
-                }
-
-                // Wait before retrying
-                gloo_timers::future::TimeoutFuture::new(1000).await;
-            }
-        }
-    }
-
-    Ok(())
-}
-
-async fn connect_and_handle_session(
-    room_name: String,
-    app_rx: &mut Receiver<NetworkMessage>,
-) -> Result<(), anyhow::Error> {
-    let room = get_room(&room_name);
-
-    // Handle outgoing messages
-    'stream: loop {
-        tokio::select!(
-            message = app_rx.recv() => {
-                let Some(outgoing) = message else {
-                    debug!("App pipe broken, exiting loop");
-                    break 'stream;
-                };
-
-                let destination_identities = match outgoing.recipient {
-                    NetworkMessageRecipient::All => js_sys::Array::new(),
-                    NetworkMessageRecipient::Peer(address) => js_sys::Array::of1(&JsValue::from_str(&format!("{address:#x}"))),
-                    NetworkMessageRecipient::AuthServer => js_sys::Array::of1(&JsValue::from_str("authoritative-server")),
-                };
-
-                if let Err(e) = publish_data(
-                    &room,
-                    &outgoing.data,
-                    !outgoing.unreliable,
-                    destination_identities.into(),
-                )
-                .await
-                {
-                    warn!("Failed to publish data: {:?}", e);
-                    break 'stream;
-                }
-            }
-        );
-    }
-
-    room.into_abi();
-
-    Ok(())
-}
 
 // Define structures for the events coming from JavaScript
 #[derive(Debug, Deserialize)]

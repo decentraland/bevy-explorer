@@ -5,7 +5,7 @@ use livekit::RoomError;
 use tokio::{sync::mpsc, task::JoinHandle};
 
 #[cfg(target_arch = "wasm32")]
-use crate::livekit::web::{connect_livekit, RoomError};
+use crate::livekit::web::RoomError;
 use crate::{
     global_crdt::PlayerUpdate,
     livekit::{
@@ -33,13 +33,7 @@ impl Plugin for LivekitPlugin {
 
         app.add_systems(
             Update,
-            (
-                #[cfg(target_arch = "wasm32")]
-                connect_livekit,
-                start_livekit,
-                verify_player_update_tasks,
-                verify_room_tasks,
-            ),
+            (start_livekit, verify_player_update_tasks, verify_room_tasks),
         );
         app.add_event::<StartLivekit>();
     }
