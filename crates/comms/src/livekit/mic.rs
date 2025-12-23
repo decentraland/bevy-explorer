@@ -296,7 +296,6 @@ fn update_mic(
 }
 
 #[cfg(target_arch = "wasm32")]
-#[expect(clippy::type_complexity)]
 fn locate_foreign_streams(
     mut streams: Query<(
         &GlobalTransform,

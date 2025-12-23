@@ -1,4 +1,4 @@
-use bevy::{platform::sync::Arc, prelude::Deref};
+use bevy::{platform::sync::Arc, prelude::*};
 use tokio::sync::mpsc;
 use wasm_bindgen::{
     convert::{FromWasmAbi, IntoWasmAbi},
@@ -7,7 +7,7 @@ use wasm_bindgen::{
 };
 
 use crate::{
-    livekit::web::{JsValueAbi, LocalParticipant, RoomEvent, RoomOptions, RoomResult},
+    livekit::web::{JsValueAbi, LocalParticipant, RoomError, RoomEvent, RoomOptions, RoomResult},
     make_js_version,
 };
 
@@ -17,7 +17,7 @@ extern "C" {
     fn room_name(room: &JsValue) -> String;
 }
 
-#[derive(Clone, Deref)]
+#[derive(Clone)]
 pub struct Room {
     room: Arc<JsRoom>,
 }

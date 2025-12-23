@@ -2,45 +2,45 @@ use bevy::{
     ecs::relationship::Relationship,
     platform::{collections::HashMap, sync::Arc},
     prelude::*,
+    tasks::poll_once,
 };
-use common::{structs::AudioDecoderError, util::AsH160};
+use common::util::AsH160;
 use ethers_core::types::H160;
 use http::Uri;
-use tokio::sync::{mpsc, oneshot};
-#[cfg(target_arch = "wasm32")]
-use {
-    dcl_component::proto_components::kernel::comms::rfc4,
-    prost::Message,
-    wasm_bindgen::{
-        convert::{FromWasmAbi, IntoWasmAbi},
-        JsValue,
-    },
-};
+use tokio::sync::mpsc;
 #[cfg(not(target_arch = "wasm32"))]
 use {
+    common::structs::AudioDecoderError,
     kira::sound::streaming::StreamingSoundData,
     livekit::{
         id::ParticipantIdentity,
         participant::{ConnectionQuality, Participant},
         DataPacket, Room, RoomEvent, RoomOptions, RoomResult,
     },
+    tokio::sync::oneshot,
 };
+#[cfg(target_arch = "wasm32")]
+use {dcl_component::proto_components::kernel::comms::rfc4, prost::Message};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::{
     livekit_video_bridge::LivekitVideoFrame,
-    participant::connection_quality::{Excellent, Good, Lost, Poor},
+    participant::{
+        connection_quality::{Excellent, Good, Lost, Poor},
+        ParticipantConnectionQuality, ParticipantDisconnected, ParticipantMetadataChanged,
+        ParticipantPayload,
+    },
+    room::LivekitRoomTrackTask,
 };
 use crate::{
     global_crdt::ChannelControl,
     livekit::{
         participant::{
-            HostingParticipants, LivekitParticipant, ParticipantConnected,
-            ParticipantConnectionQuality, ParticipantDisconnected, ParticipantMetadataChanged,
-            ParticipantPayload, ReceivingStream, Streamer,
+            HostingParticipants, LivekitParticipant, ParticipantConnected, ReceivingStream,
+            Streamer,
         },
         plugin::{RoomTask, RoomTasks},
-        room::{Connected, Connecting, ConnectingLivekitRoom, LivekitRoom, LivekitRoomTrackTask},
+        room::{Connected, Connecting, ConnectingLivekitRoom, LivekitRoom},
         track, LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime, LivekitTransport,
     },
     NetworkMessageRecipient,
@@ -185,7 +185,6 @@ fn process_room_events(
     #[cfg(target_arch = "wasm32")]
     let sender = player_state.get_sender();
 
-    #[cfg_attr(target_arch = "wasm32", expect(unused_mut))]
     for (entity, mut livekit_room) in livekit_rooms {
         while let Ok(room_event) = livekit_room.room_event_receiver.try_recv() {
             trace!("in: {:?}", room_event);

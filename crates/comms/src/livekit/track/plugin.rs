@@ -6,13 +6,19 @@ use bevy::{
 };
 use common::util::AsH160;
 #[cfg(not(target_arch = "wasm32"))]
-use livekit::track::{RemoteTrack, TrackKind, TrackSource};
-use tokio::sync::{mpsc, oneshot};
+use {
+    livekit::track::{RemoteTrack, TrackKind, TrackSource},
+    tokio::sync::{mpsc, oneshot},
+};
 
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::{RemoteTrack, TrackKind, TrackSource};
 #[cfg(not(target_arch = "wasm32"))]
-use crate::livekit::{kira_bridge::kira_thread, livekit_video_bridge::livekit_video_thread};
+use crate::livekit::{
+    kira_bridge::kira_thread,
+    livekit_video_bridge::livekit_video_thread,
+    track::{LivekitTrackTask, Subscribing},
+};
 use crate::{
     global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
     livekit::{
@@ -20,11 +26,10 @@ use crate::{
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
         track::{
-            Audio, Camera, LivekitFrame, LivekitTrack, LivekitTrackTask, Microphone,
-            OpenAudioSender, OpenVideoSender, PublishedBy, SubscribeToAudioTrack,
-            SubscribeToVideoTrack, Subscribed, Subscribing, TrackPublished, TrackSubscribed,
-            TrackUnpublished, TrackUnsubscribed, UnsubscribeToTrack, Unsubscribed, Unsubscribing,
-            Video,
+            Audio, Camera, LivekitFrame, LivekitTrack, Microphone, OpenAudioSender,
+            OpenVideoSender, PublishedBy, SubscribeToAudioTrack, SubscribeToVideoTrack, Subscribed,
+            TrackPublished, TrackSubscribed, TrackUnpublished, TrackUnsubscribed,
+            UnsubscribeToTrack, Unsubscribed, Unsubscribing, Video,
         },
         LivekitRuntime,
     },

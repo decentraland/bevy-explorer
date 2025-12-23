@@ -4,11 +4,11 @@ use bevy::{
     ecs::{component::HookContext, world::DeferredWorld},
     prelude::*,
 };
+#[cfg(not(target_arch = "wasm32"))]
 use common::structs::AudioDecoderError;
-use tokio::{
-    sync::{mpsc, oneshot},
-    task::JoinHandle,
-};
+#[cfg(not(target_arch = "wasm32"))]
+use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinHandle;
 #[cfg(not(target_arch = "wasm32"))]
 use {
     kira::sound::streaming::StreamingSoundData,
