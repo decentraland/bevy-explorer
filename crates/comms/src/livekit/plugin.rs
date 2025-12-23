@@ -1,9 +1,8 @@
-use bevy::platform::sync::Arc;
 use bevy::prelude::*;
 use dcl_component::proto_components::kernel::comms::rfc4;
 #[cfg(not(target_arch = "wasm32"))]
 use livekit::RoomError;
-use tokio::{runtime::Builder, sync::mpsc, task::JoinHandle};
+use tokio::{sync::mpsc, task::JoinHandle};
 
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::{connect_livekit, RoomError};
@@ -11,8 +10,9 @@ use crate::{
     global_crdt::PlayerUpdate,
     livekit::{
         mic::MicPlugin, participant::plugin::LivekitParticipantPlugin,
-        room::plugin::LivekitRoomPlugin, track::plugin::LivekitTrackPlugin, LivekitChannelControl,
-        LivekitNetworkMessage, LivekitRuntime, LivekitTransport, StartLivekit,
+        room::plugin::LivekitRoomPlugin, runtime::LivekitRuntimePlugin,
+        track::plugin::LivekitTrackPlugin, LivekitChannelControl, LivekitNetworkMessage,
+        LivekitRuntime, LivekitTransport, StartLivekit,
     },
     profile::CurrentUserProfile,
     NetworkMessage, Transport, TransportType,
@@ -26,6 +26,7 @@ impl Plugin for LivekitPlugin {
         app.init_resource::<RoomTasks>();
 
         app.add_plugins(MicPlugin);
+        app.add_plugins(LivekitRuntimePlugin);
         app.add_plugins(LivekitRoomPlugin);
         app.add_plugins(LivekitParticipantPlugin);
         app.add_plugins(LivekitTrackPlugin);
@@ -85,23 +86,6 @@ fn start_livekit(
         };
         let _ = sender.try_send(NetworkMessage::reliable(&response));
 
-        #[cfg(not(target_arch = "wasm32"))]
-        let runtime = Arc::new(
-            Builder::new_multi_thread()
-                .worker_threads(1)
-                .enable_all()
-                .build()
-                .unwrap(),
-        );
-        #[cfg(target_arch = "wasm32")]
-        let runtime = Arc::new(
-            Builder::new_current_thread()
-                .worker_threads(1)
-                .enable_all()
-                .build()
-                .unwrap(),
-        );
-
         commands.entity(ev.entity).try_insert((
             Transport {
                 transport_type: TransportType::Livekit,
@@ -117,7 +101,7 @@ fn start_livekit(
                 receiver: control_receiver,
             },
             LivekitNetworkMessage { receiver },
-            LivekitRuntime(runtime),
+            LivekitRuntime::new(),
         ));
     }
 }

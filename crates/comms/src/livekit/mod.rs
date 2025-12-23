@@ -8,14 +8,15 @@ mod mic;
 pub mod participant;
 pub mod plugin;
 pub mod room;
+mod runtime;
 pub mod track;
-#[cfg(all(feature = "livekit", target_arch = "wasm32"))]
+#[cfg(target_arch = "wasm32")]
 pub mod web;
 
-use bevy::platform::sync::Arc;
 use bevy::prelude::*;
-use tokio::{runtime::Runtime, sync::mpsc};
+use tokio::sync::mpsc;
 
+pub use crate::livekit::runtime::LivekitRuntime;
 use crate::{ChannelControl, NetworkMessage};
 
 #[derive(Event)]
@@ -39,9 +40,6 @@ pub struct LivekitChannelControl {
 pub struct LivekitNetworkMessage {
     receiver: mpsc::Receiver<NetworkMessage>,
 }
-
-#[derive(Clone, Component, Deref, DerefMut)]
-pub struct LivekitRuntime(Arc<Runtime>);
 
 #[macro_export]
 macro_rules! make_hooks {
