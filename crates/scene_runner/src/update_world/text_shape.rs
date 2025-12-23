@@ -433,23 +433,21 @@ fn update_text_shapes(
             commands.try_push_children(&[ui_node]);
         }
 
-        commands
-            .entity(ent)
-            .try_insert((
-                PriorTextShapeUi(ui_node, text_shape.0.clone()),
-                WorldUi {
-                    dbg: format!("TextShape `{source}`"),
-                    pix_per_m: 375.0 / text_shape.0.font_size.unwrap_or(10.0),
-                    valign,
-                    halign: halign_wui,
-                    add_y_pix,
-                    bounds: scene.bounds.clone(),
-                    view: world_ui.view,
-                    ui_node,
-                    vertex_billboard: false,
-                    blend_mode: AlphaMode::Blend,
-                },
-            ));
+        commands.entity(ent).try_insert((
+            PriorTextShapeUi(ui_node, text_shape.0.clone()),
+            WorldUi {
+                dbg: format!("TextShape `{source}`"),
+                pix_per_m: 375.0 / text_shape.0.font_size.unwrap_or(10.0),
+                valign,
+                halign: halign_wui,
+                add_y_pix,
+                bounds: scene.bounds.clone(),
+                view: world_ui.view,
+                ui_node,
+                vertex_billboard: false,
+                blend_mode: AlphaMode::Blend,
+            },
+        ));
 
         debug!("[{}] textshape {ent:?}", frame.0);
     }

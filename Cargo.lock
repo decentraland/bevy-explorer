@@ -5999,6 +5999,7 @@ dependencies = [
  "gltf-json",
  "image",
  "ipfs",
+ "js-sys",
  "multihash-codetable",
  "platform",
  "reqwest 0.12.15",
@@ -6008,7 +6009,10 @@ dependencies = [
  "url",
  "urlencoding",
  "urn",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-fs",
+ "web-sys",
  "web-time",
 ]
 
