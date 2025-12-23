@@ -19,7 +19,7 @@ use common::{
     rpc::RpcCall,
     sets::{SceneLoopSets, SceneSets},
     structs::{AppConfig, AppError, DebugInfo, PrimaryCamera, PrimaryUser},
-    util::{TryPushChildrenEx, dcl_assert},
+    util::{dcl_assert, TryPushChildrenEx},
 };
 use comms::{SceneRoomConnection, SetCurrentScene};
 use dcl::{

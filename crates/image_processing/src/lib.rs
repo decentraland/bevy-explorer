@@ -11,7 +11,11 @@ use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use bevy::{
-    asset::AssetPath, diagnostic::FrameCount, image::TextureFormatPixelInfo, platform::collections::{HashMap, HashSet}, prelude::*
+    asset::AssetPath,
+    diagnostic::FrameCount,
+    image::TextureFormatPixelInfo,
+    platform::collections::{HashMap, HashSet},
+    prelude::*,
 };
 
 #[derive(Clone, Copy)]

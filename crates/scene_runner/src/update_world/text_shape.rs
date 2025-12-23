@@ -90,7 +90,7 @@ bevy: not implemented
 use bevy::{
     diagnostic::FrameCount,
     ecs::{relationship::RelatedSpawner, spawn::SpawnWith},
-    platform::collections::{HashMap, HashSet},
+    platform::collections::HashSet,
     prelude::*,
     render::view::VisibilitySystems,
     text::{ComputedTextBlock, CosmicBuffer, LineBreak},
@@ -154,35 +154,102 @@ const PIX_PER_M: f32 = 200.0;
 pub struct PriorTextShapeUi(Entity, PbTextShape);
 
 #[derive(Component, Clone, Copy)]
-pub struct SceneWorldUi {
+pub struct TextShapeUi {
     view: Entity,
     ui_root: Entity,
+    ticks: usize,
 }
+
+#[derive(Component)]
+pub struct RetryTextShape(u32);
 
 fn update_text_shapes(
     mut commands: Commands,
     images: ResMut<Assets<Image>>,
-    query: Query<(Entity, &SceneEntity, &TextShape, Option<&PriorTextShapeUi>), Changed<TextShape>>,
+    query: Query<
+        (
+            Entity,
+            &SceneEntity,
+            &TextShape,
+            Option<&PriorTextShapeUi>,
+            Option<&RetryTextShape>,
+        ),
+        Or<(Changed<TextShape>, With<RetryTextShape>)>,
+    >,
     mut removed: RemovedComponents<TextShape>,
-    scenes: Query<(&RendererSceneContext, Option<&SceneWorldUi>)>,
+    scenes: Query<&RendererSceneContext>,
     frame: Res<FrameCount>,
+    mut cameras: Query<&mut Camera>,
+    mut views: Query<&mut TextShapeUi>,
 ) {
     // remove deleted ui nodes
     for e in removed.read() {
         if let Ok(mut commands) = commands.get_entity(e) {
             commands.remove::<WorldUi>();
         }
+
+        if let Ok(view) = views.get(e) {
+            if let Ok(mut commands) = commands.get_entity(view.view) {
+                commands.despawn();
+            }
+            if let Ok(mut commands) = commands.get_entity(view.ui_root) {
+                commands.despawn();
+            }
+        }
+
         debug!("[{}] kill textshape {e:?}", frame.0);
     }
 
-    let mut new_world_uis: HashMap<Entity, SceneWorldUi> = HashMap::new();
+    let mut active_count = 0;
+    let mut queue_count = 0;
+    let mut wait_count = 0;
+
+    const MAX_ACTIVE: usize = 10;
+
+    for mut shape in views.iter_mut() {
+        if shape.ticks > 0 && active_count < MAX_ACTIVE {
+            if cameras.get(shape.view).is_ok_and(|c| !c.is_active) {
+                cameras.get_mut(shape.view).unwrap().is_active = true;
+                active_count += 1;
+            }
+            shape.ticks -= 1;
+        } else {
+            if shape.ticks > 0 {
+                queue_count += 1;
+            }
+            if cameras.get(shape.view).is_ok_and(|c| c.is_active) {
+                cameras.get_mut(shape.view).unwrap().is_active = false;
+            }
+        }
+    }
+
     let images = images.into_inner();
 
+    let mut oldest = query
+        .iter()
+        .flat_map(|(_, _, _, _, since)| since.map(|s| s.0))
+        .collect::<Vec<_>>();
+    oldest.sort();
+
+    let stop_at = oldest.get(MAX_ACTIVE - active_count);
+
     // add new nodes
-    for (ent, scene_ent, text_shape, maybe_prior) in query.iter() {
+    for (ent, scene_ent, text_shape, maybe_prior, maybe_retry) in query.iter() {
+        let skip = active_count >= MAX_ACTIVE
+            || stop_at.is_some_and(|stop_at| maybe_retry.is_none_or(|retry| retry.0 > *stop_at));
+
+        if skip {
+            if maybe_retry.is_none() {
+                commands.entity(ent).try_insert(RetryTextShape(frame.0));
+            }
+            wait_count += 1;
+            continue;
+        }
+
+        active_count += 1;
         debug!("ts: {:?}", text_shape.0);
 
-        let Ok((scene, world_ui)) = scenes.get(scene_ent.root) else {
+        let Ok(scene) = scenes.get(scene_ent.root) else {
             warn!("no scene!");
             continue;
         };
@@ -201,32 +268,39 @@ fn update_text_shapes(
             continue;
         }
 
-        let world_ui = world_ui.unwrap_or_else(|| {
-            new_world_uis.entry(scene_ent.root).or_insert_with(|| {
-                let (view, _) = spawn_world_ui_view(&mut commands, images, None);
-                commands.entity(view).insert(DespawnWith(scene_ent.root));
-                let ui_root = commands
-                    .spawn((
-                        Node {
-                            width: Val::Px(8192.0),
-                            min_width: Val::Px(8192.0),
-                            max_width: Val::Px(8192.0),
-                            max_height: Val::Px(8192.0),
-                            flex_direction: FlexDirection::Row,
-                            flex_wrap: FlexWrap::Wrap,
-                            align_items: AlignItems::FlexStart,
-                            align_content: AlignContent::FlexStart,
-                            ..Default::default()
-                        },
-                        UiTargetCamera(view),
-                        DespawnWith(scene_ent.root),
-                    ))
-                    .id();
-                let world_ui = SceneWorldUi { view, ui_root };
-                commands.entity(scene_ent.root).try_insert(world_ui);
-                world_ui
-            })
+        let mut world_ui = views.get(ent).ok().cloned().unwrap_or_else(|| {
+            error!("make ui for {ent}");
+            let (view, _) = spawn_world_ui_view(&mut commands, images, None);
+            commands.entity(view).insert(DespawnWith(ent));
+            let ui_root = commands
+                .spawn((
+                    Node {
+                        width: Val::Px(4096.0),
+                        min_width: Val::Px(4096.0),
+                        max_width: Val::Px(8192.0),
+                        max_height: Val::Px(8192.0),
+                        flex_direction: FlexDirection::Row,
+                        flex_wrap: FlexWrap::Wrap,
+                        align_items: AlignItems::FlexStart,
+                        align_content: AlignContent::FlexStart,
+                        ..Default::default()
+                    },
+                    UiTargetCamera(view),
+                    DespawnWith(ent),
+                ))
+                .id();
+            let world_ui = TextShapeUi {
+                view,
+                ui_root,
+                ticks: 2,
+            };
+            commands.entity(ent).try_insert(world_ui);
+            world_ui
         });
+        world_ui.ticks = 2;
+        if let Ok(mut camera) = cameras.get_mut(world_ui.ui_root) {
+            camera.is_active = false;
+        }
 
         let text_align = text_shape
             .0
@@ -357,24 +431,29 @@ fn update_text_shapes(
             commands.try_push_children(&[ui_node]);
         }
 
-        commands.entity(ent).try_insert((
-            PriorTextShapeUi(ui_node, text_shape.0.clone()),
-            WorldUi {
-                dbg: format!("TextShape `{source}`"),
-                pix_per_m: 375.0 / text_shape.0.font_size.unwrap_or(10.0),
-                valign,
-                halign: halign_wui,
-                add_y_pix,
-                bounds: scene.bounds.clone(),
-                view: world_ui.view,
-                ui_node,
-                vertex_billboard: false,
-                blend_mode: AlphaMode::Blend,
-            },
-        ));
+        commands
+            .entity(ent)
+            .try_insert((
+                PriorTextShapeUi(ui_node, text_shape.0.clone()),
+                WorldUi {
+                    dbg: format!("TextShape `{source}`"),
+                    pix_per_m: 375.0 / text_shape.0.font_size.unwrap_or(10.0),
+                    valign,
+                    halign: halign_wui,
+                    add_y_pix,
+                    bounds: scene.bounds.clone(),
+                    view: world_ui.view,
+                    ui_node,
+                    vertex_billboard: false,
+                    blend_mode: AlphaMode::Blend,
+                },
+            ))
+            .try_remove::<RetryTextShape>();
 
         debug!("[{}] textshape {ent:?}", frame.0);
     }
+
+    println!("active: {active_count}, queue: {queue_count}, wait: {wait_count}");
 }
 
 #[derive(Component)]
