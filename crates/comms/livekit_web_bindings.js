@@ -40,7 +40,7 @@ export async function room_connect(url, token, room_options, room_connect_option
  * @param {livekit.Room} room
  */
 export function room_local_participant(room) {
-    return room.localParticipant();
+    return room.localParticipant;
 }
 
 /**
