@@ -2,7 +2,6 @@ use bevy::{
     ecs::relationship::Relationship,
     platform::{collections::HashMap, sync::Arc},
     prelude::*,
-    tasks::poll_once,
 };
 use common::util::AsH160;
 use ethers_core::types::H160;
@@ -398,7 +397,6 @@ fn process_room_events(
                 RoomEvent::ParticipantDisconnected { .. } => {
                     debug!("Participant disconnected");
                 }
-                #[cfg(not(target_arch = "wasm32"))]
                 _ => {
                     debug!("Event: {:?}", room_event);
                 }
