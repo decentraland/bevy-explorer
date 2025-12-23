@@ -5,11 +5,12 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use bevy::{platform::sync::Arc, prelude::*};
+use bevy::prelude::*;
 use ethers_core::types::H160;
 use serde::Deserialize;
 use wasm_bindgen::{
     convert::{FromWasmAbi, IntoWasmAbi, OptionFromWasmAbi},
+    describe::WasmDescribe,
     prelude::*,
 };
 
@@ -135,7 +136,8 @@ pub struct RoomOptions {
     // pub join_retries: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
 pub enum RoomError {
     Other(String),
 }
@@ -153,6 +155,7 @@ impl Error for RoomError {}
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum RoomEvent {
+    Connected,
     DataReceived {
         room_name: String,
         participant: RemoteParticipant,
@@ -263,25 +266,49 @@ impl RemoteParticipant {
 
 #[derive(Debug, Clone)]
 pub struct LocalParticipant {
-    participant: Arc<JsLocalParticipant>,
+    inner: JsValue,
 }
-make_js_version!(JsLocalParticipant);
+
+/// SAFETY: should be fine while WASM remains single threaded
+unsafe impl Send for LocalParticipant {}
+/// SAFETY: should be fine while WASM remains single threaded
+unsafe impl Sync for LocalParticipant {}
+
+impl WasmDescribe for LocalParticipant {
+    fn describe() {
+        JsValue::describe();
+    }
+}
+
+impl FromWasmAbi for LocalParticipant {
+    type Abi = JsValueAbi;
+
+    unsafe fn from_abi(value: JsValueAbi) -> Self {
+        Self {
+            inner: unsafe { JsValue::from_abi(value) },
+        }
+    }
+}
 
 impl LocalParticipant {
     pub async fn publish_data<T>(&self, data: T) -> RoomResult<()> {
-        todo!()
+        error!("todo publish_data");
+        panic!("todo publish_data")
     }
 
     pub fn identity(&self) -> ParticipantIdentity {
-        todo!()
+        error!("todo identity");
+        panic!("todo identity")
     }
 
     pub fn sid(&self) -> String {
-        todo!()
+        error!("todo sid");
+        panic!("todo sid")
     }
 
     pub fn metadata(&self) -> String {
-        todo!()
+        error!("todo metadata");
+        panic!("todo metadata")
     }
 }
 
@@ -313,7 +340,8 @@ pub enum RemoteTrack {
 
 impl RemoteTrack {
     pub fn sid(&self) -> String {
-        todo!()
+        error!("todo sid");
+        panic!("todo sid")
     }
 }
 
@@ -324,19 +352,23 @@ pub struct RemoteTrackPublication {
 
 impl RemoteTrackPublication {
     pub fn sid(&self) -> String {
-        todo!()
+        error!("todo sid");
+        panic!("todo sid")
     }
 
     pub fn kind(&self) -> TrackKind {
-        todo!()
+        error!("todo kind");
+        panic!("todo kind")
     }
 
     pub fn source(&self) -> TrackSource {
-        todo!()
+        error!("todo source");
+        panic!("todo source")
     }
 
     pub fn track(&self) -> Option<RemoteTrack> {
-        todo!()
+        error!("todo track");
+        panic!("todo track")
     }
 
     pub fn set_subscribed(&self, switch: bool) {}
@@ -384,5 +416,12 @@ pub fn participant_audio_subscribe(room_name: &str, address: H160, subscribe: bo
         warn!("Failed to (un)subscribe to {address:?}: {e:?}");
     } else {
         debug!("sub to {address:?}: {subscribe}");
+    }
+}
+
+impl From<JsValue> for RoomError {
+    fn from(value: JsValue) -> Self {
+        error!("{value:?}");
+        serde_wasm_bindgen::from_value(value).expect("Room error")
     }
 }

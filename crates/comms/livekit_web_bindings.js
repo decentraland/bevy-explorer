@@ -17,6 +17,57 @@ const participantAudioSids = new Map();
 const participantVideoSids = new Map();
 var audioContext = null;
 
+/**
+ * 
+ * @param {string} url
+ * @param {string} token
+ * @param {livekit.RoomOptions} room_options 
+ * @param {livekit.RoomConnectOptions} room_connect_options 
+ * @param {function} handler 
+ */
+export async function room_connect(url, token, room_options, room_connect_options, handler) {
+    const room = new LivekitClient.Room(room_options);
+
+    alt_set_room_event_handler(room, handler);
+
+    await room.connect(url, token, room_connect_options);
+
+    return room;
+}
+
+/**
+ * 
+ * @param {livekit.Room} room
+ */
+export function room_local_participant(room) {
+    return room.localParticipant();
+}
+
+/**
+ * 
+ * @param {livekit.Room} room 
+ * @param {function} handler 
+ */
+function alt_set_room_event_handler(room, handler) {
+    const room_name = room.name;
+    room.on(LivekitClient.RoomEvent.Connected, () => {
+        handler({
+            type: 'connected',
+        })
+    });
+    room.on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
+        handler({
+            type: 'dataReceived',
+            payload,
+            participant: {
+                room_name: room_name,
+                identity: participant.identity,
+                metadata: participant.metadata || ''
+            }
+        })
+    });
+}
+
 export async function connect_room(url, token) {
     const room = new LivekitClient.Room({
         adaptiveStream: false,
