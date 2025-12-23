@@ -246,6 +246,8 @@ fn update_text_shapes(
             continue;
         }
 
+        commands.entity(ent).try_remove::<RetryTextShape>();
+
         active_count += 1;
         debug!("ts: {:?}", text_shape.0);
 
@@ -269,7 +271,7 @@ fn update_text_shapes(
         }
 
         let mut world_ui = views.get(ent).ok().cloned().unwrap_or_else(|| {
-            error!("make ui for {ent}");
+            debug!("make ui for {ent}");
             let (view, _) = spawn_world_ui_view(&mut commands, images, None);
             commands.entity(view).insert(DespawnWith(ent));
             let ui_root = commands
@@ -447,13 +449,12 @@ fn update_text_shapes(
                     vertex_billboard: false,
                     blend_mode: AlphaMode::Blend,
                 },
-            ))
-            .try_remove::<RetryTextShape>();
+            ));
 
         debug!("[{}] textshape {ent:?}", frame.0);
     }
 
-    println!("active: {active_count}, queue: {queue_count}, wait: {wait_count}");
+    debug!("active: {active_count}, queue: {queue_count}, wait: {wait_count}");
 }
 
 #[derive(Component)]
