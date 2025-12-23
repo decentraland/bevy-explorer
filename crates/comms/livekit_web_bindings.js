@@ -68,6 +68,33 @@ function alt_set_room_event_handler(room, handler) {
     });
 }
 
+/**
+ * 
+ * @param {livekit.LocalParticipant} local_participant 
+ * @returns string
+ */
+export function local_participant_sid(local_participant) {
+    return local_participant.sid;
+}
+
+/**
+ * 
+ * @param {livekit.LocalParticipant} local_participant 
+ * @returns string
+ */
+export function local_participant_identity(local_participant) {
+    return local_participant.identity;
+}
+
+/**
+ * 
+ * @param {livekit.LocalParticipant} local_participant 
+ * @returns string
+ */
+export function local_participant_metadata(local_participant) {
+    return local_participant.metadata;
+}
+
 export async function connect_room(url, token) {
     const room = new LivekitClient.Room({
         adaptiveStream: false,
