@@ -1,8 +1,11 @@
+use std::str::FromStr;
+
 use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
 use assets::EmbedAssetsPlugin;
 use bevy::{
     app::Propagate,
     diagnostic::FrameTimeDiagnosticsPlugin,
+    log::LogPlugin,
     prelude::*,
     render::{renderer::RenderDevice, view::RenderLayers},
     tasks::{IoTaskPool, Task},
@@ -10,8 +13,7 @@ use bevy::{
 };
 use bevy_console::ConsoleCommand;
 use dcl_wasm::init_runtime;
-use imposters::DclImposterPlugin;
-use std::str::FromStr;
+use tracing::Level;
 
 use collectibles::CollectiblesPlugin;
 use common::{
@@ -24,6 +26,7 @@ use common::{
     },
     util::{TaskCompat, TaskExt, TryPushChildrenEx, UtilsPlugin},
 };
+use imposters::DclImposterPlugin;
 use restricted_actions::{lookup_portable, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
@@ -163,6 +166,11 @@ fn main_inner(
                     wasm_loader_handle,
                     unapproved_path_mode: bevy::asset::UnapprovedPathMode::Allow,
                     ..Default::default()
+                })
+                .set(LogPlugin {
+                    level: Level::INFO,
+                    filter: std::option_env!("RUST_LOG").unwrap_or("").to_string(),
+                    custom_layer: |_| None,
                 })
                 .add_before::<AssetPlugin>(IpfsIoPlugin {
                     preview: is_preview,
@@ -491,7 +499,6 @@ pub fn init_asset_load_thread() {
 #[wasm_bindgen]
 pub async fn engine_init() -> Result<JsValue, JsValue> {
     console_error_panic_hook::set_once();
-    let _ = console_log::init_with_level(log::Level::Info);
 
     let mut file = match web_fs::File::open("config.json").await {
         Ok(f) => f,
