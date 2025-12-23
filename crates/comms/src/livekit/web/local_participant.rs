@@ -6,10 +6,18 @@ use wasm_bindgen::{
     JsValue,
 };
 
-use crate::livekit::web::{JsValueAbi, ParticipantIdentity, ParticipantSid, RoomResult};
+use crate::livekit::web::{
+    DataPacket, JsValueAbi, ParticipantIdentity, ParticipantSid, RoomResult,
+};
 
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
 extern "C" {
+    #[wasm_bindgen(catch)]
+    async fn local_participant_publish_data(
+        local_participant: &LocalParticipant,
+        data: &[u8],
+        data_publish_options: DataPublishOptions,
+    ) -> RoomResult<()>;
     #[wasm_bindgen]
     fn local_participant_sid(local_participant: &LocalParticipant) -> String;
     #[wasm_bindgen]
@@ -24,9 +32,24 @@ pub struct LocalParticipant {
 }
 
 impl LocalParticipant {
-    pub async fn publish_data<T>(&self, data: T) -> RoomResult<()> {
-        error!("todo publish_data");
-        panic!("todo publish_data")
+    pub async fn publish_data(&self, data: DataPacket) -> RoomResult<()> {
+        let DataPacket {
+            payload,
+            reliable,
+            topic,
+            destination_identities,
+        } = data;
+
+        let data_publish_options = DataPublishOptions {
+            reliable,
+            topic,
+            destinationIdentities: destination_identities
+                .into_iter()
+                .map(|participant_identity| participant_identity.0)
+                .collect(),
+        };
+
+        local_participant_publish_data(self, &payload, data_publish_options).await
     }
 
     pub fn identity(&self) -> ParticipantIdentity {
@@ -71,3 +94,10 @@ impl IntoWasmAbi for &LocalParticipant {
     }
 }
 
+#[expect(non_snake_case, reason = "Matching JS names")]
+#[wasm_bindgen]
+struct DataPublishOptions {
+    reliable: bool,
+    topic: Option<String>,
+    destinationIdentities: Vec<String>,
+}

@@ -70,6 +70,17 @@ function alt_set_room_event_handler(room, handler) {
 
 /**
  * 
+ * @param {livekit.LocalParticipant} local_participant
+ * @param {Uint8Array} payload 
+ * @param {livekit.DataPublishOptions} payload 
+ * @returns string
+ */
+export async function local_participant_publish_data(local_participant, payload, data_publish_options) {
+    local_participant.publishData(payload, data_publish_options).await;
+}
+
+/**
+ * 
  * @param {livekit.LocalParticipant} local_participant 
  * @returns string
  */
