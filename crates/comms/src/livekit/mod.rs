@@ -43,9 +43,6 @@ pub struct LivekitNetworkMessage {
 #[derive(Clone, Component, Deref, DerefMut)]
 pub struct LivekitRuntime(Arc<Runtime>);
 
-#[derive(Component)]
-pub struct LivekitConnection;
-
 #[macro_export]
 macro_rules! make_hooks {
     ($inserted:ty, ($($to_remove:ty),+)) => {

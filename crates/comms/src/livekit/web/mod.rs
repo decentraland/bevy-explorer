@@ -17,7 +17,7 @@ use wasm_bindgen_futures::spawn_local;
 
 use crate::{
     global_crdt::{ChannelControl, GlobalCrdtState, PlayerUpdate},
-    livekit::{room::LivekitRoom, LivekitConnection, LivekitTransport},
+    livekit::{room::LivekitRoom, LivekitTransport},
     NetworkMessage, NetworkMessageRecipient,
 };
 
