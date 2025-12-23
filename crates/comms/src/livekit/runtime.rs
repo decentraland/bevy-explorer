@@ -70,8 +70,8 @@ impl LivekitRuntime {
     #[cfg(target_arch = "wasm32")]
     pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
     where
-        F: Future + Send + 'static,
-        F::Output: Send + 'static,
+        F: Future + 'static,
+        F::Output: 'static,
     {
         self.0.spawn_local(future)
     }
