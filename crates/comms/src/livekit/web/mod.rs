@@ -200,7 +200,7 @@ impl Participant {
         }
     }
 
-    pub fn sid(&self) -> String {
+    pub fn sid(&self) -> ParticipantSid {
         match self {
             Self::Local(l) => l.sid(),
             Self::Remote(r) => r.sid(),
@@ -236,8 +236,8 @@ impl RemoteParticipant {
         "".to_owned()
     }
 
-    pub fn sid(&self) -> String {
-        "".to_owned()
+    pub fn sid(&self) -> ParticipantSid {
+        ParticipantSid("".to_owned())
     }
 }
 
@@ -345,6 +345,16 @@ pub fn participant_audio_subscribe(room_name: &str, address: H160, subscribe: bo
         warn!("Failed to (un)subscribe to {address:?}: {e:?}");
     } else {
         debug!("sub to {address:?}: {subscribe}");
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deref)]
+#[wasm_bindgen]
+pub struct ParticipantSid(String);
+
+impl std::fmt::Display for ParticipantSid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}", self.0)
     }
 }
 

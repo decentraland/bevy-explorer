@@ -1,11 +1,45 @@
 use bevy::prelude::*;
-use wasm_bindgen::{convert::FromWasmAbi, describe::WasmDescribe, JsValue};
+use wasm_bindgen::{
+    convert::{FromWasmAbi, IntoWasmAbi},
+    describe::WasmDescribe,
+    prelude::*,
+    JsValue,
+};
 
-use crate::livekit::web::{JsValueAbi, ParticipantIdentity, RoomResult};
+use crate::livekit::web::{JsValueAbi, ParticipantIdentity, ParticipantSid, RoomResult};
+
+#[wasm_bindgen(module = "/livekit_web_bindings.js")]
+extern "C" {
+    #[wasm_bindgen]
+    fn local_participant_sid(local_participant: &LocalParticipant) -> String;
+    #[wasm_bindgen]
+    fn local_participant_identity(local_participant: &LocalParticipant) -> String;
+    #[wasm_bindgen]
+    fn local_participant_metadata(local_participant: &LocalParticipant) -> String;
+}
 
 #[derive(Debug, Clone)]
 pub struct LocalParticipant {
     inner: JsValue,
+}
+
+impl LocalParticipant {
+    pub async fn publish_data<T>(&self, data: T) -> RoomResult<()> {
+        error!("todo publish_data");
+        panic!("todo publish_data")
+    }
+
+    pub fn identity(&self) -> ParticipantIdentity {
+        ParticipantIdentity(local_participant_identity(self))
+    }
+
+    pub fn sid(&self) -> ParticipantSid {
+        ParticipantSid(local_participant_sid(self))
+    }
+
+    pub fn metadata(&self) -> String {
+        local_participant_metadata(self)
+    }
 }
 
 /// SAFETY: should be fine while WASM remains single threaded
@@ -29,24 +63,11 @@ impl FromWasmAbi for LocalParticipant {
     }
 }
 
-impl LocalParticipant {
-    pub async fn publish_data<T>(&self, data: T) -> RoomResult<()> {
-        error!("todo publish_data");
-        panic!("todo publish_data")
-    }
+impl IntoWasmAbi for &LocalParticipant {
+    type Abi = JsValueAbi;
 
-    pub fn identity(&self) -> ParticipantIdentity {
-        error!("todo identity");
-        panic!("todo identity")
-    }
-
-    pub fn sid(&self) -> String {
-        error!("todo sid");
-        panic!("todo sid")
-    }
-
-    pub fn metadata(&self) -> String {
-        error!("todo metadata");
-        panic!("todo metadata")
+    fn into_abi(self) -> JsValueAbi {
+        self.inner.clone().into_abi()
     }
 }
+
