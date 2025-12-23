@@ -100,30 +100,6 @@ extern "C" {
 
 type JsValueAbi = <JsValue as IntoWasmAbi>::Abi;
 
-#[macro_export]
-macro_rules! make_js_version {
-    ($name:ident) => {
-        struct $name {
-            abi: JsValueAbi,
-        }
-
-        impl std::fmt::Debug for $name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                let js = unsafe { JsValue::from_abi(self.abi) };
-                let res = writeln!(f, "{js:?}");
-                js.into_abi();
-                res
-            }
-        }
-
-        impl Drop for $name {
-            fn drop(&mut self) {
-                let _ = unsafe { JsValue::from_abi(self.abi) };
-            }
-        }
-    };
-}
-
 pub type RoomResult<T> = Result<T, RoomError>;
 
 #[derive(Debug, Default, Clone)]
