@@ -1,7 +1,8 @@
 mod local_participant;
+mod remote_participant;
 mod room;
 mod room_event;
-mod remote_participant;
+mod traits;
 
 use std::{
     error::Error,
@@ -18,7 +19,11 @@ use wasm_bindgen::{
     prelude::*,
 };
 
-pub use {local_participant::LocalParticipant, room::Room, room_event::RoomEvent, remote_participant::RemoteParticipant};
+use crate::livekit::web::traits::GetFromJsValue;
+pub use crate::livekit::web::{
+    local_participant::LocalParticipant, remote_participant::RemoteParticipant, room::Room,
+    room_event::RoomEvent,
+};
 
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
 extern "C" {
@@ -307,5 +312,13 @@ impl<'de> Deserialize<'de> for DataPacketKind {
             _ => unreachable!("Should always be 0 for Reliable or 1 for Lossy, but was {int}."),
         };
         Ok(kind)
+    }
+}
+
+impl GetFromJsValue for DataPacketKind {
+    fn get_from_js_value(js_value: &JsValue, key: &str) -> Option<Self> {
+        js_sys::Reflect::get(&js_value, &JsValue::from(key))
+            .ok()
+            .and_then(|kind| serde_wasm_bindgen::from_value::<DataPacketKind>(kind).ok())
     }
 }

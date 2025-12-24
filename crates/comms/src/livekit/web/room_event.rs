@@ -1,8 +1,12 @@
 use bevy::{platform::sync::Arc, prelude::*};
-use wasm_bindgen::{convert::{FromWasmAbi, IntoWasmAbi, OptionFromWasmAbi}, JsValue, describe::WasmDescribe};
 use serde::{Deserialize, Deserializer};
+use wasm_bindgen::{
+    convert::{FromWasmAbi, IntoWasmAbi, OptionFromWasmAbi},
+    describe::WasmDescribe,
+    JsValue,
+};
 
-use crate::livekit::web::{DataPacketKind, RemoteParticipant};
+use crate::livekit::web::{traits::GetFromJsValue, DataPacketKind, RemoteParticipant};
 
 // Define structures for the events coming from JavaScript
 #[derive(Debug)]
@@ -60,37 +64,24 @@ impl FromWasmAbi for RoomEvent {
         match tag.as_deref() {
             Some("connected") => RoomEvent::Connected,
             Some(tag) => {
-                let Some(payload) = js_sys::Reflect::get(&js_value, &JsValue::from("payload"))
-                    .ok()
-                    .and_then(|payload| {
-                        serde_wasm_bindgen::from_value::<PayloadIntermediate>(payload).ok()
-                    })
-                else {
+                let Some(payload) = Arc::<Vec<u8>>::get_from_js_value(&js_value, "payload") else {
                     error!("RoomEvent::DataReceived did not have payload field.");
                     panic!();
                 };
                 let Some(participant) =
-                    js_sys::Reflect::get(&js_value, &JsValue::from("participant"))
-                        .ok()
-                        .map(|participant| RemoteParticipant {
-                            inner: participant,
-                        })
+                    RemoteParticipant::get_from_js_value(&js_value, "participant")
                 else {
                     error!("RoomEvent::DataReceived did not have participant field.");
                     panic!();
                 };
-                let Some(kind) = js_sys::Reflect::get(&js_value, &JsValue::from("kind"))
-                    .ok()
-                    .and_then(|kind| serde_wasm_bindgen::from_value::<DataPacketKind>(kind).ok())
-                else {
+                let Some(kind) = DataPacketKind::get_from_js_value(&js_value, "kind") else {
                     error!("RoomEvent::DataReceived did not have kind field.");
                     panic!();
                 };
-                let topic = js_sys::Reflect::get(&js_value, &JsValue::from("topic"))
-                    .ok()
-                    .and_then(|topic| topic.as_string());
+                let topic = String::get_from_js_value(&js_value, "topic");
+
                 RoomEvent::DataReceived {
-                    payload: payload.0,
+                    payload,
                     participant,
                     kind,
                     topic,
@@ -107,18 +98,5 @@ impl FromWasmAbi for RoomEvent {
 impl OptionFromWasmAbi for RoomEvent {
     fn is_none(abi: &Self::Abi) -> bool {
         std::mem::ManuallyDrop::new(unsafe { JsValue::from_abi(*abi) }).is_object()
-    }
-}
-
-#[derive(Debug)]
-struct PayloadIntermediate(Arc<Vec<u8>>);
-
-impl<'de> Deserialize<'de> for PayloadIntermediate {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let buf = serde_bytes::ByteBuf::deserialize(deserializer)?;
-        Ok(Self(Arc::new(buf.into_vec())))
     }
 }
