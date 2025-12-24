@@ -55,17 +55,21 @@ function alt_set_room_event_handler(room, handler) {
             type: 'connected',
         })
     });
-    room.on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
-        handler({
-            type: 'dataReceived',
-            payload,
-            participant: {
-                room_name: room_name,
-                identity: participant.identity,
-                metadata: participant.metadata || ''
-            }
-        })
-    });
+    room.on(
+        LivekitClient.RoomEvent.DataReceived,
+        (payload, participant, kind, topic) => {
+            handler({
+                type: 'dataReceived',
+                payload,
+                participant: {
+                    identity: participant.identity,
+                    metadata: participant.metadata || ''
+                },
+                kind,
+                topic
+            })
+        }
+    );
 }
 
 /**

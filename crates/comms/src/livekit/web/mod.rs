@@ -6,9 +6,9 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use bevy::prelude::*;
+use bevy::{platform::sync::Arc, prelude::*};
 use ethers_core::types::H160;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use wasm_bindgen::{
     convert::{FromWasmAbi, IntoWasmAbi, OptionFromWasmAbi},
     describe::WasmDescribe,
@@ -134,9 +134,11 @@ impl Error for RoomError {}
 pub enum RoomEvent {
     Connected,
     DataReceived {
-        room_name: String,
+        #[serde(deserialize_with = "data_received_payload_deserializer")]
+        payload: Arc<Vec<u8>>,
+        topic: Option<String>,
+        kind: DataPacketKind,
         participant: RemoteParticipant,
-        payload: serde_bytes::ByteBuf,
     },
     TrackPublished {
         room_name: String,
@@ -363,4 +365,39 @@ impl From<JsValue> for RoomError {
         error!("{value:?}");
         serde_wasm_bindgen::from_value(value).expect("Room error")
     }
+}
+
+
+/// Kind of the packet.
+/// 
+/// Keep in track with
+/// [https://github.com/livekit/protocol/blob/e7532dfc617d0c920eb905a93b6ca0d3ca4033e9/protobufs/livekit_models.proto#L324]
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DataPacketKind {
+    Reliable = 0,
+    Lossy = 1,
+}
+
+impl<'de> Deserialize<'de> for DataPacketKind {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let int = u32::deserialize(deserializer)?;
+        let kind = match int {
+            0 => DataPacketKind::Reliable,
+            1 => DataPacketKind::Lossy,
+            _ => unreachable!("Should always be 0 for Reliable or 1 for Lossy, but was {int}."),
+        };
+        Ok(kind)
+    }
+}
+
+fn data_received_payload_deserializer<'de, D>(deserializer: D) -> Result<Arc<Vec<u8>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let buf = serde_bytes::ByteBuf::deserialize(deserializer)?;
+    Ok(Arc::new(buf.into_vec()))
 }
