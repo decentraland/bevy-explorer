@@ -361,6 +361,19 @@ fn livekit_handler_inner(
                                             }).await;
                                         }
                                     }
+                                    let meta = participant.metadata();
+                                    if !meta.is_empty() {
+                                        if let Some(address) = participant.identity().0.as_str().as_h160() {
+                                            if let Err(e) = sender.send(PlayerUpdate {
+                                                transport_id,
+                                                message: PlayerMessage::MetaData(meta),
+                                                address,
+                                            }).await {
+                                                warn!("app pipe broken ({e}), existing loop");
+                                                break 'stream;
+                                            }
+                                        }
+                                    }
                                 } else if participant.identity().as_str().ends_with("-streamer") {
                                     for publication in publications {
                                         publication.set_subscribed(true);
