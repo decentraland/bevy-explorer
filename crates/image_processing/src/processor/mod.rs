@@ -227,7 +227,7 @@ fn process_gltf(raw_bytes: &[u8]) -> Result<Vec<u8>, GltfProcessError> {
             let start = view.byte_offset.unwrap_or_default().0 as usize;
             let len = view.byte_length.0 as usize;
             // Pad
-            while new_bin.len() % 4 != 0 {
+            while !new_bin.len().is_multiple_of(4) {
                 new_bin.push(0);
             }
             let new_offset = new_bin.len() as u64;
@@ -245,7 +245,7 @@ fn process_gltf(raw_bytes: &[u8]) -> Result<Vec<u8>, GltfProcessError> {
             let bc7_data = process_image(&raw_pixels)?;
 
             // 2. Append to new_bin
-            while new_bin.len() % 4 != 0 {
+            while !new_bin.len().is_multiple_of(4) {
                 new_bin.push(0);
             }
             let offset = new_bin.len() as u64;
@@ -322,7 +322,7 @@ pub fn write_glb<W: Write>(
     let mut json_bytes = json_string.as_bytes().to_vec();
 
     // 2. Pad JSON (Must be multiple of 4, padded with spaces 0x20)
-    while json_bytes.len() % 4 != 0 {
+    while !json_bytes.len().is_multiple_of(4) {
         json_bytes.push(0x20);
     }
 
@@ -330,7 +330,7 @@ pub fn write_glb<W: Write>(
     // Note: We copy to a vector here to pad. For huge files,
     // you might want to write padding bytes directly to the writer instead.
     let mut bin_data = binary_payload.to_vec();
-    while bin_data.len() % 4 != 0 {
+    while !bin_data.len().is_multiple_of(4) {
         bin_data.push(0x00);
     }
 
