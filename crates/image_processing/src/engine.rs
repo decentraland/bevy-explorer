@@ -111,7 +111,9 @@ fn check_assets(
             if image.width() as usize
                 * image.height() as usize
                 * image.texture_descriptor.format.pixel_size()
-                < 1024
+                <= 1024
+                || image.height() <= 2 // bc7 requires 4x4 blocks, we won't save anything
+                || image.width() <= 2
             {
                 stats.skip_tiny += 1;
                 continue;
