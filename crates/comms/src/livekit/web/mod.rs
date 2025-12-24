@@ -1,6 +1,7 @@
 mod local_participant;
 mod room;
 mod room_event;
+mod remote_participant;
 
 use std::{
     error::Error,
@@ -17,7 +18,7 @@ use wasm_bindgen::{
     prelude::*,
 };
 
-pub use {local_participant::LocalParticipant, room::Room, room_event::RoomEvent};
+pub use {local_participant::LocalParticipant, room::Room, room_event::RoomEvent, remote_participant::RemoteParticipant};
 
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
 extern "C" {
@@ -158,35 +159,6 @@ impl Participant {
         }
     }
 }
-
-#[derive(Debug, Clone)]
-pub struct RemoteParticipant {
-    inner: JsValue,
-}
-
-impl RemoteParticipant {
-    pub fn identity(&self) -> ParticipantIdentity {
-        ParticipantIdentity("".to_owned())
-    }
-
-    pub fn name(&self) -> String {
-        "".to_owned()
-    }
-
-    pub fn metadata(&self) -> String {
-        "".to_owned()
-    }
-
-    pub fn sid(&self) -> ParticipantSid {
-        ParticipantSid("".to_owned())
-    }
-}
-
-/// SAFETY: should be fine while WASM remains single-threaded
-unsafe impl Send for RemoteParticipant {}
-
-/// SAFETY: should be fine while WASM remains single-threaded
-unsafe impl Sync for RemoteParticipant {}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct TrackSid;
