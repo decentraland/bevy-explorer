@@ -184,7 +184,7 @@ impl FromWasmAbi for RoomEvent {
 
 impl OptionFromWasmAbi for RoomEvent {
     fn is_none(abi: &Self::Abi) -> bool {
-        [0, JsValue::NULL.into_abi(), JsValue::UNDEFINED.into_abi()].contains(abi)
+        std::mem::ManuallyDrop::new(unsafe { JsValue::from_abi(*abi) }).is_object()
     }
 }
 
