@@ -106,6 +106,33 @@ export function local_participant_metadata(local_participant) {
     return local_participant.metadata;
 }
 
+/**
+ * 
+ * @param {livekit.RemoteParticipant} remote_participant 
+ * @returns string
+ */
+export function remote_participant_sid(remote_participant) {
+    return remote_participant.sid;
+}
+
+/**
+ * 
+ * @param {livekit.RemoteParticipant} remote_participant 
+ * @returns string
+ */
+export function remote_participant_identity(remote_participant) {
+    return remote_participant.identity;
+}
+
+/**
+ * 
+ * @param {livekit.RemoteParticipant} remote_participant 
+ * @returns string
+ */
+export function remote_participant_metadata(remote_participant) {
+    return remote_participant.metadata;
+}
+
 export async function connect_room(url, token) {
     const room = new LivekitClient.Room({
         adaptiveStream: false,
