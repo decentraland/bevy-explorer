@@ -63,7 +63,7 @@ impl FromWasmAbi for RoomEvent {
 
         match tag.as_deref() {
             Some("connected") => RoomEvent::Connected,
-            Some(tag) => {
+            Some("dataReceived") => {
                 let Some(payload) = Arc::<Vec<u8>>::get_from_js_value(&js_value, "payload") else {
                     error!("RoomEvent::DataReceived did not have payload field.");
                     panic!();
@@ -86,6 +86,9 @@ impl FromWasmAbi for RoomEvent {
                     kind,
                     topic,
                 }
+            }
+            Some(tag) => {
+                todo!("{tag:?}");
             }
             None => {
                 error!("RoomEvent's `type` was not a string, was {tag:?}.");
