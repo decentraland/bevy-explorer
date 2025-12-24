@@ -176,7 +176,7 @@ fn play_videos(
     }
 
     impl FrameSource {
-        fn data(&self) -> Cow<[u8]> {
+        fn data(&self) -> Cow<'_, [u8]> {
             match self {
                 FrameSource::Video(video) => Cow::Borrowed(video.data(0)),
                 #[cfg(feature = "livekit")]
