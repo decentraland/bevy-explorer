@@ -132,15 +132,15 @@ fn process_image(raw_bytes: &[u8]) -> Result<Vec<u8>, ImageProcessError> {
         return Err(ImageProcessError::DdsFailed);
     };
 
-    if dds.get_height() == 0 {
+    if dds.get_height() == 0 || dds.get_width() == 0 {
         error!(
-            "fucked size: {}/{} -> {}/{}",
+            "returned size zero processing {}/{} -> {}/{}",
             initial_width,
             initial_height,
             resized.width(),
             resized.height()
         );
-        std::process::exit(1);
+        return Err(ImageProcessError::DdsFailed);
     }
 
     Ok(output)
