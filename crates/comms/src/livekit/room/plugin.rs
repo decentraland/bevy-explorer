@@ -1,0 +1,775 @@
+use bevy::{
+    ecs::relationship::Relationship,
+    platform::{collections::HashMap, sync::Arc},
+    prelude::*,
+};
+use common::util::AsH160;
+use ethers_core::types::H160;
+use http::Uri;
+use tokio::sync::mpsc;
+#[cfg(not(target_arch = "wasm32"))]
+use {
+    common::structs::AudioDecoderError,
+    kira::sound::streaming::StreamingSoundData,
+    livekit::{
+        id::ParticipantIdentity,
+        participant::{ConnectionQuality, Participant},
+        DataPacket, Room, RoomEvent, RoomOptions, RoomResult,
+    },
+    tokio::sync::oneshot,
+};
+#[cfg(target_arch = "wasm32")]
+use {dcl_component::proto_components::kernel::comms::rfc4, prost::Message};
+
+#[cfg(not(target_arch = "wasm32"))]
+use crate::livekit::{
+    livekit_video_bridge::LivekitVideoFrame,
+    participant::{
+        connection_quality::{Excellent, Good, Lost, Poor},
+        ParticipantConnectionQuality, ParticipantDisconnected, ParticipantMetadataChanged,
+        ParticipantPayload,
+    },
+    room::LivekitRoomTrackTask,
+};
+use crate::{
+    global_crdt::ChannelControl,
+    livekit::{
+        participant::{
+            HostingParticipants, LivekitParticipant, ParticipantConnected, ReceivingStream,
+            Streamer,
+        },
+        plugin::{RoomTask, RoomTasks},
+        room::{Connected, Connecting, ConnectingLivekitRoom, LivekitRoom},
+        track, LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime, LivekitTransport,
+    },
+    NetworkMessageRecipient,
+};
+#[cfg(target_arch = "wasm32")]
+use crate::{
+    global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
+    livekit::web::{
+        participant_audio_subscribe, streamer_subscribe_channel, DataPacket, ParticipantIdentity,
+        Room, RoomEvent, RoomOptions, RoomResult,
+    },
+};
+
+pub struct LivekitRoomPlugin;
+
+impl Plugin for LivekitRoomPlugin {
+    fn build(&self, app: &mut App) {
+        #[cfg(not(target_arch = "wasm32"))]
+        app.init_resource::<LivekitRoomTrackTask>();
+
+        app.add_observer(initiate_room_connection);
+        app.add_observer(connect_to_livekit_room);
+        app.add_observer(disconnect_from_room_on_replace);
+
+        app.add_systems(
+            Update,
+            (
+                poll_connecting_rooms,
+                (
+                    process_room_events,
+                    process_channel_control,
+                    process_network_message,
+                ),
+            )
+                .chain(),
+        );
+    }
+}
+
+fn initiate_room_connection(trigger: Trigger<OnAdd, LivekitTransport>, mut commands: Commands) {
+    commands.entity(trigger.target()).insert(Connecting);
+}
+
+fn connect_to_livekit_room(
+    trigger: Trigger<OnAdd, Connecting>,
+    mut commands: Commands,
+    livekit_transports: Query<(&LivekitTransport, &LivekitRuntime)>,
+) {
+    let entity = trigger.target();
+    let Ok((livekit_transport, livekit_runtime)) = livekit_transports.get(entity) else {
+        error!("{entity} does not have a LivekitRuntime.");
+        return;
+    };
+
+    let remote_address = &livekit_transport.address;
+    debug!(">> lk connect async : {remote_address}");
+
+    let url = Uri::try_from(remote_address).unwrap();
+    let address = format!(
+        "{}://{}{}",
+        url.scheme_str().unwrap_or_default(),
+        url.host().unwrap_or_default(),
+        url.path()
+    );
+    let params: HashMap<_, _, bevy::platform::hash::FixedHasher> =
+        HashMap::from_iter(url.query().unwrap_or_default().split('&').flat_map(|par| {
+            par.split_once('=')
+                .map(|(a, b)| (a.to_owned(), b.to_owned()))
+        }));
+    debug!("{params:?}");
+    let token = params.get("access_token").cloned().unwrap_or_default();
+
+    commands.entity(entity).insert(ConnectingLivekitRoom(
+        livekit_runtime.spawn(connect_to_room(address, token)),
+    ));
+}
+
+fn poll_connecting_rooms(
+    mut commands: Commands,
+    livekit_rooms: Populated<(Entity, &LivekitRuntime, &mut ConnectingLivekitRoom)>,
+) {
+    for (entity, livekit_runtime, mut connecting_livekit_room) in livekit_rooms.into_inner() {
+        if connecting_livekit_room.is_finished() {
+            let Ok(poll) =
+                livekit_runtime.block_on(connecting_livekit_room.as_deref_mut().as_mut())
+            else {
+                error!("Failed to poll ConnectingLivekitRoom.");
+                continue;
+            };
+
+            match poll {
+                Ok((room, room_event_receiver)) => {
+                    let local_participant = room.local_participant();
+
+                    commands
+                        .entity(entity)
+                        .insert((
+                            LivekitRoom {
+                                room: Arc::new(room),
+                                room_event_receiver,
+                            },
+                            Connected,
+                        ))
+                        .remove::<ConnectingLivekitRoom>();
+
+                    commands.trigger(ParticipantConnected {
+                        participant: local_participant.into(),
+                        room: entity,
+                    });
+                }
+                Err(err) => {
+                    error!("Failed to connect to room due to '{err}'.");
+                    commands.entity(entity).remove::<ConnectingLivekitRoom>();
+                }
+            }
+        }
+    }
+}
+
+async fn connect_to_room(
+    address: String,
+    token: String,
+) -> RoomResult<(Room, mpsc::UnboundedReceiver<RoomEvent>)> {
+    Room::connect(
+        &address,
+        &token,
+        RoomOptions {
+            auto_subscribe: false,
+            adaptive_stream: false,
+            dynacast: false,
+            ..Default::default()
+        },
+    )
+    .await
+}
+
+fn process_room_events(
+    mut commands: Commands,
+    livekit_rooms: Query<(Entity, &mut LivekitRoom), With<Connected>>,
+    #[cfg(target_arch = "wasm32")] player_state: Res<GlobalCrdtState>,
+) {
+    #[cfg(target_arch = "wasm32")]
+    let sender = player_state.get_sender();
+
+    for (entity, mut livekit_room) in livekit_rooms {
+        while let Ok(room_event) = livekit_room.room_event_receiver.try_recv() {
+            trace!("in: {:?}", room_event);
+
+            match room_event {
+                #[cfg(not(target_arch = "wasm32"))]
+                RoomEvent::Connected {
+                    participants_with_tracks,
+                } => {
+                    for (participant, publications) in participants_with_tracks {
+                        commands.trigger(ParticipantConnected {
+                            participant: participant.clone().into(),
+                            room: entity,
+                        });
+                        for publication in &publications {
+                            commands.trigger(track::TrackPublished {
+                                participant: Participant::Remote(participant.clone()),
+                                track: publication.clone(),
+                            });
+                        }
+                    }
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                RoomEvent::DataReceived {
+                    payload,
+                    participant: maybe_participant,
+                    ..
+                } => {
+                    if let Some(participant) = maybe_participant {
+                        commands.trigger(ParticipantPayload {
+                            room: entity,
+                            participant: participant.into(),
+                            payload,
+                        });
+                    } else {
+                        debug!("Owner-less payload received.");
+                    }
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                RoomEvent::TrackPublished {
+                    publication,
+                    participant,
+                } => {
+                    commands.trigger(track::TrackPublished {
+                        participant: Participant::Remote(participant.clone()),
+                        track: publication.clone(),
+                    });
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                RoomEvent::TrackUnpublished {
+                    publication,
+                    participant,
+                } => {
+                    commands.trigger(track::TrackUnpublished {
+                        participant: Participant::Remote(participant.clone()),
+                        track: publication.clone(),
+                    });
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                RoomEvent::TrackSubscribed { publication, .. } => {
+                    commands.trigger(track::TrackSubscribed { track: publication });
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                RoomEvent::TrackUnsubscribed { publication, .. } => {
+                    commands.trigger(track::TrackUnsubscribed { track: publication });
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                RoomEvent::ParticipantConnected(participant) => {
+                    commands.trigger(ParticipantConnected {
+                        participant: participant.clone().into(),
+                        room: entity,
+                    });
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                RoomEvent::ParticipantDisconnected(participant) => {
+                    commands.trigger(ParticipantDisconnected {
+                        participant: participant.into(),
+                        room: entity,
+                    });
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                RoomEvent::ParticipantMetadataChanged { participant, .. } => {
+                    commands.trigger(ParticipantMetadataChanged {
+                        room: entity,
+                        participant: participant.into(),
+                    });
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                RoomEvent::ConnectionQualityChanged {
+                    quality,
+                    participant,
+                } => match quality {
+                    ConnectionQuality::Excellent => {
+                        commands.trigger(ParticipantConnectionQuality::new(
+                            participant.into(),
+                            entity,
+                            Excellent,
+                        ));
+                    }
+                    ConnectionQuality::Good => {
+                        commands.trigger(ParticipantConnectionQuality::new(
+                            participant.into(),
+                            entity,
+                            Good,
+                        ));
+                    }
+                    ConnectionQuality::Poor => {
+                        commands.trigger(ParticipantConnectionQuality::new(
+                            participant.into(),
+                            entity,
+                            Poor,
+                        ));
+                    }
+                    ConnectionQuality::Lost => {
+                        commands.trigger(ParticipantConnectionQuality::new(
+                            participant.into(),
+                            entity,
+                            Lost,
+                        ));
+                    }
+                },
+                #[cfg(target_arch = "wasm32")]
+                RoomEvent::DataReceived {
+                    payload,
+                    participant,
+                    ..
+                } => {
+                    if let Some(address) = participant.identity().as_h160() {
+                        if let Ok(packet) = rfc4::Packet::decode(payload.as_slice()) {
+                            if let Some(message) = packet.message {
+                                let _ = sender
+                                    .try_send(PlayerUpdate {
+                                        transport_id: entity,
+                                        message: PlayerMessage::PlayerData(message),
+                                        address,
+                                    })
+                                    .inspect_err(|err| {
+                                        error!("Failed to send player update due to '{err}'")
+                                    });
+                            }
+                        }
+                    }
+                }
+                #[cfg(target_arch = "wasm32")]
+                RoomEvent::TrackPublished {
+                    participant, kind, ..
+                } => {
+                    debug!("pub {} {}", participant.identity(), kind);
+                    if let Some(address) = participant.identity().as_h160() {
+                        if kind == "audio" {
+                            let _ = sender
+                                .try_send(PlayerUpdate {
+                                    transport_id: entity,
+                                    message: PlayerMessage::AudioStreamAvailable {
+                                        transport: entity,
+                                    },
+                                    address,
+                                })
+                                .inspect_err(|err| {
+                                    error!("Failed to send player update due to '{err}'")
+                                });
+                        }
+                    }
+                }
+                #[cfg(target_arch = "wasm32")]
+                RoomEvent::TrackUnpublished {
+                    participant, kind, ..
+                } => {
+                    debug!("unpub {} {}", participant.identity(), kind);
+                    if let Some(address) = participant.identity().as_h160() {
+                        if kind == "audio" {
+                            let _ = sender
+                                .try_send(PlayerUpdate {
+                                    transport_id: entity,
+                                    message: PlayerMessage::AudioStreamUnavailable {
+                                        transport: entity,
+                                    },
+                                    address,
+                                })
+                                .inspect_err(|err| {
+                                    error!("Failed to send player update due to '{err}'")
+                                });
+                        }
+                    }
+                }
+                #[cfg(target_arch = "wasm32")]
+                RoomEvent::TrackSubscribed { .. } => {
+                    debug!("Track subscribed event - audio is handled in JavaScript");
+                }
+                #[cfg(target_arch = "wasm32")]
+                RoomEvent::TrackUnsubscribed { .. } => {
+                    debug!("Track unsubscribed event");
+                }
+                #[cfg(target_arch = "wasm32")]
+                RoomEvent::ParticipantConnected { participant, .. } => {
+                    if let Some(address) = participant.identity().as_h160() {
+                        if !participant.metadata().is_empty() {
+                            let _ = sender
+                                .try_send(PlayerUpdate {
+                                    transport_id: entity,
+                                    message: PlayerMessage::MetaData(participant.metadata()),
+                                    address,
+                                })
+                                .inspect_err(|err| {
+                                    error!("Failed to send player update due to '{err}'")
+                                });
+                        }
+                    }
+                }
+                #[cfg(target_arch = "wasm32")]
+                RoomEvent::ParticipantDisconnected { .. } => {
+                    debug!("Participant disconnected");
+                }
+                _ => {
+                    debug!("Event: {:?}", room_event);
+                }
+            };
+        }
+    }
+}
+
+fn process_channel_control(
+    mut commands: Commands,
+    rooms: Query<(Entity, &LivekitRoom, &mut LivekitChannelControl)>,
+) {
+    #[cfg_attr(not(target_arch = "wasm32"), expect(unused_variables))]
+    for (entity, livekit_room, mut channel_control) in rooms {
+        loop {
+            match channel_control.try_recv() {
+                Ok(channel_control) => {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    match channel_control {
+                        ChannelControl::VoiceSubscribe(address, sender) => {
+                            #[cfg(not(target_arch = "wasm32"))]
+                            commands.run_system_cached_with(
+                                subscribe_to_voice,
+                                (entity, address, sender),
+                            );
+                        }
+                        ChannelControl::VoiceUnsubscribe(address) => {
+                            commands
+                                .run_system_cached_with(unsubscribe_to_voice, (entity, address));
+                        }
+                        ChannelControl::StreamerSubscribe(subscriber, audio, video) => {
+                            commands.run_system_cached_with(
+                                subscribe_to_streamer,
+                                (entity, subscriber, audio, video),
+                            );
+                        }
+                        ChannelControl::StreamerUnsubscribe(subscriber) => {
+                            commands.run_system_cached_with(unsubscribe_to_streamer, subscriber);
+                        }
+                    };
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        let room_name = livekit_room.name();
+                        match channel_control {
+                            ChannelControl::VoiceSubscribe(address, _) => {
+                                participant_audio_subscribe(&room_name, address, true)
+                            }
+                            ChannelControl::VoiceUnsubscribe(address) => {
+                                participant_audio_subscribe(&room_name, address, false)
+                            }
+                            ChannelControl::StreamerSubscribe => {
+                                if let Err(err) = streamer_subscribe_channel(&room_name, true, true)
+                                {
+                                    error!("{err:?}");
+                                }
+                            }
+                            ChannelControl::StreamerUnsubscribe => {
+                                if let Err(err) =
+                                    streamer_subscribe_channel(&room_name, false, false)
+                                {
+                                    error!("{err:?}");
+                                }
+                            }
+                        };
+                    }
+                }
+                Err(mpsc::error::TryRecvError::Empty) => break,
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    error!("Channel control of {entity} was closed.");
+                    commands.send_event(AppExit::from_code(1));
+                    return;
+                }
+            }
+        }
+    }
+}
+
+fn process_network_message(
+    mut commands: Commands,
+    rooms: Query<(
+        Entity,
+        &LivekitRoom,
+        &LivekitRuntime,
+        &mut LivekitNetworkMessage,
+    )>,
+    mut room_tasks: ResMut<RoomTasks>,
+) {
+    for (entity, room, runtime, mut network_message) in rooms {
+        loop {
+            match network_message.try_recv() {
+                Ok(outgoing) => {
+                    let destination_identities = match outgoing.recipient {
+                        NetworkMessageRecipient::All => Vec::default(),
+                        NetworkMessageRecipient::Peer(address) => {
+                            vec![ParticipantIdentity(format!("{address:#x}"))]
+                        }
+                        NetworkMessageRecipient::AuthServer => {
+                            vec![ParticipantIdentity("authoritative-server".to_string())]
+                        }
+                    };
+
+                    let packet = DataPacket {
+                        payload: outgoing.data,
+                        topic: None,
+                        reliable: !outgoing.unreliable,
+                        destination_identities,
+                    };
+
+                    let local_participant = room.local_participant();
+                    let task =
+                        runtime.spawn(async move { local_participant.publish_data(packet).await });
+                    room_tasks.push(RoomTask {
+                        runtime: runtime.clone(),
+                        task,
+                    });
+                }
+                Err(mpsc::error::TryRecvError::Empty) => break,
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    error!("Network message of {entity} was closed.");
+                    commands.send_event(AppExit::from_code(1));
+                    return;
+                }
+            }
+        }
+    }
+}
+
+fn disconnect_from_room_on_replace(
+    trigger: Trigger<OnReplace, LivekitRoom>,
+    mut commands: Commands,
+    livekit_rooms: Query<(&LivekitRoom, Option<&LivekitRuntime>)>,
+) {
+    let entity = trigger.target();
+    let Ok((livekit_room, maybe_livekit_runtime)) = livekit_rooms.get(entity) else {
+        unreachable!("Infallible query.");
+    };
+    let Some(livekit_runtime) = maybe_livekit_runtime.as_ref() else {
+        error!("Room {} does not have a runtime.", livekit_room.name());
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    let room = livekit_room.room.clone();
+    debug!("Closing room {}.", room.name());
+    livekit_runtime.spawn(async move {
+        if let Err(err) = room.close().await {
+            error!("Error while closing room {}. '{err}'.", room.name());
+        }
+    });
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+type SubscribeToAudio = (
+    Entity,
+    H160,
+    oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
+);
+#[cfg(target_arch = "wasm32")]
+type SubscribeToAudio = (Entity, H160);
+
+fn subscribe_to_voice(
+    In(input): In<SubscribeToAudio>,
+    mut commands: Commands,
+    rooms: Query<(&LivekitRoom, &LivekitRuntime, Option<&HostingParticipants>)>,
+    participants: Query<(&LivekitParticipant, &track::Publishing)>,
+    tracks: Query<Entity, With<track::Microphone>>,
+) {
+    #[cfg(not(target_arch = "wasm32"))]
+    let (room_entity, address, sender) = input;
+    #[cfg(target_arch = "wasm32")]
+    let (room_entity, address) = input;
+
+    let Ok((room, runtime, maybe_hosting)) = rooms.get(room_entity) else {
+        error!("{} is not an well formed room.", room_entity);
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    let Some(hosting) = maybe_hosting else {
+        error!(
+            "Trying to subscribe to voice in room {}, but there are not participants.",
+            room.name()
+        );
+        return;
+    };
+
+    let Some((participant, publishing)) =
+        participants
+            .iter_many(hosting.collection())
+            .find(|(participant, _)| {
+                participant
+                    .identity()
+                    .as_str()
+                    .as_h160()
+                    .filter(|participant_address| participant_address == &address)
+                    .is_some()
+            })
+    else {
+        error!(
+            "No participant with address {} in room {}.",
+            address,
+            room.name()
+        );
+        return;
+    };
+
+    if let Some(track_entity) = tracks.iter_many(publishing.collection()).next() {
+        commands.trigger_targets(
+            track::SubscribeToAudioTrack {
+                runtime: runtime.clone(),
+                #[cfg(not(target_arch = "wasm32"))]
+                sender,
+            },
+            track_entity,
+        );
+    } else {
+        error!(
+            "No microphone track for {} ({}).",
+            participant.sid(),
+            participant.identity()
+        );
+    }
+}
+
+fn unsubscribe_to_voice(
+    In((room_entity, address)): In<(Entity, H160)>,
+    mut commands: Commands,
+    rooms: Query<(&LivekitRoom, &LivekitRuntime, Option<&HostingParticipants>)>,
+    participants: Query<(&LivekitParticipant, &track::Publishing)>,
+    tracks: Query<Entity, With<track::Microphone>>,
+) {
+    let Ok((room, runtime, maybe_hosting)) = rooms.get(room_entity) else {
+        error!("{} is not an well formed room.", room_entity);
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    let Some(hosting) = maybe_hosting else {
+        error!(
+            "Trying to subscribe to voice in room {}, but there are not participants.",
+            room.name()
+        );
+        return;
+    };
+
+    let Some((participant, publishing)) =
+        participants
+            .iter_many(hosting.collection())
+            .find(|(participant, _)| {
+                participant
+                    .identity()
+                    .as_str()
+                    .as_h160()
+                    .filter(|participant_address| participant_address == &address)
+                    .is_some()
+            })
+    else {
+        error!(
+            "No participant with address {} in room {}.",
+            address,
+            room.name()
+        );
+        return;
+    };
+
+    if let Some(track_entity) = tracks.iter_many(publishing.collection()).next() {
+        commands.trigger_targets(
+            track::UnsubscribeToTrack {
+                runtime: runtime.clone(),
+            },
+            track_entity,
+        );
+    } else {
+        error!(
+            "No microphone track for {} ({}).",
+            participant.sid(),
+            participant.identity()
+        );
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+type SubscribeToStreamer = (
+    Entity,
+    Entity,
+    mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
+    mpsc::Sender<LivekitVideoFrame>,
+);
+#[cfg(target_arch = "wasm32")]
+type SubscribeToStreamer = (Entity, Entity);
+
+fn subscribe_to_streamer(
+    In(input): In<SubscribeToStreamer>,
+    mut commands: Commands,
+    rooms: Query<(&LivekitRoom, &LivekitRuntime, Option<&HostingParticipants>)>,
+    participants: Query<(Entity, &LivekitParticipant, &track::Publishing), With<Streamer>>,
+    audio_tracks: Query<Entity, With<track::Audio>>,
+    video_tracks: Query<Entity, With<track::Video>>,
+) {
+    #[cfg(not(target_arch = "wasm32"))]
+    let (room_entity, subscriber, audio, video) = input;
+    #[cfg(target_arch = "wasm32")]
+    let (room_entity, subscriber) = input;
+
+    let Ok((room, runtime, maybe_hosting)) = rooms.get(room_entity) else {
+        error!("LivekitRoom did not have runtime.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    let Some(hosting) = maybe_hosting else {
+        error!(
+            "Trying to subscribe to voice in room {}, but there are not participants.",
+            room.name()
+        );
+        return;
+    };
+
+    let Some((participant_entity, participant, publishing)) =
+        participants.iter_many(hosting.collection()).next()
+    else {
+        error!("No streamer participant in room {}.", room.name());
+        return;
+    };
+
+    commands
+        .entity(subscriber)
+        .insert(<ReceivingStream as Relationship>::from(participant_entity));
+
+    if let Some(track_entity) = audio_tracks.iter_many(publishing.collection()).next() {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let (bypass_sender, bypass_receiver) = oneshot::channel();
+
+            commands.trigger_targets(
+                track::SubscribeToAudioTrack {
+                    runtime: runtime.clone(),
+                    #[cfg(not(target_arch = "wasm32"))]
+                    sender: bypass_sender,
+                },
+                track_entity,
+            );
+            runtime.spawn(async move {
+                let frame = bypass_receiver.await.unwrap();
+                audio.send(frame).await.unwrap();
+            });
+        }
+    } else {
+        error!(
+            "No audio track for {} ({}).",
+            participant.sid(),
+            participant.identity()
+        );
+    }
+
+    if let Some(track_entity) = video_tracks.iter_many(publishing.collection()).next() {
+        commands.trigger_targets(
+            track::SubscribeToVideoTrack {
+                runtime: runtime.clone(),
+                #[cfg(not(target_arch = "wasm32"))]
+                sender: video,
+            },
+            track_entity,
+        );
+    } else {
+        error!(
+            "No video track for {} ({}).",
+            participant.sid(),
+            participant.identity()
+        );
+    }
+}
+
+fn unsubscribe_to_streamer(In(subscriber): In<Entity>, mut commands: Commands) {
+    commands.entity(subscriber).try_remove::<ReceivingStream>();
+}

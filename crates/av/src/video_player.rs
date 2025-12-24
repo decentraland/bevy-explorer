@@ -9,7 +9,7 @@ use bevy::{
 };
 use common::sets::SceneSets;
 #[cfg(feature = "livekit")]
-use comms::{livekit_room::LivekitTransport, SceneRoom, Transport};
+use comms::{livekit::LivekitTransport, SceneRoom, Transport};
 use dcl::interface::CrdtType;
 use dcl_component::{
     proto_components::sdk::components::{PbVideoEvent, VideoState},
@@ -306,6 +306,7 @@ fn rebuild_sinks(
             if let Ok(transport) = scene_rooms.single_mut() {
                 if let Some(control_channel) = transport.control.clone() {
                     let (video_sink, audio_sink) = streamer_sinks(
+                        ent,
                         control_channel,
                         player.source.src.clone(),
                         image_handle,
