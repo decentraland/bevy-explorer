@@ -4,6 +4,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Cache, DedicatedWorkerGlobalScope, Response, ResponseInit};
 
+// must match key used in service_worker.js
 fn key(filename: &str) -> Result<String, JsValue> {
     let url = web_sys::Url::new(filename)?;
     Ok(format!("{}{}", url.pathname(), url.search()))
@@ -16,7 +17,6 @@ pub async fn read_file(filename: &str) -> Result<Vec<u8>, anyhow::Error> {
     })
 }
 
-/// Reads a file completely into a Vec<u8> given a directory handle and a relative path.
 async fn read_file_internal(filename: &str) -> Result<Vec<u8>, JsValue> {
     let filename = &key(filename)?;
     let global = js_sys::global().dyn_into::<DedicatedWorkerGlobalScope>()?;
@@ -25,7 +25,7 @@ async fn read_file_internal(filename: &str) -> Result<Vec<u8>, JsValue> {
         .await?
         .dyn_into()?;
 
-    // 2. Try to find existing item
+    // try to find existing item
     let match_promise = cache.match_with_str(filename);
 
     let response_val = JsFuture::from(match_promise).await?;
@@ -53,8 +53,6 @@ pub async fn write_file(filename: &str, data: &[u8]) -> Result<(), anyhow::Error
     })
 }
 
-/// Writes data to a temp file and then moves it to the target filename
-/// to ensure atomic updates (readers never see partial writes).
 pub async fn write_file_internal(filename: &str, data: &[u8]) -> Result<(), JsValue> {
     let filename = &key(filename)?;
 

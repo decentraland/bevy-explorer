@@ -175,7 +175,8 @@ fn process_gltf(raw_bytes: &[u8]) -> Result<Vec<u8>, GltfProcessError> {
         return Err(GltfProcessError::InvalidHeader);
     };
 
-    // Pre-pass: Absorb Data URI Buffers into the Binary Chunk
+    // ai code below
+    // absorb data URI buffers into the binary chunk
     if let Some(first_buffer) = root.buffers.first_mut() {
         if let Some(uri) = &first_buffer.uri {
             if uri.starts_with("data:") {
@@ -199,8 +200,8 @@ fn process_gltf(raw_bytes: &[u8]) -> Result<Vec<u8>, GltfProcessError> {
         }
     }
 
-    // A. Collect all Raw Image Data first
-    // We store them in a temp vector so we can safely mutate the JSON later.
+    // collect all Raw Image Data first
+    // store them in a temp vector so we can safely mutate the JSON later.
     let mut raw_images: Vec<Option<Vec<u8>>> = Vec::new();
     let mut zombie_views = vec![false; root.buffer_views.len()];
 
@@ -208,13 +209,13 @@ fn process_gltf(raw_bytes: &[u8]) -> Result<Vec<u8>, GltfProcessError> {
         let pixels = extract_pixels_safe(image, &root.buffer_views, &old_bin);
         raw_images.push(pixels);
 
-        // Mark associated view as zombie
+        // mark associated view as zombie
         if let Some(idx) = image.buffer_view {
             zombie_views[idx.value()] = true;
         }
     }
 
-    // B. Rebuild Binary (Geometry Only)
+    // rebuild binary (non-image chunks only)
     let mut new_bin: Vec<u8> = Vec::new();
 
     for (i, view) in root.buffer_views.iter_mut().enumerate() {
@@ -237,21 +238,19 @@ fn process_gltf(raw_bytes: &[u8]) -> Result<Vec<u8>, GltfProcessError> {
         }
     }
 
-    // C. Compress & Append Textures
+    // compress & append textures
     for (i, raw_opt) in raw_images.into_iter().enumerate() {
         if let Some(raw_pixels) = raw_opt {
-            // 1. Resize & Compress (Your existing BC7 logic)
-            // Note: This needs to handle the "Pad to 4x4" logic we discussed
             let bc7_data = process_image(&raw_pixels)?;
 
-            // 2. Append to new_bin
+            // append to new_bin
             while !new_bin.len().is_multiple_of(4) {
                 new_bin.push(0);
             }
             let offset = new_bin.len() as u64;
             new_bin.extend_from_slice(&bc7_data);
 
-            // 3. Create NEW BufferView
+            // Create NEW BufferView
             let new_view_idx = root.buffer_views.len();
             root.buffer_views.push(gltf_json::buffer::View {
                 buffer: gltf_json::Index::new(0),
@@ -264,14 +263,14 @@ fn process_gltf(raw_bytes: &[u8]) -> Result<Vec<u8>, GltfProcessError> {
                 extras: Default::default(),
             });
 
-            // 4. Update Image to point to new View
+            // Update Image to point to new View
             root.images[i].buffer_view = Some(gltf_json::Index::new(new_view_idx as u32));
-            root.images[i].uri = None; // Ensure URI is gone
+            root.images[i].uri = None;
             root.images[i].mime_type = Some(gltf_json::image::MimeType("image/vnd-ms.dds".into()));
         }
     }
 
-    // D. Update Buffer Total Size
+    // Update Buffer Total Size
     if root.buffers.is_empty() {
         root.buffers.push(gltf_json::Buffer {
             byte_length: Default::default(),
@@ -283,7 +282,7 @@ fn process_gltf(raw_bytes: &[u8]) -> Result<Vec<u8>, GltfProcessError> {
     }
     root.buffers[0].byte_length = new_bin.len().into();
 
-    // E. Serialize (using previous helper)
+    // Serialize
     let mut output = Vec::new();
     write_glb(&mut output, &root, &new_bin).unwrap();
     Ok(output)
@@ -317,6 +316,7 @@ pub fn write_glb<W: Write>(
     root: &gltf_json::Root,
     binary_payload: &[u8],
 ) -> std::io::Result<()> {
+    // ai below
     // 1. Serialize JSON
     let json_string = gltf_json::serialize::to_string(root).expect("Serialization failed");
     let mut json_bytes = json_string.as_bytes().to_vec();
