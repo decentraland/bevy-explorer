@@ -26,6 +26,7 @@ use common::{
     },
     util::{TaskCompat, TaskExt, TryPushChildrenEx, UtilsPlugin},
 };
+use image_processing::ImageProcessingPlugin;
 use imposters::DclImposterPlugin;
 use restricted_actions::{lookup_portable, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
@@ -248,6 +249,7 @@ fn main_inner(
         .add_plugins(CollectiblesPlugin)
         .add_plugins(WorldUiPlugin)
         .add_plugins(TextureCameraPlugin)
+        .add_plugins(ImageProcessingPlugin)
         .add_plugins(SystemBridgePlugin { bare: false });
 
     if !is_preview {

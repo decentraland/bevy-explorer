@@ -7,6 +7,7 @@ use build_time::build_time_utc;
 
 use dcl_deno_ipc::init_runtime;
 
+use image_processing::ImageProcessingPlugin;
 use mimalloc::MiMalloc;
 use platform::default_camera_components;
 #[global_allocator]
@@ -443,6 +444,7 @@ fn main() {
         .add_plugins(CollectiblesPlugin)
         .add_plugins(WorldUiPlugin)
         .add_plugins(TextureCameraPlugin)
+        .add_plugins(ImageProcessingPlugin)
         .add_plugins(SystemBridgePlugin { bare: false });
 
     if !is_preview {

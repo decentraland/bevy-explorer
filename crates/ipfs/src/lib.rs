@@ -666,7 +666,7 @@ pub struct IpfsIo {
     default_fs_path: Option<PathBuf>,
     realm_config_receiver: tokio::sync::watch::Receiver<Option<(String, String, ServerAbout)>>,
     realm_config_sender: tokio::sync::watch::Sender<Option<(String, String, ServerAbout)>>,
-    context: AsyncRwLock<IpfsContext>,
+    pub context: AsyncRwLock<IpfsContext>,
     request_slots: tokio::sync::Semaphore,
     reqno: AtomicU16,
     static_files: HashMap<&'static str, &'static str>,

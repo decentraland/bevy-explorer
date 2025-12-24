@@ -1,0 +1,47 @@
+[package]
+name = "image_processing"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[features]
+hot_reload = []
+
+[dependencies]
+common = { workspace = true }
+console = { workspace = true }
+platform = { workspace = true }
+ipfs = { workspace = true }
+
+bevy = { workspace = true }
+anyhow = { workspace = true }
+bevy_console = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+urn = { workspace = true }
+async-std = { workspace = true }
+reqwest = { workspace = true }
+urlencoding = { workspace = true }
+async-fs = { workspace = true }
+multihash-codetable = { workspace = true }
+base64 = { workspace = true }
+web-time = { workspace = true }
+
+url = "2.4.0"
+futures-io = "0.3"
+block_compression = { version = "0.7", default-features = false, features = ["bc7"] }
+image = "0.25"
+ddsfile = "0.5.2"
+gltf = "1.4"
+gltf-json = "1.4"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-fs = { workspace = true }
+futures-lite = { workspace = true }
+web-sys = { workspace = true }
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+js-sys = { workspace = true }

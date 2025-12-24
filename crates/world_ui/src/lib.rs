@@ -246,7 +246,10 @@ pub fn update_worldui_materials(
             if image.size().cmplt(req_size).any() {
                 let max_size = UVec2::splat(render_device.limits().max_texture_dimension_2d);
                 if req_size.cmpge(max_size).any() {
-                    warn!("too many textshapes, truncating image");
+                    warn!(
+                        "too many textshapes, truncating image {} to {}",
+                        req_size, max_size
+                    );
                     // TODO: split out to separate textures
                 }
                 let req_size = req_size.min(max_size).max(image.size());

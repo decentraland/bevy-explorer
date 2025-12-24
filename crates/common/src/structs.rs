@@ -1038,3 +1038,9 @@ pub struct PreviewMode {
     pub server: Option<String>,
     pub is_preview: bool,
 }
+
+// resource into which systems can add debug info
+#[derive(Resource, Default, Debug)]
+pub struct DebugInfo {
+    pub info: HashMap<&'static str, String>,
+}

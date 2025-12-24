@@ -18,7 +18,7 @@ use bevy::{
 use boimp::{bake::ImposterBakeMaterialPlugin, render::Imposter, ImposterLoaderSettings};
 use common::{
     sets::SceneSets,
-    structs::{AppConfig, PrimaryCamera, PrimaryUser},
+    structs::{AppConfig, DebugInfo, PrimaryCamera, PrimaryUser},
     util::{TaskCompat, TaskExt},
 };
 use ipfs::{CurrentRealm, IpfsAssetServer};
@@ -28,7 +28,6 @@ use scene_runner::{
         CurrentImposterScene, LiveScenes, PointerResult, SceneLoading, ScenePointers, PARCEL_SIZE,
     },
     renderer_context::RendererSceneContext,
-    DebugInfo,
 };
 
 use crate::{

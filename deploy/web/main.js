@@ -254,6 +254,28 @@ async function initEngine() {
         }
       };
     });
+
+    // start asset processor thread
+    await new Promise((resolve, _reject) => {
+      const basePath = window.location.pathname.replace(/\/$/, ''); // removes trailing slash if present
+      const assetLoaderPath = new URL(`${basePath}/asset_processor.js`, window.location.origin);
+
+      const assetProcessor = new Worker(assetLoaderPath, { type: "module" });
+      assetProcessor.onmessage = (workerEvent) => {
+        if (workerEvent.data.type === "READY") {
+          assetProcessor.postMessage({
+            type: "INIT_ASSET_PROCESSOR",
+            payload: {
+              compiledModule,
+              sharedMemory,
+            },
+          });
+        }
+        if (workerEvent.data.type === "INITIALIZED") {
+          resolve();
+        }
+      };
+    });
   } catch (error) {
     console.error(
       "[Main JS] Error during Wasm initialization or setup:",
