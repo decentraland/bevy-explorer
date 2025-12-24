@@ -14,7 +14,7 @@ pub enum RoomEvent {
     Connected,
     DataReceived {
         payload: Arc<Vec<u8>>,
-        participant: RemoteParticipant,
+        participant: Option<RemoteParticipant>,
         kind: DataPacketKind,
         topic: Option<String>,
     },
@@ -68,12 +68,7 @@ impl FromWasmAbi for RoomEvent {
                     error!("RoomEvent::DataReceived did not have payload field.");
                     panic!();
                 };
-                let Some(participant) =
-                    RemoteParticipant::get_from_js_value(&js_value, "participant")
-                else {
-                    error!("RoomEvent::DataReceived did not have participant field.");
-                    panic!();
-                };
+                let participant = RemoteParticipant::get_from_js_value(&js_value, "participant");
                 let Some(kind) = DataPacketKind::get_from_js_value(&js_value, "kind") else {
                     error!("RoomEvent::DataReceived did not have kind field.");
                     panic!();
