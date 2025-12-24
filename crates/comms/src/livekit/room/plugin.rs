@@ -27,7 +27,6 @@ use crate::livekit::{
     participant::{
         connection_quality::{Excellent, Good, Lost, Poor},
         ParticipantConnectionQuality, ParticipantDisconnected, ParticipantMetadataChanged,
-        ParticipantPayload,
     },
     room::LivekitRoomTrackTask,
 };
@@ -35,8 +34,8 @@ use crate::{
     global_crdt::ChannelControl,
     livekit::{
         participant::{
-            HostingParticipants, LivekitParticipant, ParticipantConnected, ReceivingStream,
-            Streamer,
+            HostingParticipants, LivekitParticipant, ParticipantConnected, ParticipantPayload,
+            ReceivingStream, Streamer,
         },
         plugin::{RoomTask, RoomTasks},
         room::{Connected, Connecting, ConnectingLivekitRoom, LivekitRoom},
@@ -206,7 +205,8 @@ fn process_room_events(
                         }
                     }
                 }
-                #[cfg(not(target_arch = "wasm32"))]
+                #[cfg(target_arch = "wasm32")]
+                RoomEvent::Connected => (),
                 RoomEvent::DataReceived {
                     payload,
                     participant: maybe_participant,
@@ -305,28 +305,6 @@ fn process_room_events(
                         ));
                     }
                 },
-                #[cfg(target_arch = "wasm32")]
-                RoomEvent::DataReceived {
-                    payload,
-                    participant,
-                    ..
-                } => {
-                    if let Some(address) = participant.identity().as_h160() {
-                        if let Ok(packet) = rfc4::Packet::decode(payload.as_slice()) {
-                            if let Some(message) = packet.message {
-                                let _ = sender
-                                    .try_send(PlayerUpdate {
-                                        transport_id: entity,
-                                        message: PlayerMessage::PlayerData(message),
-                                        address,
-                                    })
-                                    .inspect_err(|err| {
-                                        error!("Failed to send player update due to '{err}'")
-                                    });
-                            }
-                        }
-                    }
-                }
                 #[cfg(target_arch = "wasm32")]
                 RoomEvent::TrackPublished {
                     participant, kind, ..
