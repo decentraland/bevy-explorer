@@ -49,7 +49,6 @@ export function room_local_participant(room) {
  * @param {function} handler 
  */
 function alt_set_room_event_handler(room, handler) {
-    const room_name = room.name;
     room.on(LivekitClient.RoomEvent.Connected, () => {
         handler({
             type: 'connected',
@@ -61,10 +60,7 @@ function alt_set_room_event_handler(room, handler) {
             handler({
                 type: 'dataReceived',
                 payload,
-                participant: {
-                    identity: participant.identity,
-                    metadata: participant.metadata || ''
-                },
+                participant,
                 kind,
                 topic
             })

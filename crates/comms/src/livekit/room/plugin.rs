@@ -311,7 +311,7 @@ fn process_room_events(
                     participant,
                     ..
                 } => {
-                    if let Some(address) = participant.identity.as_h160() {
+                    if let Some(address) = participant.identity().as_h160() {
                         if let Ok(packet) = rfc4::Packet::decode(payload.as_slice()) {
                             if let Some(message) = packet.message {
                                 let _ = sender
@@ -331,8 +331,8 @@ fn process_room_events(
                 RoomEvent::TrackPublished {
                     participant, kind, ..
                 } => {
-                    debug!("pub {} {}", participant.identity, kind);
-                    if let Some(address) = participant.identity.as_h160() {
+                    debug!("pub {} {}", participant.identity(), kind);
+                    if let Some(address) = participant.identity().as_h160() {
                         if kind == "audio" {
                             let _ = sender
                                 .try_send(PlayerUpdate {
@@ -352,8 +352,8 @@ fn process_room_events(
                 RoomEvent::TrackUnpublished {
                     participant, kind, ..
                 } => {
-                    debug!("unpub {} {}", participant.identity, kind);
-                    if let Some(address) = participant.identity.as_h160() {
+                    debug!("unpub {} {}", participant.identity(), kind);
+                    if let Some(address) = participant.identity().as_h160() {
                         if kind == "audio" {
                             let _ = sender
                                 .try_send(PlayerUpdate {
@@ -379,12 +379,12 @@ fn process_room_events(
                 }
                 #[cfg(target_arch = "wasm32")]
                 RoomEvent::ParticipantConnected { participant, .. } => {
-                    if let Some(address) = participant.identity.as_h160() {
-                        if !participant.metadata.is_empty() {
+                    if let Some(address) = participant.identity().as_h160() {
+                        if !participant.metadata().is_empty() {
                             let _ = sender
                                 .try_send(PlayerUpdate {
                                     transport_id: entity,
-                                    message: PlayerMessage::MetaData(participant.metadata),
+                                    message: PlayerMessage::MetaData(participant.metadata()),
                                     address,
                                 })
                                 .inspect_err(|err| {

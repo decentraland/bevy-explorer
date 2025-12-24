@@ -9,6 +9,7 @@ use std::{
 use bevy::{platform::sync::Arc, prelude::*};
 use ethers_core::types::H160;
 use serde::{Deserialize, Deserializer};
+use serde_json::Value;
 use wasm_bindgen::{
     convert::{FromWasmAbi, IntoWasmAbi, OptionFromWasmAbi},
     describe::WasmDescribe,
@@ -129,16 +130,14 @@ impl Display for RoomError {
 impl Error for RoomError {}
 
 // Define structures for the events coming from JavaScript
-#[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[derive(Debug)]
 pub enum RoomEvent {
     Connected,
     DataReceived {
-        #[serde(deserialize_with = "data_received_payload_deserializer")]
         payload: Arc<Vec<u8>>,
-        topic: Option<String>,
-        kind: DataPacketKind,
         participant: RemoteParticipant,
+        kind: DataPacketKind,
+        topic: Option<String>,
     },
     TrackPublished {
         room_name: String,
@@ -178,7 +177,55 @@ impl FromWasmAbi for RoomEvent {
     type Abi = <JsValue as IntoWasmAbi>::Abi;
 
     unsafe fn from_abi(abi: Self::Abi) -> Self {
-        serde_wasm_bindgen::from_value(JsValue::from_abi(abi)).unwrap()
+        let js_value = JsValue::from_abi(abi);
+        let tag = js_sys::Reflect::get(&js_value, &JsValue::from("type"))
+            .ok()
+            .and_then(|tag| tag.as_string());
+
+        match tag.as_deref() {
+            Some("connected") => RoomEvent::Connected,
+            Some(tag) => {
+                let Some(payload) = js_sys::Reflect::get(&js_value, &JsValue::from("payload"))
+                    .ok()
+                    .and_then(|payload| {
+                        serde_wasm_bindgen::from_value::<PayloadIntermediate>(payload).ok()
+                    })
+                else {
+                    error!("RoomEvent::DataReceived did not have payload field.");
+                    panic!();
+                };
+                let Some(participant) =
+                    js_sys::Reflect::get(&js_value, &JsValue::from("participant"))
+                        .ok()
+                        .map(|participant| RemoteParticipant {
+                            inner: participant,
+                        })
+                else {
+                    error!("RoomEvent::DataReceived did not have participant field.");
+                    panic!();
+                };
+                let Some(kind) = js_sys::Reflect::get(&js_value, &JsValue::from("kind"))
+                    .ok()
+                    .and_then(|kind| serde_wasm_bindgen::from_value::<DataPacketKind>(kind).ok())
+                else {
+                    error!("RoomEvent::DataReceived did not have kind field.");
+                    panic!();
+                };
+                let topic = js_sys::Reflect::get(&js_value, &JsValue::from("topic"))
+                    .ok()
+                    .and_then(|topic| topic.as_string());
+                RoomEvent::DataReceived {
+                    payload: payload.0,
+                    participant,
+                    kind,
+                    topic,
+                }
+            }
+            None => {
+                error!("RoomEvent's `type` was not a string, was {tag:?}.");
+                panic!()
+            }
+        }
     }
 }
 
@@ -217,17 +264,14 @@ impl Participant {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub struct RemoteParticipant {
-    pub identity: String,
-    #[serde(default)]
-    pub metadata: String,
+    inner: JsValue,
 }
 
 impl RemoteParticipant {
     pub fn identity(&self) -> ParticipantIdentity {
-        ParticipantIdentity(self.identity.clone())
+        ParticipantIdentity("".to_owned())
     }
 
     pub fn name(&self) -> String {
@@ -242,6 +286,12 @@ impl RemoteParticipant {
         ParticipantSid("".to_owned())
     }
 }
+
+/// SAFETY: should be fine while WASM remains single-threaded
+unsafe impl Send for RemoteParticipant {}
+
+/// SAFETY: should be fine while WASM remains single-threaded
+unsafe impl Sync for RemoteParticipant {}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct TrackSid;
@@ -367,9 +417,8 @@ impl From<JsValue> for RoomError {
     }
 }
 
-
 /// Kind of the packet.
-/// 
+///
 /// Keep in track with
 /// [https://github.com/livekit/protocol/blob/e7532dfc617d0c920eb905a93b6ca0d3ca4033e9/protobufs/livekit_models.proto#L324]
 #[wasm_bindgen]
@@ -394,10 +443,15 @@ impl<'de> Deserialize<'de> for DataPacketKind {
     }
 }
 
-fn data_received_payload_deserializer<'de, D>(deserializer: D) -> Result<Arc<Vec<u8>>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let buf = serde_bytes::ByteBuf::deserialize(deserializer)?;
-    Ok(Arc::new(buf.into_vec()))
+#[derive(Debug)]
+struct PayloadIntermediate(Arc<Vec<u8>>);
+
+impl<'de> Deserialize<'de> for PayloadIntermediate {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let buf = serde_bytes::ByteBuf::deserialize(deserializer)?;
+        Ok(Self(Arc::new(buf.into_vec())))
+    }
 }
