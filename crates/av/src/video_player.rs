@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use bevy::{
     color::palettes::basic,
     diagnostic::FrameCount,
@@ -8,6 +10,7 @@ use bevy::{
     },
 };
 use common::sets::SceneSets;
+use comms::livekit_native::LivekitVideoFrame;
 #[cfg(feature = "livekit")]
 use comms::{livekit_room::LivekitTransport, SceneRoom, Transport};
 use dcl::interface::CrdtType;
@@ -166,6 +169,24 @@ fn play_videos(
     mut scenes: Query<&mut RendererSceneContext>,
     frame: Res<FrameCount>,
 ) {
+    enum FrameSource {
+        Video(ffmpeg_next::frame::Video),
+        #[cfg(feature = "livekit")]
+        Livekit(LivekitVideoFrame),
+    }
+
+    impl FrameSource {
+        fn data(&self) -> Cow<[u8]> {
+            match self {
+                FrameSource::Video(video) => Cow::Borrowed(video.data(0)),
+                #[cfg(feature = "livekit")]
+                FrameSource::Livekit(livekit_video_frame) => {
+                    Cow::Owned(livekit_video_frame.rgba_data())
+                }
+            }
+        }
+    }
+
     for (mut sink, container) in q.iter_mut() {
         let mut last_frame_received = None;
         let mut new_state = None;
@@ -187,7 +208,7 @@ fn play_videos(
                     sink.rate = Some(rate);
                 }
                 Ok(VideoData::Frame(frame, time)) => {
-                    last_frame_received = Some(frame.data(0).to_vec());
+                    last_frame_received = Some(FrameSource::Video(frame));
                     sink.current_time = time;
                 }
                 #[cfg(feature = "livekit")]
@@ -205,8 +226,8 @@ fn play_videos(
                         });
                     }
 
-                    last_frame_received = Some(frame.rgba_data());
                     sink.current_time = frame.timestamp() as f64;
+                    last_frame_received = Some(FrameSource::Livekit(frame));
                 }
                 Ok(VideoData::State(state)) => new_state = Some(state),
                 Err(_) => break,
@@ -221,7 +242,7 @@ fn play_videos(
                 .data
                 .as_mut()
                 .unwrap()
-                .copy_from_slice(frame.as_slice());
+                .copy_from_slice(&frame.data());
         }
 
         const VIDEO_REPORT_FREQUENCY: f64 = 1.0;
