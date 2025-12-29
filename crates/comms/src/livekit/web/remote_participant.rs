@@ -74,7 +74,7 @@ impl IntoWasmAbi for &RemoteParticipant {
 
 impl GetFromJsValue for RemoteParticipant {
     fn get_from_js_value(js_value: &JsValue, key: &str) -> Option<Self> {
-        js_sys::Reflect::get(&js_value, &JsValue::from(key))
+        js_sys::Reflect::get(js_value, &JsValue::from(key))
             .ok()
             .map(|participant| RemoteParticipant { inner: participant })
     }

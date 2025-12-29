@@ -62,8 +62,8 @@ impl Room {
 
         let (sender, receiver) = mpsc::unbounded_channel();
         let handler = Closure::new(move |room_event: RoomEvent| {
-            if let Err(_) = sender.send(room_event) {
-                error!("Failed to send room event");
+            if let Err(err) = sender.send(room_event) {
+                error!("Failed to send room event due to '{err}'.");
             }
         });
 

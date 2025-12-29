@@ -317,7 +317,7 @@ impl<'de> Deserialize<'de> for DataPacketKind {
 
 impl GetFromJsValue for DataPacketKind {
     fn get_from_js_value(js_value: &JsValue, key: &str) -> Option<Self> {
-        js_sys::Reflect::get(&js_value, &JsValue::from(key))
+        js_sys::Reflect::get(js_value, &JsValue::from(key))
             .ok()
             .and_then(|kind| serde_wasm_bindgen::from_value::<DataPacketKind>(kind).ok())
     }

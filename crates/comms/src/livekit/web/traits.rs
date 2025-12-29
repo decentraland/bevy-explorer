@@ -10,7 +10,7 @@ pub trait GetFromJsValue {
 
 impl GetFromJsValue for String {
     fn get_from_js_value(js_value: &JsValue, key: &str) -> Option<Self> {
-        js_sys::Reflect::get(&js_value, &JsValue::from(key))
+        js_sys::Reflect::get(js_value, &JsValue::from(key))
             .ok()
             .and_then(|topic| topic.as_string())
     }
@@ -18,7 +18,7 @@ impl GetFromJsValue for String {
 
 impl GetFromJsValue for Arc<Vec<u8>> {
     fn get_from_js_value(js_value: &JsValue, key: &str) -> Option<Self> {
-        js_sys::Reflect::get(&js_value, &JsValue::from(key))
+        js_sys::Reflect::get(js_value, &JsValue::from(key))
             .ok()
             .and_then(|payload| serde_wasm_bindgen::from_value::<PayloadIntermediate>(payload).ok())
             .map(|payload| payload.0)
