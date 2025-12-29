@@ -426,15 +426,10 @@ fn process_channel_control(
 
 fn process_network_message(
     mut commands: Commands,
-    rooms: Query<(
-        Entity,
-        &LivekitRoom,
-        &LivekitRuntime,
-        &mut LivekitNetworkMessage,
-    )>,
+    rooms: Query<(&LivekitRoom, &LivekitRuntime, &mut LivekitNetworkMessage)>,
     mut room_tasks: ResMut<RoomTasks>,
 ) {
-    for (entity, room, runtime, mut network_message) in rooms {
+    for (room, runtime, mut network_message) in rooms {
         loop {
             match network_message.try_recv() {
                 Ok(outgoing) => {
