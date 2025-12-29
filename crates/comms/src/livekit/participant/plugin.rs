@@ -95,7 +95,7 @@ fn participant_disconnected(
     let Some(entity) = participants
         .iter_many(hosting_participants.collection())
         .find_map(|(entity, ecs_participant)| {
-            if ecs_participant.identity() == participant.identity() {
+            if ecs_participant.sid() == participant.sid() {
                 Some(entity)
             } else {
                 None
@@ -138,7 +138,7 @@ fn participant_connection_quality_changed<C: Component + Default>(
     let Some(entity) = participants
         .iter_many(hosting_participants.collection())
         .find_map(|(entity, ecs_participant)| {
-            if ecs_participant.identity() == participant.identity() {
+            if ecs_participant.sid() == participant.sid() {
                 Some(entity)
             } else {
                 None
