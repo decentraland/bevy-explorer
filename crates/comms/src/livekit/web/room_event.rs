@@ -6,7 +6,7 @@ use wasm_bindgen::{
     JsValue,
 };
 
-use crate::livekit::web::{traits::GetFromJsValue, DataPacketKind, RemoteParticipant};
+use crate::livekit::web::{traits::GetFromJsValue, DataPacketKind, Participant, RemoteParticipant};
 
 // Define structures for the events coming from JavaScript
 #[derive(Debug)]
@@ -17,6 +17,13 @@ pub enum RoomEvent {
         participant: Option<RemoteParticipant>,
         kind: DataPacketKind,
         topic: Option<String>,
+    },
+    ParticipantConnected(RemoteParticipant),
+    ParticipantDisconnected(RemoteParticipant),
+    ParticipantMetadataChanged {
+        participant: Participant,
+        old_metadata: String,
+        metadata: String,
     },
     TrackPublished {
         room_name: String,
@@ -33,14 +40,6 @@ pub enum RoomEvent {
         participant: RemoteParticipant,
     },
     TrackUnsubscribed {
-        room_name: String,
-        participant: RemoteParticipant,
-    },
-    ParticipantConnected {
-        room_name: String,
-        participant: RemoteParticipant,
-    },
-    ParticipantDisconnected {
         room_name: String,
         participant: RemoteParticipant,
     },
@@ -82,8 +81,49 @@ impl FromWasmAbi for RoomEvent {
                     topic,
                 }
             }
+            Some("participantConnected") => {
+                let Some(participant) =
+                    RemoteParticipant::get_from_js_value(&js_value, "participant")
+                else {
+                    error!("RoomEvent::ParticipantConnected did not have participant field.");
+                    panic!();
+                };
+                RoomEvent::ParticipantConnected(participant)
+            }
+            Some("participantDisconnected") => {
+                let Some(participant) =
+                    RemoteParticipant::get_from_js_value(&js_value, "participant")
+                else {
+                    error!("RoomEvent::ParticipantDisconnected did not have participant field.");
+                    panic!();
+                };
+                RoomEvent::ParticipantDisconnected(participant)
+            }
+            Some("participantMetadataChanged") => {
+                let Some(participant) = Participant::get_from_js_value(&js_value, "participant")
+                else {
+                    error!("RoomEvent::ParticipantDisconnected did not have participant field.");
+                    panic!();
+                };
+                let Some(old_metadata) = String::get_from_js_value(&js_value, "old_metadata")
+                else {
+                    error!(
+                        "RoomEvent::ParticipantMetadataChanged did not have old_metadata field."
+                    );
+                    panic!();
+                };
+                let Some(metadata) = String::get_from_js_value(&js_value, "metadata") else {
+                    error!("RoomEvent::ParticipantMetadataChanged did not have metadata field.");
+                    panic!();
+                };
+                RoomEvent::ParticipantMetadataChanged {
+                    participant,
+                    old_metadata,
+                    metadata,
+                }
+            }
             Some(tag) => {
-                todo!("{tag:?}");
+                todo!("{tag:?} {js_value:?}");
             }
             None => {
                 error!("RoomEvent's `type` was not a string, was {tag:?}.");

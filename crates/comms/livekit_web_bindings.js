@@ -66,6 +66,35 @@ function alt_set_room_event_handler(room, handler) {
             })
         }
     );
+    room.on(
+        LivekitClient.RoomEvent.ParticipantConnected,
+        (remote_participant) => {
+            handler({
+                type: 'participantConnected',
+                participant: remote_participant,
+            })
+        }
+    );
+    room.on(
+        LivekitClient.RoomEvent.ParticipantDisconnected,
+        (remote_participant) => {
+            handler({
+                type: 'participantDisconnected',
+                participant: remote_participant,
+            })
+        }
+    );
+    room.on(
+        LivekitClient.RoomEvent.ParticipantMetadataChanged,
+        (prev_metadata, participant) => {
+            handler({
+                type: 'participantMetadataChanged',
+                participant,
+                old_metadata: prev_metadata,
+                metadata: participant.metadata
+            })
+        }
+    );
 }
 
 /**

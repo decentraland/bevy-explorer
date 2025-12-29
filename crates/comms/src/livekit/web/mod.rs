@@ -165,6 +165,13 @@ impl Participant {
     }
 }
 
+impl GetFromJsValue for Participant {
+    fn get_from_js_value(js_value: &JsValue, key: &str) -> Option<Self> {
+        debug!("{js_value:?}");
+        None
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct TrackSid;
 

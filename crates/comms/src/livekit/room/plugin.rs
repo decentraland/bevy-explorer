@@ -26,7 +26,7 @@ use crate::livekit::{
     livekit_video_bridge::LivekitVideoFrame,
     participant::{
         connection_quality::{Excellent, Good, Lost, Poor},
-        ParticipantConnectionQuality, ParticipantDisconnected, ParticipantMetadataChanged,
+        ParticipantConnectionQuality,
     },
     room::LivekitRoomTrackTask,
 };
@@ -34,8 +34,8 @@ use crate::{
     global_crdt::ChannelControl,
     livekit::{
         participant::{
-            HostingParticipants, LivekitParticipant, ParticipantConnected, ParticipantPayload,
-            ReceivingStream, Streamer,
+            HostingParticipants, LivekitParticipant, ParticipantConnected, ParticipantDisconnected,
+            ParticipantMetadataChanged, ParticipantPayload, ReceivingStream, Streamer,
         },
         plugin::{RoomTask, RoomTasks},
         room::{Connected, Connecting, ConnectingLivekitRoom, LivekitRoom},
@@ -222,6 +222,24 @@ fn process_room_events(
                         debug!("Owner-less payload received.");
                     }
                 }
+                RoomEvent::ParticipantConnected(participant) => {
+                    commands.trigger(ParticipantConnected {
+                        participant: participant.clone().into(),
+                        room: entity,
+                    });
+                }
+                RoomEvent::ParticipantDisconnected(participant) => {
+                    commands.trigger(ParticipantDisconnected {
+                        participant: participant.into(),
+                        room: entity,
+                    });
+                }
+                RoomEvent::ParticipantMetadataChanged { participant, .. } => {
+                    commands.trigger(ParticipantMetadataChanged {
+                        room: entity,
+                        participant: participant.into(),
+                    });
+                }
                 #[cfg(not(target_arch = "wasm32"))]
                 RoomEvent::TrackPublished {
                     publication,
@@ -249,27 +267,6 @@ fn process_room_events(
                 #[cfg(not(target_arch = "wasm32"))]
                 RoomEvent::TrackUnsubscribed { publication, .. } => {
                     commands.trigger(track::TrackUnsubscribed { track: publication });
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                RoomEvent::ParticipantConnected(participant) => {
-                    commands.trigger(ParticipantConnected {
-                        participant: participant.clone().into(),
-                        room: entity,
-                    });
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                RoomEvent::ParticipantDisconnected(participant) => {
-                    commands.trigger(ParticipantDisconnected {
-                        participant: participant.into(),
-                        room: entity,
-                    });
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                RoomEvent::ParticipantMetadataChanged { participant, .. } => {
-                    commands.trigger(ParticipantMetadataChanged {
-                        room: entity,
-                        participant: participant.into(),
-                    });
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 RoomEvent::ConnectionQualityChanged {
@@ -354,26 +351,6 @@ fn process_room_events(
                 #[cfg(target_arch = "wasm32")]
                 RoomEvent::TrackUnsubscribed { .. } => {
                     debug!("Track unsubscribed event");
-                }
-                #[cfg(target_arch = "wasm32")]
-                RoomEvent::ParticipantConnected { participant, .. } => {
-                    if let Some(address) = participant.identity().as_h160() {
-                        if !participant.metadata().is_empty() {
-                            let _ = sender
-                                .try_send(PlayerUpdate {
-                                    transport_id: entity,
-                                    message: PlayerMessage::MetaData(participant.metadata()),
-                                    address,
-                                })
-                                .inspect_err(|err| {
-                                    error!("Failed to send player update due to '{err}'")
-                                });
-                        }
-                    }
-                }
-                #[cfg(target_arch = "wasm32")]
-                RoomEvent::ParticipantDisconnected { .. } => {
-                    debug!("Participant disconnected");
                 }
                 _ => {
                     debug!("Event: {:?}", room_event);
