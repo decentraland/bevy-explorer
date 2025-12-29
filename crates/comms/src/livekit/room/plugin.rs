@@ -360,7 +360,6 @@ fn process_channel_control(
     mut commands: Commands,
     rooms: Query<(Entity, &LivekitRoom, &mut LivekitChannelControl)>,
 ) {
-    #[cfg_attr(not(target_arch = "wasm32"), expect(unused_variables))]
     for (entity, livekit_room, mut channel_control) in rooms {
         loop {
             match channel_control.try_recv() {
