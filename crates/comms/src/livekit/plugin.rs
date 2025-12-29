@@ -95,7 +95,6 @@ fn start_livekit(
                 receiver: control_receiver,
             },
             LivekitNetworkMessage { receiver },
-            LivekitRuntime::new(),
         ));
     }
 }

@@ -3,7 +3,10 @@
     not(target_arch = "wasm32"),
     doc = "[`Runtime`](tokio::runtime::Runtime)"
 )]
-#![cfg_attr(target_arch = "wasm32", doc = "[`LocalRuntime`]")]
+#![cfg_attr(
+    target_arch = "wasm32",
+    doc = "[`LocalRuntime`](tokio::runtime::LocalRuntime)"
+)]
 //! for use by Livekit rooms.
 
 use std::future::Future;
@@ -18,7 +21,7 @@ use tokio::{
     task::yield_now,
 };
 
-#[derive(Clone, Component)]
+#[derive(Clone, Resource)]
 pub struct LivekitRuntime(
     #[cfg(not(target_arch = "wasm32"))] Arc<Runtime>,
     #[cfg(target_arch = "wasm32")] Arc<LocalRuntime>,
@@ -95,11 +98,8 @@ unsafe impl Sync for LivekitRuntime {}
 pub struct LivekitRuntimePlugin;
 
 impl Plugin for LivekitRuntimePlugin {
-    #[cfg_attr(
-        not(target_arch = "wasm32"),
-        expect(unused_variables, reason = "Only used on wasm32")
-    )]
     fn build(&self, app: &mut App) {
+        app.init_resource::<LivekitRuntime>();
         #[cfg(target_arch = "wasm32")]
         app.add_systems(First, yield_to_runtime);
     }
@@ -109,8 +109,6 @@ impl Plugin for LivekitRuntimePlugin {
 /// it, it will never poll the tasks on wasm, native does not have this issue
 /// as it is multithreaded
 #[cfg(target_arch = "wasm32")]
-fn yield_to_runtime(livekit_runtimes: Query<&LivekitRuntime>) {
-    for runtime in livekit_runtimes {
-        runtime.block_on(yield_now());
-    }
+fn yield_to_runtime(livekit_runtime: Res<LivekitRuntime>) {
+    livekit_runtime.block_on(yield_now());
 }

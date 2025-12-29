@@ -147,21 +147,17 @@ fn update_mic(
 #[cfg(all(not(target_arch = "wasm32"), feature = "livekit"))]
 fn create_mic_thread(
     mut commands: Commands,
-    rooms: Query<(&LivekitRoom, Option<&LivekitRuntime>)>,
+    rooms: Query<&LivekitRoom>,
     participants: Populated<
         (Entity, &LivekitParticipant, &HostedBy),
         (With<LivekitLocalParticipant>, Without<MicWorker>),
     >,
+    livekit_runtime: Res<LivekitRuntime>,
     local_audio_source: Res<LocalAudioSource>,
 ) {
     for (entity, participant, hosted_by) in participants.into_inner() {
-        let Ok((room, maybe_runtime)) = rooms.get(hosted_by.get()) else {
+        let Ok(room) = rooms.get(hosted_by.get()) else {
             error!("{entity} is not a LivekitRoom.");
-            commands.send_event(AppExit::from_code(1));
-            return;
-        };
-        let Some(runtime) = maybe_runtime else {
-            error!("Room {} does not have a runtime.", room.name());
             commands.send_event(AppExit::from_code(1));
             return;
         };
@@ -175,7 +171,7 @@ fn create_mic_thread(
             participant.identity(),
             room.name()
         );
-        let task = runtime.spawn(mic_thread(
+        let task = livekit_runtime.spawn(mic_thread(
             local_participant,
             local_audio_source.subscribe(),
         ));

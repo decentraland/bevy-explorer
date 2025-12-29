@@ -181,10 +181,9 @@ fn participant_connection_quality_changed<C: Component + Default>(
 
 fn participant_payload(
     trigger: Trigger<ParticipantPayload>,
-    mut commands: Commands,
-    rooms: Query<&LivekitRuntime, With<LivekitRoom>>,
     global_crdt_state: Res<GlobalCrdtState>,
     mut player_update_tasks: ResMut<PlayerUpdateTasks>,
+    livekit_runtime: Res<LivekitRuntime>,
 ) {
     let ParticipantPayload {
         room: room_entity,
@@ -198,11 +197,6 @@ fn participant_payload(
             participant.sid(),
             participant.identity()
         );
-        return;
-    };
-    let Ok(runtime) = rooms.get(*room_entity) else {
-        error!("Room {room_entity} does not have a runtime.");
-        commands.send_event(AppExit::from_code(1));
         return;
     };
 
@@ -234,7 +228,7 @@ fn participant_payload(
 
     let room = *room_entity;
     let sender = global_crdt_state.get_sender();
-    let task = runtime.spawn(async move {
+    let task = livekit_runtime.spawn(async move {
         sender
             .send(PlayerUpdate {
                 transport_id: room,
@@ -244,25 +238,18 @@ fn participant_payload(
             .await
     });
     player_update_tasks.push(PlayerUpdateTask {
-        runtime: runtime.clone(),
+        runtime: livekit_runtime.clone(),
         task,
     });
 }
 
 fn participant_metadata_changed(
     trigger: Trigger<ParticipantMetadataChanged>,
-    mut commands: Commands,
-    rooms: Query<&LivekitRuntime, With<LivekitRoom>>,
     global_crdt_state: Res<GlobalCrdtState>,
     mut player_update_tasks: ResMut<PlayerUpdateTasks>,
+    livekit_runtime: Res<LivekitRuntime>,
 ) {
     let ParticipantMetadataChanged { room, participant } = trigger.event();
-
-    let Ok(runtime) = rooms.get(*room) else {
-        error!("Room {room} does not have a runtime.");
-        commands.send_event(AppExit::from_code(1));
-        return;
-    };
 
     let meta = participant.metadata();
     if !meta.is_empty() {
@@ -274,7 +261,7 @@ fn participant_metadata_changed(
         if let Some(address) = participant.identity().as_str().as_h160() {
             let room = *room;
             let sender = global_crdt_state.get_sender();
-            let task = runtime.spawn(async move {
+            let task = livekit_runtime.spawn(async move {
                 sender
                     .send(PlayerUpdate {
                         transport_id: room,
@@ -284,28 +271,22 @@ fn participant_metadata_changed(
                     .await
             });
             player_update_tasks.push(PlayerUpdateTask {
-                runtime: runtime.clone(),
+                runtime: livekit_runtime.clone(),
                 task,
             });
         }
     }
 }
 
-#[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn streamer_has_no_watchers(
     trigger: Trigger<OnRemove, TransmittingTo>,
     mut commands: Commands,
-    rooms: Query<&LivekitRuntime, With<LivekitRoom>>,
-    participants: Populated<(&HostedBy, &Publishing), (With<Streamer>, Without<TransmittingTo>)>,
+    participants: Populated<&Publishing, (With<Streamer>, Without<TransmittingTo>)>,
+    livekit_runtime: Res<LivekitRuntime>,
 ) {
     let entity = trigger.target();
-    let Ok((hosted_by, publishing)) = participants.get(entity) else {
+    let Ok(publishing) = participants.get(entity) else {
         error!("An entity that is not a participant had TransmittingTo.");
-        commands.send_event(AppExit::from_code(1));
-        return;
-    };
-    let Ok(runtime) = rooms.get(hosted_by.get()) else {
-        error!("HostedBy relationship was broken.");
         commands.send_event(AppExit::from_code(1));
         return;
     };
@@ -313,7 +294,7 @@ fn streamer_has_no_watchers(
     for track in publishing.iter() {
         commands.trigger_targets(
             UnsubscribeToTrack {
-                runtime: runtime.clone(),
+                runtime: livekit_runtime.clone(),
             },
             track,
         );

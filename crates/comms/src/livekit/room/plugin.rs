@@ -81,10 +81,11 @@ impl Plugin for LivekitRoomPlugin {
 fn initiate_room_connection(
     trigger: Trigger<OnAdd, LivekitTransport>,
     mut commands: Commands,
-    livekit_transports: Query<(&LivekitTransport, &LivekitRuntime)>,
+    livekit_transports: Query<&LivekitTransport>,
+    livekit_runtime: Res<LivekitRuntime>,
 ) {
     let entity = trigger.target();
-    let Ok((livekit_transport, livekit_runtime)) = livekit_transports.get(entity) else {
+    let Ok(livekit_transport) = livekit_transports.get(entity) else {
         error!("{entity} does not have a LivekitRuntime.");
         return;
     };
@@ -114,9 +115,10 @@ fn initiate_room_connection(
 
 fn poll_connecting_rooms(
     mut commands: Commands,
-    livekit_rooms: Populated<(Entity, &LivekitRuntime, &mut ConnectingLivekitRoom)>,
+    livekit_rooms: Populated<(Entity, &mut ConnectingLivekitRoom)>,
+    livekit_runtime: Res<LivekitRuntime>,
 ) {
-    for (entity, livekit_runtime, mut connecting_livekit_room) in livekit_rooms.into_inner() {
+    for (entity, mut connecting_livekit_room) in livekit_rooms.into_inner() {
         if connecting_livekit_room.is_finished() {
             let Ok(poll) =
                 livekit_runtime.block_on(connecting_livekit_room.as_deref_mut().as_mut())
@@ -427,10 +429,11 @@ fn process_channel_control(
 
 fn process_network_message(
     mut commands: Commands,
-    rooms: Query<(&LivekitRoom, &LivekitRuntime, &mut LivekitNetworkMessage)>,
+    rooms: Query<(&LivekitRoom, &mut LivekitNetworkMessage)>,
     mut room_tasks: ResMut<RoomTasks>,
+    livekit_runtime: Res<LivekitRuntime>,
 ) {
-    for (room, runtime, mut network_message) in rooms {
+    for (room, mut network_message) in rooms {
         loop {
             match network_message.try_recv() {
                 Ok(outgoing) => {
@@ -452,10 +455,10 @@ fn process_network_message(
                     };
 
                     let local_participant = room.local_participant();
-                    let task =
-                        runtime.spawn(async move { local_participant.publish_data(packet).await });
+                    let task = livekit_runtime
+                        .spawn(async move { local_participant.publish_data(packet).await });
                     room_tasks.push(RoomTask {
-                        runtime: runtime.clone(),
+                        runtime: livekit_runtime.clone(),
                         task,
                     });
                 }
@@ -491,25 +494,22 @@ fn create_local_participant(
 
 fn disconnect_from_room_on_replace(
     trigger: Trigger<OnReplace, LivekitRoom>,
-    mut commands: Commands,
-    livekit_rooms: Query<(&LivekitRoom, Option<&LivekitRuntime>)>,
+    livekit_rooms: Query<&LivekitRoom>,
+    livekit_runtime: Res<LivekitRuntime>,
 ) {
     let entity = trigger.target();
-    let Ok((livekit_room, maybe_livekit_runtime)) = livekit_rooms.get(entity) else {
+    let Ok(livekit_room) = livekit_rooms.get(entity) else {
         unreachable!("Infallible query.");
-    };
-    let Some(livekit_runtime) = maybe_livekit_runtime.as_ref() else {
-        error!("Room {} does not have a runtime.", livekit_room.name());
-        commands.send_event(AppExit::from_code(1));
-        return;
     };
 
     let room = livekit_room.room.clone();
     debug!("Closing room {}.", room.name());
     livekit_runtime.spawn(async move {
+        debug!("Closing room");
         if let Err(err) = room.close().await {
             error!("Error while closing room {}. '{err}'.", room.name());
         }
+        debug!("Closed room");
     });
 }
 
@@ -525,16 +525,17 @@ type SubscribeToAudio = (Entity, H160);
 fn subscribe_to_voice(
     In(input): In<SubscribeToAudio>,
     mut commands: Commands,
-    rooms: Query<(&LivekitRoom, &LivekitRuntime, Option<&HostingParticipants>)>,
+    rooms: Query<(&LivekitRoom, Option<&HostingParticipants>)>,
     participants: Query<(&LivekitParticipant, &track::Publishing)>,
     tracks: Query<Entity, With<track::Microphone>>,
+    livekit_runtime: Res<LivekitRuntime>,
 ) {
     #[cfg(not(target_arch = "wasm32"))]
     let (room_entity, address, sender) = input;
     #[cfg(target_arch = "wasm32")]
     let (room_entity, address) = input;
 
-    let Ok((room, runtime, maybe_hosting)) = rooms.get(room_entity) else {
+    let Ok((room, maybe_hosting)) = rooms.get(room_entity) else {
         error!("{} is not an well formed room.", room_entity);
         commands.send_event(AppExit::from_code(1));
         return;
@@ -571,7 +572,7 @@ fn subscribe_to_voice(
     if let Some(track_entity) = tracks.iter_many(publishing.collection()).next() {
         commands.trigger_targets(
             track::SubscribeToAudioTrack {
-                runtime: runtime.clone(),
+                runtime: livekit_runtime.clone(),
                 #[cfg(not(target_arch = "wasm32"))]
                 sender,
             },
@@ -589,11 +590,12 @@ fn subscribe_to_voice(
 fn unsubscribe_to_voice(
     In((room_entity, address)): In<(Entity, H160)>,
     mut commands: Commands,
-    rooms: Query<(&LivekitRoom, &LivekitRuntime, Option<&HostingParticipants>)>,
+    rooms: Query<(&LivekitRoom, Option<&HostingParticipants>)>,
     participants: Query<(&LivekitParticipant, &track::Publishing)>,
     tracks: Query<Entity, With<track::Microphone>>,
+    livekit_runtime: Res<LivekitRuntime>,
 ) {
-    let Ok((room, runtime, maybe_hosting)) = rooms.get(room_entity) else {
+    let Ok((room, maybe_hosting)) = rooms.get(room_entity) else {
         error!("{} is not an well formed room.", room_entity);
         commands.send_event(AppExit::from_code(1));
         return;
@@ -630,7 +632,7 @@ fn unsubscribe_to_voice(
     if let Some(track_entity) = tracks.iter_many(publishing.collection()).next() {
         commands.trigger_targets(
             track::UnsubscribeToTrack {
-                runtime: runtime.clone(),
+                runtime: livekit_runtime.clone(),
             },
             track_entity,
         );
@@ -656,17 +658,18 @@ type SubscribeToStreamer = (Entity, Entity);
 fn subscribe_to_streamer(
     In(input): In<SubscribeToStreamer>,
     mut commands: Commands,
-    rooms: Query<(&LivekitRoom, &LivekitRuntime, Option<&HostingParticipants>)>,
+    rooms: Query<(&LivekitRoom, Option<&HostingParticipants>)>,
     participants: Query<(Entity, &LivekitParticipant, &track::Publishing), With<Streamer>>,
     audio_tracks: Query<Entity, With<track::Audio>>,
     video_tracks: Query<Entity, With<track::Video>>,
+    livekit_runtime: Res<LivekitRuntime>,
 ) {
     #[cfg(not(target_arch = "wasm32"))]
     let (room_entity, subscriber, audio, video) = input;
     #[cfg(target_arch = "wasm32")]
     let (room_entity, subscriber) = input;
 
-    let Ok((room, runtime, maybe_hosting)) = rooms.get(room_entity) else {
+    let Ok((room, maybe_hosting)) = rooms.get(room_entity) else {
         error!("LivekitRoom did not have runtime.");
         commands.send_event(AppExit::from_code(1));
         return;
@@ -698,13 +701,13 @@ fn subscribe_to_streamer(
 
             commands.trigger_targets(
                 track::SubscribeToAudioTrack {
-                    runtime: runtime.clone(),
+                    runtime: livekit_runtime.clone(),
                     #[cfg(not(target_arch = "wasm32"))]
                     sender: bypass_sender,
                 },
                 track_entity,
             );
-            runtime.spawn(async move {
+            livekit_runtime.spawn(async move {
                 let frame = bypass_receiver.await.unwrap();
                 audio.send(frame).await.unwrap();
             });
@@ -720,7 +723,7 @@ fn subscribe_to_streamer(
     if let Some(track_entity) = video_tracks.iter_many(publishing.collection()).next() {
         commands.trigger_targets(
             track::SubscribeToVideoTrack {
-                runtime: runtime.clone(),
+                runtime: livekit_runtime.clone(),
                 #[cfg(not(target_arch = "wasm32"))]
                 sender: video,
             },

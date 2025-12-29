@@ -75,8 +75,7 @@ impl Room {
     }
 
     pub async fn close(&self) -> RoomResult<()> {
-        error!("{self:?}");
-        panic!("todo")
+        Err(RoomError::Other("todo".to_owned()))
     }
 
     pub fn name(&self) -> String {

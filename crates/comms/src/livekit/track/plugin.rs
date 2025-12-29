@@ -24,7 +24,6 @@ use crate::{
     livekit::{
         participant::{HostedBy, LivekitParticipant},
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
-        room::LivekitRoom,
         track::{
             Audio, Camera, LivekitFrame, LivekitTrack, Microphone, OpenAudioSender,
             OpenVideoSender, PublishedBy, SubscribeToAudioTrack, SubscribeToVideoTrack, Subscribed,
@@ -61,10 +60,10 @@ fn track_published(
     trigger: Trigger<TrackPublished>,
     mut commands: Commands,
     participants: Query<(Entity, &LivekitParticipant, &HostedBy)>,
-    rooms: Query<&LivekitRuntime, With<LivekitRoom>>,
     player_state: Res<GlobalCrdtState>,
     mut player_update_tasks: ResMut<PlayerUpdateTasks>,
     mut images: ResMut<Assets<Image>>,
+    livekit_runtime: Res<LivekitRuntime>,
 ) {
     let TrackPublished { participant, track } = trigger.event();
 
@@ -78,11 +77,6 @@ fn track_published(
     };
 
     let room_entity = hosted_by.get();
-    let Ok(runtime) = rooms.get(room_entity) else {
-        error!("Room {} does not have a runtime.", room_entity);
-        commands.send_event(AppExit::from_code(1));
-        return;
-    };
 
     debug!(
         "{} ({}) published {:?} track {}.",
@@ -142,7 +136,7 @@ fn track_published(
         let address = maybe_address.unwrap();
 
         let sender = player_state.get_sender();
-        let task = runtime.spawn(async move {
+        let task = livekit_runtime.spawn(async move {
             sender
                 .send(PlayerUpdate {
                     transport_id: room_entity,
@@ -154,7 +148,7 @@ fn track_published(
                 .await
         });
         player_update_tasks.push(PlayerUpdateTask {
-            runtime: runtime.clone(),
+            runtime: livekit_runtime.clone(),
             task,
         });
     }
@@ -165,9 +159,9 @@ fn track_unpublished(
     mut commands: Commands,
     tracks: Query<(Entity, &LivekitTrack, &PublishedBy)>,
     participants: Query<(Entity, &LivekitParticipant, &HostedBy)>,
-    rooms: Query<&LivekitRuntime, With<LivekitRoom>>,
     player_state: Res<GlobalCrdtState>,
     mut player_update_tasks: ResMut<PlayerUpdateTasks>,
+    livekit_runtime: Res<LivekitRuntime>,
 ) {
     let TrackUnpublished { participant, track } = trigger.event();
 
@@ -179,13 +173,7 @@ fn track_unpublished(
         commands.send_event(AppExit::from_code(1));
         return;
     };
-
     let room_entity = hosted_by.get();
-    let Ok(runtime) = rooms.get(room_entity) else {
-        error!("Room {} does not have a runtime.", room_entity);
-        commands.send_event(AppExit::from_code(1));
-        return;
-    };
 
     let Some((entity, published_by)) =
         tracks
@@ -231,7 +219,7 @@ fn track_unpublished(
         let address = maybe_address.unwrap();
 
         let sender = player_state.get_sender();
-        let task = runtime.spawn(async move {
+        let task = livekit_runtime.spawn(async move {
             sender
                 .send(PlayerUpdate {
                     transport_id: room_entity,
@@ -244,7 +232,7 @@ fn track_unpublished(
         });
 
         player_update_tasks.push(PlayerUpdateTask {
-            runtime: runtime.clone(),
+            runtime: livekit_runtime.clone(),
             task,
         });
     }
