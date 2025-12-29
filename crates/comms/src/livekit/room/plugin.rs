@@ -61,6 +61,7 @@ impl Plugin for LivekitRoomPlugin {
 
         app.add_observer(initiate_room_connection);
         app.add_observer(connect_to_livekit_room);
+        app.add_observer(create_local_participant);
         app.add_observer(disconnect_from_room_on_replace);
 
         app.add_systems(
@@ -143,11 +144,6 @@ fn poll_connecting_rooms(
                             Connected,
                         ))
                         .remove::<ConnectingLivekitRoom>();
-
-                    commands.trigger(ParticipantConnected {
-                        participant: local_participant.into(),
-                        room: entity,
-                    });
                 }
                 Err(err) => {
                     error!("Failed to connect to room due to '{err}'.");
@@ -477,6 +473,25 @@ fn process_network_message(
             }
         }
     }
+}
+
+fn create_local_participant(
+    trigger: Trigger<OnAdd, Connected>,
+    mut commands: Commands,
+    rooms: Query<&LivekitRoom>,
+) {
+    let entity = trigger.target();
+    let Ok(room) = rooms.get(entity) else {
+        error!("Can't create local participant because {entity} is not a LivekitRoom.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    let local_participant = room.local_participant();
+    commands.trigger(ParticipantConnected {
+        participant: local_participant.into(),
+        room: entity,
+    });
 }
 
 fn disconnect_from_room_on_replace(
