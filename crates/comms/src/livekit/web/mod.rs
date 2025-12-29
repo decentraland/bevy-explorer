@@ -181,7 +181,7 @@ pub struct ParticipantIdentity(pub String);
 
 impl std::fmt::Display for ParticipantIdentity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}", self.0)
+        write!(f, "{}", self.0)
     }
 }
 
@@ -278,7 +278,7 @@ pub struct ParticipantSid(String);
 
 impl std::fmt::Display for ParticipantSid {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}", self.0)
+        write!(f, "{}", self.0)
     }
 }
 
