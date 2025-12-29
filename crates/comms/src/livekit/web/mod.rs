@@ -329,3 +329,10 @@ impl GetFromJsValue for DataPacketKind {
             .and_then(|kind| serde_wasm_bindgen::from_value::<DataPacketKind>(kind).ok())
     }
 }
+
+#[derive(Debug)]
+pub enum ConnectionState {
+    Connected,
+    Reconnecting,
+    Disconnected,
+}

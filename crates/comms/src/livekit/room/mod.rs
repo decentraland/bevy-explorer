@@ -37,7 +37,7 @@ impl Connected {
         deferred_world
             .commands()
             .entity(entity)
-            .remove::<Connecting>();
+            .remove::<(Reconnecting, Disconnected)>();
     }
 
     pub fn on_remove(mut deferred_world: DeferredWorld, hook_context: HookContext) {
@@ -52,21 +52,60 @@ impl Connected {
     }
 }
 
-/// Marks that a [`LivekitRoom`] as connecting or
+/// Marks that a [`LivekitRoom`] as
 /// attempting to reconnect
 #[derive(Component)]
 #[component(on_add=Self::on_add, on_remove=Self::on_remove)]
-pub struct Connecting;
+pub struct Reconnecting;
 
-impl Connecting {
+impl Reconnecting {
     pub fn on_add(mut deferred_world: DeferredWorld, hook_context: HookContext) {
         let entity = hook_context.entity;
-        debug!("Room {entity} is connecting.");
+        let Some(room) = deferred_world.entity(entity).get::<LivekitRoom>() else {
+            error!("Reconnecting room {entity} did not have LivekitRoom.");
+            deferred_world.commands().send_event(AppExit::from_code(1));
+            return;
+        };
+        debug!("Room {} is reconnecting.", room.name());
 
         deferred_world
             .commands()
             .entity(entity)
-            .remove::<Connected>();
+            .remove::<(Connected, Disconnected)>();
+    }
+
+    pub fn on_remove(mut deferred_world: DeferredWorld, hook_context: HookContext) {
+        let entity = hook_context.entity;
+
+        // This hook will also run on despawn
+        // so `try_remove` is used
+        deferred_world
+            .commands()
+            .entity(entity)
+            .try_remove::<ConnectingLivekitRoom>();
+    }
+}
+
+/// Marks that a [`LivekitRoom`] as
+/// attempting to disconnected
+#[derive(Component)]
+#[component(on_add=Self::on_add, on_remove=Self::on_remove)]
+pub struct Disconnected;
+
+impl Disconnected {
+    pub fn on_add(mut deferred_world: DeferredWorld, hook_context: HookContext) {
+        let entity = hook_context.entity;
+        let Some(room) = deferred_world.entity(entity).get::<LivekitRoom>() else {
+            error!("Disconnected room {entity} did not have LivekitRoom.");
+            deferred_world.commands().send_event(AppExit::from_code(1));
+            return;
+        };
+        debug!("Room {} is disconnected.", room.name());
+
+        deferred_world
+            .commands()
+            .entity(entity)
+            .remove::<(Connected, Reconnecting)>();
     }
 
     pub fn on_remove(mut deferred_world: DeferredWorld, hook_context: HookContext) {

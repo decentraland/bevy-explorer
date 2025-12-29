@@ -54,6 +54,12 @@ function alt_set_room_event_handler(room, handler) {
             type: 'connected',
         })
     });
+    room.on(LivekitClient.RoomEvent.ConnectionStateChanged, (state) => {
+        handler({
+            type: 'connectionStateChanged',
+            state: state
+        })
+    });
     room.on(
         LivekitClient.RoomEvent.DataReceived,
         (payload, participant, kind, topic) => {

@@ -14,7 +14,7 @@ use {
     livekit::{
         id::ParticipantIdentity,
         participant::{ConnectionQuality, Participant},
-        DataPacket, Room, RoomEvent, RoomOptions, RoomResult,
+        ConnectionState, DataPacket, Room, RoomEvent, RoomOptions, RoomResult,
     },
     tokio::sync::oneshot,
 };
@@ -38,7 +38,7 @@ use crate::{
             ParticipantMetadataChanged, ParticipantPayload, ReceivingStream, Streamer,
         },
         plugin::{RoomTask, RoomTasks},
-        room::{Connected, Connecting, ConnectingLivekitRoom, LivekitRoom},
+        room::{Connected, ConnectingLivekitRoom, Disconnected, LivekitRoom, Reconnecting},
         track, LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime, LivekitTransport,
     },
     NetworkMessageRecipient,
@@ -47,8 +47,8 @@ use crate::{
 use crate::{
     global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
     livekit::web::{
-        participant_audio_subscribe, streamer_subscribe_channel, DataPacket, ParticipantIdentity,
-        Room, RoomEvent, RoomOptions, RoomResult,
+        participant_audio_subscribe, streamer_subscribe_channel, ConnectionState, DataPacket,
+        ParticipantIdentity, Room, RoomEvent, RoomOptions, RoomResult,
     },
 };
 
@@ -60,7 +60,6 @@ impl Plugin for LivekitRoomPlugin {
         app.init_resource::<LivekitRoomTrackTask>();
 
         app.add_observer(initiate_room_connection);
-        app.add_observer(connect_to_livekit_room);
         app.add_observer(create_local_participant);
         app.add_observer(disconnect_from_room_on_replace);
 
@@ -79,12 +78,8 @@ impl Plugin for LivekitRoomPlugin {
     }
 }
 
-fn initiate_room_connection(trigger: Trigger<OnAdd, LivekitTransport>, mut commands: Commands) {
-    commands.entity(trigger.target()).insert(Connecting);
-}
-
-fn connect_to_livekit_room(
-    trigger: Trigger<OnAdd, Connecting>,
+fn initiate_room_connection(
+    trigger: Trigger<OnAdd, LivekitTransport>,
     mut commands: Commands,
     livekit_transports: Query<(&LivekitTransport, &LivekitRuntime)>,
 ) {
@@ -132,17 +127,12 @@ fn poll_connecting_rooms(
 
             match poll {
                 Ok((room, room_event_receiver)) => {
-                    let local_participant = room.local_participant();
-
                     commands
                         .entity(entity)
-                        .insert((
-                            LivekitRoom {
-                                room: Arc::new(room),
-                                room_event_receiver,
-                            },
-                            Connected,
-                        ))
+                        .insert(LivekitRoom {
+                            room: Arc::new(room),
+                            room_event_receiver,
+                        })
                         .remove::<ConnectingLivekitRoom>();
                 }
                 Err(err) => {
@@ -173,7 +163,7 @@ async fn connect_to_room(
 
 fn process_room_events(
     mut commands: Commands,
-    livekit_rooms: Query<(Entity, &mut LivekitRoom), With<Connected>>,
+    livekit_rooms: Query<(Entity, &mut LivekitRoom)>,
     #[cfg(target_arch = "wasm32")] player_state: Res<GlobalCrdtState>,
 ) {
     #[cfg(target_arch = "wasm32")]
@@ -203,6 +193,17 @@ fn process_room_events(
                 }
                 #[cfg(target_arch = "wasm32")]
                 RoomEvent::Connected => (),
+                RoomEvent::ConnectionStateChanged(state) => match state {
+                    ConnectionState::Connected => {
+                        commands.entity(entity).insert(Connected);
+                    }
+                    ConnectionState::Reconnecting => {
+                        commands.entity(entity).insert(Reconnecting);
+                    }
+                    ConnectionState::Disconnected => {
+                        commands.entity(entity).insert(Disconnected);
+                    }
+                },
                 RoomEvent::DataReceived {
                     payload,
                     participant: maybe_participant,

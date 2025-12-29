@@ -6,12 +6,15 @@ use wasm_bindgen::{
     JsValue,
 };
 
-use crate::livekit::web::{traits::GetFromJsValue, DataPacketKind, Participant, RemoteParticipant};
+use crate::livekit::web::{
+    traits::GetFromJsValue, ConnectionState, DataPacketKind, Participant, RemoteParticipant,
+};
 
 // Define structures for the events coming from JavaScript
 #[derive(Debug)]
 pub enum RoomEvent {
     Connected,
+    ConnectionStateChanged(ConnectionState),
     DataReceived {
         payload: Arc<Vec<u8>>,
         participant: Option<RemoteParticipant>,
@@ -62,6 +65,23 @@ impl FromWasmAbi for RoomEvent {
 
         match tag.as_deref() {
             Some("connected") => RoomEvent::Connected,
+            Some("connectionStateChanged") => {
+                let Some(state) = String::get_from_js_value(&js_value, "state") else {
+                    error!("RoomEvent::ConnectionStateChanged did not have state field.");
+                    panic!();
+                };
+                let state = match state.as_str() {
+                    "connecting" => ConnectionState::Reconnecting,
+                    "connected" => ConnectionState::Connected,
+                    "reconnecting" => ConnectionState::Reconnecting,
+                    "disconnected" => ConnectionState::Disconnected,
+                    _ => {
+                        error!("Invalid ConnectionState '{state}'.");
+                        panic!()
+                    }
+                };
+                RoomEvent::ConnectionStateChanged(state)
+            },
             Some("dataReceived") => {
                 let Some(payload) = Arc::<Vec<u8>>::get_from_js_value(&js_value, "payload") else {
                     error!("RoomEvent::DataReceived did not have payload field.");
