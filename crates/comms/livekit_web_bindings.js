@@ -24,6 +24,7 @@ var audioContext = null;
  * @param {livekit.RoomOptions} room_options 
  * @param {livekit.RoomConnectOptions} room_connect_options 
  * @param {function} handler 
+ * @returns livekit.Room
  */
 export async function room_connect(url, token, room_options, room_connect_options, handler) {
     const room = new LivekitClient.Room(room_options);
@@ -38,6 +39,16 @@ export async function room_connect(url, token, room_options, room_connect_option
 /**
  * 
  * @param {livekit.Room} room
+ * @returns string
+ */
+export function room_name(room) {
+    return room.name
+}
+
+/**
+ * 
+ * @param {livekit.Room} room
+ * @returns livekit.LocalParticipant
  */
 export function room_local_participant(room) {
     return room.localParticipant;
@@ -628,8 +639,4 @@ export function streamer_subscribe_channel(roomName, subscribe_audio, subscribe_
         log(`video sub(${subscribe_video}) ${roomName}-${participant.identity}`);
         pub.setSubscribed(subscribe_video);
     }
-}
-
-export function room_name(room) {
-    return room.name
 }
