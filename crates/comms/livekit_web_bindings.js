@@ -188,8 +188,8 @@ export async function connect_room(url, token) {
         });
         const pub = await room.localParticipant.publishTrack(audioTrack, {
             source: LivekitClient.Track.Source.Microphone,
-        }).catch(error => {
-            error(`Failed to publish to room: ${error}`);
+        }).catch(error_msg => {
+            error(`Failed to publish to room: ${error_msg}`);
         })
 
         // avoid race
@@ -244,8 +244,8 @@ export function set_microphone_enabled(enabled) {
                 });
                 let pub = await room.localParticipant.publishTrack(audioTrack, {
                     source: LivekitClient.Track.Source.Microphone,
-                }).catch(error => {
-                    error(`Failed to publish to room: ${error}`);
+                }).catch(error_msg => {
+                    error(`Failed to publish to room: ${error_msg}`);
                 });
 
                 // avoid race
@@ -256,8 +256,8 @@ export function set_microphone_enabled(enabled) {
 
             Promise.all(publishPromises).then(() => {
                 log('Microphone enabled successfully for all rooms');
-            }).catch(error => {
-                error('Failed to enable microphone:', error);
+            }).catch(error_msg => {
+                error('Failed to enable microphone:', error_msg);
             });
         }
     } else {
@@ -271,21 +271,21 @@ export function set_microphone_enabled(enabled) {
                     try {
                         room.localParticipant.unpublishTrack(pub.track);
                         log(`unpublish ${room.name}`);
-                    } catch (error) {
-                        error(`Failed to unpublish ${pub} from room ${room.name}:`, error);
+                    } catch (error_msg) {
+                        error(`Failed to unpublish ${pub} from room ${room.name}:`, error_msg);
                     }
                 });
 
                 try {
                     await Promise.all(roomSpecificPromises);
-                } catch (error) {
-                    error(`Failed to unpublish audio from room ${room.name}:`, error);
+                } catch (error_msg) {
+                    error(`Failed to unpublish audio from room ${room.name}:`, error_msg);
                 }
             });
 
             Promise.all(allRoomUnpublishPromises)
-                .catch(error => {
-                    error('A critical error occurred during the unpublish-all process:', error);
+                .catch(error_msg => {
+                    error('A critical error occurred during the unpublish-all process:', error_msg);
                 })
                 .finally(() => {
                     currentMicTrack = false;
