@@ -118,8 +118,8 @@ fn verify_player_update_tasks(
             let res = runtime.block_on(task);
             match res {
                 Ok(res) => {
-                    if res.is_err() {
-                        error!("Failed to send PlayerUpdate.");
+                    if let Err(err) = res {
+                        error!("Failed to send PlayerUpdate due to {err}.");
                         commands.send_event(AppExit::from_code(1));
                         return;
                     }
@@ -153,14 +153,14 @@ fn verify_room_tasks(mut commands: Commands, mut network_message_tasks: ResMut<R
             let res = runtime.block_on(task);
             match res {
                 Ok(res) => {
-                    if res.is_err() {
-                        error!("Failed to send PlayerUpdate.");
+                    if let Err(err) = res {
+                        error!("Failed to complete room task due to {err}.");
                         commands.send_event(AppExit::from_code(1));
                         return;
                     }
                 }
                 Err(err) => {
-                    error!("Failed to pull PlayerUpdateTask due to '{err}'.");
+                    error!("Failed to pull RoomTask due to '{err}'.");
                     commands.send_event(AppExit::from_code(1));
                     return;
                 }
