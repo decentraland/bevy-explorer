@@ -36,8 +36,15 @@ impl Plugin for LivekitParticipantPlugin {
     }
 }
 
-fn participant_connected(trigger: Trigger<ParticipantConnected>, mut commands: Commands, rooms: Query<&LivekitRoom>) {
-    let ParticipantConnected { participant, room: room_entity } = trigger.event();
+fn participant_connected(
+    trigger: Trigger<ParticipantConnected>,
+    mut commands: Commands,
+    rooms: Query<&LivekitRoom>,
+) {
+    let ParticipantConnected {
+        participant,
+        room: room_entity,
+    } = trigger.event();
     let Ok(room) = rooms.get(*room_entity) else {
         error!("Room {room_entity} given to ParticipantConnected was invalid.");
         commands.send_event(AppExit::from_code(1));
@@ -68,7 +75,10 @@ fn participant_connected(trigger: Trigger<ParticipantConnected>, mut commands: C
             Streamer,
         ));
     } else {
-        commands.spawn((participant.clone(), <HostedBy as Relationship>::from(*room_entity)));
+        commands.spawn((
+            participant.clone(),
+            <HostedBy as Relationship>::from(*room_entity),
+        ));
     }
 
     commands.trigger(ParticipantMetadataChanged {
@@ -83,7 +93,10 @@ fn participant_disconnected(
     participants: Query<(Entity, &LivekitParticipant)>,
     rooms: Query<(&LivekitRoom, Option<&HostingParticipants>)>,
 ) {
-    let ParticipantDisconnected { participant, room: room_entity } = trigger.event();
+    let ParticipantDisconnected {
+        participant,
+        room: room_entity,
+    } = trigger.event();
     let Ok((room, maybe_hosting_participants)) = rooms.get(*room_entity) else {
         error!("Room {room_entity} given to ParticipantDisconnected was invalid.");
         commands.send_event(AppExit::from_code(1));
