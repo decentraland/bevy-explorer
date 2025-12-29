@@ -420,7 +420,7 @@ fn process_channel_control(
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
-                    error!("Channel control of {entity} was closed.");
+                    error!("Channel control of {} was closed.", livekit_room.name());
                     commands.send_event(AppExit::from_code(1));
                     return;
                 }
@@ -470,7 +470,7 @@ fn process_network_message(
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
-                    error!("Network message of {entity} was closed.");
+                    error!("Network message of {} was closed.", room.name());
                     commands.send_event(AppExit::from_code(1));
                     return;
                 }

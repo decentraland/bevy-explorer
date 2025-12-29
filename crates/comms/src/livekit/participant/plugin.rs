@@ -36,13 +36,18 @@ impl Plugin for LivekitParticipantPlugin {
     }
 }
 
-fn participant_connected(trigger: Trigger<ParticipantConnected>, mut commands: Commands) {
-    let ParticipantConnected { participant, room } = trigger.event();
+fn participant_connected(trigger: Trigger<ParticipantConnected>, mut commands: Commands, rooms: Query<&LivekitRoom>) {
+    let ParticipantConnected { participant, room: room_entity } = trigger.event();
+    let Ok(room) = rooms.get(*room_entity) else {
+        error!("Room {room_entity} given to ParticipantConnected was invalid.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
     debug!(
         "Participant '{}' ({}) connected to room {}.",
         participant.sid(),
         participant.identity(),
-        room
+        room.name()
     );
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -53,21 +58,21 @@ fn participant_connected(trigger: Trigger<ParticipantConnected>, mut commands: C
     if is_local {
         commands.spawn((
             participant.clone(),
-            <HostedBy as Relationship>::from(*room),
+            <HostedBy as Relationship>::from(*room_entity),
             Local,
         ));
     } else if participant.identity().as_str().ends_with("-streamer") {
         commands.spawn((
             participant.clone(),
-            <HostedBy as Relationship>::from(*room),
+            <HostedBy as Relationship>::from(*room_entity),
             Streamer,
         ));
     } else {
-        commands.spawn((participant.clone(), <HostedBy as Relationship>::from(*room)));
+        commands.spawn((participant.clone(), <HostedBy as Relationship>::from(*room_entity)));
     }
 
     commands.trigger(ParticipantMetadataChanged {
-        room: *room,
+        room: *room_entity,
         participant: participant.clone(),
     });
 }
@@ -76,18 +81,23 @@ fn participant_disconnected(
     trigger: Trigger<ParticipantDisconnected>,
     mut commands: Commands,
     participants: Query<(Entity, &LivekitParticipant)>,
-    rooms: Query<&HostingParticipants, With<LivekitRoom>>,
+    rooms: Query<(&LivekitRoom, Option<&HostingParticipants>)>,
 ) {
-    let ParticipantDisconnected { participant, room } = trigger.event();
+    let ParticipantDisconnected { participant, room: room_entity } = trigger.event();
+    let Ok((room, maybe_hosting_participants)) = rooms.get(*room_entity) else {
+        error!("Room {room_entity} given to ParticipantDisconnected was invalid.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
     debug!(
         "Participant '{}' ({}) disconnected from room {}.",
         participant.sid(),
         participant.identity(),
-        room
+        room.name()
     );
 
-    let Ok(hosting_participants) = rooms.get(*room) else {
-        error!("Room given to ParticipantDisconnected was invalid.");
+    let Some(hosting_participants) = maybe_hosting_participants else {
+        error!("Room {} is not hosting participants.", room.name());
         commands.send_event(AppExit::from_code(1));
         return;
     };
@@ -103,7 +113,7 @@ fn participant_disconnected(
         })
     else {
         error!(
-            "No entity referent to '{}' ({}).",
+            "Disconnecting participant '{}' ({}) not found in participants.",
             participant.sid(),
             participant.identity()
         );

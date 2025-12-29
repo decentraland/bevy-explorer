@@ -27,7 +27,12 @@ pub struct Connected;
 impl Connected {
     pub fn on_add(mut deferred_world: DeferredWorld, hook_context: HookContext) {
         let entity = hook_context.entity;
-        debug!("Room {entity} connected.");
+        let Some(room) = deferred_world.entity(entity).get::<LivekitRoom>() else {
+            error!("Connected room {entity} did not have LivekitRoom.");
+            deferred_world.commands().send_event(AppExit::from_code(1));
+            return;
+        };
+        debug!("Room {} connected.", room.name());
 
         deferred_world
             .commands()
