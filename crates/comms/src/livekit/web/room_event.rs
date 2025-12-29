@@ -81,7 +81,7 @@ impl FromWasmAbi for RoomEvent {
                     }
                 };
                 RoomEvent::ConnectionStateChanged(state)
-            },
+            }
             Some("dataReceived") => {
                 let Some(payload) = Arc::<Vec<u8>>::get_from_js_value(&js_value, "payload") else {
                     error!("RoomEvent::DataReceived did not have payload field.");

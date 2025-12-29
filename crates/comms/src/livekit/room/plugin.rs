@@ -6,7 +6,7 @@ use bevy::{
 use common::util::AsH160;
 use ethers_core::types::H160;
 use http::Uri;
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, task::JoinHandle};
 #[cfg(not(target_arch = "wasm32"))]
 use {
     common::structs::AudioDecoderError,
@@ -14,7 +14,7 @@ use {
     livekit::{
         id::ParticipantIdentity,
         participant::{ConnectionQuality, Participant},
-        ConnectionState, DataPacket, Room, RoomEvent, RoomOptions, RoomResult,
+        ConnectionState, DataPacket, Room, RoomError, RoomEvent, RoomOptions, RoomResult,
     },
     tokio::sync::oneshot,
 };
@@ -37,7 +37,6 @@ use crate::{
             HostingParticipants, LivekitParticipant, ParticipantConnected, ParticipantDisconnected,
             ParticipantMetadataChanged, ParticipantPayload, ReceivingStream, Streamer,
         },
-        plugin::{RoomTask, RoomTasks},
         room::{Connected, ConnectingLivekitRoom, Disconnected, LivekitRoom, Reconnecting},
         track, LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime, LivekitTransport,
     },
@@ -48,7 +47,7 @@ use crate::{
     global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
     livekit::web::{
         participant_audio_subscribe, streamer_subscribe_channel, ConnectionState, DataPacket,
-        ParticipantIdentity, Room, RoomEvent, RoomOptions, RoomResult,
+        ParticipantIdentity, Room, RoomError, RoomEvent, RoomOptions, RoomResult,
     },
 };
 
@@ -72,11 +71,18 @@ impl Plugin for LivekitRoomPlugin {
                     process_channel_control,
                     process_network_message,
                 ),
+                verify_room_tasks,
             )
                 .chain(),
         );
     }
 }
+
+#[derive(Default, Component, Deref, DerefMut)]
+struct RoomTasks(Vec<RoomTask>);
+
+#[derive(Deref, DerefMut)]
+struct RoomTask(JoinHandle<Result<(), RoomError>>);
 
 fn initiate_room_connection(
     trigger: Trigger<OnAdd, LivekitTransport>,
@@ -429,11 +435,16 @@ fn process_channel_control(
 
 fn process_network_message(
     mut commands: Commands,
-    rooms: Query<(&LivekitRoom, &mut LivekitNetworkMessage)>,
-    mut room_tasks: ResMut<RoomTasks>,
+    rooms: Query<(
+        Entity,
+        &LivekitRoom,
+        &mut LivekitNetworkMessage,
+        Option<&mut RoomTasks>,
+    )>,
     livekit_runtime: Res<LivekitRuntime>,
 ) {
-    for (room, mut network_message) in rooms {
+    let mut new_room_tasks = vec![];
+    for (entity, room, mut network_message, maybe_room_tasks) in rooms {
         loop {
             match network_message.try_recv() {
                 Ok(outgoing) => {
@@ -457,10 +468,7 @@ fn process_network_message(
                     let local_participant = room.local_participant();
                     let task = livekit_runtime
                         .spawn(async move { local_participant.publish_data(packet).await });
-                    room_tasks.push(RoomTask {
-                        runtime: livekit_runtime.clone(),
-                        task,
-                    });
+                    new_room_tasks.push(RoomTask(task));
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
@@ -469,6 +477,17 @@ fn process_network_message(
                     return;
                 }
             }
+        }
+        if let Some(mut room_tasks) = maybe_room_tasks {
+            room_tasks.extend(&mut new_room_tasks.drain(..));
+        } else {
+            #[expect(
+                clippy::drain_collect,
+                reason = "This does not reset the capacity of `new_room_tasks`."
+            )]
+            commands
+                .entity(entity)
+                .insert(RoomTasks(new_room_tasks.drain(..).collect()));
         }
     }
 }
@@ -740,4 +759,37 @@ fn subscribe_to_streamer(
 
 fn unsubscribe_to_streamer(In(subscriber): In<Entity>, mut commands: Commands) {
     commands.entity(subscriber).try_remove::<ReceivingStream>();
+}
+
+fn verify_room_tasks(
+    mut commands: Commands,
+    rooms: Query<&mut RoomTasks, With<LivekitRoom>>,
+    livekit_runtime: Res<LivekitRuntime>,
+) {
+    for mut room_tasks in rooms {
+        let mut i = 0;
+        while i < room_tasks.len() {
+            if room_tasks[i].is_finished() {
+                let RoomTask(task) = room_tasks.swap_remove(i);
+
+                let res = livekit_runtime.block_on(task);
+                match res {
+                    Ok(res) => {
+                        if let Err(err) = res {
+                            error!("Failed to complete room task due to {err}.");
+                            commands.send_event(AppExit::from_code(1));
+                            return;
+                        }
+                    }
+                    Err(err) => {
+                        error!("Failed to pull RoomTask due to '{err}'.");
+                        commands.send_event(AppExit::from_code(1));
+                        return;
+                    }
+                }
+            } else {
+                i += 1;
+            }
+        }
+    }
 }
