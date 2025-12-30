@@ -202,10 +202,35 @@ impl RemoteTrack {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[wasm_bindgen]
 pub enum TrackKind {
     Audio,
     Video,
+}
+
+impl WasmDescribe for TrackKind {
+    fn describe() {
+        JsValue::describe();
+    }
+}
+
+impl FromWasmAbi for TrackKind {
+    type Abi = JsValueAbi;
+
+    unsafe fn from_abi(value: JsValueAbi) -> Self {
+        let js_value = JsValue::from_abi(value);
+        match js_value.as_string().as_deref() {
+            Some("audio") => Self::Audio,
+            Some("video") => Self::Video,
+            Some(other) => {
+                error!("TrackKind was not a known kind. Was '{other}'. Assuming Audio.");
+                Self::Audio
+            }
+            None => {
+                error!("TrackKind was not a string. Assuming Audio.");
+                Self::Audio
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
