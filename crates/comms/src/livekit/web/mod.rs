@@ -13,7 +13,7 @@ use std::{
 use bevy::prelude::*;
 use ethers_core::types::H160;
 use serde::{Deserialize, Deserializer};
-use wasm_bindgen::{convert::IntoWasmAbi, prelude::*};
+use wasm_bindgen::{convert::{IntoWasmAbi, FromWasmAbi}, prelude::*, describe::WasmDescribe};
 
 use crate::livekit::web::traits::GetFromJsValue;
 pub use crate::livekit::web::{
@@ -209,13 +209,39 @@ pub enum TrackKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[wasm_bindgen]
 pub enum TrackSource {
     Unknown,
     Camera,
     Microphone,
     Screenshare,
     ScreenshareAudio,
+}
+
+impl WasmDescribe for TrackSource {
+    fn describe() {
+        JsValue::describe();
+    }
+}
+
+impl FromWasmAbi for TrackSource {
+    type Abi = JsValueAbi;
+
+    unsafe fn from_abi(value: JsValueAbi) -> Self {
+        let js_value = JsValue::from_abi(value);
+        match js_value.as_string().as_deref() {
+            Some("microphone") => Self::Microphone,
+            Some("camera") => Self::Camera,
+            Some("screen_share") => Self::Screenshare,
+            Some("screen_share_audio") => Self::ScreenshareAudio,
+            Some("unknown") => Self::Unknown,
+            Some(other) => {
+                error!("TrackSource was not a known source. Was '{other}'. Return Unknown.");
+                Self::Unknown},
+            None => {
+                error!("TrackSource was not a string. Return Unknown.");
+                Self::Unknown}
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
