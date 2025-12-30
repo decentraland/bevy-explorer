@@ -13,7 +13,11 @@ use std::{
 use bevy::prelude::*;
 use ethers_core::types::H160;
 use serde::{Deserialize, Deserializer};
-use wasm_bindgen::{convert::{IntoWasmAbi, FromWasmAbi}, prelude::*, describe::WasmDescribe};
+use wasm_bindgen::{
+    convert::{FromWasmAbi, IntoWasmAbi},
+    describe::WasmDescribe,
+    prelude::*,
+};
 
 use crate::livekit::web::traits::GetFromJsValue;
 pub use crate::livekit::web::{
@@ -261,10 +265,12 @@ impl FromWasmAbi for TrackSource {
             Some("unknown") => Self::Unknown,
             Some(other) => {
                 error!("TrackSource was not a known source. Was '{other}'. Return Unknown.");
-                Self::Unknown},
+                Self::Unknown
+            }
             None => {
                 error!("TrackSource was not a string. Return Unknown.");
-                Self::Unknown}
+                Self::Unknown
+            }
         }
     }
 }
