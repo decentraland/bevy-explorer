@@ -61,8 +61,18 @@ export function room_local_participant(room) {
  */
 function alt_set_room_event_handler(room, handler) {
     room.on(LivekitClient.RoomEvent.Connected, () => {
+        const participants_with_tracks = Array
+            .from(room.remoteParticipants.values())
+            .filter(remote_participant => room.localParticipant.sid != remote_participant.sid)
+            .map(remote_participant => {
+                return {
+                    participant: remote_participant,
+                    tracks: Array.from(remote_participant.trackPublications.values())
+                };
+            });
         handler({
             type: 'connected',
+            participants_with_tracks
         })
     });
     room.on(LivekitClient.RoomEvent.ConnectionStateChanged, (state) => {
@@ -109,6 +119,16 @@ function alt_set_room_event_handler(room, handler) {
                 participant,
                 old_metadata: prev_metadata,
                 metadata: participant.metadata
+            })
+        }
+    );
+    room.on(
+        LivekitClient.RoomEvent.TrackPublished,
+        (remote_track_publication, remote_participant) => {
+            handler({
+                type: 'trackPublished',
+                publication: remote_track_publication,
+                participant: remote_participant
             })
         }
     );
@@ -177,6 +197,33 @@ export function remote_participant_identity(remote_participant) {
  */
 export function remote_participant_metadata(remote_participant) {
     return remote_participant.metadata;
+}
+
+/**
+ * 
+ * @param {livekit.RemoteTrackPublication} remote_track_publication 
+ * @returns string
+ */
+export function remote_track_publication_sid(remote_track_publication) {
+    return remote_track_publication.sid;
+}
+
+/**
+ * 
+ * @param {livekit.RemoteTrackPublication} remote_track_publication 
+ * @returns string
+ */
+export function remote_track_publication_kind(remote_track_publication) {
+    return remote_track_publication.kind;
+}
+
+/**
+ * 
+ * @param {livekit.RemoteTrackPublication} remote_track_publication 
+ * @returns string
+ */
+export function remote_track_publication_source(remote_track_publication) {
+    return remote_track_publication.source;
 }
 
 export async function connect_room(url, token) {

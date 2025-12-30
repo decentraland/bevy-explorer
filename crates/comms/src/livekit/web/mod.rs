@@ -1,5 +1,6 @@
 mod local_participant;
 mod remote_participant;
+mod remote_track_publication;
 mod room;
 mod room_event;
 mod traits;
@@ -16,8 +17,8 @@ use wasm_bindgen::{convert::IntoWasmAbi, prelude::*};
 
 use crate::livekit::web::traits::GetFromJsValue;
 pub use crate::livekit::web::{
-    local_participant::LocalParticipant, remote_participant::RemoteParticipant, room::Room,
-    room_event::RoomEvent,
+    local_participant::LocalParticipant, remote_participant::RemoteParticipant,
+    remote_track_publication::RemoteTrackPublication, room::Room, room_event::RoomEvent,
 };
 
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
@@ -200,42 +201,15 @@ impl RemoteTrack {
     }
 }
 
-#[derive(Clone)]
-pub struct RemoteTrackPublication {
-    abi: JsValueAbi,
-}
-
-impl RemoteTrackPublication {
-    pub fn sid(&self) -> String {
-        error!("todo sid");
-        panic!("todo sid")
-    }
-
-    pub fn kind(&self) -> TrackKind {
-        error!("todo kind");
-        panic!("todo kind")
-    }
-
-    pub fn source(&self) -> TrackSource {
-        error!("todo source");
-        panic!("todo source")
-    }
-
-    pub fn track(&self) -> Option<RemoteTrack> {
-        error!("todo track");
-        panic!("todo track")
-    }
-
-    pub fn set_subscribed(&self, switch: bool) {}
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[wasm_bindgen]
 pub enum TrackKind {
     Audio,
     Video,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[wasm_bindgen]
 pub enum TrackSource {
     Unknown,
     Camera,

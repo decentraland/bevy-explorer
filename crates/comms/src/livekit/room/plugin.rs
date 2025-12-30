@@ -45,7 +45,7 @@ use crate::{
     global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
     livekit::web::{
         participant_audio_subscribe, streamer_subscribe_channel, ConnectionState, DataPacket,
-        ParticipantIdentity, Room, RoomError, RoomEvent, RoomOptions, RoomResult,
+        Participant, ParticipantIdentity, Room, RoomError, RoomEvent, RoomOptions, RoomResult,
     },
 };
 
@@ -181,7 +181,6 @@ fn process_room_events(
             trace!("in: {:?}", room_event);
 
             match room_event {
-                #[cfg(not(target_arch = "wasm32"))]
                 RoomEvent::Connected {
                     participants_with_tracks,
                 } => {
@@ -198,8 +197,6 @@ fn process_room_events(
                         }
                     }
                 }
-                #[cfg(target_arch = "wasm32")]
-                RoomEvent::Connected => (),
                 RoomEvent::ConnectionStateChanged(state) => match state {
                     ConnectionState::Connected => {
                         commands.entity(entity).insert(Connected);
@@ -244,7 +241,6 @@ fn process_room_events(
                         participant: participant.into(),
                     });
                 }
-                #[cfg(not(target_arch = "wasm32"))]
                 RoomEvent::TrackPublished {
                     publication,
                     participant,
@@ -306,27 +302,6 @@ fn process_room_events(
                         ));
                     }
                 },
-                #[cfg(target_arch = "wasm32")]
-                RoomEvent::TrackPublished {
-                    participant, kind, ..
-                } => {
-                    debug!("pub {} {}", participant.identity(), kind);
-                    if let Some(address) = participant.identity().as_h160() {
-                        if kind == "audio" {
-                            let _ = sender
-                                .try_send(PlayerUpdate {
-                                    transport_id: entity,
-                                    message: PlayerMessage::AudioStreamAvailable {
-                                        transport: entity,
-                                    },
-                                    address,
-                                })
-                                .inspect_err(|err| {
-                                    error!("Failed to send player update due to '{err}'")
-                                });
-                        }
-                    }
-                }
                 #[cfg(target_arch = "wasm32")]
                 RoomEvent::TrackUnpublished {
                     participant, kind, ..

@@ -6,12 +6,15 @@ use wasm_bindgen::{
 
 use crate::livekit::web::{
     traits::GetFromJsValue, ConnectionState, DataPacketKind, Participant, RemoteParticipant,
+    RemoteTrackPublication,
 };
 
 // Define structures for the events coming from JavaScript
 #[derive(Debug)]
 pub enum RoomEvent {
-    Connected,
+    Connected {
+        participants_with_tracks: Vec<(RemoteParticipant, Vec<RemoteTrackPublication>)>,
+    },
     ConnectionStateChanged(ConnectionState),
     DataReceived {
         payload: Arc<Vec<u8>>,
@@ -27,8 +30,7 @@ pub enum RoomEvent {
         metadata: String,
     },
     TrackPublished {
-        room_name: String,
-        kind: String,
+        publication: RemoteTrackPublication,
         participant: RemoteParticipant,
     },
     TrackUnpublished {
@@ -62,7 +64,54 @@ impl FromWasmAbi for RoomEvent {
             .and_then(|tag| tag.as_string());
 
         match tag.as_deref() {
-            Some("connected") => RoomEvent::Connected,
+            Some("connected") => {
+                let Some(participants_with_tracks) =
+                    js_sys::Reflect::get(&js_value, &JsValue::from("participants_with_tracks"))
+                        .ok()
+                        .map(Into::<js_sys::Array>::into)
+                else {
+                    error!("RoomEvent::Connected did not have participants_with_tracks field.");
+                    panic!();
+                };
+
+                let participants_with_tracks = participants_with_tracks
+                    .iter()
+                    .map(|js_object: JsValue| {
+                        let Some(participant) =
+                            RemoteParticipant::get_from_js_value(&js_object, "participant")
+                        else {
+                            error!(
+                                "Object in participants_with_tracks array of RoomEvent::Connected\
+                        did not have participant field."
+                            );
+                            panic!();
+                        };
+                        let Some(publications) =
+                            js_sys::Reflect::get(&js_object, &JsValue::from("tracks"))
+                                .ok()
+                                .map(Into::<js_sys::Array>::into)
+                        else {
+                            error!(
+                                "Object in participants_with_tracks array of RoomEvent::Connected\
+                        did not have tracks field."
+                            );
+                            panic!();
+                        };
+
+                        (
+                            participant,
+                            publications
+                                .iter()
+                                .map(|publication| RemoteTrackPublication::from(publication))
+                                .collect(),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+
+                RoomEvent::Connected {
+                    participants_with_tracks,
+                }
+            }
             Some("connectionStateChanged") => {
                 let Some(state) = String::get_from_js_value(&js_value, "state") else {
                     error!("RoomEvent::ConnectionStateChanged did not have state field.");
@@ -138,6 +187,24 @@ impl FromWasmAbi for RoomEvent {
                     participant,
                     old_metadata,
                     metadata,
+                }
+            }
+            Some("trackPublished") => {
+                let Some(publication) =
+                    RemoteTrackPublication::get_from_js_value(&js_value, "publication")
+                else {
+                    error!("RoomEvent::TrackPublished did not have publication field.");
+                    panic!();
+                };
+                let Some(participant) =
+                    RemoteParticipant::get_from_js_value(&js_value, "participant")
+                else {
+                    error!("RoomEvent::TrackPublished did not have participant field.");
+                    panic!();
+                };
+                RoomEvent::TrackPublished {
+                    publication,
+                    participant,
                 }
             }
             Some(tag) => {
