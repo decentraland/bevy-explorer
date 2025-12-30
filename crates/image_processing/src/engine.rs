@@ -134,7 +134,7 @@ fn check_assets(
             };
             let Ok(Some(ipfs_path)) = IpfsPath::new_from_path(asset_path.path()) else {
                 // skip ... ?
-                println!("skip unknown {asset_path:?}");
+                debug!("skip unknown {asset_path:?}");
                 stats.skip_unknown += 1;
                 continue;
             };
