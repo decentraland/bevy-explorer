@@ -60,9 +60,10 @@ pub fn update_attached(
                 data
             }
             Some(id) => {
+                let id = id.to_lowercase();
                 let Some((attach, _)) = all_users
                     .iter()
-                    .find(|(_, profile)| profile.content.user_id.as_ref() == Some(id))
+                    .find(|(_, profile)| profile.content.eth_address.to_lowercase() == id)
                 else {
                     warn!("user {:?} not found", id);
                     warn!(
