@@ -39,6 +39,14 @@ export async function room_connect(url, token, room_options, room_connect_option
 /**
  * 
  * @param {livekit.Room} room
+ */
+export async function room_close(room) {
+    await room.disconnect();
+}
+
+/**
+ * 
+ * @param {livekit.Room} room
  * @returns string
  */
 export function room_name(room) {
