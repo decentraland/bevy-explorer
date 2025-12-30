@@ -68,7 +68,7 @@ struct ImgReprocessStats {
     swapped: usize,
 }
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn check_assets(
     mut a: EventReader<AssetEvent<Image>>,
     images: Res<Assets<Image>>,
