@@ -44,7 +44,10 @@ use livekit::{
     Room, RoomOptions,
 };
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{
+    traits::{DeviceTrait, HostTrait, StreamTrait},
+    Device,
+};
 
 pub struct MicPlugin;
 
@@ -110,10 +113,17 @@ pub fn update_mic(
     mut last_name: Local<String>,
     mut stream: NonSendMut<MicStream>,
     mut mic_state: ResMut<MicState>,
+    mut input: Local<Option<Device>>,
+    mut last_update: Local<f32>,
+    time: Res<Time>,
 ) {
-    let default_host = cpal::default_host();
-    let default_input = default_host.default_input_device();
-    if let Some(input) = default_input {
+    if input.is_none() || time.elapsed_secs() > *last_update + 3.0 {
+        let default_host = cpal::default_host();
+        *input = default_host.default_input_device();
+        *last_update = time.elapsed_secs();
+    }
+
+    if let Some(input) = input.as_mut() {
         if let Ok(name) = input.name() {
             mic_state.available = true;
 
