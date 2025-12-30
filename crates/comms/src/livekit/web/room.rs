@@ -16,6 +16,8 @@ extern "C" {
         room_connect_options: InternalRoomConnectOptions,
         handler: &Closure<dyn Fn(RoomEvent)>,
     ) -> RoomResult<Room>;
+    #[wasm_bindgen(catch)]
+    async fn room_close(room: &Room) -> RoomResult<()>;
     #[wasm_bindgen]
     fn room_name(room: &Room) -> String;
     #[wasm_bindgen]
@@ -70,7 +72,7 @@ impl Room {
     }
 
     pub async fn close(&self) -> RoomResult<()> {
-        Err(RoomError::Other("todo".to_owned()))
+        room_close(self).await
     }
 
     pub fn name(&self) -> String {
