@@ -213,7 +213,7 @@ export function remote_participant_metadata(remote_participant) {
  * @returns string
  */
 export function remote_track_publication_sid(remote_track_publication) {
-    return remote_track_publication.sid;
+    return remote_track_publication.trackSid;
 }
 
 /**
