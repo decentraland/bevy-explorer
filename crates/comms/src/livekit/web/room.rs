@@ -1,11 +1,6 @@
 use bevy::prelude::*;
 use tokio::sync::mpsc;
-use wasm_bindgen::{
-    convert::{FromWasmAbi, IntoWasmAbi},
-    describe::WasmDescribe,
-    prelude::*,
-    JsValue,
-};
+use wasm_bindgen::{convert::IntoWasmAbi, describe::WasmDescribe, prelude::*, JsValue};
 
 use crate::livekit::web::{
     JsValueAbi, LocalParticipant, RoomError, RoomEvent, RoomOptions, RoomResult,

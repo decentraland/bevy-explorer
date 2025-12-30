@@ -9,15 +9,10 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use bevy::{platform::sync::Arc, prelude::*};
+use bevy::prelude::*;
 use ethers_core::types::H160;
 use serde::{Deserialize, Deserializer};
-use serde_json::Value;
-use wasm_bindgen::{
-    convert::{FromWasmAbi, IntoWasmAbi, OptionFromWasmAbi},
-    describe::WasmDescribe,
-    prelude::*,
-};
+use wasm_bindgen::{convert::IntoWasmAbi, prelude::*};
 
 use crate::livekit::web::traits::GetFromJsValue;
 pub use crate::livekit::web::{

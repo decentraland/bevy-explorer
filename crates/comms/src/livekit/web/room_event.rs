@@ -1,8 +1,6 @@
 use bevy::{platform::sync::Arc, prelude::*};
-use serde::{Deserialize, Deserializer};
 use wasm_bindgen::{
     convert::{FromWasmAbi, IntoWasmAbi, OptionFromWasmAbi},
-    describe::WasmDescribe,
     JsValue,
 };
 

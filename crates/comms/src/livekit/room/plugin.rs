@@ -18,8 +18,6 @@ use {
     },
     tokio::sync::oneshot,
 };
-#[cfg(target_arch = "wasm32")]
-use {dcl_component::proto_components::kernel::comms::rfc4, prost::Message};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::{

@@ -2,8 +2,6 @@ use bevy::prelude::*;
 use dcl_component::proto_components::kernel::comms::rfc4;
 use tokio::{sync::mpsc, task::JoinHandle};
 
-#[cfg(target_arch = "wasm32")]
-use crate::livekit::web::RoomError;
 use crate::{
     global_crdt::PlayerUpdate,
     livekit::{
