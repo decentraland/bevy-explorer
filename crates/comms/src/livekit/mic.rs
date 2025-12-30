@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use common::structs::MicState;
-#[cfg(all(not(target_arch = "wasm32"), feature = "livekit"))]
+#[cfg(not(target_arch = "wasm32"))]
 use {
     bevy::ecs::relationship::Relationship,
     cpal::{traits::{DeviceTrait, HostTrait, StreamTrait}, Device},
@@ -24,7 +24,7 @@ use {
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::global_crdt::{LocalAudioFrame, LocalAudioSource};
-#[cfg(all(not(target_arch = "wasm32"), feature = "livekit"))]
+#[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::{
     participant::{HostedBy, LivekitParticipant, Local as LivekitLocalParticipant},
     room::LivekitRoom,
@@ -151,7 +151,7 @@ fn update_mic(
 }
 
 #[expect(clippy::type_complexity, reason = "Queries are complex")]
-#[cfg(all(not(target_arch = "wasm32"), feature = "livekit"))]
+#[cfg(not(target_arch = "wasm32"))]
 fn create_mic_thread(
     mut commands: Commands,
     rooms: Query<&LivekitRoom>,
@@ -186,7 +186,7 @@ fn create_mic_thread(
     }
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "livekit"))]
+#[cfg(not(target_arch = "wasm32"))]
 fn verify_health_of_mic_worker(
     mut commands: Commands,
     participants: Populated<(Entity, &LivekitParticipant, &mut MicWorker)>,
@@ -203,7 +203,7 @@ fn verify_health_of_mic_worker(
     }
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "livekit"))]
+#[cfg(not(target_arch = "wasm32"))]
 async fn mic_thread(
     local_participant: LocalParticipant,
     mut mic: broadcast::Receiver<LocalAudioFrame>,
