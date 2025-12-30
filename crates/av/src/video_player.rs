@@ -11,7 +11,10 @@ use bevy::{
 };
 use common::sets::SceneSets;
 #[cfg(feature = "livekit")]
-use comms::{livekit::{LivekitTransport, livekit_video_bridge::LivekitVideoFrame}, SceneRoom, Transport};
+use comms::{
+    livekit::{livekit_video_bridge::LivekitVideoFrame, LivekitTransport},
+    SceneRoom, Transport,
+};
 use dcl::interface::CrdtType;
 use dcl_component::{
     proto_components::sdk::components::{PbVideoEvent, VideoState},

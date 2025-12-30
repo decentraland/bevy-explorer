@@ -3,7 +3,10 @@ use common::structs::MicState;
 #[cfg(not(target_arch = "wasm32"))]
 use {
     bevy::ecs::relationship::Relationship,
-    cpal::{traits::{DeviceTrait, HostTrait, StreamTrait}, Device},
+    cpal::{
+        traits::{DeviceTrait, HostTrait, StreamTrait},
+        Device,
+    },
     livekit::{
         id::TrackSid,
         options::TrackPublishOptions,
