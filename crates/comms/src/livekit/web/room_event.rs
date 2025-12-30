@@ -34,8 +34,7 @@ pub enum RoomEvent {
         participant: RemoteParticipant,
     },
     TrackUnpublished {
-        room_name: String,
-        kind: String,
+        publication: RemoteTrackPublication,
         participant: RemoteParticipant,
     },
     TrackSubscribed {
@@ -203,6 +202,24 @@ impl FromWasmAbi for RoomEvent {
                     panic!();
                 };
                 RoomEvent::TrackPublished {
+                    publication,
+                    participant,
+                }
+            }
+            Some("trackUnpublished") => {
+                let Some(publication) =
+                    RemoteTrackPublication::get_from_js_value(&js_value, "publication")
+                else {
+                    error!("RoomEvent::TrackUnpublished did not have publication field.");
+                    panic!();
+                };
+                let Some(participant) =
+                    RemoteParticipant::get_from_js_value(&js_value, "participant")
+                else {
+                    error!("RoomEvent::TrackUnpublished did not have participant field.");
+                    panic!();
+                };
+                RoomEvent::TrackUnpublished {
                     publication,
                     participant,
                 }

@@ -140,6 +140,16 @@ function alt_set_room_event_handler(room, handler) {
             })
         }
     );
+    room.on(
+        LivekitClient.RoomEvent.TrackUnpublished,
+        (remote_track_publication, remote_participant) => {
+            handler({
+                type: 'trackUnpublished',
+                publication: remote_track_publication,
+                participant: remote_participant
+            })
+        }
+    );
 }
 
 /**
