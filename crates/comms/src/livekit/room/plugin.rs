@@ -498,11 +498,9 @@ fn disconnect_from_room_on_replace(
     let room = livekit_room.room.clone();
     debug!("Closing room {}.", room.name());
     livekit_runtime.spawn(async move {
-        debug!("Closing room");
         if let Err(err) = room.close().await {
             error!("Error while closing room {}. '{err}'.", room.name());
         }
-        debug!("Closed room");
     });
 }
 
