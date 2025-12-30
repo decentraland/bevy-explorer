@@ -73,6 +73,7 @@ impl Plugin for LivekitRoomPlugin {
             )
                 .chain(),
         );
+        app.add_systems(Last, close_rooms_on_app_exit.run_if(on_event::<AppExit>));
     }
 }
 
@@ -788,6 +789,17 @@ fn verify_room_tasks(
             } else {
                 i += 1;
             }
+        }
+    }
+}
+
+fn close_rooms_on_app_exit(rooms: Query<&LivekitRoom>, livekit_runtime: Res<LivekitRuntime>) {
+    for room in rooms {
+        if let Err(err) = livekit_runtime.block_on(room.close()) {
+            error!(
+                "Failed to close room {} before exiting due to '{err}'.",
+                room.name()
+            );
         }
     }
 }
