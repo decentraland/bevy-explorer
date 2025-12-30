@@ -65,7 +65,7 @@ struct MicWorker {
 struct MicStream(Option<cpal::Stream>);
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn update_mic(
+fn update_mic(
     mic: Res<LocalAudioSource>,
     mut last_name: Local<String>,
     mut stream: NonSendMut<MicStream>,
