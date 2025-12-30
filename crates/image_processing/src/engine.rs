@@ -68,6 +68,7 @@ struct ImgReprocessStats {
     swapped: usize,
 }
 
+#[allow(clippy::type_complexity)]
 fn check_assets(
     mut a: EventReader<AssetEvent<Image>>,
     images: Res<Assets<Image>>,
@@ -158,6 +159,7 @@ fn check_assets(
     if task.is_none() && !assets_to_process.is_empty() {
         let ipfs = ipfas.ipfs().clone();
         let assets_to_process = std::mem::take(&mut *assets_to_process);
+        #[cfg(not(target_arch = "wasm32"))]
         let cache_root = cache_root.to_owned();
         *task = Some(IoTaskPool::get().spawn(async move {
             let ctx = ipfs.context.read().await;
