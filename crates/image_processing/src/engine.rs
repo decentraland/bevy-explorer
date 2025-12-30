@@ -1,13 +1,12 @@
-use std::collections::VecDeque;
-
 use bevy::{
     asset::AssetPath,
     diagnostic::FrameCount,
     image::TextureFormatPixelInfo,
     platform::collections::{HashMap, HashSet},
     prelude::*,
+    tasks::{IoTaskPool, Task},
 };
-use common::structs::DebugInfo;
+use common::{structs::DebugInfo, util::TaskExt};
 use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer};
 
 #[cfg(target_arch = "wasm32")]
@@ -74,9 +73,10 @@ fn check_assets(
     images: Res<Assets<Image>>,
     mut w: EventWriter<AssetForProcessing>,
     ipfas: IpfsAssetServer,
-    mut assets_to_process: Local<VecDeque<(ProcessingAssetType, IpfsPath, AssetPath)>>,
+    mut assets_to_process: Local<Vec<(ProcessingAssetType, IpfsPath, AssetPath)>>,
     mut paths_processed: Local<HashSet<IpfsPath>>,
     mut stats: ResMut<ImgReprocessStats>,
+    mut task: Local<Option<Task<(usize, usize, Vec<AssetForProcessing>)>>>,
 ) {
     #[cfg(not(target_arch = "wasm32"))]
     let Some(cache_root) = ipfas.ipfs_cache_path() else {
@@ -151,45 +151,67 @@ fn check_assets(
                 continue;
             }
 
-            assets_to_process.push_back((ty, ipfs_path, asset_path.to_owned()));
+            assets_to_process.push((ty, ipfs_path, asset_path.to_owned()));
         }
     }
 
-    if assets_to_process.is_empty() {
-        return;
+    if task.is_none() && !assets_to_process.is_empty() {
+        let ipfs = ipfas.ipfs().clone();
+        let assets_to_process = std::mem::take(&mut *assets_to_process);
+        let cache_root = cache_root.to_owned();
+        *task = Some(IoTaskPool::get().spawn(async move {
+            let ctx = ipfs.context.read().await;
+            let mut skip_unhashable = 0;
+            let mut skip_shouldnt_cache = 0;
+
+            let results = assets_to_process
+                .into_iter()
+                .flat_map(|(ty, ipfs_path, base_path)| {
+                    let Some(hash) = ipfs_path.hash(&ctx) else {
+                        skip_unhashable += 1;
+                        return None;
+                    };
+
+                    if ipfs_path.should_cache(&hash) {
+                        #[cfg(not(target_arch = "wasm32"))]
+                        let cache_path = {
+                            let mut cache_path = std::path::PathBuf::from(&cache_root);
+                            cache_path.push(hash);
+                            cache_path.to_string_lossy().into_owned()
+                        };
+
+                        #[cfg(target_arch = "wasm32")]
+                        let Ok(cache_path) = ipfs_path.to_url(&ctx) else {
+                            skip_unhashable += 1;
+                            return None;
+                        };
+
+                        Some(AssetForProcessing {
+                            cache_path,
+                            base_path,
+                            ty,
+                        })
+                    } else {
+                        skip_shouldnt_cache += 1;
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            (skip_unhashable, skip_shouldnt_cache, results)
+        }));
     }
 
-    let Ok(ctx) = ipfas.ipfs().context.try_read() else {
-        return;
-    };
-
-    for (ty, ipfs_path, base_path) in assets_to_process.drain(..) {
-        let Some(hash) = ipfs_path.hash(&ctx) else {
-            stats.skip_unhashable += 1;
-            continue;
-        };
-
-        if ipfs_path.should_cache(&hash) {
-            #[cfg(not(target_arch = "wasm32"))]
-            let cache_path = {
-                let mut cache_path = std::path::PathBuf::from(cache_root);
-                cache_path.push(hash);
-                cache_path.to_string_lossy().into_owned()
-            };
-
-            #[cfg(target_arch = "wasm32")]
-            let Ok(cache_path) = ipfs_path.to_url(&ctx) else {
-                stats.skip_unhashable += 1;
-                continue;
-            };
-
-            w.write(AssetForProcessing {
-                cache_path,
-                base_path,
-                ty,
-            });
-        } else {
-            stats.skip_shouldnt_cache += 1;
+    if let Some(mut current_task) = task.take() {
+        match current_task.complete() {
+            Some((skip_unhashable, skip_shouldnt_cache, results)) => {
+                stats.skip_unhashable += skip_unhashable;
+                stats.skip_shouldnt_cache += skip_shouldnt_cache;
+                for asset in results {
+                    w.write(asset);
+                }
+            }
+            None => *task = Some(current_task),
         }
     }
 }
