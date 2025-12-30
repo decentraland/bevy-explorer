@@ -57,6 +57,15 @@ export async function connect_room(url, token, handler) {
     // check existing streams
     const participants = Array.from(room.remoteParticipants.values());
     for (const participant of participants) {
+        handler({
+            type: 'participantConnected',
+            room_name: room_name,
+            participant: {
+                identity: participant.identity,
+                metadata: participant.metadata || ''
+            }
+        })
+
         const audioPubs = Array.from(participant.trackPublications.values())
             .filter(pub => pub.kind === 'audio');
         for (const publication of audioPubs) {
