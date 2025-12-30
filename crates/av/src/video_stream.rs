@@ -186,6 +186,7 @@ pub fn av_thread_inner(
 
 #[cfg(feature = "livekit")]
 pub fn streamer_sinks(
+    av_player: Entity,
     control_channel: Sender<ChannelControl>,
     source: String,
     image: Handle<Image>,
@@ -198,6 +199,7 @@ pub fn streamer_sinks(
 
     control_channel
         .blocking_send(ChannelControl::StreamerSubscribe(
+            av_player,
             audio_sender,
             stream_sender,
         ))
