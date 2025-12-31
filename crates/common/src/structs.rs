@@ -55,7 +55,7 @@ impl Default for PrimaryUser {
     }
 }
 
-#[derive(Component, Default)]
+#[derive(Component, Default, Debug)]
 pub struct PlayerModifiers {
     pub hide: bool,
     pub hide_profile: bool,
@@ -75,7 +75,7 @@ pub struct PlayerModifiers {
     pub areas: Vec<ActiveAvatarArea>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ActiveAvatarArea {
     pub entity: Entity,
     pub allow_locomotion: PermissionState,

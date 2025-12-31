@@ -79,7 +79,7 @@ pub(crate) fn update_user_velocity(
         dynamic_state.tank = false;
     }
 
-    if axis_input != Vec2::ZERO && !user.block_run {
+    if axis_input != Vec2::ZERO {
         let movement_axis = match (user.block_walk, user.block_run, user.block_all) {
             (_, _, true) | (true, true, false) => Vec2::ZERO,
             (true, false, false) => axis_input.normalize_or_zero() * user.run_speed,
