@@ -43,7 +43,11 @@ pub enum RoomEvent {
         participant: RemoteParticipant,
     },
     TrackUnsubscribed {
-        room_name: String,
+        // Note: The browser livekit docs say that the first parameter is a Livekit.Track,
+        // not a Livekit.RemoteTrack, verify if there is ever an event with a local
+        // track
+        track: RemoteTrack,
+        publication: RemoteTrackPublication,
         participant: RemoteParticipant,
     },
 }
@@ -243,6 +247,29 @@ impl FromWasmAbi for RoomEvent {
                     panic!();
                 };
                 RoomEvent::TrackSubscribed {
+                    track,
+                    publication,
+                    participant,
+                }
+            }
+            Some("trackUnsubscribed") => {
+                let Some(track) = RemoteTrack::get_from_js_value(&js_value, "track") else {
+                    error!("RoomEvent::TrackUnsubscribed did not have track field.");
+                    panic!();
+                };
+                let Some(publication) =
+                    RemoteTrackPublication::get_from_js_value(&js_value, "publication")
+                else {
+                    error!("RoomEvent::TrackUnsubscribed did not have publication field.");
+                    panic!();
+                };
+                let Some(participant) =
+                    RemoteParticipant::get_from_js_value(&js_value, "participant")
+                else {
+                    error!("RoomEvent::TrackUnsubscribed did not have participant field.");
+                    panic!();
+                };
+                RoomEvent::TrackUnsubscribed {
                     track,
                     publication,
                     participant,

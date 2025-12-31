@@ -161,6 +161,20 @@ function alt_set_room_event_handler(room, handler) {
             })
         }
     );
+    room.on(
+        LivekitClient.RoomEvent.TrackUnsubscribed,
+        // Note: The browser livekit docs say that the first parameter is a Livekit.Track,
+        // not a Livekit.RemoteTrack, verify if there is ever an event with a local
+        // track
+        (remote_track, remote_track_publication, remote_participant) => {
+            handler({
+                type: 'trackUnsubscribed',
+                track: remote_track,
+                publication: remote_track_publication,
+                participant: remote_participant
+            })
+        }
+    );
 }
 
 /**

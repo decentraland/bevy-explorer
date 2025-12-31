@@ -262,7 +262,6 @@ fn process_room_events(
                 RoomEvent::TrackSubscribed { publication, .. } => {
                     commands.trigger(track::TrackSubscribed { track: publication });
                 }
-                #[cfg(not(target_arch = "wasm32"))]
                 RoomEvent::TrackUnsubscribed { publication, .. } => {
                     commands.trigger(track::TrackUnsubscribed { track: publication });
                 }
