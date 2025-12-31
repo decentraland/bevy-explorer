@@ -6,7 +6,7 @@ use wasm_bindgen::{
 
 use crate::livekit::web::{
     traits::GetFromJsValue, ConnectionState, DataPacketKind, Participant, RemoteParticipant,
-    RemoteTrackPublication,
+    RemoteTrack, RemoteTrackPublication,
 };
 
 // Define structures for the events coming from JavaScript
@@ -38,7 +38,8 @@ pub enum RoomEvent {
         participant: RemoteParticipant,
     },
     TrackSubscribed {
-        room_name: String,
+        track: RemoteTrack,
+        publication: RemoteTrackPublication,
         participant: RemoteParticipant,
     },
     TrackUnsubscribed {
@@ -220,6 +221,29 @@ impl FromWasmAbi for RoomEvent {
                     panic!();
                 };
                 RoomEvent::TrackUnpublished {
+                    publication,
+                    participant,
+                }
+            }
+            Some("trackSubscribed") => {
+                let Some(track) = RemoteTrack::get_from_js_value(&js_value, "track") else {
+                    error!("RoomEvent::TrackSubscribed did not have track field.");
+                    panic!();
+                };
+                let Some(publication) =
+                    RemoteTrackPublication::get_from_js_value(&js_value, "publication")
+                else {
+                    error!("RoomEvent::TrackSubscribed did not have publication field.");
+                    panic!();
+                };
+                let Some(participant) =
+                    RemoteParticipant::get_from_js_value(&js_value, "participant")
+                else {
+                    error!("RoomEvent::TrackSubscribed did not have participant field.");
+                    panic!();
+                };
+                RoomEvent::TrackSubscribed {
+                    track,
                     publication,
                     participant,
                 }

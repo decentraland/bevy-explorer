@@ -259,7 +259,6 @@ fn process_room_events(
                         track: publication.clone(),
                     });
                 }
-                #[cfg(not(target_arch = "wasm32"))]
                 RoomEvent::TrackSubscribed { publication, .. } => {
                     commands.trigger(track::TrackSubscribed { track: publication });
                 }
@@ -301,10 +300,6 @@ fn process_room_events(
                         ));
                     }
                 },
-                #[cfg(target_arch = "wasm32")]
-                RoomEvent::TrackSubscribed { .. } => {
-                    debug!("Track subscribed event - audio is handled in JavaScript");
-                }
                 #[cfg(target_arch = "wasm32")]
                 RoomEvent::TrackUnsubscribed { .. } => {
                     debug!("Track unsubscribed event");

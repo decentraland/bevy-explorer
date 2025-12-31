@@ -205,6 +205,27 @@ impl RemoteTrack {
     }
 }
 
+impl GetFromJsValue for RemoteTrack {
+    fn get_from_js_value(js_value: &JsValue, key: &str) -> Option<Self> {
+        let Some(track) = js_sys::Reflect::get(js_value, &JsValue::from("track")).ok() else {
+            return None;
+        };
+        let kind = js_sys::Reflect::get(&track, &JsValue::from("kind"))
+            .ok()
+            .and_then(|kind| kind.as_string());
+        match kind.as_deref() {
+            Some("audio") => Some(Self::Audio(RemoteAudioTrack { inner: track })),
+            Some("video") => Some(Self::Video(RemoteVideoTrack { inner: track })),
+            Some(other) => {
+                panic!("Unknown RemoteTrack kind {other}.")
+            }
+            None => {
+                panic!("RemoteTrack did not have kind field.")
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrackKind {
     Audio,
@@ -277,13 +298,25 @@ impl FromWasmAbi for TrackSource {
 
 #[derive(Debug, Clone)]
 pub struct RemoteAudioTrack {
-    abi: JsValueAbi,
+    inner: JsValue,
 }
+
+/// SAFETY: should be fine while WASM remains single-threaded
+unsafe impl Send for RemoteAudioTrack {}
+
+/// SAFETY: should be fine while WASM remains single-threaded
+unsafe impl Sync for RemoteAudioTrack {}
 
 #[derive(Debug, Clone)]
 pub struct RemoteVideoTrack {
-    abi: JsValueAbi,
+    inner: JsValue,
 }
+
+/// SAFETY: should be fine while WASM remains single-threaded
+unsafe impl Send for RemoteVideoTrack {}
+
+/// SAFETY: should be fine while WASM remains single-threaded
+unsafe impl Sync for RemoteVideoTrack {}
 
 pub fn update_participant_pan(participant_identity: &str, pan: f32) {
     if let Err(e) = set_participant_pan(participant_identity, pan) {
