@@ -65,9 +65,7 @@ impl Plugin for GlobalCrdtPlugin {
             realm_bounds: (IVec2::MAX, IVec2::MIN),
         });
 
-        let (sender, receiver) = tokio::sync::broadcast::channel(1_000);
-        // leak the receiver so it never gets dropped
-        Box::leak(Box::new(receiver));
+        let (sender, _) = tokio::sync::broadcast::channel(1_000);
         app.insert_resource(LocalAudioSource { sender });
 
         app.add_systems(Update, process_transport_updates);
