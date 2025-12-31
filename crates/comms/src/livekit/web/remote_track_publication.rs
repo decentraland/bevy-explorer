@@ -40,7 +40,9 @@ impl RemoteTrackPublication {
         panic!("todo track")
     }
 
-    pub fn set_subscribed(&self, switch: bool) {}
+    pub fn set_subscribed(&self, switch: bool) {
+        todo!();
+    }
 }
 
 impl From<JsValue> for RemoteTrackPublication {

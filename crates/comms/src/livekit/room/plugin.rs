@@ -42,7 +42,7 @@ use crate::{
 };
 #[cfg(target_arch = "wasm32")]
 use crate::{
-    global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
+    global_crdt::GlobalCrdtState,
     livekit::web::{
         participant_audio_subscribe, streamer_subscribe_channel, ConnectionState, DataPacket,
         Participant, ParticipantIdentity, Room, RoomError, RoomEvent, RoomOptions, RoomResult,
@@ -303,6 +303,7 @@ fn process_room_events(
                 RoomEvent::TrackUnsubscribed { .. } => {
                     debug!("Track unsubscribed event");
                 }
+                #[cfg(not(target_arch = "wasm32"))]
                 _ => {
                     debug!("Event: {:?}", room_event);
                 }

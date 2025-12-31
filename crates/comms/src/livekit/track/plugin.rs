@@ -437,7 +437,7 @@ fn subscribed_video_track_with_open_sender(
         let publication = track.track.clone();
 
         let Some(RemoteTrack::Video(video)) = track.track() else {
-            error!("A subscribed video track did not have a audio RemoteTrack.");
+            error!("A subscribed video track did not have a video RemoteTrack.");
             commands.send_event(AppExit::from_code(1));
             return;
         };

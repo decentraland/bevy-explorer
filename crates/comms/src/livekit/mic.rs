@@ -1,8 +1,13 @@
-use bevy::prelude::*;
+use bevy::{ecs::relationship::Relationship, prelude::*};
 use common::structs::MicState;
+use tokio::task::JoinHandle;
+#[cfg(target_arch = "wasm32")]
+use {
+    bevy::render::view::RenderLayers,
+    common::{structs::AudioSettings, util::VolumePanning},
+};
 #[cfg(not(target_arch = "wasm32"))]
 use {
-    bevy::ecs::relationship::Relationship,
     cpal::{
         traits::{DeviceTrait, HostTrait, StreamTrait},
         Device,
@@ -17,27 +22,22 @@ use {
             prelude::{AudioFrame, AudioSourceOptions, RtcAudioSource},
         },
     },
-    tokio::{sync::broadcast, task::JoinHandle},
-};
-#[cfg(target_arch = "wasm32")]
-use {
-    bevy::render::view::RenderLayers,
-    common::{structs::AudioSettings, util::VolumePanning},
+    tokio::sync::broadcast,
 };
 
-#[cfg(not(target_arch = "wasm32"))]
-use crate::global_crdt::{LocalAudioFrame, LocalAudioSource};
-#[cfg(not(target_arch = "wasm32"))]
-use crate::livekit::{
-    participant::{HostedBy, LivekitParticipant, Local as LivekitLocalParticipant},
-    room::LivekitRoom,
-    LivekitRuntime,
-};
 #[cfg(target_arch = "wasm32")]
 use crate::{
     global_crdt::{ForeignAudioSource, ForeignPlayer},
     livekit::web::{
         is_microphone_available, set_microphone_enabled, set_participant_spatial_audio,
+    },
+};
+use crate::{
+    global_crdt::{LocalAudioFrame, LocalAudioSource},
+    livekit::{
+        participant::{HostedBy, LivekitParticipant, Local as LivekitLocalParticipant},
+        room::LivekitRoom,
+        LivekitRuntime,
     },
 };
 
@@ -49,9 +49,10 @@ impl Plugin for MicPlugin {
         app.init_non_send_resource::<MicStream>();
         app.init_resource::<MicState>();
 
-        app.add_systems(Update, update_mic);
-        #[cfg(not(target_arch = "wasm32"))]
-        app.add_systems(Update, (create_mic_thread, verify_health_of_mic_worker));
+        app.add_systems(
+            Update,
+            (update_mic, create_mic_thread, verify_health_of_mic_worker),
+        );
         #[cfg(target_arch = "wasm32")]
         app.add_systems(Update, locate_foreign_streams);
     }
@@ -59,7 +60,6 @@ impl Plugin for MicPlugin {
 
 #[derive(Component)]
 struct MicWorker {
-    #[cfg(not(target_arch = "wasm32"))]
     task: JoinHandle<()>,
 }
 
@@ -154,7 +154,6 @@ fn update_mic(
 }
 
 #[expect(clippy::type_complexity, reason = "Queries are complex")]
-#[cfg(not(target_arch = "wasm32"))]
 fn create_mic_thread(
     mut commands: Commands,
     rooms: Query<&LivekitRoom>,
@@ -189,7 +188,6 @@ fn create_mic_thread(
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn verify_health_of_mic_worker(
     mut commands: Commands,
     participants: Populated<(Entity, &LivekitParticipant, &mut MicWorker)>,

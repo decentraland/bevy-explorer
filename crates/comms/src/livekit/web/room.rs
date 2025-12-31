@@ -2,9 +2,7 @@ use bevy::prelude::*;
 use tokio::sync::mpsc;
 use wasm_bindgen::{convert::IntoWasmAbi, describe::WasmDescribe, prelude::*, JsValue};
 
-use crate::livekit::web::{
-    JsValueAbi, LocalParticipant, RoomError, RoomEvent, RoomOptions, RoomResult,
-};
+use crate::livekit::web::{JsValueAbi, LocalParticipant, RoomEvent, RoomOptions, RoomResult};
 
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
 extern "C" {
