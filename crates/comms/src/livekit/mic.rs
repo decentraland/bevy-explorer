@@ -153,6 +153,30 @@ fn update_mic(
     mic_state.available = false;
 }
 
+#[cfg(target_arch = "wasm32")]
+fn update_mic(
+    mut mic_state: ResMut<MicState>,
+    mut last_enabled: Local<Option<bool>>,
+    mut last_available: Local<Option<bool>>,
+) {
+    // Check if microphone is available in the browser
+    let current_available = is_microphone_available().unwrap_or(false);
+
+    // Only update availability if it changed
+    if last_available.is_none() || last_available.unwrap() != current_available {
+        mic_state.available = current_available;
+        *last_available = Some(current_available);
+    }
+
+    // Only update microphone enabled state if it changed
+    if last_enabled.is_none() || last_enabled.unwrap() != mic_state.enabled {
+        if let Err(e) = set_microphone_enabled(mic_state.enabled) {
+            warn!("Failed to set microphone state: {:?}", e);
+        }
+        *last_enabled = Some(mic_state.enabled);
+    }
+}
+
 #[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn create_mic_thread(
     mut commands: Commands,
@@ -277,30 +301,6 @@ async fn mic_thread(
         {
             warn!("failed to capture from mic: {e}");
         };
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn update_mic(
-    mut mic_state: ResMut<MicState>,
-    mut last_enabled: Local<Option<bool>>,
-    mut last_available: Local<Option<bool>>,
-) {
-    // Check if microphone is available in the browser
-    let current_available = is_microphone_available().unwrap_or(false);
-
-    // Only update availability if it changed
-    if last_available.is_none() || last_available.unwrap() != current_available {
-        mic_state.available = current_available;
-        *last_available = Some(current_available);
-    }
-
-    // Only update microphone enabled state if it changed
-    if last_enabled.is_none() || last_enabled.unwrap() != mic_state.enabled {
-        if let Err(e) = set_microphone_enabled(mic_state.enabled) {
-            warn!("Failed to set microphone state: {:?}", e);
-        }
-        *last_enabled = Some(mic_state.enabled);
     }
 }
 
