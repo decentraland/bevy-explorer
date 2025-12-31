@@ -28,30 +28,10 @@ pub use crate::livekit::web::{
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
 extern "C" {
     #[wasm_bindgen(catch)]
-    pub async fn connect_room(url: &str, token: &str) -> Result<JsValue, JsValue>;
-
-    #[wasm_bindgen]
-    pub fn get_room(room_name: &str) -> JsValue;
-
-    #[wasm_bindgen]
-    pub fn recv_room_event(room: &JsValue) -> Option<RoomEvent>;
-
-    #[wasm_bindgen(catch)]
-    async fn publish_data(
-        room: &JsValue,
-        data: &[u8],
-        reliable: bool,
-        destinations: JsValue,
-    ) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(catch)]
     async fn publish_audio_track(room: &JsValue, track: &JsValue) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(catch)]
     async fn unpublish_track(room: &JsValue, sid: &str) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(catch)]
-    pub async fn close_room(room: &JsValue) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch)]
     fn create_audio_track(sample_rate: u32, num_channels: u32) -> Result<JsValue, JsValue>;
@@ -62,12 +42,6 @@ extern "C" {
         samples: &[f32],
         sample_rate: u32,
         num_channels: u32,
-    ) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(catch)]
-    fn set_room_event_handler(
-        room: &JsValue,
-        handler: &Closure<dyn FnMut(JsValue)>,
     ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch)]
@@ -118,7 +92,7 @@ pub struct RoomOptions {
     pub dynacast: bool,
     // pub e2ee: Option<E2eeOptions>,
     // pub rtc_config: RtcConfiguration,
-    // pub join_retries: u32,
+    pub join_retries: u32,
 }
 
 #[derive(Debug, Deserialize)]
