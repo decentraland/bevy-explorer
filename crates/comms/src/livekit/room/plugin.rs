@@ -250,7 +250,6 @@ fn process_room_events(
                         track: publication.clone(),
                     });
                 }
-                #[cfg(not(target_arch = "wasm32"))]
                 RoomEvent::TrackUnpublished {
                     publication,
                     participant,
@@ -302,27 +301,6 @@ fn process_room_events(
                         ));
                     }
                 },
-                #[cfg(target_arch = "wasm32")]
-                RoomEvent::TrackUnpublished {
-                    participant, kind, ..
-                } => {
-                    debug!("unpub {} {}", participant.identity(), kind);
-                    if let Some(address) = participant.identity().as_h160() {
-                        if kind == "audio" {
-                            let _ = sender
-                                .try_send(PlayerUpdate {
-                                    transport_id: entity,
-                                    message: PlayerMessage::AudioStreamUnavailable {
-                                        transport: entity,
-                                    },
-                                    address,
-                                })
-                                .inspect_err(|err| {
-                                    error!("Failed to send player update due to '{err}'")
-                                });
-                        }
-                    }
-                }
                 #[cfg(target_arch = "wasm32")]
                 RoomEvent::TrackSubscribed { .. } => {
                     debug!("Track subscribed event - audio is handled in JavaScript");
