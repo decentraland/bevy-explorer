@@ -13,7 +13,7 @@ name = "webgpu_build"
 # - copy ./assets to deploy/web/assets
 # - copy ./crates/dcl/src/js/modules to deploy/web/modules
 # - rustup default nightly # (tested with 2025-06-03)
-# - wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="wasm, livekit" && npx serve deploy/web
+# - wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="livekit" && npx serve deploy/web
 
 [features]
 default = ["livekit", "ffmpeg", "inspect", "social"]

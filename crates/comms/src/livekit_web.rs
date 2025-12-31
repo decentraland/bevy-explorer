@@ -11,7 +11,10 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use crate::{
-    global_crdt::{ChannelControl, GlobalCrdtState, PlayerMessage, PlayerUpdate},
+    global_crdt::{
+        ChannelControl, GlobalCrdtState, NetworkUpdate, NonPlayerUpdate, PlayerMessage,
+        PlayerUpdate,
+    },
     livekit_room::{LivekitConnection, LivekitTransport},
     NetworkMessage, NetworkMessageRecipient,
 };
@@ -167,7 +170,7 @@ fn livekit_handler_inner(
     remote_address: &str,
     app_rx: Receiver<NetworkMessage>,
     control_rx: Receiver<ChannelControl>,
-    sender: Sender<PlayerUpdate>,
+    sender: Sender<NetworkUpdate>,
 ) -> Result<(), anyhow::Error> {
     debug!(">> lk connect async : {}", remote_address);
 
@@ -204,7 +207,7 @@ async fn run_livekit_session(
     token: &str,
     mut app_rx: Receiver<NetworkMessage>,
     mut control_rx: Receiver<ChannelControl>,
-    sender: Sender<PlayerUpdate>,
+    sender: Sender<NetworkUpdate>,
 ) -> Result<(), anyhow::Error> {
     loop {
         // Check if sender is closed (indicates we should stop)
@@ -257,7 +260,7 @@ async fn connect_and_handle_session(
     token: &str,
     app_rx: &mut Receiver<NetworkMessage>,
     control_rx: &mut Receiver<ChannelControl>,
-    sender: &Sender<PlayerUpdate>,
+    sender: &Sender<NetworkUpdate>,
 ) -> Result<(), anyhow::Error> {
     let sender_clone = sender.clone();
 
@@ -375,7 +378,7 @@ struct Participant {
     metadata: String,
 }
 
-async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<PlayerUpdate>) {
+async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<NetworkUpdate>) {
     // Try to deserialize the event using serde_wasm_bindgen
     let event_result: Result<RoomEvent, _> = serde_wasm_bindgen::from_value(event);
 
@@ -386,15 +389,29 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                 participant,
                 ..
             } => {
-                if let Some(address) = participant.identity.as_h160() {
-                    if let Ok(packet) = rfc4::Packet::decode(payload.as_slice()) {
-                        if let Some(message) = packet.message {
+                if let Ok(packet) = rfc4::Packet::decode(payload.as_slice()) {
+                    if let Some(message) = packet.message {
+                        if let Some(address) = participant.identity.as_h160() {
                             let _ = sender
-                                .send(PlayerUpdate {
-                                    transport_id,
-                                    message: PlayerMessage::PlayerData(message),
-                                    address,
-                                })
+                                .send(
+                                    PlayerUpdate {
+                                        transport_id,
+                                        message: PlayerMessage::PlayerData(message),
+                                        address,
+                                    }
+                                    .into(),
+                                )
+                                .await;
+                        } else {
+                            let res = sender
+                                .send(
+                                    NonPlayerUpdate {
+                                        transport_id,
+                                        address: participant.identity,
+                                        message,
+                                    }
+                                    .into(),
+                                )
                                 .await;
                         }
                     }
@@ -407,13 +424,16 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                 if let Some(address) = participant.identity.as_h160() {
                     if kind == "audio" {
                         let _ = sender
-                            .send(PlayerUpdate {
-                                transport_id,
-                                message: PlayerMessage::AudioStreamAvailable {
-                                    transport: transport_id,
-                                },
-                                address,
-                            })
+                            .send(
+                                PlayerUpdate {
+                                    transport_id,
+                                    message: PlayerMessage::AudioStreamAvailable {
+                                        transport: transport_id,
+                                    },
+                                    address,
+                                }
+                                .into(),
+                            )
                             .await;
                     }
                 }
@@ -425,13 +445,16 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                 if let Some(address) = participant.identity.as_h160() {
                     if kind == "audio" {
                         let _ = sender
-                            .send(PlayerUpdate {
-                                transport_id,
-                                message: PlayerMessage::AudioStreamUnavailable {
-                                    transport: transport_id,
-                                },
-                                address,
-                            })
+                            .send(
+                                PlayerUpdate {
+                                    transport_id,
+                                    message: PlayerMessage::AudioStreamUnavailable {
+                                        transport: transport_id,
+                                    },
+                                    address,
+                                }
+                                .into(),
+                            )
                             .await;
                     }
                 }
@@ -446,11 +469,14 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                 if let Some(address) = participant.identity.as_h160() {
                     if !participant.metadata.is_empty() {
                         let _ = sender
-                            .send(PlayerUpdate {
-                                transport_id,
-                                message: PlayerMessage::MetaData(participant.metadata),
-                                address,
-                            })
+                            .send(
+                                PlayerUpdate {
+                                    transport_id,
+                                    message: PlayerMessage::MetaData(participant.metadata),
+                                    address,
+                                }
+                                .into(),
+                            )
                             .await;
                     }
                 }

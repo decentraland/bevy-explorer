@@ -23,7 +23,8 @@ use dcl_component::proto_components::kernel::comms::rfc4;
 
 use crate::{
     global_crdt::{
-        GlobalCrdtState, LocalAudioFrame, LocalAudioSource, PlayerMessage, PlayerUpdate,
+        GlobalCrdtState, LocalAudioFrame, LocalAudioSource, NetworkUpdate, NonPlayerUpdate,
+        PlayerMessage, PlayerUpdate,
     },
     livekit_room::{LivekitConnection, LivekitTransport},
     ChannelControl, NetworkMessage, NetworkMessageRecipient,
@@ -228,7 +229,7 @@ fn livekit_handler(
     remote_address: String,
     receiver: Receiver<NetworkMessage>,
     control_receiver: Receiver<ChannelControl>,
-    sender: Sender<PlayerUpdate>,
+    sender: Sender<NetworkUpdate>,
     mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
 ) {
     let receiver = Arc::new(Mutex::new(receiver));
@@ -258,7 +259,7 @@ fn livekit_handler_inner(
     remote_address: &str,
     app_rx: Arc<Mutex<Receiver<NetworkMessage>>>,
     control_rx: Arc<Mutex<Receiver<ChannelControl>>>,
-    sender: Sender<PlayerUpdate>,
+    sender: Sender<NetworkUpdate>,
     mut mic: tokio::sync::broadcast::Receiver<LocalAudioFrame>,
 ) -> Result<(), anyhow::Error> {
     debug!(">> lk connect async : {remote_address}");
@@ -368,7 +369,7 @@ fn livekit_handler_inner(
                                                 transport_id,
                                                 message: PlayerMessage::AudioStreamAvailable { transport: transport_id },
                                                 address,
-                                            }).await;
+                                            }.into()).await;
                                         }
                                     }
                                     let meta = participant.metadata();
@@ -378,7 +379,7 @@ fn livekit_handler_inner(
                                                 transport_id,
                                                 message: PlayerMessage::MetaData(meta),
                                                 address,
-                                            }).await {
+                                            }.into()).await {
                                                 warn!("app pipe broken ({e}), existing loop");
                                                 break 'stream;
                                             }
@@ -393,26 +394,38 @@ fn livekit_handler_inner(
                         }
                         livekit::RoomEvent::DataReceived { payload, participant, .. } => {
                             if let Some(participant) = participant {
-                                if let Some(address) = participant.identity().0.as_str().as_h160() {
-                                    let packet = match rfc4::Packet::decode(payload.as_slice()) {
-                                        Ok(packet) => packet,
-                                        Err(e) => {
-                                            warn!("unable to parse packet body: {e}");
-                                            continue;
-                                        }
-                                    };
-                                    let Some(message) = packet.message else {
-                                        warn!("received empty packet body");
+                                let packet = match rfc4::Packet::decode(payload.as_slice()) {
+                                    Ok(packet) => packet,
+                                    Err(e) => {
+                                        warn!("unable to parse packet body: {e}");
                                         continue;
-                                    };
-                                    debug!("[{}] received [{}] packet {message:?} from {address}", transport_id, packet.protocol_version);
-                                    if let Err(e) = sender.send(PlayerUpdate {
-                                        transport_id,
-                                        message: PlayerMessage::PlayerData(message),
-                                        address,
-                                    }).await {
-                                        warn!("app pipe broken ({e}), existing loop");
-                                        break 'stream;
+                                    }
+                                };
+                                let Some(message) = packet.message else {
+                                    warn!("received empty packet body");
+                                    continue;
+                                };
+                                debug!("[{}] received [{}] packet {message:?} from {}", transport_id, packet.protocol_version, participant.identity().0);
+                                match participant.identity().0.as_str().as_h160() {
+                                    Some(address) => {
+                                        if let Err(e) = sender.send(PlayerUpdate {
+                                            transport_id,
+                                            message: PlayerMessage::PlayerData(message),
+                                            address,
+                                        }.into()).await {
+                                            warn!("app pipe broken ({e}), existing loop");
+                                            break 'stream;
+                                        }
+                                    }
+                                    None => {
+                                        if let Err(e) = sender.send(NonPlayerUpdate {
+                                            transport_id,
+                                            message,
+                                            address: participant.identity().0.clone()
+                                        }.into()).await {
+                                            warn!("app pipe broken ({e}), existing loop");
+                                            break 'stream;
+                                        }
                                     }
                                 }
                             }
@@ -426,7 +439,7 @@ fn livekit_handler_inner(
                                         transport_id,
                                         message: PlayerMessage::AudioStreamAvailable { transport: transport_id },
                                         address,
-                                    }).await;
+                                    }.into()).await;
                                 }
                             } else if participant.identity().as_str().ends_with("-streamer") {
                                 publication.set_subscribed(true);
@@ -440,7 +453,7 @@ fn livekit_handler_inner(
                                         transport_id,
                                         message: PlayerMessage::AudioStreamUnavailable { transport: transport_id },
                                         address,
-                                    }).await;
+                                    }.into()).await;
                                 }
                             }
                         }
@@ -475,7 +488,7 @@ fn livekit_handler_inner(
                                         transport_id,
                                         message: PlayerMessage::MetaData(meta),
                                         address,
-                                    }).await {
+                                    }.into()).await {
                                         warn!("app pipe broken ({e}), existing loop");
                                         break 'stream;
                                     }
