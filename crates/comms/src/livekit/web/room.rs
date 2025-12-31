@@ -48,6 +48,7 @@ impl Room {
             auto_subscribe,
             adaptive_stream,
             dynacast,
+            join_retries,
         } = room_options;
 
         let mut room_options = InternalRoomOptions::default();
@@ -56,6 +57,7 @@ impl Room {
 
         let mut room_connect_options = InternalRoomConnectOptions::default();
         room_connect_options.autoSubscribe = auto_subscribe;
+        room_connect_options.maxRetries = join_retries;
 
         let (sender, receiver) = mpsc::unbounded_channel();
         let handler = Closure::new(move |room_event: RoomEvent| {
