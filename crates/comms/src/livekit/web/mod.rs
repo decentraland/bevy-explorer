@@ -181,7 +181,7 @@ impl RemoteTrack {
 
 impl GetFromJsValue for RemoteTrack {
     fn get_from_js_value(js_value: &JsValue, key: &str) -> Option<Self> {
-        let Some(track) = js_sys::Reflect::get(js_value, &JsValue::from("track")).ok() else {
+        let Some(track) = js_sys::Reflect::get(js_value, &JsValue::from(key)).ok() else {
             return None;
         };
         let kind = js_sys::Reflect::get(&track, &JsValue::from("kind"))
