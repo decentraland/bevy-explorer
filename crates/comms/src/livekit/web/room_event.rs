@@ -106,7 +106,7 @@ impl FromWasmAbi for RoomEvent {
                             participant,
                             publications
                                 .iter()
-                                .map(|publication| RemoteTrackPublication::from(publication))
+                                .map(RemoteTrackPublication::from)
                                 .collect(),
                         )
                     })
