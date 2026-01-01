@@ -403,7 +403,7 @@ async fn handle_room_event(event: JsValue, transport_id: Entity, sender: Sender<
                                 )
                                 .await;
                         } else {
-                            let res = sender
+                            let _ = sender
                                 .send(
                                     NonPlayerUpdate {
                                         transport_id,
