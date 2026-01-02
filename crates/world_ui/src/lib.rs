@@ -140,7 +140,7 @@ pub fn add_worldui_materials(
         let material = materials.add(TextShapeMaterial {
             base: SceneMaterial {
                 base: StandardMaterial {
-                    base_color: Color::srgb(2.0, 2.0, 2.0),
+                    base_color: Color::WHITE,
                     base_color_texture: Some(target.0.clone()),
                     unlit: true,
                     alpha_mode: wui.blend_mode,
