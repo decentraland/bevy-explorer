@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use bevy::{platform::collections::HashMap, prelude::*};
 use ethers_core::types::H160;
@@ -154,13 +154,20 @@ pub fn update_mic(
             let new_stream = input
                 .build_input_stream(
                     &config.into(),
-                    move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                    move |data_f32: &[f32], _: &cpal::InputCallbackInfo| {
+                        let mut data_uninit = Arc::new_uninit_slice(data_f32.len());
+                        let data_slice = Arc::get_mut(&mut data_uninit).unwrap();
+                        for (src, dest) in data_f32.iter().zip(data_slice.iter_mut()) {
+                            dest.write((*src * i16::MAX as f32).round() as i16);
+                        }
+                        // SAFETY: we have initialized all 'len' elements
+                        let data = unsafe { data_uninit.assume_init() };
                         if sender
                             .send(LocalAudioFrame {
-                                data: data.to_owned(),
+                                data,
                                 sample_rate,
                                 num_channels,
-                                samples_per_channel: data.len() as u32 / num_channels,
+                                samples_per_channel: data_f32.len() as u32 / num_channels,
                             })
                             .is_err()
                         {
@@ -305,7 +312,6 @@ fn livekit_handler_inner(
 
         rt2.spawn(async move {
             while let Ok(frame) = mic.recv().await {
-                let data = frame.data.iter().map(|f| (f * i16::MAX as f32) as i16).collect();
                 if native_source.as_ref().is_none_or(|ns| ns.sample_rate() != frame.sample_rate || ns.num_channels() != frame.num_channels) {
                     // update track
                     if let Some(sid) = mic_sid.take() {
@@ -335,10 +341,10 @@ fn livekit_handler_inner(
                     debug!("set sid");
                 }
                 if let Err(e) = native_source.as_mut().unwrap().capture_frame(&AudioFrame {
-                    data,
+                    data: Cow::Borrowed(&frame.data),
                     sample_rate: frame.sample_rate,
                     num_channels: frame.num_channels,
-                    samples_per_channel: frame.data.len() as u32 / frame.num_channels,
+                    samples_per_channel: frame.samples_per_channel,
                 }).await {
                     warn!("failed to capture from mic: {e}");
                 };
