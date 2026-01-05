@@ -75,8 +75,10 @@ impl Plugin for MicPlugin {
         #[cfg(target_arch = "wasm32")]
         app.add_systems(Update, locate_foreign_streams);
 
-        app.add_observer(availability_changed);
-        app.add_observer(enabled_changed);
+        app.add_observer(now_available);
+        app.add_observer(now_unavailable);
+        app.add_observer(now_enabled);
+        app.add_observer(now_disabled);
     }
 }
 
@@ -87,13 +89,11 @@ struct Microphone;
 #[derive(Component, Deref, DerefMut)]
 struct MicrophoneDevice(Device);
 
-#[derive(Component, Deref)]
-#[component(immutable)]
-struct Available(bool);
+#[derive(Component)]
+struct Available;
 
-#[derive(Component, Deref)]
-#[component(immutable)]
-struct Enabled(bool);
+#[derive(Component)]
+struct Enabled;
 
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Component)]
@@ -106,7 +106,7 @@ struct MicWorker {
 struct MicStream(Option<cpal::Stream>);
 
 fn create_microphone_entity(mut commands: Commands) {
-    commands.spawn((Microphone, Available(false), Enabled(false)));
+    commands.spawn(Microphone);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -119,8 +119,7 @@ fn verify_microphone_device_health(
         debug!("Microphone device became unavailable due to '{err}'.");
         commands
             .entity(entity)
-            .remove::<MicrophoneDevice>()
-            .insert(Available(false));
+            .remove::<(MicrophoneDevice, Available)>();
     }
 }
 
@@ -143,37 +142,45 @@ fn verify_availability(
         mic_state.available = true;
         commands
             .entity(*microphone)
-            .insert((MicrophoneDevice(device), Available(true)));
+            .insert((MicrophoneDevice(device), Available));
     }
 }
 
 #[cfg(target_arch = "wasm32")]
 fn verify_availability(
     mut commands: Commands,
-    microphone: Single<(Entity, &Available), With<Microphone>>,
+    microphone: Single<(Entity, Has<Available>), With<Microphone>>,
     mut mic_state: ResMut<MicState>,
 ) {
     // Check if microphone is available in the browser
     let current_available = is_microphone_available().unwrap_or(false);
-    let (entity, last_available) = microphone.into_inner();
+    let (entity, has_available) = microphone.into_inner();
 
     // Only update availability if it changed
-    if **last_available != current_available {
+    if has_available != current_available {
         mic_state.available = current_available;
-        commands.entity(entity).insert(Available(current_available));
+        if current_available {
+            commands.entity(entity).insert(Available);
+        } else {
+            commands.entity(entity).remove::<Available>();
+        }
     }
 }
 
 fn verify_enabled(
     mut commands: Commands,
-    microphone: Single<(Entity, &Enabled), With<Microphone>>,
+    microphone: Single<(Entity, Has<Enabled>), With<Microphone>>,
     mic_state: Res<MicState>,
 ) {
-    let (entity, last_enabled) = microphone.into_inner();
+    let (entity, has_enabled) = microphone.into_inner();
 
     // Only update availability if it changed
-    if **last_enabled != mic_state.enabled {
-        commands.entity(entity).insert(Enabled(mic_state.enabled));
+    if has_enabled != mic_state.enabled {
+        if mic_state.enabled {
+            commands.entity(entity).insert(Enabled);
+        } else {
+            commands.entity(entity).remove::<Enabled>();
+        }
     }
 }
 
@@ -409,22 +416,19 @@ pub fn update_participant_spatial_audio(participant_identity: &str, pan: f32, vo
     }
 }
 
-fn availability_changed(
-    _trigger: Trigger<OnInsert, Available>,
-    microphone: Single<&Available, With<Microphone>>,
-) {
-    match *microphone {
-        Available(true) => debug!("Microphone is now available."),
-        Available(false) => debug!("Microphone is now unavailable."),
-    }
+fn now_available(_trigger: Trigger<OnInsert, Available>) {
+    debug!("Microphone is now available.");
 }
 
-fn enabled_changed(
-    _trigger: Trigger<OnInsert, Enabled>,
-    microphone: Single<&Enabled, With<Microphone>>,
-) {
-    match *microphone {
-        Enabled(true) => debug!("Microphone is now enabled."),
-        Enabled(false) => debug!("Microphone is now disabled."),
-    }
+fn now_unavailable(_trigger: Trigger<OnReplace, Available>) {
+    debug!("Microphone is now unavailable.");
 }
+
+fn now_enabled(_trigger: Trigger<OnInsert, Enabled>) {
+    debug!("Microphone is now enabled.");
+}
+
+fn now_disabled(_trigger: Trigger<OnReplace, Enabled>) {
+    debug!("Microphone is now disabled.");
+}
+
