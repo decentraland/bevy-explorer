@@ -47,7 +47,6 @@ impl Plugin for MicPlugin {
     fn build(&self, app: &mut App) {
         #[cfg(not(target_arch = "wasm32"))]
         app.init_non_send_resource::<MicStream>();
-        app.init_resource::<MicState>();
 
         app.add_systems(
             Update,

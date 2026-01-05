@@ -77,7 +77,6 @@ impl Plugin for CommsPlugin {
 
         #[cfg(feature = "livekit")]
         app.add_plugins(LivekitPlugin);
-        #[cfg(not(feature = "livekit"))]
         app.init_resource::<MicState>();
 
         app.add_systems(Update, (process_realm_change, connect_scene_room));
