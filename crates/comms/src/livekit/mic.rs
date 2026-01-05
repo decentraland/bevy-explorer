@@ -64,6 +64,8 @@ impl Plugin for MicPlugin {
                 #[cfg(not(target_arch = "wasm32"))]
                 verify_microphone_device_health,
                 verify_availability,
+                verify_enabled,
+                #[cfg(not(target_arch = "wasm32"))]
                 update_mic,
             )
                 .chain(),
@@ -162,6 +164,19 @@ fn verify_availability(
     }
 }
 
+fn verify_enabled(
+    mut commands: Commands,
+    microphone: Single<(Entity, &Enabled), With<Microphone>>,
+    mic_state: Res<MicState>,
+) {
+    let (entity, last_enabled) = microphone.into_inner();
+
+    // Only update availability if it changed
+    if **last_enabled != mic_state.enabled {
+        commands.entity(entity).insert(Enabled(mic_state.enabled));
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn update_mic(
     microphone: Single<&mut MicrophoneDevice, With<Microphone>>,
@@ -230,31 +245,6 @@ fn update_mic(
                 warn!("failed to stream mic: {e}");
             }
         }
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn update_mic(
-    mut commands: Commands,
-    microphone: Single<(Entity, &Available, &Enabled), With<Microphone>>,
-    mut mic_state: ResMut<MicState>,
-) {
-    // Check if microphone is available in the browser
-    let current_available = is_microphone_available().unwrap_or(false);
-    let (entity, last_available, last_enabled) = microphone.into_inner();
-
-    // Only update availability if it changed
-    if **last_available != current_available {
-        mic_state.available = current_available;
-        commands.entity(entity).insert(Available(current_available));
-    }
-
-    // Only update microphone enabled state if it changed
-    if **last_enabled != mic_state.enabled {
-        // if let Err(e) = set_microphone_enabled(mic_state.enabled) {
-        //     warn!("Failed to set microphone state: {:?}", e);
-        // }
-        commands.entity(entity).insert(Enabled(mic_state.enabled));
     }
 }
 
