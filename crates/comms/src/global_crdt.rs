@@ -52,7 +52,7 @@ pub struct GlobalCrdtPlugin;
 impl Plugin for GlobalCrdtPlugin {
     fn build(&self, app: &mut App) {
         let (ext_sender, ext_receiver) = mpsc::channel(1000);
-        let (int_sender, ) = broadcast::channel(1000);
+        let (int_sender, _) = broadcast::channel(1000);
         app.insert_resource(GlobalCrdtState {
             ext_receiver,
             ext_sender,
