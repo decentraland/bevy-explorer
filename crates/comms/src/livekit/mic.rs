@@ -1,3 +1,6 @@
+#[cfg(not(target_arch = "wasm32"))]
+use std::{borrow::Cow, sync::Arc};
+
 use bevy::{ecs::relationship::Relationship, prelude::*};
 use common::structs::MicState;
 use tokio::task::JoinHandle;
@@ -5,6 +8,7 @@ use tokio::task::JoinHandle;
 use {
     bevy::render::view::RenderLayers,
     common::{structs::AudioSettings, util::VolumePanning},
+    wasm_bindgen::prelude::*,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use {
@@ -28,9 +32,7 @@ use {
 #[cfg(target_arch = "wasm32")]
 use crate::{
     global_crdt::{ForeignAudioSource, ForeignPlayer},
-    livekit::web::{
-        is_microphone_available, set_microphone_enabled, set_participant_spatial_audio,
-    },
+    livekit::web::{set_microphone_enabled, set_participant_spatial_audio},
 };
 use crate::{
     global_crdt::{LocalAudioFrame, LocalAudioSource},
@@ -41,6 +43,13 @@ use crate::{
     },
 };
 
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(module = "/livekit_web_bindings.js")]
+extern "C" {
+    #[wasm_bindgen(catch)]
+    pub fn is_microphone_available() -> Result<bool, JsValue>;
+}
+
 pub struct MicPlugin;
 
 impl Plugin for MicPlugin {
@@ -48,14 +57,43 @@ impl Plugin for MicPlugin {
         #[cfg(not(target_arch = "wasm32"))]
         app.init_non_send_resource::<MicStream>();
 
-        app.add_systems(Update, update_mic);
+        app.add_systems(Startup, create_microphone_entity);
+        app.add_systems(
+            Update,
+            (
+                #[cfg(not(target_arch = "wasm32"))]
+                verify_microphone_device_health,
+                verify_availability,
+                update_mic,
+            )
+                .chain(),
+        );
         #[cfg(not(target_arch = "wasm32"))]
         app.add_systems(Update, (create_mic_thread, verify_health_of_mic_worker));
         #[cfg(target_arch = "wasm32")]
         app.add_systems(Update, locate_foreign_streams);
+
+        app.add_observer(availability_changed);
+        app.add_observer(enabled_changed);
     }
 }
 
+#[derive(Component)]
+struct Microphone;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Component, Deref, DerefMut)]
+struct MicrophoneDevice(Device);
+
+#[derive(Component, Deref)]
+#[component(immutable)]
+struct Available(bool);
+
+#[derive(Component, Deref)]
+#[component(immutable)]
+struct Enabled(bool);
+
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Component)]
 struct MicWorker {
     task: JoinHandle<()>,
@@ -65,122 +103,159 @@ struct MicWorker {
 #[derive(Default)]
 struct MicStream(Option<cpal::Stream>);
 
+fn create_microphone_entity(mut commands: Commands) {
+    commands.spawn((Microphone, Available(false), Enabled(false)));
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn verify_microphone_device_health(
+    mut commands: Commands,
+    microphone: Single<(Entity, &MicrophoneDevice), With<Microphone>>,
+) {
+    let (entity, microphone_device) = microphone.into_inner();
+    dbg!(microphone.id());
+    if let Err(err) = microphone_device.name() {
+        debug!("Microphone device became unavailable due to '{err}'.");
+        commands
+            .entity(entity)
+            .remove::<MicrophoneDevice>()
+            .insert(Available(false));
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn verify_availability(
+    mut commands: Commands,
+    microphone: Single<Entity, (With<Microphone>, Without<MicrophoneDevice>)>,
+    mut mic_state: ResMut<MicState>,
+) {
+    let default_host = cpal::default_host();
+    let maybe_device = default_host.default_input_device();
+
+    if let Some(device) = maybe_device {
+        debug!(
+            "Default microphone '{}' set as input device.",
+            device
+                .name()
+                .expect("Shouldn't became unavailable in such a sort span.")
+        );
+        mic_state.available = true;
+        commands
+            .entity(*microphone)
+            .insert((MicrophoneDevice(device), Available(true)));
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn verify_availability(
+    mut commands: Commands,
+    microphone: Single<(Entity, &Available), With<Microphone>>,
+    mut mic_state: ResMut<MicState>,
+) {
+    // Check if microphone is available in the browser
+    let current_available = is_microphone_available().unwrap_or(false);
+    let (entity, last_available) = microphone.into_inner();
+
+    // Only update availability if it changed
+    if **last_available != current_available {
+        mic_state.available = current_available;
+        commands.entity(entity).insert(Available(current_available));
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn update_mic(
+    microphone: Single<&mut MicrophoneDevice, With<Microphone>>,
     mic: Res<LocalAudioSource>,
-    mut last_name: Local<String>,
     mut stream: NonSendMut<MicStream>,
-    mut mic_state: ResMut<MicState>,
-    mut input: Local<Option<Device>>,
-    mut last_update: Local<f32>,
-    time: Res<Time>,
+    mic_state: Res<MicState>,
 ) {
-    if input.is_none() || time.elapsed_secs() > *last_update + 3.0 {
-        let default_host = cpal::default_host();
-        *input = default_host.default_input_device();
-        *last_update = time.elapsed_secs();
-    }
-
-    if let Some(input) = input.as_mut() {
-        if let Ok(name) = input.name() {
-            mic_state.available = true;
-
-            if name == *last_name && mic_state.enabled {
-                return;
-            }
-
-            // drop old stream
-            stream.0 = None;
-            // send termination frame
-            let _ = mic.sender.send(LocalAudioFrame {
-                data: Default::default(),
-                sample_rate: 0,
-                num_channels: 0,
-                samples_per_channel: 0,
-            });
-
-            if !mic_state.enabled {
-                "disabled".clone_into(&mut last_name);
-                return;
-            }
-
-            let config = input.default_input_config().unwrap();
-            let sender = mic.sender.clone();
-            let num_channels = config.channels() as u32;
-            let sample_rate = config.sample_rate().0;
-            let new_stream = input
-                .build_input_stream(
-                    &config.into(),
-                    move |data_f32: &[f32], _: &cpal::InputCallbackInfo| {
-                        use std::sync::Arc;
-
-                        let mut data_uninit = Arc::new_uninit_slice(data_f32.len());
-                        let data_slice = Arc::get_mut(&mut data_uninit).unwrap();
-                        for (src, dest) in data_f32.iter().zip(data_slice.iter_mut()) {
-                            dest.write((*src * i16::MAX as f32).round() as i16);
-                        }
-                        // SAFETY: we have initialized all 'len' elements
-                        let data = unsafe { data_uninit.assume_init() };
-                        if sender
-                            .send(LocalAudioFrame {
-                                data,
-                                sample_rate,
-                                num_channels,
-                                samples_per_channel: data_f32.len() as u32 / num_channels,
-                            })
-                            .is_err()
-                        {
-                            warn!("mic channel closed?");
-                        }
-                    },
-                    |err: cpal::StreamError| {
-                        warn!("mic error: {err}");
-                    },
-                    None,
-                )
-                .unwrap();
-            match new_stream.play() {
-                Ok(()) => {
-                    stream.0 = Some(new_stream);
-                    info!("set mic to {name}");
-                    *last_name = name;
-                }
-                Err(e) => {
-                    warn!("failed to stream mic: {e}");
-                }
-            }
-
+    if let Ok(name) = microphone.name() {
+        if mic_state.enabled {
             return;
         }
-    }
 
-    // faild to find input - drop old stream
-    stream.0 = None;
-    "no device".clone_into(&mut last_name);
-    mic_state.available = false;
+        // drop old stream
+        stream.0 = None;
+        // send termination frame
+        let _ = mic.sender.send(LocalAudioFrame {
+            data: Default::default(),
+            sample_rate: 0,
+            num_channels: 0,
+            samples_per_channel: 0,
+        });
+
+        if !mic_state.enabled {
+            return;
+        }
+
+        let config = microphone.default_input_config().unwrap();
+        let sender = mic.sender.clone();
+        let num_channels = config.channels() as u32;
+        let sample_rate = config.sample_rate().0;
+        let new_stream = microphone
+            .build_input_stream(
+                &config.into(),
+                move |data_f32: &[f32], _: &cpal::InputCallbackInfo| {
+                    let mut data_uninit = Arc::new_uninit_slice(data_f32.len());
+                    let data_slice = Arc::get_mut(&mut data_uninit).unwrap();
+                    for (src, dest) in data_f32.iter().zip(data_slice.iter_mut()) {
+                        dest.write((*src * i16::MAX as f32).round() as i16);
+                    }
+                    // SAFETY: we have initialized all 'len' elements
+                    let data = unsafe { data_uninit.assume_init() };
+                    if sender
+                        .send(LocalAudioFrame {
+                            data: data.to_owned(),
+                            sample_rate,
+                            num_channels,
+                            samples_per_channel: data.len() as u32 / num_channels,
+                        })
+                        .is_err()
+                    {
+                        warn!("mic channel closed?");
+                    }
+                },
+                |err: cpal::StreamError| {
+                    warn!("mic error: {err}");
+                },
+                None,
+            )
+            .unwrap();
+        match new_stream.play() {
+            Ok(()) => {
+                stream.0 = Some(new_stream);
+                info!("set mic to {name}");
+            }
+            Err(e) => {
+                warn!("failed to stream mic: {e}");
+            }
+        }
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 fn update_mic(
+    mut commands: Commands,
+    microphone: Single<(Entity, &Available, &Enabled), With<Microphone>>,
     mut mic_state: ResMut<MicState>,
-    mut last_enabled: Local<Option<bool>>,
-    mut last_available: Local<Option<bool>>,
 ) {
     // Check if microphone is available in the browser
     let current_available = is_microphone_available().unwrap_or(false);
+    let (entity, last_available, last_enabled) = microphone.into_inner();
 
     // Only update availability if it changed
-    if last_available.is_none() || last_available.unwrap() != current_available {
+    if **last_available != current_available {
         mic_state.available = current_available;
-        *last_available = Some(current_available);
+        commands.entity(entity).insert(Available(current_available));
     }
 
     // Only update microphone enabled state if it changed
-    if last_enabled.is_none() || last_enabled.unwrap() != mic_state.enabled {
-        if let Err(e) = set_microphone_enabled(mic_state.enabled) {
-            warn!("Failed to set microphone state: {:?}", e);
-        }
-        *last_enabled = Some(mic_state.enabled);
+    if **last_enabled != mic_state.enabled {
+        // if let Err(e) = set_microphone_enabled(mic_state.enabled) {
+        //     warn!("Failed to set microphone state: {:?}", e);
+        // }
+        commands.entity(entity).insert(Enabled(mic_state.enabled));
     }
 }
 
@@ -220,6 +295,7 @@ fn create_mic_thread(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn verify_health_of_mic_worker(
     mut commands: Commands,
     participants: Populated<(Entity, &LivekitParticipant, &mut MicWorker)>,
@@ -245,8 +321,6 @@ async fn mic_thread(
     let mut mic_sid: Option<TrackSid> = None;
 
     while let Ok(frame) = mic.recv().await {
-        use std::borrow::Cow;
-
         if native_source.as_ref().is_none_or(|ns| {
             ns.sample_rate() != frame.sample_rate || ns.num_channels() != frame.num_channels
         }) {
@@ -343,5 +417,25 @@ pub fn update_participant_spatial_audio(participant_identity: &str, pan: f32, vo
             "Failed to set spatial audio for {}: {:?}",
             participant_identity, e
         );
+    }
+}
+
+fn availability_changed(
+    _trigger: Trigger<OnInsert, Available>,
+    microphone: Single<&Available, With<Microphone>>,
+) {
+    match *microphone {
+        Available(true) => debug!("Microphone is now available."),
+        Available(false) => debug!("Microphone is now unavailable."),
+    }
+}
+
+fn enabled_changed(
+    _trigger: Trigger<OnInsert, Enabled>,
+    microphone: Single<&Enabled, With<Microphone>>,
+) {
+    match *microphone {
+        Enabled(true) => debug!("Microphone is now enabled."),
+        Enabled(false) => debug!("Microphone is now disabled."),
     }
 }

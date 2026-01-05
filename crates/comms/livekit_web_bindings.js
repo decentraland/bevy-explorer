@@ -17,6 +17,16 @@ const participantAudioSids = new Map();
 
 /**
  * 
+ * @returns boolean
+ */
+export function is_microphone_available() {
+    // Check if getUserMedia is available
+    const res = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+    return res;
+}
+
+/**
+ * 
  * @param {string} url
  * @param {string} token
  * @param {livekit.RoomOptions} room_options 
@@ -331,12 +341,6 @@ export function set_microphone_enabled(enabled) {
                 });
         }
     }
-}
-
-export function is_microphone_available() {
-    // Check if getUserMedia is available
-    const res = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
-    return res;
 }
 
 export async function publish_audio_track(room, track) {
