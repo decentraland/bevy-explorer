@@ -113,7 +113,6 @@ fn verify_microphone_device_health(
     microphone: Single<(Entity, &MicrophoneDevice), With<Microphone>>,
 ) {
     let (entity, microphone_device) = microphone.into_inner();
-    dbg!(microphone.id());
     if let Err(err) = microphone_device.name() {
         debug!("Microphone device became unavailable due to '{err}'.");
         commands
