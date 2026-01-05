@@ -7,7 +7,8 @@ use wasm_bindgen::{
 };
 
 use crate::livekit::web::{
-    DataPacket, JsValueAbi, ParticipantIdentity, ParticipantSid, RoomResult,
+    DataPacket, JsValueAbi, LocalTrack, LocalTrackPublication, ParticipantIdentity, ParticipantSid,
+    RoomResult, TrackPublishOptions, TrackSid,
 };
 
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
@@ -50,6 +51,18 @@ impl LocalParticipant {
         };
 
         local_participant_publish_data(self, &payload, data_publish_options).await
+    }
+
+    pub async fn publish_track(
+        &self,
+        track: LocalTrack,
+        options: TrackPublishOptions,
+    ) -> RoomResult<LocalTrackPublication> {
+        todo!()
+    }
+
+    pub async fn unpublish_track(&self, sid: &TrackSid) -> RoomResult<LocalTrackPublication> {
+        todo!()
     }
 
     pub fn identity(&self) -> ParticipantIdentity {

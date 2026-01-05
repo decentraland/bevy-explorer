@@ -1,4 +1,5 @@
 mod local_participant;
+mod local_track_publication;
 mod remote_participant;
 mod remote_track_publication;
 mod room;
@@ -21,8 +22,9 @@ use wasm_bindgen::{
 
 use crate::livekit::web::traits::GetFromJsValue;
 pub use crate::livekit::web::{
-    local_participant::LocalParticipant, remote_participant::RemoteParticipant,
-    remote_track_publication::RemoteTrackPublication, room::Room, room_event::RoomEvent,
+    local_participant::LocalParticipant, local_track_publication::LocalTrackPublication,
+    remote_participant::RemoteParticipant, remote_track_publication::RemoteTrackPublication,
+    room::Room, room_event::RoomEvent,
 };
 
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
@@ -366,4 +368,59 @@ pub enum ConnectionState {
     Connected,
     Reconnecting,
     Disconnected,
+}
+
+#[derive(Debug, Clone)]
+pub struct LocalAudioTrack {
+    inner: JsValue,
+}
+
+/// SAFETY: should be fine while WASM remains single-threaded
+unsafe impl Send for LocalAudioTrack {}
+
+/// SAFETY: should be fine while WASM remains single-threaded
+unsafe impl Sync for LocalAudioTrack {}
+
+#[derive(Debug, Clone)]
+pub struct LocalVideoTrack {
+    inner: JsValue,
+}
+
+/// SAFETY: should be fine while WASM remains single-threaded
+unsafe impl Send for LocalVideoTrack {}
+
+/// SAFETY: should be fine while WASM remains single-threaded
+unsafe impl Sync for LocalVideoTrack {}
+
+pub enum LocalTrack {
+    Audio(LocalAudioTrack),
+    Video(LocalVideoTrack),
+}
+
+pub struct TrackPublishOptions {
+    // pub video_encoding: Option<VideoEncoding>,
+    // pub audio_encoding: Option<AudioEncoding>,
+    // pub video_codec: VideoCodec,
+    // pub dtx: bool,
+    // pub red: bool,
+    pub simulcast: bool,
+    pub source: TrackSource,
+    pub stream: String,
+    pub preconnect_buffer: bool,
+}
+
+impl Default for TrackPublishOptions {
+    fn default() -> Self {
+        Self {
+            // video_encoding: None,
+            // audio_encoding: None,
+            // video_codec: VideoCodec::VP8,
+            // dtx: true,
+            // red: true,
+            simulcast: true,
+            source: TrackSource::Unknown,
+            stream: "".to_string(),
+            preconnect_buffer: false,
+        }
+    }
 }
