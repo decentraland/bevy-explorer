@@ -1,4 +1,4 @@
-use std::{f32::consts::TAU, ops::RangeInclusive};
+use std::{f32::consts::TAU, ops::RangeInclusive, sync::Arc};
 
 use bevy::{
     app::Propagate,
@@ -234,10 +234,9 @@ pub struct ForeignAudioSource {
     pub audio_receiver: Option<oneshot::Receiver<StreamingSoundData<AudioDecoderError>>>,
 }
 
-// TODO: I should avoid the clone on recv somehow
 #[derive(Clone)]
 pub struct LocalAudioFrame {
-    pub data: Vec<f32>,
+    pub data: Arc<[i16]>,
     pub sample_rate: u32,
     pub num_channels: u32,
     pub samples_per_channel: u32,
