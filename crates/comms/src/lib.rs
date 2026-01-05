@@ -21,9 +21,7 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use bimap::BiMap;
-#[cfg(not(feature = "livekit"))]
-use common::structs::MicState;
-use common::util::{TaskCompat, TaskExt};
+use common::{util::{TaskCompat, TaskExt}, structs::MicState};
 use ethers_core::types::{Address, H160};
 use http::{StatusCode, Uri};
 use preview::PreviewPlugin;
