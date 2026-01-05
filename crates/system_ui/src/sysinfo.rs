@@ -15,7 +15,7 @@ use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     sets::{SceneSets, SetupSets},
     structs::{
-        AppConfig, CursorLocks, PreviewCommand, PreviewMode, PrimaryUser, SettingsTab,
+        AppConfig, CursorLocks, DebugInfo, PreviewCommand, PreviewMode, PrimaryUser, SettingsTab,
         ShowSettingsEvent, SystemScene, Version, ZOrder,
     },
     util::ModifyComponentExt,
@@ -31,7 +31,7 @@ use scene_runner::{
         gltf_container::{GltfLoadingCount, SceneResourceLookup},
         ComponentTracker, TrackComponents,
     },
-    ContainerEntity, ContainingScene, DebugInfo, Toaster,
+    ContainerEntity, ContainingScene, Toaster,
 };
 use ui_core::{
     bound_node::BoundedImageMaterial,

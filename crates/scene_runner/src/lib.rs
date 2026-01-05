@@ -18,7 +18,7 @@ use bevy::{
 use common::{
     rpc::RpcCall,
     sets::{SceneLoopSets, SceneSets},
-    structs::{AppConfig, AppError, PrimaryCamera, PrimaryUser},
+    structs::{AppConfig, AppError, DebugInfo, PrimaryCamera, PrimaryUser},
     util::{dcl_assert, TryPushChildrenEx},
 };
 use comms::{SceneRoomConnection, SetCurrentScene};
@@ -124,12 +124,6 @@ pub struct ContainerEntity {
     pub container: Entity,
     pub root: Entity,
     pub container_id: SceneEntityId,
-}
-
-// resource into which systems can add debug info
-#[derive(Resource, Default, Debug)]
-pub struct DebugInfo {
-    pub info: HashMap<&'static str, String>,
 }
 
 // resource for adding toasts

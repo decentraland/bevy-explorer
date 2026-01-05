@@ -138,13 +138,16 @@ fn track_published(
         let sender = player_state.get_sender();
         let task = livekit_runtime.spawn(async move {
             sender
-                .send(PlayerUpdate {
-                    transport_id: room_entity,
-                    message: PlayerMessage::AudioStreamAvailable {
-                        transport: room_entity,
-                    },
-                    address,
-                })
+                .send(
+                    PlayerUpdate {
+                        transport_id: room_entity,
+                        message: PlayerMessage::AudioStreamAvailable {
+                            transport: room_entity,
+                        },
+                        address,
+                    }
+                    .into(),
+                )
                 .await
         });
         player_update_tasks.push(PlayerUpdateTask {
@@ -221,13 +224,16 @@ fn track_unpublished(
         let sender = player_state.get_sender();
         let task = livekit_runtime.spawn(async move {
             sender
-                .send(PlayerUpdate {
-                    transport_id: room_entity,
-                    message: PlayerMessage::AudioStreamUnavailable {
-                        transport: room_entity,
-                    },
-                    address,
-                })
+                .send(
+                    PlayerUpdate {
+                        transport_id: room_entity,
+                        message: PlayerMessage::AudioStreamUnavailable {
+                            transport: room_entity,
+                        },
+                        address,
+                    }
+                    .into(),
+                )
                 .await
         });
 

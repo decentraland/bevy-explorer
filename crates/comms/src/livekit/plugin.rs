@@ -3,7 +3,7 @@ use dcl_component::proto_components::kernel::comms::rfc4;
 use tokio::{sync::mpsc, task::JoinHandle};
 
 use crate::{
-    global_crdt::PlayerUpdate,
+    global_crdt::NetworkUpdate,
     livekit::{
         mic::MicPlugin, participant::plugin::LivekitParticipantPlugin,
         room::plugin::LivekitRoomPlugin, runtime::LivekitRuntimePlugin,
@@ -36,7 +36,7 @@ pub(super) struct PlayerUpdateTasks(Vec<PlayerUpdateTask>);
 
 pub(super) struct PlayerUpdateTask {
     pub runtime: LivekitRuntime,
-    pub task: JoinHandle<Result<(), mpsc::error::SendError<PlayerUpdate>>>,
+    pub task: JoinHandle<Result<(), mpsc::error::SendError<NetworkUpdate>>>,
 }
 
 fn start_livekit(

@@ -201,7 +201,7 @@ jobs:
           only-update-versions: true
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2025-06-03
+          toolchain: nightly-2025-12-31
           target: wasm32-unknown-unknown
           components: rust-src
           override: true

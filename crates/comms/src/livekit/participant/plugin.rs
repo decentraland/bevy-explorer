@@ -6,7 +6,7 @@ use livekit::prelude::Participant;
 use prost::Message;
 
 use crate::{
-    global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
+    global_crdt::{GlobalCrdtState, NonPlayerUpdate, PlayerMessage, PlayerUpdate},
     livekit::{
         participant::{
             connection_quality, HostedBy, HostingParticipants, LivekitParticipant, Local,
@@ -191,15 +191,6 @@ fn participant_payload(
         payload,
     } = trigger.event();
 
-    let Some(address) = participant.identity().as_str().as_h160() else {
-        debug!(
-            "Payload for non-player participant {} ({}) is ignored.",
-            participant.sid(),
-            participant.identity()
-        );
-        return;
-    };
-
     let packet = match rfc4::Packet::decode(payload.as_slice()) {
         Ok(packet) => packet,
         Err(_) => {
@@ -219,24 +210,43 @@ fn participant_payload(
         );
         return;
     };
-
-    trace!(
-        "[{}] received [{}] packet {message:?} from {address}",
-        room_entity,
-        packet.protocol_version
-    );
-
     let room = *room_entity;
     let sender = global_crdt_state.get_sender();
-    let task = livekit_runtime.spawn(async move {
-        sender
-            .send(PlayerUpdate {
-                transport_id: room,
-                message: PlayerMessage::PlayerData(message),
-                address,
-            })
-            .await
-    });
+
+    let task = if let Some(address) = participant.identity().as_str().as_h160() {
+        trace!(
+            "[{}] received [{}] packet {message:?} from {address}",
+            room_entity,
+            packet.protocol_version
+        );
+        livekit_runtime.spawn(async move {
+            sender
+                .send(
+                    PlayerUpdate {
+                        transport_id: room,
+                        message: PlayerMessage::PlayerData(message),
+                        address,
+                    }
+                    .into(),
+                )
+                .await
+        })
+    } else {
+        let address = participant.identity().to_string();
+        livekit_runtime.spawn(async move {
+            sender
+                .send(
+                    NonPlayerUpdate {
+                        transport_id: room,
+                        address,
+                        message,
+                    }
+                    .into(),
+                )
+                .await
+        })
+    };
+
     player_update_tasks.push(PlayerUpdateTask {
         runtime: livekit_runtime.clone(),
         task,
@@ -263,11 +273,14 @@ fn participant_metadata_changed(
             let sender = global_crdt_state.get_sender();
             let task = livekit_runtime.spawn(async move {
                 sender
-                    .send(PlayerUpdate {
-                        transport_id: room,
-                        message: PlayerMessage::MetaData(meta),
-                        address,
-                    })
+                    .send(
+                        PlayerUpdate {
+                            transport_id: room,
+                            message: PlayerMessage::MetaData(meta),
+                            address,
+                        }
+                        .into(),
+                    )
                     .await
             });
             player_update_tasks.push(PlayerUpdateTask {

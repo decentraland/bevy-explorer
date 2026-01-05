@@ -21,13 +21,12 @@ use crate::{
         pointer_events::PointerEvents,
         scene_ui::UiLink,
     },
-    ContainerEntity, ContainingScene, DebugInfo, PrimaryUser, RendererSceneContext, SceneEntity,
-    SceneSets,
+    ContainerEntity, ContainingScene, PrimaryUser, RendererSceneContext, SceneEntity, SceneSets,
 };
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     inputs::{Action, CommonInputAction, POINTER_SET},
-    structs::{CursorLocks, PrimaryCamera},
+    structs::{CursorLocks, DebugInfo, PrimaryCamera},
     util::DespawnWith,
 };
 use dcl::interface::CrdtType;

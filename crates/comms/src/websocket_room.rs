@@ -19,7 +19,11 @@ use dcl_component::proto_components::kernel::comms::{
 };
 use wallet::Wallet;
 
-use crate::{global_crdt::PlayerMessage, profile::CurrentUserProfile, Transport, TransportType};
+use crate::{
+    global_crdt::{NetworkUpdate, PlayerMessage},
+    profile::CurrentUserProfile,
+    Transport, TransportType,
+};
 
 use super::{
     global_crdt::{GlobalCrdtState, PlayerUpdate},
@@ -161,7 +165,7 @@ async fn websocket_room_handler(
     remote_address: String,
     wallet: Wallet,
     mut receiver: Receiver<NetworkMessage>,
-    sender: Sender<PlayerUpdate>,
+    sender: Sender<NetworkUpdate>,
 ) -> (Receiver<NetworkMessage>, anyhow::Error) {
     let res =
         websocket_room_handler_inner(transport_id, remote_address, wallet, &mut receiver, sender)
@@ -174,7 +178,7 @@ async fn websocket_room_handler_inner(
     remote_address: String,
     wallet: Wallet,
     receiver: &mut Receiver<NetworkMessage>,
-    sender: Sender<PlayerUpdate>,
+    sender: Sender<NetworkUpdate>,
 ) -> Result<(), anyhow::Error> {
     debug!(">> stream connect async : {remote_address}");
 
@@ -343,11 +347,14 @@ async fn websocket_room_handler_inner(
                         transport_id, message, address
                     );
                     sender
-                        .send(PlayerUpdate {
-                            transport_id,
-                            message: PlayerMessage::PlayerData(message),
-                            address,
-                        })
+                        .send(
+                            PlayerUpdate {
+                                transport_id,
+                                message: PlayerMessage::PlayerData(message),
+                                address,
+                            }
+                            .into(),
+                        )
                         .await
                         .map_err(|_| anyhow!("Send error"))?;
                 }

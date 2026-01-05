@@ -55,7 +55,7 @@ impl Default for PrimaryUser {
     }
 }
 
-#[derive(Component, Default)]
+#[derive(Component, Default, Debug)]
 pub struct PlayerModifiers {
     pub hide: bool,
     pub hide_profile: bool,
@@ -75,7 +75,7 @@ pub struct PlayerModifiers {
     pub areas: Vec<ActiveAvatarArea>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ActiveAvatarArea {
     pub entity: Entity,
     pub allow_locomotion: PermissionState,
@@ -1037,4 +1037,10 @@ pub struct MicState {
 pub struct PreviewMode {
     pub server: Option<String>,
     pub is_preview: bool,
+}
+
+// resource into which systems can add debug info
+#[derive(Resource, Default, Debug)]
+pub struct DebugInfo {
+    pub info: HashMap<&'static str, String>,
 }

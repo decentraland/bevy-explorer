@@ -21,7 +21,10 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use bimap::BiMap;
-use common::{util::{TaskCompat, TaskExt}, structs::MicState};
+use common::{
+    structs::MicState,
+    util::{TaskCompat, TaskExt},
+};
 use ethers_core::types::{Address, H160};
 use http::{StatusCode, Uri};
 use preview::PreviewPlugin;
