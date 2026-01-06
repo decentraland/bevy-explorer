@@ -161,6 +161,7 @@ fn verify_availability(
 fn verify_microphone_device_health(
     mut commands: Commands,
     microphone_device: Res<MicrophoneDevice>,
+    mut mic_state: ResMut<MicState>
 ) {
     if let Err(err) = microphone_device.name() {
         debug!("Microphone device became unavailable due to '{err}'.");
