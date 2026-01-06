@@ -164,6 +164,7 @@ fn verify_microphone_device_health(
 ) {
     if let Err(err) = microphone_device.name() {
         debug!("Microphone device became unavailable due to '{err}'.");
+        mic_state.available = false;
         commands.set_state(MicrophoneAvailability::Unavailable);
         commands.remove_resource::<MicrophoneDevice>();
     }
