@@ -57,7 +57,8 @@ impl IntoWasmAbi for TrackSource {
             Self::Screenshare => JsValue::from_str("screen_share"),
             Self::ScreenshareAudio => JsValue::from_str("screen_share_audio"),
             Self::Unknown => JsValue::from_str("unknown"),
-        }.into_abi()
+        }
+        .into_abi()
     }
 }
 
