@@ -149,8 +149,6 @@ impl From<PbTextShape> for TextShape {
     }
 }
 
-const PIX_PER_M: f32 = 200.0;
-
 #[derive(Component)]
 pub struct PriorTextShapeUi(Entity, PbTextShape);
 
@@ -271,39 +269,48 @@ fn update_text_shapes(
             continue;
         }
 
-        let mut world_ui = views.get(ent).ok().cloned().unwrap_or_else(|| {
-            debug!("make ui for {ent}");
-            let (view, _) = spawn_world_ui_view(&mut commands, images, None);
-            commands.entity(view).insert(DespawnWith(ent));
-            let ui_root = commands
-                .spawn((
-                    Node {
-                        width: Val::Px(4096.0),
-                        min_width: Val::Px(4096.0),
-                        max_width: Val::Px(8192.0),
-                        max_height: Val::Px(8192.0),
-                        flex_direction: FlexDirection::Row,
-                        flex_wrap: FlexWrap::Wrap,
-                        align_items: AlignItems::FlexStart,
-                        align_content: AlignContent::FlexStart,
-                        ..Default::default()
-                    },
-                    UiTargetCamera(view),
-                    DespawnWith(ent),
-                ))
-                .id();
-            let world_ui = TextShapeUi {
-                view,
-                ui_root,
-                ticks: 2,
-            };
-            commands.entity(ent).try_insert(world_ui);
-            world_ui
-        });
-        world_ui.ticks = 2;
+        let world_ui = views
+            .get_mut(ent)
+            .map(|mut world_ui| {
+                // reset ticks on existing camera
+                world_ui.ticks = 2;
+                *world_ui
+            })
+            .ok()
+            .unwrap_or_else(|| {
+                debug!("make ui for {ent}");
+                let (view, _) = spawn_world_ui_view(&mut commands, images, None);
+                commands.entity(view).insert(DespawnWith(ent));
+                let ui_root = commands
+                    .spawn((
+                        Node {
+                            width: Val::Px(4096.0),
+                            min_width: Val::Px(4096.0),
+                            max_width: Val::Px(8192.0),
+                            max_height: Val::Px(8192.0),
+                            flex_direction: FlexDirection::Row,
+                            flex_wrap: FlexWrap::Wrap,
+                            align_items: AlignItems::FlexStart,
+                            align_content: AlignContent::FlexStart,
+                            ..Default::default()
+                        },
+                        UiTargetCamera(view),
+                        DespawnWith(ent),
+                    ))
+                    .id();
+                let world_ui = TextShapeUi {
+                    view,
+                    ui_root,
+                    ticks: 2,
+                };
+                commands.entity(ent).try_insert(world_ui);
+                world_ui
+            });
         if let Ok(mut camera) = cameras.get_mut(world_ui.ui_root) {
             camera.is_active = false;
         }
+
+        let wrapping = text_shape.0.text_wrapping() && !text_shape.0.font_auto_size();
 
         let text_align = text_shape
             .0
@@ -311,19 +318,21 @@ fn update_text_shapes(
             .map(|_| text_shape.0.text_align())
             .unwrap_or(TextAlignMode::TamMiddleCenter);
 
-        let valign = match text_align {
+        let (valign_wui, valign_flex) = match text_align {
             TextAlignMode::TamTopLeft
             | TextAlignMode::TamTopCenter
-            | TextAlignMode::TamTopRight => -0.5,
+            | TextAlignMode::TamTopRight => (-0.5, AlignItems::FlexStart),
             TextAlignMode::TamMiddleLeft
             | TextAlignMode::TamMiddleCenter
-            | TextAlignMode::TamMiddleRight => 0.0,
+            | TextAlignMode::TamMiddleRight => (0.0, AlignItems::Center),
             TextAlignMode::TamBottomLeft
             | TextAlignMode::TamBottomCenter
-            | TextAlignMode::TamBottomRight => 0.5,
+            | TextAlignMode::TamBottomRight => (0.5, AlignItems::FlexEnd),
         };
 
-        let (halign_wui, halign) = match text_align {
+        let valign_wui = if wrapping { 0.0 } else { valign_wui };
+
+        let (halign_wui, halign_flex) = match text_align {
             TextAlignMode::TamTopLeft
             | TextAlignMode::TamMiddleLeft
             | TextAlignMode::TamBottomLeft => (0.5, JustifyText::Left),
@@ -335,16 +344,26 @@ fn update_text_shapes(
             | TextAlignMode::TamBottomRight => (-0.5, JustifyText::Right),
         };
 
-        let add_y_pix = (text_shape.0.padding_bottom() - text_shape.0.padding_top()) * PIX_PER_M;
+        let halign_wui = if wrapping { 0.0 } else { halign_wui };
 
+        // use constant font size to avoid small text being illegible
         let font_size = 30.0;
 
-        let wrapping = text_shape.0.text_wrapping() && !text_shape.0.font_auto_size();
+        // use pix per meter based on font size to scale appropriately
+        let pix_per_m = 375.0 / text_shape.0.font_size.unwrap_or(10.0);
+
+        let add_y_pix = (text_shape.0.padding_bottom() - text_shape.0.padding_top()) * pix_per_m;
 
         let width = if wrapping {
-            text_shape.0.width.unwrap_or(1.0) * PIX_PER_M
+            text_shape.0.width.unwrap_or(1.0) * pix_per_m
         } else {
             4096.0
+        };
+
+        let height = if let Some(height) = text_shape.0.height {
+            Val::Px(pix_per_m * height)
+        } else {
+            Val::Auto
         };
 
         // create ui layout
@@ -374,7 +393,7 @@ fn update_text_shapes(
                 .map(Color4DclToBevy::convert_srgba)
                 .unwrap_or(Color::WHITE),
             text_shape.0.font(),
-            halign,
+            halign_flex,
             wrapping,
         );
 
@@ -384,6 +403,11 @@ fn update_text_shapes(
                     margin: UiRect::all(Val::Px(1.0)),
                     flex_direction: FlexDirection::Row,
                     max_width: Val::Px(width),
+                    height,
+                    max_height: height,
+                    min_height: height,
+                    align_items: valign_flex,
+                    overflow: Overflow::hidden(),
                     ..Default::default()
                 },
                 DespawnWith(ent),
@@ -391,21 +415,21 @@ fn update_text_shapes(
             .with_children(|c| {
                 if text_shape.0.padding_left.is_some() {
                     c.spawn(Node {
-                        width: Val::Px(text_shape.0.padding_left() * PIX_PER_M),
-                        min_width: Val::Px(text_shape.0.padding_left() * PIX_PER_M),
-                        max_width: Val::Px(text_shape.0.padding_left() * PIX_PER_M),
+                        width: Val::Px(text_shape.0.padding_left() * pix_per_m),
+                        min_width: Val::Px(text_shape.0.padding_left() * pix_per_m),
+                        max_width: Val::Px(text_shape.0.padding_left() * pix_per_m),
                         ..Default::default()
                     });
                 }
 
-                if halign != JustifyText::Left {
+                if halign_flex != JustifyText::Left {
                     c.spacer();
                 }
 
                 c.spawn(Node::default()).with_child((
                     text,
                     Node {
-                        align_self: match halign {
+                        align_self: match halign_flex {
                             JustifyText::Left => AlignSelf::FlexStart,
                             JustifyText::Center => AlignSelf::Center,
                             JustifyText::Right => AlignSelf::FlexEnd,
@@ -415,15 +439,15 @@ fn update_text_shapes(
                     },
                 ));
 
-                if halign != JustifyText::Right {
+                if halign_flex != JustifyText::Right {
                     c.spacer();
                 }
 
                 if text_shape.0.padding_right.is_some() {
                     c.spawn(Node {
-                        width: Val::Px(text_shape.0.padding_right() * PIX_PER_M),
-                        min_width: Val::Px(text_shape.0.padding_right() * PIX_PER_M),
-                        max_width: Val::Px(text_shape.0.padding_right() * PIX_PER_M),
+                        width: Val::Px(text_shape.0.padding_right() * pix_per_m),
+                        min_width: Val::Px(text_shape.0.padding_right() * pix_per_m),
+                        max_width: Val::Px(text_shape.0.padding_right() * pix_per_m),
                         ..Default::default()
                     });
                 }
@@ -438,8 +462,8 @@ fn update_text_shapes(
             PriorTextShapeUi(ui_node, text_shape.0.clone()),
             WorldUi {
                 dbg: format!("TextShape `{source}`"),
-                pix_per_m: 375.0 / text_shape.0.font_size.unwrap_or(10.0),
-                valign,
+                pix_per_m,
+                valign: valign_wui,
                 halign: halign_wui,
                 add_y_pix,
                 bounds: scene.bounds.clone(),
