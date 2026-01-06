@@ -295,6 +295,29 @@ export function remote_track_publication_source(remote_track_publication) {
     return remote_track_publication.source;
 }
 
+/**
+ * 
+ * @param {livekit.AudioCaptureOptions} options 
+ * @returns livekit.LocalAudioTrack
+ */
+export async function local_audio_track_new(options) {
+    try {
+        return await LivekitClient.createLocalAudioTrack(options);
+    } catch (err) {
+        error(err);
+    }
+}
+
+/**
+ * 
+ * @param {livekit.LocalAudioTrack} local_audio_track 
+ * @returns livekit.TrackSid
+ */
+export async function local_audio_track_sid(local_audio_track) {
+    log(local_audio_track);
+    return local_audio_track.sid;
+}
+
 export function set_microphone_enabled(enabled) {
     if (enabled) {
         // Enable microphone

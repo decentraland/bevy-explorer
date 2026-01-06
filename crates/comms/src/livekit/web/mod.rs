@@ -1,3 +1,4 @@
+mod local_audio_track;
 mod local_participant;
 mod local_track_publication;
 mod remote_participant;
@@ -22,7 +23,8 @@ use wasm_bindgen::{
 
 use crate::livekit::web::traits::GetFromJsValue;
 pub use crate::livekit::web::{
-    local_participant::LocalParticipant, local_track_publication::LocalTrackPublication,
+    local_audio_track::LocalAudioTrack, local_participant::LocalParticipant,
+    local_track_publication::LocalTrackPublication,
     remote_participant::RemoteParticipant, remote_track_publication::RemoteTrackPublication,
     room::Room, room_event::RoomEvent,
 };
@@ -371,17 +373,6 @@ pub enum ConnectionState {
 }
 
 #[derive(Debug, Clone)]
-pub struct LocalAudioTrack {
-    inner: JsValue,
-}
-
-/// SAFETY: should be fine while WASM remains single-threaded
-unsafe impl Send for LocalAudioTrack {}
-
-/// SAFETY: should be fine while WASM remains single-threaded
-unsafe impl Sync for LocalAudioTrack {}
-
-#[derive(Debug, Clone)]
 pub struct LocalVideoTrack {
     inner: JsValue,
 }
@@ -423,4 +414,24 @@ impl Default for TrackPublishOptions {
             preconnect_buffer: false,
         }
     }
+}
+
+#[wasm_bindgen]
+#[derive(Debug, Default)]
+pub struct AudioCaptureOptions {
+    #[wasm_bindgen(js_name = "autoGainControl")]
+    pub auto_gain_control: Option<bool>,
+    #[wasm_bindgen(js_name = "channelCount")]
+    pub channel_count: Option<u64>,
+    #[wasm_bindgen(js_name = "echoCancellation")]
+    pub echo_cancellation: Option<bool>,
+    pub latency: Option<f64>,
+    #[wasm_bindgen(js_name = "noiseSuppresion")]
+    pub noise_suppression: Option<bool>,
+    #[wasm_bindgen(js_name = "voiceIsolation")]
+    pub voice_isolation: Option<bool>,
+    #[wasm_bindgen(js_name = "sampleRate")]
+    pub sample_rate: Option<u64>,
+    #[wasm_bindgen(js_name = "sampleSize")]
+    pub sample_size: Option<u64>,
 }
