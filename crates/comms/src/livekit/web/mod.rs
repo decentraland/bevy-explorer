@@ -5,6 +5,7 @@ mod remote_participant;
 mod remote_track_publication;
 mod room;
 mod room_event;
+mod track_source;
 mod traits;
 
 use std::{
@@ -26,7 +27,7 @@ pub use crate::livekit::web::{
     local_audio_track::LocalAudioTrack, local_participant::LocalParticipant,
     local_track_publication::LocalTrackPublication,
     remote_participant::RemoteParticipant, remote_track_publication::RemoteTrackPublication,
-    room::Room, room_event::RoomEvent,
+    room::Room, room_event::RoomEvent, track_source::TrackSource,
 };
 
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
@@ -229,44 +230,6 @@ impl FromWasmAbi for TrackKind {
             None => {
                 error!("TrackKind was not a string. Assuming Audio.");
                 Self::Audio
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TrackSource {
-    Unknown,
-    Camera,
-    Microphone,
-    Screenshare,
-    ScreenshareAudio,
-}
-
-impl WasmDescribe for TrackSource {
-    fn describe() {
-        JsValue::describe();
-    }
-}
-
-impl FromWasmAbi for TrackSource {
-    type Abi = JsValueAbi;
-
-    unsafe fn from_abi(value: JsValueAbi) -> Self {
-        let js_value = JsValue::from_abi(value);
-        match js_value.as_string().as_deref() {
-            Some("microphone") => Self::Microphone,
-            Some("camera") => Self::Camera,
-            Some("screen_share") => Self::Screenshare,
-            Some("screen_share_audio") => Self::ScreenshareAudio,
-            Some("unknown") => Self::Unknown,
-            Some(other) => {
-                error!("TrackSource was not a known source. Was '{other}'. Return Unknown.");
-                Self::Unknown
-            }
-            None => {
-                error!("TrackSource was not a string. Return Unknown.");
-                Self::Unknown
             }
         }
     }
