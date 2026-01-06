@@ -1,3 +1,4 @@
+use bevy::log::debug;
 use dcl::js::player_identity;
 use deno_core::{error::AnyError, op2, OpDecl, OpState};
 
@@ -19,7 +20,7 @@ fn address(state: &OpState) -> String {
     let address = player_identity(state)
         .map(|id| id.address)
         .unwrap_or_default();
-    println!("local storage address: {address:?}");
+    debug!("local storage address: {address:?}");
     address
 }
 

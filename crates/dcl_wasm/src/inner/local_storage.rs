@@ -54,7 +54,7 @@ fn address(state: &WorkerContext) -> String {
     let address = player_identity(&*state.state.borrow())
         .map(|id| id.address)
         .unwrap_or_default();
-    println!("local storage address: {address:?}");
+    debug!("local storage address: {address:?}");
     address
 }
 
