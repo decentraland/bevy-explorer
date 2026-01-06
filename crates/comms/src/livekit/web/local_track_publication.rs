@@ -1,5 +1,7 @@
 use bevy::prelude::*;
-use wasm_bindgen::{convert::IntoWasmAbi, describe::WasmDescribe, prelude::wasm_bindgen, JsValue};
+use wasm_bindgen::{
+    convert::IntoWasmAbi, describe::WasmDescribe, prelude::wasm_bindgen, JsCast, JsValue,
+};
 
 use crate::livekit::web::{GetFromJsValue, JsValueAbi, LocalTrack, TrackKind, TrackSource};
 
@@ -19,6 +21,12 @@ extern "C" {
 pub struct LocalTrackPublication {
     inner: JsValue,
 }
+
+/// SAFETY: should be fine while WASM remains single threaded
+unsafe impl Send for LocalTrackPublication {}
+
+/// SAFETY: should be fine while WASM remains single threaded
+unsafe impl Sync for LocalTrackPublication {}
 
 impl LocalTrackPublication {
     pub fn sid(&self) -> String {
@@ -49,6 +57,12 @@ impl From<JsValue> for LocalTrackPublication {
     }
 }
 
+impl From<LocalTrackPublication> for JsValue {
+    fn from(value: LocalTrackPublication) -> Self {
+        value.inner
+    }
+}
+
 impl GetFromJsValue for LocalTrackPublication {
     fn get_from_js_value(js_value: &JsValue, key: &str) -> Option<Self> {
         js_sys::Reflect::get(js_value, &JsValue::from(key))
@@ -71,8 +85,22 @@ impl IntoWasmAbi for &LocalTrackPublication {
     }
 }
 
-/// SAFETY: should be fine while WASM remains single threaded
-unsafe impl Send for LocalTrackPublication {}
+impl JsCast for LocalTrackPublication {
+    fn instanceof(value: &JsValue) -> bool {
+        panic!("{value:?}");
+    }
 
-/// SAFETY: should be fine while WASM remains single threaded
-unsafe impl Sync for LocalTrackPublication {}
+    fn unchecked_from_js(value: JsValue) -> Self {
+        Self { inner: value }
+    }
+
+    fn unchecked_from_js_ref(value: &JsValue) -> &Self {
+        panic!("js_ref {:?}", value)
+    }
+}
+
+impl AsRef<JsValue> for LocalTrackPublication {
+    fn as_ref(&self) -> &JsValue {
+        &self.inner
+    }
+}
