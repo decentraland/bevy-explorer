@@ -268,36 +268,43 @@ fn update_text_shapes(
             continue;
         }
 
-        let mut world_ui = views.get(ent).ok().cloned().unwrap_or_else(|| {
-            debug!("make ui for {ent}");
-            let (view, _) = spawn_world_ui_view(&mut commands, images, None);
-            commands.entity(view).insert(DespawnWith(ent));
-            let ui_root = commands
-                .spawn((
-                    Node {
-                        width: Val::Px(4096.0),
-                        min_width: Val::Px(4096.0),
-                        max_width: Val::Px(8192.0),
-                        max_height: Val::Px(8192.0),
-                        flex_direction: FlexDirection::Row,
-                        flex_wrap: FlexWrap::Wrap,
-                        align_items: AlignItems::FlexStart,
-                        align_content: AlignContent::FlexStart,
-                        ..Default::default()
-                    },
-                    UiTargetCamera(view),
-                    DespawnWith(ent),
-                ))
-                .id();
-            let world_ui = TextShapeUi {
-                view,
-                ui_root,
-                ticks: 2,
-            };
-            commands.entity(ent).try_insert(world_ui);
-            world_ui
-        });
-        world_ui.ticks = 2;
+        let world_ui = views
+            .get_mut(ent)
+            .map(|mut world_ui| {
+                // reset ticks on existing camera
+                world_ui.ticks = 2;
+                *world_ui
+            })
+            .ok()
+            .unwrap_or_else(|| {
+                debug!("make ui for {ent}");
+                let (view, _) = spawn_world_ui_view(&mut commands, images, None);
+                commands.entity(view).insert(DespawnWith(ent));
+                let ui_root = commands
+                    .spawn((
+                        Node {
+                            width: Val::Px(4096.0),
+                            min_width: Val::Px(4096.0),
+                            max_width: Val::Px(8192.0),
+                            max_height: Val::Px(8192.0),
+                            flex_direction: FlexDirection::Row,
+                            flex_wrap: FlexWrap::Wrap,
+                            align_items: AlignItems::FlexStart,
+                            align_content: AlignContent::FlexStart,
+                            ..Default::default()
+                        },
+                        UiTargetCamera(view),
+                        DespawnWith(ent),
+                    ))
+                    .id();
+                let world_ui = TextShapeUi {
+                    view,
+                    ui_root,
+                    ticks: 2,
+                };
+                commands.entity(ent).try_insert(world_ui);
+                world_ui
+            });
         if let Ok(mut camera) = cameras.get_mut(world_ui.ui_root) {
             camera.is_active = false;
         }
