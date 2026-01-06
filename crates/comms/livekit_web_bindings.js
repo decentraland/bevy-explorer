@@ -199,6 +199,15 @@ export async function local_participant_publish_data(local_participant, payload,
 /**
  * 
  * @param {livekit.LocalParticipant} local_participant 
+ * @returns bool
+ */
+export function local_participant_is_local(local_participant) {
+    return local_participant.isLocal();
+}
+
+/**
+ * 
+ * @param {livekit.LocalParticipant} local_participant 
  * @returns string
  */
 export function local_participant_sid(local_participant) {

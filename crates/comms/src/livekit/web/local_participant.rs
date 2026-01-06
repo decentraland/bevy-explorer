@@ -20,6 +20,8 @@ extern "C" {
         data_publish_options: DataPublishOptions,
     ) -> RoomResult<()>;
     #[wasm_bindgen]
+    fn local_participant_is_local(local_participant: &LocalParticipant) -> bool;
+    #[wasm_bindgen]
     fn local_participant_sid(local_participant: &LocalParticipant) -> String;
     #[wasm_bindgen]
     fn local_participant_identity(local_participant: &LocalParticipant) -> String;
@@ -64,6 +66,10 @@ impl LocalParticipant {
     pub async fn unpublish_track(&self, sid: &TrackSid) -> RoomResult<LocalTrackPublication> {
         todo!()
     }
+    pub fn is_local(&self) -> bool {
+        // Should always be false
+        local_participant_is_local(self)
+    }
 
     pub fn identity(&self) -> ParticipantIdentity {
         ParticipantIdentity(local_participant_identity(self))
@@ -75,6 +81,12 @@ impl LocalParticipant {
 
     pub fn metadata(&self) -> String {
         local_participant_metadata(self)
+    }
+}
+
+impl From<JsValue> for LocalParticipant {
+    fn from(value: JsValue) -> Self {
+        Self { inner: value }
     }
 }
 
