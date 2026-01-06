@@ -1,5 +1,6 @@
 mod local_audio_track;
 mod local_participant;
+mod local_track;
 mod local_track_publication;
 mod remote_participant;
 mod remote_track_publication;
@@ -25,7 +26,7 @@ use wasm_bindgen::{
 use crate::livekit::web::traits::GetFromJsValue;
 pub use crate::livekit::web::{
     local_audio_track::LocalAudioTrack, local_participant::LocalParticipant,
-    local_track_publication::LocalTrackPublication,
+    local_track::LocalTrack, local_track_publication::LocalTrackPublication,
     remote_participant::RemoteParticipant, remote_track_publication::RemoteTrackPublication,
     room::Room, room_event::RoomEvent, track_source::TrackSource,
 };
@@ -346,11 +347,8 @@ unsafe impl Send for LocalVideoTrack {}
 /// SAFETY: should be fine while WASM remains single-threaded
 unsafe impl Sync for LocalVideoTrack {}
 
-pub enum LocalTrack {
-    Audio(LocalAudioTrack),
-    Video(LocalVideoTrack),
-}
-
+#[wasm_bindgen]
+#[derive(Debug)]
 pub struct TrackPublishOptions {
     // pub video_encoding: Option<VideoEncoding>,
     // pub audio_encoding: Option<AudioEncoding>,
