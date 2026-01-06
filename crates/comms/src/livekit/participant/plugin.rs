@@ -19,6 +19,8 @@ use crate::{
         LivekitRuntime,
     },
 };
+#[cfg(target_arch = "wasm32")]
+use crate::livekit::web::Participant;
 
 pub struct LivekitParticipantPlugin;
 
@@ -57,10 +59,7 @@ fn participant_connected(
         room.name()
     );
 
-    #[cfg(not(target_arch = "wasm32"))]
     let is_local = matches!(participant.participant, Participant::Local(_));
-    #[cfg(target_arch = "wasm32")]
-    let is_local = false;
 
     if is_local {
         commands.spawn((
