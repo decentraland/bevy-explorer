@@ -258,8 +258,9 @@ fn build_cpal_stream(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn drop_cpal_stream(mut mic_stream: NonSendMut<MicStream>) {
+fn drop_cpal_stream(mut commands: Commands, mut mic_stream: NonSendMut<MicStream>) {
     **mic_stream = None;
+    commands.set_state(MicrophoneState::Disabled);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
