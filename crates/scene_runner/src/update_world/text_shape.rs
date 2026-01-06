@@ -109,6 +109,7 @@ use dcl_component::{
     SceneComponentId,
 };
 use ui_core::{ui_builder::SpawnSpacer, user_font, FontName, WeightName};
+use unicode_segmentation::UnicodeSegmentation;
 use world_ui::{spawn_world_ui_view, WorldUi};
 
 use crate::{renderer_context::RendererSceneContext, SceneEntity};
@@ -807,15 +808,50 @@ pub fn make_text_section(
             .char_indices()
             .find(|(_, c)| *c == '<')
             .map(|(ix, _)| section_start + ix.max(1))
-            .unwrap_or(usize::MAX);
+            .unwrap_or(text.len());
 
-        let span = if section_end == usize::MAX {
-            TextSpan::new(&text[section_start..])
-        } else {
-            TextSpan::new(&text[section_start..section_end])
+        // gather emoji ranges
+        let mut span_start = section_start;
+        let mut emoji_span = None;
+
+        for (char_index, grapheme) in text[section_start..section_end].grapheme_indices(true) {
+            let char_is_emoji = emojis::get(grapheme).is_some();
+
+            match emoji_span {
+                Some(span_is_emoji) if span_is_emoji == char_is_emoji => continue,
+                None => {
+                    emoji_span = Some(char_is_emoji);
+                    continue;
+                }
+                Some(span_is_emoji) => {
+                    let use_color = match span_is_emoji {
+                        true => TextColor(Color::WHITE),
+                        _ => color,
+                    };
+
+                    spans.push((
+                        TextSpan::new(&text[span_start..section_start + char_index]),
+                        font.clone(),
+                        use_color,
+                        maybe_extras,
+                    ));
+                    span_start = section_start + char_index;
+                    emoji_span = Some(char_is_emoji);
+                }
+            }
+        }
+
+        // add last range
+        let last_color = match emoji_span {
+            Some(true) => TextColor(Color::WHITE),
+            _ => color,
         };
-
-        spans.push((span, font, color, maybe_extras));
+        spans.push((
+            TextSpan::new(&text[span_start..section_end]),
+            font,
+            last_color,
+            maybe_extras,
+        ));
 
         if let Some(link) = link_data.last().cloned() {
             links.push((span_index, link));
