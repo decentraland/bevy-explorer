@@ -1,5 +1,8 @@
 use super::WorkerContext;
-use bevy::{log::{warn, debug}, platform::collections::HashMap};
+use bevy::{
+    log::{debug, warn},
+    platform::collections::HashMap,
+};
 use dcl::{interface::crdt_context::CrdtContext, js::player_identity};
 use futures_lite::io::{AsyncReadExt, AsyncWriteExt};
 use serde::{Deserialize, Serialize};
