@@ -161,7 +161,7 @@ pub async fn load_imposter_remote(
         .to_string_lossy()
         .into_owned()
         .replace("\\", "/");
-    let zip_url = format!("https://imposter.kuruk.net/{zip_file}")
+    let zip_url = format!("https://imposters-org.dclexplorer.com/{zip_file}")
         // double url encode
         .replace("%", "%25");
     debug!("zip_url {zip_url}");
