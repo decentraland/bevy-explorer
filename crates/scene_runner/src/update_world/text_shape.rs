@@ -317,25 +317,21 @@ fn update_text_shapes(
             .map(|_| text_shape.0.text_align())
             .unwrap_or(TextAlignMode::TamMiddleCenter);
 
-        let valign = match text_align {
+        let (valign_wui, valign_flex) = match text_align {
             TextAlignMode::TamTopLeft
             | TextAlignMode::TamTopCenter
-            | TextAlignMode::TamTopRight => -0.5,
+            | TextAlignMode::TamTopRight => (-0.5, AlignItems::FlexStart),
             TextAlignMode::TamMiddleLeft
             | TextAlignMode::TamMiddleCenter
-            | TextAlignMode::TamMiddleRight => 0.0,
+            | TextAlignMode::TamMiddleRight => (0.0, AlignItems::Center),
             TextAlignMode::TamBottomLeft
             | TextAlignMode::TamBottomCenter
-            | TextAlignMode::TamBottomRight => 0.5,
+            | TextAlignMode::TamBottomRight => (0.5, AlignItems::FlexEnd),
         };
 
-        let valign = if wrapping {
-            -valign
-        } else {
-            valign
-        };
+        let valign_wui = if wrapping { 0.0 } else { valign_wui };
 
-        let (halign_wui, halign) = match text_align {
+        let (halign_wui, halign_flex) = match text_align {
             TextAlignMode::TamTopLeft
             | TextAlignMode::TamMiddleLeft
             | TextAlignMode::TamBottomLeft => (0.5, JustifyText::Left),
@@ -347,11 +343,7 @@ fn update_text_shapes(
             | TextAlignMode::TamBottomRight => (-0.5, JustifyText::Right),
         };
 
-        let halign_wui = if wrapping {
-            0.0
-        } else {
-            halign_wui
-        };
+        let halign_wui = if wrapping { 0.0 } else { halign_wui };
 
         // use constant font size to avoid small text being illegible
         let font_size = 30.0;
@@ -365,6 +357,12 @@ fn update_text_shapes(
             text_shape.0.width.unwrap_or(1.0) * pix_per_m
         } else {
             4096.0
+        };
+
+        let height = if let Some(height) = text_shape.0.height {
+            Val::Px(pix_per_m * height)
+        } else {
+            Val::Auto
         };
 
         // create ui layout
@@ -394,7 +392,7 @@ fn update_text_shapes(
                 .map(Color4DclToBevy::convert_srgba)
                 .unwrap_or(Color::WHITE),
             text_shape.0.font(),
-            halign,
+            halign_flex,
             wrapping,
         );
 
@@ -404,6 +402,11 @@ fn update_text_shapes(
                     margin: UiRect::all(Val::Px(1.0)),
                     flex_direction: FlexDirection::Row,
                     max_width: Val::Px(width),
+                    height,
+                    max_height: height,
+                    min_height: height,
+                    align_items: valign_flex,
+                    overflow: Overflow::hidden(),
                     ..Default::default()
                 },
                 DespawnWith(ent),
@@ -418,14 +421,14 @@ fn update_text_shapes(
                     });
                 }
 
-                if halign != JustifyText::Left {
+                if halign_flex != JustifyText::Left {
                     c.spacer();
                 }
 
                 c.spawn(Node::default()).with_child((
                     text,
                     Node {
-                        align_self: match halign {
+                        align_self: match halign_flex {
                             JustifyText::Left => AlignSelf::FlexStart,
                             JustifyText::Center => AlignSelf::Center,
                             JustifyText::Right => AlignSelf::FlexEnd,
@@ -435,7 +438,7 @@ fn update_text_shapes(
                     },
                 ));
 
-                if halign != JustifyText::Right {
+                if halign_flex != JustifyText::Right {
                     c.spacer();
                 }
 
@@ -459,7 +462,7 @@ fn update_text_shapes(
             WorldUi {
                 dbg: format!("TextShape `{source}`"),
                 pix_per_m,
-                valign,
+                valign: valign_wui,
                 halign: halign_wui,
                 add_y_pix,
                 bounds: scene.bounds.clone(),
