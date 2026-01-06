@@ -12,6 +12,8 @@ use crate::livekit::web::{
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
 extern "C" {
     #[wasm_bindgen]
+    fn remote_participant_is_local(remote_participant: &RemoteParticipant) -> bool;
+    #[wasm_bindgen]
     fn remote_participant_sid(remote_participant: &RemoteParticipant) -> String;
     #[wasm_bindgen]
     fn remote_participant_identity(remote_participant: &RemoteParticipant) -> String;
@@ -25,6 +27,11 @@ pub struct RemoteParticipant {
 }
 
 impl RemoteParticipant {
+    pub fn is_local(&self) -> bool {
+        // Should always be false
+        remote_participant_is_local(self)
+    }
+
     pub fn identity(&self) -> ParticipantIdentity {
         ParticipantIdentity(remote_participant_identity(self))
     }
@@ -39,6 +46,12 @@ impl RemoteParticipant {
 
     pub fn sid(&self) -> ParticipantSid {
         ParticipantSid(remote_participant_sid(self))
+    }
+}
+
+impl From<JsValue> for RemoteParticipant {
+    fn from(value: JsValue) -> Self {
+        Self { inner: value }
     }
 }
 

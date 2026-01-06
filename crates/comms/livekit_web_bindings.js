@@ -234,6 +234,15 @@ export function local_participant_metadata(local_participant) {
 
 /**
  * 
+ * @param {livekit.LocalParticipant} remote_participant 
+ * @returns bool
+ */
+export function remote_participant_is_local(remote_participant) {
+    return remote_participant.isLocal();
+}
+
+/**
+ * 
  * @param {livekit.RemoteParticipant} remote_participant 
  * @returns string
  */
