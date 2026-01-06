@@ -69,6 +69,7 @@ impl Plugin for MicPlugin {
                     in_state(MicrophoneAvailability::Available)
                         .and(in_state(MicrophoneState::Disabled)),
                 ),
+                #[cfg(not(target_arch = "wasm32"))]
                 exit_building_cpal_stream.run_if(in_state(MicrophoneState::BuildingCpalStream)),
                 verify_disabled.run_if(in_state(MicrophoneState::Enabled)),
                 publish_tracks.run_if(in_state(MicrophoneState::Enabled)),
