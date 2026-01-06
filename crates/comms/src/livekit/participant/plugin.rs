@@ -5,6 +5,8 @@ use dcl_component::proto_components::kernel::comms::rfc4;
 use livekit::prelude::Participant;
 use prost::Message;
 
+#[cfg(target_arch = "wasm32")]
+use crate::livekit::web::Participant;
 use crate::{
     global_crdt::{GlobalCrdtState, NonPlayerUpdate, PlayerMessage, PlayerUpdate},
     livekit::{
@@ -19,8 +21,6 @@ use crate::{
         LivekitRuntime,
     },
 };
-#[cfg(target_arch = "wasm32")]
-use crate::livekit::web::Participant;
 
 pub struct LivekitParticipantPlugin;
 
