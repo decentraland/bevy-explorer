@@ -302,6 +302,8 @@ fn update_text_shapes(
             camera.is_active = false;
         }
 
+        let wrapping = text_shape.0.text_wrapping() && !text_shape.0.font_auto_size();
+
         let text_align = text_shape
             .0
             .text_align
@@ -320,6 +322,12 @@ fn update_text_shapes(
             | TextAlignMode::TamBottomRight => 0.5,
         };
 
+        let valign = if wrapping {
+            -valign
+        } else {
+            valign
+        };
+
         let (halign_wui, halign) = match text_align {
             TextAlignMode::TamTopLeft
             | TextAlignMode::TamMiddleLeft
@@ -332,6 +340,12 @@ fn update_text_shapes(
             | TextAlignMode::TamBottomRight => (-0.5, JustifyText::Right),
         };
 
+        let halign_wui = if wrapping {
+            0.0
+        } else {
+            halign_wui
+        };
+
         // use constant font size to avoid small text being illegible
         let font_size = 30.0;
 
@@ -339,8 +353,6 @@ fn update_text_shapes(
         let pix_per_m = 375.0 / text_shape.0.font_size.unwrap_or(10.0);
 
         let add_y_pix = (text_shape.0.padding_bottom() - text_shape.0.padding_top()) * pix_per_m;
-
-        let wrapping = text_shape.0.text_wrapping() && !text_shape.0.font_auto_size();
 
         let width = if wrapping {
             text_shape.0.width.unwrap_or(1.0) * pix_per_m
