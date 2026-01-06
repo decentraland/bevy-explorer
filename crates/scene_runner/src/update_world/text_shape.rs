@@ -148,8 +148,6 @@ impl From<PbTextShape> for TextShape {
     }
 }
 
-const PIX_PER_M: f32 = 200.0;
-
 #[derive(Component)]
 pub struct PriorTextShapeUi(Entity, PbTextShape);
 
@@ -334,14 +332,18 @@ fn update_text_shapes(
             | TextAlignMode::TamBottomRight => (-0.5, JustifyText::Right),
         };
 
-        let add_y_pix = (text_shape.0.padding_bottom() - text_shape.0.padding_top()) * PIX_PER_M;
-
+        // use constant font size to avoid small text being illegible
         let font_size = 30.0;
+
+        // use pix per meter based on font size to scale appropriately
+        let pix_per_m = 375.0 / text_shape.0.font_size.unwrap_or(10.0);
+
+        let add_y_pix = (text_shape.0.padding_bottom() - text_shape.0.padding_top()) * pix_per_m;
 
         let wrapping = text_shape.0.text_wrapping() && !text_shape.0.font_auto_size();
 
         let width = if wrapping {
-            text_shape.0.width.unwrap_or(1.0) * PIX_PER_M
+            text_shape.0.width.unwrap_or(1.0) * pix_per_m
         } else {
             4096.0
         };
@@ -390,9 +392,9 @@ fn update_text_shapes(
             .with_children(|c| {
                 if text_shape.0.padding_left.is_some() {
                     c.spawn(Node {
-                        width: Val::Px(text_shape.0.padding_left() * PIX_PER_M),
-                        min_width: Val::Px(text_shape.0.padding_left() * PIX_PER_M),
-                        max_width: Val::Px(text_shape.0.padding_left() * PIX_PER_M),
+                        width: Val::Px(text_shape.0.padding_left() * pix_per_m),
+                        min_width: Val::Px(text_shape.0.padding_left() * pix_per_m),
+                        max_width: Val::Px(text_shape.0.padding_left() * pix_per_m),
                         ..Default::default()
                     });
                 }
@@ -420,9 +422,9 @@ fn update_text_shapes(
 
                 if text_shape.0.padding_right.is_some() {
                     c.spawn(Node {
-                        width: Val::Px(text_shape.0.padding_right() * PIX_PER_M),
-                        min_width: Val::Px(text_shape.0.padding_right() * PIX_PER_M),
-                        max_width: Val::Px(text_shape.0.padding_right() * PIX_PER_M),
+                        width: Val::Px(text_shape.0.padding_right() * pix_per_m),
+                        min_width: Val::Px(text_shape.0.padding_right() * pix_per_m),
+                        max_width: Val::Px(text_shape.0.padding_right() * pix_per_m),
                         ..Default::default()
                     });
                 }
@@ -437,7 +439,7 @@ fn update_text_shapes(
             PriorTextShapeUi(ui_node, text_shape.0.clone()),
             WorldUi {
                 dbg: format!("TextShape `{source}`"),
-                pix_per_m: 375.0 / text_shape.0.font_size.unwrap_or(10.0),
+                pix_per_m,
                 valign,
                 halign: halign_wui,
                 add_y_pix,
