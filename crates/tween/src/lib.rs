@@ -91,14 +91,23 @@ impl Tween {
                 transform.translation = start + (end - start) * ease_value;
             }
             Some(Mode::Rotate(data)) => {
-                let start: Quat = data.start.unwrap_or_default().into();
-                let end = data.end.unwrap_or_default().into();
+                let start: Quat = data.start.unwrap_or_default().to_bevy_normalized();
+                let end = data.end.unwrap_or_default().to_bevy_normalized();
                 transform.rotation = start.slerp(end, ease_value);
             }
             Some(Mode::Scale(data)) => {
                 let start = data.start.unwrap_or_default().abs_vec_to_vec3();
                 let end = data.end.unwrap_or_default().abs_vec_to_vec3();
                 transform.scale = start + ((end - start) * ease_value);
+                if transform.scale.x == 0.0 {
+                    transform.scale.x = f32::EPSILON;
+                };
+                if transform.scale.y == 0.0 {
+                    transform.scale.y = f32::EPSILON;
+                };
+                if transform.scale.z == 0.0 {
+                    transform.scale.z = f32::EPSILON;
+                };
             }
             Some(Mode::TextureMove(data)) => {
                 let start: Vec2 = (&data.start.unwrap_or_default()).into();
