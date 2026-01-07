@@ -3,6 +3,7 @@ use std::{borrow::Cow, sync::Arc};
 
 use bevy::prelude::*;
 use common::structs::MicState;
+use tokio::task::JoinHandle;
 #[cfg(target_arch = "wasm32")]
 use {
     bevy::render::view::RenderLayers,
@@ -27,19 +28,18 @@ use {
     tokio::sync::broadcast,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::global_crdt::{LocalAudioFrame, LocalAudioSource};
+use crate::livekit::{
+    participant::{LivekitParticipant, Local as LivekitLocalParticipant},
+    LivekitRuntime,
+};
 #[cfg(target_arch = "wasm32")]
 use crate::{
     global_crdt::{ForeignAudioSource, ForeignPlayer},
     livekit::web::{
-        set_microphone_enabled, set_participant_spatial_audio, LocalTrack, Participant,
-        TrackPublishOptions, TrackSource,
-    },
-};
-use crate::{
-    global_crdt::{LocalAudioFrame, LocalAudioSource},
-    livekit::{
-        participant::{LivekitParticipant, Local as LivekitLocalParticipant},
-        LivekitRuntime,
+        set_participant_spatial_audio, AudioCaptureOptions, LocalAudioTrack, LocalTrack,
+        Participant, TrackPublishOptions, TrackSource,
     },
 };
 
@@ -65,28 +65,24 @@ impl Plugin for MicPlugin {
             (
                 verify_availability.run_if(in_state(MicrophoneAvailability::Unavailable)),
                 verify_microphone_device_health.run_if(in_state(MicrophoneAvailability::Available)),
-                verify_enabled.run_if(
+                (microphone_disabled, verify_enabled).run_if(
                     in_state(MicrophoneAvailability::Available)
                         .and(in_state(MicrophoneState::Disabled)),
                 ),
-                #[cfg(not(target_arch = "wasm32"))]
-                exit_building_cpal_stream.run_if(in_state(MicrophoneState::BuildingCpalStream)),
-                verify_disabled.run_if(in_state(MicrophoneState::Enabled)),
-                publish_tracks.run_if(in_state(MicrophoneState::Enabled)),
-                unpublish_tracks.run_if(in_state(MicrophoneState::Disabled)),
+                (microphone_enabled, verify_disabled).run_if(in_state(MicrophoneState::Enabled)),
+                (
+                    poll_local_audio_track_futures,
+                    publish_tracks,
+                    unpublish_tracks,
+                )
+                    .run_if(in_state(MicrophoneAvailability::Available)),
             )
                 .chain(),
         );
         #[cfg(not(target_arch = "wasm32"))]
-        app.add_systems(
-            OnEnter(MicrophoneState::BuildingCpalStream),
-            build_cpal_stream,
-        );
+        app.add_systems(OnEnter(MicrophoneState::Enabled), build_cpal_stream);
         #[cfg(not(target_arch = "wasm32"))]
-        app.add_systems(
-            OnEnter(MicrophoneState::DroppingCpalStream),
-            drop_cpal_stream,
-        );
+        app.add_systems(OnEnter(MicrophoneState::Disabled), drop_cpal_stream);
 
         #[cfg(target_arch = "wasm32")]
         app.add_systems(Update, locate_foreign_streams);
@@ -104,16 +100,18 @@ enum MicrophoneAvailability {
 enum MicrophoneState {
     #[default]
     Disabled,
-    #[cfg(not(target_arch = "wasm32"))]
-    BuildingCpalStream,
     Enabled,
-    #[cfg(not(target_arch = "wasm32"))]
-    DroppingCpalStream,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Resource, Deref, DerefMut)]
 struct MicrophoneDevice(Device);
+
+#[derive(Component)]
+struct ParticipantWithTrack;
+
+#[derive(Component, Deref, DerefMut)]
+struct LocalAudioTrackFuture(JoinHandle<LocalAudioTrack>);
 
 #[derive(Component, Deref)]
 struct MicrophoneLocalTrack(LocalAudioTrack);
@@ -141,14 +139,9 @@ fn verify_availability(mut commands: Commands, mut mic_state: ResMut<MicState>) 
 }
 
 #[cfg(target_arch = "wasm32")]
-fn verify_availability(
-    mut commands: Commands,
-    microphone: Single<(Entity, Has<Available>), With<Microphone>>,
-    mut mic_state: ResMut<MicState>,
-) {
+fn verify_availability(mut commands: Commands, mut mic_state: ResMut<MicState>) {
     // Check if microphone is available in the browser
     let current_available = is_microphone_available().unwrap_or(false);
-    let (entity, has_available) = microphone.into_inner();
 
     // Only update availability if it changed
     if current_available {
@@ -161,7 +154,7 @@ fn verify_availability(
 fn verify_microphone_device_health(
     mut commands: Commands,
     microphone_device: Res<MicrophoneDevice>,
-    mut mic_state: ResMut<MicState>
+    mut mic_state: ResMut<MicState>,
 ) {
     if let Err(err) = microphone_device.name() {
         debug!("Microphone device became unavailable due to '{err}'.");
@@ -175,9 +168,7 @@ fn verify_microphone_device_health(
 fn verify_microphone_device_health(mut commands: Commands, mut mic_state: ResMut<MicState>) {
     // Check if microphone is available in the browser
     let current_available = is_microphone_available().unwrap_or(false);
-    let (entity, has_available) = microphone.into_inner();
 
-    // Only update availability if it changed
     if !current_available {
         debug!("Microphone became unavailable.");
         mic_state.available = false;
@@ -187,16 +178,8 @@ fn verify_microphone_device_health(mut commands: Commands, mut mic_state: ResMut
 
 fn verify_enabled(mut commands: Commands, mic_state: Res<MicState>) {
     if mic_state.enabled {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            debug!("Microphone is now enabled. Building Cpal stream.");
-            commands.set_state(MicrophoneState::BuildingCpalStream);
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            debug!("Microphone is now enabled.");
-            commands.set_state(MicrophoneState::Enabled);
-        }
+        debug!("Microphone is now enabled.");
+        commands.set_state(MicrophoneState::Enabled);
     }
 }
 
@@ -265,40 +248,58 @@ fn drop_cpal_stream(mut commands: Commands, mut mic_stream: NonSendMut<MicStream
     commands.set_state(MicrophoneState::Disabled);
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn exit_building_cpal_stream(mut commands: Commands, mic_state: Res<MicState>) {
+fn verify_disabled(mut commands: Commands, mic_state: Res<MicState>) {
     if !mic_state.enabled {
+        debug!("Microphone is now disabled.");
         commands.set_state(MicrophoneState::Disabled);
     }
 }
 
-fn verify_disabled(mut commands: Commands, mic_state: Res<MicState>) {
-    if !mic_state.enabled {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            debug!("Microphone is now disabled. Dropping Cpal stream.");
-            commands.set_state(MicrophoneState::DroppingCpalStream);
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            debug!("Microphone is now disabled.");
-            commands.set_state(MicrophoneState::Disabled);
-        }
+fn microphone_enabled(
+    mut commands: Commands,
+    local_participants: Populated<
+        Entity,
+        (With<LivekitLocalParticipant>, Without<ParticipantWithTrack>),
+    >,
+) {
+    commands.insert_batch(
+        local_participants
+            .iter()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|entity| (entity, ParticipantWithTrack)),
+    );
+}
+
+fn microphone_disabled(
+    mut commands: Commands,
+    local_participants: Populated<
+        Entity,
+        (With<LivekitLocalParticipant>, With<ParticipantWithTrack>),
+    >,
+) {
+    for entity in local_participants.into_inner() {
+        commands.entity(entity).remove::<ParticipantWithTrack>();
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 #[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn publish_tracks(
     mut commands: Commands,
     local_participants: Query<
         (Entity, &LivekitParticipant),
-        (With<LivekitLocalParticipant>, Without<MicrophoneLocalTrack>),
+        (
+            With<LivekitLocalParticipant>,
+            With<ParticipantWithTrack>,
+            Without<MicrophoneLocalTrack>,
+            Without<LocalAudioTrackFuture>,
+        ),
     >,
     livekit_runtime: Res<LivekitRuntime>,
-    local_audio_source: Res<LocalAudioSource>,
-    microphone_device: Res<MicrophoneDevice>,
+    #[cfg(not(target_arch = "wasm32"))] local_audio_source: Res<LocalAudioSource>,
+    #[cfg(not(target_arch = "wasm32"))] microphone_device: Res<MicrophoneDevice>,
 ) {
+    #[cfg(not(target_arch = "wasm32"))]
     let Ok(config) = microphone_device
         .default_input_config()
         .inspect_err(|err| error!("{err}"))
@@ -307,6 +308,40 @@ fn publish_tracks(
     };
 
     for (entity, livekit_participant) in local_participants {
+        if !matches!(**livekit_participant, Participant::Local(_)) {
+            error!(
+                "Participant {} ({}) has 'Local', but was remote.",
+                livekit_participant.sid(),
+                livekit_participant.identity()
+            );
+            commands.send_event(AppExit::from_code(1));
+            return;
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        let local_audio_track_future = livekit_runtime.spawn(build_audio_local_track());
+        #[cfg(not(target_arch = "wasm32"))]
+        let local_audio_track_future = livekit_runtime.spawn(build_audio_local_track(
+            local_audio_source.subscribe(),
+            config.sample_rate().0,
+            u32::from(config.channels()),
+        ));
+
+        commands.entity(entity).insert((
+            ParticipantWithTrack,
+            LocalAudioTrackFuture(local_audio_track_future),
+        ));
+    }
+}
+
+fn poll_local_audio_track_futures(
+    mut commands: Commands,
+    local_audio_tracks: Populated<(Entity, &LivekitParticipant, &mut LocalAudioTrackFuture)>,
+    livekit_runtime: Res<LivekitRuntime>,
+) {
+    for (entity, livekit_participant, mut local_audio_track_future) in
+        local_audio_tracks.into_inner()
+    {
         let Participant::Local(ref local_participant) = **livekit_participant else {
             error!(
                 "Participant {} ({}) has 'Local', but was remote.",
@@ -317,50 +352,60 @@ fn publish_tracks(
             return;
         };
 
-        // This future should be fast
-        let local_audio_track = livekit_runtime.block_on(build_audio_local_track(
-            local_audio_source.subscribe(),
-            config.sample_rate().0,
-            u32::from(config.channels()),
-        ));
+        if local_audio_track_future.is_finished() {
+            match livekit_runtime.block_on(&mut **local_audio_track_future) {
+                Ok(local_audio_track) => {
+                    let local_participant_clone = local_participant.clone();
+                    let local_audio_track_clone = local_audio_track.clone();
+                    livekit_runtime.spawn(async move {
+                        if let Err(err) = local_participant_clone
+                            .publish_track(
+                                LocalTrack::Audio(local_audio_track_clone),
+                                TrackPublishOptions {
+                                    source: TrackSource::Microphone,
+                                    ..Default::default()
+                                },
+                            )
+                            .await
+                        {
+                            error!(
+                                "Failed to publish local audio track for {} ({}) due to '{err}'.",
+                                local_participant_clone.sid(),
+                                local_participant_clone.identity()
+                            );
+                        }
+                    });
 
-        let local_participant = local_participant.clone();
-        let local_audio_track_clone = local_audio_track.clone();
-        livekit_runtime.spawn(async move {
-            if let Err(err) = local_participant
-                .publish_track(
-                    LocalTrack::Audio(local_audio_track_clone),
-                    TrackPublishOptions {
-                        source: TrackSource::Microphone,
-                        ..Default::default()
-                    },
-                )
-                .await
-            {
-                error!(
-                    "Failed to publish local audio track for {} ({}) due to '{err}'.",
-                    local_participant.sid(),
-                    local_participant.identity()
-                );
+                    commands
+                        .entity(entity)
+                        .insert(MicrophoneLocalTrack(local_audio_track))
+                        .remove::<LocalAudioTrackFuture>();
+                }
+                Err(err) => {
+                    error!(
+                        "Failed to poll local audio track of {} ({}) due to '{err}'.",
+                        livekit_participant.sid(),
+                        livekit_participant.identity()
+                    );
+                    commands.send_event(AppExit::from_code(1));
+                    return;
+                }
             }
-        });
-
-        commands
-            .entity(entity)
-            .insert(MicrophoneLocalTrack(local_audio_track));
+        }
     }
 }
 
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn unpublish_tracks(
     mut commands: Commands,
-    local_participants: Query<
+    local_participants: Populated<
         (Entity, &LivekitParticipant, &MicrophoneLocalTrack),
-        With<LivekitLocalParticipant>,
+        (With<LivekitLocalParticipant>, Without<ParticipantWithTrack>),
     >,
     livekit_runtime: Res<LivekitRuntime>,
     #[cfg(not(target_arch = "wasm32"))] local_audio_source: Res<LocalAudioSource>,
 ) {
-    for (entity, livekit_participant, microphone_local_track) in local_participants {
+    for (entity, livekit_participant, microphone_local_track) in local_participants.into_inner() {
         let Participant::Local(ref local_participant) = **livekit_participant else {
             error!(
                 "Participant {} ({}) has 'Local', but was remote.",
@@ -375,7 +420,7 @@ fn unpublish_tracks(
         let local_audio_track_clone = (*microphone_local_track).clone();
         livekit_runtime.spawn(async move {
             if let Err(err) = local_participant_clone
-                .unpublish_track(&local_audio_track_clone.sid())
+                .unpublish_track(&LocalTrack::Audio(local_audio_track_clone))
                 .await
             {
                 error!(
@@ -484,6 +529,12 @@ async fn build_audio_local_track(
 }
 
 #[cfg(target_arch = "wasm32")]
-fn build_audio_local_track() -> LocalAudioTrack {
-    todo!()
+async fn build_audio_local_track() -> LocalAudioTrack {
+    LocalAudioTrack::new(AudioCaptureOptions {
+        echo_cancellation: Some(true),
+        noise_suppression: Some(true),
+        auto_gain_control: Some(true),
+        ..Default::default()
+    })
+    .await
 }
