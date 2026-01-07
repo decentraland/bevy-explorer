@@ -2,6 +2,7 @@ mod local_audio_track;
 mod local_participant;
 mod local_track;
 mod local_track_publication;
+mod participant;
 mod remote_participant;
 mod remote_track_publication;
 mod room;
@@ -28,8 +29,9 @@ use crate::livekit::web::traits::GetFromJsValue;
 pub use crate::livekit::web::{
     local_audio_track::LocalAudioTrack, local_participant::LocalParticipant,
     local_track::LocalTrack, local_track_publication::LocalTrackPublication,
-    remote_participant::RemoteParticipant, remote_track_publication::RemoteTrackPublication,
-    room::Room, room_event::RoomEvent, track_sid::TrackSid, track_source::TrackSource,
+    participant::Participant, remote_participant::RemoteParticipant,
+    remote_track_publication::RemoteTrackPublication, room::Room, room_event::RoomEvent,
+    track_sid::TrackSid, track_source::TrackSource,
 };
 
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
@@ -116,43 +118,6 @@ impl Display for RoomError {
 }
 
 impl Error for RoomError {}
-
-#[derive(Debug, Clone)]
-pub enum Participant {
-    Local(LocalParticipant),
-    Remote(RemoteParticipant),
-}
-
-impl Participant {
-    pub fn identity(&self) -> ParticipantIdentity {
-        match self {
-            Self::Local(l) => l.identity(),
-            Self::Remote(r) => r.identity(),
-        }
-    }
-
-    pub fn sid(&self) -> ParticipantSid {
-        match self {
-            Self::Local(l) => l.sid(),
-            Self::Remote(r) => r.sid(),
-        }
-    }
-
-    pub fn metadata(&self) -> String {
-        match self {
-            Self::Local(l) => l.metadata(),
-            Self::Remote(r) => r.metadata(),
-        }
-    }
-}
-
-impl GetFromJsValue for Participant {
-    fn get_from_js_value(js_value: &JsValue, key: &str) -> Option<Self> {
-        debug!("{js_value:?}");
-        None
-    }
-}
-
 
 #[derive(Debug, Clone)]
 pub struct DataPacket {

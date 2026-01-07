@@ -187,6 +187,15 @@ function alt_set_room_event_handler(room, handler) {
 
 /**
  * 
+ * @param {livekit.Participant} participant
+ * @returns bool
+ */
+export async function particinpant_is_local(participant) {
+    return particinpant.isLocal();
+}
+
+/**
+ * 
  * @param {livekit.LocalParticipant} local_participant
  * @param {Uint8Array} payload 
  * @param {livekit.DataPublishOptions} payload 
@@ -194,6 +203,27 @@ function alt_set_room_event_handler(room, handler) {
  */
 export async function local_participant_publish_data(local_participant, payload, data_publish_options) {
     local_participant.publishData(payload, data_publish_options).await;
+}
+
+/**
+ * 
+ * @param {livekit.LocalParticipant} local_participant
+ * @param {livekit.LocalTrack} local_track
+ * @param {livekit.TrackPublishingOptions} track_publishing_option
+ * @returns livekit.LocalTrackPublication
+ */
+export async function local_participant_publish_track(local_participant, local_track, track_publishing_option) {
+    return await local_participant.publishTrack(local_track, track_publishing_option);
+}
+
+/**
+ * 
+ * @param {livekit.LocalParticipant} local_participant
+ * @param {livekit.LocalTrack} local_track
+ * @returns livekit.LocalTrackPublication
+ */
+export async function local_participant_unpublish_track(local_participant, local_track) {
+    return await local_participant.unpublishTrack(local_track, true);
 }
 
 /**
