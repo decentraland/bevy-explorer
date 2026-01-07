@@ -40,15 +40,6 @@ impl LocalTrackPublication {
     pub fn source(&self) -> TrackSource {
         local_track_publication_source(self)
     }
-
-    pub fn track(&self) -> Option<LocalTrack> {
-        error!("todo track");
-        panic!("todo track")
-    }
-
-    pub fn set_subscribed(&self, switch: bool) {
-        todo!();
-    }
 }
 
 impl From<JsValue> for LocalTrackPublication {
