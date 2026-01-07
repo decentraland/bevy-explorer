@@ -417,7 +417,7 @@ impl AssetLoader for WearableLoader {
                     if representation.override_replaces.is_empty() {
                         &meta.data.replaces
                     } else {
-                        &representation.override_hides
+                        &representation.override_replaces
                     }
                     .iter()
                     .copied(),
