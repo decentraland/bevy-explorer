@@ -614,10 +614,14 @@ fn update_render_avatar(
 
             if let Some((wearable, _)) = wearables.get(category) {
                 hides_first_pass.extend(wearable.hides.iter());
-                debug!("add {:?} = {:?} -> {:?}", category, wearable.hides, hides_first_pass);
+                debug!(
+                    "add {:?} = {:?} -> {:?}",
+                    category, wearable.hides, hides_first_pass
+                );
             }
 
-            hides_first_pass.retain(|cat| !selection.shape.0.force_render.iter().any(|h| h == cat.slot));
+            hides_first_pass
+                .retain(|cat| !selection.shape.0.force_render.iter().any(|h| h == cat.slot));
         }
 
         debug!("calculating hides phase 2");
