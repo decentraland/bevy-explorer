@@ -8,7 +8,7 @@ use wasm_bindgen::{
 
 use crate::livekit::web::{
     DataPacket, JsValueAbi, LocalTrack, LocalTrackPublication, ParticipantIdentity, ParticipantSid,
-    RoomResult, TrackPublishOptions, TrackSid,
+    RoomResult, TrackPublishOptions,
 };
 
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
@@ -19,6 +19,17 @@ extern "C" {
         data: &[u8],
         data_publish_options: DataPublishOptions,
     ) -> RoomResult<()>;
+    #[wasm_bindgen(catch)]
+    async fn local_participant_publish_track(
+        local_participant: &LocalParticipant,
+        local_track: &LocalTrack,
+        track_publish_options: TrackPublishOptions,
+    ) -> RoomResult<LocalTrackPublication>;
+    #[wasm_bindgen(catch)]
+    async fn local_participant_unpublish_track(
+        local_participant: &LocalParticipant,
+        local_track: &LocalTrack,
+    ) -> RoomResult<LocalTrackPublication>;
     #[wasm_bindgen]
     fn local_participant_is_local(local_participant: &LocalParticipant) -> bool;
     #[wasm_bindgen]
@@ -60,14 +71,18 @@ impl LocalParticipant {
         track: LocalTrack,
         options: TrackPublishOptions,
     ) -> RoomResult<LocalTrackPublication> {
-        todo!()
+        local_participant_publish_track(self, &track, options).await
     }
 
-    pub async fn unpublish_track(&self, sid: &TrackSid) -> RoomResult<LocalTrackPublication> {
-        todo!()
+    pub async fn unpublish_track(
+        &self,
+        local_track: &LocalTrack,
+    ) -> RoomResult<LocalTrackPublication> {
+        local_participant_unpublish_track(self, local_track).await
     }
+
     pub fn is_local(&self) -> bool {
-        // Should always be false
+        // Should always be true
         local_participant_is_local(self)
     }
 
