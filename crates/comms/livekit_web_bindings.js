@@ -347,6 +347,16 @@ export function remote_track_publication_source(remote_track_publication) {
 
 /**
  * 
+ * @param {livekit.RemoteTrackPublication} remote_track_publication 
+ * @param {boolean} subscribed 
+ * @returns string
+ */
+export function remote_track_publication_set_subscribed(remote_track_publication, subscribed) {
+    remote_track_publication.setSubscribed(subscribed);
+}
+
+/**
+ * 
  * @param {livekit.AudioCaptureOptions} options 
  * @returns livekit.LocalAudioTrack
  */

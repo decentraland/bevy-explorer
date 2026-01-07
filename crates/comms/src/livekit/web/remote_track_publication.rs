@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use wasm_bindgen::{convert::IntoWasmAbi, describe::WasmDescribe, prelude::wasm_bindgen, JsValue};
 
-use crate::livekit::web::{GetFromJsValue, JsValueAbi, RemoteTrack, TrackKind, TrackSource};
+use crate::livekit::web::{GetFromJsValue, JsValueAbi, TrackKind, TrackSource};
 
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
 extern "C" {
@@ -15,6 +15,11 @@ extern "C" {
     fn remote_track_publication_source(
         remote_track_publication: &RemoteTrackPublication,
     ) -> TrackSource;
+    #[wasm_bindgen]
+    fn remote_track_publication_set_subscribed(
+        remote_track_publication: &RemoteTrackPublication,
+        subscribed: bool,
+    );
 }
 
 #[derive(Debug, Clone)]
@@ -35,13 +40,8 @@ impl RemoteTrackPublication {
         remote_track_publication_source(self)
     }
 
-    pub fn track(&self) -> Option<RemoteTrack> {
-        error!("todo track");
-        panic!("todo track")
-    }
-
-    pub fn set_subscribed(&self, switch: bool) {
-        todo!();
+    pub fn set_subscribed(&self, subscribed: bool) {
+        remote_track_publication_set_subscribed(self, subscribed)
     }
 }
 
