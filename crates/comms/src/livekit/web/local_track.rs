@@ -1,6 +1,6 @@
-use wasm_bindgen::{describe::WasmDescribe, JsValue, convert::IntoWasmAbi};
+use wasm_bindgen::{convert::IntoWasmAbi, describe::WasmDescribe, JsValue};
 
-use crate::livekit::web::{LocalAudioTrack, LocalVideoTrack, JsValueAbi};
+use crate::livekit::web::{JsValueAbi, LocalAudioTrack, LocalVideoTrack};
 
 pub enum LocalTrack {
     Audio(LocalAudioTrack),
