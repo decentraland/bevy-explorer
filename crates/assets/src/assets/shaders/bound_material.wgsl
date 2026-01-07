@@ -93,15 +93,13 @@ fn fragment(
             bias.mip_bias,
         ).rgb);
     } else {
-        if dot(emissive, emissive) != 0.0 {
-            // emissive is set, no emissive texture, use base color texture as emissive texture (only if present)
-            if ((material.flags & STANDARD_MATERIAL_FLAGS_BASE_COLOR_TEXTURE_BIT) != 0u) {
-                emissive = emissive * pbr_input.material.base_color.rgb;
-            }
+        // emissive is set, no emissive texture, use base color texture as emissive texture (only if present)
+        if ((material.flags & STANDARD_MATERIAL_FLAGS_BASE_COLOR_TEXTURE_BIT) != 0u) {
+            emissive = emissive * pbr_input.material.base_color.rgb;
         }
     }
 #endif
-    // scale up for lumens
+    // scale up for lumens, use 0 for auto-exposure weight (alpha channel)
     pbr_input.material.emissive = vec4(emissive * 10.0, 0.0);
 
     let world_position = pbr_input.world_position.xyz;
