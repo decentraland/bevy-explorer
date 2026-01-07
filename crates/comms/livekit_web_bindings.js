@@ -547,30 +547,6 @@ export function get_audio_participants() {
     return Array.from(participantAudioSids.keys());
 }
 
-export function subscribe_channel(roomName, participantId, subscribe) {
-    const room = activeRooms.get(room.name);
-    if (!room) {
-        warn(`couldn't find room ${roomName} for subscription`);
-        return;
-    }
-
-    const participant = room.remoteParticipants.get(participantId);
-    if (!participant) {
-        warn(`couldn't find participant ${participantId} in room ${roomName} for subscription`);
-        return;
-    }
-
-    const audioPubs = Array.from(participant.trackPublications.values())
-        .filter(pub => pub.kind === 'audio');
-
-    log(`subscribing to ${audioPubs.length} audio tracks`);
-
-    for (const pub of audioPubs) {
-        log(`sub ${roomName}-${participantId}`);
-        pub.setSubscribed(subscribe);
-    }
-}
-
 export function streamer_subscribe_channel(roomName, subscribe_audio, subscribe_video) {
     const room = activeRooms.get(room.name);
     if (!room) {

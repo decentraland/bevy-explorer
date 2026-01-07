@@ -12,23 +12,24 @@ use {
 };
 
 #[cfg(target_arch = "wasm32")]
-use crate::livekit::web::{RemoteTrack, TrackKind, TrackSource};
+use crate::livekit::web::{TrackKind, TrackSource};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::{
     kira_bridge::kira_thread,
     livekit_video_bridge::livekit_video_thread,
-    track::{LivekitTrackTask, Subscribing},
+    track::{LivekitTrackTask, OpenAudioSender, OpenVideoSender},
 };
 use crate::{
     global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
     livekit::{
         participant::{HostedBy, LivekitParticipant},
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
+        track::Subscribing,
         track::{
-            Audio, Camera, LivekitFrame, LivekitTrack, Microphone, OpenAudioSender,
-            OpenVideoSender, PublishedBy, SubscribeToAudioTrack, SubscribeToVideoTrack, Subscribed,
-            TrackPublished, TrackSubscribed, TrackUnpublished, TrackUnsubscribed,
-            UnsubscribeToTrack, Unsubscribed, Unsubscribing, Video,
+            Audio, Camera, LivekitFrame, LivekitTrack, Microphone, PublishedBy,
+            SubscribeToAudioTrack, SubscribeToVideoTrack, Subscribed, TrackPublished,
+            TrackSubscribed, TrackUnpublished, TrackUnsubscribed, UnsubscribeToTrack, Unsubscribed,
+            Unsubscribing, Video,
         },
         LivekitRuntime,
     },
@@ -46,6 +47,7 @@ impl Plugin for LivekitTrackPlugin {
         app.add_observer(subscribe_to_video_track);
         app.add_observer(unsubscribe_to_track);
 
+        #[cfg(not(target_arch = "wasm32"))]
         app.add_systems(
             Update,
             (
@@ -307,25 +309,26 @@ fn subscribe_to_audio_track(
         return;
     };
 
+    debug!("Subscribing to audio track {}", track.sid());
+    let track = track.clone();
     #[cfg(not(target_arch = "wasm32"))]
-    {
-        let track = track.clone();
+    let snatcher_sender = {
         let (mut snatcher_sender, _) = oneshot::channel();
         std::mem::swap(&mut snatcher_sender, sender);
+        snatcher_sender
+    };
 
-        debug!("Subscribing to audio track {}", track.sid());
-        let task = runtime.spawn(async move {
-            track.set_subscribed(true);
-        });
-        commands.entity(entity).insert((
-            Subscribing { task },
-            OpenAudioSender {
-                runtime: runtime.clone(),
-                #[cfg(not(target_arch = "wasm32"))]
-                sender: snatcher_sender,
-            },
-        ));
-    }
+    let task = runtime.spawn(async move {
+        track.set_subscribed(true);
+    });
+    commands.entity(entity).insert((
+        Subscribing { task },
+        #[cfg(not(target_arch = "wasm32"))]
+        OpenAudioSender {
+            runtime: runtime.clone(),
+            sender: snatcher_sender,
+        },
+    ));
 }
 
 fn subscribe_to_video_track(
@@ -398,6 +401,7 @@ fn unsubscribe_to_track(
     commands.entity(entity).insert(Unsubscribing { task });
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn subscribed_audio_track_with_open_sender(
     mut commands: Commands,
@@ -430,6 +434,7 @@ fn subscribed_audio_track_with_open_sender(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn subscribed_video_track_with_open_sender(
     mut commands: Commands,

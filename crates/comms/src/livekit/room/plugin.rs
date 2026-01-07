@@ -3,20 +3,21 @@ use bevy::{
     platform::{collections::HashMap, sync::Arc},
     prelude::*,
 };
-use common::util::AsH160;
+use common::{structs::AudioDecoderError, util::AsH160};
 use ethers_core::types::H160;
 use http::Uri;
-use tokio::{sync::mpsc, task::JoinHandle};
+use tokio::{
+    sync::{mpsc, oneshot},
+    task::JoinHandle,
+};
 #[cfg(not(target_arch = "wasm32"))]
 use {
-    common::structs::AudioDecoderError,
     kira::sound::streaming::StreamingSoundData,
     livekit::{
         id::ParticipantIdentity,
         participant::{ConnectionQuality, Participant},
         ConnectionState, DataPacket, Room, RoomError, RoomEvent, RoomOptions, RoomResult,
     },
-    tokio::sync::oneshot,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -42,10 +43,10 @@ use crate::{
 };
 #[cfg(target_arch = "wasm32")]
 use crate::{
-    global_crdt::GlobalCrdtState,
+    global_crdt::StreamingSoundData,
     livekit::web::{
-        participant_audio_subscribe, streamer_subscribe_channel, ConnectionState, DataPacket,
-        Participant, ParticipantIdentity, Room, RoomError, RoomEvent, RoomOptions, RoomResult,
+        streamer_subscribe_channel, ConnectionState, DataPacket, Participant, ParticipantIdentity,
+        Room, RoomError, RoomEvent, RoomOptions, RoomResult,
     },
 };
 
@@ -168,14 +169,7 @@ async fn connect_to_room(
     .await
 }
 
-fn process_room_events(
-    mut commands: Commands,
-    livekit_rooms: Query<(Entity, &mut LivekitRoom)>,
-    #[cfg(target_arch = "wasm32")] player_state: Res<GlobalCrdtState>,
-) {
-    #[cfg(target_arch = "wasm32")]
-    let sender = player_state.get_sender();
-
+fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mut LivekitRoom)>) {
     for (entity, mut livekit_room) in livekit_rooms {
         while let Ok(room_event) = livekit_room.room_event_receiver.try_recv() {
             trace!("in: {:?}", room_event);
@@ -316,10 +310,10 @@ fn process_channel_control(
         loop {
             match channel_control.try_recv() {
                 Ok(channel_control) => {
-                    #[cfg(not(target_arch = "wasm32"))]
+                    #[cfg(target_arch = "wasm32")]
+                    let room_name = livekit_room.name();
                     match channel_control {
                         ChannelControl::VoiceSubscribe(address, sender) => {
-                            #[cfg(not(target_arch = "wasm32"))]
                             commands.run_system_cached_with(
                                 subscribe_to_voice,
                                 (entity, address, sender),
@@ -329,41 +323,30 @@ fn process_channel_control(
                             commands
                                 .run_system_cached_with(unsubscribe_to_voice, (entity, address));
                         }
+                        #[cfg(not(target_arch = "wasm32"))]
                         ChannelControl::StreamerSubscribe(subscriber, audio, video) => {
                             commands.run_system_cached_with(
                                 subscribe_to_streamer,
                                 (entity, subscriber, audio, video),
                             );
                         }
+                        #[cfg(not(target_arch = "wasm32"))]
                         ChannelControl::StreamerUnsubscribe(subscriber) => {
                             commands.run_system_cached_with(unsubscribe_to_streamer, subscriber);
                         }
+                        #[cfg(target_arch = "wasm32")]
+                        ChannelControl::StreamerSubscribe => {
+                            if let Err(err) = streamer_subscribe_channel(&room_name, true, true) {
+                                error!("{err:?}");
+                            }
+                        }
+                        #[cfg(target_arch = "wasm32")]
+                        ChannelControl::StreamerUnsubscribe => {
+                            if let Err(err) = streamer_subscribe_channel(&room_name, false, false) {
+                                error!("{err:?}");
+                            }
+                        }
                     };
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        let room_name = livekit_room.name();
-                        match channel_control {
-                            ChannelControl::VoiceSubscribe(address, _) => {
-                                participant_audio_subscribe(&room_name, address, true)
-                            }
-                            ChannelControl::VoiceUnsubscribe(address) => {
-                                participant_audio_subscribe(&room_name, address, false)
-                            }
-                            ChannelControl::StreamerSubscribe => {
-                                if let Err(err) = streamer_subscribe_channel(&room_name, true, true)
-                                {
-                                    error!("{err:?}");
-                                }
-                            }
-                            ChannelControl::StreamerUnsubscribe => {
-                                if let Err(err) =
-                                    streamer_subscribe_channel(&room_name, false, false)
-                                {
-                                    error!("{err:?}");
-                                }
-                            }
-                        };
-                    }
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
@@ -473,14 +456,11 @@ fn disconnect_from_room_on_replace(
     });
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 type SubscribeToAudio = (
     Entity,
     H160,
     oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
 );
-#[cfg(target_arch = "wasm32")]
-type SubscribeToAudio = (Entity, H160);
 
 fn subscribe_to_voice(
     In(input): In<SubscribeToAudio>,
@@ -493,7 +473,7 @@ fn subscribe_to_voice(
     #[cfg(not(target_arch = "wasm32"))]
     let (room_entity, address, sender) = input;
     #[cfg(target_arch = "wasm32")]
-    let (room_entity, address) = input;
+    let (room_entity, address, _) = input;
 
     let Ok((room, maybe_hosting)) = rooms.get(room_entity) else {
         error!("{} is not an well formed room.", room_entity);

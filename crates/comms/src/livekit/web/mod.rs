@@ -17,7 +17,6 @@ use std::{
 };
 
 use bevy::prelude::*;
-use ethers_core::types::H160;
 use js_sys::{Object, Reflect};
 use serde::{Deserialize, Deserializer};
 use wasm_bindgen::{
@@ -75,13 +74,6 @@ extern "C" {
 
     #[wasm_bindgen(catch)]
     fn get_audio_participants() -> Result<JsValue, JsValue>;
-
-    #[wasm_bindgen(catch)]
-    fn subscribe_channel(
-        room_name: &str,
-        participant_identity: &str,
-        subscribe: bool,
-    ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch)]
     pub fn streamer_subscribe_channel(
@@ -232,14 +224,6 @@ pub fn update_participant_pan(participant_identity: &str, pan: f32) {
 pub fn update_participant_volume(participant_identity: &str, volume: f32) {
     if let Err(e) = set_participant_volume(participant_identity, volume) {
         warn!("Failed to set volume for {}: {:?}", participant_identity, e);
-    }
-}
-
-pub fn participant_audio_subscribe(room_name: &str, address: H160, subscribe: bool) {
-    if let Err(e) = subscribe_channel(room_name, &format!("{address:#x}"), subscribe) {
-        warn!("Failed to (un)subscribe to {address:?}: {e:?}");
-    } else {
-        debug!("sub to {address:?}: {subscribe}");
     }
 }
 
