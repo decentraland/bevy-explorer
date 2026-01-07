@@ -3,7 +3,7 @@ use wasm_bindgen::{
     convert::IntoWasmAbi, describe::WasmDescribe, prelude::wasm_bindgen, JsCast, JsValue,
 };
 
-use crate::livekit::web::{GetFromJsValue, JsValueAbi, LocalTrack, TrackKind, TrackSource};
+use crate::livekit::web::{GetFromJsValue, JsValueAbi, TrackKind, TrackSource};
 
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
 extern "C" {
