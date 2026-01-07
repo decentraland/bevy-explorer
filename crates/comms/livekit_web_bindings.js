@@ -313,8 +313,7 @@ export async function local_audio_track_new(options) {
  * @param {livekit.LocalAudioTrack} local_audio_track 
  * @returns livekit.TrackSid
  */
-export async function local_audio_track_sid(local_audio_track) {
-    log(local_audio_track);
+export function local_audio_track_sid(local_audio_track) {
     return local_audio_track.sid;
 }
 
