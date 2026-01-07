@@ -98,13 +98,14 @@ impl Unsubscribing {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Component)]
 struct OpenAudioSender {
     runtime: LivekitRuntime,
-    #[cfg(not(target_arch = "wasm32"))]
     sender: oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Component)]
 struct OpenVideoSender {
     runtime: LivekitRuntime,
