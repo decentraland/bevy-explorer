@@ -3,10 +3,7 @@ use bevy::{platform::collections::HashMap, prelude::*};
 use common::structs::{AvatarDynamicState, PrimaryUser};
 
 use comms::global_crdt::ForeignPlayer;
-use scene_runner::{
-    renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
-    ContainerEntity,
-};
+use scene_runner::{renderer_context::RendererSceneContext, ContainerEntity};
 
 use crate::AvatarShape;
 
@@ -29,7 +26,7 @@ fn update_npc_velocity(
             Without<PrimaryUser>,
         ),
     >,
-    mut scenes: Query<(&RendererSceneContext, &mut SceneColliderData)>,
+    scenes: Query<&RendererSceneContext>,
     mut saved_positions: Local<HashMap<Entity, (u32, Vec3)>>,
 ) {
     let mut last_positions = std::mem::take(&mut *saved_positions);
@@ -39,7 +36,7 @@ fn update_npc_velocity(
         let (last_tick, prev_translation) = last_positions
             .remove(&ent)
             .unwrap_or((0, current_translation));
-        let Ok((scene, mut collider_data)) = scenes.get_mut(container.root) else {
+        let Ok(scene) = scenes.get(container.root) else {
             continue;
         };
 
@@ -50,14 +47,10 @@ fn update_npc_velocity(
         }
 
         let velocity = (current_translation - prev_translation) / scene.last_update_dt;
-        let ground_height = collider_data
-            .get_groundheight(scene.tick_number, current_translation)
-            .map(|(h, _)| h)
-            .unwrap_or(current_translation.y);
 
         commands.entity(ent).insert(AvatarDynamicState {
             velocity,
-            ground_height,
+            ground_height: 0.0,
             ..Default::default()
         });
     }

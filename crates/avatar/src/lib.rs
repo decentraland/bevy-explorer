@@ -640,6 +640,10 @@ fn update_render_avatar(
             hides.retain(|cat| !selection.shape.0.force_render.iter().any(|h| h == cat.slot));
         }
 
+        if selection.shape.0.show_only_wearables() {
+            hides.insert(WearableCategory::BODY_SHAPE);
+        }
+
         let initial_count = wearables.len();
         wearables.retain(|cat, _| !hides.contains(cat));
         debug!(
