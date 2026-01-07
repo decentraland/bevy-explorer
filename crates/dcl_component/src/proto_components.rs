@@ -203,6 +203,17 @@ impl From<common::Quaternion> for bevy::math::Quat {
     }
 }
 
+impl common::Quaternion {
+    pub fn to_bevy_normalized(self) -> bevy::math::Quat {
+        let quat = bevy::math::Quat::from(self).normalize();
+        if quat.is_finite() {
+            quat
+        } else {
+            bevy::math::Quat::IDENTITY
+        }
+    }
+}
+
 impl From<bevy::math::Quat> for common::Quaternion {
     fn from(q: bevy::math::Quat) -> Self {
         common::Quaternion {
