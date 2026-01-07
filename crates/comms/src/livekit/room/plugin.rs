@@ -299,10 +299,6 @@ fn process_room_events(
                         ));
                     }
                 },
-                #[cfg(target_arch = "wasm32")]
-                RoomEvent::TrackUnsubscribed { .. } => {
-                    debug!("Track unsubscribed event");
-                }
                 #[cfg(not(target_arch = "wasm32"))]
                 _ => {
                     debug!("Event: {:?}", room_event);
