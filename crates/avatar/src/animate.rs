@@ -382,7 +382,7 @@ fn animate(
                 repeat: request_loop,
                 ..Default::default()
             }
-        } else {
+        } else if maybe_foreign.is_some() || maybe_primary.is_some() {
             // otherwise play a default emote based on motion
             let time_to_peak = (jump_height * -gravity * 2.0).sqrt() / -gravity;
             let just_jumped =
@@ -448,6 +448,11 @@ fn animate(
                         ..Default::default()
                     }
                 }
+            }
+        } else {
+            ActiveEmote {
+                speed: 0.0,
+                ..Default::default()
             }
         }
     }
