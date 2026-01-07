@@ -8,11 +8,12 @@ function error(...args) {
     console.error("[livekit]", ...args)
 }
 
+var audioContext = null;
+
 let currentMicTrack = false;
 const activeRooms = new Map();
 
 // Store audio elements and panner nodes for spatial audio
-const trackRigs = new Map();
 const participantAudioSids = new Map();
 
 /**
@@ -161,6 +162,20 @@ function alt_set_room_event_handler(room, handler) {
     room.on(
         LivekitClient.RoomEvent.TrackSubscribed,
         (remote_track, remote_track_publication, remote_participant) => {
+            log(`Subscribed to track ${remote_track.sid} of ${remote_participant.sid} (${remote_participant.identity}).`);
+
+            if (remote_track.kind === "audio") {
+                if (remote_track.trackRig) {
+                    error(`Rebuilding track rig of ${remote_track.sid} for ${remote_participant.sid} (${remote_participant.identity}).`);
+                    track_rig_drop(remote_track);
+                }
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+
+                track_rig_new(remote_track);
+            }
+
             handler({
                 type: 'trackSubscribed',
                 track: remote_track,
@@ -175,6 +190,11 @@ function alt_set_room_event_handler(room, handler) {
         // not a Livekit.RemoteTrack, verify if there is ever an event with a local
         // track
         (remote_track, remote_track_publication, remote_participant) => {
+            log(`Unsubscribed to track ${remote_track.sid} of ${remote_participant.sid} (${remote_participant.identity}).`);
+            if (remote_track.kind === "audio") {
+                track_rig_drop(remote_track);
+            }
+
             handler({
                 type: 'trackUnsubscribed',
                 track: remote_track,
@@ -345,6 +365,57 @@ export async function local_audio_track_new(options) {
  */
 export function local_audio_track_sid(local_audio_track) {
     return local_audio_track.sid;
+}
+
+/**
+ * 
+ * @param {livekit.RemoteTrack} remote_track 
+ */
+function track_rig_new(remote_track) {
+    log(`Creating new track rig for ${remote_track.sid}.`);
+
+    // dummy audioElement
+    const audioElement = remote_track.attach();
+    audioElement.volume = 0;
+
+    // use the track internal stream in playback
+    const stream = new MediaStream([remote_track.mediaStreamTrack]);
+    const source = audioContext.createMediaStreamSource(stream);
+    const pannerNode = audioContext.createStereoPanner();
+    const gainNode = audioContext.createGain();
+
+    // Connect the audio graph: source -> panner -> gain -> destination
+    source.connect(pannerNode);
+    pannerNode.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    // Store the nodes for later control
+    remote_track.trackRig = {
+        audioElement,
+        source,
+        pannerNode,
+        gainNode,
+        stream,
+    };
+
+    audioElement.play();
+}
+/**
+ * 
+ * @param {livekit.RemoteTrack} remote_track 
+ */
+function track_rig_drop(remote_track) {
+    log(`Dropping track rig of ${remote_track.sid}.`);
+    const track_rig = remote_track.trackRig;
+    if (track_rig) {
+        delete remote_track.trackRig;
+
+        remote_track.detach(track_rig.audioElement);
+        track_rig.source.disconnect();
+        track_rig.pannerNode.disconnect();
+        track_rig.gainNode.disconnect();
+        track_rig.audioElement.pause();
+    }
 }
 
 export function set_microphone_enabled(enabled) {
