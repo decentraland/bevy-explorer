@@ -18,6 +18,7 @@ use std::{
 
 use bevy::prelude::*;
 use ethers_core::types::H160;
+use js_sys::{Object, Reflect};
 use serde::{Deserialize, Deserializer};
 use wasm_bindgen::{
     convert::{FromWasmAbi, IntoWasmAbi},
@@ -311,7 +312,6 @@ unsafe impl Send for LocalVideoTrack {}
 /// SAFETY: should be fine while WASM remains single-threaded
 unsafe impl Sync for LocalVideoTrack {}
 
-#[wasm_bindgen]
 #[derive(Debug)]
 pub struct TrackPublishOptions {
     // pub video_encoding: Option<VideoEncoding>,
@@ -319,10 +319,10 @@ pub struct TrackPublishOptions {
     // pub video_codec: VideoCodec,
     // pub dtx: bool,
     // pub red: bool,
-    pub simulcast: bool,
+    pub simulcast: Option<bool>,
     pub source: TrackSource,
-    pub stream: String,
-    pub preconnect_buffer: bool,
+    pub stream: Option<String>,
+    pub preconnect_buffer: Option<bool>,
 }
 
 impl Default for TrackPublishOptions {
@@ -333,11 +333,31 @@ impl Default for TrackPublishOptions {
             // video_codec: VideoCodec::VP8,
             // dtx: true,
             // red: true,
-            simulcast: true,
+            simulcast: Some(true),
             source: TrackSource::Unknown,
-            stream: "".to_string(),
-            preconnect_buffer: false,
+            stream: Some("".to_string()),
+            preconnect_buffer: Some(false),
         }
+    }
+}
+
+impl WasmDescribe for TrackPublishOptions {
+    fn describe() {
+        JsValue::describe()
+    }
+}
+
+impl IntoWasmAbi for TrackPublishOptions {
+    type Abi = JsValueAbi;
+
+    fn into_abi(self) -> Self::Abi {
+        let object = Object::new();
+
+        if let Some(simulcast) = self.simulcast {
+            let _ = Reflect::set(&object, &"simulcast".into(), &JsValue::from(simulcast));
+        }
+
+        JsValue::from(object).into_abi()
     }
 }
 
