@@ -3,7 +3,7 @@
     pbr_fragment::pbr_input_from_standard_material,
     pbr_functions::{SampleBias, alpha_discard, apply_pbr_lighting, main_pass_post_lighting_processing},
     pbr_bindings::{material, emissive_texture, emissive_sampler},
-    pbr_types::STANDARD_MATERIAL_FLAGS_EMISSIVE_TEXTURE_BIT,
+    pbr_types::{STANDARD_MATERIAL_FLAGS_EMISSIVE_TEXTURE_BIT, STANDARD_MATERIAL_FLAGS_BASE_COLOR_TEXTURE_BIT}
     mesh_view_bindings::{globals, view},
     pbr_types,
 }
@@ -70,15 +70,15 @@ fn fragment(
     // x                no                  x * base color
     // 0                t                   2 * t
     // x != 0           t                   x * t
-    var emissive: vec4<f32> = material.emissive;
+    var emissive: vec3<f32> = material.emissive.rgb;
 #ifdef VERTEX_UVS
     if ((material.flags & STANDARD_MATERIAL_FLAGS_EMISSIVE_TEXTURE_BIT) != 0u) {
         if dot(emissive, emissive) == 0.0 {
-            emissive = vec4(2.0);
+            emissive = vec3(2.0);
         }
         var bias: SampleBias;
         bias.mip_bias = view.mip_bias;
-        emissive = vec4<f32>(emissive.rgb * textureSampleBias(
+        emissive = vec3<f32>(emissive * textureSampleBias(
             emissive_texture, 
             emissive_sampler,
 #ifdef STANDARD_MATERIAL_EMISSIVE_UV_B
@@ -91,17 +91,18 @@ fn fragment(
             (material.uv_transform * vec3(in.uv, 1.0)).xy,
 #endif
             bias.mip_bias,
-        ).rgb, emissive.a);
+        ).rgb);
     } else {
         if dot(emissive, emissive) != 0.0 {
-            // emissive is set, no emissive texture, use base color texture as emissive texture
-            emissive = emissive * pbr_input.material.base_color;
+            // emissive is set, no emissive texture, use base color texture as emissive texture (only if present)
+            if ((material.flags & STANDARD_MATERIAL_FLAGS_BASE_COLOR_TEXTURE_BIT) != 0u) {
+                emissive = emissive * pbr_input.material.base_color.rgb;
+            }
         }
     }
 #endif
     // scale up for lumens
-    pbr_input.material.emissive = emissive * 10.0;
-    pbr_input.material.emissive.a = min(pbr_input.material.emissive.a, 1.0);
+    pbr_input.material.emissive = vec4(emissive * 10.0, 0.0);
 
     let world_position = pbr_input.world_position.xyz;
     // check bounds
