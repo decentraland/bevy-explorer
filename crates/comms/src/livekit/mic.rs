@@ -419,10 +419,16 @@ fn unpublish_tracks(
         let local_participant_clone = local_participant.clone();
         let local_audio_track_clone = (*microphone_local_track).clone();
         livekit_runtime.spawn(async move {
-            if let Err(err) = local_participant_clone
+            #[cfg(not(target_arch = "wasm32"))]
+            let unpublished = local_participant_clone
+                .unpublish_track(&local_audio_track_clone.sid())
+                .await;
+            #[cfg(target_arch = "wasm32")]
+            let unpublished = local_participant_clone
                 .unpublish_track(&LocalTrack::Audio(local_audio_track_clone))
-                .await
-            {
+                .await;
+
+            if let Err(err) = unpublished {
                 error!(
                     "Failed to unpublish local audio track of {} ({}) due to '{err}'.",
                     local_participant_clone.sid(),
