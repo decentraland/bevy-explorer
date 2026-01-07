@@ -6,6 +6,7 @@ mod remote_participant;
 mod remote_track_publication;
 mod room;
 mod room_event;
+mod track_sid;
 mod track_source;
 mod traits;
 
@@ -28,7 +29,7 @@ pub use crate::livekit::web::{
     local_audio_track::LocalAudioTrack, local_participant::LocalParticipant,
     local_track::LocalTrack, local_track_publication::LocalTrackPublication,
     remote_participant::RemoteParticipant, remote_track_publication::RemoteTrackPublication,
-    room::Room, room_event::RoomEvent, track_source::TrackSource,
+    room::Room, room_event::RoomEvent, track_sid::TrackSid, track_source::TrackSource,
 };
 
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
@@ -152,8 +153,6 @@ impl GetFromJsValue for Participant {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct TrackSid;
 
 #[derive(Debug, Clone)]
 pub struct DataPacket {
