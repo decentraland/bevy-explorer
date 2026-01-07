@@ -32,6 +32,7 @@ impl InputWrapper {
 impl InputWrapper {
     fn get_input(&mut self, blocking: bool) -> Option<&mut Input> {
         if self.input.is_some() {
+            #[allow(clippy::unnecessary_unwrap)] // required for borrow split
             return Some(self.input.as_mut().unwrap());
         }
 

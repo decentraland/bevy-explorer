@@ -53,6 +53,8 @@ web-time = { workspace = true }
 petgraph = "0.6.3"
 spin_sleep = "1.1.1"
 image = "0.25"
+unicode-segmentation = "1"
+emojis = "0.8"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dcl_deno_ipc = { workspace = true }

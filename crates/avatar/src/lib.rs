@@ -603,12 +603,32 @@ fn update_render_avatar(
         }
 
         // calculate what is hidden
-        let mut hides: HashSet<WearableCategory, _> = HashSet::default();
+        let mut hides_first_pass: HashSet<WearableCategory, _> = HashSet::new();
 
-        debug!("calculating hides");
+        debug!("calculating hides phase 1");
         for category in WearableCategory::hides_order() {
-            if hides.contains(category) {
+            if hides_first_pass.contains(category) {
                 debug!("skip {:?}, already hidden", category);
+                continue;
+            }
+
+            if let Some((wearable, _)) = wearables.get(category) {
+                hides_first_pass.extend(wearable.hides.iter());
+                debug!(
+                    "add {:?} = {:?} -> {:?}",
+                    category, wearable.hides, hides_first_pass
+                );
+            }
+
+            hides_first_pass
+                .retain(|cat| !selection.shape.0.force_render.iter().any(|h| h == cat.slot));
+        }
+
+        debug!("calculating hides phase 2");
+        let mut hides: HashSet<WearableCategory, _> = HashSet::new();
+        for category in WearableCategory::hides_order() {
+            if hides_first_pass.contains(category) {
+                debug!("skip {:?}, hidden", category);
                 continue;
             }
 

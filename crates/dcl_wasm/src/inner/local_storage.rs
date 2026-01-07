@@ -1,5 +1,8 @@
 use super::WorkerContext;
-use bevy::{log::warn, platform::collections::HashMap};
+use bevy::{
+    log::{debug, warn},
+    platform::collections::HashMap,
+};
 use dcl::{interface::crdt_context::CrdtContext, js::player_identity};
 use futures_lite::io::{AsyncReadExt, AsyncWriteExt};
 use serde::{Deserialize, Serialize};
@@ -54,7 +57,7 @@ fn address(state: &WorkerContext) -> String {
     let address = player_identity(&*state.state.borrow())
         .map(|id| id.address)
         .unwrap_or_default();
-    println!("local storage address: {address:?}");
+    debug!("local storage address: {address:?}");
     address
 }
 

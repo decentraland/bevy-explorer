@@ -1,4 +1,7 @@
-use bevy::{platform::collections::HashSet, prelude::*};
+use bevy::{
+    platform::collections::{hash_map::Entry, HashMap, HashSet},
+    prelude::*,
+};
 
 use crate::{
     permissions::Permission, renderer_context::RendererSceneContext, ContainingScene, SceneEntity,
@@ -89,7 +92,8 @@ pub fn update_camera_mode_area(
     virtual_cameras: Query<&VirtualCamera>,
     main_scene_cameras: Query<&MainSceneCamera>,
     contexts: Query<&RendererSceneContext>,
-    mut current_areas: Local<Vec<(Entity, PermissionState)>>,
+    mut current_areas: Local<Vec<Entity>>,
+    mut current_permissions: Local<HashMap<Entity, PermissionState>>,
     mut camera: Query<&mut PrimaryCamera>,
     mut perms: Permission<Entity>,
     mut toaster: Toaster,
@@ -135,7 +139,7 @@ pub fn update_camera_mode_area(
         let current_index = current_areas
             .iter()
             .enumerate()
-            .find(|(_, (e, _))| ent == *e)
+            .find(|(_, e)| ent == **e)
             .map(|(ix, _)| ix);
         let in_area = scenes.contains(&scene_ent.root)
             && maybe_area.is_some_and(|area| player_in_area(area, transform));
@@ -150,34 +154,15 @@ pub fn update_camera_mode_area(
                 current_areas.remove(index);
             }
             // add at end if newly entered
-            None => current_areas.push((ent, PermissionState::NotRequested)),
+            None => current_areas.push(ent),
         }
     }
 
     // remove destroyed areas
-    current_areas.retain(|(area_ent, _)| areas.get(*area_ent).is_ok());
+    current_areas.retain(|area_ent| areas.get(*area_ent).is_ok());
 
     // apply last-entered
-    let area = current_areas
-        .iter_mut()
-        .rev()
-        .filter_map(|(ent, permitted)| match permitted {
-            PermissionState::Resolved(true) => Some(*ent),
-            PermissionState::NotRequested => {
-                let (_, scene_ent, _, _, _) = areas.get(*ent).unwrap();
-                perms.check_unique(
-                    PermissionType::ForceCamera,
-                    scene_ent.root,
-                    *ent,
-                    None,
-                    false,
-                );
-                *permitted = PermissionState::Pending;
-                None
-            }
-            _ => None,
-        })
-        .next();
+    let area = current_areas.iter().last().copied();
 
     let virtual_camera = scenes
         .iter()
@@ -199,70 +184,104 @@ pub fn update_camera_mode_area(
     // use virtual cam if specified, fall back to area
     let area_or_virtual = virtual_camera.or(area);
 
+    // check requested permissions
+    for ent in perms.drain_success(PermissionType::ForceCamera) {
+        if let Some(state) = current_permissions.get_mut(&ent) {
+            *state = PermissionState::Resolved(true);
+        }
+    }
+    for ent in perms.drain_fail(PermissionType::ForceCamera) {
+        if let Some(state) = current_permissions.get_mut(&ent) {
+            *state = PermissionState::Resolved(false);
+        }
+    }
+    current_permissions.retain(|scene, _| scenes.contains(scene));
+
     if let Some(area_or_virtual) = area_or_virtual {
         let (bevy_ent, scene_ent, maybe_area, _, maybe_virtual) =
             areas.get(area_or_virtual).unwrap();
 
-        match maybe_area.map(|area| area.0.mode()) {
-            Some(CameraType::CtFirstPerson) => {
-                camera.scene_override = Some(CameraOverride::Distance(0.0))
+        let permitted = match current_permissions.entry(scene_ent.root) {
+            Entry::Occupied(occupied_entry) => {
+                occupied_entry.get() == &PermissionState::Resolved(true)
             }
-            Some(CameraType::CtThirdPerson) => {
-                camera.scene_override = Some(CameraOverride::Distance(1.0))
+            Entry::Vacant(vacant_entry) => {
+                perms.check_unique(
+                    PermissionType::ForceCamera,
+                    scene_ent.root,
+                    scene_ent.root,
+                    None,
+                    false,
+                );
+
+                vacant_entry.insert(PermissionState::Pending);
+                false
             }
-            Some(CameraType::CtCinematic) => {
-                let Some(cinematic_settings) =
-                    maybe_area.as_ref().unwrap().0.cinematic_settings.as_ref()
-                else {
-                    warn!("no cinematic settings");
-                    return;
-                };
-                let target_entity = SceneEntityId::from_proto_u32(cinematic_settings.camera_entity);
-                let Ok(ctx) = contexts.get(scene_ent.root) else {
-                    warn!("no scene");
-                    return;
-                };
-                let Some(cam) = ctx.bevy_entity(target_entity) else {
-                    warn!("no scene cam");
-                    return;
-                };
-                camera.scene_override = Some(CameraOverride::Cinematic(CinematicSettings {
-                    origin: cam,
-                    allow_manual_rotation: cinematic_settings
-                        .allow_manual_rotation
-                        .unwrap_or_default(),
-                    yaw_range: cinematic_settings.yaw_range,
-                    pitch_range: cinematic_settings.pitch_range,
-                    roll_range: cinematic_settings.roll_range,
-                    zoom_min: cinematic_settings.zoom_min,
-                    zoom_max: cinematic_settings.zoom_max,
-                    look_at_entity: None,
-                    transition: None,
-                }));
-            }
-            None => {
-                let Ok(ctx) = contexts.get(scene_ent.root) else {
-                    warn!("no scene");
-                    return;
-                };
-                camera.scene_override = Some(CameraOverride::Cinematic(CinematicSettings {
-                    origin: bevy_ent,
-                    allow_manual_rotation: false,
-                    yaw_range: Some(0.0),
-                    pitch_range: Some(0.0),
-                    roll_range: Some(0.0),
-                    zoom_min: None,
-                    zoom_max: None,
-                    look_at_entity: maybe_virtual
-                        .as_ref()
-                        .and_then(|v| v.0.look_at_entity)
-                        .and_then(|look_at| {
-                            ctx.bevy_entity(SceneEntityId::from_proto_u32(look_at))
-                        }),
-                    transition: maybe_virtual
-                        .as_ref()
-                        .and_then(|v| v.0.default_transition.clone()),
-                }));
+        };
+
+        if permitted {
+            match maybe_area.map(|area| area.0.mode()) {
+                Some(CameraType::CtFirstPerson) => {
+                    camera.scene_override = Some(CameraOverride::Distance(0.0))
+                }
+                Some(CameraType::CtThirdPerson) => {
+                    camera.scene_override = Some(CameraOverride::Distance(1.0))
+                }
+                Some(CameraType::CtCinematic) => {
+                    let Some(cinematic_settings) =
+                        maybe_area.as_ref().unwrap().0.cinematic_settings.as_ref()
+                    else {
+                        warn!("no cinematic settings");
+                        return;
+                    };
+                    let target_entity =
+                        SceneEntityId::from_proto_u32(cinematic_settings.camera_entity);
+                    let Ok(ctx) = contexts.get(scene_ent.root) else {
+                        warn!("no scene");
+                        return;
+                    };
+                    let Some(cam) = ctx.bevy_entity(target_entity) else {
+                        warn!("no scene cam");
+                        return;
+                    };
+                    camera.scene_override = Some(CameraOverride::Cinematic(CinematicSettings {
+                        origin: cam,
+                        allow_manual_rotation: cinematic_settings
+                            .allow_manual_rotation
+                            .unwrap_or_default(),
+                        yaw_range: cinematic_settings.yaw_range,
+                        pitch_range: cinematic_settings.pitch_range,
+                        roll_range: cinematic_settings.roll_range,
+                        zoom_min: cinematic_settings.zoom_min,
+                        zoom_max: cinematic_settings.zoom_max,
+                        look_at_entity: None,
+                        transition: None,
+                    }));
+                }
+                None => {
+                    let Ok(ctx) = contexts.get(scene_ent.root) else {
+                        warn!("no scene");
+                        return;
+                    };
+                    camera.scene_override = Some(CameraOverride::Cinematic(CinematicSettings {
+                        origin: bevy_ent,
+                        allow_manual_rotation: false,
+                        yaw_range: Some(0.0),
+                        pitch_range: Some(0.0),
+                        roll_range: Some(0.0),
+                        zoom_min: None,
+                        zoom_max: None,
+                        look_at_entity: maybe_virtual
+                            .as_ref()
+                            .and_then(|v| v.0.look_at_entity)
+                            .and_then(|look_at| {
+                                ctx.bevy_entity(SceneEntityId::from_proto_u32(look_at))
+                            }),
+                        transition: maybe_virtual
+                            .as_ref()
+                            .and_then(|v| v.0.default_transition.clone()),
+                    }));
+                }
             }
         }
     } else {
@@ -272,21 +291,5 @@ pub fn update_camera_mode_area(
 
     if current_areas.is_empty() {
         toaster.clear_toast(format!("{:?}", PermissionType::ForceCamera).as_str());
-    }
-
-    let succeeded = perms
-        .drain_success(PermissionType::ForceCamera)
-        .collect::<HashSet<_>>();
-    let failed = perms
-        .drain_fail(PermissionType::ForceCamera)
-        .collect::<HashSet<_>>();
-
-    for (area, state) in current_areas.iter_mut() {
-        if succeeded.contains(area) {
-            *state = PermissionState::Resolved(true);
-        }
-        if failed.contains(area) {
-            *state = PermissionState::Resolved(false);
-        }
     }
 }
