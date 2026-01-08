@@ -70,12 +70,12 @@ return out;
 
 fn discard_dither(ndc_position: vec2<f32>, world_position: vec3<f32>, depth: f32) {
     let view_to_frag = world_position - view.world_position;
+    
     // player is left of the view forward by 0.25 * clamp(camera distance, 0, 3). we use half of that as our target
-    let target_position = view.world_position 
-        + depth * (view.world_from_view * vec4(0.0, 0.0, -1.0, 0.0)).xyz // view fwd
-        + 0.125 * clamp(depth, 0.0, 3.0) * (view.world_from_view * vec4(-1.0, 0.0, 0.0, 0.0)).xyz; // view left
+    let target_offset = depth * -view.world_from_view[2].xyz // view fwd
+        - 0.125 * clamp(depth, 0.0, 3.0) * view.world_from_view[0].xyz; // view right
 
-    let view_direction = normalize(target_position - view.world_position);
+    let view_direction = normalize(target_offset);
     let projection_length = dot(view_to_frag, view_direction);
 
     if projection_length < depth + 0.35 { // 0.35 = collider radius
