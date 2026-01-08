@@ -81,7 +81,7 @@ fn discard_dither(ndc_position: vec2<f32>, world_position: vec3<f32>, depth: f32
     if projection_length < depth + 0.35 { // 0.35 = collider radius
         let cone_distance = length(world_position - (view.world_position.xyz + (view_direction * projection_length)));
         let threshold = fract(52.9829189 * fract(dot(ndc_position * (1.0 * 5.588238), vec2(0.06711056, 0.00583715))));
-        if cone_distance + 0.5 - saturate((depth - projection_length) * 0.5) * 1.0 + saturate(projection_length - depth) * 5.0 < threshold * 2.0 {
+        if max(0.2, cone_distance + 0.5 - saturate((depth - projection_length) * 0.5) * 1.0 + saturate(projection_length - depth) * 5.0) < threshold * 2.0 {
             discard;
         }
     }
