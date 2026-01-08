@@ -302,6 +302,7 @@ pub struct AvatarSelection {
     scene: Option<Entity>,
     shape: AvatarShape,
     automatic_delete: bool,
+    disable_dither: bool,
 }
 
 // choose the avatar shape based on current scene of the player
@@ -363,6 +364,7 @@ fn select_avatar(
                     scene: Some(scene_ent.root),
                     shape: AvatarShape(scene_avatar_shape.0.clone()),
                     automatic_delete: true,
+                    disable_dither: false,
                 });
 
                 debug!("npc avatar {:?}", scene_ent);
@@ -436,6 +438,7 @@ fn select_avatar(
                     scene: update.current_source,
                     shape,
                     automatic_delete: true,
+                    disable_dither: maybe_player.is_none(), // disable for primary avatar only
                 });
             }
         }
@@ -463,6 +466,7 @@ pub struct AvatarDefinition {
     hides: HashSet<WearableCategory>,
     bounds: Vec<BoundRegion>,
     emote: Option<EmoteCommand>,
+    disable_dither: bool,
 }
 
 #[derive(Component)]
@@ -734,6 +738,7 @@ fn update_render_avatar(
                                 .expression_trigger_timestamp
                                 .unwrap_or_default(),
                         }),
+                    disable_dither: selection.disable_dither,
                 },
                 UsedWearables(urns),
             ));
@@ -1109,6 +1114,7 @@ fn process_avatar(
                             def.bounds.clone(),
                             config.graphics.oob,
                             false,
+                            def.disable_dither,
                         ),
                     };
                     let instance_mat = instance_scene_materials
@@ -1174,6 +1180,7 @@ fn process_avatar(
                                     def.bounds.clone(),
                                     config.graphics.oob,
                                     true,
+                                    def.disable_dither,
                                 ),
                             };
                             let material = scene_materials.add(new_mat);
@@ -1366,6 +1373,7 @@ fn process_avatar(
                                 def.bounds.clone(),
                                 config.graphics.oob,
                                 false,
+                                def.disable_dither,
                             ),
                         };
                         let instance_mat = instance_scene_materials

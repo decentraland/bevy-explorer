@@ -3,6 +3,7 @@ use std::f32::consts::{FRAC_PI_4, PI};
 use bevy::{
     math::FloatOrd,
     prelude::*,
+    render::globals::UserGlobal,
     window::{CursorGrabMode, PrimaryWindow},
 };
 
@@ -181,6 +182,7 @@ pub fn update_camera_position(
     mut prev_override: Local<Option<CameraOverride>>,
     mut prev_oow: Local<bool>,
     gt_helper: TransformHelper,
+    mut user_global: ResMut<UserGlobal>,
 ) {
     let (
         Ok((player_transform, dynamic_state, is_oow)),
@@ -247,6 +249,8 @@ pub fn update_camera_position(
         {
             target_transition = transition.clone();
         }
+
+        user_global.0 = 0.0;
     } else {
         let target_fov = (dynamic_state.velocity.length() / 4.0).clamp(1.25, 1.25) * FRAC_PI_4;
         if let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
@@ -280,6 +284,7 @@ pub fn update_camera_position(
                 player_head + head_offset * distance.clamp(0.0, 3.0) + target_direction * distance;
         }
 
+        let base_distance = distance;
         if distance > 0.0 {
             // cast to check visibility
             let scenes_head = containing_scene.get_position(player_head);
@@ -321,11 +326,18 @@ pub fn update_camera_position(
                 "{distance} vs {:?}",
                 offset_distances.iter().map(|d| d.0).collect::<Vec<_>>()
             );
-            distance *= offset_distances.iter().max().unwrap().0;
+            distance *= offset_distances.iter().min().unwrap().0;
         }
 
-        target_transform.translation =
-            player_head + head_offset * distance.clamp(0.0, 3.0) + target_direction * distance;
+        target_transform.translation = player_head
+            + head_offset * base_distance.clamp(0.0, 3.0)
+            + target_direction * base_distance;
+
+        if base_distance == distance {
+            user_global.0 = 0.0;
+        } else {
+            user_global.0 = base_distance;
+        }
     }
 
     let changed = (prev_override.is_some() != options.scene_override.is_some())

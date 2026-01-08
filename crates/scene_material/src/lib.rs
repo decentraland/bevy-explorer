@@ -12,6 +12,7 @@ pub const SCENE_MATERIAL_SHOW_OUTSIDE: u32 = 1;
 pub const SCENE_MATERIAL_OUTLINE: u32 = 2;
 pub const SCENE_MATERIAL_OUTLINE_RED: u32 = 4;
 pub const SCENE_MATERIAL_OUTLINE_FORCE: u32 = 8;
+pub const SCENE_MATERIAL_NO_DITHERING: u32 = 16;
 
 pub trait SceneMaterialExt {
     fn unbounded_outlined(mat: StandardMaterial, force: bool) -> Self
@@ -86,12 +87,22 @@ impl SceneBound {
         }
     }
 
-    pub fn new_outlined(bounds: Vec<BoundRegion>, distance: f32, force_outline: bool) -> Self {
+    pub fn new_outlined(
+        bounds: Vec<BoundRegion>,
+        distance: f32,
+        force_outline: bool,
+        disable_dither: bool,
+    ) -> Self {
         Self {
             data: SceneBoundData {
                 flags: SCENE_MATERIAL_OUTLINE
                     + if force_outline {
                         SCENE_MATERIAL_OUTLINE_FORCE
+                    } else {
+                        0
+                    }
+                    + if disable_dither {
+                        SCENE_MATERIAL_NO_DITHERING
                     } else {
                         0
                     },

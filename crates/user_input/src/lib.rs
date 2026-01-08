@@ -6,7 +6,7 @@ use bevy::{
     app::Propagate,
     ecs::query::Has,
     prelude::*,
-    render::{camera::CameraUpdateSystem, view::RenderLayers},
+    render::{camera::CameraUpdateSystem, globals::UserGlobal, view::RenderLayers},
     transform::TransformSystem,
 };
 
@@ -45,6 +45,7 @@ pub struct UserInputPlugin;
 
 impl Plugin for UserInputPlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<UserGlobal>();
         app.add_systems(
             Update,
             (update_user_velocity, update_camera)

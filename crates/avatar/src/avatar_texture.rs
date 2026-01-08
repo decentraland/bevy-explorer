@@ -83,6 +83,7 @@ impl PhotoBooth<'_, '_> {
                     scene: None,
                     shape,
                     automatic_delete: false,
+                    disable_dither: true,
                 },
                 Propagate(render_layers.clone()),
                 AvatarDynamicState::default(),

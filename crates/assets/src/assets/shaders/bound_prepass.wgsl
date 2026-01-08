@@ -8,6 +8,10 @@
 #import bevy_render::globals::Globals;
 
 #import "embedded://shaders/simplex.wgsl"::simplex_noise_3d
+#import "embedded://shaders/bound_material_effect.wgsl"::discard_dither
+
+const OUTLINE_RED: u32 = 4u;
+const DISABLE_DITHER: u32 = 16u;
 
 @group(0) @binding(1) var<uniform> globals: Globals;
 
@@ -45,6 +49,10 @@ fn fragment(
     @builtin(front_facing) is_front: bool
 ) -> FragmentOutput {
     var out: FragmentOutput;
+
+    if (bounds.flags & (DISABLE_DITHER + OUTLINE_RED)) == 0 {
+        discard_dither(in.position.xy, in.world_position.xyz, globals.user_global);
+    }
 
 #ifdef NORMAL_PREPASS
     out.normal = vec4(in.world_normal * 0.5 + vec3(0.5), 1.0);
