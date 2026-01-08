@@ -89,6 +89,7 @@ impl GetFromJsValue for RemoteParticipant {
     fn get_from_js_value(js_value: &JsValue, key: &str) -> Option<Self> {
         js_sys::Reflect::get(js_value, &JsValue::from(key))
             .ok()
+            .filter(|participant| !(participant.is_null() || participant.is_undefined()))
             .map(|participant| RemoteParticipant { inner: participant })
     }
 }
