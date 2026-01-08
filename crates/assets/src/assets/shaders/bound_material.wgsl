@@ -8,7 +8,7 @@
     pbr_types,
 }
 #import "embedded://shaders/simplex.wgsl"::simplex_noise_3d
-#import "embedded://shaders/outline.wgsl"::apply_outline
+#import "embedded://shaders/bound_material_effect.wgsl"::{apply_outline, discard_dither}
 
 struct Bounds {
     min: u32,
@@ -37,6 +37,7 @@ const SHOW_OUTSIDE: u32 = 1u;
 //const OUTLINE: u32 = 2u; // replaced by OUTLINE shader def
 const OUTLINE_RED: u32 = 4u;
 const OUTLINE_FORCE: u32 = 8u;
+const DISABLE_DITHER: u32 = 16u;
 
 @group(2) @binding(100)
 var<uniform> bounds: SceneBounds;
@@ -54,6 +55,10 @@ fn fragment(
     // generate a PbrInput struct from the StandardMaterial bindings
     var pbr_input = pbr_input_from_standard_material(in, is_front);
     var out: FragmentOutput;
+
+    if (bounds.flags & (DISABLE_DITHER + OUTLINE_RED)) == 0 {
+        discard_dither(in.position.xy, in.world_position.xyz, globals.user_global);
+    }
 
 #ifdef OUTLINE
 #ifndef MULTISAMPLED
