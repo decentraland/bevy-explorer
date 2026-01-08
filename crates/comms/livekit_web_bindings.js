@@ -211,7 +211,7 @@ function alt_set_room_event_handler(room, handler) {
  * @returns bool
  */
 export async function particinpant_is_local(participant) {
-    return particinpant.isLocal();
+    return particinpant.isLocal;
 }
 
 /**
@@ -252,7 +252,7 @@ export async function local_participant_unpublish_track(local_participant, local
  * @returns bool
  */
 export function local_participant_is_local(local_participant) {
-    return local_participant.isLocal();
+    return local_participant.isLocal;
 }
 
 /**
@@ -288,7 +288,7 @@ export function local_participant_metadata(local_participant) {
  * @returns bool
  */
 export function remote_participant_is_local(remote_participant) {
-    return remote_participant.isLocal();
+    return remote_participant.isLocal;
 }
 
 /**
