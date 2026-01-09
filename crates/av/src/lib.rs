@@ -32,7 +32,10 @@ use audio_source::AudioSourcePlugin;
 #[cfg(not(feature = "html"))]
 use audio_source_native::AudioSourcePluginImpl;
 use bevy::{math::FloatOrd, prelude::*};
-use common::structs::{AppConfig, PrimaryUser};
+use common::{
+    sets::SceneSets,
+    structs::{AppConfig, PrimaryUser},
+};
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::sdk::components::{PbAudioStream, PbVideoPlayer},
@@ -117,7 +120,10 @@ impl Plugin for AVPlayerPlugin {
             PostUpdate,
             (spawn_audio_streams, spawn_and_locate_foreign_streams).chain(),
         );
-        app.add_systems(Update, (av_player_is_in_scene, av_player_should_be_playing));
+        app.add_systems(
+            Update,
+            (av_player_is_in_scene, av_player_should_be_playing).in_set(SceneSets::PostLoop),
+        );
 
         #[cfg(feature = "ffmpeg")]
         app.add_observer(audio_sink::change_audio_sink_volume);
@@ -141,9 +147,9 @@ fn av_player_is_in_scene(
         .filter(|(_, _, player)| player.source.playing.unwrap_or(true))
     {
         if containing_scenes.contains(&container.root) {
-            commands.entity(ent).try_insert(InScene);
+            commands.entity(ent).insert_if_new(InScene);
         } else {
-            commands.entity(ent).try_remove::<InScene>();
+            commands.entity(ent).remove::<InScene>();
         }
     }
 }
