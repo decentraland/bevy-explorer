@@ -598,3 +598,29 @@ pub struct SystemActionEvent {
     pub action: SystemAction,
     pub pressed: bool,
 }
+
+/// Information about an action button configured on a hovered element
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct HoverActionInfo {
+    /// The action (e.g., IaPointer, IaPrimary, etc.)
+    pub action: CommonInputAction,
+    /// The input binding for this action (e.g., "Mouse Left", "E")
+    pub input_binding: Option<String>,
+    /// The hover text configured for this action
+    pub hover_text: Option<String>,
+}
+
+/// Event sent when hovering over 3D elements
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct HoverEvent {
+    /// Whether the mouse entered (true) or left (false) the element
+    pub entered: bool,
+    /// The mesh name if available
+    pub mesh_name: Option<String>,
+    /// Distance from player to the element
+    pub distance: f32,
+    /// Available actions on this element with their input bindings
+    pub actions: Vec<HoverActionInfo>,
+}

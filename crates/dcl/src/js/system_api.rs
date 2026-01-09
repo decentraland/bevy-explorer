@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use bevy::{log::debug, math::Vec4};
 use common::{
-    inputs::{Action, BindingsData, InputIdentifier, SystemActionEvent},
+    inputs::{Action, BindingsData, HoverEvent, InputIdentifier, SystemActionEvent},
     rpc::{RpcCall, RpcResultReceiver, RpcResultSender, RpcStreamReceiver, RpcStreamSender},
     structs::{
         MicState, PermissionLevel, PermissionStrings, PermissionType, PermissionUsed,
@@ -675,6 +675,40 @@ pub async fn op_read_voice_stream(
     let Some(mut receiver) = state
         .borrow_mut()
         .try_take::<RpcStreamReceiver<VoiceMessage>>()
+    else {
+        return Ok(None);
+    };
+
+    let res = match receiver.recv().await {
+        Some(data) => Ok(Some(data)),
+        None => Ok(None),
+    };
+
+    state.borrow_mut().put(receiver);
+
+    res
+}
+
+pub async fn op_get_hover_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+    state.borrow_mut().put(rx);
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetHoverStream(sx))
+        .unwrap();
+
+    3
+}
+
+pub async fn op_read_hover_stream(
+    state: Rc<RefCell<impl State>>,
+    _rid: u32,
+) -> Result<Option<HoverEvent>, anyhow::Error> {
+    let Some(mut receiver) = state
+        .borrow_mut()
+        .try_take::<RpcStreamReceiver<HoverEvent>>()
     else {
         return Ok(None);
     };

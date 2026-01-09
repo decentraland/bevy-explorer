@@ -333,3 +333,29 @@ module.exports.getVoiceStream = async function() {
 
   return streamGenerator();
 }
+
+// get hover events as a stream for 3D elements
+// type HoverActionInfo = {
+//   action: string,        // e.g., "IaPointer", "IaPrimary", etc.
+//   inputBinding: string?, // e.g., "Mouse Left", "E"
+//   hoverText: string?,    // the hover text configured for this action
+// }
+// type HoverEvent = {
+//   entered: bool,              // true = entered, false = left
+//   meshName: string?,          // mesh name if available
+//   distance: number,           // distance from player to element
+//   actions: HoverActionInfo[], // available actions with their bindings
+// }
+module.exports.getHoverStream = async function() {
+  const rid = await Deno.core.ops.op_get_hover_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_hover_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}

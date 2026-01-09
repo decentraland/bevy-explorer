@@ -11,7 +11,7 @@ use bevy::{
 };
 use bevy_console::{ConsoleCommandEntered, PrintConsoleLine};
 use common::{
-    inputs::{BindingsData, InputIdentifier, SystemActionEvent},
+    inputs::{BindingsData, HoverEvent, InputIdentifier, SystemActionEvent},
     rpc::{RpcResultSender, RpcStreamSender},
     structs::{
         AppConfig, MicState, PermissionLevel, PermissionType, PermissionUsed, PermissionValue,
@@ -113,6 +113,7 @@ pub enum SystemApi {
     GetSystemActionStream(RpcStreamSender<SystemActionEvent>),
     GetChatStream(RpcStreamSender<ChatMessage>),
     GetVoiceStream(RpcStreamSender<VoiceMessage>),
+    GetHoverStream(RpcStreamSender<HoverEvent>),
     SendChat(String, String),
     Quit,
     GetPermissionRequestStream(RpcStreamSender<PermissionRequest>),

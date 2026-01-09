@@ -1,5 +1,5 @@
 use common::{
-    inputs::SystemActionEvent,
+    inputs::{HoverEvent, SystemActionEvent},
     structs::{MicState, PermissionType, PermissionUsed, PermissionValue},
 };
 use dcl::js::system_api::{JsBindingsData, PermissionTypeDetail};
@@ -59,6 +59,8 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_set_mic_enabled(),
             op_get_voice_stream(),
             op_read_voice_stream(),
+            op_get_hover_stream(),
+            op_read_hover_stream(),
         ]
     } else {
         Vec::default()
@@ -359,4 +361,18 @@ pub async fn op_read_voice_stream(
     rid: u32,
 ) -> Result<Option<VoiceMessage>, deno_core::anyhow::Error> {
     dcl::js::system_api::op_read_voice_stream(state, rid).await
+}
+
+#[op2(async)]
+pub async fn op_get_hover_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_hover_stream(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_hover_stream(
+    state: Rc<RefCell<OpState>>,
+    rid: u32,
+) -> Result<Option<HoverEvent>, deno_core::anyhow::Error> {
+    dcl::js::system_api::op_read_hover_stream(state, rid).await
 }
