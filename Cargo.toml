@@ -113,6 +113,7 @@ bevy = { version = "0.16.1", default-features = false, features=[
 wgpu = "24"
 bevy_console = { git = "https://github.com/robtfm/bevy-console", branch="0.16" }
 bevy_egui = { version = "0.34", default-features = false, features = ["default_fonts", "render"] }
+disqualified = "1"
 
 serde = "1.0.152"
 serde_json = { version = "1.0.92", features = ["raw_value"] }
@@ -167,18 +168,18 @@ js-sys = "0.3"
 serde-wasm-bindgen = "0.6"
 serde_bytes = "0.11"
 web-sys = { version = "0.3", features = [
-    "Performance", 
-    "Window", 
-    "Document", 
-    "Element", 
-    "HtmlCanvasElement", 
+    "Performance",
+    "Window",
+    "Document",
+    "Element",
+    "HtmlCanvasElement",
     "DedicatedWorkerGlobalScope",
     "CacheStorage",
     "Cache",
     "Request",
     "Response",
-    "ResponseInit", 
-    "Headers",    
+    "ResponseInit",
+    "Headers",
     "Url",
 ] }
 web-time = "1.1"
