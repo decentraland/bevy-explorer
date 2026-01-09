@@ -28,6 +28,9 @@ pub mod html_video_player;
 #[cfg(feature = "ffmpeg")]
 pub mod video_player;
 
+#[cfg(feature = "av_player_debug")]
+pub mod av_player_debug;
+
 use audio_source::AudioSourcePlugin;
 #[cfg(not(feature = "html"))]
 use audio_source_native::AudioSourcePluginImpl;
@@ -127,6 +130,9 @@ impl Plugin for AVPlayerPlugin {
 
         #[cfg(feature = "ffmpeg")]
         app.add_observer(audio_sink::change_audio_sink_volume);
+
+        #[cfg(feature = "av_player_debug")]
+        app.add_plugins(av_player_debug::AvPlayerDebugPlugin);
     }
 }
 
