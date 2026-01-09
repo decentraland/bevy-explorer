@@ -23,7 +23,7 @@ impl Plugin for AvPlayerDebugPlugin {
         {
             app.add_observer(on_add_column::<AudioSink, AudioSinkColumn>);
             app.add_observer(on_remove_column::<AudioSink, AudioSinkColumn>);
-            app.add_observer(on_add_column::<VideoSink, VideoSink>);
+            app.add_observer(on_add_column::<VideoSink, VideoSinkColumn>);
             app.add_observer(on_remove_column::<VideoSink, VideoSinkColumn>);
         }
         #[cfg(feature = "livekit")]
@@ -307,7 +307,7 @@ fn on_remove_column<T: Component, C: Component>(
     trigger: Trigger<OnRemove, T>,
     mut commands: Commands,
     av_player_references: Query<(Entity, &AvPlayerRef), With<C>>,
-    children: Query<&Children>
+    children: Query<&Children>,
 ) {
     let entity = trigger.target();
 
@@ -325,6 +325,8 @@ fn on_remove_column<T: Component, C: Component>(
         return;
     };
 
+    // If the reason for the removal is despawn
+    // using `despawn_related` will crash
     if let Ok(children) = children.get(node) {
         for child in children {
             commands.entity(*child).try_despawn();
