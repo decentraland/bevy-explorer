@@ -46,9 +46,11 @@ fn main() -> std::io::Result<()> {
     writeln!(&mut writer, "}}")?;
 
     // generate hash of shaders for the gpu cache
-    let mut hasher = bevy::platform::hash::FixedHasher::default().build_hasher();
+    let mut hasher = bevy::platform::hash::FixedHasher.build_hasher();
 
-    let mut shader_paths = fs::read_dir("src/assets/shaders")?.map(|entry| entry.unwrap().path()).collect::<Vec<_>>();
+    let mut shader_paths = fs::read_dir("src/assets/shaders")?
+        .map(|entry| entry.unwrap().path())
+        .collect::<Vec<_>>();
     shader_paths.sort();
 
     for path in shader_paths {
@@ -59,7 +61,10 @@ fn main() -> std::io::Result<()> {
 
     let hash = hasher.finish();
 
-    writeln!(&mut writer, "pub fn precomputed_shader_hash() -> u64 {{ {hash} }}")?;
+    writeln!(
+        &mut writer,
+        "pub fn precomputed_shader_hash() -> u64 {{ {hash} }}"
+    )?;
 
     Ok(())
 }
