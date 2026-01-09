@@ -310,9 +310,7 @@ function start() {
 initButton.onclick = start;
 
 initEngine()
-  .then(() => {
-    initGpuCache(gpu_cache_hash())
-  })
+  .then(() => initGpuCache(gpu_cache_hash()))
   .then(() => {
     if (autoStart) {
       start()
