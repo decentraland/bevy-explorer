@@ -1434,6 +1434,7 @@ dependencies = [
  "bevy_log",
  "bevy_math",
  "bevy_pbr",
+ "bevy_picking",
  "bevy_platform",
  "bevy_ptr",
  "bevy_reflect",
@@ -1591,6 +1592,28 @@ dependencies = [
  "static_assertions",
  "thiserror 2.0.12",
  "tracing",
+]
+
+[[package]]
+name = "bevy_picking"
+version = "0.16.1"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#dfc0e0ccc469983eb961bce5b1be7765709b8a47"
+dependencies = [
+ "bevy_app",
+ "bevy_asset",
+ "bevy_derive",
+ "bevy_ecs",
+ "bevy_input",
+ "bevy_math",
+ "bevy_platform",
+ "bevy_reflect",
+ "bevy_render",
+ "bevy_time",
+ "bevy_transform",
+ "bevy_utils",
+ "bevy_window",
+ "tracing",
+ "uuid 1.17.0",
 ]
 
 [[package]]
