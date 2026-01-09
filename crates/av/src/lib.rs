@@ -138,7 +138,7 @@ impl Plugin for AVPlayerPlugin {
 
 fn av_player_is_in_scene(
     mut commands: Commands,
-    av_players: Query<(Entity, &ContainerEntity, &AVPlayer)>,
+    av_players: Query<(Entity, &ContainerEntity, &AVPlayer, Has<InScene>)>,
     user: Query<&GlobalTransform, With<PrimaryUser>>,
     containing_scene: ContainingScene,
 ) {
@@ -148,49 +148,59 @@ fn av_player_is_in_scene(
     };
     let containing_scenes = containing_scene.get_position(user.translation());
 
-    for (ent, container, _) in av_players
+    for (ent, container, _, has_in_scene) in av_players
         .iter()
-        .filter(|(_, _, player)| player.source.playing.unwrap_or(true))
+        .filter(|(_, _, player, _)| player.source.playing.unwrap_or(true))
     {
-        if containing_scenes.contains(&container.root) {
-            commands.entity(ent).insert_if_new(InScene);
-        } else {
+        let contained = containing_scenes.contains(&container.root);
+        if contained && !has_in_scene {
+            // Only call `insert` on those that do not have `InScene`
+            commands.entity(ent).insert(InScene);
+        } else if !contained && has_in_scene {
+            // Only call `remove` on those that have `InScene`
             commands.entity(ent).remove::<InScene>();
         }
     }
 }
 
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn av_player_should_be_playing(
     mut commands: Commands,
-    av_players: Query<(Entity, &AVPlayer, Has<InScene>, &GlobalTransform)>,
-    user: Query<&GlobalTransform, With<PrimaryUser>>,
+    av_players: Query<(
+        Entity,
+        &AVPlayer,
+        Has<InScene>,
+        Has<ShouldBePlaying>,
+        &GlobalTransform,
+    )>,
+    user: Single<&GlobalTransform, With<PrimaryUser>>,
     config: Res<AppConfig>,
 ) {
-    // disable distant av
-    let Ok(user) = user.single() else {
-        return;
-    };
-
     let mut sorted_players = av_players
         .iter()
-        .filter_map(|(ent, player, in_scene, transform)| {
-            if player.source.playing.unwrap_or(true) {
-                let distance = transform.translation().distance(user.translation());
-                Some((in_scene, distance, ent))
-            } else {
-                None
-            }
-        })
+        .filter_map(
+            |(ent, player, has_in_scene, has_should_be_playing, transform)| {
+                if player.source.playing.unwrap_or(true) {
+                    let distance = transform.translation().distance(user.translation());
+                    Some((has_in_scene, has_should_be_playing, distance, ent))
+                } else {
+                    None
+                }
+            },
+        )
         .collect::<Vec<_>>();
 
     // prioritise av in current scene (false < true), then by distance
-    sorted_players.sort_by_key(|(in_scene, distance, _)| (!in_scene, FloatOrd(*distance)));
+    sorted_players.sort_by_key(|(in_scene, _, distance, _)| (!in_scene, FloatOrd(*distance)));
 
     // Removing first for better Trigger ordering
     for ent in sorted_players
         .iter()
         .skip(config.max_videos)
-        .map(|(_, _, ent)| *ent)
+        // Only call remove on those that have `ShouldBePlaying`
+        // The `filter` MUST be after the `skip`
+        .filter(|(_, has_should_be_playing, _, _)| *has_should_be_playing)
+        .map(|(_, _, _, ent)| *ent)
     {
         commands.entity(ent).try_remove::<ShouldBePlaying>();
     }
@@ -198,7 +208,10 @@ fn av_player_should_be_playing(
     for ent in sorted_players
         .iter()
         .take(config.max_videos)
-        .map(|(_, _, ent)| *ent)
+        // Only call `insert` on those that do not have `ShouldBePlaying`
+        // The `filter` MUST be after the `take`
+        .filter(|(_, has_should_be_playing, _, _)| !*has_should_be_playing)
+        .map(|(_, _, _, ent)| *ent)
     {
         commands.entity(ent).try_insert(ShouldBePlaying);
     }
