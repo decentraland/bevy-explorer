@@ -8,7 +8,7 @@ use bevy::{
 use crate::{audio_sink::AudioSink, video_stream::VideoSink};
 use crate::{AVPlayer, InScene, ShouldBePlaying};
 #[cfg(feature = "livekit")]
-use comms::livekit::StreamImage;
+use comms::livekit::StreamViewer;
 
 pub struct AvPlayerDebugPlugin;
 
@@ -28,8 +28,8 @@ impl Plugin for AvPlayerDebugPlugin {
         }
         #[cfg(feature = "livekit")]
         {
-            app.add_observer(on_add_column::<StreamImage, StreamerColumn>);
-            app.add_observer(on_remove_column::<StreamImage, StreamerColumn>);
+            app.add_observer(on_add_column::<StreamViewer, StreamerColumn>);
+            app.add_observer(on_remove_column::<StreamViewer, StreamerColumn>);
         }
         app.add_observer(on_add_column::<InScene, InSceneColumn>);
         app.add_observer(on_remove_column::<InScene, InSceneColumn>);
