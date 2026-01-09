@@ -10,3 +10,11 @@ impl Plugin for EmbedAssetsPlugin {
         embed_assets(embedded.into_inner());
     }
 }
+
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn gpu_cache_hash() -> String {
+    format!("{}", precomputed_shader_hash())
+}

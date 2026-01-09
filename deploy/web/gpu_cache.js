@@ -46,6 +46,30 @@ function openDB() {
   return dbPromise;
 }
 
+async function clearDatabase() {
+  const db = await openDB();
+
+  const tableNames = ["shader", "bindgroup", "layout", "pipeline", "requiredItems"];
+
+  const tx = db.transaction(tableNames, "readwrite");
+
+  const clearPromises = tableNames.map(name => {
+    const store = tx.objectStore(name);
+    const request = store.clear();
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  });
+
+  await Promise.all(clearPromises);
+  await new Promise((resolve, reject) => {
+    tx.oncomplete = resolve;
+    tx.onabort = reject;
+    tx.onerror = reject;
+  });
+}
+
 async function fetchRequiredItems() {
   const db = await openDB();
   return new Promise((resolve) => {
@@ -108,29 +132,10 @@ async function storeInstance(type, hash, value) {
   });
 }
 
-async function clearDatabase() {
-  const storeNames = ["shader", "bindgroup", "layout", "pipeline"];
-
-  const tx = await db.transaction("rqeuiredItems", "readwrite");
-  await tx.objectStore("requiredItems").clear();
-
-  const clearPromises = storeNames.map((name) => {
-    const tx = db.transaction(name, "readwrite");
-    return new Promise((resolve, reject) => {
-      const request = tx.objectStore(name).clear();
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-  });
-
-  // Wait for all clear operations to complete
-  await Promise.all(clearPromises);
-  await tx.done;
-}
-
-export async function initGpuCache() {
+export async function initGpuCache(key) {
+  console.log(`[GPU Cache] key: ${key}`);
   patchWebgpuAdater();
-  await createGpuCache();
+  await createGpuCache(key);
 }
 
 function patchWebgpuAdater() {
@@ -210,7 +215,15 @@ function patchWebgpuAdater() {
   };
 }
 
-async function createGpuCache() {
+async function createGpuCache(key) {
+  const cachedKey = localStorage.getItem("gpuCacheKey");
+  if (cachedKey != key) {
+    console.log("shaders updated, clearing db");
+    await clearDatabase();
+    localStorage.setItem("gpuCacheKey", key);
+    return;
+  }
+
   const cachedDeviceDescriptor = localStorage.getItem("deviceDescriptor");
   if (cachedDeviceDescriptor === null) {
     return;

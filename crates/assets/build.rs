@@ -1,5 +1,6 @@
 use std::env;
 use std::fs::{self, File};
+use std::hash::{BuildHasher, Hasher};
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
@@ -43,6 +44,22 @@ fn main() -> std::io::Result<()> {
     visit_dirs(&mut writer, source_path, source_path)?;
 
     writeln!(&mut writer, "}}")?;
+
+    // generate hash of shaders for the gpu cache
+    let mut hasher = bevy::platform::hash::FixedHasher::default().build_hasher();
+
+    let mut shader_paths = fs::read_dir("src/assets/shaders")?.map(|entry| entry.unwrap().path()).collect::<Vec<_>>();
+    shader_paths.sort();
+
+    for path in shader_paths {
+        hasher.write(path.to_string_lossy().as_bytes());
+        let bytes = fs::read(&path).expect("Failed to read file");
+        hasher.write(&bytes);
+    }
+
+    let hash = hasher.finish();
+
+    writeln!(&mut writer, "pub fn precomputed_shader_hash() -> u64 {{ {hash} }}")?;
 
     Ok(())
 }
