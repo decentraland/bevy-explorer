@@ -2,6 +2,8 @@ use bevy::prelude::*;
 use dcl_component::proto_components::kernel::comms::rfc4;
 use tokio::{sync::mpsc, task::JoinHandle};
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::livekit::kira_bridge::LivekitKiraPlugin;
 use crate::{
     global_crdt::NetworkUpdate,
     livekit::{
@@ -25,6 +27,8 @@ impl Plugin for LivekitPlugin {
         app.add_plugins(LivekitRoomPlugin);
         app.add_plugins(LivekitParticipantPlugin);
         app.add_plugins(LivekitTrackPlugin);
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_plugins(LivekitKiraPlugin);
 
         app.add_systems(Update, (start_livekit, verify_player_update_tasks));
 
