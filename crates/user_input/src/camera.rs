@@ -1,9 +1,8 @@
 use std::f32::consts::{FRAC_PI_4, PI};
 
 use bevy::{
-    math::FloatOrd,
     prelude::*,
-    render::globals::UserGlobal,
+    render::view::ViewUserValue,
     window::{CursorGrabMode, PrimaryWindow},
 };
 
@@ -14,10 +13,7 @@ use common::{
 };
 use dcl_component::proto_components::sdk::components::common::camera_transition::TransitionMode;
 use input_manager::{InputManager, InputPriority};
-use scene_runner::{
-    renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
-    ContainingScene, OutOfWorld,
-};
+use scene_runner::OutOfWorld;
 use tween::SystemTween;
 
 use crate::TRANSITION_TIME;
@@ -177,12 +173,9 @@ pub fn update_camera_position(
         (&Transform, &AvatarDynamicState, Has<OutOfWorld>),
         (With<PrimaryUser>, Without<PrimaryCamera>),
     >,
-    containing_scene: ContainingScene,
-    mut scene_colliders: Query<(&RendererSceneContext, &mut SceneColliderData)>,
     mut prev_override: Local<Option<CameraOverride>>,
     mut prev_oow: Local<bool>,
     gt_helper: TransformHelper,
-    mut user_global: ResMut<UserGlobal>,
 ) {
     let (
         Ok((player_transform, dynamic_state, is_oow)),
@@ -250,7 +243,7 @@ pub fn update_camera_position(
             target_transition = transition.clone();
         }
 
-        user_global.0 = 0.0;
+        commands.entity(camera_ent).insert(ViewUserValue(0.0));
     } else {
         let target_fov = (dynamic_state.velocity.length() / 4.0).clamp(1.25, 1.25) * FRAC_PI_4;
         if let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
@@ -275,69 +268,17 @@ pub fn update_camera_position(
             + Vec3::Y * -0.08;
 
         let target_direction = target_transform.rotation.mul_vec3(Vec3::Z);
-        let mut target_translation =
+        let target_translation =
             player_head + head_offset * distance.clamp(0.0, 3.0) + target_direction * distance;
 
-        if target_translation.y < 0.1 {
-            distance -= (target_translation.y - 0.1) / target_direction.y;
-            target_translation =
-                player_head + head_offset * distance.clamp(0.0, 3.0) + target_direction * distance;
+        if target_translation.y < distance * 0.25 {
+            distance = player_head.y / (0.25 - target_direction.y);
         }
 
-        let base_distance = distance;
-        // if distance > 0.0 {
-        //     // cast to check visibility
-        //     let scenes_head = containing_scene.get_position(player_head);
-        //     let scenes_cam =
-        //         containing_scene.get_position(player_head + target_direction * distance);
+        target_transform.translation =
+            player_head + head_offset * distance.clamp(0.0, 3.0) + target_direction * distance;
 
-        //     const OFFSET_SIZE: f32 = 0.15;
-        //     let offsets = [
-        //         Vec3::ZERO,
-        //         Vec3::new(-OFFSET_SIZE, 0.0, 0.0),
-        //         Vec3::new(OFFSET_SIZE, 0.0, 0.0),
-        //         Vec3::new(0.0, -OFFSET_SIZE, 0.0),
-        //         Vec3::new(0.0, OFFSET_SIZE, 0.0),
-        //     ];
-        //     let mut offset_distances = [FloatOrd(1.0); 5];
-        //     for scene in (scenes_head).union(&scenes_cam) {
-        //         let Ok((context, mut colliders)) = scene_colliders.get_mut(*scene) else {
-        //             continue;
-        //         };
-
-        //         for ix in 0..5 {
-        //             let origin = player_head + target_transform.rotation.mul_vec3(offsets[ix]);
-        //             if let Some(hit) = colliders.cast_ray_nearest(
-        //                 context.last_update_frame,
-        //                 origin,
-        //                 target_translation - origin,
-        //                 1.0,
-        //                 u32::MAX,
-        //                 false,
-        //                 false,
-        //                 None,
-        //             ) {
-        //                 offset_distances[ix] =
-        //                     FloatOrd(offset_distances[ix].0.min(hit.toi).max(0.0));
-        //             }
-        //         }
-        //     }
-        //     debug!(
-        //         "{distance} vs {:?}",
-        //         offset_distances.iter().map(|d| d.0).collect::<Vec<_>>()
-        //     );
-        //     distance *= offset_distances.iter().min().unwrap().0;
-        // }
-
-        target_transform.translation = player_head
-            + head_offset * base_distance.clamp(0.0, 3.0)
-            + target_direction * base_distance;
-
-        // if base_distance == distance {
-        //     user_global.0 = 0.0;
-        // } else {
-            user_global.0 = base_distance;
-        // }
+        commands.entity(camera_ent).insert(ViewUserValue(distance));
     }
 
     let changed = (prev_override.is_some() != options.scene_override.is_some())
