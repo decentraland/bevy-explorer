@@ -51,7 +51,7 @@ impl Plugin for LivekitTrackPlugin {
         #[cfg(not(target_arch = "wasm32"))]
         app.add_observer(video_track_is_now_subscribed);
         #[cfg(not(target_arch = "wasm32"))]
-        app.add_observer(track_of_watched_streamer::<Video, SubscribeToVideoTrack>);
+        app.add_observer(video_track_of_watched_streamer_published);
     }
 }
 
@@ -488,10 +488,10 @@ fn receive_video_frame(
     }
 }
 
-fn track_of_watched_streamer<C: Component, E: Event + Default>(
-    trigger: Trigger<OnAdd, C>,
+fn video_track_of_watched_streamer_published(
+    trigger: Trigger<OnAdd, Video>,
     mut commands: Commands,
-    tracks: Query<&PublishedBy, With<C>>,
+    tracks: Query<&PublishedBy, With<Video>>,
     participants: Query<Has<StreamBroadcast>, With<LivekitParticipant>>,
 ) {
     let entity = trigger.target();
@@ -507,6 +507,6 @@ fn track_of_watched_streamer<C: Component, E: Event + Default>(
     };
 
     if has_stream_broadcast {
-        commands.trigger_targets(E::default(), entity);
+        commands.trigger_targets(SubscribeToVideoTrack, entity);
     }
 }

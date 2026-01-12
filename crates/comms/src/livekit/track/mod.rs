@@ -152,7 +152,7 @@ pub struct SubscribeToAudioTrack {
     pub sender: oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
 }
 
-#[derive(Default, Event)]
+#[derive(Event)]
 pub struct SubscribeToVideoTrack;
 
 #[derive(Event)]
