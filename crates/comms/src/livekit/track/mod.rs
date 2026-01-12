@@ -125,11 +125,6 @@ pub struct Microphone;
 #[derive(Component)]
 pub struct Camera;
 
-#[derive(Component)]
-pub struct LivekitFrame {
-    pub handle: Handle<Image>,
-}
-
 #[derive(Event)]
 pub struct TrackPublished {
     pub participant: Participant,

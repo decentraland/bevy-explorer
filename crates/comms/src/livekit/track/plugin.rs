@@ -1,9 +1,4 @@
-use bevy::{
-    asset::RenderAssetUsages,
-    ecs::relationship::Relationship,
-    prelude::*,
-    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
-};
+use bevy::{ecs::relationship::Relationship, prelude::*, render::render_resource::Extent3d};
 use common::util::AsH160;
 #[cfg(not(target_arch = "wasm32"))]
 use {
@@ -26,10 +21,9 @@ use crate::{
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         track::Subscribing,
         track::{
-            Audio, Camera, LivekitFrame, LivekitTrack, Microphone, PublishedBy,
-            SubscribeToAudioTrack, SubscribeToVideoTrack, Subscribed, TrackPublished,
-            TrackSubscribed, TrackUnpublished, TrackUnsubscribed, UnsubscribeToTrack, Unsubscribed,
-            Unsubscribing, Video,
+            Audio, Camera, LivekitTrack, Microphone, PublishedBy, SubscribeToAudioTrack,
+            SubscribeToVideoTrack, Subscribed, TrackPublished, TrackSubscribed, TrackUnpublished,
+            TrackUnsubscribed, UnsubscribeToTrack, Unsubscribed, Unsubscribing, Video,
         },
         LivekitRuntime,
     },
@@ -64,7 +58,6 @@ fn track_published(
     participants: Query<(Entity, &LivekitParticipant, &HostedBy)>,
     player_state: Res<GlobalCrdtState>,
     mut player_update_tasks: ResMut<PlayerUpdateTasks>,
-    mut images: ResMut<Assets<Image>>,
     livekit_runtime: Res<LivekitRuntime>,
 ) {
     let TrackPublished { participant, track } = trigger.event();
@@ -99,24 +92,7 @@ fn track_published(
             entity_cmd.insert(Audio);
         }
         TrackKind::Video => {
-            let image = Image::new_fill(
-                Extent3d {
-                    width: 8,
-                    height: 8,
-                    depth_or_array_layers: 1,
-                },
-                TextureDimension::D2,
-                &[255, 0, 255, 255],
-                TextureFormat::Rgba8UnormSrgb,
-                RenderAssetUsages::all(),
-            );
-
-            entity_cmd.insert((
-                Video,
-                LivekitFrame {
-                    handle: images.add(image),
-                },
-            ));
+            entity_cmd.insert(Video);
         }
     }
     match track.source() {
