@@ -254,6 +254,13 @@ impl MaterialExtension for SceneBound {
         ShaderRef::Path("embedded://shaders/bound_material.wgsl".into())
     }
 
+    fn alpha_mode(base_mode: AlphaMode) -> Option<AlphaMode> {
+        Some(match base_mode {
+            AlphaMode::Opaque => AlphaMode::Mask(0.0),
+            other => other,
+        })
+    }
+
     fn prepass_fragment_shader() -> ShaderRef {
         ShaderRef::Path("embedded://shaders/bound_prepass.wgsl".into())
     }
