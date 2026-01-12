@@ -92,11 +92,19 @@ fn discard_dither(ndc_position: vec2<f32>, world_position: vec3<f32>, depth: f32
 
             let full_transparent_factor = saturate((projection_length - full_transparent_start_distance) / (full_transparent_end_distance - full_transparent_start_distance));
 
-            use_distance = mix(
-                min(cone_distance, full_transparent_factor), 
-                min(cone_distance, 2.0),
-                full_transparent_factor,
-            );
+            if cone_distance < 1.0 {
+                use_distance = mix(
+                    min(cone_distance, full_transparent_factor * 0.75), 
+                    cone_distance,
+                    full_transparent_factor,
+                );
+            } else {
+                use_distance = mix(
+                    full_transparent_factor * 0.75,
+                    min(pow(cone_distance, 0.5), 2.0),
+                    full_transparent_factor,
+                );
+            }
         }
 
         if  max(

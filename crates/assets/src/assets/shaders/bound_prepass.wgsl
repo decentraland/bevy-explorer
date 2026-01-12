@@ -44,16 +44,21 @@ fn unpack_bounds(packed: u32) -> vec2<f32> {
 var<uniform> bounds: SceneBounds;
 
 
-#ifdef PREPASS_FRAGMENT
 @fragment
 fn fragment(
     in: VertexOutput, 
     @builtin(front_facing) is_front: bool
-) -> FragmentOutput {
+) 
+
+#ifdef PREPASS_FRAGMENT
+-> FragmentOutput {
     var out: FragmentOutput;
+#else
+{
+#endif
 
     if (bounds.flags & (DISABLE_DITHER + OUTLINE_RED)) == 0 {
-        discard_dither(in.position.xy, in.world_position.xyz, globals.user_global, (bounds.flags & CONE_ONLY_DITHER) == 0);
+        discard_dither(in.position.xy, in.world_position.xyz, view.user_value, (bounds.flags & CONE_ONLY_DITHER) == 0);
     }
 
 #ifdef NORMAL_PREPASS
@@ -125,46 +130,7 @@ fn fragment(
 
     prepass_alpha_discard(in);
 
+#ifdef PREPASS_FRAGMENT
     return out;
+#endif
 }
-#else // !PREPASS_FRAGMENT (?)
-@fragment
-fn fragment(in: VertexOutput) {
-    let world_position = in.world_position.xyz;
-    var outside_amt: f32 = 9999.0;
-    var nearest_region_distance: f32 = 9999.0;
-    var nearest_region_height: f32 = 9999.0;
-    if bounds.num_bounds > 0 {
-        for (var ix = 0u; ix < bounds.num_bounds; ix += 1u) {
-            let min_wp = unpack_bounds(bounds.bounds[ix].min);
-            let max_wp = unpack_bounds(bounds.bounds[ix].max);
-
-            let outside_xy = abs(clamp(world_position.xz, min_wp, max_wp) - world_position.xz);
-            let distance = max(outside_xy.x, outside_xy.y);
-            if distance < nearest_region_distance {
-                nearest_region_distance = distance;
-                nearest_region_height = bounds.bounds[ix].height;
-            }
-            outside_amt = min(outside_amt, distance);
-        }
-        let outside_height = max(world_position.y - nearest_region_height, 0.0);
-        outside_amt = max(outside_amt, outside_height);
-    } else {
-        outside_amt = 0.0;
-    }
-
-    var noise = 0.0;
-    if outside_amt > 0.0 {
-        if outside_amt < bounds.distance {
-            noise = simplex_noise_3d(world_position * 2.0 + globals.time * vec3(0.2, 0.16, 0.24)) * 0.5 + 0.55;
-            if noise < (outside_amt - 0.125) / 2.0 {
-                discard;
-            }
-        } else if outside_amt > 0.05 {
-            discard;
-        }
-    }
-    
-    prepass_alpha_discard(in);
-}
-#endif // PREPASS_FRAGMENT

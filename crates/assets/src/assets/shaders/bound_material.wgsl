@@ -55,7 +55,7 @@ fn fragment(
 ) -> FragmentOutput {
     var cap_brightness: f32 = 0.0;
     if (bounds.flags & (DISABLE_DITHER + OUTLINE_RED)) == 0 {
-        cap_brightness = discard_dither(in.position.xy, in.world_position.xyz, globals.user_global, (bounds.flags & CONE_ONLY_DITHER) == 0);
+        cap_brightness = discard_dither(in.position.xy, in.world_position.xyz, view.user_value, (bounds.flags & CONE_ONLY_DITHER) == 0);
     }
 
     // generate a PbrInput struct from the StandardMaterial bindings
@@ -186,7 +186,7 @@ fn fragment(
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);
 
     let cap_factor = max(max(out.color.r, out.color.g), max(out.color.b, 1.0));
-    out.color = mix(out.color, vec4<f32>(out.color.rgb * cap_factor, out.color.a), saturate(cap_brightness * 2.0));
+    out.color = mix(out.color, vec4<f32>(out.color.rgb / cap_factor, out.color.a), saturate(cap_brightness * 2.0));
 
     return out;
 }
