@@ -19,7 +19,7 @@ use {
 
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::{Participant, RemoteTrackPublication};
-use crate::{livekit::LivekitRuntime, make_hooks};
+use crate::make_hooks;
 
 #[derive(Clone, Component, Deref, DerefMut)]
 pub struct LivekitTrack {
@@ -101,7 +101,6 @@ impl Unsubscribing {
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Component)]
 struct OpenAudioSender {
-    runtime: LivekitRuntime,
     sender: oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
 }
 
@@ -147,7 +146,6 @@ pub struct TrackUnsubscribed {
 
 #[derive(Event)]
 pub struct SubscribeToAudioTrack {
-    pub runtime: LivekitRuntime,
     #[cfg(not(target_arch = "wasm32"))]
     pub sender: oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
 }

@@ -455,7 +455,6 @@ fn subscribe_to_voice(
     rooms: Query<(&LivekitRoom, Option<&HostingParticipants>)>,
     participants: Query<(&LivekitParticipant, &track::Publishing)>,
     tracks: Query<Entity, With<track::Microphone>>,
-    livekit_runtime: Res<LivekitRuntime>,
 ) {
     #[cfg(not(target_arch = "wasm32"))]
     let (room_entity, address, sender) = input;
@@ -499,7 +498,6 @@ fn subscribe_to_voice(
     if let Some(track_entity) = tracks.iter_many(publishing.collection()).next() {
         commands.trigger_targets(
             track::SubscribeToAudioTrack {
-                runtime: livekit_runtime.clone(),
                 #[cfg(not(target_arch = "wasm32"))]
                 sender,
             },

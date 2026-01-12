@@ -269,10 +269,10 @@ fn subscribe_to_audio_track(
     mut trigger: Trigger<SubscribeToAudioTrack>,
     mut commands: Commands,
     tracks: Query<&LivekitTrack, With<Audio>>,
+    livekit_runtime: Res<LivekitRuntime>,
 ) {
     let entity = trigger.target();
     let SubscribeToAudioTrack {
-        runtime,
         #[cfg(not(target_arch = "wasm32"))]
         sender,
     } = trigger.event_mut();
@@ -297,14 +297,13 @@ fn subscribe_to_audio_track(
         snatcher_sender
     };
 
-    let task = runtime.spawn(async move {
+    let task = livekit_runtime.spawn(async move {
         track.set_subscribed(true);
     });
     commands.entity(entity).insert((
         Subscribing { task },
         #[cfg(not(target_arch = "wasm32"))]
         OpenAudioSender {
-            runtime: runtime.clone(),
             sender: snatcher_sender,
         },
     ));
@@ -375,9 +374,10 @@ fn subscribed_audio_track_with_open_sender(
         (Entity, &LivekitTrack, &mut OpenAudioSender),
         (With<Audio>, With<Subscribed>),
     >,
+    livekit_runtime: Res<LivekitRuntime>,
 ) {
     for (entity, track, mut sender) in tracks.iter_mut() {
-        let runtime = sender.runtime.clone();
+        let runtime = livekit_runtime.clone();
         let publication = track.track.clone();
 
         let Some(RemoteTrack::Audio(audio)) = track.track() else {
