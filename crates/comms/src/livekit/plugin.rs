@@ -1,4 +1,4 @@
-use bevy::{ecs::relationship::Relationship, prelude::*};
+use bevy::prelude::*;
 use dcl_component::proto_components::kernel::comms::rfc4;
 use tokio::{sync::mpsc, task::JoinHandle};
 
@@ -8,7 +8,7 @@ use crate::{
         mic::MicPlugin, participant::plugin::LivekitParticipantPlugin,
         room::plugin::LivekitRoomPlugin, runtime::LivekitRuntimePlugin,
         track::plugin::LivekitTrackPlugin, LivekitChannelControl, LivekitNetworkMessage,
-        LivekitRuntime, LivekitTransport, StartLivekit, StreamBroadcast, StreamImage, StreamViewer,
+        LivekitRuntime, LivekitTransport, StartLivekit,
     },
     profile::CurrentUserProfile,
     NetworkMessage, Transport, TransportType,
@@ -26,15 +26,8 @@ impl Plugin for LivekitPlugin {
         app.add_plugins(LivekitParticipantPlugin);
         app.add_plugins(LivekitTrackPlugin);
 
-        app.add_systems(
-            Update,
-            (
-                start_livekit,
-                verify_player_update_tasks,
-                stream_viewer_without_stream_image,
-                non_stream_viewer_with_stream_image,
-            ),
-        );
+        app.add_systems(Update, (start_livekit, verify_player_update_tasks));
+
         app.add_event::<StartLivekit>();
     }
 }
@@ -126,38 +119,5 @@ fn verify_player_update_tasks(
 
     while let Some(i) = done.pop() {
         player_update_tasks.remove(i);
-    }
-}
-
-fn stream_viewer_without_stream_image(
-    mut commands: Commands,
-    stream_viewers: Populated<(Entity, &StreamViewer), Without<StreamImage>>,
-    stream_broadcasts: Query<&StreamImage, With<StreamBroadcast>>,
-) {
-    for (entity, stream_viewer) in stream_viewers.into_inner() {
-        let Ok(stream_image) = stream_broadcasts.get(stream_viewer.get()) else {
-            error!("Invalid StreamBroadcast relationship.");
-            commands.send_event(AppExit::from_code(1));
-            return;
-        };
-
-        commands.entity(entity).insert(stream_image.clone());
-    }
-}
-
-#[expect(clippy::type_complexity, reason = "Queries are complex")]
-fn non_stream_viewer_with_stream_image(
-    mut commands: Commands,
-    stream_viewers: Populated<
-        Entity,
-        (
-            Without<StreamViewer>,
-            Without<StreamBroadcast>,
-            With<StreamImage>,
-        ),
-    >,
-) {
-    for entity in stream_viewers.into_inner() {
-        commands.entity(entity).remove::<StreamImage>();
     }
 }

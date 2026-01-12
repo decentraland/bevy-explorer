@@ -34,6 +34,14 @@ impl Plugin for LivekitParticipantPlugin {
         app.add_observer(participant_connection_quality_changed::<connection_quality::Lost>);
         app.add_observer(participant_payload);
         app.add_observer(participant_metadata_changed);
+
+        app.add_systems(
+            Update,
+            (
+                stream_viewer_without_stream_image,
+                non_stream_viewer_with_stream_image,
+            ),
+        );
         app.add_observer(streamer_has_no_watchers);
     }
 }
@@ -287,6 +295,39 @@ fn participant_metadata_changed(
                 task,
             });
         }
+    }
+}
+
+fn stream_viewer_without_stream_image(
+    mut commands: Commands,
+    stream_viewers: Populated<(Entity, &StreamViewer), Without<StreamImage>>,
+    stream_broadcasts: Query<&StreamImage, With<StreamBroadcast>>,
+) {
+    for (entity, stream_viewer) in stream_viewers.into_inner() {
+        let Ok(stream_image) = stream_broadcasts.get(stream_viewer.get()) else {
+            error!("Invalid StreamBroadcast relationship.");
+            commands.send_event(AppExit::from_code(1));
+            return;
+        };
+
+        commands.entity(entity).insert(stream_image.clone());
+    }
+}
+
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
+fn non_stream_viewer_with_stream_image(
+    mut commands: Commands,
+    stream_viewers: Populated<
+        Entity,
+        (
+            Without<StreamViewer>,
+            Without<StreamBroadcast>,
+            With<StreamImage>,
+        ),
+    >,
+) {
+    for entity in stream_viewers.into_inner() {
+        commands.entity(entity).remove::<StreamImage>();
     }
 }
 
