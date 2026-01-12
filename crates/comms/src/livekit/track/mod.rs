@@ -151,7 +151,7 @@ pub struct SubscribeToAudioTrack {
 }
 
 #[derive(Event)]
-pub struct SubscribeToVideoTrack;
+pub struct SubscribeToTrack;
 
 #[derive(Event)]
 pub struct UnsubscribeToTrack;

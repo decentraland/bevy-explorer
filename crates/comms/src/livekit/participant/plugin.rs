@@ -24,7 +24,7 @@ use crate::{
         },
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
-        track::{Publishing, SubscribeToVideoTrack, UnsubscribeToTrack, Video},
+        track::{Audio, Publishing, SubscribeToTrack, UnsubscribeToTrack, Video},
         LivekitRuntime,
     },
 };
@@ -343,6 +343,7 @@ fn someone_wants_to_watch_stream(
     trigger: Trigger<OnAdd, StreamBroadcast>,
     mut commands: Commands,
     participants: Query<(&LivekitParticipant, Option<&Publishing>), With<Streamer>>,
+    audio_tracks: Query<(), With<Audio>>,
     video_tracks: Query<(), With<Video>>,
     mut images: ResMut<Assets<Image>>,
 ) {
@@ -376,11 +377,23 @@ fn someone_wants_to_watch_stream(
         .insert(StreamImage(images.add(image)));
 
     if let Some(publishing) = maybe_publishing {
+        if let Some(audio_track) = publishing
+            .iter()
+            .find(|published_track| audio_tracks.contains(*published_track))
+        {
+            commands.trigger_targets(SubscribeToTrack, audio_track);
+        } else {
+            debug!(
+                "Participant {} ({}) is being watched but do not have any published audio track.",
+                participant.sid(),
+                participant.identity()
+            );
+        }
         if let Some(video_track) = publishing
             .iter()
             .find(|published_track| video_tracks.contains(*published_track))
         {
-            commands.trigger_targets(SubscribeToVideoTrack, video_track);
+            commands.trigger_targets(SubscribeToTrack, video_track);
         } else {
             debug!(
                 "Participant {} ({}) is being watched but do not have any published video track.",

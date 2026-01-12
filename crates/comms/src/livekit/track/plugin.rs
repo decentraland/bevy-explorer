@@ -23,7 +23,7 @@ use crate::{
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         track::{
             Audio, Camera, LivekitTrack, Microphone, PublishedBy, SubscribeToAudioTrack,
-            SubscribeToVideoTrack, Subscribed, Subscribing, TrackPublished, TrackSubscribed,
+            SubscribeToTrack, Subscribed, Subscribing, TrackPublished, TrackSubscribed,
             TrackUnpublished, TrackUnsubscribed, UnsubscribeToTrack, Unsubscribed, Unsubscribing,
             Video,
         },
@@ -40,7 +40,7 @@ impl Plugin for LivekitTrackPlugin {
         app.add_observer(track_subscribed);
         app.add_observer(track_unsubscribed);
         app.add_observer(subscribe_to_audio_track);
-        app.add_observer(subscribe_to_video_track);
+        app.add_observer(subscribe_to_track);
         app.add_observer(unsubscribe_to_track);
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -51,7 +51,9 @@ impl Plugin for LivekitTrackPlugin {
         #[cfg(not(target_arch = "wasm32"))]
         app.add_observer(video_track_is_now_subscribed);
         #[cfg(not(target_arch = "wasm32"))]
-        app.add_observer(video_track_of_watched_streamer_published);
+        app.add_observer(track_of_watched_streamer_published::<Video>);
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_observer(track_of_watched_streamer_published::<Audio>);
     }
 }
 
@@ -309,8 +311,8 @@ fn subscribe_to_audio_track(
     ));
 }
 
-fn subscribe_to_video_track(
-    trigger: Trigger<SubscribeToVideoTrack>,
+fn subscribe_to_track(
+    trigger: Trigger<SubscribeToTrack>,
     mut commands: Commands,
     tracks: Query<&LivekitTrack, With<Video>>,
     livekit_runtime: Res<LivekitRuntime>,
@@ -488,10 +490,10 @@ fn receive_video_frame(
     }
 }
 
-fn video_track_of_watched_streamer_published(
-    trigger: Trigger<OnAdd, Video>,
+fn track_of_watched_streamer_published<C: Component>(
+    trigger: Trigger<OnAdd, C>,
     mut commands: Commands,
-    tracks: Query<&PublishedBy, With<Video>>,
+    tracks: Query<&PublishedBy, With<C>>,
     participants: Query<Has<StreamBroadcast>, With<LivekitParticipant>>,
 ) {
     let entity = trigger.target();
@@ -507,6 +509,6 @@ fn video_track_of_watched_streamer_published(
     };
 
     if has_stream_broadcast {
-        commands.trigger_targets(SubscribeToVideoTrack, entity);
+        commands.trigger_targets(SubscribeToTrack, entity);
     }
 }
