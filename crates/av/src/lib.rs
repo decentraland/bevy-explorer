@@ -192,7 +192,12 @@ fn av_player_should_be_playing(
         .filter_map(
             |(ent, player, has_in_scene, has_should_be_playing, transform)| {
                 if player.source.playing.unwrap_or(true) {
-                    let distance = transform.translation().distance(user.translation());
+                    let distance =
+                        if !has_in_scene && player.source.src.starts_with("livekit-video://") {
+                            f32::MAX
+                        } else {
+                            transform.translation().distance(user.translation())
+                        };
                     Some((has_in_scene, has_should_be_playing, distance, ent))
                 } else {
                     None
