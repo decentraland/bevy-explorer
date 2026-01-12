@@ -10,33 +10,18 @@ use livekit::{
 };
 use tokio::sync::mpsc;
 
-#[derive(Deref)]
-pub struct LivekitVideoFrame {
-    #[deref]
-    buffer: I420Buffer,
-    timestamp: i64,
+pub trait I420BufferExt {
+    fn rgba_data(&self) -> Vec<u8>;
 }
 
-impl LivekitVideoFrame {
-    pub fn timestamp(&self) -> i64 {
-        self.timestamp
-    }
-
-    pub fn width(&self) -> u32 {
-        self.buffer.width()
-    }
-
-    pub fn height(&self) -> u32 {
-        self.buffer.height()
-    }
-
-    pub fn rgba_data(&self) -> Vec<u8> {
-        let width = self.buffer.width();
-        let height = self.buffer.height();
+impl I420BufferExt for I420Buffer {
+    fn rgba_data(&self) -> Vec<u8> {
+        let width = self.width();
+        let height = self.height();
         let stride = width * 4;
 
-        let (stride_y, stride_u, stride_v) = self.buffer.strides();
-        let (data_y, data_u, data_v) = self.buffer.data();
+        let (stride_y, stride_u, stride_v) = self.strides();
+        let (data_y, data_u, data_v) = self.data();
 
         let mut dst = vec![0; (width * height * 4) as usize];
 
@@ -60,25 +45,17 @@ impl LivekitVideoFrame {
 pub async fn livekit_video_thread(
     video: RemoteVideoTrack,
     publication: RemoteTrackPublication,
-    channel: mpsc::Sender<LivekitVideoFrame>,
+    sender: mpsc::Sender<I420Buffer>,
 ) {
     let mut stream =
         livekit::webrtc::video_stream::native::NativeVideoStream::new(video.rtc_track());
 
     while let Some(frame) = stream.next().await {
         let buffer = frame.buffer.to_i420();
-        let Err(err) = channel
-            .send(LivekitVideoFrame {
-                buffer,
-                timestamp: frame.timestamp_us,
-            })
-            .await
-        else {
-            continue;
-        };
-
-        error!("Livekit video channel errored: {err}.");
-        break;
+        if let Err(err) = sender.send(buffer).await {
+            error!("Livekit video thread failed to send frame buffer due to '{err}'.");
+            break;
+        }
     }
 
     warn!("video track {:?} ended, exiting task", publication.sid());

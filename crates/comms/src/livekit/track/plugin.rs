@@ -3,6 +3,7 @@ use common::util::AsH160;
 #[cfg(not(target_arch = "wasm32"))]
 use {
     livekit::track::{RemoteTrack, TrackKind, TrackSource},
+    livekit::webrtc::prelude::VideoBuffer,
     tokio::sync::{mpsc, oneshot},
 };
 
@@ -11,19 +12,20 @@ use crate::livekit::web::{TrackKind, TrackSource};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::{
     kira_bridge::kira_thread,
-    livekit_video_bridge::livekit_video_thread,
-    track::{LivekitTrackTask, OpenAudioSender, OpenVideoSender},
+    livekit_video_bridge::{livekit_video_thread, I420BufferExt},
+    participant::StreamImage,
+    track::{LivekitTrackTask, OpenAudioSender, VideoFrameReceiver},
 };
 use crate::{
     global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
     livekit::{
-        participant::{HostedBy, LivekitParticipant},
+        participant::{HostedBy, LivekitParticipant, StreamBroadcast},
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
-        track::Subscribing,
         track::{
             Audio, Camera, LivekitTrack, Microphone, PublishedBy, SubscribeToAudioTrack,
-            SubscribeToVideoTrack, Subscribed, TrackPublished, TrackSubscribed, TrackUnpublished,
-            TrackUnsubscribed, UnsubscribeToTrack, Unsubscribed, Unsubscribing, Video,
+            SubscribeToVideoTrack, Subscribed, Subscribing, TrackPublished, TrackSubscribed,
+            TrackUnpublished, TrackUnsubscribed, UnsubscribeToTrack, Unsubscribed, Unsubscribing,
+            Video,
         },
         LivekitRuntime,
     },
@@ -44,11 +46,12 @@ impl Plugin for LivekitTrackPlugin {
         #[cfg(not(target_arch = "wasm32"))]
         app.add_systems(
             Update,
-            (
-                subscribed_audio_track_with_open_sender,
-                subscribed_video_track_with_open_sender,
-            ),
+            (subscribed_audio_track_with_open_sender, receive_video_frame),
         );
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_observer(video_track_is_now_subscribed);
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_observer(track_of_watched_streamer::<Video, SubscribeToVideoTrack>);
     }
 }
 
@@ -308,16 +311,12 @@ fn subscribe_to_audio_track(
 }
 
 fn subscribe_to_video_track(
-    mut trigger: Trigger<SubscribeToVideoTrack>,
+    trigger: Trigger<SubscribeToVideoTrack>,
     mut commands: Commands,
     tracks: Query<&LivekitTrack, With<Video>>,
+    livekit_runtime: Res<LivekitRuntime>,
 ) {
     let entity = trigger.target();
-    let SubscribeToVideoTrack {
-        runtime,
-        #[cfg(not(target_arch = "wasm32"))]
-        sender,
-    } = trigger.event_mut();
 
     if entity == Entity::PLACEHOLDER {
         error!(
@@ -333,31 +332,22 @@ fn subscribe_to_video_track(
     #[cfg(not(target_arch = "wasm32"))]
     {
         let track = track.clone();
-        let (mut snatcher_sender, _) = mpsc::channel(1);
-        std::mem::swap(&mut snatcher_sender, sender);
 
         debug!("Subscribing to video track {}", track.sid());
-        let task = runtime.spawn(async move {
+        let task = livekit_runtime.spawn(async move {
             track.set_subscribed(true);
         });
-        commands.entity(entity).insert((
-            Subscribing { task },
-            OpenVideoSender {
-                runtime: runtime.clone(),
-                #[cfg(not(target_arch = "wasm32"))]
-                sender: snatcher_sender,
-            },
-        ));
+        commands.entity(entity).insert(Subscribing { task });
     }
 }
 
 fn unsubscribe_to_track(
-    mut trigger: Trigger<UnsubscribeToTrack>,
+    trigger: Trigger<UnsubscribeToTrack>,
     mut commands: Commands,
     tracks: Query<&LivekitTrack>,
+    livekit_runtime: Res<LivekitRuntime>,
 ) {
     let entity = trigger.target();
-    let UnsubscribeToTrack { runtime } = trigger.event_mut();
 
     if entity == Entity::PLACEHOLDER {
         error!("UnsubscribeToTrack is an entity event. Call it with 'Commands::trigger_targets'.");
@@ -371,7 +361,7 @@ fn unsubscribe_to_track(
     let track = track.clone();
 
     debug!("Unsubscribing to track {}", track.sid());
-    let task = runtime.spawn(async move {
+    let task = livekit_runtime.spawn(async move {
         track.set_subscribed(false);
     });
     commands.entity(entity).insert(Unsubscribing { task });
@@ -411,34 +401,112 @@ fn subscribed_audio_track_with_open_sender(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-#[expect(clippy::type_complexity, reason = "Queries are complex")]
-fn subscribed_video_track_with_open_sender(
+fn video_track_is_now_subscribed(
+    trigger: Trigger<OnAdd, Subscribed>,
     mut commands: Commands,
-    mut tracks: Populated<
-        (Entity, &LivekitTrack, &mut OpenVideoSender),
+    tracks: Query<&LivekitTrack, (With<Video>, With<Subscribed>)>,
+    livekit_runtime: Res<LivekitRuntime>,
+) {
+    use crate::livekit::track::VideoFrameReceiver;
+
+    let entity = trigger.target();
+    let Ok(track) = tracks.get(entity) else {
+        error!("Subscribed track was not a video.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    let runtime = livekit_runtime.clone();
+    let publication = track.track.clone();
+
+    let Some(RemoteTrack::Video(video)) = track.track() else {
+        error!("A subscribed video track did not have a video RemoteTrack.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    let (sender, receiver) = mpsc::channel(60);
+    let handle = runtime.spawn(livekit_video_thread(video, publication, sender));
+    commands
+        .entity(entity)
+        .insert((LivekitTrackTask(handle), VideoFrameReceiver { receiver }));
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
+fn receive_video_frame(
+    mut commands: Commands,
+    video_tracks: Populated<
+        (Entity, &LivekitTrack, &mut VideoFrameReceiver, &PublishedBy),
         (With<Video>, With<Subscribed>),
     >,
+    participants: Query<(&LivekitParticipant, Option<&StreamImage>)>,
+    mut images: ResMut<Assets<Image>>,
 ) {
-    for (entity, track, mut sender) in tracks.iter_mut() {
-        let runtime = sender.runtime.clone();
-        let publication = track.track.clone();
+    for (entity, livekit_track, mut video_frame_receiver, published_by) in video_tracks.into_inner()
+    {
+        use tokio::sync::mpsc::error::TryRecvError;
 
-        let Some(RemoteTrack::Video(video)) = track.track() else {
-            error!("A subscribed video track did not have a video RemoteTrack.");
+        let Ok((participant, maybe_stream_image)) = participants.get(published_by.get()) else {
+            error!("Invalid PublishedBy relationship.");
             commands.send_event(AppExit::from_code(1));
             return;
         };
+        let Some(stream_image) = maybe_stream_image else {
+            debug!(
+                "Participant {} ({}) has subscribed video track but no StreamImage.",
+                participant.sid(),
+                participant.identity()
+            );
+            continue;
+        };
 
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let (mut snatcher_sender, _) = mpsc::channel(1);
-            std::mem::swap(&mut snatcher_sender, &mut sender.sender);
+        match video_frame_receiver.try_recv() {
+            Ok(frame) => {
+                let Some(image) = images.get_mut(stream_image.id()) else {
+                    error!("StreamImage holds an invalid handle.");
+                    commands.send_event(AppExit::from_code(1));
+                    return;
+                };
 
-            let handle = runtime.spawn(livekit_video_thread(video, publication, snatcher_sender));
-            commands
-                .entity(entity)
-                .insert(LivekitTrackTask(handle))
-                .remove::<OpenVideoSender>();
+                if image.width() != frame.width() || image.height() != frame.height() {
+                    debug!("Resizing StreamImage image.");
+                    image.resize(Extent3d {
+                        width: frame.width(),
+                        height: frame.height(),
+                        depth_or_array_layers: 1,
+                    });
+                }
+                image.data = Some(frame.rgba_data());
+            }
+            Err(TryRecvError::Empty) => (),
+            Err(TryRecvError::Disconnected) => {
+                info!("Video stream {} is disconnected.", livekit_track.sid());
+                commands.entity(entity).try_remove::<VideoFrameReceiver>();
+            }
         }
+    }
+}
+
+fn track_of_watched_streamer<C: Component, E: Event + Default>(
+    trigger: Trigger<OnAdd, C>,
+    mut commands: Commands,
+    tracks: Query<&PublishedBy, With<C>>,
+    participants: Query<Has<StreamBroadcast>, With<LivekitParticipant>>,
+) {
+    let entity = trigger.target();
+    let Ok(published_by) = tracks.get(entity) else {
+        error!("Malformed track.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+    let Ok(has_stream_broadcast) = participants.get(published_by.get()) else {
+        error!("Invalid PublishedBy relationship.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    if has_stream_broadcast {
+        commands.trigger_targets(E::default(), entity);
     }
 }

@@ -520,7 +520,6 @@ fn unsubscribe_to_voice(
     rooms: Query<(&LivekitRoom, Option<&HostingParticipants>)>,
     participants: Query<(&LivekitParticipant, &track::Publishing)>,
     tracks: Query<Entity, With<track::Microphone>>,
-    livekit_runtime: Res<LivekitRuntime>,
 ) {
     let Ok((room, maybe_hosting)) = rooms.get(room_entity) else {
         error!("{} is not an well formed room.", room_entity);
@@ -557,12 +556,7 @@ fn unsubscribe_to_voice(
     };
 
     if let Some(track_entity) = tracks.iter_many(publishing.collection()).next() {
-        commands.trigger_targets(
-            track::UnsubscribeToTrack {
-                runtime: livekit_runtime.clone(),
-            },
-            track_entity,
-        );
+        commands.trigger_targets(track::UnsubscribeToTrack, track_entity);
     } else {
         error!(
             "No microphone track for {} ({}).",

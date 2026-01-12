@@ -7,6 +7,8 @@ use bevy::{
 #[cfg(not(target_arch = "wasm32"))]
 use common::structs::AudioDecoderError;
 #[cfg(not(target_arch = "wasm32"))]
+use livekit::webrtc::prelude::I420Buffer;
+#[cfg(not(target_arch = "wasm32"))]
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 #[cfg(not(target_arch = "wasm32"))]
@@ -15,8 +17,6 @@ use {
     livekit::prelude::{Participant, RemoteTrackPublication},
 };
 
-#[cfg(not(target_arch = "wasm32"))]
-use crate::livekit::livekit_video_bridge::LivekitVideoFrame;
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::{Participant, RemoteTrackPublication};
 use crate::{livekit::LivekitRuntime, make_hooks};
@@ -106,11 +106,9 @@ struct OpenAudioSender {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-#[derive(Component)]
-struct OpenVideoSender {
-    runtime: LivekitRuntime,
-    #[cfg(not(target_arch = "wasm32"))]
-    sender: mpsc::Sender<LivekitVideoFrame>,
+#[derive(Component, Deref, DerefMut)]
+struct VideoFrameReceiver {
+    receiver: mpsc::Receiver<I420Buffer>,
 }
 
 #[derive(Component)]
@@ -154,14 +152,8 @@ pub struct SubscribeToAudioTrack {
     pub sender: oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
 }
 
-#[derive(Event)]
-pub struct SubscribeToVideoTrack {
-    pub runtime: LivekitRuntime,
-    #[cfg(not(target_arch = "wasm32"))]
-    pub sender: mpsc::Sender<LivekitVideoFrame>,
-}
+#[derive(Default, Event)]
+pub struct SubscribeToVideoTrack;
 
 #[derive(Event)]
-pub struct UnsubscribeToTrack {
-    pub runtime: LivekitRuntime,
-}
+pub struct UnsubscribeToTrack;

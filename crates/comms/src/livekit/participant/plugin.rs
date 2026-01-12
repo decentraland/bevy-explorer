@@ -24,6 +24,7 @@ use crate::{
         },
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
+        track::{Publishing, SubscribeToVideoTrack, UnsubscribeToTrack, Video},
         LivekitRuntime,
     },
 };
@@ -341,11 +342,12 @@ fn non_stream_viewer_with_stream_image(
 fn someone_wants_to_watch_stream(
     trigger: Trigger<OnAdd, StreamBroadcast>,
     mut commands: Commands,
-    participants: Query<&LivekitParticipant, With<Streamer>>,
+    participants: Query<(&LivekitParticipant, Option<&Publishing>), With<Streamer>>,
+    video_tracks: Query<(), With<Video>>,
     mut images: ResMut<Assets<Image>>,
 ) {
     let entity = trigger.target();
-    let Ok(participant) = participants.get(entity) else {
+    let Ok((participant, maybe_publishing)) = participants.get(entity) else {
         error!("StreamBroadcast on a non-Streamer participant.");
         commands.send_event(AppExit::from_code(1));
         return;
@@ -372,15 +374,31 @@ fn someone_wants_to_watch_stream(
     commands
         .entity(entity)
         .insert(StreamImage(images.add(image)));
+
+    if let Some(publishing) = maybe_publishing {
+        if let Some(video_track) = publishing
+            .iter()
+            .find(|published_track| video_tracks.contains(*published_track))
+        {
+            commands.trigger_targets(SubscribeToVideoTrack, video_track);
+        } else {
+            debug!(
+                "Participant {} ({}) is being watched but do not have any published video track.",
+                participant.sid(),
+                participant.identity()
+            );
+        }
+    }
 }
 
 fn noone_is_watching_stream(
     trigger: Trigger<OnRemove, StreamBroadcast>,
     mut commands: Commands,
-    participants: Query<&LivekitParticipant, With<Streamer>>,
+    participants: Query<(&LivekitParticipant, Option<&Publishing>), With<Streamer>>,
+    video_tracks: Query<(), With<Video>>,
 ) {
     let entity = trigger.target();
-    let Ok(participant) = participants.get(entity) else {
+    let Ok((participant, maybe_publishing)) = participants.get(entity) else {
         error!("StreamBroadcast on a non-Streamer participant.");
         commands.send_event(AppExit::from_code(1));
         return;
@@ -391,4 +409,19 @@ fn noone_is_watching_stream(
         participant.identity()
     );
     commands.entity(entity).try_remove::<StreamImage>();
+
+    if let Some(publishing) = maybe_publishing {
+        if let Some(video_track) = publishing
+            .iter()
+            .find(|published_track| video_tracks.contains(*published_track))
+        {
+            commands.trigger_targets(UnsubscribeToTrack, video_track);
+        } else {
+            debug!(
+                "Participant {} ({}) is being watched but do not have any published video track.",
+                participant.sid(),
+                participant.identity()
+            );
+        }
+    }
 }
