@@ -1,4 +1,10 @@
-use bevy::{ecs::relationship::Relationship, prelude::*};
+use bevy::{
+    asset::RenderAssetUsages,
+    color::palettes,
+    ecs::relationship::Relationship,
+    prelude::*,
+    render::render_resource::{TextureDimension, TextureFormat, TextureUsages},
+};
 use common::util::AsH160;
 use dcl_component::proto_components::kernel::comms::rfc4;
 #[cfg(not(target_arch = "wasm32"))]
@@ -18,7 +24,7 @@ use crate::{
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
         track::{Publishing, UnsubscribeToTrack},
-        LivekitRuntime,
+        LivekitRuntime, StreamBroadcast, StreamImage, StreamViewer,
     },
 };
 
@@ -43,6 +49,8 @@ impl Plugin for LivekitParticipantPlugin {
             ),
         );
         app.add_observer(streamer_has_no_watchers);
+        app.add_observer(someone_wants_to_watch_stream);
+        app.add_observer(noone_is_watching_stream);
     }
 }
 
@@ -352,4 +360,61 @@ fn streamer_has_no_watchers(
             track,
         );
     }
+}
+
+fn someone_wants_to_watch_stream(
+    trigger: Trigger<OnAdd, StreamBroadcast>,
+    mut commands: Commands,
+    participants: Query<&LivekitParticipant, With<Streamer>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    let entity = trigger.target();
+    let Ok(participant) = participants.get(entity) else {
+        error!("StreamBroadcast on a non-Streamer participant.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    let mut image = Image::new_fill(
+        bevy::render::render_resource::Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        &palettes::basic::FUCHSIA.to_u8_array(),
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::all(),
+    );
+    image.texture_descriptor.usage =
+        TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT;
+    image.immediate_upload = true;
+
+    debug!(
+        "Streamer {} ({}) is now being watched.",
+        participant.sid(),
+        participant.identity()
+    );
+    commands
+        .entity(entity)
+        .insert(StreamImage(images.add(image)));
+}
+
+fn noone_is_watching_stream(
+    trigger: Trigger<OnRemove, StreamBroadcast>,
+    mut commands: Commands,
+    participants: Query<&LivekitParticipant, With<Streamer>>,
+) {
+    let entity = trigger.target();
+    let Ok(participant) = participants.get(entity) else {
+        error!("StreamBroadcast on a non-Streamer participant.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+    debug!(
+        "Streamer {} ({}) no longer being watched.",
+        participant.sid(),
+        participant.identity()
+    );
+    commands.entity(entity).try_remove::<StreamImage>();
 }
