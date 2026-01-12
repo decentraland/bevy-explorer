@@ -1,3 +1,5 @@
+var count = 0;
+
 function simpleHash(s) {
   var h = 0x811c9dc5;
 
@@ -166,6 +168,9 @@ function patchWebgpuAdater() {
 
     function wrapDeviceFunction(itemType, originalFunction) {
       return (...args) => {
+        if (count == 0 && !precaching) {
+          console.error(`itemType: ${itemType}`)
+        }
         const jsonArgs = JSON.stringify(args);
         const hash = simpleHash(jsonArgs);
         const cachedItem = gpuSessionState[itemType].get(hash);
@@ -313,3 +318,24 @@ function rehydrateItem(currentObject) {
     }
   }
 }
+
+window.shaderCompilerWait = async () => {
+  count += 1;
+  document.getElementById("shader-compiling").style.display = "flex";
+  await new Promise(resolve => {
+    setTimeout(resolve, 0);
+  });
+}
+
+window.shaderCompilerDone = async () => {
+  setTimeout(() => {
+    count -= 1;
+    if (count == 0) {
+      document.getElementById("shader-compiling").style.display = "none";
+    }
+  }, 500);
+  await new Promise(resolve => {
+    setTimeout(resolve, 0);
+  });
+}
+

@@ -341,16 +341,17 @@ window.set_url_params = (x, y, server, system_scene, preview) => {
     } else {
       urlParams.delete("systemScene");
     }
-  
+
     if (preview) {
       urlParams.set("preview", true);
     } else {
       urlParams.delete("preview");
     }
 
-    const newPath = window.location.pathname + '?' + urlParams.toString(); 
+    const newPath = window.location.pathname + '?' + urlParams.toString();
     history.replaceState(null, '', newPath);
   } catch (e) {
     console.log(`set url params failed: ${e}`);
   }
 }
+
