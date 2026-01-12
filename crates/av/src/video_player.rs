@@ -11,10 +11,7 @@ use bevy::{
 };
 use common::sets::SceneSets;
 #[cfg(feature = "livekit")]
-use comms::{
-    livekit::{livekit_video_bridge::LivekitVideoFrame, LivekitTransport},
-    SceneRoom, Transport,
-};
+use comms::livekit::participant::{StreamImage, StreamViewer};
 use dcl::interface::CrdtType;
 use dcl_component::{
     proto_components::sdk::components::{PbVideoEvent, VideoState},
@@ -26,11 +23,9 @@ use scene_runner::{
     ContainerEntity,
 };
 
-#[cfg(feature = "livekit")]
-use crate::video_stream::streamer_sinks;
 use crate::{
     audio_sink::{AudioSink, ChangeAudioSinkVolume},
-    av_player_is_in_scene,
+    av_player_should_be_playing,
     stream_processor::AVCommand,
     video_context::{VideoData, VideoInfo},
     video_stream::{av_sinks, noop_sinks, VideoSink},
@@ -46,13 +41,15 @@ impl Plugin for VideoPlayerPlugin {
         app.add_systems(
             Update,
             rebuild_sinks
-                .before(av_player_is_in_scene)
+                .after(av_player_should_be_playing)
                 .in_set(SceneSets::PostLoop),
         );
 
         app.add_observer(av_player_on_insert);
         app.add_observer(av_player_should_be_playing_on_add);
         app.add_observer(av_player_should_be_playing_on_remove);
+        #[cfg(feature = "livekit")]
+        app.add_observer(copy_stream_image);
     }
 }
 
@@ -64,11 +61,11 @@ fn init_ffmpeg() {
 fn av_player_on_insert(
     trigger: Trigger<OnInsert, AVPlayer>,
     mut commands: Commands,
-    mut av_players: Query<(&AVPlayer, Option<&AudioSink>, Option<&VideoSink>)>,
+    av_players: Query<(&AVPlayer, Option<&AudioSink>, Option<&VideoSink>)>,
 ) {
     let entity = trigger.target();
-    let Ok((av_player, maybe_audio_sink, maybe_video_sink)) = av_players.get_mut(entity) else {
-        return;
+    let Ok((av_player, maybe_audio_sink, maybe_video_sink)) = av_players.get(entity) else {
+        unreachable!("");
     };
 
     // This forces an update on the entity
@@ -110,6 +107,7 @@ fn av_player_on_insert(
             }
         }
     } else {
+        debug!("{entity:?}");
         if maybe_audio_sink.is_some() || maybe_video_sink.is_some() {
             debug!("Removing sinks of {entity} due to diverging source.");
         }
@@ -173,18 +171,12 @@ fn play_videos(
 ) {
     enum FrameSource {
         Video(ffmpeg_next::frame::Video),
-        #[cfg(feature = "livekit")]
-        Livekit(LivekitVideoFrame),
     }
 
     impl FrameSource {
         fn data(&self) -> Cow<'_, [u8]> {
             match self {
                 FrameSource::Video(video) => Cow::Borrowed(video.data(0)),
-                #[cfg(feature = "livekit")]
-                FrameSource::Livekit(livekit_video_frame) => {
-                    Cow::Owned(livekit_video_frame.rgba_data())
-                }
             }
         }
     }
@@ -212,24 +204,6 @@ fn play_videos(
                 Ok(VideoData::Frame(frame, time)) => {
                     last_frame_received = Some(FrameSource::Video(frame));
                     sink.current_time = time;
-                }
-                #[cfg(feature = "livekit")]
-                Ok(VideoData::LivekitFrame(frame)) => {
-                    let image = images.get_mut(&sink.image).unwrap();
-                    let extent = image.size();
-                    let width = frame.width();
-                    let height = frame.height();
-                    if extent.x != width || extent.y != height {
-                        debug!("resize {width} {height}");
-                        image.resize(Extent3d {
-                            width: width.max(16),
-                            height: height.max(16),
-                            depth_or_array_layers: 1,
-                        });
-                    }
-
-                    sink.current_time = frame.timestamp() as f64;
-                    last_frame_received = Some(FrameSource::Livekit(frame));
                 }
                 Ok(VideoData::State(state)) => new_state = Some(state),
                 Err(_) => break,
@@ -277,29 +251,32 @@ fn play_videos(
     }
 }
 
-#[expect(clippy::type_complexity, reason = "Queries are complex")]
+#[cfg(not(feature = "livekit"))]
+type RebuildSinkFilter = (Without<AudioSink>, Without<VideoSink>);
+#[cfg(feature = "livekit")]
+type RebuildSinkFilter = (
+    Without<AudioSink>,
+    Without<VideoSink>,
+    Without<StreamViewer>,
+);
+
 fn rebuild_sinks(
     mut commands: Commands,
-    video_players: Query<
+    video_players: Populated<
         (
             Entity,
             &ContainerEntity,
             &AVPlayer,
             Option<&VideoTextureOutput>,
-            &GlobalTransform,
         ),
-        (Without<AudioSink>, Without<VideoSink>),
-    >,
-    #[cfg(feature = "livekit")] mut scene_rooms: Query<
-        &mut Transport,
-        (With<LivekitTransport>, With<SceneRoom>),
+        RebuildSinkFilter,
     >,
     scenes: Query<&RendererSceneContext>,
     ipfs: Res<IpfsResource>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    for (ent, container, player, maybe_texture, _) in video_players.iter() {
-        debug!("Rebuilding sinks for {}.", ent);
+    for (ent, container, player, maybe_texture) in video_players.iter() {
+        trace!("Rebuilding sinks for {}.", ent);
         let image_handle = match maybe_texture {
             None => {
                 let mut image = Image::new_fill(
@@ -325,44 +302,8 @@ fn rebuild_sinks(
         };
 
         let (video_sink, audio_sink) = if player.source.src.starts_with("livekit-video://") {
-            #[cfg(feature = "livekit")]
-            if let Ok(transport) = scene_rooms.single_mut() {
-                if let Some(control_channel) = transport.control.clone() {
-                    let (video_sink, audio_sink) = streamer_sinks(
-                        ent,
-                        control_channel,
-                        player.source.src.clone(),
-                        image_handle,
-                        player.source.volume.unwrap_or(1.0),
-                    );
-                    debug!(
-                        "spawned streamer thread for scene @ {} (playing={})",
-                        context.base,
-                        player.source.playing.unwrap_or(true)
-                    );
-                    (video_sink, audio_sink)
-                } else {
-                    error!("Transport did not have ChannelControl channel.");
-                    noop_sinks(
-                        player.source.src.clone(),
-                        image_handle,
-                        player.source.volume.unwrap_or(1.0),
-                    )
-                }
-            } else {
-                error!("Could not determinate the scene of the AvPlayer.");
-                noop_sinks(
-                    player.source.src.clone(),
-                    image_handle,
-                    player.source.volume.unwrap_or(1.0),
-                )
-            }
-            #[cfg(not(feature = "livekit"))]
-            noop_sinks(
-                player.source.src.clone(),
-                image_handle,
-                player.source.volume.unwrap_or(1.0),
-            )
+            // Done in observers
+            continue;
         } else if player.source.src.is_empty() {
             let (video_sink, audio_sink) = noop_sinks(
                 player.source.src.clone(),
@@ -398,4 +339,20 @@ fn rebuild_sinks(
             .try_insert((video_sink, video_output, audio_sink));
         debug!("{ent:?} has {}", player.source.src);
     }
+}
+
+#[cfg(feature = "livekit")]
+fn copy_stream_image(
+    trigger: Trigger<OnAdd, StreamImage>,
+    mut commands: Commands,
+    stream_viewers: Query<&StreamImage, With<StreamViewer>>,
+) {
+    let entity = trigger.target();
+    let Ok(stream_image) = stream_viewers.get(entity) else {
+        // StreamImage added to something that is not a StreamViewer
+        return;
+    };
+    commands
+        .entity(entity)
+        .insert(VideoTextureOutput((**stream_image).clone()));
 }

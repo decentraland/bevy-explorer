@@ -56,6 +56,11 @@ use {
     audio_source_wasm::AudioSourcePluginImpl,
     html_video_player::VideoPlayerPlugin,
 };
+#[cfg(feature = "livekit")]
+use {
+    bevy::ecs::relationship::Relationship,
+    comms::livekit::participant::{StreamViewer, Streamer},
+};
 
 #[derive(Component, Debug)]
 #[component(immutable)]
@@ -130,6 +135,12 @@ impl Plugin for AVPlayerPlugin {
 
         #[cfg(feature = "ffmpeg")]
         app.add_observer(audio_sink::change_audio_sink_volume);
+        #[cfg(feature = "livekit")]
+        {
+            app.add_observer(stream_should_be_played);
+            app.add_observer(stream_shouldnt_be_played);
+            app.add_observer(streamer_joined);
+        }
 
         #[cfg(feature = "av_player_debug")]
         app.add_plugins(av_player_debug::AvPlayerDebugPlugin);
@@ -214,5 +225,64 @@ fn av_player_should_be_playing(
         .map(|(_, _, _, ent)| *ent)
     {
         commands.entity(ent).try_insert(ShouldBePlaying);
+    }
+}
+
+#[cfg(feature = "livekit")]
+fn stream_should_be_played(
+    trigger: Trigger<OnAdd, ShouldBePlaying>,
+    mut commands: Commands,
+    av_players: Query<(Entity, &AVPlayer)>,
+    streamer: Single<Entity, With<Streamer>>,
+) {
+    let entity = trigger.target();
+    let Ok((av_player_entity, av_player)) = av_players.get(entity) else {
+        unreachable!("ShouldBePlaying must only be added to AVPlayers.");
+    };
+
+    if av_player.source.src.starts_with("livekit-video://") {
+        debug!("AVPlayer {av_player_entity} should be playing. Linking to the stream.");
+        commands
+            .entity(entity)
+            .insert(<StreamViewer as Relationship>::from(*streamer));
+    }
+}
+
+#[cfg(feature = "livekit")]
+fn stream_shouldnt_be_played(
+    trigger: Trigger<OnRemove, ShouldBePlaying>,
+    mut commands: Commands,
+    av_players: Query<(Entity, &AVPlayer, Has<StreamViewer>)>,
+) {
+    let entity = trigger.target();
+    let Ok((av_player_entity, av_player, has_stream_viewer)) = av_players.get(entity) else {
+        unreachable!("ShouldBePlaying must have only been added to AVPlayers.");
+    };
+    if !has_stream_viewer {
+        // Noop if AVPlayer does not have `StreamViewer`
+        return;
+    }
+
+    if av_player.source.src.starts_with("livekit-video://") {
+        debug!("AVPlayer {av_player_entity} no longer playing. Unlinking to the stream.");
+        commands.entity(entity).try_remove::<StreamViewer>();
+    }
+}
+
+#[cfg(feature = "livekit")]
+fn streamer_joined(
+    trigger: Trigger<OnAdd, Streamer>,
+    mut commands: Commands,
+    av_players: Query<(Entity, &AVPlayer), With<ShouldBePlaying>>,
+) {
+    let entity = trigger.target();
+    debug!("Streamer {entity} has connected. Linking to AVPlayers in range.");
+
+    for (av_player_entity, av_player) in av_players {
+        if av_player.source.src.starts_with("livekit-video://") {
+            commands
+                .entity(av_player_entity)
+                .insert(<StreamViewer as Relationship>::from(entity));
+        }
     }
 }
