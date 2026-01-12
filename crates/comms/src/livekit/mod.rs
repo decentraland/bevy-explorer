@@ -41,17 +41,6 @@ pub struct LivekitNetworkMessage {
     receiver: mpsc::Receiver<NetworkMessage>,
 }
 
-#[derive(Component)]
-#[relationship(relationship_target=StreamBroadcast)]
-pub struct StreamViewer(Entity);
-
-#[derive(Component)]
-#[relationship_target(relationship=StreamViewer)]
-pub struct StreamBroadcast(Vec<Entity>);
-
-#[derive(Clone, Component, Deref)]
-pub struct StreamImage(Handle<Image>);
-
 #[macro_export]
 macro_rules! make_hooks {
     ($inserted:ty, ($($to_remove:ty),+)) => {

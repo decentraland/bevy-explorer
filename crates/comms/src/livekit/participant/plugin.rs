@@ -19,12 +19,12 @@ use crate::{
         participant::{
             connection_quality, HostedBy, HostingParticipants, LivekitParticipant, Local,
             ParticipantConnected, ParticipantConnectionQuality, ParticipantDisconnected,
-            ParticipantMetadataChanged, ParticipantPayload, Streamer, TransmittingTo,
+            ParticipantMetadataChanged, ParticipantPayload, StreamBroadcast, StreamImage,
+            StreamViewer, Streamer,
         },
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
-        track::{Publishing, UnsubscribeToTrack},
-        LivekitRuntime, StreamBroadcast, StreamImage, StreamViewer,
+        LivekitRuntime,
     },
 };
 
@@ -48,7 +48,6 @@ impl Plugin for LivekitParticipantPlugin {
                 non_stream_viewer_with_stream_image,
             ),
         );
-        app.add_observer(streamer_has_no_watchers);
         app.add_observer(someone_wants_to_watch_stream);
         app.add_observer(noone_is_watching_stream);
     }
@@ -336,29 +335,6 @@ fn non_stream_viewer_with_stream_image(
 ) {
     for entity in stream_viewers.into_inner() {
         commands.entity(entity).remove::<StreamImage>();
-    }
-}
-
-fn streamer_has_no_watchers(
-    trigger: Trigger<OnRemove, TransmittingTo>,
-    mut commands: Commands,
-    participants: Populated<&Publishing, (With<Streamer>, Without<TransmittingTo>)>,
-    livekit_runtime: Res<LivekitRuntime>,
-) {
-    let entity = trigger.target();
-    let Ok(publishing) = participants.get(entity) else {
-        error!("An entity that is not a participant had TransmittingTo.");
-        commands.send_event(AppExit::from_code(1));
-        return;
-    };
-
-    for track in publishing.iter() {
-        commands.trigger_targets(
-            UnsubscribeToTrack {
-                runtime: livekit_runtime.clone(),
-            },
-            track,
-        );
     }
 }
 

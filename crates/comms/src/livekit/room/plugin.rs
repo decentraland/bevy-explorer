@@ -34,7 +34,7 @@ use crate::{
     livekit::{
         participant::{
             HostingParticipants, LivekitParticipant, ParticipantConnected, ParticipantDisconnected,
-            ParticipantMetadataChanged, ParticipantPayload, ReceivingStream, Streamer,
+            ParticipantMetadataChanged, ParticipantPayload, StreamViewer, Streamer,
         },
         room::{Connected, ConnectingLivekitRoom, Disconnected, LivekitRoom, Reconnecting},
         track, LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime, LivekitTransport,
@@ -632,7 +632,7 @@ fn subscribe_to_streamer(
 
     commands
         .entity(subscriber)
-        .insert(<ReceivingStream as Relationship>::from(participant_entity));
+        .insert(<StreamViewer as Relationship>::from(participant_entity));
 
     if let Some(track_entity) = audio_tracks.iter_many(publishing.collection()).next() {
         #[cfg(not(target_arch = "wasm32"))]
@@ -679,7 +679,7 @@ fn subscribe_to_streamer(
 }
 
 fn unsubscribe_to_streamer(In(subscriber): In<Entity>, mut commands: Commands) {
-    commands.entity(subscriber).try_remove::<ReceivingStream>();
+    commands.entity(subscriber).try_remove::<StreamViewer>();
 }
 
 fn verify_room_tasks(

@@ -53,12 +53,6 @@ pub struct Local;
 #[derive(Component)]
 pub struct Streamer;
 
-/// Marks an entity as a receiver of stream data.
-///
-/// Usable on video players.
-#[derive(Component)]
-pub struct StreamReceiver;
-
 #[derive(Component)]
 #[relationship(relationship_target=HostingParticipants)]
 pub struct HostedBy(Entity);
@@ -68,12 +62,15 @@ pub struct HostedBy(Entity);
 pub struct HostingParticipants(Vec<Entity>);
 
 #[derive(Component)]
-#[relationship(relationship_target=TransmittingTo)]
-pub struct ReceivingStream(Entity);
+#[relationship(relationship_target=StreamBroadcast)]
+pub struct StreamViewer(Entity);
 
 #[derive(Component)]
-#[relationship_target(relationship=ReceivingStream)]
-pub struct TransmittingTo(Vec<Entity>);
+#[relationship_target(relationship=StreamViewer)]
+pub struct StreamBroadcast(Vec<Entity>);
+
+#[derive(Clone, Component, Deref)]
+pub struct StreamImage(Handle<Image>);
 
 #[derive(Event)]
 pub struct ParticipantConnected {
