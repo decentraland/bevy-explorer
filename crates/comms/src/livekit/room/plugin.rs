@@ -1,5 +1,4 @@
 use bevy::{
-    ecs::relationship::Relationship,
     platform::{collections::HashMap, sync::Arc},
     prelude::*,
 };
@@ -22,7 +21,6 @@ use {
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::{
-    livekit_video_bridge::LivekitVideoFrame,
     participant::{
         connection_quality::{Excellent, Good, Lost, Poor},
         ParticipantConnectionQuality,
@@ -34,7 +32,7 @@ use crate::{
     livekit::{
         participant::{
             HostingParticipants, LivekitParticipant, ParticipantConnected, ParticipantDisconnected,
-            ParticipantMetadataChanged, ParticipantPayload, StreamViewer, Streamer,
+            ParticipantMetadataChanged, ParticipantPayload,
         },
         room::{Connected, ConnectingLivekitRoom, Disconnected, LivekitRoom, Reconnecting},
         track, LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime, LivekitTransport,
@@ -323,17 +321,6 @@ fn process_channel_control(
                             commands
                                 .run_system_cached_with(unsubscribe_to_voice, (entity, address));
                         }
-                        #[cfg(not(target_arch = "wasm32"))]
-                        ChannelControl::StreamerSubscribe(subscriber, audio, video) => {
-                            commands.run_system_cached_with(
-                                subscribe_to_streamer,
-                                (entity, subscriber, audio, video),
-                            );
-                        }
-                        #[cfg(not(target_arch = "wasm32"))]
-                        ChannelControl::StreamerUnsubscribe(subscriber) => {
-                            commands.run_system_cached_with(unsubscribe_to_streamer, subscriber);
-                        }
                         #[cfg(target_arch = "wasm32")]
                         ChannelControl::StreamerSubscribe => {
                             if let Err(err) = streamer_subscribe_channel(&room_name, true, true) {
@@ -583,103 +570,6 @@ fn unsubscribe_to_voice(
             participant.identity()
         );
     }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-type SubscribeToStreamer = (
-    Entity,
-    Entity,
-    mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
-    mpsc::Sender<LivekitVideoFrame>,
-);
-#[cfg(target_arch = "wasm32")]
-type SubscribeToStreamer = (Entity, Entity);
-
-fn subscribe_to_streamer(
-    In(input): In<SubscribeToStreamer>,
-    mut commands: Commands,
-    rooms: Query<(&LivekitRoom, Option<&HostingParticipants>)>,
-    participants: Query<(Entity, &LivekitParticipant, &track::Publishing), With<Streamer>>,
-    audio_tracks: Query<Entity, With<track::Audio>>,
-    video_tracks: Query<Entity, With<track::Video>>,
-    livekit_runtime: Res<LivekitRuntime>,
-) {
-    #[cfg(not(target_arch = "wasm32"))]
-    let (room_entity, subscriber, audio, video) = input;
-    #[cfg(target_arch = "wasm32")]
-    let (room_entity, subscriber) = input;
-
-    let Ok((room, maybe_hosting)) = rooms.get(room_entity) else {
-        error!("LivekitRoom did not have runtime.");
-        commands.send_event(AppExit::from_code(1));
-        return;
-    };
-
-    let Some(hosting) = maybe_hosting else {
-        error!(
-            "Trying to subscribe to voice in room {}, but there are not participants.",
-            room.name()
-        );
-        return;
-    };
-
-    let Some((participant_entity, participant, publishing)) =
-        participants.iter_many(hosting.collection()).next()
-    else {
-        error!("No streamer participant in room {}.", room.name());
-        return;
-    };
-
-    commands
-        .entity(subscriber)
-        .insert(<StreamViewer as Relationship>::from(participant_entity));
-
-    if let Some(track_entity) = audio_tracks.iter_many(publishing.collection()).next() {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let (bypass_sender, bypass_receiver) = oneshot::channel();
-
-            commands.trigger_targets(
-                track::SubscribeToAudioTrack {
-                    runtime: livekit_runtime.clone(),
-                    #[cfg(not(target_arch = "wasm32"))]
-                    sender: bypass_sender,
-                },
-                track_entity,
-            );
-            livekit_runtime.spawn(async move {
-                let frame = bypass_receiver.await.unwrap();
-                audio.send(frame).await.unwrap();
-            });
-        }
-    } else {
-        error!(
-            "No audio track for {} ({}).",
-            participant.sid(),
-            participant.identity()
-        );
-    }
-
-    if let Some(track_entity) = video_tracks.iter_many(publishing.collection()).next() {
-        commands.trigger_targets(
-            track::SubscribeToVideoTrack {
-                runtime: livekit_runtime.clone(),
-                #[cfg(not(target_arch = "wasm32"))]
-                sender: video,
-            },
-            track_entity,
-        );
-    } else {
-        error!(
-            "No video track for {} ({}).",
-            participant.sid(),
-            participant.identity()
-        );
-    }
-}
-
-fn unsubscribe_to_streamer(In(subscriber): In<Entity>, mut commands: Commands) {
-    commands.entity(subscriber).try_remove::<StreamViewer>();
 }
 
 fn verify_room_tasks(
