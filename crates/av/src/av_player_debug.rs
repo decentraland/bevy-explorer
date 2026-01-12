@@ -8,7 +8,7 @@ use bevy::{
 use crate::{audio_sink::AudioSink, video_stream::VideoSink};
 use crate::{AVPlayer, InScene, ShouldBePlaying};
 #[cfg(feature = "livekit")]
-use comms::livekit::StreamViewer;
+use comms::livekit::participant::StreamViewer;
 
 pub struct AvPlayerDebugPlugin;
 
@@ -136,7 +136,7 @@ fn setup_av_player_debug_ui(mut commands: Commands) {
                     #[cfg(feature = "ffmpeg")]
                     "VideoSink",
                     #[cfg(feature = "livekit")]
-                    "Streamer",
+                    "StreamerViewer",
                     "InScene",
                     "ShouldBePlaying",
                 ),
