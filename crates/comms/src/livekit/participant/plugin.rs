@@ -362,9 +362,7 @@ fn someone_wants_to_watch_stream(
         TextureFormat::Rgba8UnormSrgb,
         RenderAssetUsages::all(),
     );
-    image.texture_descriptor.usage =
-        TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT;
-    image.immediate_upload = true;
+    image.texture_descriptor.usage = TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING;
 
     debug!(
         "Streamer {} ({}) is now being watched.",
