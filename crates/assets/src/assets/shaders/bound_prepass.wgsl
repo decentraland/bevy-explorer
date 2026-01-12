@@ -2,6 +2,7 @@
     prepass_bindings,
     prepass_io::{Vertex, VertexOutput, FragmentOutput},
     mesh_view_bindings::{view, previous_view_proj},
+    pbr_types::STANDARD_MATERIAL_FLAGS_DOUBLE_SIDED_BIT,
     pbr_fragment::pbr_input_from_standard_material,
     pbr_prepass_functions::prepass_alpha_discard,
 }
@@ -12,6 +13,7 @@
 
 const OUTLINE_RED: u32 = 4u;
 const DISABLE_DITHER: u32 = 16u;
+const CONE_ONLY_DITHER: u32 = 32u;
 
 @group(0) @binding(1) var<uniform> globals: Globals;
 
@@ -51,7 +53,7 @@ fn fragment(
     var out: FragmentOutput;
 
     if (bounds.flags & (DISABLE_DITHER + OUTLINE_RED)) == 0 {
-        discard_dither(in.position.xy, in.world_position.xyz, globals.user_global);
+        discard_dither(in.position.xy, in.world_position.xyz, globals.user_global, (bounds.flags & CONE_ONLY_DITHER) == 0);
     }
 
 #ifdef NORMAL_PREPASS

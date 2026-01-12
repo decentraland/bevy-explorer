@@ -68,21 +68,49 @@ fn apply_outline(position: vec4<f32>, color_in: vec4<f32>, hilight: bool, sample
 return out;
 }
 
-fn discard_dither(ndc_position: vec2<f32>, world_position: vec3<f32>, depth: f32) {
+fn discard_dither(ndc_position: vec2<f32>, world_position: vec3<f32>, depth: f32, distance_dither: bool) -> f32 {
     let view_to_frag = world_position - view.world_position;
     
     // player is left of the view forward by 0.25 * clamp(camera distance, 0, 3). we use half of that as our target
-    let target_offset = depth * -view.world_from_view[2].xyz // view fwd
-        - 0.125 * clamp(depth, 0.0, 3.0) * view.world_from_view[0].xyz; // view right
+    // we also lower by 0.5m world, as target is at head height
+    let view_fwd = -view.world_from_view[2].xyz;
+    let view_right = view.world_from_view[0].xyz;
+    let view_up = view.world_from_view[1].xyz;
+    let target_offset = depth * view_fwd - 0.125 * clamp(depth, 0.0, 3.0) * view_right; 
 
     let view_direction = normalize(target_offset);
     let projection_length = dot(view_to_frag, view_direction);
 
     if projection_length < depth + 0.35 { // 0.35 = collider radius
-        let cone_distance = length(world_position - (view.world_position.xyz + (view_direction * projection_length)));
+        let cone_distance = length(world_position - (view.world_position.xyz + (view_direction * projection_length))) / (projection_length / depth) / (1.0 + max(0.0, (projection_length - depth)) / 10.0);
         let threshold = fract(52.9829189 * fract(dot(ndc_position * (1.0 * 5.588238), vec2(0.06711056, 0.00583715))));
-        if max(0.2, cone_distance + 0.5 - saturate((depth - projection_length) * 0.5) * 1.0 + saturate(projection_length - depth) * 5.0) < threshold * 2.0 {
+
+        var use_distance = cone_distance;
+        if distance_dither {
+            let full_transparent_start_distance = depth * 0.0;
+            let full_transparent_end_distance = depth * 0.75;
+
+            let full_transparent_factor = saturate((projection_length - full_transparent_start_distance) / (full_transparent_end_distance - full_transparent_start_distance));
+
+            use_distance = mix(
+                min(cone_distance, full_transparent_factor), 
+                min(cone_distance, 2.0),
+                full_transparent_factor,
+            );
+        }
+
+        if  max(
+               0.1,
+               use_distance 
+                 + 0.5 
+                 - saturate((depth - projection_length) * 0.5) * 1.0 
+                 + saturate(projection_length - depth) * 5.0
+            ) < threshold
+        {
             discard;
         }
+        return 1.0 - saturate(use_distance);
     }
+
+    return 0.0;
 }

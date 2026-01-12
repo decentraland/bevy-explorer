@@ -285,59 +285,59 @@ pub fn update_camera_position(
         }
 
         let base_distance = distance;
-        if distance > 0.0 {
-            // cast to check visibility
-            let scenes_head = containing_scene.get_position(player_head);
-            let scenes_cam =
-                containing_scene.get_position(player_head + target_direction * distance);
+        // if distance > 0.0 {
+        //     // cast to check visibility
+        //     let scenes_head = containing_scene.get_position(player_head);
+        //     let scenes_cam =
+        //         containing_scene.get_position(player_head + target_direction * distance);
 
-            const OFFSET_SIZE: f32 = 0.15;
-            let offsets = [
-                Vec3::ZERO,
-                Vec3::new(-OFFSET_SIZE, 0.0, 0.0),
-                Vec3::new(OFFSET_SIZE, 0.0, 0.0),
-                Vec3::new(0.0, -OFFSET_SIZE, 0.0),
-                Vec3::new(0.0, OFFSET_SIZE, 0.0),
-            ];
-            let mut offset_distances = [FloatOrd(1.0); 5];
-            for scene in (scenes_head).union(&scenes_cam) {
-                let Ok((context, mut colliders)) = scene_colliders.get_mut(*scene) else {
-                    continue;
-                };
+        //     const OFFSET_SIZE: f32 = 0.15;
+        //     let offsets = [
+        //         Vec3::ZERO,
+        //         Vec3::new(-OFFSET_SIZE, 0.0, 0.0),
+        //         Vec3::new(OFFSET_SIZE, 0.0, 0.0),
+        //         Vec3::new(0.0, -OFFSET_SIZE, 0.0),
+        //         Vec3::new(0.0, OFFSET_SIZE, 0.0),
+        //     ];
+        //     let mut offset_distances = [FloatOrd(1.0); 5];
+        //     for scene in (scenes_head).union(&scenes_cam) {
+        //         let Ok((context, mut colliders)) = scene_colliders.get_mut(*scene) else {
+        //             continue;
+        //         };
 
-                for ix in 0..5 {
-                    let origin = player_head + target_transform.rotation.mul_vec3(offsets[ix]);
-                    if let Some(hit) = colliders.cast_ray_nearest(
-                        context.last_update_frame,
-                        origin,
-                        target_translation - origin,
-                        1.0,
-                        u32::MAX,
-                        false,
-                        false,
-                        None,
-                    ) {
-                        offset_distances[ix] =
-                            FloatOrd(offset_distances[ix].0.min(hit.toi).max(0.0));
-                    }
-                }
-            }
-            debug!(
-                "{distance} vs {:?}",
-                offset_distances.iter().map(|d| d.0).collect::<Vec<_>>()
-            );
-            distance *= offset_distances.iter().min().unwrap().0;
-        }
+        //         for ix in 0..5 {
+        //             let origin = player_head + target_transform.rotation.mul_vec3(offsets[ix]);
+        //             if let Some(hit) = colliders.cast_ray_nearest(
+        //                 context.last_update_frame,
+        //                 origin,
+        //                 target_translation - origin,
+        //                 1.0,
+        //                 u32::MAX,
+        //                 false,
+        //                 false,
+        //                 None,
+        //             ) {
+        //                 offset_distances[ix] =
+        //                     FloatOrd(offset_distances[ix].0.min(hit.toi).max(0.0));
+        //             }
+        //         }
+        //     }
+        //     debug!(
+        //         "{distance} vs {:?}",
+        //         offset_distances.iter().map(|d| d.0).collect::<Vec<_>>()
+        //     );
+        //     distance *= offset_distances.iter().min().unwrap().0;
+        // }
 
         target_transform.translation = player_head
             + head_offset * base_distance.clamp(0.0, 3.0)
             + target_direction * base_distance;
 
-        if base_distance == distance {
-            user_global.0 = 0.0;
-        } else {
+        // if base_distance == distance {
+        //     user_global.0 = 0.0;
+        // } else {
             user_global.0 = base_distance;
-        }
+        // }
     }
 
     let changed = (prev_override.is_some() != options.scene_override.is_some())
