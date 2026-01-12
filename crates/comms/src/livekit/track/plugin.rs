@@ -406,17 +406,19 @@ fn subscribed_audio_track_with_open_sender(
 fn video_track_is_now_subscribed(
     trigger: Trigger<OnAdd, Subscribed>,
     mut commands: Commands,
-    tracks: Query<&LivekitTrack, (With<Video>, With<Subscribed>)>,
+    tracks: Query<(&LivekitTrack, Has<Video>), With<Subscribed>>,
     livekit_runtime: Res<LivekitRuntime>,
 ) {
-    use crate::livekit::track::VideoFrameReceiver;
-
     let entity = trigger.target();
-    let Ok(track) = tracks.get(entity) else {
-        error!("Subscribed track was not a video.");
+    let Ok((track, is_video)) = tracks.get(entity) else {
+        error!("Subscribed track did not have LivekitTrack.");
         commands.send_event(AppExit::from_code(1));
         return;
     };
+    if !is_video {
+        trace!("Subscribed track was not a video track.");
+        return;
+    }
 
     let runtime = livekit_runtime.clone();
     let publication = track.track.clone();
