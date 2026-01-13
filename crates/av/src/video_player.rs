@@ -107,7 +107,6 @@ fn av_player_on_insert(
             }
         }
     } else {
-        debug!("{entity:?}");
         if maybe_audio_sink.is_some() || maybe_video_sink.is_some() {
             debug!("Removing sinks of {entity} due to diverging source.");
         }
@@ -117,6 +116,7 @@ fn av_player_on_insert(
         if let Some(audio_sink) = maybe_audio_sink {
             let _ = audio_sink.command_sender.try_send(AVCommand::Dispose);
         }
+        debug!("{entity:?} has {}.", av_player.source.src);
         commands
             .entity(trigger.target())
             .try_remove::<(AudioSink, VideoSink)>();
@@ -337,7 +337,6 @@ fn rebuild_sinks(
         commands
             .entity(ent)
             .try_insert((video_sink, video_output, audio_sink));
-        debug!("{ent:?} has {}", player.source.src);
     }
 }
 
