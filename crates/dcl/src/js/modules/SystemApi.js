@@ -336,10 +336,12 @@ module.exports.getVoiceStream = async function() {
 
 // get hover events as a stream for 3D elements
 // type HoverTargetType = "world" | "ui" | "avatar"
+// type PointerEventType = "petUp" | "petDown" | "petHoverEnter" | "petHoverLeave" | "petDragLocked" | "petDrag" | "petDragEnd"
 // type HoverActionInfo = {
-//   action: string,        // e.g., "IaPointer", "IaPrimary", etc.
-//   inputBinding: string?, // e.g., "Mouse Left", "E"
-//   hoverText: string?,    // the hover text configured for this action
+//   action: string,             // e.g., "IaPointer", "IaPrimary", etc.
+//   inputBinding: string?,      // e.g., "Mouse Left", "E"
+//   hoverText: string?,         // the hover text configured for this action
+//   eventType: PointerEventType, // the type of event this action responds to
 // }
 // type HoverEvent = {
 //   entered: bool,              // true = entered, false = left

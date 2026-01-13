@@ -599,6 +599,19 @@ pub struct SystemActionEvent {
     pub pressed: bool,
 }
 
+/// Type of pointer event interaction
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[serde(rename_all = "camelCase")]
+pub enum PointerEventType {
+    PetUp = 0,
+    PetDown = 1,
+    PetHoverEnter = 2,
+    PetHoverLeave = 3,
+    PetDragLocked = 4,
+    PetDrag = 5,
+    PetDragEnd = 6,
+}
+
 /// Information about an action button configured on a hovered element
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
@@ -609,6 +622,8 @@ pub struct HoverActionInfo {
     pub input_binding: Option<String>,
     /// The hover text configured for this action
     pub hover_text: Option<String>,
+    /// The type of event this action responds to
+    pub event_type: PointerEventType,
 }
 
 /// Type of target being hovered

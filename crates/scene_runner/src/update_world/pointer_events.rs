@@ -3,7 +3,7 @@ use bevy::{
     prelude::*,
 };
 use common::{
-    inputs::{CommonInputAction, HoverActionInfo, HoverEvent, HoverTargetType, InputMap},
+    inputs::{CommonInputAction, HoverActionInfo, HoverEvent, HoverTargetType, InputMap, PointerEventType},
     rpc::RpcStreamSender,
     structs::{ToolTips, TooltipSource},
 };
@@ -131,6 +131,19 @@ fn convert_target_type(ty: PointerTargetType) -> HoverTargetType {
         PointerTargetType::World => HoverTargetType::World,
         PointerTargetType::Ui => HoverTargetType::Ui,
         PointerTargetType::Avatar => HoverTargetType::Avatar,
+    }
+}
+
+fn convert_event_type(event_type: i32) -> PointerEventType {
+    match event_type {
+        0 => PointerEventType::PetUp,
+        1 => PointerEventType::PetDown,
+        2 => PointerEventType::PetHoverEnter,
+        3 => PointerEventType::PetHoverLeave,
+        4 => PointerEventType::PetDragLocked,
+        5 => PointerEventType::PetDrag,
+        6 => PointerEventType::PetDragEnd,
+        _ => PointerEventType::PetDown, // default
     }
 }
 
@@ -311,6 +324,7 @@ fn collect_actions(
                 action,
                 input_binding,
                 hover_text: info.hover_text.clone(),
+                event_type: convert_event_type(pe.event_type),
             })
         })
         .collect();
