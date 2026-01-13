@@ -929,59 +929,48 @@ fn send_action_events(
         }
     };
 
-    // send event to action target
-    let mut unconsumed = Vec::default();
+    // send event to action target (if any)
     if let Some(info) = target.0.as_ref() {
-        let unconsumed_down = input_mgr
-            .iter_scene_just_down()
-            .map(IaToDcl::to_dcl)
-            .filter(|down| {
-                let consumed = send_event(info, PointerEventType::PetDown, *down, None);
-                if filtered_events(&pointer_requests, info, PointerEventType::PetDrag, *down)
-                    .next()
-                    .is_some()
-                {
-                    debug!("added drag");
-                    drag_target.entities.insert(*down, (info.clone(), false));
-                }
-                if filtered_events(
-                    &pointer_requests,
-                    info,
-                    PointerEventType::PetDragLocked,
-                    *down,
-                )
+        for down in input_mgr.iter_scene_just_down().map(IaToDcl::to_dcl) {
+            send_event(info, PointerEventType::PetDown, down, None);
+            if filtered_events(&pointer_requests, info, PointerEventType::PetDrag, down)
                 .next()
                 .is_some()
-                {
-                    debug!("added drag lock");
-                    drag_target.entities.insert(*down, (info.clone(), true));
-                }
+            {
+                debug!("added drag");
+                drag_target.entities.insert(down, (info.clone(), false));
+            }
+            if filtered_events(
+                &pointer_requests,
+                info,
+                PointerEventType::PetDragLocked,
+                down,
+            )
+            .next()
+            .is_some()
+            {
+                debug!("added drag lock");
+                drag_target.entities.insert(down, (info.clone(), true));
+            }
+        }
 
-                !consumed
-            })
-            .map(|button| (PointerEventType::PetDown, button));
-        unconsumed.extend(unconsumed_down);
+        for up in input_mgr.iter_scene_just_up().map(IaToDcl::to_dcl) {
+            send_event(info, PointerEventType::PetUp, up, None);
+        }
+    }
 
-        let unconsumed_up = input_mgr
-            .iter_scene_just_up()
-            .map(IaToDcl::to_dcl)
-            .filter(|up| !send_event(info, PointerEventType::PetUp, *up, None))
-            .map(|button| (PointerEventType::PetUp, button));
-        unconsumed.extend(unconsumed_up);
-    } else {
-        unconsumed.extend(
-            input_mgr
-                .iter_scene_just_down()
-                .map(IaToDcl::to_dcl)
-                .map(|b| (PointerEventType::PetDown, b)),
-        );
-        unconsumed.extend(
+    // always collect all inputs for scene roots (inputSystem.isPressed)
+    let all_inputs: Vec<_> = input_mgr
+        .iter_scene_just_down()
+        .map(IaToDcl::to_dcl)
+        .map(|b| (PointerEventType::PetDown, b))
+        .chain(
             input_mgr
                 .iter_scene_just_up()
                 .map(IaToDcl::to_dcl)
                 .map(|b| (PointerEventType::PetUp, b)),
-        );
-    }
+        )
+        .collect();
 
     // send any drags
     let frame_delta = input_mgr.get_analog(POINTER_SET, InputPriority::Scene);
@@ -1018,14 +1007,14 @@ fn send_action_events(
     }
 
     // send events to scene roots
-    if unconsumed.is_empty() {
+    if all_inputs.is_empty() {
         return;
     }
 
     for (mut context, _) in scenes.iter_mut() {
         let tick_number = context.tick_number;
 
-        for &(pet, button) in &unconsumed {
+        for &(pet, button) in &all_inputs {
             context.update_crdt(
                 SceneComponentId::POINTER_RESULT,
                 CrdtType::GO_ENT,

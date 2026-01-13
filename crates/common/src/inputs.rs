@@ -600,8 +600,8 @@ pub struct SystemActionEvent {
 }
 
 /// Type of pointer event interaction
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[serde(rename_all = "camelCase")]
+#[derive(serde_repr::Serialize_repr, serde_repr::Deserialize_repr, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(i32)]
 pub enum PointerEventType {
     PetUp = 0,
     PetDown = 1,
@@ -626,13 +626,13 @@ pub struct HoverActionInfo {
     pub event_type: PointerEventType,
 }
 
-/// Type of target being hovered
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+/// Type of target being hovered (0=world, 1=ui, 2=avatar)
+#[derive(serde_repr::Serialize_repr, serde_repr::Deserialize_repr, Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(i32)]
 pub enum HoverTargetType {
-    World,
-    Ui,
-    Avatar,
+    World = 0,
+    Ui = 1,
+    Avatar = 2,
 }
 
 /// Event sent when hovering over 3D elements
