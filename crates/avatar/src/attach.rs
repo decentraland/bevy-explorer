@@ -13,7 +13,7 @@ use dcl_component::{
     proto_components::sdk::components::{AvatarAnchorPointType, PbAvatarAttach},
     SceneComponentId,
 };
-use scene_material::{SCENE_MATERIAL_CONE_ONLY_DITHER, SCENE_MATERIAL_NO_DITHERING, SceneMaterial};
+use scene_material::{SceneMaterial, SCENE_MATERIAL_CONE_ONLY_DITHER, SCENE_MATERIAL_NO_DITHERING};
 use scene_runner::update_world::{
     mesh_collider::DisableCollisions,
     transform_and_parent::{AvatarAttachStage, ParentPositionSync},
@@ -37,7 +37,7 @@ impl Plugin for AttachPlugin {
 }
 
 #[derive(Component, Clone, PartialEq)]
-pub struct AttachedToPlayer{
+pub struct AttachedToPlayer {
     pub is_primary: bool,
 }
 
@@ -114,7 +114,7 @@ pub fn update_attached(
         commands.try_insert((
             ParentPositionSync::<AvatarAttachStage>::new(sync_entity),
             DisableCollisions,
-            AttachedToPlayer{ is_primary },
+            AttachedToPlayer { is_primary },
         ));
         debug!("syncing {ent:?} to {sync_entity:?}");
     }
