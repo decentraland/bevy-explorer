@@ -1,21 +1,18 @@
 use bevy::prelude::*;
 use common::structs::AudioDecoderError;
-use futures_lite::StreamExt;
+use futures_lite::{future::poll_once, StreamExt};
 use livekit::{
     prelude::RemoteTrackPublication,
     track::{RemoteAudioTrack, RemoteVideoTrack},
     webrtc::{
         audio_stream::native::NativeAudioStream,
         native::yuv_helper,
-        prelude::{AudioFrame, I420Buffer, VideoBuffer},
+        prelude::{AudioFrame, I420Buffer, RtcTrackState, VideoBuffer},
         video_stream::native::NativeVideoStream,
     },
 };
 use tokio::sync::mpsc;
-#[cfg(not(target_arch = "wasm32"))]
-use {futures_lite::future::poll_once, livekit::webrtc::prelude::RtcTrackState};
 
-#[cfg(not(target_arch = "wasm32"))]
 pub struct AudioTrackKiraBridge {
     sample_rate: u32,
     receiver: mpsc::Receiver<AudioFrame<'static>>,
