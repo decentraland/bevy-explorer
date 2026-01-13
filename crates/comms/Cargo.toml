@@ -29,6 +29,7 @@ futures-lite = { workspace = true }
 reqwest = { workspace = true }
 prost = { workspace = true }
 async-std = { workspace = true }
+bevy_kira_audio = { workspace = true }
 kira = { workspace = true }
 futures-util = { workspace = true }
 num-traits = { workspace = true }

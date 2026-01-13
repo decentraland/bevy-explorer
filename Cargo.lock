@@ -2766,6 +2766,7 @@ dependencies = [
  "anyhow",
  "async-std",
  "bevy",
+ "bevy_kira_audio",
  "bimap",
  "cid",
  "common",
