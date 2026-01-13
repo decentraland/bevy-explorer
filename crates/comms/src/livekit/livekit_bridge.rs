@@ -12,6 +12,8 @@ use livekit::{
     },
 };
 use tokio::sync::mpsc;
+#[cfg(not(target_arch = "wasm32"))]
+use {futures_lite::future::poll_once, livekit::webrtc::prelude::RtcTrackState};
 
 #[cfg(not(target_arch = "wasm32"))]
 pub struct AudioTrackKiraBridge {
@@ -26,27 +28,41 @@ impl AudioTrackKiraBridge {
         let mut rtc_stream = NativeAudioStream::new(audio_track.rtc_track(), sample_rate as i32, 1);
 
         let (sender, receiver) = mpsc::channel(480);
-        std::thread::spawn(move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .thread_name(sid)
-                .enable_all()
-                .build()
-                .unwrap();
+        std::thread::Builder::new()
+            .name(sid.to_string())
+            .spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .thread_name(sid)
+                    .enable_all()
+                    .build()
+                    .unwrap();
 
-            let handle = runtime.spawn(async move {
-                while let Some(frame) = rtc_stream.next().await {
-                    match sender.send(frame).await {
-                        Ok(()) => (),
-                        Err(mpsc::error::SendError(_)) => {
-                            error!("Failed to send audio frame.");
+                let handle = runtime.spawn(async move {
+                    loop {
+                        if rtc_stream.track().state() == RtcTrackState::Ended {
                             break;
                         }
+                        let Some(poll) = poll_once(rtc_stream.next()).await else {
+                            continue;
+                        };
+                        let Some(frame) = poll else {
+                            break;
+                        };
+                        match sender.send(frame).await {
+                            Ok(()) => (),
+                            Err(mpsc::error::SendError(_)) => {
+                                error!("Failed to send audio frame.");
+                                break;
+                            }
+                        }
                     }
-                }
-            });
+                });
 
-            runtime.block_on(handle).unwrap();
-        });
+                runtime.block_on(handle).unwrap();
+
+                debug!("Worker thread {:?} ended.", std::thread::current().name())
+            })
+            .unwrap();
 
         Self {
             sample_rate,
