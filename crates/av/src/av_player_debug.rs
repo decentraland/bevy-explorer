@@ -1,14 +1,27 @@
 //! Debug overlay to show information about [`AVPlayer`]s
 
 use bevy::{
-    color::palettes, ecs::relationship::RelatedSpawnerCommands, picking::Pickable, prelude::*,
+    color::palettes,
+    ecs::relationship::RelatedSpawnerCommands,
+    picking::Pickable,
+    prelude::*,
+    text::{FontSmoothing, LineHeight},
 };
 
 #[cfg(feature = "ffmpeg")]
 use crate::{audio_sink::AudioSink, video_stream::VideoSink};
 use crate::{AVPlayer, InScene, ShouldBePlaying};
 #[cfg(feature = "livekit")]
-use comms::livekit::participant::StreamViewer;
+use comms::livekit::participant::{StreamAudioSource, StreamImage, StreamViewer};
+
+const DEFAULT_FONT: TextFont = TextFont {
+    font: Handle::Weak(AssetId::Uuid {
+        uuid: AssetId::<Font>::DEFAULT_UUID,
+    }),
+    font_size: 12.,
+    line_height: LineHeight::RelativeToFont(1.2),
+    font_smoothing: FontSmoothing::AntiAliased,
+};
 
 pub struct AvPlayerDebugPlugin;
 
@@ -28,8 +41,12 @@ impl Plugin for AvPlayerDebugPlugin {
         }
         #[cfg(feature = "livekit")]
         {
-            app.add_observer(on_add_column::<StreamViewer, StreamerColumn>);
-            app.add_observer(on_remove_column::<StreamViewer, StreamerColumn>);
+            app.add_observer(on_add_column::<StreamViewer, StreamViewerColumn>);
+            app.add_observer(on_remove_column::<StreamViewer, StreamViewerColumn>);
+            app.add_observer(on_add_column::<StreamAudioSource, StreamAudioSourceColumn>);
+            app.add_observer(on_remove_column::<StreamAudioSource, StreamAudioSourceColumn>);
+            app.add_observer(on_add_column::<StreamImage, StreamImageColumn>);
+            app.add_observer(on_remove_column::<StreamImage, StreamImageColumn>);
         }
         app.add_observer(on_add_column::<InScene, InSceneColumn>);
         app.add_observer(on_remove_column::<InScene, InSceneColumn>);
@@ -62,17 +79,29 @@ const VIDEO_SINK_COLUMN_COLUMN: i16 = 3;
 
 #[cfg(feature = "livekit")]
 #[derive(Component)]
-struct StreamerColumn;
+struct StreamViewerColumn;
 #[cfg(feature = "livekit")]
-const STREAMER_COLUMN_COLUMN: i16 = 4;
+const STREAM_VIEWER_COLUMN_COLUMN: i16 = 4;
+
+#[cfg(feature = "livekit")]
+#[derive(Component)]
+struct StreamAudioSourceColumn;
+#[cfg(feature = "livekit")]
+const STREAM_AUDIO_SOURCE_COLUMN_COLUMN: i16 = 5;
+
+#[cfg(feature = "livekit")]
+#[derive(Component)]
+struct StreamImageColumn;
+#[cfg(feature = "livekit")]
+const STREAM_IMAGE_COLUMN_COLUMN: i16 = 6;
 
 #[derive(Component)]
 struct InSceneColumn;
-const IN_SCENE_COLUMN_COLUMN: i16 = 5;
+const IN_SCENE_COLUMN_COLUMN: i16 = 7;
 
 #[derive(Component)]
 struct ShouldPlayColumn;
-const SHOULD_PLAY_COLUMN_COLUMN: i16 = 6;
+const SHOULD_PLAY_COLUMN_COLUMN: i16 = 8;
 
 #[cfg(all(not(feature = "ffmpeg"), not(feature = "livekit")))]
 type AnyColumn = Or<(
@@ -91,7 +120,9 @@ type AnyColumn = Or<(
 #[cfg(all(not(feature = "ffmpeg"), feature = "livekit"))]
 type AnyColumn = Or<(
     With<AvPlayerColumn>,
-    With<StreamerColumn>,
+    With<StreamViewerColumn>,
+    With<StreamAudioSourceColumn>,
+    With<StreamImageColumn>,
     With<InSceneColumn>,
     With<ShouldPlayColumn>,
 )>;
@@ -100,7 +131,9 @@ type AnyColumn = Or<(
     With<AvPlayerColumn>,
     With<AudioSinkColumn>,
     With<VideoSinkColumn>,
-    With<StreamerColumn>,
+    With<StreamViewerColumn>,
+    With<StreamAudioSourceColumn>,
+    With<StreamImageColumn>,
     With<InSceneColumn>,
     With<ShouldPlayColumn>,
 )>;
@@ -137,6 +170,10 @@ fn setup_av_player_debug_ui(mut commands: Commands) {
                     "VideoSink",
                     #[cfg(feature = "livekit")]
                     "StreamerViewer",
+                    #[cfg(feature = "livekit")]
+                    "StreamerAudioSource",
+                    #[cfg(feature = "livekit")]
+                    "StreamerImage",
                     "InScene",
                     "ShouldBePlaying",
                 ),
@@ -194,6 +231,10 @@ fn av_player_on_add(
                     #[cfg(feature = "ffmpeg")]
                     "No",
                     #[cfg(feature = "ffmpeg")]
+                    "No",
+                    #[cfg(feature = "livekit")]
+                    "No",
+                    #[cfg(feature = "livekit")]
                     "No",
                     #[cfg(feature = "livekit")]
                     "No",
@@ -275,7 +316,12 @@ fn av_player_on_insert(
     } else {
         &av_player.source.src
     };
-    commands.spawn((Text::new(av_player_name), Pickable::IGNORE, ChildOf(node)));
+    commands.spawn((
+        Text::new(av_player_name),
+        DEFAULT_FONT,
+        Pickable::IGNORE,
+        ChildOf(node),
+    ));
 }
 
 fn on_add_column<T: Component, C: Component>(
@@ -300,7 +346,12 @@ fn on_add_column<T: Component, C: Component>(
     };
 
     commands.entity(node).despawn_related::<Children>();
-    commands.spawn((Text::new("Yes"), Pickable::IGNORE, ChildOf(node)));
+    commands.spawn((
+        Text::new("Yes"),
+        DEFAULT_FONT,
+        Pickable::IGNORE,
+        ChildOf(node),
+    ));
 }
 
 fn on_remove_column<T: Component, C: Component>(
@@ -332,7 +383,12 @@ fn on_remove_column<T: Component, C: Component>(
             commands.entity(*child).try_despawn();
         }
     }
-    commands.spawn((Text::new("No"), Pickable::IGNORE, ChildOf(node)));
+    commands.spawn((
+        Text::new("No"),
+        DEFAULT_FONT,
+        Pickable::IGNORE,
+        ChildOf(node),
+    ));
 }
 
 #[cfg(all(not(feature = "ffmpeg"), not(feature = "livekit")))]
@@ -340,9 +396,18 @@ type RowTexts<'a> = (&'a str, &'a str, &'a str);
 #[cfg(all(feature = "ffmpeg", not(feature = "livekit")))]
 type RowTexts<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str);
 #[cfg(all(not(feature = "ffmpeg"), feature = "livekit"))]
-type RowTexts<'a> = (&'a str, &'a str, &'a str, &'a str);
-#[cfg(all(feature = "ffmpeg", feature = "livekit"))]
 type RowTexts<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str, &'a str);
+#[cfg(all(feature = "ffmpeg", feature = "livekit"))]
+type RowTexts<'a> = (
+    &'a str,
+    &'a str,
+    &'a str,
+    &'a str,
+    &'a str,
+    &'a str,
+    &'a str,
+    &'a str,
+);
 
 fn build_row(
     parent: &mut RelatedSpawnerCommands<'_, ChildOf>,
@@ -355,82 +420,105 @@ fn build_row(
     #[cfg(all(feature = "ffmpeg", not(feature = "livekit")))]
     let (av_player_name, audio_sink, video_sink, in_scene, should_play) = row_texts;
     #[cfg(all(not(feature = "ffmpeg"), feature = "livekit"))]
-    let (av_player_name, streamer, in_scene, should_play) = row_texts;
+    let (av_player_name, stream_viewer, stream_audio_source, stream_image, in_scene, should_play) =
+        row_texts;
     #[cfg(all(feature = "ffmpeg", feature = "livekit"))]
-    let (av_player_name, audio_sink, video_sink, streamer, in_scene, should_play) = row_texts;
+    let (
+        av_player_name,
+        audio_sink,
+        video_sink,
+        stream_viewer,
+        stream_audio_source,
+        stream_image,
+        in_scene,
+        should_play,
+    ) = row_texts;
 
     let av_player_name = if av_player_name.len() >= 32 {
         &av_player_name[..32]
     } else {
         av_player_name
     };
-    parent.spawn((
-        Node {
-            grid_row: GridPlacement::start(row),
-            grid_column: GridPlacement::start(AV_PLAYER_COLUMN_COLUMN),
-            ..Default::default()
-        },
-        children![(Text::new(av_player_name), Pickable::IGNORE)],
+
+    parent.spawn(build_cel(
+        av_player,
         AvPlayerColumn,
-        AvPlayerRef(av_player),
-        Pickable::IGNORE,
+        row,
+        AV_PLAYER_COLUMN_COLUMN,
+        av_player_name,
     ));
     #[cfg(feature = "ffmpeg")]
-    parent.spawn((
-        Node {
-            grid_row: GridPlacement::start(row),
-            grid_column: GridPlacement::start(AUDIO_SINK_COLUMN_COLUMN),
-            ..Default::default()
-        },
-        children![(Text::new(audio_sink), Pickable::IGNORE)],
+    parent.spawn(build_cel(
+        av_player,
         AudioSinkColumn,
-        AvPlayerRef(av_player),
-        Pickable::IGNORE,
+        row,
+        AUDIO_SINK_COLUMN_COLUMN,
+        audio_sink,
     ));
     #[cfg(feature = "ffmpeg")]
-    parent.spawn((
-        Node {
-            grid_row: GridPlacement::start(row),
-            grid_column: GridPlacement::start(VIDEO_SINK_COLUMN_COLUMN),
-            ..Default::default()
-        },
-        children![(Text::new(video_sink), Pickable::IGNORE)],
+    parent.spawn(build_cel(
+        av_player,
         VideoSinkColumn,
-        AvPlayerRef(av_player),
-        Pickable::IGNORE,
+        row,
+        VIDEO_SINK_COLUMN_COLUMN,
+        video_sink,
     ));
     #[cfg(feature = "livekit")]
-    parent.spawn((
-        Node {
-            grid_row: GridPlacement::start(row),
-            grid_column: GridPlacement::start(STREAMER_COLUMN_COLUMN),
-            ..Default::default()
-        },
-        children![(Text::new(streamer), Pickable::IGNORE)],
-        StreamerColumn,
-        AvPlayerRef(av_player),
-        Pickable::IGNORE,
+    parent.spawn(build_cel(
+        av_player,
+        StreamViewerColumn,
+        row,
+        STREAM_VIEWER_COLUMN_COLUMN,
+        stream_viewer,
     ));
-    parent.spawn((
-        Node {
-            grid_row: GridPlacement::start(row),
-            grid_column: GridPlacement::start(IN_SCENE_COLUMN_COLUMN),
-            ..Default::default()
-        },
-        children![(Text::new(in_scene), Pickable::IGNORE)],
+    #[cfg(feature = "livekit")]
+    parent.spawn(build_cel(
+        av_player,
+        StreamAudioSourceColumn,
+        row,
+        STREAM_AUDIO_SOURCE_COLUMN_COLUMN,
+        stream_audio_source,
+    ));
+    #[cfg(feature = "livekit")]
+    parent.spawn(build_cel(
+        av_player,
+        StreamImageColumn,
+        row,
+        STREAM_IMAGE_COLUMN_COLUMN,
+        stream_image,
+    ));
+    parent.spawn(build_cel(
+        av_player,
         InSceneColumn,
-        AvPlayerRef(av_player),
-        Pickable::IGNORE,
+        row,
+        IN_SCENE_COLUMN_COLUMN,
+        in_scene,
     ));
-    parent.spawn((
+    parent.spawn(build_cel(
+        av_player,
+        ShouldBePlaying,
+        row,
+        SHOULD_PLAY_COLUMN_COLUMN,
+        should_play,
+    ));
+}
+
+fn build_cel<C: Component>(
+    av_player: Entity,
+    column_marker: C,
+    row: i16,
+    column: i16,
+    text: &str,
+) -> impl Bundle {
+    (
         Node {
             grid_row: GridPlacement::start(row),
-            grid_column: GridPlacement::start(SHOULD_PLAY_COLUMN_COLUMN),
+            grid_column: GridPlacement::start(column),
             ..Default::default()
         },
-        children![(Text::new(should_play), Pickable::IGNORE)],
-        ShouldPlayColumn,
+        children![(Text::new(text), DEFAULT_FONT, Pickable::IGNORE)],
+        column_marker,
         AvPlayerRef(av_player),
         Pickable::IGNORE,
-    ));
+    )
 }
