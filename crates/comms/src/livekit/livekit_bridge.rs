@@ -101,8 +101,8 @@ pub async fn livekit_audio_thread(
     let mut stream = NativeAudioStream::new(audio.rtc_track(), 48_000, 1);
 
     while let Some(frame) = stream.next().await {
-        debug!(
-            "Frame for {} received. {} / {}",
+        trace!(
+            "Audio frame for {} received. {} / {}",
             audio.sid(),
             frame.data.len(),
             frame.num_channels
