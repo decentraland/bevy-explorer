@@ -13,6 +13,7 @@ pub const SCENE_MATERIAL_OUTLINE: u32 = 2;
 pub const SCENE_MATERIAL_OUTLINE_RED: u32 = 4;
 pub const SCENE_MATERIAL_OUTLINE_FORCE: u32 = 8;
 pub const SCENE_MATERIAL_NO_DITHERING: u32 = 16;
+pub const SCENE_MATERIAL_CONE_ONLY_DITHER: u32 = 32;
 
 pub trait SceneMaterialExt {
     fn unbounded_outlined(mat: StandardMaterial, force: bool) -> Self
@@ -105,7 +106,8 @@ impl SceneBound {
                         SCENE_MATERIAL_NO_DITHERING
                     } else {
                         0
-                    },
+                    }
+                    + SCENE_MATERIAL_CONE_ONLY_DITHER,
                 ..Self::new(bounds, distance).data
             },
         }
@@ -250,6 +252,13 @@ mod test {
 impl MaterialExtension for SceneBound {
     fn fragment_shader() -> bevy::render::render_resource::ShaderRef {
         ShaderRef::Path("embedded://shaders/bound_material.wgsl".into())
+    }
+
+    fn alpha_mode(base_mode: AlphaMode) -> Option<AlphaMode> {
+        Some(match base_mode {
+            AlphaMode::Opaque => AlphaMode::Mask(0.0),
+            other => other,
+        })
     }
 
     fn prepass_fragment_shader() -> ShaderRef {

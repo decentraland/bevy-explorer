@@ -13,7 +13,7 @@ use dcl_component::{
     proto_components::sdk::components::{AvatarAnchorPointType, PbAvatarAttach},
     SceneComponentId,
 };
-use scene_material::{SceneMaterial, SCENE_MATERIAL_NO_DITHERING};
+use scene_material::{SceneMaterial, SCENE_MATERIAL_CONE_ONLY_DITHER, SCENE_MATERIAL_NO_DITHERING};
 use scene_runner::update_world::{
     mesh_collider::DisableCollisions,
     transform_and_parent::{AvatarAttachStage, ParentPositionSync},
@@ -32,12 +32,14 @@ impl Plugin for AttachPlugin {
             Update,
             (update_attached, undither_materials_on_attached_items).in_set(SceneSets::PostLoop),
         );
-        app.add_plugins(HierarchyPropagatePlugin::<AttachedToPrimaryPlayer>::default());
+        app.add_plugins(HierarchyPropagatePlugin::<AttachedToPlayer>::default());
     }
 }
 
 #[derive(Component, Clone, PartialEq)]
-pub struct AttachedToPrimaryPlayer;
+pub struct AttachedToPlayer {
+    pub is_primary: bool,
+}
 
 #[derive(Component, Debug)]
 pub struct AvatarAttachment(pub PbAvatarAttach);
@@ -60,7 +62,7 @@ pub fn update_attached(
             commands.remove::<(
                 ParentPositionSync<AvatarAttachStage>,
                 DisableCollisions,
-                Propagate<AttachedToPrimaryPlayer>,
+                Propagate<AttachedToPlayer>,
             )>();
         }
     }
@@ -112,10 +114,8 @@ pub fn update_attached(
         commands.try_insert((
             ParentPositionSync::<AvatarAttachStage>::new(sync_entity),
             DisableCollisions,
+            AttachedToPlayer { is_primary },
         ));
-        if is_primary {
-            commands.try_insert(Propagate(AttachedToPrimaryPlayer));
-        }
         debug!("syncing {ent:?} to {sync_entity:?}");
     }
 }
@@ -128,20 +128,21 @@ fn undither_materials_on_attached_items(
     mut commands: Commands,
     mut scene_mats: ResMut<Assets<SceneMaterial>>,
     new: Query<
-        (Entity, &MeshMaterial3d<SceneMaterial>),
-        (
-            With<AttachedToPrimaryPlayer>,
-            Without<DitheredMaterial<SceneMaterial>>,
-        ),
+        (Entity, &MeshMaterial3d<SceneMaterial>, &AttachedToPlayer),
+        Without<DitheredMaterial<SceneMaterial>>,
     >,
-    old: Query<(Entity, &DitheredMaterial<SceneMaterial>), Without<AttachedToPrimaryPlayer>>,
+    old: Query<(Entity, &DitheredMaterial<SceneMaterial>), Without<AttachedToPlayer>>,
 ) {
-    for (ent, mat) in new.iter() {
+    for (ent, mat, attached) in new.iter() {
         let Some(mut undithered_material) = scene_mats.get(mat).cloned() else {
             continue;
         };
 
-        undithered_material.extension.data.flags |= SCENE_MATERIAL_NO_DITHERING;
+        if attached.is_primary {
+            undithered_material.extension.data.flags |= SCENE_MATERIAL_NO_DITHERING;
+        } else {
+            undithered_material.extension.data.flags |= SCENE_MATERIAL_CONE_ONLY_DITHER;
+        }
         let undithered_material = scene_mats.add(undithered_material);
         commands.entity(ent).try_insert((
             MeshMaterial3d(undithered_material),
