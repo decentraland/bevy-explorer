@@ -31,6 +31,7 @@ impl AudioFrameExt for AudioFrame<'_> {
                 .collect()),
             2 => {
                 let (left, right) = self.data.split_at(self.data.len() / 2);
+                debug_assert_eq!(left.len(), right.len());
                 let left_iter = left.iter().map(i16_to_f32_sample);
                 let right_iter = right.iter().map(i16_to_f32_sample);
                 Ok(left_iter
