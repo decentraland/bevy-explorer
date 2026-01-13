@@ -1,15 +1,66 @@
+use std::{borrow::Borrow, fmt::Display};
+
 use bevy::prelude::*;
+use bevy_kira_audio::prelude::Frame;
 use futures_lite::StreamExt;
 use livekit::{
     prelude::RemoteTrackPublication,
-    track::RemoteVideoTrack,
+    track::{RemoteAudioTrack, RemoteVideoTrack},
     webrtc::{
+        audio_stream::native::NativeAudioStream,
         native::yuv_helper,
-        prelude::{I420Buffer, VideoBuffer},
+        prelude::{AudioFrame, I420Buffer, VideoBuffer},
         video_stream::native::NativeVideoStream,
     },
 };
 use tokio::sync::mpsc;
+
+pub trait AudioFrameExt {
+    fn to_frame(&self) -> Result<Vec<Frame>, TryIntoFrame>;
+}
+
+impl AudioFrameExt for AudioFrame<'_> {
+    fn to_frame(&self) -> Result<Vec<Frame>, TryIntoFrame> {
+        match self.num_channels {
+            0 => Err(TryIntoFrame::NoChannels),
+            1 => Ok(self
+                .data
+                .iter()
+                .map(i16_to_f32_sample)
+                .map(Frame::from_mono)
+                .collect()),
+            2 => {
+                let (left, right) = self.data.split_at(self.data.len() / 2);
+                let left_iter = left.iter().map(i16_to_f32_sample);
+                let right_iter = right.iter().map(i16_to_f32_sample);
+                Ok(left_iter
+                    .zip(right_iter)
+                    .map(|(left, right)| Frame::new(left, right))
+                    .collect())
+            }
+            _ => Err(TryIntoFrame::NotMonoOrStereo),
+        }
+    }
+}
+
+fn i16_to_f32_sample(sample: impl Borrow<i16>) -> f32 {
+    *sample.borrow() as f32 / i16::MAX as f32
+}
+
+#[derive(Debug)]
+pub enum TryIntoFrame {
+    NoChannels,
+    NotMonoOrStereo,
+}
+
+impl Display for TryIntoFrame {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoChannels => write!(f, "Audio frame had no channels."),
+            Self::NotMonoOrStereo => write!(f, "Audio frame had more than 2 channels."),
+        }
+    }
+}
 
 pub trait I420BufferExt {
     fn rgba_data(&self) -> Vec<u8>;
@@ -41,6 +92,31 @@ impl I420BufferExt for I420Buffer {
 
         dst
     }
+}
+
+pub async fn livekit_audio_thread(
+    audio: RemoteAudioTrack,
+    channel: mpsc::Sender<AudioFrame<'static>>,
+) {
+    let mut stream = NativeAudioStream::new(audio.rtc_track(), 48_000, 1);
+
+    while let Some(frame) = stream.next().await {
+        debug!(
+            "Frame for {} received. {} / {}",
+            audio.sid(),
+            frame.data.len(),
+            frame.num_channels
+        );
+        match channel.send(frame).await {
+            Ok(()) => (),
+            Err(mpsc::error::SendError(_)) => {
+                warn!("Failed to send audio frame through channel.");
+                return;
+            }
+        }
+    }
+
+    warn!("track ended, exiting task");
 }
 
 pub async fn livekit_video_thread(
