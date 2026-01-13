@@ -7,6 +7,8 @@
     mesh_view_bindings::{globals, view},
     pbr_types,
 }
+#import bevy_core_pipeline::tonemapping::approximate_inverse_tone_mapping
+
 #import "embedded://shaders/simplex.wgsl"::simplex_noise_3d
 #import "embedded://shaders/bound_material_effect.wgsl"::{apply_outline, discard_dither}
 
@@ -155,7 +157,8 @@ fn fragment(
     if (pbr_input.material.flags & bevy_pbr::pbr_types::STANDARD_MATERIAL_FLAGS_UNLIT_BIT) == 0u {
         out.color = apply_pbr_lighting(pbr_input);
     } else {
-        out.color = pbr_input.material.base_color;
+        // invert tonemapping for unlit materials
+        out.color = approximate_inverse_tone_mapping(pbr_input.material.base_color, view.color_grading); 
     }
 
     if should_discard {
