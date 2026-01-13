@@ -6,6 +6,7 @@ use livekit::{
     webrtc::{
         native::yuv_helper,
         prelude::{I420Buffer, VideoBuffer},
+        video_stream::native::NativeVideoStream,
     },
 };
 use tokio::sync::mpsc;
@@ -47,8 +48,7 @@ pub async fn livekit_video_thread(
     publication: RemoteTrackPublication,
     sender: mpsc::Sender<I420Buffer>,
 ) {
-    let mut stream =
-        livekit::webrtc::video_stream::native::NativeVideoStream::new(video.rtc_track());
+    let mut stream = NativeVideoStream::new(video.rtc_track());
 
     while let Some(frame) = stream.next().await {
         let buffer = frame.buffer.to_i420();
