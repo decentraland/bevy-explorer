@@ -1,7 +1,5 @@
-use std::{borrow::Borrow, fmt::Display};
-
 use bevy::prelude::*;
-use bevy_kira_audio::prelude::Frame;
+use common::structs::AudioDecoderError;
 use futures_lite::StreamExt;
 use livekit::{
     prelude::RemoteTrackPublication,
@@ -15,51 +13,98 @@ use livekit::{
 };
 use tokio::sync::mpsc;
 
-pub trait AudioFrameExt {
-    fn to_frame(&self) -> Result<Vec<Frame>, TryIntoFrame>;
+#[cfg(not(target_arch = "wasm32"))]
+pub struct AudioTrackKiraBridge {
+    sample_rate: u32,
+    receiver: mpsc::Receiver<AudioFrame<'static>>,
 }
 
-impl AudioFrameExt for AudioFrame<'_> {
-    fn to_frame(&self) -> Result<Vec<Frame>, TryIntoFrame> {
-        match self.num_channels {
-            0 => Err(TryIntoFrame::NoChannels),
-            1 => Ok(self
-                .data
-                .iter()
-                .map(i16_to_f32_sample)
-                .map(Frame::from_mono)
-                .collect()),
-            2 => {
-                let (left, right) = self.data.split_at(self.data.len() / 2);
-                debug_assert_eq!(left.len(), right.len());
-                let left_iter = left.iter().map(i16_to_f32_sample);
-                let right_iter = right.iter().map(i16_to_f32_sample);
-                Ok(left_iter
-                    .zip(right_iter)
-                    .map(|(left, right)| Frame::new(left, right))
-                    .collect())
-            }
-            _ => Err(TryIntoFrame::NotMonoOrStereo),
+#[cfg(not(target_arch = "wasm32"))]
+impl AudioTrackKiraBridge {
+    pub fn new(audio_track: RemoteAudioTrack, sample_rate: u32) -> Self {
+        let sid = audio_track.sid();
+        let mut rtc_stream = NativeAudioStream::new(audio_track.rtc_track(), sample_rate as i32, 1);
+
+        let (sender, receiver) = mpsc::channel(480);
+        std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .thread_name(sid)
+                .enable_all()
+                .build()
+                .unwrap();
+
+            let handle = runtime.spawn(async move {
+                while let Some(frame) = rtc_stream.next().await {
+                    match sender.send(frame).await {
+                        Ok(()) => (),
+                        Err(mpsc::error::SendError(_)) => {
+                            error!("Failed to send audio frame.");
+                            break;
+                        }
+                    }
+                }
+            });
+
+            runtime.block_on(handle).unwrap();
+        });
+
+        Self {
+            sample_rate,
+            receiver,
         }
     }
 }
 
-fn i16_to_f32_sample(sample: impl Borrow<i16>) -> f32 {
-    *sample.borrow() as f32 / i16::MAX as f32
-}
+#[cfg(not(target_arch = "wasm32"))]
+impl kira::sound::streaming::Decoder for AudioTrackKiraBridge {
+    type Error = AudioDecoderError;
 
-#[derive(Debug)]
-pub enum TryIntoFrame {
-    NoChannels,
-    NotMonoOrStereo,
-}
+    fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
 
-impl Display for TryIntoFrame {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NoChannels => write!(f, "Audio frame had no channels."),
-            Self::NotMonoOrStereo => write!(f, "Audio frame had more than 2 channels."),
+    fn num_frames(&self) -> usize {
+        u32::MAX as usize
+    }
+
+    fn decode(&mut self) -> Result<Vec<kira::Frame>, Self::Error> {
+        let mut frames = Vec::default();
+
+        loop {
+            match self.receiver.try_recv() {
+                Ok(frame) => {
+                    if frame.sample_rate != self.sample_rate {
+                        warn!(
+                            "sample rate changed?! was {}, now {}",
+                            self.sample_rate, frame.sample_rate
+                        );
+                    }
+
+                    if frame.num_channels != 1 {
+                        warn!("frame has {} channels", frame.num_channels);
+                    }
+
+                    for i in 0..frame.samples_per_channel as usize {
+                        let sample = frame.data[i] as f32 / i16::MAX as f32;
+                        frames.push(kira::Frame::new(sample, sample));
+                    }
+                }
+                Err(mpsc::error::TryRecvError::Empty) => break,
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    return Err(AudioDecoderError::StreamClosed)
+                }
+            }
         }
+        Ok(frames)
+    }
+
+    fn seek(&mut self, seek: usize) -> Result<usize, Self::Error> {
+        if seek == 0 {
+            return Ok(0);
+        }
+        Err(AudioDecoderError::Other(format!(
+            "Can't seek (requested {seek})"
+        )))
     }
 }
 
@@ -93,31 +138,6 @@ impl I420BufferExt for I420Buffer {
 
         dst
     }
-}
-
-pub async fn livekit_audio_thread(
-    audio: RemoteAudioTrack,
-    channel: mpsc::Sender<AudioFrame<'static>>,
-) {
-    let mut stream = NativeAudioStream::new(audio.rtc_track(), 48_000, 1);
-
-    while let Some(frame) = stream.next().await {
-        trace!(
-            "Audio frame for {} received. {} / {}",
-            audio.sid(),
-            frame.data.len(),
-            frame.num_channels
-        );
-        match channel.send(frame).await {
-            Ok(()) => (),
-            Err(mpsc::error::SendError(_)) => {
-                warn!("Failed to send audio frame through channel.");
-                return;
-            }
-        }
-    }
-
-    warn!("track ended, exiting task");
 }
 
 pub async fn livekit_video_thread(
