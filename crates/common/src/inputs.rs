@@ -50,7 +50,18 @@ impl From<SystemAction> for Action {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    serde_repr::Serialize_repr,
+    serde_repr::Deserialize_repr,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+)]
 #[repr(i32)]
 pub enum CommonInputAction {
     IaPointer = 0,
