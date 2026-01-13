@@ -62,11 +62,11 @@ pub struct HostedBy(Entity);
 #[relationship_target(relationship=HostedBy, linked_spawn)]
 pub struct HostingParticipants(Vec<Entity>);
 
-#[derive(Component)]
+#[derive(Debug, Component)]
 #[relationship(relationship_target=StreamBroadcast)]
 pub struct StreamViewer(Entity);
 
-#[derive(Component)]
+#[derive(Debug, Component)]
 #[relationship_target(relationship=StreamViewer)]
 pub struct StreamBroadcast(Vec<Entity>);
 
