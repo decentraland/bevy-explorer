@@ -496,7 +496,7 @@ fn build_row(
     ));
     parent.spawn(build_cel(
         av_player,
-        ShouldBePlaying,
+        ShouldPlayColumn,
         row,
         SHOULD_PLAY_COLUMN_COLUMN,
         should_play,
