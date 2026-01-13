@@ -14,6 +14,7 @@ pub mod track;
 pub mod web;
 
 use bevy::prelude::*;
+use kira::manager::AudioManager;
 use tokio::sync::mpsc;
 
 pub use crate::livekit::runtime::LivekitRuntime;
@@ -39,6 +40,11 @@ pub struct LivekitChannelControl {
 #[derive(Component, Deref, DerefMut)]
 pub struct LivekitNetworkMessage {
     receiver: mpsc::Receiver<NetworkMessage>,
+}
+
+#[derive(Resource, Deref, DerefMut)]
+pub struct LivekitAudioManager {
+    manager: AudioManager,
 }
 
 #[macro_export]

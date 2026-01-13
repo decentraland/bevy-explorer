@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use dcl_component::proto_components::kernel::comms::rfc4;
+use kira::manager::{AudioManager, AudioManagerSettings, DefaultBackend};
 use tokio::{sync::mpsc, task::JoinHandle};
 
 use crate::{
@@ -7,8 +8,8 @@ use crate::{
     livekit::{
         mic::MicPlugin, participant::plugin::LivekitParticipantPlugin,
         room::plugin::LivekitRoomPlugin, runtime::LivekitRuntimePlugin,
-        track::plugin::LivekitTrackPlugin, LivekitChannelControl, LivekitNetworkMessage,
-        LivekitRuntime, LivekitTransport, StartLivekit,
+        track::plugin::LivekitTrackPlugin, LivekitAudioManager, LivekitChannelControl,
+        LivekitNetworkMessage, LivekitRuntime, LivekitTransport, StartLivekit,
     },
     profile::CurrentUserProfile,
     NetworkMessage, Transport, TransportType,
@@ -27,6 +28,7 @@ impl Plugin for LivekitPlugin {
         app.add_plugins(LivekitTrackPlugin);
 
         app.add_systems(Update, (start_livekit, verify_player_update_tasks));
+        app.add_systems(Startup, build_kira_audio_manager);
 
         app.add_event::<StartLivekit>();
     }
@@ -120,4 +122,17 @@ fn verify_player_update_tasks(
     while let Some(i) = done.pop() {
         player_update_tasks.remove(i);
     }
+}
+
+fn build_kira_audio_manager(mut commands: Commands) {
+    match AudioManager::new(AudioManagerSettings::<DefaultBackend>::default()) {
+        Ok(manager) => {
+            debug!("Livekit AudioManager built.");
+            commands.insert_resource(LivekitAudioManager { manager });
+        }
+        Err(err) => {
+            error!("Failed to livekit build AudioManager due to '{err}'.");
+            commands.send_event(AppExit::from_code(1));
+        }
+    };
 }
