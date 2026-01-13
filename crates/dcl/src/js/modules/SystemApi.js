@@ -348,6 +348,7 @@ module.exports.getVoiceStream = async function() {
 //   meshName: string?,          // mesh name if available
 //   distance: number,           // distance from player to element
 //   targetType: HoverTargetType, // type of target: "world", "ui", or "avatar"
+//   sceneHash: string?,         // hash of the scene (null for avatars)
 //   actions: HoverActionInfo[], // available actions with their bindings
 // }
 module.exports.getHoverStream = async function() {

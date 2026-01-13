@@ -647,6 +647,8 @@ pub struct HoverEvent {
     pub distance: f32,
     /// Type of the hovered target (World, Ui, Avatar)
     pub target_type: HoverTargetType,
+    /// The scene hash if available (None for avatars)
+    pub scene_hash: Option<String>,
     /// Available actions on this element with their input bindings
     pub actions: Vec<HoverActionInfo>,
 }
