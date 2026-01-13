@@ -2,9 +2,15 @@ use bevy::{ecs::relationship::Relationship, prelude::*, render::render_resource:
 use common::util::AsH160;
 #[cfg(not(target_arch = "wasm32"))]
 use {
-    livekit::track::{RemoteTrack, TrackKind, TrackSource},
-    livekit::webrtc::prelude::VideoBuffer,
-    tokio::sync::{mpsc, oneshot},
+    kira::sound::streaming::StreamingSoundData,
+    livekit::{
+        track::{RemoteTrack, TrackKind, TrackSource},
+        webrtc::prelude::VideoBuffer,
+    },
+    tokio::sync::{
+        mpsc::{self, error::TryRecvError},
+        oneshot,
+    },
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -12,9 +18,10 @@ use crate::livekit::web::{TrackKind, TrackSource};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::{
     kira_bridge::kira_thread,
-    livekit_video_bridge::{livekit_video_thread, I420BufferExt},
+    livekit_bridge::{livekit_video_thread, AudioTrackKiraBridge, I420BufferExt},
     participant::StreamImage,
-    track::{LivekitTrackTask, OpenAudioSender, VideoFrameReceiver},
+    track::{AudioStreamingSound, LivekitTrackTask, OpenAudioSender, VideoFrameReceiver},
+    LivekitAudioManager,
 };
 use crate::{
     global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
@@ -48,6 +55,8 @@ impl Plugin for LivekitTrackPlugin {
             Update,
             (subscribed_audio_track_with_open_sender, receive_video_frame),
         );
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_observer(audio_track_is_now_subscribed);
         #[cfg(not(target_arch = "wasm32"))]
         app.add_observer(video_track_is_now_subscribed);
         #[cfg(not(target_arch = "wasm32"))]
@@ -286,7 +295,10 @@ fn subscribe_to_audio_track(
         return;
     }
     let Ok(track) = tracks.get(entity) else {
-        error!("Can't subscribe to {} because it is not a track.", entity);
+        error!(
+            "Can't subscribe to audio track {} because it is not a track.",
+            entity
+        );
         return;
     };
 
@@ -314,18 +326,16 @@ fn subscribe_to_audio_track(
 fn subscribe_to_track(
     trigger: Trigger<SubscribeToTrack>,
     mut commands: Commands,
-    tracks: Query<&LivekitTrack, With<Video>>,
+    tracks: Query<(&LivekitTrack, AnyOf<(&Audio, &Video)>)>,
     livekit_runtime: Res<LivekitRuntime>,
 ) {
     let entity = trigger.target();
 
     if entity == Entity::PLACEHOLDER {
-        error!(
-            "SubscribeToVideoTrack is an entity event. Call it with 'Commands::trigger_targets'."
-        );
+        error!("SubscribeToTrack is an entity event. Call it with 'Commands::trigger_targets'.");
         return;
     }
-    let Ok(track) = tracks.get(entity) else {
+    let Ok((track, audio_or_video)) = tracks.get(entity) else {
         error!("Can't subscribe to {} because it is not a track.", entity);
         return;
     };
@@ -334,7 +344,13 @@ fn subscribe_to_track(
     {
         let track = track.clone();
 
-        debug!("Subscribing to video track {}", track.sid());
+        let kind = match audio_or_video {
+            (Some(_), None) => "audio",
+            (None, Some(_)) => "video",
+            _ => unreachable!("Track must have either Audio or Video."),
+        };
+
+        debug!("Subscribing to {kind} track {}", track.sid());
         let task = livekit_runtime.spawn(async move {
             track.set_subscribed(true);
         });
@@ -355,7 +371,7 @@ fn unsubscribe_to_track(
         return;
     }
     let Ok(track) = tracks.get(entity) else {
-        error!("Can't unsubscribe to {} because it is not a track.", entity);
+        error!("Can't unsubscribe to {} because it is not a track. This may happen when changing scenes.", entity);
         return;
     };
 
@@ -400,6 +416,42 @@ fn subscribed_audio_track_with_open_sender(
                 .remove::<OpenAudioSender>();
         }
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn audio_track_is_now_subscribed(
+    trigger: Trigger<OnAdd, Subscribed>,
+    mut commands: Commands,
+    tracks: Query<(&LivekitTrack, Has<Audio>), With<Subscribed>>,
+    mut livekit_audio_manager: ResMut<LivekitAudioManager>,
+) {
+    let entity = trigger.target();
+    let Ok((track, is_audio)) = tracks.get(entity) else {
+        error!("Subscribed track did not have LivekitTrack.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+    if !is_audio {
+        trace!("Subscribed track was not an audio track.");
+        return;
+    }
+
+    let Some(RemoteTrack::Audio(audio)) = track.track() else {
+        error!("A subscribed audio track did not have a audio RemoteTrack.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    let decoder = AudioTrackKiraBridge::new(audio, 48_000);
+
+    let Ok(handle) = livekit_audio_manager.play(StreamingSoundData::from_decoder(decoder)) else {
+        error!("Failed to play track audio in LivekitAudioManager.");
+        return;
+    };
+
+    commands
+        .entity(entity)
+        .insert(AudioStreamingSound { handle });
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -449,8 +501,6 @@ fn receive_video_frame(
 ) {
     for (entity, livekit_track, mut video_frame_receiver, published_by) in video_tracks.into_inner()
     {
-        use tokio::sync::mpsc::error::TryRecvError;
-
         let Ok((participant, maybe_stream_image)) = participants.get(published_by.get()) else {
             error!("Invalid PublishedBy relationship.");
             commands.send_event(AppExit::from_code(1));

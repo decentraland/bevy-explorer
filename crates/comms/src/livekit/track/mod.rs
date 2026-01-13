@@ -13,7 +13,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 #[cfg(not(target_arch = "wasm32"))]
 use {
-    kira::sound::streaming::StreamingSoundData,
+    kira::sound::streaming::{StreamingSoundData, StreamingSoundHandle},
     livekit::prelude::{Participant, RemoteTrackPublication},
 };
 
@@ -102,6 +102,12 @@ impl Unsubscribing {
 #[derive(Component)]
 struct OpenAudioSender {
     sender: oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Component, Deref, DerefMut)]
+struct AudioStreamingSound {
+    handle: StreamingSoundHandle<AudioDecoderError>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]

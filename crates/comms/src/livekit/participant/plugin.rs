@@ -19,8 +19,8 @@ use crate::{
         participant::{
             connection_quality, HostedBy, HostingParticipants, LivekitParticipant, Local,
             ParticipantConnected, ParticipantConnectionQuality, ParticipantDisconnected,
-            ParticipantMetadataChanged, ParticipantPayload, StreamAudioSource, StreamBroadcast,
-            StreamImage, StreamViewer, Streamer,
+            ParticipantMetadataChanged, ParticipantPayload, StreamBroadcast, StreamImage,
+            StreamViewer, Streamer,
         },
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
@@ -46,11 +46,9 @@ impl Plugin for LivekitParticipantPlugin {
             Update,
             (
                 stream_viewer_without_stream_image,
-                non_stream_viewer_with_stream_audio_source,
                 non_stream_viewer_with_stream_image,
             ),
         );
-        app.add_observer(copy_stream_audio_source_to_viewers);
         app.add_observer(someone_wants_to_watch_stream);
         app.add_observer(noone_is_watching_stream);
     }
@@ -308,25 +306,6 @@ fn participant_metadata_changed(
     }
 }
 
-fn copy_stream_audio_source_to_viewers(
-    trigger: Trigger<OnInsert, StreamAudioSource>,
-    mut commands: Commands,
-    stream_broadcasts: Query<(&StreamBroadcast, &StreamAudioSource)>,
-    stream_viewers: Populated<Entity, Without<StreamImage>>,
-) {
-    let entity = trigger.target();
-    let Ok((stream_broadcast, stream_audio_source)) = stream_broadcasts.get(entity) else {
-        trace!("StreamAudioSource added to viewer.");
-        return;
-    };
-
-    for stream_viewer_entity in stream_viewers.iter_many(stream_broadcast.collection()) {
-        commands
-            .entity(stream_viewer_entity)
-            .insert(StreamAudioSource((**stream_audio_source).clone()));
-    }
-}
-
 fn stream_viewer_without_stream_image(
     mut commands: Commands,
     stream_viewers: Populated<(Entity, &StreamViewer), Without<StreamImage>>,
@@ -340,23 +319,6 @@ fn stream_viewer_without_stream_image(
         };
 
         commands.entity(entity).insert(stream_image.clone());
-    }
-}
-
-#[expect(clippy::type_complexity, reason = "Queries are complex")]
-fn non_stream_viewer_with_stream_audio_source(
-    mut commands: Commands,
-    stream_viewers: Populated<
-        Entity,
-        (
-            Without<StreamViewer>,
-            Without<StreamBroadcast>,
-            With<StreamAudioSource>,
-        ),
-    >,
-) {
-    for entity in stream_viewers.into_inner() {
-        commands.entity(entity).remove::<StreamAudioSource>();
     }
 }
 
@@ -460,9 +422,7 @@ fn noone_is_watching_stream(
         participant.sid(),
         participant.identity()
     );
-    commands
-        .entity(entity)
-        .try_remove::<(StreamAudioSource, StreamImage)>();
+    commands.entity(entity).try_remove::<StreamImage>();
 
     if let Some(publishing) = maybe_publishing {
         if let Some(audio_track) = publishing

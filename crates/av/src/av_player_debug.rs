@@ -12,7 +12,7 @@ use bevy::{
 use crate::{audio_sink::AudioSink, video_stream::VideoSink};
 use crate::{AVPlayer, InScene, ShouldBePlaying};
 #[cfg(feature = "livekit")]
-use comms::livekit::participant::{StreamAudioSource, StreamImage, StreamViewer};
+use comms::livekit::participant::{StreamImage, StreamViewer};
 
 const DEFAULT_FONT: TextFont = TextFont {
     font: Handle::Weak(AssetId::Uuid {
@@ -43,8 +43,6 @@ impl Plugin for AvPlayerDebugPlugin {
         {
             app.add_observer(on_add_column::<StreamViewer, StreamViewerColumn>);
             app.add_observer(on_remove_column::<StreamViewer, StreamViewerColumn>);
-            app.add_observer(on_add_column::<StreamAudioSource, StreamAudioSourceColumn>);
-            app.add_observer(on_remove_column::<StreamAudioSource, StreamAudioSourceColumn>);
             app.add_observer(on_add_column::<StreamImage, StreamImageColumn>);
             app.add_observer(on_remove_column::<StreamImage, StreamImageColumn>);
         }
@@ -85,23 +83,17 @@ const STREAM_VIEWER_COLUMN_COLUMN: i16 = 4;
 
 #[cfg(feature = "livekit")]
 #[derive(Component)]
-struct StreamAudioSourceColumn;
-#[cfg(feature = "livekit")]
-const STREAM_AUDIO_SOURCE_COLUMN_COLUMN: i16 = 5;
-
-#[cfg(feature = "livekit")]
-#[derive(Component)]
 struct StreamImageColumn;
 #[cfg(feature = "livekit")]
-const STREAM_IMAGE_COLUMN_COLUMN: i16 = 6;
+const STREAM_IMAGE_COLUMN_COLUMN: i16 = 5;
 
 #[derive(Component)]
 struct InSceneColumn;
-const IN_SCENE_COLUMN_COLUMN: i16 = 7;
+const IN_SCENE_COLUMN_COLUMN: i16 = 6;
 
 #[derive(Component)]
 struct ShouldPlayColumn;
-const SHOULD_PLAY_COLUMN_COLUMN: i16 = 8;
+const SHOULD_PLAY_COLUMN_COLUMN: i16 = 7;
 
 #[cfg(all(not(feature = "ffmpeg"), not(feature = "livekit")))]
 type AnyColumn = Or<(
@@ -121,7 +113,6 @@ type AnyColumn = Or<(
 type AnyColumn = Or<(
     With<AvPlayerColumn>,
     With<StreamViewerColumn>,
-    With<StreamAudioSourceColumn>,
     With<StreamImageColumn>,
     With<InSceneColumn>,
     With<ShouldPlayColumn>,
@@ -132,7 +123,6 @@ type AnyColumn = Or<(
     With<AudioSinkColumn>,
     With<VideoSinkColumn>,
     With<StreamViewerColumn>,
-    With<StreamAudioSourceColumn>,
     With<StreamImageColumn>,
     With<InSceneColumn>,
     With<ShouldPlayColumn>,
@@ -170,8 +160,6 @@ fn setup_av_player_debug_ui(mut commands: Commands) {
                     "VideoSink",
                     #[cfg(feature = "livekit")]
                     "StreamerViewer",
-                    #[cfg(feature = "livekit")]
-                    "StreamerAudioSource",
                     #[cfg(feature = "livekit")]
                     "StreamerImage",
                     "InScene",
@@ -231,8 +219,6 @@ fn av_player_on_add(
                     #[cfg(feature = "ffmpeg")]
                     "No",
                     #[cfg(feature = "ffmpeg")]
-                    "No",
-                    #[cfg(feature = "livekit")]
                     "No",
                     #[cfg(feature = "livekit")]
                     "No",
@@ -396,10 +382,9 @@ type RowTexts<'a> = (&'a str, &'a str, &'a str);
 #[cfg(all(feature = "ffmpeg", not(feature = "livekit")))]
 type RowTexts<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str);
 #[cfg(all(not(feature = "ffmpeg"), feature = "livekit"))]
-type RowTexts<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str, &'a str);
+type RowTexts<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str);
 #[cfg(all(feature = "ffmpeg", feature = "livekit"))]
 type RowTexts<'a> = (
-    &'a str,
     &'a str,
     &'a str,
     &'a str,
@@ -420,15 +405,13 @@ fn build_row(
     #[cfg(all(feature = "ffmpeg", not(feature = "livekit")))]
     let (av_player_name, audio_sink, video_sink, in_scene, should_play) = row_texts;
     #[cfg(all(not(feature = "ffmpeg"), feature = "livekit"))]
-    let (av_player_name, stream_viewer, stream_audio_source, stream_image, in_scene, should_play) =
-        row_texts;
+    let (av_player_name, stream_viewer, stream_image, in_scene, should_play) = row_texts;
     #[cfg(all(feature = "ffmpeg", feature = "livekit"))]
     let (
         av_player_name,
         audio_sink,
         video_sink,
         stream_viewer,
-        stream_audio_source,
         stream_image,
         in_scene,
         should_play,
@@ -470,14 +453,6 @@ fn build_row(
         row,
         STREAM_VIEWER_COLUMN_COLUMN,
         stream_viewer,
-    ));
-    #[cfg(feature = "livekit")]
-    parent.spawn(build_cel(
-        av_player,
-        StreamAudioSourceColumn,
-        row,
-        STREAM_AUDIO_SOURCE_COLUMN_COLUMN,
-        stream_audio_source,
     ));
     #[cfg(feature = "livekit")]
     parent.spawn(build_cel(
