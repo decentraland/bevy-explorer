@@ -7,6 +7,7 @@ use bevy::{
     platform::sync::Arc,
     prelude::*,
 };
+use bevy_kira_audio::AudioSource;
 #[cfg(not(target_arch = "wasm32"))]
 use livekit::{
     participant::Participant,
@@ -68,6 +69,17 @@ pub struct StreamViewer(Entity);
 #[derive(Component)]
 #[relationship_target(relationship=StreamViewer)]
 pub struct StreamBroadcast(Vec<Entity>);
+
+/// Most recent [`AudioSource`] from the track stream
+#[derive(Clone, Component, Deref)]
+#[component(immutable)]
+pub struct StreamAudioSource(Handle<AudioSource>);
+
+impl From<Handle<AudioSource>> for StreamAudioSource {
+    fn from(value: Handle<AudioSource>) -> Self {
+        Self(value)
+    }
+}
 
 #[derive(Clone, Component, Deref)]
 pub struct StreamImage(Handle<Image>);
