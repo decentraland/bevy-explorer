@@ -171,7 +171,7 @@ fn update_avatar_collider_actions(
                 }
             }
 
-            if native_ui.profile {
+            if native_ui.profile && native_ui.hover {
                 tooltips.0.insert(
                     TooltipSource::Label("avatar_pointer"),
                     vec![("Middle Click : Profile".to_owned(), true)],

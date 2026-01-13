@@ -335,6 +335,7 @@ module.exports.getVoiceStream = async function() {
 }
 
 // get hover events as a stream for 3D elements
+// type HoverTargetType = "world" | "ui" | "avatar"
 // type HoverActionInfo = {
 //   action: string,        // e.g., "IaPointer", "IaPrimary", etc.
 //   inputBinding: string?, // e.g., "Mouse Left", "E"
@@ -344,6 +345,7 @@ module.exports.getVoiceStream = async function() {
 //   entered: bool,              // true = entered, false = left
 //   meshName: string?,          // mesh name if available
 //   distance: number,           // distance from player to element
+//   targetType: HoverTargetType, // type of target: "world", "ui", or "avatar"
 //   actions: HoverActionInfo[], // available actions with their bindings
 // }
 module.exports.getHoverStream = async function() {

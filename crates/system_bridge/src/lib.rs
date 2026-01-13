@@ -164,6 +164,7 @@ pub struct NativeUi {
     pub permissions: bool,
     pub profile: bool,
     pub nametags: bool,
+    pub hover: bool,
 }
 
 #[derive(Resource)]

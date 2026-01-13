@@ -600,7 +600,7 @@ pub struct SystemActionEvent {
 }
 
 /// Information about an action button configured on a hovered element
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct HoverActionInfo {
     /// The action (e.g., IaPointer, IaPrimary, etc.)
@@ -609,6 +609,15 @@ pub struct HoverActionInfo {
     pub input_binding: Option<String>,
     /// The hover text configured for this action
     pub hover_text: Option<String>,
+}
+
+/// Type of target being hovered
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum HoverTargetType {
+    World,
+    Ui,
+    Avatar,
 }
 
 /// Event sent when hovering over 3D elements
@@ -621,6 +630,8 @@ pub struct HoverEvent {
     pub mesh_name: Option<String>,
     /// Distance from player to the element
     pub distance: f32,
+    /// Type of the hovered target (World, Ui, Avatar)
+    pub target_type: HoverTargetType,
     /// Available actions on this element with their input bindings
     pub actions: Vec<HoverActionInfo>,
 }

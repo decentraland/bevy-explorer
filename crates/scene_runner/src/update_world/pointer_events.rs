@@ -3,20 +3,21 @@ use bevy::{
     prelude::*,
 };
 use common::{
-    inputs::{CommonInputAction, HoverActionInfo, HoverEvent, InputMap},
+    inputs::{CommonInputAction, HoverActionInfo, HoverEvent, HoverTargetType, InputMap},
     rpc::RpcStreamSender,
+    structs::{ToolTips, TooltipSource},
 };
 use comms::global_crdt::ForeignPlayer;
-use system_bridge::SystemApi;
+use system_bridge::{NativeUi, SystemApi};
 
 use crate::{
     renderer_context::RendererSceneContext,
-    update_scene::pointer_results::{IaToCommon, PointerTarget, PointerTargetInfo},
+    update_scene::pointer_results::{IaToCommon, PointerTarget, PointerTargetInfo, PointerTargetType},
     SceneEntity,
 };
 use dcl::interface::ComponentPosition;
 use dcl_component::{
-    proto_components::sdk::components::{pb_pointer_events::Entry, PbPointerEvents},
+    proto_components::sdk::components::{common::InputAction, pb_pointer_events::Entry, PbPointerEvents},
     SceneComponentId,
 };
 
@@ -122,7 +123,15 @@ pub struct HoverText;
 #[derive(Default)]
 struct HoverStreamState {
     senders: Vec<RpcStreamSender<HoverEvent>>,
-    previous_target: Option<(Entity, Option<String>)>,
+    previous_target: Option<(Entity, Option<String>, PointerTargetType)>,
+}
+
+fn convert_target_type(ty: PointerTargetType) -> HoverTargetType {
+    match ty {
+        PointerTargetType::World => HoverTargetType::World,
+        PointerTargetType::Ui => HoverTargetType::Ui,
+        PointerTargetType::Avatar => HoverTargetType::Avatar,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -132,6 +141,8 @@ fn hover_text(
     input_map: Res<InputMap>,
     mut events: EventReader<SystemApi>,
     mut state: Local<HoverStreamState>,
+    mut tooltip: ResMut<ToolTips>,
+    native_ui: Res<NativeUi>,
 ) {
     // Collect new stream senders
     let new_senders = events
@@ -152,26 +163,90 @@ fn hover_text(
     let current_target = hover_target
         .0
         .as_ref()
-        .map(|info| (info.container, info.mesh_name.clone()));
+        .map(|info| (info.container, info.mesh_name.clone(), info.ty));
 
     // Determine if hover target changed
     let target_changed = match (&state.previous_target, &current_target) {
         (None, None) => false,
         (Some(_), None) | (None, Some(_)) => true,
-        (Some((prev_e, prev_m)), Some((cur_e, cur_m))) => prev_e != cur_e || prev_m != cur_m,
+        (Some((prev_e, prev_m, prev_ty)), Some((cur_e, cur_m, cur_ty))) => {
+            prev_e != cur_e || prev_m != cur_m || prev_ty != cur_ty
+        }
     };
 
+    // Native tooltips (always update, not just on target change)
+    if native_ui.hover {
+        let mut texts = Vec::default();
+
+        if let Some(PointerTargetInfo {
+            container,
+            distance,
+            ..
+        }) = hover_target.0
+        {
+            if let Ok(pes) = pointer_events.get(container) {
+                texts = pes
+                    .iter()
+                    .flat_map(|pe| {
+                        if let Some(info) = pe.event_info.as_ref() {
+                            if info.show_feedback.unwrap_or(true) {
+                                if let Some(text) = info.hover_text.as_ref() {
+                                    let button = input_map
+                                        .get_input(info.button().to_common())
+                                        .map(|b| {
+                                            let button_str = serde_json::to_string(&b).unwrap();
+                                            let button_str =
+                                                button_str.strip_prefix("\"").unwrap_or(&button_str);
+                                            button_str
+                                                .strip_suffix("\"")
+                                                .unwrap_or(button_str)
+                                                .to_owned()
+                                        })
+                                        .unwrap_or_else(|| {
+                                            if info.button() == InputAction::IaAny {
+                                                "(ANY)"
+                                            } else {
+                                                "(No binding)"
+                                            }
+                                            .to_owned()
+                                        });
+                                    return Some((
+                                        format!("{button} : {text}"),
+                                        info.max_distance.unwrap_or(10.0) > distance.0,
+                                    ));
+                                }
+                            }
+                        }
+                        None
+                    })
+                    .collect::<Vec<_>>();
+                // make unique
+                texts = texts
+                    .into_iter()
+                    .collect::<HashSet<_>>()
+                    .into_iter()
+                    .collect();
+            }
+        }
+
+        tooltip
+            .0
+            .insert(TooltipSource::Label("pointer_events"), texts);
+    }
+
+    // Stream events (only on target change)
     if !target_changed {
         return;
     }
 
     // Send leave event for previous target
-    if let Some((prev_entity, prev_mesh)) = state.previous_target.take() {
+    if let Some((prev_entity, prev_mesh, prev_ty)) = state.previous_target.take() {
         let actions = collect_actions(&pointer_events, prev_entity, 0.0, &input_map);
         let leave_event = HoverEvent {
             entered: false,
             mesh_name: prev_mesh,
             distance: 0.0,
+            target_type: convert_target_type(prev_ty),
             actions,
         };
         for sender in &state.senders {
@@ -184,6 +259,7 @@ fn hover_text(
         container,
         mesh_name,
         distance,
+        ty,
         ..
     }) = hover_target.0.as_ref()
     {
@@ -192,12 +268,13 @@ fn hover_text(
             entered: true,
             mesh_name: mesh_name.clone(),
             distance: distance.0,
+            target_type: convert_target_type(*ty),
             actions,
         };
         for sender in &state.senders {
             let _ = sender.send(enter_event.clone());
         }
-        state.previous_target = Some((*container, mesh_name.clone()));
+        state.previous_target = Some((*container, mesh_name.clone(), *ty));
     }
 }
 
@@ -211,7 +288,8 @@ fn collect_actions(
         return Vec::new();
     };
 
-    pes.iter()
+    let actions: Vec<HoverActionInfo> = pes
+        .iter()
         .filter_map(|pe| {
             let info = pe.event_info.as_ref()?;
             let max_distance = info.max_distance.unwrap_or(10.0);
@@ -235,5 +313,12 @@ fn collect_actions(
                 hover_text: info.hover_text.clone(),
             })
         })
+        .collect();
+
+    // Deduplicate
+    actions
+        .into_iter()
+        .collect::<HashSet<_>>()
+        .into_iter()
         .collect()
 }
