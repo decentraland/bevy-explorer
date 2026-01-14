@@ -144,7 +144,6 @@ pub struct PointerTargetInfo {
     pub normal: Option<Vec3>,
     pub face: Option<usize>,
     pub ty: PointerTargetType,
-    pub scene_hash: Option<String>,
 }
 
 #[derive(Default, Debug, Resource, Clone, PartialEq)]
@@ -306,7 +305,6 @@ fn update_pointer_target(
             normal: Some(avatar_hit.normal.normalize_or_zero()),
             face: avatar_hit.face,
             ty: PointerTargetType::Avatar,
-            scene_hash: None,
         });
     } else if let Some((scene_entity, hit)) = maybe_nearest_hit {
         let (_, context, mut collider_data) = scenes.get_mut(scene_entity).unwrap();
@@ -321,7 +319,6 @@ fn update_pointer_target(
 
         if let Some(container) = context.bevy_entity(hit.id.entity) {
             let mesh_name = hit.id.name;
-            let scene_hash = Some(context.hash.clone());
             world_target.0 = Some(PointerTargetInfo {
                 container,
                 mesh_name,
@@ -330,7 +327,6 @@ fn update_pointer_target(
                 normal: Some(hit.normal.normalize_or_zero()),
                 face: hit.face,
                 ty: PointerTargetType::World,
-                scene_hash,
             });
         } else {
             warn!("hit some dead entity?");
@@ -527,8 +523,6 @@ fn resolve_pointer_target(
     mut target: ResMut<PointerTarget>,
     mut prev: Local<Option<Entity>>,
     tick: Res<FrameCount>,
-    containers: Query<&ContainerEntity>,
-    scenes: Query<&RendererSceneContext>,
 ) {
     if !ui_roots
         .iter()
@@ -550,15 +544,6 @@ fn resolve_pointer_target(
         }
     }
 
-    // Helper to get scene hash from container entity
-    let get_scene_hash = |e: Entity| -> Option<String> {
-        containers
-            .get(e)
-            .ok()
-            .and_then(|c| scenes.get(c.root).ok())
-            .map(|ctx| ctx.hash.clone())
-    };
-
     match &ui_target.0 {
         UiPointerTargetValue::Primary(e, mesh) => {
             target.0 = Some(PointerTargetInfo {
@@ -569,7 +554,6 @@ fn resolve_pointer_target(
                 normal: None,
                 face: None,
                 ty: PointerTargetType::Ui,
-                scene_hash: get_scene_hash(*e),
             });
         }
         UiPointerTargetValue::World(e, mesh) => {
@@ -587,7 +571,6 @@ fn resolve_pointer_target(
                 normal: None,
                 face: None,
                 ty: PointerTargetType::Ui,
-                scene_hash: get_scene_hash(*e),
             });
         }
         UiPointerTargetValue::None => target.0.clone_from(&world_target.0),
@@ -798,7 +781,6 @@ fn send_hover_events(
                 normal: None,
                 face: None,
                 ty: *ty,
-                scene_hash: None,
             },
             PointerEventType::PetHoverLeave,
         );
