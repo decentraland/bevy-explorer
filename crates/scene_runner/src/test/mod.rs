@@ -13,6 +13,7 @@ use bevy::{
     prelude::*,
     render::mesh::MeshPlugin,
     scene::ScenePlugin,
+    state::app::StatesPlugin,
     time::TimePlugin,
 };
 use bevy_dui::DuiPlugin;
@@ -99,6 +100,7 @@ impl PluginGroup for TestPlugins {
             .add(AnimationPlugin)
             .add(InputPlugin)
             .add(ScenePlugin)
+            .add(StatesPlugin)
             .add(ConsolePlugin { add_egui: false })
             .add(WalletPlugin)
             .add(CommsPlugin)
