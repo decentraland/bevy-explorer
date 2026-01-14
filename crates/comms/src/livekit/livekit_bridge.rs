@@ -1,6 +1,8 @@
+use std::time::Duration;
+
 use bevy::prelude::*;
 use common::structs::AudioDecoderError;
-use futures_lite::{future::poll_once, StreamExt};
+use futures_lite::{future::yield_now, StreamExt};
 use livekit::{
     prelude::RemoteTrackPublication,
     track::{RemoteAudioTrack, RemoteVideoTrack},
@@ -22,12 +24,19 @@ pub struct AudioTrackKiraBridge {
 impl AudioTrackKiraBridge {
     pub fn new(audio_track: RemoteAudioTrack, sample_rate: u32) -> Self {
         let sid = audio_track.sid();
-        let mut rtc_stream = NativeAudioStream::new(audio_track.rtc_track(), sample_rate as i32, 1);
+        let rtc_stream = NativeAudioStream::new(audio_track.rtc_track(), sample_rate as i32, 1);
 
         let (sender, receiver) = mpsc::channel(480);
         std::thread::Builder::new()
             .name(sid.to_string())
             .spawn(move || {
+                debug!(
+                    "Audio worker thread {:?} ({:?}) started.",
+                    std::thread::current().name().unwrap(),
+                    std::thread::current().id()
+                );
+
+                let mut rtc_stream = rtc_stream;
                 let runtime = tokio::runtime::Builder::new_current_thread()
                     .thread_name(sid)
                     .enable_all()
@@ -35,16 +44,7 @@ impl AudioTrackKiraBridge {
                     .unwrap();
 
                 let handle = runtime.spawn(async move {
-                    loop {
-                        if rtc_stream.track().state() == RtcTrackState::Ended {
-                            break;
-                        }
-                        let Some(poll) = poll_once(rtc_stream.next()).await else {
-                            continue;
-                        };
-                        let Some(frame) = poll else {
-                            break;
-                        };
+                    while let Some(frame) = rtc_stream.next().await {
                         match sender.send(frame).await {
                             Ok(()) => (),
                             Err(mpsc::error::SendError(_)) => {
@@ -55,9 +55,18 @@ impl AudioTrackKiraBridge {
                     }
                 });
 
-                runtime.block_on(handle).unwrap();
+                let rtc_track = audio_track.rtc_track();
+                while rtc_track.state() == RtcTrackState::Live {
+                    std::thread::sleep(Duration::from_millis(100));
+                    runtime.block_on(yield_now());
+                }
+                handle.abort();
 
-                debug!("Worker thread {:?} ended.", std::thread::current().name())
+                debug!(
+                    "Audio worker thread {:?} ({:?}) ended.",
+                    std::thread::current().name().unwrap(),
+                    std::thread::current().id()
+                );
             })
             .unwrap();
 
