@@ -244,7 +244,7 @@ pub struct AudioCaptureOptions {
     #[wasm_bindgen(js_name = "echoCancellation")]
     pub echo_cancellation: Option<bool>,
     pub latency: Option<f64>,
-    #[wasm_bindgen(js_name = "noiseSuppresion")]
+    #[wasm_bindgen(js_name = "noiseSuppression")]
     pub noise_suppression: Option<bool>,
     #[wasm_bindgen(js_name = "voiceIsolation")]
     pub voice_isolation: Option<bool>,
