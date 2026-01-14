@@ -652,8 +652,6 @@ pub enum HoverTargetType {
 pub struct HoverEvent {
     /// Whether the mouse entered (true) or left (false) the element
     pub entered: bool,
-    /// The mesh name if available
-    pub mesh_name: Option<String>,
     /// Distance from player to the element
     pub distance: f32,
     /// Type of the hovered target (World, Ui, Avatar)

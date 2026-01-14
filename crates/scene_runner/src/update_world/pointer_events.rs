@@ -123,7 +123,7 @@ pub struct HoverText;
 #[derive(Default)]
 struct HoverStreamState {
     senders: Vec<RpcStreamSender<HoverEvent>>,
-    previous_target: Option<(Entity, Option<String>, PointerTargetType)>, // (container, mesh_name, ty)
+    previous_target: Option<(Entity, PointerTargetType)>, // (container, ty)
 }
 
 fn convert_target_type(ty: PointerTargetType) -> HoverTargetType {
@@ -176,14 +176,14 @@ fn hover_text(
     let current_target = hover_target
         .0
         .as_ref()
-        .map(|info| (info.container, info.mesh_name.clone(), info.ty));
+        .map(|info| (info.container, info.ty));
 
     // Determine if hover target changed
     let target_changed = match (&state.previous_target, &current_target) {
         (None, None) => false,
         (Some(_), None) | (None, Some(_)) => true,
-        (Some((prev_e, prev_m, prev_ty)), Some((cur_e, cur_m, cur_ty))) => {
-            prev_e != cur_e || prev_m != cur_m || prev_ty != cur_ty
+        (Some((prev_e, prev_ty)), Some((cur_e, cur_ty))) => {
+            prev_e != cur_e || prev_ty != cur_ty
         }
     };
 
@@ -253,11 +253,10 @@ fn hover_text(
     }
 
     // Send leave event for previous target
-    if let Some((prev_entity, prev_mesh, prev_ty)) = state.previous_target.take() {
+    if let Some((prev_entity, prev_ty)) = state.previous_target.take() {
         let actions = collect_actions(&pointer_events, prev_entity, 0.0, &input_map);
         let leave_event = HoverEvent {
             entered: false,
-            mesh_name: prev_mesh,
             distance: 0.0,
             target_type: convert_target_type(prev_ty),
             actions,
@@ -270,7 +269,6 @@ fn hover_text(
     // Send enter event for new target
     if let Some(PointerTargetInfo {
         container,
-        mesh_name,
         distance,
         ty,
         ..
@@ -279,7 +277,6 @@ fn hover_text(
         let actions = collect_actions(&pointer_events, *container, distance.0, &input_map);
         let enter_event = HoverEvent {
             entered: true,
-            mesh_name: mesh_name.clone(),
             distance: distance.0,
             target_type: convert_target_type(*ty),
             actions,
@@ -287,7 +284,7 @@ fn hover_text(
         for sender in &state.senders {
             let _ = sender.send(enter_event.clone());
         }
-        state.previous_target = Some((*container, mesh_name.clone(), *ty));
+        state.previous_target = Some((*container, *ty));
     }
 }
 

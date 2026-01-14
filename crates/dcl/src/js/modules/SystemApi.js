@@ -345,7 +345,6 @@ module.exports.getVoiceStream = async function() {
 // }
 // type HoverEvent = {
 //   entered: bool,              // true = entered, false = left
-//   meshName: string?,          // mesh name if available
 //   distance: number,           // distance from player to element
 //   targetType: number,         // type of target (see HoverTargetType)
 //   actions: HoverActionInfo[], // available actions with their bindings
