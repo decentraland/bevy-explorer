@@ -123,7 +123,7 @@ pub struct HoverText;
 #[derive(Default)]
 struct HoverStreamState {
     senders: Vec<RpcStreamSender<HoverEvent>>,
-    previous_target: Option<(Entity, Option<String>, PointerTargetType, Option<String>)>, // (container, mesh_name, ty, scene_hash)
+    previous_target: Option<(Entity, Option<String>, PointerTargetType)>, // (container, mesh_name, ty)
 }
 
 fn convert_target_type(ty: PointerTargetType) -> HoverTargetType {
@@ -176,13 +176,13 @@ fn hover_text(
     let current_target = hover_target
         .0
         .as_ref()
-        .map(|info| (info.container, info.mesh_name.clone(), info.ty, info.scene_hash.clone()));
+        .map(|info| (info.container, info.mesh_name.clone(), info.ty));
 
     // Determine if hover target changed
     let target_changed = match (&state.previous_target, &current_target) {
         (None, None) => false,
         (Some(_), None) | (None, Some(_)) => true,
-        (Some((prev_e, prev_m, prev_ty, _)), Some((cur_e, cur_m, cur_ty, _))) => {
+        (Some((prev_e, prev_m, prev_ty)), Some((cur_e, cur_m, cur_ty))) => {
             prev_e != cur_e || prev_m != cur_m || prev_ty != cur_ty
         }
     };
@@ -253,14 +253,13 @@ fn hover_text(
     }
 
     // Send leave event for previous target
-    if let Some((prev_entity, prev_mesh, prev_ty, prev_scene_hash)) = state.previous_target.take() {
+    if let Some((prev_entity, prev_mesh, prev_ty)) = state.previous_target.take() {
         let actions = collect_actions(&pointer_events, prev_entity, 0.0, &input_map);
         let leave_event = HoverEvent {
             entered: false,
             mesh_name: prev_mesh,
             distance: 0.0,
             target_type: convert_target_type(prev_ty),
-            scene_hash: prev_scene_hash,
             actions,
         };
         for sender in &state.senders {
@@ -274,7 +273,6 @@ fn hover_text(
         mesh_name,
         distance,
         ty,
-        scene_hash,
         ..
     }) = hover_target.0.as_ref()
     {
@@ -284,13 +282,12 @@ fn hover_text(
             mesh_name: mesh_name.clone(),
             distance: distance.0,
             target_type: convert_target_type(*ty),
-            scene_hash: scene_hash.clone(),
             actions,
         };
         for sender in &state.senders {
             let _ = sender.send(enter_event.clone());
         }
-        state.previous_target = Some((*container, mesh_name.clone(), *ty, scene_hash.clone()));
+        state.previous_target = Some((*container, mesh_name.clone(), *ty));
     }
 }
 
