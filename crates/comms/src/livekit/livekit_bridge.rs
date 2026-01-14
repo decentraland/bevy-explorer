@@ -20,7 +20,6 @@ pub struct AudioTrackKiraBridge {
     receiver: mpsc::Receiver<AudioFrame<'static>>,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl AudioTrackKiraBridge {
     pub fn new(audio_track: RemoteAudioTrack, sample_rate: u32) -> Self {
         let sid = audio_track.sid();
@@ -77,7 +76,6 @@ impl AudioTrackKiraBridge {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl kira::sound::streaming::Decoder for AudioTrackKiraBridge {
     type Error = AudioDecoderError;
 
