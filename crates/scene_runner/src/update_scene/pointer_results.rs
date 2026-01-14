@@ -811,7 +811,7 @@ fn send_hover_events(
 fn send_action_events(
     target: Res<PointerTarget>,
     pointer_requests: Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
-    mut scenes: Query<(&mut RendererSceneContext, &GlobalTransform)>,
+    mut scenes: Query<(Entity, &mut RendererSceneContext, &GlobalTransform)>,
     input_mgr: InputManager,
     frame: Res<FrameCount>,
     time: Res<Time>,
@@ -848,18 +848,18 @@ fn send_action_events(
                           ev_type: PointerEventType,
                           action: InputAction,
                           direction: Option<Vec2>|
-     -> bool {
+     -> Option<Entity> {
         let Ok((maybe_scene_entity, maybe_foreign_player, _)) =
             pointer_requests.get(info.container)
         else {
-            return false;
+            return None;
         };
 
         let mut potential_entries =
             filtered_events(&pointer_requests, info, ev_type, action).peekable();
         // check there's at least one potential request before doing any work
         if potential_entries.peek().is_some() {
-            let mut consumed = false;
+            let mut consumer = None;
             let scene_entity_id = maybe_scene_entity
                 .map(|se| se.id)
                 .unwrap_or_else(|| maybe_foreign_player.unwrap().scene_id);
@@ -870,8 +870,8 @@ fn send_action_events(
                     .and_then(|info| info.max_distance)
                     .unwrap_or(10.0);
                 if info.distance.0 <= max_distance {
-                    let Ok((mut context, scene_transform)) = scenes.get_mut(scene) else {
-                        return false;
+                    let Ok((_, mut context, scene_transform)) = scenes.get_mut(scene) else {
+                        return None;
                     };
 
                     let tick_number = context.tick_number;
@@ -902,66 +902,70 @@ fn send_action_events(
                         },
                     );
                     context.last_action_event = Some(time.elapsed_secs());
-                    consumed = true;
+                    consumer = Some(scene);
                 }
             }
-            consumed
+            consumer
         } else {
-            false
+            None
         }
     };
 
     // send event to action target
-    let mut unconsumed = Vec::default();
+    let mut events_and_consumers = Vec::default(); // (event type, button, option<consuming scene>)
     if let Some(info) = target.0.as_ref() {
-        let unconsumed_down = input_mgr
+        let down_events = input_mgr
             .iter_scene_just_down()
             .map(IaToDcl::to_dcl)
-            .filter(|down| {
-                let consumed = send_event(info, PointerEventType::PetDown, *down, None);
-                if filtered_events(&pointer_requests, info, PointerEventType::PetDrag, *down)
+            .map(|down| {
+                let consumed_by = send_event(info, PointerEventType::PetDown, down, None);
+                if filtered_events(&pointer_requests, info, PointerEventType::PetDrag, down)
                     .next()
                     .is_some()
                 {
                     debug!("added drag");
-                    drag_target.entities.insert(*down, (info.clone(), false));
+                    drag_target.entities.insert(down, (info.clone(), false));
                 }
                 if filtered_events(
                     &pointer_requests,
                     info,
                     PointerEventType::PetDragLocked,
-                    *down,
+                    down,
                 )
                 .next()
                 .is_some()
                 {
                     debug!("added drag lock");
-                    drag_target.entities.insert(*down, (info.clone(), true));
+                    drag_target.entities.insert(down, (info.clone(), true));
                 }
 
-                !consumed
-            })
-            .map(|button| (PointerEventType::PetDown, button));
-        unconsumed.extend(unconsumed_down);
+                (PointerEventType::PetDown, down, consumed_by)
+            });
+        events_and_consumers.extend(down_events);
 
-        let unconsumed_up = input_mgr
+        let up_events = input_mgr
             .iter_scene_just_up()
             .map(IaToDcl::to_dcl)
-            .filter(|up| !send_event(info, PointerEventType::PetUp, *up, None))
-            .map(|button| (PointerEventType::PetUp, button));
-        unconsumed.extend(unconsumed_up);
+            .map(|up| {
+                (
+                    PointerEventType::PetUp,
+                    up,
+                    send_event(info, PointerEventType::PetUp, up, None),
+                )
+            });
+        events_and_consumers.extend(up_events);
     } else {
-        unconsumed.extend(
+        events_and_consumers.extend(
             input_mgr
                 .iter_scene_just_down()
                 .map(IaToDcl::to_dcl)
-                .map(|b| (PointerEventType::PetDown, b)),
+                .map(|b| (PointerEventType::PetDown, b, None)),
         );
-        unconsumed.extend(
+        events_and_consumers.extend(
             input_mgr
                 .iter_scene_just_up()
                 .map(IaToDcl::to_dcl)
-                .map(|b| (PointerEventType::PetUp, b)),
+                .map(|b| (PointerEventType::PetUp, b, None)),
         );
     }
 
@@ -1000,14 +1004,18 @@ fn send_action_events(
     }
 
     // send events to scene roots
-    if unconsumed.is_empty() {
+    if events_and_consumers.is_empty() {
         return;
     }
 
-    for (mut context, _) in scenes.iter_mut() {
+    for (entity, mut context, _) in scenes.iter_mut() {
         let tick_number = context.tick_number;
 
-        for &(pet, button) in &unconsumed {
+        for &(pet, button, maybe_consumer) in &events_and_consumers {
+            if maybe_consumer == Some(entity) {
+                continue;
+            }
+
             context.update_crdt(
                 SceneComponentId::POINTER_RESULT,
                 CrdtType::GO_ENT,
