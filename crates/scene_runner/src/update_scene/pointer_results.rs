@@ -14,6 +14,7 @@ use console::DoAddConsoleCommand;
 
 use crate::{
     gltf_resolver::GltfMeshResolver,
+    initialize_scene::SuperUserScene,
     update_world::{
         mesh_collider::{
             ColliderId, CtCollider, MeshCollider, MeshColliderShape, SceneColliderData,
@@ -829,7 +830,7 @@ fn send_hover_events(
 fn send_action_events(
     target: Res<PointerTarget>,
     pointer_requests: Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
-    mut scenes: Query<(&mut RendererSceneContext, &GlobalTransform)>,
+    mut scenes: Query<(&mut RendererSceneContext, &GlobalTransform, Option<&SuperUserScene>)>,
     input_mgr: InputManager,
     frame: Res<FrameCount>,
     time: Res<Time>,
@@ -888,7 +889,7 @@ fn send_action_events(
                     .and_then(|info| info.max_distance)
                     .unwrap_or(10.0);
                 if info.distance.0 <= max_distance {
-                    let Ok((mut context, scene_transform)) = scenes.get_mut(scene) else {
+                    let Ok((mut context, scene_transform, _)) = scenes.get_mut(scene) else {
                         return false;
                     };
 
@@ -929,48 +930,59 @@ fn send_action_events(
         }
     };
 
-    // send event to action target (if any)
+    // send event to action target
+    let mut unconsumed = Vec::default();
     if let Some(info) = target.0.as_ref() {
-        for down in input_mgr.iter_scene_just_down().map(IaToDcl::to_dcl) {
-            send_event(info, PointerEventType::PetDown, down, None);
-            if filtered_events(&pointer_requests, info, PointerEventType::PetDrag, down)
+        let unconsumed_down = input_mgr
+            .iter_scene_just_down()
+            .map(IaToDcl::to_dcl)
+            .filter(|down| {
+                let consumed = send_event(info, PointerEventType::PetDown, *down, None);
+                if filtered_events(&pointer_requests, info, PointerEventType::PetDrag, *down)
+                    .next()
+                    .is_some()
+                {
+                    debug!("added drag");
+                    drag_target.entities.insert(*down, (info.clone(), false));
+                }
+                if filtered_events(
+                    &pointer_requests,
+                    info,
+                    PointerEventType::PetDragLocked,
+                    *down,
+                )
                 .next()
                 .is_some()
-            {
-                debug!("added drag");
-                drag_target.entities.insert(down, (info.clone(), false));
-            }
-            if filtered_events(
-                &pointer_requests,
-                info,
-                PointerEventType::PetDragLocked,
-                down,
-            )
-            .next()
-            .is_some()
-            {
-                debug!("added drag lock");
-                drag_target.entities.insert(down, (info.clone(), true));
-            }
-        }
+                {
+                    debug!("added drag lock");
+                    drag_target.entities.insert(*down, (info.clone(), true));
+                }
 
-        for up in input_mgr.iter_scene_just_up().map(IaToDcl::to_dcl) {
-            send_event(info, PointerEventType::PetUp, up, None);
-        }
-    }
+                !consumed
+            })
+            .map(|button| (PointerEventType::PetDown, button));
+        unconsumed.extend(unconsumed_down);
 
-    // always collect all inputs for scene roots (inputSystem.isPressed)
-    let all_inputs: Vec<_> = input_mgr
-        .iter_scene_just_down()
-        .map(IaToDcl::to_dcl)
-        .map(|b| (PointerEventType::PetDown, b))
-        .chain(
+        let unconsumed_up = input_mgr
+            .iter_scene_just_up()
+            .map(IaToDcl::to_dcl)
+            .filter(|up| !send_event(info, PointerEventType::PetUp, *up, None))
+            .map(|button| (PointerEventType::PetUp, button));
+        unconsumed.extend(unconsumed_up);
+    } else {
+        unconsumed.extend(
+            input_mgr
+                .iter_scene_just_down()
+                .map(IaToDcl::to_dcl)
+                .map(|b| (PointerEventType::PetDown, b)),
+        );
+        unconsumed.extend(
             input_mgr
                 .iter_scene_just_up()
                 .map(IaToDcl::to_dcl)
                 .map(|b| (PointerEventType::PetUp, b)),
-        )
-        .collect();
+        );
+    }
 
     // send any drags
     let frame_delta = input_mgr.get_analog(POINTER_SET, InputPriority::Scene);
@@ -1006,15 +1018,36 @@ fn send_action_events(
         locks.0.remove("pointer");
     }
 
-    // send events to scene roots
-    if all_inputs.is_empty() {
-        return;
-    }
+    // Collect all inputs for super user scenes
+    let all_inputs: Vec<_> = input_mgr
+        .iter_scene_just_down()
+        .map(IaToDcl::to_dcl)
+        .map(|b| (PointerEventType::PetDown, b))
+        .chain(
+            input_mgr
+                .iter_scene_just_up()
+                .map(IaToDcl::to_dcl)
+                .map(|b| (PointerEventType::PetUp, b)),
+        )
+        .collect();
 
-    for (mut context, _) in scenes.iter_mut() {
+    // send events to scene roots
+    for (mut context, _, is_super_user) in scenes.iter_mut() {
+        // Super user scenes (system UI) always receive all inputs
+        // Regular scenes only receive unconsumed inputs
+        let events_to_send = if is_super_user.is_some() {
+            &all_inputs
+        } else {
+            &unconsumed
+        };
+
+        if events_to_send.is_empty() {
+            continue;
+        }
+
         let tick_number = context.tick_number;
 
-        for &(pet, button) in &all_inputs {
+        for &(pet, button) in events_to_send {
             context.update_crdt(
                 SceneComponentId::POINTER_RESULT,
                 CrdtType::GO_ENT,
