@@ -3,8 +3,11 @@ mod local_participant;
 mod local_track;
 mod local_track_publication;
 mod participant;
+mod remote_audio_track;
 mod remote_participant;
+mod remote_track;
 mod remote_track_publication;
+mod remote_video_track;
 mod room;
 mod room_event;
 mod track_sid;
@@ -29,59 +32,11 @@ use crate::livekit::web::traits::GetFromJsValue;
 pub use crate::livekit::web::{
     local_audio_track::LocalAudioTrack, local_participant::LocalParticipant,
     local_track::LocalTrack, local_track_publication::LocalTrackPublication,
-    participant::Participant, remote_participant::RemoteParticipant,
-    remote_track_publication::RemoteTrackPublication, room::Room, room_event::RoomEvent,
-    track_sid::TrackSid, track_source::TrackSource,
+    participant::Participant, remote_audio_track::RemoteAudioTrack,
+    remote_participant::RemoteParticipant, remote_track::RemoteTrack,
+    remote_track_publication::RemoteTrackPublication, remote_video_track::RemoteVideoTrack,
+    room::Room, room_event::RoomEvent, track_sid::TrackSid, track_source::TrackSource,
 };
-
-#[wasm_bindgen(module = "/livekit_web_bindings.js")]
-extern "C" {
-    #[wasm_bindgen(catch)]
-    async fn publish_audio_track(room: &JsValue, track: &JsValue) -> Result<JsValue, JsValue>;
-
-    #[wasm_bindgen(catch)]
-    async fn unpublish_track(room: &JsValue, sid: &str) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(catch)]
-    fn create_audio_track(sample_rate: u32, num_channels: u32) -> Result<JsValue, JsValue>;
-
-    #[wasm_bindgen(catch)]
-    fn send_audio_frame(
-        track: &JsValue,
-        samples: &[f32],
-        sample_rate: u32,
-        num_channels: u32,
-    ) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(catch)]
-    pub fn set_microphone_enabled(enabled: bool) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(catch)]
-    pub fn is_microphone_available() -> Result<bool, JsValue>;
-
-    #[wasm_bindgen(catch)]
-    pub fn set_participant_spatial_audio(
-        participant_identity: &str,
-        pan: f32,
-        volume: f32,
-    ) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(catch)]
-    fn set_participant_pan(participant_identity: &str, pan: f32) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(catch)]
-    fn set_participant_volume(participant_identity: &str, volume: f32) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(catch)]
-    fn get_audio_participants() -> Result<JsValue, JsValue>;
-
-    #[wasm_bindgen(catch)]
-    pub fn streamer_subscribe_channel(
-        room_name: &str,
-        subscribe_audio: bool,
-        subscribe_video: bool,
-    ) -> Result<(), JsValue>;
-}
 
 type JsValueAbi = <JsValue as IntoWasmAbi>::Abi;
 
@@ -129,38 +84,6 @@ impl std::fmt::Display for ParticipantIdentity {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum RemoteTrack {
-    Audio(RemoteAudioTrack),
-    Video(RemoteVideoTrack),
-}
-
-impl RemoteTrack {
-    pub fn sid(&self) -> String {
-        error!("todo sid");
-        panic!("todo sid")
-    }
-}
-
-impl GetFromJsValue for RemoteTrack {
-    fn get_from_js_value(js_value: &JsValue, key: &str) -> Option<Self> {
-        let track = js_sys::Reflect::get(js_value, &JsValue::from(key)).ok()?;
-        let kind = js_sys::Reflect::get(&track, &JsValue::from("kind"))
-            .ok()
-            .and_then(|kind| kind.as_string());
-        match kind.as_deref() {
-            Some("audio") => Some(Self::Audio(RemoteAudioTrack { inner: track })),
-            Some("video") => Some(Self::Video(RemoteVideoTrack { inner: track })),
-            Some(other) => {
-                panic!("Unknown RemoteTrack kind {other}.")
-            }
-            None => {
-                panic!("RemoteTrack did not have kind field.")
-            }
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrackKind {
     Audio,
@@ -190,40 +113,6 @@ impl FromWasmAbi for TrackKind {
                 Self::Audio
             }
         }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct RemoteAudioTrack {
-    inner: JsValue,
-}
-
-/// SAFETY: should be fine while WASM remains single-threaded
-unsafe impl Send for RemoteAudioTrack {}
-
-/// SAFETY: should be fine while WASM remains single-threaded
-unsafe impl Sync for RemoteAudioTrack {}
-
-#[derive(Debug, Clone)]
-pub struct RemoteVideoTrack {
-    inner: JsValue,
-}
-
-/// SAFETY: should be fine while WASM remains single-threaded
-unsafe impl Send for RemoteVideoTrack {}
-
-/// SAFETY: should be fine while WASM remains single-threaded
-unsafe impl Sync for RemoteVideoTrack {}
-
-pub fn update_participant_pan(participant_identity: &str, pan: f32) {
-    if let Err(e) = set_participant_pan(participant_identity, pan) {
-        warn!("Failed to set pan for {}: {:?}", participant_identity, e);
-    }
-}
-
-pub fn update_participant_volume(participant_identity: &str, volume: f32) {
-    if let Err(e) = set_participant_volume(participant_identity, volume) {
-        warn!("Failed to set volume for {}: {:?}", participant_identity, e);
     }
 }
 

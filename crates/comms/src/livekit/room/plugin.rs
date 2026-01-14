@@ -43,8 +43,8 @@ use crate::{
 use crate::{
     global_crdt::StreamingSoundData,
     livekit::web::{
-        streamer_subscribe_channel, ConnectionState, DataPacket, Participant, ParticipantIdentity,
-        Room, RoomError, RoomEvent, RoomOptions, RoomResult,
+        ConnectionState, DataPacket, Participant, ParticipantIdentity, Room, RoomError, RoomEvent,
+        RoomOptions, RoomResult,
     },
 };
 
@@ -308,8 +308,6 @@ fn process_channel_control(
         loop {
             match channel_control.try_recv() {
                 Ok(channel_control) => {
-                    #[cfg(target_arch = "wasm32")]
-                    let room_name = livekit_room.name();
                     match channel_control {
                         ChannelControl::VoiceSubscribe(address, sender) => {
                             commands.run_system_cached_with(
@@ -320,18 +318,6 @@ fn process_channel_control(
                         ChannelControl::VoiceUnsubscribe(address) => {
                             commands
                                 .run_system_cached_with(unsubscribe_to_voice, (entity, address));
-                        }
-                        #[cfg(target_arch = "wasm32")]
-                        ChannelControl::StreamerSubscribe => {
-                            if let Err(err) = streamer_subscribe_channel(&room_name, true, true) {
-                                error!("{err:?}");
-                            }
-                        }
-                        #[cfg(target_arch = "wasm32")]
-                        ChannelControl::StreamerUnsubscribe => {
-                            if let Err(err) = streamer_subscribe_channel(&room_name, false, false) {
-                                error!("{err:?}");
-                            }
                         }
                     };
                 }

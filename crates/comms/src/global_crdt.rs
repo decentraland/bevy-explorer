@@ -206,10 +206,6 @@ pub enum ChannelControl {
         oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
     ),
     VoiceUnsubscribe(Address),
-    #[cfg(target_arch = "wasm32")]
-    StreamerSubscribe,
-    #[cfg(target_arch = "wasm32")]
-    StreamerUnsubscribe,
 }
 
 pub enum ForeignAudioData {

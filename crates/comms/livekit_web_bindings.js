@@ -10,12 +10,6 @@ function error(...args) {
 
 var audioContext = null;
 
-let currentMicTrack = false;
-const activeRooms = new Map();
-
-// Store audio elements and panner nodes for spatial audio
-const participantAudioSids = new Map();
-
 /**
  * 
  * @returns boolean
@@ -174,6 +168,19 @@ function set_room_event_handler(room, handler) {
                 }
 
                 track_rig_new(remote_track);
+            } else if (remote_track.kind == "video") {
+                if (remote_track.videoElement) {
+                    error(`Rebuilding video element of ${remote_track.sid} for ${remote_participant.sid} (${remote_participant.identity}).`);
+                    const videoElement = remote_track.videoElement;
+                    delete remote_track.videoElement;
+                    remote_track.detach(videoElement);
+                }
+                const streamPlayerContainer = window.document.querySelector("#stream-player-container");
+                if (streamPlayerContainer) {
+                    const videoElement = remote_track.attach();
+                    streamPlayerContainer.append(videoElement);
+                    remote_track.videoElement = videoElement;
+                }
             }
 
             handler({
@@ -355,6 +362,17 @@ export function remote_track_publication_set_subscribed(remote_track_publication
     remote_track_publication.setSubscribed(subscribed);
 }
 
+
+/**
+ * 
+ * @param {livekit.RemoteTrackPublication} remote_track_publication 
+ * @returns livekit.RemoteTrack | null
+ */
+export function remote_track_publication_track(remote_track_publication) {
+    log(remote_track_publication);
+    return remote_track_publication.track;
+}
+
 /**
  * 
  * @param {livekit.AudioCaptureOptions} options 
@@ -410,6 +428,7 @@ function track_rig_new(remote_track) {
 
     audioElement.play();
 }
+
 /**
  * 
  * @param {livekit.RemoteTrack} remote_track 
@@ -428,105 +447,19 @@ function track_rig_drop(remote_track) {
     }
 }
 
-export function set_microphone_enabled(enabled) {
-    if (enabled) {
-        // Enable microphone
-        if (!currentMicTrack) {
-            currentMicTrack = true;
-
-            // Publish to all active rooms
-            const publishPromises = activeRooms.forEach(async (room_name, room, map) => {
-                log(`publish ${room.name}`);
-                const audioTrack = await LivekitClient.createLocalAudioTrack({
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true,
-                });
-                let pub = await room.localParticipant.publishTrack(audioTrack, {
-                    source: LivekitClient.Track.Source.Microphone,
-                }).catch(error_msg => {
-                    error(`Failed to publish to room: ${error_msg}`);
-                });
-
-                // avoid race
-                if (!currentMicTrack) {
-                    await room.localParticipant.unpublishTrack(pub.track);
-                }
-            });
-
-            Promise.all(publishPromises).then(() => {
-                log('Microphone enabled successfully for all rooms');
-            }).catch(error_msg => {
-                error('Failed to enable microphone:', error_msg);
-            });
-        }
-    } else {
-        // Disable microphone
-        if (currentMicTrack) {
-            const allRoomUnpublishPromises = activeRooms.forEach(async (room_name, room, map) => {
-                const audioPubs = Array.from(room.localParticipant.trackPublications.values())
-                    .filter(pub => pub.kind === 'audio');
-
-                const roomSpecificPromises = audioPubs.map(pub => {
-                    try {
-                        room.localParticipant.unpublishTrack(pub.track);
-                        log(`unpublish ${room.name}`);
-                    } catch (error_msg) {
-                        error(`Failed to unpublish ${pub} from room ${room.name}:`, error_msg);
-                    }
-                });
-
-                try {
-                    await Promise.all(roomSpecificPromises);
-                } catch (error_msg) {
-                    error(`Failed to unpublish audio from room ${room.name}:`, error_msg);
-                }
-            });
-
-            Promise.all(allRoomUnpublishPromises)
-                .catch(error_msg => {
-                    error('A critical error occurred during the unpublish-all process:', error_msg);
-                })
-                .finally(() => {
-                    currentMicTrack = false;
-                });
-        }
-    }
-}
-
-export async function publish_audio_track(room, track) {
-    const publication = await room.localParticipant.publishTrack(track, {
-        source: LivekitClient.Track.Source.Microphone,
-    });
-    return publication.trackSid;
-}
-
-export async function unpublish_track(room, sid) {
-    const publication = room.localParticipant.trackPublications.get(sid);
-    if (publication) {
-        await room.localParticipant.unpublishTrack(publication.track);
-    }
-}
-
-// Spatial audio control functions
-export function set_participant_spatial_audio(participantIdentity, pan, volume) {
-    const participantAudio = participantAudioSids.get(participantIdentity);
-    if (!participantAudio) {
-        log(`no rig for ${participantIdentity}`)
-        return;
-    }
-
-    const nodes = trackRigs.get(participantAudio.audio);
-    if (!nodes) {
-        error(`no nodes for participant ${participantIdentity}, this should never happen`, audio);
-        error("rigs:", trackRigs);
-        return;
-    }
-
+/**
+ * 
+ * @param {livekit.RemoteTrack} remote_track 
+ * @param {float} pan 
+ * @param {float} volume 
+ */
+export function remote_track_pan_and_volume(remote_track, pan, volume) {
+    log(`Setting pan and volume for track ${remote_track.sid}.`);
+    const track_rig = remote_track.trackRig;
     // Pan value should be between -1 (left) and 1 (right)
-    nodes.pannerNode.pan.value = Math.max(-1, Math.min(1, pan));
+    track_rig.pannerNode.pan.value = Math.max(-1, Math.min(1, pan));
     // Volume should be between 0 and 1 (or higher for boost)
-    nodes.gainNode.gain.value = Math.max(0, volume);
+    track_rig.gainNode.gain.value = Math.max(0, volume);
 
     // nodes.analyser.getByteTimeDomainData(nodes.dataArray);
 
@@ -540,39 +473,4 @@ export function set_participant_spatial_audio(participantIdentity, pan, volume) 
     // }
 
     // log(`[${audioContext.state}] Set spatial audio for ${participantIdentity} : pan=${nodes.pannerNode.pan.value}, volume=${nodes.gainNode.gain.value}`);
-}
-
-// Get all active participant identities with audio
-export function get_audio_participants() {
-    return Array.from(participantAudioSids.keys());
-}
-
-export function streamer_subscribe_channel(roomName, subscribe_audio, subscribe_video) {
-    const room = activeRooms.get(room.name);
-    if (!room) {
-        warn(`couldn't find room ${roomName} for subscription`);
-        return;
-    }
-
-    const participant = room.remoteParticipants.values().find(participant => participant.identity.endsWith("-streamer"));
-    if (!participant) {
-        warn(`couldn't find streamer participant in room ${roomName} for subscription`);
-        return;
-    }
-
-    const audioPubs = Array.from(participant.trackPublications.values())
-        .filter(pub => pub.kind === 'audio');
-    const videoPubs = Array.from(participant.trackPublications.values())
-        .filter(pub => pub.kind === 'video');
-
-    log(`subscribing to ${audioPubs.length} audio tracks and to ${videoPubs.length} video tracks`);
-
-    for (const pub of audioPubs) {
-        log(`sub(${subscribe_video}) ${roomName}-${participant.identity}`);
-        pub.setSubscribed(subscribe_audio);
-    }
-    for (const pub of videoPubs) {
-        log(`video sub(${subscribe_video}) ${roomName}-${participant.identity}`);
-        pub.setSubscribed(subscribe_video);
-    }
 }

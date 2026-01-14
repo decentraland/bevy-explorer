@@ -7,7 +7,7 @@ use tokio::task::JoinHandle;
 #[cfg(target_arch = "wasm32")]
 use {
     bevy::render::view::RenderLayers,
-    common::{structs::AudioSettings, util::VolumePanning},
+    common::{structs::AudioSettings, util::AsH160, util::VolumePanning},
     wasm_bindgen::prelude::*,
 };
 #[cfg(not(target_arch = "wasm32"))]
@@ -37,9 +37,12 @@ use crate::livekit::{
 #[cfg(target_arch = "wasm32")]
 use crate::{
     global_crdt::{ForeignAudioSource, ForeignPlayer},
-    livekit::web::{
-        set_participant_spatial_audio, AudioCaptureOptions, LocalAudioTrack, LocalTrack,
-        Participant, TrackPublishOptions, TrackSource,
+    livekit::{
+        track::{Audio, LivekitTrack, Publishing, Subscribed},
+        web::{
+            AudioCaptureOptions, LocalAudioTrack, LocalTrack, Participant, TrackPublishOptions,
+            TrackSource,
+        },
     },
 };
 
@@ -457,32 +460,47 @@ fn locate_foreign_streams(
         &ForeignAudioSource,
         &ForeignPlayer,
     )>,
+    participants: Query<(&LivekitParticipant, &Publishing)>,
+    tracks: Query<&LivekitTrack, (With<Subscribed>, With<Audio>)>,
     pan: VolumePanning,
     settings: Res<AudioSettings>,
 ) {
     for (emitter_transform, render_layers, source, player) in streams.iter_mut() {
         if source.current_transport.is_some() {
-            let (volume, panning) =
-                pan.volume_and_panning(emitter_transform.translation(), render_layers);
-            let volume = volume * settings.voice();
+            let Some(publishing) = participants
+                .iter()
+                .filter_map(|(participant, publishing)| {
+                    if participant
+                        .identity()
+                        .as_str()
+                        .as_h160()
+                        .filter(|h160| *h160 == player.address)
+                        .is_some()
+                    {
+                        Some(publishing.collection().to_vec())
+                    } else {
+                        None
+                    }
+                })
+                .reduce(|mut accumulator, mut next| {
+                    accumulator.append(&mut next);
+                    accumulator
+                })
+            else {
+                error!("No participant with address {}.", player.address);
+                continue;
+            };
 
-            update_participant_spatial_audio(
-                &format!("{:#x}", player.address),
-                -1.0 + 2.0 * panning,
-                volume,
-            );
+            for livekit_track in tracks.iter_many(publishing) {
+                let (volume, panning) =
+                    pan.volume_and_panning(emitter_transform.translation(), render_layers);
+                let volume = volume * settings.voice();
+
+                if let Some(track) = livekit_track.track() {
+                    track.pan_and_volume(panning, volume);
+                }
+            }
         }
-    }
-}
-
-// Public API for spatial audio control
-#[cfg(target_arch = "wasm32")]
-pub fn update_participant_spatial_audio(participant_identity: &str, pan: f32, volume: f32) {
-    if let Err(e) = set_participant_spatial_audio(participant_identity, pan, volume) {
-        warn!(
-            "Failed to set spatial audio for {}: {:?}",
-            participant_identity, e
-        );
     }
 }
 

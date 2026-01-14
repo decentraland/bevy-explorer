@@ -63,9 +63,7 @@ impl Plugin for LivekitTrackPlugin {
         app.add_observer(audio_track_unpublished);
         #[cfg(not(target_arch = "wasm32"))]
         app.add_observer(video_track_is_now_subscribed);
-        #[cfg(not(target_arch = "wasm32"))]
         app.add_observer(track_of_watched_streamer_published::<Video>);
-        #[cfg(not(target_arch = "wasm32"))]
         app.add_observer(track_of_watched_streamer_published::<Audio>);
     }
 }
@@ -344,22 +342,19 @@ fn subscribe_to_track(
         return;
     };
 
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let track = track.clone();
+    let track = track.clone();
 
-        let kind = match audio_or_video {
-            (Some(_), None) => "audio",
-            (None, Some(_)) => "video",
-            _ => unreachable!("Track must have either Audio or Video."),
-        };
+    let kind = match audio_or_video {
+        (Some(_), None) => "audio",
+        (None, Some(_)) => "video",
+        _ => unreachable!("Track must have either Audio or Video."),
+    };
 
-        debug!("Subscribing to {kind} track {}", track.sid());
-        let task = livekit_runtime.spawn(async move {
-            track.set_subscribed(true);
-        });
-        commands.entity(entity).insert(Subscribing { task });
-    }
+    debug!("Subscribing to {kind} track {}", track.sid());
+    let task = livekit_runtime.spawn(async move {
+        track.set_subscribed(true);
+    });
+    commands.entity(entity).insert(Subscribing { task });
 }
 
 fn unsubscribe_to_track(
@@ -408,17 +403,14 @@ fn subscribed_audio_track_with_open_sender(
             return;
         };
 
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let (mut snatcher_sender, _) = oneshot::channel();
-            std::mem::swap(&mut snatcher_sender, &mut sender.sender);
+        let (mut snatcher_sender, _) = oneshot::channel();
+        std::mem::swap(&mut snatcher_sender, &mut sender.sender);
 
-            let handle = runtime.spawn(kira_thread(audio, publication, snatcher_sender));
-            commands
-                .entity(entity)
-                .insert(LivekitTrackTask(handle))
-                .remove::<OpenAudioSender>();
-        }
+        let handle = runtime.spawn(kira_thread(audio, publication, snatcher_sender));
+        commands
+            .entity(entity)
+            .insert(LivekitTrackTask(handle))
+            .remove::<OpenAudioSender>();
     }
 }
 
