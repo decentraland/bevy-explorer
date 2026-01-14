@@ -729,7 +729,10 @@ fn perform_video_copies(
 
         trace!(
             "{:?}/{:?} perform {:?} -> {:?}",
-            request.target, gpu_image.texture_view, source_size, target_size
+            request.target,
+            gpu_image.texture_view,
+            source_size,
+            target_size
         );
 
         render_queue.copy_external_image_to_texture(
