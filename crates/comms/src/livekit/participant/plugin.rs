@@ -24,7 +24,7 @@ use crate::{
         },
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
-        track::{Audio, Publishing, SubscribeToTrack, UnsubscribeToTrack, Video},
+        track::{Audio, LivekitTrack, Publishing, SubscribeToTrack, Video},
         LivekitRuntime,
     },
 };
@@ -408,8 +408,8 @@ fn noone_is_watching_stream(
     trigger: Trigger<OnRemove, StreamBroadcast>,
     mut commands: Commands,
     participants: Query<(&LivekitParticipant, Option<&Publishing>), With<Streamer>>,
-    audio_tracks: Query<(), With<Audio>>,
-    video_tracks: Query<(), With<Video>>,
+    tracks: Query<&LivekitTrack>,
+    livekit_runtime: Res<LivekitRuntime>,
 ) {
     let entity = trigger.target();
     let Ok((participant, maybe_publishing)) = participants.get(entity) else {
@@ -425,29 +425,11 @@ fn noone_is_watching_stream(
     commands.entity(entity).try_remove::<StreamImage>();
 
     if let Some(publishing) = maybe_publishing {
-        if let Some(audio_track) = publishing
-            .iter()
-            .find(|published_track| audio_tracks.contains(*published_track))
-        {
-            commands.trigger_targets(UnsubscribeToTrack, audio_track);
-        } else {
-            debug!(
-                "Participant {} ({}) is being watched but do not have any published audio track.",
-                participant.sid(),
-                participant.identity()
-            );
-        }
-        if let Some(video_track) = publishing
-            .iter()
-            .find(|published_track| video_tracks.contains(*published_track))
-        {
-            commands.trigger_targets(UnsubscribeToTrack, video_track);
-        } else {
-            debug!(
-                "Participant {} ({}) is being watched but do not have any published video track.",
-                participant.sid(),
-                participant.identity()
-            );
+        for livekit_track in tracks.iter_many(publishing.collection()) {
+            let track = livekit_track.clone();
+            livekit_runtime.spawn(async move {
+                track.set_subscribed(false);
+            });
         }
     }
 }
