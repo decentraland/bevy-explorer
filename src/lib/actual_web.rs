@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 
 use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
 use assets::EmbedAssetsPlugin;
@@ -7,8 +7,13 @@ use bevy::{
     diagnostic::FrameTimeDiagnosticsPlugin,
     log::LogPlugin,
     prelude::*,
-    render::{renderer::RenderDevice, view::RenderLayers},
-    tasks::{IoTaskPool, Task},
+    render::{
+        render_resource::{PipelineCompilationHandler, PipelineCompilationMode},
+        renderer::RenderDevice,
+        view::RenderLayers,
+        RenderPlugin,
+    },
+    tasks::{BoxedFuture, IoTaskPool, Task},
     winit::{UpdateMode, WinitSettings},
 };
 use bevy_console::ConsoleCommand;
@@ -55,6 +60,7 @@ use user_input::UserInputPlugin;
 use uuid::Uuid;
 use visuals::VisualsPlugin;
 use wallet::WalletPlugin;
+use wasm_bindgen_futures::{js_sys, JsFuture};
 use world_ui::WorldUiPlugin;
 
 fn main_inner(
@@ -150,10 +156,31 @@ fn main_inner(
     };
     app.insert_resource(text_bindings);
 
+    pub struct Notifyer;
+    impl PipelineCompilationHandler for Notifyer {
+        fn on_compile_start(&self) -> BoxedFuture<'_, ()> {
+            Box::pin(async {
+                let _ = JsFuture::from(js_shader_compiler_start()).await;
+            })
+        }
+
+        fn on_compile_end(&self) -> BoxedFuture<'_, ()> {
+            Box::pin(async {
+                let _ = JsFuture::from(js_shader_compiler_end()).await;
+            })
+        }
+    }
+
     app.insert_resource(Version(version.clone()))
         .insert_resource(final_config.audio.clone())
         .add_plugins(
             DefaultPlugins
+                .set(RenderPlugin {
+                    pipeline_compilation_mode: PipelineCompilationMode::AsyncWithNotify(Arc::new(
+                        Box::new(Notifyer),
+                    )),
+                    ..default()
+                })
                 .set(WindowPlugin {
                     primary_window: Some(Window {
                         canvas: Some("#mygame-canvas".into()),
@@ -571,6 +598,13 @@ extern "C" {
         system_scene: Option<String>,
         is_preview: bool,
     );
+
+    // Your JS function
+    #[wasm_bindgen(js_name = "shaderCompilerWait")]
+    fn js_shader_compiler_start() -> js_sys::Promise;
+
+    #[wasm_bindgen(js_name = "shaderCompilerDone")]
+    fn js_shader_compiler_end() -> js_sys::Promise;
 }
 
 #[derive(PartialEq, Default, Clone)]

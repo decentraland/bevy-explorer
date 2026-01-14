@@ -347,10 +347,10 @@ fn update_text_shapes(
         let halign_wui = if wrapping { 0.0 } else { halign_wui };
 
         // use constant font size to avoid small text being illegible
-        let font_size = 30.0;
+        let font_size = 20.0;
 
         // use pix per meter based on font size to scale appropriately
-        let pix_per_m = 375.0 / text_shape.0.font_size.unwrap_or(10.0);
+        let pix_per_m = 225.0 / text_shape.0.font_size.unwrap_or(10.0);
 
         let add_y_pix = (text_shape.0.padding_bottom() - text_shape.0.padding_top()) * pix_per_m;
 

@@ -1,6 +1,6 @@
 // Import the wasm-bindgen generated JS glue code and Rust functions
 import { initGpuCache } from "./gpu_cache.js";
-import init, { engine_init, engine_run } from "./pkg/webgpu_build.js"; // Ensure this path is correct
+import init, { engine_init, engine_run, gpu_cache_hash } from "./pkg/webgpu_build.js"; // Ensure this path is correct
 
 const initialRealmInput = document.getElementById("initialRealm");
 const locationInput = document.getElementById("location");
@@ -309,7 +309,8 @@ function start() {
 
 initButton.onclick = start;
 
-Promise.all([initEngine(), initGpuCache()])
+initEngine()
+  .then(() => initGpuCache(gpu_cache_hash()))
   .then(() => {
     if (autoStart) {
       start()
@@ -340,16 +341,17 @@ window.set_url_params = (x, y, server, system_scene, preview) => {
     } else {
       urlParams.delete("systemScene");
     }
-  
+
     if (preview) {
       urlParams.set("preview", true);
     } else {
       urlParams.delete("preview");
     }
 
-    const newPath = window.location.pathname + '?' + urlParams.toString(); 
+    const newPath = window.location.pathname + '?' + urlParams.toString();
     history.replaceState(null, '', newPath);
   } catch (e) {
     console.log(`set url params failed: ${e}`);
   }
 }
+

@@ -1,3 +1,5 @@
+var count = 0;
+
 function simpleHash(s) {
   var h = 0x811c9dc5;
 
@@ -44,6 +46,30 @@ function openDB() {
     request.onerror = (event) => reject(event.target.error);
   });
   return dbPromise;
+}
+
+async function clearDatabase() {
+  const db = await openDB();
+
+  const tableNames = ["shader", "bindgroup", "layout", "pipeline", "requiredItems"];
+
+  const tx = db.transaction(tableNames, "readwrite");
+
+  const clearPromises = tableNames.map(name => {
+    const store = tx.objectStore(name);
+    const request = store.clear();
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  });
+
+  await Promise.all(clearPromises);
+  await new Promise((resolve, reject) => {
+    tx.oncomplete = resolve;
+    tx.onabort = reject;
+    tx.onerror = reject;
+  });
 }
 
 async function fetchRequiredItems() {
@@ -108,29 +134,10 @@ async function storeInstance(type, hash, value) {
   });
 }
 
-async function clearDatabase() {
-  const storeNames = ["shader", "bindgroup", "layout", "pipeline"];
-
-  const tx = await db.transaction("rqeuiredItems", "readwrite");
-  await tx.objectStore("requiredItems").clear();
-
-  const clearPromises = storeNames.map((name) => {
-    const tx = db.transaction(name, "readwrite");
-    return new Promise((resolve, reject) => {
-      const request = tx.objectStore(name).clear();
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-  });
-
-  // Wait for all clear operations to complete
-  await Promise.all(clearPromises);
-  await tx.done;
-}
-
-export async function initGpuCache() {
+export async function initGpuCache(key) {
+  console.log(`[GPU Cache] key: ${key}`);
   patchWebgpuAdater();
-  await createGpuCache();
+  await createGpuCache(key);
 }
 
 function patchWebgpuAdater() {
@@ -161,6 +168,9 @@ function patchWebgpuAdater() {
 
     function wrapDeviceFunction(itemType, originalFunction) {
       return (...args) => {
+        if (count == 0 && !precaching) {
+          console.error(`itemType: ${itemType}`)
+        }
         const jsonArgs = JSON.stringify(args);
         const hash = simpleHash(jsonArgs);
         const cachedItem = gpuSessionState[itemType].get(hash);
@@ -210,7 +220,15 @@ function patchWebgpuAdater() {
   };
 }
 
-async function createGpuCache() {
+async function createGpuCache(key) {
+  const cachedKey = localStorage.getItem("gpuCacheKey");
+  if (cachedKey != key) {
+    console.log("shaders updated, clearing db");
+    await clearDatabase();
+    localStorage.setItem("gpuCacheKey", key);
+    return;
+  }
+
   const cachedDeviceDescriptor = localStorage.getItem("deviceDescriptor");
   if (cachedDeviceDescriptor === null) {
     return;
@@ -300,3 +318,24 @@ function rehydrateItem(currentObject) {
     }
   }
 }
+
+window.shaderCompilerWait = async () => {
+  count += 1;
+  document.getElementById("shader-compiling").style.display = "flex";
+  await new Promise(resolve => {
+    setTimeout(resolve, 0);
+  });
+}
+
+window.shaderCompilerDone = async () => {
+  setTimeout(() => {
+    count -= 1;
+    if (count == 0) {
+      document.getElementById("shader-compiling").style.display = "none";
+    }
+  }, 500);
+  await new Promise(resolve => {
+    setTimeout(resolve, 0);
+  });
+}
+

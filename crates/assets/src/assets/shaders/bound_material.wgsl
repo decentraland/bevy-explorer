@@ -3,12 +3,14 @@
     pbr_fragment::pbr_input_from_standard_material,
     pbr_functions::{SampleBias, alpha_discard, apply_pbr_lighting, main_pass_post_lighting_processing},
     pbr_bindings::{material, emissive_texture, emissive_sampler},
-    pbr_types::{STANDARD_MATERIAL_FLAGS_EMISSIVE_TEXTURE_BIT, STANDARD_MATERIAL_FLAGS_BASE_COLOR_TEXTURE_BIT}
+    pbr_types::{STANDARD_MATERIAL_FLAGS_EMISSIVE_TEXTURE_BIT, STANDARD_MATERIAL_FLAGS_BASE_COLOR_TEXTURE_BIT, STANDARD_MATERIAL_FLAGS_DOUBLE_SIDED_BIT}
     mesh_view_bindings::{globals, view},
     pbr_types,
 }
+#import bevy_core_pipeline::tonemapping::approximate_inverse_tone_mapping
+
 #import "embedded://shaders/simplex.wgsl"::simplex_noise_3d
-#import "embedded://shaders/outline.wgsl"::apply_outline
+#import "embedded://shaders/bound_material_effect.wgsl"::{apply_outline, discard_dither}
 
 struct Bounds {
     min: u32,
@@ -37,6 +39,8 @@ const SHOW_OUTSIDE: u32 = 1u;
 //const OUTLINE: u32 = 2u; // replaced by OUTLINE shader def
 const OUTLINE_RED: u32 = 4u;
 const OUTLINE_FORCE: u32 = 8u;
+const DISABLE_DITHER: u32 = 16u;
+const CONE_ONLY_DITHER: u32 = 32u;
 
 @group(2) @binding(100)
 var<uniform> bounds: SceneBounds;
@@ -51,6 +55,11 @@ fn fragment(
 #endif
 #endif
 ) -> FragmentOutput {
+    var cap_brightness: f32 = 0.0;
+    if (bounds.flags & (DISABLE_DITHER + OUTLINE_RED)) == 0 {
+        cap_brightness = discard_dither(in.position.xy, in.world_position.xyz, view.user_value, (bounds.flags & CONE_ONLY_DITHER) == 0);
+    }
+
     // generate a PbrInput struct from the StandardMaterial bindings
     var pbr_input = pbr_input_from_standard_material(in, is_front);
     var out: FragmentOutput;
@@ -150,7 +159,8 @@ fn fragment(
     if (pbr_input.material.flags & bevy_pbr::pbr_types::STANDARD_MATERIAL_FLAGS_UNLIT_BIT) == 0u {
         out.color = apply_pbr_lighting(pbr_input);
     } else {
-        out.color = pbr_input.material.base_color;
+        // invert tonemapping for unlit materials
+        out.color = approximate_inverse_tone_mapping(pbr_input.material.base_color, view.color_grading); 
     }
 
     if should_discard {
@@ -177,6 +187,9 @@ fn fragment(
     // apply in-shader post processing (fog, alpha-premultiply, and also tonemapping, debanding if the camera is non-hdr)
     // note this does not include fullscreen postprocessing effects like bloom.
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);
+
+    let cap_factor = max(max(out.color.r, out.color.g), max(out.color.b, 1.0));
+    out.color = mix(out.color, vec4<f32>(out.color.rgb / cap_factor, out.color.a), saturate(cap_brightness * 2.0));
 
     return out;
 }
