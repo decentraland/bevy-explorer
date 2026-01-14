@@ -106,7 +106,7 @@ struct OpenAudioSender {
 
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Component, Deref, DerefMut)]
-struct AudioStreamingSound {
+struct AudioStreamingHandle {
     handle: StreamingSoundHandle<AudioDecoderError>,
 }
 

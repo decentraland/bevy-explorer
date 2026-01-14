@@ -1,3 +1,5 @@
+#[cfg(not(target_arch = "wasm32"))]
+use bevy::ecs::world::OnDespawn;
 use bevy::{ecs::relationship::Relationship, prelude::*, render::render_resource::Extent3d};
 use common::util::AsH160;
 #[cfg(not(target_arch = "wasm32"))]
@@ -20,7 +22,7 @@ use crate::livekit::{
     kira_bridge::kira_thread,
     livekit_bridge::{livekit_video_thread, AudioTrackKiraBridge, I420BufferExt},
     participant::StreamImage,
-    track::{AudioStreamingSound, LivekitTrackTask, OpenAudioSender, VideoFrameReceiver},
+    track::{AudioStreamingHandle, LivekitTrackTask, OpenAudioSender, VideoFrameReceiver},
     LivekitAudioManager,
 };
 use crate::{
@@ -57,6 +59,8 @@ impl Plugin for LivekitTrackPlugin {
         );
         #[cfg(not(target_arch = "wasm32"))]
         app.add_observer(audio_track_is_now_subscribed);
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_observer(audio_track_unpublished);
         #[cfg(not(target_arch = "wasm32"))]
         app.add_observer(video_track_is_now_subscribed);
         #[cfg(not(target_arch = "wasm32"))]
@@ -419,20 +423,26 @@ fn subscribed_audio_track_with_open_sender(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn audio_track_is_now_subscribed(
     trigger: Trigger<OnAdd, Subscribed>,
     mut commands: Commands,
-    tracks: Query<(&LivekitTrack, Has<Audio>), With<Subscribed>>,
+    tracks: Query<(&LivekitTrack, Has<Audio>, Has<AudioStreamingHandle>), With<Subscribed>>,
     mut livekit_audio_manager: ResMut<LivekitAudioManager>,
 ) {
     let entity = trigger.target();
-    let Ok((track, is_audio)) = tracks.get(entity) else {
+    let Ok((track, is_audio, has_audio_streaming_sound)) = tracks.get(entity) else {
         error!("Subscribed track did not have LivekitTrack.");
         commands.send_event(AppExit::from_code(1));
         return;
     };
     if !is_audio {
         trace!("Subscribed track was not an audio track.");
+        return;
+    }
+    if has_audio_streaming_sound {
+        // Creation of [`AudioStreamingSound`] only needs to be done once
+        // for a track
         return;
     }
 
@@ -451,7 +461,32 @@ fn audio_track_is_now_subscribed(
 
     commands
         .entity(entity)
-        .insert(AudioStreamingSound { handle });
+        .insert(AudioStreamingHandle { handle });
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn audio_track_unpublished(
+    trigger: Trigger<OnDespawn, Audio>,
+    mut commands: Commands,
+    mut tracks: Query<(&LivekitTrack, Option<&mut AudioStreamingHandle>), With<Audio>>,
+) {
+    let entity = trigger.target();
+    let Ok((livekit_track, maybe_audio_streaming_handle)) = tracks.get_mut(entity) else {
+        error!("Audio track did not have LivekitTrack.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    let Some(mut audio_streaming_sound) = maybe_audio_streaming_handle else {
+        trace!(
+            "Audio track {} did not have AudioStreamingHandle.",
+            livekit_track.sid()
+        );
+        return;
+    };
+
+    debug!("Stopping audio track {}.", livekit_track.sid());
+    audio_streaming_sound.stop(Default::default());
 }
 
 #[cfg(not(target_arch = "wasm32"))]
