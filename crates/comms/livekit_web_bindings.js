@@ -38,7 +38,7 @@ export function is_microphone_available() {
 export async function room_connect(url, token, room_options, room_connect_options, handler) {
     const room = new LivekitClient.Room(room_options);
 
-    alt_set_room_event_handler(room, handler);
+    set_room_event_handler(room, handler);
 
     await room.connect(url, token, room_connect_options);
 
@@ -76,7 +76,7 @@ export function room_local_participant(room) {
  * @param {livekit.Room} room 
  * @param {function} handler 
  */
-function alt_set_room_event_handler(room, handler) {
+function set_room_event_handler(room, handler) {
     room.on(LivekitClient.RoomEvent.Connected, () => {
         const participants_with_tracks = Array
             .from(room.remoteParticipants.values())
