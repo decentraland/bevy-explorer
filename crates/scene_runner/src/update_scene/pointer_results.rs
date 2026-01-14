@@ -830,12 +830,19 @@ fn send_hover_events(
 fn send_action_events(
     target: Res<PointerTarget>,
     pointer_requests: Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
-    mut scenes: Query<(&mut RendererSceneContext, &GlobalTransform, Option<&SuperUserScene>)>,
+    mut scenes: Query<(
+        Entity,
+        &mut RendererSceneContext,
+        &GlobalTransform,
+        Option<&SuperUserScene>,
+    )>,
     input_mgr: InputManager,
     frame: Res<FrameCount>,
     time: Res<Time>,
     mut drag_target: ResMut<PointerDragTarget>,
     mut locks: ResMut<CursorLocks>,
+    player: Query<Entity, With<PrimaryUser>>,
+    containing_scenes: ContainingScene,
 ) {
     fn filtered_events<'a>(
         pointer_requests: &'a Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
@@ -889,7 +896,7 @@ fn send_action_events(
                     .and_then(|info| info.max_distance)
                     .unwrap_or(10.0);
                 if info.distance.0 <= max_distance {
-                    let Ok((mut context, scene_transform, _)) = scenes.get_mut(scene) else {
+                    let Ok((_, mut context, scene_transform, _)) = scenes.get_mut(scene) else {
                         return false;
                     };
 
@@ -1018,6 +1025,12 @@ fn send_action_events(
         locks.0.remove("pointer");
     }
 
+    // Get scenes containing the player
+    let Ok(player_entity) = player.single() else {
+        return;
+    };
+    let player_scenes = containing_scenes.get_area(player_entity, PLAYER_COLLIDER_RADIUS);
+
     // Collect all inputs for super user scenes
     let all_inputs: Vec<_> = input_mgr
         .iter_scene_just_down()
@@ -1032,13 +1045,17 @@ fn send_action_events(
         .collect();
 
     // send events to scene roots
-    for (mut context, _, is_super_user) in scenes.iter_mut() {
+    for (scene_entity, mut context, _, is_super_user) in scenes.iter_mut() {
         // Super user scenes (system UI) always receive all inputs
-        // Regular scenes only receive unconsumed inputs
+        // Scenes containing the player receive unconsumed inputs
+        // Scenes NOT containing the player receive NO inputs
         let events_to_send = if is_super_user.is_some() {
             &all_inputs
-        } else {
+        } else if player_scenes.contains(&scene_entity) {
             &unconsumed
+        } else {
+            // Player is outside this scene - don't send any inputs
+            continue;
         };
 
         if events_to_send.is_empty() {
