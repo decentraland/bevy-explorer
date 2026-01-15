@@ -19,13 +19,14 @@ use {
 };
 
 #[cfg(not(target_arch = "wasm32"))]
-use crate::livekit::{participant::ParticipantConnectionQuality, room::LivekitRoomTrackTask};
+use crate::livekit::room::LivekitRoomTrackTask;
 use crate::{
     global_crdt::ChannelControl,
     livekit::{
         participant::{
-            HostingParticipants, LivekitParticipant, ParticipantConnected, ParticipantDisconnected,
-            ParticipantMetadataChanged, ParticipantPayload,
+            HostingParticipants, LivekitParticipant, ParticipantConnected,
+            ParticipantConnectionQuality, ParticipantDisconnected, ParticipantMetadataChanged,
+            ParticipantPayload,
         },
         room::{Connected, ConnectingLivekitRoom, Disconnected, LivekitRoom, Reconnecting},
         track, LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime, LivekitTransport,
@@ -250,7 +251,6 @@ fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mu
                 RoomEvent::TrackUnsubscribed { publication, .. } => {
                     commands.trigger(track::TrackUnsubscribed { track: publication });
                 }
-                #[cfg(not(target_arch = "wasm32"))]
                 RoomEvent::ConnectionQualityChanged {
                     quality,
                     participant,

@@ -5,8 +5,8 @@ use wasm_bindgen::{
 };
 
 use crate::livekit::web::{
-    traits::GetFromJsValue, ConnectionState, DataPacketKind, Participant, RemoteParticipant,
-    RemoteTrack, RemoteTrackPublication,
+    traits::GetFromJsValue, ConnectionQuality, ConnectionState, DataPacketKind, Participant,
+    RemoteParticipant, RemoteTrack, RemoteTrackPublication,
 };
 
 // Define structures for the events coming from JavaScript
@@ -28,6 +28,10 @@ pub enum RoomEvent {
         participant: Participant,
         old_metadata: String,
         metadata: String,
+    },
+    ConnectionQualityChanged {
+        quality: ConnectionQuality,
+        participant: Participant,
     },
     TrackPublished {
         publication: RemoteTrackPublication,
@@ -191,6 +195,22 @@ impl FromWasmAbi for RoomEvent {
                     participant,
                     old_metadata,
                     metadata,
+                }
+            }
+            Some("connectionQualityChanged") => {
+                let Some(quality) =
+                    ConnectionQuality::get_from_js_value(&js_value, "connection_quality")
+                else {
+                    panic!("RoomEvent::ConnectionQualityChanged did not have quality field.");
+                };
+                let Some(participant) =
+                    Participant::get_from_js_value(&js_value, "participant")
+                else {
+                    panic!("RoomEvent::ConnectionQualityChanged did not have participant field.");
+                };
+                RoomEvent::ConnectionQualityChanged {
+                    quality,
+                    participant,
                 }
             }
             Some("trackPublished") => {

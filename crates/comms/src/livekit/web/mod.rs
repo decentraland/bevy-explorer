@@ -261,3 +261,18 @@ pub enum ConnectionQuality {
     Poor,
     Lost,
 }
+
+impl GetFromJsValue for ConnectionQuality {
+    fn get_from_js_value(js_value: &JsValue, key: &str) -> Option<Self> {
+        let quality = js_sys::Reflect::get(js_value, &JsValue::from(key)).ok()?.as_string()?;
+        match quality.as_str() {
+            "excellent" => Some(ConnectionQuality::Excellent),
+            "good" => Some(ConnectionQuality::Good),
+            "poor" => Some(ConnectionQuality::Poor),
+            "lost" => Some(ConnectionQuality::Lost),
+            other => {
+                panic!("Invalid ConnectionQuality '{other}'.")
+            }
+        }
+    }
+}

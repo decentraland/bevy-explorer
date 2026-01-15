@@ -92,6 +92,13 @@ function set_room_event_handler(room, handler) {
             state: state
         })
     });
+    room.on(LivekitClient.RoomEvent.ConnectionQualityChanged, (connection_quality, participant) => {
+        handler({
+            type: 'connectionQualityChanged',
+            connection_quality,
+            participant
+        })
+    });
     room.on(
         LivekitClient.RoomEvent.DataReceived,
         (payload, participant, kind, topic) => {
