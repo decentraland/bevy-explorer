@@ -203,8 +203,7 @@ impl FromWasmAbi for RoomEvent {
                 else {
                     panic!("RoomEvent::ConnectionQualityChanged did not have quality field.");
                 };
-                let Some(participant) =
-                    Participant::get_from_js_value(&js_value, "participant")
+                let Some(participant) = Participant::get_from_js_value(&js_value, "participant")
                 else {
                     panic!("RoomEvent::ConnectionQualityChanged did not have participant field.");
                 };

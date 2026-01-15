@@ -419,11 +419,21 @@ fn subscribed_audio_track_with_open_sender(
 fn audio_track_is_now_subscribed(
     trigger: Trigger<OnAdd, Subscribed>,
     mut commands: Commands,
-    tracks: Query<(&LivekitTrack, Has<Audio>, Has<AudioStreamingHandle>, Has<OpenAudioSender>), With<Subscribed>>,
+    tracks: Query<
+        (
+            &LivekitTrack,
+            Has<Audio>,
+            Has<AudioStreamingHandle>,
+            Has<OpenAudioSender>,
+        ),
+        With<Subscribed>,
+    >,
     mut livekit_audio_manager: ResMut<LivekitAudioManager>,
 ) {
     let entity = trigger.target();
-    let Ok((track, is_audio, has_audio_streaming_sound, has_open_audio_sender)) = tracks.get(entity) else {
+    let Ok((track, is_audio, has_audio_streaming_sound, has_open_audio_sender)) =
+        tracks.get(entity)
+    else {
         error!("Subscribed track did not have LivekitTrack.");
         commands.send_event(AppExit::from_code(1));
         return;
