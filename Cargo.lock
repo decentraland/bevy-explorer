@@ -2774,7 +2774,6 @@ dependencies = [
  "cpal",
  "dcl",
  "dcl_component",
- "disqualified",
  "ethers-core",
  "futures-lite 1.13.0",
  "futures-util",

@@ -1,12 +1,6 @@
 pub(super) mod plugin;
 
-use std::marker::PhantomData;
-
-use bevy::{
-    ecs::{component::HookContext, world::DeferredWorld},
-    platform::sync::Arc,
-    prelude::*,
-};
+use bevy::{platform::sync::Arc, prelude::*};
 #[cfg(not(target_arch = "wasm32"))]
 use livekit::{
     participant::Participant,
@@ -15,7 +9,6 @@ use livekit::{
 
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::{LocalParticipant, Participant, RemoteParticipant};
-use crate::make_hooks;
 
 #[derive(Clone, Component, Deref)]
 pub struct LivekitParticipant {
@@ -85,19 +78,22 @@ pub struct ParticipantDisconnected {
 }
 
 #[derive(Event)]
-pub struct ParticipantConnectionQuality<C: Component> {
+pub struct ParticipantConnectionQuality {
     participant: LivekitParticipant,
     room: Entity,
-    phantom_data: PhantomData<C>,
+    connection_quality: ConnectionQuality,
 }
 
-impl<C: Component> ParticipantConnectionQuality<C> {
-    #[expect(unused_variables, reason = "Parameter exists to help type inference")]
-    pub fn new(participant: LivekitParticipant, room: Entity, connection_quality: C) -> Self {
+impl ParticipantConnectionQuality {
+    pub fn new<C: Into<ConnectionQuality>>(
+        participant: LivekitParticipant,
+        room: Entity,
+        connection_quality: C,
+    ) -> Self {
         Self {
             participant,
             room,
-            phantom_data: PhantomData,
+            connection_quality: connection_quality.into(),
         }
     }
 }
@@ -115,26 +111,21 @@ pub struct ParticipantMetadataChanged {
     pub participant: LivekitParticipant,
 }
 
-pub mod connection_quality {
-    use super::*;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Component)]
+pub enum ConnectionQuality {
+    Excelent,
+    Good,
+    Poor,
+    Lost,
+}
 
-    #[derive(Default, Component)]
-    #[component(on_add=Self::on_add)]
-    pub struct Excellent;
-    make_hooks!(Excellent, (Good, Poor, Lost));
-
-    #[derive(Default, Component)]
-    #[component(on_add=Self::on_add)]
-    pub struct Good;
-    make_hooks!(Good, (Excellent, Poor, Lost));
-
-    #[derive(Default, Component)]
-    #[component(on_add=Self::on_add)]
-    pub struct Poor;
-    make_hooks!(Poor, (Excellent, Good, Lost));
-
-    #[derive(Default, Component)]
-    #[component(on_add=Self::on_add)]
-    pub struct Lost;
-    make_hooks!(Lost, (Excellent, Good, Poor));
+impl From<livekit::participant::ConnectionQuality> for ConnectionQuality {
+    fn from(value: livekit::participant::ConnectionQuality) -> Self {
+        match value {
+            livekit::participant::ConnectionQuality::Excellent => Self::Excelent,
+            livekit::participant::ConnectionQuality::Good => Self::Good,
+            livekit::participant::ConnectionQuality::Poor => Self::Poor,
+            livekit::participant::ConnectionQuality::Lost => Self::Lost,
+        }
+    }
 }

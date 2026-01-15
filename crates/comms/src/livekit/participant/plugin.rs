@@ -17,10 +17,9 @@ use crate::{
     global_crdt::{GlobalCrdtState, NonPlayerUpdate, PlayerMessage, PlayerUpdate},
     livekit::{
         participant::{
-            connection_quality, HostedBy, HostingParticipants, LivekitParticipant, Local,
-            ParticipantConnected, ParticipantConnectionQuality, ParticipantDisconnected,
-            ParticipantMetadataChanged, ParticipantPayload, StreamBroadcast, StreamImage,
-            StreamViewer, Streamer,
+            HostedBy, HostingParticipants, LivekitParticipant, Local, ParticipantConnected,
+            ParticipantConnectionQuality, ParticipantDisconnected, ParticipantMetadataChanged,
+            ParticipantPayload, StreamBroadcast, StreamImage, StreamViewer, Streamer,
         },
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
@@ -35,10 +34,7 @@ impl Plugin for LivekitParticipantPlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(participant_connected);
         app.add_observer(participant_disconnected);
-        app.add_observer(participant_connection_quality_changed::<connection_quality::Excellent>);
-        app.add_observer(participant_connection_quality_changed::<connection_quality::Good>);
-        app.add_observer(participant_connection_quality_changed::<connection_quality::Poor>);
-        app.add_observer(participant_connection_quality_changed::<connection_quality::Lost>);
+        app.add_observer(participant_connection_quality_changed);
         app.add_observer(participant_payload);
         app.add_observer(participant_metadata_changed);
 
@@ -151,20 +147,22 @@ fn participant_disconnected(
     commands.entity(entity).despawn();
 }
 
-fn participant_connection_quality_changed<C: Component + Default>(
-    trigger: Trigger<ParticipantConnectionQuality<C>>,
+fn participant_connection_quality_changed(
+    trigger: Trigger<ParticipantConnectionQuality>,
     mut commands: Commands,
     participants: Query<(Entity, &LivekitParticipant)>,
     rooms: Query<&HostingParticipants, With<LivekitRoom>>,
 ) {
     let ParticipantConnectionQuality {
-        participant, room, ..
+        participant,
+        room,
+        connection_quality,
     } = trigger.event();
     debug!(
-        "Participant '{}' ({}) connection quality with {room} changed to {}.",
+        "Participant '{}' ({}) connection quality with {room} changed to {:?}.",
         participant.sid(),
         participant.identity(),
-        disqualified::ShortName::of::<C>(),
+        connection_quality
     );
 
     let Ok(hosting_participants) = rooms.get(*room) else {
@@ -191,7 +189,7 @@ fn participant_connection_quality_changed<C: Component + Default>(
         return;
     };
 
-    commands.entity(entity).insert(C::default());
+    commands.entity(entity).insert(*connection_quality);
 }
 
 fn participant_payload(

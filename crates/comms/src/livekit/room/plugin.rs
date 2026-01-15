@@ -13,20 +13,13 @@ use tokio::{
 use {
     kira::sound::streaming::StreamingSoundData,
     livekit::{
-        id::ParticipantIdentity,
-        participant::{ConnectionQuality, Participant},
-        ConnectionState, DataPacket, Room, RoomError, RoomEvent, RoomOptions, RoomResult,
+        id::ParticipantIdentity, participant::Participant, ConnectionState, DataPacket, Room,
+        RoomError, RoomEvent, RoomOptions, RoomResult,
     },
 };
 
 #[cfg(not(target_arch = "wasm32"))]
-use crate::livekit::{
-    participant::{
-        connection_quality::{Excellent, Good, Lost, Poor},
-        ParticipantConnectionQuality,
-    },
-    room::LivekitRoomTrackTask,
-};
+use crate::livekit::{participant::ParticipantConnectionQuality, room::LivekitRoomTrackTask};
 use crate::{
     global_crdt::ChannelControl,
     livekit::{
@@ -261,36 +254,13 @@ fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mu
                 RoomEvent::ConnectionQualityChanged {
                     quality,
                     participant,
-                } => match quality {
-                    ConnectionQuality::Excellent => {
-                        commands.trigger(ParticipantConnectionQuality::new(
-                            participant.into(),
-                            entity,
-                            Excellent,
-                        ));
-                    }
-                    ConnectionQuality::Good => {
-                        commands.trigger(ParticipantConnectionQuality::new(
-                            participant.into(),
-                            entity,
-                            Good,
-                        ));
-                    }
-                    ConnectionQuality::Poor => {
-                        commands.trigger(ParticipantConnectionQuality::new(
-                            participant.into(),
-                            entity,
-                            Poor,
-                        ));
-                    }
-                    ConnectionQuality::Lost => {
-                        commands.trigger(ParticipantConnectionQuality::new(
-                            participant.into(),
-                            entity,
-                            Lost,
-                        ));
-                    }
-                },
+                } => {
+                    commands.trigger(ParticipantConnectionQuality::new(
+                        participant.into(),
+                        entity,
+                        quality,
+                    ));
+                }
                 #[cfg(not(target_arch = "wasm32"))]
                 _ => {
                     debug!("Event: {:?}", room_event);
