@@ -151,25 +151,26 @@ fn participant_connection_quality_changed(
     trigger: Trigger<ParticipantConnectionQuality>,
     mut commands: Commands,
     participants: Query<(Entity, &LivekitParticipant)>,
-    rooms: Query<&HostingParticipants, With<LivekitRoom>>,
+    rooms: Query<(&LivekitRoom, &HostingParticipants)>,
 ) {
     let ParticipantConnectionQuality {
         participant,
         room,
         connection_quality,
     } = trigger.event();
-    debug!(
-        "Participant '{}' ({}) connection quality with {room} changed to {:?}.",
-        participant.sid(),
-        participant.identity(),
-        connection_quality
-    );
-
-    let Ok(hosting_participants) = rooms.get(*room) else {
-        error!("Room given to ParticipantDisconnected was invalid.");
+    let Ok((livekit_room, hosting_participants)) = rooms.get(*room) else {
+        error!("Room given to ParticipantConnectionQuality was invalid.");
         commands.send_event(AppExit::from_code(1));
         return;
     };
+
+    debug!(
+        "Participant '{}' ({}) connection quality with {} changed to {:?}.",
+        participant.sid(),
+        participant.identity(),
+        livekit_room.name(),
+        connection_quality
+    );
 
     let Some(entity) = participants
         .iter_many(hosting_participants.collection())
