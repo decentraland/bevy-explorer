@@ -6,7 +6,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use bevy::{
-    asset::{AssetEvents, AssetLoader},
+    asset::{AssetEvents, AssetLoader, RenderAssetTransferPriority},
     diagnostic::FrameCount,
     gltf::{Gltf, GltfLoaderSettings},
     image::ImageLoaderSettings,
@@ -356,7 +356,8 @@ impl AssetLoader for WearableLoader {
                         load_context
                             .loader()
                             .with_settings::<ImageLoaderSettings>(|s| {
-                                s.asset_usage = RenderAssetUsages::RENDER_WORLD
+                                s.asset_usage = RenderAssetUsages::RENDER_WORLD;
+                                s.transfer_priority = RenderAssetTransferPriority::Priority(1);
                             })
                             .load(path)
                     });
@@ -369,7 +370,8 @@ impl AssetLoader for WearableLoader {
                         load_context
                             .loader()
                             .with_settings::<ImageLoaderSettings>(|s| {
-                                s.asset_usage = RenderAssetUsages::RENDER_WORLD
+                                s.asset_usage = RenderAssetUsages::RENDER_WORLD;
+                                s.transfer_priority = RenderAssetTransferPriority::Priority(1);
                             })
                             .load(path)
                     });

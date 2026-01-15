@@ -1,13 +1,10 @@
 use std::borrow::Cow;
 
 use bevy::{
-    color::palettes::basic,
-    diagnostic::FrameCount,
-    prelude::*,
-    render::{
+    asset::RenderAssetTransferPriority, color::palettes::basic, diagnostic::FrameCount, prelude::*, render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
-    },
+    }
 };
 use common::sets::SceneSets;
 use comms::livekit_native::LivekitVideoFrame;
@@ -313,6 +310,7 @@ fn rebuild_sinks(
                 );
                 image.texture_descriptor.usage =
                     TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING;
+                image.transfer_priority = RenderAssetTransferPriority::Priority(-2);
                 images.add(image)
             }
             Some(texture) => texture.0.clone(),

@@ -1,14 +1,11 @@
 use std::f32::consts::FRAC_PI_4;
 
 use bevy::{
-    app::{HierarchyPropagatePlugin, Propagate, PropagateSet, PropagateStop},
-    platform::collections::{HashMap, HashSet},
-    prelude::*,
-    render::{
+    app::{HierarchyPropagatePlugin, Propagate, PropagateSet, PropagateStop}, asset::RenderAssetTransferPriority, platform::collections::{HashMap, HashSet}, prelude::*, render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureFormat, TextureUsages},
         view::RenderLayers,
-    },
+    }
 };
 use bevy_atmosphere::plugin::AtmosphereCamera;
 use common::{
@@ -269,6 +266,7 @@ fn update_texture_cameras(
                         RenderAssetUsages::all(), // RENDER_WORLD alone doesn't work..?
                     );
                     image.data = None;
+                    image.transfer_priority = RenderAssetTransferPriority::Immediate;
                     image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
                     images.add(image)
                 }

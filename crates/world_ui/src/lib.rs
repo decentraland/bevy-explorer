@@ -1,9 +1,5 @@
 use bevy::{
-    diagnostic::FrameCount,
-    pbr::{ExtendedMaterial, MaterialExtension, NotShadowCaster},
-    platform::collections::{HashMap, HashSet},
-    prelude::*,
-    render::{
+    asset::RenderAssetTransferPriority, diagnostic::FrameCount, pbr::{ExtendedMaterial, MaterialExtension, NotShadowCaster}, platform::collections::{HashMap, HashSet}, prelude::*, render::{
         camera::RenderTarget,
         render_asset::RenderAssetUsages,
         render_resource::{
@@ -11,9 +7,7 @@ use bevy::{
         },
         renderer::RenderDevice,
         view::NoFrustumCulling,
-    },
-    transform::TransformSystem,
-    ui::UiSystem,
+    }, transform::TransformSystem, ui::UiSystem
 };
 use boimp::bake::{
     ImposterBakeMaterialExtension, ImposterBakeMaterialPlugin, STANDARD_BAKE_HANDLE,
@@ -84,6 +78,7 @@ pub fn spawn_world_ui_view(
         );
         image.data = None;
         image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
+        image.transfer_priority = RenderAssetTransferPriority::Immediate;
         images.add(image)
     });
 

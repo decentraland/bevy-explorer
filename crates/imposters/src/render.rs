@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
 use bevy::{
-    asset::RenderAssetUsages,
+    asset::{RenderAssetTransferPriority, RenderAssetUsages},
     diagnostic::FrameCount,
     ecs::system::SystemParam,
     math::FloatOrd,
     pbr::{NotShadowCaster, NotShadowReceiver},
-    platform::collections::{hash_map::Entry, HashMap, HashSet},
+    platform::collections::{HashMap, HashSet, hash_map::Entry},
     prelude::*,
     render::{
         mesh::{MeshAabb, VertexAttributeValues},
@@ -946,7 +946,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                                         alpha: 1.0,
                                         alpha_blend: 0.0, // blend
                                         multisample_amount: 0.0,
-                                        immediate_upload: true,
+                                        transfer_priority: RenderAssetTransferPriority::Priority(-1),
                                         asset_usages: RenderAssetUsages::RENDER_WORLD,
                                     }
                                 },
@@ -1249,7 +1249,7 @@ fn load_imposters(
                             uv[1] = 0.0 / 18.0
                                 + 17.0 / 18.0 * (1.0 - bottomleft.y - (1.0 - uv[1]) * parcel_size);
                         }
-                        floor.immediate_upload = true;
+                        floor.transfer_priority = RenderAssetTransferPriority::Priority(-1);
 
                         meshes.add(floor)
                     };
