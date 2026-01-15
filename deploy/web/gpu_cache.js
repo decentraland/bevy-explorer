@@ -168,9 +168,6 @@ function patchWebgpuAdater() {
 
     function wrapDeviceFunction(itemType, originalFunction) {
       return (...args) => {
-        if (count == 0 && !precaching) {
-          console.error(`itemType: ${itemType}`)
-        }
         const jsonArgs = JSON.stringify(args);
         const hash = simpleHash(jsonArgs);
         const cachedItem = gpuSessionState[itemType].get(hash);
