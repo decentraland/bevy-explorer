@@ -253,3 +253,11 @@ pub struct AudioCaptureOptions {
     #[wasm_bindgen(js_name = "sampleSize")]
     pub sample_size: Option<u64>,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionQuality {
+    Excellent,
+    Good,
+    Poor,
+    Lost,
+}

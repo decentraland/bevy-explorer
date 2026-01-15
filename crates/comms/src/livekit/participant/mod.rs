@@ -3,12 +3,14 @@ pub(super) mod plugin;
 use bevy::{platform::sync::Arc, prelude::*};
 #[cfg(not(target_arch = "wasm32"))]
 use livekit::{
-    participant::Participant,
+    participant::{ConnectionQuality as LivekitConnectionQuality, Participant},
     prelude::{LocalParticipant, RemoteParticipant},
 };
 
 #[cfg(target_arch = "wasm32")]
-use crate::livekit::web::{LocalParticipant, Participant, RemoteParticipant};
+use crate::livekit::web::{
+    ConnectionQuality as LivekitConnectionQuality, LocalParticipant, Participant, RemoteParticipant,
+};
 
 #[derive(Clone, Component, Deref)]
 pub struct LivekitParticipant {
@@ -113,19 +115,19 @@ pub struct ParticipantMetadataChanged {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Component)]
 pub enum ConnectionQuality {
-    Excelent,
+    Excellent,
     Good,
     Poor,
     Lost,
 }
 
-impl From<livekit::participant::ConnectionQuality> for ConnectionQuality {
-    fn from(value: livekit::participant::ConnectionQuality) -> Self {
+impl From<LivekitConnectionQuality> for ConnectionQuality {
+    fn from(value: LivekitConnectionQuality) -> Self {
         match value {
-            livekit::participant::ConnectionQuality::Excellent => Self::Excelent,
-            livekit::participant::ConnectionQuality::Good => Self::Good,
-            livekit::participant::ConnectionQuality::Poor => Self::Poor,
-            livekit::participant::ConnectionQuality::Lost => Self::Lost,
+            LivekitConnectionQuality::Excellent => Self::Excellent,
+            LivekitConnectionQuality::Good => Self::Good,
+            LivekitConnectionQuality::Poor => Self::Poor,
+            LivekitConnectionQuality::Lost => Self::Lost,
         }
     }
 }
