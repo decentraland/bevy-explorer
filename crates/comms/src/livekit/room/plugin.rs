@@ -18,8 +18,6 @@ use {
     },
 };
 
-#[cfg(not(target_arch = "wasm32"))]
-use crate::livekit::room::LivekitRoomTrackTask;
 use crate::{
     global_crdt::ChannelControl,
     livekit::{
@@ -46,9 +44,6 @@ pub struct LivekitRoomPlugin;
 
 impl Plugin for LivekitRoomPlugin {
     fn build(&self, app: &mut App) {
-        #[cfg(not(target_arch = "wasm32"))]
-        app.init_resource::<LivekitRoomTrackTask>();
-
         app.add_observer(initiate_room_connection);
         app.add_observer(create_local_participant);
         app.add_observer(disconnect_from_room_on_replace);
