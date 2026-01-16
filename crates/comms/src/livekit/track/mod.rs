@@ -26,10 +26,12 @@ pub struct LivekitTrack {
     track: RemoteTrackPublication,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Component)]
 #[component(on_replace=Self::on_replace)]
 struct LivekitTrackTask(JoinHandle<()>);
 
+#[cfg(not(target_arch = "wasm32"))]
 impl LivekitTrackTask {
     fn on_replace(mut deferred_world: DeferredWorld, hook_context: HookContext) {
         let entity = hook_context.entity;
