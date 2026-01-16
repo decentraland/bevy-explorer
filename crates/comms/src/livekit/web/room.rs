@@ -50,13 +50,13 @@ impl Room {
         } = room_options;
 
         let room_options = InternalRoomOptions {
-            adaptive_stream: adaptive_stream,
-            dynacast: dynacast,
+            adaptive_stream,
+            dynacast,
             ..Default::default()
         };
 
-        let mut room_connect_options = InternalRoomConnectOptions {
-            auto_subscribe: auto_subscribe,
+        let room_connect_options = InternalRoomConnectOptions {
+            auto_subscribe,
             max_retries: join_retries,
             ..Default::default()
         };
