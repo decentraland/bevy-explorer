@@ -49,9 +49,11 @@ impl Room {
             join_retries,
         } = room_options;
 
-        let mut room_options = InternalRoomOptions::default();
-        room_options.adaptiveStream = adaptive_stream;
-        room_options.dynacast = dynacast;
+        let room_options = InternalRoomOptions {
+            adaptive_stream: adaptive_stream,
+            dynacast: dynacast,
+            ..Default::default()
+        };
 
         let mut room_connect_options = InternalRoomConnectOptions {
             auto_subscribe: auto_subscribe,
@@ -130,21 +132,24 @@ impl JsCast for Room {
 
 #[wasm_bindgen]
 #[non_exhaustive]
-#[expect(non_snake_case, reason = "Matching JS names")]
 struct InternalRoomOptions {
-    pub adaptiveStream: bool,
+    #[wasm_bindgen(js_name = "adaptiveStream")]
+    pub adaptive_stream: bool,
+    #[wasm_bindgen(js_name = "dynacast")]
     pub dynacast: bool,
-    pub stopLocalTrackOnUnpublish: bool,
-    pub disconnectOnPageLeave: bool,
+    #[wasm_bindgen(js_name = "stopLocalTrackOnUnpublish")]
+    pub stop_local_track_on_unpublish: bool,
+    #[wasm_bindgen(js_name = "disconnectOnPageLeave")]
+    pub disconnect_on_page_leave: bool,
 }
 
 impl Default for InternalRoomOptions {
     fn default() -> Self {
         Self {
-            adaptiveStream: false,
+            adaptive_stream: false,
             dynacast: false,
-            stopLocalTrackOnUnpublish: true,
-            disconnectOnPageLeave: true,
+            stop_local_track_on_unpublish: true,
+            disconnect_on_page_leave: true,
         }
     }
 }
