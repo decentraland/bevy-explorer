@@ -57,7 +57,7 @@ impl LocalParticipant {
         let data_publish_options = DataPublishOptions {
             reliable,
             topic,
-            destinationIdentities: destination_identities
+            destination_identities: destination_identities
                 .into_iter()
                 .map(|participant_identity| participant_identity.0)
                 .collect(),
@@ -134,10 +134,13 @@ impl IntoWasmAbi for &LocalParticipant {
     }
 }
 
-#[expect(non_snake_case, reason = "Matching JS names")]
+#[expect(dead_code, reason = "Read on JavaScript side")]
 #[wasm_bindgen]
 struct DataPublishOptions {
+    #[wasm_bindgen = "reliable"]
     reliable: bool,
+    #[wasm_bindgen = "topic"]
     topic: Option<String>,
-    destinationIdentities: Vec<String>,
+    #[wasm_bindgen = "destinationIdentities"]
+    destination_identities: Vec<String>,
 }
