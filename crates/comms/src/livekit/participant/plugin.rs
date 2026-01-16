@@ -1,16 +1,19 @@
-use bevy::{
-    asset::RenderAssetUsages,
-    color::palettes,
-    ecs::relationship::Relationship,
-    prelude::*,
-    render::render_resource::{TextureDimension, TextureFormat, TextureUsages},
-};
+use bevy::{ecs::relationship::Relationship, prelude::*};
 use common::util::AsH160;
 use dcl_component::proto_components::kernel::comms::rfc4;
-#[cfg(not(target_arch = "wasm32"))]
-use livekit::prelude::Participant;
 use prost::Message;
+#[cfg(not(target_arch = "wasm32"))]
+use {
+    bevy::{
+        asset::RenderAssetUsages,
+        color::palettes,
+        render::render_resource::{TextureDimension, TextureFormat, TextureUsages},
+    },
+    livekit::prelude::Participant,
+};
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::livekit::participant::{StreamImage, StreamViewer};
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::Participant;
 use crate::{
@@ -19,7 +22,7 @@ use crate::{
         participant::{
             HostedBy, HostingParticipants, LivekitParticipant, Local, ParticipantConnected,
             ParticipantConnectionQuality, ParticipantDisconnected, ParticipantMetadataChanged,
-            ParticipantPayload, StreamBroadcast, StreamImage, StreamViewer, Streamer,
+            ParticipantPayload, StreamBroadcast, Streamer,
         },
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
@@ -38,6 +41,7 @@ impl Plugin for LivekitParticipantPlugin {
         app.add_observer(participant_payload);
         app.add_observer(participant_metadata_changed);
 
+        #[cfg(not(target_arch = "wasm32"))]
         app.add_systems(
             Update,
             (
@@ -305,6 +309,7 @@ fn participant_metadata_changed(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn stream_viewer_without_stream_image(
     mut commands: Commands,
     stream_viewers: Populated<(Entity, &StreamViewer), Without<StreamImage>>,
@@ -321,6 +326,7 @@ fn stream_viewer_without_stream_image(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn non_stream_viewer_with_stream_image(
     mut commands: Commands,
@@ -344,7 +350,7 @@ fn someone_wants_to_watch_stream(
     participants: Query<(&LivekitParticipant, Option<&Publishing>), With<Streamer>>,
     audio_tracks: Query<(), With<Audio>>,
     video_tracks: Query<(), With<Video>>,
-    mut images: ResMut<Assets<Image>>,
+    #[cfg(not(target_arch = "wasm32"))] mut images: ResMut<Assets<Image>>,
 ) {
     let entity = trigger.target();
     let Ok((participant, maybe_publishing)) = participants.get(entity) else {
@@ -353,27 +359,30 @@ fn someone_wants_to_watch_stream(
         return;
     };
 
-    let mut image = Image::new_fill(
-        bevy::render::render_resource::Extent3d {
-            width: 8,
-            height: 8,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        &palettes::basic::FUCHSIA.to_u8_array(),
-        TextureFormat::Rgba8UnormSrgb,
-        RenderAssetUsages::all(),
-    );
-    image.texture_descriptor.usage = TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING;
-
     debug!(
         "Streamer {} ({}) is now being watched.",
         participant.sid(),
         participant.identity()
     );
-    commands
-        .entity(entity)
-        .insert(StreamImage(images.add(image)));
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut image = Image::new_fill(
+            bevy::render::render_resource::Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            TextureDimension::D2,
+            &palettes::basic::FUCHSIA.to_u8_array(),
+            TextureFormat::Rgba8UnormSrgb,
+            RenderAssetUsages::all(),
+        );
+        image.texture_descriptor.usage = TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING;
+
+        commands
+            .entity(entity)
+            .insert(StreamImage(images.add(image)));
+    }
 
     if let Some(publishing) = maybe_publishing {
         if let Some(audio_track) = publishing
@@ -421,6 +430,7 @@ fn noone_is_watching_stream(
         participant.sid(),
         participant.identity()
     );
+    #[cfg(not(target_arch = "wasm32"))]
     commands.entity(entity).try_remove::<StreamImage>();
 
     if let Some(publishing) = maybe_publishing {

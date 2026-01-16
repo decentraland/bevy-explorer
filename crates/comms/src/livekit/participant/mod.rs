@@ -64,6 +64,7 @@ pub struct StreamViewer(Entity);
 #[relationship_target(relationship=StreamViewer)]
 pub struct StreamBroadcast(Vec<Entity>);
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Component, Deref)]
 pub struct StreamImage(Handle<Image>);
 

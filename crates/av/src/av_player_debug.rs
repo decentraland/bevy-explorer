@@ -11,8 +11,10 @@ use bevy::{
 #[cfg(feature = "ffmpeg")]
 use crate::{audio_sink::AudioSink, video_stream::VideoSink};
 use crate::{AVPlayer, InScene, ShouldBePlaying};
+#[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
+use comms::livekit::participant::StreamImage;
 #[cfg(feature = "livekit")]
-use comms::livekit::participant::{StreamImage, StreamViewer};
+use comms::livekit::participant::StreamViewer;
 
 const DEFAULT_FONT: TextFont = TextFont {
     font: Handle::Weak(AssetId::Uuid {
@@ -43,6 +45,9 @@ impl Plugin for AvPlayerDebugPlugin {
         {
             app.add_observer(on_add_column::<StreamViewer, StreamViewerColumn>);
             app.add_observer(on_remove_column::<StreamViewer, StreamViewerColumn>);
+        }
+        #[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
+        {
             app.add_observer(on_add_column::<StreamImage, StreamImageColumn>);
             app.add_observer(on_remove_column::<StreamImage, StreamImageColumn>);
         }
@@ -81,10 +86,10 @@ struct StreamViewerColumn;
 #[cfg(feature = "livekit")]
 const STREAM_VIEWER_COLUMN_COLUMN: i16 = 4;
 
-#[cfg(feature = "livekit")]
+#[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
 #[derive(Component)]
 struct StreamImageColumn;
-#[cfg(feature = "livekit")]
+#[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
 const STREAM_IMAGE_COLUMN_COLUMN: i16 = 5;
 
 #[derive(Component)]
@@ -109,7 +114,11 @@ type AnyColumn = Or<(
     With<InSceneColumn>,
     With<ShouldPlayColumn>,
 )>;
-#[cfg(all(not(feature = "ffmpeg"), feature = "livekit"))]
+#[cfg(all(
+    not(feature = "ffmpeg"),
+    feature = "livekit",
+    not(target_arch = "wasm32")
+))]
 type AnyColumn = Or<(
     With<AvPlayerColumn>,
     With<StreamViewerColumn>,
@@ -117,13 +126,29 @@ type AnyColumn = Or<(
     With<InSceneColumn>,
     With<ShouldPlayColumn>,
 )>;
-#[cfg(all(feature = "ffmpeg", feature = "livekit"))]
+#[cfg(all(not(feature = "ffmpeg"), feature = "livekit", target_arch = "wasm32"))]
+type AnyColumn = Or<(
+    With<AvPlayerColumn>,
+    With<StreamViewerColumn>,
+    With<InSceneColumn>,
+    With<ShouldPlayColumn>,
+)>;
+#[cfg(all(feature = "ffmpeg", feature = "livekit", not(target_arch = "wasm32")))]
 type AnyColumn = Or<(
     With<AvPlayerColumn>,
     With<AudioSinkColumn>,
     With<VideoSinkColumn>,
     With<StreamViewerColumn>,
     With<StreamImageColumn>,
+    With<InSceneColumn>,
+    With<ShouldPlayColumn>,
+)>;
+#[cfg(all(feature = "ffmpeg", feature = "livekit", target_arch = "wasm32"))]
+type AnyColumn = Or<(
+    With<AvPlayerColumn>,
+    With<AudioSinkColumn>,
+    With<VideoSinkColumn>,
+    With<StreamViewerColumn>,
     With<InSceneColumn>,
     With<ShouldPlayColumn>,
 )>;
@@ -160,7 +185,7 @@ fn setup_av_player_debug_ui(mut commands: Commands) {
                     "VideoSink",
                     #[cfg(feature = "livekit")]
                     "StreamerViewer",
-                    #[cfg(feature = "livekit")]
+                    #[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
                     "StreamerImage",
                     "InScene",
                     "ShouldBePlaying",
@@ -222,7 +247,7 @@ fn av_player_on_add(
                     "No",
                     #[cfg(feature = "livekit")]
                     "No",
-                    #[cfg(feature = "livekit")]
+                    #[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
                     "No",
                     "No",
                     "No",
@@ -381,9 +406,15 @@ fn on_remove_column<T: Component, C: Component>(
 type RowTexts<'a> = (&'a str, &'a str, &'a str);
 #[cfg(all(feature = "ffmpeg", not(feature = "livekit")))]
 type RowTexts<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str);
-#[cfg(all(not(feature = "ffmpeg"), feature = "livekit"))]
+#[cfg(all(
+    not(feature = "ffmpeg"),
+    feature = "livekit",
+    not(target_arch = "wasm32")
+))]
 type RowTexts<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str);
-#[cfg(all(feature = "ffmpeg", feature = "livekit"))]
+#[cfg(all(not(feature = "ffmpeg"), feature = "livekit", target_arch = "wasm32"))]
+type RowTexts<'a> = (&'a str, &'a str, &'a str, &'a str);
+#[cfg(all(feature = "ffmpeg", feature = "livekit", not(target_arch = "wasm32")))]
 type RowTexts<'a> = (
     &'a str,
     &'a str,
@@ -393,6 +424,8 @@ type RowTexts<'a> = (
     &'a str,
     &'a str,
 );
+#[cfg(all(feature = "ffmpeg", feature = "livekit", target_arch = "wasm32"))]
+type RowTexts<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str, &'a str);
 
 fn build_row(
     parent: &mut RelatedSpawnerCommands<'_, ChildOf>,
@@ -404,9 +437,15 @@ fn build_row(
     let (av_player_name, in_scene, should_play) = row_texts;
     #[cfg(all(feature = "ffmpeg", not(feature = "livekit")))]
     let (av_player_name, audio_sink, video_sink, in_scene, should_play) = row_texts;
-    #[cfg(all(not(feature = "ffmpeg"), feature = "livekit"))]
+    #[cfg(all(
+        not(feature = "ffmpeg"),
+        feature = "livekit",
+        not(target_arch = "wasm32")
+    ))]
     let (av_player_name, stream_viewer, stream_image, in_scene, should_play) = row_texts;
-    #[cfg(all(feature = "ffmpeg", feature = "livekit"))]
+    #[cfg(all(not(feature = "ffmpeg"), feature = "livekit", target_arch = "wasm32"))]
+    let (av_player_name, stream_viewer, in_scene, should_play) = row_texts;
+    #[cfg(all(feature = "ffmpeg", feature = "livekit", not(target_arch = "wasm32")))]
     let (
         av_player_name,
         audio_sink,
@@ -416,6 +455,8 @@ fn build_row(
         in_scene,
         should_play,
     ) = row_texts;
+    #[cfg(all(feature = "ffmpeg", feature = "livekit", target_arch = "wasm32"))]
+    let (av_player_name, audio_sink, video_sink, stream_viewer, in_scene, should_play) = row_texts;
 
     let av_player_name = if av_player_name.len() >= 32 {
         &av_player_name[..32]
@@ -454,7 +495,7 @@ fn build_row(
         STREAM_VIEWER_COLUMN_COLUMN,
         stream_viewer,
     ));
-    #[cfg(feature = "livekit")]
+    #[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
     parent.spawn(build_cel(
         av_player,
         StreamImageColumn,

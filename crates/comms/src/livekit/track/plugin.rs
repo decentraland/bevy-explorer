@@ -1,9 +1,8 @@
-#[cfg(not(target_arch = "wasm32"))]
-use bevy::ecs::world::OnDespawn;
-use bevy::{ecs::relationship::Relationship, prelude::*, render::render_resource::Extent3d};
+use bevy::{ecs::relationship::Relationship, prelude::*};
 use common::util::AsH160;
 #[cfg(not(target_arch = "wasm32"))]
 use {
+    bevy::{ecs::world::OnDespawn, render::render_resource::Extent3d},
     kira::sound::streaming::StreamingSoundData,
     livekit::{
         track::{RemoteTrack, TrackKind, TrackSource},
