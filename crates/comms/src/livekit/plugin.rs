@@ -3,6 +3,8 @@ use dcl_component::proto_components::kernel::comms::rfc4;
 use kira::manager::{AudioManager, AudioManagerSettings, DefaultBackend};
 use tokio::{sync::mpsc, task::JoinHandle};
 
+#[cfg(feature = "room_debug")]
+use crate::livekit::room_debug::RoomDebugPlugin;
 use crate::{
     global_crdt::NetworkUpdate,
     livekit::{
@@ -31,6 +33,9 @@ impl Plugin for LivekitPlugin {
         app.add_systems(Startup, build_kira_audio_manager);
 
         app.add_event::<StartLivekit>();
+
+        #[cfg(feature = "room_debug")]
+        app.add_plugins(RoomDebugPlugin);
     }
 }
 

@@ -12,6 +12,8 @@ mod runtime;
 pub mod track;
 #[cfg(target_arch = "wasm32")]
 pub mod web;
+#[cfg(feature = "room_debug")]
+mod room_debug;
 
 use bevy::prelude::*;
 use kira::manager::AudioManager;

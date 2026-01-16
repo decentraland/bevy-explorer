@@ -7,6 +7,7 @@ edition = "2021"
 
 [features]
 livekit = ["dep:livekit"]
+room_debug = []
 
 [dependencies]
 common = { workspace = true }
@@ -39,11 +40,16 @@ web-time = { workspace = true }
 modular-bitfield = "0.11"
 
 cid = "0.11.0"
-multipart = { version = "0.18.0", default-features = false, features = ["client", "lazy_static"] }
+multipart = { version = "0.18.0", default-features = false, features = [
+    "client",
+    "lazy_static",
+] }
 image = "0.25"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-livekit = { git = "https://github.com/robtfm/client-sdk-rust", branch="h264-true-prefixed", features=["native-tls"], optional = true }
+livekit = { git = "https://github.com/robtfm/client-sdk-rust", branch = "h264-true-prefixed", features = [
+    "native-tls",
+], optional = true }
 cpal = "0.15.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
