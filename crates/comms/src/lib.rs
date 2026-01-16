@@ -2,12 +2,8 @@ pub mod archipelago;
 pub mod broadcast_position;
 pub mod global_crdt;
 
-#[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
-pub mod livekit_native;
 #[cfg(feature = "livekit")]
-pub mod livekit_room;
-#[cfg(all(feature = "livekit", target_arch = "wasm32"))]
-pub mod livekit_web;
+pub mod livekit;
 
 pub mod movement_compressed;
 pub mod preview;
@@ -25,9 +21,10 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use bimap::BiMap;
-#[cfg(not(feature = "livekit"))]
-use common::structs::MicState;
-use common::util::{TaskCompat, TaskExt};
+use common::{
+    structs::MicState,
+    util::{TaskCompat, TaskExt},
+};
 use ethers_core::types::{Address, H160};
 use http::{StatusCode, Uri};
 use preview::PreviewPlugin;
@@ -50,7 +47,7 @@ use self::{
 };
 
 #[cfg(feature = "livekit")]
-use self::livekit_room::{LivekitPlugin, StartLivekit};
+use self::livekit::{plugin::LivekitPlugin, StartLivekit};
 
 const GATEKEEPER_URL: &str = "https://comms-gatekeeper.decentraland.org/get-scene-adapter";
 const PREVIEW_GATEKEEPER_URL: &str =
@@ -81,7 +78,6 @@ impl Plugin for CommsPlugin {
 
         #[cfg(feature = "livekit")]
         app.add_plugins(LivekitPlugin);
-        #[cfg(not(feature = "livekit"))]
         app.init_resource::<MicState>();
 
         app.add_systems(Update, (process_realm_change, connect_scene_room));

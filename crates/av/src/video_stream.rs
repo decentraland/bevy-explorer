@@ -6,8 +6,6 @@ use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::format::input;
 use ipfs::{IpfsIo, IpfsResource};
 use kira::sound::streaming::StreamingSoundData;
-#[cfg(feature = "livekit")]
-use {comms::global_crdt::ChannelControl, tokio::sync::mpsc::Sender};
 
 use crate::{
     audio_context::{AudioContext, AudioError},
@@ -182,51 +180,6 @@ pub fn av_thread_inner(
             process_streams(input_context, &mut [&mut vc, &mut ac], commands)
         }
     }
-}
-
-#[cfg(feature = "livekit")]
-pub fn streamer_sinks(
-    control_channel: Sender<ChannelControl>,
-    source: String,
-    image: Handle<Image>,
-    volume: f32,
-) -> (VideoSink, AudioSink) {
-    let (command_sender, _command_receiver) = tokio::sync::mpsc::channel(10);
-    let (video_sender, video_receiver) = tokio::sync::mpsc::channel(10);
-    let (stream_sender, stream_receiver) = tokio::sync::mpsc::channel(10);
-    let (audio_sender, audio_receiver) = tokio::sync::mpsc::channel(10);
-
-    control_channel
-        .blocking_send(ChannelControl::StreamerSubscribe(
-            audio_sender,
-            stream_sender,
-        ))
-        .unwrap();
-
-    std::thread::spawn(move || {
-        let mut stream_receiver = stream_receiver;
-
-        while let Some(frame) = stream_receiver.blocking_recv() {
-            if let Err(err) = video_sender.blocking_send(VideoData::from(frame)) {
-                error!("Streamer sink channel failed: {err}.");
-                break;
-            };
-        }
-    });
-
-    (
-        VideoSink {
-            source,
-            command_sender: command_sender.clone(),
-            video_receiver,
-            image,
-            current_time: -1.0,
-            last_reported_time: -1.0,
-            length: None,
-            rate: None,
-        },
-        AudioSink::new(volume, command_sender, audio_receiver),
-    )
 }
 
 pub fn noop_sinks(source: String, image: Handle<Image>, volume: f32) -> (VideoSink, AudioSink) {

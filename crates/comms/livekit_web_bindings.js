@@ -8,408 +8,465 @@ function error(...args) {
     console.error("[livekit]", ...args)
 }
 
-let currentMicTrack = false;
-const activeRooms = new Set();
-
-// Store audio elements and panner nodes for spatial audio
-const trackRigs = new Map();
-const participantAudioSids = new Map();
-const participantVideoSids = new Map();
 var audioContext = null;
 
-export async function connect_room(url, token, handler) {
-    const room = new LivekitClient.Room({
-        adaptiveStream: false,
-        dynacast: false,
-    });
+/**
+ * 
+ * @returns boolean
+ */
+export function is_microphone_available() {
+    // Check if getUserMedia is available
+    const res = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+    return res;
+}
 
-    set_room_event_handler(room, handler)
+/**
+ * 
+ * @param {string} url
+ * @param {string} token
+ * @param {livekit.RoomOptions} room_options 
+ * @param {livekit.RoomConnectOptions} room_connect_options 
+ * @param {function} handler 
+ * @returns livekit.Room
+ */
+export async function room_connect(url, token, room_options, room_connect_options, handler) {
+    const room = new LivekitClient.Room(room_options);
 
-    await room.connect(url, token, {
-        autoSubscribe: false,
-    });
+    set_room_event_handler(room, handler);
 
-    // Add to active rooms set
-    activeRooms.add(room);
-
-    // set up microphone
-    if (currentMicTrack) {
-        log(`sub ${room.name}`);
-        const audioTrack = await LivekitClient.createLocalAudioTrack({
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-        });
-        const pub = await room.localParticipant.publishTrack(audioTrack, {
-            source: LivekitClient.Track.Source.Microphone,
-        }).catch(error_msg => {
-            error(`Failed to publish to room: ${error_msg}`);
-        })
-
-        // avoid race
-        if (!currentMicTrack) {
-            await room.localParticipant.unpublishTrack(pub.track);
-        }
-    }
-
-    const room_name = room.name;
-
-    // check existing streams
-    const participants = Array.from(room.remoteParticipants.values());
-    for (const participant of participants) {
-        handler({
-            type: 'participantConnected',
-            room_name: room_name,
-            participant: {
-                identity: participant.identity,
-                metadata: participant.metadata || ''
-            }
-        })
-
-        const audioPubs = Array.from(participant.trackPublications.values())
-            .filter(pub => pub.kind === 'audio');
-        for (const publication of audioPubs) {
-            log(`found initial pub for ${participant}`);
-            handler({
-                type: 'trackPublished',
-                room_name: room_name,
-                kind: publication.kind,
-                participant: {
-                    identity: participant.identity,
-                    metadata: participant.metadata || ''
-                }
-            })
-        }
-    }
+    await room.connect(url, token, room_connect_options);
 
     return room;
 }
 
-export function set_microphone_enabled(enabled) {
-    if (enabled) {
-        // Enable microphone
-        if (!currentMicTrack) {
-            currentMicTrack = true;
-
-            // Publish to all active rooms
-            const publishPromises = Array.from(activeRooms).map(async (room) => {
-                log(`publish ${room.name}`);
-                const audioTrack = await LivekitClient.createLocalAudioTrack({
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true,
-                });
-                let pub = await room.localParticipant.publishTrack(audioTrack, {
-                    source: LivekitClient.Track.Source.Microphone,
-                }).catch(error_msg => {
-                    error(`Failed to publish to room: ${error_msg}`);
-                });
-
-                // avoid race
-                if (!currentMicTrack) {
-                    await room.localParticipant.unpublishTrack(pub.track);
-                }
-            });
-
-            Promise.all(publishPromises).then(() => {
-                log('Microphone enabled successfully for all rooms');
-            }).catch(error_msg => {
-                error('Failed to enable microphone:', error_msg);
-            });
-        }
-    } else {
-        // Disable microphone
-        if (currentMicTrack) {
-            const allRoomUnpublishPromises = Array.from(activeRooms).map(async (room) => {
-                const audioPubs = Array.from(room.localParticipant.trackPublications.values())
-                    .filter(pub => pub.kind === 'audio');
-
-                const roomSpecificPromises = audioPubs.map(pub => {
-                    try {
-                        room.localParticipant.unpublishTrack(pub.track);
-                        log(`unpublish ${room.name}`);
-                    } catch (error_msg) {
-                        error(`Failed to unpublish ${pub} from room ${room.name}:`, error_msg);
-                    }
-                });
-
-                try {
-                    await Promise.all(roomSpecificPromises);
-                } catch (error_msg) {
-                    error(`Failed to unpublish audio from room ${room.name}:`, error_msg);
-                }
-            });
-
-            Promise.all(allRoomUnpublishPromises)
-                .catch(error_msg => {
-                    error('A critical error occurred during the unpublish-all process:', error_msg);
-                })
-                .finally(() => {
-                    currentMicTrack = false;
-                });
-        }
-    }
-}
-
-export function is_microphone_available() {
-    // Check if getUserMedia is available
-    const res = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
-    return res;
-}
-
-export async function publish_data(room, data, reliable, destinations) {
-    const options = {
-        reliable: reliable,
-        destination: destinations.length > 0 ? destinations : undefined,
-    };
-
-    await room.localParticipant.publishData(data, options);
-}
-
-export async function publish_audio_track(room, track) {
-    const publication = await room.localParticipant.publishTrack(track, {
-        source: LivekitClient.Track.Source.Microphone,
-    });
-    return publication.trackSid;
-}
-
-export async function unpublish_track(room, sid) {
-    const publication = room.localParticipant.trackPublications.get(sid);
-    if (publication) {
-        await room.localParticipant.unpublishTrack(publication.track);
-    }
-}
-
-export async function close_room(room) {
-    // Remove from active rooms set
-    activeRooms.delete(room);
-
-    // If mic is active, clean up
-    if (currentMicTrack) {
-        const audioPubs = Array.from(room.localParticipant.trackPublications.values())
-            .filter(pub => pub.kind === 'audio');
-
-        for (const pub of audioPubs) {
-            log(`stop ${room.name} on exit`);
-            pub.track.stop();
-        }
-    }
-
+/**
+ * 
+ * @param {livekit.Room} room
+ */
+export async function room_close(room) {
     await room.disconnect();
 }
 
-export function set_room_event_handler(room, handler) {
-    const room_name = room.name;
+/**
+ * 
+ * @param {livekit.Room} room
+ * @returns string
+ */
+export function room_name(room) {
+    return room.name
+}
 
-    room.on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
-        handler({
-            type: 'dataReceived',
-            room_name: room_name,
-            payload,
-            participant: {
-                identity: participant.identity,
-                metadata: participant.metadata || ''
-            }
-        });
-    });
+/**
+ * 
+ * @param {livekit.Room} room
+ * @returns livekit.LocalParticipant
+ */
+export function room_local_participant(room) {
+    return room.localParticipant;
+}
 
-    room.on(LivekitClient.RoomEvent.TrackPublished, (publication, participant) => {
-        log(`${room.name} ${participant.identity} rec pub ${publication.kind}`);
+/**
+ * 
+ * @param {livekit.Room} room 
+ * @param {function} handler 
+ */
+function set_room_event_handler(room, handler) {
+    room.on(LivekitClient.RoomEvent.Connected, () => {
+        const participants_with_tracks = Array
+            .from(room.remoteParticipants.values())
+            .filter(remote_participant => room.localParticipant.sid != remote_participant.sid)
+            .map(remote_participant => {
+                return {
+                    participant: remote_participant,
+                    tracks: Array.from(remote_participant.trackPublications.values())
+                };
+            });
         handler({
-            type: 'trackPublished',
-            room_name: room_name,
-            kind: publication.kind,
-            participant: {
-                identity: participant.identity,
-                metadata: participant.metadata || ''
-            }
+            type: 'connected',
+            participants_with_tracks
         })
     });
-
-    room.on(LivekitClient.RoomEvent.TrackUnpublished, (publication, participant) => {
-        log(`${room.name} ${participant.identity} rec unpub ${publication.kind}`);
-
-        const key = publication.trackSid;
-        const rig = trackRigs.get(key);
-
-        if (rig) {
-            log(`cleaning up audio rig for track: ${key}`);
-
-            rig.source.disconnect();
-            rig.pannerNode.disconnect();
-            rig.gainNode.disconnect();
-
-            trackRigs.delete(key);
-        } else {
-            log(`no cleanup for ${key}`);
+    room.on(LivekitClient.RoomEvent.ConnectionStateChanged, (state) => {
+        handler({
+            type: 'connectionStateChanged',
+            state: state
+        })
+    });
+    room.on(LivekitClient.RoomEvent.ConnectionQualityChanged, (connection_quality, participant) => {
+        handler({
+            type: 'connectionQualityChanged',
+            connection_quality,
+            participant
+        })
+    });
+    room.on(
+        LivekitClient.RoomEvent.DataReceived,
+        (payload, participant, kind, topic) => {
+            handler({
+                type: 'dataReceived',
+                payload,
+                participant,
+                kind,
+                topic
+            })
         }
+    );
+    room.on(
+        LivekitClient.RoomEvent.ParticipantConnected,
+        (remote_participant) => {
+            handler({
+                type: 'participantConnected',
+                participant: remote_participant,
+            })
+        }
+    );
+    room.on(
+        LivekitClient.RoomEvent.ParticipantDisconnected,
+        (remote_participant) => {
+            handler({
+                type: 'participantDisconnected',
+                participant: remote_participant,
+            })
+        }
+    );
+    room.on(
+        LivekitClient.RoomEvent.ParticipantMetadataChanged,
+        (prev_metadata, participant) => {
+            handler({
+                type: 'participantMetadataChanged',
+                participant,
+                old_metadata: prev_metadata,
+                metadata: participant.metadata
+            })
+        }
+    );
+    room.on(
+        LivekitClient.RoomEvent.TrackPublished,
+        (remote_track_publication, remote_participant) => {
+            handler({
+                type: 'trackPublished',
+                publication: remote_track_publication,
+                participant: remote_participant
+            })
+        }
+    );
+    room.on(
+        LivekitClient.RoomEvent.TrackUnpublished,
+        (remote_track_publication, remote_participant) => {
+            handler({
+                type: 'trackUnpublished',
+                publication: remote_track_publication,
+                participant: remote_participant
+            })
+        }
+    );
+    room.on(
+        LivekitClient.RoomEvent.TrackSubscribed,
+        (remote_track, remote_track_publication, remote_participant) => {
+            log(`Subscribed to track ${remote_track.sid} of ${remote_participant.sid} (${remote_participant.identity}).`);
 
-        handler({
-            type: 'trackUnpublished',
-            room_name: room_name,
-            kind: publication.kind,
-            participant: {
-                identity: participant.identity,
-                metadata: participant.metadata || ''
-            }
-        })
-    });
+            if (remote_track.kind === "audio") {
+                if (remote_track.trackRig) {
+                    error(`Rebuilding track rig of ${remote_track.sid} for ${remote_participant.sid} (${remote_participant.identity}).`);
+                    track_rig_drop(remote_track);
+                }
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
 
-    room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
-        log(`${room.name} ${participant.identity} rec sub ${publication.kind} (track sid ${track.sid})`);
-        // For audio tracks, set up spatial audio
-        if (track.kind === 'audio') {
-            if (!audioContext) {
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            }
-
-            const key = track.sid;
-
-            if (!trackRigs.has(key)) {
-                log("create nodes for", key);
-
-                // dummy audioElement
-                const audioElement = track.attach();
-                audioElement.volume = 0;
-
-                // use the track internal stream in playback
-                const stream = new MediaStream([track.mediaStreamTrack]);
-                const source = audioContext.createMediaStreamSource(stream);
-                const pannerNode = audioContext.createStereoPanner();
-                const gainNode = audioContext.createGain();
-
-                // Connect the audio graph: source -> panner -> gain -> destination
-                source.connect(pannerNode);
-                pannerNode.connect(gainNode);
-                gainNode.connect(audioContext.destination);
-
-                // Store the nodes for later control
-                trackRigs.set(key, {
-                    audioElement,
-                    source,
-                    pannerNode,
-                    gainNode,
-                    stream,
-                });
-            }
-
-            const audioElement = trackRigs.get(key).audioElement;
-            audioElement.play(); // we have to do this to get the stream to start pumping
-
-            log(`set rig for ${participant.identity}`, key);
-            participantAudioSids.set(participant.identity, { room: room.name, audio: key })
-        } else if (track.kind === "video") {
-            const key = track.sid;
-
-            if (!trackRigs.get(key)) {
-                log("create video nodes for", key);
-                const parentElement = window.document.querySelector("#stream-player-container");
-                if (parentElement) {
-                    const element = track.attach();
-                    parentElement.appendChild(element);
-                    trackRigs.set(key, {
-                        videoElement: element,
-                    });
+                track_rig_new(remote_track);
+            } else if (remote_track.kind == "video") {
+                if (remote_track.videoElement) {
+                    error(`Rebuilding video element of ${remote_track.sid} for ${remote_participant.sid} (${remote_participant.identity}).`);
+                    const videoElement = remote_track.videoElement;
+                    delete remote_track.videoElement;
+                    remote_track.detach(videoElement);
+                }
+                const streamPlayerContainer = window.document.querySelector("#stream-player-container");
+                if (streamPlayerContainer) {
+                    const videoElement = remote_track.attach();
+                    streamPlayerContainer.append(videoElement);
+                    remote_track.videoElement = videoElement;
                 }
             }
 
-            participantVideoSids.set(participant.identity, { room: room.name, video: key })
+            handler({
+                type: 'trackSubscribed',
+                track: remote_track,
+                publication: remote_track_publication,
+                participant: remote_participant
+            })
         }
-
-        handler({
-            type: 'trackSubscribed',
-            room_name: room_name,
-            participant: {
-                identity: participant.identity,
-                metadata: participant.metadata || ''
+    );
+    room.on(
+        LivekitClient.RoomEvent.TrackUnsubscribed,
+        // Note: The browser livekit docs say that the first parameter is a Livekit.Track,
+        // not a Livekit.RemoteTrack, verify if there is ever an event with a local
+        // track
+        (remote_track, remote_track_publication, remote_participant) => {
+            log(`Unsubscribed to track ${remote_track.sid} of ${remote_participant.sid} (${remote_participant.identity}).`);
+            if (remote_track.kind === "audio") {
+                track_rig_drop(remote_track);
             }
-        });
-    });
 
-    room.on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
-        log(`${room.name} ${participant.identity} rec unsub ${publication.kind} (track sid ${track.sid})`);
-        if (participantAudioSids.get(participant.identity)?.room === room.name) {
-            log(`delete lookup for ${participant.identity}`);
-            participantAudioSids.delete(participant.identity);
+            handler({
+                type: 'trackUnsubscribed',
+                track: remote_track,
+                publication: remote_track_publication,
+                participant: remote_participant
+            })
         }
-        if (participantVideoSids.get(participant.identity)?.room === room.name) {
-            log(`delete video lookup for ${participant.identity}`);
-            participantVideoSids.delete(participant.identity);
-        }
-
-        const key = track.sid;
-
-        if (trackRigs.has(key)) {
-            const audioElement = trackRigs.get(key).audioElement;
-            if (audioElement) {
-                log(`detach and pause audioElement for ${key}`)
-                track.detach(audioElement);
-                audioElement.pause();
-            }
-            const videoElement = trackRigs.get(key).videoElement;
-            if (videoElement) {
-                log(`detach videoElement for ${key}`)
-                track.detach(videoElement);
-                videoElement.remove();
-            }
-            trackRigs.delete(key);
-        }
-
-
-        handler({
-            type: 'trackUnsubscribed',
-            room_name: room_name,
-            participant: {
-                identity: participant.identity,
-                metadata: participant.metadata || ''
-            }
-        });
-    });
-
-    room.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
-        handler({
-            type: 'participantConnected',
-            room_name: room_name,
-            participant: {
-                identity: participant.identity,
-                metadata: participant.metadata || ''
-            }
-        });
-    });
-
-    room.on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
-        participantAudioSids.delete(participant.identity);
-        participantVideoSids.delete(participant.identity);
-        handler({
-            type: 'participantDisconnected',
-            room_name: room_name,
-            participant: {
-                identity: participant.identity,
-                metadata: participant.metadata || ''
-            }
-        });
-    });
+    );
 }
 
-// Spatial audio control functions
-export function set_participant_spatial_audio(participantIdentity, pan, volume) {
-    const participantAudio = participantAudioSids.get(participantIdentity);
-    if (!participantAudio) {
-        log(`no rig for ${participantIdentity}`)
-        return;
-    }
+/**
+ * 
+ * @param {livekit.Participant} participant
+ * @returns bool
+ */
+export async function particinpant_is_local(participant) {
+    return particinpant.isLocal;
+}
 
-    const nodes = trackRigs.get(participantAudio.audio);
-    if (!nodes) {
-        error(`no nodes for participant ${participantIdentity}, this should never happen`, audio);
-        error("rigs:", trackRigs);
-        return;
-    }
+/**
+ * 
+ * @param {livekit.LocalParticipant} local_participant
+ * @param {Uint8Array} payload 
+ * @param {livekit.DataPublishOptions} payload 
+ * @returns string
+ */
+export async function local_participant_publish_data(local_participant, payload, data_publish_options) {
+    local_participant.publishData(payload, data_publish_options).await;
+}
 
+/**
+ * 
+ * @param {livekit.LocalParticipant} local_participant
+ * @param {livekit.LocalTrack} local_track
+ * @param {livekit.TrackPublishingOptions} track_publishing_option
+ * @returns livekit.LocalTrackPublication
+ */
+export async function local_participant_publish_track(local_participant, local_track, track_publishing_option) {
+    return await local_participant.publishTrack(local_track, track_publishing_option);
+}
+
+/**
+ * 
+ * @param {livekit.LocalParticipant} local_participant
+ * @param {livekit.LocalTrack} local_track
+ * @returns livekit.LocalTrackPublication
+ */
+export async function local_participant_unpublish_track(local_participant, local_track) {
+    return await local_participant.unpublishTrack(local_track, true);
+}
+
+/**
+ * 
+ * @param {livekit.LocalParticipant} local_participant 
+ * @returns bool
+ */
+export function local_participant_is_local(local_participant) {
+    return local_participant.isLocal;
+}
+
+/**
+ * 
+ * @param {livekit.LocalParticipant} local_participant 
+ * @returns string
+ */
+export function local_participant_sid(local_participant) {
+    return local_participant.sid;
+}
+
+/**
+ * 
+ * @param {livekit.LocalParticipant} local_participant 
+ * @returns string
+ */
+export function local_participant_identity(local_participant) {
+    return local_participant.identity;
+}
+
+/**
+ * 
+ * @param {livekit.LocalParticipant} local_participant 
+ * @returns string
+ */
+export function local_participant_metadata(local_participant) {
+    return local_participant.metadata;
+}
+
+/**
+ * 
+ * @param {livekit.LocalParticipant} remote_participant 
+ * @returns bool
+ */
+export function remote_participant_is_local(remote_participant) {
+    return remote_participant.isLocal;
+}
+
+/**
+ * 
+ * @param {livekit.RemoteParticipant} remote_participant 
+ * @returns string
+ */
+export function remote_participant_sid(remote_participant) {
+    return remote_participant.sid;
+}
+
+/**
+ * 
+ * @param {livekit.RemoteParticipant} remote_participant 
+ * @returns string
+ */
+export function remote_participant_identity(remote_participant) {
+    return remote_participant.identity;
+}
+
+/**
+ * 
+ * @param {livekit.RemoteParticipant} remote_participant 
+ * @returns string
+ */
+export function remote_participant_metadata(remote_participant) {
+    return remote_participant.metadata;
+}
+
+/**
+ * 
+ * @param {livekit.RemoteTrackPublication} remote_track_publication 
+ * @returns string
+ */
+export function remote_track_publication_sid(remote_track_publication) {
+    return remote_track_publication.trackSid;
+}
+
+/**
+ * 
+ * @param {livekit.RemoteTrackPublication} remote_track_publication 
+ * @returns string
+ */
+export function remote_track_publication_kind(remote_track_publication) {
+    return remote_track_publication.kind;
+}
+
+/**
+ * 
+ * @param {livekit.RemoteTrackPublication} remote_track_publication 
+ * @returns string
+ */
+export function remote_track_publication_source(remote_track_publication) {
+    return remote_track_publication.source;
+}
+
+/**
+ * 
+ * @param {livekit.RemoteTrackPublication} remote_track_publication 
+ * @param {boolean} subscribed 
+ * @returns string
+ */
+export function remote_track_publication_set_subscribed(remote_track_publication, subscribed) {
+    remote_track_publication.setSubscribed(subscribed);
+}
+
+
+/**
+ * 
+ * @param {livekit.RemoteTrackPublication} remote_track_publication 
+ * @returns livekit.RemoteTrack | null
+ */
+export function remote_track_publication_track(remote_track_publication) {
+    log(remote_track_publication);
+    return remote_track_publication.track;
+}
+
+/**
+ * 
+ * @param {livekit.AudioCaptureOptions} options 
+ * @returns livekit.LocalAudioTrack
+ */
+export async function local_audio_track_new(options) {
+    try {
+        return await LivekitClient.createLocalAudioTrack(options);
+    } catch (err) {
+        error(err);
+    }
+}
+
+/**
+ * 
+ * @param {livekit.LocalAudioTrack} local_audio_track 
+ * @returns livekit.TrackSid
+ */
+export function local_audio_track_sid(local_audio_track) {
+    return local_audio_track.sid;
+}
+
+/**
+ * 
+ * @param {livekit.RemoteTrack} remote_track 
+ */
+function track_rig_new(remote_track) {
+    log(`Creating new track rig for ${remote_track.sid}.`);
+
+    // dummy audioElement
+    const audioElement = remote_track.attach();
+    audioElement.volume = 0;
+
+    // use the track internal stream in playback
+    const stream = new MediaStream([remote_track.mediaStreamTrack]);
+    const source = audioContext.createMediaStreamSource(stream);
+    const pannerNode = audioContext.createStereoPanner();
+    const gainNode = audioContext.createGain();
+
+    // Connect the audio graph: source -> panner -> gain -> destination
+    source.connect(pannerNode);
+    pannerNode.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    // Store the nodes for later control
+    remote_track.trackRig = {
+        audioElement,
+        source,
+        pannerNode,
+        gainNode,
+        stream,
+    };
+
+    audioElement.play();
+}
+
+/**
+ * 
+ * @param {livekit.RemoteTrack} remote_track 
+ */
+function track_rig_drop(remote_track) {
+    log(`Dropping track rig of ${remote_track.sid}.`);
+    const track_rig = remote_track.trackRig;
+    if (track_rig) {
+        delete remote_track.trackRig;
+
+        remote_track.detach(track_rig.audioElement);
+        track_rig.source.disconnect();
+        track_rig.pannerNode.disconnect();
+        track_rig.gainNode.disconnect();
+        track_rig.audioElement.pause();
+    }
+}
+
+/**
+ * 
+ * @param {livekit.RemoteTrack} remote_track 
+ * @param {float} pan 
+ * @param {float} volume 
+ */
+export function remote_track_pan_and_volume(remote_track, pan, volume) {
+    log(`Setting pan and volume for track ${remote_track.sid}.`);
+    const track_rig = remote_track.trackRig;
     // Pan value should be between -1 (left) and 1 (right)
-    nodes.pannerNode.pan.value = Math.max(-1, Math.min(1, pan));
+    track_rig.pannerNode.pan.value = Math.max(-1, Math.min(1, pan));
     // Volume should be between 0 and 1 (or higher for boost)
-    nodes.gainNode.gain.value = Math.max(0, volume);
+    track_rig.gainNode.gain.value = Math.max(0, volume);
 
     // nodes.analyser.getByteTimeDomainData(nodes.dataArray);
 
@@ -423,67 +480,4 @@ export function set_participant_spatial_audio(participantIdentity, pan, volume) 
     // }
 
     // log(`[${audioContext.state}] Set spatial audio for ${participantIdentity} : pan=${nodes.pannerNode.pan.value}, volume=${nodes.gainNode.gain.value}`);
-}
-
-// Get all active participant identities with audio
-export function get_audio_participants() {
-    return Array.from(participantAudioSids.keys());
-}
-
-export function subscribe_channel(roomName, participantId, subscribe) {
-    const room = Array.from(activeRooms).find(room => room.name === roomName);
-    if (!room) {
-        warn(`couldn't find room ${roomName} for subscription`);
-        return;
-    }
-
-    const participant = room.remoteParticipants.get(participantId);
-    if (!participant) {
-        warn(`couldn't find participant ${participantId} in room ${roomName} for subscription`);
-        return;
-    }
-
-    const audioPubs = Array.from(participant.trackPublications.values())
-        .filter(pub => pub.kind === 'audio');
-
-    log(`subscribing to ${audioPubs.length} audio tracks`);
-
-    for (const pub of audioPubs) {
-        log(`sub ${roomName}-${participantId}`);
-        pub.setSubscribed(subscribe);
-    }
-}
-
-export function streamer_subscribe_channel(roomName, subscribe_audio, subscribe_video) {
-    const room = Array.from(activeRooms).find(room => room.name === roomName);
-    if (!room) {
-        warn(`couldn't find room ${roomName} for subscription`);
-        return;
-    }
-
-    const participant = room.remoteParticipants.values().find(participant => participant.identity.endsWith("-streamer"));
-    if (!participant) {
-        warn(`couldn't find streamer participant in room ${roomName} for subscription`);
-        return;
-    }
-
-    const audioPubs = Array.from(participant.trackPublications.values())
-        .filter(pub => pub.kind === 'audio');
-    const videoPubs = Array.from(participant.trackPublications.values())
-        .filter(pub => pub.kind === 'video');
-
-    log(`subscribing to ${audioPubs.length} audio tracks and to ${videoPubs.length} video tracks`);
-
-    for (const pub of audioPubs) {
-        log(`sub(${subscribe_video}) ${roomName}-${participant.identity}`);
-        pub.setSubscribed(subscribe_audio);
-    }
-    for (const pub of videoPubs) {
-        log(`video sub(${subscribe_video}) ${roomName}-${participant.identity}`);
-        pub.setSubscribed(subscribe_video);
-    }
-}
-
-export function room_name(room) {
-    return room.name
 }

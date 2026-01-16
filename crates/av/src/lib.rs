@@ -28,11 +28,17 @@ pub mod html_video_player;
 #[cfg(feature = "ffmpeg")]
 pub mod video_player;
 
+#[cfg(feature = "av_player_debug")]
+pub mod av_player_debug;
+
 use audio_source::AudioSourcePlugin;
 #[cfg(not(feature = "html"))]
 use audio_source_native::AudioSourcePluginImpl;
 use bevy::{math::FloatOrd, prelude::*};
-use common::structs::{AppConfig, PrimaryUser};
+use common::{
+    sets::SceneSets,
+    structs::{AppConfig, PrimaryUser},
+};
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::sdk::components::{PbAudioStream, PbVideoPlayer},
@@ -49,6 +55,11 @@ use {
     // foreign players
     audio_source_wasm::AudioSourcePluginImpl,
     html_video_player::VideoPlayerPlugin,
+};
+#[cfg(feature = "livekit")]
+use {
+    bevy::ecs::relationship::Relationship,
+    comms::livekit::participant::{StreamViewer, Streamer},
 };
 
 #[derive(Component, Debug)]
@@ -117,16 +128,28 @@ impl Plugin for AVPlayerPlugin {
             PostUpdate,
             (spawn_audio_streams, spawn_and_locate_foreign_streams).chain(),
         );
-        app.add_systems(Update, (av_player_is_in_scene, av_player_should_be_playing));
+        app.add_systems(
+            Update,
+            (av_player_is_in_scene, av_player_should_be_playing).in_set(SceneSets::PostLoop),
+        );
 
         #[cfg(feature = "ffmpeg")]
         app.add_observer(audio_sink::change_audio_sink_volume);
+        #[cfg(feature = "livekit")]
+        {
+            app.add_observer(stream_should_be_played);
+            app.add_observer(stream_shouldnt_be_played);
+            app.add_observer(streamer_joined);
+        }
+
+        #[cfg(feature = "av_player_debug")]
+        app.add_plugins(av_player_debug::AvPlayerDebugPlugin);
     }
 }
 
 fn av_player_is_in_scene(
     mut commands: Commands,
-    av_players: Query<(Entity, &ContainerEntity, &AVPlayer)>,
+    av_players: Query<(Entity, &ContainerEntity, &AVPlayer, Has<InScene>)>,
     user: Query<&GlobalTransform, With<PrimaryUser>>,
     containing_scene: ContainingScene,
 ) {
@@ -136,49 +159,64 @@ fn av_player_is_in_scene(
     };
     let containing_scenes = containing_scene.get_position(user.translation());
 
-    for (ent, container, _) in av_players
+    for (ent, container, _, has_in_scene) in av_players
         .iter()
-        .filter(|(_, _, player)| player.source.playing.unwrap_or(true))
+        .filter(|(_, _, player, _)| player.source.playing.unwrap_or(true))
     {
-        if containing_scenes.contains(&container.root) {
-            commands.entity(ent).try_insert(InScene);
-        } else {
-            commands.entity(ent).try_remove::<InScene>();
+        let contained = containing_scenes.contains(&container.root);
+        if contained && !has_in_scene {
+            // Only call `insert` on those that do not have `InScene`
+            commands.entity(ent).insert(InScene);
+        } else if !contained && has_in_scene {
+            // Only call `remove` on those that have `InScene`
+            commands.entity(ent).remove::<InScene>();
         }
     }
 }
 
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn av_player_should_be_playing(
     mut commands: Commands,
-    av_players: Query<(Entity, &AVPlayer, Has<InScene>, &GlobalTransform)>,
-    user: Query<&GlobalTransform, With<PrimaryUser>>,
+    av_players: Query<(
+        Entity,
+        &AVPlayer,
+        Has<InScene>,
+        Has<ShouldBePlaying>,
+        &GlobalTransform,
+    )>,
+    user: Single<&GlobalTransform, With<PrimaryUser>>,
     config: Res<AppConfig>,
 ) {
-    // disable distant av
-    let Ok(user) = user.single() else {
-        return;
-    };
-
     let mut sorted_players = av_players
         .iter()
-        .filter_map(|(ent, player, in_scene, transform)| {
-            if player.source.playing.unwrap_or(true) {
-                let distance = transform.translation().distance(user.translation());
-                Some((in_scene, distance, ent))
-            } else {
-                None
-            }
-        })
+        .filter_map(
+            |(ent, player, has_in_scene, has_should_be_playing, transform)| {
+                if player.source.playing.unwrap_or(true) {
+                    let distance =
+                        if !has_in_scene && player.source.src.starts_with("livekit-video://") {
+                            f32::MAX
+                        } else {
+                            transform.translation().distance(user.translation())
+                        };
+                    Some((has_in_scene, has_should_be_playing, distance, ent))
+                } else {
+                    None
+                }
+            },
+        )
         .collect::<Vec<_>>();
 
     // prioritise av in current scene (false < true), then by distance
-    sorted_players.sort_by_key(|(in_scene, distance, _)| (!in_scene, FloatOrd(*distance)));
+    sorted_players.sort_by_key(|(in_scene, _, distance, _)| (!in_scene, FloatOrd(*distance)));
 
     // Removing first for better Trigger ordering
     for ent in sorted_players
         .iter()
         .skip(config.max_videos)
-        .map(|(_, _, ent)| *ent)
+        // Only call remove on those that have `ShouldBePlaying`
+        // The `filter` MUST be after the `skip`
+        .filter(|(_, has_should_be_playing, _, _)| *has_should_be_playing)
+        .map(|(_, _, _, ent)| *ent)
     {
         commands.entity(ent).try_remove::<ShouldBePlaying>();
     }
@@ -186,8 +224,70 @@ fn av_player_should_be_playing(
     for ent in sorted_players
         .iter()
         .take(config.max_videos)
-        .map(|(_, _, ent)| *ent)
+        // Only call `insert` on those that do not have `ShouldBePlaying`
+        // The `filter` MUST be after the `take`
+        .filter(|(_, has_should_be_playing, _, _)| !*has_should_be_playing)
+        .map(|(_, _, _, ent)| *ent)
     {
         commands.entity(ent).try_insert(ShouldBePlaying);
+    }
+}
+
+#[cfg(feature = "livekit")]
+fn stream_should_be_played(
+    trigger: Trigger<OnAdd, ShouldBePlaying>,
+    mut commands: Commands,
+    av_players: Query<(Entity, &AVPlayer)>,
+    streamer: Single<Entity, With<Streamer>>,
+) {
+    let entity = trigger.target();
+    let Ok((av_player_entity, av_player)) = av_players.get(entity) else {
+        unreachable!("ShouldBePlaying must only be added to AVPlayers.");
+    };
+
+    if av_player.source.src.starts_with("livekit-video://") {
+        debug!("AVPlayer {av_player_entity} should be playing. Linking to the stream.");
+        commands
+            .entity(entity)
+            .insert(<StreamViewer as Relationship>::from(*streamer));
+    }
+}
+
+#[cfg(feature = "livekit")]
+fn stream_shouldnt_be_played(
+    trigger: Trigger<OnRemove, ShouldBePlaying>,
+    mut commands: Commands,
+    av_players: Query<(Entity, &AVPlayer, Has<StreamViewer>)>,
+) {
+    let entity = trigger.target();
+    let Ok((av_player_entity, av_player, has_stream_viewer)) = av_players.get(entity) else {
+        unreachable!("ShouldBePlaying must have only been added to AVPlayers.");
+    };
+    if !has_stream_viewer {
+        // Noop if AVPlayer does not have `StreamViewer`
+        return;
+    }
+
+    if av_player.source.src.starts_with("livekit-video://") {
+        debug!("AVPlayer {av_player_entity} no longer playing. Unlinking to the stream.");
+        commands.entity(entity).try_remove::<StreamViewer>();
+    }
+}
+
+#[cfg(feature = "livekit")]
+fn streamer_joined(
+    trigger: Trigger<OnAdd, Streamer>,
+    mut commands: Commands,
+    av_players: Query<(Entity, &AVPlayer), With<ShouldBePlaying>>,
+) {
+    let entity = trigger.target();
+    debug!("Streamer {entity} has connected. Linking to AVPlayers in range.");
+
+    for (av_player_entity, av_player) in av_players {
+        if av_player.source.src.starts_with("livekit-video://") {
+            commands
+                .entity(av_player_entity)
+                .insert(<StreamViewer as Relationship>::from(entity));
+        }
     }
 }
