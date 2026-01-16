@@ -53,9 +53,11 @@ impl Room {
         room_options.adaptiveStream = adaptive_stream;
         room_options.dynacast = dynacast;
 
-        let mut room_connect_options = InternalRoomConnectOptions::default();
-        room_connect_options.autoSubscribe = auto_subscribe;
-        room_connect_options.maxRetries = join_retries;
+        let mut room_connect_options = InternalRoomConnectOptions {
+            auto_subscribe: auto_subscribe,
+            max_retries: join_retries,
+            ..Default::default()
+        };
 
         let (sender, receiver) = mpsc::unbounded_channel();
         let handler = Closure::new(move |room_event: RoomEvent| {
@@ -149,21 +151,24 @@ impl Default for InternalRoomOptions {
 
 #[wasm_bindgen]
 #[non_exhaustive]
-#[expect(non_snake_case, reason = "Matching JS names")]
 struct InternalRoomConnectOptions {
-    pub autoSubscribe: bool,
-    pub peerConnectionTimeout: u32,
-    pub maxRetries: u32,
-    pub websocketTimeout: u32,
+    #[wasm_bindgen(js_name = "autoSubscribe")]
+    pub auto_subscribe: bool,
+    #[wasm_bindgen(js_name = "peerConnectionTimeout")]
+    pub peer_connection_timeout: u32,
+    #[wasm_bindgen(js_name = "maxRetries")]
+    pub max_retries: u32,
+    #[wasm_bindgen(js_name = "websocketTimeout")]
+    pub websocket_timeout: u32,
 }
 
 impl Default for InternalRoomConnectOptions {
     fn default() -> Self {
         Self {
-            autoSubscribe: true,
-            peerConnectionTimeout: 15000,
-            maxRetries: 1,
-            websocketTimeout: 15000,
+            auto_subscribe: true,
+            peer_connection_timeout: 15000,
+            max_retries: 1,
+            websocket_timeout: 15000,
         }
     }
 }
