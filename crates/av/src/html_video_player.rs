@@ -31,8 +31,7 @@ use dcl_component::{
 };
 use ipfs::IpfsResource;
 use scene_runner::{
-    renderer_context::RendererSceneContext, update_world::material::VideoTextureOutput,
-    ContainerEntity,
+    ContainerEntity, renderer_context::RendererSceneContext, update_world::material::{VideoTextureOutput, update_materials}
 };
 use wasm_bindgen::prelude::wasm_bindgen;
 use web_sys::{
@@ -80,7 +79,7 @@ impl Plugin for VideoPlayerPlugin {
             (
                 try_subscription.run_if(on_timer(Duration::from_secs(5))),
                 rebuild_html_media_entities.before(av_player_is_in_scene),
-                update_av_players.after(av_player_should_be_playing),
+                update_av_players.before(update_materials).after(av_player_should_be_playing),
             )
                 .chain()
                 .in_set(SceneSets::PostLoop),
@@ -553,7 +552,7 @@ fn rebuild_html_media_entities(
                     image.texture_descriptor.usage = TextureUsages::COPY_DST
                         | TextureUsages::TEXTURE_BINDING
                         | TextureUsages::RENDER_ATTACHMENT;
-                    image.immediate_upload = true;
+                    image.transfer_priority = bevy::asset::RenderAssetTransferPriority::Immediate;
                     image.data = None;
                     images.add(image)
                 }
@@ -660,7 +659,8 @@ fn update_av_players(
                             image.texture_descriptor.usage = TextureUsages::COPY_DST
                                 | TextureUsages::TEXTURE_BINDING
                                 | TextureUsages::RENDER_ATTACHMENT;
-                            image.immediate_upload = true;
+                            image.transfer_priority =
+                                bevy::asset::RenderAssetTransferPriority::Immediate;
                             image.data = None;
                             let image = images.add(image);
                             av.size = Some(video_size);
@@ -736,13 +736,7 @@ fn perform_video_copies(
     mut requests: ResMut<FrameCopyReceiveQueue>,
     images: Res<RenderAssets<GpuImage>>,
     render_queue: Res<RenderQueue>,
-    mut used: Local<Vec<WgpuWrapper<VideoFrame>>>,
 ) {
-    //close previous frames
-    for frame in used.into_iter() {
-        frame.close();
-    }
-
     let mut latest_requests: HashMap<AssetId<Image>, FrameCopyRequest> = HashMap::new();
 
     while let Ok(request) = requests.0.try_recv() {
@@ -753,7 +747,7 @@ fn perform_video_copies(
     }
 
     for (_, request) in latest_requests.drain() {
-        used.push(request.video_frame.clone());
+        let frame_copy = request.video_frame.clone();
         let Some(gpu_image) = images.get(request.target) else {
             warn!("missing gpu image");
             continue;
@@ -796,6 +790,8 @@ fn perform_video_copies(
                 depth_or_array_layers: 1,
             },
         );
+
+        frame_copy.close();
     }
 }
 

@@ -15,11 +15,11 @@ use bevy::{
     platform::collections::HashMap,
     prelude::*,
     render::{
-        mesh::{Indices, VertexAttributeValues, skinning::SkinnedMesh},
+        mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues},
         render_asset::RenderAssetUsages,
         view::NoFrustumCulling,
     },
-    scene::{InstanceId, scene_spawner_system},
+    scene::{scene_spawner_system, InstanceId},
     transform::TransformSystem,
 };
 use common::{
@@ -246,7 +246,7 @@ fn update_gltf(
         };
 
         let transfer_priority = if immediate_scene == Some(scene_ent.root) {
-            RenderAssetTransferPriority::Immediate
+            RenderAssetTransferPriority::Priority(1)
         } else {
             RenderAssetTransferPriority::Priority(0)
         };

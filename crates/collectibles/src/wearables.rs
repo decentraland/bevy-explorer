@@ -357,7 +357,7 @@ impl AssetLoader for WearableLoader {
                             .loader()
                             .with_settings::<ImageLoaderSettings>(|s| {
                                 s.asset_usage = RenderAssetUsages::RENDER_WORLD;
-                                s.transfer_priority = RenderAssetTransferPriority::Priority(1);
+                                s.transfer_priority = RenderAssetTransferPriority::Priority(2);
                             })
                             .load(path)
                     });
@@ -371,7 +371,7 @@ impl AssetLoader for WearableLoader {
                             .loader()
                             .with_settings::<ImageLoaderSettings>(|s| {
                                 s.asset_usage = RenderAssetUsages::RENDER_WORLD;
-                                s.transfer_priority = RenderAssetTransferPriority::Priority(1);
+                                s.transfer_priority = RenderAssetTransferPriority::Priority(2);
                             })
                             .load(path)
                     });
@@ -399,6 +399,7 @@ impl AssetLoader for WearableLoader {
                         s.load_lights = false;
                         s.load_meshes = RenderAssetUsages::MAIN_WORLD;
                         s.load_materials = RenderAssetUsages::RENDER_WORLD;
+                        s.transfer_priority = RenderAssetTransferPriority::Priority(2);
                     })
                     .load(path);
 

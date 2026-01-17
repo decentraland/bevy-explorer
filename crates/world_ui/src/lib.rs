@@ -1,5 +1,10 @@
 use bevy::{
-    asset::RenderAssetTransferPriority, diagnostic::FrameCount, pbr::{ExtendedMaterial, MaterialExtension, NotShadowCaster}, platform::collections::{HashMap, HashSet}, prelude::*, render::{
+    asset::RenderAssetTransferPriority,
+    diagnostic::FrameCount,
+    pbr::{ExtendedMaterial, MaterialExtension, NotShadowCaster},
+    platform::collections::{HashMap, HashSet},
+    prelude::*,
+    render::{
         camera::RenderTarget,
         render_asset::RenderAssetUsages,
         render_resource::{
@@ -7,7 +12,9 @@ use bevy::{
         },
         renderer::RenderDevice,
         view::NoFrustumCulling,
-    }, transform::TransformSystem, ui::UiSystem
+    },
+    transform::TransformSystem,
+    ui::UiSystem,
 };
 use boimp::bake::{
     ImposterBakeMaterialExtension, ImposterBakeMaterialPlugin, STANDARD_BAKE_HANDLE,
@@ -207,7 +214,7 @@ pub fn update_worldui_materials(
             continue;
         }
 
-        let Some(mat) = mats.get_mut(ref_mat.0) else {
+        let Some(mat) = mats.get(ref_mat.0) else {
             warn!("failed to update mat");
             continue;
         };
@@ -216,12 +223,15 @@ pub fn update_worldui_materials(
 
         let topleft = translation.xy() - node.size() / 2.0;
         let bottomright = translation.xy() + node.size() / 2.0;
-        mat.extension.data.uvs = Vec4::new(topleft.x, topleft.y, bottomright.x, bottomright.y);
+        let required_uvs = Vec4::new(topleft.x, topleft.y, bottomright.x, bottomright.y);
+        if mat.extension.data.uvs != required_uvs {
+            mats.get_mut(ref_mat.0).unwrap().extension.data.uvs = required_uvs;
+        }
         debug!(
             "[{}] img {:?}, {ent:?} uvs set to {} (size: {}, translation: {})",
             frame.0,
             ref_mat.1,
-            mat.extension.data.uvs,
+            required_uvs,
             node.size(),
             translation.xy()
         );

@@ -6,7 +6,7 @@ use bevy::{
     ecs::system::SystemParam,
     math::FloatOrd,
     pbr::{NotShadowCaster, NotShadowReceiver},
-    platform::collections::{HashMap, HashSet, hash_map::Entry},
+    platform::collections::{hash_map::Entry, HashMap, HashSet},
     prelude::*,
     render::{
         mesh::{MeshAabb, VertexAttributeValues},
@@ -946,7 +946,9 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                                         alpha: 1.0,
                                         alpha_blend: 0.0, // blend
                                         multisample_amount: 0.0,
-                                        transfer_priority: RenderAssetTransferPriority::Priority(-1),
+                                        transfer_priority: RenderAssetTransferPriority::Priority(
+                                            -1,
+                                        ),
                                         asset_usages: RenderAssetUsages::RENDER_WORLD,
                                     }
                                 },

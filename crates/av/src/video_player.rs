@@ -1,10 +1,14 @@
 use std::borrow::Cow;
 
 use bevy::{
-    asset::RenderAssetTransferPriority, color::palettes::basic, diagnostic::FrameCount, prelude::*, render::{
+    asset::RenderAssetTransferPriority,
+    color::palettes::basic,
+    diagnostic::FrameCount,
+    prelude::*,
+    render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
-    }
+    },
 };
 use common::sets::SceneSets;
 use comms::livekit_native::LivekitVideoFrame;
@@ -17,8 +21,7 @@ use dcl_component::{
 };
 use ipfs::IpfsResource;
 use scene_runner::{
-    renderer_context::RendererSceneContext, update_world::material::VideoTextureOutput,
-    ContainerEntity,
+    ContainerEntity, renderer_context::RendererSceneContext, update_world::material::{VideoTextureOutput, update_materials}
 };
 
 #[cfg(feature = "livekit")]
@@ -37,10 +40,11 @@ pub struct VideoPlayerPlugin;
 impl Plugin for VideoPlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, init_ffmpeg);
-        app.add_systems(Update, play_videos);
+        app.add_systems(Update, play_videos.before(update_materials));
         app.add_systems(
             Update,
             rebuild_sinks
+                .after(play_videos)
                 .before(av_player_is_in_scene)
                 .in_set(SceneSets::PostLoop),
         );
@@ -162,7 +166,7 @@ fn av_player_should_be_playing_on_remove(
 
 fn play_videos(
     mut images: ResMut<Assets<Image>>,
-    mut q: Query<(&mut VideoSink, &ContainerEntity)>,
+    mut q: Query<(&mut VideoSink, &ContainerEntity, &mut VideoTextureOutput)>,
     mut scenes: Query<&mut RendererSceneContext>,
     frame: Res<FrameCount>,
 ) {
@@ -184,7 +188,7 @@ fn play_videos(
         }
     }
 
-    for (mut sink, container) in q.iter_mut() {
+    for (mut sink, container, mut output) in q.iter_mut() {
         let mut last_frame_received = None;
         let mut new_state = None;
         loop {
@@ -196,11 +200,18 @@ fn play_videos(
                     length,
                 })) => {
                     debug!("resize");
-                    images.get_mut(&sink.image).unwrap().resize(Extent3d {
+                    let image = images.get_mut(&sink.image).unwrap();
+                    let target_extent = Extent3d {
                         width: width.max(16),
                         height: height.max(16),
                         depth_or_array_layers: 1,
-                    });
+                    };
+                    if image.texture_descriptor.size != target_extent {
+                        debug!("resize {target_extent:?}");
+                        image.data = None;
+                        image.texture_descriptor.size = target_extent;
+                        image.transfer_priority = RenderAssetTransferPriority::Immediate;
+                    }
                     sink.length = Some(length);
                     sink.rate = Some(rate);
                 }
@@ -211,16 +222,16 @@ fn play_videos(
                 #[cfg(feature = "livekit")]
                 Ok(VideoData::LivekitFrame(frame)) => {
                     let image = images.get_mut(&sink.image).unwrap();
-                    let extent = image.size();
-                    let width = frame.width();
-                    let height = frame.height();
-                    if extent.x != width || extent.y != height {
-                        debug!("resize {width} {height}");
-                        image.resize(Extent3d {
-                            width: width.max(16),
-                            height: height.max(16),
-                            depth_or_array_layers: 1,
-                        });
+                    let target_extent = Extent3d {
+                        width: frame.width().max(16),
+                        height: frame.height().max(16),
+                        depth_or_array_layers: 1,
+                    };
+                    if image.texture_descriptor.size != target_extent {
+                        debug!("resize {target_extent:?}");
+                        image.data = None;
+                        image.texture_descriptor.size = target_extent;
+                        image.transfer_priority = RenderAssetTransferPriority::Immediate;
                     }
 
                     sink.current_time = frame.timestamp() as f64;
@@ -233,13 +244,19 @@ fn play_videos(
 
         if let Some(frame) = last_frame_received {
             trace!("set frame on {:?}", sink.image);
-            images
-                .get_mut(&sink.image)
-                .unwrap()
-                .data
-                .as_mut()
-                .unwrap()
-                .copy_from_slice(&frame.data());
+
+            let image = images.get_mut(&sink.image).unwrap();
+
+            match &mut image.data {
+                Some(data) => {
+                    data.copy_from_slice(&frame.data());
+                    image.transfer_priority = RenderAssetTransferPriority::Priority(-2);
+                }
+                None => {
+                    image.data = Some(frame.data().into_owned());
+                    output.set_changed();
+                }
+            }
         }
 
         const VIDEO_REPORT_FREQUENCY: f64 = 1.0;
@@ -310,7 +327,7 @@ fn rebuild_sinks(
                 );
                 image.texture_descriptor.usage =
                     TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING;
-                image.transfer_priority = RenderAssetTransferPriority::Priority(-2);
+                image.transfer_priority = RenderAssetTransferPriority::Immediate;
                 images.add(image)
             }
             Some(texture) => texture.0.clone(),

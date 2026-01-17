@@ -1,11 +1,15 @@
 use std::f32::consts::FRAC_PI_4;
 
 use bevy::{
-    app::{HierarchyPropagatePlugin, Propagate, PropagateSet, PropagateStop}, asset::RenderAssetTransferPriority, platform::collections::{HashMap, HashSet}, prelude::*, render::{
+    app::{HierarchyPropagatePlugin, Propagate, PropagateSet, PropagateStop},
+    asset::RenderAssetTransferPriority,
+    platform::collections::{HashMap, HashSet},
+    prelude::*,
+    render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureFormat, TextureUsages},
         view::RenderLayers,
-    }
+    },
 };
 use bevy_atmosphere::plugin::AtmosphereCamera;
 use common::{
