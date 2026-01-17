@@ -817,6 +817,8 @@ fn send_action_events(
     time: Res<Time>,
     mut drag_target: ResMut<PointerDragTarget>,
     mut locks: ResMut<CursorLocks>,
+    player: Query<Entity, With<PrimaryUser>>,
+    containing_scenes: ContainingScene,
 ) {
     fn filtered_events<'a>(
         pointer_requests: &'a Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
@@ -1008,7 +1010,15 @@ fn send_action_events(
         return;
     }
 
-    for (entity, mut context, _) in scenes.iter_mut() {
+    let Ok(player) = player.single() else {
+        return;
+    };
+    let containing_scenes = containing_scenes.get_area(player, PLAYER_COLLIDER_RADIUS);
+
+    for (entity, mut context, _) in scenes
+        .iter_mut()
+        .filter(|(scene, ..)| containing_scenes.contains(scene))
+    {
         let tick_number = context.tick_number;
 
         for &(pet, button, maybe_consumer) in &events_and_consumers {
