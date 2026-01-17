@@ -31,7 +31,9 @@ use dcl_component::{
 };
 use ipfs::IpfsResource;
 use scene_runner::{
-    ContainerEntity, renderer_context::RendererSceneContext, update_world::material::{VideoTextureOutput, update_materials}
+    renderer_context::RendererSceneContext,
+    update_world::material::{update_materials, VideoTextureOutput},
+    ContainerEntity,
 };
 use wasm_bindgen::prelude::wasm_bindgen;
 use web_sys::{
@@ -79,7 +81,9 @@ impl Plugin for VideoPlayerPlugin {
             (
                 try_subscription.run_if(on_timer(Duration::from_secs(5))),
                 rebuild_html_media_entities.before(av_player_is_in_scene),
-                update_av_players.before(update_materials).after(av_player_should_be_playing),
+                update_av_players
+                    .before(update_materials)
+                    .after(av_player_should_be_playing),
             )
                 .chain()
                 .in_set(SceneSets::PostLoop),

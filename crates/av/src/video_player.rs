@@ -21,7 +21,9 @@ use dcl_component::{
 };
 use ipfs::IpfsResource;
 use scene_runner::{
-    ContainerEntity, renderer_context::RendererSceneContext, update_world::material::{VideoTextureOutput, update_materials}
+    renderer_context::RendererSceneContext,
+    update_world::material::{update_materials, VideoTextureOutput},
+    ContainerEntity,
 };
 
 #[cfg(feature = "livekit")]

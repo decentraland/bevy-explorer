@@ -658,7 +658,10 @@ pub fn update_materials(
             .unwrap_or(true);
 
         if changed {
-            commands.entity(ent).insert(RetryMaterial(Vec::default())).remove::<MaterialSource>();
+            commands
+                .entity(ent)
+                .insert(RetryMaterial(Vec::default()))
+                .remove::<MaterialSource>();
         }
     }
 }
