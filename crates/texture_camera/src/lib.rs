@@ -2,6 +2,7 @@ use std::f32::consts::FRAC_PI_4;
 
 use bevy::{
     app::{HierarchyPropagatePlugin, Propagate, PropagateSet, PropagateStop},
+    asset::RenderAssetTransferPriority,
     platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
@@ -269,6 +270,7 @@ fn update_texture_cameras(
                         RenderAssetUsages::all(), // RENDER_WORLD alone doesn't work..?
                     );
                     image.data = None;
+                    image.transfer_priority = RenderAssetTransferPriority::Immediate;
                     image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
                     images.add(image)
                 }

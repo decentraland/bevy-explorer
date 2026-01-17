@@ -69,7 +69,7 @@ impl Plugin for VisualsPlugin {
         let config = app.world().resource::<AppConfig>();
 
         if config.graphics.gpu_bytes_per_frame > 0 {
-            app.insert_resource(RenderAssetBytesPerFrame::new(
+            app.insert_resource(RenderAssetBytesPerFrame::new_with_priorities(
                 config.graphics.gpu_bytes_per_frame,
             ));
         }

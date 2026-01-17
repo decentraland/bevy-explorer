@@ -9,7 +9,7 @@ use std::{
 
 use bevy::{
     animation::AnimationTarget,
-    asset::LoadState,
+    asset::{LoadState, RenderAssetTransferPriority},
     gltf::{Gltf, GltfExtras, GltfLoaderSettings},
     pbr::{ExtendedMaterial, NotShadowCaster},
     platform::collections::HashMap,
@@ -245,7 +245,11 @@ fn update_gltf(
             continue;
         };
 
-        let immediate_upload = immediate_scene == Some(scene_ent.root);
+        let transfer_priority = if immediate_scene == Some(scene_ent.root) {
+            RenderAssetTransferPriority::Priority(1)
+        } else {
+            RenderAssetTransferPriority::Priority(0)
+        };
         let h_gltf = ipfas.load_content_file_with_settings::<Gltf, GltfLoaderSettings>(
             &gltf.0.src,
             &scene_def.id,
@@ -255,7 +259,7 @@ fn update_gltf(
                 s.load_meshes = RenderAssetUsages::MAIN_WORLD; // we'll modify then upload
                 s.load_materials = RenderAssetUsages::RENDER_WORLD;
                 s.include_source = true;
-                s.immediate_upload = immediate_upload;
+                s.transfer_priority = transfer_priority;
             },
         );
 
