@@ -3,6 +3,9 @@ name = "tween"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+tween_debug = []
+
 [lib]
 
 [dependencies]

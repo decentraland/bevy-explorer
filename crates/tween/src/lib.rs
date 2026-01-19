@@ -1,3 +1,6 @@
+#[cfg(feature = "tween_debug")]
+mod tween_debug;
+
 use bevy::prelude::*;
 use common::sets::SceneSets;
 use dcl::interface::{ComponentPosition, CrdtType};
@@ -9,7 +12,6 @@ use dcl_component::{
     transform_and_parent::DclTransformAndParent,
     SceneComponentId,
 };
-
 use scene_material::SceneMaterial;
 use scene_runner::{
     renderer_context::RendererSceneContext, update_world::AddCrdtInterfaceExt, ContainerEntity,
@@ -149,6 +151,9 @@ impl Plugin for TweenPlugin {
         );
         app.add_systems(Update, update_tween.in_set(SceneSets::PostLoop));
         app.add_systems(PostUpdate, update_system_tween);
+
+        #[cfg(feature = "tween_debug")]
+        app.add_plugins(tween_debug::TweenDebugPlugin);
     }
 }
 
