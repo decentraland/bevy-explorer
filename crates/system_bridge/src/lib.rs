@@ -163,6 +163,7 @@ pub struct NativeUi {
     pub permissions: bool,
     pub profile: bool,
     pub nametags: bool,
+    pub tooltips: bool,
 }
 
 #[derive(Resource)]
