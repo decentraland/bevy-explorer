@@ -116,12 +116,19 @@ impl TryFrom<u32> for HoverTargetType {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct HoverAction {
-    pub action: u32,
-    pub input_binding: String,
+pub struct HoverEventInfo {
+    pub input_action: u32,
     pub hover_text: String,
+    pub hide_feedback: bool,
+    pub show_highlight: bool,
+    pub max_distance: f32,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct HoverAction {
     pub event_type: u32,
-    pub in_range: bool,
+    pub event_info: HoverEventInfo,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

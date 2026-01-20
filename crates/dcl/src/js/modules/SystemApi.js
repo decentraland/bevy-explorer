@@ -337,12 +337,16 @@ module.exports.getVoiceStream = async function() {
 // get hover events as a stream
 // HoverTargetType: 0 = World, 1 = Ui, 2 = Avatar
 // PointerEventType: 0 = PET_UP, 1 = PET_DOWN, 2 = PET_HOVER_ENTER, 3 = PET_HOVER_LEAVE, 4 = PET_DRAG_LOCKED, 5 = PET_DRAG, 6 = PET_DRAG_END
-// type HoverAction = {
-//   action: number,        // InputAction (0-13)
-//   inputBinding: string,  // e.g. "KeyE", "Mouse0"
+// type HoverEventInfo = {
+//   inputAction: number,   // InputAction (0-13)
 //   hoverText: string,
+//   hideFeedback: boolean,
+//   showHighlight: boolean,
+//   maxDistance: number,
+// }
+// type HoverAction = {
 //   eventType: number,     // PointerEventType (0-6)
-//   inRange: boolean,
+//   eventInfo: HoverEventInfo,
 // }
 // type HoverEvent = {
 //   entered: boolean,

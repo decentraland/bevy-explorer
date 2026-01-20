@@ -4,7 +4,7 @@ use bevy::{
 };
 use common::{
     inputs::InputMap,
-    structs::{HoverAction, HoverInfo, HoverTargetType, PrimaryUser, ToolTips, TooltipSource},
+    structs::{HoverAction, HoverEventInfo, HoverInfo, HoverTargetType, PrimaryUser, ToolTips, TooltipSource},
 };
 use comms::global_crdt::ForeignPlayer;
 
@@ -187,24 +187,28 @@ fn generate_hover_info(
         if let Ok(pes) = pointer_events.get(container) {
             for pe in pes.iter() {
                 if let Some(info) = pe.event_info.as_ref() {
-                    if info.show_feedback.unwrap_or(true) {
-                        if let Some(text) = info.hover_text.as_ref() {
-                            let action = info.button();
-                            let binding = input_binding_string(&input_map, action);
-                            let in_range = info.max_distance.unwrap_or(10.0) > distance.0;
+                    let action = info.button();
+                    let max_distance = info.max_distance.unwrap_or(10.0);
+                    let hide_feedback = !info.show_feedback.unwrap_or(true);
+                    let hover_text = info.hover_text.clone().unwrap_or_default();
 
-                            // Add to HoverInfo
-                            hover_info.actions.push(HoverAction {
-                                action: action as u32,
-                                input_binding: binding.clone(),
-                                hover_text: text.clone(),
-                                event_type: pe.event_type() as u32,
-                                in_range,
-                            });
+                    // Add to HoverInfo
+                    hover_info.actions.push(HoverAction {
+                        event_type: pe.event_type() as u32,
+                        event_info: HoverEventInfo {
+                            input_action: action as u32,
+                            hover_text: hover_text.clone(),
+                            hide_feedback,
+                            show_highlight: true, // not in proto, default to true
+                            max_distance,
+                        },
+                    });
 
-                            // Add to texts for ToolTips (backward compatibility)
-                            texts.push((format!("{binding} : {text}"), in_range));
-                        }
+                    // Add to texts for ToolTips (backward compatibility)
+                    if !hide_feedback && !hover_text.is_empty() {
+                        let binding = input_binding_string(&input_map, action);
+                        let in_range = max_distance > distance.0;
+                        texts.push((format!("{binding} : {hover_text}"), in_range));
                     }
                 }
             }

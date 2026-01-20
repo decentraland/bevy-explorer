@@ -22,9 +22,9 @@ use crate::{
         scene_ui::UiLink,
     },
     ContainerEntity, ContainingScene, PrimaryUser, RendererSceneContext, SceneEntity, SceneSets,
+    PARCEL_SIZE,
 };
 use common::{
-    dynamics::PLAYER_COLLIDER_RADIUS,
     inputs::{Action, CommonInputAction, POINTER_SET},
     structs::{CursorLocks, DebugInfo, PrimaryCamera},
     util::DespawnWith,
@@ -241,7 +241,7 @@ fn update_pointer_target(
 
     pointer_ray.0 = Some(ray);
 
-    let containing_scenes = containing_scenes.get_area(player, PLAYER_COLLIDER_RADIUS);
+    let containing_scenes = containing_scenes.get_area(player, PARCEL_SIZE);
     let maybe_nearest_hit = scenes
         .iter_mut()
         .filter(|(scene_entity, ..)| containing_scenes.contains(scene_entity))
@@ -1013,7 +1013,7 @@ fn send_action_events(
     let Ok(player) = player.single() else {
         return;
     };
-    let containing_scenes = containing_scenes.get_area(player, PLAYER_COLLIDER_RADIUS);
+    let containing_scenes = containing_scenes.get_area(player, PARCEL_SIZE);
 
     for (entity, mut context, _) in scenes
         .iter_mut()

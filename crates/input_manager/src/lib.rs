@@ -23,7 +23,7 @@ use common::{
     rpc::{RpcResultSender, RpcStreamSender},
     structs::{AppConfig, CursorLocks, HoverInfo, PlayerModifiers},
 };
-use system_bridge::{HoverAction, HoverEvent, HoverTargetType, SystemApi};
+use system_bridge::{HoverAction, HoverEvent, HoverEventInfo, HoverTargetType, SystemApi};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Default, Debug)]
 #[repr(u32)]
@@ -777,11 +777,14 @@ fn handle_hover_stream(
                     .actions
                     .iter()
                     .map(|a| HoverAction {
-                        action: a.action,
-                        input_binding: a.input_binding.clone(),
-                        hover_text: a.hover_text.clone(),
                         event_type: a.event_type,
-                        in_range: a.in_range,
+                        event_info: HoverEventInfo {
+                            input_action: a.event_info.input_action,
+                            hover_text: a.event_info.hover_text.clone(),
+                            hide_feedback: a.event_info.hide_feedback,
+                            show_highlight: a.event_info.show_highlight,
+                            max_distance: a.event_info.max_distance,
+                        },
                     })
                     .collect(),
                 outside_scene: hover_info.outside_scene,

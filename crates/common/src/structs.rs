@@ -251,12 +251,18 @@ pub enum HoverTargetType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HoverAction {
-    pub action: u32,       // InputAction as u32
-    pub input_binding: String,
+pub struct HoverEventInfo {
+    pub input_action: u32,       // InputAction as u32
     pub hover_text: String,
+    pub hide_feedback: bool,
+    pub show_highlight: bool,
+    pub max_distance: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HoverAction {
     pub event_type: u32,   // PointerEventType as u32
-    pub in_range: bool,
+    pub event_info: HoverEventInfo,
 }
 
 #[derive(Resource, Default, Debug, Clone)]
