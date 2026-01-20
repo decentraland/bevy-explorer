@@ -33,10 +33,14 @@ impl From<PbTween> for Tween {
 impl Tween {
     #[cfg(feature = "adr285")]
     fn is_continuous(&self) -> bool {
-        match self.0.mode {
-            Some(Mode::RotateContinuous(_)) => true,
-            _ => false,
-        }
+        matches!(
+            &self.0.mode,
+            Some(
+                Mode::RotateContinuous(_)
+                    | Mode::MoveContinuous(_)
+                    | Mode::TextureMoveContinuous(_)
+            )
+        )
     }
 
     fn apply(
