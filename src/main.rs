@@ -368,6 +368,7 @@ fn main() {
                 })
                 .add_before::<IpfsIoPlugin>(NftReaderPlugin),
         );
+    app.add_plugins(MeshPickingPlugin);
 
     app.add_plugins(EmbedAssetsPlugin);
 
