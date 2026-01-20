@@ -242,6 +242,30 @@ pub enum TooltipSource {
 #[derive(Resource, Default)]
 pub struct ToolTips(pub HashMap<TooltipSource, Vec<(String, bool)>>);
 
+// Hover information for tooltips and hover stream API
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HoverTargetType {
+    World,
+    Ui,
+    Avatar,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HoverAction {
+    pub action: u32,       // InputAction as u32
+    pub input_binding: String,
+    pub hover_text: String,
+    pub event_type: u32,   // PointerEventType as u32
+    pub in_range: bool,
+}
+
+#[derive(Resource, Default, Debug, Clone)]
+pub struct HoverInfo {
+    pub target_type: Option<HoverTargetType>,
+    pub distance: f32,
+    pub actions: Vec<HoverAction>,
+}
+
 // web3 authorization chain link
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ChainLink {

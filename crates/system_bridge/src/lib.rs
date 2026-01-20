@@ -87,6 +87,52 @@ pub struct VoiceMessage {
     pub active: bool,
 }
 
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(into = "u32", try_from = "u32")]
+#[repr(u32)]
+pub enum HoverTargetType {
+    World = 0,
+    Ui = 1,
+    Avatar = 2,
+}
+
+impl From<HoverTargetType> for u32 {
+    fn from(t: HoverTargetType) -> u32 {
+        t as u32
+    }
+}
+
+impl TryFrom<u32> for HoverTargetType {
+    type Error = &'static str;
+    fn try_from(v: u32) -> Result<Self, Self::Error> {
+        match v {
+            0 => Ok(HoverTargetType::World),
+            1 => Ok(HoverTargetType::Ui),
+            2 => Ok(HoverTargetType::Avatar),
+            _ => Err("Invalid HoverTargetType"),
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct HoverAction {
+    pub action: u32,
+    pub input_binding: String,
+    pub hover_text: String,
+    pub event_type: u32,
+    pub in_range: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct HoverEvent {
+    pub entered: bool,
+    pub target_type: HoverTargetType,
+    pub distance: f32,
+    pub actions: Vec<HoverAction>,
+}
+
 #[derive(Event, Clone, Debug, Serialize, Deserialize)]
 pub enum SystemApi {
     ConsoleCommand(String, Vec<String>, RpcResultSender<Result<String, String>>),
@@ -113,6 +159,7 @@ pub enum SystemApi {
     GetSystemActionStream(RpcStreamSender<SystemActionEvent>),
     GetChatStream(RpcStreamSender<ChatMessage>),
     GetVoiceStream(RpcStreamSender<VoiceMessage>),
+    GetHoverStream(RpcStreamSender<HoverEvent>),
     SendChat(String, String),
     Quit,
     GetPermissionRequestStream(RpcStreamSender<PermissionRequest>),
