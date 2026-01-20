@@ -99,7 +99,6 @@ impl Plugin for InputManagerPlugin {
                 update_deltas,
                 handle_native_input,
                 handle_get_bindings,
-                handle_get_input_bindings_map,
                 handle_set_bindings,
                 handle_pointer_motion,
                 handle_system_input_stream,
@@ -634,48 +633,6 @@ fn handle_get_bindings(mut events: EventReader<SystemApi>, map: Res<InputMap>) {
     }
 }
 
-fn handle_get_input_bindings_map(mut events: EventReader<SystemApi>, map: Res<InputMap>) {
-    use common::inputs::CommonInputAction;
-    use std::collections::HashMap;
-
-    const ALL_ACTIONS: [CommonInputAction; 14] = [
-        CommonInputAction::IaPointer,
-        CommonInputAction::IaPrimary,
-        CommonInputAction::IaSecondary,
-        CommonInputAction::IaAny,
-        CommonInputAction::IaForward,
-        CommonInputAction::IaBackward,
-        CommonInputAction::IaRight,
-        CommonInputAction::IaLeft,
-        CommonInputAction::IaJump,
-        CommonInputAction::IaWalk,
-        CommonInputAction::IaAction3,
-        CommonInputAction::IaAction4,
-        CommonInputAction::IaAction5,
-        CommonInputAction::IaAction6,
-    ];
-
-    for sender in events.read().filter_map(|e| {
-        if let SystemApi::GetInputBindingsMap(sender) = e {
-            Some(sender)
-        } else {
-            None
-        }
-    }) {
-        let bindings_map: HashMap<u32, String> = ALL_ACTIONS
-            .iter()
-            .filter_map(|&action| {
-                map.get_input(action).map(|binding| {
-                    let binding_str = serde_json::to_string(&binding).unwrap_or_default();
-                    let binding_str = binding_str.trim_matches('"').to_string();
-                    (action as u32, binding_str)
-                })
-            })
-            .collect();
-        sender.send(bindings_map);
-    }
-}
-
 fn handle_set_bindings(
     mut events: EventReader<SystemApi>,
     mut map: ResMut<InputMap>,
@@ -766,6 +723,7 @@ fn handle_system_input_stream(
 struct PreviousHoverState {
     had_target: bool,
     target_type: Option<HoverTargetType>,
+    outside_scene: bool,
 }
 
 fn handle_hover_stream(

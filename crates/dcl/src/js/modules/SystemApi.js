@@ -138,13 +138,6 @@ module.exports.getInputBindings = async function() {
     return await Deno.core.ops.op_get_bindings()
 }
 
-// get input bindings as a simple map
-// -> { [inputAction: number]: string }
-// e.g. { 0: "Mouse0", 1: "KeyE", 2: "KeyF", ... }
-module.exports.getInputBindingsMap = async function() {
-    return await Deno.core.ops.op_get_input_bindings_map()
-}
-
 // set current key bindings
 // arg: {
 //   bindings: (string, string[])[]
