@@ -16,6 +16,7 @@ message PBTween {
     Rotate rotate = 4;
     Scale scale = 5;
     TextureMove texture_move = 8;
+    RotateContinuous rotate_continuous = 9;
   }
 
   optional bool playing = 6; // default true (pause or running)
@@ -44,6 +45,11 @@ message TextureMove {
   decentraland.common.Vector2 start = 1;
   decentraland.common.Vector2 end = 2;
   optional TextureMovementType movement_type = 3; // default = TextureMovementType.TMT_OFFSET
+}
+
+message RotateContinuous {
+  decentraland.common.Quaternion direction = 1;
+  float speed = 2;
 }
 
 enum TextureMovementType {
