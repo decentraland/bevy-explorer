@@ -1277,7 +1277,7 @@ fn debug_modifiers(
         }
 
         if !unused.is_empty() {
-            error!(
+            warn!(
                 "no match for gltf modifiers {unused:?} in nodes {:?}",
                 processed.named_nodes.keys().collect::<Vec<_>>()
             )
