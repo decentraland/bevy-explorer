@@ -4,8 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
+default = ["adr285"]
 tween_debug = []
-alt_rotate_continuous = []
+adr285 = []
+alt_rotate_continuous = ["adr285"]
 
 [lib]
 

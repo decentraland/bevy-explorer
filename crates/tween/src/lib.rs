@@ -1,6 +1,9 @@
 #[cfg(feature = "tween_debug")]
 mod tween_debug;
 
+#[cfg(all(feature = "adr285", not(feature = "alt_rotate_continuous")))]
+use std::f32::consts::FRAC_2_PI;
+
 use bevy::prelude::*;
 use common::sets::SceneSets;
 use dcl::interface::{ComponentPosition, CrdtType};
@@ -28,6 +31,7 @@ impl From<PbTween> for Tween {
 }
 
 impl Tween {
+    #[cfg(feature = "adr285")]
     fn is_continuous(&self) -> bool {
         match self.0.mode {
             Some(Mode::RotateContinuous(_)) => true,
@@ -140,6 +144,7 @@ impl Tween {
                     }
                 }
             }
+            #[cfg(feature = "adr285")]
             Some(Mode::RotateContinuous(data)) => {
                 #[cfg(not(feature = "alt_rotate_continuous"))]
                 {
@@ -154,8 +159,11 @@ impl Tween {
                     } else {
                         0.
                     };
-                    let dcl_quat = data.direction.unwrap().to_bevy_normalized();
-                    let axis = dcl_quat * Vec3::NEG_Y;
+                    let dcl_quat = data.direction.unwrap();
+                    // +Z forward to Bevy's -Z forward
+                    let quat =
+                        dcl_quat.to_bevy_normalized() * Quat::from_axis_angle(Vec3::Y, FRAC_2_PI);
+                    let axis = quat * Vec3::NEG_Y;
                     transform.rotation = Quat::from_axis_angle(axis, startup_factor + post_startup);
                 }
                 #[cfg(feature = "alt_rotate_continuous")]
@@ -227,6 +235,7 @@ pub fn update_tween(
             continue;
         };
 
+        #[cfg(feature = "adr285")]
         if tween.is_continuous() {
             continuous_tween_update(
                 &mut commands,
@@ -246,6 +255,15 @@ pub fn update_tween(
                 &time,
             );
         }
+        #[cfg(not(feature = "adr285"))]
+        discrete_tween_update(
+            &mut commands,
+            (ent, scene_ent, parent, tween, transform, state, maybe_h_mat),
+            scene,
+            parents,
+            materials,
+            &time,
+        );
     }
 }
 
@@ -327,6 +345,7 @@ fn discrete_tween_update(
     }
 }
 
+#[cfg(feature = "adr285")]
 fn continuous_tween_update(
     commands: &mut Commands,
     (ent, scene_ent, parent, tween, mut transform, state, maybe_h_mat): DiscreteTweenComponents,

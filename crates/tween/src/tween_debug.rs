@@ -1,3 +1,5 @@
+#[cfg(all(feature = "adr285", not(feature = "alt_rotate_continuous")))]
+use std::f32::consts::FRAC_2_PI;
 use std::fmt::Debug;
 
 use bevy::{
@@ -219,6 +221,7 @@ fn tween_picking(
                     &tween.0.current_time,
                 );
             }
+            #[cfg(feature = "adr285")]
             Some(Mode::RotateContinuous(data)) => {
                 plate_head(&mut commands, 1, root, "Continuous rotation");
                 plate_display_row(&mut commands, 2, root, "Duration", &tween.0.duration);
@@ -303,23 +306,24 @@ fn plate_display_row<T: Debug>(
 fn axis_gizmos(mut gizmos: Gizmos, tweens: Query<(&Tween, &GlobalTransform)>) {
     for (tween, global_transform) in tweens {
         match &tween.0.mode {
-            #[cfg(not(feature = "alt_rotate_continuous"))]
+            #[cfg(all(feature = "adr285", not(feature = "alt_rotate_continuous")))]
             Some(Mode::RotateContinuous(data)) => {
-                let direction = data.direction.unwrap().to_bevy_normalized();
+                let dcl_quat = data.direction.unwrap();
+                // +Z forward to Bevy's -Z forward
+                let quat =
+                    dcl_quat.to_bevy_normalized() * Quat::from_axis_angle(Vec3::Y, FRAC_2_PI);
+                let axis = quat * Vec3::NEG_Y;
                 gizmos.axes(
-                    Isometry3d::new(
-                        global_transform.translation(),
-                        Quat::from_axis_angle(Vec3::X, -90.0f32.to_radians()),
-                    ),
+                    Isometry3d::from_translation(global_transform.translation()),
                     2.5,
                 );
                 gizmos.arrow(
                     global_transform.translation(),
-                    global_transform.translation() + direction * Vec3::NEG_Y * 2.5,
+                    global_transform.translation() + axis * 2.5,
                     palettes::tailwind::RED_700,
                 );
             }
-            #[cfg(feature = "alt_rotate_continuous")]
+            #[cfg(all(feature = "adr285", feature = "alt_rotate_continuous"))]
             Some(Mode::RotateContinuous(data)) => {
                 let direction = data.direction.unwrap();
                 let (axis, _) = direction.to_bevy_normalized().to_axis_angle();
