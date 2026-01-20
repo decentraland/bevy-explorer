@@ -131,6 +131,7 @@ pub struct HoverEvent {
     pub target_type: HoverTargetType,
     pub distance: f32,
     pub actions: Vec<HoverAction>,
+    pub outside_scene: bool,
 }
 
 #[derive(Event, Clone, Debug, Serialize, Deserialize)]

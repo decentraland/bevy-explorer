@@ -784,6 +784,7 @@ fn handle_hover_stream(
                         in_range: a.in_range,
                     })
                     .collect(),
+                outside_scene: hover_info.outside_scene,
             };
 
             for s in &senders {
@@ -803,6 +804,7 @@ fn handle_hover_stream(
                     target_type: prev_target_type,
                     distance: 0.0,
                     actions: vec![],
+                    outside_scene: false,
                 };
 
                 for s in &senders {

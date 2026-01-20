@@ -4,14 +4,14 @@ use bevy::{
 };
 use common::{
     inputs::InputMap,
-    structs::{HoverAction, HoverInfo, HoverTargetType, ToolTips, TooltipSource},
+    structs::{HoverAction, HoverInfo, HoverTargetType, PrimaryUser, ToolTips, TooltipSource},
 };
 use comms::global_crdt::ForeignPlayer;
 
 use crate::{
     renderer_context::RendererSceneContext,
     update_scene::pointer_results::{IaToCommon, PointerTarget, PointerTargetInfo, PointerTargetType},
-    SceneEntity,
+    ContainerEntity, ContainingScene, SceneEntity,
 };
 use dcl::interface::ComponentPosition;
 use dcl_component::{
@@ -146,11 +146,15 @@ fn generate_hover_info(
     input_map: Res<InputMap>,
     mut hover_info: ResMut<HoverInfo>,
     mut tooltip: ResMut<ToolTips>,
+    container_entities: Query<&ContainerEntity>,
+    containing_scenes: ContainingScene,
+    player: Query<Entity, With<PrimaryUser>>,
 ) {
     // Reset hover info
     hover_info.target_type = None;
     hover_info.distance = 0.0;
     hover_info.actions.clear();
+    hover_info.outside_scene = false;
 
     let mut texts = Vec::default();
 
@@ -168,6 +172,17 @@ fn generate_hover_info(
             PointerTargetType::Avatar => HoverTargetType::Avatar,
         });
         hover_info.distance = distance.0;
+
+        // Determine if player is outside the scene containing the entity
+        // For avatars, they're global so outside_scene is always false
+        if ty != PointerTargetType::Avatar {
+            if let (Ok(player_entity), Ok(container_entity)) =
+                (player.single(), container_entities.get(container))
+            {
+                let player_scenes = containing_scenes.get(player_entity);
+                hover_info.outside_scene = !player_scenes.contains(&container_entity.root);
+            }
+        }
 
         if let Ok(pes) = pointer_events.get(container) {
             for pe in pes.iter() {

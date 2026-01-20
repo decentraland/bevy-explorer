@@ -349,6 +349,7 @@ module.exports.getVoiceStream = async function() {
 //   targetType: HoverTargetType,
 //   distance: number,
 //   actions: HoverAction[],
+//   outsideScene: boolean,  // true if player is outside the scene containing the entity (always false for avatars)
 // }
 module.exports.getHoverStream = async function() {
   const rid = await Deno.core.ops.op_get_hover_stream();

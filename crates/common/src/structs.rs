@@ -264,6 +264,7 @@ pub struct HoverInfo {
     pub target_type: Option<HoverTargetType>,
     pub distance: f32,
     pub actions: Vec<HoverAction>,
+    pub outside_scene: bool,
 }
 
 // web3 authorization chain link
