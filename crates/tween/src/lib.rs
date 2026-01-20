@@ -173,8 +173,11 @@ impl Tween {
                     };
                     let dcl_quat = data.direction.unwrap();
                     let (axis, angle) = dcl_quat.to_bevy_normalized().to_axis_angle();
-                    transform.rotation =
-                        Quat::from_axis_angle(axis, angle + startup_factor + post_startup);
+                    let corrected_axis = Vec3::new(axis.x, -axis.z, -axis.y);
+                    transform.rotation = Quat::from_axis_angle(
+                        corrected_axis,
+                        angle + startup_factor + post_startup,
+                    );
                 }
             }
             _ => {}

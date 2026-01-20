@@ -307,7 +307,10 @@ fn axis_gizmos(mut gizmos: Gizmos, tweens: Query<(&Tween, &GlobalTransform)>) {
             Some(Mode::RotateContinuous(data)) => {
                 let direction = data.direction.unwrap().to_bevy_normalized();
                 gizmos.axes(
-                    Isometry3d::from_translation(global_transform.translation()),
+                    Isometry3d::new(
+                        global_transform.translation(),
+                        Quat::from_axis_angle(Vec3::X, -90.0f32.to_radians()),
+                    ),
                     2.5,
                 );
                 gizmos.arrow(
@@ -319,15 +322,16 @@ fn axis_gizmos(mut gizmos: Gizmos, tweens: Query<(&Tween, &GlobalTransform)>) {
             #[cfg(feature = "alt_rotate_continuous")]
             Some(Mode::RotateContinuous(data)) => {
                 let direction = data.direction.unwrap();
-                let (axis, _) = Quat::from_xyzw(direction.x, direction.y, direction.z, direction.w)
-                    .to_axis_angle();
+                let (axis, _) = direction.to_bevy_normalized().to_axis_angle();
+                let correction = Quat::from_axis_angle(Vec3::X, -90.0f32.to_radians());
+                let corrected_axis = Vec3::new(axis.x, -axis.z, -axis.y);
                 gizmos.axes(
-                    Isometry3d::from_translation(global_transform.translation()),
+                    Isometry3d::new(global_transform.translation(), correction),
                     2.5,
                 );
                 gizmos.arrow(
                     global_transform.translation(),
-                    global_transform.translation() + axis * 2.5,
+                    global_transform.translation() + corrected_axis * 2.5,
                     palettes::tailwind::RED_700,
                 );
             }
