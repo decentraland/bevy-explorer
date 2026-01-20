@@ -254,7 +254,7 @@ pub enum HoverTargetType {
 pub struct HoverEventInfo {
     pub button: u32,             // InputAction as u32
     pub hover_text: String,
-    pub hide_feedback: bool,
+    pub show_feedback: bool,
     pub show_highlight: bool,
     pub max_distance: f32,
 }

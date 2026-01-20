@@ -340,7 +340,7 @@ module.exports.getVoiceStream = async function() {
 // type HoverEventInfo = {
 //   button: number,        // InputAction (0-13)
 //   hoverText: string,
-//   hideFeedback: boolean,
+//   showFeedback: boolean,
 //   showHighlight: boolean,
 //   maxDistance: number,
 // }

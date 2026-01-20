@@ -149,6 +149,7 @@ fn generate_hover_info(
     container_entities: Query<&ContainerEntity>,
     containing_scenes: ContainingScene,
     player: Query<Entity, With<PrimaryUser>>,
+    mut prev_scene_root: Local<Option<Entity>>,
 ) {
     // Reset hover info
     hover_info.target_type = None;
@@ -181,7 +182,10 @@ fn generate_hover_info(
             {
                 let player_scenes = containing_scenes.get(player_entity);
                 hover_info.outside_scene = !player_scenes.contains(&container_entity.root);
+                *prev_scene_root = Some(container_entity.root);
             }
+        } else {
+            *prev_scene_root = None;
         }
 
         if let Ok(pes) = pointer_events.get(container) {
@@ -189,7 +193,7 @@ fn generate_hover_info(
                 if let Some(info) = pe.event_info.as_ref() {
                     let action = info.button();
                     let max_distance = info.max_distance.unwrap_or(10.0);
-                    let hide_feedback = !info.show_feedback.unwrap_or(true);
+                    let show_feedback = info.show_feedback.unwrap_or(true);
                     let hover_text = info.hover_text.clone().unwrap_or_default();
 
                     // Add to HoverInfo
@@ -198,14 +202,14 @@ fn generate_hover_info(
                         event_info: HoverEventInfo {
                             button: action as u32,
                             hover_text: hover_text.clone(),
-                            hide_feedback,
+                            show_feedback,
                             show_highlight: true, // not in proto, default to true
                             max_distance,
                         },
                     });
 
                     // Add to texts for ToolTips (backward compatibility)
-                    if !hide_feedback && !hover_text.is_empty() {
+                    if show_feedback && !hover_text.is_empty() {
                         let binding = input_binding_string(&input_map, action);
                         let in_range = max_distance > distance.0;
                         texts.push((format!("{binding} : {hover_text}"), in_range));
@@ -219,6 +223,13 @@ fn generate_hover_info(
                 .collect::<HashSet<_>>()
                 .into_iter()
                 .collect();
+        }
+    } else if let Some(scene_root) = *prev_scene_root {
+        // No target, but we had a previous scene - calculate if player is outside that scene
+        // This is needed for exit events (entered: false) to report the correct outside_scene value
+        if let Ok(player_entity) = player.single() {
+            let player_scenes = containing_scenes.get(player_entity);
+            hover_info.outside_scene = !player_scenes.contains(&scene_root);
         }
     }
 

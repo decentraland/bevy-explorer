@@ -782,7 +782,7 @@ fn handle_hover_stream(
                         event_info: HoverEventInfo {
                             button: a.event_info.button,
                             hover_text: a.event_info.hover_text.clone(),
-                            hide_feedback: a.event_info.hide_feedback,
+                            show_feedback: a.event_info.show_feedback,
                             show_highlight: a.event_info.show_highlight,
                             max_distance: a.event_info.max_distance,
                         },
@@ -800,6 +800,7 @@ fn handle_hover_stream(
                 common::structs::HoverTargetType::Ui => HoverTargetType::Ui,
                 common::structs::HoverTargetType::Avatar => HoverTargetType::Avatar,
             });
+            prev_state.outside_scene = hover_info.outside_scene;
         } else if prev_state.had_target {
             // Exited - send event with entered=false
             if let Some(prev_target_type) = prev_state.target_type {
@@ -808,7 +809,7 @@ fn handle_hover_stream(
                     target_type: prev_target_type,
                     distance: 0.0,
                     actions: vec![],
-                    outside_scene: false,
+                    outside_scene: prev_state.outside_scene,
                 };
 
                 for s in &senders {
