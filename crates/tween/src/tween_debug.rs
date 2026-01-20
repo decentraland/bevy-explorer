@@ -78,7 +78,7 @@ fn new_tween(
             },
             ChildOf(*tween_debug_plane),
             TweenDebugPlate(entity),
-            BackgroundColor(Color::BLACK.with_alpha(0.5)),
+            BackgroundColor(Color::BLACK.with_alpha(0.75)),
         ))
         .id();
     match &tween.0.mode {
@@ -198,22 +198,26 @@ fn tween_dropped(
 }
 
 fn update_plate_position(
+    mut commands: Commands,
     primary_camera: Single<(&Camera, &GlobalTransform), With<PrimaryCamera>>,
     tweens: Query<(&GlobalTransform, &TweenedEntity), With<Tween>>,
     mut tween_plates: Query<(&mut Node, &ComputedNode), With<TweenDebugPlate>>,
 ) {
     let (camera, camera_global_transform) = primary_camera.into_inner();
     for (global_transform, tweened_entity) in tweens {
-        let Ok((mut node, computed_node)) = tween_plates.get_mut(*tweened_entity.collection())
-        else {
+        let tween_debug_plate_entity = *tweened_entity.collection();
+        let Ok((mut node, computed_node)) = tween_plates.get_mut(tween_debug_plate_entity) else {
             unreachable!("TweenDebugPlate without Node.");
         };
-        if let Ok(viewport_position) =
-            camera.world_to_viewport(camera_global_transform, global_transform.translation())
+        if let Ok(viewport_position) = camera
+            .world_to_viewport_with_depth(camera_global_transform, global_transform.translation())
         {
             node.display = Display::Grid;
             node.left = Val::Px(viewport_position.x - computed_node.content_size.x / 2.);
             node.top = Val::Px(viewport_position.y - computed_node.content_size.y / 2.);
+            commands
+                .entity(tween_debug_plate_entity)
+                .insert(GlobalZIndex(-viewport_position.z as i32));
         } else {
             node.display = Display::None;
         }
