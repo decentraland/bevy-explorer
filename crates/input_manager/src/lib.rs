@@ -763,8 +763,13 @@ fn handle_hover_stream(
             common::structs::HoverTargetType::Avatar => HoverTargetType::Avatar,
         });
 
-    // Send events on enter/exit
-    if target_changed {
+    // Check if outside_scene changed while still hovering the same target
+    let outside_scene_changed = has_target
+        && !target_changed
+        && prev_state.outside_scene != hover_info.outside_scene;
+
+    // Send events on enter/exit or when outside_scene changes
+    if target_changed || outside_scene_changed {
         if let Some(target_type) = hover_info.target_type {
             let event = HoverEvent {
                 entered: true,
