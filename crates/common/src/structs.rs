@@ -250,7 +250,7 @@ pub enum HoverTargetType {
     Avatar,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HoverEventInfo {
     pub button: u32,             // InputAction as u32
     pub hover_text: String,
@@ -259,10 +259,11 @@ pub struct HoverEventInfo {
     pub max_distance: f32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HoverAction {
     pub event_type: u32,   // PointerEventType as u32
     pub event_info: HoverEventInfo,
+    pub too_far: bool,     // true if distance > max_distance
 }
 
 #[derive(Resource, Default, Debug, Clone)]

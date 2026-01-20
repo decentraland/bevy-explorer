@@ -129,6 +129,7 @@ pub struct HoverEventInfo {
 pub struct HoverAction {
     pub event_type: u32,
     pub event_info: HoverEventInfo,
+    pub too_far: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

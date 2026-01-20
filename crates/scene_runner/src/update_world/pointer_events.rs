@@ -197,6 +197,7 @@ fn generate_hover_info(
                     let hover_text = info.hover_text.clone().unwrap_or_default();
 
                     // Add to HoverInfo
+                    let too_far = distance.0 > max_distance;
                     hover_info.actions.push(HoverAction {
                         event_type: pe.event_type() as u32,
                         event_info: HoverEventInfo {
@@ -206,6 +207,7 @@ fn generate_hover_info(
                             show_highlight: true, // not in proto, default to true
                             max_distance,
                         },
+                        too_far,
                     });
 
                     // Add to texts for ToolTips (backward compatibility)

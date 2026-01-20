@@ -347,6 +347,7 @@ module.exports.getVoiceStream = async function() {
 // type HoverAction = {
 //   eventType: number,     // PointerEventType (0-6)
 //   eventInfo: HoverEventInfo,
+//   tooFar: boolean,       // true if distance > maxDistance
 // }
 // type HoverEvent = {
 //   entered: boolean,

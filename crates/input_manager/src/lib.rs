@@ -724,6 +724,7 @@ struct PreviousHoverState {
     had_target: bool,
     target_type: Option<HoverTargetType>,
     outside_scene: bool,
+    actions: Vec<common::structs::HoverAction>,
 }
 
 fn handle_hover_stream(
@@ -768,8 +769,13 @@ fn handle_hover_stream(
         && !target_changed
         && prev_state.outside_scene != hover_info.outside_scene;
 
-    // Send events on enter/exit or when outside_scene changes
-    if target_changed || outside_scene_changed {
+    // Check if any action's too_far changed while still hovering the same target
+    let actions_changed = has_target
+        && !target_changed
+        && prev_state.actions != hover_info.actions;
+
+    // Send events on enter/exit, when outside_scene changes, or when actions change (e.g., too_far)
+    if target_changed || outside_scene_changed || actions_changed {
         if let Some(target_type) = hover_info.target_type {
             let event = HoverEvent {
                 entered: true,
@@ -791,6 +797,7 @@ fn handle_hover_stream(
                             show_highlight: a.event_info.show_highlight,
                             max_distance: a.event_info.max_distance,
                         },
+                        too_far: a.too_far,
                     })
                     .collect(),
                 outside_scene: hover_info.outside_scene,
@@ -806,6 +813,7 @@ fn handle_hover_stream(
                 common::structs::HoverTargetType::Avatar => HoverTargetType::Avatar,
             });
             prev_state.outside_scene = hover_info.outside_scene;
+            prev_state.actions = hover_info.actions.clone();
         } else if prev_state.had_target {
             // Exited - send event with entered=false
             if let Some(prev_target_type) = prev_state.target_type {
@@ -822,6 +830,7 @@ fn handle_hover_stream(
                 }
             }
             prev_state.target_type = None;
+            prev_state.actions.clear();
         }
     }
 
