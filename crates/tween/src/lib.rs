@@ -267,7 +267,7 @@ pub fn update_tween(
     }
 }
 
-type DiscreteTweenComponents<'a> = (
+type TweenUpdateComponents<'a> = (
     Entity,
     &'a ContainerEntity,
     &'a ChildOf,
@@ -279,7 +279,7 @@ type DiscreteTweenComponents<'a> = (
 
 fn discrete_tween_update(
     commands: &mut Commands,
-    (ent, scene_ent, parent, tween, mut transform, state, maybe_h_mat): DiscreteTweenComponents,
+    (ent, scene_ent, parent, tween, mut transform, state, maybe_h_mat): TweenUpdateComponents,
     mut scene: Mut<RendererSceneContext>,
     parents: Query<&SceneEntity>,
     materials: &mut Assets<SceneMaterial>,
@@ -348,7 +348,7 @@ fn discrete_tween_update(
 #[cfg(feature = "adr285")]
 fn continuous_tween_update(
     commands: &mut Commands,
-    (ent, scene_ent, parent, tween, mut transform, state, maybe_h_mat): DiscreteTweenComponents,
+    (ent, scene_ent, parent, tween, mut transform, state, maybe_h_mat): TweenUpdateComponents,
     mut scene: Mut<RendererSceneContext>,
     parents: Query<&SceneEntity>,
     materials: &mut Assets<SceneMaterial>,
