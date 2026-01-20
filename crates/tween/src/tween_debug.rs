@@ -306,6 +306,38 @@ fn plate_display_row<T: Debug>(
 fn axis_gizmos(mut gizmos: Gizmos, tweens: Query<(&Tween, &GlobalTransform)>) {
     for (tween, global_transform) in tweens {
         match &tween.0.mode {
+            Some(Mode::Move(data)) => {
+                gizmos.arrow(
+                    global_transform.translation(),
+                    data.end.unwrap().world_vec_to_vec3(),
+                    palettes::tailwind::RED_700,
+                );
+            }
+            Some(Mode::Rotate(data)) => {
+                let start = global_transform.rotation();
+                let end = data.end.unwrap().to_bevy_normalized();
+                let angle = end.angle_between(start);
+                gizmos.arc_3d(
+                    angle,
+                    5.,
+                    Isometry3d::from_translation(global_transform.translation()),
+                    palettes::tailwind::RED_700,
+                );
+            }
+            Some(Mode::Scale(data)) => {
+                let start = global_transform.scale().length().sqrt();
+                let end = data.end.unwrap().world_vec_to_vec3().length().sqrt();
+                gizmos.sphere(
+                    Isometry3d::from_translation(global_transform.translation()),
+                    start,
+                    palettes::tailwind::RED_300,
+                );
+                gizmos.sphere(
+                    Isometry3d::from_translation(global_transform.translation()),
+                    end,
+                    palettes::tailwind::RED_700,
+                );
+            }
             #[cfg(all(feature = "adr285", not(feature = "alt_rotate_continuous")))]
             Some(Mode::RotateContinuous(data)) => {
                 let dcl_quat = data.direction.unwrap();
