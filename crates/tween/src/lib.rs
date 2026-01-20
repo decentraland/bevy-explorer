@@ -28,6 +28,13 @@ impl From<PbTween> for Tween {
 }
 
 impl Tween {
+    fn is_continuous(&self) -> bool {
+        match self.0.mode {
+            Some(Mode::RotateContinuous(_)) => true,
+            _ => false,
+        }
+    }
+
     fn apply(
         &self,
         time: f32,
@@ -133,6 +140,43 @@ impl Tween {
                     }
                 }
             }
+            Some(Mode::RotateContinuous(data)) => {
+                #[cfg(not(feature = "alt_rotate_continuous"))]
+                {
+                    // The rotation is desired.
+                    // The speed and time is provided.
+                    // The rotation is then calculated by integrating the
+                    // speed function.
+                    // The integral of a constant speed is `speed * time`.
+                    let startup_factor = if self.0.duration > 0. { todo!() } else { 0. };
+                    let post_startup = if time > self.0.duration {
+                        ((time - self.0.duration) / 1000.) * data.speed.to_radians()
+                    } else {
+                        0.
+                    };
+                    let dcl_quat = data.direction.unwrap().to_bevy_normalized();
+                    let axis = dcl_quat * Vec3::NEG_Y;
+                    transform.rotation = Quat::from_axis_angle(axis, startup_factor + post_startup);
+                }
+                #[cfg(feature = "alt_rotate_continuous")]
+                {
+                    // The rotation is desired.
+                    // The speed and time is provided.
+                    // The rotation is then calculated by integrating the
+                    // speed function.
+                    // The integral of a constant speed is `speed * time`.
+                    let startup_factor = if self.0.duration > 0. { todo!() } else { 0. };
+                    let post_startup = if time > self.0.duration {
+                        ((time - self.0.duration) / 1000.) * data.speed.to_radians()
+                    } else {
+                        0.
+                    };
+                    let dcl_quat = data.direction.unwrap();
+                    let (axis, angle) = dcl_quat.to_bevy_normalized().to_axis_angle();
+                    transform.rotation =
+                        Quat::from_axis_angle(axis, angle + startup_factor + post_startup);
+                }
+            }
             _ => {}
         }
     }
@@ -175,69 +219,173 @@ pub fn update_tween(
     materials: ResMut<Assets<SceneMaterial>>,
 ) {
     let materials = materials.into_inner();
-    for (ent, scene_ent, parent, tween, mut transform, state, maybe_h_mat) in tweens.iter_mut() {
-        let playing = tween.0.playing.unwrap_or(true);
-        let delta = if playing {
-            time.delta_secs() * 1000.0 / tween.0.duration
-        } else {
-            0.0
+    for (ent, scene_ent, parent, tween, transform, state, maybe_h_mat) in tweens.iter_mut() {
+        let Ok(scene) = scenes.get_mut(scene_ent.root) else {
+            continue;
         };
 
-        let updated_time = if tween.is_changed() {
-            tween.0.current_time.unwrap_or(0.0)
-        } else {
-            state
-                .as_ref()
-                .map(|state| state.0.current_time + delta)
-                .unwrap_or(0.0)
-                .min(1.0)
-        };
-
-        let updated_status = if playing && updated_time == 1.0 {
-            TweenStateStatus::TsCompleted
-        } else if playing {
-            TweenStateStatus::TsActive
-        } else {
-            TweenStateStatus::TsPaused
-        };
-
-        let updated_state = TweenState(PbTweenState {
-            state: updated_status as i32,
-            current_time: updated_time,
-        });
-
-        if state.as_deref() != Some(&updated_state) {
-            let Ok(mut scene) = scenes.get_mut(scene_ent.root) else {
-                continue;
-            };
-
-            scene.update_crdt(
-                SceneComponentId::TWEEN_STATE,
-                CrdtType::LWW_ENT,
-                scene_ent.container_id,
-                &updated_state.0,
+        if tween.is_continuous() {
+            continuous_tween_update(
+                &mut commands,
+                (ent, scene_ent, parent, tween, transform, state, maybe_h_mat),
+                scene,
+                parents,
+                materials,
+                &time,
             );
-
-            if let Some(mut state) = state {
-                state.0 = updated_state.0;
-            } else {
-                commands.entity(ent).try_insert(updated_state);
-            }
-
-            tween.apply(updated_time, &mut transform, maybe_h_mat, materials);
-
-            let Ok(parent) = parents.get(parent.parent()) else {
-                warn!("no parent for tweened ent");
-                continue;
-            };
-
-            scene.update_crdt(
-                SceneComponentId::TRANSFORM,
-                CrdtType::LWW_ENT,
-                scene_ent.container_id,
-                &DclTransformAndParent::from_bevy_transform_and_parent(&transform, parent.id),
+        } else {
+            discrete_tween_update(
+                &mut commands,
+                (ent, scene_ent, parent, tween, transform, state, maybe_h_mat),
+                scene,
+                parents,
+                materials,
+                &time,
             );
         }
+    }
+}
+
+type DiscreteTweenComponents<'a> = (
+    Entity,
+    &'a ContainerEntity,
+    &'a ChildOf,
+    Ref<'a, Tween>,
+    Mut<'a, Transform>,
+    Option<Mut<'a, TweenState>>,
+    Option<&'a MeshMaterial3d<SceneMaterial>>,
+);
+
+fn discrete_tween_update(
+    commands: &mut Commands,
+    (ent, scene_ent, parent, tween, mut transform, state, maybe_h_mat): DiscreteTweenComponents,
+    mut scene: Mut<RendererSceneContext>,
+    parents: Query<&SceneEntity>,
+    materials: &mut Assets<SceneMaterial>,
+    time: &Time,
+) {
+    let playing = tween.0.playing.unwrap_or(true);
+    let delta = if playing {
+        time.delta_secs() * 1000.0 / tween.0.duration
+    } else {
+        0.0
+    };
+
+    let updated_time = if tween.is_changed() {
+        tween.0.current_time.unwrap_or(0.0)
+    } else {
+        state
+            .as_ref()
+            .map(|state| state.0.current_time + delta)
+            .unwrap_or(0.0)
+            .min(1.0)
+    };
+
+    let updated_status = if playing && updated_time == 1.0 {
+        TweenStateStatus::TsCompleted
+    } else if playing {
+        TweenStateStatus::TsActive
+    } else {
+        TweenStateStatus::TsPaused
+    };
+
+    let updated_state = TweenState(PbTweenState {
+        state: updated_status as i32,
+        current_time: updated_time,
+    });
+
+    if state.as_deref() != Some(&updated_state) {
+        scene.update_crdt(
+            SceneComponentId::TWEEN_STATE,
+            CrdtType::LWW_ENT,
+            scene_ent.container_id,
+            &updated_state.0,
+        );
+
+        if let Some(mut state) = state {
+            state.0 = updated_state.0;
+        } else {
+            commands.entity(ent).try_insert(updated_state);
+        }
+
+        tween.apply(updated_time, &mut transform, maybe_h_mat, materials);
+
+        let Ok(parent) = parents.get(parent.parent()) else {
+            warn!("no parent for tweened ent");
+            return;
+        };
+
+        scene.update_crdt(
+            SceneComponentId::TRANSFORM,
+            CrdtType::LWW_ENT,
+            scene_ent.container_id,
+            &DclTransformAndParent::from_bevy_transform_and_parent(&transform, parent.id),
+        );
+    }
+}
+
+fn continuous_tween_update(
+    commands: &mut Commands,
+    (ent, scene_ent, parent, tween, mut transform, state, maybe_h_mat): DiscreteTweenComponents,
+    mut scene: Mut<RendererSceneContext>,
+    parents: Query<&SceneEntity>,
+    materials: &mut Assets<SceneMaterial>,
+    time: &Time,
+) {
+    let playing = tween.0.playing.unwrap_or(true);
+    let delta = if playing {
+        time.delta_secs() * 1000.
+    } else {
+        0.0
+    };
+
+    let updated_time = if tween.is_changed() {
+        tween.0.current_time.unwrap_or(0.0)
+    } else {
+        state
+            .as_ref()
+            .map(|state| state.0.current_time + delta)
+            .unwrap_or(0.0)
+    };
+
+    let updated_status = if playing {
+        TweenStateStatus::TsActive
+    } else {
+        TweenStateStatus::TsPaused
+    };
+
+    let updated_state = TweenState(PbTweenState {
+        state: updated_status as i32,
+        current_time: updated_time,
+    });
+
+    if state.as_deref() != Some(&updated_state) {
+        scene.update_crdt(
+            SceneComponentId::TWEEN_STATE,
+            CrdtType::LWW_ENT,
+            scene_ent.container_id,
+            &updated_state.0,
+        );
+
+        if let Some(mut state) = state {
+            state.0 = updated_state.0;
+        } else {
+            commands.entity(ent).try_insert(updated_state);
+        }
+
+        tween.apply(updated_time, &mut transform, maybe_h_mat, materials);
+
+        let Ok(parent) = parents.get(parent.parent()) else {
+            warn!("no parent for tweened ent");
+            return;
+        };
+
+        scene.update_crdt(
+            SceneComponentId::TRANSFORM,
+            CrdtType::LWW_ENT,
+            scene_ent.container_id,
+            &DclTransformAndParent::from_bevy_transform_and_parent(&transform, parent.id),
+        );
     }
 }
 

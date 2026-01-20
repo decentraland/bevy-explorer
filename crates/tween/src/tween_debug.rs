@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use bevy::{
+    color::palettes,
     prelude::*,
     text::{FontSmoothing, LineHeight},
 };
@@ -32,6 +33,11 @@ impl Plugin for TweenDebugPlugin {
 
             app.add_observer(tween_picking);
             app.add_observer(tween_out);
+
+            app.add_systems(
+                PostUpdate,
+                axis_gizmos.after(TransformSystem::TransformPropagate),
+            );
         } else {
             error!("MeshPickingPlugin not added to the app. Tween picking systems are disabled.")
         }
@@ -292,4 +298,40 @@ fn plate_display_row<T: Debug>(
         DEFAULT_FONT,
         ChildOf(parent),
     ));
+}
+
+fn axis_gizmos(mut gizmos: Gizmos, tweens: Query<(&Tween, &GlobalTransform)>) {
+    for (tween, global_transform) in tweens {
+        match &tween.0.mode {
+            #[cfg(not(feature = "alt_rotate_continuous"))]
+            Some(Mode::RotateContinuous(data)) => {
+                let direction = data.direction.unwrap().to_bevy_normalized();
+                gizmos.axes(
+                    Isometry3d::from_translation(global_transform.translation()),
+                    2.5,
+                );
+                gizmos.arrow(
+                    global_transform.translation(),
+                    global_transform.translation() + direction * Vec3::NEG_Y * 2.5,
+                    palettes::tailwind::RED_700,
+                );
+            }
+            #[cfg(feature = "alt_rotate_continuous")]
+            Some(Mode::RotateContinuous(data)) => {
+                let direction = data.direction.unwrap();
+                let (axis, _) = Quat::from_xyzw(direction.x, direction.y, direction.z, direction.w)
+                    .to_axis_angle();
+                gizmos.axes(
+                    Isometry3d::from_translation(global_transform.translation()),
+                    2.5,
+                );
+                gizmos.arrow(
+                    global_transform.translation(),
+                    global_transform.translation() + axis * 2.5,
+                    palettes::tailwind::RED_700,
+                );
+            }
+            _ => {}
+        }
+    }
 }

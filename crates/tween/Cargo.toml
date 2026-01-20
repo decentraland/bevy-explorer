@@ -5,6 +5,7 @@ edition = "2021"
 
 [features]
 tween_debug = []
+alt_rotate_continuous = []
 
 [lib]
 
