@@ -1192,7 +1192,14 @@ fn debug_modifiers(
                 let path = if modifier.path.is_empty() {
                     None
                 } else {
-                    Some(modifier.path.as_str().split('/').collect::<Vec<_>>())
+                    Some(
+                        modifier
+                            .path
+                            .as_str()
+                            .split('/')
+                            .filter(|segment| !segment.is_empty())
+                            .collect::<Vec<_>>(),
+                    )
                 };
 
                 (path, (modifier.cast_shadows, &modifier.material))
@@ -1221,7 +1228,10 @@ fn debug_modifiers(
                 continue;
             };
 
-            let node_path_components = path.split('/').collect::<Vec<_>>();
+            let node_path_components = path
+                .split('/')
+                .filter(|segment| !segment.is_empty())
+                .collect::<Vec<_>>();
 
             commands.entity(*child).try_remove::<NotShadowCaster>();
 
