@@ -6224,6 +6224,7 @@ dependencies = [
  "bevy",
  "common",
  "platform",
+ "serde_json",
  "strum 0.27.1",
  "system_bridge",
  "tokio",

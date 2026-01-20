@@ -252,7 +252,7 @@ pub enum HoverTargetType {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HoverEventInfo {
-    pub input_action: u32,       // InputAction as u32
+    pub button: u32,             // InputAction as u32
     pub hover_text: String,
     pub hide_feedback: bool,
     pub show_highlight: bool,

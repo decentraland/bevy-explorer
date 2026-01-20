@@ -196,7 +196,7 @@ fn generate_hover_info(
                     hover_info.actions.push(HoverAction {
                         event_type: pe.event_type() as u32,
                         event_info: HoverEventInfo {
-                            input_action: action as u32,
+                            button: action as u32,
                             hover_text: hover_text.clone(),
                             hide_feedback,
                             show_highlight: true, // not in proto, default to true

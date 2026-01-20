@@ -291,6 +291,20 @@ pub async fn op_get_bindings(
     })
 }
 
+pub async fn op_get_input_bindings_map(
+    state: Rc<RefCell<impl State>>,
+) -> Result<std::collections::HashMap<u32, String>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetInputBindingsMap(sx))
+        .unwrap();
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
 pub async fn op_set_bindings(
     state: Rc<RefCell<impl State>>,
     bindings: JsBindingsData,

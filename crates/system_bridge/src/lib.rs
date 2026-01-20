@@ -117,7 +117,7 @@ impl TryFrom<u32> for HoverTargetType {
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct HoverEventInfo {
-    pub input_action: u32,
+    pub button: u32,
     pub hover_text: String,
     pub hide_feedback: bool,
     pub show_highlight: bool,
@@ -160,6 +160,7 @@ pub enum SystemApi {
     SetAvatar(SetAvatarData, RpcResultSender<Result<u32, String>>),
     GetNativeInput(RpcResultSender<InputIdentifier>),
     GetBindings(RpcResultSender<BindingsData>),
+    GetInputBindingsMap(RpcResultSender<std::collections::HashMap<u32, String>>),
     SetBindings(BindingsData, RpcResultSender<()>),
     LiveSceneInfo(RpcResultSender<Vec<LiveSceneInfo>>),
     GetHomeScene(RpcResultSender<HomeScene>),

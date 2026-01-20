@@ -138,6 +138,13 @@ module.exports.getInputBindings = async function() {
     return await Deno.core.ops.op_get_bindings()
 }
 
+// get input bindings as a simple map
+// -> { [inputAction: number]: string }
+// e.g. { 0: "Mouse0", 1: "KeyE", 2: "KeyF", ... }
+module.exports.getInputBindingsMap = async function() {
+    return await Deno.core.ops.op_get_input_bindings_map()
+}
+
 // set current key bindings
 // arg: {
 //   bindings: (string, string[])[]
@@ -338,7 +345,7 @@ module.exports.getVoiceStream = async function() {
 // HoverTargetType: 0 = World, 1 = Ui, 2 = Avatar
 // PointerEventType: 0 = PET_UP, 1 = PET_DOWN, 2 = PET_HOVER_ENTER, 3 = PET_HOVER_LEAVE, 4 = PET_DRAG_LOCKED, 5 = PET_DRAG, 6 = PET_DRAG_END
 // type HoverEventInfo = {
-//   inputAction: number,   // InputAction (0-13)
+//   button: number,        // InputAction (0-13)
 //   hoverText: string,
 //   hideFeedback: boolean,
 //   showHighlight: boolean,

@@ -129,6 +129,11 @@ pub async fn op_get_bindings(state: &WorkerContext) -> Result<JsValue, WasmError
 }
 
 #[wasm_bindgen]
+pub async fn op_get_input_bindings_map(state: &WorkerContext) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_get_input_bindings_map(state.rc()).await)
+}
+
+#[wasm_bindgen]
 pub async fn op_set_bindings(state: &WorkerContext, bindings: JsValue) -> Result<(), WasmError> {
     serde_parse!(bindings);
     dcl::js::system_api::op_set_bindings(state.rc(), bindings)

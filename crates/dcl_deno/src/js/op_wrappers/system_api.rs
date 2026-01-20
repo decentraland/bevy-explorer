@@ -34,6 +34,7 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_set_avatar(),
             op_native_input(),
             op_get_bindings(),
+            op_get_input_bindings_map(),
             op_set_bindings(),
             op_console_command(),
             op_live_scene_info(),
@@ -172,6 +173,14 @@ pub async fn op_native_input(state: Rc<RefCell<OpState>>) -> String {
 #[serde]
 pub async fn op_get_bindings(state: Rc<RefCell<OpState>>) -> Result<JsBindingsData, anyhow::Error> {
     dcl::js::system_api::op_get_bindings(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_input_bindings_map(
+    state: Rc<RefCell<OpState>>,
+) -> Result<std::collections::HashMap<u32, String>, anyhow::Error> {
+    dcl::js::system_api::op_get_input_bindings_map(state).await
 }
 
 #[op2(async)]
