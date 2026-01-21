@@ -1,7 +1,7 @@
 #[cfg(feature = "tween_debug")]
 mod tween_debug;
 
-#[cfg(all(feature = "adr285", not(feature = "alt_rotate_continuous")))]
+#[cfg(feature = "adr285")]
 use std::f32::consts::FRAC_2_PI;
 
 use bevy::prelude::*;
@@ -150,44 +150,29 @@ impl Tween {
             }
             #[cfg(feature = "adr285")]
             Some(Mode::RotateContinuous(data)) => {
-                #[cfg(not(feature = "alt_rotate_continuous"))]
-                {
-                    // The rotation is desired.
-                    // The speed and time is provided.
-                    // The rotation is then calculated by integrating the
-                    // speed function.
-                    // The integral of a constant speed is `speed * time`.
-                    let startup_factor = if self.0.duration > 0. { todo!() } else { 0. };
-                    let post_startup = if time > self.0.duration {
-                        ((time - self.0.duration) / 1000.) * data.speed.to_radians()
-                    } else {
-                        0.
-                    };
+                // The rotation is desired.
+                // The speed and time is provided.
+                // The rotation is then calculated by integrating the
+                // speed function.
+                // The integral of a constant speed is `speed * time`.
+                let startup_factor = if self.0.duration > 0. { todo!() } else { 0. };
+                let post_startup = if time > self.0.duration {
+                    ((time - self.0.duration) / 1000.) * data.speed.to_radians()
+                } else {
+                    0.
+                };
+                let axis = if cfg!(feature = "alt_rotate_continuous") {
+                    let dcl_quat = data.direction.unwrap();
+                    let (axis, _) = dcl_quat.to_bevy_normalized().to_axis_angle();
+                    axis
+                } else {
                     let dcl_quat = data.direction.unwrap();
                     // +Z forward to Bevy's -Z forward
                     let quat =
                         dcl_quat.to_bevy_normalized() * Quat::from_axis_angle(Vec3::Y, FRAC_2_PI);
-                    let axis = quat * Vec3::NEG_Y;
-                    transform.rotation = Quat::from_axis_angle(axis, startup_factor + post_startup);
-                }
-                #[cfg(feature = "alt_rotate_continuous")]
-                {
-                    // The rotation is desired.
-                    // The speed and time is provided.
-                    // The rotation is then calculated by integrating the
-                    // speed function.
-                    // The integral of a constant speed is `speed * time`.
-                    let startup_factor = if self.0.duration > 0. { todo!() } else { 0. };
-                    let post_startup = if time > self.0.duration {
-                        ((time - self.0.duration) / 1000.) * data.speed.to_radians()
-                    } else {
-                        0.
-                    };
-                    let dcl_quat = data.direction.unwrap();
-                    let (axis, angle) = dcl_quat.to_bevy_normalized().to_axis_angle();
-                    transform.rotation =
-                        Quat::from_axis_angle(axis, angle + startup_factor + post_startup);
-                }
+                    quat * Vec3::NEG_Y
+                };
+                transform.rotation = Quat::from_axis_angle(axis, startup_factor + post_startup);
             }
             _ => {}
         }
