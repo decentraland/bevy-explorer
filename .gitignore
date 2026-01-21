@@ -12,3 +12,4 @@ config.json
 /deploy/web/package-lock.json
 /deploy/web/node_modules
 .idea
+*.pem
