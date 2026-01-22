@@ -4,6 +4,8 @@ mod tween_debug;
 #[cfg(feature = "adr285")]
 use std::f32::consts::FRAC_2_PI;
 
+#[cfg(feature = "adr285")]
+use bevy::math::Affine2;
 use bevy::prelude::*;
 use common::sets::SceneSets;
 use dcl::interface::{ComponentPosition, CrdtType};
@@ -200,13 +202,17 @@ impl Tween {
 #[derive(Component, Debug, PartialEq)]
 pub struct TweenState(PbTweenState);
 
-/// This caches the initial [`Transform`] of a continuous tween
-/// for calculating the new [`Transform`] in a frame independent
-/// way
-#[derive(Component, Deref)]
+/// Cache of information needed to calculate continuous tweens in a
+/// frame independent way
+#[derive(Component)]
 #[component(immutable)]
 #[cfg(feature = "adr285")]
-struct ContinuousTweenAnchor(Transform);
+struct ContinuousTweenAnchor {
+    ///  Caches the [`Transform`] at the moment [`Tween`] was inserted
+    transform: Transform,
+    ///  Caches the [`StandardMaterial::uv_transform`] at the moment [`Tween`] was inserted
+    uv_transform: Affine2,
+}
 
 pub struct TweenPlugin;
 
@@ -439,7 +445,12 @@ fn continuous_tween_update(
 
         // This weirdness is due to the fact that the continuous tweens
         // in a frame independent way
-        *transform = **continuous_tween_anchor;
+        *transform = continuous_tween_anchor.transform;
+        if let Some(scene_material) =
+            maybe_h_mat.and_then(|mesh_material| materials.get_mut(mesh_material.id()))
+        {
+            scene_material.base.uv_transform = continuous_tween_anchor.uv_transform;
+        }
         tween.apply(updated_time, &mut transform, maybe_h_mat, materials);
 
         let Ok(parent) = parents.get(parent.parent()) else {
@@ -523,17 +534,23 @@ pub fn update_system_tween(
 fn tween_inserted(
     trigger: Trigger<OnInsert, Tween>,
     mut commands: Commands,
-    tweens: Query<(&Tween, &Transform)>,
+    tweens: Query<(&Tween, &Transform, Option<&MeshMaterial3d<SceneMaterial>>)>,
+    scene_materials: Res<Assets<SceneMaterial>>,
 ) {
     let entity = trigger.target();
-    let Ok((tween, transform)) = tweens.get(entity) else {
+    let Ok((tween, transform, maybe_scene_material)) = tweens.get(entity) else {
         unreachable!("Tween must be available.");
     };
 
     if tween.is_continuous() {
-        commands
-            .entity(entity)
-            .insert(ContinuousTweenAnchor(*transform));
+        let uv_transform = maybe_scene_material
+            .and_then(|mesh_material_handle| scene_materials.get(mesh_material_handle.id()))
+            .map(|scene_material| scene_material.base.uv_transform)
+            .unwrap_or_default();
+        commands.entity(entity).insert(ContinuousTweenAnchor {
+            transform: *transform,
+            uv_transform,
+        });
     }
 }
 
