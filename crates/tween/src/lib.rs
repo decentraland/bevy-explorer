@@ -421,14 +421,8 @@ fn continuous_tween_update(
 
         // This weirdness is due to the fact that the continuous tweens
         // in a frame independent way
-        let mut intermediate_transform = Transform::default();
-        tween.apply(
-            updated_time,
-            &mut intermediate_transform,
-            maybe_h_mat,
-            materials,
-        );
-        *transform = **continuous_tween_anchor * intermediate_transform;
+        *transform = **continuous_tween_anchor;
+        tween.apply(updated_time, &mut transform, maybe_h_mat, materials);
 
         let Ok(parent) = parents.get(parent.parent()) else {
             warn!("no parent for tweened ent");
