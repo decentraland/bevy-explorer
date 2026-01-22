@@ -5,7 +5,7 @@ edition = "2021"
 
 [features]
 default = ["adr285"]
-tween_debug = []
+tween_debug = ["bevy/bevy_mesh_picking_backend"]
 adr285 = []
 alt_rotate_continuous = ["adr285"]
 

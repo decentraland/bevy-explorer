@@ -368,6 +368,7 @@ fn main() {
                 })
                 .add_before::<IpfsIoPlugin>(NftReaderPlugin),
         );
+    #[cfg(feature = "bevy_mesh_picking_backend")]
     app.add_plugins(MeshPickingPlugin);
 
     app.add_plugins(EmbedAssetsPlugin);

@@ -27,6 +27,10 @@ hot_reload = ["bevy/file_watcher", "ipfs/hot_reload"]
 livekit = ["av/livekit", "comms/livekit", "system_ui/livekit"]
 ffmpeg = ["av/ffmpeg"]
 social = ["social/social"]
+bevy_mesh_picking_backend = ["bevy/bevy_mesh_picking_backend"]
+
+# Debug features
+tween_debug = ["tween/tween_debug"]
 
 [profile.release]
 codegen-units = 1
@@ -87,7 +91,6 @@ bevy = { version = "0.16.1", default-features = false, features=[
     "bevy_scene",
     "bevy_winit",
     "bevy_core_pipeline",
-    "bevy_mesh_picking_backend",
     "bevy_pbr",
     "bevy_picking",
     "bevy_gltf",
