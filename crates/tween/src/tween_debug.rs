@@ -243,6 +243,28 @@ fn tween_picking(
                     &tween.0.current_time,
                 );
             }
+            #[cfg(feature = "adr285")]
+            Some(Mode::MoveContinuous(data)) => {
+                plate_head(&mut commands, 1, root, "MoveContinuouus");
+                plate_display_row(&mut commands, 2, root, "Duration", &tween.0.duration);
+                plate_display_row(
+                    &mut commands,
+                    3,
+                    root,
+                    "Easing function",
+                    &tween.0.easing_function(),
+                );
+                plate_display_row(&mut commands, 4, root, "Direction", &data.direction);
+                plate_display_row(&mut commands, 5, root, "Speed", &data.speed);
+                plate_display_row(&mut commands, 6, root, "Playing", &tween.0.playing);
+                plate_display_row(
+                    &mut commands,
+                    7,
+                    root,
+                    "Current time",
+                    &tween.0.current_time,
+                );
+            }
             _ => {}
         }
     }
@@ -359,6 +381,16 @@ fn axis_gizmos(mut gizmos: Gizmos, tweens: Query<(&Tween, &GlobalTransform)>) {
                     global_transform.translation(),
                     global_transform.translation() + axis * 2.5,
                     palettes::tailwind::RED_700,
+                );
+            }
+            #[cfg(feature = "adr285")]
+            Some(Mode::MoveContinuous(data)) => {
+                let direction = data.direction.unwrap().world_vec_to_vec3();
+                let speed = data.speed;
+                gizmos.arrow(
+                    global_transform.translation(),
+                    global_transform.translation() + direction * speed,
+                    palettes::tailwind::ORANGE_500,
                 );
             }
             _ => {}
