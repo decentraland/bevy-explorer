@@ -156,8 +156,8 @@ impl Tween {
                 // speed function.
                 // The integral of a constant speed is `speed * time`.
                 let startup_factor = if self.0.duration > 0. { todo!() } else { 0. };
-                let post_startup = if time > self.0.duration {
-                    ((time - self.0.duration) / 1000.) * data.speed.to_radians()
+                let post_startup_factor = if time > self.0.duration {
+                    (time - self.0.duration) / 1000.
                 } else {
                     0.
                 };
@@ -172,7 +172,8 @@ impl Tween {
                         dcl_quat.to_bevy_normalized() * Quat::from_axis_angle(Vec3::Y, FRAC_2_PI);
                     quat * Vec3::NEG_Y
                 };
-                transform.rotation = Quat::from_axis_angle(axis, startup_factor + post_startup);
+                let factor = startup_factor + post_startup_factor;
+                transform.rotation = Quat::from_axis_angle(axis, factor * data.speed.to_radians());
             }
             #[cfg(feature = "adr285")]
             Some(Mode::MoveContinuous(data)) => {
