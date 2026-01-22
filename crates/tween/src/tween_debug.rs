@@ -265,6 +265,29 @@ fn tween_picking(
                     &tween.0.current_time,
                 );
             }
+            #[cfg(feature = "adr285")]
+            Some(Mode::TextureMoveContinuous(data)) => {
+                plate_head(&mut commands, 1, root, "MoveContinuouus");
+                plate_display_row(&mut commands, 2, root, "Duration", &tween.0.duration);
+                plate_display_row(
+                    &mut commands,
+                    3,
+                    root,
+                    "Easing function",
+                    &tween.0.easing_function(),
+                );
+                plate_display_row(&mut commands, 4, root, "Direction", &data.direction);
+                plate_display_row(&mut commands, 5, root, "Speed", &data.speed);
+                plate_display_row(&mut commands, 6, root, "MovementType", &data.movement_type);
+                plate_display_row(&mut commands, 7, root, "Playing", &tween.0.playing);
+                plate_display_row(
+                    &mut commands,
+                    8,
+                    root,
+                    "Current time",
+                    &tween.0.current_time,
+                );
+            }
             _ => {}
         }
     }
@@ -391,6 +414,19 @@ fn axis_gizmos(mut gizmos: Gizmos, tweens: Query<(&Tween, &GlobalTransform)>) {
                     global_transform.translation(),
                     global_transform.translation() + direction * speed,
                     palettes::tailwind::ORANGE_500,
+                );
+            }
+            #[cfg(feature = "adr285")]
+            Some(Mode::TextureMoveContinuous(data)) => {
+                let dcl_vec2 = data.direction.unwrap();
+                // The direction is in pixels, so we scale it down for the gizmo
+                let direction = Vec3::new(dcl_vec2.x, dcl_vec2.y, 0.) / 1024.;
+                let speed = data.speed;
+                gizmos.arrow(
+                    global_transform.translation(),
+                    global_transform.translation()
+                        + global_transform.rotation() * direction * speed,
+                    palettes::tailwind::PURPLE_300,
                 );
             }
             _ => {}
