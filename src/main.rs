@@ -244,6 +244,7 @@ fn main() {
     let no_avatar = args.contains("--no_avatar");
     let no_gltf = args.contains("--no_gltf");
     let no_fog = args.contains("--no_fog");
+    let no_loading_scene_ui = args.contains("--no-loading-scene-ui");
 
     let is_preview = args.contains("--preview");
 
@@ -257,6 +258,7 @@ fn main() {
             permissions: !args.contains("--no-perms"),
             profile: !args.contains("--no-profile"),
             nametags: !args.contains("--no-nametags"),
+            loading_scene: !no_loading_scene_ui,
         });
         app.insert_resource(SystemScene {
             source: Some(source),
@@ -272,6 +274,7 @@ fn main() {
             permissions: true,
             profile: true,
             nametags: true,
+            loading_scene: !no_loading_scene_ui,
         });
     }
 

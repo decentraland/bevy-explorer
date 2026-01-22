@@ -87,6 +87,14 @@ pub struct VoiceMessage {
     pub active: bool,
 }
 
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneLoadingUi {
+    pub visible: bool,
+    pub title: String,
+    pub pending_assets: Option<u32>,
+}
+
 #[derive(Event, Clone, Debug, Serialize, Deserialize)]
 pub enum SystemApi {
     ConsoleCommand(String, Vec<String>, RpcResultSender<Result<String, String>>),
@@ -113,6 +121,7 @@ pub enum SystemApi {
     GetSystemActionStream(RpcStreamSender<SystemActionEvent>),
     GetChatStream(RpcStreamSender<ChatMessage>),
     GetVoiceStream(RpcStreamSender<VoiceMessage>),
+    GetSceneLoadingUiStream(RpcStreamSender<SceneLoadingUi>),
     SendChat(String, String),
     Quit,
     GetPermissionRequestStream(RpcStreamSender<PermissionRequest>),
@@ -155,6 +164,7 @@ pub struct SetPermanentPermission {
     pub allow: Option<PermissionValue>,
 }
 
+// TODO: rename to NativeUiFlags?
 #[derive(Resource)]
 pub struct NativeUi {
     pub login: bool,
@@ -163,6 +173,7 @@ pub struct NativeUi {
     pub permissions: bool,
     pub profile: bool,
     pub nametags: bool,
+    pub loading_scene: bool,
 }
 
 #[derive(Resource)]

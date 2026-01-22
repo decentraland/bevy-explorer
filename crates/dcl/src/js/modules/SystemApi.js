@@ -333,3 +333,23 @@ module.exports.getVoiceStream = async function() {
 
   return streamGenerator();
 }
+
+// get scene loading UI state as a stream
+// type SceneLoadingUi = {
+//   visible: boolean,
+//   title: string,
+//   pendingAssets: number | null,
+// }
+module.exports.getSceneLoadingUIStream = async function() {
+  const rid = await Deno.core.ops.op_get_scene_loading_ui_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_scene_loading_ui_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}
