@@ -61,7 +61,7 @@ impl AssetLoader for FloorImposterLoader {
                 &ImposterLoaderSettings {
                     multisample: true,
                     alpha_blend: 0.5,
-                    immediate_upload: true,
+                    transfer_priority: bevy::asset::RenderAssetTransferPriority::Priority(-1),
                     asset_usages: RenderAssetUsages::RENDER_WORLD,
                     ..Default::default()
                 },

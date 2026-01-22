@@ -563,13 +563,16 @@ fn receive_video_frame(
                     return;
                 };
 
-                if image.width() != frame.width() || image.height() != frame.height() {
-                    debug!("Resizing StreamImage image.");
-                    image.resize(Extent3d {
-                        width: frame.width(),
-                        height: frame.height(),
-                        depth_or_array_layers: 1,
-                    });
+                let target_extent = Extent3d {
+                    width: frame.width().max(16),
+                    height: frame.height().max(16),
+                    depth_or_array_layers: 1,
+                };
+                if image.texture_descriptor.size != target_extent {
+                    debug!("Resizing StreamImage image to {target_extent:?}.");
+                    image.data = None;
+                    image.texture_descriptor.size = target_extent;
+                    image.transfer_priority = bevy::asset::RenderAssetTransferPriority::Immediate;
                 }
                 image.data = Some(frame.rgba_data());
             }

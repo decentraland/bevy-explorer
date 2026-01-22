@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use bevy::{
+    asset::RenderAssetTransferPriority,
     color::palettes::basic,
     diagnostic::FrameCount,
     prelude::*,
@@ -19,7 +20,8 @@ use dcl_component::{
 };
 use ipfs::IpfsResource;
 use scene_runner::{
-    renderer_context::RendererSceneContext, update_world::material::VideoTextureOutput,
+    renderer_context::RendererSceneContext,
+    update_world::material::{update_materials, VideoTextureOutput},
     ContainerEntity,
 };
 
@@ -37,10 +39,11 @@ pub struct VideoPlayerPlugin;
 impl Plugin for VideoPlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, init_ffmpeg);
-        app.add_systems(Update, play_videos);
+        app.add_systems(Update, play_videos.before(update_materials));
         app.add_systems(
             Update,
             rebuild_sinks
+                .after(play_videos)
                 .after(av_player_should_be_playing)
                 .in_set(SceneSets::PostLoop),
         );
@@ -165,7 +168,7 @@ fn av_player_should_be_playing_on_remove(
 
 fn play_videos(
     mut images: ResMut<Assets<Image>>,
-    mut q: Query<(&mut VideoSink, &ContainerEntity)>,
+    mut q: Query<(&mut VideoSink, &ContainerEntity, &mut VideoTextureOutput)>,
     mut scenes: Query<&mut RendererSceneContext>,
     frame: Res<FrameCount>,
 ) {
@@ -181,7 +184,7 @@ fn play_videos(
         }
     }
 
-    for (mut sink, container) in q.iter_mut() {
+    for (mut sink, container, mut output) in q.iter_mut() {
         let mut last_frame_received = None;
         let mut new_state = None;
         loop {
@@ -193,11 +196,18 @@ fn play_videos(
                     length,
                 })) => {
                     debug!("resize");
-                    images.get_mut(&sink.image).unwrap().resize(Extent3d {
+                    let image = images.get_mut(&sink.image).unwrap();
+                    let target_extent = Extent3d {
                         width: width.max(16),
                         height: height.max(16),
                         depth_or_array_layers: 1,
-                    });
+                    };
+                    if image.texture_descriptor.size != target_extent {
+                        debug!("resize {target_extent:?}");
+                        image.data = None;
+                        image.texture_descriptor.size = target_extent;
+                        image.transfer_priority = RenderAssetTransferPriority::Immediate;
+                    }
                     sink.length = Some(length);
                     sink.rate = Some(rate);
                 }
@@ -212,13 +222,19 @@ fn play_videos(
 
         if let Some(frame) = last_frame_received {
             trace!("set frame on {:?}", sink.image);
-            images
-                .get_mut(&sink.image)
-                .unwrap()
-                .data
-                .as_mut()
-                .unwrap()
-                .copy_from_slice(&frame.data());
+
+            let image = images.get_mut(&sink.image).unwrap();
+
+            match &mut image.data {
+                Some(data) => {
+                    data.copy_from_slice(&frame.data());
+                    image.transfer_priority = RenderAssetTransferPriority::Priority(-2);
+                }
+                None => {
+                    image.data = Some(frame.data().into_owned());
+                    output.set_changed();
+                }
+            }
         }
 
         const VIDEO_REPORT_FREQUENCY: f64 = 1.0;
@@ -292,6 +308,7 @@ fn rebuild_sinks(
                 );
                 image.texture_descriptor.usage =
                     TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING;
+                image.transfer_priority = RenderAssetTransferPriority::Immediate;
                 images.add(image)
             }
             Some(texture) => texture.0.clone(),

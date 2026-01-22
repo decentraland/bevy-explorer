@@ -454,7 +454,7 @@ fn init_cache(
 }
 
 #[allow(clippy::type_complexity)]
-fn update_materials(
+pub fn update_materials(
     mut commands: Commands,
     mut new_materials: Query<
         (
@@ -648,7 +648,7 @@ fn update_materials(
         }
     }
 
-    for (ent, touch, source) in sourced.iter() {
+    for (ent, _touch, source) in sourced.iter() {
         let changed = sources
             .get(source.0)
             .map(|(maybe_video, maybe_ui)| {
@@ -658,9 +658,10 @@ fn update_materials(
             .unwrap_or(true);
 
         if changed {
-            commands.entity(ent).insert(RetryMaterial(Vec::default()));
-        } else {
-            materials.get_mut(touch);
+            commands
+                .entity(ent)
+                .insert(RetryMaterial(Vec::default()))
+                .remove::<MaterialSource>();
         }
     }
 }

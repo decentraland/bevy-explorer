@@ -1,4 +1,4 @@
-use bevy::asset::RenderAssetUsages;
+use bevy::asset::{RenderAssetTransferPriority, RenderAssetUsages};
 use bevy::math::{IVec2, Vec3, Vec3Swizzles};
 use bevy::reflect::prelude::*;
 use bevy::render::mesh::{Indices, Mesh, MeshBuilder, PrimitiveTopology};
@@ -90,7 +90,7 @@ impl MeshBuilder for ImposterMesh {
         mesh = mesh
             .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
             .with_inserted_indices(indices);
-        mesh.immediate_upload = true;
+        mesh.transfer_priority = RenderAssetTransferPriority::Priority(-1);
 
         mesh
     }
