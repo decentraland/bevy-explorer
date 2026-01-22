@@ -1598,7 +1598,7 @@ dependencies = [
 [[package]]
 name = "bevy_picking"
 version = "0.16.1"
-source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#dfc0e0ccc469983eb961bce5b1be7765709b8a47"
+source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#11ad9a79a1395e73f809390d019f76cc0d0e7a30"
 dependencies = [
  "bevy_app",
  "bevy_asset",
@@ -1606,6 +1606,7 @@ dependencies = [
  "bevy_ecs",
  "bevy_input",
  "bevy_math",
+ "bevy_mesh",
  "bevy_platform",
  "bevy_reflect",
  "bevy_render",
@@ -1613,6 +1614,7 @@ dependencies = [
  "bevy_transform",
  "bevy_utils",
  "bevy_window",
+ "crossbeam-channel",
  "tracing",
  "uuid 1.17.0",
 ]

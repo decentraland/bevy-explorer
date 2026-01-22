@@ -3,6 +3,12 @@ name = "tween"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["adr285"]
+tween_debug = ["bevy/bevy_mesh_picking_backend"]
+adr285 = []
+alt_rotate_continuous = ["adr285"]
+
 [lib]
 
 [dependencies]
