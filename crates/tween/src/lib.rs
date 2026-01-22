@@ -179,7 +179,7 @@ impl Tween {
             }
             #[cfg(feature = "adr285")]
             Some(Mode::MoveContinuous(data)) => {
-                // A new is desired.
+                // A new position is desired.
                 // The speed and time is provided.
                 // The new position is then calculated by integrating the
                 // speed function.
