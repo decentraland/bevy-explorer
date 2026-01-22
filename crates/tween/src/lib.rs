@@ -194,6 +194,41 @@ impl Tween {
                 transform.translation +=
                     data.direction.unwrap().world_vec_to_vec3() * data.speed * factor;
             }
+            #[cfg(feature = "adr285")]
+            Some(Mode::TextureMoveContinuous(data)) => {
+                let Some(h_mat) = maybe_h_mat else {
+                    return;
+                };
+                let Some(material) = materials.get_mut(h_mat) else {
+                    return;
+                };
+
+                // A new texture uv is desired.
+                // The speed and time is provided.
+                // The new texture uv is then calculated by integrating the
+                // speed function.
+                // The integral of a constant speed is `speed * time`.
+                let startup_factor = if self.0.duration > 0. { todo!() } else { 0. };
+                let post_startup_factor = if time > self.0.duration {
+                    (time - self.0.duration) / 1000.
+                } else {
+                    0.
+                };
+                let factor = startup_factor + post_startup_factor;
+                let dcl_vec2 = data.direction.unwrap();
+                let direction = Vec2::new(dcl_vec2.x, dcl_vec2.y);
+
+                match data.movement_type() {
+                    TextureMovementType::TmtOffset => {
+                        material.base.uv_transform.translation =
+                            direction * data.speed * factor * Vec2::new(1.0, -1.0);
+                    }
+                    TextureMovementType::TmtTiling => {
+                        material.base.uv_transform.matrix2 =
+                            Mat2::from_diagonal(direction * data.speed * factor);
+                    }
+                }
+            }
             _ => {}
         }
     }
