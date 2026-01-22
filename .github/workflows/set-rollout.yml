@@ -13,7 +13,7 @@ jobs:
       - name: Set Rollout - Development
         uses: decentraland/set-rollout-action@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ github.token }}
 
           # Repo deployment info
           ref: ${{ github.event.deployment.ref }}
