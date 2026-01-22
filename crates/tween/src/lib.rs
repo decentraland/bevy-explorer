@@ -174,6 +174,23 @@ impl Tween {
                 };
                 transform.rotation = Quat::from_axis_angle(axis, startup_factor + post_startup);
             }
+            #[cfg(feature = "adr285")]
+            Some(Mode::MoveContinuous(data)) => {
+                // A new is desired.
+                // The speed and time is provided.
+                // The new position is then calculated by integrating the
+                // speed function.
+                // The integral of a constant speed is `speed * time`.
+                let startup_factor = if self.0.duration > 0. { todo!() } else { 0. };
+                let post_startup_factor = if time > self.0.duration {
+                    (time - self.0.duration) / 1000.
+                } else {
+                    0.
+                };
+                let factor = startup_factor + post_startup_factor;
+                transform.translation +=
+                    data.direction.unwrap().world_vec_to_vec3() * data.speed * factor;
+            }
             _ => {}
         }
     }
