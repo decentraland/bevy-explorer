@@ -479,7 +479,7 @@ fn continuous_tween_update(
         }
 
         // This weirdness is due to the fact that the continuous tweens
-        // in a frame independent way
+        // are implemented in a frame independent way
         *transform = continuous_tween_anchor.transform;
         if let Some(scene_material) =
             maybe_h_mat.and_then(|mesh_material| materials.get_mut(mesh_material.id()))
