@@ -2,9 +2,12 @@ use bevy::prelude::*;
 use common::sets::SceneSets;
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
-    proto_components::sdk::components::{
-        pb_tween::Mode, EasingFunction, PbTween, PbTweenState, TextureMovementType,
-        TweenStateStatus,
+    proto_components::{
+        common::{texture_union::Tex, Texture},
+        sdk::components::{
+            pb_material, pb_tween::Mode, EasingFunction, PbTween, PbTweenState,
+            TextureMovementType, TweenStateStatus,
+        },
     },
     transform_and_parent::DclTransformAndParent,
     SceneComponentId,
@@ -12,8 +15,9 @@ use dcl_component::{
 
 use scene_material::SceneMaterial;
 use scene_runner::{
-    renderer_context::RendererSceneContext, update_world::AddCrdtInterfaceExt, ContainerEntity,
-    SceneEntity,
+    renderer_context::RendererSceneContext,
+    update_world::{material::PbMaterialComponent, AddCrdtInterfaceExt},
+    ContainerEntity, SceneEntity,
 };
 
 #[derive(Component, Debug)]
@@ -26,6 +30,10 @@ impl From<PbTween> for Tween {
 }
 
 impl Tween {
+    fn is_texture_move(&self) -> bool {
+        matches!(&self.0.mode, Some(Mode::TextureMove(_)))
+    }
+
     fn apply(
         &self,
         time: f32,
@@ -139,21 +147,31 @@ impl Tween {
 #[derive(Component, Debug, PartialEq)]
 pub struct TweenState(PbTweenState);
 
+#[derive(Event)]
+struct TweenUpdatedTexture(Entity);
+
 pub struct TweenPlugin;
 
 impl Plugin for TweenPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
+        app.add_event::<TweenUpdatedTexture>();
+
         app.add_crdt_lww_component::<PbTween, Tween>(
             SceneComponentId::TWEEN,
             ComponentPosition::EntityOnly,
         );
-        app.add_systems(Update, update_tween.in_set(SceneSets::PostLoop));
+        app.add_systems(
+            Update,
+            (update_tween, transfer_material_to_scene)
+                .chain()
+                .in_set(SceneSets::PostLoop),
+        );
         app.add_systems(PostUpdate, update_system_tween);
     }
 }
 
 #[allow(clippy::type_complexity)]
-pub fn update_tween(
+fn update_tween(
     mut commands: Commands,
     time: Res<Time>,
     mut tweens: Query<(
@@ -168,6 +186,7 @@ pub fn update_tween(
     mut scenes: Query<&mut RendererSceneContext>,
     parents: Query<&SceneEntity>,
     materials: ResMut<Assets<SceneMaterial>>,
+    mut tween_updated_texture_writer: EventWriter<TweenUpdatedTexture>,
 ) {
     let materials = materials.into_inner();
     for (ent, scene_ent, parent, tween, mut transform, state, maybe_h_mat) in tweens.iter_mut() {
@@ -232,7 +251,114 @@ pub fn update_tween(
                 scene_ent.container_id,
                 &DclTransformAndParent::from_bevy_transform_and_parent(&transform, parent.id),
             );
+            if tween.is_texture_move() {
+                tween_updated_texture_writer.write(TweenUpdatedTexture(ent));
+            }
         }
+    }
+}
+
+fn transfer_material_to_scene(
+    mut tween_updated_texture: EventReader<TweenUpdatedTexture>,
+    mut tweens: Query<
+        (
+            &ContainerEntity,
+            &mut PbMaterialComponent,
+            &MeshMaterial3d<SceneMaterial>,
+        ),
+        With<Tween>,
+    >,
+    materials: ResMut<Assets<SceneMaterial>>,
+    mut scenes: Query<&mut RendererSceneContext>,
+) {
+    for TweenUpdatedTexture(entity) in tween_updated_texture.read() {
+        let Ok((container_entity, mut pb_material_component, mesh_material)) =
+            tweens.get_mut(*entity)
+        else {
+            error!("TweenUpdatedTexture triggered for an entity that is not a tween.");
+            continue;
+        };
+        let Ok(mut scene) = scenes.get_mut(container_entity.root) else {
+            error!("Entity in invalid scene.");
+            continue;
+        };
+
+        let PbMaterialComponent(pb_material) = pb_material_component.as_mut();
+        let Some(scene_material) = materials.get(mesh_material.id()) else {
+            error!("Entity with TextureMove tween did not have valid material.");
+            continue;
+        };
+
+        if let Some(material) = pb_material.material.as_mut() {
+            match material {
+                pb_material::Material::Pbr(pbr_material) => {
+                    if let Some(Tex::Texture(texture)) = pbr_material
+                        .texture
+                        .as_mut()
+                        .and_then(|texture_union| texture_union.tex.as_mut())
+                    {
+                        update_texture(texture, scene_material);
+                    }
+                    if let Some(Tex::Texture(texture)) = pbr_material
+                        .alpha_texture
+                        .as_mut()
+                        .and_then(|texture_union| texture_union.tex.as_mut())
+                    {
+                        update_texture(texture, scene_material);
+                    }
+                    if let Some(Tex::Texture(texture)) = pbr_material
+                        .emissive_texture
+                        .as_mut()
+                        .and_then(|texture_union| texture_union.tex.as_mut())
+                    {
+                        update_texture(texture, scene_material);
+                    }
+                    if let Some(Tex::Texture(texture)) = pbr_material
+                        .bump_texture
+                        .as_mut()
+                        .and_then(|texture_union| texture_union.tex.as_mut())
+                    {
+                        update_texture(texture, scene_material);
+                    }
+                }
+                pb_material::Material::Unlit(unlit_material) => {
+                    if let Some(Tex::Texture(texture)) = unlit_material
+                        .texture
+                        .as_mut()
+                        .and_then(|texture_union| texture_union.tex.as_mut())
+                    {
+                        update_texture(texture, scene_material);
+                    }
+                    if let Some(Tex::Texture(texture)) = unlit_material
+                        .alpha_texture
+                        .as_mut()
+                        .and_then(|texture_union| texture_union.tex.as_mut())
+                    {
+                        update_texture(texture, scene_material);
+                    }
+                }
+            }
+        }
+
+        scene.update_crdt(
+            SceneComponentId::MATERIAL,
+            CrdtType::LWW_ENT,
+            container_entity.container_id,
+            pb_material,
+        );
+    }
+}
+
+fn update_texture(texture: &mut Texture, scene_material: &SceneMaterial) {
+    if let Some(offset) = texture.offset.as_mut() {
+        let uv_transform = scene_material.base.uv_transform;
+        offset.x = uv_transform.translation.x;
+        offset.y = uv_transform.translation.y;
+    }
+    if let Some(tiling) = texture.tiling.as_mut() {
+        let uv_transform = scene_material.base.uv_transform;
+        tiling.x = uv_transform.matrix2.x_axis.x;
+        tiling.y = uv_transform.matrix2.y_axis.y;
     }
 }
 
