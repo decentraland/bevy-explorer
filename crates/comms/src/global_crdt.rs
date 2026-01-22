@@ -33,8 +33,6 @@ use dcl_component::{
     DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter,
 };
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "livekit"))]
-use crate::livekit_native::LivekitVideoFrame;
 use crate::{
     movement_compressed::MovementCompressed, profile::ProfileMetaCache, SceneRoom, Transport,
 };
@@ -208,17 +206,6 @@ pub enum ChannelControl {
         oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
     ),
     VoiceUnsubscribe(Address),
-    #[cfg(all(not(target_arch = "wasm32"), feature = "livekit"))]
-    StreamerSubscribe(
-        mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
-        mpsc::Sender<LivekitVideoFrame>,
-    ),
-    #[cfg(all(not(target_arch = "wasm32"), feature = "livekit"))]
-    StreamerUnsubscribe,
-    #[cfg(target_arch = "wasm32")]
-    StreamerSubscribe,
-    #[cfg(target_arch = "wasm32")]
-    StreamerUnsubscribe,
 }
 
 pub enum ForeignAudioData {

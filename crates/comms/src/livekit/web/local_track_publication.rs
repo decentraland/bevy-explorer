@@ -1,0 +1,97 @@
+use bevy::prelude::*;
+use wasm_bindgen::{
+    convert::IntoWasmAbi, describe::WasmDescribe, prelude::wasm_bindgen, JsCast, JsValue,
+};
+
+use crate::livekit::web::{GetFromJsValue, JsValueAbi, TrackKind, TrackSource};
+
+#[wasm_bindgen(module = "/livekit_web_bindings.js")]
+extern "C" {
+    #[wasm_bindgen]
+    fn local_track_publication_sid(local_track_publication: &LocalTrackPublication) -> String;
+    #[wasm_bindgen]
+    fn local_track_publication_kind(local_track_publication: &LocalTrackPublication) -> TrackKind;
+    #[wasm_bindgen]
+    fn local_track_publication_source(
+        local_track_publication: &LocalTrackPublication,
+    ) -> TrackSource;
+}
+
+#[derive(Debug, Clone)]
+pub struct LocalTrackPublication {
+    inner: JsValue,
+}
+
+/// SAFETY: should be fine while WASM remains single threaded
+unsafe impl Send for LocalTrackPublication {}
+
+/// SAFETY: should be fine while WASM remains single threaded
+unsafe impl Sync for LocalTrackPublication {}
+
+impl LocalTrackPublication {
+    pub fn sid(&self) -> String {
+        local_track_publication_sid(self)
+    }
+
+    pub fn kind(&self) -> TrackKind {
+        local_track_publication_kind(self)
+    }
+
+    pub fn source(&self) -> TrackSource {
+        local_track_publication_source(self)
+    }
+}
+
+impl From<JsValue> for LocalTrackPublication {
+    fn from(value: JsValue) -> Self {
+        LocalTrackPublication { inner: value }
+    }
+}
+
+impl From<LocalTrackPublication> for JsValue {
+    fn from(value: LocalTrackPublication) -> Self {
+        value.inner
+    }
+}
+
+impl GetFromJsValue for LocalTrackPublication {
+    fn get_from_js_value(js_value: &JsValue, key: &str) -> Option<Self> {
+        js_sys::Reflect::get(js_value, &JsValue::from(key))
+            .ok()
+            .map(|publication| LocalTrackPublication { inner: publication })
+    }
+}
+
+impl WasmDescribe for LocalTrackPublication {
+    fn describe() {
+        JsValue::describe()
+    }
+}
+
+impl IntoWasmAbi for &LocalTrackPublication {
+    type Abi = JsValueAbi;
+
+    fn into_abi(self) -> JsValueAbi {
+        self.inner.clone().into_abi()
+    }
+}
+
+impl JsCast for LocalTrackPublication {
+    fn instanceof(value: &JsValue) -> bool {
+        panic!("{value:?}");
+    }
+
+    fn unchecked_from_js(value: JsValue) -> Self {
+        Self { inner: value }
+    }
+
+    fn unchecked_from_js_ref(value: &JsValue) -> &Self {
+        panic!("js_ref {:?}", value)
+    }
+}
+
+impl AsRef<JsValue> for LocalTrackPublication {
+    fn as_ref(&self) -> &JsValue {
+        &self.inner
+    }
+}
