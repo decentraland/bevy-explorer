@@ -182,6 +182,14 @@ impl Tween {
 #[derive(Component, Debug, PartialEq)]
 pub struct TweenState(PbTweenState);
 
+/// This caches the initial [`Transform`] of a continuous tween
+/// for calculating the new [`Transform`] in a frame independent
+/// way
+#[derive(Component, Deref)]
+#[component(immutable)]
+#[cfg(feature = "adr285")]
+struct ContinuousTweenAnchor(Transform);
+
 pub struct TweenPlugin;
 
 impl Plugin for TweenPlugin {
@@ -193,66 +201,18 @@ impl Plugin for TweenPlugin {
         app.add_systems(Update, update_tween.in_set(SceneSets::PostLoop));
         app.add_systems(PostUpdate, update_system_tween);
 
+        #[cfg(feature = "adr285")]
+        {
+            app.add_observer(tween_inserted);
+            app.add_observer(tween_replaced);
+        }
+
         #[cfg(feature = "tween_debug")]
         app.add_plugins(tween_debug::TweenDebugPlugin);
     }
 }
 
-#[allow(clippy::type_complexity)]
-pub fn update_tween(
-    mut commands: Commands,
-    time: Res<Time>,
-    mut tweens: Query<(
-        Entity,
-        &ContainerEntity,
-        &ChildOf,
-        Ref<Tween>,
-        &mut Transform,
-        Option<&mut TweenState>,
-        Option<&MeshMaterial3d<SceneMaterial>>,
-    )>,
-    mut scenes: Query<&mut RendererSceneContext>,
-    parents: Query<&SceneEntity>,
-    materials: ResMut<Assets<SceneMaterial>>,
-) {
-    let materials = materials.into_inner();
-    for (ent, scene_ent, parent, tween, transform, state, maybe_h_mat) in tweens.iter_mut() {
-        let Ok(scene) = scenes.get_mut(scene_ent.root) else {
-            continue;
-        };
-
-        #[cfg(feature = "adr285")]
-        if tween.is_continuous() {
-            continuous_tween_update(
-                &mut commands,
-                (ent, scene_ent, parent, tween, transform, state, maybe_h_mat),
-                scene,
-                parents,
-                materials,
-                &time,
-            );
-        } else {
-            discrete_tween_update(
-                &mut commands,
-                (ent, scene_ent, parent, tween, transform, state, maybe_h_mat),
-                scene,
-                parents,
-                materials,
-                &time,
-            );
-        }
-        #[cfg(not(feature = "adr285"))]
-        discrete_tween_update(
-            &mut commands,
-            (ent, scene_ent, parent, tween, transform, state, maybe_h_mat),
-            scene,
-            parents,
-            materials,
-            &time,
-        );
-    }
-}
-
+#[cfg(not(feature = "adr285"))]
 type TweenUpdateComponents<'a> = (
     Entity,
     &'a ContainerEntity,
@@ -262,15 +222,80 @@ type TweenUpdateComponents<'a> = (
     Option<Mut<'a, TweenState>>,
     Option<&'a MeshMaterial3d<SceneMaterial>>,
 );
+#[cfg(feature = "adr285")]
+type TweenUpdateComponents<'a> = (
+    Entity,
+    &'a ContainerEntity,
+    &'a ChildOf,
+    Ref<'a, Tween>,
+    Mut<'a, Transform>,
+    Option<Mut<'a, TweenState>>,
+    Option<&'a ContinuousTweenAnchor>,
+    Option<&'a MeshMaterial3d<SceneMaterial>>,
+);
+
+#[allow(clippy::type_complexity)]
+fn update_tween(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut tweens: Query<TweenUpdateComponents>,
+    mut scenes: Query<&mut RendererSceneContext>,
+    parents: Query<&SceneEntity>,
+    materials: ResMut<Assets<SceneMaterial>>,
+) {
+    let materials = materials.into_inner();
+    for tween_update_components in tweens.iter_mut() {
+        let Ok(scene) = scenes.get_mut(tween_update_components.1.root) else {
+            continue;
+        };
+
+        #[cfg(feature = "adr285")]
+        if tween_update_components.3.is_continuous() {
+            continuous_tween_update(
+                &mut commands,
+                tween_update_components,
+                scene,
+                parents,
+                materials,
+                &time,
+            );
+        } else {
+            discrete_tween_update(
+                &mut commands,
+                tween_update_components,
+                scene,
+                parents,
+                materials,
+                &time,
+            );
+        }
+        #[cfg(not(feature = "adr285"))]
+        discrete_tween_update(
+            &mut commands,
+            tween_update_components,
+            scene,
+            parents,
+            materials,
+            &time,
+        );
+    }
+}
 
 fn discrete_tween_update(
     commands: &mut Commands,
-    (ent, scene_ent, parent, tween, mut transform, state, maybe_h_mat): TweenUpdateComponents,
+    tween_update_components: TweenUpdateComponents,
     mut scene: Mut<RendererSceneContext>,
     parents: Query<&SceneEntity>,
     materials: &mut Assets<SceneMaterial>,
     time: &Time,
 ) {
+    #[cfg(not(feature = "adr285"))]
+    let (ent, scene_ent, parent, tween, mut transform, state, maybe_h_mat) =
+        tween_update_components;
+    #[cfg(feature = "adr285")]
+    let (ent, scene_ent, parent, tween, mut transform, state, _, maybe_h_mat) =
+        tween_update_components;
+
     let playing = tween.0.playing.unwrap_or(true);
     let delta = if playing {
         time.delta_secs() * 1000.0 / tween.0.duration
@@ -334,12 +359,25 @@ fn discrete_tween_update(
 #[cfg(feature = "adr285")]
 fn continuous_tween_update(
     commands: &mut Commands,
-    (ent, scene_ent, parent, tween, mut transform, state, maybe_h_mat): TweenUpdateComponents,
+    (
+        ent,
+        scene_ent,
+        parent,
+        tween,
+        mut transform,
+        state,
+        maybe_continuous_tween_anchor,
+        maybe_h_mat,
+    ): TweenUpdateComponents,
     mut scene: Mut<RendererSceneContext>,
     parents: Query<&SceneEntity>,
     materials: &mut Assets<SceneMaterial>,
     time: &Time,
 ) {
+    let Some(continuous_tween_anchor) = maybe_continuous_tween_anchor else {
+        unreachable!("ContinuousTweenAnchor must be present on a continuous tween.");
+    };
+
     let playing = tween.0.playing.unwrap_or(true);
     let delta = if playing {
         time.delta_secs() * 1000.
@@ -381,7 +419,16 @@ fn continuous_tween_update(
             commands.entity(ent).try_insert(updated_state);
         }
 
-        tween.apply(updated_time, &mut transform, maybe_h_mat, materials);
+        // This weirdness is due to the fact that the continuous tweens
+        // in a frame independent way
+        let mut intermediate_transform = Transform::default();
+        tween.apply(
+            updated_time,
+            &mut intermediate_transform,
+            maybe_h_mat,
+            materials,
+        );
+        *transform = **continuous_tween_anchor * intermediate_transform;
 
         let Ok(parent) = parents.get(parent.parent()) else {
             warn!("no parent for tweened ent");
@@ -458,4 +505,30 @@ pub fn update_system_tween(
             }
         }
     }
+}
+
+#[cfg(feature = "adr285")]
+fn tween_inserted(
+    trigger: Trigger<OnInsert, Tween>,
+    mut commands: Commands,
+    tweens: Query<(&Tween, &Transform)>,
+) {
+    let entity = trigger.target();
+    let Ok((tween, transform)) = tweens.get(entity) else {
+        unreachable!("Tween must be available.");
+    };
+
+    if tween.is_continuous() {
+        commands
+            .entity(entity)
+            .insert(ContinuousTweenAnchor(*transform));
+    }
+}
+
+#[cfg(feature = "adr285")]
+fn tween_replaced(trigger: Trigger<OnReplace, Tween>, mut commands: Commands) {
+    let entity = trigger.target();
+    commands
+        .entity(entity)
+        .try_remove::<ContinuousTweenAnchor>();
 }
