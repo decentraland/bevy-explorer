@@ -269,7 +269,10 @@ impl MaterialExtension for SceneBound {
 
     fn fallback_asset(&self, _base: &Self::Base) -> Option<ExtendedMaterial<Self>> {
         let (base_color, emissive) = if self.data.flags & SCENE_MATERIAL_OUTLINE != 0 {
-            (Color::srgba(1.0, 1.0, 4.0, 1.0), Color::srgba(1.0, 1.0, 4.0, 1.0))
+            (
+                Color::srgba(1.0, 1.0, 4.0, 1.0),
+                Color::srgba(1.0, 1.0, 4.0, 1.0),
+            )
         } else {
             (Color::srgba(1.25, 0.25, 1.25, 0.75), Color::BLACK)
         };
