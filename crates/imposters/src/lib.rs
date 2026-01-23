@@ -3,7 +3,7 @@ pub mod floor_imposter;
 pub mod imposter_spec;
 pub mod render;
 
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use bake_scene::DclImposterBakeScenePlugin;
 use bevy::prelude::*;
@@ -16,6 +16,7 @@ use render::{DclImposterRenderPlugin, ImposterEntities, SceneImposter};
 pub struct DclImposterPlugin {
     pub zip_output: Option<PathBuf>,
     pub download: bool,
+    pub kill_timer: Option<Duration>,
 }
 
 impl Plugin for DclImposterPlugin {

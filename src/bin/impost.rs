@@ -1,4 +1,4 @@
-use std::{fs::File, io::Write, sync::OnceLock};
+use std::{fs::File, io::Write, sync::OnceLock, time::Duration};
 
 use comms::{
     preview::PreviewMode,
@@ -121,6 +121,10 @@ fn main() {
 
     let content_server_override = args.value_from_str("--content-server").ok();
     let zip_output = args.value_from_str("--zip-output").ok();
+    let kill_timer = args
+        .value_from_str::<_, u64>("--timeout-seconds")
+        .ok()
+        .map(|secs| Duration::from_secs(secs));
 
     let no_download = args.contains("--no-download");
 
@@ -244,6 +248,7 @@ fn main() {
         .add_plugins(DclImposterPlugin {
             zip_output,
             download: !no_download,
+            kill_timer,
         })
         .add_plugins(SystemBridgePlugin { bare: true });
 

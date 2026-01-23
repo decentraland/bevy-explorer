@@ -835,6 +835,8 @@ fn pick_imposter_to_bake(
     current_realm: Res<CurrentRealm>,
     config: Res<AppConfig>,
     plugin: Res<DclImposterPlugin>,
+    time: Res<Time>,
+    mut exit: EventWriter<AppExit>,
 ) {
     if config.scene_imposter_bake == SceneImposterBake::Off {
         return;
@@ -850,6 +852,15 @@ fn pick_imposter_to_bake(
     }
 
     if !baking.0.is_empty() {
+        return;
+    }
+
+    if plugin
+        .kill_timer
+        .is_some_and(|kill_timer| time.elapsed_wrapped() > kill_timer)
+    {
+        info!("exiting on timeout after {} seconds", time.elapsed_secs());
+        exit.write_default();
         return;
     }
 
