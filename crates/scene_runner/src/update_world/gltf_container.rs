@@ -573,6 +573,11 @@ fn update_ready_gltfs(
                         continue;
                     };
 
+                    if read_only_mesh_data.count_vertices() == 0 {
+                        commands.entity(spawned_ent).try_remove::<Mesh3d>();
+                        continue;
+                    }
+
                     // get or create hash
                     // note we must use the handle lookup rather than recomputing the hash as we may modify the mesh on first load,
                     // then recalculating would yield a different hash result

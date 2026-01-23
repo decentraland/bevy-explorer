@@ -304,7 +304,7 @@ function start() {
     return "unknown";
   })();
 
-  engine_run(platform, initialRealm, location, systemScene, true, preview, 5e7);
+  engine_run(platform, initialRealm, location, systemScene, true, preview, 1e7);
 }
 
 initButton.onclick = start;
