@@ -90,7 +90,7 @@ impl MeshBuilder for ImposterMesh {
         mesh = mesh
             .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
             .with_inserted_indices(indices);
-        mesh.transfer_priority = RenderAssetTransferPriority::Priority(-1);
+        mesh.transfer_priority = RenderAssetTransferPriority::Immediate;
 
         mesh
     }

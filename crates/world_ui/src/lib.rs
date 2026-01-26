@@ -271,7 +271,7 @@ pub fn update_worldui_materials(
         .collect();
 }
 
-pub type TextShapeMaterial = ExtendedMaterial<SceneMaterial, TextQuad>;
+pub type TextShapeMaterial = ExtendedMaterial<TextQuad>;
 
 #[derive(Asset, TypePath, Clone, AsBindGroup)]
 pub struct TextQuad {
@@ -299,6 +299,8 @@ mod decl {
 pub use decl::*;
 
 impl MaterialExtension for TextQuad {
+    type Base = SceneMaterial;
+
     fn vertex_shader() -> bevy::render::render_resource::ShaderRef {
         ShaderRef::Path("embedded://shaders/text_quad_vertex.wgsl".into())
     }
