@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc};
+use std::str::FromStr;
 
 use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
 use assets::EmbedAssetsPlugin;
@@ -60,7 +60,7 @@ use user_input::UserInputPlugin;
 use uuid::Uuid;
 use visuals::VisualsPlugin;
 use wallet::WalletPlugin;
-use wasm_bindgen_futures::{js_sys, JsFuture};
+use wasm_bindgen_futures::js_sys;
 use world_ui::WorldUiPlugin;
 
 fn main_inner(
@@ -156,17 +156,19 @@ fn main_inner(
     };
     app.insert_resource(text_bindings);
 
-    pub struct Notifyer;
-    impl PipelineCompilationHandler for Notifyer {
-        fn on_compile_start(&self) -> BoxedFuture<'_, ()> {
+    pub struct PipelineHandler;
+    impl PipelineCompilationHandler for PipelineHandler {
+        fn precreate_render_pipeline<'a>(
+            &self,
+            device: &'a RenderDevice,
+            desc: &'a wgpu::RenderPipelineDescriptor,
+        ) -> BoxedFuture<'a, ()> {
             Box::pin(async {
-                let _ = JsFuture::from(js_shader_compiler_start()).await;
-            })
-        }
-
-        fn on_compile_end(&self) -> BoxedFuture<'_, ()> {
-            Box::pin(async {
-                let _ = JsFuture::from(js_shader_compiler_end()).await;
+                allow_a_dummy_pipeline();
+                let _ = device.create_render_pipeline(desc);
+                if !last_pipeline_was_valid() {
+                    let _ = wasm_bindgen_futures::JsFuture::from(wait_for_async_pipelines()).await;
+                }
             })
         }
     }
@@ -176,9 +178,9 @@ fn main_inner(
         .add_plugins(
             DefaultPlugins
                 .set(RenderPlugin {
-                    pipeline_compilation_mode: PipelineCompilationMode::AsyncWithNotify(Arc::new(
-                        Box::new(Notifyer),
-                    )),
+                    pipeline_compilation_mode: PipelineCompilationMode::async_with_handler(
+                        PipelineHandler,
+                    ),
                     ..default()
                 })
                 .set(WindowPlugin {
@@ -587,7 +589,6 @@ pub fn update_winit_fps(config: Res<AppConfig>, mut winit: ResMut<WinitSettings>
     }
 }
 
-// This block imports the global JS function we defined in main.js
 #[wasm_bindgen(js_namespace = window)]
 extern "C" {
     #[wasm_bindgen(js_name = set_url_params)]
@@ -599,12 +600,14 @@ extern "C" {
         is_preview: bool,
     );
 
-    // Your JS function
-    #[wasm_bindgen(js_name = "shaderCompilerWait")]
-    fn js_shader_compiler_start() -> js_sys::Promise;
+    #[wasm_bindgen(js_name = "allowADummyPipeline")]
+    fn allow_a_dummy_pipeline();
 
-    #[wasm_bindgen(js_name = "shaderCompilerDone")]
-    fn js_shader_compiler_end() -> js_sys::Promise;
+    #[wasm_bindgen(js_name = "lastPipelineWasValid")]
+    fn last_pipeline_was_valid() -> bool;
+
+    #[wasm_bindgen(js_name = "waitForPipelines")]
+    fn wait_for_async_pipelines() -> js_sys::Promise;
 }
 
 #[derive(PartialEq, Default, Clone)]
