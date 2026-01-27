@@ -68,7 +68,7 @@ fn av_player_on_insert(
 ) {
     let entity = trigger.target();
     let Ok((av_player, maybe_audio_sink, maybe_video_sink)) = av_players.get(entity) else {
-        unreachable!("");
+        unreachable!("Infallible query.");
     };
 
     // This forces an update on the entity
