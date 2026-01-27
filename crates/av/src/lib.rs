@@ -242,7 +242,8 @@ fn stream_should_be_played(
 ) {
     let entity = trigger.target();
     let Ok(av_player) = av_players.get(entity) else {
-        unreachable!("ShouldBePlaying must only be added to AVPlayers.");
+        error!("ShouldBePlaying must only be added to AVPlayers.");
+        return;
     };
 
     if av_player.source.src.starts_with("livekit-video://") {
@@ -265,7 +266,8 @@ fn stream_shouldnt_be_played(
         return;
     }
     let Ok((av_player, has_stream_viewer)) = av_players.get(entity) else {
-        unreachable!("ShouldBePlaying must have only been added to AVPlayers.");
+        warn!("ShouldBePlaying must have only been added to AVPlayers.");
+        return;
     };
     if !has_stream_viewer {
         // Noop if AVPlayer does not have `StreamViewer`
