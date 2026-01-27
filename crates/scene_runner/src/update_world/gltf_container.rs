@@ -1179,7 +1179,7 @@ impl From<PbGltfNodeModifiers> for GltfNodeModifiers {
 fn debug_modifiers(
     mut commands: Commands,
     q: Query<
-        (&GltfNodeModifiers, &GltfProcessed),
+        (&GltfNodeModifiers, &GltfProcessed, Option<&GltfDefinition>),
         Or<(Changed<GltfNodeModifiers>, Changed<GltfProcessed>)>,
     >,
     child_nodes: Query<
@@ -1192,7 +1192,7 @@ fn debug_modifiers(
     removed_q: Query<&GltfProcessed>,
     mut removed_components: RemovedComponents<GltfNodeModifiers>,
 ) {
-    for (modifiers, processed) in q {
+    for (modifiers, processed, def) in q {
         let mut modifiers = modifiers
             .0
             .modifiers
@@ -1244,18 +1244,41 @@ fn debug_modifiers(
 
             commands.entity(*child).try_remove::<NotShadowCaster>();
 
+            fn segments_match(node_segment: &str, modifier_segment: &str) -> bool {
+                if node_segment == modifier_segment {
+                    return true;
+                }
+
+                if !modifier_segment.is_char_boundary(node_segment.len()) {
+                    return false;
+                }
+
+                if modifier_segment[0..node_segment.len()] != node_segment[..] {
+                    return false;
+                }
+
+                // allow anything that matches but with a "_number"-like tail
+                modifier_segment
+                    .char_indices()
+                    .skip_while(|(ix, _)| *ix < node_segment.len())
+                    .all(|(_, c)| c == '_' || c.is_numeric())
+            }
+
             let mut material_modified = false;
             for (modifier_path, (shadows, maybe_material)) in
                 modifiers.iter().filter(|(modifier_path_components, _)| {
                     modifier_path_components
                         .as_ref()
                         .is_none_or(|modifier_path_components| {
-                            node_path_components.len() <= modifier_path_components.len()
-                                && (0..modifier_path_components.len() - node_path_components.len())
-                                    .any(|ix| {
-                                        node_path_components[ix..ix + node_path_components.len()]
-                                            == node_path_components
-                                    })
+                            node_path_components
+                                .windows(modifier_path_components.len())
+                                .any(|window| {
+                                    window.iter().zip(modifier_path_components).all(
+                                        |(node_segment, modifier_segment)| {
+                                            segments_match(node_segment, modifier_segment)
+                                        },
+                                    )
+                                })
                         })
                 })
             {
@@ -1297,8 +1320,9 @@ fn debug_modifiers(
 
         if !unused.is_empty() {
             warn!(
-                "no match for gltf modifiers {unused:?} in nodes {:?}",
-                processed.named_nodes.keys().collect::<Vec<_>>()
+                "no match for gltf modifiers {unused:?} in nodes {:?} from {:?}",
+                processed.named_nodes.keys().collect::<Vec<_>>(),
+                def.map(|d| &d.0.src)
             )
         }
     }
