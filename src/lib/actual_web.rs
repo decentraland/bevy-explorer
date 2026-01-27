@@ -125,6 +125,7 @@ fn main_inner(
             permissions: false,
             profile: false,
             nametags: false,
+            loading_scene: false,
         });
         app.insert_resource(SystemScene {
             source: Some(source),
@@ -140,6 +141,7 @@ fn main_inner(
             permissions: true,
             profile: true,
             nametags: true,
+            loading_scene: true,
         });
     }
 

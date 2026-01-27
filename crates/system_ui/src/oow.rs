@@ -1,25 +1,51 @@
 use bevy::prelude::*;
 use bevy_dui::{DuiEntities, DuiEntityCommandsExt, DuiProps};
-use common::structs::{PrimaryUser, ZOrder};
+use common::{
+    rpc::RpcStreamSender,
+    structs::{PrimaryUser, ZOrder},
+};
 use scene_runner::{
     renderer_context::RendererSceneContext, update_world::gltf_container::GltfLoadingCount,
     ContainingScene, OutOfWorld,
 };
+use system_bridge::{NativeUi, SceneLoadingUi, SystemApi};
 use ui_core::ui_actions::{Click, EventDefaultExt};
 use wallet::Wallet;
 
 use crate::change_realm::ChangeRealmDialog;
 
+/// Extracts scene loading info: (title, pending_assets_count)
+fn get_scene_loading_info(
+    player: Entity,
+    containing_scene: &ContainingScene,
+    scenes: &Query<(&RendererSceneContext, Option<&GltfLoadingCount>)>,
+) -> (String, Option<u32>) {
+    let scene = containing_scene
+        .get_parcel_oow(player)
+        .and_then(|scene| scenes.get(scene).ok());
+
+    let title = scene
+        .map(|(context, _)| context.title.clone())
+        .unwrap_or_else(|| "Scene".to_owned());
+
+    let pending_assets = scene.and_then(|(_, gltf_count)| gltf_count.map(|c| c.0 as u32));
+
+    (title, pending_assets)
+}
+
 pub struct OowUiPlugin;
 
 impl Plugin for OowUiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, set_oow);
+        if app.world().resource::<NativeUi>().loading_scene {
+            app.add_systems(Update, update_loading_scene_dialog);
+        }
+        app.add_systems(Update, pipe_scene_loading_ui_stream);
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-fn set_oow(
+fn update_loading_scene_dialog(
     mut commands: Commands,
     wallet: Res<Wallet>,
     oow: Query<&OutOfWorld>,
@@ -44,19 +70,10 @@ fn set_oow(
         return;
     };
 
-    let scene = containing_scene
-        .get_parcel_oow(player)
-        .and_then(|scene| scenes.get(scene).ok());
-    let title_text = scene
-        .map(|(context, _)| context.title.clone())
-        .unwrap_or("Scene".to_owned());
-    let state_text = scene
-        .map(|(_, gltf_count)| {
-            gltf_count
-                .map(|c| format!("{} assets", c.0))
-                .unwrap_or_else(|| "assets".to_owned())
-        })
-        .unwrap_or("Scene Info".to_owned());
+    let (title_text, pending_assets) = get_scene_loading_info(player, &containing_scene, &scenes);
+    let state_text = pending_assets
+        .map(|count| format!("{} assets", count))
+        .unwrap_or_else(|| "assets".to_owned());
 
     match dialog.as_ref() {
         Some(ent) => {
@@ -92,5 +109,60 @@ fn set_oow(
                 .root;
             *dialog = Some(ent);
         }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn pipe_scene_loading_ui_stream(
+    mut requests: EventReader<SystemApi>,
+    wallet: Res<Wallet>,
+    oow: Query<&OutOfWorld>,
+    player: Query<Entity, With<PrimaryUser>>,
+    containing_scene: ContainingScene,
+    scenes: Query<(&RendererSceneContext, Option<&GltfLoadingCount>)>,
+    mut senders: Local<Vec<RpcStreamSender<SceneLoadingUi>>>,
+    mut last_state: Local<Option<SceneLoadingUi>>,
+) {
+    // Collect new stream subscribers
+    senders.extend(requests.read().filter_map(|ev| {
+        if let SystemApi::GetSceneLoadingUiStream(sender) = ev {
+            Some(sender.clone())
+        } else {
+            None
+        }
+    }));
+
+    // Remove closed senders
+    senders.retain(|s| !s.is_closed());
+
+    // If no subscribers, nothing to do
+    if senders.is_empty() {
+        return;
+    }
+
+    // Compute current state
+    let visible = wallet.address().is_some() && !oow.is_empty();
+
+    let current_state = if let (true, Ok(player)) = (visible, player.single()) {
+        let (title, pending_assets) = get_scene_loading_info(player, &containing_scene, &scenes);
+        SceneLoadingUi {
+            visible: true,
+            title,
+            pending_assets,
+        }
+    } else {
+        SceneLoadingUi {
+            visible: false,
+            title: String::new(),
+            pending_assets: None,
+        }
+    };
+
+    // Only send if state changed
+    if last_state.as_ref() != Some(&current_state) {
+        for sender in senders.iter() {
+            let _ = sender.send(current_state.clone());
+        }
+        *last_state = Some(current_state);
     }
 }
