@@ -258,8 +258,12 @@ fn stream_shouldnt_be_played(
     trigger: Trigger<OnRemove, ShouldBePlaying>,
     mut commands: Commands,
     av_players: Query<(Entity, &AVPlayer, Has<StreamViewer>)>,
+    mut removed_av_players: RemovedComponents<AVPlayer>,
 ) {
     let entity = trigger.target();
+    if removed_av_players.read().find(|removed| *removed == entity).is_some() {
+        return;
+    }
     let Ok((av_player_entity, av_player, has_stream_viewer)) = av_players.get(entity) else {
         unreachable!("ShouldBePlaying must have only been added to AVPlayers.");
     };
