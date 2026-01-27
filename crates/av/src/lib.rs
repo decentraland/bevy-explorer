@@ -263,8 +263,7 @@ fn stream_shouldnt_be_played(
     let entity = trigger.target();
     if removed_av_players
         .read()
-        .find(|removed| *removed == entity)
-        .is_some()
+        .any(|removed| removed == entity)
     {
         return;
     }
