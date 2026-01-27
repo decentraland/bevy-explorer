@@ -1250,7 +1250,7 @@ fn debug_modifiers(
                     modifier_path_components
                         .as_ref()
                         .is_none_or(|modifier_path_components| {
-                            node_path_components.len() >= modifier_path_components.len()
+                            node_path_components.len() <= modifier_path_components.len()
                                 && (0..modifier_path_components.len() - node_path_components.len())
                                     .any(|ix| {
                                         node_path_components[ix..ix + node_path_components.len()]
