@@ -31,7 +31,7 @@ use crate::{
     stream_processor::AVCommand,
     video_context::{VideoData, VideoInfo},
     video_stream::{av_sinks, noop_sinks, VideoSink},
-    AVPlayer, ShouldBePlaying,
+    AVPlayer, ShouldBePlaying, InScene
 };
 
 pub struct VideoPlayerPlugin;
@@ -49,6 +49,7 @@ impl Plugin for VideoPlayerPlugin {
         );
 
         app.add_observer(av_player_on_insert);
+        app.add_observer(av_player_on_remove);
         app.add_observer(av_player_should_be_playing_on_add);
         app.add_observer(av_player_should_be_playing_on_remove);
         #[cfg(feature = "livekit")]
@@ -124,6 +125,17 @@ fn av_player_on_insert(
             .entity(trigger.target())
             .try_remove::<(AudioSink, VideoSink)>();
     }
+}
+
+fn av_player_on_remove(trigger: Trigger<OnRemove, AVPlayer>, mut commands: Commands) {
+    let entity = trigger.target();
+    commands
+        .entity(entity)
+        .try_remove::<(InScene, ShouldBePlaying, AudioSink, VideoSink, VideoTextureOutput)>();
+    #[cfg(feature = "livekit")]
+    commands
+        .entity(entity)
+        .try_remove::<(StreamViewer, StreamImage)>();
 }
 
 fn av_player_should_be_playing_on_add(
