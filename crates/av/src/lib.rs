@@ -261,10 +261,7 @@ fn stream_shouldnt_be_played(
     mut removed_av_players: RemovedComponents<AVPlayer>,
 ) {
     let entity = trigger.target();
-    if removed_av_players
-        .read()
-        .any(|removed| removed == entity)
-    {
+    if removed_av_players.read().any(|removed| removed == entity) {
         return;
     }
     let Ok((av_player, has_stream_viewer)) = av_players.get(entity) else {
