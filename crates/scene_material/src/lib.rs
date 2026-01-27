@@ -267,7 +267,7 @@ impl MaterialExtension for SceneBound {
         ShaderRef::Path("embedded://shaders/bound_prepass.wgsl".into())
     }
 
-    fn fallback_asset(&self, _base: &Self::Base) -> Option<ExtendedMaterial<Self>> {
+    fn fallback_asset(&self, base: &Self::Base) -> Option<ExtendedMaterial<Self>> {
         let (base_color, emissive) = if self.data.flags & SCENE_MATERIAL_OUTLINE != 0 {
             (
                 Color::srgba(1.0, 1.0, 4.0, 1.0),
@@ -282,6 +282,7 @@ impl MaterialExtension for SceneBound {
                 base_color,
                 emissive: emissive.to_linear(),
                 double_sided: true,
+                cull_mode: base.cull_mode,
                 unlit: true,
                 alpha_mode: AlphaMode::Blend,
                 ..Default::default()
