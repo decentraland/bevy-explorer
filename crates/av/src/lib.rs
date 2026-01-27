@@ -237,16 +237,16 @@ fn av_player_should_be_playing(
 fn stream_should_be_played(
     trigger: Trigger<OnAdd, ShouldBePlaying>,
     mut commands: Commands,
-    av_players: Query<(Entity, &AVPlayer)>,
+    av_players: Query<&AVPlayer>,
     streamer: Single<Entity, With<Streamer>>,
 ) {
     let entity = trigger.target();
-    let Ok((av_player_entity, av_player)) = av_players.get(entity) else {
+    let Ok(av_player) = av_players.get(entity) else {
         unreachable!("ShouldBePlaying must only be added to AVPlayers.");
     };
 
     if av_player.source.src.starts_with("livekit-video://") {
-        debug!("AVPlayer {av_player_entity} should be playing. Linking to the stream.");
+        debug!("AVPlayer {entity} should be playing. Linking to the stream.");
         commands
             .entity(entity)
             .insert(<StreamViewer as Relationship>::from(*streamer));
@@ -257,14 +257,18 @@ fn stream_should_be_played(
 fn stream_shouldnt_be_played(
     trigger: Trigger<OnRemove, ShouldBePlaying>,
     mut commands: Commands,
-    av_players: Query<(Entity, &AVPlayer, Has<StreamViewer>)>,
+    av_players: Query<(&AVPlayer, Has<StreamViewer>)>,
     mut removed_av_players: RemovedComponents<AVPlayer>,
 ) {
     let entity = trigger.target();
-    if removed_av_players.read().find(|removed| *removed == entity).is_some() {
+    if removed_av_players
+        .read()
+        .find(|removed| *removed == entity)
+        .is_some()
+    {
         return;
     }
-    let Ok((av_player_entity, av_player, has_stream_viewer)) = av_players.get(entity) else {
+    let Ok((av_player, has_stream_viewer)) = av_players.get(entity) else {
         unreachable!("ShouldBePlaying must have only been added to AVPlayers.");
     };
     if !has_stream_viewer {
@@ -273,7 +277,7 @@ fn stream_shouldnt_be_played(
     }
 
     if av_player.source.src.starts_with("livekit-video://") {
-        debug!("AVPlayer {av_player_entity} no longer playing. Unlinking to the stream.");
+        debug!("AVPlayer {entity} no longer playing. Unlinking to the stream.");
         commands.entity(entity).try_remove::<StreamViewer>();
     }
 }
