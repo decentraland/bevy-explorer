@@ -164,7 +164,6 @@ pub struct SetPermanentPermission {
     pub allow: Option<PermissionValue>,
 }
 
-// TODO: rename to NativeUiFlags?
 #[derive(Resource)]
 pub struct NativeUi {
     pub login: bool,
