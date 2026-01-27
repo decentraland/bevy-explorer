@@ -331,7 +331,7 @@ window.set_url_params = (x, y, server, system_scene, preview) => {
     urlParams.set("location", `${x},${y}`);
 
     if (server != DEFAULT_SERVER) {
-      urlParams.set("initialServer", realm);
+      urlParams.set("initialServer", server);
     } else {
       urlParams.delete("initialServer");
     }
