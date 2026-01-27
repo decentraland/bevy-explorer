@@ -68,11 +68,20 @@ pub struct LightSource {
 
 impl From<PbLightSource> for LightSource {
     fn from(value: PbLightSource) -> Self {
+        // rescale colors > 1 to 1, and multiply intensity by pow(max^2.2)
+        // to match unity
+        let color_scale = value
+            .color
+            .map(|c| c.r.max(c.g).max(c.b).max(1.0))
+            .unwrap_or(1.0);
+
         Self {
             enabled: value.active.unwrap_or(true),
-            intensity: value.intensity,
+            intensity: Some(value.intensity.unwrap_or(16000.0) * color_scale.powf(2.2)),
             shadow: value.shadow,
-            color: value.color.map(Color3DclToBevy::convert_linear_rgb),
+            color: value.color.map(|c| {
+                Color::linear_rgb(c.r / color_scale, c.g / color_scale, c.b / color_scale)
+            }),
             range: value.range,
             spotlight_angles: if let Some(pb_light_source::Type::Spot(spot)) = value.r#type {
                 Some((
