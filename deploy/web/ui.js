@@ -57,10 +57,10 @@ function populateInputsFromQueryParams() {
     previewInput.checked = false;
   }
 
-  // Hide form when autoStart is true (no manualParams in URL)
-  if (autoStart) {
+  // Show form only when manualParams is present (autoStart is false)
+  if (!autoStart) {
     const form = document.querySelector('form');
-    if (form) form.style.display = 'none';
+    if (form) form.style.display = 'block';
   }
 }
 
