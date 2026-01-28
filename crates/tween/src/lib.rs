@@ -3,7 +3,7 @@ use common::sets::SceneSets;
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
-        common::{texture_union::Tex, Texture},
+        common::{texture_union::Tex, Texture, Vector2},
         sdk::components::{
             pb_material, pb_tween::Mode, EasingFunction, PbTween, PbTweenState,
             TextureMovementType, TweenStateStatus,
@@ -350,16 +350,14 @@ fn transfer_material_to_scene(
 }
 
 fn update_texture(texture: &mut Texture, scene_material: &SceneMaterial) {
-    if let Some(offset) = texture.offset.as_mut() {
-        let uv_transform = scene_material.base.uv_transform;
-        offset.x = uv_transform.translation.x;
-        offset.y = uv_transform.translation.y;
-    }
-    if let Some(tiling) = texture.tiling.as_mut() {
-        let uv_transform = scene_material.base.uv_transform;
-        tiling.x = uv_transform.matrix2.x_axis.x;
-        tiling.y = uv_transform.matrix2.y_axis.y;
-    }
+    let uv_transform = scene_material.base.uv_transform;
+    let offset = texture.offset.get_or_insert_default();
+    let tiling = texture.tiling.get_or_insert(Vector2 { x: 1., y: 1. });
+
+    offset.x = uv_transform.translation.x;
+    offset.y = uv_transform.translation.y;
+    tiling.x = uv_transform.matrix2.x_axis.x;
+    tiling.y = uv_transform.matrix2.y_axis.y;
 }
 
 #[derive(Component)]
