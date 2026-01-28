@@ -346,7 +346,7 @@ fn subscribe_to_track(
     let kind = match audio_or_video {
         (Some(_), None) => "audio",
         (None, Some(_)) => "video",
-        _ => unreachable!("Track must have either Audio or Video."),
+        _ => panic!("Track must have either Audio or Video."),
     };
 
     debug!("Subscribing to {kind} track {}", track.sid());

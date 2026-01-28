@@ -153,7 +153,7 @@ impl<'de> Deserialize<'de> for DataPacketKind {
         let kind = match int {
             0 => DataPacketKind::Reliable,
             1 => DataPacketKind::Lossy,
-            _ => unreachable!("Should always be 0 for Reliable or 1 for Lossy, but was {int}."),
+            _ => panic!("Should always be 0 for Reliable or 1 for Lossy, but was {int}."),
         };
         Ok(kind)
     }
