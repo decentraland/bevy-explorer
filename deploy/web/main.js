@@ -61,8 +61,15 @@ initButton.onclick = start;
 
 // Initialize engine and start or enable button
 initEngine()
-  .then(() => initGpuCache(gpu_cache_hash()))
   .then(() => {
+    // Step 5: GPU cache
+    setLoadingStepActive('gpu');
+    return initGpuCache(gpu_cache_hash());
+  })
+  .then(() => {
+    setLoadingStepCompleted('gpu');
+    hideLoading();
+
     if (autoStart) {
       start();
     } else {

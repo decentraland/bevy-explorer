@@ -107,5 +107,73 @@ window.set_url_params = (x, y, server, system_scene, preview) => {
   }
 };
 
+// ============================================
+// Loading Progress UI
+// ============================================
+
+const LOADING_STEPS = ['download', 'compile', 'init', 'workers', 'gpu'];
+const loadingOverallFill = document.getElementById('loading-overall-fill');
+
+/**
+ * Sets a loading step as active (shows spinner).
+ * @param {string} stepName - The step identifier
+ */
+function setLoadingStepActive(stepName) {
+  const step = document.querySelector(`.loading-step[data-step="${stepName}"]`);
+  if (step) {
+    step.classList.add('active');
+    step.classList.remove('completed');
+  }
+  updateOverallProgress();
+}
+
+/**
+ * Sets a loading step as completed (shows checkmark).
+ * @param {string} stepName - The step identifier
+ */
+function setLoadingStepCompleted(stepName) {
+  const step = document.querySelector(`.loading-step[data-step="${stepName}"]`);
+  if (step) {
+    step.classList.remove('active');
+    step.classList.add('completed');
+  }
+  updateOverallProgress();
+}
+
+/**
+ * Updates the progress bar of a specific step.
+ * @param {string} stepName - The step identifier
+ * @param {number} percent - Progress percentage (0-100)
+ */
+function setLoadingStepProgress(stepName, percent) {
+  const step = document.querySelector(`.loading-step[data-step="${stepName}"]`);
+  if (step) {
+    const fill = step.querySelector('.loading-step-fill');
+    if (fill) {
+      fill.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+    }
+  }
+}
+
+/**
+ * Updates the overall progress bar based on completed steps.
+ */
+function updateOverallProgress() {
+  const completedCount = document.querySelectorAll('.loading-step.completed').length;
+  const totalSteps = LOADING_STEPS.length;
+  const percent = (completedCount / totalSteps) * 100;
+  if (loadingOverallFill) {
+    loadingOverallFill.style.width = `${percent}%`;
+  }
+}
+
+/**
+ * Hides the loading container.
+ */
+function hideLoading() {
+  const container = document.getElementById('loading-container');
+  if (container) container.style.display = 'none';
+}
+
 // Initialize UI immediately when script loads
 populateInputsFromQueryParams();

@@ -8,23 +8,71 @@ import { initGpuCache } from "./gpu_cache.js";
 export { gpu_cache_hash, initGpuCache };
 
 /**
+ * Fetches a URL with download progress tracking.
+ * @param {string} url - URL to fetch
+ * @param {function} onProgress - Callback with percentage (0-100)
+ * @returns {Promise<ArrayBuffer>}
+ */
+async function fetchWithProgress(url, onProgress) {
+  const response = await fetch(url);
+  const contentLength = response.headers.get('Content-Length');
+
+  if (!contentLength || !response.body) {
+    // Fallback if Content-Length is missing or no streaming support
+    const buffer = await response.arrayBuffer();
+    onProgress(100);
+    return buffer;
+  }
+
+  const total = parseInt(contentLength, 10);
+  const reader = response.body.getReader();
+  const chunks = [];
+  let received = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    chunks.push(value);
+    received += value.length;
+    onProgress((received / total) * 100);
+  }
+
+  // Combine chunks into single ArrayBuffer
+  const buffer = new Uint8Array(received);
+  let position = 0;
+  for (const chunk of chunks) {
+    buffer.set(chunk, position);
+    position += chunk.length;
+  }
+
+  return buffer.buffer;
+}
+
+/**
  * Initializes the WASM engine, shared memory, and worker threads.
  * @returns {Promise<void>}
  */
 export async function initEngine() {
   if (initButton) {
     initButton.disabled = true;
-    if (autoStart) {
-      initButton.textContent = "Autostarting ..";
-    } else {
-      initButton.textContent = "Loading ...";
-    }
+    initButton.textContent = autoStart ? "Autostarting .." : "Loading ...";
   }
 
   const publicUrl = window.PUBLIC_URL || ".";
   const wasmUrl = `${publicUrl}/pkg/webgpu_build_bg.wasm`;
 
-  const compiledModule = await WebAssembly.compileStreaming(fetch(wasmUrl));
+  // Step 1: Download WASM with progress
+  setLoadingStepActive('download');
+  const wasmBytes = await fetchWithProgress(wasmUrl, (percent) => {
+    setLoadingStepProgress('download', percent);
+  });
+  setLoadingStepCompleted('download');
+
+  // Step 2: Compile WASM
+  setLoadingStepActive('compile');
+  const compiledModule = await WebAssembly.compile(wasmBytes);
+  setLoadingStepCompleted('compile');
 
   const initialMemoryPages = 1280; // setting initial memory high causes malloc failures
   const maximumMemoryPages = 65536;
@@ -121,6 +169,8 @@ export async function initEngine() {
     });
   };
 
+  // Step 3: Initialize engine
+  setLoadingStepActive('init');
   await init({ module_or_path: compiledModule, memory: sharedMemory });
   console.log("[Main JS] Main application WebAssembly module initialized.");
 
@@ -129,6 +179,11 @@ export async function initEngine() {
     "[Main JS] Main application WebAssembly module custom initialized: ",
     res
   );
+  setLoadingStepCompleted('init');
+
+  // Step 4: Start workers
+  setLoadingStepActive('workers');
+  setLoadingStepProgress('workers', 0);
 
   // start asset loader thread
   await new Promise((resolve, _reject) => {
@@ -151,6 +206,7 @@ export async function initEngine() {
       }
     };
   });
+  setLoadingStepProgress('workers', 50);
 
   // start asset processor thread
   await new Promise((resolve, _reject) => {
@@ -173,6 +229,7 @@ export async function initEngine() {
       }
     };
   });
+  setLoadingStepCompleted('workers');
 }
 
 /**

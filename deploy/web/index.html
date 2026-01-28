@@ -111,6 +111,103 @@
             position: relative;
         }
 
+        /* Loading UI */
+        #loading-container {
+            margin-top: 2rem;
+            width: 100%;
+        }
+        .loading-overall {
+            margin-bottom: 1.5rem;
+        }
+        .loading-overall-bar {
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .loading-overall-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #FF2D55, #FFBC5B);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        .loading-steps {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .loading-step {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.5rem 0;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.9rem;
+            transition: color 0.2s;
+        }
+        .loading-step.active {
+            color: rgba(255, 255, 255, 0.9);
+        }
+        .loading-step.completed {
+            color: rgba(255, 255, 255, 0.7);
+        }
+        .loading-step-icon {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .loading-step-icon svg {
+            width: 16px;
+            height: 16px;
+        }
+        .loading-step-check {
+            display: none;
+        }
+        .loading-step.completed .loading-step-check {
+            display: block;
+            color: #4ade80;
+        }
+        .loading-step.completed .loading-step-spinner {
+            display: none;
+        }
+        .loading-step:not(.active):not(.completed) .loading-step-spinner {
+            display: none;
+        }
+        .loading-step-content {
+            flex: 1;
+            min-width: 0;
+        }
+        .loading-step-name {
+            display: block;
+        }
+        .loading-step-bar {
+            height: 3px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            margin-top: 4px;
+            overflow: hidden;
+        }
+        .loading-step-fill {
+            height: 100%;
+            background: rgba(255, 255, 255, 0.5);
+            width: 0%;
+            transition: width 0.2s ease;
+        }
+        .loading-step.completed .loading-step-fill {
+            width: 100%;
+            background: #4ade80;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .loading-step-spinner {
+            animation: spin 1s linear infinite;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
         /* For smaller screens */
         @media (max-width: 600px) {
             body {
@@ -158,6 +255,86 @@
 
             <button id="initButton" disabled="true">Loading...</button>
         </form>
+
+        <div id="loading-container">
+            <div class="loading-overall">
+                <div class="loading-overall-bar">
+                    <div class="loading-overall-fill" id="loading-overall-fill"></div>
+                </div>
+            </div>
+            <ul class="loading-steps">
+                <li class="loading-step" data-step="download">
+                    <span class="loading-step-icon">
+                        <svg class="loading-step-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2v4m0 12v4m10-10h-4M6 12H2m15.07-5.07l-2.83 2.83M8.76 15.24l-2.83 2.83m11.31 0l-2.83-2.83M8.76 8.76L5.93 5.93"/>
+                        </svg>
+                        <svg class="loading-step-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                    </span>
+                    <span class="loading-step-content">
+                        <span class="loading-step-name">Downloading engine</span>
+                        <div class="loading-step-bar"><div class="loading-step-fill" id="step-download-fill"></div></div>
+                    </span>
+                </li>
+                <li class="loading-step" data-step="compile">
+                    <span class="loading-step-icon">
+                        <svg class="loading-step-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2v4m0 12v4m10-10h-4M6 12H2m15.07-5.07l-2.83 2.83M8.76 15.24l-2.83 2.83m11.31 0l-2.83-2.83M8.76 8.76L5.93 5.93"/>
+                        </svg>
+                        <svg class="loading-step-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                    </span>
+                    <span class="loading-step-content">
+                        <span class="loading-step-name">Compiling WASM</span>
+                        <div class="loading-step-bar"><div class="loading-step-fill"></div></div>
+                    </span>
+                </li>
+                <li class="loading-step" data-step="init">
+                    <span class="loading-step-icon">
+                        <svg class="loading-step-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2v4m0 12v4m10-10h-4M6 12H2m15.07-5.07l-2.83 2.83M8.76 15.24l-2.83 2.83m11.31 0l-2.83-2.83M8.76 8.76L5.93 5.93"/>
+                        </svg>
+                        <svg class="loading-step-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                    </span>
+                    <span class="loading-step-content">
+                        <span class="loading-step-name">Initializing engine</span>
+                        <div class="loading-step-bar"><div class="loading-step-fill"></div></div>
+                    </span>
+                </li>
+                <li class="loading-step" data-step="workers">
+                    <span class="loading-step-icon">
+                        <svg class="loading-step-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2v4m0 12v4m10-10h-4M6 12H2m15.07-5.07l-2.83 2.83M8.76 15.24l-2.83 2.83m11.31 0l-2.83-2.83M8.76 8.76L5.93 5.93"/>
+                        </svg>
+                        <svg class="loading-step-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                    </span>
+                    <span class="loading-step-content">
+                        <span class="loading-step-name">Starting workers</span>
+                        <div class="loading-step-bar"><div class="loading-step-fill"></div></div>
+                    </span>
+                </li>
+                <li class="loading-step" data-step="gpu">
+                    <span class="loading-step-icon">
+                        <svg class="loading-step-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2v4m0 12v4m10-10h-4M6 12H2m15.07-5.07l-2.83 2.83M8.76 15.24l-2.83 2.83m11.31 0l-2.83-2.83M8.76 8.76L5.93 5.93"/>
+                        </svg>
+                        <svg class="loading-step-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                    </span>
+                    <span class="loading-step-content">
+                        <span class="loading-step-name">Loading GPU cache</span>
+                        <div class="loading-step-bar"><div class="loading-step-fill"></div></div>
+                    </span>
+                </li>
+            </ul>
+        </div>
     </div>
 
     <div id="canvas-parent">
