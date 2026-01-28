@@ -57,10 +57,11 @@ function populateInputsFromQueryParams() {
     previewInput.checked = false;
   }
 
-  initialRealmInput.disabled = autoStart;
-  locationInput.disabled = autoStart;
-  systemSceneInput.disabled = autoStart;
-  previewInput.disabled = autoStart;
+  // Hide form when autoStart is true (no manualParams in URL)
+  if (autoStart) {
+    const form = document.querySelector('form');
+    if (form) form.style.display = 'none';
+  }
 }
 
 /**
