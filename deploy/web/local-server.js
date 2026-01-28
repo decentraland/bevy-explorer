@@ -12,7 +12,7 @@ const SLOW_MODE = args.includes('--slow');
 
 // Throttle settings (only apply when --slow is used)
 const CHUNK_SIZE = 16 * 1024; // 16KB chunks
-const CHUNK_DELAY_MS = 50;    // 50ms delay between chunks (~320 KB/s)
+const CHUNK_DELAY_MS = 6;     // 6ms delay between chunks (~2.5 MB/s, 4G medio ~20 Mbps)
 
 const MIME_TYPES = {
   '.html': 'text/html',

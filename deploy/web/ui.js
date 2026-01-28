@@ -114,6 +114,10 @@ window.set_url_params = (x, y, server, system_scene, preview) => {
 const LOADING_STEPS = ['download', 'compile', 'init', 'workers', 'gpu'];
 const loadingOverallFill = document.getElementById('loading-overall-fill');
 
+// Track current step progress for overall bar calculation
+let currentStepName = null;
+let currentStepProgress = 0;
+
 /**
  * Sets a loading step as active (shows spinner).
  * @param {string} stepName - The step identifier
@@ -124,6 +128,8 @@ function setLoadingStepActive(stepName) {
     step.classList.add('active');
     step.classList.remove('completed');
   }
+  currentStepName = stepName;
+  currentStepProgress = 0;
   updateOverallProgress();
 }
 
@@ -137,6 +143,8 @@ function setLoadingStepCompleted(stepName) {
     step.classList.remove('active');
     step.classList.add('completed');
   }
+  currentStepName = null;
+  currentStepProgress = 0;
   updateOverallProgress();
 }
 
@@ -153,15 +161,25 @@ function setLoadingStepProgress(stepName, percent) {
       fill.style.width = `${Math.min(100, Math.max(0, percent))}%`;
     }
   }
+  // Update current step progress for overall bar
+  if (stepName === currentStepName) {
+    currentStepProgress = Math.min(100, Math.max(0, percent));
+    updateOverallProgress();
+  }
 }
 
 /**
- * Updates the overall progress bar based on completed steps.
+ * Updates the overall progress bar based on completed steps + current step progress.
+ * Each step is worth 1/5 (20%) of the total progress.
  */
 function updateOverallProgress() {
   const completedCount = document.querySelectorAll('.loading-step.completed').length;
   const totalSteps = LOADING_STEPS.length;
-  const percent = (completedCount / totalSteps) * 100;
+  const stepWeight = 100 / totalSteps; // 20% per step
+
+  // Completed steps + fraction of current step
+  const percent = (completedCount * stepWeight) + (currentStepProgress / 100 * stepWeight);
+
   if (loadingOverallFill) {
     loadingOverallFill.style.width = `${percent}%`;
   }
