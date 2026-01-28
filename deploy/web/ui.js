@@ -114,6 +114,15 @@ window.set_url_params = (x, y, server, system_scene, preview) => {
 const LOADING_STEPS = ['download', 'compile', 'init', 'workers', 'gpu'];
 const loadingOverallFill = document.getElementById('loading-overall-fill');
 
+// Weight of each step in the overall progress (must sum to 100)
+const STEP_WEIGHTS = {
+  download: 80,
+  compile: 5,
+  init: 5,
+  workers: 5,
+  gpu: 5
+};
+
 // Track current step progress for overall bar calculation
 let currentStepName = null;
 let currentStepProgress = 0;
@@ -170,15 +179,23 @@ function setLoadingStepProgress(stepName, percent) {
 
 /**
  * Updates the overall progress bar based on completed steps + current step progress.
- * Each step is worth 1/5 (20%) of the total progress.
+ * Each step has a custom weight defined in STEP_WEIGHTS.
  */
 function updateOverallProgress() {
-  const completedCount = document.querySelectorAll('.loading-step.completed').length;
-  const totalSteps = LOADING_STEPS.length;
-  const stepWeight = 100 / totalSteps; // 20% per step
+  let percent = 0;
 
-  // Completed steps + fraction of current step
-  const percent = (completedCount * stepWeight) + (currentStepProgress / 100 * stepWeight);
+  // Add weight of completed steps
+  for (const stepName of LOADING_STEPS) {
+    const step = document.querySelector(`.loading-step[data-step="${stepName}"]`);
+    if (step && step.classList.contains('completed')) {
+      percent += STEP_WEIGHTS[stepName];
+    }
+  }
+
+  // Add fraction of current step's weight
+  if (currentStepName && STEP_WEIGHTS[currentStepName]) {
+    percent += (currentStepProgress / 100) * STEP_WEIGHTS[currentStepName];
+  }
 
   if (loadingOverallFill) {
     loadingOverallFill.style.width = `${percent}%`;
