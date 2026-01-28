@@ -149,6 +149,7 @@ impl Plugin for TweenPlugin {
         );
         app.add_systems(Update, update_tween.in_set(SceneSets::PostLoop));
         app.add_systems(PostUpdate, update_system_tween);
+        app.add_observer(clean_scene_tween_state);
     }
 }
 
@@ -233,6 +234,30 @@ pub fn update_tween(
                 &DclTransformAndParent::from_bevy_transform_and_parent(&transform, parent.id),
             );
         }
+    }
+}
+
+// remove scene TWEEN_STATE data when TWEEN is removed
+fn clean_scene_tween_state(
+    trigger: Trigger<OnRemove, Tween>,
+    mut commands: Commands,
+    scene_ent: Query<&ContainerEntity>,
+    mut scenes: Query<&mut RendererSceneContext>,
+) {
+    let entity = trigger.target();
+    if let Ok(mut commands) = commands.get_entity(entity) {
+        commands.try_remove::<TweenState>();
+    }
+
+    let Ok(scene_ent) = scene_ent.get(entity) else {
+        return;
+    };
+    if let Ok(mut ctx) = scenes.get_mut(scene_ent.root) {
+        ctx.clear_crdt(
+            SceneComponentId::TWEEN_STATE,
+            CrdtType::LWW_ANY,
+            scene_ent.container_id,
+        );
     }
 }
 
