@@ -13,3 +13,4 @@ config.json
 /deploy/web/node_modules
 .idea
 *.pem
+.DS_Store

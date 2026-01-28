@@ -21,6 +21,8 @@ use bevy::{
     },
 };
 use common::sets::SceneSets;
+#[cfg(feature = "livekit")]
+use comms::livekit::participant::StreamViewer;
 use dcl::interface::CrdtType;
 use dcl_component::{
     proto_components::sdk::components::{PbAudioEvent, PbVideoEvent, VideoState},
@@ -39,7 +41,9 @@ use web_sys::{
     HtmlMediaElement, HtmlVideoElement, VideoFrame,
 };
 
-use crate::{av_player_is_in_scene, av_player_should_be_playing, AVPlayer, ShouldBePlaying};
+use crate::{
+    av_player_is_in_scene, av_player_should_be_playing, AVPlayer, InScene, ShouldBePlaying,
+};
 
 type RcClosure = Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>>;
 
@@ -88,6 +92,7 @@ impl Plugin for VideoPlayerPlugin {
         app.insert_resource(FrameCopyRequestQueue(sx));
 
         app.add_observer(av_player_on_insert);
+        app.add_observer(av_player_on_remove);
 
         let render_app = app.sub_app_mut(RenderApp);
         render_app
@@ -472,6 +477,18 @@ fn av_player_on_insert(
             .entity(trigger.target())
             .try_remove::<HtmlMediaEntity>();
     }
+}
+
+fn av_player_on_remove(trigger: Trigger<OnRemove, AVPlayer>, mut commands: Commands) {
+    let entity = trigger.target();
+    commands.entity(entity).try_remove::<(
+        InScene,
+        ShouldBePlaying,
+        HtmlMediaEntity,
+        VideoTextureOutput,
+    )>();
+    #[cfg(feature = "livekit")]
+    commands.entity(entity).try_remove::<StreamViewer>();
 }
 
 fn rebuild_html_media_entities(

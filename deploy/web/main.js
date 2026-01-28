@@ -13,7 +13,7 @@ const header = document.getElementById("header");
 var autoStart = true;
 
 const DEFAULT_SERVER = "https://realm-provider-ea.decentraland.org/main"
-const DEFAULT_SYSTEMSCENE = "https://dclexplorer.github.io/bevy-ui-scene/BevyUiScene"
+const DEFAULT_SYSTEMSCENE = "https://regenesislabs.github.io/bevy-ui-scene/BevyUiScene"
 
 function populateInputsFromQueryParams() {
   const queryParams = new URLSearchParams(window.location.search);
@@ -304,7 +304,7 @@ function start() {
     return "unknown";
   })();
 
-  engine_run(platform, initialRealm, location, systemScene, true, preview, 5e7);
+  engine_run(platform, initialRealm, location, systemScene, true, preview, 1e7);
 }
 
 initButton.onclick = start;
@@ -331,7 +331,7 @@ window.set_url_params = (x, y, server, system_scene, preview) => {
     urlParams.set("location", `${x},${y}`);
 
     if (server != DEFAULT_SERVER) {
-      urlParams.set("initialServer", realm);
+      urlParams.set("initialServer", server);
     } else {
       urlParams.delete("initialServer");
     }
@@ -354,4 +354,5 @@ window.set_url_params = (x, y, server, system_scene, preview) => {
     console.log(`set url params failed: ${e}`);
   }
 }
+
 

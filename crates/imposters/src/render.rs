@@ -946,9 +946,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                                         alpha: 1.0,
                                         alpha_blend: 0.0, // blend
                                         multisample_amount: 0.0,
-                                        transfer_priority: RenderAssetTransferPriority::Priority(
-                                            -1,
-                                        ),
+                                        transfer_priority: RenderAssetTransferPriority::Immediate,
                                         asset_usages: RenderAssetUsages::RENDER_WORLD,
                                     }
                                 },
@@ -1194,8 +1192,9 @@ fn load_imposters(
                     let (mesh, aabb) = if error == 0 {
                         (imposter_meshes.cube.clone(), imposter_meshes.aabb)
                     } else {
-                        let mesh = ImposterMesh::from_spec(&spec, base_imposter);
+                        let mut mesh = ImposterMesh::from_spec(&spec, base_imposter);
                         let aabb = mesh.compute_aabb().unwrap();
+                        mesh.transfer_priority = RenderAssetTransferPriority::Immediate;
 
                         (meshes.add(mesh), aabb)
                     };
@@ -1251,7 +1250,7 @@ fn load_imposters(
                             uv[1] = 0.0 / 18.0
                                 + 17.0 / 18.0 * (1.0 - bottomleft.y - (1.0 - uv[1]) * parcel_size);
                         }
-                        floor.transfer_priority = RenderAssetTransferPriority::Priority(-1);
+                        floor.transfer_priority = RenderAssetTransferPriority::Immediate;
 
                         meshes.add(floor)
                     };
