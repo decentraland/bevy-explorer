@@ -54,10 +54,6 @@ async function fetchWithProgress(url, onProgress) {
  * @returns {Promise<void>}
  */
 export async function initEngine() {
-  if (initButton) {
-    initButton.disabled = true;
-    initButton.textContent = autoStart ? "Autostarting .." : "Loading ...";
-  }
 
   const publicUrl = window.PUBLIC_URL || ".";
   const wasmUrl = `${publicUrl}/pkg/webgpu_build_bg.wasm`;

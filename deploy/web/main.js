@@ -73,11 +73,13 @@ initEngine()
     if (autoStart) {
       start();
     } else {
-      initButton.disabled = false;
-      initButton.textContent = "Go";
+      // Show the button when loading is complete
+      initButton.style.display = 'block';
     }
   })
   .catch((e) => {
     console.log("error", e);
+    // Show error state
+    initButton.style.display = 'block';
     initButton.textContent = "Load Failed";
   });

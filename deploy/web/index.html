@@ -109,6 +109,10 @@
         form {
             display: none;
         }
+        /* Button hidden while loading, shown via JS when ready */
+        #initButton {
+            display: none;
+        }
         input[type=checkbox] {
             width: 1.2rem;
             height: 1.2rem;
@@ -258,7 +262,7 @@
 
             </div>
 
-            <button id="initButton" disabled="true">Loading...</button>
+            <button id="initButton">Launch</button>
         </form>
 
         <div id="loading-container">
