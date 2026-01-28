@@ -104,6 +104,12 @@
         .input-group {
             margin-bottom: 15px;
         }
+        input[type=checkbox] {
+            width: 1.2rem;
+            height: 1.2rem;
+            top:0.2rem;
+            position: relative;
+        }
 
         /* For smaller screens */
         @media (max-width: 600px) {
@@ -131,23 +137,23 @@
         </h1>
 
         <div class="input-group">
-            <label for="initialRealm">Initial Realm:</label>
+            <label for="initialRealm">Initial Realm</label>
             <input type="text" id="initialRealm" name="initialRealm" placeholder="e.g., https://realm-provider-ea.decentraland.org/main">
         </div>
 
         <div class="input-group">
-            <label for="location">Location:</label>
+            <label for="location">Location</label>
             <input type="text" id="location" name="location" placeholder="e.g., 0,0">
         </div>
 
         <div class="input-group">
-            <label for="systemScene">System Scene:</label>
+            <label for="systemScene">System Scene</label>
             <input type="text" id="systemScene" name="systemScene" placeholder="">
         </div>
 
         <div class="input-group">
-            <label for="preview">Preview Mode: </label>
-            <input type="checkbox" id="preview" name="preview">
+            <label for="preview">Preview Mode <input type="checkbox" id="preview" name="preview"> </label>
+
         </div>
 
         <button id="initButton" disabled="true">Loading...</button>
