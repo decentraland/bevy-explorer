@@ -141,6 +141,7 @@ fn broadcast_emote(
                 message: Some(rfc4::packet::Message::PlayerEmote(PlayerEmote {
                     incremental_id: *count as u32,
                     urn: emote.urn.clone(),
+                    timestamp: time.elapsed_secs(),
                 })),
                 protocol_version: 100,
             };
