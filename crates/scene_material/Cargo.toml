@@ -9,4 +9,3 @@ edition = "2021"
 bevy = { workspace = true }
 common = { workspace = true }
 boimp = { workspace = true }
-

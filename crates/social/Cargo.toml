@@ -26,4 +26,7 @@ web-time = { workspace = true }
 dcl-rpc = { workspace = true, optional = true }
 futures-util = { workspace = true }
 
-matrix-sdk = { version = "0.10", default-features = false, features = ["e2e-encryption", "native-tls"], optional = true }
+matrix-sdk = { version = "0.10", default-features = false, features = [
+  "e2e-encryption",
+  "native-tls",
+], optional = true }

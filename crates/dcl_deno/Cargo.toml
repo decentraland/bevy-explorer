@@ -41,5 +41,9 @@ bytes = "1.4.0"
 
 # inspector requirements
 fastwebsockets = { version = "0.4.4", optional = true, features = ["upgrade"] }
-hyper = { version = "0.14.26", features = ["runtime", "http1", "server"], optional = true }
+hyper = { version = "0.14.26", features = [
+  "runtime",
+  "http1",
+  "server",
+], optional = true }
 uuid = { workspace = true, optional = true }
