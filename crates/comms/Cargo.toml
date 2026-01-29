@@ -41,14 +41,14 @@ modular-bitfield = "0.11"
 
 cid = "0.11.0"
 multipart = { version = "0.18.0", default-features = false, features = [
-    "client",
-    "lazy_static",
+  "client",
+  "lazy_static",
 ] }
 image = "0.25"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 livekit = { git = "https://github.com/robtfm/client-sdk-rust", branch = "h264-true-prefixed", features = [
-    "native-tls",
+  "native-tls",
 ], optional = true }
 cpal = "0.15.2"
 

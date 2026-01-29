@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 common = { workspace = true }
 comms = { workspace = true }
-console = { workspace = true}
+console = { workspace = true }
 dcl = { workspace = true }
 dcl_component = { workspace = true }
 ipfs = { workspace = true }
