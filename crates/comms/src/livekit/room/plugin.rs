@@ -5,6 +5,7 @@ use bevy::{
 use common::{structs::AudioDecoderError, util::AsH160};
 use ethers_core::types::H160;
 use http::Uri;
+use livekit::DisconnectReason;
 use tokio::{
     sync::{mpsc, oneshot},
     task::JoinHandle,
@@ -29,7 +30,8 @@ use crate::{
         room::{
             Connected, Connecting, ConnectingLivekitRoom, Disconnected, LivekitRoom, Reconnecting,
         },
-        track, LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime, LivekitTransport,
+        track, ConnectionAvailability, LivekitChannelControl, LivekitNetworkMessage,
+        LivekitRuntime, LivekitTransport,
     },
     NetworkMessageRecipient,
 };
@@ -54,7 +56,7 @@ impl Plugin for LivekitRoomPlugin {
         app.add_systems(
             Update,
             (
-                try_reconnect,
+                try_reconnect.run_if(not(in_state(ConnectionAvailability::Unavailable))),
                 poll_connecting_rooms,
                 (
                     process_room_events,
@@ -85,7 +87,13 @@ fn initiate_room_connection(
     mut commands: Commands,
     livekit_transports: Query<&LivekitTransport>,
     livekit_runtime: Res<LivekitRuntime>,
+    connection_availability: Res<State<ConnectionAvailability>>,
 ) {
+    if *connection_availability.get() == ConnectionAvailability::Unavailable {
+        debug!("Can't connect because new connections are disabled.");
+        return;
+    }
+
     let entity = trigger.target();
     let Ok(livekit_transport) = livekit_transports.get(entity) else {
         error!("{entity} does not have a LivekitRuntime.");
@@ -185,6 +193,14 @@ fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mu
                                 track: publication.clone(),
                             });
                         }
+                    }
+                }
+                RoomEvent::Disconnected { reason } => {
+                    if matches!(
+                        reason,
+                        DisconnectReason::DuplicateIdentity | DisconnectReason::ParticipantRemoved
+                    ) {
+                        commands.set_state(ConnectionAvailability::Unavailable);
                     }
                 }
                 RoomEvent::ConnectionStateChanged(state) => match state {
