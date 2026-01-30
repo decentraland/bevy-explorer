@@ -49,7 +49,7 @@ impl Connected {
         deferred_world
             .commands()
             .entity(entity)
-            .try_remove::<LivekitRoom>();
+            .despawn_related::<HostingParticipants>();
     }
 }
 
@@ -82,8 +82,7 @@ impl Connecting {
         deferred_world
             .commands()
             .entity(entity)
-            .try_remove::<ConnectingLivekitRoom>()
-            .despawn_related::<HostingParticipants>();
+            .try_remove::<ConnectingLivekitRoom>();
     }
 }
 
