@@ -11,6 +11,7 @@ use tokio::{sync::mpsc, task::JoinHandle};
 
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::{Room, RoomEvent, RoomResult};
+use crate::livekit::LivekitTransport;
 
 #[derive(Component, Deref)]
 pub struct LivekitRoom {
@@ -37,7 +38,7 @@ impl Connected {
         deferred_world
             .commands()
             .entity(entity)
-            .remove::<(Reconnecting, Disconnected)>();
+            .remove::<(Connecting, Reconnecting, Disconnected)>();
     }
 
     pub fn on_remove(mut deferred_world: DeferredWorld, hook_context: HookContext) {
@@ -49,6 +50,39 @@ impl Connected {
             .commands()
             .entity(entity)
             .try_remove::<LivekitRoom>();
+    }
+}
+
+/// Marks that a [`LivekitRoom`] is connecting
+#[derive(Component)]
+#[component(on_add=Self::on_add, on_remove=Self::on_remove)]
+pub struct Connecting;
+
+impl Connecting {
+    pub fn on_add(mut deferred_world: DeferredWorld, hook_context: HookContext) {
+        let entity = hook_context.entity;
+        let Some(transport) = deferred_world.entity(entity).get::<LivekitTransport>() else {
+            error!("Connecting room {entity} did not have LivekitTransport.");
+            deferred_world.commands().send_event(AppExit::from_code(1));
+            return;
+        };
+        debug!("Room {} connecting.", transport.address);
+
+        deferred_world
+            .commands()
+            .entity(entity)
+            .remove::<(Connected, Reconnecting, Disconnected)>();
+    }
+
+    pub fn on_remove(mut deferred_world: DeferredWorld, hook_context: HookContext) {
+        let entity = hook_context.entity;
+
+        // This hook will also run on despawn
+        // so `try_remove` is used
+        deferred_world
+            .commands()
+            .entity(entity)
+            .try_remove::<ConnectingLivekitRoom>();
     }
 }
 
@@ -71,7 +105,7 @@ impl Reconnecting {
         deferred_world
             .commands()
             .entity(entity)
-            .remove::<(Connected, Disconnected)>();
+            .remove::<(Connected, Connecting, Disconnected)>();
     }
 
     pub fn on_remove(mut deferred_world: DeferredWorld, hook_context: HookContext) {
@@ -105,7 +139,7 @@ impl Disconnected {
         deferred_world
             .commands()
             .entity(entity)
-            .remove::<(Connected, Reconnecting)>();
+            .remove::<(Connected, Connecting, Reconnecting)>();
     }
 
     pub fn on_remove(mut deferred_world: DeferredWorld, hook_context: HookContext) {

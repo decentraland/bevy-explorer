@@ -26,7 +26,9 @@ use crate::{
             ParticipantConnectionQuality, ParticipantDisconnected, ParticipantMetadataChanged,
             ParticipantPayload,
         },
-        room::{Connected, ConnectingLivekitRoom, Disconnected, LivekitRoom, Reconnecting},
+        room::{
+            Connected, Connecting, ConnectingLivekitRoom, Disconnected, LivekitRoom, Reconnecting,
+        },
         track, LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime, LivekitTransport,
     },
     NetworkMessageRecipient,
@@ -44,6 +46,7 @@ pub struct LivekitRoomPlugin;
 
 impl Plugin for LivekitRoomPlugin {
     fn build(&self, app: &mut App) {
+        app.add_observer(livekit_transport_added);
         app.add_observer(initiate_room_connection);
         app.add_observer(create_local_participant);
         app.add_observer(disconnect_from_room_on_replace);
@@ -51,6 +54,7 @@ impl Plugin for LivekitRoomPlugin {
         app.add_systems(
             Update,
             (
+                try_reconnect,
                 poll_connecting_rooms,
                 (
                     process_room_events,
@@ -71,8 +75,13 @@ struct RoomTasks(Vec<RoomTask>);
 #[derive(Deref, DerefMut)]
 struct RoomTask(JoinHandle<Result<(), RoomError>>);
 
+fn livekit_transport_added(trigger: Trigger<OnAdd, LivekitTransport>, mut commands: Commands) {
+    let entity = trigger.target();
+    commands.entity(entity).insert(Connecting);
+}
+
 fn initiate_room_connection(
-    trigger: Trigger<OnAdd, LivekitTransport>,
+    trigger: Trigger<OnAdd, Connecting>,
     mut commands: Commands,
     livekit_transports: Query<&LivekitTransport>,
     livekit_runtime: Res<LivekitRuntime>,
@@ -553,5 +562,11 @@ fn close_rooms_on_app_exit(rooms: Query<&LivekitRoom>, livekit_runtime: Res<Live
                 room.name()
             );
         }
+    }
+}
+
+fn try_reconnect(mut commands: Commands, rooms: Populated<Entity, With<Disconnected>>) {
+    for entity in rooms.into_inner() {
+        commands.entity(entity).insert(Connecting);
     }
 }
