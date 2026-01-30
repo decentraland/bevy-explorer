@@ -227,6 +227,7 @@ pub struct SceneColliderData {
 }
 
 const SCALE_EPSILON: f32 = 0.001;
+const RAYCAST_EPSILON: f32 = 0.0001;
 
 pub trait ScaleShapeExt {
     fn scale_ext(&self, req_scale: Vec3) -> SharedShape;
@@ -453,27 +454,47 @@ impl SceneColliderData {
             filter.exclude_sensors()
         };
 
-        self.query_state
-            .as_ref()
-            .unwrap()
-            .cast_ray_and_get_normal(
-                &self.dummy_rapier_structs.1,
-                &self.collider_set,
-                &ray,
-                distance,
-                true,
-                filter,
-            )
-            .map(|(handle, intersection)| RaycastResult {
-                id: self.get_id(handle).unwrap().clone(),
-                toi: intersection.time_of_impact,
-                normal: Vec3::from(intersection.normal),
-                face: if let FeatureId::Face(fix) = intersection.feature {
-                    Some(fix as usize)
-                } else {
-                    None
-                },
-            })
+        let mut closest: Option<(&ColliderId, RayIntersection)> = None;
+
+        self.query_state.as_ref().unwrap().intersections_with_ray(
+            &self.dummy_rapier_structs.1,
+            &self.collider_set,
+            &ray,
+            distance,
+            true,
+            filter,
+            |handle, intersection| {
+                if closest.is_some_and(|(_, prev_intersection)| {
+                    intersection.time_of_impact > prev_intersection.time_of_impact + RAYCAST_EPSILON
+                }) {
+                    // too far to consider
+                    return true;
+                }
+
+                let id = self.get_id(handle).unwrap();
+
+                if closest.is_none_or(|(prev_id, prev_intersection)| {
+                    // prev is too far to consider
+                    intersection.time_of_impact < prev_intersection.time_of_impact - RAYCAST_EPSILON
+                        // or entity is lower
+                        || id.entity.id < prev_id.entity.id
+                }) {
+                    closest = Some((id, intersection));
+                }
+                true
+            },
+        );
+
+        closest.map(|(id, intersection)| RaycastResult {
+            id: id.clone(),
+            toi: intersection.time_of_impact,
+            normal: Vec3::from(intersection.normal),
+            face: if let FeatureId::Face(fix) = intersection.feature {
+                Some(fix as usize)
+            } else {
+                None
+            },
+        })
     }
 
     pub fn get_groundheight(&mut self, scene_time: u32, origin: Vec3) -> Option<(f32, ColliderId)> {
