@@ -11,7 +11,7 @@ use tokio::{sync::mpsc, task::JoinHandle};
 
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::{Room, RoomEvent, RoomResult};
-use crate::livekit::LivekitTransport;
+use crate::livekit::{participant::HostingParticipants, LivekitTransport};
 
 #[derive(Component, Deref)]
 pub struct LivekitRoom {
@@ -82,7 +82,8 @@ impl Connecting {
         deferred_world
             .commands()
             .entity(entity)
-            .try_remove::<ConnectingLivekitRoom>();
+            .try_remove::<ConnectingLivekitRoom>()
+            .despawn_related::<HostingParticipants>();
     }
 }
 
