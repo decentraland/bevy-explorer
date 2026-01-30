@@ -5,7 +5,6 @@ use bevy::{
 use common::{structs::AudioDecoderError, util::AsH160};
 use ethers_core::types::H160;
 use http::Uri;
-use livekit::DisconnectReason;
 use tokio::{
     sync::{mpsc, oneshot},
     task::JoinHandle,
@@ -14,8 +13,8 @@ use tokio::{
 use {
     kira::sound::streaming::StreamingSoundData,
     livekit::{
-        id::ParticipantIdentity, participant::Participant, ConnectionState, DataPacket, Room,
-        RoomError, RoomEvent, RoomOptions, RoomResult,
+        id::ParticipantIdentity, participant::Participant, ConnectionState, DataPacket,
+        DisconnectReason, Room, RoomError, RoomEvent, RoomOptions, RoomResult,
     },
 };
 
@@ -39,8 +38,8 @@ use crate::{
 use crate::{
     global_crdt::StreamingSoundData,
     livekit::web::{
-        ConnectionState, DataPacket, Participant, ParticipantIdentity, Room, RoomError, RoomEvent,
-        RoomOptions, RoomResult,
+        ConnectionState, DataPacket, DisconnectReason, Participant, ParticipantIdentity, Room,
+        RoomError, RoomEvent, RoomOptions, RoomResult,
     },
 };
 
