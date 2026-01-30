@@ -1,16 +1,16 @@
 pub mod archipelago;
 pub mod broadcast_position;
 pub mod global_crdt;
-
 #[cfg(feature = "livekit")]
 pub mod livekit;
-
 pub mod movement_compressed;
 pub mod preview;
 pub mod profile;
 pub mod signed_login;
 #[cfg(test)]
 mod test;
+#[cfg(feature = "transport_debug")]
+mod transport_debug;
 pub mod websocket_room;
 
 use std::marker::PhantomData;
@@ -81,10 +81,13 @@ impl Plugin for CommsPlugin {
         app.init_resource::<MicState>();
 
         app.add_systems(Update, (process_realm_change, connect_scene_room));
+
+        #[cfg(feature = "transport_debug")]
+        app.add_plugins(transport_debug::TransportDebugPlugin);
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TransportType {
     WebsocketRoom,
     Livekit,
