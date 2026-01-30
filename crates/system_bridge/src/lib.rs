@@ -87,6 +87,61 @@ pub struct VoiceMessage {
     pub active: bool,
 }
 
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(into = "u32", try_from = "u32")]
+#[repr(u32)]
+pub enum HoverTargetType {
+    World = 0,
+    Ui = 1,
+    Avatar = 2,
+}
+
+impl From<HoverTargetType> for u32 {
+    fn from(t: HoverTargetType) -> u32 {
+        t as u32
+    }
+}
+
+impl TryFrom<u32> for HoverTargetType {
+    type Error = &'static str;
+    fn try_from(v: u32) -> Result<Self, Self::Error> {
+        match v {
+            0 => Ok(HoverTargetType::World),
+            1 => Ok(HoverTargetType::Ui),
+            2 => Ok(HoverTargetType::Avatar),
+            _ => Err("Invalid HoverTargetType"),
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct HoverEventInfo {
+    pub button: u32,
+    pub hover_text: String,
+    pub show_feedback: bool,
+    pub show_highlight: bool,
+    pub max_distance: f32,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct HoverAction {
+    pub event_type: u32,
+    pub event_info: HoverEventInfo,
+    pub too_far: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct HoverEvent {
+    pub entered: bool,
+    pub target_type: HoverTargetType,
+    pub distance: f32,
+    pub actions: Vec<HoverAction>,
+    pub outside_scene: bool,
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SceneLoadingUi {
@@ -121,6 +176,7 @@ pub enum SystemApi {
     GetSystemActionStream(RpcStreamSender<SystemActionEvent>),
     GetChatStream(RpcStreamSender<ChatMessage>),
     GetVoiceStream(RpcStreamSender<VoiceMessage>),
+    GetHoverStream(RpcStreamSender<HoverEvent>),
     GetSceneLoadingUiStream(RpcStreamSender<SceneLoadingUi>),
     SendChat(String, String),
     Quit,
@@ -172,6 +228,7 @@ pub struct NativeUi {
     pub permissions: bool,
     pub profile: bool,
     pub nametags: bool,
+    pub tooltips: bool,
     pub loading_scene: bool,
 }
 
