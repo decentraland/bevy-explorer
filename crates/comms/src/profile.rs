@@ -697,12 +697,21 @@ pub async fn get_remote_profile(
 
     let response = ipfs
         .client()
-        .get(format!("{endpoint}/profiles/{address:#x}"))
+        .post(format!(
+            "https://asset-bundle-registry.decentraland.org/profiles"
+        ))
+        .body(format!("{{ \"ids\": [\"{:#x}\"] }}", address))
+        .header("content-type", "application/json")
         .send()
         .await?;
-    let content = response
-        .json::<LambdaProfiles>()
-        .await?
+
+    let mut content = response.json::<Vec<LambdaProfiles>>().await.unwrap();
+    if content.is_empty() {
+        anyhow::bail!("not found");
+    }
+
+    let content = content
+        .remove(0)
         .avatars
         .into_iter()
         .next()
