@@ -237,7 +237,7 @@ export function start() {
   const systemScene = systemSceneInput.value;
   const preview = previewInput.checked;
   console.log(
-    `[Main JS] "Go" button clicked. Initial Realm: "${initialRealm}", Location: "${location}", System Scene: "${systemScene}"`
+    `[Main JS] "Launch" button clicked. Initial Realm: "${initialRealm}", Location: "${location}", System Scene: "${systemScene}"`
   );
   hideHeader();
 
