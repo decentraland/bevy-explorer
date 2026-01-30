@@ -5,8 +5,8 @@ use wasm_bindgen::{
 };
 
 use crate::livekit::web::{
-    traits::GetFromJsValue, ConnectionQuality, ConnectionState, DataPacketKind, Participant,
-    RemoteParticipant, RemoteTrack, RemoteTrackPublication,
+    traits::GetFromJsValue, ConnectionQuality, ConnectionState, DataPacketKind, DisconnectReason,
+    Participant, RemoteParticipant, RemoteTrack, RemoteTrackPublication,
 };
 
 // Define structures for the events coming from JavaScript
@@ -14,6 +14,9 @@ use crate::livekit::web::{
 pub enum RoomEvent {
     Connected {
         participants_with_tracks: Vec<(RemoteParticipant, Vec<RemoteTrackPublication>)>,
+    },
+    Disconnected {
+        reason: DisconnectReason,
     },
     ConnectionStateChanged(ConnectionState),
     DataReceived {
@@ -120,6 +123,15 @@ impl FromWasmAbi for RoomEvent {
                     participants_with_tracks,
                 }
             }
+            Some("disconnected") => {
+                let Some(reason) =
+                    DisconnectReason::get_from_js_value(&js_value, "disconnectReason")
+                else {
+                    panic!("RoomEvent::Disconnected did not have disconnectReason field.");
+                };
+
+                RoomEvent::Disconnected { reason }
+            }
             Some("connectionStateChanged") => {
                 let Some(state) = String::get_from_js_value(&js_value, "state") else {
                     error!("RoomEvent::ConnectionStateChanged did not have state field.");
@@ -128,11 +140,10 @@ impl FromWasmAbi for RoomEvent {
                 let state = match state.as_str() {
                     "connecting" => ConnectionState::Reconnecting,
                     "connected" => ConnectionState::Connected,
-                    "reconnecting" => ConnectionState::Reconnecting,
+                    "signalReconnecting" | "reconnecting" => ConnectionState::Reconnecting,
                     "disconnected" => ConnectionState::Disconnected,
                     _ => {
-                        error!("Invalid ConnectionState '{state}'.");
-                        panic!()
+                        panic!("Invalid ConnectionState '{state}'.");
                     }
                 };
                 RoomEvent::ConnectionStateChanged(state)
