@@ -528,12 +528,9 @@ fn verify_room_tasks(
 
                 let res = livekit_runtime.block_on(task);
                 match res {
-                    Ok(res) => {
-                        if let Err(err) = res {
-                            error!("Failed to complete room task due to {err}.");
-                            commands.send_event(AppExit::from_code(1));
-                            return;
-                        }
+                    Ok(Ok(())) => {}
+                    Ok(Err(err)) => {
+                        error!("Failed to complete room task due to {err}.");
                     }
                     Err(err) => {
                         error!("Failed to pull RoomTask due to '{err}'.");
