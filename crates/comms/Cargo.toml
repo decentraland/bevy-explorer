@@ -8,6 +8,7 @@ edition = "2021"
 [features]
 livekit = ["dep:livekit"]
 room_debug = []
+transport_debug = ["bevy/bevy_picking"]
 
 [dependencies]
 common = { workspace = true }

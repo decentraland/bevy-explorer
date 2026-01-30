@@ -109,6 +109,11 @@ fn room_connected(
     } else {
         *room_container
     };
+    let text = if has_scene_room {
+        format!("> {}", livekit_room.name())
+    } else {
+        livekit_room.name().to_owned()
+    };
 
     commands.spawn((
         Node {
@@ -124,7 +129,7 @@ fn room_connected(
         },
         RoomRef(entity),
         ChildOf(container),
-        children![(Text::new(livekit_room.name()), default_font.clone())],
+        children![(Text::new(text), default_font.clone())],
     ));
 }
 
