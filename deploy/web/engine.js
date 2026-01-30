@@ -249,4 +249,6 @@ export function start() {
   })();
 
   engine_run(platform, initialRealm, location, systemScene, true, preview, 1e7);
+
+  setTimeout(showCanvas, 2222) // TODO remove once we have SystemScene loaded and shown before green empty world
 }

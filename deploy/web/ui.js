@@ -69,6 +69,9 @@ function populateInputsFromQueryParams() {
  */
 function hideHeader() {
   if (header) header.style.display = "none";
+}
+
+function showCanvas(){
   if (canvas) canvas.style.display = "block";
 }
 
