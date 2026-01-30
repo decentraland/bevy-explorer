@@ -44,6 +44,7 @@ use scene_material::SceneBoundPlugin;
 use scene_runner::{
     automatic_testing::AutomaticTestingPlugin,
     initialize_scene::{PortableScenes, PortableSource, TestingData, PARCEL_SIZE},
+    loading_system_scene_screen::LoadingSystemSceneScreenPlugin,
     update_world::{mesh_collider::GroundCollider, NoGltf},
     OutOfWorld, SceneRunnerPlugin,
 };
@@ -472,6 +473,7 @@ fn main() {
 
     app.add_plugins(AVPlayerPlugin)
         .add_plugins(RestrictedActionsPlugin)
+        .add_plugins(LoadingSystemSceneScreenPlugin)
         .insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER))
         .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
         .add_systems(Startup, setup.in_set(SetupSets::Init))
@@ -479,7 +481,9 @@ fn main() {
             color: Color::srgb(0.85, 0.85, 1.0),
             brightness: 575.0,
             ..Default::default()
-        });
+        })
+        // Purple background matching loading_background.png to avoid white flash on startup
+        .insert_resource(ClearColor(Color::srgb(0.6, 0.1, 0.8)));
 
     app.add_console_command::<ChangeLocationCommand, _>(change_location);
     app.add_console_command::<SceneDistanceCommand, _>(scene_distance);
