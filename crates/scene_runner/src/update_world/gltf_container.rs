@@ -12,7 +12,7 @@ use bevy::{
     asset::{LoadState, RenderAssetTransferPriority},
     gltf::{Gltf, GltfExtras, GltfLoaderSettings},
     pbr::{ExtendedMaterial, NotShadowCaster},
-    platform::collections::HashMap,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
         mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues},
@@ -572,6 +572,11 @@ fn update_ready_gltfs(
                         error!("gltf contained mesh not loaded?!");
                         continue;
                     };
+
+                    if read_only_mesh_data.count_vertices() == 0 {
+                        commands.entity(spawned_ent).try_remove::<Mesh3d>();
+                        continue;
+                    }
 
                     // get or create hash
                     // note we must use the handle lookup rather than recomputing the hash as we may modify the mesh on first load,
@@ -1174,7 +1179,7 @@ impl From<PbGltfNodeModifiers> for GltfNodeModifiers {
 fn debug_modifiers(
     mut commands: Commands,
     q: Query<
-        (&GltfNodeModifiers, &GltfProcessed),
+        (&GltfNodeModifiers, &GltfProcessed, Option<&GltfDefinition>),
         Or<(Changed<GltfNodeModifiers>, Changed<GltfProcessed>)>,
     >,
     child_nodes: Query<
@@ -1187,8 +1192,8 @@ fn debug_modifiers(
     removed_q: Query<&GltfProcessed>,
     mut removed_components: RemovedComponents<GltfNodeModifiers>,
 ) {
-    for (modifiers, processed) in q {
-        let modifiers = modifiers
+    for (modifiers, processed, def) in q {
+        let mut modifiers = modifiers
             .0
             .modifiers
             .iter()
@@ -1196,35 +1201,101 @@ fn debug_modifiers(
                 let path = if modifier.path.is_empty() {
                     None
                 } else {
-                    Some(modifier.path.as_str())
+                    Some(
+                        modifier
+                            .path
+                            .as_str()
+                            .split('/')
+                            .filter(|segment| !segment.is_empty())
+                            .collect::<Vec<_>>(),
+                    )
                 };
 
-                (
-                    path,
-                    (modifier.cast_shadows.unwrap_or(true), &modifier.material),
-                )
+                (path, (modifier.cast_shadows, &modifier.material))
             })
-            .collect::<HashMap<_, _>>();
+            .collect::<Vec<_>>();
 
-        let mut found = false;
+        // sort by segment length to apply most specific last
+        modifiers.sort_by_key(|(path, _)| {
+            path.as_ref()
+                .map(|path| {
+                    (
+                        path.len(),
+                        path.iter().map(|segment| segment.len()).sum::<usize>(),
+                    )
+                })
+                .unwrap_or_default()
+        });
+
+        let mut unused = modifiers
+            .iter()
+            .flat_map(|(path, _)| path)
+            .collect::<HashSet<_>>();
 
         for (path, child) in processed.named_nodes.iter() {
             let Ok((existing_material, _)) = child_nodes.get(*child) else {
                 continue;
             };
 
-            found = true;
+            let node_path_components = path
+                .split('/')
+                .filter(|segment| !segment.is_empty())
+                .collect::<Vec<_>>();
 
-            let maybe_path_modifiers = modifiers
-                .get(&Some(path.as_str()))
-                .or_else(|| modifiers.get(&None));
+            commands.entity(*child).try_remove::<NotShadowCaster>();
 
-            if let Some((shadows, maybe_material)) = maybe_path_modifiers {
-                if !shadows {
-                    commands.entity(*child).try_insert(NotShadowCaster);
+            fn segments_match(node_segment: &str, modifier_segment: &str) -> bool {
+                if node_segment == modifier_segment {
+                    return true;
+                }
+
+                if !modifier_segment.is_char_boundary(node_segment.len()) {
+                    return false;
+                }
+
+                if modifier_segment[0..node_segment.len()] != node_segment[..] {
+                    return false;
+                }
+
+                // allow anything that matches but with a "_number"-like tail
+                modifier_segment
+                    .char_indices()
+                    .skip_while(|(ix, _)| *ix < node_segment.len())
+                    .all(|(_, c)| c == '_' || c.is_numeric())
+            }
+
+            let mut material_modified = false;
+            for (modifier_path, (shadows, maybe_material)) in
+                modifiers.iter().filter(|(modifier_path_components, _)| {
+                    modifier_path_components
+                        .as_ref()
+                        .is_none_or(|modifier_path_components| {
+                            node_path_components
+                                .windows(modifier_path_components.len())
+                                .any(|window| {
+                                    window.iter().zip(modifier_path_components).all(
+                                        |(node_segment, modifier_segment)| {
+                                            segments_match(node_segment, modifier_segment)
+                                        },
+                                    )
+                                })
+                        })
+                })
+            {
+                if let Some(modifier_path) = modifier_path {
+                    unused.remove(modifier_path);
+                }
+
+                if let Some(shadows) = shadows {
+                    if *shadows {
+                        commands.entity(*child).try_remove::<NotShadowCaster>();
+                    } else {
+                        commands.entity(*child).try_insert(NotShadowCaster);
+                    }
                 }
 
                 if let Some(material) = maybe_material {
+                    material_modified = true;
                     if let Some(existing) = existing_material {
                         commands
                             .entity(*child)
@@ -1234,17 +1305,26 @@ fn debug_modifiers(
                         .entity(*child)
                         .try_insert(PbMaterialComponent(material.clone()));
                 }
-            } else {
+            }
+
+            if !material_modified {
                 commands
                     .entity(*child)
-                    .try_remove::<(NotShadowCaster, HiddenMaterial, PbMaterialComponent)>();
+                    .try_remove::<(HiddenMaterial, PbMaterialComponent)>();
+
                 if let Ok((_, Some(prev_material))) = child_nodes.get(*child) {
                     commands.entity(*child).try_insert(prev_material.0.clone());
                 }
             }
         }
 
-        debug!("applying GltfNodeModifiers (found a path match = {found}): {modifiers:?}");
+        if !unused.is_empty() {
+            warn!(
+                "no match for gltf modifiers {unused:?} in nodes {:?} from {:?}",
+                processed.named_nodes.keys().collect::<Vec<_>>(),
+                def.map(|d| &d.0.src)
+            )
+        }
     }
 
     for removed in removed_components.read() {

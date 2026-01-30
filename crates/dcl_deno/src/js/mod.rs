@@ -409,21 +409,6 @@ async fn run_script(
         .await
         .map(|_| ());
 
-    if result.is_err() {
-        debug!("rerunning event loop");
-        for _ in 0..100 {
-            let x = runtime
-                .run_event_loop(PollEventLoopOptions::default())
-                .await;
-            if x.is_err() {
-                error!("repeat error: {x:?}");
-            } else {
-                break;
-            }
-        }
-        debug!("done rerunning event loop");
-    }
-
     result
 }
 

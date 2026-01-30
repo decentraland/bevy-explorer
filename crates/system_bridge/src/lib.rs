@@ -142,6 +142,14 @@ pub struct HoverEvent {
     pub outside_scene: bool,
 }
 
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneLoadingUi {
+    pub visible: bool,
+    pub title: String,
+    pub pending_assets: Option<u32>,
+}
+
 #[derive(Event, Clone, Debug, Serialize, Deserialize)]
 pub enum SystemApi {
     ConsoleCommand(String, Vec<String>, RpcResultSender<Result<String, String>>),
@@ -169,6 +177,7 @@ pub enum SystemApi {
     GetChatStream(RpcStreamSender<ChatMessage>),
     GetVoiceStream(RpcStreamSender<VoiceMessage>),
     GetHoverStream(RpcStreamSender<HoverEvent>),
+    GetSceneLoadingUiStream(RpcStreamSender<SceneLoadingUi>),
     SendChat(String, String),
     Quit,
     GetPermissionRequestStream(RpcStreamSender<PermissionRequest>),
@@ -220,6 +229,7 @@ pub struct NativeUi {
     pub profile: bool,
     pub nametags: bool,
     pub tooltips: bool,
+    pub loading_scene: bool,
 }
 
 #[derive(Resource)]

@@ -928,7 +928,7 @@ impl SceneImposterBake {
 #[derive(Resource, Default)]
 pub struct CursorLocks(pub HashSet<&'static str>);
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub enum MoveKind {
     #[default]
     Idle,

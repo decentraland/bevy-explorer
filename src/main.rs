@@ -258,6 +258,7 @@ fn main() {
             profile: !args.contains("--no-profile"),
             nametags: !args.contains("--no-nametags"),
             tooltips: !args.contains("--no-tooltips"),
+            loading_scene: !args.contains("--no-loading-scene-ui"),
         });
         app.insert_resource(SystemScene {
             source: Some(source),
@@ -274,6 +275,7 @@ fn main() {
             profile: true,
             nametags: true,
             tooltips: !args.contains("--no-tooltips"),
+            loading_scene: true,
         });
     }
 

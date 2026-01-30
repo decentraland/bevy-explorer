@@ -5,7 +5,6 @@ use std::{
         atomic::{AtomicU32, Ordering},
         Arc, Mutex,
     },
-    time::Duration,
 };
 
 use bevy::{
@@ -20,10 +19,10 @@ use bevy::{
         texture::GpuImage,
         Render, RenderApp, RenderSet,
     },
-    time::common_conditions::on_timer,
 };
 use common::sets::SceneSets;
-use comms::{global_crdt::ChannelControl, SceneRoom, Transport};
+#[cfg(feature = "livekit")]
+use comms::livekit::participant::StreamViewer;
 use dcl::interface::CrdtType;
 use dcl_component::{
     proto_components::sdk::components::{PbAudioEvent, PbVideoEvent, VideoState},
@@ -79,7 +78,6 @@ impl Plugin for VideoPlayerPlugin {
         app.add_systems(
             Update,
             (
-                try_subscription.run_if(on_timer(Duration::from_secs(5))),
                 rebuild_html_media_entities.before(av_player_is_in_scene),
                 update_av_players
                     .before(update_materials)
@@ -94,9 +92,7 @@ impl Plugin for VideoPlayerPlugin {
         app.insert_resource(FrameCopyRequestQueue(sx));
 
         app.add_observer(av_player_on_insert);
-        app.add_observer(unsubscribe_to_streamer);
-        app.add_observer(subscribe_to_streamer);
-        app.add_observer(resubscribe_on_entering_room);
+        app.add_observer(av_player_on_remove);
 
         let render_app = app.sub_app_mut(RenderApp);
         render_app
@@ -275,12 +271,12 @@ impl HtmlMediaEntity {
         *callback.borrow_mut() = Some(Closure::wrap(Box::new({
             let video = video.clone();
             move |_now: f64, metadata: JsValue| {
-                debug!("frame received");
+                trace!("frame received");
                 if let Some(media_time) = Reflect::get(&metadata, &"mediaTime".into())
                     .ok()
                     .and_then(|mt| mt.as_f64())
                 {
-                    debug!("frame received -> {media_time}");
+                    trace!("frame received -> {media_time}");
                     frame_time_clone.store(
                         (media_time as f32).to_bits(),
                         std::sync::atomic::Ordering::Relaxed,
@@ -347,12 +343,12 @@ impl HtmlMediaEntity {
         *callback.borrow_mut() = Some(Closure::wrap(Box::new({
             let video = video.clone();
             move |_now: f64, metadata: JsValue| {
-                debug!("stream frame received");
+                trace!("stream frame received");
                 if let Some(media_time) = Reflect::get(&metadata, &"mediaTime".into())
                     .ok()
                     .and_then(|mt| mt.as_f64())
                 {
-                    debug!("stream frame received -> {media_time}");
+                    trace!("stream frame received -> {media_time}");
                     frame_time_clone.store(
                         (media_time as f32).to_bits(),
                         std::sync::atomic::Ordering::Relaxed,
@@ -424,7 +420,7 @@ impl HtmlMediaEntity {
     }
 
     pub fn stop(&mut self) {
-        debug!("called play");
+        debug!("called stop");
         let _ = self.media.pause();
     }
 
@@ -483,36 +479,16 @@ fn av_player_on_insert(
     }
 }
 
-/// Try subscribing to streamer if a stream is active
-#[expect(clippy::type_complexity, reason = "Queries are complex")]
-fn try_subscription(
-    av_players: Populated<
-        &AVPlayer,
-        (
-            Without<HtmlMediaEntity>,
-            With<InScene>,
-            With<ShouldBePlaying>,
-        ),
-    >,
-    mut scene_rooms: Query<&mut Transport, With<SceneRoom>>,
-) {
-    let Ok(mut transport) = scene_rooms.single_mut() else {
-        error!("No SceneRoom transport.");
-        return;
-    };
-    let Some(channel) = transport.control.as_mut() else {
-        error!("SceneRoom transport has not control channel.");
-        return;
-    };
-
-    if av_players
-        .iter()
-        .any(|av_player| av_player.source.src.starts_with("livekit-video://"))
-    {
-        channel
-            .blocking_send(ChannelControl::StreamerSubscribe)
-            .unwrap();
-    }
+fn av_player_on_remove(trigger: Trigger<OnRemove, AVPlayer>, mut commands: Commands) {
+    let entity = trigger.target();
+    commands.entity(entity).try_remove::<(
+        InScene,
+        ShouldBePlaying,
+        HtmlMediaEntity,
+        VideoTextureOutput,
+    )>();
+    #[cfg(feature = "livekit")]
+    commands.entity(entity).try_remove::<StreamViewer>();
 }
 
 fn rebuild_html_media_entities(
@@ -635,7 +611,7 @@ fn update_av_players(
                     if new_time != 0 {
                         // new frame is ready
                         let new_time = f32::from_bits(new_time);
-                        debug!("got new frame -> {new_time}");
+                        trace!("got new frame -> {new_time}");
 
                         let Ok(frame) = VideoFrame::new_with_html_video_element(video) else {
                             warn!("failed to extract frame");
@@ -673,11 +649,11 @@ fn update_av_players(
                                 .insert(VideoTextureOutput(image.clone()));
                             av.image = Some(image);
 
-                            debug!("queue resized frame {:?}", video_size);
+                            trace!("queue resized frame {:?}", video_size);
                         }
 
                         // queue copy
-                        debug!("queue frame {:?}", video_size);
+                        trace!("queue frame {:?}", video_size);
                         let _ = send_queue.0.send(FrameCopyRequest {
                             video_frame: WgpuWrapper::new(frame),
                             target: image_id,
@@ -685,7 +661,7 @@ fn update_av_players(
 
                         av.current_time = new_time;
                     } else {
-                        debug!("no frame (new_time == 0)");
+                        trace!("no frame (new_time == 0)");
                     }
                 } else {
                     debug!("no video");
@@ -704,7 +680,7 @@ fn update_av_players(
                 continue;
             };
             let tick_number = context.tick_number;
-            debug!("set {:?} {:?}", av.state(), av.current_time);
+            trace!("set {:?} {:?}", av.state(), av.current_time);
 
             if player.has_video {
                 context.update_crdt(
@@ -766,9 +742,12 @@ fn perform_video_copies(
             continue;
         }
 
-        debug!(
+        trace!(
             "{:?}/{:?} perform {:?} -> {:?}",
-            request.target, gpu_image.texture_view, source_size, target_size
+            request.target,
+            gpu_image.texture_view,
+            source_size,
+            target_size
         );
 
         render_queue.copy_external_image_to_texture(
@@ -796,81 +775,5 @@ fn perform_video_copies(
         );
 
         frame_copy.close();
-    }
-}
-
-fn unsubscribe_to_streamer(
-    trigger: Trigger<OnRemove, ShouldBePlaying>,
-    av_players: Query<(&AVPlayer, Has<InScene>)>,
-    mut scene_rooms: Query<&mut Transport, With<SceneRoom>>,
-) {
-    let Ok((av_player, in_scene)) = av_players.get(trigger.target()) else {
-        unreachable!("ShouldBePlaying should only be present on a AVPlayer.");
-    };
-    if !in_scene || !av_player.source.src.starts_with("livekit-video://") {
-        return;
-    }
-
-    let Ok(mut transport) = scene_rooms.single_mut() else {
-        error!("No SceneRoom transport.");
-        return;
-    };
-    let Some(channel) = transport.control.as_mut() else {
-        error!("SceneRoom transport has not control channel.");
-        return;
-    };
-
-    channel
-        .blocking_send(ChannelControl::StreamerUnsubscribe)
-        .unwrap();
-}
-
-fn subscribe_to_streamer(
-    trigger: Trigger<OnAdd, ShouldBePlaying>,
-    av_players: Query<(&AVPlayer, Has<InScene>)>,
-    mut scene_rooms: Query<&mut Transport, With<SceneRoom>>,
-) {
-    let Ok((av_player, in_scene)) = av_players.get(trigger.target()) else {
-        unreachable!("ShouldBePlaying should only be present on a AVPlayer.");
-    };
-    if !in_scene || !av_player.source.src.starts_with("livekit-video://") {
-        return;
-    }
-
-    let Ok(mut transport) = scene_rooms.single_mut() else {
-        error!("No SceneRoom transport.");
-        return;
-    };
-    let Some(channel) = transport.control.as_mut() else {
-        error!("SceneRoom transport has not control channel.");
-        return;
-    };
-
-    channel
-        .blocking_send(ChannelControl::StreamerSubscribe)
-        .unwrap();
-}
-
-fn resubscribe_on_entering_room(
-    trigger: Trigger<OnAdd, Transport>,
-    av_players: Query<&AVPlayer, (With<ShouldBePlaying>, With<InScene>)>,
-    mut scene_rooms: Query<&mut Transport, With<SceneRoom>>,
-) {
-    let Ok(mut transport) = scene_rooms.get_mut(trigger.target()) else {
-        return;
-    };
-    let Some(channel) = transport.control.as_mut() else {
-        error!("SceneRoom transport has not control channel.");
-        return;
-    };
-
-    if av_players
-        .iter()
-        .any(|av_player| av_player.source.src.starts_with("livekit-video://"))
-    {
-        debug!("An active AVPlayer is a stream. Resubscribing to streams.");
-        channel
-            .blocking_send(ChannelControl::StreamerSubscribe)
-            .unwrap();
     }
 }

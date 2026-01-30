@@ -8,7 +8,10 @@ use bevy::{
     platform::collections::{HashMap, HashSet},
     prelude::*,
     reflect::TypePath,
-    render::render_resource::{AsBindGroup, ShaderRef},
+    render::{
+        primitives::Aabb,
+        render_resource::{AsBindGroup, ShaderRef},
+    },
 };
 
 use common::{
@@ -127,6 +130,10 @@ pub struct SceneEntityDefinitionHandle(pub Handle<EntityDefinition>);
 pub struct SceneInitialData {
     pub js: Handle<SceneJsFile>,
 }
+
+/// Marker component for grid planes that are part of preview mode
+#[derive(Component)]
+struct PreviewGridPlane;
 
 pub(crate) fn load_scene_entity(
     mut commands: Commands,
@@ -1570,6 +1577,11 @@ fn animate_ready_scene(
                     children.push(
                         commands
                             .spawn((
+                                PreviewGridPlane,
+                                Aabb::from_min_max(
+                                    Vec3::new(-PARCEL_SIZE / 2., -PARCEL_SIZE / 2., 0.),
+                                    Vec3::new(PARCEL_SIZE / 2., PARCEL_SIZE / 2., 0.),
+                                ),
                                 Mesh3d(handles.as_ref().unwrap().0.clone()),
                                 MeshMaterial3d(handles.as_ref().unwrap().1.clone()),
                                 Transform::from_translation(
