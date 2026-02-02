@@ -293,7 +293,7 @@ function start() {
   const systemScene = systemSceneInput.value;
   const preview = previewInput.checked;
   console.log(
-    `[Main JS] "Go" button clicked. Initial Realm: "${realm}", Position: "${position}", System Scene: "${systemScene}"`
+    `[Main JS] "Go" button clicked. Realm: "${realm}", Position: "${position}", System Scene: "${systemScene}"`
   );
   hideHeader();
 
