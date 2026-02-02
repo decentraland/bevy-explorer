@@ -22,6 +22,7 @@ use dcl_component::proto_components::{
     sdk::components::{pb_pointer_events, PbAvatarBase, PbAvatarEquippedData},
 };
 use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use settings::SettingBridgePlugin;
 
 use crate::settings::SettingInfo;
@@ -87,31 +88,12 @@ pub struct VoiceMessage {
     pub active: bool,
 }
 
-#[derive(Hash, Clone, Copy, Serialize, Deserialize, Debug, PartialEq, Eq)]
-#[serde(into = "u32", try_from = "u32")]
+#[derive(Hash, Clone, Copy, Serialize_repr, Deserialize_repr, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum PointerTargetType {
     World = 0,
     Ui = 1,
     Avatar = 2,
-}
-
-impl From<PointerTargetType> for u32 {
-    fn from(t: PointerTargetType) -> u32 {
-        t as u32
-    }
-}
-
-impl TryFrom<u32> for PointerTargetType {
-    type Error = &'static str;
-    fn try_from(v: u32) -> Result<Self, Self::Error> {
-        match v {
-            0 => Ok(PointerTargetType::World),
-            1 => Ok(PointerTargetType::Ui),
-            2 => Ok(PointerTargetType::Avatar),
-            _ => Err("Invalid PointerTargetType"),
-        }
-    }
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
