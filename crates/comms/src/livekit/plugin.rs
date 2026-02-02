@@ -10,8 +10,9 @@ use crate::{
     livekit::{
         mic::MicPlugin, participant::plugin::LivekitParticipantPlugin,
         room::plugin::LivekitRoomPlugin, runtime::LivekitRuntimePlugin,
-        track::plugin::LivekitTrackPlugin, LivekitAudioManager, LivekitChannelControl,
-        LivekitNetworkMessage, LivekitRuntime, LivekitTransport, StartLivekit,
+        track::plugin::LivekitTrackPlugin, ConnectionAvailability, LivekitAudioManager,
+        LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime, LivekitTransport,
+        StartLivekit,
     },
     profile::CurrentUserProfile,
     NetworkMessage, Transport, TransportType,
@@ -22,6 +23,7 @@ pub struct LivekitPlugin;
 impl Plugin for LivekitPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PlayerUpdateTasks>();
+        app.init_state::<ConnectionAvailability>();
 
         app.add_plugins(MicPlugin);
         app.add_plugins(LivekitRuntimePlugin);

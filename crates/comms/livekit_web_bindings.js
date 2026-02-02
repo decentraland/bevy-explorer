@@ -86,6 +86,12 @@ function set_room_event_handler(room, handler) {
             participants_with_tracks
         })
     });
+    room.on(LivekitClient.RoomEvent.Disconnected, (disconnectReason) => {
+        handler({
+            type: 'disconnected',
+            disconnectReason
+        })
+    });
     room.on(LivekitClient.RoomEvent.ConnectionStateChanged, (state) => {
         handler({
             type: 'connectionStateChanged',

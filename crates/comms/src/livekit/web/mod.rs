@@ -278,3 +278,61 @@ impl GetFromJsValue for ConnectionQuality {
         }
     }
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[repr(i32)]
+pub enum DisconnectReason {
+    UnknownReason = 0,
+    /// the client initiated the disconnect
+    ClientInitiated = 1,
+    /// another participant with the same identity has joined the room
+    DuplicateIdentity = 2,
+    /// the server instance is shutting down
+    ServerShutdown = 3,
+    /// RoomService.RemoveParticipant was called
+    ParticipantRemoved = 4,
+    /// RoomService.DeleteRoom was called
+    RoomDeleted = 5,
+    /// the client is attempting to resume a session, but server is not aware of it
+    StateMismatch = 6,
+    /// client was unable to connect fully
+    JoinFailure = 7,
+    /// Cloud-only, the server requested Participant to migrate the connection elsewhere
+    Migration = 8,
+    /// the signal websocket was closed unexpectedly
+    SignalClose = 9,
+    /// the room was closed, due to all Standard and Ingress participants having left
+    RoomClosed = 10,
+}
+
+impl<'de> Deserialize<'de> for DisconnectReason {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let int = i32::deserialize(deserializer)?;
+        let kind = match int {
+            0 => DisconnectReason::UnknownReason,
+            1 => DisconnectReason::ClientInitiated,
+            2 => DisconnectReason::DuplicateIdentity,
+            3 => DisconnectReason::ServerShutdown,
+            4 => DisconnectReason::ParticipantRemoved,
+            5 => DisconnectReason::RoomDeleted,
+            6 => DisconnectReason::StateMismatch,
+            7 => DisconnectReason::JoinFailure,
+            8 => DisconnectReason::Migration,
+            9 => DisconnectReason::SignalClose,
+            10 => DisconnectReason::RoomClosed,
+            _ => panic!("Not a valid DisconnectReason."),
+        };
+        Ok(kind)
+    }
+}
+
+impl GetFromJsValue for DisconnectReason {
+    fn get_from_js_value(js_value: &JsValue, key: &str) -> Option<Self> {
+        js_sys::Reflect::get(js_value, &JsValue::from(key))
+            .ok()
+            .and_then(|kind| serde_wasm_bindgen::from_value::<DisconnectReason>(kind).ok())
+    }
+}
