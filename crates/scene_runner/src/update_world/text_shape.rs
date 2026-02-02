@@ -793,10 +793,12 @@ pub fn make_text_section(
                     "/link" => {
                         link_data.pop();
                     }
-                    i if i.get(0..6) == Some("cspace") => warn!("`cspace` is ignored in the Bevy explorer."),
+                    i if i.get(0..6) == Some("cspace") => {
+                        warn!("`cspace` is ignored in the Bevy explorer.")
+                    }
                     "/cspace" => {
                         // No need to print a warning on closing tag
-                    },
+                    }
                     _ => warn!("unrecognised text tag `{tag}`"),
                 }
                 section_start = section_start + close + 1;
