@@ -3,7 +3,7 @@ import { initGpuCache } from "./gpu_cache.js";
 import init, { engine_init, engine_run, gpu_cache_hash } from "./pkg/webgpu_build.js"; // Ensure this path is correct
 
 const realmInput = document.getElementById("realm");
-const locationInput = document.getElementById("location");
+const positionInput = document.getElementById("position");
 const systemSceneInput = document.getElementById("systemScene");
 const previewInput = document.getElementById("preview");
 const initButton = document.getElementById("initButton");
@@ -30,11 +30,11 @@ function populateInputsFromQueryParams() {
     realmInput.value = DEFAULT_SERVER;
   }
 
-  const locationParam = queryParams.get("location");
-  if (locationInput && locationParam) {
-    locationInput.value = decodeURIComponent(locationParam);
-  } else if (locationInput) {
-    locationInput.value = "";
+  const positionParam = queryParams.get("position");
+  if (positionInput && positionParam) {
+    positionInput.value = decodeURIComponent(positionParam);
+  } else if (positionInput) {
+    positionInput.value = "";
   }
 
   const systemSceneParam = queryParams.get("systemScene");
@@ -52,7 +52,7 @@ function populateInputsFromQueryParams() {
   }
 
   realmInput.disabled = autoStart;
-  locationInput.disabled = autoStart;
+  positionInput.disabled = autoStart;
   systemSceneInput.disabled = autoStart;
   previewInput.disabled = autoStart;
 }
@@ -289,11 +289,11 @@ async function initEngine() {
 
 function start() {
   const realm = realmInput.value;
-  const location = locationInput.value;
+  const position = positionInput.value;
   const systemScene = systemSceneInput.value;
   const preview = previewInput.checked;
   console.log(
-    `[Main JS] "Go" button clicked. Initial Realm: "${realm}", Location: "${location}", System Scene: "${systemScene}"`
+    `[Main JS] "Go" button clicked. Initial Realm: "${realm}", Position: "${position}", System Scene: "${systemScene}"`
   );
   hideHeader();
 
@@ -304,7 +304,7 @@ function start() {
     return "unknown";
   })();
 
-  engine_run(platform, realm, location, systemScene, true, preview, 1e7);
+  engine_run(platform, realm, position, systemScene, true, preview, 1e7);
 }
 
 initButton.onclick = start;
@@ -328,7 +328,7 @@ window.set_url_params = (x, y, server, system_scene, preview) => {
   try {
     const urlParams = new URLSearchParams(window.location.search);
 
-    urlParams.set("location", `${x},${y}`);
+    urlParams.set("position", `${x},${y}`);
 
     if (server != DEFAULT_SERVER) {
       urlParams.set("initialServer", server);
