@@ -697,9 +697,7 @@ pub async fn get_remote_profile(
 
     let response = ipfs
         .client()
-        .post(format!(
-            "https://asset-bundle-registry.decentraland.org/profiles"
-        ))
+        .post("https://asset-bundle-registry.decentraland.org/profiles")
         .body(format!("{{ \"ids\": [\"{:#x}\"] }}", address))
         .header("content-type", "application/json")
         .send()
