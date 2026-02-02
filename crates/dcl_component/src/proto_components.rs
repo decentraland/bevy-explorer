@@ -426,3 +426,43 @@ impl std::hash::Hash for sdk::components::pb_material::PbrMaterial {
         self.direct_intensity.map(FloatOrd).hash(state);
     }
 }
+
+// impl PartialOrd for sdk::components::pb_pointer_events::Entry {
+//     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+//         match self.event_type.partial_cmp(&other.event_type) {
+//             Some(core::cmp::Ordering::Equal) => {}
+//             ord => return ord,
+//         }
+//         self.event_info.partial_cmp(&other.event_info)
+//     }
+// }
+// impl Eq for sdk::components::pb_pointer_events::Entry {}
+// impl Ord for sdk::components::pb_pointer_events::Entry {
+//     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+//         self.partial_cmp(other).unwrap()
+//     }
+// }
+
+// impl PartialOrd for sdk::components::pb_pointer_events::Info {
+//     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+//         match self.button.partial_cmp(&other.button) {
+//             Some(core::cmp::Ordering::Equal) => {}
+//             ord => return ord,
+//         }
+//         match self.hover_text.partial_cmp(&other.hover_text) {
+//             Some(core::cmp::Ordering::Equal) => {}
+//             ord => return ord,
+//         }
+//         match self.max_distance.partial_cmp(&other.max_distance) {
+//             Some(core::cmp::Ordering::Equal) => {}
+//             ord => return ord,
+//         }
+//         self.show_feedback.partial_cmp(&other.show_feedback)
+//     }
+// }
+// impl Eq for sdk::components::pb_pointer_events::Info {}
+// impl Ord for sdk::components::pb_pointer_events::Info {
+//     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+//         self.partial_cmp(other).unwrap()
+//     }
+// }

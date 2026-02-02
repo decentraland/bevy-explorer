@@ -11,6 +11,7 @@ use bevy::{
 use bevy_console::ConsoleCommand;
 use comms::global_crdt::ForeignPlayer;
 use console::DoAddConsoleCommand;
+use system_bridge::{HoverAction, HoverEvent, PointerTargetType, SystemApi};
 
 use crate::{
     gltf_resolver::GltfMeshResolver,
@@ -25,7 +26,9 @@ use crate::{
     PARCEL_SIZE,
 };
 use common::{
+    dynamics::PLAYER_COLLIDER_RADIUS,
     inputs::{Action, CommonInputAction, POINTER_SET},
+    rpc::RpcStreamSender,
     structs::{CursorLocks, DebugInfo, PrimaryCamera},
     util::DespawnWith,
 };
@@ -119,6 +122,7 @@ impl Plugin for PointerResultPlugin {
                 send_hover_events,
                 send_action_events,
                 debug_pointer,
+                handle_hover_stream,
             )
                 .chain()
                 .in_set(SceneSets::Input),
@@ -127,18 +131,12 @@ impl Plugin for PointerResultPlugin {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
-pub enum PointerTargetType {
-    World,
-    Ui,
-    Avatar,
-}
-
 #[derive(Debug, Resource, Clone, PartialEq)]
 pub struct PointerTargetInfo {
     pub container: Entity,
     pub mesh_name: Option<String>,
     pub distance: FloatOrd,
+    pub in_scene: bool,
     pub position: Option<Vec3>,
     pub normal: Option<Vec3>,
     pub face: Option<usize>,
@@ -241,10 +239,11 @@ fn update_pointer_target(
 
     pointer_ray.0 = Some(ray);
 
-    let containing_scenes = containing_scenes.get_area(player, PARCEL_SIZE);
+    let nearby_scenes = containing_scenes.get_area(player, PARCEL_SIZE);
+    let containing_scenes = containing_scenes.get_area(player, PLAYER_COLLIDER_RADIUS);
     let maybe_nearest_hit = scenes
         .iter_mut()
-        .filter(|(scene_entity, ..)| containing_scenes.contains(scene_entity))
+        .filter(|(scene_entity, ..)| nearby_scenes.contains(scene_entity))
         .fold(
             None,
             |maybe_prior_nearest, (scene_entity, context, mut collider_data)| {
@@ -300,6 +299,7 @@ fn update_pointer_target(
             container: *avatar,
             mesh_name: None,
             distance: FloatOrd(distance),
+            in_scene: true,
             position: Some(ray.origin + ray.direction * avatar_hit.toi),
             normal: Some(avatar_hit.normal.normalize_or_zero()),
             face: avatar_hit.face,
@@ -322,6 +322,7 @@ fn update_pointer_target(
                 container,
                 mesh_name,
                 distance: FloatOrd(distance),
+                in_scene: containing_scenes.contains(&scene_entity),
                 position: Some(ray.origin + ray.direction * hit.toi),
                 normal: Some(hit.normal.normalize_or_zero()),
                 face: hit.face,
@@ -548,6 +549,7 @@ fn resolve_pointer_target(
             target.0 = Some(PointerTargetInfo {
                 container: *e,
                 distance: FloatOrd(0.0),
+                in_scene: true,
                 mesh_name: mesh.clone(),
                 position: None,
                 normal: None,
@@ -556,15 +558,16 @@ fn resolve_pointer_target(
             });
         }
         UiPointerTargetValue::World(e, mesh) => {
-            let distance = world_target
+            let (distance, in_scene) = world_target
                 .0
                 .as_ref()
-                .map(|t| t.distance)
-                .unwrap_or(FloatOrd(0.0));
+                .map(|t| (t.distance, t.in_scene))
+                .unwrap_or((FloatOrd(0.0), false));
 
             target.0 = Some(PointerTargetInfo {
                 container: *e,
                 distance,
+                in_scene,
                 mesh_name: mesh.clone(),
                 position: None,
                 normal: None,
@@ -683,6 +686,9 @@ fn send_hover_events(
                 // check there's at least one potential request before doing any work
                 if potential_entries.peek().is_some() {
                     for (scene, ev) in potential_entries {
+                        if !info.in_scene {
+                            continue;
+                        }
                         let max_distance = ev
                             .event_info
                             .as_ref()
@@ -776,6 +782,7 @@ fn send_hover_events(
                 container: *entity,
                 mesh_name: mesh.clone(),
                 distance: FloatOrd(0.0),
+                in_scene: true,
                 position: None,
                 normal: None,
                 face: None,
@@ -866,6 +873,9 @@ fn send_action_events(
                 .map(|se| se.id)
                 .unwrap_or_else(|| maybe_foreign_player.unwrap().scene_id);
             for (scene, ev) in potential_entries {
+                if !info.in_scene {
+                    continue;
+                }
                 let max_distance = ev
                     .event_info
                     .as_ref()
@@ -1040,5 +1050,74 @@ fn send_action_events(
                 },
             );
         }
+    }
+}
+
+#[derive(Default, Clone)]
+struct PreviousHoverState(Option<HoverEvent>);
+
+fn handle_hover_stream(
+    mut events: EventReader<SystemApi>,
+    mut senders: Local<Vec<RpcStreamSender<HoverEvent>>>,
+    target: Res<PointerTarget>,
+    actions: Query<&PointerEvents>,
+    mut prev_state: Local<PreviousHoverState>,
+) {
+    // Collect new senders
+    let new_senders = events
+        .read()
+        .filter_map(|ev| {
+            if let SystemApi::GetHoverStream(s) = ev {
+                Some(s.clone())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    senders.extend(new_senders);
+    senders.retain(|s| !s.is_closed());
+
+    if senders.is_empty() {
+        return;
+    }
+
+    let event = target.0.as_ref().map(|t| HoverEvent {
+        entered: true,
+        target_type: t.ty,
+        actions: actions
+            .get(t.container)
+            .map(|pe| {
+                pe.iter()
+                    .map(|event| HoverAction {
+                        event: event.clone(),
+                        enabled: t.in_scene
+                            && t.distance.0
+                                <= event
+                                    .event_info
+                                    .as_ref()
+                                    .and_then(|info| info.max_distance)
+                                    .unwrap_or(10.0),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+    });
+
+    if event != prev_state.0 {
+        if let Some(mut prev) = prev_state.0.take() {
+            prev.entered = false;
+            for s in &senders {
+                let _ = s.send(prev.clone());
+            }
+        }
+
+        if let Some(ev) = &event {
+            for s in &senders {
+                let _ = s.send(ev.clone());
+            }
+        }
+
+        prev_state.0 = event;
     }
 }

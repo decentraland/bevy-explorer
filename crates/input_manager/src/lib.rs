@@ -21,9 +21,9 @@ use common::{
         SystemActionEvent, POINTER_SET,
     },
     rpc::{RpcResultSender, RpcStreamSender},
-    structs::{AppConfig, CursorLocks, HoverInfo, PlayerModifiers},
+    structs::{AppConfig, CursorLocks, PlayerModifiers},
 };
-use system_bridge::{HoverAction, HoverEvent, HoverEventInfo, HoverTargetType, SystemApi};
+use system_bridge::SystemApi;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Default, Debug)]
 #[repr(u32)]
@@ -102,7 +102,6 @@ impl Plugin for InputManagerPlugin {
                 handle_set_bindings,
                 handle_pointer_motion,
                 handle_system_input_stream,
-                handle_hover_stream,
             ),
         );
     }
@@ -717,122 +716,4 @@ fn handle_system_input_stream(
     }
 
     *pressed = new_pressed;
-}
-
-#[derive(Default, Clone)]
-struct PreviousHoverState {
-    had_target: bool,
-    target_type: Option<HoverTargetType>,
-    outside_scene: bool,
-    actions: Vec<common::structs::HoverAction>,
-}
-
-fn handle_hover_stream(
-    mut events: EventReader<SystemApi>,
-    mut senders: Local<Vec<RpcStreamSender<HoverEvent>>>,
-    hover_info: Option<Res<HoverInfo>>,
-    mut prev_state: Local<PreviousHoverState>,
-) {
-    // Collect new senders
-    let new_senders = events
-        .read()
-        .filter_map(|ev| {
-            if let SystemApi::GetHoverStream(s) = ev {
-                Some(s.clone())
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-
-    senders.extend(new_senders);
-    senders.retain(|s| !s.is_closed());
-
-    if senders.is_empty() {
-        return;
-    }
-
-    let Some(hover_info) = hover_info else {
-        return;
-    };
-
-    let has_target = hover_info.target_type.is_some();
-    let target_changed = prev_state.had_target != has_target
-        || prev_state.target_type != hover_info.target_type.map(|t| match t {
-            common::structs::HoverTargetType::World => HoverTargetType::World,
-            common::structs::HoverTargetType::Ui => HoverTargetType::Ui,
-            common::structs::HoverTargetType::Avatar => HoverTargetType::Avatar,
-        });
-
-    // Check if outside_scene changed while still hovering the same target
-    let outside_scene_changed = has_target
-        && !target_changed
-        && prev_state.outside_scene != hover_info.outside_scene;
-
-    // Check if any action's too_far changed while still hovering the same target
-    let actions_changed = has_target
-        && !target_changed
-        && prev_state.actions != hover_info.actions;
-
-    // Send events on enter/exit, when outside_scene changes, or when actions change (e.g., too_far)
-    if target_changed || outside_scene_changed || actions_changed {
-        if let Some(target_type) = hover_info.target_type {
-            let event = HoverEvent {
-                entered: true,
-                target_type: match target_type {
-                    common::structs::HoverTargetType::World => HoverTargetType::World,
-                    common::structs::HoverTargetType::Ui => HoverTargetType::Ui,
-                    common::structs::HoverTargetType::Avatar => HoverTargetType::Avatar,
-                },
-                distance: hover_info.distance,
-                actions: hover_info
-                    .actions
-                    .iter()
-                    .map(|a| HoverAction {
-                        event_type: a.event_type,
-                        event_info: HoverEventInfo {
-                            button: a.event_info.button,
-                            hover_text: a.event_info.hover_text.clone(),
-                            show_feedback: a.event_info.show_feedback,
-                            show_highlight: a.event_info.show_highlight,
-                            max_distance: a.event_info.max_distance,
-                        },
-                        too_far: a.too_far,
-                    })
-                    .collect(),
-                outside_scene: hover_info.outside_scene,
-            };
-
-            for s in &senders {
-                let _ = s.send(event.clone());
-            }
-
-            prev_state.target_type = Some(match target_type {
-                common::structs::HoverTargetType::World => HoverTargetType::World,
-                common::structs::HoverTargetType::Ui => HoverTargetType::Ui,
-                common::structs::HoverTargetType::Avatar => HoverTargetType::Avatar,
-            });
-            prev_state.outside_scene = hover_info.outside_scene;
-            prev_state.actions = hover_info.actions.clone();
-        } else if prev_state.had_target {
-            // Exited - send event with entered=false
-            if let Some(prev_target_type) = prev_state.target_type {
-                let event = HoverEvent {
-                    entered: false,
-                    target_type: prev_target_type,
-                    distance: 0.0,
-                    actions: vec![],
-                    outside_scene: prev_state.outside_scene,
-                };
-
-                for s in &senders {
-                    let _ = s.send(event.clone());
-                }
-            }
-            prev_state.target_type = None;
-            prev_state.actions.clear();
-        }
-    }
-
-    prev_state.had_target = has_target;
 }

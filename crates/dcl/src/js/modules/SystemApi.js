@@ -335,26 +335,14 @@ module.exports.getVoiceStream = async function() {
 }
 
 // get hover events as a stream
-// HoverTargetType: 0 = World, 1 = Ui, 2 = Avatar
-// PointerEventType: 0 = PET_UP, 1 = PET_DOWN, 2 = PET_HOVER_ENTER, 3 = PET_HOVER_LEAVE, 4 = PET_DRAG_LOCKED, 5 = PET_DRAG, 6 = PET_DRAG_END
-// type HoverEventInfo = {
-//   button: number,        // InputAction (0-13)
-//   hoverText: string,
-//   showFeedback: boolean,
-//   showHighlight: boolean,
-//   maxDistance: number,
-// }
 // type HoverAction = {
-//   eventType: number,     // PointerEventType (0-6)
-//   eventInfo: HoverEventInfo,
-//   tooFar: boolean,       // true if distance > maxDistance
+//   enabled: bool,
+//   ...pb_pointer_events::Entry
 // }
 // type HoverEvent = {
-//   entered: boolean,
-//   targetType: HoverTargetType,
-//   distance: number,
+//   entered: bool,
+//   targetType: PointerTargetType, 0 = world, 1 = ui, 2 = avatar
 //   actions: HoverAction[],
-//   outsideScene: boolean,  // true if player is outside the scene containing the entity (always false for avatars)
 // }
 module.exports.getHoverStream = async function() {
   const rid = await Deno.core.ops.op_get_hover_stream();
