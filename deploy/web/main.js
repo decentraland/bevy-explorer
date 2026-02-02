@@ -2,7 +2,7 @@
 import { initGpuCache } from "./gpu_cache.js";
 import init, { engine_init, engine_run, gpu_cache_hash } from "./pkg/webgpu_build.js"; // Ensure this path is correct
 
-const initialRealmInput = document.getElementById("initialRealm");
+const realmInput = document.getElementById("realm");
 const locationInput = document.getElementById("location");
 const systemSceneInput = document.getElementById("systemScene");
 const previewInput = document.getElementById("preview");
@@ -23,11 +23,11 @@ function populateInputsFromQueryParams() {
     autoStart = false;
   }
 
-  const initialRealmParam = queryParams.get("initialRealm");
-  if (initialRealmInput && initialRealmParam) {
-    initialRealmInput.value = decodeURIComponent(initialRealmParam);
-  } else if (initialRealmInput) {
-    initialRealmInput.value = DEFAULT_SERVER;
+  const realmParam = queryParams.get("realm");
+  if (realmInput && realmParam) {
+    realmInput.value = decodeURIComponent(realmParam);
+  } else if (realmInput) {
+    realmInput.value = DEFAULT_SERVER;
   }
 
   const locationParam = queryParams.get("location");
@@ -51,7 +51,7 @@ function populateInputsFromQueryParams() {
     previewInput.checked = false;
   }
 
-  initialRealmInput.disabled = autoStart;
+  realmInput.disabled = autoStart;
   locationInput.disabled = autoStart;
   systemSceneInput.disabled = autoStart;
   previewInput.disabled = autoStart;
@@ -288,12 +288,12 @@ async function initEngine() {
 }
 
 function start() {
-  const initialRealm = initialRealmInput.value;
+  const realm = realmInput.value;
   const location = locationInput.value;
   const systemScene = systemSceneInput.value;
   const preview = previewInput.checked;
   console.log(
-    `[Main JS] "Go" button clicked. Initial Realm: "${initialRealm}", Location: "${location}", System Scene: "${systemScene}"`
+    `[Main JS] "Go" button clicked. Initial Realm: "${realm}", Location: "${location}", System Scene: "${systemScene}"`
   );
   hideHeader();
 
@@ -304,7 +304,7 @@ function start() {
     return "unknown";
   })();
 
-  engine_run(platform, initialRealm, location, systemScene, true, preview, 1e7);
+  engine_run(platform, realm, location, systemScene, true, preview, 1e7);
 }
 
 initButton.onclick = start;
