@@ -137,6 +137,7 @@ impl Plugin for TextShapePlugin {
                 .before(UiSystem::Stack)
                 .before(VisibilitySystems::VisibilityPropagate),
         );
+        app.init_resource::<UnrecognisedTags>();
     }
 }
 
@@ -162,6 +163,9 @@ pub struct TextShapeUi {
 #[derive(Component)]
 pub struct RetryTextShape(u32);
 
+#[derive(Default, Resource, Deref, DerefMut)]
+pub struct UnrecognisedTags(HashSet<String>);
+
 fn update_text_shapes(
     mut commands: Commands,
     images: ResMut<Assets<Image>>,
@@ -180,6 +184,7 @@ fn update_text_shapes(
     frame: Res<FrameCount>,
     mut cameras: Query<&mut Camera>,
     mut views: Query<&mut TextShapeUi>,
+    mut unrecognized_tags: ResMut<UnrecognisedTags>,
 ) {
     // remove deleted ui nodes
     for e in removed.read() {
@@ -395,6 +400,7 @@ fn update_text_shapes(
             text_shape.0.font(),
             halign_flex,
             wrapping,
+            &mut unrecognized_tags,
         );
 
         let ui_node = commands
@@ -711,6 +717,7 @@ pub fn make_text_section(
     font: dcl_component::proto_components::sdk::components::common::Font,
     justify: JustifyText,
     wrapping: bool,
+    unrecognized_tags: &mut UnrecognisedTags,
 ) -> (impl Bundle, Vec<(usize, String)>) {
     let mut links = Vec::default();
 
@@ -793,13 +800,17 @@ pub fn make_text_section(
                     "/link" => {
                         link_data.pop();
                     }
-                    i if i.get(0..6) == Some("cspace") => {
-                        warn!("`cspace` is ignored in the Bevy explorer.")
+                    other => {
+                        let tag = if let Some((tag, _)) = other.split_once("=") {
+                            tag
+                        } else {
+                            other
+                        };
+                        if !unrecognized_tags.contains(tag) {
+                            unrecognized_tags.insert(tag.to_owned());
+                            warn!("unrecognised text tag `{tag}`");
+                        }
                     }
-                    "/cspace" => {
-                        // No need to print a warning on closing tag
-                    }
-                    _ => warn!("unrecognised text tag `{tag}`"),
                 }
                 section_start = section_start + close + 1;
             } else {
