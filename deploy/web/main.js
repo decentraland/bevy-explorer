@@ -324,16 +324,16 @@ initEngine()
     initButton.textContent = "Load Failed";
   });
 
-window.set_url_params = (x, y, server, system_scene, preview) => {
+window.set_url_params = (x, y, realm, system_scene, preview) => {
   try {
     const urlParams = new URLSearchParams(window.location.search);
 
     urlParams.set("position", `${x},${y}`);
 
-    if (server != DEFAULT_SERVER) {
-      urlParams.set("initialServer", server);
+    if (realm != DEFAULT_SERVER) {
+      urlParams.set("realm", realm);
     } else {
-      urlParams.delete("initialServer");
+      urlParams.delete("realm");
     }
 
     if (system_scene != DEFAULT_SYSTEMSCENE) {
