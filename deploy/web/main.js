@@ -2,8 +2,8 @@
 import { initGpuCache } from "./gpu_cache.js";
 import init, { engine_init, engine_run, gpu_cache_hash } from "./pkg/webgpu_build.js"; // Ensure this path is correct
 
-const initialRealmInput = document.getElementById("initialRealm");
-const locationInput = document.getElementById("location");
+const realmInput = document.getElementById("realm");
+const positionInput = document.getElementById("position");
 const systemSceneInput = document.getElementById("systemScene");
 const previewInput = document.getElementById("preview");
 const initButton = document.getElementById("initButton");
@@ -23,18 +23,18 @@ function populateInputsFromQueryParams() {
     autoStart = false;
   }
 
-  const initialRealmParam = queryParams.get("initialRealm");
-  if (initialRealmInput && initialRealmParam) {
-    initialRealmInput.value = decodeURIComponent(initialRealmParam);
-  } else if (initialRealmInput) {
-    initialRealmInput.value = DEFAULT_SERVER;
+  const realmParam = queryParams.get("realm");
+  if (realmInput && realmParam) {
+    realmInput.value = decodeURIComponent(realmParam);
+  } else if (realmInput) {
+    realmInput.value = DEFAULT_SERVER;
   }
 
-  const locationParam = queryParams.get("location");
-  if (locationInput && locationParam) {
-    locationInput.value = decodeURIComponent(locationParam);
-  } else if (locationInput) {
-    locationInput.value = "";
+  const positionParam = queryParams.get("position");
+  if (positionInput && positionParam) {
+    positionInput.value = decodeURIComponent(positionParam);
+  } else if (positionInput) {
+    positionInput.value = "";
   }
 
   const systemSceneParam = queryParams.get("systemScene");
@@ -51,8 +51,8 @@ function populateInputsFromQueryParams() {
     previewInput.checked = false;
   }
 
-  initialRealmInput.disabled = autoStart;
-  locationInput.disabled = autoStart;
+  realmInput.disabled = autoStart;
+  positionInput.disabled = autoStart;
   systemSceneInput.disabled = autoStart;
   previewInput.disabled = autoStart;
 }
@@ -288,12 +288,12 @@ async function initEngine() {
 }
 
 function start() {
-  const initialRealm = initialRealmInput.value;
-  const location = locationInput.value;
+  const realm = realmInput.value;
+  const position = positionInput.value;
   const systemScene = systemSceneInput.value;
   const preview = previewInput.checked;
   console.log(
-    `[Main JS] "Go" button clicked. Initial Realm: "${initialRealm}", Location: "${location}", System Scene: "${systemScene}"`
+    `[Main JS] "Go" button clicked. Realm: "${realm}", Position: "${position}", System Scene: "${systemScene}"`
   );
   hideHeader();
 
@@ -304,7 +304,7 @@ function start() {
     return "unknown";
   })();
 
-  engine_run(platform, initialRealm, location, systemScene, true, preview, 1e7);
+  engine_run(platform, realm, position, systemScene, true, preview, 1e7);
 }
 
 initButton.onclick = start;
@@ -324,16 +324,16 @@ initEngine()
     initButton.textContent = "Load Failed";
   });
 
-window.set_url_params = (x, y, server, system_scene, preview) => {
+window.set_url_params = (x, y, realm, system_scene, preview) => {
   try {
     const urlParams = new URLSearchParams(window.location.search);
 
-    urlParams.set("location", `${x},${y}`);
+    urlParams.set("position", `${x},${y}`);
 
-    if (server != DEFAULT_SERVER) {
-      urlParams.set("initialServer", server);
+    if (realm != DEFAULT_SERVER) {
+      urlParams.set("realm", realm);
     } else {
-      urlParams.delete("initialServer");
+      urlParams.delete("realm");
     }
 
     if (system_scene != DEFAULT_SYSTEMSCENE) {

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,16 +8,22 @@
     <style>
         video {
             display: none;
-        }        
-        body { 
-            font-family: 'Inter', sans-serif; /* Changed to Inter */
-            margin: 0px; 
-            background-color: #f7fafc; /* Lighter gray */
-            color: #2d3748; /* Darker gray for text */
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            /* Changed to Inter */
+            margin: 0px;
+            background-color: #f7fafc;
+            /* Lighter gray */
+            color: #2d3748;
+            /* Darker gray for text */
             display: flex;
             flex-direction: column;
-            align-items: center; /* Center content */
+            align-items: center;
+            /* Center content */
         }
+
         .container {
             background-color: #ffffff;
             padding: 25px;
@@ -24,61 +31,80 @@
             border-radius: 8px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             width: 100%;
-            max-width: 700px; /* Max width for content */
+            max-width: 700px;
+            /* Max width for content */
         }
-        h1 { 
-            color: #2b6cb0; /* Tailwind blue-700 */
+
+        h1 {
+            color: #2b6cb0;
+            /* Tailwind blue-700 */
             text-align: center;
             margin-bottom: 20px;
         }
+
         label {
             display: block;
             margin-top: 15px;
             margin-bottom: 5px;
             font-weight: 600;
-            color: #4a5568; /* Tailwind gray-700 */
+            color: #4a5568;
+            /* Tailwind gray-700 */
         }
+
         input[type="text"] {
-            width: calc(100% - 22px); /* Full width minus padding and border */
+            width: calc(100% - 22px);
+            /* Full width minus padding and border */
             padding: 10px;
-            border: 1px solid #cbd5e0; /* Tailwind gray-400 */
+            border: 1px solid #cbd5e0;
+            /* Tailwind gray-400 */
             border-radius: 6px;
             font-size: 1rem;
             color: #2d3748;
         }
+
         input[type="text"]:focus {
             outline: none;
-            border-color: #4299e1; /* Tailwind blue-500 */
+            border-color: #4299e1;
+            /* Tailwind blue-500 */
             box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.5);
         }
-        button { 
-            padding: 12px 20px; 
-            background-color: #3182ce; /* Tailwind blue-600 */
-            color: white; 
-            border: none; 
-            border-radius: 6px; 
-            cursor: pointer; 
+
+        button {
+            padding: 12px 20px;
+            background-color: #3182ce;
+            /* Tailwind blue-600 */
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
             margin-top: 25px;
             font-size: 1rem;
             font-weight: 600;
             transition: background-color 0.2s ease-in-out;
-            display: block; /* Make button block to center it */
+            display: block;
+            /* Make button block to center it */
             margin-left: auto;
             margin-right: auto;
         }
-        button:hover { 
-            background-color: #2b6cb0; /* Tailwind blue-700 */
+
+        button:hover {
+            background-color: #2b6cb0;
+            /* Tailwind blue-700 */
         }
+
         #canvas-parent {
             display: none;
             width: 100%;
             height: 100vh;
         }
+
         #mygame-canvas {
             width: 100%;
             height: 100%;
-            display: block; /* Remove extra space below canvas */
+            display: block;
+            /* Remove extra space below canvas */
         }
+
         /* Added for better structure and responsiveness */
         .input-group {
             margin-bottom: 15px;
@@ -89,12 +115,15 @@
             body {
                 margin: 10px;
             }
+
             .container {
                 padding: 20px;
             }
+
             h1 {
                 font-size: 1.8rem;
             }
+
             button {
                 width: 100%;
             }
@@ -102,18 +131,19 @@
     </style>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
+
 <body>
     <div id="header" class="container">
         <h1>Bevy Explorer</h1>
 
         <div class="input-group">
-            <label for="initialRealm">Initial Realm:</label>
-            <input type="text" id="initialRealm" name="initialRealm" placeholder="e.g., world_alpha">
+            <label for="realm">Realm:</label>
+            <input type="text" id="realm" name="realm" placeholder="e.g., world_alpha">
         </div>
 
         <div class="input-group">
-            <label for="location">Location:</label>
-            <input type="text" id="location" name="location" placeholder="e.g., 0,0">
+            <label for="position">Position:</label>
+            <input type="text" id="position" name="position" placeholder="e.g., 0,0">
         </div>
 
         <div class="input-group">
@@ -127,16 +157,18 @@
         </div>
 
         <button id="initButton" disabled="true">Loading...</button>
-        
+
     </div>
     <div id="canvas-parent">
-        <canvas id="mygame-canvas"></canvas> 
+        <canvas id="mygame-canvas"></canvas>
     </div>
-    <div id="shader-compiling" style="position: absolute; height:30%; aspect-ratio: 1; background: radial-gradient(circle closest-side, #000000aa, #00000000); align-items: center; justify-content: center; display: none;">
-        <image src="shader_compiling_transparent2.png" style="width: 100%;"/>
+    <div id="shader-compiling"
+        style="position: absolute; height:30%; aspect-ratio: 1; background: radial-gradient(circle closest-side, #000000aa, #00000000); align-items: center; justify-content: center; display: none;">
+        <image src="shader_compiling_transparent2.png" style="width: 100%;" />
     </div>
     <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <script type="module" src="main.js"></script>
 </body>
+
 </html>
