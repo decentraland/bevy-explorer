@@ -45,11 +45,16 @@ impl Connected {
         let entity = hook_context.entity;
 
         // This hook will also run on despawn
-        // so `try_remove` is used
-        deferred_world
-            .commands()
-            .entity(entity)
-            .despawn_related::<HostingParticipants>();
+        // so call `try_despawn` individually
+        if let Some(hosting_participant) = deferred_world
+            .get::<HostingParticipants>(entity)
+            .map(|hosting| hosting.collection().clone())
+        {
+            let mut commands = deferred_world.commands();
+            for entity in hosting_participant.into_iter() {
+                commands.entity(entity).try_despawn();
+            }
+        }
     }
 }
 
