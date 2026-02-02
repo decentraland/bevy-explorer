@@ -1271,6 +1271,11 @@ fn process_avatar(
                     player: root_player_entity.parent(),
                 });
             }
+
+            commands.entity(armature_node).try_insert(AnimationTarget {
+                id: AnimationTargetId::from_name(&Name::new("Armature")),
+                player: root_player_entity.parent(),
+            });
         }
 
         // color the components of wearables
