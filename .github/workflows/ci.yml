@@ -178,6 +178,27 @@ jobs:
           command: clippy
           args: -- -D warnings
 
+  toml:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Install taplo
+        run: curl -fsSL https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86_64.gz | gzip -d - | install -m 755 /dev/stdin /usr/local/bin/taplo
+      - name: Run Taplo
+        id: taplo
+        run: taplo fmt --check --diff
+      - name: Taplo info
+        if: failure()
+        run: |
+          echo 'To fix toml fmt, please run `taplo fmt`.'
+          echo 'To check for a diff, run `taplo fmt --check --diff`.'
+          echo 'You can find taplo here: https://taplo.tamasfe.dev/'
+          echo 'Or if you use VSCode, use the `Even Better Toml` extension.'
+          echo 'You can find the extension here: https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml'
+
   build-deploy-web:
     name: Build and Deploy Web
     # needs: [check, test, fmt, clippy]
