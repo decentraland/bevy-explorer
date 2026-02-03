@@ -6,8 +6,8 @@ const DEFAULT_SERVER = "https://realm-provider-ea.decentraland.org/main";
 const DEFAULT_SYSTEMSCENE = "https://dcl-regenesislabs.github.io/bevy-ui-scene/BevyUiScene";
 
 // DOM references
-const initialRealmInput = document.getElementById("initialRealm");
-const locationInput = document.getElementById("location");
+const realmInput = document.getElementById("realm");
+const positionInput = document.getElementById("position");
 const systemSceneInput = document.getElementById("systemScene");
 const previewInput = document.getElementById("preview");
 const initButton = document.getElementById("initButton");
@@ -29,18 +29,18 @@ function populateInputsFromQueryParams() {
     autoStart = false;
   }
 
-  const initialRealmParam = queryParams.get("initialRealm");
-  if (initialRealmInput && initialRealmParam) {
-    initialRealmInput.value = decodeURIComponent(initialRealmParam);
-  } else if (initialRealmInput) {
-    initialRealmInput.value = DEFAULT_SERVER;
+  const realmParam = queryParams.get("initialRealm") ?? queryParams.get("realm");
+  if (realmInput && realmParam) {
+    realmInput.value = decodeURIComponent(realmParam);
+  } else if (realmInput) {
+    realmInput.value = DEFAULT_SERVER;
   }
 
-  const locationParam = queryParams.get("location");
-  if (locationInput && locationParam) {
-    locationInput.value = decodeURIComponent(locationParam);
-  } else if (locationInput) {
-    locationInput.value = "";
+  const positionParam = queryParams.get("position");
+  if (positionInput && positionParam) {
+    positionInput.value = decodeURIComponent(positionParam);
+  } else if (positionInput) {
+    positionInput.value = "";
   }
 
   const systemSceneParam = queryParams.get("systemScene");
@@ -83,12 +83,12 @@ window.set_url_params = (x, y, server, system_scene, preview) => {
   try {
     const urlParams = new URLSearchParams(window.location.search);
 
-    urlParams.set("location", `${x},${y}`);
+    urlParams.set("position", `${x},${y}`);
 
     if (server != DEFAULT_SERVER) {
-      urlParams.set("initialRealm", server);
+      urlParams.set("realm", server);
     } else {
-      urlParams.delete("initialRealm");
+      urlParams.delete("realm");
     }
 
     if (system_scene != DEFAULT_SYSTEMSCENE) {

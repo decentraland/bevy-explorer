@@ -232,12 +232,12 @@ export async function initEngine() {
  * Starts the game engine with values from the UI inputs.
  */
 export function start() {
-  const initialRealm = initialRealmInput.value;
-  const location = locationInput.value;
+  const realmValue = realmInput.value;
+  const positionValue = positionInput.value;
   const systemScene = systemSceneInput.value;
   const preview = previewInput.checked;
   console.log(
-    `[Main JS] "Launch" button clicked. Initial Realm: "${initialRealm}", Location: "${location}", System Scene: "${systemScene}"`
+    `[Main JS] "Launch" button clicked. Initial Realm: "${realmValue}", Position (coords): "${positionValue}", System Scene: "${systemScene}"`
   );
   hideHeader();
 
@@ -248,7 +248,7 @@ export function start() {
     return "unknown";
   })();
 
-  engine_run(platform, initialRealm, location, systemScene, true, preview, 1e7);
+  engine_run(platform, realmValue, positionValue, systemScene, true, preview, 1e7);
 
   setTimeout(showCanvas, 2222) // TODO remove once we have SystemScene loaded and shown before green empty world
 }
