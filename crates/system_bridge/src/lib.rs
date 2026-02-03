@@ -19,9 +19,10 @@ use common::{
 };
 use dcl_component::proto_components::{
     common::Vector2,
-    sdk::components::{PbAvatarBase, PbAvatarEquippedData},
+    sdk::components::{pb_pointer_events, PbAvatarBase, PbAvatarEquippedData},
 };
 use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use settings::SettingBridgePlugin;
 
 use crate::settings::SettingInfo;
@@ -87,6 +88,30 @@ pub struct VoiceMessage {
     pub active: bool,
 }
 
+#[derive(Hash, Clone, Copy, Serialize_repr, Deserialize_repr, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum PointerTargetType {
+    World = 0,
+    Ui = 1,
+    Avatar = 2,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HoverAction {
+    #[serde(flatten)]
+    pub event: pb_pointer_events::Entry,
+    pub enabled: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HoverEvent {
+    pub entered: bool,
+    pub target_type: PointerTargetType,
+    pub actions: Vec<HoverAction>,
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SceneLoadingUi {
@@ -121,6 +146,7 @@ pub enum SystemApi {
     GetSystemActionStream(RpcStreamSender<SystemActionEvent>),
     GetChatStream(RpcStreamSender<ChatMessage>),
     GetVoiceStream(RpcStreamSender<VoiceMessage>),
+    GetHoverStream(RpcStreamSender<HoverEvent>),
     GetSceneLoadingUiStream(RpcStreamSender<SceneLoadingUi>),
     SendChat(String, String),
     Quit,
@@ -172,6 +198,7 @@ pub struct NativeUi {
     pub permissions: bool,
     pub profile: bool,
     pub nametags: bool,
+    pub tooltips: bool,
     pub loading_scene: bool,
 }
 

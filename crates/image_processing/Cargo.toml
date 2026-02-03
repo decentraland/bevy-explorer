@@ -32,7 +32,9 @@ web-time = { workspace = true }
 
 url = "2.4.0"
 futures-io = "0.3"
-block_compression = { version = "0.7", default-features = false, features = ["bc7"] }
+block_compression = { version = "0.7", default-features = false, features = [
+  "bc7",
+] }
 image = "0.25"
 ddsfile = "0.5.2"
 gltf = "1.4"

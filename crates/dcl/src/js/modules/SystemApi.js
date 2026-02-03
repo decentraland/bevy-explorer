@@ -334,6 +334,30 @@ module.exports.getVoiceStream = async function() {
   return streamGenerator();
 }
 
+// get hover events as a stream
+// type HoverAction = {
+//   enabled: bool,
+//   ...pb_pointer_events::Entry
+// }
+// type HoverEvent = {
+//   entered: bool,
+//   targetType: PointerTargetType, 0 = world, 1 = ui, 2 = avatar
+//   actions: HoverAction[],
+// }
+module.exports.getHoverStream = async function() {
+  const rid = await Deno.core.ops.op_get_hover_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_hover_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}
+
 // get scene loading UI state as a stream
 // type SceneLoadingUi = {
 //   visible: boolean,

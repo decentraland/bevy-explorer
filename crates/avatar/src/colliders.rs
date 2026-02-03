@@ -22,11 +22,11 @@ use rapier3d::{
 };
 use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE_RED};
 use scene_runner::{
-    update_scene::pointer_results::{AvatarColliders, PointerTarget, PointerTargetType},
+    update_scene::pointer_results::{AvatarColliders, PointerTarget},
     update_world::mesh_collider::ColliderId,
 };
 use serde_json::json;
-use system_bridge::NativeUi;
+use system_bridge::{NativeUi, PointerTargetType};
 
 pub struct AvatarColliderPlugin;
 

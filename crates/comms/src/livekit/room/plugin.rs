@@ -13,8 +13,8 @@ use tokio::{
 use {
     kira::sound::streaming::StreamingSoundData,
     livekit::{
-        id::ParticipantIdentity, participant::Participant, ConnectionState, DataPacket, Room,
-        RoomError, RoomEvent, RoomOptions, RoomResult,
+        id::ParticipantIdentity, participant::Participant, ConnectionState, DataPacket,
+        DisconnectReason, Room, RoomError, RoomEvent, RoomOptions, RoomResult,
     },
 };
 
@@ -26,8 +26,11 @@ use crate::{
             ParticipantConnectionQuality, ParticipantDisconnected, ParticipantMetadataChanged,
             ParticipantPayload,
         },
-        room::{Connected, ConnectingLivekitRoom, Disconnected, LivekitRoom, Reconnecting},
-        track, LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime, LivekitTransport,
+        room::{
+            Connected, Connecting, ConnectingLivekitRoom, Disconnected, LivekitRoom, Reconnecting,
+        },
+        track, ConnectionAvailability, LivekitChannelControl, LivekitNetworkMessage,
+        LivekitRuntime, LivekitTransport,
     },
     NetworkMessageRecipient,
 };
@@ -35,8 +38,8 @@ use crate::{
 use crate::{
     global_crdt::StreamingSoundData,
     livekit::web::{
-        ConnectionState, DataPacket, Participant, ParticipantIdentity, Room, RoomError, RoomEvent,
-        RoomOptions, RoomResult,
+        ConnectionState, DataPacket, DisconnectReason, Participant, ParticipantIdentity, Room,
+        RoomError, RoomEvent, RoomOptions, RoomResult,
     },
 };
 
@@ -44,6 +47,7 @@ pub struct LivekitRoomPlugin;
 
 impl Plugin for LivekitRoomPlugin {
     fn build(&self, app: &mut App) {
+        app.add_observer(livekit_transport_added);
         app.add_observer(initiate_room_connection);
         app.add_observer(create_local_participant);
         app.add_observer(disconnect_from_room_on_replace);
@@ -51,6 +55,7 @@ impl Plugin for LivekitRoomPlugin {
         app.add_systems(
             Update,
             (
+                try_reconnect.run_if(not(in_state(ConnectionAvailability::Unavailable))),
                 poll_connecting_rooms,
                 (
                     process_room_events,
@@ -71,12 +76,23 @@ struct RoomTasks(Vec<RoomTask>);
 #[derive(Deref, DerefMut)]
 struct RoomTask(JoinHandle<Result<(), RoomError>>);
 
+fn livekit_transport_added(trigger: Trigger<OnAdd, LivekitTransport>, mut commands: Commands) {
+    let entity = trigger.target();
+    commands.entity(entity).insert(Connecting);
+}
+
 fn initiate_room_connection(
-    trigger: Trigger<OnAdd, LivekitTransport>,
+    trigger: Trigger<OnAdd, Connecting>,
     mut commands: Commands,
     livekit_transports: Query<&LivekitTransport>,
     livekit_runtime: Res<LivekitRuntime>,
+    connection_availability: Res<State<ConnectionAvailability>>,
 ) {
+    if *connection_availability.get() == ConnectionAvailability::Unavailable {
+        debug!("Can't connect because new connections are disabled.");
+        return;
+    }
+
     let entity = trigger.target();
     let Ok(livekit_transport) = livekit_transports.get(entity) else {
         error!("{entity} does not have a LivekitRuntime.");
@@ -176,6 +192,14 @@ fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mu
                                 track: publication.clone(),
                             });
                         }
+                    }
+                }
+                RoomEvent::Disconnected { reason } => {
+                    if matches!(
+                        reason,
+                        DisconnectReason::DuplicateIdentity | DisconnectReason::ParticipantRemoved
+                    ) {
+                        commands.set_state(ConnectionAvailability::Unavailable);
                     }
                 }
                 RoomEvent::ConnectionStateChanged(state) => match state {
@@ -528,12 +552,9 @@ fn verify_room_tasks(
 
                 let res = livekit_runtime.block_on(task);
                 match res {
-                    Ok(res) => {
-                        if let Err(err) = res {
-                            error!("Failed to complete room task due to {err}.");
-                            commands.send_event(AppExit::from_code(1));
-                            return;
-                        }
+                    Ok(Ok(())) => {}
+                    Ok(Err(err)) => {
+                        error!("Failed to complete room task due to {err}.");
                     }
                     Err(err) => {
                         error!("Failed to pull RoomTask due to '{err}'.");
@@ -556,5 +577,11 @@ fn close_rooms_on_app_exit(rooms: Query<&LivekitRoom>, livekit_runtime: Res<Live
                 room.name()
             );
         }
+    }
+}
+
+fn try_reconnect(mut commands: Commands, rooms: Populated<Entity, With<Disconnected>>) {
+    for entity in rooms.into_inner() {
+        commands.entity(entity).insert(Connecting);
     }
 }

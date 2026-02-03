@@ -10,7 +10,8 @@ use dcl_component::proto_components::{
 };
 
 use crate::{
-    update_scene::pointer_results::UiPointerTarget, update_world::text_shape::make_text_section,
+    update_scene::pointer_results::UiPointerTarget,
+    update_world::text_shape::{make_text_section, UnrecognisedTags},
     SceneEntity,
 };
 
@@ -90,6 +91,7 @@ pub fn set_ui_text(
     children: Query<&Children>,
     prev_texts: Query<&UiTextMarker>,
     mut node_style: Query<&mut Node>,
+    mut unrecognized_tags: ResMut<UnrecognisedTags>,
 ) {
     for ent in removed.read() {
         let Ok(link) = links.get(ent) else {
@@ -134,6 +136,7 @@ pub fn set_ui_text(
             ui_text.font,
             ui_text.h_align,
             ui_text.wrapping,
+            &mut unrecognized_tags,
         );
 
         // with text nodes the axis sizes are unusual.
