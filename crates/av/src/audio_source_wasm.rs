@@ -1,7 +1,7 @@
 use bevy::{platform::collections::HashMap, prelude::*, render::view::RenderLayers};
 use common::{
     structs::{AudioEmitter, AudioSettings, AudioType, PrimaryUser, SystemAudio},
-    util::VolumePanning,
+    util::{ReportErr, VolumePanning},
 };
 use ipfs::IpfsAssetServer;
 use scene_runner::{ContainingScene, SceneEntity};
