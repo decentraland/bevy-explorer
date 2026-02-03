@@ -127,7 +127,7 @@ impl Tween {
                         update_pb_material(
                             &mut material.0,
                             None,
-                            Some((start + ((end - start) * ease_value)) * Vec2::new(1.0, -1.0)),
+                            Some(start + ((end - start) * ease_value)),
                         );
                     }
                     TextureMovementType::TmtTiling => {
