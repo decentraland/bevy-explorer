@@ -78,6 +78,9 @@ fn gen_sdk_components() -> Result<()> {
         "PBAvatarBase",
         "PBAvatarEquippedData",
         "InputAction",
+        "PointerEventType",
+        "Entry",
+        "Info",
     ];
 
     for component in serde_components {
