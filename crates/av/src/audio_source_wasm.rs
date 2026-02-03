@@ -138,12 +138,12 @@ pub struct AudioGraphHtmlElements {
 
 impl AudioGraphHtmlElements {
     pub fn stop(&self, now: f64) {
-        let _ = self
-            .gain_node
+        self.gain_node
             .gain()
-            .linear_ramp_to_value_at_time(0.0, now + 0.01);
+            .linear_ramp_to_value_at_time(0.0, now + 0.01)
+            .report();
         let node: &AudioScheduledSourceNode = self.source_node.as_ref();
-        let _ = node.stop_with_when(now + 0.01);
+        node.stop_with_when(now + 0.01).report();
     }
 }
 

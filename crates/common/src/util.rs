@@ -1,5 +1,5 @@
 use core::f32;
-use std::{collections::VecDeque, marker::PhantomData};
+use std::{collections::VecDeque, marker::PhantomData, panic::Location};
 
 use bevy::{
     app::Update,
@@ -12,6 +12,7 @@ use bevy::{
         },
         world::EntityWorldMut,
     },
+    log::error,
     math::Vec3,
     pbr::{MeshMaterial3d, StandardMaterial},
     prelude::{Bundle, Command, Entity, GlobalTransform, Plugin, Res, World},
@@ -592,5 +593,26 @@ impl SceneSpawnerPlus<'_, '_> {
         }
 
         true
+    }
+}
+
+pub trait ReportErr {
+    fn report(self)
+    where
+        Self: Sized,
+    {
+    }
+}
+
+impl<T, E: std::fmt::Debug> ReportErr for Result<T, E> {
+    #[track_caller]
+    fn report(self)
+    where
+        Self: Sized,
+    {
+        if let Err(e) = self {
+            let caller = Location::caller();
+            error!("Unexpected application error : {e:?} @ {caller}")
+        }
     }
 }
