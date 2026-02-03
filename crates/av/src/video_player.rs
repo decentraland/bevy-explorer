@@ -85,14 +85,7 @@ fn av_player_on_insert(
             let _ = video_sink
                 .command_sender
                 .try_send(AVCommand::Repeat(av_player.source.r#loop.unwrap_or(false)));
-
-            if av_player.source.playing.unwrap_or(true) {
-                debug!("scene requesting start of video for {entity}");
-                let _ = video_sink.command_sender.try_send(AVCommand::Play);
-            } else {
-                debug!("scene stopping video {entity}");
-                let _ = video_sink.command_sender.try_send(AVCommand::Pause);
-            }
+            let _ = video_sink.command_sender.try_send(AVCommand::Pause);
         }
         if let Some(audio_sink) = maybe_audio_sink {
             commands.trigger_targets(
@@ -101,14 +94,7 @@ fn av_player_on_insert(
                 },
                 entity,
             );
-
-            if av_player.source.playing.unwrap_or(true) {
-                debug!("scene requesting start of audio for {entity}");
-                let _ = audio_sink.command_sender.try_send(AVCommand::Play);
-            } else {
-                debug!("scene stopping audio {entity}");
-                let _ = audio_sink.command_sender.try_send(AVCommand::Pause);
-            }
+            let _ = audio_sink.command_sender.try_send(AVCommand::Pause);
         }
     } else {
         if maybe_audio_sink.is_some() || maybe_video_sink.is_some() {
