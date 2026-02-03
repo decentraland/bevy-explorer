@@ -469,6 +469,7 @@ fn av_player_on_insert(
     commands.entity(entity).try_remove::<ShouldBePlaying>();
     if av_player.source.src == html_media_entity.source {
         debug!("Updating html media entity {entity}.");
+        html_media_entity.stop();
         html_media_entity.set_loop(av_player.source.r#loop.unwrap_or(false));
         html_media_entity.set_volume(av_player.source.volume.unwrap_or(1.0));
     } else {
