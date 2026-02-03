@@ -328,7 +328,14 @@ pub async fn op_get_hover_stream(state: &WorkerContext) -> u32 {
 
 #[wasm_bindgen]
 pub async fn op_read_hover_stream(state: &WorkerContext, rid: u32) -> Result<JsValue, WasmError> {
-    serde_result!(dcl::js::system_api::op_read_hover_stream(state.rc(), rid).await)
+    let hover_event = dcl::js::system_api::op_read_hover_stream(state.rc(), rid).await;
+    // use a specific serializer to convert to object here, as wasm_bindgen's conversion otherwise produces a Map
+    hover_event
+        .map(|v| {
+            v.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+                .unwrap()
+        })
+        .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
