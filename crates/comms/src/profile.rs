@@ -231,11 +231,7 @@ pub fn setup_primary_profile(
                 let wallet = wallet.clone();
                 *deploy_task = Some((
                     profile.version,
-                    IoTaskPool::get().spawn_compat(deploy_profile(
-                        ipfs,
-                        wallet,
-                        profile,
-                    )),
+                    IoTaskPool::get().spawn_compat(deploy_profile(ipfs, wallet, profile)),
                 ));
                 current_profile.is_deployed = true;
             }
