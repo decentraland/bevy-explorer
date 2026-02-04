@@ -37,7 +37,6 @@ use restricted_actions::{lookup_portable, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
     initialize_scene::{PortableScenes, PortableSource, TestingData},
-    loading_system_scene_screen::LoadingSystemSceneScreenPlugin,
     update_world::mesh_collider::GroundCollider,
     vec3_to_parcel, OutOfWorld, SceneRunnerPlugin,
 };
@@ -297,7 +296,6 @@ fn main_inner(
 
     app.add_plugins(AVPlayerPlugin)
         .add_plugins(RestrictedActionsPlugin)
-        .add_plugins(LoadingSystemSceneScreenPlugin)
         .insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER))
         .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
         .add_systems(Startup, setup.in_set(SetupSets::Init))

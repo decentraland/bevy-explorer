@@ -44,7 +44,6 @@ use scene_material::SceneBoundPlugin;
 use scene_runner::{
     automatic_testing::AutomaticTestingPlugin,
     initialize_scene::{PortableScenes, PortableSource, TestingData, PARCEL_SIZE},
-    loading_system_scene_screen::LoadingSystemSceneScreenPlugin,
     update_world::{mesh_collider::GroundCollider, NoGltf},
     OutOfWorld, SceneRunnerPlugin,
 };
@@ -475,7 +474,6 @@ fn main() {
 
     app.add_plugins(AVPlayerPlugin)
         .add_plugins(RestrictedActionsPlugin)
-        .add_plugins(LoadingSystemSceneScreenPlugin)
         .insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER))
         .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
         .add_systems(Startup, setup.in_set(SetupSets::Init))

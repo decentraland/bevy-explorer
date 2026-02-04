@@ -61,7 +61,6 @@ pub mod automatic_testing;
 pub mod bounds_calc;
 pub mod gltf_resolver;
 pub mod initialize_scene;
-pub mod loading_system_scene_screen;
 pub mod permissions;
 pub mod primary_entities;
 pub mod renderer_context;
