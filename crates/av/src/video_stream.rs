@@ -36,7 +36,7 @@ pub fn av_sinks(
     playing: bool,
     repeat: bool,
 ) -> (VideoSink, AudioSink) {
-    let (command_sender, command_receiver) = tokio::sync::mpsc::channel(10);
+    let (command_sender, command_receiver) = tokio::sync::mpsc::channel(128);
     let (video_sender, video_receiver) = tokio::sync::mpsc::channel(10);
     let (audio_sender, audio_receiver) = tokio::sync::mpsc::channel(10);
 

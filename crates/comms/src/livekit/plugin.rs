@@ -57,7 +57,7 @@ fn start_livekit(
     for ev in room_events.read() {
         info!("starting livekit protocol");
         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
-        let (control_sender, control_receiver) = tokio::sync::mpsc::channel(10);
+        let (control_sender, control_receiver) = tokio::sync::mpsc::channel(128);
 
         let Some(current_profile) = current_profile.profile.as_ref() else {
             return;
