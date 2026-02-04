@@ -39,3 +39,18 @@
         </bounds>
     </div>
 </define-template>
+
+<define-template id="out-of-world-backdrop">
+    <div 
+        focus="block" 
+        style="
+            position-type: absolute;
+            width: 100%;
+            height: 100%;
+            align-items: center;
+            justify-content: center;
+        " 
+        image = "embedded://images/gradient-background.png"
+    >
+    </div>
+</define-template>
