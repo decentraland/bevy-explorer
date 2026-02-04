@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{image::ImageLoaderSettings, prelude::*};
 use bevy_dui::{DuiEntities, DuiEntityCommandsExt, DuiProps};
 use common::{
     rpc::RpcStreamSender,
@@ -40,10 +40,7 @@ impl Plugin for OowUiPlugin {
         if app.world().resource::<NativeUi>().loading_scene {
             app.add_systems(Update, update_loading_scene_dialog);
         } else {
-            app.add_systems(
-                Update,
-                update_loading_backdrop.run_if(in_state(ui_core::State::Ready)),
-            );
+            app.add_systems(Update, update_loading_backdrop);
         }
         app.add_systems(Update, pipe_scene_loading_ui_stream);
     }
@@ -122,7 +119,7 @@ fn update_loading_backdrop(
     mut commands: Commands,
     oow: Query<&OutOfWorld>,
     mut dialog: Local<Option<Entity>>,
-    dui: Res<bevy_dui::DuiRegistry>,
+    asset_server: Res<AssetServer>,
 ) {
     match (oow.is_empty(), dialog.is_some()) {
         (true, true) => {
@@ -132,10 +129,25 @@ fn update_loading_backdrop(
         (false, false) => {
             // not in world, dialog is not showing, show it
             let ent = commands
-                .spawn(ZOrder::OutOfWorldBackdrop.default())
-                .apply_template(&dui, "out-of-world-backdrop", DuiProps::new())
-                .unwrap()
-                .root;
+                .spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(100.0),
+                        ..Default::default()
+                    },
+                    ImageNode::new(
+                        asset_server.load_with_settings::<Image, ImageLoaderSettings>(
+                            "embedded://images/gradient-background.png",
+                            |s| {
+                                s.transfer_priority =
+                                    bevy::asset::RenderAssetTransferPriority::Immediate;
+                            },
+                        ),
+                    ),
+                    ZOrder::OutOfWorldBackdrop.default(),
+                ))
+                .id();
             *dialog = Some(ent);
         }
         _ => (),
