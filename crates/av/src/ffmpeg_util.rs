@@ -1,3 +1,4 @@
+use common::util::ReportErr;
 use ffmpeg_next::{format::context::Input, Packet};
 
 pub const BUFFER_TIME: f64 = 10.0;
@@ -134,7 +135,7 @@ impl PacketIter for InputWrapper {
             let path = self.path.clone();
             std::thread::spawn(move || {
                 if let Ok(mut input) = ffmpeg_next::format::input(&path) {
-                    let _ = input.seek((time * 1000000.0) as i64, ..);
+                    input.seek((time * 1000000.0) as i64, ..).report();
                     let _ = sx.send(input);
                 }
             });

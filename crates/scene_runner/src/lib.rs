@@ -561,7 +561,7 @@ impl ContainingScene<'_, '_> {
                 Some(gt.translation().xz() * Vec2::new(1.0, -1.0))
             }
         }) else {
-            return Default::default();
+            return self.get_portables(false);
         };
 
         let min_point = focus - Vec2::splat(radius);

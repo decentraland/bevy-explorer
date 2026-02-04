@@ -126,7 +126,7 @@ fn main_inner(
             permissions: false,
             profile: false,
             nametags: false,
-            tooltips: true,
+            tooltips: false,
             loading_scene: false,
         });
         app.insert_resource(SystemScene {

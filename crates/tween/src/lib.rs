@@ -127,7 +127,7 @@ impl Tween {
                         update_pb_material(
                             &mut material.0,
                             None,
-                            Some((start + ((end - start) * ease_value)) * Vec2::new(1.0, -1.0)),
+                            Some(start + ((end - start) * ease_value)),
                         );
                     }
                     TextureMovementType::TmtTiling => {
@@ -320,12 +320,16 @@ fn update_pb_material(pb_material: &mut PbMaterial, tiling: Option<Vec2>, offset
 
 fn transfer_material_to_scene(
     mut tween_updated_texture: EventReader<TweenUpdatedTexture>,
-    mut tweens: Query<(&ContainerEntity, &PbMaterialComponent), With<Tween>>,
+    mut tweens: Query<(&ContainerEntity, Option<&PbMaterialComponent>), With<Tween>>,
     mut scenes: Query<&mut RendererSceneContext>,
 ) {
     for TweenUpdatedTexture(entity) in tween_updated_texture.read() {
-        let Ok((container_entity, pb_material_component)) = tweens.get_mut(*entity) else {
+        let Ok((container_entity, maybe_pb_material_component)) = tweens.get_mut(*entity) else {
             error!("TweenUpdatedTexture triggered for an entity that is not a tween.");
+            continue;
+        };
+        let Some(pb_material_component) = maybe_pb_material_component else {
+            debug!("Material not ready.");
             continue;
         };
         let Ok(mut scene) = scenes.get_mut(container_entity.root) else {
