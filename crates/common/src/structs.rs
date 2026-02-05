@@ -113,12 +113,41 @@ pub enum PermissionState {
 pub struct AttachPoints {
     pub position: Entity,
     pub nametag: Entity,
+    pub head: Entity,
+    pub neck: Entity,
+    pub spine: Entity,
+    pub spine_1: Entity,
+    pub spine_2: Entity,
+    pub hip: Entity,
+    pub left_shoulder: Entity,
+    pub left_arm: Entity,
+    pub left_forearm: Entity,
     pub left_hand: Entity,
+    pub left_hand_index: Entity,
+    pub right_shoulder: Entity,
+    pub righ_arm: Entity,
+    pub right_forearm: Entity,
     pub right_hand: Entity,
+    pub right_hand_index: Entity,
+    /// AAPT_LEFT_UP_LEG
+    pub left_thigh: Entity,
+    /// AAPT_LEFT_LEG
+    pub left_shin: Entity,
+    pub left_foot: Entity,
+    pub left_toe_base: Entity,
+    /// AAPT_RIGHT_UP_LEG
+    pub right_thigh: Entity,
+    /// AAPT_RIGHT_LEG
+    pub right_shin: Entity,
+    pub right_foot: Entity,
+    pub right_toe_base: Entity,
 }
 
 impl AttachPoints {
     pub fn new(commands: &mut Commands) -> Self {
+        let inverted_transform = Transform::from_rotation(Quat::from_rotation_y(PI));
+        let default_visibility = Visibility::default();
+        let default_bundle = (inverted_transform, default_visibility);
         Self {
             position: commands
                 .spawn((Transform::default(), Visibility::default()))
@@ -129,23 +158,63 @@ impl AttachPoints {
                     Visibility::default(),
                 ))
                 .id(),
-            left_hand: commands
-                .spawn((
-                    Transform::from_rotation(Quat::from_rotation_y(PI)),
-                    Visibility::default(),
-                ))
-                .id(),
-            right_hand: commands
-                .spawn((
-                    Transform::from_rotation(Quat::from_rotation_y(PI)),
-                    Visibility::default(),
-                ))
-                .id(),
+            head: commands.spawn(default_bundle).id(),
+            neck: commands.spawn(default_bundle).id(),
+            spine: commands.spawn(default_bundle).id(),
+            spine_1: commands.spawn(default_bundle).id(),
+            spine_2: commands.spawn(default_bundle).id(),
+            hip: commands.spawn(default_bundle).id(),
+            left_shoulder: commands.spawn(default_bundle).id(),
+            left_arm: commands.spawn(default_bundle).id(),
+            left_forearm: commands.spawn(default_bundle).id(),
+            left_hand: commands.spawn(default_bundle).id(),
+            left_hand_index: commands.spawn(default_bundle).id(),
+            right_shoulder: commands.spawn(default_bundle).id(),
+            righ_arm: commands.spawn(default_bundle).id(),
+            right_forearm: commands.spawn(default_bundle).id(),
+            right_hand: commands.spawn(default_bundle).id(),
+            right_hand_index: commands.spawn(default_bundle).id(),
+            left_thigh: commands.spawn(default_bundle).id(),
+            left_shin: commands.spawn(default_bundle).id(),
+            left_foot: commands.spawn(default_bundle).id(),
+            left_toe_base: commands.spawn(default_bundle).id(),
+            right_thigh: commands.spawn(default_bundle).id(),
+            right_shin: commands.spawn(default_bundle).id(),
+            right_foot: commands.spawn(default_bundle).id(),
+            right_toe_base: commands.spawn(default_bundle).id(),
         }
     }
 
-    pub fn entities(&self) -> [Entity; 4] {
-        [self.position, self.nametag, self.left_hand, self.right_hand]
+    /// AttachPoints entities ordered by their protocol id
+    pub fn entities(&self) -> [Entity; 26] {
+        [
+            self.position,
+            self.nametag,
+            self.left_hand,
+            self.right_hand,
+            self.head,
+            self.neck,
+            self.spine,
+            self.spine_1,
+            self.spine_2,
+            self.hip,
+            self.left_shoulder,
+            self.left_arm,
+            self.left_forearm,
+            self.left_hand_index,
+            self.right_shoulder,
+            self.righ_arm,
+            self.right_forearm,
+            self.right_hand_index,
+            self.left_thigh,
+            self.left_shin,
+            self.left_foot,
+            self.left_toe_base,
+            self.right_thigh,
+            self.right_shin,
+            self.right_foot,
+            self.right_toe_base,
+        ]
     }
 }
 
