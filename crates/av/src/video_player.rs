@@ -84,8 +84,8 @@ fn av_player_on_insert(
         if let Some(video_sink) = maybe_video_sink {
             let _ = video_sink
                 .command_sender
-                .try_send(AVCommand::Repeat(av_player.source.r#loop.unwrap_or(false)));
-            let _ = video_sink.command_sender.try_send(AVCommand::Pause);
+                .send(AVCommand::Repeat(av_player.source.r#loop.unwrap_or(false)));
+            let _ = video_sink.command_sender.send(AVCommand::Pause);
         }
         if let Some(audio_sink) = maybe_audio_sink {
             commands.trigger_targets(
@@ -94,17 +94,17 @@ fn av_player_on_insert(
                 },
                 entity,
             );
-            let _ = audio_sink.command_sender.try_send(AVCommand::Pause);
+            let _ = audio_sink.command_sender.send(AVCommand::Pause);
         }
     } else {
         if maybe_audio_sink.is_some() || maybe_video_sink.is_some() {
             debug!("Removing sinks of {entity} due to diverging source.");
         }
         if let Some(video_sink) = maybe_video_sink {
-            let _ = video_sink.command_sender.try_send(AVCommand::Dispose);
+            let _ = video_sink.command_sender.send(AVCommand::Dispose);
         }
         if let Some(audio_sink) = maybe_audio_sink {
-            let _ = audio_sink.command_sender.try_send(AVCommand::Dispose);
+            let _ = audio_sink.command_sender.send(AVCommand::Dispose);
         }
         debug!("{entity:?} has {}.", av_player.source.src);
         commands
@@ -141,10 +141,10 @@ fn av_player_should_be_playing_on_add(
     };
 
     if let Some(audio_sink) = maybe_audio_sink {
-        let _ = audio_sink.command_sender.try_send(AVCommand::Play);
+        let _ = audio_sink.command_sender.send(AVCommand::Play);
     }
     if let Some(video_sink) = maybe_video_sink {
-        let _ = video_sink.command_sender.try_send(AVCommand::Play);
+        let _ = video_sink.command_sender.send(AVCommand::Play);
     }
 }
 
@@ -161,10 +161,10 @@ fn av_player_should_be_playing_on_remove(
     };
 
     if let Some(audio_sink) = maybe_audio_sink {
-        let _ = audio_sink.command_sender.try_send(AVCommand::Pause);
+        let _ = audio_sink.command_sender.send(AVCommand::Pause);
     }
     if let Some(video_sink) = maybe_video_sink {
-        let _ = video_sink.command_sender.try_send(AVCommand::Pause);
+        let _ = video_sink.command_sender.send(AVCommand::Pause);
     }
 }
 
