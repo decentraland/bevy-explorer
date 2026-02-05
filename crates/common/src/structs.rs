@@ -145,6 +145,9 @@ pub struct AttachPoints {
 
 impl AttachPoints {
     pub fn new(commands: &mut Commands) -> Self {
+        let inverted_transform = Transform::from_rotation(Quat::from_rotation_y(PI));
+        let default_visibility = Visibility::default();
+        let default_bundle = (inverted_transform, default_visibility);
         Self {
             position: commands
                 .spawn((Transform::default(), Visibility::default()))
@@ -155,84 +158,30 @@ impl AttachPoints {
                     Visibility::default(),
                 ))
                 .id(),
-            head: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
-            neck: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
-            spine: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
-            spine_1: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
-            spine_2: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
-            hip: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
-            left_shoulder: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
-            left_arm: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
-            left_forearm: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
-            left_hand: commands
-                .spawn((
-                    Transform::from_rotation(Quat::from_rotation_y(PI)),
-                    Visibility::default(),
-                ))
-                .id(),
-            left_hand_index: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
-            right_shoulder: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
-            righ_arm: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
-            right_forearm: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
-            right_hand: commands
-                .spawn((
-                    Transform::from_rotation(Quat::from_rotation_y(PI)),
-                    Visibility::default(),
-                ))
-                .id(),
-            right_hand_index: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
-            left_thigh: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
-            left_shin: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
-            left_foot: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
-            left_toe_base: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
-            right_thigh: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
-            right_shin: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
-            right_foot: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
-            right_toe_base: commands
-                .spawn((Transform::default(), Visibility::default()))
-                .id(),
+            head: commands.spawn(default_bundle).id(),
+            neck: commands.spawn(default_bundle).id(),
+            spine: commands.spawn(default_bundle).id(),
+            spine_1: commands.spawn(default_bundle).id(),
+            spine_2: commands.spawn(default_bundle).id(),
+            hip: commands.spawn(default_bundle).id(),
+            left_shoulder: commands.spawn(default_bundle).id(),
+            left_arm: commands.spawn(default_bundle).id(),
+            left_forearm: commands.spawn(default_bundle).id(),
+            left_hand: commands.spawn(default_bundle).id(),
+            left_hand_index: commands.spawn(default_bundle).id(),
+            right_shoulder: commands.spawn(default_bundle).id(),
+            righ_arm: commands.spawn(default_bundle).id(),
+            right_forearm: commands.spawn(default_bundle).id(),
+            right_hand: commands.spawn(default_bundle).id(),
+            right_hand_index: commands.spawn(default_bundle).id(),
+            left_thigh: commands.spawn(default_bundle).id(),
+            left_shin: commands.spawn(default_bundle).id(),
+            left_foot: commands.spawn(default_bundle).id(),
+            left_toe_base: commands.spawn(default_bundle).id(),
+            right_thigh: commands.spawn(default_bundle).id(),
+            right_shin: commands.spawn(default_bundle).id(),
+            right_foot: commands.spawn(default_bundle).id(),
+            right_toe_base: commands.spawn(default_bundle).id(),
         }
     }
 
