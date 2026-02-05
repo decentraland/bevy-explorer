@@ -130,7 +130,9 @@ impl Plugin for AVPlayerPlugin {
         );
         app.add_systems(
             Update,
-            (av_player_is_in_scene, av_player_should_be_playing).in_set(SceneSets::PostLoop),
+            (av_player_is_in_scene, av_player_should_be_playing)
+                .chain()
+                .in_set(SceneSets::PostLoop),
         );
 
         #[cfg(feature = "ffmpeg")]

@@ -18,7 +18,7 @@ use crate::{
 #[derive(Component)]
 pub struct VideoSink {
     pub source: String,
-    pub command_sender: tokio::sync::mpsc::Sender<AVCommand>,
+    pub command_sender: tokio::sync::mpsc::UnboundedSender<AVCommand>,
     pub video_receiver: tokio::sync::mpsc::Receiver<VideoData>,
     pub image: Handle<Image>,
     pub current_time: f64,
@@ -36,7 +36,7 @@ pub fn av_sinks(
     playing: bool,
     repeat: bool,
 ) -> (VideoSink, AudioSink) {
-    let (command_sender, command_receiver) = tokio::sync::mpsc::channel(10);
+    let (command_sender, command_receiver) = tokio::sync::mpsc::unbounded_channel();
     let (video_sender, video_receiver) = tokio::sync::mpsc::channel(10);
     let (audio_sender, audio_receiver) = tokio::sync::mpsc::channel(10);
 
@@ -50,11 +50,9 @@ pub fn av_sinks(
     );
 
     if playing {
-        command_sender.blocking_send(AVCommand::Play).unwrap();
+        command_sender.send(AVCommand::Play).unwrap();
     }
-    command_sender
-        .blocking_send(AVCommand::Repeat(repeat))
-        .unwrap();
+    command_sender.send(AVCommand::Repeat(repeat)).unwrap();
 
     (
         VideoSink {
@@ -73,7 +71,7 @@ pub fn av_sinks(
 
 pub fn spawn_av_thread(
     ipfs: IpfsResource,
-    commands: tokio::sync::mpsc::Receiver<AVCommand>,
+    commands: tokio::sync::mpsc::UnboundedReceiver<AVCommand>,
     frames: tokio::sync::mpsc::Sender<VideoData>,
     audio: tokio::sync::mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
     path: String,
@@ -84,7 +82,7 @@ pub fn spawn_av_thread(
 
 fn av_thread(
     ipfs: IpfsResource,
-    commands: tokio::sync::mpsc::Receiver<AVCommand>,
+    commands: tokio::sync::mpsc::UnboundedReceiver<AVCommand>,
     frames: tokio::sync::mpsc::Sender<VideoData>,
     audio: tokio::sync::mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
     path: String,
@@ -107,7 +105,7 @@ fn av_thread(
 
 pub fn av_thread_inner(
     ipfas: &IpfsIo,
-    commands: tokio::sync::mpsc::Receiver<AVCommand>,
+    commands: tokio::sync::mpsc::UnboundedReceiver<AVCommand>,
     video: tokio::sync::mpsc::Sender<VideoData>,
     audio: tokio::sync::mpsc::Sender<StreamingSoundData<AudioDecoderError>>,
     mut path: String,
@@ -187,7 +185,7 @@ pub fn av_thread_inner(
 }
 
 pub fn noop_sinks(source: String, image: Handle<Image>, volume: f32) -> (VideoSink, AudioSink) {
-    let (command_sender, _command_receiver) = tokio::sync::mpsc::channel(10);
+    let (command_sender, _command_receiver) = tokio::sync::mpsc::unbounded_channel();
     let (_video_sender, video_receiver) = tokio::sync::mpsc::channel(10);
     let (_audio_sender, audio_receiver) = tokio::sync::mpsc::channel(10);
 
