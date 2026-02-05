@@ -17,7 +17,7 @@ use crate::{stream_processor::AVCommand, InScene};
 #[derive(Component)]
 pub struct AudioSink {
     pub volume: f32,
-    pub command_sender: tokio::sync::mpsc::Sender<AVCommand>,
+    pub command_sender: tokio::sync::mpsc::UnboundedSender<AVCommand>,
     pub sound_data: tokio::sync::mpsc::Receiver<StreamingSoundData<AudioDecoderError>>,
     pub handle: Option<<StreamingSoundData<AudioDecoderError> as kira::sound::SoundData>::Handle>,
 }
@@ -25,7 +25,7 @@ pub struct AudioSink {
 impl AudioSink {
     pub fn new(
         volume: f32,
-        command_sender: tokio::sync::mpsc::Sender<AVCommand>,
+        command_sender: tokio::sync::mpsc::UnboundedSender<AVCommand>,
         receiver: tokio::sync::mpsc::Receiver<StreamingSoundData<AudioDecoderError>>,
     ) -> Self {
         Self {

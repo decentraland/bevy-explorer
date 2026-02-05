@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{image::ImageLoaderSettings, prelude::*};
 use bevy_dui::{DuiEntities, DuiEntityCommandsExt, DuiProps};
 use common::{
     rpc::RpcStreamSender,
@@ -6,12 +6,12 @@ use common::{
 };
 use scene_runner::{
     renderer_context::RendererSceneContext, update_world::gltf_container::GltfLoadingCount,
-    ContainingScene, OutOfWorld
+    ContainingScene, OutOfWorld,
 };
 use system_bridge::{NativeUi, SceneLoadingUi, SystemApi};
 use ui_core::ui_actions::{Click, EventDefaultExt};
 use wallet::Wallet;
-use crate::oow_backdrop::OowBackdropPlugin;
+
 use crate::change_realm::ChangeRealmDialog;
 
 /// Extracts scene loading info: (title, pending_assets_count)
@@ -37,9 +37,10 @@ pub struct OowUiPlugin;
 
 impl Plugin for OowUiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(OowBackdropPlugin);
         if app.world().resource::<NativeUi>().loading_scene {
             app.add_systems(Update, update_loading_scene_dialog);
+        } else {
+            app.add_systems(Update, update_loading_backdrop);
         }
         app.add_systems(Update, pipe_scene_loading_ui_stream);
     }
@@ -110,6 +111,55 @@ fn update_loading_scene_dialog(
                 .root;
             *dialog = Some(ent);
         }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn update_loading_backdrop(
+    mut commands: Commands,
+    oow: Query<&OutOfWorld>,
+    mut dialog: Local<Option<Entity>>,
+    asset_server: Res<AssetServer>,
+) {
+    match (oow.is_empty(), dialog.is_some()) {
+        (true, true) => {
+            // in world, dialog is showing, remove it
+            commands.entity(dialog.take().unwrap()).despawn();
+        }
+        (false, false) => {
+            // not in world, dialog is not showing, show it
+            let ent = commands
+                .spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(100.0),
+                        ..Default::default()
+                    },
+                    BackgroundColor(Color::srgb(0.45, 0.15, 0.55)),
+                    ZOrder::OutOfWorldBackdrop.default(),
+                ))
+                .with_child((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(100.0),
+                        ..Default::default()
+                    },
+                    ImageNode::new(
+                        asset_server.load_with_settings::<Image, ImageLoaderSettings>(
+                            "embedded://images/gradient-background.png",
+                            |s| {
+                                s.transfer_priority =
+                                    bevy::asset::RenderAssetTransferPriority::Immediate;
+                            },
+                        ),
+                    ),
+                ))
+                .id();
+            *dialog = Some(ent);
+        }
+        _ => (),
     }
 }
 
