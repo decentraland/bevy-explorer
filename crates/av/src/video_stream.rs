@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use bevy::prelude::*;
-use common::structs::AudioDecoderError;
+use common::{structs::AudioDecoderError, util::ReportErr};
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::format::input;
 use ipfs::{IpfsIo, IpfsResource};
@@ -94,7 +94,9 @@ fn av_thread(
     );
     let _span = bevy::log::tracing::info_span!("av-thread").entered();
     if let Err(e) = av_thread_inner(&ipfs, commands, frames.clone(), audio, path, hash) {
-        let _ = frames.blocking_send(VideoData::State(VideoState::VsError));
+        frames
+            .blocking_send(VideoData::State(VideoState::VsError))
+            .report();
         warn!("av error: {e}");
     } else {
         debug!("av closed");
@@ -109,7 +111,9 @@ pub fn av_thread_inner(
     mut path: String,
     hash: String,
 ) -> Result<(), anyhow::Error> {
-    let _ = video.blocking_send(VideoData::State(VideoState::VsLoading));
+    video
+        .blocking_send(VideoData::State(VideoState::VsLoading))
+        .report();
     debug!("av thread spawned for {path} ...");
     let download = |url: &str| -> Result<String, anyhow::Error> {
         let local_folder = ipfas.cache_path().unwrap().join("video_downloads");

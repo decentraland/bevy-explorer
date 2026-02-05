@@ -10,7 +10,7 @@ use bevy::{
         render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
     },
 };
-use common::sets::SceneSets;
+use common::{sets::SceneSets, util::ReportErr};
 #[cfg(feature = "livekit")]
 use comms::livekit::participant::{StreamImage, StreamViewer};
 use dcl::interface::CrdtType;
@@ -82,10 +82,11 @@ fn av_player_on_insert(
     {
         debug!("Updating sinks of {entity}.");
         if let Some(video_sink) = maybe_video_sink {
-            let _ = video_sink
+            video_sink
                 .command_sender
-                .send(AVCommand::Repeat(av_player.source.r#loop.unwrap_or(false)));
-            let _ = video_sink.command_sender.send(AVCommand::Pause);
+                .send(AVCommand::Repeat(av_player.source.r#loop.unwrap_or(false)))
+                .report();
+            video_sink.command_sender.send(AVCommand::Pause).report();
         }
         if let Some(audio_sink) = maybe_audio_sink {
             commands.trigger_targets(
@@ -94,17 +95,17 @@ fn av_player_on_insert(
                 },
                 entity,
             );
-            let _ = audio_sink.command_sender.send(AVCommand::Pause);
+            audio_sink.command_sender.send(AVCommand::Pause).report();
         }
     } else {
         if maybe_audio_sink.is_some() || maybe_video_sink.is_some() {
             debug!("Removing sinks of {entity} due to diverging source.");
         }
         if let Some(video_sink) = maybe_video_sink {
-            let _ = video_sink.command_sender.send(AVCommand::Dispose);
+            video_sink.command_sender.send(AVCommand::Dispose).report();
         }
         if let Some(audio_sink) = maybe_audio_sink {
-            let _ = audio_sink.command_sender.send(AVCommand::Dispose);
+            audio_sink.command_sender.send(AVCommand::Dispose).report();
         }
         debug!("{entity:?} has {}.", av_player.source.src);
         commands
@@ -141,10 +142,10 @@ fn av_player_should_be_playing_on_add(
     };
 
     if let Some(audio_sink) = maybe_audio_sink {
-        let _ = audio_sink.command_sender.send(AVCommand::Play);
+        audio_sink.command_sender.send(AVCommand::Play).report();
     }
     if let Some(video_sink) = maybe_video_sink {
-        let _ = video_sink.command_sender.send(AVCommand::Play);
+        video_sink.command_sender.send(AVCommand::Play).report();
     }
 }
 
@@ -161,10 +162,10 @@ fn av_player_should_be_playing_on_remove(
     };
 
     if let Some(audio_sink) = maybe_audio_sink {
-        let _ = audio_sink.command_sender.send(AVCommand::Pause);
+        audio_sink.command_sender.send(AVCommand::Pause).report();
     }
     if let Some(video_sink) = maybe_video_sink {
-        let _ = video_sink.command_sender.send(AVCommand::Pause);
+        video_sink.command_sender.send(AVCommand::Pause).report();
     }
 }
 

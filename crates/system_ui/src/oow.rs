@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{image::ImageLoaderSettings, prelude::*};
 use bevy_dui::{DuiEntities, DuiEntityCommandsExt, DuiProps};
 use common::{
     rpc::RpcStreamSender,
@@ -39,6 +39,8 @@ impl Plugin for OowUiPlugin {
     fn build(&self, app: &mut App) {
         if app.world().resource::<NativeUi>().loading_scene {
             app.add_systems(Update, update_loading_scene_dialog);
+        } else {
+            app.add_systems(Update, update_loading_backdrop);
         }
         app.add_systems(Update, pipe_scene_loading_ui_stream);
     }
@@ -109,6 +111,46 @@ fn update_loading_scene_dialog(
                 .root;
             *dialog = Some(ent);
         }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn update_loading_backdrop(
+    mut commands: Commands,
+    oow: Query<&OutOfWorld>,
+    mut dialog: Local<Option<Entity>>,
+    asset_server: Res<AssetServer>,
+) {
+    match (oow.is_empty(), dialog.is_some()) {
+        (true, true) => {
+            // in world, dialog is showing, remove it
+            commands.entity(dialog.take().unwrap()).despawn();
+        }
+        (false, false) => {
+            // not in world, dialog is not showing, show it
+            let ent = commands
+                .spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(100.0),
+                        ..Default::default()
+                    },
+                    ImageNode::new(
+                        asset_server.load_with_settings::<Image, ImageLoaderSettings>(
+                            "embedded://images/gradient-background.png",
+                            |s| {
+                                s.transfer_priority =
+                                    bevy::asset::RenderAssetTransferPriority::Immediate;
+                            },
+                        ),
+                    ),
+                    ZOrder::OutOfWorldBackdrop.default(),
+                ))
+                .id();
+            *dialog = Some(ent);
+        }
+        _ => (),
     }
 }
 

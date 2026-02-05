@@ -26,7 +26,7 @@ module.exports.triggerEmote = async function (body) {
 }
 
 module.exports.triggerSceneEmote = async function (body) { 
-    Deno.core.ops.op_scene_emote(body.src, body.looping)
+    Deno.core.ops.op_scene_emote(body.src, body.loop)
     return {} 
 }
 

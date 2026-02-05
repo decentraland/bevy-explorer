@@ -994,7 +994,8 @@ pub enum ZOrder {
     Crosshair = -65536,
     // PortableScene -> -65535 <= value <= -1
     // default 0 => appear in world, under scene ui
-    SceneUi = 1,
+    OutOfWorldBackdrop = 1,
+    SceneUi,
     SceneUiOverlay,
     SystemSceneUi,
     SystemSceneUiOverlay,

@@ -37,7 +37,7 @@ deno_web = "0.199"
 deno_websocket = "0.173"
 deno_webstorage = "0.163"
 
-bytes = "1.4.0"
+bytes = "1.11.1"
 
 # inspector requirements
 fastwebsockets = { version = "0.4.4", optional = true, features = ["upgrade"] }

@@ -20,7 +20,7 @@ use bevy::{
         Render, RenderApp, RenderSet,
     },
 };
-use common::sets::SceneSets;
+use common::{sets::SceneSets, util::ReportErr};
 #[cfg(feature = "livekit")]
 use comms::livekit::participant::StreamViewer;
 use dcl::interface::CrdtType;
@@ -416,12 +416,12 @@ impl HtmlMediaEntity {
 
     pub fn play(&mut self) {
         debug!("called play");
-        let _ = self.media.play();
+        self.media.play().report();
     }
 
     pub fn stop(&mut self) {
         debug!("called stop");
-        let _ = self.media.pause();
+        self.media.pause().report();
     }
 
     pub fn state(&self) -> VideoState {
@@ -655,10 +655,13 @@ fn update_av_players(
 
                         // queue copy
                         trace!("queue frame {:?}", video_size);
-                        let _ = send_queue.0.send(FrameCopyRequest {
-                            video_frame: WgpuWrapper::new(frame),
-                            target: image_id,
-                        });
+                        send_queue
+                            .0
+                            .send(FrameCopyRequest {
+                                video_frame: WgpuWrapper::new(frame),
+                                target: image_id,
+                            })
+                            .report();
 
                         av.current_time = new_time;
                     } else {
