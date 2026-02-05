@@ -155,40 +155,84 @@ impl AttachPoints {
                     Visibility::default(),
                 ))
                 .id(),
-            head: Entity::PLACEHOLDER,
-            neck: Entity::PLACEHOLDER,
-            spine: Entity::PLACEHOLDER,
-            spine_1: Entity::PLACEHOLDER,
-            spine_2: Entity::PLACEHOLDER,
-            hip: Entity::PLACEHOLDER,
-            left_shoulder: Entity::PLACEHOLDER,
-            left_arm: Entity::PLACEHOLDER,
-            left_forearm: Entity::PLACEHOLDER,
+            head: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
+            neck: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
+            spine: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
+            spine_1: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
+            spine_2: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
+            hip: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
+            left_shoulder: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
+            left_arm: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
+            left_forearm: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
             left_hand: commands
                 .spawn((
                     Transform::from_rotation(Quat::from_rotation_y(PI)),
                     Visibility::default(),
                 ))
                 .id(),
-            left_hand_index: Entity::PLACEHOLDER,
-            right_shoulder: Entity::PLACEHOLDER,
-            righ_arm: Entity::PLACEHOLDER,
-            right_forearm: Entity::PLACEHOLDER,
+            left_hand_index: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
+            right_shoulder: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
+            righ_arm: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
+            right_forearm: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
             right_hand: commands
                 .spawn((
                     Transform::from_rotation(Quat::from_rotation_y(PI)),
                     Visibility::default(),
                 ))
                 .id(),
-            right_hand_index: Entity::PLACEHOLDER,
-            left_thigh: Entity::PLACEHOLDER,
-            left_shin: Entity::PLACEHOLDER,
-            left_foot: Entity::PLACEHOLDER,
-            left_toe_base: Entity::PLACEHOLDER,
-            right_thigh: Entity::PLACEHOLDER,
-            right_shin: Entity::PLACEHOLDER,
-            right_foot: Entity::PLACEHOLDER,
-            right_toe_base: Entity::PLACEHOLDER,
+            right_hand_index: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
+            left_thigh: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
+            left_shin: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
+            left_foot: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
+            left_toe_base: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
+            right_thigh: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
+            right_shin: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
+            right_foot: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
+            right_toe_base: commands
+                .spawn((Transform::default(), Visibility::default()))
+                .id(),
         }
     }
 
