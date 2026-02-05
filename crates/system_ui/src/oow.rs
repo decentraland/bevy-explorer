@@ -136,6 +136,16 @@ fn update_loading_backdrop(
                         height: Val::Percent(100.0),
                         ..Default::default()
                     },
+                    BackgroundColor(Color::srgb(0.45, 0.15, 0.55)),
+                    ZOrder::OutOfWorldBackdrop.default(),
+                ))
+                .with_child((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(100.0),
+                        ..Default::default()
+                    },
                     ImageNode::new(
                         asset_server.load_with_settings::<Image, ImageLoaderSettings>(
                             "embedded://images/gradient-background.png",
@@ -145,7 +155,6 @@ fn update_loading_backdrop(
                             },
                         ),
                     ),
-                    ZOrder::OutOfWorldBackdrop.default(),
                 ))
                 .id();
             *dialog = Some(ent);
