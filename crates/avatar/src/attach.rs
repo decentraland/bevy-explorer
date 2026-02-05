@@ -99,15 +99,30 @@ pub fn update_attached(
         let sync_entity = match attach.0.anchor_point_id() {
             AvatarAnchorPointType::AaptPosition => attach_points.position,
             AvatarAnchorPointType::AaptNameTag => attach_points.nametag,
+            AvatarAnchorPointType::AaptHead => attach_points.head,
+            AvatarAnchorPointType::AaptNeck => attach_points.neck,
+            AvatarAnchorPointType::AaptSpine => attach_points.spine,
+            AvatarAnchorPointType::AaptSpine1 => attach_points.spine_1,
+            AvatarAnchorPointType::AaptSpine2 => attach_points.spine_2,
+            AvatarAnchorPointType::AaptHip => attach_points.hip,
+            AvatarAnchorPointType::AaptLeftShoulder => attach_points.left_shoulder,
+            AvatarAnchorPointType::AaptLeftArm => attach_points.left_arm,
+            AvatarAnchorPointType::AaptLeftForearm => attach_points.left_forearm,
             AvatarAnchorPointType::AaptLeftHand => attach_points.left_hand,
+            AvatarAnchorPointType::AaptLeftHandIndex => attach_points.left_hand_index,
+            AvatarAnchorPointType::AaptRightShoulder => attach_points.right_shoulder,
+            AvatarAnchorPointType::AaptRightArm => attach_points.righ_arm,
+            AvatarAnchorPointType::AaptRightForearm => attach_points.right_forearm,
             AvatarAnchorPointType::AaptRightHand => attach_points.right_hand,
-            _ => {
-                warn!(
-                    "unimplemented attach point {:?}",
-                    attach.0.anchor_point_id()
-                );
-                continue;
-            }
+            AvatarAnchorPointType::AaptRightHandIndex => attach_points.right_hand_index,
+            AvatarAnchorPointType::AaptLeftUpLeg => attach_points.left_thigh,
+            AvatarAnchorPointType::AaptLeftLeg => attach_points.left_shin,
+            AvatarAnchorPointType::AaptLeftFoot => attach_points.left_foot,
+            AvatarAnchorPointType::AaptLeftToeBase => attach_points.left_toe_base,
+            AvatarAnchorPointType::AaptRightUpLeg => attach_points.right_thigh,
+            AvatarAnchorPointType::AaptRightLeg => attach_points.right_shin,
+            AvatarAnchorPointType::AaptRightFoot => attach_points.right_foot,
+            AvatarAnchorPointType::AaptRightToeBase => attach_points.right_toe_base,
         };
 
         let mut commands = commands.entity(ent);

@@ -113,8 +113,34 @@ pub enum PermissionState {
 pub struct AttachPoints {
     pub position: Entity,
     pub nametag: Entity,
+    pub head: Entity,
+    pub neck: Entity,
+    pub spine: Entity,
+    pub spine_1: Entity,
+    pub spine_2: Entity,
+    pub hip: Entity,
+    pub left_shoulder: Entity,
+    pub left_arm: Entity,
+    pub left_forearm: Entity,
     pub left_hand: Entity,
+    pub left_hand_index: Entity,
+    pub right_shoulder: Entity,
+    pub righ_arm: Entity,
+    pub right_forearm: Entity,
     pub right_hand: Entity,
+    pub right_hand_index: Entity,
+    /// AAPT_LEFT_UP_LEG
+    pub left_thigh: Entity,
+    /// AAPT_LEFT_LEG
+    pub left_shin: Entity,
+    pub left_foot: Entity,
+    pub left_toe_base: Entity,
+    /// AAPT_RIGHT_UP_LEG
+    pub right_thigh: Entity,
+    /// AAPT_RIGHT_LEG
+    pub right_shin: Entity,
+    pub right_foot: Entity,
+    pub right_toe_base: Entity,
 }
 
 impl AttachPoints {
@@ -129,23 +155,73 @@ impl AttachPoints {
                     Visibility::default(),
                 ))
                 .id(),
+            head: Entity::PLACEHOLDER,
+            neck: Entity::PLACEHOLDER,
+            spine: Entity::PLACEHOLDER,
+            spine_1: Entity::PLACEHOLDER,
+            spine_2: Entity::PLACEHOLDER,
+            hip: Entity::PLACEHOLDER,
+            left_shoulder: Entity::PLACEHOLDER,
+            left_arm: Entity::PLACEHOLDER,
+            left_forearm: Entity::PLACEHOLDER,
             left_hand: commands
                 .spawn((
                     Transform::from_rotation(Quat::from_rotation_y(PI)),
                     Visibility::default(),
                 ))
                 .id(),
+            left_hand_index: Entity::PLACEHOLDER,
+            right_shoulder: Entity::PLACEHOLDER,
+            righ_arm: Entity::PLACEHOLDER,
+            right_forearm: Entity::PLACEHOLDER,
             right_hand: commands
                 .spawn((
                     Transform::from_rotation(Quat::from_rotation_y(PI)),
                     Visibility::default(),
                 ))
                 .id(),
+            right_hand_index: Entity::PLACEHOLDER,
+            left_thigh: Entity::PLACEHOLDER,
+            left_shin: Entity::PLACEHOLDER,
+            left_foot: Entity::PLACEHOLDER,
+            left_toe_base: Entity::PLACEHOLDER,
+            right_thigh: Entity::PLACEHOLDER,
+            right_shin: Entity::PLACEHOLDER,
+            right_foot: Entity::PLACEHOLDER,
+            right_toe_base: Entity::PLACEHOLDER,
         }
     }
 
-    pub fn entities(&self) -> [Entity; 4] {
-        [self.position, self.nametag, self.left_hand, self.right_hand]
+    /// AttachPoints entities ordered by their protocol id
+    pub fn entities(&self) -> [Entity; 26] {
+        [
+            self.position,
+            self.nametag,
+            self.left_hand,
+            self.right_hand,
+            self.head,
+            self.neck,
+            self.spine,
+            self.spine_1,
+            self.spine_2,
+            self.hip,
+            self.left_shoulder,
+            self.left_arm,
+            self.left_forearm,
+            self.left_hand_index,
+            self.right_shoulder,
+            self.righ_arm,
+            self.right_forearm,
+            self.right_hand_index,
+            self.left_thigh,
+            self.left_shin,
+            self.left_foot,
+            self.left_toe_base,
+            self.right_thigh,
+            self.right_shin,
+            self.right_foot,
+            self.right_toe_base,
+        ]
     }
 }
 
