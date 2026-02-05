@@ -1516,7 +1516,7 @@ fn reparent_attach_point(
     if let Some(bone) = target_armature_entities.get(key) {
         commands.entity(*bone).try_push_children(&[attach_point]);
     } else {
-        panic!(
+        warn!(
             "no {}, available: {:#?}",
             key,
             target_armature_entities.keys()
