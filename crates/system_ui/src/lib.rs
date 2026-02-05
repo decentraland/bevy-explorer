@@ -11,7 +11,6 @@ pub mod map;
 #[cfg(feature = "livekit")]
 pub mod mic;
 pub mod oow;
-pub mod oow_backdrop;
 pub mod permission_manager;
 pub mod permissions;
 pub mod profile;
