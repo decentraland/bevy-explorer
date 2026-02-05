@@ -1,9 +1,6 @@
 // kuruk 0x481bed8645804714Efd1dE3f25467f78E7Ba07d6
 
-use avatar::{
-    avatar_texture::{BoothInstance, PhotoBooth},
-    AvatarShape,
-};
+use avatar::AvatarShape;
 use bevy::prelude::*;
 use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
@@ -12,7 +9,7 @@ use common::{
     sets::SetupSets,
     structs::{
         ActiveDialog, AppConfig, PermissionTarget, SettingsTab, ShowSettingsEvent, SystemAudio,
-        ZOrder, PROFILE_UI_RENDERLAYER,
+        ZOrder,
     },
     util::TryPushChildrenEx,
 };
@@ -128,7 +125,6 @@ fn save_settings(
             Entity,
             Option<&AvatarShape>,
             Option<&ProfileDetail>,
-            Option<&BoothInstance>,
             Option<&AppSettingsDetail>,
             Option<&PermissionSettingsDetail>,
         ),
@@ -140,7 +136,7 @@ fn save_settings(
         return;
     };
 
-    let Ok((dialog_ent, maybe_avatar, maybe_detail, maybe_booth, maybe_settings, maybe_perms)) =
+    let Ok((dialog_ent, maybe_avatar, maybe_detail, maybe_settings, maybe_perms)) =
         modified.single()
     else {
         error!("no dialog");
@@ -200,15 +196,6 @@ fn save_settings(
 
         profile.version += 1;
         profile.content.version = profile.version as i64;
-
-        if let Some(booth) = maybe_booth {
-            if let (Some(face), Some(body)) = (
-                booth.snapshot_target.0.clone(),
-                booth.snapshot_target.1.clone(),
-            ) {
-                current_profile.snapshots = Some((face, body));
-            }
-        }
 
         current_profile.is_deployed = false;
     }
@@ -456,17 +443,13 @@ pub fn show_settings(
 }
 
 enum ProcessProfileState {
-    Snapping(Entity, u32, RpcResultSender<Result<u32, String>>),
     Deploying(u32, RpcResultSender<Result<u32, String>>),
 }
 
 fn process_profile(
-    mut commands: Commands,
     mut e: EventReader<SystemApi>,
     mut current_profile: ResMut<CurrentUserProfile>,
     mut processing: Local<Option<ProcessProfileState>>,
-    mut photo_booth: PhotoBooth,
-    booths: Query<&BoothInstance>,
     mut deployed: EventReader<ProfileDeployedEvent>,
 ) {
     if let Some(SystemApi::SetAvatar(set_avatar, sender)) = e
@@ -527,10 +510,6 @@ fn process_profile(
 
         if let Some(existing) = processing.take() {
             match existing {
-                ProcessProfileState::Snapping(entity, _, sender) => {
-                    commands.entity(entity).despawn();
-                    sender.send(Err("cancelled".to_owned()));
-                }
                 ProcessProfileState::Deploying(_, sender) => {
                     sender.send(Err("cancelled".to_owned()));
                 }
@@ -538,44 +517,16 @@ fn process_profile(
         }
 
         if profile.content.has_connected_web3.unwrap_or_default() {
-            *processing = Some(ProcessProfileState::Snapping(
-                commands
-                    .spawn(photo_booth.spawn_booth(
-                        PROFILE_UI_RENDERLAYER,
-                        (&*profile).into(),
-                        Default::default(),
-                        true,
-                    ))
-                    .id(),
+            *processing = Some(ProcessProfileState::Deploying(
                 profile.version,
                 sender.clone(),
             ));
+            current_profile.is_deployed = false;
         } else {
             sender.send(Ok(u32::MAX))
         }
 
         return;
-    }
-
-    if let Some(ProcessProfileState::Snapping(booth_ent, version, sender)) = &*processing {
-        let Ok(booth) = booths.get(*booth_ent) else {
-            error!("no booth?");
-            sender.send(Err("no snapshot booth?!".to_owned()));
-            *processing = None;
-            return;
-        };
-
-        debug!("processing ...");
-        let (Some(face), Some(body)) = booth.snapshot_target.clone() else {
-            return;
-        };
-        debug!("updating ...");
-
-        commands.entity(*booth_ent).despawn();
-        current_profile.snapshots = Some((face, body));
-        current_profile.is_deployed = false;
-
-        *processing = Some(ProcessProfileState::Deploying(*version, sender.clone()));
     }
 
     if let Some(ProcessProfileState::Deploying(version, sender)) = processing.take() {
