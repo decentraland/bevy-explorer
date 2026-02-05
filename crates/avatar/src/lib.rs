@@ -1230,24 +1230,16 @@ fn process_avatar(
         } else {
             // reparent hands
             if let Ok(attach_points) = attach_points.get(root_player_entity.parent()) {
-                if let Some(left_hand) =
-                    target_armature_entities.get(&String::from("avatar_lefthand"))
-                {
-                    commands
-                        .entity(*left_hand)
-                        .try_push_children(&[attach_points.left_hand]);
-                } else {
-                    warn!("no left hand");
-                    warn!("available: {:#?}", target_armature_entities.keys());
-                }
-                if let Some(right_hand) =
-                    target_armature_entities.get(&String::from("avatar_righthand"))
-                {
-                    commands
-                        .entity(*right_hand)
-                        .try_push_children(&[attach_points.right_hand]);
-                } else {
-                    warn!("no right hand");
+                for (key, attach_point) in [
+                    ("avatar_lefthand", attach_points.left_hand),
+                    ("avatar_righthand", attach_points.right_hand),
+                ] {
+                    reparent_attach_point(
+                        &mut commands,
+                        &target_armature_entities,
+                        key,
+                        attach_point,
+                    );
                 }
             } else {
                 warn!("no attach points");
@@ -1490,6 +1482,23 @@ fn process_avatar(
                 );
             }
         }
+    }
+}
+
+fn reparent_attach_point(
+    commands: &mut Commands,
+    target_armature_entities: &HashMap<String, Entity>,
+    key: &str,
+    attach_point: Entity,
+) {
+    if let Some(bone) = target_armature_entities.get(key) {
+        commands.entity(*bone).try_push_children(&[attach_point]);
+    } else {
+        warn!(
+            "no {}, available: {:#?}",
+            key,
+            target_armature_entities.keys()
+        );
     }
 }
 
