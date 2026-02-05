@@ -191,5 +191,10 @@ fn fragment(
     let cap_factor = max(max(out.color.r, out.color.g), max(out.color.b, 1.0));
     out.color = mix(out.color, vec4<f32>(out.color.rgb / cap_factor, out.color.a), saturate(cap_brightness * 2.0));
 
+    if out.color.a < 0.001 {
+        // avoid writing to the depth buffer for alpha-blend materials with zero alpha
+        discard;
+    }
+
     return out;
 }
