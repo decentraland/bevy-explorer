@@ -1231,8 +1231,30 @@ fn process_avatar(
             // reparent hands
             if let Ok(attach_points) = attach_points.get(root_player_entity.parent()) {
                 for (key, attach_point) in [
+                    ("avatar_head", attach_points.head),
+                    ("avatar_neck", attach_points.neck),
+                    ("avatar_spine", attach_points.spine),
+                    ("avatar_spine1", attach_points.spine_1),
+                    ("avatar_spine2", attach_points.spine_2),
+                    ("avatar_hips", attach_points.hip),
+                    ("avatar_leftshoulder", attach_points.left_shoulder),
+                    ("avatar_leftarm", attach_points.left_arm),
+                    ("avatar_leftforearm", attach_points.left_forearm),
                     ("avatar_lefthand", attach_points.left_hand),
+                    ("avatar_lefthandindex4", attach_points.left_hand_index),
+                    ("avatar_rightshoulder", attach_points.right_shoulder),
+                    ("avatar_rightarm", attach_points.righ_arm),
+                    ("avatar_rightforearm", attach_points.right_forearm),
                     ("avatar_righthand", attach_points.right_hand),
+                    ("avatar_righthandindex4", attach_points.right_hand_index),
+                    ("avatar_leftupleg", attach_points.left_thigh),
+                    ("avatar_leftleg", attach_points.left_shin),
+                    ("avatar_leftfoot", attach_points.left_foot),
+                    ("avatar_lefttoebase", attach_points.left_toe_base),
+                    ("avatar_rightupleg", attach_points.right_thigh),
+                    ("avatar_rightleg", attach_points.right_shin),
+                    ("avatar_rightfoot", attach_points.right_foot),
+                    ("avatar_righttoebase", attach_points.right_toe_base),
                 ] {
                     reparent_attach_point(
                         &mut commands,
@@ -1494,7 +1516,7 @@ fn reparent_attach_point(
     if let Some(bone) = target_armature_entities.get(key) {
         commands.entity(*bone).try_push_children(&[attach_point]);
     } else {
-        warn!(
+        panic!(
             "no {}, available: {:#?}",
             key,
             target_armature_entities.keys()
