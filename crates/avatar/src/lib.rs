@@ -1516,6 +1516,9 @@ fn reparent_attach_point(
     if let Some(bone) = target_armature_entities.get(key) {
         commands.entity(*bone).try_push_children(&[attach_point]);
     } else {
+        #[cfg(not(debug_assertions))]
+        warn!("no {}", key,);
+        #[cfg(debug_assertions)]
         warn!(
             "no {}, available: {:#?}",
             key,
