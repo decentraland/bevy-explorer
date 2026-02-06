@@ -249,5 +249,5 @@ export function start() {
   })();
 
   engine_run(platform, realmValue, positionValue, systemScene, true, preview, 1e7);
-  showCanvas()
+  setTimeout(showCanvas,200)
 }
