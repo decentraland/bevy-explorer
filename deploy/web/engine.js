@@ -67,7 +67,9 @@ export async function initEngine() {
 
   // Step 2: Compile WASM
   setLoadingStepActive('compile');
+  console.time("compileTime")
   const compiledModule = await WebAssembly.compile(wasmBytes);
+  console.timeEnd("compileTime") // 70 ms
   setLoadingStepCompleted('compile');
 
   const initialMemoryPages = 1280; // setting initial memory high causes malloc failures

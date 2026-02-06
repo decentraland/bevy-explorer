@@ -69,11 +69,16 @@ function populateInputsFromQueryParams() {
  */
 function hideHeader() {
   console.log("hide header")
-  if (header) header.style.display = "none";
   const logo = document.getElementById("loading-logo");
   if (logo) {
     document.documentElement.style.setProperty("--vh", window.innerHeight / 100 + "px");
     logo.style.display = "flex";
+  }
+  if (header) {
+    header.style.opacity = "0";
+    header.addEventListener("transitionend", () => {
+      header.style.display = "none";
+    }, { once: true });
   }
 }
 
