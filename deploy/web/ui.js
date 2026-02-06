@@ -68,11 +68,20 @@ function populateInputsFromQueryParams() {
  * Hides the header and shows the canvas for the game.
  */
 function hideHeader() {
+  console.log("hide header")
   if (header) header.style.display = "none";
+  const logo = document.getElementById("loading-logo");
+  if (logo) {
+    document.documentElement.style.setProperty("--vh", window.innerHeight / 100 + "px");
+    logo.style.display = "flex";
+  }
 }
 
 function showCanvas(){
+  console.log("show canvas")
   if (canvas) canvas.style.display = "block";
+  const logo = document.getElementById("loading-logo");
+  if (logo) logo.style.display = "none";
 }
 
 /**
