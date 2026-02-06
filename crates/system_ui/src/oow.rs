@@ -1,3 +1,5 @@
+use std::f32::consts::TAU;
+
 use bevy::{image::ImageLoaderSettings, prelude::*};
 use bevy_dui::{DuiEntities, DuiEntityCommandsExt, DuiProps};
 use common::{
@@ -42,7 +44,7 @@ impl Plugin for OowUiPlugin {
         } else {
             app.add_systems(Update, update_loading_backdrop);
         }
-        app.add_systems(Update, pipe_scene_loading_ui_stream);
+        app.add_systems(Update, (pipe_scene_loading_ui_stream, animate_logo_pulse));
     }
 }
 
@@ -114,6 +116,17 @@ fn update_loading_scene_dialog(
     }
 }
 
+#[derive(Component)]
+struct LogoPulse;
+
+fn animate_logo_pulse(mut logos: Query<&mut ImageNode, With<LogoPulse>>, time: Res<Time>) {
+    for mut img in logos.iter_mut() {
+        // ping-pong opacity 0.5..1.0 over 1 second
+        let alpha = 0.75 + 0.25 * (time.elapsed_secs() * TAU).sin();
+        img.color = img.color.with_alpha(alpha);
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn update_loading_backdrop(
     mut commands: Commands,
@@ -139,23 +152,53 @@ fn update_loading_backdrop(
                     BackgroundColor(Color::srgb(0.45, 0.15, 0.55)),
                     ZOrder::OutOfWorldBackdrop.default(),
                 ))
-                .with_child((
-                    Node {
-                        position_type: PositionType::Absolute,
-                        width: Val::Percent(100.0),
-                        height: Val::Percent(100.0),
-                        ..Default::default()
-                    },
-                    ImageNode::new(
-                        asset_server.load_with_settings::<Image, ImageLoaderSettings>(
-                            "embedded://images/gradient-background.png",
-                            |s| {
-                                s.transfer_priority =
-                                    bevy::asset::RenderAssetTransferPriority::Immediate;
-                            },
+                .with_children(|parent| {
+                    // gradient background
+                    parent.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            width: Val::Percent(100.0),
+                            height: Val::Percent(100.0),
+                            ..Default::default()
+                        },
+                        ImageNode::new(
+                            asset_server.load_with_settings::<Image, ImageLoaderSettings>(
+                                "embedded://images/gradient-background.png",
+                                |s| {
+                                    s.transfer_priority =
+                                        bevy::asset::RenderAssetTransferPriority::Immediate;
+                                },
+                            ),
                         ),
-                    ),
-                ))
+                    ));
+                    // centered logo
+                    parent
+                        .spawn((Node {
+                            position_type: PositionType::Absolute,
+                            width: Val::Percent(100.0),
+                            height: Val::Percent(100.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..Default::default()
+                        },))
+                        .with_child((
+                            Node {
+                                width: Val::Vh(10.0),
+                                height: Val::Vh(10.0),
+                                ..Default::default()
+                            },
+                            ImageNode::new(
+                                asset_server.load_with_settings::<Image, ImageLoaderSettings>(
+                                    "embedded://images/logo.png",
+                                    |s| {
+                                        s.transfer_priority =
+                                            bevy::asset::RenderAssetTransferPriority::Immediate;
+                                    },
+                                ),
+                            ),
+                            LogoPulse,
+                        ));
+                })
                 .id();
             *dialog = Some(ent);
         }
