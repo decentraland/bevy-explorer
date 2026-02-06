@@ -172,32 +172,32 @@ fn update_loading_backdrop(
                         ),
                     ));
                     // centered logo
-                    parent.spawn((
-                        Node {
+                    parent
+                        .spawn((Node {
                             position_type: PositionType::Absolute,
                             width: Val::Percent(100.0),
                             height: Val::Percent(100.0),
                             justify_content: JustifyContent::Center,
                             align_items: AlignItems::Center,
                             ..Default::default()
-                        },
-                    )).with_child((
-                        Node {
-                            width: Val::Vh(10.0),
-                            height: Val::Vh(10.0),
-                            ..Default::default()
-                        },
-                        ImageNode::new(
-                            asset_server.load_with_settings::<Image, ImageLoaderSettings>(
-                                "embedded://images/logo.png",
-                                |s| {
-                                    s.transfer_priority =
-                                        bevy::asset::RenderAssetTransferPriority::Immediate;
-                                },
+                        },))
+                        .with_child((
+                            Node {
+                                width: Val::Vh(10.0),
+                                height: Val::Vh(10.0),
+                                ..Default::default()
+                            },
+                            ImageNode::new(
+                                asset_server.load_with_settings::<Image, ImageLoaderSettings>(
+                                    "embedded://images/logo.png",
+                                    |s| {
+                                        s.transfer_priority =
+                                            bevy::asset::RenderAssetTransferPriority::Immediate;
+                                    },
+                                ),
                             ),
-                        ),
-                        LogoPulse,
-                    ));
+                            LogoPulse,
+                        ));
                 })
                 .id();
             *dialog = Some(ent);
