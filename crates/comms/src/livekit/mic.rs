@@ -51,8 +51,8 @@ use crate::{
 extern "C" {
     #[wasm_bindgen]
     pub fn setupMicrophonePermission();
-    #[wasm_bindgen(catch)]
-    pub fn is_microphone_available() -> Result<bool, JsValue>;
+    #[wasm_bindgen]
+    pub fn is_microphone_available() -> bool;
 }
 
 pub struct MicPlugin;
@@ -148,10 +148,11 @@ fn verify_availability(mut commands: Commands, mut mic_state: ResMut<MicState>) 
 #[cfg(target_arch = "wasm32")]
 fn verify_availability(mut commands: Commands, mut mic_state: ResMut<MicState>) {
     // Check if microphone is available in the browser
-    let current_available = is_microphone_available().unwrap_or(false);
+    let current_available = is_microphone_available();
 
     // Only update availability if it changed
     if current_available {
+        debug!("Microphone became available.");
         mic_state.available = true;
         commands.set_state(MicrophoneAvailability::Available);
     }
@@ -174,7 +175,7 @@ fn verify_microphone_device_health(
 #[cfg(target_arch = "wasm32")]
 fn verify_microphone_device_health(mut commands: Commands, mut mic_state: ResMut<MicState>) {
     // Check if microphone is available in the browser
-    let current_available = is_microphone_available().unwrap_or(false);
+    let current_available = is_microphone_available();
 
     if !current_available {
         debug!("Microphone became unavailable.");
