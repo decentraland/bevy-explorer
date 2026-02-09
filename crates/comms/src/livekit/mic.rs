@@ -49,7 +49,7 @@ use crate::{
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
 extern "C" {
-    #[wasm_bindgen(js_name="setupMicrophonePermission")]
+    #[wasm_bindgen(js_name = "setupMicrophonePermission")]
     pub fn setup_microphone_permission();
     #[wasm_bindgen]
     pub fn is_microphone_available() -> bool;
