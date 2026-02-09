@@ -397,7 +397,7 @@ fn animate(
                 }
                 ActiveEmote {
                     urn: EmoteUrn::new("jump").unwrap(),
-                    speed: time_to_peak.recip() * 0.75,
+                    speed: time_to_peak.recip() * 0.5,
                     repeat: true,
                     restart: dynamic_state.jump_time > time.elapsed_secs() - time.delta_secs(),
                     transition_seconds: 0.1,
@@ -427,6 +427,7 @@ fn animate(
                             speed: directional_velocity_len / 1.5,
                             restart: false,
                             repeat: true,
+                            transition_seconds: 0.4,
                             ..Default::default()
                         }
                     } else {
@@ -436,6 +437,7 @@ fn animate(
                             speed: directional_velocity_len / 4.5,
                             restart: false,
                             repeat: true,
+                            transition_seconds: 0.4,
                             ..Default::default()
                         }
                     }
@@ -446,6 +448,7 @@ fn animate(
                         speed: 1.0,
                         restart: false,
                         repeat: true,
+                        transition_seconds: 0.4,
                         ..Default::default()
                     }
                 }
@@ -803,6 +806,12 @@ fn play_current_emote(
                 active_animation.set_speed(active_emote.speed);
 
                 // nasty hack for falling animation
+                if active_emote.urn.as_str() == "urn:decentraland:off-chain:base-emotes:jump"
+                    && active_animation.seek_time() >= 0.4
+                    && active_emote.repeat
+                {
+                    active_animation.set_speed(active_emote.speed * 0.125);
+                }
                 if active_emote.urn.as_str() == "urn:decentraland:off-chain:base-emotes:jump"
                     && active_animation.seek_time() >= 0.5833
                     && active_emote.repeat
