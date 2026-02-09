@@ -809,11 +809,6 @@ fn update_ready_gltfs(
                         commands.entity(spawned_ent).remove::<Mesh3d>();
                     }
 
-                    // when `visible_meshes_collision_mask` is specified, we should treat all meshes as colliders but NOT make
-                    // them invisible, so we recalculate `is_collider` here
-                    let is_collider =
-                        is_collider || definition.0.visible_meshes_collision_mask.is_some();
-
                     // get specified or default collider bits
                     // try mesh node first
                     let collider_bits = maybe_extras
@@ -851,6 +846,11 @@ fn update_ready_gltfs(
                                     }
                                 })
                         });
+
+                    // when `visible_meshes_collision_mask` is specified, we should treat all meshes as colliders but NOT make
+                    // them invisible, so we recalculate `is_collider` here
+                    let is_collider =
+                        is_collider || definition.0.visible_meshes_collision_mask.is_some();
 
                     if is_collider && collider_bits != Some(0) {
                         let collider_bits = collider_bits.unwrap_or(
