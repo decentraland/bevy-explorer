@@ -49,8 +49,8 @@ use crate::{
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
 extern "C" {
-    #[wasm_bindgen]
-    pub fn setupMicrophonePermission();
+    #[wasm_bindgen(js_name="setupMicrophonePermission")]
+    pub fn setup_microphone_permission();
     #[wasm_bindgen]
     pub fn is_microphone_available() -> bool;
 }
@@ -66,7 +66,7 @@ impl Plugin for MicPlugin {
         app.init_state::<MicrophoneState>();
 
         #[cfg(target_arch = "wasm32")]
-        app.add_systems(Startup, setupMicrophonePermission);
+        app.add_systems(Startup, setup_microphone_permission);
         app.add_systems(
             Update,
             (
