@@ -481,7 +481,9 @@ fn main() {
             color: Color::srgb(0.85, 0.85, 1.0),
             brightness: 575.0,
             ..Default::default()
-        });
+        })
+        // Purple background matching loading_background.png to avoid white flash on startup
+        .insert_resource(ClearColor(Color::srgb(0.6, 0.1, 0.8)));
 
     app.add_console_command::<ChangeLocationCommand, _>(change_location);
     app.add_console_command::<SceneDistanceCommand, _>(scene_distance);
