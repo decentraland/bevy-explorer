@@ -49,6 +49,8 @@ use crate::{
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
 extern "C" {
+    #[wasm_bindgen]
+    pub fn setupMicrophonePermission();
     #[wasm_bindgen(catch)]
     pub fn is_microphone_available() -> Result<bool, JsValue>;
 }
@@ -63,6 +65,8 @@ impl Plugin for MicPlugin {
         app.init_state::<MicrophoneAvailability>();
         app.init_state::<MicrophoneState>();
 
+        #[cfg(target_arch = "wasm32")]
+        app.add_systems(Startup, setupMicrophonePermission);
         app.add_systems(
             Update,
             (
@@ -144,7 +148,7 @@ fn verify_availability(mut commands: Commands, mut mic_state: ResMut<MicState>) 
 #[cfg(target_arch = "wasm32")]
 fn verify_availability(mut commands: Commands, mut mic_state: ResMut<MicState>) {
     // Check if microphone is available in the browser
-    let current_available = is_microphone_available().unwrap_or(false);
+    let current_available = dbg!(is_microphone_available().unwrap_or(false));
 
     // Only update availability if it changed
     if current_available {
@@ -170,7 +174,7 @@ fn verify_microphone_device_health(
 #[cfg(target_arch = "wasm32")]
 fn verify_microphone_device_health(mut commands: Commands, mut mic_state: ResMut<MicState>) {
     // Check if microphone is available in the browser
-    let current_available = is_microphone_available().unwrap_or(false);
+    let current_available = dbg!(is_microphone_available().unwrap_or(false));
 
     if !current_available {
         debug!("Microphone became unavailable.");
