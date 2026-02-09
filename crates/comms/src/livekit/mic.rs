@@ -148,7 +148,7 @@ fn verify_availability(mut commands: Commands, mut mic_state: ResMut<MicState>) 
 #[cfg(target_arch = "wasm32")]
 fn verify_availability(mut commands: Commands, mut mic_state: ResMut<MicState>) {
     // Check if microphone is available in the browser
-    let current_available = dbg!(is_microphone_available().unwrap_or(false));
+    let current_available = is_microphone_available().unwrap_or(false);
 
     // Only update availability if it changed
     if current_available {
@@ -174,7 +174,7 @@ fn verify_microphone_device_health(
 #[cfg(target_arch = "wasm32")]
 fn verify_microphone_device_health(mut commands: Commands, mut mic_state: ResMut<MicState>) {
     // Check if microphone is available in the browser
-    let current_available = dbg!(is_microphone_available().unwrap_or(false));
+    let current_available = is_microphone_available().unwrap_or(false);
 
     if !current_available {
         debug!("Microphone became unavailable.");
