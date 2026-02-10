@@ -11,20 +11,21 @@ export { gpu_cache_hash, initGpuCache };
  * Fetches a URL with download progress tracking.
  * @param {string} url - URL to fetch
  * @param {function} onProgress - Callback with percentage (0-100)
+ * @param {number|null} expectedSize - Expected uncompressed size in bytes (fallback when Content-Length is missing due to content-encoding)
  * @returns {Promise<ArrayBuffer>}
  */
-async function fetchWithProgress(url, onProgress) {
+async function fetchWithProgress(url, onProgress, expectedSize) {
   const response = await fetch(url);
   const contentLength = response.headers.get('Content-Length');
+  const total = contentLength ? parseInt(contentLength, 10) : expectedSize;
 
-  if (!contentLength || !response.body) {
-    // Fallback if Content-Length is missing or no streaming support
+  if (!total || !response.body) {
+    // Fallback if no size info available or no streaming support
     const buffer = await response.arrayBuffer();
     onProgress(100);
     return buffer;
   }
 
-  const total = parseInt(contentLength, 10);
   const reader = response.body.getReader();
   const chunks = [];
   let received = 0;
@@ -35,7 +36,7 @@ async function fetchWithProgress(url, onProgress) {
 
     chunks.push(value);
     received += value.length;
-    onProgress((received / total) * 100);
+    onProgress(Math.min((received / total) * 100, 100));
   }
 
   // Combine chunks into single ArrayBuffer
@@ -58,11 +59,20 @@ export async function initEngine() {
   const publicUrl = window.PUBLIC_URL || ".";
   const wasmUrl = `${publicUrl}/pkg/webgpu_build_bg.wasm`;
 
+  // Fetch manifest for expected WASM size (used when Content-Length is missing due to CDN compression)
+  let expectedWasmSize = null;
+  try {
+    const manifest = await fetch(`${publicUrl}/pkg/manifest.json`).then(r => r.json());
+    expectedWasmSize = manifest.wasmSize;
+  } catch (e) {
+    console.warn("Could not load manifest.json, progress may not be accurate", e);
+  }
+
   // Step 1: Download WASM with progress
   setLoadingStepActive('download');
   const wasmBytes = await fetchWithProgress(wasmUrl, (percent) => {
     setLoadingStepProgress('download', percent);
-  });
+  }, expectedWasmSize);
   setLoadingStepCompleted('download');
 
   // Step 2: Compile WASM

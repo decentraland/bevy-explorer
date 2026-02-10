@@ -242,6 +242,8 @@ jobs:
         run: |
           wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="livekit"
           rm -f ./deploy/web/pkg/.gitignore
+          WASM_SIZE=$(wc -c < ./deploy/web/pkg/webgpu_build_bg.wasm)
+          echo "{\"wasmSize\":${WASM_SIZE}}" > ./deploy/web/pkg/manifest.json
       - name: Install
         run: npm i
         working-directory: deploy/web
