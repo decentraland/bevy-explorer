@@ -9,12 +9,12 @@ use std::path::PathBuf;
 use bake_scene::DclImposterBakeScenePlugin;
 use bevy::{
     prelude::*,
-    tasks::{block_on, poll_once, IoTaskPool, Task},
+    tasks::{IoTaskPool, Task},
 };
 use bevy_console::ConsoleCommand;
 use common::{
     structs::{AppConfig, SceneLoadDistance},
-    util::TaskCompat,
+    util::{TaskCompat, TaskExt},
 };
 use console::DoAddConsoleCommand;
 use ipfs::CurrentRealm;
@@ -152,7 +152,7 @@ fn realm_changed(mut commands: Commands, current_realm: Res<CurrentRealm>) {
 }
 
 fn verify_cors(mut commands: Commands, mut testing_cors: ResMut<TestingCors>) {
-    if let Some(maybe_status_code) = block_on(poll_once(&mut testing_cors.task)) {
+    if let Some(maybe_status_code) = testing_cors.task.complete() {
         match maybe_status_code {
             Ok(status_code) => {
                 if status_code.is_success() {
