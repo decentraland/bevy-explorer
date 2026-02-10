@@ -194,7 +194,7 @@ pub fn focus_imposters(
     } else {
         (cam_pos.distance(origin) * 0.5, 0.5)
     };
-    debug!("focus: {focus:?}");
+    trace!("focus: {focus:?}");
 }
 
 pub fn spawn_imposters(
@@ -903,7 +903,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
             }
         }
 
-        debug!("{} requested", requested_loading_handles.len());
+        trace!("{} requested", requested_loading_handles.len());
 
         // start loading available local assets
         let mut new_loading_handles = HashMap::default();
@@ -921,7 +921,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         requests.sort_by_key(|(_, req)| FloatOrd(-req.benefit));
 
         #[cfg(debug_assertions)]
-        debug!(
+        trace!(
             "candidates: {:?}",
             requests
                 .iter()
@@ -966,7 +966,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         );
         let count2 = new_loading_handles.len();
         *loading_handles = std::mem::take(&mut new_loading_handles);
-        debug!("loading {} / {}", count, count2);
+        trace!("loading {} / {}", count, count2);
 
         if self.plugin.download {
             // count current downloads
