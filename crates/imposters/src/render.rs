@@ -35,7 +35,7 @@ use crate::{
     floor_imposter::{FloorImposter, FloorImposterLoader},
     imposter_mesh::ImposterMesh,
     imposter_spec::{floor_path, load_imposter, texture_path, BakedScene, ImposterSpec},
-    DclImposterPlugin,
+    DclImposterPlugin, ImpostersAllowed,
 };
 
 pub struct DclImposterRenderPlugin;
@@ -62,7 +62,7 @@ impl Plugin for DclImposterRenderPlugin {
                     resource_exists_and_changed::<CurrentRealm>.or(scene_imposters_is_empty),
                 ),
                 focus_imposters,
-                spawn_imposters,
+                spawn_imposters.run_if(in_state(ImpostersAllowed::Allowed)),
                 load_imposters,
                 debug_write_imposters,
             )
