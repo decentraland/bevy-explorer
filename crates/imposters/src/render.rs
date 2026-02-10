@@ -58,6 +58,9 @@ impl Plugin for DclImposterRenderPlugin {
         .add_systems(
             Update,
             (
+                purge_imposters.run_if(
+                    resource_exists_and_changed::<CurrentRealm>.or(scene_imposters_is_empty),
+                ),
                 focus_imposters,
                 spawn_imposters,
                 load_imposters,
@@ -197,32 +200,36 @@ pub fn focus_imposters(
     trace!("focus: {focus:?}");
 }
 
+fn scene_imposters_is_empty(config: Res<AppConfig>) -> bool {
+    config.scene_imposter_distances.is_empty()
+}
+
+fn purge_imposters(
+    mut commands: Commands,
+    current_imposters: Query<(Entity, &SceneImposter)>,
+    mut manager: ImposterSpecManager,
+) {
+    for (entity, _) in &current_imposters {
+        if let Ok(mut commands) = commands.get_entity(entity) {
+            commands.despawn();
+        }
+    }
+    manager.clear();
+    debug!("purge");
+}
+
 pub fn spawn_imposters(
     mut commands: Commands,
     config: Res<AppConfig>,
     focus: Res<ImposterFocus>,
     mut required: Local<HashMap<(IVec2, usize), bool>>,
     current_imposters: Query<(Entity, &SceneImposter)>,
-    current_realm: Res<CurrentRealm>,
     ingredients: Res<BakingIngredients>,
     live_scenes: Res<LiveScenes>,
     scenes: Query<&RendererSceneContext, Without<SceneLoading>>,
     current_imposter_scene: Res<CurrentImposterScene>,
     mut manager: ImposterSpecManager,
 ) {
-    if current_realm.is_changed() || config.scene_imposter_distances.is_empty() {
-        for (entity, _) in &current_imposters {
-            if let Ok(mut commands) = commands.get_entity(entity) {
-                commands.despawn();
-            }
-        }
-
-        manager.clear();
-
-        debug!("purge");
-        return;
-    }
-
     // skip if no realm
     if manager.pointers.min() == IVec2::MAX {
         return;
