@@ -62,6 +62,8 @@ impl Plugin for DclImposterBakeScenePlugin {
                     bake_scene_imposters,
                     bake_imposter_imposter,
                     check_bake_state,
+                    clear_imposters_bake_on_realm_change
+                        .run_if(resource_exists_and_changed::<CurrentRealm>),
                     pick_imposter_to_bake,
                     output_progress,
                 )
@@ -777,6 +779,10 @@ pub enum ImposterToBake {
 #[derive(Resource, Default, Debug)]
 pub struct ImposterBakeList(Vec<ImposterToBake>);
 
+fn clear_imposters_bake_on_realm_change(mut baking: ResMut<ImposterBakeList>) {
+    baking.0.clear();
+}
+
 fn pick_imposter_to_bake(
     q: Query<&SceneImposter, (Without<RetryImposter>, Without<Children>)>,
     focus: Query<&GlobalTransform, With<PrimaryUser>>,
@@ -788,11 +794,6 @@ fn pick_imposter_to_bake(
     plugin: Res<DclImposterPlugin>,
 ) {
     if config.scene_imposter_bake == SceneImposterBake::Off {
-        return;
-    }
-
-    if current_realm.is_changed() {
-        baking.0.clear();
         return;
     }
 
