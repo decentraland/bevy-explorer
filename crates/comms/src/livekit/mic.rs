@@ -53,6 +53,10 @@ extern "C" {
     pub fn setup_microphone_permission();
     #[wasm_bindgen]
     pub fn is_microphone_available() -> bool;
+    #[wasm_bindgen(js_name = "microphonePermissionState")]
+    pub fn microphone_permission_state() -> String;
+    #[wasm_bindgen(js_name = "promptMicrophonePermission")]
+    pub fn prompt_microphone_permission();
 }
 
 pub struct MicPlugin;
@@ -63,6 +67,7 @@ impl Plugin for MicPlugin {
         app.init_non_send_resource::<MicStream>();
 
         app.init_state::<MicrophoneAvailability>();
+        app.init_state::<MicrophonePermission>();
         app.init_state::<MicrophoneState>();
 
         #[cfg(target_arch = "wasm32")]
@@ -70,6 +75,8 @@ impl Plugin for MicPlugin {
         app.add_systems(
             Update,
             (
+                #[cfg(target_arch = "wasm32")]
+                poll_microphone_permission,
                 verify_availability.run_if(in_state(MicrophoneAvailability::Unavailable)),
                 verify_microphone_device_health.run_if(in_state(MicrophoneAvailability::Available)),
                 (microphone_disabled, verify_enabled).run_if(
@@ -79,7 +86,7 @@ impl Plugin for MicPlugin {
                 (microphone_enabled, verify_disabled).run_if(in_state(MicrophoneState::Enabled)),
                 (
                     poll_local_audio_track_futures,
-                    publish_tracks,
+                    publish_tracks.run_if(in_state(MicrophonePermission::Granted)),
                     unpublish_tracks,
                 )
                     .run_if(in_state(MicrophoneAvailability::Available)),
@@ -90,6 +97,19 @@ impl Plugin for MicPlugin {
         app.add_systems(OnEnter(MicrophoneState::Enabled), build_cpal_stream);
         #[cfg(not(target_arch = "wasm32"))]
         app.add_systems(OnEnter(MicrophoneState::Disabled), drop_cpal_stream);
+        #[cfg(target_arch = "wasm32")]
+        app.add_systems(
+            OnEnter(MicrophoneState::Enabled),
+            prompt_microphone_permission.run_if(in_state(MicrophonePermission::Prompt)),
+        );
+        #[cfg(target_arch = "wasm32")]
+        app.add_systems(
+            OnEnter(MicrophonePermission::Prompt),
+            prompt_microphone_permission.run_if(in_state(MicrophoneState::Enabled)),
+        );
+
+        #[cfg(not(target_arch = "wasm32"))]
+        app.insert_state(MicrophonePermission::Granted);
 
         #[cfg(target_arch = "wasm32")]
         app.add_systems(Update, locate_foreign_streams);
@@ -101,6 +121,15 @@ enum MicrophoneAvailability {
     #[default]
     Unavailable,
     Available,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, States)]
+enum MicrophonePermission {
+    #[default]
+    Denied,
+    #[cfg(target_arch = "wasm32")]
+    Prompt,
+    Granted,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, States)]
@@ -181,6 +210,34 @@ fn verify_microphone_device_health(mut commands: Commands, mut mic_state: ResMut
         debug!("Microphone became unavailable.");
         mic_state.available = false;
         commands.set_state(MicrophoneAvailability::Unavailable);
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn poll_microphone_permission(
+    mut commands: Commands,
+    microphone_permission: Res<State<MicrophonePermission>>,
+) {
+    match microphone_permission_state().as_str() {
+        "granted" => {
+            if *microphone_permission.get() != MicrophonePermission::Granted {
+                debug!("Granted microphone permission.");
+                commands.set_state(MicrophonePermission::Granted);
+            }
+        }
+        "prompt" => {
+            if *microphone_permission.get() != MicrophonePermission::Prompt {
+                debug!("Microphone permission needs to be prompted.");
+                commands.set_state(MicrophonePermission::Prompt);
+            }
+        }
+        "denied" => {
+            if *microphone_permission.get() != MicrophonePermission::Denied {
+                debug!("Denied microphone permission.");
+                commands.set_state(MicrophonePermission::Denied);
+            }
+        }
+        other => panic!("Unknown microphone permission '{}'.", other),
     }
 }
 

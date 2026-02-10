@@ -9,56 +9,41 @@ function error(...args) {
 }
 
 var audioContext = null;
-var microphonePermission = false;
+var microphonePermission = "denied";
 
 export function setupMicrophonePermission() {
     navigator.permissions.query({ name: "microphone" }).then((permissionState) => {
-        if (permissionState.state == "prompt" && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            try {
-                log("Prompting for microphone permission.");
-                navigator.mediaDevices.getUserMedia({ audio: true });
-            } catch (err) {
-                error(err);
-            }
-        }
+        microphonePermission = permissionState.state;
 
         permissionState.onchange = () => {
-            if (permissionState.state == "granted") {
-                log("Microphone permission was granted.");
-                microphonePermission = true;
-            } else if (permissionState.state == "prompt") {
-                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                    try {
-                        log("Prompting for microphone permission.");
-                        navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
-                            log("Microphone permission was granted.");
-                            microphonePermission = true;
-                        }).catch((reason) => {
-                            error(reason);
-                            microphonePermission = false;
-                        });
-                    } catch (err) {
-                        error(err);
-                        microphonePermission = false;
-                    }
-                } else {
-                    error("No navigator media devices.");
-                    microphonePermission = false;
-                }
-            } else if (permissionState.state == "denied") {
-                log("Microphone permission was denied.");
-                microphonePermission = false;
-            }
+            microphonePermission = permissionState.state;
         };
     });
 }
 
 /**
- * 
+ * Tests if the browser can accept requests for microphone streams
  * @returns boolean
  */
 export function is_microphone_available() {
+    return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+}
+
+/**
+ * Requests current microphone permission state
+ * @returns "granted" | "prompt" | "denied"
+ */
+export function microphonePermissionState() {
     return microphonePermission;
+}
+
+/**
+ * Prompts for microphone permission
+ */
+export function promptMicrophonePermission() {
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ audio: true });
+    }
 }
 
 /**
