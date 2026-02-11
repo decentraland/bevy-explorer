@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use bevy::{prelude::*, time::common_conditions::on_timer};
 use wasm_bindgen::convert::{FromWasmAbi, IntoWasmAbi};
-use web_sys::NotificationPermission;
+use web_sys::{NotificationOptions, NotificationPermission};
 
 use crate::{plugin::NotificationsState, Notification, PushNotification};
 
@@ -66,8 +66,13 @@ fn build_native_notification(
     notifications: Populated<(Entity, &Notification), Without<NativeNotification>>,
 ) {
     for (entity, notification) in notifications.into_inner() {
+        let options = NotificationOptions::default();
+        if let Some(ref icon) = notification.icon {
+            options.set_icon(icon);
+        }
         let Ok(notification) =
-            web_sys::Notification::new(&notification.title).inspect_err(|err| error!("{err:?}"))
+            web_sys::Notification::new_with_options(&notification.title, &options)
+                .inspect_err(|err| error!("{err:?}"))
         else {
             continue;
         };

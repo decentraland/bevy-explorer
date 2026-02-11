@@ -53,6 +53,7 @@ fn notification_pushed(
         commands.spawn((
             Notification {
                 title: push_notification.title.clone(),
+                icon: push_notification.icon.clone(),
             },
             NotificationTimeout(Timer::from_seconds(
                 push_notification.timeout,

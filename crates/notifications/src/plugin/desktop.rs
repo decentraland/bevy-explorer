@@ -25,11 +25,14 @@ fn build_native_notification(
     notifications: Populated<(Entity, &Notification), Without<NativeNotification>>,
 ) {
     for (entity, notification) in notifications.into_inner() {
-        let Ok(notification_handle) = notify_rust::Notification::new()
-            .summary(&notification.title)
-            .show()
-            .inspect_err(|err| error!("{err:?}"))
-        else {
+        let mut notify = notify_rust::Notification::new();
+        notify.summary(&notification.title);
+        #[cfg(target_os = "linux")]
+        if let Some(ref icon) = notification.icon {
+            notify.icon(icon);
+        }
+
+        let Ok(notification_handle) = notify.show().inspect_err(|err| error!("{err:?}")) else {
             continue;
         };
 
