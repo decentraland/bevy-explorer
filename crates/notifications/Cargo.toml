@@ -6,6 +6,9 @@ edition = "2021"
 [dependencies]
 bevy = { workspace = true }
 
+[target.'cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))'.dependencies]
+notify-rust = { workspace = true }
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { workspace = true }
 web-sys = { workspace = true, features = [

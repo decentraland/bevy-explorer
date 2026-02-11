@@ -206,6 +206,8 @@ web-time = "1.1"
 copypwasmta = { git = "https://github.com/robtfm/copypwasmta" }
 web-fs = "0.2.6"
 
+notify-rust = "4.12"
+
 [dependencies]
 assets = { workspace = true }
 analytics = { workspace = true }

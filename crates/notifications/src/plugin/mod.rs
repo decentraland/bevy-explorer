@@ -1,8 +1,12 @@
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+mod desktop;
 #[cfg(target_arch = "wasm32")]
 mod web;
 
 use bevy::prelude::*;
 
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+use crate::plugin::desktop::NativeNotificationsPlugin;
 #[cfg(target_arch = "wasm32")]
 use crate::plugin::web::NativeNotificationsPlugin;
 use crate::{Notification, NotificationTimeout, PushNotification};
