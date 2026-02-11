@@ -3626,6 +3626,7 @@ dependencies = [
  "log-panics",
  "mimalloc",
  "nft",
+ "notifications",
  "once_cell",
  "pico-args",
  "platform",
@@ -7690,6 +7691,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8911957c4b1549ac0dc74e30db9c8b0e66ddcd6d7acc33098f4c63a64a6d7ed"
 dependencies = [
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "notifications"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

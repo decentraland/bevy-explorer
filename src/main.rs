@@ -27,7 +27,6 @@ use bevy::{
     window::WindowResolution,
 };
 use bevy_console::ConsoleCommand;
-
 use collectibles::CollectiblesPlugin;
 use common::{
     inputs::InputMap,
@@ -39,6 +38,7 @@ use common::{
     },
     util::{TaskCompat, TaskExt, TryPushChildrenEx, UtilsPlugin},
 };
+use notifications::plugin::NotificationsPlugin;
 use restricted_actions::{lookup_portable, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
@@ -449,6 +449,7 @@ fn main() {
         .add_plugins(WorldUiPlugin)
         .add_plugins(TextureCameraPlugin)
         .add_plugins(ImageProcessingPlugin)
+        .add_plugins(NotificationsPlugin)
         .add_plugins(SystemBridgePlugin { bare: false });
 
     if !is_preview {
