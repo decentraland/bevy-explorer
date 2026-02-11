@@ -1,9 +1,10 @@
 use std::time::Duration;
 
 use bevy::{prelude::*, time::common_conditions::on_timer};
-use web_sys::{Notification, NotificationPermission};
+use wasm_bindgen::convert::{FromWasmAbi, IntoWasmAbi};
+use web_sys::NotificationPermission;
 
-use crate::{plugin::NotificationsState, PushNotification};
+use crate::{plugin::NotificationsState, Notification, PushNotification};
 
 pub struct WebNotificationsPlugin;
 
@@ -16,8 +17,19 @@ impl Plugin for WebNotificationsPlugin {
                 request_permission.run_if(
                     in_state(NotificationsState::Default).and(on_event::<PushNotification>),
                 ),
+                build_native_notification.run_if(in_state(NotificationsState::Granted)),
             ),
         );
+    }
+}
+
+#[derive(Component)]
+struct NativeNotification(<web_sys::Notification as IntoWasmAbi>::Abi);
+
+impl Drop for NativeNotification {
+    fn drop(&mut self) {
+        let notification = unsafe { web_sys::Notification::from_abi(self.0) };
+        notification.close();
     }
 }
 
@@ -25,7 +37,7 @@ fn poll_notifications_state(
     mut commands: Commands,
     notifications_state: Res<State<NotificationsState>>,
 ) {
-    match Notification::permission() {
+    match web_sys::Notification::permission() {
         NotificationPermission::Default => {
             if *notifications_state.get() != NotificationsState::Default {
                 commands.set_state(NotificationsState::Default);
@@ -47,4 +59,21 @@ fn poll_notifications_state(
 
 fn request_permission() {
     let _ = web_sys::Notification::request_permission().inspect_err(|err| error!("{err:?}"));
+}
+
+fn build_native_notification(
+    mut commands: Commands,
+    notifications: Populated<(Entity, &Notification), Without<NativeNotification>>,
+) {
+    for (entity, notification) in notifications.into_inner() {
+        let Ok(notification) =
+            web_sys::Notification::new(&notification.title).inspect_err(|err| error!("{err:?}"))
+        else {
+            continue;
+        };
+
+        commands
+            .entity(entity)
+            .insert(NativeNotification(notification.into_abi()));
+    }
 }

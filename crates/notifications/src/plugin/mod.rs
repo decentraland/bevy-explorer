@@ -47,18 +47,10 @@ fn notification_pushed(
     mut push_notifications: EventReader<PushNotification>,
 ) {
     for push_notification in push_notifications.read() {
-        #[cfg(target_arch = "wasm32")]
-        let Ok(notification) = web_sys::Notification::new(&push_notification.title)
-            .inspect_err(|err| error!("{err:?}"))
-        else {
-            continue;
-        };
-
         commands.spawn((
-            #[cfg(not(target_arch = "wasm32"))]
-            Notification,
-            #[cfg(target_arch = "wasm32")]
-            Notification(notification.into_abi()),
+            Notification {
+                title: push_notification.title.clone(),
+            },
             NotificationTimeout(Timer::from_seconds(
                 push_notification.timeout,
                 TimerMode::Once,
