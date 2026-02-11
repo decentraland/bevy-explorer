@@ -2,9 +2,9 @@
 mod web;
 
 use bevy::prelude::*;
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::convert::IntoWasmAbi;
 
+#[cfg(target_arch = "wasm32")]
+use crate::plugin::web::NativeNotificationsPlugin;
 use crate::{Notification, NotificationTimeout, PushNotification};
 
 pub struct NotificationsPlugin;
@@ -14,8 +14,7 @@ impl Plugin for NotificationsPlugin {
         app.init_state::<NotificationsState>();
         app.add_event::<PushNotification>();
 
-        #[cfg(target_arch = "wasm32")]
-        app.add_plugins(web::WebNotificationsPlugin);
+        app.add_plugins(NativeNotificationsPlugin);
 
         app.add_systems(Update, (tick_notifications, notification_pushed));
     }

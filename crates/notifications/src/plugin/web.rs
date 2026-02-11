@@ -6,9 +6,9 @@ use web_sys::NotificationPermission;
 
 use crate::{plugin::NotificationsState, Notification, PushNotification};
 
-pub struct WebNotificationsPlugin;
+pub struct NativeNotificationsPlugin;
 
-impl Plugin for WebNotificationsPlugin {
+impl Plugin for NativeNotificationsPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
