@@ -20,7 +20,7 @@ impl Plugin for NativeNotificationsPlugin {
 #[cfg(not(unix))]
 type NotificationHandle = ();
 
-#[expect(dead_code, reason = "Might be usable later")]
+#[cfg_attr(unix, expect(dead_code, reason = "Might be usable later"))]
 #[derive(Component)]
 struct NativeNotification(NotificationHandle);
 
