@@ -70,6 +70,9 @@ fn build_native_notification(
         if let Some(ref icon) = notification.icon {
             options.set_icon(icon);
         }
+        if let Some(ref body) = notification.body {
+            options.set_body(body);
+        }
         let Ok(notification) =
             web_sys::Notification::new_with_options(&notification.title, &options)
                 .inspect_err(|err| error!("{err:?}"))

@@ -31,6 +31,9 @@ fn build_native_notification(
         if let Some(ref icon) = notification.icon {
             notify.icon(icon);
         }
+        if let Some(ref body) = notification.body {
+            notify.body(body);
+        }
 
         let Ok(notification_handle) = notify.show().inspect_err(|err| error!("{err:?}")) else {
             continue;

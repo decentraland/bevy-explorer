@@ -54,6 +54,7 @@ fn notification_pushed(
             Notification {
                 title: push_notification.title.clone(),
                 icon: push_notification.icon.clone(),
+                body: push_notification.body.clone(),
             },
             NotificationTimeout(Timer::from_seconds(
                 push_notification.timeout,
