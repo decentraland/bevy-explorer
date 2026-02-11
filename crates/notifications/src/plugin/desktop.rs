@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+#[cfg(unix)]
 use notify_rust::NotificationHandle;
 
 use crate::{plugin::NotificationsState, Notification};
@@ -15,6 +16,9 @@ impl Plugin for NativeNotificationsPlugin {
         );
     }
 }
+
+#[cfg(not(unix))]
+type NotificationHandle = ();
 
 #[expect(dead_code, reason = "Might be usable later")]
 #[derive(Component)]
