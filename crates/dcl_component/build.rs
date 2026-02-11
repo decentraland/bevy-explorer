@@ -58,6 +58,7 @@ fn gen_sdk_components() -> Result<()> {
         "trigger_area",
         "trigger_area_result",
         "gltf_node_modifiers",
+        "skybox_time",
     ];
 
     let mut sources = components
