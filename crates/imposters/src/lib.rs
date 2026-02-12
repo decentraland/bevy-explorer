@@ -7,11 +7,19 @@ pub mod render;
 use std::path::PathBuf;
 
 use bake_scene::DclImposterBakeScenePlugin;
-use bevy::prelude::*;
+use bevy::{
+    prelude::*,
+    tasks::{IoTaskPool, Task},
+};
 use bevy_console::ConsoleCommand;
-use common::structs::{AppConfig, SceneLoadDistance};
+use common::{
+    structs::{AppConfig, SceneLoadDistance},
+    util::{TaskCompat, TaskExt},
+};
 use console::DoAddConsoleCommand;
+use ipfs::CurrentRealm;
 use render::{DclImposterRenderPlugin, SceneImposter};
+use reqwest::{Client, StatusCode};
 
 #[derive(Resource, Clone)]
 pub struct DclImposterPlugin {
@@ -21,12 +29,42 @@ pub struct DclImposterPlugin {
 
 impl Plugin for DclImposterPlugin {
     fn build(&self, app: &mut App) {
+        app.init_state::<ImpostersAllowed>();
+
         app.add_plugins((DclImposterBakeScenePlugin, DclImposterRenderPlugin))
             .add_console_command::<ImpostDistanceCommand, _>(set_impost_distance)
             .add_console_command::<ImpostMultisampleCommand, _>(set_impost_multi);
         app.insert_resource(self.clone());
+
+        app.add_systems(
+            Update,
+            (
+                realm_changed.run_if(resource_exists_and_changed::<CurrentRealm>),
+                verify_cors.run_if(resource_exists::<TestingCors>),
+            ),
+        );
     }
 }
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, States)]
+enum ImpostersAllowed {
+    #[default]
+    Disallowed,
+    Allowed,
+}
+
+#[derive(Resource)]
+struct TestingCors {
+    task: Task<Result<StatusCode, reqwest::Error>>,
+}
+
+/// SAFETY: should be fine while WASM remains single-threaded
+#[cfg(target_arch = "wasm32")]
+unsafe impl Send for TestingCors {}
+
+/// SAFETY: should be fine while WASM remains single-threaded
+#[cfg(target_arch = "wasm32")]
+unsafe impl Sync for TestingCors {}
 
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/impost")]
@@ -89,5 +127,42 @@ fn set_impost_multi(
         for e in q.iter() {
             commands.entity(e).despawn();
         }
+    }
+}
+
+fn realm_changed(mut commands: Commands, current_realm: Res<CurrentRealm>) {
+    commands.set_state(ImpostersAllowed::Disallowed);
+    if let Some(ref realm_name) = current_realm.config.realm_name {
+        debug!("Realm changed to {:?}", realm_name);
+        if realm_name == "main" {
+            let task_pool = IoTaskPool::get();
+            let task = task_pool.spawn_compat(async {
+                let client = Client::new();
+                let request = client
+                    .head("https://imposter.kuruk.net/v1/scenes.json")
+                    .build()?;
+                client
+                    .execute(request)
+                    .await
+                    .map(|response| response.status())
+            });
+            commands.insert_resource(TestingCors { task });
+        }
+    }
+}
+
+fn verify_cors(mut commands: Commands, mut testing_cors: ResMut<TestingCors>) {
+    if let Some(maybe_status_code) = testing_cors.task.complete() {
+        match maybe_status_code {
+            Ok(status_code) => {
+                if status_code.is_success() {
+                    commands.set_state(ImpostersAllowed::Allowed);
+                }
+            }
+            Err(err) => {
+                error!("{err}");
+            }
+        }
+        commands.remove_resource::<TestingCors>();
     }
 }
