@@ -1,6 +1,7 @@
 use std::{f32::consts::PI, num::ParseIntError, ops::Range, str::FromStr, sync::Arc};
 
 use bevy::{
+    pbr::{CascadeShadowConfig, CascadeShadowConfigBuilder},
     platform::collections::{HashMap, HashSet},
     prelude::*,
     render::view::RenderLayers,
@@ -522,7 +523,63 @@ impl AudioSettings {
 pub enum ShadowSetting {
     Off,
     Low,
+    Middle,
     High,
+}
+
+impl ShadowSetting {
+    /// Creates complete shadow configuration including cascade settings and map resolution.
+    ///
+    /// Returns a tuple of (shadows_enabled, cascade_shadow_config, shadow_map_size).
+    ///
+    /// # Arguments
+    /// * `shadow_distance` - Maximum distance for shadow rendering
+    ///
+    /// # Returns
+    /// * `bool` - Whether shadows are enabled
+    /// * `CascadeShadowConfig` - The cascade shadow configuration
+    /// * `usize` - The recommended shadow map resolution
+    pub fn to_shadow_config(&self, shadow_distance: f32) -> (bool, CascadeShadowConfig, usize) {
+        match self {
+            ShadowSetting::Off => (false, Default::default(), 512),
+            ShadowSetting::Low => (
+                true,
+                CascadeShadowConfigBuilder {
+                    num_cascades: 1,
+                    minimum_distance: 0.1,
+                    maximum_distance: shadow_distance,
+                    first_cascade_far_bound: shadow_distance,
+                    overlap_proportion: 0.2,
+                }
+                .build(),
+                512, // Performance-focused resolution
+            ),
+            ShadowSetting::Middle => (
+                true,
+                CascadeShadowConfigBuilder {
+                    num_cascades: 2,
+                    minimum_distance: 0.1,
+                    maximum_distance: shadow_distance,
+                    first_cascade_far_bound: shadow_distance / 8.0, // Optimized for better near-distance quality
+                    overlap_proportion: 0.2,
+                }
+                .build(),
+                1024, // Balanced quality/performance resolution
+            ),
+            ShadowSetting::High => (
+                true,
+                CascadeShadowConfigBuilder {
+                    num_cascades: 4,
+                    minimum_distance: 0.1,
+                    maximum_distance: shadow_distance,
+                    first_cascade_far_bound: shadow_distance / 15.0,
+                    overlap_proportion: 0.2,
+                }
+                .build(),
+                4096, // Quality-focused resolution
+            ),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
