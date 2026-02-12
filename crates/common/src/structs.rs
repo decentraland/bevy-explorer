@@ -1015,9 +1015,8 @@ pub struct SceneGlobalLight {
 
 #[derive(Resource)]
 pub struct TimeOfDay {
-    pub time: f32, // secs since midnight
-    pub target_time: Option<f32>,
-    pub speed: f32,
+    /// secs since midnight
+    pub time: f32,
 }
 
 impl TimeOfDay {

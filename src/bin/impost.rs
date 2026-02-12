@@ -273,8 +273,6 @@ fn main() {
         .init_resource::<CursorLocks>()
         .insert_resource(TimeOfDay {
             time: 10.0 * 3600.0,
-            target_time: None,
-            speed: 12.0,
         });
 
     // requires local version of `bevy_mod_debugdump` due to once_cell version conflict.
