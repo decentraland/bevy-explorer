@@ -3,6 +3,7 @@ use std::{borrow::Borrow, collections::VecDeque, num::ParseIntError, str::FromSt
 use analytics::segment_system::SegmentConfig;
 use bevy::{
     asset::{io::Reader, AssetLoader, LoadContext},
+    diagnostic::FrameCount,
     math::{FloatOrd, Vec3Swizzles},
     pbr::NotShadowCaster,
     platform::collections::{HashMap, HashSet},
@@ -243,6 +244,7 @@ pub(crate) fn load_scene_javascript(
     global_scene: Res<GlobalCrdtState>,
     portable_scenes: Res<PortableScenes>,
     realm: Res<CurrentRealm>,
+    frame: Res<FrameCount>,
 ) {
     for (root, state, h_scene) in loading_scenes
         .iter()
@@ -379,6 +381,7 @@ pub(crate) fn load_scene_javascript(
             definition.id.clone(),
             storage_root,
             portable.is_some(),
+            frame.0,
             title,
             base,
             parcels,
