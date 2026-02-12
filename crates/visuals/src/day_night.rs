@@ -1,13 +1,15 @@
 use bevy::prelude::*;
 use bevy_console::{AddConsoleCommand, ConsoleCommand};
-use common::structs::TimeOfDay;
+use common::structs::{PrimaryUser, SceneTime, TimeOfDay};
+use scene_runner::{ContainingScene, SceneEntity};
 
 #[derive(Component)]
-pub struct TimeKeeper;
+struct TimeKeeper;
 
 #[derive(Component)]
-pub struct RunningClock {
-    pub time: f32, // secs since midnight
+struct RunningClock {
+    /// secs since midnight
+    pub time: f32,
     pub target_time: Option<f32>,
     pub speed: f32,
 }
@@ -83,11 +85,31 @@ fn update_running_clock(
 
 fn push_time_of_day(
     time_keeper: Single<&RunningClock, With<TimeKeeper>>,
+    maybe_player: Option<Single<Entity, With<PrimaryUser>>>,
+    containing_scene: ContainingScene,
+    scene_times: Query<&SceneTime, With<SceneEntity>>,
     mut time_of_day: ResMut<TimeOfDay>,
 ) {
     let running_clock = time_keeper.into_inner();
 
-    time_of_day.time = running_clock.time;
+    let maybe_containing_scenes = maybe_player.map(|single| {
+        let player = single.into_inner();
+        containing_scene.get(player)
+    });
+
+    let maybe_scene_time = maybe_containing_scenes
+        .as_ref()
+        .and_then(|containing_scenes| {
+            containing_scenes
+                .iter()
+                .find_map(|scene| scene_times.get(*scene).ok())
+        });
+
+    if let Some(scene_time) = maybe_scene_time {
+        time_of_day.time = scene_time.time;
+    } else {
+        time_of_day.time = running_clock.time;
+    }
 }
 
 #[derive(clap::Parser, ConsoleCommand)]

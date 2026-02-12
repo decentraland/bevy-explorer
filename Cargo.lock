@@ -12444,6 +12444,7 @@ dependencies = [
  "common",
  "console",
  "noise",
+ "scene_runner",
  "web-time",
 ]
 

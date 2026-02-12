@@ -689,6 +689,12 @@ pub struct SceneDisplay {
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
+pub struct SkyboxConfig {
+    pub fixed_time: Option<f32>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct SceneMeta {
     pub owner: Option<String>,
     pub display: Option<SceneDisplay>,
@@ -696,6 +702,7 @@ pub struct SceneMeta {
     pub scene: SceneMetaScene,
     pub runtime_version: Option<String>,
     pub spawn_points: Option<Vec<SpawnPoint>>,
+    pub skybox_config: Option<SkyboxConfig>,
     pub authoritative_multiplayer: Option<bool>,
 }
 
@@ -1023,6 +1030,14 @@ impl TimeOfDay {
     pub fn elapsed_secs(&self) -> f32 {
         self.time
     }
+}
+
+/// Fixed time defined on `scene.json` `skyboxConfig`
+#[derive(Component)]
+#[component(immutable)]
+pub struct SceneTime {
+    /// secs since midnight
+    pub time: f32,
 }
 
 // porting aid, used to be one component

@@ -15,7 +15,9 @@ use bevy::{
 };
 
 use common::{
-    structs::{AppConfig, AppError, IVec2Arg, PreviewMode, SceneLoadDistance, SceneMeta},
+    structs::{
+        AppConfig, AppError, IVec2Arg, PreviewMode, SceneLoadDistance, SceneMeta, SceneTime,
+    },
     util::{TaskExt, TryPushChildrenEx},
 };
 use comms::global_crdt::GlobalCrdtState;
@@ -372,6 +374,15 @@ pub(crate) fn load_scene_javascript(
                 format!("{about_url}:{}:{}", base.x, base.y)
             }
         };
+
+        if let Some(fixed_time) = meta
+            .skybox_config
+            .and_then(|skybox_config| skybox_config.fixed_time)
+        {
+            commands
+                .entity(root)
+                .try_insert(SceneTime { time: fixed_time });
+        }
 
         info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?}, is sdk7: {is_sdk7:?}), storage root: {storage_root}");
         let mut renderer_context = RendererSceneContext::new(
