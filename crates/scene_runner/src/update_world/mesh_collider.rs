@@ -11,7 +11,7 @@ use bevy_console::ConsoleCommand;
 use rapier3d::{
     control::KinematicCharacterController,
     parry::{
-        query::{NonlinearRigidMotion, ShapeCastHit, ShapeCastOptions, ShapeCastStatus},
+        query::ShapeCastOptions,
         shape::{Ball, Capsule},
     },
     prelude::*,
@@ -22,7 +22,7 @@ use crate::{
     update_world::{
         gltf_container::mesh_to_parry_shape, mesh_renderer::truncated_cone::TruncatedCone,
     },
-    ContainerEntity, ContainingScene, DeletedSceneEntities, PrimaryUser, RendererSceneContext,
+    ContainerEntity, DeletedSceneEntities, PrimaryUser, RendererSceneContext,
     SceneLoopSchedule, SceneSets,
 };
 use common::{
@@ -159,16 +159,18 @@ impl Plugin for MeshColliderPlugin {
             ComponentPosition::EntityOnly,
         );
 
-        add_collider_systems::<CtCollider>(app);
-
         app.add_systems(
             Update,
             propagate_disabled::<CtCollider>.in_set(SceneSets::Init),
         );
+
         app.add_systems(
             Update,
             update_scene_collider_data.in_set(SceneSets::PostInit),
         );
+
+        // in postinit - update collider transforms
+        add_collider_systems::<CtCollider>(app);
 
         // collider deletion has to occur within the scene loop, as the DeletedSceneEntities resource is only
         // valid within the loop
@@ -205,6 +207,7 @@ pub struct RaycastResult {
     pub toi: f32,
     pub normal: Vec3,
     pub face: Option<usize>,
+    pub position: Vec3,
 }
 
 struct ColliderState {
@@ -303,8 +306,7 @@ impl SceneColliderData {
         &mut self,
         id: &ColliderId,
         transform: &GlobalTransform,
-        cast_with: Option<&ColliderSet>,
-    ) -> (Option<Transform>, Option<ShapeCastHit>) {
+    ) -> Option<Transform> {
         if let Some(handle) = self.get_collider_handle(id) {
             if let Some(collider) = self.collider_set.get_mut(handle) {
                 self.query_state_valid_at = None;
@@ -318,42 +320,11 @@ impl SceneColliderData {
                     ..
                 } = self.collider_state.get(id).unwrap();
 
-                let mut cast_result = None;
                 let mut new_scale = *init_scale;
                 if (req_scale - *init_scale).length_squared() > SCALE_EPSILON {
                     new_scale = req_scale;
                     // colliders don't have a scale, we have to modify the shape directly when scale changes (significantly)
                     collider.set_shape(base_collider.shape().scale_ext(req_scale));
-                }
-
-                if self.disabled.contains(&handle) {
-                    // don't shapecast
-                } else if let Some(colliders) = cast_with {
-                    // if scale doesn't change then just shapecast to hit colliders
-                    let mut pipeline = QueryPipeline::new();
-                    pipeline.update(colliders);
-                    let euler_axes =
-                        (req_rotation * init_rotation.inverse()).to_euler(EulerRot::XYZ);
-                    cast_result = pipeline
-                        .nonlinear_cast_shape(
-                            &self.dummy_rapier_structs.1,
-                            colliders,
-                            &NonlinearRigidMotion {
-                                start: Isometry::from_parts(
-                                    (*init_translation).into(),
-                                    (*init_rotation).into(),
-                                ),
-                                local_center: Default::default(),
-                                linvel: (req_translation - *init_translation).into(),
-                                angvel: [euler_axes.0, euler_axes.1, euler_axes.2].into(),
-                            },
-                            collider.shape(),
-                            0.0,
-                            1.0,
-                            true,
-                            QueryFilter::default(),
-                        )
-                        .map(|(_, toi)| toi);
                 }
 
                 let initial_transform = Transform {
@@ -371,11 +342,11 @@ impl SceneColliderData {
                     req_translation.into(),
                     req_rotation.into(),
                 ));
-                return (Some(initial_transform), cast_result);
+                return Some(initial_transform);
             }
         }
 
-        (None, None)
+        None
     }
 
     fn update_pipeline(&mut self, scene_frame: u32) {
@@ -494,10 +465,11 @@ impl SceneColliderData {
             } else {
                 None
             },
+            position: origin + direction * intersection.time_of_impact,
         })
     }
 
-    pub fn get_groundheight(&mut self, scene_time: u32, origin: Vec3) -> Option<(f32, ColliderId)> {
+    pub fn get_ground(&mut self, scene_time: u32, origin: Vec3) -> Option<(f32, ColliderId)> {
         self.update_pipeline(scene_time);
         let contact = self.query_state.as_ref().unwrap().cast_shape(
             &self.dummy_rapier_structs.1,
@@ -736,6 +708,7 @@ impl SceneColliderData {
                     } else {
                         None
                     },
+                    position: origin + direction * intersection.time_of_impact,
                 });
                 true
             },
@@ -743,6 +716,208 @@ impl SceneColliderData {
 
         results
     }
+
+    pub fn cast_avatar_all(
+        &mut self,
+        scene_time: u32,
+        origin: Vec3,
+        direction: Vec3,
+        distance: f32,
+        collision_mask: u32,
+        skip_inside: bool,
+        include_sensors: bool,
+    ) -> Vec<RaycastResult> {
+        let mut results = Vec::new();
+        let mut ignore = HashSet::new();
+
+        while let Some(result) = self.cast_avatar_nearest(
+            scene_time,
+            origin,
+            direction,
+            distance,
+            collision_mask,
+            skip_inside,
+            include_sensors,
+            ignore.iter().collect(),
+            false,
+        ) {
+            ignore.insert(result.id.clone());
+            results.push(result);
+        }
+
+        results
+    }
+
+    pub fn cast_avatar_nearest(
+        &mut self,
+        scene_time: u32,
+        origin: Vec3,
+        direction: Vec3,
+        distance: f32,
+        collision_mask: u32,
+        skip_inside: bool,
+        include_sensors: bool,
+        specific_colliders: HashSet<&ColliderId>,
+        include_specific: bool,
+    ) -> Option<RaycastResult> {
+        self.update_pipeline(scene_time);
+
+        let avatar_shape = Capsule::new_y(
+            PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS,
+            PLAYER_COLLIDER_RADIUS,
+        );
+
+        // collect colliders we started inside of, we must omit these from the query
+        let mut inside = HashSet::new();
+        if skip_inside {
+            self.query_state.as_ref().unwrap().intersections_with_shape(
+                &self.dummy_rapier_structs.1,
+                &self.collider_set,
+                &(origin + Vec3::Y * PLAYER_COLLIDER_HEIGHT * 0.5).into(),
+                &avatar_shape,
+                QueryFilter::default().groups(InteractionGroups::new(
+                    Group::from_bits_truncate(collision_mask),
+                    Group::from_bits_truncate(collision_mask),
+                )),
+                |h| {
+                    inside.insert(h);
+                    true
+                },
+            );
+        }
+
+        let specific_colliders = specific_colliders
+            .into_iter()
+            .flat_map(|id| self.get_collider_handle(id))
+            .collect::<HashSet<_>>();
+        let predicate =
+            |h, _: &_| !inside.contains(&h) && specific_colliders.contains(&h) == include_specific;
+        let filter = QueryFilter::default()
+            .groups(InteractionGroups::new(
+                Group::from_bits_truncate(collision_mask),
+                Group::from_bits_truncate(collision_mask),
+            ))
+            .predicate(&predicate);
+
+        let filter = if include_sensors {
+            filter
+        } else {
+            filter.exclude_sensors()
+        };
+
+        let result = self.query_state.as_ref().unwrap().cast_shape(
+            &self.dummy_rapier_structs.1,
+            &self.collider_set,
+            &(origin + Vec3::Y * PLAYER_COLLIDER_HEIGHT * 0.5).into(),
+            &direction.into(),
+            &avatar_shape,
+            ShapeCastOptions {
+                max_time_of_impact: distance,
+                target_distance: 0.0,
+                stop_at_penetration: false,
+                compute_impact_geometry_on_penetration: true,
+            },
+            filter,
+        );
+
+        result.map(|(handle, intersection)| RaycastResult {
+            id: self.get_id(handle).unwrap().clone(),
+            toi: intersection.time_of_impact,
+            normal: Vec3::from(intersection.normal1),
+            face: None,
+            position: Vec3::from(intersection.witness1),
+        })
+    }
+
+    fn avatar_intersections(
+        &mut self, 
+        scene_time: u32,
+        translation: Vec3,
+        size_adjust: f32,
+        mut cb: impl FnMut(&Self, ColliderHandle) -> bool,
+    ) {
+        self.update_pipeline(scene_time);
+
+        let avatar_shape = Capsule::new_y(
+            PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS,
+            PLAYER_COLLIDER_RADIUS + size_adjust,
+        );
+
+        self.query_state.as_ref().unwrap().intersections_with_shape(
+            &self.dummy_rapier_structs.1,
+            &self.collider_set,
+            &(translation + Vec3::Y * PLAYER_COLLIDER_HEIGHT * 0.5).into(),
+            &avatar_shape,
+            QueryFilter::default().groups(InteractionGroups::new(
+                Group::from_bits_truncate(ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK),
+                Group::from_bits_truncate(ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK),
+            )),
+            |h| cb(self, h),
+        );        
+    }
+
+    pub fn avatar_collisions(&mut self, scene_time: u32, translation: Vec3, size_adjust: f32) -> HashSet<ColliderId> {
+        let mut results = HashSet::new();
+        self.avatar_intersections(scene_time, translation, size_adjust, |slf, h| {
+            results.insert(slf.get_id(h).unwrap().clone());
+            true
+        });
+
+        results
+    }
+
+    pub fn avatar_constraints(&mut self, scene_time: u32, translation: Vec3) -> (Vec3, Vec3) {
+        let avatar_inner_segment = rapier3d::parry::shape::Segment::new(
+            (Vec3::Y * PLAYER_COLLIDER_RADIUS).into(),
+            (Vec3::Y * (PLAYER_COLLIDER_HEIGHT - PLAYER_COLLIDER_RADIUS)).into(),
+        );
+        let rapier_avatar_position = (translation + Vec3::Y * PLAYER_COLLIDER_HEIGHT * 0.5).into();
+
+        let mut constraint_min = Vec3::NEG_INFINITY;
+        let mut constraint_max = Vec3::INFINITY;
+
+        self.avatar_intersections(
+            scene_time,
+            translation,
+            0.0,
+            |slf, h| {
+                let collided = slf.collider_set.get(h).unwrap();
+                let result = rapier3d::parry::query::closest_points(
+                    &rapier_avatar_position,
+                    &avatar_inner_segment,
+                    collided.position(),
+                    collided.shape(),
+                    PLAYER_COLLIDER_RADIUS,
+                );
+
+                let Ok(result) = result else {
+                    panic!("{result:?}");
+                };
+
+                match result {
+                    rapier3d::parry::query::ClosestPoints::Intersecting => (),
+                    rapier3d::parry::query::ClosestPoints::WithinMargin(opoint, opoint1) => {
+                        let offset = Vec3::from(opoint1 - opoint);
+                        let required_offset = offset.normalize() * PLAYER_COLLIDER_RADIUS;
+                        let correction = required_offset - offset;
+
+                        let mask_pos = correction.cmpgt(Vec3::ZERO);
+                        let active_pos = Vec3::select(mask_pos, correction, Vec3::NEG_INFINITY);
+                        constraint_min = constraint_min.max(active_pos);
+
+                        let mask_neg = correction.cmplt(Vec3::ZERO);
+                        let active_neg = Vec3::select(mask_neg, correction, Vec3::INFINITY);
+                        constraint_max = constraint_max.min(active_neg);
+                    }
+                    rapier3d::parry::query::ClosestPoints::Disjoint => (),
+                }
+
+                true
+            },
+        );
+
+        (constraint_min, constraint_max)
+    }    
 
     pub fn closest_point<F: Fn(&ColliderId) -> bool>(
         &mut self,
@@ -1027,10 +1202,6 @@ fn remove_deleted_colliders(
     }
 }
 
-// (scene entity, collider id) of collider player is standing on
-#[derive(Component, Default)]
-pub struct GroundCollider(pub Option<(Entity, ColliderId, GlobalTransform)>);
-
 #[allow(clippy::type_complexity)]
 fn propagate_disabled<T: ColliderType>(
     mut scene_datas: Query<(Entity, &mut SceneColliderData)>,
@@ -1079,208 +1250,39 @@ fn propagate_disabled<T: ColliderType>(
     }
 }
 
+#[derive(Component)]
+pub struct PreviousColliderTransform(pub GlobalTransform);
+
 #[allow(clippy::type_complexity)]
-fn update_collider_transforms<T: ColliderType>(
+pub fn update_collider_transforms<T: ColliderType>(
+    mut commands: Commands,
     changed_colliders: Query<
-        (&ContainerEntity, &HasCollider<T>, &GlobalTransform),
+        (Entity, &ContainerEntity, &HasCollider<T>, &GlobalTransform),
         (
             Or<(Changed<GlobalTransform>, Changed<HasCollider<T>>)>, // needs updating
         ),
     >,
     mut scene_data: Query<&mut SceneColliderData>,
-    containing_scene: ContainingScene,
-    mut player: Query<(Entity, &mut Transform), With<PrimaryUser>>,
 ) {
-    let mut containing_scenes = HashSet::new();
-    let mut player_transform = None;
-
-    if let Ok((player, transform)) = player.single_mut() {
-        player_transform = Some(transform);
-        containing_scenes.extend(containing_scene.get_area(player, PLAYER_COLLIDER_RADIUS));
-    }
-
-    let mut player_collider_set = ColliderSet::default();
-    player_collider_set.insert(
-        ColliderBuilder::new(SharedShape::capsule_y(
-            PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS,
-            PLAYER_COLLIDER_RADIUS - PLAYER_COLLIDER_OVERLAP,
-        ))
-        .position(Isometry::from_parts(
-            player_transform
-                .as_ref()
-                .map(|t| t.translation + PLAYER_COLLIDER_HEIGHT * 0.5 * Vec3::Y)
-                .unwrap_or_default()
-                .into(),
-            Default::default(),
-        ))
-        .build(),
-    );
-
-    // closure to generate vector to (attempt to) fix a penetration with a scene collider
-    // TODO perhaps store last collider position and move this to player dynamics?
-    // not sure ... that would be better for colliders vs other stuff than player
-    // but currently it uses pretty intimate knowledge of scene collider data
-    let depenetration_vector =
-        |scene_data: &mut SceneColliderData, translation: Vec3, toi: &ShapeCastHit| -> Vec3 {
-            // just use the bottom sphere of the player collider
-            let base_of_sphere = translation + PLAYER_COLLIDER_RADIUS * Vec3::Y;
-            let closest_point = match toi.status {
-                ShapeCastStatus::OutOfIterations | ShapeCastStatus::Converged => {
-                    Vec3::from(toi.witness1)
-                }
-                ShapeCastStatus::Failed | ShapeCastStatus::PenetratingOrWithinTargetDist => {
-                    scene_data.force_update();
-                    match scene_data.query_state.as_ref().unwrap().project_point(
-                        &scene_data.dummy_rapier_structs.1,
-                        &scene_data.collider_set,
-                        &base_of_sphere.into(),
-                        true,
-                        QueryFilter::default().predicate(&|h, _| scene_data.collider_enabled(h)),
-                    ) {
-                        Some((_, point)) => Vec3::from(point.point),
-                        None => translation,
-                    }
-                }
-            };
-            let fix_dir = base_of_sphere - closest_point;
-            let distance = (PLAYER_COLLIDER_RADIUS - fix_dir.length()).clamp(0.00, 1.0);
-            debug!(
-                "closest point: {}, dir: {fix_dir}, len: {distance}",
-                closest_point
-            );
-            (fix_dir.normalize_or_zero() * distance)
-                // constrain resulting position to above ground
-                .max(Vec3::new(
-                    f32::NEG_INFINITY,
-                    -translation.y,
-                    f32::NEG_INFINITY,
-                ))
-        };
-
-    for (container, collider, global_transform) in changed_colliders.iter() {
+    for (entity, container, collider, global_transform) in changed_colliders.iter() {
         let Ok(mut scene_data) = scene_data.get_mut(container.root) else {
             warn!("missing scene root for {container:?}");
             continue;
         };
 
-        let (maybe_original_transform, maybe_toi) = scene_data.update_collider_transform(
-            &collider.0,
-            global_transform,
-            if !T::is_trigger() && containing_scenes.contains(&container.root) {
-                Some(&player_collider_set)
-            } else {
-                None
-            },
-        );
+        let maybe_original_transform =
+            scene_data.update_collider_transform(&collider.0, global_transform);
 
         if let Some(original_transform) = maybe_original_transform {
-            if let Some(toi) = maybe_toi {
-                match toi.status {
-                    ShapeCastStatus::PenetratingOrWithinTargetDist => {
-                        // penetrating collider - use closest point to infer fix/depen direction
-                        debug!(
-                            "don't skip pen, player: {:?} [moving {:?}]",
-                            player_transform.as_ref().unwrap().translation,
-                            (&container.root, &collider.0),
-                        );
-                        let fix_vector = depenetration_vector(
-                            &mut scene_data,
-                            player_transform.as_ref().unwrap().translation,
-                            &toi,
-                        );
-                        player_transform.as_mut().unwrap().translation += fix_vector;
-                    }
-                    _ => {
-                        // get contact point at toi
-                        // use 0.9 cap to avoid clipping
-                        let ratio = toi.time_of_impact.min(0.9);
-                        let relative_hit_point = Vec3::from(toi.witness2);
-                        let (new_scale, new_rotation, new_translation) =
-                            global_transform.to_scale_rotation_translation();
-                        let transform_at_toi = Transform {
-                            translation: original_transform.translation * (1.0 - ratio)
-                                + new_translation * ratio,
-                            rotation: original_transform.rotation.lerp(new_rotation, ratio),
-                            // we use a unit scale because the scale is embedded in the collider mesh/support fn,
-                            // so the witness point is actually wrt a unit scale
-                            // we know that scale doesn't change because we can't shape-cast a non-constant shape anyway
-                            // TODO fix this somehow (stepping in the update? yuck tho)
-                            scale: Vec3::ONE,
-                        };
-                        let contact_at_toi = GlobalTransform::from(transform_at_toi)
-                            .transform_point(relative_hit_point);
-                        // get contact point at end
-                        // unit scale - see above
-                        let contact_at_end =
-                            global_transform.transform_point(relative_hit_point) / new_scale;
-
-                        // add diff as velocity or as motion?
-                        let req_translation = contact_at_end - contact_at_toi;
-                        let dot_w_normal1 = req_translation
-                            .normalize_or_zero()
-                            .dot(Vec3::from(toi.normal1));
-                        let dot_w_normal2 = req_translation
-                            .normalize_or_zero()
-                            .dot(Vec3::from(toi.normal2));
-                        if req_translation.length() > 1.0 {
-                            // disregard too large deltas as the collider probably just warped
-                            // TODO we could check this before updating based on translation?
-                            warn!("disregarding push due to large delta: {}, toi: {}, normal dot1: {}, 2: {}", req_translation, toi.time_of_impact, dot_w_normal1, dot_w_normal2);
-                            continue;
-                        }
-                        // add extra 0.01 due to character controller offset / collider size difference
-                        debug!(
-                            "old player: {:?}",
-                            player_transform.as_ref().unwrap().translation
-                        );
-                        player_transform.as_mut().unwrap().translation += req_translation
-                            .normalize_or_zero()
-                            * (req_translation.length() + PLAYER_COLLIDER_OVERLAP);
-                        debug!(
-                            "[{:?} - scale = {}] push {} = {} -> 1 = {}",
-                            collider.0, new_scale, ratio, contact_at_toi, contact_at_end
-                        );
-                        debug!("toi: {toi:?}");
-                        debug!(
-                            "new player: {:?}",
-                            player_transform.as_ref().unwrap().translation
-                        );
-
-                        // check for intersection and move out until safe
-                        let (_, player_collider) = player_collider_set.iter_mut().next().unwrap();
-                        player_collider.set_position(Isometry::from_parts(
-                            player_transform
-                                .as_ref()
-                                .map(|t| t.translation + Vec3::Y)
-                                .unwrap_or_default()
-                                .into(),
-                            Default::default(),
-                        ));
-                        let new_toi = scene_data
-                            .update_collider_transform(
-                                &collider.0,
-                                global_transform,
-                                Some(&player_collider_set),
-                            )
-                            .1;
-
-                        if let Some(new_toi) = new_toi {
-                            debug!(
-                                "update toi - can we fix it?: {:?}, player: {}",
-                                new_toi,
-                                player_transform.as_ref().unwrap().translation
-                            );
-                            let fix_vector = depenetration_vector(
-                                &mut scene_data,
-                                player_transform.as_ref().unwrap().translation,
-                                &new_toi,
-                            );
-                            debug!("fix: {fix_vector}");
-                            player_transform.as_mut().unwrap().translation += fix_vector;
-                        }
-                    }
-                }
-            }
+            commands
+                .entity(entity)
+                .try_insert(PreviousColliderTransform(GlobalTransform::from(
+                    original_transform,
+                )));
+        } else {
+            commands
+                .entity(entity)
+                .try_remove::<PreviousColliderTransform>();
         }
     }
 }

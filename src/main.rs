@@ -44,7 +44,10 @@ use scene_material::SceneBoundPlugin;
 use scene_runner::{
     automatic_testing::AutomaticTestingPlugin,
     initialize_scene::{PortableScenes, PortableSource, TestingData, PARCEL_SIZE},
-    update_world::{mesh_collider::GroundCollider, NoGltf},
+    update_world::{
+        avatar_movement::{AvatarMovementPlugin, GroundCollider},
+        NoGltf,
+    },
     OutOfWorld, SceneRunnerPlugin,
 };
 
@@ -449,7 +452,8 @@ fn main() {
         .add_plugins(WorldUiPlugin)
         .add_plugins(TextureCameraPlugin)
         .add_plugins(ImageProcessingPlugin)
-        .add_plugins(SystemBridgePlugin { bare: false });
+        .add_plugins(SystemBridgePlugin { bare: false })
+        .add_plugins(AvatarMovementPlugin);
 
     if !is_preview {
         app.add_plugins(DclImposterPlugin {

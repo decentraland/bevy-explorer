@@ -23,12 +23,9 @@ use dynamics::{
     jump_cmd, no_clip, speed_cmd, JumpCommand, NoClipCommand, SpeedCommand, UserClipping,
 };
 use scene_runner::{
-    update_scene::pointer_lock::update_pointer_lock,
-    update_world::{
-        gltf_container::GltfLinkSet,
-        transform_and_parent::{parent_position_sync, AvatarAttachStage, SceneProxyStage},
-    },
-    OutOfWorld,
+    OutOfWorld, update_scene::pointer_lock::update_pointer_lock, update_world::{
+        avatar_movement, gltf_container::GltfLinkSet, transform_and_parent::{AvatarAttachStage, SceneProxyStage, parent_position_sync}
+    }
 };
 use tween::update_system_tween;
 
@@ -56,16 +53,17 @@ impl Plugin for UserInputPlugin {
         app.add_systems(
             PostUpdate,
             (
-                update_user_position
-                    .after(anim_last_system!())
-                    .after(GltfLinkSet)
-                    .before(parent_position_sync::<AvatarAttachStage>)
-                    .before(parent_position_sync::<SceneProxyStage>)
-                    .before(TransformSystem::TransformPropagate),
+                // update_user_position
+                //     .after(anim_last_system!())
+                //     .after(GltfLinkSet)
+                //     .before(parent_position_sync::<AvatarAttachStage>)
+                //     .before(parent_position_sync::<SceneProxyStage>)
+                //     .before(TransformSystem::TransformPropagate),
                 update_camera_position
                     .after(anim_last_system!())
                     .after(GltfLinkSet)
                     .after(update_user_position)
+                    .after(avatar_movement::apply_movement)
                     .after(parent_position_sync::<AvatarAttachStage>)
                     .before(parent_position_sync::<SceneProxyStage>)
                     .before(TransformSystem::TransformPropagate)

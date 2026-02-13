@@ -38,7 +38,7 @@ use restricted_actions::RestrictedActionsPlugin;
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
     initialize_scene::ScenePointers, permissions::PermissionManager,
-    update_world::mesh_collider::GroundCollider, OutOfWorld, SceneRunnerPlugin,
+    update_world::avatar_movement::GroundCollider, OutOfWorld, SceneRunnerPlugin,
 };
 
 use ipfs::{map_realm_name, CurrentRealm, IpfsIoPlugin};
