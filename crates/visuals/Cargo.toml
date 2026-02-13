@@ -9,6 +9,8 @@ edition = "2021"
 common = { workspace = true }
 console = { workspace = true }
 scene_runner = { workspace = true }
+dcl = { workspace = true }
+dcl_component = { workspace = true }
 
 bevy = { workspace = true }
 bevy_atmosphere = { git = "https://github.com/robtfm/bevy_atmosphere", branch = "0.16-2" }

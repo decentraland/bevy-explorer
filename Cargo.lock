@@ -12443,6 +12443,8 @@ dependencies = [
  "clap",
  "common",
  "console",
+ "dcl",
+ "dcl_component",
  "noise",
  "scene_runner",
  "web-time",
