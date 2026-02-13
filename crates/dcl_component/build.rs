@@ -58,6 +58,8 @@ fn gen_sdk_components() -> Result<()> {
         "trigger_area",
         "trigger_area_result",
         "gltf_node_modifiers",
+        "avatar_movement_info",
+        "avatar_movement",
     ];
 
     let mut sources = components

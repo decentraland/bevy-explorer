@@ -78,7 +78,7 @@ fn update_avatar_colliders(
             ));
             colliders
                 .collider_data
-                .update_collider_transform(&id, &transform, None);
+                .update_collider_transform(&id, &transform);
         } else {
             // collider didn't exist, make a new one
             let collider = ColliderBuilder::new(SharedShape::capsule_y(

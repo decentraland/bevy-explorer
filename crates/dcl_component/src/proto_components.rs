@@ -123,6 +123,8 @@ impl DclProtoComponent for sdk::components::PbInputModifier {}
 impl DclProtoComponent for sdk::components::PbTriggerArea {}
 impl DclProtoComponent for sdk::components::PbTriggerAreaResult {}
 impl DclProtoComponent for sdk::components::PbGltfNodeModifiers {}
+impl DclProtoComponent for sdk::components::PbAvatarMovement {}
+impl DclProtoComponent for sdk::components::PbAvatarMovementInfo {}
 
 // VECTOR2 conversions
 impl Copy for common::Vector2 {}

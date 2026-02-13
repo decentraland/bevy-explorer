@@ -221,7 +221,7 @@ fn update_foreign_user_actual_position(
                         scene_datas.get_mut(scene)
                     {
                         if let Some(ground_height) = collider_data
-                            .get_groundheight(context.last_update_frame, actual.translation)
+                            .get_ground(context.last_update_frame, actual.translation)
                             .map(|(h, _)| h)
                         {
                             dynamic_state.ground_height =

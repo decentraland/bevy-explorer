@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package decentraland.sdk.components;
+
+import "decentraland/sdk/components/common/id.proto";
+import "decentraland/common/vectors.proto";
+
+option (common.ecs_component_id) = 1500;
+
+message PBAvatarMovementInfo {
+  float step_time = 1;                                      // the length of time the current step velocity will apply for
+  float previous_step_time = 2;                             // the length of time the previous step velocity applied for
+  decentraland.common.Vector3 requested_velocity = 3;       // the velocity requested for the previous frame
+  decentraland.common.Vector3 actual_velocity = 4;          // the resulting velocity taking collisions into account
+  decentraland.common.Vector3 external_velocity = 5;        // the velocity imparted by movement of the "ground" platform or pushing from other moving colliders
+}

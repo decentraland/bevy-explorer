@@ -61,7 +61,10 @@ use common::{
 
 use scene_runner::{
     renderer_context::RendererSceneContext,
-    update_world::mesh_collider::{ColliderId, GroundCollider, SceneColliderData},
+    update_world::{
+        avatar_movement::GroundCollider,
+        mesh_collider::{ColliderId, SceneColliderData},
+    },
     ContainingScene, OutOfWorld,
 };
 
@@ -240,7 +243,7 @@ pub fn update_user_position(
                         .position()
                         .translation,
                 );
-                collider_data.update_collider_transform(&collider, &new_global_transform, None);
+                collider_data.update_collider_transform(&collider, &new_global_transform);
                 let new_cpos = Vec3::from(
                     collider_data
                         .get_collider(&collider)
@@ -350,7 +353,7 @@ pub fn update_user_position(
             continue;
         };
         if let Some((height, collider)) =
-            collider_data.get_groundheight(context.last_update_frame, transform.translation)
+            collider_data.get_ground(context.last_update_frame, transform.translation)
         {
             if height < dynamic_state.ground_height {
                 dynamic_state.ground_height = height;
