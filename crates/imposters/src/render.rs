@@ -35,7 +35,7 @@ use crate::{
     floor_imposter::{FloorImposter, FloorImposterLoader},
     imposter_mesh::ImposterMesh,
     imposter_spec::{floor_path, load_imposter, texture_path, BakedScene, ImposterSpec},
-    DclImposterPlugin, ImpostersAllowed,
+    DclImposterPlugin,
 };
 
 pub struct DclImposterRenderPlugin;
@@ -58,11 +58,8 @@ impl Plugin for DclImposterRenderPlugin {
         .add_systems(
             Update,
             (
-                purge_imposters.run_if(
-                    resource_exists_and_changed::<CurrentRealm>.or(scene_imposters_is_empty),
-                ),
                 focus_imposters,
-                spawn_imposters.run_if(in_state(ImpostersAllowed::Allowed)),
+                spawn_imposters,
                 load_imposters,
                 debug_write_imposters,
             )
@@ -197,25 +194,7 @@ pub fn focus_imposters(
     } else {
         (cam_pos.distance(origin) * 0.5, 0.5)
     };
-    trace!("focus: {focus:?}");
-}
-
-fn scene_imposters_is_empty(config: Res<AppConfig>) -> bool {
-    config.scene_imposter_distances.is_empty()
-}
-
-fn purge_imposters(
-    mut commands: Commands,
-    current_imposters: Query<(Entity, &SceneImposter)>,
-    mut manager: ImposterSpecManager,
-) {
-    for (entity, _) in &current_imposters {
-        if let Ok(mut commands) = commands.get_entity(entity) {
-            commands.despawn();
-        }
-    }
-    manager.clear();
-    debug!("purge");
+    debug!("focus: {focus:?}");
 }
 
 pub fn spawn_imposters(
@@ -224,12 +203,26 @@ pub fn spawn_imposters(
     focus: Res<ImposterFocus>,
     mut required: Local<HashMap<(IVec2, usize), bool>>,
     current_imposters: Query<(Entity, &SceneImposter)>,
+    current_realm: Res<CurrentRealm>,
     ingredients: Res<BakingIngredients>,
     live_scenes: Res<LiveScenes>,
     scenes: Query<&RendererSceneContext, Without<SceneLoading>>,
     current_imposter_scene: Res<CurrentImposterScene>,
     mut manager: ImposterSpecManager,
 ) {
+    if current_realm.is_changed() || config.scene_imposter_distances.is_empty() {
+        for (entity, _) in &current_imposters {
+            if let Ok(mut commands) = commands.get_entity(entity) {
+                commands.despawn();
+            }
+        }
+
+        manager.clear();
+
+        debug!("purge");
+        return;
+    }
+
     // skip if no realm
     if manager.pointers.min() == IVec2::MAX {
         return;
@@ -910,7 +903,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
             }
         }
 
-        trace!("{} requested", requested_loading_handles.len());
+        debug!("{} requested", requested_loading_handles.len());
 
         // start loading available local assets
         let mut new_loading_handles = HashMap::default();
@@ -928,7 +921,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         requests.sort_by_key(|(_, req)| FloatOrd(-req.benefit));
 
         #[cfg(debug_assertions)]
-        trace!(
+        debug!(
             "candidates: {:?}",
             requests
                 .iter()
@@ -973,7 +966,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         );
         let count2 = new_loading_handles.len();
         *loading_handles = std::mem::take(&mut new_loading_handles);
-        trace!("loading {} / {}", count, count2);
+        debug!("loading {} / {}", count, count2);
 
         if self.plugin.download {
             // count current downloads
