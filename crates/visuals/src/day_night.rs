@@ -216,8 +216,9 @@ fn push_time_of_day_from_time_skip(
     }
 }
 
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn push_time_of_day_from_running_clock(
-    time_keeper: Single<&RunningClock, (With<TimeKeeper>, Without<SceneTime>)>,
+    time_keeper: Single<&RunningClock, (With<TimeKeeper>, Without<SceneTime>, Without<SkyboxTime>)>,
     mut time_of_day: ResMut<TimeOfDay>,
 ) {
     trace!("Pushing time from RunningClock");
