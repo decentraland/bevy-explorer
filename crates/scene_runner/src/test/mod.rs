@@ -139,8 +139,6 @@ fn init_test_app(entity_json: &str) -> App {
     app.init_resource::<SceneGlobalLight>();
     app.insert_resource(TimeOfDay {
         time: 10.0 * 3600.0,
-        target_time: None,
-        speed: 12.0,
     });
     app.add_event::<RpcCall>();
     app.add_event::<ScrollTargetEvent>();
