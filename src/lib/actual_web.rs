@@ -17,9 +17,6 @@ use bevy::{
     winit::{UpdateMode, WinitSettings},
 };
 use bevy_console::ConsoleCommand;
-use dcl_wasm::init_runtime;
-use tracing::Level;
-
 use collectibles::CollectiblesPlugin;
 use common::{
     inputs::InputMap,
@@ -31,8 +28,10 @@ use common::{
     },
     util::{TaskCompat, TaskExt, TryPushChildrenEx, UtilsPlugin},
 };
+use dcl_wasm::init_runtime;
 use image_processing::ImageProcessingPlugin;
 use imposters::DclImposterPlugin;
+use notifications::plugin::NotificationsPlugin;
 use restricted_actions::{lookup_portable, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
@@ -40,6 +39,7 @@ use scene_runner::{
     update_world::mesh_collider::GroundCollider,
     vec3_to_parcel, OutOfWorld, SceneRunnerPlugin,
 };
+use tracing::Level;
 
 use av::AVPlayerPlugin;
 use avatar::AvatarPlugin;
@@ -283,6 +283,7 @@ fn main_inner(
         .add_plugins(WorldUiPlugin)
         .add_plugins(TextureCameraPlugin)
         .add_plugins(ImageProcessingPlugin)
+        .add_plugins(NotificationsPlugin)
         .add_plugins(SystemBridgePlugin { bare: false });
 
     if !is_preview {
