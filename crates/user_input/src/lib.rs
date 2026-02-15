@@ -23,9 +23,13 @@ use dynamics::{
     jump_cmd, no_clip, speed_cmd, JumpCommand, NoClipCommand, SpeedCommand, UserClipping,
 };
 use scene_runner::{
-    OutOfWorld, update_scene::pointer_lock::update_pointer_lock, update_world::{
-        avatar_movement, gltf_container::GltfLinkSet, transform_and_parent::{AvatarAttachStage, SceneProxyStage, parent_position_sync}
-    }
+    update_scene::pointer_lock::update_pointer_lock,
+    update_world::{
+        avatar_movement,
+        gltf_container::GltfLinkSet,
+        transform_and_parent::{parent_position_sync, AvatarAttachStage, SceneProxyStage},
+    },
+    OutOfWorld,
 };
 use tween::update_system_tween;
 

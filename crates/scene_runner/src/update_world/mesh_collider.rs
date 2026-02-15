@@ -22,11 +22,11 @@ use crate::{
     update_world::{
         gltf_container::mesh_to_parry_shape, mesh_renderer::truncated_cone::TruncatedCone,
     },
-    ContainerEntity, DeletedSceneEntities, PrimaryUser, RendererSceneContext,
-    SceneLoopSchedule, SceneSets,
+    ContainerEntity, DeletedSceneEntities, PrimaryUser, RendererSceneContext, SceneLoopSchedule,
+    SceneSets,
 };
 use common::{
-    dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
+    dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_RADIUS},
     sets::SceneLoopSets,
 };
 use console::DoAddConsoleCommand;
@@ -474,9 +474,9 @@ impl SceneColliderData {
         let contact = self.query_state.as_ref().unwrap().cast_shape(
             &self.dummy_rapier_structs.1,
             &self.collider_set,
-            &(origin + Vec3::Y * (PLAYER_COLLIDER_RADIUS - PLAYER_COLLIDER_OVERLAP)).into(),
+            &(origin + Vec3::Y * PLAYER_COLLIDER_RADIUS).into(),
             &(-Vec3::Y).into(),
-            &Ball::new(PLAYER_COLLIDER_RADIUS - PLAYER_COLLIDER_OVERLAP),
+            &Ball::new(PLAYER_COLLIDER_RADIUS),
             ShapeCastOptions {
                 max_time_of_impact: 10.0,
                 target_distance: 0.0,
@@ -740,6 +740,7 @@ impl SceneColliderData {
             include_sensors,
             ignore.iter().collect(),
             false,
+            0.0,
         ) {
             ignore.insert(result.id.clone());
             results.push(result);
@@ -759,12 +760,13 @@ impl SceneColliderData {
         include_sensors: bool,
         specific_colliders: HashSet<&ColliderId>,
         include_specific: bool,
+        size_adjust: f32,
     ) -> Option<RaycastResult> {
         self.update_pipeline(scene_time);
 
         let avatar_shape = Capsule::new_y(
             PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS,
-            PLAYER_COLLIDER_RADIUS,
+            PLAYER_COLLIDER_RADIUS + size_adjust,
         );
 
         // collect colliders we started inside of, we must omit these from the query
@@ -822,7 +824,7 @@ impl SceneColliderData {
 
         result.map(|(handle, intersection)| RaycastResult {
             id: self.get_id(handle).unwrap().clone(),
-            toi: intersection.time_of_impact,
+            toi: intersection.time_of_impact / distance,
             normal: Vec3::from(intersection.normal1),
             face: None,
             position: Vec3::from(intersection.witness1),
@@ -830,7 +832,7 @@ impl SceneColliderData {
     }
 
     fn avatar_intersections(
-        &mut self, 
+        &mut self,
         scene_time: u32,
         translation: Vec3,
         size_adjust: f32,
@@ -853,10 +855,15 @@ impl SceneColliderData {
                 Group::from_bits_truncate(ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK),
             )),
             |h| cb(self, h),
-        );        
+        );
     }
 
-    pub fn avatar_collisions(&mut self, scene_time: u32, translation: Vec3, size_adjust: f32) -> HashSet<ColliderId> {
+    pub fn avatar_collisions(
+        &mut self,
+        scene_time: u32,
+        translation: Vec3,
+        size_adjust: f32,
+    ) -> HashSet<ColliderId> {
         let mut results = HashSet::new();
         self.avatar_intersections(scene_time, translation, size_adjust, |slf, h| {
             results.insert(slf.get_id(h).unwrap().clone());
@@ -871,35 +878,31 @@ impl SceneColliderData {
             (Vec3::Y * PLAYER_COLLIDER_RADIUS).into(),
             (Vec3::Y * (PLAYER_COLLIDER_HEIGHT - PLAYER_COLLIDER_RADIUS)).into(),
         );
-        let rapier_avatar_position = (translation + Vec3::Y * PLAYER_COLLIDER_HEIGHT * 0.5).into();
 
         let mut constraint_min = Vec3::NEG_INFINITY;
         let mut constraint_max = Vec3::INFINITY;
 
-        self.avatar_intersections(
-            scene_time,
-            translation,
-            0.0,
-            |slf, h| {
-                let collided = slf.collider_set.get(h).unwrap();
-                let result = rapier3d::parry::query::closest_points(
-                    &rapier_avatar_position,
-                    &avatar_inner_segment,
-                    collided.position(),
-                    collided.shape(),
-                    PLAYER_COLLIDER_RADIUS,
-                );
+        self.avatar_intersections(scene_time, translation, 0.0, |slf, h| {
+            let collided = slf.collider_set.get(h).unwrap();
+            let result = rapier3d::parry::query::closest_points(
+                &translation.into(),
+                &avatar_inner_segment,
+                collided.position(),
+                collided.shape(),
+                PLAYER_COLLIDER_RADIUS,
+            );
 
-                let Ok(result) = result else {
-                    panic!("{result:?}");
-                };
+            let Ok(result) = result else {
+                panic!("{result:?}");
+            };
 
-                match result {
-                    rapier3d::parry::query::ClosestPoints::Intersecting => (),
-                    rapier3d::parry::query::ClosestPoints::WithinMargin(opoint, opoint1) => {
-                        let offset = Vec3::from(opoint1 - opoint);
+            match result {
+                rapier3d::parry::query::ClosestPoints::Intersecting => (),
+                rapier3d::parry::query::ClosestPoints::WithinMargin(opoint, opoint1) => {
+                    let offset = Vec3::from(opoint1 - opoint);
+                    if offset != Vec3::ZERO {
                         let required_offset = offset.normalize() * PLAYER_COLLIDER_RADIUS;
-                        let correction = required_offset - offset;
+                        let correction = offset - required_offset;
 
                         let mask_pos = correction.cmpgt(Vec3::ZERO);
                         let active_pos = Vec3::select(mask_pos, correction, Vec3::NEG_INFINITY);
@@ -909,15 +912,15 @@ impl SceneColliderData {
                         let active_neg = Vec3::select(mask_neg, correction, Vec3::INFINITY);
                         constraint_max = constraint_max.min(active_neg);
                     }
-                    rapier3d::parry::query::ClosestPoints::Disjoint => (),
                 }
+                rapier3d::parry::query::ClosestPoints::Disjoint => (),
+            }
 
-                true
-            },
-        );
+            true
+        });
 
         (constraint_min, constraint_max)
-    }    
+    }
 
     pub fn closest_point<F: Fn(&ColliderId) -> bool>(
         &mut self,
@@ -1059,7 +1062,7 @@ fn update_scene_collider_data(
             let floor_panel = ColliderBuilder::cuboid(8.0, 8.0, 8.0)
                 .translation(
                     ((parcel.as_vec2() + Vec2::splat(0.5)) * Vec2::new(16.0, -16.0))
-                        .extend(-8.0 + PLAYER_COLLIDER_OVERLAP)
+                        .extend(-8.0)
                         .xzy()
                         .into(),
                 )

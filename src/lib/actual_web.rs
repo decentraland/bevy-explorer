@@ -37,7 +37,7 @@ use restricted_actions::{lookup_portable, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
     initialize_scene::{PortableScenes, PortableSource, TestingData},
-    update_world::mesh_collider::GroundCollider,
+    update_world::avatar_movement::GroundCollider,
     vec3_to_parcel, OutOfWorld, SceneRunnerPlugin,
 };
 

@@ -2,7 +2,10 @@ use std::f32::consts::TAU;
 
 use bevy::{platform::collections::HashMap, prelude::*};
 use common::{
-    anim_last_system, dynamics::{PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS, PLAYER_GROUND_THRESHOLD}, sets::SceneSets, structs::{AvatarDynamicState, PrimaryPlayerRes, PrimaryUser}
+    anim_last_system,
+    dynamics::{PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS, PLAYER_GROUND_THRESHOLD},
+    sets::SceneSets,
+    structs::{AvatarDynamicState, PrimaryPlayerRes, PrimaryUser},
 };
 use dcl::interface::ComponentPosition;
 use dcl_component::{
@@ -14,11 +17,17 @@ use dcl_component::{
 };
 
 use crate::{
-    ContainingScene, SceneEntity, renderer_context::RendererSceneContext, update_world::{
-        AddCrdtInterfaceExt, gltf_container::GltfLinkSet, mesh_collider::{
-            ColliderId, CtCollider, GROUND_COLLISION_MASK, PreviousColliderTransform, SceneColliderData, update_collider_transforms
-        }, transform_and_parent::{AvatarAttachStage, SceneProxyStage, parent_position_sync}
-    }
+    renderer_context::RendererSceneContext,
+    update_world::{
+        gltf_container::GltfLinkSet,
+        mesh_collider::{
+            update_collider_transforms, ColliderId, CtCollider, PreviousColliderTransform,
+            SceneColliderData, GROUND_COLLISION_MASK,
+        },
+        transform_and_parent::{parent_position_sync, AvatarAttachStage, SceneProxyStage},
+        AddCrdtInterfaceExt,
+    },
+    ContainingScene, SceneEntity,
 };
 
 pub struct AvatarMovementPlugin;
@@ -187,8 +196,11 @@ pub fn apply_movement(
     let disabled = scenes
         .iter_mut()
         .flat_map(|(scene, ctx, mut collider_data)| {
-            let results =
-                collider_data.avatar_collisions(ctx.last_update_frame, transform.translation, -PLAYER_COLLIDER_OVERLAP);
+            let results = collider_data.avatar_collisions(
+                ctx.last_update_frame,
+                transform.translation,
+                -PLAYER_COLLIDER_OVERLAP,
+            );
             if results.is_empty() {
                 None
             } else {
@@ -200,10 +212,12 @@ pub fn apply_movement(
     let mut position = transform.translation;
     let mut time = time.delta_secs();
     let mut velocity = movement.movement.velocity;
+    let mut steps = 0;
 
-    while time > 0.0 {
+    while steps < 6 && time > 0.0 {
+        steps += 1;
         let mut step_time = time;
-        let mut next_vel = velocity;
+        let mut contact_normal = Vec3::ZERO;
         for (e, ctx, mut collider_data) in scenes.iter_mut() {
             if let Some(hit) = collider_data.cast_avatar_nearest(
                 ctx.last_update_frame,
@@ -218,15 +232,16 @@ pub fn apply_movement(
                     .map(|d| d.iter().collect())
                     .unwrap_or_default(),
                 false,
+                -PLAYER_COLLIDER_OVERLAP,
             ) {
-                step_time = hit.toi * step_time;
-                next_vel = velocity - (velocity.dot(hit.normal) * hit.normal);
+                step_time = hit.toi * time;
+                contact_normal = hit.normal;
             }
         }
 
-        position += velocity * step_time;
+        position += velocity * step_time + contact_normal * PLAYER_COLLIDER_OVERLAP;
+        velocity = velocity - (velocity.dot(contact_normal) * contact_normal);
         time -= step_time;
-        velocity = next_vel;
     }
 
     transform.translation = position;
@@ -299,7 +314,7 @@ fn apply_ground_collider_movement(
 
         // calculate updated translation
         let player_global_transform = GlobalTransform::from(*transform);
-        let relative_position = player_global_transform.reparented_to(&old_transform);
+        let relative_position = player_global_transform.reparented_to(old_transform);
         let new_transform = new_global_transform.mul_transform(relative_position);
         let new_translation = new_transform.translation();
         transform.translation = new_translation;

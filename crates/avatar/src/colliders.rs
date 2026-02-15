@@ -4,7 +4,7 @@ use bevy::{
     prelude::*,
 };
 use common::{
-    dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
+    dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_RADIUS},
     inputs::{CommonInputAction, SystemAction},
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
@@ -83,7 +83,7 @@ fn update_avatar_colliders(
             // collider didn't exist, make a new one
             let collider = ColliderBuilder::new(SharedShape::capsule_y(
                 PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS,
-                PLAYER_COLLIDER_RADIUS - PLAYER_COLLIDER_OVERLAP,
+                PLAYER_COLLIDER_RADIUS,
             ))
             .position(Isometry::from_parts(
                 (transform.translation() + PLAYER_COLLIDER_HEIGHT * 0.5 * Vec3::Y).into(),
