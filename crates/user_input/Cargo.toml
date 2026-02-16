@@ -15,5 +15,5 @@ console = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }
-rapier3d = { workspace = true }
+rapier3d-f64 = { workspace = true }
 clap = { workspace = true }

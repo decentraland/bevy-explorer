@@ -49,7 +49,6 @@ use bevy::{
     prelude::*,
 };
 use bevy_console::ConsoleCommand;
-use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 
 use common::{
     dynamics::{

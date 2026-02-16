@@ -196,10 +196,9 @@ pub fn apply_movement(
     let disabled = scenes
         .iter_mut()
         .flat_map(|(scene, ctx, mut collider_data)| {
-            let results = collider_data.avatar_collisions(
+            let results = collider_data.avatar_central_collisions(
                 ctx.last_update_frame,
                 transform.translation,
-                -PLAYER_COLLIDER_OVERLAP,
             );
             if results.is_empty() {
                 None

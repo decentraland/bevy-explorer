@@ -29,5 +29,5 @@ anyhow = { workspace = true }
 clap = { workspace = true }
 bevy_console = { workspace = true }
 tokio = { workspace = true }
-rapier3d = { workspace = true }
+rapier3d-f64 = { workspace = true }
 bevy_dui = { workspace = true }

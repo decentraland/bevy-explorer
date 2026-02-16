@@ -37,7 +37,7 @@ bimap = { workspace = true }
 nalgebra = { version = "0.33.2", features = ["convert-glam029"] }
 futures-lite = { workspace = true }
 once_cell = { workspace = true }
-rapier3d = { workspace = true }
+rapier3d-f64 = { workspace = true }
 urlencoding = { workspace = true }
 itertools = { workspace = true }
 analytics = { workspace = true }
