@@ -333,7 +333,7 @@ impl ScaleShapeExt for dyn Shape {
                 SharedShape::compound(scaled_items)
             }
             TypedShape::TriMesh(trimesh) => {
-                SharedShape::new(trimesh.clone().scaled(&req_scale.into()))
+                SharedShape::new(trimesh.clone().scaled(&req_scale))
             }
             _ => panic!(),
         }
