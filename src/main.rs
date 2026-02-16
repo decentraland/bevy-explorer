@@ -61,7 +61,7 @@ use system_ui::{crash_report::CrashReportPlugin, SystemUiPlugin};
 use texture_camera::TextureCameraPlugin;
 use tween::TweenPlugin;
 use ui_core::UiCorePlugin;
-use user_input::{UserInputPlugin, avatar_movement::{AvatarMovementPlugin, GroundCollider}};
+use user_input::{UserInputPlugin, avatar_movement::GroundCollider};
 use uuid::Uuid;
 use visuals::VisualsPlugin;
 use wallet::WalletPlugin;
@@ -449,8 +449,7 @@ fn main() {
         .add_plugins(WorldUiPlugin)
         .add_plugins(TextureCameraPlugin)
         .add_plugins(ImageProcessingPlugin)
-        .add_plugins(SystemBridgePlugin { bare: false })
-        .add_plugins(AvatarMovementPlugin);
+        .add_plugins(SystemBridgePlugin { bare: false });
 
     if !is_preview {
         app.add_plugins(DclImposterPlugin {
