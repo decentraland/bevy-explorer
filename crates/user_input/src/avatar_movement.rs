@@ -2,9 +2,7 @@ use std::f32::consts::TAU;
 
 use bevy::{platform::collections::HashMap, prelude::*};
 use common::{
-    anim_last_system,
     dynamics::{PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS, PLAYER_GROUND_THRESHOLD},
-    sets::SceneSets,
     structs::{AvatarDynamicState, PrimaryPlayerRes, PrimaryUser},
 };
 use dcl::interface::ComponentPosition;
@@ -16,15 +14,13 @@ use dcl_component::{
     SceneComponentId, SceneEntityId,
 };
 
-use crate::{
+use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::{
-        gltf_container::GltfLinkSet,
         mesh_collider::{
-            update_collider_transforms, ColliderId, CtCollider, PreviousColliderTransform,
-            SceneColliderData, GROUND_COLLISION_MASK,
+            ColliderId, PreviousColliderTransform, SceneColliderData, GROUND_COLLISION_MASK,
         },
-        transform_and_parent::{parent_position_sync, AvatarAttachStage, SceneProxyStage},
+        transform_and_parent::PostUpdateSets,
         AddCrdtInterfaceExt,
     },
     ContainingScene, SceneEntity,
@@ -41,34 +37,15 @@ impl Plugin for AvatarMovementPlugin {
 
         app.add_systems(
             PostUpdate,
-            (pick_movement, apply_movement)
-                .chain()
-                .after(anim_last_system!())
-                .after(GltfLinkSet)
-                .before(parent_position_sync::<AvatarAttachStage>)
-                .before(parent_position_sync::<SceneProxyStage>)
-                .before(TransformSystem::TransformPropagate),
-        );
-
-        // record ground
-        app.add_systems(
-            Update,
-            (record_ground_collider)
-                .in_set(SceneSets::PostInit)
-                .before(update_collider_transforms::<CtCollider>),
-        );
-
-        // resolve position
-        app.add_systems(
-            Update,
             (
+                pick_movement,
+                apply_movement,
+                record_ground_collider,
                 apply_ground_collider_movement,
-                // apply_pseudo_ground_collider_movement,
                 resolve_collisions,
             )
                 .chain()
-                .in_set(SceneSets::PostInit)
-                .after(update_collider_transforms::<CtCollider>),
+                .in_set(PostUpdateSets::PlayerUpdate),
         );
     }
 }
@@ -196,10 +173,8 @@ pub fn apply_movement(
     let disabled = scenes
         .iter_mut()
         .flat_map(|(scene, ctx, mut collider_data)| {
-            let results = collider_data.avatar_central_collisions(
-                ctx.last_update_frame,
-                transform.translation,
-            );
+            let results = collider_data
+                .avatar_central_collisions(ctx.last_update_frame, transform.translation);
             if results.is_empty() {
                 None
             } else {

@@ -34,7 +34,6 @@ use super::{DeletedSceneEntities, RendererSceneContext, SceneLoopSchedule, Scene
 
 pub mod animation;
 pub mod avatar_modifier_area;
-pub mod avatar_movement;
 pub mod billboard;
 pub mod camera_mode_area;
 pub mod gltf_container;

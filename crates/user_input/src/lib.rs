@@ -1,39 +1,32 @@
+pub mod avatar_movement;
 pub mod camera;
-pub mod dynamics;
 pub mod player_input;
 
 use bevy::{
-    app::Propagate, ecs::query::Has, prelude::*, render::{camera::CameraUpdateSystem, view::RenderLayers}, transform::TransformSystem
+    app::Propagate,
+    ecs::query::Has,
+    prelude::*,
+    render::view::RenderLayers,
 };
 
+use bevy_console::ConsoleCommand;
 use camera::update_cursor_lock;
 use common::{
-    anim_last_system,
     sets::SceneSets,
     structs::{
         CursorLocks, PlayerModifiers, PrimaryCamera, PrimaryUser, PRIMARY_AVATAR_LIGHT_LAYER_INDEX,
     },
 };
 use console::DoAddConsoleCommand;
-use dynamics::{
-    jump_cmd, no_clip, speed_cmd, JumpCommand, NoClipCommand, SpeedCommand, UserClipping,
-};
 use scene_runner::{
     update_scene::pointer_lock::update_pointer_lock,
-    update_world::{
-        avatar_movement,
-        gltf_container::GltfLinkSet,
-        transform_and_parent::{parent_position_sync, AvatarAttachStage, SceneProxyStage},
-    },
+    update_world::{transform_and_parent::PostUpdateSets},
     OutOfWorld,
 };
-use tween::update_system_tween;
 
-use self::{
-    camera::{update_camera, update_camera_position},
-    // dynamics::update_user_position,
-    player_input::update_user_velocity,
-};
+use crate::avatar_movement::AvatarMovementPlugin;
+
+use self::camera::{update_camera, update_camera_position};
 
 static TRANSITION_TIME: f32 = 0.5;
 
@@ -42,9 +35,10 @@ pub struct UserInputPlugin;
 
 impl Plugin for UserInputPlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(AvatarMovementPlugin);
         app.add_systems(
             Update,
-            (update_user_velocity, update_camera)
+            update_camera
                 .chain()
                 .in_set(SceneSets::Input)
                 .after(update_pointer_lock),
@@ -53,24 +47,10 @@ impl Plugin for UserInputPlugin {
         app.add_systems(
             PostUpdate,
             (
-                // update_user_position
-                //     .after(anim_last_system!())
-                //     .after(GltfLinkSet)
-                //     .before(parent_position_sync::<AvatarAttachStage>)
-                //     .before(parent_position_sync::<SceneProxyStage>)
-                //     .before(TransformSystem::TransformPropagate),
-                update_camera_position
-                    .after(anim_last_system!())
-                    .after(GltfLinkSet)
-                    // .after(update_user_position)
-                    .after(avatar_movement::apply_movement)
-                    .after(parent_position_sync::<AvatarAttachStage>)
-                    .before(parent_position_sync::<SceneProxyStage>)
-                    .before(TransformSystem::TransformPropagate)
-                    .before(CameraUpdateSystem)
-                    .before(update_system_tween),
-                update_cursor_lock.after(update_camera_position),
-            ),
+                update_camera_position.in_set(PostUpdateSets::CameraUpdate),
+                update_cursor_lock,
+            )
+                .chain(),
         );
         app.insert_resource(UserClipping(true))
             .init_resource::<CursorLocks>();
@@ -127,5 +107,68 @@ fn manage_player_visibility(
                 .with(0)
                 .without(PRIMARY_AVATAR_LIGHT_LAYER_INDEX);
         }
+    }
+}
+
+#[derive(Resource)]
+pub struct UserClipping(pub bool);
+
+// turn clipping on/off
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/idnoclip")]
+pub(crate) struct NoClipCommand {
+    clip: Option<bool>,
+}
+
+pub(crate) fn no_clip(mut input: ConsoleCommand<NoClipCommand>, mut clip: ResMut<UserClipping>) {
+    if let Some(Ok(command)) = input.take() {
+        let new_state = command.clip.unwrap_or(!clip.0);
+        clip.0 = new_state;
+        input.reply_ok(format!("clipping set to {}", clip.0));
+    }
+}
+
+// set speed and friction
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/speed")]
+pub(crate) struct SpeedCommand {
+    run: f32,
+    friction: f32,
+}
+
+pub(crate) fn speed_cmd(
+    mut input: ConsoleCommand<SpeedCommand>,
+    mut user: Query<&mut PrimaryUser>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let mut user = user.single_mut().unwrap();
+        user.run_speed = command.run;
+        user.friction = command.friction;
+        input.reply_ok(format!(
+            "run speed: {}, friction: {}",
+            command.run, command.friction
+        ));
+    }
+}
+
+// set jump height, gravity, max fall speed
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/jump")]
+pub(crate) struct JumpCommand {
+    jump_height: f32,
+    gravity: f32,
+    fall_speed: f32,
+}
+
+pub(crate) fn jump_cmd(mut input: ConsoleCommand<JumpCommand>, mut user: Query<&mut PrimaryUser>) {
+    if let Some(Ok(command)) = input.take() {
+        let mut user = user.single_mut().unwrap();
+        user.jump_height = command.jump_height;
+        user.gravity = -command.gravity;
+        user.fall_speed = -command.fall_speed;
+        input.reply_ok(format!(
+            "jump height: {}, gravity: -{}, max fallspeed: -{}",
+            command.jump_height, command.gravity, command.fall_speed
+        ));
     }
 }

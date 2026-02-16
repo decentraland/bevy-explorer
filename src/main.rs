@@ -44,10 +44,7 @@ use scene_material::SceneBoundPlugin;
 use scene_runner::{
     automatic_testing::AutomaticTestingPlugin,
     initialize_scene::{PortableScenes, PortableSource, TestingData, PARCEL_SIZE},
-    update_world::{
-        avatar_movement::{AvatarMovementPlugin, GroundCollider},
-        NoGltf,
-    },
+    update_world::NoGltf,
     OutOfWorld, SceneRunnerPlugin,
 };
 
@@ -64,7 +61,7 @@ use system_ui::{crash_report::CrashReportPlugin, SystemUiPlugin};
 use texture_camera::TextureCameraPlugin;
 use tween::TweenPlugin;
 use ui_core::UiCorePlugin;
-use user_input::UserInputPlugin;
+use user_input::{UserInputPlugin, avatar_movement::{AvatarMovementPlugin, GroundCollider}};
 use uuid::Uuid;
 use visuals::VisualsPlugin;
 use wallet::WalletPlugin;

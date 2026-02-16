@@ -12282,6 +12282,7 @@ dependencies = [
  "clap",
  "common",
  "console",
+ "dcl",
  "dcl_component",
  "input_manager",
  "rapier3d-f64",

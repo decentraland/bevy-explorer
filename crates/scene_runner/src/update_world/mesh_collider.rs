@@ -21,6 +21,7 @@ use crate::{
     gltf_resolver::GltfMeshResolver,
     update_world::{
         gltf_container::mesh_to_parry_shape, mesh_renderer::truncated_cone::TruncatedCone,
+        transform_and_parent::PostUpdateSets,
     },
     ContainerEntity, DeletedSceneEntities, PrimaryUser, RendererSceneContext, SceneLoopSchedule,
     SceneSets,
@@ -206,8 +207,8 @@ pub fn add_collider_systems<T: ColliderType>(app: &mut App) {
 
     // update collider transforms before queries and scenes are run, but after global transforms are updated (at end of prior frame)
     app.add_systems(
-        Update,
-        update_collider_transforms::<T>.in_set(SceneSets::PostInit),
+        PostUpdate,
+        update_collider_transforms::<T>.in_set(PostUpdateSets::ColliderUpdate),
     );
 
     // show debugs whenever
@@ -790,15 +791,10 @@ impl SceneColliderData {
         translation: Vec3,
     ) -> HashSet<ColliderId> {
         let mut results = HashSet::new();
-        self.avatar_intersections(
-            scene_time,
-            translation,
-            0.0,
-            |slf, h| {
-                results.insert(slf.get_id(h).unwrap().clone());
-                true
-            },
-        );
+        self.avatar_intersections(scene_time, translation, 0.0, |slf, h| {
+            results.insert(slf.get_id(h).unwrap().clone());
+            true
+        });
 
         results
     }

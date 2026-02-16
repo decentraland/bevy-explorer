@@ -38,12 +38,13 @@ use restricted_actions::RestrictedActionsPlugin;
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
     initialize_scene::ScenePointers, permissions::PermissionManager,
-    update_world::avatar_movement::GroundCollider, OutOfWorld, SceneRunnerPlugin,
+    OutOfWorld, SceneRunnerPlugin,
 };
 
 use ipfs::{map_realm_name, CurrentRealm, IpfsIoPlugin};
 use system_bridge::SystemBridgePlugin;
 use ui_core::{scrollable::ScrollTargetEvent, UiCorePlugin};
+use user_input::avatar_movement::GroundCollider;
 use wallet::Wallet;
 
 static SESSION_LOG: OnceLock<String> = OnceLock::new();

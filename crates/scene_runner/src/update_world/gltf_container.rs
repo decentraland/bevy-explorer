@@ -31,12 +31,15 @@ use rapier3d_f64::prelude::*;
 use serde::Deserialize;
 
 use crate::{
-    ContainerEntity, ContainingScene, OutOfWorld, SceneEntity, SceneSets, initialize_scene::SceneEntityDefinitionHandle, renderer_context::RendererSceneContext, update_world::{
+    initialize_scene::SceneEntityDefinitionHandle,
+    renderer_context::RendererSceneContext,
+    update_world::{
         lights::LightSource,
-        material::{BaseMaterial, PbMaterialComponent, dcl_material_from_standard_material},
+        material::{dcl_material_from_standard_material, BaseMaterial, PbMaterialComponent},
         mesh_collider::{ColliderType, CtCollider, ToRapier},
         trigger_area::CtTrigger,
-    }
+    },
+    ContainerEntity, ContainingScene, OutOfWorld, SceneEntity, SceneSets,
 };
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{

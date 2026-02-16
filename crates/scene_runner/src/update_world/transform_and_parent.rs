@@ -7,14 +7,14 @@ use bevy::{
         hash::FixedHasher,
     },
     prelude::*,
-    transform::TransformSystem,
+    transform::systems::{mark_dirty_trees, propagate_parent_transforms, sync_simple_transforms},
 };
 use common::{anim_last_system, util::ModifyComponentExt};
 use dcl::{crdt::lww::CrdtLWWState, interface::ComponentPosition};
 
 use crate::{
     initialize_scene::process_scene_lifecycle, primary_entities::PrimaryEntities,
-    update_world::billboard::update_billboards, DeletedSceneEntities, RendererSceneContext,
+    update_world::gltf_container::GltfLinkSet, DeletedSceneEntities, RendererSceneContext,
     SceneEntity, SceneLoopSchedule, TargetParent,
 };
 use common::sets::SceneLoopSets;
@@ -23,12 +23,39 @@ use dcl_component::{
     SceneEntityId,
 };
 
-use super::{gltf_container::GltfLinkSet, AddCrdtInterfaceExt, CrdtStateComponent};
+use super::{AddCrdtInterfaceExt, CrdtStateComponent};
 
 pub struct TransformAndParentPlugin;
 
+#[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
+pub enum PostUpdateSets {
+    EarlyTransformPropagate,
+    ColliderUpdate,
+    PlayerUpdate,
+    CameraUpdate,
+    AttachSync,
+    Billboard,
+}
+
 impl Plugin for TransformAndParentPlugin {
     fn build(&self, app: &mut App) {
+        app.configure_sets(
+            PostUpdate,
+            (
+                PostUpdateSets::EarlyTransformPropagate,
+                PostUpdateSets::ColliderUpdate,
+                PostUpdateSets::PlayerUpdate,
+                PostUpdateSets::CameraUpdate,
+                PostUpdateSets::AttachSync,
+                PostUpdateSets::Billboard,
+            )
+                .chain()
+                .after(GltfLinkSet)
+                .after(anim_last_system!())
+                .before(TransformSystem::TransformPropagate)
+                .before(process_scene_lifecycle),
+        );
+
         app.add_crdt_lww_interface::<DclTransformAndParent>(
             SceneComponentId::TRANSFORM,
             ComponentPosition::EntityOnly,
@@ -40,20 +67,26 @@ impl Plugin for TransformAndParentPlugin {
         app.add_systems(
             PostUpdate,
             (
-                parent_position_sync::<AvatarAttachStage>
-                    .after(anim_last_system!())
-                    .after(GltfLinkSet)
-                    .before(TransformSystem::TransformPropagate)
-                    .before(process_scene_lifecycle)
-                    .before(update_billboards),
-                parent_position_sync::<SceneProxyStage>
-                    .after(anim_last_system!())
-                    .after(GltfLinkSet)
-                    .after(parent_position_sync::<AvatarAttachStage>)
-                    .before(TransformSystem::TransformPropagate)
-                    .before(process_scene_lifecycle)
-                    .before(update_billboards),
-            ),
+                parent_position_sync::<AvatarAttachStage>,
+                parent_position_sync::<SceneProxyStage>,
+            )
+                .in_set(PostUpdateSets::AttachSync),
+        );
+
+        // rerun the entire transform tree update
+        // TODO efficiency, either:
+        // - make propagate_parent_transforms generic over TransformTreeChanged type?
+        // - only update things with colliders below?
+        // - manually calculate collider global transforms?
+        app.add_systems(
+            PostUpdate,
+            (
+                mark_dirty_trees,
+                propagate_parent_transforms,
+                sync_simple_transforms,
+            )
+                .chain()
+                .in_set(PostUpdateSets::EarlyTransformPropagate),
         );
     }
 }
