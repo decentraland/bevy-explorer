@@ -9,7 +9,6 @@ use bevy::{
 };
 use bevy_console::ConsoleCommand;
 use rapier3d::{
-    control::KinematicCharacterController,
     parry::{
         query::ShapeCastOptions,
         shape::{Ball, Capsule},
@@ -26,7 +25,7 @@ use crate::{
     SceneSets,
 };
 use common::{
-    dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_RADIUS},
+    dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
     sets::SceneLoopSets,
 };
 use console::DoAddConsoleCommand;
@@ -499,155 +498,6 @@ impl SceneColliderData {
         !self.disabled.contains(&handle)
     }
 
-    pub fn depentrate_character(&mut self, scene_time: u32, origin: Vec3) -> Option<Vec3> {
-        self.update_pipeline(scene_time);
-
-        // check for initial penetration
-        let pipeline = self.query_state.as_ref().unwrap();
-        let initial_intersection = pipeline.intersection_with_shape(
-            &self.dummy_rapier_structs.1,
-            &self.collider_set,
-            &Isometry {
-                rotation: Default::default(),
-                translation: (origin + Vec3::Y * 1.0).into(),
-            },
-            &Capsule::new_y(
-                (PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS) * 0.85,
-                PLAYER_COLLIDER_RADIUS * 0.85,
-            ),
-            QueryFilter::default()
-                .groups(InteractionGroups::new(
-                    Group::from_bits_truncate(
-                        ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK,
-                    ),
-                    Group::from_bits_truncate(
-                        ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK,
-                    ),
-                ))
-                .exclude_sensors(),
-        );
-        initial_intersection.map(|_| {
-            // check nearby points and eject
-            fn fibonacci_sphere_points(samples: usize) -> Vec<Vec3> {
-                let mut points = Vec::with_capacity(samples);
-                let phi = std::f32::consts::PI * (3.0 - 5.0_f32.sqrt());
-
-                for i in 0..samples {
-                    let i_f = i as f32;
-                    let n_f = samples as f32;
-
-                    // y goes from 1 to -1
-                    let y = 1.0 - (i_f / (n_f - 1.0)) * 2.0;
-
-                    // radius at this height
-                    let r_at_height = (1.0 - y * y).sqrt();
-
-                    let theta = phi * i_f;
-
-                    let x = theta.cos() * r_at_height;
-                    let z = theta.sin() * r_at_height;
-
-                    // scale and shift to world position
-                    points.push(Vec3::new(x, y, z));
-                }
-                points
-            }
-
-            let mut distance = 0.5;
-            let mut num_points = 15;
-            loop {
-                let sphere_offsets = fibonacci_sphere_points(num_points);
-                for offset in sphere_offsets {
-                    if (origin + offset).y < 0.0 {
-                        continue;
-                    }
-                    if pipeline
-                        .intersection_with_shape(
-                            &self.dummy_rapier_structs.1,
-                            &self.collider_set,
-                            &Isometry {
-                                rotation: Default::default(),
-                                translation: (origin + Vec3::Y * 1.0 + offset * distance).into(),
-                            },
-                            &Capsule::new_y(
-                                PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS,
-                                PLAYER_COLLIDER_RADIUS,
-                            ),
-                            QueryFilter::default()
-                                .groups(InteractionGroups::new(
-                                    Group::from_bits_truncate(
-                                        ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK,
-                                    ),
-                                    Group::from_bits_truncate(
-                                        ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK,
-                                    ),
-                                ))
-                                .exclude_sensors(),
-                        )
-                        .is_none()
-                    {
-                        return offset;
-                    }
-                }
-
-                distance *= 2.0;
-                num_points *= 2;
-            }
-        })
-    }
-
-    pub fn move_character(
-        &mut self,
-        dt: f32,
-        scene_time: u32,
-        origin: Vec3,
-        direction: Vec3,
-        character: &KinematicCharacterController,
-        specific_collider: Option<&ColliderId>,
-        include_specific_collider: bool,
-    ) -> Vec3 {
-        self.update_pipeline(scene_time);
-        let specific_collider = specific_collider.map(|id| self.get_collider_handle(id).unwrap());
-        if include_specific_collider && specific_collider.is_none() {
-            return direction;
-        }
-
-        Vec3::from(
-            character
-                .move_shape(
-                    dt,
-                    &self.dummy_rapier_structs.1,
-                    &self.collider_set,
-                    self.query_state.as_ref().unwrap(),
-                    &Capsule::new_y(
-                        PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS,
-                        PLAYER_COLLIDER_RADIUS,
-                    ),
-                    &Isometry {
-                        rotation: Default::default(),
-                        translation: (origin + Vec3::Y * 1.0).into(),
-                    },
-                    direction.into(),
-                    QueryFilter::default()
-                        .groups(InteractionGroups::new(
-                            Group::from_bits_truncate(
-                                ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK,
-                            ),
-                            Group::from_bits_truncate(
-                                ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK,
-                            ),
-                        ))
-                        .exclude_sensors()
-                        .predicate(&|h, _| {
-                            ((specific_collider == Some(h)) == include_specific_collider)
-                                && !self.disabled.contains(&h)
-                        }),
-                    |_| {},
-                )
-                .translation,
-        )
-    }
-
     pub fn cast_ray_all(
         &mut self,
         scene_time: u32,
@@ -816,7 +666,7 @@ impl SceneColliderData {
             ShapeCastOptions {
                 max_time_of_impact: distance,
                 target_distance: 0.0,
-                stop_at_penetration: false,
+                stop_at_penetration: true,
                 compute_impact_geometry_on_penetration: true,
             },
             filter,
@@ -882,7 +732,7 @@ impl SceneColliderData {
         let mut constraint_min = Vec3::NEG_INFINITY;
         let mut constraint_max = Vec3::INFINITY;
 
-        self.avatar_intersections(scene_time, translation, 0.0, |slf, h| {
+        self.avatar_intersections(scene_time, translation, PLAYER_COLLIDER_OVERLAP * 10.0, |slf, h| {
             let collided = slf.collider_set.get(h).unwrap();
             let result = rapier3d::parry::query::closest_points(
                 &translation.into(),

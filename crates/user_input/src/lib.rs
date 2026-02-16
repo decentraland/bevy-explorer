@@ -3,11 +3,7 @@ pub mod dynamics;
 pub mod player_input;
 
 use bevy::{
-    app::Propagate,
-    ecs::query::Has,
-    prelude::*,
-    render::{camera::CameraUpdateSystem, view::RenderLayers},
-    transform::TransformSystem,
+    app::Propagate, ecs::query::Has, prelude::*, render::{camera::CameraUpdateSystem, view::RenderLayers}, transform::TransformSystem
 };
 
 use camera::update_cursor_lock;
@@ -35,7 +31,7 @@ use tween::update_system_tween;
 
 use self::{
     camera::{update_camera, update_camera_position},
-    dynamics::update_user_position,
+    // dynamics::update_user_position,
     player_input::update_user_velocity,
 };
 
@@ -66,7 +62,7 @@ impl Plugin for UserInputPlugin {
                 update_camera_position
                     .after(anim_last_system!())
                     .after(GltfLinkSet)
-                    .after(update_user_position)
+                    // .after(update_user_position)
                     .after(avatar_movement::apply_movement)
                     .after(parent_position_sync::<AvatarAttachStage>)
                     .before(parent_position_sync::<SceneProxyStage>)

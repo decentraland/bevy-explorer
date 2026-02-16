@@ -183,7 +183,7 @@ fn pick_movement(
 pub fn apply_movement(
     mut player: Query<(&mut Transform, &mut AvatarDynamicState, &Movement), With<PrimaryUser>>,
     mut scenes: Query<(Entity, &RendererSceneContext, &mut SceneColliderData)>,
-    time: Res<Time>,
+    time_res: Res<Time>,
 ) {
     let Ok((mut transform, mut dynamic_state, movement)) = player.single_mut() else {
         return;
@@ -210,7 +210,7 @@ pub fn apply_movement(
         .collect::<HashMap<_, _>>();
 
     let mut position = transform.translation;
-    let mut time = time.delta_secs();
+    let mut time = time_res.delta_secs();
     let mut velocity = movement.movement.velocity;
     let mut steps = 0;
 
@@ -225,7 +225,7 @@ pub fn apply_movement(
                 velocity,
                 step_time,
                 ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK,
-                true,
+                false,
                 false,
                 disabled
                     .get(&e)
