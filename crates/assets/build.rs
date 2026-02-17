@@ -17,7 +17,7 @@ fn visit_dirs(writer: &mut BufWriter<File>, dir: &Path, base_dir: &Path) -> std:
                 let full_path = path.canonicalize()?;
                 let full_path = full_path.to_string_lossy().replace('\\', "\\\\");
 
-                writeln!(writer, "    embedded.insert_asset(PathBuf::default(), Path::new(\"{relative_path}\"), include_bytes!(\"{full_path}\"));")?;
+                writeln!(writer, "    embedded.insert_asset(PathBuf::from(\"crates/assets/src/assets/{relative_path}\"), Path::new(\"{relative_path}\"), include_bytes!(\"{full_path}\"));")?;
             }
         }
     }
