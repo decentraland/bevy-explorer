@@ -227,12 +227,27 @@ fn push_time_of_day_from_time_skip(
 
 #[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn push_time_of_day_from_running_clock(
+    mut commands: Commands,
     time_keeper: Single<&RunningClock, (With<TimeKeeper>, Without<SceneTime>, Without<SkyboxTime>)>,
     mut time_of_day: ResMut<TimeOfDay>,
 ) {
-    trace!("Pushing time from RunningClock");
-    let running_clock = time_keeper.into_inner();
-    time_of_day.time = running_clock.time;
+    if (time_keeper.time - time_of_day.time).abs() > ONE_HOUR {
+        let end = if time_keeper.time > time_of_day.time {
+            time_keeper.time
+        } else {
+            time_keeper.time + TWENTY_FOUR_HOURS
+        };
+        commands.insert_resource(TimeSkip {
+            start: time_of_day.time,
+            end,
+            progress: 0.,
+            easing: EaseFunction::SmoothStep,
+        });
+    } else {
+        trace!("Pushing time from RunningClock");
+        let running_clock = time_keeper.into_inner();
+        time_of_day.time = running_clock.time;
+    }
 }
 
 fn check_new_scene_time(
