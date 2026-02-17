@@ -192,7 +192,7 @@ pub fn apply_movement(
     let mut velocity = movement.movement.velocity.as_dvec3();
     let mut steps = 0;
 
-    while steps < 6 && time > 0.0 {
+    while steps < 60 && time > 1e-10 {
         steps += 1;
         let mut step_time = time;
         let mut contact_normal = DVec3::ZERO;
@@ -223,63 +223,12 @@ pub fn apply_movement(
     }
 
     debug!(
-        "move {:.7} + {:.7} = {:.7}",
+        "move {:.7} + {:.7} = {:.7} ({steps} iterations)",
         transform.translation, movement.movement.velocity, position
     );
 
     let position = position.as_vec3();
     let velocity = velocity.as_vec3();
-
-    if (position - transform.translation)
-        .xz()
-        .dot(movement.movement.velocity.xz())
-        < 0.0
-        || (position - transform.translation).length()
-            < movement.movement.velocity.length() * time_res.delta_secs() * 0.2
-    {
-        let mut position = transform.translation.as_dvec3();
-        let mut time = time_res.delta_secs_f64();
-        let mut velocity = movement.movement.velocity.as_dvec3();
-        let mut steps = 0;
-
-        warn!(
-            "failed move {:.7} + {:.7} = {:.7}",
-            transform.translation, movement.movement.velocity, position
-        );
-
-        while steps < 6 && time > 0.0 {
-            steps += 1;
-            let mut step_time = time;
-            let mut contact_normal = DVec3::ZERO;
-            for (e, ctx, mut collider_data) in scenes.iter_mut() {
-                if let Some(hit) = collider_data.cast_avatar_nearest(
-                    ctx.last_update_frame,
-                    position,
-                    velocity,
-                    step_time,
-                    ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK,
-                    false,
-                    false,
-                    disabled
-                        .get(&e)
-                        .map(|d| d.iter().collect())
-                        .unwrap_or_default(),
-                    false,
-                    -PLAYER_COLLIDER_OVERLAP,
-                ) {
-                    step_time = hit.toi as f64 * time;
-                    contact_normal = hit.normal.as_dvec3();
-                }
-            }
-
-            position += velocity * step_time + contact_normal * PLAYER_COLLIDER_OVERLAP as f64;
-            velocity = velocity - (velocity.dot(contact_normal).min(0.0) * contact_normal);
-
-            warn!("step {steps}: {step_time} / {time}, contact {contact_normal:.7} -> new position {position:.7}, new velocity {velocity:.7}");
-
-            time -= step_time;
-        }
-    }
 
     transform.translation = position;
     transform.rotation = Quat::from_rotation_y(movement.movement.orientation / 360.0 * TAU);
@@ -374,98 +323,6 @@ fn apply_ground_collider_movement(
     }
 }
 
-// fn apply_pseudo_ground_collider_movement(
-//     ground_transforms: Query<(
-//         Entity,
-//         &ContainerEntity,
-//         &HasCollider<CtCollider>,
-//         &GlobalTransform,
-//         &PreviousColliderTransform,
-//     )>,
-//     mut player: Query<(&mut Transform, &GroundCollider, &Movement), With<PrimaryUser>>,
-//     mut scenes: Query<(&RendererSceneContext, &mut SceneColliderData)>,
-// ) {
-//     let Ok((mut transform, ground_collider, movement)) = player.single_mut() else {
-//         return;
-//     };
-
-//     // gather changed colliders
-//     let mut changed_colliders = ground_transforms
-//         .iter()
-//         .flat_map(
-//             |(entity, scene_ent, collider, new_gt, PreviousColliderTransform(old_gt))| {
-//                 // skip primary ground collider
-//                 if ground_collider
-//                     .0
-//                     .as_ref()
-//                     .is_some_and(|(ground_entity, _, _)| *ground_entity == entity)
-//                 {
-//                     return None;
-//                 }
-
-//                 let translation = new_gt.translation() - old_gt.translation();
-//                 let ctc = translation.length();
-//                 // skip too big movement
-//                 if ctc > PLAYER_COLLIDER_RADIUS * 0.95 {
-//                     return None;
-//                 }
-
-//                 // skip non-ground direction
-//                 if translation.dot(movement.movement.ground_direction) >= 0.0 {
-//                     return None;
-//                 }
-
-//                 Some((scene_ent.root, collider.0.clone(), translation))
-//             },
-//         )
-//         .collect::<Vec<_>>();
-
-//     changed_colliders.sort_unstable_by_key(|(scene, ..)| *scene);
-//     let changed_colliders = changed_colliders
-//         .into_iter()
-//         .map(|(scene, collider, translation)| (scene, (collider, translation)))
-//         .fold(
-//             HashMap::<Entity, _>::default(),
-//             |mut collect, (scene, data)| {
-//                 collect.entry(scene).or_insert_with(Vec::default).push(data);
-//                 collect
-//             },
-//         );
-
-//     // calculate max adjustment
-//     let mut max_adjustment = Vec3::ZERO;
-
-//     for (scene, data) in changed_colliders {
-//         let Ok((ctx, mut collider_data)) = scenes.get_mut(scene) else {
-//             continue;
-//         };
-
-//         for (collider, translation) in data {
-//             // cast backwards from player + movement to player, take (1-toi) * ctc
-//             let result = collider_data.cast_avatar_nearest(
-//                 ctx.last_update_frame,
-//                 transform.translation + translation,
-//                 -translation,
-//                 1.0,
-//                 ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK,
-//                 true,
-//                 false,
-//                 Some(&collider),
-//             );
-
-//             if let Some(result) = result {
-//                 let adjustment = translation * (1.0 - result.toi);
-//                 if adjustment.length_squared() > max_adjustment.length_squared() {
-//                     max_adjustment = adjustment;
-//                 }
-//             }
-//         }
-//     }
-
-//     // apply
-//     transform.translation += max_adjustment;
-// }
-
 fn resolve_collisions(
     mut player: Query<&mut Transform, With<PrimaryUser>>,
     mut scenes: Query<(&RendererSceneContext, &mut SceneColliderData)>,
@@ -477,10 +334,12 @@ fn resolve_collisions(
     let mut constraint_min = DVec3::NEG_INFINITY;
     let mut constraint_max = DVec3::INFINITY;
 
-    let mut prev = (DVec3::ZERO, DVec3::ZERO);
+    let mut prev = DVec3::INFINITY;
     let mut current_offset = DVec3::ZERO;
     let mut iteration = 0;
-    while prev != (constraint_min, constraint_max) && iteration < 5 {
+    while (prev - current_offset).length() > PLAYER_COLLIDER_OVERLAP as f64 * 0.01 && iteration < 60 {
+        prev = current_offset;
+
         for (ctx, mut collider_data) in scenes.iter_mut() {
             let (scene_min, scene_max) = collider_data.avatar_constraints(
                 ctx.last_update_frame,
@@ -507,13 +366,12 @@ fn resolve_collisions(
             current_offset.z = current_offset.z.clamp(constraint_min.z, constraint_max.z);
         }
 
-        prev = (constraint_min, constraint_max);
         iteration += 1;
     }
 
     if (constraint_min, constraint_max) != (DVec3::NEG_INFINITY, DVec3::INFINITY) {
         debug!(
-            "constraining {:.7} to ({:.7}, {:.7}) -> {:.7}",
+            "constraining {:.7} to ({:.7}, {:.7}) -> {:.7} ({iteration} iterations)",
             transform.translation,
             constraint_min,
             constraint_max,
