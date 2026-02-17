@@ -1,3 +1,4 @@
+use core::f32;
 use std::f32::consts::TAU;
 
 use bevy::{diagnostic::FrameCount, math::DVec3, platform::collections::HashMap, prelude::*};
@@ -161,6 +162,7 @@ pub fn apply_movement(
     mut player: Query<(&mut Transform, &mut AvatarDynamicState, &Movement), With<PrimaryUser>>,
     mut scenes: Query<(Entity, &RendererSceneContext, &mut SceneColliderData)>,
     time_res: Res<Time>,
+    mut jumping: Local<bool>,
 ) {
     let Ok((mut transform, mut dynamic_state, movement)) = player.single_mut() else {
         return;
@@ -232,7 +234,28 @@ pub fn apply_movement(
 
     transform.translation = position;
     transform.rotation = Quat::from_rotation_y(movement.movement.orientation / 360.0 * TAU);
+
+    // for now we hack in the old dynamic state values for animations
     dynamic_state.velocity = velocity;
+    if movement.movement.velocity.y > 10.0 {
+        if !*jumping {
+            dynamic_state.jump_time = time_res.elapsed_secs();
+            *jumping = true;
+        }
+    } else {
+        *jumping = false;
+    }
+    let ground_height = scenes
+        .iter_mut()
+        .fold(f32::INFINITY, |gh, (_, ctx, mut collider_data)| {
+            gh.min(
+                collider_data
+                    .get_ground(ctx.last_update_frame, transform.translation)
+                    .map(|(h, _)| h)
+                    .unwrap_or(f32::INFINITY),
+            )
+        });
+    dynamic_state.ground_height = ground_height;
 }
 
 // (scene entity, collider id) of collider player is standing on
@@ -342,6 +365,7 @@ fn resolve_collisions(
         prev = current_offset;
 
         for (ctx, mut collider_data) in scenes.iter_mut() {
+            // Note: collisions that intersect the avatar central segment are automatically excluded here
             let (scene_min, scene_max) = collider_data.avatar_constraints(
                 ctx.last_update_frame,
                 transform.translation.as_dvec3() + current_offset,

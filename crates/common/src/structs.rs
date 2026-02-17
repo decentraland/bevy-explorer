@@ -988,11 +988,8 @@ pub enum MoveKind {
 
 #[derive(Component, Default)]
 pub struct AvatarDynamicState {
-    pub force: Vec2,
     pub velocity: Vec3,
     pub ground_height: f32,
-    pub tank: bool,
-    pub rotate: f32,
     pub jump_time: f32,
     pub move_kind: MoveKind,
 }

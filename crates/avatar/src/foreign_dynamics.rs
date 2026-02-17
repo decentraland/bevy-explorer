@@ -242,7 +242,5 @@ fn update_foreign_user_actual_position(
                 actual.translation.y = updated_y;
             }
         }
-
-        dynamic_state.force = dynamic_state.velocity.xz();
     }
 }
