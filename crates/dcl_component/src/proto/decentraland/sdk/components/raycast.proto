@@ -45,6 +45,12 @@ message PBRaycast {
 
   // Collision mask, by default CL_POINTER | CL_PHYSICS
   optional uint32 collision_mask = 9;
+
+  // shape to cast, default ray
+  optional RaycastShape shape = 11; 
+
+  // include hits with entities from other scenes
+  optional bool include_world = 12; 
 }
 
 // RaycastQueryType indicates whether the ray should stop on the first collition, or continue.
@@ -55,4 +61,11 @@ enum RaycastQueryType {
   RQT_QUERY_ALL = 1;
   // Do not perform the raycast, only set the raycast result with empty hits
   RQT_NONE = 2;
+}
+
+enum RaycastShape {
+  // cast a point, get collisions along a ray
+  RS_RAY = 0;
+  // cast the avatar collider shape, get collisions from sweeping the shape
+  RS_AVATAR = 1;
 }

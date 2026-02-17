@@ -1,6 +1,6 @@
 use std::f32::consts::TAU;
 
-use bevy::{platform::collections::HashMap, prelude::*};
+use bevy::{diagnostic::FrameCount, math::DVec3, platform::collections::HashMap, prelude::*};
 use common::{
     dynamics::{PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS, PLAYER_GROUND_THRESHOLD},
     structs::{AvatarDynamicState, PrimaryPlayerRes, PrimaryUser},
@@ -38,11 +38,11 @@ impl Plugin for AvatarMovementPlugin {
         app.add_systems(
             PostUpdate,
             (
+                apply_ground_collider_movement,
+                resolve_collisions,
                 pick_movement,
                 apply_movement,
                 record_ground_collider,
-                apply_ground_collider_movement,
-                resolve_collisions,
             )
                 .chain()
                 .in_set(PostUpdateSets::PlayerUpdate),
@@ -174,7 +174,7 @@ pub fn apply_movement(
         .iter_mut()
         .flat_map(|(scene, ctx, mut collider_data)| {
             let results = collider_data
-                .avatar_central_collisions(ctx.last_update_frame, transform.translation);
+                .avatar_central_collisions(ctx.last_update_frame, transform.translation.as_dvec3());
             if results.is_empty() {
                 None
             } else {
@@ -183,15 +183,19 @@ pub fn apply_movement(
         })
         .collect::<HashMap<_, _>>();
 
-    let mut position = transform.translation;
-    let mut time = time_res.delta_secs();
-    let mut velocity = movement.movement.velocity;
+    if !disabled.is_empty() {
+        warn!("move disabling {} colliders", disabled.len());
+    }
+
+    let mut position = transform.translation.as_dvec3();
+    let mut time = time_res.delta_secs_f64();
+    let mut velocity = movement.movement.velocity.as_dvec3();
     let mut steps = 0;
 
     while steps < 6 && time > 0.0 {
         steps += 1;
         let mut step_time = time;
-        let mut contact_normal = Vec3::ZERO;
+        let mut contact_normal = DVec3::ZERO;
         for (e, ctx, mut collider_data) in scenes.iter_mut() {
             if let Some(hit) = collider_data.cast_avatar_nearest(
                 ctx.last_update_frame,
@@ -208,14 +212,73 @@ pub fn apply_movement(
                 false,
                 -PLAYER_COLLIDER_OVERLAP,
             ) {
-                step_time = hit.toi * time;
-                contact_normal = hit.normal;
+                step_time = hit.toi as f64 * time;
+                contact_normal = hit.normal.as_dvec3();
             }
         }
 
-        position += velocity * step_time + contact_normal * PLAYER_COLLIDER_OVERLAP;
-        velocity = velocity - (velocity.dot(contact_normal) * contact_normal);
+        position += velocity * step_time + contact_normal * PLAYER_COLLIDER_OVERLAP as f64;
+        velocity = velocity - (velocity.dot(contact_normal).min(0.0) * contact_normal);
         time -= step_time;
+    }
+
+    debug!(
+        "move {:.7} + {:.7} = {:.7}",
+        transform.translation, movement.movement.velocity, position
+    );
+
+    let position = position.as_vec3();
+    let velocity = velocity.as_vec3();
+
+    if (position - transform.translation)
+        .xz()
+        .dot(movement.movement.velocity.xz())
+        < 0.0
+        || (position - transform.translation).length()
+            < movement.movement.velocity.length() * time_res.delta_secs() * 0.2
+    {
+        let mut position = transform.translation.as_dvec3();
+        let mut time = time_res.delta_secs_f64();
+        let mut velocity = movement.movement.velocity.as_dvec3();
+        let mut steps = 0;
+
+        warn!(
+            "failed move {:.7} + {:.7} = {:.7}",
+            transform.translation, movement.movement.velocity, position
+        );
+
+        while steps < 6 && time > 0.0 {
+            steps += 1;
+            let mut step_time = time;
+            let mut contact_normal = DVec3::ZERO;
+            for (e, ctx, mut collider_data) in scenes.iter_mut() {
+                if let Some(hit) = collider_data.cast_avatar_nearest(
+                    ctx.last_update_frame,
+                    position,
+                    velocity,
+                    step_time,
+                    ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK,
+                    false,
+                    false,
+                    disabled
+                        .get(&e)
+                        .map(|d| d.iter().collect())
+                        .unwrap_or_default(),
+                    false,
+                    -PLAYER_COLLIDER_OVERLAP,
+                ) {
+                    step_time = hit.toi as f64 * time;
+                    contact_normal = hit.normal.as_dvec3();
+                }
+            }
+
+            position += velocity * step_time + contact_normal * PLAYER_COLLIDER_OVERLAP as f64;
+            velocity = velocity - (velocity.dot(contact_normal).min(0.0) * contact_normal);
+
+            warn!("step {steps}: {step_time} / {time}, contact {contact_normal:.7} -> new position {position:.7}, new velocity {velocity:.7}");
+
+            time -= step_time;
+        }
     }
 
     transform.translation = position;
@@ -265,22 +328,28 @@ fn record_ground_collider(
 fn apply_ground_collider_movement(
     ground_transforms: Query<(&GlobalTransform, &PreviousColliderTransform)>,
     mut player: Query<(&mut Transform, &GroundCollider), With<PrimaryUser>>,
+    frame: Res<FrameCount>,
 ) {
     let Ok((mut transform, GroundCollider(Some((ground_entity, _, _))))) = player.single_mut()
     else {
         return;
     };
 
-    let Ok((new_global_transform, PreviousColliderTransform(old_transform))) =
-        ground_transforms.get(*ground_entity)
+    let Ok((
+        new_global_transform,
+        PreviousColliderTransform {
+            prev_transform,
+            updated,
+        },
+    )) = ground_transforms.get(*ground_entity)
     else {
         return;
     };
 
-    if new_global_transform != old_transform {
+    if *updated == frame.0 {
         // update rotation
         let rotation_change = new_global_transform.to_scale_rotation_translation().1
-            * old_transform.to_scale_rotation_translation().1.inverse();
+            * prev_transform.to_scale_rotation_translation().1.inverse();
         // clamp to x/z plane to avoid twisting around
         let new_facing =
             ((rotation_change * Vec3::from(transform.forward())) * (Vec3::X + Vec3::Z)).normalize();
@@ -288,10 +357,20 @@ fn apply_ground_collider_movement(
 
         // calculate updated translation
         let player_global_transform = GlobalTransform::from(*transform);
-        let relative_position = player_global_transform.reparented_to(old_transform);
+        let relative_position = player_global_transform.reparented_to(prev_transform);
         let new_transform = new_global_transform.mul_transform(relative_position);
         let new_translation = new_transform.translation();
-        transform.translation = new_translation;
+
+        debug!(
+            "ground collider {} + ? = {}",
+            transform.translation, new_translation
+        );
+
+        if (new_translation - transform.translation).length() < 5.0 {
+            transform.translation = new_translation;
+        } else {
+            debug!("skipped");
+        }
     }
 }
 
@@ -395,17 +474,17 @@ fn resolve_collisions(
         return;
     };
 
-    let mut constraint_min = Vec3::NEG_INFINITY;
-    let mut constraint_max = Vec3::INFINITY;
+    let mut constraint_min = DVec3::NEG_INFINITY;
+    let mut constraint_max = DVec3::INFINITY;
 
-    let mut prev = (Vec3::ZERO, Vec3::ZERO);
-    let mut current_offset = Vec3::ZERO;
+    let mut prev = (DVec3::ZERO, DVec3::ZERO);
+    let mut current_offset = DVec3::ZERO;
     let mut iteration = 0;
     while prev != (constraint_min, constraint_max) && iteration < 5 {
         for (ctx, mut collider_data) in scenes.iter_mut() {
             let (scene_min, scene_max) = collider_data.avatar_constraints(
                 ctx.last_update_frame,
-                transform.translation + current_offset,
+                transform.translation.as_dvec3() + current_offset,
             );
 
             constraint_min = constraint_min.max(scene_min + current_offset);
@@ -432,5 +511,15 @@ fn resolve_collisions(
         iteration += 1;
     }
 
-    transform.translation += current_offset;
+    if (constraint_min, constraint_max) != (DVec3::NEG_INFINITY, DVec3::INFINITY) {
+        debug!(
+            "constraining {:.7} to ({:.7}, {:.7}) -> {:.7}",
+            transform.translation,
+            constraint_min,
+            constraint_max,
+            transform.translation + current_offset.as_vec3()
+        );
+    }
+
+    transform.translation += current_offset.as_vec3();
 }

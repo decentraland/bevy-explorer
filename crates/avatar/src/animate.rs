@@ -283,7 +283,7 @@ fn animate(
             .unwrap_or(Vec3::ZERO);
         let ratio = time.delta_secs().clamp(0.0, 0.1) / 0.1;
         let damped_velocity =
-            dynamic_state.force.extend(0.0).xzy() * ratio + prior_velocity * (1.0 - ratio);
+            dynamic_state.velocity * ratio + prior_velocity * (1.0 - ratio);
         let damped_velocity_len = damped_velocity.xz().length();
         velocities.insert(avatar_ent, damped_velocity);
 

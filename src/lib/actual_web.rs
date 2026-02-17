@@ -37,7 +37,6 @@ use restricted_actions::{lookup_portable, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
     initialize_scene::{PortableScenes, PortableSource, TestingData},
-    update_world::avatar_movement::GroundCollider,
     vec3_to_parcel, OutOfWorld, SceneRunnerPlugin,
 };
 
@@ -56,7 +55,7 @@ use system_ui::SystemUiPlugin;
 use texture_camera::TextureCameraPlugin;
 use tween::TweenPlugin;
 use ui_core::UiCorePlugin;
-use user_input::UserInputPlugin;
+use user_input::{UserInputPlugin, avatar_movement::GroundCollider};
 use uuid::Uuid;
 use visuals::VisualsPlugin;
 use wallet::WalletPlugin;

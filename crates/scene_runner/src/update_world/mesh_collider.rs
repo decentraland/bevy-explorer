@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
 use bevy::{
+    diagnostic::FrameCount,
     math::{DQuat, DVec3, Vec3},
     pbr::{wireframe::Wireframe, NotShadowCaster, NotShadowReceiver},
     platform::collections::{HashMap, HashSet},
@@ -43,9 +44,12 @@ pub trait ToRapier<T2, R> {
     fn to_rapier(self) -> R;
 }
 
-impl ToRapier<f64, f64> for f32 {
-    fn to_rapier(self) -> f64 {
-        self as f64
+impl<T, R> ToRapier<T, R> for T
+where
+    R: From<T>,
+{
+    fn to_rapier(self) -> R {
+        self.into()
     }
 }
 
@@ -332,9 +336,7 @@ impl ScaleShapeExt for dyn Shape {
                     .collect();
                 SharedShape::compound(scaled_items)
             }
-            TypedShape::TriMesh(trimesh) => {
-                SharedShape::new(trimesh.clone().scaled(&req_scale))
-            }
+            TypedShape::TriMesh(trimesh) => SharedShape::new(trimesh.clone().scaled(&req_scale)),
             _ => panic!(),
         }
     }
@@ -640,12 +642,13 @@ impl SceneColliderData {
     pub fn cast_avatar_all(
         &mut self,
         scene_time: u32,
-        origin: Vec3,
-        direction: Vec3,
-        distance: f32,
+        origin: DVec3,
+        direction: DVec3,
+        distance: f64,
         collision_mask: u32,
         skip_inside: bool,
         include_sensors: bool,
+        size_adjust: f32,
     ) -> Vec<RaycastResult> {
         let mut results = Vec::new();
         let mut ignore = HashSet::new();
@@ -660,7 +663,7 @@ impl SceneColliderData {
             include_sensors,
             ignore.iter().collect(),
             false,
-            0.0,
+            size_adjust,
         ) {
             ignore.insert(result.id.clone());
             results.push(result);
@@ -672,9 +675,9 @@ impl SceneColliderData {
     pub fn cast_avatar_nearest(
         &mut self,
         scene_time: u32,
-        origin: Vec3,
-        direction: Vec3,
-        distance: f32,
+        origin: DVec3,
+        direction: DVec3,
+        distance: f64,
         collision_mask: u32,
         skip_inside: bool,
         include_sensors: bool,
@@ -695,7 +698,7 @@ impl SceneColliderData {
             self.query_state.as_ref().unwrap().intersections_with_shape(
                 &self.dummy_rapier_structs.1,
                 &self.collider_set,
-                &(origin + Vec3::Y * PLAYER_COLLIDER_HEIGHT * 0.5).to_rapier(),
+                &(origin + DVec3::Y * PLAYER_COLLIDER_HEIGHT as f64 * 0.5).to_rapier(),
                 &avatar_shape,
                 QueryFilter::default().groups(InteractionGroups::new(
                     Group::from_bits_truncate(collision_mask),
@@ -730,7 +733,7 @@ impl SceneColliderData {
         let result = self.query_state.as_ref().unwrap().cast_shape(
             &self.dummy_rapier_structs.1,
             &self.collider_set,
-            &(origin + Vec3::Y * PLAYER_COLLIDER_HEIGHT * 0.5).to_rapier(),
+            &(origin + DVec3::Y * PLAYER_COLLIDER_HEIGHT as f64 * 0.5).to_rapier(),
             &direction.to_rapier(),
             &avatar_shape,
             ShapeCastOptions {
@@ -744,7 +747,7 @@ impl SceneColliderData {
 
         result.map(|(handle, intersection)| RaycastResult {
             id: self.get_id(handle).unwrap().clone(),
-            toi: intersection.time_of_impact.from_rapier() / distance,
+            toi: (intersection.time_of_impact / distance).from_rapier(),
             normal: intersection.normal1.from_rapier(),
             face: None,
             position: intersection.witness1.from_rapier(),
@@ -754,7 +757,7 @@ impl SceneColliderData {
     fn avatar_intersections(
         &mut self,
         scene_time: u32,
-        translation: Vec3,
+        translation: DVec3,
         size: f32,
         mut cb: impl FnMut(&Self, ColliderHandle) -> bool,
     ) {
@@ -762,8 +765,8 @@ impl SceneColliderData {
 
         let avatar_shape: &dyn parry::shape::Shape = if size == 0.0 {
             &parry::shape::Segment::new(
-                (Vec3::Y * PLAYER_COLLIDER_RADIUS).to_rapier(),
-                (Vec3::Y * (PLAYER_COLLIDER_HEIGHT - PLAYER_COLLIDER_RADIUS)).to_rapier(),
+                (Vec3::NEG_Y * (PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS)).to_rapier(),
+                (Vec3::Y * (PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS)).to_rapier(),
             )
         } else {
             &Capsule::new_y(
@@ -775,7 +778,7 @@ impl SceneColliderData {
         self.query_state.as_ref().unwrap().intersections_with_shape(
             &self.dummy_rapier_structs.1,
             &self.collider_set,
-            &(translation + Vec3::Y * PLAYER_COLLIDER_HEIGHT * 0.5).to_rapier(),
+            &(translation + DVec3::Y * PLAYER_COLLIDER_HEIGHT as f64 * 0.5).to_rapier(),
             avatar_shape,
             QueryFilter::default().groups(InteractionGroups::new(
                 Group::from_bits_truncate(ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK),
@@ -788,7 +791,7 @@ impl SceneColliderData {
     pub fn avatar_central_collisions(
         &mut self,
         scene_time: u32,
-        translation: Vec3,
+        translation: DVec3,
     ) -> HashSet<ColliderId> {
         let mut results = HashSet::new();
         self.avatar_intersections(scene_time, translation, 0.0, |slf, h| {
@@ -799,14 +802,14 @@ impl SceneColliderData {
         results
     }
 
-    pub fn avatar_constraints(&mut self, scene_time: u32, translation: Vec3) -> (Vec3, Vec3) {
+    pub fn avatar_constraints(&mut self, scene_time: u32, translation: DVec3) -> (DVec3, DVec3) {
         let avatar_inner_segment = parry::shape::Segment::new(
             (Vec3::Y * PLAYER_COLLIDER_RADIUS).to_rapier(),
             (Vec3::Y * (PLAYER_COLLIDER_HEIGHT - PLAYER_COLLIDER_RADIUS)).to_rapier(),
         );
 
-        let mut constraint_min = Vec3::NEG_INFINITY;
-        let mut constraint_max = Vec3::INFINITY;
+        let mut constraint_min = DVec3::NEG_INFINITY;
+        let mut constraint_max = DVec3::INFINITY;
 
         self.avatar_intersections(
             scene_time,
@@ -829,17 +832,17 @@ impl SceneColliderData {
                 match result {
                     parry::query::ClosestPoints::Intersecting => (),
                     parry::query::ClosestPoints::WithinMargin(opoint, opoint1) => {
-                        let offset = (opoint1 - opoint).from_rapier();
-                        if offset != Vec3::ZERO {
-                            let required_offset = offset.normalize() * PLAYER_COLLIDER_RADIUS;
+                        let offset = DVec3::from(opoint1 - opoint);
+                        if offset != DVec3::ZERO {
+                            let required_offset = offset.normalize() * PLAYER_COLLIDER_RADIUS as f64;
                             let correction = offset - required_offset;
 
-                            let mask_pos = correction.cmpgt(Vec3::ZERO);
-                            let active_pos = Vec3::select(mask_pos, correction, Vec3::NEG_INFINITY);
+                            let mask_pos = correction.cmpgt(DVec3::ZERO);
+                            let active_pos = DVec3::select(mask_pos, correction, DVec3::NEG_INFINITY);
                             constraint_min = constraint_min.max(active_pos);
 
-                            let mask_neg = correction.cmplt(Vec3::ZERO);
-                            let active_neg = Vec3::select(mask_neg, correction, Vec3::INFINITY);
+                            let mask_neg = correction.cmplt(DVec3::ZERO);
+                            let active_neg = DVec3::select(mask_neg, correction, DVec3::INFINITY);
                             constraint_max = constraint_max.min(active_neg);
                         }
                     }
@@ -1187,7 +1190,10 @@ fn propagate_disabled<T: ColliderType>(
 }
 
 #[derive(Component)]
-pub struct PreviousColliderTransform(pub GlobalTransform);
+pub struct PreviousColliderTransform {
+    pub prev_transform: GlobalTransform,
+    pub updated: u32,
+}
 
 #[allow(clippy::type_complexity)]
 pub fn update_collider_transforms<T: ColliderType>(
@@ -1199,6 +1205,7 @@ pub fn update_collider_transforms<T: ColliderType>(
         ),
     >,
     mut scene_data: Query<&mut SceneColliderData>,
+    frame: Res<FrameCount>,
 ) {
     for (entity, container, collider, global_transform) in changed_colliders.iter() {
         let Ok(mut scene_data) = scene_data.get_mut(container.root) else {
@@ -1212,9 +1219,10 @@ pub fn update_collider_transforms<T: ColliderType>(
         if let Some(original_transform) = maybe_original_transform {
             commands
                 .entity(entity)
-                .try_insert(PreviousColliderTransform(GlobalTransform::from(
-                    original_transform,
-                )));
+                .try_insert(PreviousColliderTransform {
+                    prev_transform: GlobalTransform::from(original_transform),
+                    updated: frame.0,
+                });
         } else {
             commands
                 .entity(entity)
