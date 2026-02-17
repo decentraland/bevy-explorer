@@ -71,34 +71,34 @@ where
     }
 }
 
-pub trait FromRapier<T2> {
+pub trait ToBevy<T2> {
     type T;
-    fn from_rapier(self) -> Self::T;
+    fn to_bevy(self) -> Self::T;
 }
 
-impl FromRapier<f64> for f64 {
+impl ToBevy<f64> for f64 {
     type T = f32;
-    fn from_rapier(self) -> Self::T {
+    fn to_bevy(self) -> Self::T {
         self as f32
     }
 }
 
-impl<R> FromRapier<DVec3> for R
+impl<R> ToBevy<DVec3> for R
 where
     DVec3: From<R>,
 {
     type T = Vec3;
-    fn from_rapier(self) -> Self::T {
+    fn to_bevy(self) -> Self::T {
         DVec3::from(self).as_vec3()
     }
 }
 
-impl<R> FromRapier<DQuat> for R
+impl<R> ToBevy<DQuat> for R
 where
     DQuat: From<R>,
 {
     type T = Quat;
-    fn from_rapier(self) -> Self::T {
+    fn to_bevy(self) -> Self::T {
         DQuat::from(self).as_quat()
     }
 }
@@ -524,14 +524,14 @@ impl SceneColliderData {
 
         closest.map(|(id, intersection)| RaycastResult {
             id: id.clone(),
-            toi: intersection.time_of_impact.from_rapier(),
-            normal: intersection.normal.from_rapier(),
+            toi: intersection.time_of_impact.to_bevy(),
+            normal: intersection.normal.to_bevy(),
             face: if let FeatureId::Face(fix) = intersection.feature {
                 Some(fix as usize)
             } else {
                 None
             },
-            position: origin + direction * intersection.time_of_impact.from_rapier(),
+            position: origin + direction * intersection.time_of_impact.to_bevy(),
         })
     }
 
@@ -556,7 +556,7 @@ impl SceneColliderData {
 
         contact.map(|(handle, toi)| {
             (
-                toi.time_of_impact.from_rapier(),
+                toi.time_of_impact.to_bevy(),
                 self.get_id(handle).unwrap().clone(),
             )
         })
@@ -623,14 +623,14 @@ impl SceneColliderData {
             |handle, intersection| {
                 results.push(RaycastResult {
                     id: self.get_id(handle).unwrap().clone(),
-                    toi: intersection.time_of_impact.from_rapier(),
-                    normal: intersection.normal.from_rapier(),
+                    toi: intersection.time_of_impact.to_bevy(),
+                    normal: intersection.normal.to_bevy(),
                     face: if let FeatureId::Face(fix) = intersection.feature {
                         Some(fix as usize)
                     } else {
                         None
                     },
-                    position: origin + direction * intersection.time_of_impact.from_rapier(),
+                    position: origin + direction * intersection.time_of_impact.to_bevy(),
                 });
                 true
             },
@@ -747,10 +747,10 @@ impl SceneColliderData {
 
         result.map(|(handle, intersection)| RaycastResult {
             id: self.get_id(handle).unwrap().clone(),
-            toi: (intersection.time_of_impact / distance).from_rapier(),
-            normal: intersection.normal1.from_rapier(),
+            toi: (intersection.time_of_impact / distance).to_bevy(),
+            normal: intersection.normal1.to_bevy(),
             face: None,
-            position: intersection.witness1.from_rapier(),
+            position: intersection.witness1.to_bevy(),
         })
     }
 
@@ -834,11 +834,13 @@ impl SceneColliderData {
                     parry::query::ClosestPoints::WithinMargin(opoint, opoint1) => {
                         let offset = DVec3::from(opoint1 - opoint);
                         if offset != DVec3::ZERO {
-                            let required_offset = offset.normalize() * PLAYER_COLLIDER_RADIUS as f64;
+                            let required_offset =
+                                offset.normalize() * PLAYER_COLLIDER_RADIUS as f64;
                             let correction = offset - required_offset;
 
                             let mask_pos = correction.cmpgt(DVec3::ZERO);
-                            let active_pos = DVec3::select(mask_pos, correction, DVec3::NEG_INFINITY);
+                            let active_pos =
+                                DVec3::select(mask_pos, correction, DVec3::NEG_INFINITY);
                             constraint_min = constraint_min.max(active_pos);
 
                             let mask_neg = correction.cmplt(DVec3::ZERO);
@@ -879,7 +881,7 @@ impl SceneColliderData {
                 true,
                 q,
             )
-            .map(|(_, point)| point.point.from_rapier())
+            .map(|(_, point)| point.point.to_bevy())
     }
 
     pub fn remove_collider(&mut self, id: &ColliderId) {

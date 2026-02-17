@@ -61,7 +61,7 @@ use system_ui::{crash_report::CrashReportPlugin, SystemUiPlugin};
 use texture_camera::TextureCameraPlugin;
 use tween::TweenPlugin;
 use ui_core::UiCorePlugin;
-use user_input::{UserInputPlugin, avatar_movement::GroundCollider};
+use user_input::{avatar_movement::GroundCollider, UserInputPlugin};
 use uuid::Uuid;
 use visuals::VisualsPlugin;
 use wallet::WalletPlugin;

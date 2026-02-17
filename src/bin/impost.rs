@@ -37,8 +37,7 @@ use nft::asset_source::Nft;
 use restricted_actions::RestrictedActionsPlugin;
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
-    initialize_scene::ScenePointers, permissions::PermissionManager,
-    OutOfWorld, SceneRunnerPlugin,
+    initialize_scene::ScenePointers, permissions::PermissionManager, OutOfWorld, SceneRunnerPlugin,
 };
 
 use ipfs::{map_realm_name, CurrentRealm, IpfsIoPlugin};

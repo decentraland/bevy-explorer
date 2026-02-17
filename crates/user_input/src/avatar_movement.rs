@@ -337,7 +337,8 @@ fn resolve_collisions(
     let mut prev = DVec3::INFINITY;
     let mut current_offset = DVec3::ZERO;
     let mut iteration = 0;
-    while (prev - current_offset).length() > PLAYER_COLLIDER_OVERLAP as f64 * 0.01 && iteration < 60 {
+    while (prev - current_offset).length() > PLAYER_COLLIDER_OVERLAP as f64 * 0.01 && iteration < 60
+    {
         prev = current_offset;
 
         for (ctx, mut collider_data) in scenes.iter_mut() {
