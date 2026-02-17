@@ -672,8 +672,13 @@ impl SpawnPosition {
 #[derive(Deserialize, Debug, Clone)]
 pub struct SpawnPoint {
     pub name: Option<String>,
+    #[serde(default = "default_default_spawn_point")]
     pub default: bool,
     pub position: SpawnPosition,
+}
+
+fn default_default_spawn_point() -> bool {
+    false
 }
 
 #[derive(Deserialize, Debug)]
