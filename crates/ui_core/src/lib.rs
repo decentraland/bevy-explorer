@@ -69,6 +69,9 @@ pub enum WeightName {
     BoldItalic,
 }
 
+/// Scale factor applied to SDK font sizes to match the reference renderer.
+pub const FONT_SIZE_SCALE: f32 = 0.95;
+
 pub fn user_font(name: FontName, weight: WeightName) -> Handle<Font> {
     FONTS.get().unwrap().get(&(name, weight)).unwrap().clone()
 }
