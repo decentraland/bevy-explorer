@@ -143,7 +143,7 @@ fn fetch_time_from_skybox(
     mut commands: Commands,
     primary_player: Res<PrimaryPlayerRes>,
     containing_scene: ContainingScene,
-    scenes: Query<(Entity, &RendererSceneContext, &SkyboxTime)>,
+    scenes: Query<(Entity, &RendererSceneContext, Ref<SkyboxTime>)>,
     time_keeper: Single<(Entity, Option<&SkyboxTime>, Option<&SkyboxTimeSource>), With<TimeKeeper>>,
     scene_time_component_id: ComponentIdFor<SceneTime>,
 ) {
@@ -165,6 +165,15 @@ fn fetch_time_from_skybox(
             .is_none()
         {
             debug!("Now using skybox time from scene {}.", entity);
+            commands.entity(time_keeper).insert((
+                SkyboxTime(PbSkyboxTime {
+                    fixed_time: skybox_time.fixed_time,
+                    transition_mode: skybox_time.transition_mode,
+                }),
+                SkyboxTimeSource(entity),
+            ));
+        } else if skybox_time.is_changed() {
+            debug!("New skybox time from scene {}.", entity);
             commands.entity(time_keeper).insert((
                 SkyboxTime(PbSkyboxTime {
                     fixed_time: skybox_time.fixed_time,
