@@ -1236,12 +1236,17 @@ fn load_active_entities(
         for active_entity in retrieved_parcels {
             // TODO check for portables
 
-            let Some(meta) = active_entity
-                .metadata
-                .and_then(|meta| serde_json::from_value::<SceneMeta>(meta).ok())
-            else {
-                warn!("active entity scene.json did not resolve to expected format");
+            let Some(active_entity_metadata) = active_entity.metadata else {
+                debug!("Active entity did not have any metadata.");
                 continue;
+            };
+
+            let meta = match serde_json::from_value::<SceneMeta>(active_entity_metadata) {
+                Ok(metadata) => metadata,
+                Err(err) => {
+                    error!("Failed to deserialize active entity metadata due to '{err}'.");
+                    continue;
+                }
             };
 
             let mut urn = urn_lookup.remove(&active_entity.id);
