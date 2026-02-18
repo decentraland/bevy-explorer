@@ -123,6 +123,7 @@ impl DclProtoComponent for sdk::components::PbInputModifier {}
 impl DclProtoComponent for sdk::components::PbTriggerArea {}
 impl DclProtoComponent for sdk::components::PbTriggerAreaResult {}
 impl DclProtoComponent for sdk::components::PbGltfNodeModifiers {}
+impl DclProtoComponent for sdk::components::PbSkyboxTime {}
 
 // VECTOR2 conversions
 impl Copy for common::Vector2 {}
