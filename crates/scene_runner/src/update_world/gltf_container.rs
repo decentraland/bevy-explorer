@@ -752,8 +752,14 @@ fn update_ready_gltfs(
                                 failed.push((bevy_scene_entity, instance));
                                 break 'outer;
                             };
+
+                            // materials with anisotropy were causing issues
+                            // see https://github.com/decentraland/bevy-explorer/issues/424
+                            let mut base_clone = base.clone();
+                            base_clone.anisotropy_strength = 0.;
+
                             let h_scene_material = bound_mats.add(ExtendedMaterial {
-                                base: base.clone(),
+                                base: base_clone,
                                 extension: SceneBound::new(
                                     context.bounds.clone(),
                                     config.graphics.oob,
