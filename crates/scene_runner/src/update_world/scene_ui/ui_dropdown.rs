@@ -11,7 +11,7 @@ use dcl_component::{
 use ui_core::{
     combo_box::ComboBox,
     ui_actions::{DataChanged, On},
-    user_font, FontName,
+    user_font, FontName, FONT_SIZE_SCALE,
 };
 
 use crate::{
@@ -95,7 +95,7 @@ pub fn set_ui_dropdown(
                 Some((
                     TextFont {
                         font: user_font(font_name, ui_core::WeightName::Regular),
-                        font_size,
+                        font_size: font_size * FONT_SIZE_SCALE,
                         ..Default::default()
                     },
                     TextColor(

@@ -108,7 +108,7 @@ use dcl_component::{
     },
     SceneComponentId,
 };
-use ui_core::{ui_builder::SpawnSpacer, user_font, FontName, WeightName};
+use ui_core::{ui_builder::SpawnSpacer, user_font, FontName, WeightName, FONT_SIZE_SCALE};
 use unicode_segmentation::UnicodeSegmentation;
 use world_ui::{spawn_world_ui_view, WorldUi};
 
@@ -839,7 +839,7 @@ pub fn make_text_section(
 
         let font = TextFont {
             font: user_font(font_name, weight),
-            font_size: font_size * 0.95,
+            font_size: font_size * FONT_SIZE_SCALE,
             ..Default::default()
         };
 
