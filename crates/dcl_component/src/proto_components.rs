@@ -174,7 +174,12 @@ impl std::ops::Add<common::Vector3> for common::Vector3 {
 impl common::Vector3 {
     // flip z coordinate for handedness
     pub fn world_vec_to_vec3(&self) -> bevy::prelude::Vec3 {
-        bevy::prelude::Vec3::new(self.x, self.y, -self.z)
+        let vec = bevy::prelude::Vec3::new(self.x, self.y, -self.z);
+        if vec.is_nan() {
+            bevy::prelude::Vec3::ZERO
+        } else {
+            vec
+        }
     }
 
     pub fn world_vec_from_vec3(vec3: &bevy::prelude::Vec3) -> Self {

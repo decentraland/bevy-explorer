@@ -4,13 +4,15 @@ use std::f32::consts::TAU;
 use bevy::{diagnostic::FrameCount, math::DVec3, platform::collections::HashMap, prelude::*};
 use common::{
     dynamics::{PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS, PLAYER_GROUND_THRESHOLD},
+    sets::SceneSets,
     structs::{AvatarDynamicState, PrimaryPlayerRes, PrimaryUser},
 };
-use dcl::interface::ComponentPosition;
+use comms::global_crdt::GlobalCrdtState;
+use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
         common::Vector3,
-        sdk::components::{ColliderLayer, PbAvatarMovement},
+        sdk::components::{ColliderLayer, PbAvatarMovement, PbAvatarMovementInfo},
     },
     SceneComponentId, SceneEntityId,
 };
@@ -36,6 +38,10 @@ impl Plugin for AvatarMovementPlugin {
             ComponentPosition::EntityOnly,
         );
 
+        app.init_resource::<AvatarMovementInfo>();
+
+        app.add_systems(Update, broadcast_movement_info.in_set(SceneSets::Init));
+
         app.add_systems(
             PostUpdate,
             (
@@ -51,7 +57,7 @@ impl Plugin for AvatarMovementPlugin {
     }
 }
 
-#[derive(Component, Clone, Copy)]
+#[derive(Component, Clone, Copy, Debug)]
 pub struct AvatarMovement {
     pub velocity: Vec3,
     pub orientation: f32,
@@ -103,6 +109,9 @@ impl Default for Movement {
         }
     }
 }
+
+#[derive(Resource, Default)]
+pub struct AvatarMovementInfo(pub PbAvatarMovementInfo);
 
 // choose the movement we want to use
 fn pick_movement(
@@ -162,13 +171,29 @@ pub fn apply_movement(
     mut player: Query<(&mut Transform, &mut AvatarDynamicState, &Movement), With<PrimaryUser>>,
     mut scenes: Query<(Entity, &RendererSceneContext, &mut SceneColliderData)>,
     time_res: Res<Time>,
+    mut info: ResMut<AvatarMovementInfo>,
     mut jumping: Local<bool>,
 ) {
     let Ok((mut transform, mut dynamic_state, movement)) = player.single_mut() else {
         return;
     };
 
+    info.0.step_time = time_res.delta_secs();
+
     if movement.movement.velocity == Vec3::ZERO {
+        dynamic_state.velocity = Vec3::ZERO;
+        let ground_height =
+            scenes
+                .iter_mut()
+                .fold(f32::INFINITY, |gh, (_, ctx, mut collider_data)| {
+                    gh.min(
+                        collider_data
+                            .get_ground(ctx.last_update_frame, transform.translation)
+                            .map(|(h, _)| h)
+                            .unwrap_or(f32::INFINITY),
+                    )
+                });
+        dynamic_state.ground_height = ground_height;
         return;
     };
 
@@ -214,7 +239,7 @@ pub fn apply_movement(
                 false,
                 -PLAYER_COLLIDER_OVERLAP,
             ) {
-                step_time = hit.toi as f64 * time;
+                step_time = hit.toi as f64;
                 contact_normal = hit.normal.as_dvec3();
             }
         }
@@ -228,6 +253,11 @@ pub fn apply_movement(
         "move {:.7} + {:.7} = {:.7} ({steps} iterations)",
         transform.translation, movement.movement.velocity, position
     );
+
+    info.0.requested_velocity = Some(Vector3::world_vec_from_vec3(&movement.movement.velocity));
+    info.0.actual_velocity = Some(Vector3::world_vec_from_vec3(
+        &((position - transform.translation.as_dvec3()) / time_res.delta_secs_f64()).as_vec3(),
+    ));
 
     let position = position.as_vec3();
     let velocity = velocity.as_vec3();
@@ -301,6 +331,8 @@ fn apply_ground_collider_movement(
     ground_transforms: Query<(&GlobalTransform, &PreviousColliderTransform)>,
     mut player: Query<(&mut Transform, &GroundCollider), With<PrimaryUser>>,
     frame: Res<FrameCount>,
+    mut info: ResMut<AvatarMovementInfo>,
+    time: Res<Time>,
 ) {
     let Ok((mut transform, GroundCollider(Some((ground_entity, _, _))))) = player.single_mut()
     else {
@@ -339,6 +371,18 @@ fn apply_ground_collider_movement(
         );
 
         if (new_translation - transform.translation).length() < 5.0 {
+            let add_external_velocity =
+                (new_translation - transform.translation) / time.delta_secs();
+            let existing_external_velocity = info
+                .0
+                .external_velocity
+                .as_ref()
+                .map(Vector3::world_vec_to_vec3)
+                .unwrap_or_default();
+            info.0.external_velocity = Some(Vector3::world_vec_from_vec3(
+                &(existing_external_velocity + add_external_velocity),
+            ));
+
             transform.translation = new_translation;
         } else {
             debug!("skipped");
@@ -349,6 +393,8 @@ fn apply_ground_collider_movement(
 fn resolve_collisions(
     mut player: Query<&mut Transform, With<PrimaryUser>>,
     mut scenes: Query<(&RendererSceneContext, &mut SceneColliderData)>,
+    mut info: ResMut<AvatarMovementInfo>,
+    time: Res<Time>,
 ) {
     let Ok(mut transform) = player.single_mut() else {
         return;
@@ -404,5 +450,42 @@ fn resolve_collisions(
         );
     }
 
-    transform.translation += current_offset.as_vec3();
+    let current_offset = current_offset.as_vec3();
+
+    if current_offset != Vec3::ZERO {
+        let add_external_velocity = current_offset / time.delta_secs();
+        let existing_external_velocity = info
+            .0
+            .external_velocity
+            .as_ref()
+            .map(Vector3::world_vec_to_vec3)
+            .unwrap_or_default();
+        info.0.external_velocity = Some(Vector3::world_vec_from_vec3(
+            &(existing_external_velocity + add_external_velocity),
+        ));
+
+        transform.translation += current_offset;
+    }
+}
+
+fn broadcast_movement_info(
+    mut info: ResMut<AvatarMovementInfo>,
+    mut global_crdt: ResMut<GlobalCrdtState>,
+    time: Res<Time>,
+) {
+    debug!("broadcast {:?}", info.0);
+
+    global_crdt.update_crdt(
+        SceneComponentId::AVATAR_MOVEMENT_INFO,
+        CrdtType::LWW_ANY,
+        SceneEntityId::PLAYER,
+        &info.0,
+    );
+    info.0 = PbAvatarMovementInfo {
+        step_time: time.delta_secs(),
+        previous_step_time: info.0.step_time,
+        requested_velocity: None,
+        actual_velocity: None,
+        external_velocity: None,
+    }
 }

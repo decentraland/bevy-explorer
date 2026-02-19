@@ -12281,6 +12281,7 @@ dependencies = [
  "bevy_console",
  "clap",
  "common",
+ "comms",
  "console",
  "dcl",
  "dcl_component",
