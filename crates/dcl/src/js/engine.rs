@@ -119,7 +119,7 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
         }
     };
 
-    let mut global_update_receiver = op_state.take::<tokio::sync::broadcast::Receiver<Arc<[u8]>>>();
+    let mut global_update_receiver = op_state.take::<tokio::sync::broadcast::Receiver<Vec<u8>>>();
     loop {
         match global_update_receiver.try_recv() {
             Ok(next) => {
@@ -130,7 +130,7 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
                     &mut stream,
                     false,
                 );
-                results.push(next.to_vec());
+                results.push(next);
             }
             Err(TryRecvError::Empty) => break,
             Err(TryRecvError::Lagged(_)) => (), // continue on with whatever we can still get

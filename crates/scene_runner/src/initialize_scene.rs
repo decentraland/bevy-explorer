@@ -6,10 +6,7 @@ use bevy::{
     diagnostic::FrameCount,
     math::{FloatOrd, Vec3Swizzles},
     pbr::NotShadowCaster,
-    platform::{
-        collections::{HashMap, HashSet},
-        sync::Arc,
-    },
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     reflect::TypePath,
     render::{
@@ -125,7 +122,7 @@ pub enum SceneLoading {
     MainCrdt {
         crdt: Option<Handle<SerializedCrdtStore>>,
     },
-    Javascript(Option<tokio::sync::broadcast::Receiver<Arc<[u8]>>>),
+    Javascript(Option<tokio::sync::broadcast::Receiver<Vec<u8>>>),
     Failed,
 }
 
