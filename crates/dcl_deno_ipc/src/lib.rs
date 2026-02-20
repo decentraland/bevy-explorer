@@ -1,6 +1,9 @@
 use anyhow::anyhow;
 use bevy::log::{debug, error, warn};
-use common::rpc::{rmp_encode, IpcMessage, ResponseContext, ENGINE_IPC_CONTEXT};
+use common::{
+    rpc::{rmp_encode, IpcMessage, ResponseContext, ENGINE_IPC_CONTEXT},
+    structs::GlobalCrdtStateUpdate,
+};
 use dcl::{
     interface::{CrdtComponentInterfaces, CrdtStore},
     js::SceneResponseSender,
@@ -61,7 +64,7 @@ pub struct NewSceneCommand {
     id: u64,
     info: NewSceneInfo,
     renderer_channel: tokio::sync::mpsc::Receiver<RendererResponse>,
-    global_channel: tokio::sync::broadcast::Receiver<Vec<u8>>,
+    global_channel: tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
     response_channel: SceneResponseSender,
     system_api_sender: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
 }
@@ -203,7 +206,11 @@ pub async fn renderer_ipc_out(
                     warn!("renderer_ipc_out exit on global receiver closed");
                     return;
                 };
-                write_msg(&mut stream, &EngineToScene::GlobalUpdate(data)).await;
+                match data {
+                    GlobalCrdtStateUpdate::Crdt(data) => {
+                        write_msg(&mut stream, &EngineToScene::GlobalUpdate(data)).await;
+                    }
+                }
             }
             ipc = ipc_router.recv() => {
                 let Some(ipc) = ipc else {
@@ -262,7 +269,7 @@ pub fn spawn_scene(
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     renderer_sender: SceneResponseSender,
-    global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
+    global_update_receiver: tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
     id: SceneId,
     storage_root: String,
     inspect: bool,

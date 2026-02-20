@@ -2,6 +2,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use bevy::log::{debug, error, info_span};
+use common::structs::GlobalCrdtStateUpdate;
 use dcl::{
     interface::{CrdtComponentInterfaces, CrdtStore},
     js::{
@@ -190,7 +191,7 @@ pub(crate) fn scene_thread(
     crdt_component_interfaces: CrdtComponentInterfaces,
     thread_sx: SceneResponseSender,
     thread_rx: Receiver<RendererResponse>,
-    global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
+    global_update_receiver: tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
     inspect: bool,
     testing: bool,
     preview: bool,
