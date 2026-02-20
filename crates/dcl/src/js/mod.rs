@@ -1,7 +1,7 @@
-use std::{cell::RefCell, rc::Rc, sync::Arc};
+use std::{cell::RefCell, rc::Rc};
 
 use anyhow::anyhow;
-use bevy::log::debug;
+use bevy::{log::debug, platform::sync::Arc};
 use dcl_component::{
     proto_components::sdk::components::PbPlayerIdentityData, DclReader, FromDclReader,
     SceneComponentId, SceneEntityId,
@@ -135,7 +135,7 @@ pub fn init_state(
     crdt_component_interfaces: CrdtComponentInterfaces,
     thread_sx: SceneResponseSender,
     thread_rx: Receiver<RendererResponse>,
-    global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
+    global_update_receiver: tokio::sync::broadcast::Receiver<Arc<[u8]>>,
     _inspect: bool,
     testing: bool,
     preview: bool,

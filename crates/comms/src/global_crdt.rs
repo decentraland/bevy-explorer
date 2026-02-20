@@ -138,7 +138,7 @@ pub struct GlobalCrdtState {
     // sender for sockets to post to
     ext_sender: mpsc::Sender<NetworkUpdate>,
     // sender for broadcast updates
-    int_sender: broadcast::Sender<Vec<u8>>,
+    int_sender: broadcast::Sender<Arc<[u8]>>,
     context: CrdtContext,
     store: CrdtStore,
     lookup: BiMap<Address, Entity>,
@@ -152,7 +152,7 @@ impl GlobalCrdtState {
     }
 
     // get a channel from which crdt updates can be received
-    pub fn subscribe(&self) -> (CrdtStore, broadcast::Receiver<Vec<u8>>) {
+    pub fn subscribe(&self) -> (CrdtStore, broadcast::Receiver<Arc<[u8]>>) {
         (self.store.clone(), self.int_sender.subscribe())
     }
 
@@ -176,7 +176,7 @@ impl GlobalCrdtState {
             CrdtType::LWW(_) => put_component(&id, &component_id, &timestamp, Some(&buf)),
             CrdtType::GO(_) => append_component(&id, &component_id, &buf),
         };
-        if let Err(e) = self.int_sender.send(crdt_message) {
+        if let Err(e) = self.int_sender.send(crdt_message.into()) {
             error!("failed to send foreign player update to scenes: {e}");
         }
     }
@@ -184,7 +184,7 @@ impl GlobalCrdtState {
     pub fn delete_entity(&mut self, id: SceneEntityId) {
         self.store.clean_up(&HashSet::from_iter(Some(id)));
         let crdt_message = delete_entity(&id);
-        if let Err(e) = self.int_sender.send(crdt_message) {
+        if let Err(e) = self.int_sender.send(crdt_message.into()) {
             error!("failed to send foreign player update to scenes: {e}");
         }
     }

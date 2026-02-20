@@ -1,5 +1,8 @@
 use anyhow::anyhow;
-use bevy::log::{debug, error, warn};
+use bevy::{
+    log::{debug, error, warn},
+    platform::sync::Arc,
+};
 use common::rpc::{rmp_encode, IpcMessage, ResponseContext, ENGINE_IPC_CONTEXT};
 use dcl::{
     interface::{CrdtComponentInterfaces, CrdtStore},
@@ -41,7 +44,7 @@ pub enum EngineToScene {
     NewScene(u64, NewSceneInfo),
     SceneUpdate(u64, RendererResponse),
     KillScene(u64),
-    GlobalUpdate(Vec<u8>),
+    GlobalUpdate(Arc<[u8]>),
     IpcMessage(u64, IpcMessage),
 }
 
@@ -61,7 +64,7 @@ pub struct NewSceneCommand {
     id: u64,
     info: NewSceneInfo,
     renderer_channel: tokio::sync::mpsc::Receiver<RendererResponse>,
-    global_channel: tokio::sync::broadcast::Receiver<Vec<u8>>,
+    global_channel: tokio::sync::broadcast::Receiver<Arc<[u8]>>,
     response_channel: SceneResponseSender,
     system_api_sender: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
 }
@@ -262,7 +265,7 @@ pub fn spawn_scene(
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     renderer_sender: SceneResponseSender,
-    global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
+    global_update_receiver: tokio::sync::broadcast::Receiver<Arc<[u8]>>,
     id: SceneId,
     storage_root: String,
     inspect: bool,

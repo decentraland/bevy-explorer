@@ -5,7 +5,7 @@ use std::{
     sync::Mutex,
 };
 
-use bevy::{log::error, platform::collections::HashMap};
+use bevy::{log::error, platform::{collections::HashMap, sync::Arc}};
 use deno_core::v8::IsolateHandle;
 use once_cell::sync::Lazy;
 use system_bridge::SystemApi;
@@ -36,7 +36,7 @@ pub fn spawn_scene(
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     renderer_sender: SceneResponseSender,
-    global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
+    global_update_receiver: tokio::sync::broadcast::Receiver<Arc<[u8]>>,
     id: SceneId,
     storage_root: String,
     inspect: bool,
