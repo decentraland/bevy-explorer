@@ -405,13 +405,21 @@ async fn run_script(
     };
 
     let f = runtime.resolve(promise);
-    let result = timeout(
-        Duration::from_secs(5),
-        runtime.with_event_loop_promise(f, PollEventLoopOptions::default()),
-    )
-    .await
-    .map_err(|_| anyhow!("script timed out"))?
-    .map(|_| ());
+
+    let result = if true {
+        runtime
+            .with_event_loop_promise(f, PollEventLoopOptions::default())
+            .await
+            .map(|_| ())
+    } else {
+        timeout(
+            Duration::from_secs(30),
+            runtime.with_event_loop_promise(f, PollEventLoopOptions::default()),
+        )
+        .await
+        .map_err(|_| anyhow!("script timed out"))?
+        .map(|_| ())
+    };
 
     result
 }
