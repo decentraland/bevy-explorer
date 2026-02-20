@@ -378,7 +378,7 @@ fn setup_minimap(
     if preview.server.is_some()
         || system_scene
             .as_ref()
-            .is_some_and(|ss| ss.scenes.get(0).is_some_and(|scene| scene.preview))
+            .is_some_and(|ss| ss.scenes.first().is_some_and(|scene| scene.preview))
     {
         let tracker = commands
             .entity(components.root)
@@ -403,9 +403,9 @@ fn setup_minimap(
                         system_scene: Option<Res<StartupScenes>>,
                         mut toaster: Toaster,
                     | {
-                        if system_scene.as_ref().is_some_and(|ss| ss.scenes.get(0).is_some_and(|scene| scene.hot_reload.is_some())) {
+                        if system_scene.as_ref().is_some_and(|ss| ss.scenes.first().is_some_and(|scene| scene.hot_reload.is_some())) {
                             let ss = system_scene.unwrap();
-                            let ss = ss.scenes.get(0).unwrap();
+                            let ss = ss.scenes.first().unwrap();
                             if let Some(hash) = ss.hash.clone() {
                                 test_data.inspect_hash = Some(hash.clone());
                                 let _ = ss.hot_reload.as_ref().unwrap().send(PreviewCommand::ReloadScene { hash });

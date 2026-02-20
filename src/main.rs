@@ -32,14 +32,13 @@ use common::{
     inputs::InputMap,
     sets::SetupSets,
     structs::{
-        AppConfig, AttachPoints, AvatarDynamicState, GraphicsSettings, IVec2Arg, 
-        PreviewMode, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser,
-        SceneImposterBake, SceneLoadDistance, StartupScene, StartupScenes, Version,
-        GROUND_RENDERLAYER,
+        AppConfig, AttachPoints, AvatarDynamicState, GraphicsSettings, IVec2Arg, PreviewMode,
+        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneImposterBake,
+        SceneLoadDistance, StartupScene, StartupScenes, Version, GROUND_RENDERLAYER,
     },
     util::{TryPushChildrenEx, UtilsPlugin},
 };
-use restricted_actions::{RestrictedActionsPlugin, process_startup_scenes};
+use restricted_actions::{process_startup_scenes, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
     automatic_testing::AutomaticTestingPlugin,

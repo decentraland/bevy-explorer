@@ -747,7 +747,12 @@ impl SceneColliderData {
 
         result.map(|(handle, intersection)| {
             let id = self.get_id(handle).unwrap().clone();
-            let position = self.collider_set.get(handle).unwrap().position().transform_point(&intersection.witness1);
+            let position = self
+                .collider_set
+                .get(handle)
+                .unwrap()
+                .position()
+                .transform_point(&intersection.witness1);
             RaycastResult {
                 id,
                 toi: intersection.time_of_impact.to_bevy(),

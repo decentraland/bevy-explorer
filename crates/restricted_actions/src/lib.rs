@@ -22,11 +22,17 @@ use common::{
         RpcEventSender, RpcResultSender, SpawnResponse,
     },
     sets::SceneSets,
-    structs::{AvatarDynamicState, PermissionType, PreviewCommand, PrimaryCamera, PrimaryUser, StartupScenes, ZOrder},
+    structs::{
+        AvatarDynamicState, PermissionType, PreviewCommand, PrimaryCamera, PrimaryUser,
+        StartupScenes, ZOrder,
+    },
     util::{AsH160, TaskCompat, TaskExt},
 };
 use comms::{
-    NetworkMessage, NetworkMessageRecipient, SceneRoom, Transport, global_crdt::ForeignPlayer, preview::handle_preview_socket, profile::{CurrentUserProfile, ProfileManager, UserProfile}
+    global_crdt::ForeignPlayer,
+    preview::handle_preview_socket,
+    profile::{CurrentUserProfile, ProfileManager, UserProfile},
+    NetworkMessage, NetworkMessageRecipient, SceneRoom, Transport,
 };
 use console::DoAddConsoleCommand;
 use copypwasmta::{ClipboardContext, ClipboardProvider};
@@ -1624,7 +1630,7 @@ pub fn process_startup_scenes(
 
             if scene.preview {
                 let sx = channel
-                    .get_or_insert_with(|| tokio::sync::mpsc::unbounded_channel())
+                    .get_or_insert_with(tokio::sync::mpsc::unbounded_channel)
                     .0
                     .clone();
                 IoTaskPool::get()
