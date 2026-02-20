@@ -13,7 +13,7 @@ use bevy::{
         view::RenderLayers,
         RenderPlugin,
     },
-    tasks::{BoxedFuture, IoTaskPool, Task},
+    tasks::BoxedFuture,
     winit::{UpdateMode, WinitSettings},
 };
 use bevy_console::ConsoleCommand;
@@ -25,28 +25,25 @@ use common::{
     inputs::InputMap,
     sets::SetupSets,
     structs::{
-        AppConfig, AttachPoints, AvatarDynamicState, IVec2Arg, PreviewCommand, PreviewMode,
-        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneLoadDistance,
-        SystemScene, Version, GROUND_RENDERLAYER,
+        AppConfig, AttachPoints, AvatarDynamicState, IVec2Arg, PreviewMode, PrimaryCamera,
+        PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneLoadDistance, StartupScene,
+        StartupScenes, Version, GROUND_RENDERLAYER,
     },
-    util::{TaskCompat, TaskExt, TryPushChildrenEx, UtilsPlugin},
+    util::{TryPushChildrenEx, UtilsPlugin},
 };
 use image_processing::ImageProcessingPlugin;
 use imposters::DclImposterPlugin;
-use restricted_actions::{lookup_portable, RestrictedActionsPlugin};
+use restricted_actions::{process_startup_scenes, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
-use scene_runner::{
-    initialize_scene::{PortableScenes, PortableSource, TestingData},
-    vec3_to_parcel, OutOfWorld, SceneRunnerPlugin,
-};
+use scene_runner::{initialize_scene::TestingData, vec3_to_parcel, OutOfWorld, SceneRunnerPlugin};
 
 use av::AVPlayerPlugin;
 use avatar::AvatarPlugin;
-use comms::{preview::handle_preview_socket, CommsPlugin};
+use comms::CommsPlugin;
 use console::{ConsolePlugin, DoAddConsoleCommand};
 use futures_lite::io::AsyncReadExt;
 use input_manager::InputManagerPlugin;
-use ipfs::{map_realm_name, CurrentRealm, IpfsAssetServer, IpfsIoPlugin};
+use ipfs::{map_realm_name, CurrentRealm, IpfsIoPlugin};
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use platform::default_camera_components;
 use social::SocialPlugin;
@@ -110,13 +107,34 @@ fn main_inner(
 
     let no_fog = false;
 
-    let ui_scene = if system_scene.is_empty() {
+    let startup_scenes = if system_scene.is_empty() {
         None
     } else {
         Some(system_scene.to_owned())
     };
-    if let Some(source) = ui_scene {
-        app.add_systems(Update, process_system_ui_scene);
+
+    let mut first = true;
+    let startup_scenes = startup_scenes
+        .map(|scenes| {
+            scenes
+                .split(';')
+                .map(|scene| {
+                    let scene = StartupScene {
+                        source: scene.to_owned(),
+                        super_user: first,
+                        preview: false,
+                        hot_reload: None,
+                        hash: None,
+                    };
+                    first = false;
+                    scene
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if !startup_scenes.is_empty() {
+        app.add_systems(Update, process_startup_scenes);
         app.insert_resource(NativeUi {
             login: false,
             emote_wheel: false,
@@ -127,11 +145,8 @@ fn main_inner(
             tooltips: false,
             loading_scene: false,
         });
-        app.insert_resource(SystemScene {
-            source: Some(source),
-            preview: false,
-            hot_reload: None,
-            hash: None,
+        app.insert_resource(StartupScenes {
+            scenes: startup_scenes,
         });
     } else {
         app.insert_resource(NativeUi {
@@ -457,64 +472,6 @@ fn set_fps(mut input: ConsoleCommand<FpsCommand>, mut config: ResMut<AppConfig>)
     }
 }
 
-#[allow(clippy::type_complexity)]
-pub fn process_system_ui_scene(
-    mut system_scene: ResMut<SystemScene>,
-    mut task: Local<Option<Task<Result<(String, PortableSource), String>>>>,
-    mut done: Local<bool>,
-    mut portables: ResMut<PortableScenes>,
-    ipfas: IpfsAssetServer,
-    mut channel: Local<Option<tokio::sync::mpsc::UnboundedReceiver<PreviewCommand>>>,
-    mut writer: EventWriter<PreviewCommand>,
-) {
-    if let Some(command) = channel.as_mut().and_then(|rx| rx.try_recv().ok()) {
-        writer.write(command);
-        *done = false;
-        system_scene.hash = None;
-        return;
-    }
-
-    if *done || system_scene.source.is_none() {
-        return;
-    }
-
-    if task.is_none() {
-        *task = Some(IoTaskPool::get().spawn_compat(lookup_portable(
-            None,
-            system_scene.source.clone().unwrap(),
-            true,
-            ipfas.ipfs().clone(),
-        )));
-    }
-
-    let mut t = task.take().unwrap();
-    match t.complete() {
-        Some(Ok((hash, source))) => {
-            info!("added ui scene from {}", source.pid);
-            system_scene.hash = Some(hash.clone());
-            portables.0.extend([(hash, source)]);
-            *done = true;
-
-            if system_scene.preview {
-                let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
-                IoTaskPool::get()
-                    .spawn(handle_preview_socket(
-                        system_scene.source.clone().unwrap(),
-                        sx.clone(),
-                    ))
-                    .detach();
-                *channel = Some(rx);
-                system_scene.hot_reload = Some(sx);
-            }
-        }
-        Some(Err(e)) => {
-            error!("failed to load ui scene: {e}");
-            *done = true;
-        }
-        None => *task = Some(t),
-    }
-}
-
 use once_cell::sync::OnceCell;
 use wasm_bindgen::prelude::*;
 
@@ -617,14 +574,14 @@ extern "C" {
 struct UrlParams {
     parcel: IVec2,
     server: String,
-    system_scene: Option<String>,
+    startup_scenes: Option<String>,
     preview: bool,
 }
 
 fn update_url_params(
     player: Query<&GlobalTransform, With<PrimaryUser>>,
     current_realm: Res<CurrentRealm>,
-    system_scene: Option<Res<SystemScene>>,
+    startup_scenes: Option<Res<StartupScenes>>,
     preview: Res<PreviewMode>,
     mut prev: Local<UrlParams>,
 ) {
@@ -632,13 +589,20 @@ fn update_url_params(
     let Some(server) = current_realm.about_url.strip_suffix("/about") else {
         return;
     };
-    let system_scene = system_scene.and_then(|s| s.source.clone());
+    let startup_scenes = startup_scenes.map(|s| {
+        let scenes = s
+            .scenes
+            .iter()
+            .map(|scene| scene.source.clone())
+            .collect::<Vec<_>>();
+        scenes.join(";")
+    });
     let preview = preview.is_preview;
 
     let params = UrlParams {
         parcel,
         server: server.to_owned(),
-        system_scene,
+        startup_scenes,
         preview,
     };
 
@@ -648,7 +612,7 @@ fn update_url_params(
             params.parcel.x,
             params.parcel.y,
             params.server,
-            params.system_scene,
+            params.startup_scenes,
             params.preview,
         );
     }

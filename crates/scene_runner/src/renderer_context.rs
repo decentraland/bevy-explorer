@@ -296,15 +296,20 @@ impl RendererSceneContext {
 
     pub fn log(&mut self, log: SceneLogMessage) {
         if self.log_to_stdout {
+            let base = if self.is_portable {
+                self.title.clone()
+            } else {
+                format!("{}", self.base)
+            };
             match log.level {
                 dcl::SceneLogLevel::Log => {
-                    info!("[{} {}] {}", self.base, log.timestamp, log.message)
+                    info!("[{} {}] {}", base, log.timestamp, log.message)
                 }
                 dcl::SceneLogLevel::SceneError => {
-                    warn!("[{} {}] {}", self.base, log.timestamp, log.message)
+                    warn!("[{} {}] {}", base, log.timestamp, log.message)
                 }
                 dcl::SceneLogLevel::SystemError => {
-                    error!("[{} {}] {}", self.base, log.timestamp, log.message)
+                    error!("[{} {}] {}", base, log.timestamp, log.message)
                 }
             }
         }

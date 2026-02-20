@@ -16,7 +16,7 @@ use common::{
     sets::{SceneSets, SetupSets},
     structs::{
         AppConfig, CursorLocks, DebugInfo, PreviewCommand, PreviewMode, PrimaryUser, SettingsTab,
-        ShowSettingsEvent, SystemScene, Version, ZOrder,
+        ShowSettingsEvent, StartupScenes, Version, ZOrder,
     },
     util::ModifyComponentExt,
 };
@@ -335,7 +335,7 @@ fn setup_minimap(
     root: Res<SystemUiRoot>,
     dui: Res<DuiRegistry>,
     preview: Res<PreviewMode>,
-    system_scene: Option<Res<SystemScene>>,
+    system_scene: Option<Res<StartupScenes>>,
 ) {
     let components = commands
         .spawn_template(&dui, "minimap", Default::default())
@@ -375,7 +375,11 @@ fn setup_minimap(
         commands.entity(components.named("map-container")).despawn();
     }
 
-    if preview.server.is_some() || system_scene.as_ref().is_some_and(|ss| ss.preview) {
+    if preview.server.is_some()
+        || system_scene
+            .as_ref()
+            .is_some_and(|ss| ss.scenes.get(0).is_some_and(|scene| scene.preview))
+    {
         let tracker = commands
             .entity(components.root)
             .spawn_template(
@@ -396,11 +400,12 @@ fn setup_minimap(
                         containing_scene: ContainingScene,
                         scenes: Query<&RendererSceneContext>,
                         player: Query<Entity, With<PrimaryUser>>,
-                        system_scene: Option<Res<SystemScene>>,
+                        system_scene: Option<Res<StartupScenes>>,
                         mut toaster: Toaster,
                     | {
-                        if system_scene.as_ref().is_some_and(|ss| ss.hot_reload.is_some()) {
+                        if system_scene.as_ref().is_some_and(|ss| ss.scenes.get(0).is_some_and(|scene| scene.hot_reload.is_some())) {
                             let ss = system_scene.unwrap();
+                            let ss = ss.scenes.get(0).unwrap();
                             if let Some(hash) = ss.hash.clone() {
                                 test_data.inspect_hash = Some(hash.clone());
                                 let _ = ss.hot_reload.as_ref().unwrap().send(PreviewCommand::ReloadScene { hash });
