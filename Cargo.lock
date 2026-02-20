@@ -8366,7 +8366,7 @@ dependencies = [
 [[package]]
 name = "parry3d-f64"
 version = "0.20.1"
-source = "git+https://github.com/robtfm/parry?branch=bugfix-project-local-point#2454ba05183ae9a48e3d6bf086d498b2df2285c1"
+source = "git+https://github.com/robtfm/parry?branch=bugfix-project-local-point#86f8d83e0eb9baf14c81ae9f7037e0204b104a06"
 dependencies = [
  "approx",
  "arrayvec",
