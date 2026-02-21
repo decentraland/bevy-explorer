@@ -6,6 +6,7 @@ use std::{
 };
 
 use bevy::{log::error, platform::collections::HashMap};
+use common::structs::GlobalCrdtStateUpdate;
 use deno_core::v8::IsolateHandle;
 use once_cell::sync::Lazy;
 use system_bridge::SystemApi;
@@ -36,7 +37,7 @@ pub fn spawn_scene(
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     renderer_sender: SceneResponseSender,
-    global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
+    global_update_receiver: tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
     id: SceneId,
     storage_root: String,
     inspect: bool,

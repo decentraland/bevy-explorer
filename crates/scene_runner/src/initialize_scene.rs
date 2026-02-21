@@ -17,7 +17,8 @@ use bevy::{
 
 use common::{
     structs::{
-        AppConfig, AppError, IVec2Arg, PreviewMode, SceneLoadDistance, SceneMeta, SceneTime,
+        AppConfig, AppError, GlobalCrdtStateUpdate, IVec2Arg, PreviewMode, SceneLoadDistance,
+        SceneMeta, SceneTime,
     },
     util::{TaskExt, TryPushChildrenEx},
 };
@@ -122,7 +123,7 @@ pub enum SceneLoading {
     MainCrdt {
         crdt: Option<Handle<SerializedCrdtStore>>,
     },
-    Javascript(Option<tokio::sync::broadcast::Receiver<Vec<u8>>>),
+    Javascript(Option<tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>>),
     Failed,
 }
 

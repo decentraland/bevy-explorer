@@ -5,6 +5,7 @@ pub mod op_wrappers;
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use bevy::{log::tracing::span::EnteredSpan, tasks::IoTaskPool};
+use common::structs::GlobalCrdtStateUpdate;
 use dcl::{
     interface::{CrdtComponentInterfaces, CrdtStore},
     js::{CommunicatedWithRenderer, SceneResponseSender, ShuttingDown, SuperUserScene},
@@ -26,7 +27,7 @@ pub struct SceneInitializationData {
     pub scene_js: SceneJsFile,
     pub crdt_component_interfaces: CrdtComponentInterfaces,
     pub renderer_sender: SceneResponseSender,
-    pub global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
+    pub global_update_receiver: tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
     pub id: SceneId,
     pub storage_root: String,
     pub inspect: bool,
@@ -51,7 +52,7 @@ pub fn spawn_scene(
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     renderer_sender: SceneResponseSender,
-    global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
+    global_update_receiver: tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
     id: SceneId,
     storage_root: String,
     inspect: bool,
