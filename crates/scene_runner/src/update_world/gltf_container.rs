@@ -1198,6 +1198,22 @@ fn debug_modifiers(
     removed_q: Query<&GltfProcessed>,
     mut removed_components: RemovedComponents<GltfNodeModifiers>,
 ) {
+    // turn Cube1_4 into Cube1/Primitive4
+    fn path_subsegments(segment: &str) -> Vec<String> {
+        let Some(last_underscore) = segment.rfind('_') else {
+            return vec![segment.to_owned()];
+        };
+
+        let Ok(number) = segment[last_underscore + 1..].parse::<usize>() else {
+            return vec![segment.to_owned()];
+        };
+
+        vec![
+            segment[..last_underscore].to_owned(),
+            format!("Primitive{number}"),
+        ]
+    }
+
     for (modifiers, processed, def) in q {
         let mut modifiers = modifiers
             .0
@@ -1213,6 +1229,7 @@ fn debug_modifiers(
                             .as_str()
                             .split('/')
                             .filter(|segment| !segment.is_empty())
+                            .flat_map(path_subsegments)
                             .collect::<Vec<_>>(),
                     )
                 };
@@ -1250,26 +1267,6 @@ fn debug_modifiers(
 
             commands.entity(*child).try_remove::<NotShadowCaster>();
 
-            fn segments_match(node_segment: &str, modifier_segment: &str) -> bool {
-                if node_segment == modifier_segment {
-                    return true;
-                }
-
-                if !modifier_segment.is_char_boundary(node_segment.len()) {
-                    return false;
-                }
-
-                if modifier_segment[0..node_segment.len()] != node_segment[..] {
-                    return false;
-                }
-
-                // allow anything that matches but with a "_number"-like tail
-                modifier_segment
-                    .char_indices()
-                    .skip_while(|(ix, _)| *ix < node_segment.len())
-                    .all(|(_, c)| c == '_' || c.is_numeric())
-            }
-
             let mut material_modified = false;
             for (modifier_path, (shadows, maybe_material)) in
                 modifiers.iter().filter(|(modifier_path_components, _)| {
@@ -1281,7 +1278,7 @@ fn debug_modifiers(
                                 .any(|window| {
                                     window.iter().zip(modifier_path_components).all(
                                         |(node_segment, modifier_segment)| {
-                                            segments_match(node_segment, modifier_segment)
+                                            node_segment == modifier_segment
                                         },
                                     )
                                 })
