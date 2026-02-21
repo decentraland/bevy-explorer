@@ -79,6 +79,7 @@ system_bridge = { path = "crates/system_bridge" }
 texture_camera = { path = "crates/texture_camera" }
 platform = { path = "crates/platform" }
 image_processing = { path = "crates/image_processing" }
+notifications = { path = "crates/notifications" }
 
 bevy = { version = "0.16.1", default-features = false, features = [
   "animation",
@@ -205,6 +206,8 @@ web-time = "1.1"
 copypwasmta = { git = "https://github.com/robtfm/copypwasmta" }
 web-fs = "0.2.6"
 
+notify-rust = "4.12"
+
 [dependencies]
 assets = { workspace = true }
 analytics = { workspace = true }
@@ -233,6 +236,7 @@ system_bridge = { workspace = true }
 texture_camera = { workspace = true }
 platform = { workspace = true }
 image_processing = { workspace = true }
+notifications = { workspace = true }
 
 bevy = { workspace = true }
 wgpu = { workspace = true }
