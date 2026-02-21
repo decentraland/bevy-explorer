@@ -1229,8 +1229,7 @@ fn debug_modifiers(
                             .as_str()
                             .split('/')
                             .filter(|segment| !segment.is_empty())
-                            .map(path_subsegments)
-                            .flatten()
+                            .flat_map(path_subsegments)
                             .collect::<Vec<_>>(),
                     )
                 };
