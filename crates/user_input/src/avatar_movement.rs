@@ -179,13 +179,14 @@ pub fn apply_movement(
     };
 
     info.0.step_time = time_res.delta_secs();
+    transform.rotation = Quat::from_rotation_y(movement.movement.orientation / 360.0 * TAU);
 
     if movement.movement.velocity == Vec3::ZERO {
         dynamic_state.velocity = Vec3::ZERO;
         let ground_height =
             scenes
                 .iter_mut()
-                .fold(f32::INFINITY, |gh, (_, ctx, mut collider_data)| {
+                .fold(transform.translation.y, |gh, (_, ctx, mut collider_data)| {
                     gh.min(
                         collider_data
                             .get_ground(ctx.last_update_frame, transform.translation)
@@ -263,7 +264,6 @@ pub fn apply_movement(
     let velocity = velocity.as_vec3();
 
     transform.translation = position;
-    transform.rotation = Quat::from_rotation_y(movement.movement.orientation / 360.0 * TAU);
 
     // for now we hack in the old dynamic state values for animations
     dynamic_state.velocity = velocity;
@@ -277,7 +277,7 @@ pub fn apply_movement(
     }
     let ground_height = scenes
         .iter_mut()
-        .fold(f32::INFINITY, |gh, (_, ctx, mut collider_data)| {
+        .fold(transform.translation.y, |gh, (_, ctx, mut collider_data)| {
             gh.min(
                 collider_data
                     .get_ground(ctx.last_update_frame, transform.translation)
