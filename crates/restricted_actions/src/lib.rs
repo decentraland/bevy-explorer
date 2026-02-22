@@ -22,11 +22,15 @@ use common::{
         RpcEventSender, RpcResultSender, SpawnResponse,
     },
     sets::SceneSets,
-    structs::{AvatarDynamicState, PermissionType, PrimaryCamera, PrimaryUser, ZOrder},
+    structs::{
+        AvatarDynamicState, PermissionType, PreviewCommand, PrimaryCamera, PrimaryUser,
+        StartupScenes, ZOrder,
+    },
     util::{AsH160, TaskCompat, TaskExt},
 };
 use comms::{
     global_crdt::ForeignPlayer,
+    preview::handle_preview_socket,
     profile::{CurrentUserProfile, ProfileManager, UserProfile},
     NetworkMessage, NetworkMessageRecipient, SceneRoom, Transport,
 };
@@ -277,17 +281,22 @@ fn external_url(
     }
 }
 
-async fn lookup_ens(
+pub async fn lookup_ens(
     parent_scene: Option<String>,
     ens: String,
+    super_user: bool,
     ipfs: Arc<IpfsIo>,
 ) -> Result<(String, PortableSource), String> {
-    lookup_portable(
-        parent_scene,
-        format!("https://worlds-content-server.decentraland.org/world/{ens}"),
-        false,
-        ipfs,
-    )
+    if ens.to_ascii_lowercase().starts_with("http") {
+        lookup_portable(parent_scene, ens.clone(), super_user, ipfs)
+    } else {
+        lookup_portable(
+            parent_scene,
+            format!("https://worlds-content-server.decentraland.org/world/{ens}"),
+            super_user,
+            ipfs,
+        )
+    }
     .await
     .map(|(hash, source)| {
         (
@@ -326,7 +335,7 @@ pub async fn lookup_portable(
 
     let mut first_scene = config.scenes_urn.and_then(|scenes| scenes.first().cloned());
 
-    if first_scene.is_none() && super_user {
+    if first_scene.is_none() {
         // try from active entities
         let content_url = about
             .content
@@ -455,6 +464,7 @@ fn spawn_portable(
                     IoTaskPool::get().spawn_compat(lookup_ens(
                         Some(parent_hash),
                         ens,
+                        false,
                         ipfas.ipfs().clone(),
                     )),
                     Some(response.clone()),
@@ -1354,6 +1364,7 @@ struct PendingPortableCommands(
 #[command(name = "/spawn")]
 struct SpawnPortableCommand {
     ens: String,
+    as_super: Option<bool>,
 }
 
 fn spawn_portable_command(
@@ -1363,7 +1374,12 @@ fn spawn_portable_command(
 ) {
     if let Some(Ok(command)) = input.take() {
         pending.0.push((
-            IoTaskPool::get().spawn_compat(lookup_ens(None, command.ens, ipfas.ipfs().clone())),
+            IoTaskPool::get().spawn_compat(lookup_ens(
+                None,
+                command.ens,
+                command.as_super.unwrap_or_default(),
+                ipfas.ipfs().clone(),
+            )),
             PortableAction::Spawn,
         ));
     }
@@ -1383,7 +1399,12 @@ fn kill_portable_command(
 ) {
     if let Some(Ok(command)) = input.take() {
         pending.0.push((
-            IoTaskPool::get().spawn_compat(lookup_ens(None, command.ens, ipfas.ipfs().clone())),
+            IoTaskPool::get().spawn_compat(lookup_ens(
+                None,
+                command.ens,
+                false,
+                ipfas.ipfs().clone(),
+            )),
             PortableAction::Kill,
         ));
     }
@@ -1555,4 +1576,81 @@ fn handle_entity_definition(
             true
         }
     })
+}
+
+#[allow(clippy::type_complexity)]
+pub fn process_startup_scenes(
+    mut startup_scenes: ResMut<StartupScenes>,
+    mut tasks: Local<Vec<(usize, Task<Result<(String, PortableSource), String>>)>>,
+    mut done: Local<bool>,
+    mut portables: ResMut<PortableScenes>,
+    ipfas: IpfsAssetServer,
+    mut channel: Local<
+        Option<(
+            tokio::sync::mpsc::UnboundedSender<PreviewCommand>,
+            tokio::sync::mpsc::UnboundedReceiver<PreviewCommand>,
+        )>,
+    >,
+    mut writer: EventWriter<PreviewCommand>,
+) {
+    if let Some(command) = channel.as_mut().and_then(|(_, rx)| rx.try_recv().ok()) {
+        writer.write(command);
+        *done = false;
+        for scene in &mut startup_scenes.scenes {
+            scene.hash = None;
+        }
+        return;
+    }
+
+    if *done || startup_scenes.scenes.is_empty() {
+        return;
+    }
+
+    if tasks.is_empty() {
+        for (ix, scene) in startup_scenes.scenes.iter().enumerate() {
+            tasks.push((
+                ix,
+                IoTaskPool::get().spawn_compat(lookup_ens(
+                    None,
+                    scene.source.clone(),
+                    scene.super_user,
+                    ipfas.ipfs().clone(),
+                )),
+            ));
+        }
+    }
+
+    tasks.retain_mut(|(ix, t)| match t.complete() {
+        Some(Ok((hash, source))) => {
+            let scene = startup_scenes.scenes.get_mut(*ix).unwrap();
+
+            info!("added startup scene from {}", source.pid);
+            scene.hash = Some(hash.clone());
+            portables.0.extend([(hash, source)]);
+
+            if scene.preview {
+                let sx = channel
+                    .get_or_insert_with(tokio::sync::mpsc::unbounded_channel)
+                    .0
+                    .clone();
+                IoTaskPool::get()
+                    .spawn(handle_preview_socket(scene.source.clone(), sx.clone()))
+                    .detach();
+                scene.hot_reload = Some(sx);
+            }
+            false
+        }
+        Some(Err(e)) => {
+            error!(
+                "failed to load startup scene {}: {e}",
+                startup_scenes.scenes.get(*ix).unwrap().source
+            );
+            false
+        }
+        None => true,
+    });
+
+    if tasks.is_empty() {
+        *done = true;
+    }
 }

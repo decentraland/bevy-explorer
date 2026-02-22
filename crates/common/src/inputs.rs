@@ -67,6 +67,7 @@ pub enum CommonInputAction {
     IaAction4 = 11,
     IaAction5 = 12,
     IaAction6 = 13,
+    IaModifier = 14,
 }
 
 impl From<CommonInputAction> for Action {
@@ -340,6 +341,10 @@ impl Default for InputMap {
                 ),
                 (
                     Action::Scene(CommonInputAction::IaWalk),
+                    vec![InputIdentifier::Key(KeyCode::ControlLeft)],
+                ),
+                (
+                    Action::Scene(CommonInputAction::IaModifier),
                     vec![InputIdentifier::Key(KeyCode::ShiftLeft)],
                 ),
                 (

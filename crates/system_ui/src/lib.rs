@@ -27,7 +27,7 @@ use change_realm::ChangeRealmPlugin;
 use common::{
     inputs::SystemAction,
     sets::SetupSets,
-    structs::{ActiveDialog, SystemScene, UiRoot, ZOrder},
+    structs::{ActiveDialog, StartupScenes, UiRoot, ZOrder},
 };
 use emote_select::EmoteUiPlugin;
 use foreign_profile::ForeignProfilePlugin;
@@ -73,7 +73,7 @@ impl Plugin for SystemUiPlugin {
             ForeignProfilePlugin,
         ));
 
-        if app.world().get_resource::<SystemScene>().is_none() {
+        if app.world().get_resource::<StartupScenes>().is_none() {
             app.add_plugins(MapPlugin);
         }
     }

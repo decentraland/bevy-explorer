@@ -139,6 +139,9 @@ impl SceneComponentId {
     pub const CAMERA_LAYER: SceneComponentId = SceneComponentId(1211);
 
     pub const REALM_INFO: SceneComponentId = SceneComponentId(1106);
+
+    pub const AVATAR_MOVEMENT_INFO: SceneComponentId = SceneComponentId(1500);
+    pub const AVATAR_MOVEMENT: SceneComponentId = SceneComponentId(1501);
 }
 
 #[derive(

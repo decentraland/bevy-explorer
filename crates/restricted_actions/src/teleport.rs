@@ -154,7 +154,7 @@ pub fn handle_out_of_world(
             ) + base_position;
             best_position.y = 1000.0
                 - maybe_collider_data
-                    .and_then(|mut cd| cd.get_groundheight(context.tick_number, best_position))
+                    .and_then(|mut cd| cd.get_ground(context.last_update_frame, best_position))
                     .map(|(h, _)| h)
                     .unwrap_or(1000.0);
             let mut count = 100;

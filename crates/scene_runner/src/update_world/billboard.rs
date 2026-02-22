@@ -10,6 +10,8 @@ use common::structs::PrimaryCamera;
 use dcl::interface::ComponentPosition;
 use dcl_component::{proto_components::sdk::components::PbBillboard, SceneComponentId};
 
+use crate::update_world::transform_and_parent::PostUpdateSets;
+
 use super::AddCrdtInterfaceExt;
 
 pub struct BillboardPlugin;
@@ -23,7 +25,7 @@ impl Plugin for BillboardPlugin {
 
         app.add_systems(
             PostUpdate,
-            update_billboards.before(TransformSystem::TransformPropagate),
+            update_billboards.in_set(PostUpdateSets::Billboard),
         );
     }
 }

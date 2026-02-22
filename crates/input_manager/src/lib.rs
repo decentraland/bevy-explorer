@@ -1,5 +1,7 @@
 // input settings
 
+use bevy_console::{clap, ConsoleCommand};
+use console::DoAddConsoleCommand;
 use std::collections::BTreeSet;
 use strum::IntoEnumIterator;
 
@@ -104,6 +106,8 @@ impl Plugin for InputManagerPlugin {
                 handle_system_input_stream,
             ),
         );
+
+        app.add_console_command::<ResetControlsCommand, _>(reset_controls_command);
     }
 }
 
@@ -716,4 +720,22 @@ fn handle_system_input_stream(
     }
 
     *pressed = new_pressed;
+}
+
+/// manually spawn a portable
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/reset_controls")]
+struct ResetControlsCommand;
+
+fn reset_controls_command(
+    mut input: ConsoleCommand<ResetControlsCommand>,
+    mut config: ResMut<AppConfig>,
+    mut map: ResMut<InputMap>,
+) {
+    if let Some(Ok(_)) = input.take() {
+        map.inputs = InputMap::default().inputs;
+        config.inputs.0 = map.inputs.clone().into_iter().collect();
+        platform::write_config_file(&*config);
+        input.reply_ok("Controls reset to default");
+    }
 }

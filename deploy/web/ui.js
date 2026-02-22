@@ -3,7 +3,7 @@
 
 // Constants
 const DEFAULT_SERVER = "https://realm-provider-ea.decentraland.org/main";
-const DEFAULT_SYSTEMSCENE = "https://dcl-regenesislabs.github.io/bevy-ui-scene/BevyUiScene";
+const DEFAULT_SYSTEMSCENE = "https://dcl-regenesislabs.github.io/bevy-ui-scene/BevyUiScene;robtfm.dcl.eth";
 
 // DOM references
 const realmInput = document.getElementById("realm");

@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Duration};
 
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use bevy::log::{debug, error, info_span};
@@ -11,6 +11,7 @@ use dcl::{
     RendererResponse, RpcCalls, SceneElapsedTime, SceneId, SceneResponse,
 };
 use deno_core::{
+    anyhow::anyhow,
     ascii_str,
     error::{generic_error, AnyError},
     include_js_files, op2, v8, Extension, JsRuntime, OpDecl, OpState, PollEventLoopOptions,
@@ -19,7 +20,7 @@ use deno_core::{
 use multihash_codetable::MultihashDigest;
 use platform::project_directories;
 use system_bridge::SystemApi;
-use tokio::sync::mpsc::Receiver;
+use tokio::{sync::mpsc::Receiver, time::timeout};
 
 use ipfs::SceneJsFile;
 
@@ -404,10 +405,21 @@ async fn run_script(
     };
 
     let f = runtime.resolve(promise);
-    let result = runtime
-        .with_event_loop_promise(f, PollEventLoopOptions::default())
+
+    let result = if true {
+        runtime
+            .with_event_loop_promise(f, PollEventLoopOptions::default())
+            .await
+            .map(|_| ())
+    } else {
+        timeout(
+            Duration::from_secs(30),
+            runtime.with_event_loop_promise(f, PollEventLoopOptions::default()),
+        )
         .await
-        .map(|_| ());
+        .map_err(|_| anyhow!("script timed out"))?
+        .map(|_| ())
+    };
 
     result
 }

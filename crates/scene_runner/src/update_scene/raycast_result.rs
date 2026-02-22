@@ -8,6 +8,7 @@
 
 use bevy::{color::palettes::basic, prelude::*};
 use bevy_console::ConsoleCommand;
+use common::dynamics::PLAYER_COLLIDER_OVERLAP;
 
 use crate::{
     update_world::{
@@ -143,32 +144,75 @@ fn run_raycasts(
             .collision_mask
             .unwrap_or(ColliderLayer::ClPointer as u32 | ColliderLayer::ClPhysics as u32);
 
-        let results = match (context.is_portable, raycast.query_type()) {
-            (false, RaycastQueryType::RqtHitFirst) => scene_data
-                .cast_ray_nearest(
-                    context.last_update_frame,
-                    origin,
-                    direction,
-                    raycast.max_distance,
-                    mask,
-                    true,
-                    false,
-                    None,
-                )
-                .map(|hit| vec![(scene_ent.root, hit)])
-                .unwrap_or_default(),
-            (false, RaycastQueryType::RqtQueryAll) => scene_data
-                .cast_ray_all(
-                    context.last_update_frame,
-                    origin,
-                    direction,
-                    raycast.max_distance,
-                    mask,
-                    true,
-                )
-                .into_iter()
-                .map(|hit| (scene_ent.root, hit))
-                .collect(),
+        let nearest_function =
+            |last_update_frame: u32, scene_data: &mut SceneColliderData| match raycast.shape() {
+                dcl_component::proto_components::sdk::components::RaycastShape::RsRay => scene_data
+                    .cast_ray_nearest(
+                        last_update_frame,
+                        origin,
+                        direction,
+                        raycast.max_distance,
+                        mask,
+                        true,
+                        false,
+                        None,
+                    ),
+                dcl_component::proto_components::sdk::components::RaycastShape::RsAvatar => {
+                    scene_data.cast_avatar_nearest(
+                        last_update_frame,
+                        origin.as_dvec3(),
+                        direction.as_dvec3(),
+                        raycast.max_distance as f64,
+                        mask,
+                        true,
+                        false,
+                        Default::default(),
+                        false,
+                        -PLAYER_COLLIDER_OVERLAP,
+                    )
+                }
+            };
+
+        let all_function =
+            |last_update_frame: u32, scene_data: &mut SceneColliderData| match raycast.shape() {
+                dcl_component::proto_components::sdk::components::RaycastShape::RsRay => scene_data
+                    .cast_ray_all(
+                        last_update_frame,
+                        origin,
+                        direction,
+                        raycast.max_distance,
+                        mask,
+                        true,
+                    ),
+                dcl_component::proto_components::sdk::components::RaycastShape::RsAvatar => {
+                    scene_data.cast_avatar_all(
+                        last_update_frame,
+                        origin.as_dvec3(),
+                        direction.as_dvec3(),
+                        raycast.max_distance as f64,
+                        mask,
+                        true,
+                        false,
+                        -PLAYER_COLLIDER_OVERLAP,
+                    )
+                }
+            };
+
+        let results = match (
+            context.is_portable || raycast.include_world(),
+            raycast.query_type(),
+        ) {
+            (false, RaycastQueryType::RqtHitFirst) => {
+                nearest_function(context.last_update_frame, &mut scene_data)
+                    .map(|hit| vec![(scene_ent.root, hit)])
+                    .unwrap_or_default()
+            }
+            (false, RaycastQueryType::RqtQueryAll) => {
+                all_function(context.last_update_frame, &mut scene_data)
+                    .into_iter()
+                    .map(|hit| (scene_ent.root, hit))
+                    .collect()
+            }
             (true, RaycastQueryType::RqtHitFirst) => {
                 let full_ray = direction * raycast.max_distance;
                 let mut scenes = containing_scene
@@ -184,16 +228,9 @@ fn run_raycasts(
                     else {
                         continue;
                     };
-                    if let Some(result) = colliders.cast_ray_nearest(
-                        context.last_update_frame,
-                        origin,
-                        direction,
-                        raycast.max_distance,
-                        mask,
-                        true,
-                        false,
-                        None,
-                    ) {
+                    if let Some(result) =
+                        nearest_function(context.last_update_frame, &mut colliders)
+                    {
                         if best_result.as_ref().is_none_or(|(_, b)| b.toi > result.toi) {
                             best_result = Some((scene, result));
                         }
@@ -214,16 +251,8 @@ fn run_raycasts(
                     else {
                         continue;
                     };
-                    for result in colliders
-                        .cast_ray_all(
-                            context.last_update_frame,
-                            origin,
-                            direction,
-                            raycast.max_distance,
-                            mask,
-                            true,
-                        )
-                        .into_iter()
+                    for result in
+                        all_function(context.last_update_frame, &mut colliders).into_iter()
                     {
                         results.push((scene, result));
                     }

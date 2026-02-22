@@ -67,6 +67,7 @@ impl IaToDcl for CommonInputAction {
             CommonInputAction::IaAction4 => InputAction::IaAction4,
             CommonInputAction::IaAction5 => InputAction::IaAction5,
             CommonInputAction::IaAction6 => InputAction::IaAction6,
+            CommonInputAction::IaModifier => InputAction::IaModifier,
         }
     }
 }
@@ -92,6 +93,7 @@ impl IaToCommon for InputAction {
             InputAction::IaAction4 => CommonInputAction::IaAction4,
             InputAction::IaAction5 => CommonInputAction::IaAction5,
             InputAction::IaAction6 => CommonInputAction::IaAction6,
+            InputAction::IaModifier => CommonInputAction::IaModifier,
         }
     }
 }
