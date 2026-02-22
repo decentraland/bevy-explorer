@@ -6247,7 +6247,9 @@ name = "input_manager"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_console",
  "common",
+ "console",
  "platform",
  "strum 0.27.1",
  "system_bridge",
