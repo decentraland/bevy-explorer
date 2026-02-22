@@ -183,17 +183,17 @@ pub fn apply_movement(
 
     if movement.movement.velocity == Vec3::ZERO {
         dynamic_state.velocity = Vec3::ZERO;
-        let ground_height =
-            scenes
-                .iter_mut()
-                .fold(transform.translation.y, |gh, (_, ctx, mut collider_data)| {
-                    gh.min(
-                        collider_data
-                            .get_ground(ctx.last_update_frame, transform.translation)
-                            .map(|(h, _)| h)
-                            .unwrap_or(f32::INFINITY),
-                    )
-                });
+        let ground_height = scenes.iter_mut().fold(
+            transform.translation.y,
+            |gh, (_, ctx, mut collider_data)| {
+                gh.min(
+                    collider_data
+                        .get_ground(ctx.last_update_frame, transform.translation)
+                        .map(|(h, _)| h)
+                        .unwrap_or(f32::INFINITY),
+                )
+            },
+        );
         dynamic_state.ground_height = ground_height;
         return;
     };
@@ -275,16 +275,17 @@ pub fn apply_movement(
     } else {
         *jumping = false;
     }
-    let ground_height = scenes
-        .iter_mut()
-        .fold(transform.translation.y, |gh, (_, ctx, mut collider_data)| {
+    let ground_height = scenes.iter_mut().fold(
+        transform.translation.y,
+        |gh, (_, ctx, mut collider_data)| {
             gh.min(
                 collider_data
                     .get_ground(ctx.last_update_frame, transform.translation)
                     .map(|(h, _)| h)
                     .unwrap_or(f32::INFINITY),
             )
-        });
+        },
+    );
     dynamic_state.ground_height = ground_height;
 }
 
