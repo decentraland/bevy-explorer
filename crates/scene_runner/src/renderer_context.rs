@@ -303,13 +303,13 @@ impl RendererSceneContext {
             };
             match log.level {
                 dcl::SceneLogLevel::Log => {
-                    info!("[{} {}] {}", base, log.timestamp, log.message)
+                    info!("[{} {:.2}] {}", base, log.timestamp, log.message)
                 }
                 dcl::SceneLogLevel::SceneError => {
-                    warn!("[{} {}] {}", base, log.timestamp, log.message)
+                    warn!("[{} {:.2}] {}", base, log.timestamp, log.message)
                 }
                 dcl::SceneLogLevel::SystemError => {
-                    error!("[{} {}] {}", base, log.timestamp, log.message)
+                    error!("[{} {:.2}] {}", base, log.timestamp, log.message)
                 }
             }
         }
