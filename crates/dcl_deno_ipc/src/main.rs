@@ -7,10 +7,7 @@ use bevy::{
     },
     platform::collections::HashMap,
 };
-use common::{
-    rpc::{IpcMessage, RequestContext, SCENE_IPC_CONTEXT},
-    structs::GlobalCrdtStateUpdate,
-};
+use common::rpc::{IpcMessage, RequestContext, SCENE_IPC_CONTEXT};
 use dcl::js::{SceneResponseReceiver, SceneResponseSender};
 use dcl_deno_ipc::{write_msg, EngineToScene, SceneToEngine};
 use interprocess::local_socket::{
@@ -154,7 +151,7 @@ async fn scene_ipc_in(
                 let _ = sender.send(renderer_response).await;
             }
             EngineToScene::GlobalUpdate(data) => {
-                let _ = global_sx.send(GlobalCrdtStateUpdate::Crdt(data));
+                let _ = global_sx.send(data);
             }
             EngineToScene::IpcMessage(id, ipc_message) => {
                 SCENE_IPC_CONTEXT.with(|ctx| {
@@ -178,9 +175,6 @@ async fn scene_ipc_in(
                         }
                     }
                 });
-            }
-            EngineToScene::Time(time) => {
-                let _ = global_sx.send(GlobalCrdtStateUpdate::Time(time));
             }
         }
     }

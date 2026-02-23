@@ -44,9 +44,8 @@ pub enum EngineToScene {
     NewScene(u64, NewSceneInfo),
     SceneUpdate(u64, RendererResponse),
     KillScene(u64),
-    GlobalUpdate(Vec<u8>),
+    GlobalUpdate(GlobalCrdtStateUpdate),
     IpcMessage(u64, IpcMessage),
-    Time(f32),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -207,14 +206,7 @@ pub async fn renderer_ipc_out(
                     warn!("renderer_ipc_out exit on global receiver closed");
                     return;
                 };
-                match data {
-                    GlobalCrdtStateUpdate::Crdt(data) => {
-                        write_msg(&mut stream, &EngineToScene::GlobalUpdate(data)).await;
-                    }
-                    GlobalCrdtStateUpdate::Time(time) => {
-                        write_msg(&mut stream, &EngineToScene::Time(time)).await;
-                    }
-                }
+                write_msg(&mut stream, &EngineToScene::GlobalUpdate(data)).await;
             }
             ipc = ipc_router.recv() => {
                 let Some(ipc) = ipc else {
