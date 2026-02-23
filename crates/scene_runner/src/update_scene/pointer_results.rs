@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicU32;
+
 use bevy::{
     diagnostic::FrameCount,
     ecs::entity::Entities,
@@ -108,7 +110,8 @@ impl Plugin for PointerResultPlugin {
             .init_resource::<UiPointerTarget>()
             .init_resource::<WorldPointerTarget>()
             .init_resource::<DebugPointers>()
-            .init_resource::<AvatarColliders>();
+            .init_resource::<AvatarColliders>()
+            .init_resource::<PointerEventTimestamp>();
 
         app.add_systems(
             PreUpdate,
@@ -143,6 +146,15 @@ pub struct PointerTargetInfo {
     pub normal: Option<Vec3>,
     pub face: Option<usize>,
     pub ty: PointerTargetType,
+}
+
+#[derive(Resource, Default)]
+pub struct PointerEventTimestamp(AtomicU32);
+
+impl PointerEventTimestamp {
+    fn next_timestamp(&self) -> u32 {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    }
 }
 
 #[derive(Default, Debug, Resource, Clone, PartialEq)]
@@ -668,7 +680,7 @@ fn send_hover_events(
     new_target: Res<PointerTarget>,
     pointer_requests: Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
     mut scenes: Query<(&mut RendererSceneContext, &GlobalTransform)>,
-    frame: Res<FrameCount>,
+    timestamp: Res<PointerEventTimestamp>,
     mut input_manager: InputManager,
     mut previously_entered: Local<HashSet<(Entity, Option<String>, PointerTargetType)>>,
     scene_ui_ent: Query<&UiLink>,
@@ -740,7 +752,7 @@ fn send_hover_events(
                                         entity_id: scene_entity_id.as_proto_u32(),
                                     }),
                                     state: ev_type as i32,
-                                    timestamp: frame.0,
+                                    timestamp: timestamp.next_timestamp(),
                                     analog: None,
                                     tick_number,
                                 },
@@ -822,7 +834,7 @@ fn send_action_events(
     pointer_requests: Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
     mut scenes: Query<(Entity, &mut RendererSceneContext, &GlobalTransform)>,
     input_mgr: InputManager,
-    frame: Res<FrameCount>,
+    timestamp: Res<PointerEventTimestamp>,
     time: Res<Time>,
     mut drag_target: ResMut<PointerDragTarget>,
     mut locks: ResMut<CursorLocks>,
@@ -910,7 +922,7 @@ fn send_action_events(
                             button: action as i32,
                             hit: Some(hit),
                             state: ev_type as i32,
-                            timestamp: frame.0,
+                            timestamp: timestamp.next_timestamp(),
                             analog: None,
                             tick_number,
                         },
@@ -1046,7 +1058,7 @@ fn send_action_events(
                     button: button as i32,
                     hit: None,
                     state: pet as i32,
-                    timestamp: frame.0,
+                    timestamp: timestamp.next_timestamp(),
                     analog: None,
                     tick_number,
                 },
