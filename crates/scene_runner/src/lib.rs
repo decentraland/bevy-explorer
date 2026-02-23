@@ -11,6 +11,7 @@ use bevy::{
     platform::collections::{HashMap, HashSet},
     prelude::*,
     scene::scene_spawner_system,
+    time::common_conditions::on_real_timer,
     window::PrimaryWindow,
     winit::WinitWindows,
 };
@@ -297,7 +298,12 @@ impl Plugin for SceneRunnerPlugin {
         app.add_systems(Update, log_app_errors.in_set(SceneSets::PostLoop));
         app.add_systems(Update, set_ui_constraints.in_set(SceneSets::PostLoop));
 
-        app.add_systems(Update, push_time_to_crdt.in_set(SceneSets::Input));
+        app.add_systems(
+            Update,
+            push_time_to_crdt
+                .in_set(SceneSets::Input)
+                .run_if(on_real_timer(Duration::from_secs(1))),
+        );
     }
 }
 
