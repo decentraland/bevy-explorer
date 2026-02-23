@@ -1,8 +1,5 @@
 use anyhow::anyhow;
-use bevy::{
-    log::{debug, error},
-    math::f32,
-};
+use bevy::{log::debug, math::f32};
 use common::{
     rpc::{ReadFileResponse, RpcCall, RpcResultSender},
     structs::TimeOfDay,
@@ -131,6 +128,7 @@ pub struct WorldTime {
 
 pub async fn op_world_time(op_state: Rc<RefCell<impl State>>) -> Result<WorldTime, anyhow::Error> {
     debug!("op_world_time");
-    let TimeOfDay { time } = op_state.borrow().borrow::<TimeOfDay>();
-    Ok(WorldTime { time })
+    let state = op_state.borrow();
+    let TimeOfDay { time } = state.borrow::<TimeOfDay>();
+    Ok(WorldTime { time: *time })
 }
