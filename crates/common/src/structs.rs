@@ -1131,3 +1131,9 @@ pub struct PreviewMode {
 pub struct DebugInfo {
     pub info: HashMap<&'static str, String>,
 }
+
+#[derive(Clone, Serialize, Deserialize)]
+pub enum GlobalCrdtStateUpdate {
+    Crdt(Vec<u8>),
+    Time(f32),
+}

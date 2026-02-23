@@ -9,7 +9,7 @@ use bevy::{
 use bimap::BiMap;
 use common::{
     rpc::{RpcCall, RpcEventSender, RpcStreamSender},
-    structs::{AttachPoints, AudioDecoderError, EmoteCommand},
+    structs::{AttachPoints, AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate},
     util::TryPushChildrenEx,
 };
 use ethers_core::types::Address;
@@ -138,7 +138,7 @@ pub struct GlobalCrdtState {
     // sender for sockets to post to
     ext_sender: mpsc::Sender<NetworkUpdate>,
     // sender for broadcast updates
-    int_sender: broadcast::Sender<Vec<u8>>,
+    int_sender: broadcast::Sender<GlobalCrdtStateUpdate>,
     context: CrdtContext,
     store: CrdtStore,
     lookup: BiMap<Address, Entity>,
@@ -152,7 +152,7 @@ impl GlobalCrdtState {
     }
 
     // get a channel from which crdt updates can be received
-    pub fn subscribe(&self) -> (CrdtStore, broadcast::Receiver<Vec<u8>>) {
+    pub fn subscribe(&self) -> (CrdtStore, broadcast::Receiver<GlobalCrdtStateUpdate>) {
         (self.store.clone(), self.int_sender.subscribe())
     }
 
@@ -160,6 +160,7 @@ impl GlobalCrdtState {
         info!("bounds: {min}-{max}");
         self.realm_bounds = (min, max);
     }
+
     pub fn update_crdt(
         &mut self,
         component_id: SceneComponentId,
@@ -176,7 +177,10 @@ impl GlobalCrdtState {
             CrdtType::LWW(_) => put_component(&id, &component_id, &timestamp, Some(&buf)),
             CrdtType::GO(_) => append_component(&id, &component_id, &buf),
         };
-        if let Err(e) = self.int_sender.send(crdt_message) {
+        if let Err(e) = self
+            .int_sender
+            .send(GlobalCrdtStateUpdate::Crdt(crdt_message))
+        {
             error!("failed to send foreign player update to scenes: {e}");
         }
     }
@@ -184,8 +188,17 @@ impl GlobalCrdtState {
     pub fn delete_entity(&mut self, id: SceneEntityId) {
         self.store.clean_up(&HashSet::from_iter(Some(id)));
         let crdt_message = delete_entity(&id);
-        if let Err(e) = self.int_sender.send(crdt_message) {
+        if let Err(e) = self
+            .int_sender
+            .send(GlobalCrdtStateUpdate::Crdt(crdt_message))
+        {
             error!("failed to send foreign player update to scenes: {e}");
+        }
+    }
+
+    pub fn update_time(&mut self, time: f32) {
+        if let Err(e) = self.int_sender.send(GlobalCrdtStateUpdate::Time(time)) {
+            error!("failed to send time update to scenes: {e}");
         }
     }
 }

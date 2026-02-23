@@ -1,10 +1,11 @@
+use std::{cell::RefCell, rc::Rc, sync::Arc};
+
 // Engine module
 use bevy::log::{debug, info, warn};
-
 #[cfg(feature = "span_scene_loop")]
 use bevy::log::{info_span, tracing::span::EnteredSpan};
-
-use std::{cell::RefCell, rc::Rc, sync::Arc};
+use common::structs::{GlobalCrdtStateUpdate, TimeOfDay};
+use dcl_component::DclReader;
 use tokio::sync::{broadcast::error::TryRecvError, Mutex};
 
 use crate::{
@@ -14,7 +15,6 @@ use crate::{
     CrdtComponentInterfaces, CrdtStore, RendererResponse, RpcCalls, SceneElapsedTime,
     SceneLogMessage, SceneResponse,
 };
-use dcl_component::DclReader;
 
 use super::State;
 
@@ -119,19 +119,26 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
         }
     };
 
-    let mut global_update_receiver = op_state.take::<tokio::sync::broadcast::Receiver<Vec<u8>>>();
+    let mut global_update_receiver =
+        op_state.take::<tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>>();
     loop {
         match global_update_receiver.try_recv() {
-            Ok(next) => {
-                let mut stream = DclReader::new(&next);
-                renderer_state.0.process_message_stream(
-                    &mut entity_map,
-                    &writers,
-                    &mut stream,
-                    false,
-                );
-                results.push(next);
-            }
+            Ok(next) => match next {
+                GlobalCrdtStateUpdate::Crdt(data) => {
+                    let mut stream = DclReader::new(&data);
+                    renderer_state.0.process_message_stream(
+                        &mut entity_map,
+                        &writers,
+                        &mut stream,
+                        false,
+                    );
+                    results.push(data);
+                }
+                GlobalCrdtStateUpdate::Time(time) => {
+                    let time_of_day = op_state.borrow_mut::<TimeOfDay>();
+                    time_of_day.time = time;
+                }
+            },
             Err(TryRecvError::Empty) => break,
             Err(TryRecvError::Lagged(_)) => (), // continue on with whatever we can still get
             Err(TryRecvError::Closed) => {

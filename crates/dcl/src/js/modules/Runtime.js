@@ -1,15 +1,15 @@
-module.exports.getRealm = async function (body) { 
+module.exports.getRealm = async function (body) {
     return {
         realmInfo: await Deno.core.ops.op_realm_information()
     };
 }
 
-module.exports.getWorldTime = async function  (body) { 
-    console.error("Runtime::getWorldTime not implemented");
-    return {} 
+module.exports.getWorldTime = async function (body) {
+    const res = await Deno.core.ops.op_world_time();
+    return res;
 }
 
-module.exports.readFile = async function (body) { 
+module.exports.readFile = async function (body) {
     const res = await Deno.core.ops.op_read_file(body.fileName)
     return {
         content: new Uint8Array(res.content),
@@ -17,7 +17,7 @@ module.exports.readFile = async function (body) {
     }
 }
 
-module.exports.getSceneInformation = async function (body) { 
+module.exports.getSceneInformation = async function (body) {
     return await Deno.core.ops.op_scene_information();
 }
 
