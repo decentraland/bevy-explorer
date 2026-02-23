@@ -87,6 +87,8 @@ function showCanvas(){
   if (canvas) canvas.style.display = "block";
   const logo = document.getElementById("loading-logo");
   if (logo) logo.style.display = "none";
+  const bevyBadge = document.getElementById("bevy-badge");
+  if (bevyBadge) bevyBadge.style.display = "none";
 }
 
 /**
