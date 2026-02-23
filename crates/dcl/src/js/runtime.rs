@@ -3,7 +3,10 @@ use bevy::{
     log::{debug, error},
     math::f32,
 };
-use common::rpc::{ReadFileResponse, RpcCall, RpcResultSender};
+use common::{
+    rpc::{ReadFileResponse, RpcCall, RpcResultSender},
+    structs::TimeOfDay,
+};
 use dcl_component::{
     proto_components::sdk::components::PbRealmInfo, DclReader, FromDclReader, SceneComponentId,
     SceneEntityId,
@@ -127,6 +130,7 @@ pub struct WorldTime {
 }
 
 pub async fn op_world_time(op_state: Rc<RefCell<impl State>>) -> Result<WorldTime, anyhow::Error> {
-    error!("op_world_time");
-    Ok(WorldTime { time: 0. })
+    debug!("op_world_time");
+    let TimeOfDay { time } = op_state.borrow().borrow::<TimeOfDay>();
+    Ok(WorldTime { time })
 }
