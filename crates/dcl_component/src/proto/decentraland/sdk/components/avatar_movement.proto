@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package decentraland.sdk.components;
+
+import "decentraland/sdk/components/common/id.proto";
+import "decentraland/common/vectors.proto";
+
+option (common.ecs_component_id) = 1501;
+
+message PBAvatarMovement {
+  decentraland.common.Vector3 velocity = 1;
+  float orientation = 2; // 0-360, we don't allow pitch/roll
+  optional decentraland.common.Vector3 ground_direction = 3;
+}
+
+// engine behaviour (uses only capsule shapecasts and GJK closest point for portability):
+// 1: set avatar orientation from movement info -> P0
+// 2: apply velocity (collide and slide)
+//   disable anything we are initially colliding with
+//   shapecast avatar from P3+N to p3+N+velocity*timestep
+//   on impact:
+//       project velocity onto slide plane (standard "Collide & Slide")
+//       velocity = old velocity - (normal * dot(velocity, normal))
+//       continue with residual velocity and residual time
+//    -> P1
+// 3: record "ground collider" - nearest collider within threshold distance in ground_direction using avatar collider shapecast from P1
+// 4: update all colliders, record previous transform and new transform.
+// 5: apply ground collider movement: take collider closest point, modify P1 translation and rotation by closest point translation and rotation change -> P2
+// 6: apply all other pseudo-ground collider movement:
+//   for each collider[i] that collides with the P2 player:
+//       let CTC = collider translation change
+//       if length(CTC) > max_move_threshold
+//           ignore / continue
+//       if dot(CTC, ground_direction) < 0 (i.e. collider is moving into the player from the ground direction)
+//           calculate collider_impact[i] => shapecast avatar from P2 + CTC[i] to P2. collider_impact[i] = CTC * (1 - time of impact)
+//   add max_by_length(collider_impact[i]) to player translation -> P3
+// 7: resolve collisions using position-based-dynamics
+//   while still colliding / until iteration N = max iterations
+//       for each collider[i] that collides with the P3+N player:
+//           if closest point = capsule middle (i.e. collider collides with P3 collider but with radius 0), 
+//               ignore / continue
+//           else 
+//               calculate depenetration vector[i] => closest point avatar - closest point collider
+//       add average(depenetration vector) to P3 -> P3+N
+//   repeat

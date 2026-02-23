@@ -23,7 +23,6 @@ use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     prelude::*,
     render::view::RenderLayers,
-    tasks::{IoTaskPool, Task},
     window::WindowResolution,
 };
 use bevy_console::ConsoleCommand;
@@ -33,27 +32,27 @@ use common::{
     inputs::InputMap,
     sets::SetupSets,
     structs::{
-        AppConfig, AttachPoints, AvatarDynamicState, GraphicsSettings, IVec2Arg, PreviewCommand,
-        PreviewMode, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser,
-        SceneImposterBake, SceneLoadDistance, SystemScene, Version, GROUND_RENDERLAYER,
+        AppConfig, AttachPoints, AvatarDynamicState, GraphicsSettings, IVec2Arg, PreviewMode,
+        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneImposterBake,
+        SceneLoadDistance, StartupScene, StartupScenes, Version, GROUND_RENDERLAYER,
     },
-    util::{TaskCompat, TaskExt, TryPushChildrenEx, UtilsPlugin},
+    util::{TryPushChildrenEx, UtilsPlugin},
 };
-use restricted_actions::{lookup_portable, RestrictedActionsPlugin};
+use restricted_actions::{process_startup_scenes, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
     automatic_testing::AutomaticTestingPlugin,
-    initialize_scene::{PortableScenes, PortableSource, TestingData, PARCEL_SIZE},
-    update_world::{mesh_collider::GroundCollider, NoGltf},
+    initialize_scene::{TestingData, PARCEL_SIZE},
+    update_world::NoGltf,
     OutOfWorld, SceneRunnerPlugin,
 };
 
 use av::AVPlayerPlugin;
 use avatar::AvatarPlugin;
-use comms::{preview::handle_preview_socket, CommsPlugin};
+use comms::CommsPlugin;
 use console::{ConsolePlugin, DoAddConsoleCommand};
 use input_manager::InputManagerPlugin;
-use ipfs::{map_realm_name, IpfsAssetServer, IpfsIoPlugin};
+use ipfs::{map_realm_name, IpfsIoPlugin};
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use social::SocialPlugin;
 use system_bridge::{settings::NewCameraEvent, NativeUi, SystemBridgePlugin};
@@ -61,7 +60,7 @@ use system_ui::{crash_report::CrashReportPlugin, SystemUiPlugin};
 use texture_camera::TextureCameraPlugin;
 use tween::TweenPlugin;
 use ui_core::UiCorePlugin;
-use user_input::UserInputPlugin;
+use user_input::{avatar_movement::GroundCollider, UserInputPlugin};
 use uuid::Uuid;
 use visuals::VisualsPlugin;
 use wallet::WalletPlugin;
@@ -246,10 +245,25 @@ fn main() {
     let no_fog = args.contains("--no_fog");
 
     let is_preview = args.contains("--preview");
+    let startup_scenes_preview = args.contains("--ui-preview");
 
+    let mut startup_scenes: Vec<StartupScene> = args
+        .value_from_str::<_, String>("--portables")
+        .map(|p| {
+            p.split(";")
+                .map(|scene| StartupScene {
+                    source: scene.to_owned(),
+                    super_user: false,
+                    preview: startup_scenes_preview,
+                    hot_reload: None,
+                    hash: None,
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     let ui_scene: Option<String> = args.value_from_str("--ui").ok();
+
     if let Some(source) = ui_scene {
-        app.add_systems(Update, process_system_ui_scene);
         app.insert_resource(NativeUi {
             login: false,
             emote_wheel: false,
@@ -260,12 +274,16 @@ fn main() {
             tooltips: !args.contains("--no-tooltips"),
             loading_scene: !args.contains("--no-loading-scene-ui"),
         });
-        app.insert_resource(SystemScene {
-            source: Some(source),
-            preview: args.contains("--ui-preview"),
-            hot_reload: None,
-            hash: None,
-        });
+        startup_scenes.insert(
+            0,
+            StartupScene {
+                source,
+                super_user: true,
+                preview: startup_scenes_preview,
+                hot_reload: None,
+                hash: None,
+            },
+        );
     } else {
         app.insert_resource(NativeUi {
             login: true,
@@ -276,6 +294,14 @@ fn main() {
             nametags: true,
             tooltips: !args.contains("--no-tooltips"),
             loading_scene: true,
+        });
+    }
+
+    if !startup_scenes.is_empty() {
+        app.add_systems(Update, process_startup_scenes);
+        infos.push(format!("spawning {} startup scenes", startup_scenes.len()));
+        app.insert_resource(StartupScenes {
+            scenes: startup_scenes,
         });
     }
 
@@ -644,63 +670,5 @@ fn set_fps(mut input: ConsoleCommand<FpsCommand>, mut config: ResMut<AppConfig>)
         let fps = command.fps;
         config.graphics.fps_target = fps;
         input.reply_ok("target frame rate set to {fps}");
-    }
-}
-
-#[allow(clippy::type_complexity)]
-pub fn process_system_ui_scene(
-    mut system_scene: ResMut<SystemScene>,
-    mut task: Local<Option<Task<Result<(String, PortableSource), String>>>>,
-    mut done: Local<bool>,
-    mut portables: ResMut<PortableScenes>,
-    ipfas: IpfsAssetServer,
-    mut channel: Local<Option<tokio::sync::mpsc::UnboundedReceiver<PreviewCommand>>>,
-    mut writer: EventWriter<PreviewCommand>,
-) {
-    if let Some(command) = channel.as_mut().and_then(|rx| rx.try_recv().ok()) {
-        writer.write(command);
-        *done = false;
-        system_scene.hash = None;
-        return;
-    }
-
-    if *done || system_scene.source.is_none() {
-        return;
-    }
-
-    if task.is_none() {
-        *task = Some(IoTaskPool::get().spawn_compat(lookup_portable(
-            None,
-            system_scene.source.clone().unwrap(),
-            true,
-            ipfas.ipfs().clone(),
-        )));
-    }
-
-    let mut t = task.take().unwrap();
-    match t.complete() {
-        Some(Ok((hash, source))) => {
-            info!("added ui scene from {}", source.pid);
-            system_scene.hash = Some(hash.clone());
-            portables.0.extend([(hash, source)]);
-            *done = true;
-
-            if system_scene.preview {
-                let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
-                IoTaskPool::get()
-                    .spawn(handle_preview_socket(
-                        system_scene.source.clone().unwrap(),
-                        sx.clone(),
-                    ))
-                    .detach();
-                *channel = Some(rx);
-                system_scene.hot_reload = Some(sx);
-            }
-        }
-        Some(Err(e)) => {
-            error!("failed to load ui scene: {e}");
-            *done = true;
-        }
-        None => *task = Some(t),
     }
 }

@@ -27,7 +27,7 @@ use common::{
     structs::{AppConfig, PrimaryUser},
     util::{ModifyComponentExt, SceneSpawnerPlus},
 };
-use rapier3d::prelude::*;
+use rapier3d_f64::prelude::*;
 use serde::Deserialize;
 
 use crate::{
@@ -36,7 +36,7 @@ use crate::{
     update_world::{
         lights::LightSource,
         material::{dcl_material_from_standard_material, BaseMaterial, PbMaterialComponent},
-        mesh_collider::{ColliderType, CtCollider},
+        mesh_collider::{ColliderType, CtCollider, ToRapier},
         trigger_area::CtTrigger,
     },
     ContainerEntity, ContainingScene, OutOfWorld, SceneEntity, SceneSets,
@@ -1154,7 +1154,7 @@ pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> SharedShape {
 
     let positions_parry: Vec<_> = positions_ref
         .iter()
-        .map(|pos| Point::from([pos[0], pos[1], pos[2]]))
+        .map(|pos| Point::from([pos[0].to_rapier(), pos[1].to_rapier(), pos[2].to_rapier()]))
         .collect();
 
     let indices: Vec<u32> = match mesh_data.indices() {

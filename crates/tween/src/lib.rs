@@ -166,7 +166,10 @@ impl Plugin for TweenPlugin {
                 .chain()
                 .in_set(SceneSets::PostLoop),
         );
-        app.add_systems(PostUpdate, update_system_tween);
+        app.add_systems(
+            PostUpdate,
+            update_system_tween.before(TransformSystem::TransformPropagate),
+        );
         app.add_observer(clean_scene_tween_state);
     }
 }

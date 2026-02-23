@@ -37,13 +37,13 @@ use nft::asset_source::Nft;
 use restricted_actions::RestrictedActionsPlugin;
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
-    initialize_scene::ScenePointers, permissions::PermissionManager,
-    update_world::mesh_collider::GroundCollider, OutOfWorld, SceneRunnerPlugin,
+    initialize_scene::ScenePointers, permissions::PermissionManager, OutOfWorld, SceneRunnerPlugin,
 };
 
 use ipfs::{map_realm_name, CurrentRealm, IpfsIoPlugin};
 use system_bridge::SystemBridgePlugin;
 use ui_core::{scrollable::ScrollTargetEvent, UiCorePlugin};
+use user_input::avatar_movement::GroundCollider;
 use wallet::Wallet;
 
 static SESSION_LOG: OnceLock<String> = OnceLock::new();

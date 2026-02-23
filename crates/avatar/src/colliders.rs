@@ -4,7 +4,7 @@ use bevy::{
     prelude::*,
 };
 use common::{
-    dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
+    dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_RADIUS},
     inputs::{CommonInputAction, SystemAction},
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
@@ -16,14 +16,14 @@ use common::{
 use comms::{global_crdt::ForeignPlayer, profile::UserProfile};
 use dcl_component::{proto_components::sdk::components::ColliderLayer, SceneEntityId};
 use input_manager::{InputManager, InputPriority, InputType};
-use rapier3d::{
+use rapier3d_f64::{
     na::Isometry,
     prelude::{ColliderBuilder, Group, InteractionGroups, SharedShape},
 };
 use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE_RED};
 use scene_runner::{
     update_scene::pointer_results::{AvatarColliders, PointerTarget},
-    update_world::mesh_collider::ColliderId,
+    update_world::mesh_collider::{ColliderId, ToRapier},
 };
 use serde_json::json;
 use system_bridge::{NativeUi, PointerTargetType};
@@ -78,15 +78,15 @@ fn update_avatar_colliders(
             ));
             colliders
                 .collider_data
-                .update_collider_transform(&id, &transform, None);
+                .update_collider_transform(&id, &transform);
         } else {
             // collider didn't exist, make a new one
             let collider = ColliderBuilder::new(SharedShape::capsule_y(
-                PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS,
-                PLAYER_COLLIDER_RADIUS - PLAYER_COLLIDER_OVERLAP,
+                (PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS).to_rapier(),
+                PLAYER_COLLIDER_RADIUS.to_rapier(),
             ))
             .position(Isometry::from_parts(
-                (transform.translation() + PLAYER_COLLIDER_HEIGHT * 0.5 * Vec3::Y).into(),
+                (transform.translation() + PLAYER_COLLIDER_HEIGHT * 0.5 * Vec3::Y).to_rapier(),
                 Default::default(),
             ))
             .collision_groups(InteractionGroups {
