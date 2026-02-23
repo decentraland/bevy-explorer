@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use anyhow::anyhow;
 use bevy::log::debug;
-use common::structs::GlobalCrdtStateUpdate;
+use common::structs::{GlobalCrdtStateUpdate, TimeOfDay};
 use dcl_component::{
     proto_components::sdk::components::PbPlayerIdentityData, DclReader, FromDclReader,
     SceneComponentId, SceneEntityId,
@@ -155,6 +155,9 @@ pub fn init_state(
     state.put(RendererStore(initial_crdt_store));
     state.put(Vec::<SceneLogMessage>::default());
     state.put(SceneElapsedTime(0.0));
+    state.put(TimeOfDay {
+        time: 0.
+    });
     if let Some(super_user) = super_user {
         state.put(SuperUserScene(super_user));
     }
