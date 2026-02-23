@@ -155,9 +155,7 @@ pub fn init_state(
     state.put(RendererStore(initial_crdt_store));
     state.put(Vec::<SceneLogMessage>::default());
     state.put(SceneElapsedTime(0.0));
-    state.put(TimeOfDay {
-        time: 0.
-    });
+    state.put(TimeOfDay { time: 0. });
     if let Some(super_user) = super_user {
         state.put(SuperUserScene(super_user));
     }

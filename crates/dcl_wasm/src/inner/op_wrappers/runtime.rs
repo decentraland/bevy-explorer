@@ -19,7 +19,6 @@ pub async fn op_realm_information(op_state: &WorkerContext) -> Result<JsValue, W
     serde_result!(dcl::js::runtime::op_realm_information(op_state.rc()).await)
 }
 
-
 #[wasm_bindgen]
 pub async fn op_world_time(op_state: &WorkerContext) -> Result<JsValue, WasmError> {
     serde_result!(dcl::js::runtime::op_world_time(op_state.rc()).await)
