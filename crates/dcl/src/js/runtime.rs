@@ -123,12 +123,12 @@ pub async fn realm_information(
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorldTime {
-    pub time: f32,
+    pub seconds: f32,
 }
 
 pub async fn op_world_time(op_state: Rc<RefCell<impl State>>) -> Result<WorldTime, anyhow::Error> {
     debug!("op_world_time");
     let state = op_state.borrow();
     let TimeOfDay { time } = state.borrow::<TimeOfDay>();
-    Ok(WorldTime { time: *time })
+    Ok(WorldTime { seconds: *time })
 }
