@@ -4,7 +4,7 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 use bevy::log::{debug, info, warn};
 #[cfg(feature = "span_scene_loop")]
 use bevy::log::{info_span, tracing::span::EnteredSpan};
-use common::structs::GlobalCrdtStateUpdate;
+use common::structs::{GlobalCrdtStateUpdate, TimeOfDay};
 use dcl_component::DclReader;
 use tokio::sync::{broadcast::error::TryRecvError, Mutex};
 
@@ -133,6 +133,10 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
                         false,
                     );
                     results.push(data);
+                }
+                GlobalCrdtStateUpdate::Time(time) => {
+                    let time_of_day = op_state.borrow_mut::<TimeOfDay>();
+                    time_of_day.time = time;
                 }
             },
             Err(TryRecvError::Empty) => break,

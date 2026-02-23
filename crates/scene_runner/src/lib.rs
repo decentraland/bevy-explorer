@@ -18,10 +18,10 @@ use bevy::{
 use common::{
     rpc::RpcCall,
     sets::{SceneLoopSets, SceneSets},
-    structs::{AppConfig, AppError, DebugInfo, PrimaryCamera, PrimaryUser},
+    structs::{AppConfig, AppError, DebugInfo, PrimaryCamera, PrimaryUser, TimeOfDay},
     util::{dcl_assert, TryPushChildrenEx},
 };
-use comms::{SceneRoomConnection, SetCurrentScene};
+use comms::{global_crdt::GlobalCrdtState, SceneRoomConnection, SetCurrentScene};
 use dcl::{
     interface::CrdtType,
     js::{scene_response_channel, SceneResponseReceiver, SceneResponseSender},
@@ -296,6 +296,8 @@ impl Plugin for SceneRunnerPlugin {
         app.add_systems(Update, update_scene_room.in_set(SceneSets::PostLoop));
         app.add_systems(Update, log_app_errors.in_set(SceneSets::PostLoop));
         app.add_systems(Update, set_ui_constraints.in_set(SceneSets::PostLoop));
+
+        app.add_systems(Update, push_time_to_crdt.in_set(SceneSets::Input));
     }
 }
 
@@ -1053,4 +1055,8 @@ fn set_ui_constraints(
             interactable_area.0 = Some(*area);
         }
     }
+}
+
+fn push_time_to_crdt(time_of_day: Res<TimeOfDay>, mut global_crdt_state: ResMut<GlobalCrdtState>) {
+    global_crdt_state.update_time(time_of_day.time);
 }

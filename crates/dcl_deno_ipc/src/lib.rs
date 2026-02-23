@@ -46,6 +46,7 @@ pub enum EngineToScene {
     KillScene(u64),
     GlobalUpdate(Vec<u8>),
     IpcMessage(u64, IpcMessage),
+    Time(f32),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -209,6 +210,9 @@ pub async fn renderer_ipc_out(
                 match data {
                     GlobalCrdtStateUpdate::Crdt(data) => {
                         write_msg(&mut stream, &EngineToScene::GlobalUpdate(data)).await;
+                    }
+                    GlobalCrdtStateUpdate::Time(time) => {
+                        write_msg(&mut stream, &EngineToScene::Time(time)).await;
                     }
                 }
             }

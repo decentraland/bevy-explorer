@@ -179,6 +179,9 @@ async fn scene_ipc_in(
                     }
                 });
             }
+            EngineToScene::Time(time) => {
+                let _ = global_sx.send(GlobalCrdtStateUpdate::Time(time));
+            }
         }
     }
 }

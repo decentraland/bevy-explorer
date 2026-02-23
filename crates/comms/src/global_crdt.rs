@@ -160,6 +160,7 @@ impl GlobalCrdtState {
         info!("bounds: {min}-{max}");
         self.realm_bounds = (min, max);
     }
+
     pub fn update_crdt(
         &mut self,
         component_id: SceneComponentId,
@@ -192,6 +193,12 @@ impl GlobalCrdtState {
             .send(GlobalCrdtStateUpdate::Crdt(crdt_message))
         {
             error!("failed to send foreign player update to scenes: {e}");
+        }
+    }
+
+    pub fn update_time(&mut self, time: f32) {
+        if let Err(e) = self.int_sender.send(GlobalCrdtStateUpdate::Time(time)) {
+            error!("failed to send time update to scenes: {e}");
         }
     }
 }

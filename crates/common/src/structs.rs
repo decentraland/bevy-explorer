@@ -1133,4 +1133,5 @@ pub struct DebugInfo {
 #[derive(Clone, Serialize, Deserialize)]
 pub enum GlobalCrdtStateUpdate {
     Crdt(Vec<u8>),
+    Time(f32),
 }
