@@ -164,7 +164,7 @@ fn run_raycasts(
                         direction.as_dvec3(),
                         raycast.max_distance as f64,
                         mask,
-                        true,
+                        false,
                         false,
                         Default::default(),
                         false,
@@ -191,7 +191,7 @@ fn run_raycasts(
                         direction.as_dvec3(),
                         raycast.max_distance as f64,
                         mask,
-                        true,
+                        false,
                         false,
                         -PLAYER_COLLIDER_OVERLAP,
                     )
