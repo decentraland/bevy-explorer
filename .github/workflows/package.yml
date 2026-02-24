@@ -109,13 +109,13 @@ jobs:
               
           - name: Cargo build (windows)
             if: runner.os == 'windows'
-            run: cargo build --release --bin decentra-bevy -j8
+            run: cargo build --release --package dcl_deno_ipc -j8 && cargo build --release -j8
           - name: Cargo build (macos)
             if: runner.os == 'macos'
-            run: cargo build --release --bin decentra-bevy
+            run: cargo build --release --package dcl_deno_ipc && cargp build --release
           - name: Cargo build (linux)
             if: runner.os == 'linux'
-            run: cargo build --release --bin decentra-bevy
+            run: cargo build --release --package dcl_deno_ipc && cargp build --release
 
           - name: Package common
             run: |
@@ -150,6 +150,7 @@ jobs:
             continue-on-error: true
             run: |
                 cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy.exe package/decentra-bevy.exe
+                cp ${{ env.CARGO_BUILD_DIR }}/dcl_deno_ipc.exe package/dcl_deno_ipc.exe
                 cp ${{ env.FFMPEG_DIR }}/bin/*.dll package
                 7z a ${{ env.PACKAGE_FILE }} ./package/*
 
@@ -158,6 +159,7 @@ jobs:
             continue-on-error: true
             run: |
                 cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy package/decentra-bevy
+                cp ${{ env.CARGO_BUILD_DIR }}/dcl_deno_ipc package/dcl_deno_ipc
                 # We must enter the package/ directory in order to create a flat tarball (i.e. without a directory in it).
                 cd package
                 tar -czvf ../${{ env.PACKAGE_FILE }} *            
@@ -170,6 +172,7 @@ jobs:
               mkdir BevyExplorer.AppDir/usr
               mkdir BevyExplorer.AppDir/usr/bin
               cp ../../target/release/decentra-bevy BevyExplorer.AppDir/usr/bin
+              cp ../../target/release/dcl_deno_ipc BevyExplorer.AppDir/usr/bin
               wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
               wget https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage              
               chmod +x ./linuxdeploy-x86_64.AppImage
