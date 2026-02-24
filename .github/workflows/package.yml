@@ -113,10 +113,10 @@ jobs:
             run: cargo build --release --package dcl_deno_ipc -j8 && cargo build --release -j8
           - name: Cargo build (macos)
             if: runner.os == 'macos'
-            run: cargo build --release --package dcl_deno_ipc && cargp build --release
+            run: cargo build --release --package dcl_deno_ipc && cargo build --release
           - name: Cargo build (linux)
             if: runner.os == 'linux'
-            run: cargo build --release --package dcl_deno_ipc && cargp build --release
+            run: cargo build --release --package dcl_deno_ipc && cargo build --release
 
           - name: Package common
             run: |
