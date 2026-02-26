@@ -20,7 +20,7 @@ use bevy::{
         Render, RenderApp, RenderSet,
     },
 };
-use common::{sets::SceneSets, util::ReportErr};
+use common::{sets::SceneSets, structs::AudioSettings, util::ReportErr};
 #[cfg(feature = "livekit")]
 use comms::livekit::participant::StreamViewer;
 use dcl::interface::CrdtType;
@@ -85,6 +85,10 @@ impl Plugin for VideoPlayerPlugin {
             )
                 .chain()
                 .in_set(SceneSets::PostLoop),
+        );
+        app.add_systems(
+            Update,
+            update_html_video_player_volumes.run_if(resource_changed::<AudioSettings>),
         );
 
         let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
@@ -458,6 +462,7 @@ fn av_player_on_insert(
     trigger: Trigger<OnInsert, AVPlayer>,
     mut commands: Commands,
     mut av_players: Query<(&AVPlayer, &mut HtmlMediaEntity)>,
+    audio_settings: Res<AudioSettings>,
 ) {
     info!("AVPlayer updated.");
     let entity = trigger.target();
@@ -469,9 +474,10 @@ fn av_player_on_insert(
     commands.entity(entity).try_remove::<ShouldBePlaying>();
     if av_player.source.src == html_media_entity.source {
         debug!("Updating html media entity {entity}.");
+        let av_player_volume = av_player.source.volume.unwrap_or(1.0);
         html_media_entity.stop();
         html_media_entity.set_loop(av_player.source.r#loop.unwrap_or(false));
-        html_media_entity.set_volume(av_player.source.volume.unwrap_or(1.0));
+        html_media_entity.set_volume(av_player_volume * audio_settings.scene());
     } else {
         debug!("Removing html media entity {entity} due to diverging source.");
         commands
@@ -506,6 +512,7 @@ fn rebuild_html_media_entities(
     scenes: Query<&RendererSceneContext>,
     ipfs: Res<IpfsResource>,
     mut images: ResMut<Assets<Image>>,
+    audio_settings: Res<AudioSettings>,
 ) {
     for (ent, container, player, maybe_texture) in av_players.iter() {
         let Ok(context) = scenes.get(container.root) else {
@@ -556,15 +563,17 @@ fn rebuild_html_media_entities(
                 HtmlMediaEntity::new_video(&source, player.source.src.clone(), image_handle.clone())
             };
 
+            let video_volume = player.source.volume.unwrap_or(1.0);
             video.set_loop(player.source.r#loop.unwrap_or(false));
-            video.set_volume(player.source.volume.unwrap_or(1.0));
+            video.set_volume(video_volume * audio_settings.scene());
             let video_output = VideoTextureOutput(image_handle);
 
             commands.entity(ent).try_insert((video, video_output));
         } else {
             let mut audio = HtmlMediaEntity::new_audio(&source, player.source.src.clone());
+            let audio_volume = player.source.volume.unwrap_or(1.0);
             audio.set_loop(player.source.r#loop.unwrap_or(false));
-            audio.set_volume(player.source.volume.unwrap_or(1.0));
+            audio.set_volume(audio_volume * audio_settings.scene());
 
             commands.entity(ent).try_insert(audio);
         }
@@ -779,5 +788,15 @@ fn perform_video_copies(
         );
 
         frame_copy.close();
+    }
+}
+
+fn update_html_video_player_volumes(
+    audio_settings: Res<AudioSettings>,
+    html_video_players: Query<(&AVPlayer, &mut HtmlMediaEntity)>,
+) {
+    for (av_player, html_video_player) in html_video_players {
+        let volume = av_player.source.volume.unwrap_or(1.0);
+        html_video_player.set_volume(volume * audio_settings.scene());
     }
 }
