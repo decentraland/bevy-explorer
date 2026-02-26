@@ -10,11 +10,15 @@ use common::{
 use comms::profile::UserProfile;
 use dcl::interface::ComponentPosition;
 use dcl_component::{
-    SceneComponentId, proto_components::sdk::components::{AvatarAnchorPointType, PbAvatarAttach}
+    proto_components::sdk::components::{AvatarAnchorPointType, PbAvatarAttach},
+    SceneComponentId,
 };
 use scene_material::{SceneMaterial, SCENE_MATERIAL_CONE_ONLY_DITHER, SCENE_MATERIAL_NO_DITHERING};
 use scene_runner::update_world::{
-    AddCrdtInterfaceExt, mesh_collider::DisableCollisions, transform_and_parent::{AvatarAttachStage, ParentPositionSync}, visibility::VisibilityComponent
+    mesh_collider::DisableCollisions,
+    transform_and_parent::{AvatarAttachStage, ParentPositionSync},
+    visibility::VisibilityComponent,
+    AddCrdtInterfaceExt,
 };
 
 pub struct AttachPlugin;
@@ -63,14 +67,13 @@ pub fn update_attached(
                 Propagate<AttachedToPlayer>,
             )>();
 
+            //restore visiblity after it got overwritten by the attach-parent
             let required_visibility = match visibility_component.get(removed) {
-                Ok(VisibilityComponent(inner)) => {
-                    match inner.visible.unwrap_or(true) {
-                        true => Visibility::Visible,
-                        false => Visibility::Hidden,
-                    }
+                Ok(VisibilityComponent(inner)) => match inner.visible.unwrap_or(true) {
+                    true => Visibility::Visible,
+                    false => Visibility::Hidden,
                 },
-                Err(_) => Visibility::Inherited
+                Err(_) => Visibility::Inherited,
             };
 
             commands.try_insert(required_visibility);
