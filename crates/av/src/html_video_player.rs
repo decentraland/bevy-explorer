@@ -514,6 +514,7 @@ fn rebuild_html_media_entities(
     mut images: ResMut<Assets<Image>>,
     audio_settings: Res<AudioSettings>,
 ) {
+    let scene_volume = audio_settings.scene();
     for (ent, container, player, maybe_texture) in av_players.iter() {
         let Ok(context) = scenes.get(container.root) else {
             continue;
@@ -565,7 +566,7 @@ fn rebuild_html_media_entities(
 
             let video_volume = player.source.volume.unwrap_or(1.0);
             video.set_loop(player.source.r#loop.unwrap_or(false));
-            video.set_volume(video_volume * audio_settings.scene());
+            video.set_volume(video_volume * scene_volume);
             let video_output = VideoTextureOutput(image_handle);
 
             commands.entity(ent).try_insert((video, video_output));
@@ -573,7 +574,7 @@ fn rebuild_html_media_entities(
             let mut audio = HtmlMediaEntity::new_audio(&source, player.source.src.clone());
             let audio_volume = player.source.volume.unwrap_or(1.0);
             audio.set_loop(player.source.r#loop.unwrap_or(false));
-            audio.set_volume(audio_volume * audio_settings.scene());
+            audio.set_volume(audio_volume * scene_volume);
 
             commands.entity(ent).try_insert(audio);
         }
