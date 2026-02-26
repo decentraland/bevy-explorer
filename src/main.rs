@@ -260,19 +260,36 @@ fn main() {
                 })
                 .collect::<Vec<_>>()
         })
-        .unwrap_or_default();
-    let ui_scene: Option<String> = args.value_from_str("--ui").ok();
+        .unwrap_or_else(|_| {
+            vec![StartupScene {
+                source: String::from("basiccontroller.dcl.eth"),
+                super_user: false,
+                preview: startup_scenes_preview,
+                hot_reload: None,
+                hash: None,
+            }]
+        });
+
+    let ui_scene: Option<String> = args
+        .value_from_str("--ui")
+        .ok()
+        .or_else(|| {
+            Some(String::from(
+                "https://dcl-regenesislabs.github.io/bevy-ui-scene/BevyUiScene",
+            ))
+        })
+        .filter(|scene| scene != "none");
 
     if let Some(source) = ui_scene {
         app.insert_resource(NativeUi {
-            login: false,
-            emote_wheel: false,
-            chat: !args.contains("--no-chat"),
-            permissions: !args.contains("--no-perms"),
-            profile: !args.contains("--no-profile"),
-            nametags: !args.contains("--no-nametags"),
-            tooltips: !args.contains("--no-tooltips"),
-            loading_scene: !args.contains("--no-loading-scene-ui"),
+            login: args.contains("--builtin-login"),
+            emote_wheel: args.contains("--builtin-emotes"),
+            chat: args.contains("--builtin-chat"),
+            permissions: args.contains("--builtin-perms"),
+            profile: args.contains("--builtin-profile"),
+            nametags: args.contains("--builtin-nametags"),
+            tooltips: args.contains("--builtin-tooltips"),
+            loading_scene: args.contains("--builtin-loading-scene-ui"),
         });
         startup_scenes.insert(
             0,
@@ -292,7 +309,7 @@ fn main() {
             permissions: true,
             profile: true,
             nametags: true,
-            tooltips: !args.contains("--no-tooltips"),
+            tooltips: true,
             loading_scene: true,
         });
     }
