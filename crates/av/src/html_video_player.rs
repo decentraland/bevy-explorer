@@ -795,8 +795,9 @@ fn update_html_video_player_volumes(
     audio_settings: Res<AudioSettings>,
     html_video_players: Query<(&AVPlayer, &mut HtmlMediaEntity)>,
 ) {
+    let scene_volume = audio_settings.scene();
     for (av_player, html_video_player) in html_video_players {
         let volume = av_player.source.volume.unwrap_or(1.0);
-        html_video_player.set_volume(volume * audio_settings.scene());
+        html_video_player.set_volume(volume * scene_volume);
     }
 }
