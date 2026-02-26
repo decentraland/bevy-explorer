@@ -13,9 +13,10 @@ use common::{anim_last_system, util::ModifyComponentExt};
 use dcl::{crdt::lww::CrdtLWWState, interface::ComponentPosition};
 
 use crate::{
-    initialize_scene::process_scene_lifecycle, primary_entities::PrimaryEntities,
-    update_world::gltf_container::GltfLinkSet, DeletedSceneEntities, RendererSceneContext,
-    SceneEntity, SceneLoopSchedule, TargetParent,
+    initialize_scene::process_scene_lifecycle,
+    primary_entities::PrimaryEntities,
+    update_world::{gltf_container::GltfLinkSet, visibility::VisibilityComponent},
+    DeletedSceneEntities, RendererSceneContext, SceneEntity, SceneLoopSchedule, TargetParent,
 };
 use common::sets::SceneLoopSets;
 use dcl_component::{
@@ -301,11 +302,17 @@ impl ParentPositionSyncStage for SceneProxyStage {}
 
 pub fn parent_position_sync<T: ParentPositionSyncStage>(
     mut commands: Commands,
-    syncees: Query<(Entity, &ParentPositionSync<T>, &ChildOf)>,
+    syncees: Query<(
+        Entity,
+        &ParentPositionSync<T>,
+        &ChildOf,
+        Option<&VisibilityComponent>,
+    )>,
     globals: Query<&GlobalTransform>,
     gt_helper: TransformHelperPub,
+    inherited_visibility: Query<&InheritedVisibility>,
 ) {
-    for (ent, sync, parent) in syncees.iter() {
+    for (ent, sync, parent, maybe_explicit_visibility) in syncees.iter() {
         let Ok(parent_transform) = globals.get(parent.parent()) else {
             continue;
         };
@@ -315,10 +322,25 @@ pub fn parent_position_sync<T: ParentPositionSyncStage>(
         };
 
         let transform = gt.reparented_to(parent_transform);
+        let maybe_override_visibility = if maybe_explicit_visibility.is_some() {
+            None
+        } else {
+            let inherited_visibility = inherited_visibility.get(sync.0).unwrap();
+
+            Some(match inherited_visibility.get() {
+                true => Visibility::Visible,
+                false => Visibility::Hidden,
+            })
+        };
 
         commands
             .entity(ent)
-            .modify_component(move |t: &mut Transform| *t = transform.with_scale(t.scale));
+            .modify_component(move |t: &mut Transform| *t = transform.with_scale(t.scale))
+            .modify_component(move |v: &mut Visibility| {
+                if let Some(override_visibility) = maybe_override_visibility {
+                    *v = override_visibility;
+                }
+            });
     }
 }
 

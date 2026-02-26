@@ -17,6 +17,7 @@ use scene_material::{SceneMaterial, SCENE_MATERIAL_CONE_ONLY_DITHER, SCENE_MATER
 use scene_runner::update_world::{
     mesh_collider::DisableCollisions,
     transform_and_parent::{AvatarAttachStage, ParentPositionSync},
+    visibility::VisibilityComponent,
     AddCrdtInterfaceExt,
 };
 
@@ -54,6 +55,7 @@ pub fn update_attached(
     mut commands: Commands,
     attachments: Query<(Entity, &AvatarAttachment), Changed<AvatarAttachment>>,
     mut removed_attachments: RemovedComponents<AvatarAttachment>,
+    visibility_component: Query<&VisibilityComponent>,
     primary_user: Query<&AttachPoints, With<PrimaryUser>>,
     all_users: Query<(&AttachPoints, &UserProfile, Option<&PrimaryUser>)>,
 ) {
@@ -64,6 +66,17 @@ pub fn update_attached(
                 DisableCollisions,
                 Propagate<AttachedToPlayer>,
             )>();
+
+            //restore visiblity after it got overwritten by the attach-parent
+            let required_visibility = match visibility_component.get(removed) {
+                Ok(VisibilityComponent(inner)) => match inner.visible.unwrap_or(true) {
+                    true => Visibility::Visible,
+                    false => Visibility::Hidden,
+                },
+                Err(_) => Visibility::Inherited,
+            };
+
+            commands.try_insert(required_visibility);
         }
     }
 
