@@ -39,7 +39,7 @@ impl Plugin for LivekitPlugin {
         app.add_systems(Startup, build_kira_audio_manager);
         app.add_systems(
             Update,
-            respond_to_audio_settings_change.run_if(resource_changed::<AudioSettings>),
+            respond_to_audio_settings_change.run_if(resource_exists_and_changed::<AudioSettings>),
         );
 
         app.add_event::<StartLivekit>();

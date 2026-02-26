@@ -88,7 +88,7 @@ impl Plugin for VideoPlayerPlugin {
         );
         app.add_systems(
             Update,
-            update_html_video_player_volumes.run_if(resource_changed::<AudioSettings>),
+            update_html_video_player_volumes.run_if(resource_exists_and_changed::<AudioSettings>),
         );
 
         let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
