@@ -9,7 +9,7 @@ use common::structs::GlobalCrdtStateUpdate;
 use dcl::{
     interface::{CrdtComponentInterfaces, CrdtStore},
     js::{CommunicatedWithRenderer, SceneResponseSender, ShuttingDown, SuperUserScene},
-    RendererResponse, SceneId,
+    RendererResponse, SceneElapsedTime, SceneId,
 };
 use gotham_state::GothamState;
 use ipfs::SceneJsFile;
@@ -219,6 +219,11 @@ impl From<WasmError> for JsValue {
     fn from(value: WasmError) -> Self {
         js_sys::Error::new(&value.0.to_string()).into()
     }
+}
+
+#[wasm_bindgen]
+pub fn op_set_elapsed(state: &WorkerContext, elapsed: f32) {
+    state.state.borrow_mut().put(SceneElapsedTime(elapsed));
 }
 
 #[wasm_bindgen]
