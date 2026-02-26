@@ -312,6 +312,7 @@ self.onmessage = async (event) => {
       var consecutiveErrorsWithoutInteraction = 0;
       while (ops.op_continue_running()) {
         const dt = (elapsed - prevElapsed) / 1000;
+        ops.op_set_elapsed(elapsed / 1000);
         try {
           await module.onUpdate(dt);
           consecutiveErrorsWithoutInteraction = 0;
