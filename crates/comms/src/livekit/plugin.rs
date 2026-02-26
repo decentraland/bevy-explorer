@@ -1,6 +1,10 @@
 use bevy::prelude::*;
+use common::structs::AudioSettings;
 use dcl_component::proto_components::kernel::comms::rfc4;
-use kira::manager::{AudioManager, AudioManagerSettings, DefaultBackend};
+use kira::{
+    manager::{AudioManager, AudioManagerSettings, DefaultBackend},
+    tween::Tween,
+};
 use tokio::{sync::mpsc, task::JoinHandle};
 
 #[cfg(feature = "room_debug")]
@@ -33,6 +37,10 @@ impl Plugin for LivekitPlugin {
 
         app.add_systems(Update, (start_livekit, verify_player_update_tasks));
         app.add_systems(Startup, build_kira_audio_manager);
+        app.add_systems(
+            Update,
+            respond_to_audio_settings_change.run_if(resource_changed::<AudioSettings>),
+        );
 
         app.add_event::<StartLivekit>();
 
@@ -142,4 +150,13 @@ fn build_kira_audio_manager(mut commands: Commands) {
             commands.send_event(AppExit::from_code(1));
         }
     };
+}
+
+fn respond_to_audio_settings_change(
+    mut livekit_audio_manager: ResMut<LivekitAudioManager>,
+    audio_settings: Res<AudioSettings>,
+) {
+    livekit_audio_manager
+        .main_track()
+        .set_volume(audio_settings.scene() as f64, Tween::default());
 }
