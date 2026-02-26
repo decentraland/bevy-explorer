@@ -275,8 +275,8 @@ fn main() {
         .ok()
         .or_else(|| {
             Some(String::from(
-            "https://dcl-regenesislabs.github.io/bevy-ui-scene/BevyUiScene",
-        ))
+                "https://dcl-regenesislabs.github.io/bevy-ui-scene/BevyUiScene",
+            ))
         })
         .filter(|scene| scene != "none");
 
