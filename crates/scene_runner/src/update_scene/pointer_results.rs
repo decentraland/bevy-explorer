@@ -1,5 +1,3 @@
-use std::sync::atomic::AtomicU32;
-
 use bevy::{
     diagnostic::FrameCount,
     ecs::entity::Entities,
@@ -31,7 +29,7 @@ use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     inputs::{Action, CommonInputAction, POINTER_SET},
     rpc::RpcStreamSender,
-    structs::{CursorLocks, DebugInfo, PrimaryCamera},
+    structs::{CursorLocks, DebugInfo, MonotonicTimestamp, PrimaryCamera},
     util::DespawnWith,
 };
 use dcl::interface::CrdtType;
@@ -111,7 +109,7 @@ impl Plugin for PointerResultPlugin {
             .init_resource::<WorldPointerTarget>()
             .init_resource::<DebugPointers>()
             .init_resource::<AvatarColliders>()
-            .init_resource::<PointerEventTimestamp>();
+            .init_resource::<MonotonicTimestamp<PbPointerEventsResult>>();
 
         app.add_systems(
             PreUpdate,
@@ -146,15 +144,6 @@ pub struct PointerTargetInfo {
     pub normal: Option<Vec3>,
     pub face: Option<usize>,
     pub ty: PointerTargetType,
-}
-
-#[derive(Resource, Default)]
-pub struct PointerEventTimestamp(AtomicU32);
-
-impl PointerEventTimestamp {
-    fn next_timestamp(&self) -> u32 {
-        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-    }
 }
 
 #[derive(Default, Debug, Resource, Clone, PartialEq)]
@@ -680,7 +669,7 @@ fn send_hover_events(
     new_target: Res<PointerTarget>,
     pointer_requests: Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
     mut scenes: Query<(&mut RendererSceneContext, &GlobalTransform)>,
-    timestamp: Res<PointerEventTimestamp>,
+    timestamp: Res<MonotonicTimestamp<PbPointerEventsResult>>,
     mut input_manager: InputManager,
     mut previously_entered: Local<HashSet<(Entity, Option<String>, PointerTargetType)>>,
     scene_ui_ent: Query<&UiLink>,
@@ -834,7 +823,7 @@ fn send_action_events(
     pointer_requests: Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
     mut scenes: Query<(Entity, &mut RendererSceneContext, &GlobalTransform)>,
     input_mgr: InputManager,
-    timestamp: Res<PointerEventTimestamp>,
+    timestamp: Res<MonotonicTimestamp<PbPointerEventsResult>>,
     time: Res<Time>,
     mut drag_target: ResMut<PointerDragTarget>,
     mut locks: ResMut<CursorLocks>,
