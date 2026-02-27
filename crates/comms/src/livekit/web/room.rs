@@ -157,7 +157,6 @@ fn build_room_options(room_options: &RoomOptions) -> JsValue {
     object.into()
 }
 
-
 fn build_room_connect_options(room_options: &RoomOptions) -> JsValue {
     let object = Object::new();
     Reflect::set(
