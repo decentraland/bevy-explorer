@@ -88,7 +88,10 @@ pub fn init_runtime() -> anyhow::Result<()> {
         let name_str = if cfg!(windows) {
             format!(r"\\.\pipe\bevy_explorer_ipc_{process_id:x}_{random_id}")
         } else {
-            format!("/tmp/bevy_explorer_ipc_{process_id:x}_{random_id}.sock")
+            let temp_dir = std::env::temp_dir();
+            let socket_path =
+                temp_dir.join(format!("bevy_explorer_{process_id:x}_{random_id}.sock"));
+            socket_path.to_string_lossy().into_owned()
         };
         let name = name_str.clone().to_fs_name::<GenericFilePath>().unwrap();
 

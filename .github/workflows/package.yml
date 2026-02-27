@@ -40,6 +40,7 @@ jobs:
         name: Build ${{ matrix.build_name }}
         needs: create-release
         strategy:
+            fail-fast: false
             matrix:
                 include:
                   - build_name: linux-x86_64
@@ -81,7 +82,7 @@ jobs:
             run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
           - name: install livekit deps
             if: runner.os == 'linux'
-            run: sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev fuse
+            run: sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev fuse libfuse2t64
           - name: install ffmpeg deps (linux)
             run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
             if: runner.os == 'linux'
@@ -109,13 +110,13 @@ jobs:
               
           - name: Cargo build (windows)
             if: runner.os == 'windows'
-            run: cargo build --release --bin decentra-bevy -j8
+            run: cargo build --release --package dcl_deno_ipc -j8 && cargo build --release -j8
           - name: Cargo build (macos)
             if: runner.os == 'macos'
-            run: cargo build --release --bin decentra-bevy
+            run: cargo build --release --package dcl_deno_ipc && cargo build --release
           - name: Cargo build (linux)
             if: runner.os == 'linux'
-            run: cargo build --release --bin decentra-bevy
+            run: cargo build --release --package dcl_deno_ipc && cargo build --release
 
           - name: Package common
             run: |
@@ -150,6 +151,7 @@ jobs:
             continue-on-error: true
             run: |
                 cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy.exe package/decentra-bevy.exe
+                cp ${{ env.CARGO_BUILD_DIR }}/dcl_deno_ipc.exe package/dcl_deno_ipc.exe
                 cp ${{ env.FFMPEG_DIR }}/bin/*.dll package
                 7z a ${{ env.PACKAGE_FILE }} ./package/*
 
@@ -158,6 +160,7 @@ jobs:
             continue-on-error: true
             run: |
                 cp ${{ env.CARGO_BUILD_DIR }}/decentra-bevy package/decentra-bevy
+                cp ${{ env.CARGO_BUILD_DIR }}/dcl_deno_ipc package/dcl_deno_ipc
                 # We must enter the package/ directory in order to create a flat tarball (i.e. without a directory in it).
                 cd package
                 tar -czvf ../${{ env.PACKAGE_FILE }} *            
@@ -170,11 +173,16 @@ jobs:
               mkdir BevyExplorer.AppDir/usr
               mkdir BevyExplorer.AppDir/usr/bin
               cp ../../target/release/decentra-bevy BevyExplorer.AppDir/usr/bin
-              wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-              wget https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage              
-              chmod +x ./linuxdeploy-x86_64.AppImage
-              chmod +x ./appimagetool-x86_64.AppImage
-              ./linuxdeploy-x86_64.AppImage --appdir BevyExplorer.AppDir --output appimage --create-desktop-file --executable=../../target/release/decentra-bevy --icon-file=decentra-bevy.png
+              cp ../../target/release/dcl_deno_ipc BevyExplorer.AppDir/usr/bin
+              wget https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
+              wget https://github.com/AppImage/appimagetool/releases/latest/download/appimagetool-x86_64.AppImage
+              chmod +x ./linuxdeploy-x86_64.AppImage ./appimagetool-x86_64.AppImage
+              export PATH="$(pwd):$PATH"
+              export APPIMAGETOOL="$(pwd)/appimagetool.AppImage"
+              ./linuxdeploy-x86_64.AppImage --appdir BevyExplorer.AppDir --output appimage --create-desktop-file \
+                --executable=../../target/release/decentra-bevy \
+                --executable=../../target/release/dcl_deno_ipc \
+                --icon-file=decentra-bevy.png
               mv ./decentra-bevy-x86_64.AppImage ${{ env.APPIMAGE_FILE }}
               gh release upload "${{ needs.create-release.outputs.tag_name }}" ${{ env.APPIMAGE_FILE }}
             env:

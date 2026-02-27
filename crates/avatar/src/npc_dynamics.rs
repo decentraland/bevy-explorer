@@ -49,7 +49,11 @@ fn update_npc_velocity(
         let velocity = (current_translation - prev_translation) / scene.last_update_dt;
 
         commands.entity(ent).insert(AvatarDynamicState {
-            velocity,
+            velocity: if velocity.is_finite() {
+                velocity
+            } else {
+                Vec3::ZERO
+            },
             ground_height: 0.0,
             ..Default::default()
         });
