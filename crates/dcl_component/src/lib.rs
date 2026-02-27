@@ -136,12 +136,13 @@ impl SceneComponentId {
     pub const CAMERA_LAYERS: SceneComponentId = SceneComponentId(1208);
     pub const PRIMARY_POINTER_INFO: SceneComponentId = SceneComponentId(1209);
     pub const SKYBOX_TIME: SceneComponentId = SceneComponentId(1210);
-    pub const CAMERA_LAYER: SceneComponentId = SceneComponentId(1211);
+    pub const CAMERA_LAYER: SceneComponentId = SceneComponentId(1503);
 
     pub const REALM_INFO: SceneComponentId = SceneComponentId(1106);
 
     pub const AVATAR_MOVEMENT_INFO: SceneComponentId = SceneComponentId(1500);
     pub const AVATAR_MOVEMENT: SceneComponentId = SceneComponentId(1501);
+    pub const AVATAR_LOCOMOTION_SETTINGS: SceneComponentId = SceneComponentId(1211);
 }
 
 #[derive(
