@@ -364,6 +364,10 @@ fn publish_tracks(
     #[cfg(not(target_arch = "wasm32"))] local_audio_source: Res<LocalAudioSource>,
     #[cfg(not(target_arch = "wasm32"))] microphone_device: Res<MicrophoneDevice>,
 ) {
+    if local_participants.is_empty() {
+        return;
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     let Ok(config) = microphone_device
         .default_input_config()
