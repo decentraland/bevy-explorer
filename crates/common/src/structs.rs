@@ -1,4 +1,11 @@
-use std::{f32::consts::PI, num::ParseIntError, ops::Range, str::FromStr, sync::Arc};
+use std::{
+    f32::consts::PI,
+    marker::PhantomData,
+    num::ParseIntError,
+    ops::Range,
+    str::FromStr,
+    sync::{atomic::AtomicU32, Arc},
+};
 
 use bevy::{
     platform::collections::{HashMap, HashSet},
@@ -1136,4 +1143,21 @@ pub struct DebugInfo {
 pub enum GlobalCrdtStateUpdate {
     Crdt(Vec<u8>),
     Time(f32),
+}
+
+// used for responses to scenes which require strict monotonic timestamps
+// by convention we use T = the protobuf struct containing the timestamp (e.g. PbPointerEventsResult, PbTriggerAreaResult)
+#[derive(Resource)]
+pub struct MonotonicTimestamp<T>(AtomicU32, PhantomData<fn() -> T>);
+
+impl<T> Default for MonotonicTimestamp<T> {
+    fn default() -> Self {
+        Self(Default::default(), Default::default())
+    }
+}
+
+impl<T> MonotonicTimestamp<T> {
+    pub fn next_timestamp(&self) -> u32 {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    }
 }
