@@ -206,7 +206,22 @@ function set_room_event_handler(room, handler) {
                     audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 }
 
-                track_rig_new(remote_track);
+                if (remote_participant.identity.endsWith("-streamer")) {
+                    if (remote_track.audioElement) {
+                        error(`Rebuilding audio element of ${remote_track.sid} for ${remote_participant.sid} (${remote_participant.identity}).`);
+                        const audioElement = remote_track.audioElement;
+                        delete remote_track.audioElement;
+                        remote_track.detach(audioElement);
+                    }
+                    const streamPlayerContainer = window.document.querySelector("#stream-player-container");
+                    if (streamPlayerContainer) {
+                        const audioElement = remote_track.attach();
+                        streamPlayerContainer.append(audioElement);
+                        remote_track.audioElement = audioElement;
+                    }
+                } else {
+                    track_rig_new(remote_track);
+                }
             } else if (remote_track.kind == "video") {
                 if (remote_track.videoElement) {
                     error(`Rebuilding video element of ${remote_track.sid} for ${remote_participant.sid} (${remote_participant.identity}).`);
@@ -239,6 +254,12 @@ function set_room_event_handler(room, handler) {
             log(`Unsubscribed to track ${remote_track.sid} of ${remote_participant.sid} (${remote_participant.identity}).`);
             if (remote_track.kind === "audio") {
                 track_rig_drop(remote_track);
+            }
+            if (remote_track.audioElement) {
+                const audioElement = remote_track.audioElement;
+                delete remote_track.audioElement;
+                remote_track.detach(audioElement);
+                audioElement.remove();
             }
 
             handler({
