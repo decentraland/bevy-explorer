@@ -268,7 +268,7 @@ pub fn apply_movement(
         ),
         With<PrimaryUser>,
     >,
-    mut scenes: Query<(Entity, &RendererSceneContext, &mut SceneColliderData)>,
+    mut scenes: Query<(Entity, &mut SceneColliderData)>,
     time_res: Res<Time>,
     mut info: ResMut<AvatarMovementInfo>,
     mut jumping: Local<bool>,
@@ -282,26 +282,25 @@ pub fn apply_movement(
 
     if movement.component.velocity == Vec3::ZERO {
         dynamic_state.velocity = Vec3::ZERO;
-        let ground_height = scenes.iter_mut().fold(
-            transform.translation.y,
-            |gh, (_, ctx, mut collider_data)| {
-                gh.min(
-                    collider_data
-                        .get_ground(ctx.last_update_frame, transform.translation)
-                        .map(|(h, _)| h)
-                        .unwrap_or(f32::INFINITY),
-                )
-            },
-        );
+        let ground_height =
+            scenes
+                .iter_mut()
+                .fold(transform.translation.y, |gh, (_, mut collider_data)| {
+                    gh.min(
+                        collider_data
+                            .get_ground(transform.translation)
+                            .map(|(h, _)| h)
+                            .unwrap_or(f32::INFINITY),
+                    )
+                });
         dynamic_state.ground_height = ground_height;
         return;
     };
 
     let disabled = scenes
         .iter_mut()
-        .flat_map(|(scene, ctx, mut collider_data)| {
-            let results = collider_data
-                .avatar_central_collisions(ctx.last_update_frame, transform.translation.as_dvec3());
+        .flat_map(|(scene, mut collider_data)| {
+            let results = collider_data.avatar_central_collisions(transform.translation.as_dvec3());
             if results.is_empty() {
                 None
             } else {
@@ -323,9 +322,8 @@ pub fn apply_movement(
         steps += 1;
         let mut step_time = time;
         let mut contact_normal = DVec3::ZERO;
-        for (e, ctx, mut collider_data) in scenes.iter_mut() {
+        for (e, mut collider_data) in scenes.iter_mut() {
             if let Some(hit) = collider_data.cast_avatar_nearest(
-                ctx.last_update_frame,
                 position,
                 velocity,
                 step_time,
@@ -336,7 +334,6 @@ pub fn apply_movement(
                     .get(&e)
                     .map(|d| d.iter().collect())
                     .unwrap_or_default(),
-                false,
                 -PLAYER_COLLIDER_OVERLAP,
             ) {
                 step_time = hit.toi as f64;
@@ -374,17 +371,17 @@ pub fn apply_movement(
     } else {
         *jumping = false;
     }
-    let ground_height = scenes.iter_mut().fold(
-        transform.translation.y,
-        |gh, (_, ctx, mut collider_data)| {
-            gh.min(
-                collider_data
-                    .get_ground(ctx.last_update_frame, transform.translation)
-                    .map(|(h, _)| h)
-                    .unwrap_or(f32::INFINITY),
-            )
-        },
-    );
+    let ground_height =
+        scenes
+            .iter_mut()
+            .fold(transform.translation.y, |gh, (_, mut collider_data)| {
+                gh.min(
+                    collider_data
+                        .get_ground(transform.translation)
+                        .map(|(h, _)| h)
+                        .unwrap_or(f32::INFINITY),
+                )
+            });
     dynamic_state.ground_height = ground_height;
 }
 
@@ -400,7 +397,7 @@ fn record_ground_collider(
         &mut GroundCollider,
     )>,
     containing_scenes: ContainingScene,
-    mut scenes: Query<(&RendererSceneContext, &mut SceneColliderData)>,
+    mut scenes: Query<&mut SceneColliderData>,
 ) {
     let Ok((player_ent, transform, movement, mut ground)) = player.single_mut() else {
         return;
@@ -415,13 +412,11 @@ fn record_ground_collider(
     let mut best_height = PLAYER_GROUND_THRESHOLD;
 
     for scene in containing_scenes.get_area(player_ent, PLAYER_COLLIDER_RADIUS) {
-        let Ok((ctx, mut collider_data)) = scenes.get_mut(scene) else {
+        let Ok(mut collider_data) = scenes.get_mut(scene) else {
             continue;
         };
 
-        if let Some((height, collider_id)) =
-            collider_data.get_ground(ctx.last_update_frame, transform.translation)
-        {
+        if let Some((height, collider_id)) = collider_data.get_ground(transform.translation) {
             if height < best_height {
                 if let Some(entity) = collider_data.get_collider_entity(&collider_id) {
                     best_height = height;
@@ -497,7 +492,7 @@ fn apply_ground_collider_movement(
 
 fn resolve_collisions(
     mut player: Query<&mut Transform, With<PrimaryUser>>,
-    mut scenes: Query<(&RendererSceneContext, &mut SceneColliderData)>,
+    mut scenes: Query<&mut SceneColliderData>,
     mut info: ResMut<AvatarMovementInfo>,
     time: Res<Time>,
 ) {
@@ -515,12 +510,10 @@ fn resolve_collisions(
     {
         prev = current_offset;
 
-        for (ctx, mut collider_data) in scenes.iter_mut() {
+        for mut collider_data in scenes.iter_mut() {
             // Note: collisions that intersect the avatar central segment are automatically excluded here
-            let (scene_min, scene_max) = collider_data.avatar_constraints(
-                ctx.last_update_frame,
-                transform.translation.as_dvec3() + current_offset,
-            );
+            let (scene_min, scene_max) =
+                collider_data.avatar_constraints(transform.translation.as_dvec3() + current_offset);
 
             constraint_min = constraint_min.max(scene_min + current_offset);
             constraint_max = constraint_max.min(scene_max + current_offset);

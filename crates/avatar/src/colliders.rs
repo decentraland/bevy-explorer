@@ -23,7 +23,7 @@ use rapier3d_f64::{
 use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE_RED};
 use scene_runner::{
     update_scene::pointer_results::{AvatarColliders, PointerTarget},
-    update_world::mesh_collider::{ColliderId, ToRapier},
+    update_world::mesh_collider::ColliderId,
 };
 use serde_json::json;
 use system_bridge::{NativeUi, PointerTargetType};
@@ -82,16 +82,19 @@ fn update_avatar_colliders(
         } else {
             // collider didn't exist, make a new one
             let collider = ColliderBuilder::new(SharedShape::capsule_y(
-                (PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS).to_rapier(),
-                PLAYER_COLLIDER_RADIUS.to_rapier(),
+                (PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS) as f64,
+                PLAYER_COLLIDER_RADIUS as f64,
             ))
             .position(Isometry::from_parts(
-                (transform.translation() + PLAYER_COLLIDER_HEIGHT * 0.5 * Vec3::Y).to_rapier(),
+                (transform.translation() + PLAYER_COLLIDER_HEIGHT * 0.5 * Vec3::Y)
+                    .as_dvec3()
+                    .into(),
                 Default::default(),
             ))
             .collision_groups(InteractionGroups {
                 memberships: Group::from_bits_truncate(ColliderLayer::ClPlayer as u32),
                 filter: Group::from_bits_truncate(ColliderLayer::ClPlayer as u32),
+                test_mode: rapier3d_f64::prelude::InteractionTestMode::And,
             })
             .build();
             colliders
