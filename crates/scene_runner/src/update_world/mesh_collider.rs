@@ -506,10 +506,6 @@ impl SceneColliderData {
         self.collider_state.get(id).and_then(|state| state.entity)
     }
 
-    pub fn collider_enabled(&self, handle: ColliderHandle) -> bool {
-        !self.disabled.contains(&handle)
-    }
-
     pub fn cast_ray_all(
         &mut self,
         origin: Vec3,
@@ -617,8 +613,9 @@ impl SceneColliderData {
             (PLAYER_COLLIDER_RADIUS + size_adjust) as f64,
         );
 
+        // collect attached colliders
+        let mut skip = self.disabled.clone();
         // collect colliders we started inside of, we must omit these from the query
-        let mut skip = HashSet::new();
         if skip_inside {
             skip.extend(
                 self.query_pipeline(QueryFilter::default().groups(InteractionGroups::new(
