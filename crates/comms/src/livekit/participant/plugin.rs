@@ -20,13 +20,13 @@ use crate::{
     global_crdt::{GlobalCrdtState, NonPlayerUpdate, PlayerMessage, PlayerUpdate},
     livekit::{
         participant::{
-            HostedBy, HostingParticipants, LivekitParticipant, Local, ParticipantConnected,
-            ParticipantConnectionQuality, ParticipantDisconnected, ParticipantMetadataChanged,
-            ParticipantPayload, StreamBroadcast, Streamer, ChangeVolume
+            ChangeVolume, HostedBy, HostingParticipants, LivekitParticipant, Local,
+            ParticipantConnected, ParticipantConnectionQuality, ParticipantDisconnected,
+            ParticipantMetadataChanged, ParticipantPayload, StreamBroadcast, Streamer,
         },
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
-        track::{Audio, LivekitTrack, Publishing, SubscribeToTrack, Video, TrackVolume},
+        track::{Audio, LivekitTrack, Publishing, SubscribeToTrack, TrackVolume, Video},
         LivekitRuntime,
     },
 };
