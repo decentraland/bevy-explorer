@@ -534,3 +534,12 @@ export function remote_track_pan_and_volume(remote_track, pan, volume) {
 
     // log(`[${audioContext.state}] Set spatial audio for ${participantIdentity} : pan=${nodes.pannerNode.pan.value}, volume=${nodes.gainNode.gain.value}`);
 }
+
+/**
+ * 
+ * @param {LivekitClient.RemoteAudioTrack} remote_audio_track 
+ * @param {number} volume 
+ */
+export function remote_audio_track_set_volume(remote_audio_track, volume) {
+    remote_audio_track.setVolume(volume);
+}
