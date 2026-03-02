@@ -470,7 +470,7 @@ impl SceneColliderData {
 
     pub fn get_ground(&mut self, origin: Vec3) -> Option<(f32, ColliderId)> {
         self.update_bvh();
-        
+
         let predicate = |h, _: &Collider| !self.disabled.contains(&h);
         let filter = QueryFilter::default()
             .groups(InteractionGroups::new(
