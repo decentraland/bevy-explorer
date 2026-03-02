@@ -484,12 +484,21 @@ fn audio_track_is_now_subscribed(
 fn audio_track_is_now_subscribed(
     trigger: Trigger<OnAdd, Subscribed>,
     mut commands: Commands,
-    tracks: Query<(&LivekitTrack, &PublishedBy, Option<&TrackVolume>, Has<Audio>), With<Subscribed>>,
+    tracks: Query<
+        (
+            &LivekitTrack,
+            &PublishedBy,
+            Option<&TrackVolume>,
+            Has<Audio>,
+        ),
+        With<Subscribed>,
+    >,
     participants: Query<(), (With<LivekitParticipant>, With<Streamer>)>,
     audio_settings: Res<AudioSettings>,
 ) {
     let entity = trigger.target();
-    let Ok((livekit_track, published_by, maybe_track_volume, has_audio)) = tracks.get(entity) else {
+    let Ok((livekit_track, published_by, maybe_track_volume, has_audio)) = tracks.get(entity)
+    else {
         error!("Subscribed added to something that is not a track.");
         commands.send_event(AppExit::from_code(1));
         return;
@@ -510,7 +519,11 @@ fn audio_track_is_now_subscribed(
         return;
     };
 
-    let track_volume = maybe_track_volume.copied().as_deref().copied().unwrap_or(1.);
+    let track_volume = maybe_track_volume
+        .copied()
+        .as_deref()
+        .copied()
+        .unwrap_or(1.);
 
     audio_track.set_volume(track_volume * audio_settings.scene());
 }
@@ -674,7 +687,11 @@ fn update_tracks_volume(
             continue;
         };
 
-        let track_volume = maybe_track_volume.copied().as_deref().copied().unwrap_or(1.);
+        let track_volume = maybe_track_volume
+            .copied()
+            .as_deref()
+            .copied()
+            .unwrap_or(1.);
 
         audio_track.set_volume(track_volume * audio_settings.scene());
     }
