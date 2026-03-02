@@ -337,7 +337,6 @@ impl SceneColliderData {
                         new_scale = req_scale;
                         // colliders don't have a scale, we have to modify the shape directly when scale changes (significantly)
                         collider.set_shape(base_collider.shape().scale_ext(req_scale));
-                        self.changed_colliders.insert(handle);
                     }
 
                     let state_mut = self.collider_state.get_mut(id).unwrap();
@@ -470,6 +469,8 @@ impl SceneColliderData {
     }
 
     pub fn get_ground(&mut self, origin: Vec3) -> Option<(f32, ColliderId)> {
+        self.update_bvh();
+        
         let predicate = |h, _: &Collider| !self.disabled.contains(&h);
         let filter = QueryFilter::default()
             .groups(InteractionGroups::new(
@@ -806,7 +807,7 @@ impl SceneColliderData {
         let q = QueryFilter::new().predicate(&predicate);
 
         self.query_pipeline(q)
-            .project_point(&origin.as_dvec3().into(), 0.0, true)
+            .project_point(&origin.as_dvec3().into(), f64::MAX, true)
             .map(|(_, point)| DVec3::from(point.point).as_vec3())
     }
 
