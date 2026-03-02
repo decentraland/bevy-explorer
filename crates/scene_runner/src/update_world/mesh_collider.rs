@@ -806,7 +806,7 @@ impl SceneColliderData {
         let q = QueryFilter::new().predicate(&predicate);
 
         self.query_pipeline(q)
-            .project_point(&origin.as_dvec3().into(), f64::MAX, true)
+            .project_point(&origin.as_dvec3().into(), 0.0, true)
             .map(|(_, point)| DVec3::from(point.point).as_vec3())
     }
 
