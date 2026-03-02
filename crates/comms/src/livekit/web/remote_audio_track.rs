@@ -1,13 +1,10 @@
-use wasm_bindgen::{convert::IntoWasmAbi, describe::WasmDescribe, JsValue, prelude::wasm_bindgen};
+use wasm_bindgen::{convert::IntoWasmAbi, describe::WasmDescribe, prelude::wasm_bindgen, JsValue};
 
 use crate::livekit::web::JsValueAbi;
 #[wasm_bindgen(module = "/livekit_web_bindings.js")]
 extern "C" {
     #[wasm_bindgen]
-    fn remote_audio_track_set_volume(
-        remote_audio_track: &RemoteAudioTrack,
-        volume: f32
-    );
+    fn remote_audio_track_set_volume(remote_audio_track: &RemoteAudioTrack, volume: f32);
 }
 
 #[derive(Debug, Clone)]
@@ -20,7 +17,6 @@ impl RemoteAudioTrack {
         remote_audio_track_set_volume(self, volume);
     }
 }
-
 
 impl From<JsValue> for RemoteAudioTrack {
     fn from(value: JsValue) -> Self {
