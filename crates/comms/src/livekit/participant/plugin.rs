@@ -15,18 +15,18 @@ use {
 #[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::participant::{StreamImage, StreamViewer};
 #[cfg(target_arch = "wasm32")]
-use crate::livekit::web::Participant;
+use crate::livekit::{participant::ChangeVolume, track::TrackVolume, web::Participant};
 use crate::{
     global_crdt::{GlobalCrdtState, NonPlayerUpdate, PlayerMessage, PlayerUpdate},
     livekit::{
         participant::{
-            ChangeVolume, HostedBy, HostingParticipants, LivekitParticipant, Local,
-            ParticipantConnected, ParticipantConnectionQuality, ParticipantDisconnected,
-            ParticipantMetadataChanged, ParticipantPayload, StreamBroadcast, Streamer,
+            HostedBy, HostingParticipants, LivekitParticipant, Local, ParticipantConnected,
+            ParticipantConnectionQuality, ParticipantDisconnected, ParticipantMetadataChanged,
+            ParticipantPayload, StreamBroadcast, Streamer,
         },
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
-        track::{Audio, LivekitTrack, Publishing, SubscribeToTrack, TrackVolume, Video},
+        track::{Audio, LivekitTrack, Publishing, SubscribeToTrack, Video},
         LivekitRuntime,
     },
 };
