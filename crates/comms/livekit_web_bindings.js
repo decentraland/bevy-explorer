@@ -422,14 +422,12 @@ export function remote_track_publication_set_subscribed(remote_track_publication
     remote_track_publication.setSubscribed(subscribed);
 }
 
-
 /**
  * 
  * @param {livekit.RemoteTrackPublication} remote_track_publication 
  * @returns livekit.RemoteTrack | null
  */
 export function remote_track_publication_track(remote_track_publication) {
-    log(remote_track_publication);
     return remote_track_publication.track;
 }
 
