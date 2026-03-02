@@ -15,7 +15,7 @@ use {
 #[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::participant::{StreamImage, StreamViewer};
 #[cfg(target_arch = "wasm32")]
-use crate::livekit::web::Participant;
+use crate::livekit::{participant::ChangeVolume, track::TrackVolume, web::Participant};
 use crate::{
     global_crdt::{GlobalCrdtState, NonPlayerUpdate, PlayerMessage, PlayerUpdate},
     livekit::{
@@ -51,6 +51,8 @@ impl Plugin for LivekitParticipantPlugin {
         );
         app.add_observer(someone_wants_to_watch_stream);
         app.add_observer(noone_is_watching_stream);
+        #[cfg(target_arch = "wasm32")]
+        app.add_observer(change_volume_of_tracks);
     }
 }
 
@@ -440,5 +442,29 @@ fn noone_is_watching_stream(
                 track.set_subscribed(false);
             });
         }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn change_volume_of_tracks(
+    trigger: Trigger<ChangeVolume>,
+    mut commands: Commands,
+    participants: Query<&Publishing>,
+    tracks: Query<(), With<Audio>>,
+) {
+    let entity = trigger.target();
+    let event = trigger.event();
+
+    let Ok(publishing) = participants.get(entity) else {
+        error!("{} is not publishing any tracks.", entity);
+        return;
+    };
+
+    for track in publishing.collection() {
+        if !tracks.contains(*track) {
+            continue;
+        }
+
+        commands.entity(*track).insert(TrackVolume(event.0));
     }
 }

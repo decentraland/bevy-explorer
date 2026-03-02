@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use js_sys::{Object, Reflect};
 use tokio::sync::mpsc;
 use wasm_bindgen::{convert::IntoWasmAbi, describe::WasmDescribe, prelude::*, JsValue};
 
@@ -10,8 +11,8 @@ extern "C" {
     async fn room_connect(
         url: &str,
         token: &str,
-        room_options: InternalRoomOptions,
-        room_connect_options: InternalRoomConnectOptions,
+        room_options: JsValue,
+        room_connect_options: JsValue,
         handler: &Closure<dyn Fn(RoomEvent)>,
     ) -> RoomResult<Room>;
     #[wasm_bindgen(catch)]
@@ -42,24 +43,8 @@ impl Room {
         let url = url.to_owned();
         let token = token.to_owned();
 
-        let RoomOptions {
-            auto_subscribe,
-            adaptive_stream,
-            dynacast,
-            join_retries,
-        } = room_options;
-
-        let room_options = InternalRoomOptions {
-            adaptive_stream,
-            dynacast,
-            ..Default::default()
-        };
-
-        let room_connect_options = InternalRoomConnectOptions {
-            auto_subscribe,
-            max_retries: join_retries,
-            ..Default::default()
-        };
+        let room_connect_options = build_room_connect_options(&room_options);
+        let room_options = build_room_options(&room_options);
 
         let (sender, receiver) = mpsc::unbounded_channel();
         let handler = Closure::new(move |room_event: RoomEvent| {
@@ -68,7 +53,14 @@ impl Room {
             }
         });
 
-        let room = room_connect(&url, &token, room_options, room_connect_options, &handler).await?;
+        let room = room_connect(
+            &url,
+            &token,
+            room_options.into(),
+            room_connect_options.into(),
+            &handler,
+        )
+        .await?;
 
         let _ = handler.into_js_value();
 
@@ -130,50 +122,48 @@ impl JsCast for Room {
     }
 }
 
-#[wasm_bindgen]
-#[non_exhaustive]
-struct InternalRoomOptions {
-    #[wasm_bindgen(js_name = "adaptiveStream")]
-    pub adaptive_stream: bool,
-    #[wasm_bindgen(js_name = "dynacast")]
-    pub dynacast: bool,
-    #[wasm_bindgen(js_name = "stopLocalTrackOnUnpublish")]
-    pub stop_local_track_on_unpublish: bool,
-    #[wasm_bindgen(js_name = "disconnectOnPageLeave")]
-    pub disconnect_on_page_leave: bool,
+fn build_room_options(room_options: &RoomOptions) -> JsValue {
+    let object = Object::new();
+    Reflect::set(
+        &object,
+        &JsValue::from_str("adaptiveStream"),
+        &JsValue::from_bool(room_options.adaptive_stream),
+    )
+    .unwrap();
+    Reflect::set(
+        &object,
+        &JsValue::from_str("dynacast"),
+        &JsValue::from_bool(room_options.dynacast),
+    )
+    .unwrap();
+    Reflect::set(
+        &object,
+        &JsValue::from_str("stopLocalTrackOnUnpublish"),
+        &JsValue::from_bool(true),
+    )
+    .unwrap();
+    Reflect::set(
+        &object,
+        &JsValue::from_str("disconnectOnPageLeave"),
+        &JsValue::from_bool(true),
+    )
+    .unwrap();
+    Reflect::set(
+        &object,
+        &JsValue::from_str("webAudioMix"),
+        &JsValue::from_bool(true),
+    )
+    .unwrap();
+    object.into()
 }
 
-impl Default for InternalRoomOptions {
-    fn default() -> Self {
-        Self {
-            adaptive_stream: false,
-            dynacast: false,
-            stop_local_track_on_unpublish: true,
-            disconnect_on_page_leave: true,
-        }
-    }
-}
-
-#[wasm_bindgen]
-#[non_exhaustive]
-struct InternalRoomConnectOptions {
-    #[wasm_bindgen(js_name = "autoSubscribe")]
-    pub auto_subscribe: bool,
-    #[wasm_bindgen(js_name = "peerConnectionTimeout")]
-    pub peer_connection_timeout: u32,
-    #[wasm_bindgen(js_name = "maxRetries")]
-    pub max_retries: u32,
-    #[wasm_bindgen(js_name = "websocketTimeout")]
-    pub websocket_timeout: u32,
-}
-
-impl Default for InternalRoomConnectOptions {
-    fn default() -> Self {
-        Self {
-            auto_subscribe: true,
-            peer_connection_timeout: 15000,
-            max_retries: 1,
-            websocket_timeout: 15000,
-        }
-    }
+fn build_room_connect_options(room_options: &RoomOptions) -> JsValue {
+    let object = Object::new();
+    Reflect::set(
+        &object,
+        &JsValue::from_str("autoSubscribe"),
+        &JsValue::from_bool(room_options.auto_subscribe),
+    )
+    .unwrap();
+    object.into()
 }
