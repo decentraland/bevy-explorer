@@ -74,6 +74,8 @@ impl Plugin for LivekitTrackPlugin {
         app.add_observer(video_track_is_now_subscribed);
         app.add_observer(track_of_watched_streamer_published::<Video>);
         app.add_observer(track_of_watched_streamer_published::<Audio>);
+        #[cfg(target_arch = "wasm32")]
+        app.add_observer(update_track_volume);
     }
 }
 
@@ -695,4 +697,33 @@ fn update_tracks_volume(
 
         audio_track.set_volume(track_volume * audio_settings.scene());
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn update_track_volume(
+    trigger: Trigger<OnInsert, TrackVolume>,
+    livekit_tracks: Query<(&LivekitTrack, &TrackVolume, &PublishedBy), With<Audio>>,
+    participants: Query<(), (With<LivekitParticipant>, With<Streamer>)>,
+    audio_settings: Res<AudioSettings>,
+) {
+    let entity = trigger.target();
+    let Ok((livekit_track, track_volume, published_by)) = livekit_tracks.get(entity) else {
+        error!("TrackVolume added to an entity that is not an audio track.");
+        return;
+    };
+
+    if !participants.contains(published_by.get()) {
+        return;
+    }
+
+    let Some(track) = livekit_track.track() else {
+        error!("LivekitTrack did not have remote track.");
+        return;
+    };
+    let RemoteTrack::Audio(audio_track) = track else {
+        error!("Audio LivekitTrack did not have audio remote track.");
+        return;
+    };
+
+    audio_track.set_volume(**track_volume * audio_settings.scene());
 }
