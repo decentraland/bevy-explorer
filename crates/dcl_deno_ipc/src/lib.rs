@@ -205,9 +205,16 @@ pub async fn renderer_ipc_out(
                 write_msg(&mut stream, &engine_to_scene).await;
             }
             global_rx = global_rx.recv() => {
-                let Ok(data) = global_rx else {
-                    warn!("renderer_ipc_out exit on global receiver closed");
-                    return;
+                let data = match global_rx {
+                    Ok(data) => data,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(count)) => {
+                        error!("global crdt state lagged, dropping {count} messages");
+                        continue;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        error!("renderer_ipc_out exit on global crdt closed");
+                        return;
+                    }
                 };
                 write_msg(&mut stream, &EngineToScene::GlobalUpdate(data)).await;
             }
