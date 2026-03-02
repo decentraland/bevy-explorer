@@ -671,7 +671,6 @@ fn update_tracks_volume(
             continue;
         };
 
-        error!("Updated volume");
         audio_track.set_volume(audio_settings.scene());
     }
 }
