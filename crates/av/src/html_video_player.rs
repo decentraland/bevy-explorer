@@ -482,7 +482,9 @@ fn av_player_on_insert(
         debug!("Removing html media entity {entity} due to diverging source.");
         commands
             .entity(trigger.target())
-            .try_remove::<HtmlMediaEntity>();
+            .try_remove::<(HtmlMediaEntity, ShouldBePlaying)>();
+        #[cfg(feature = "livekit")]
+        commands.entity(entity).try_remove::<StreamViewer>();
     }
 }
 
