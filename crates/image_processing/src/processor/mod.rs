@@ -5,7 +5,7 @@ mod wasm_fs;
 use std::io::Write;
 
 use base64::{engine::general_purpose, Engine};
-use bevy::log::tracing::{error, info};
+use bevy::log::{tracing::{error, info}, warn};
 use block_compression::BC7Settings;
 use ddsfile::{Caps2, Dds, DxgiFormat};
 use gltf::Glb;
@@ -233,7 +233,12 @@ fn process_gltf(raw_bytes: &[u8]) -> Result<Vec<u8>, GltfProcessError> {
             }
             let new_offset = new_bin.len() as u64;
 
-            new_bin.extend_from_slice(&old_bin[start..start + len]);
+            if old_bin.len() >= start + len {
+                new_bin.extend_from_slice(&old_bin[start..start + len]);
+            } else {
+                warn!("invalid gltf binary, replacing with zeros");
+                new_bin.extend(std::iter::repeat(0).take(len));
+            }
             view.byte_offset = Some(new_offset.into());
         }
     }
