@@ -1,4 +1,6 @@
 use bevy::{ecs::relationship::Relationship, prelude::*};
+#[cfg(target_arch = "wasm32")]
+use common::structs::AudioSettings;
 use common::util::AsH160;
 #[cfg(not(target_arch = "wasm32"))]
 use {
@@ -14,8 +16,6 @@ use {
     },
 };
 
-#[cfg(target_arch = "wasm32")]
-use crate::livekit::web::{TrackKind, TrackSource};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::{
     kira_bridge::kira_thread,
@@ -23,6 +23,11 @@ use crate::livekit::{
     participant::StreamImage,
     track::{AudioStreamingHandle, LivekitTrackTask, OpenAudioSender, VideoFrameReceiver},
     LivekitAudioManager,
+};
+#[cfg(target_arch = "wasm32")]
+use crate::livekit::{
+    participant::Streamer,
+    web::{RemoteTrack, TrackKind, TrackSource},
 };
 use crate::{
     global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
@@ -56,7 +61,11 @@ impl Plugin for LivekitTrackPlugin {
             Update,
             (subscribed_audio_track_with_open_sender, receive_video_frame),
         );
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(target_arch = "wasm32")]
+        app.add_systems(
+            Update,
+            update_tracks_volume.run_if(resource_exists_and_changed::<AudioSettings>),
+        );
         app.add_observer(audio_track_is_now_subscribed);
         #[cfg(not(target_arch = "wasm32"))]
         app.add_observer(audio_track_unpublished);
@@ -469,6 +478,40 @@ fn audio_track_is_now_subscribed(
         .insert(AudioStreamingHandle { handle });
 }
 
+#[cfg(target_arch = "wasm32")]
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
+fn audio_track_is_now_subscribed(
+    trigger: Trigger<OnAdd, Subscribed>,
+    mut commands: Commands,
+    tracks: Query<(&LivekitTrack, &PublishedBy, Has<Audio>), With<Subscribed>>,
+    participants: Query<(), (With<LivekitParticipant>, With<Streamer>)>,
+    audio_settings: Res<AudioSettings>,
+) {
+    let entity = trigger.target();
+    let Ok((livekit_track, published_by, has_audio)) = tracks.get(entity) else {
+        error!("Subscribed added to something that is not a track.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+    if !has_audio {
+        return;
+    }
+    if !participants.contains(published_by.get()) {
+        return;
+    }
+
+    let Some(track) = livekit_track.track() else {
+        error!("LivekitTrack did not have remote track.");
+        return;
+    };
+    let RemoteTrack::Audio(audio_track) = track else {
+        error!("Audio LivekitTrack did not have audio remote track.");
+        return;
+    };
+
+    audio_track.set_volume(audio_settings.scene());
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn audio_track_unpublished(
     trigger: Trigger<OnDespawn, Audio>,
@@ -605,5 +648,30 @@ fn track_of_watched_streamer_published<C: Component>(
 
     if has_stream_broadcast {
         commands.trigger_targets(SubscribeToTrack, entity);
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn update_tracks_volume(
+    livekit_tracks: Query<(&LivekitTrack, &PublishedBy), With<Audio>>,
+    participants: Query<(), (With<LivekitParticipant>, With<Streamer>)>,
+    audio_settings: Res<AudioSettings>,
+) {
+    for (livekit_track, published_by) in livekit_tracks {
+        if !participants.contains(published_by.get()) {
+            continue;
+        }
+
+        let Some(track) = livekit_track.track() else {
+            error!("LivekitTrack did not have remote track.");
+            continue;
+        };
+        let RemoteTrack::Audio(audio_track) = track else {
+            error!("Audio LivekitTrack did not have audio remote track.");
+            continue;
+        };
+
+        error!("Updated volume");
+        audio_track.set_volume(audio_settings.scene());
     }
 }
