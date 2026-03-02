@@ -27,6 +27,7 @@ use crate::livekit::{
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::{
     participant::Streamer,
+    track::TrackVolume,
     web::{RemoteTrack, TrackKind, TrackSource},
 };
 use crate::{
@@ -483,12 +484,12 @@ fn audio_track_is_now_subscribed(
 fn audio_track_is_now_subscribed(
     trigger: Trigger<OnAdd, Subscribed>,
     mut commands: Commands,
-    tracks: Query<(&LivekitTrack, &PublishedBy, Has<Audio>), With<Subscribed>>,
+    tracks: Query<(&LivekitTrack, &PublishedBy, Option<&TrackVolume>, Has<Audio>), With<Subscribed>>,
     participants: Query<(), (With<LivekitParticipant>, With<Streamer>)>,
     audio_settings: Res<AudioSettings>,
 ) {
     let entity = trigger.target();
-    let Ok((livekit_track, published_by, has_audio)) = tracks.get(entity) else {
+    let Ok((livekit_track, published_by, maybe_track_volume, has_audio)) = tracks.get(entity) else {
         error!("Subscribed added to something that is not a track.");
         commands.send_event(AppExit::from_code(1));
         return;
@@ -509,7 +510,9 @@ fn audio_track_is_now_subscribed(
         return;
     };
 
-    audio_track.set_volume(audio_settings.scene());
+    let track_volume = maybe_track_volume.copied().as_deref().copied().unwrap_or(1.);
+
+    audio_track.set_volume(track_volume * audio_settings.scene());
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -653,11 +656,11 @@ fn track_of_watched_streamer_published<C: Component>(
 
 #[cfg(target_arch = "wasm32")]
 fn update_tracks_volume(
-    livekit_tracks: Query<(&LivekitTrack, &PublishedBy), With<Audio>>,
+    livekit_tracks: Query<(&LivekitTrack, Option<&TrackVolume>, &PublishedBy), With<Audio>>,
     participants: Query<(), (With<LivekitParticipant>, With<Streamer>)>,
     audio_settings: Res<AudioSettings>,
 ) {
-    for (livekit_track, published_by) in livekit_tracks {
+    for (livekit_track, maybe_track_volume, published_by) in livekit_tracks {
         if !participants.contains(published_by.get()) {
             continue;
         }
@@ -671,6 +674,8 @@ fn update_tracks_volume(
             continue;
         };
 
-        audio_track.set_volume(audio_settings.scene());
+        let track_volume = maybe_track_volume.copied().as_deref().copied().unwrap_or(1.);
+
+        audio_track.set_volume(track_volume * audio_settings.scene());
     }
 }
