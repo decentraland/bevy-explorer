@@ -16,6 +16,8 @@ use {
     },
 };
 
+#[cfg(target_arch = "wasm32")]
+use crate::livekit::web::{RemoteTrack, TrackKind, TrackSource};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::{
     kira_bridge::kira_thread,
@@ -24,22 +26,16 @@ use crate::livekit::{
     track::{AudioStreamingHandle, LivekitTrackTask, OpenAudioSender, VideoFrameReceiver},
     LivekitAudioManager,
 };
-#[cfg(target_arch = "wasm32")]
-use crate::livekit::{
-    participant::Streamer,
-    track::TrackVolume,
-    web::{RemoteTrack, TrackKind, TrackSource},
-};
 use crate::{
     global_crdt::{GlobalCrdtState, PlayerMessage, PlayerUpdate},
     livekit::{
-        participant::{HostedBy, LivekitParticipant, StreamBroadcast},
+        participant::{HostedBy, LivekitParticipant, StreamBroadcast, Streamer},
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         track::{
             Audio, Camera, LivekitTrack, Microphone, PublishedBy, SubscribeToAudioTrack,
             SubscribeToTrack, Subscribed, Subscribing, TrackPublished, TrackSubscribed,
-            TrackUnpublished, TrackUnsubscribed, UnsubscribeToTrack, Unsubscribed, Unsubscribing,
-            Video,
+            TrackUnpublished, TrackUnsubscribed, TrackVolume, UnsubscribeToTrack, Unsubscribed,
+            Unsubscribing, Video,
         },
         LivekitRuntime,
     },
@@ -74,7 +70,6 @@ impl Plugin for LivekitTrackPlugin {
         app.add_observer(video_track_is_now_subscribed);
         app.add_observer(track_of_watched_streamer_published::<Video>);
         app.add_observer(track_of_watched_streamer_published::<Audio>);
-        #[cfg(target_arch = "wasm32")]
         app.add_observer(update_track_volume);
     }
 }
@@ -697,6 +692,34 @@ fn update_tracks_volume(
 
         audio_track.set_volume(track_volume * audio_settings.scene());
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
+fn update_track_volume(
+    trigger: Trigger<OnInsert, TrackVolume>,
+    mut livekit_tracks: Query<
+        (&mut AudioStreamingHandle, &TrackVolume, &PublishedBy),
+        (With<LivekitTrack>, With<Audio>),
+    >,
+    participants: Query<(), (With<LivekitParticipant>, With<Streamer>)>,
+) {
+    use kira::tween::Tween;
+
+    let entity = trigger.target();
+    let Ok((mut streaming_handle, track_volume, published_by)) = livekit_tracks.get_mut(entity)
+    else {
+        error!("TrackVolume added to an entity that is not an audio track.");
+        return;
+    };
+
+    if !participants.contains(published_by.get()) {
+        return;
+    }
+
+    streaming_handle
+        .handle
+        .set_volume(**track_volume as f64, Tween::default());
 }
 
 #[cfg(target_arch = "wasm32")]

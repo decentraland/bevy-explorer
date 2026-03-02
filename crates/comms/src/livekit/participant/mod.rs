@@ -135,5 +135,4 @@ impl From<LivekitConnectionQuality> for ConnectionQuality {
 
 /// Changes volume of audio tracks of this participant
 #[derive(Clone, Copy, Event)]
-#[cfg(target_arch = "wasm32")]
 pub struct ChangeVolume(pub f32);
