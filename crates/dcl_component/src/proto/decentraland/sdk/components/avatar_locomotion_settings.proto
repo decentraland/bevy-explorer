@@ -1,0 +1,18 @@
+﻿syntax = "proto3";
+
+package decentraland.sdk.components;
+
+import "decentraland/sdk/components/common/id.proto";
+
+option (common.ecs_component_id) = 1211;
+
+// The PBAvatarLocomotionSettings component allows scenes to modify locomotion settings defining things such
+// as the avatar movement speed, jump height etc.
+message PBAvatarLocomotionSettings {
+  optional float walk_speed = 1;            // Maximum speed when walking (in meters per second)
+  optional float jog_speed = 2;             // Maximum speed when jogging (in meters per second)
+  optional float run_speed = 3;             // Maximum speed when running (in meters per second)
+  optional float jump_height = 4;           // Height of a regular jump (in meters)
+  optional float run_jump_height = 5;       // Height of a jump while running (in meters)
+  optional float hard_landing_cooldown = 6; // Cooldown time after a hard landing before the avatar can move again (in seconds)
+}

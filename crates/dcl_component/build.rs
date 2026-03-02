@@ -61,6 +61,7 @@ fn gen_sdk_components() -> Result<()> {
         "skybox_time",
         "avatar_movement_info",
         "avatar_movement",
+        "avatar_locomotion_settings",
     ];
 
     let mut sources = components

@@ -12,7 +12,9 @@ use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
         common::Vector3,
-        sdk::components::{ColliderLayer, PbAvatarMovement, PbAvatarMovementInfo},
+        sdk::components::{
+            ColliderLayer, PbAvatarLocomotionSettings, PbAvatarMovement, PbAvatarMovementInfo,
+        },
     },
     SceneComponentId, SceneEntityId,
 };
@@ -20,6 +22,7 @@ use dcl_component::{
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::{
+        avatar_modifier_area::InputModifier,
         mesh_collider::{
             ColliderId, PreviousColliderTransform, SceneColliderData, GROUND_COLLISION_MASK,
         },
@@ -47,7 +50,9 @@ impl Plugin for AvatarMovementPlugin {
             (
                 apply_ground_collider_movement,
                 resolve_collisions,
-                pick_movement,
+                ActivePlayerComponent::<AvatarMovement>::pick_latest_frame_only_by_priority,
+                ActivePlayerComponent::<AvatarLocomotionSettings>::pick_by_priority,
+                ActivePlayerComponent::<InputModifier>::pick_by_priority,
                 apply_movement,
                 record_ground_collider,
             )
@@ -74,6 +79,15 @@ impl Default for AvatarMovement {
     }
 }
 
+#[derive(Default, Component, Clone, Debug)]
+pub struct AvatarLocomotionSettings(pub Option<PbAvatarLocomotionSettings>);
+
+impl From<PbAvatarLocomotionSettings> for AvatarLocomotionSettings {
+    fn from(value: PbAvatarLocomotionSettings) -> Self {
+        Self(Some(value))
+    }
+}
+
 impl From<PbAvatarMovement> for AvatarMovement {
     fn from(value: PbAvatarMovement) -> Self {
         Self {
@@ -89,23 +103,28 @@ impl From<PbAvatarMovement> for AvatarMovement {
     }
 }
 
+// generic wrapper component that tracks the active provider of singleton player components
+// e.g. AvatarMovement, by picking from the highest priority scene or falling back to default
+// if none is found.
 #[derive(Component)]
-pub struct Movement {
+pub struct ActivePlayerComponent<C: Component> {
     scene: Entity,
+    entity: Entity,
     scene_last_update: u32,
     scene_start_tick: u32,
     scene_is_portable: bool,
-    movement: AvatarMovement,
+    component: C,
 }
 
-impl Default for Movement {
+impl<C: Component + Default> Default for ActivePlayerComponent<C> {
     fn default() -> Self {
         Self {
             scene: Entity::PLACEHOLDER,
+            entity: Entity::PLACEHOLDER,
             scene_last_update: 0,
             scene_start_tick: 0,
             scene_is_portable: true,
-            movement: Default::default(),
+            component: C::default(),
         }
     }
 }
@@ -113,62 +132,142 @@ impl Default for Movement {
 #[derive(Resource, Default)]
 pub struct AvatarMovementInfo(pub PbAvatarMovementInfo);
 
-// choose the movement we want to use
-fn pick_movement(
-    mut commands: Commands,
-    q: Query<(&AvatarMovement, &SceneEntity), Changed<AvatarMovement>>,
-    scenes: Query<&RendererSceneContext>,
-    containing_scenes: ContainingScene,
-    mut player: Query<&mut Movement, With<PrimaryUser>>,
-    player_res: Res<PrimaryPlayerRes>,
-) {
-    let containing_scenes = containing_scenes.get(player_res.0);
+impl<C: Component + Clone + Default> ActivePlayerComponent<C> {
+    // pick from available of any write-time, based on priority
+    fn pick_by_priority(
+        mut commands: Commands,
+        q: Query<(Entity, Ref<C>, &SceneEntity)>,
+        mut removed_components: RemovedComponents<C>,
+        scenes: Query<&RendererSceneContext>,
+        containing_scenes: ContainingScene,
+        mut player: Query<&mut ActivePlayerComponent<C>, With<PrimaryUser>>,
+        player_res: Res<PrimaryPlayerRes>,
+    ) {
+        let containing_scenes = containing_scenes.get(player_res.0);
 
-    let Ok(mut current_choice) = player.single_mut() else {
-        commands.entity(player_res.0).insert(Movement::default());
-        return;
-    };
+        let Ok(mut current_choice) = player.single_mut() else {
+            commands
+                .entity(player_res.0)
+                .insert(ActivePlayerComponent::<C>::default());
+            return;
+        };
 
-    // clear current choice if we left the scene or it has updated
-    let current_choice_valid = containing_scenes.contains(&current_choice.scene)
-        && scenes
-            .get(current_choice.scene)
-            .is_ok_and(|ctx| ctx.last_update_frame == current_choice.scene_last_update);
+        // clear current choice if we left the scene or the component was removed
+        let current_choice_valid = containing_scenes.contains(&current_choice.scene)
+            && !removed_components
+                .read()
+                .any(|e| e == current_choice.entity);
 
-    if !current_choice_valid {
-        *current_choice = Default::default();
+        if !current_choice_valid {
+            *current_choice = Default::default();
+        }
+
+        // find best choice: parcel first, then portables by most-recently spawned
+        for (entity, update, scene_ent) in q.iter().filter(|(_, _, scene_ent)| {
+            scene_ent.id == SceneEntityId::PLAYER && containing_scenes.contains(&scene_ent.root)
+        }) {
+            // skip unchanged
+            if current_choice.entity == entity && !update.is_changed() {
+                continue;
+            }
+
+            let Ok(ctx) = scenes.get(scene_ent.root) else {
+                continue;
+            };
+
+            // prioritise parcel scenes
+            if !current_choice.scene_is_portable && ctx.is_portable {
+                continue;
+            }
+
+            // prioritise newer portables
+            if ctx.is_portable && ctx.start_tick <= current_choice.scene_start_tick {
+                continue;
+            }
+
+            *current_choice = ActivePlayerComponent {
+                scene: scene_ent.root,
+                entity,
+                scene_last_update: ctx.last_update_frame,
+                scene_start_tick: ctx.start_tick,
+                scene_is_portable: ctx.is_portable,
+                component: update.clone(),
+            };
+
+            debug!("{} chose {}", std::any::type_name::<C>(), ctx.title);
+        }
     }
 
-    // find best choice: parcel first, then portables by most-recently spawned
-    for (update, scene_ent) in q.iter().filter(|(_, scene_ent)| {
-        scene_ent.id == SceneEntityId::PLAYER && containing_scenes.contains(&scene_ent.root)
-    }) {
-        // prioritise parcel scenes
-        if !current_choice.scene_is_portable {
-            continue;
-        }
+    // pick based on priority, only from scenes that updated the component
+    // in the last available scene-tick response
+    fn pick_latest_frame_only_by_priority(
+        mut commands: Commands,
+        q: Query<(Entity, &C, &SceneEntity), Changed<C>>,
+        scenes: Query<&RendererSceneContext>,
+        containing_scenes: ContainingScene,
+        mut player: Query<&mut ActivePlayerComponent<C>, With<PrimaryUser>>,
+        player_res: Res<PrimaryPlayerRes>,
+    ) {
+        let containing_scenes = containing_scenes.get(player_res.0);
 
-        let Ok(ctx) = scenes.get(scene_ent.root) else {
-            continue;
+        let Ok(mut current_choice) = player.single_mut() else {
+            commands
+                .entity(player_res.0)
+                .insert(ActivePlayerComponent::<C>::default());
+            return;
         };
 
-        // prioritise newer portables
-        if ctx.is_portable && ctx.start_tick <= current_choice.scene_start_tick {
-            continue;
+        // clear current choice if we left the scene or it has updated
+        let current_choice_valid = containing_scenes.contains(&current_choice.scene)
+            && scenes
+                .get(current_choice.scene)
+                .is_ok_and(|ctx| ctx.last_update_frame == current_choice.scene_last_update);
+
+        if !current_choice_valid {
+            *current_choice = Default::default();
         }
 
-        *current_choice = Movement {
-            scene: scene_ent.root,
-            scene_last_update: ctx.last_update_frame,
-            scene_start_tick: ctx.start_tick,
-            scene_is_portable: ctx.is_portable,
-            movement: *update,
-        };
+        // find best choice: parcel first, then portables by most-recently spawned
+        for (entity, update, scene_ent) in q.iter().filter(|(_, _, scene_ent)| {
+            scene_ent.id == SceneEntityId::PLAYER && containing_scenes.contains(&scene_ent.root)
+        }) {
+            // prioritise parcel scenes
+            if !current_choice.scene_is_portable {
+                continue;
+            }
+
+            let Ok(ctx) = scenes.get(scene_ent.root) else {
+                continue;
+            };
+
+            // prioritise newer portables
+            if ctx.is_portable && ctx.start_tick <= current_choice.scene_start_tick {
+                continue;
+            }
+
+            *current_choice = ActivePlayerComponent {
+                scene: scene_ent.root,
+                entity,
+                scene_last_update: ctx.last_update_frame,
+                scene_start_tick: ctx.start_tick,
+                scene_is_portable: ctx.is_portable,
+                component: update.clone(),
+            };
+
+            debug!("{} chose {}", std::any::type_name::<C>(), ctx.title);
+        }
     }
 }
 
 pub fn apply_movement(
-    mut player: Query<(&mut Transform, &mut AvatarDynamicState, &Movement), With<PrimaryUser>>,
+    mut player: Query<
+        (
+            &mut Transform,
+            &mut AvatarDynamicState,
+            &ActivePlayerComponent<AvatarMovement>,
+        ),
+        With<PrimaryUser>,
+    >,
     mut scenes: Query<(Entity, &RendererSceneContext, &mut SceneColliderData)>,
     time_res: Res<Time>,
     mut info: ResMut<AvatarMovementInfo>,
@@ -179,9 +278,9 @@ pub fn apply_movement(
     };
 
     info.0.step_time = time_res.delta_secs();
-    transform.rotation = Quat::from_rotation_y(movement.movement.orientation / 360.0 * TAU);
+    transform.rotation = Quat::from_rotation_y(movement.component.orientation / 360.0 * TAU);
 
-    if movement.movement.velocity == Vec3::ZERO {
+    if movement.component.velocity == Vec3::ZERO {
         dynamic_state.velocity = Vec3::ZERO;
         let ground_height = scenes.iter_mut().fold(
             transform.translation.y,
@@ -217,7 +316,7 @@ pub fn apply_movement(
 
     let mut position = transform.translation.as_dvec3();
     let mut time = time_res.delta_secs_f64();
-    let mut velocity = movement.movement.velocity.as_dvec3();
+    let mut velocity = movement.component.velocity.as_dvec3();
     let mut steps = 0;
 
     while steps < 60 && time > 1e-10 {
@@ -252,10 +351,10 @@ pub fn apply_movement(
 
     debug!(
         "move {:.7} + {:.7} = {:.7} ({steps} iterations)",
-        transform.translation, movement.movement.velocity, position
+        transform.translation, movement.component.velocity, position
     );
 
-    info.0.requested_velocity = Some(Vector3::world_vec_from_vec3(&movement.movement.velocity));
+    info.0.requested_velocity = Some(Vector3::world_vec_from_vec3(&movement.component.velocity));
     info.0.actual_velocity = Some(Vector3::world_vec_from_vec3(
         &((position - transform.translation.as_dvec3()) / time_res.delta_secs_f64()).as_vec3(),
     ));
@@ -267,7 +366,7 @@ pub fn apply_movement(
 
     // for now we hack in the old dynamic state values for animations
     dynamic_state.velocity = velocity;
-    if movement.movement.velocity.y > 10.0 {
+    if movement.component.velocity.y > 10.0 {
         if !*jumping {
             dynamic_state.jump_time = time_res.elapsed_secs();
             *jumping = true;
@@ -294,7 +393,12 @@ pub fn apply_movement(
 pub struct GroundCollider(pub Option<(Entity, ColliderId, GlobalTransform)>);
 
 fn record_ground_collider(
-    mut player: Query<(Entity, &Transform, &Movement, &mut GroundCollider)>,
+    mut player: Query<(
+        Entity,
+        &Transform,
+        &ActivePlayerComponent<AvatarMovement>,
+        &mut GroundCollider,
+    )>,
     containing_scenes: ContainingScene,
     mut scenes: Query<(&RendererSceneContext, &mut SceneColliderData)>,
 ) {
@@ -304,7 +408,7 @@ fn record_ground_collider(
 
     ground.0 = None;
 
-    if movement.movement.ground_direction == Vec3::ZERO {
+    if movement.component.ground_direction == Vec3::ZERO {
         return;
     }
 
@@ -469,11 +573,24 @@ fn resolve_collisions(
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn broadcast_movement_info(
     mut info: ResMut<AvatarMovementInfo>,
+    active_components: Query<
+        (
+            Option<&ActivePlayerComponent<AvatarLocomotionSettings>>,
+            Option<&ActivePlayerComponent<InputModifier>>,
+        ),
+        With<PrimaryUser>,
+    >,
     mut global_crdt: ResMut<GlobalCrdtState>,
     time: Res<Time>,
 ) {
+    let (maybe_locomotion, maybe_modifier) = active_components.single().unwrap_or_default();
+
+    info.0.active_avatar_locomotion_settings = maybe_locomotion.and_then(|l| l.component.0.clone());
+    info.0.active_input_modifier = maybe_modifier.and_then(|l| l.component.0.clone());
+
     debug!("broadcast {:?}", info.0);
 
     global_crdt.update_crdt(
@@ -488,5 +605,7 @@ fn broadcast_movement_info(
         requested_velocity: None,
         actual_velocity: None,
         external_velocity: None,
+        active_avatar_locomotion_settings: None,
+        active_input_modifier: None,
     }
 }

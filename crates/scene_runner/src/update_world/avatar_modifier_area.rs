@@ -39,12 +39,12 @@ impl From<PbAvatarModifierArea> for AvatarModifierArea {
     }
 }
 
-#[derive(Component, Debug)]
-pub struct InputModifier(pub PbInputModifier);
+#[derive(Component, Debug, Clone, Default)]
+pub struct InputModifier(pub Option<PbInputModifier>);
 
 impl From<PbInputModifier> for InputModifier {
     fn from(value: PbInputModifier) -> Self {
-        Self(value)
+        Self(Some(value))
     }
 }
 
@@ -294,8 +294,9 @@ fn update_avatar_modifier_area(
                 }
             }
 
-            if let Some(pb_input_modifier::Mode::Standard(modifier)) =
-                maybe_modifier.and_then(|m| m.0.mode.as_ref())
+            if let Some(pb_input_modifier::Mode::Standard(modifier)) = maybe_modifier
+                .and_then(|m| m.0.as_ref())
+                .and_then(|m| m.mode.as_ref())
             {
                 let permit = maybe_foreign.is_some()
                     || match active_area.allow_locomotion {

@@ -4,6 +4,8 @@ package decentraland.sdk.components;
 
 import "decentraland/sdk/components/common/id.proto";
 import "decentraland/common/vectors.proto";
+import "decentraland/sdk/components/avatar_locomotion_settings.proto";
+import "decentraland/sdk/components/input_modifier.proto";
 
 option (common.ecs_component_id) = 1500;
 
@@ -13,4 +15,6 @@ message PBAvatarMovementInfo {
   decentraland.common.Vector3 requested_velocity = 3;       // the velocity requested for the previous frame
   decentraland.common.Vector3 actual_velocity = 4;          // the resulting velocity taking collisions into account
   decentraland.common.Vector3 external_velocity = 5;        // the velocity imparted by movement of the "ground" platform or pushing from other moving colliders
+  decentraland.sdk.components.PBAvatarLocomotionSettings active_avatar_locomotion_settings = 6;
+  decentraland.sdk.components.PBInputModifier active_input_modifier = 7;
 }
