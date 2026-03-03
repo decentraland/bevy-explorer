@@ -101,8 +101,8 @@ fn setup_assets(
             subdivisions: shell_texturing_config.subdivisions,
             layers: shell_texturing_config.layers,
             padding: Vec2::default(),
-            root_color: palettes::tailwind::LIME_600.into(),
-            tip_color: palettes::tailwind::LIME_800.into(),
+            root_color: palettes::tailwind::LIME_800.into(),
+            tip_color: palettes::tailwind::LIME_600.into(),
         },
     );
 }
