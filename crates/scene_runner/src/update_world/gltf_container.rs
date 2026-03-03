@@ -36,7 +36,7 @@ use crate::{
     update_world::{
         lights::LightSource,
         material::{dcl_material_from_standard_material, BaseMaterial, PbMaterialComponent},
-        mesh_collider::{ColliderType, CtCollider, ToRapier},
+        mesh_collider::{ColliderType, CtCollider},
         trigger_area::CtTrigger,
     },
     ContainerEntity, ContainingScene, OutOfWorld, SceneEntity, SceneSets,
@@ -1154,7 +1154,7 @@ pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> SharedShape {
 
     let positions_parry: Vec<_> = positions_ref
         .iter()
-        .map(|pos| Point::from([pos[0].to_rapier(), pos[1].to_rapier(), pos[2].to_rapier()]))
+        .map(|pos| Point::from([pos[0] as f64, pos[1] as f64, pos[2] as f64]))
         .collect();
 
     let indices: Vec<u32> = match mesh_data.indices() {

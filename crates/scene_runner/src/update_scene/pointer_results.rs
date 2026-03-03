@@ -204,7 +204,6 @@ fn update_pointer_target(
     containing_scenes: ContainingScene,
     mut scenes: Query<(Entity, &mut RendererSceneContext, &mut SceneColliderData)>,
     mut avatar_colliders: ResMut<AvatarColliders>,
-    frame: Res<FrameCount>,
     mut world_target: ResMut<WorldPointerTarget>,
     mut pointer_ray: ResMut<PointerRay>,
 ) {
@@ -249,9 +248,8 @@ fn update_pointer_target(
         .filter(|(scene_entity, ..)| nearby_scenes.contains(scene_entity))
         .fold(
             None,
-            |maybe_prior_nearest, (scene_entity, context, mut collider_data)| {
+            |maybe_prior_nearest, (scene_entity, _, mut collider_data)| {
                 let maybe_nearest = collider_data.cast_ray_nearest(
-                    context.last_update_frame,
                     ray.origin,
                     ray.direction.into(),
                     f32::MAX,
@@ -275,7 +273,6 @@ fn update_pointer_target(
         );
 
     let maybe_nearest_avatar = avatar_colliders.collider_data.cast_ray_nearest(
-        frame.0,
         ray.origin,
         ray.direction.into(),
         maybe_nearest_hit
@@ -292,7 +289,7 @@ fn update_pointer_target(
     if let Some(avatar_hit) = maybe_nearest_avatar {
         let nearest_point = avatar_colliders
             .collider_data
-            .closest_point(frame.0, player_translation, |cid| cid == &avatar_hit.id)
+            .closest_point(player_translation, |cid| cid == &avatar_hit.id)
             .unwrap_or(player_translation);
         let distance = (nearest_point - player_translation).length();
 
@@ -313,9 +310,7 @@ fn update_pointer_target(
 
         // get player distance
         let nearest_point = collider_data
-            .closest_point(context.last_update_frame, player_translation, |cid| {
-                cid == &hit.id
-            })
+            .closest_point(player_translation, |cid| cid == &hit.id)
             .unwrap_or(player_translation);
         let distance = (nearest_point - player_translation).length();
 
