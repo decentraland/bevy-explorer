@@ -1,6 +1,7 @@
 mod day_night;
 pub mod env_downsample;
 mod nishita_cloud;
+pub mod shell_texturing;
 
 use bevy::{
     core_pipeline::dof::{DepthOfField, DepthOfFieldMode},
@@ -33,7 +34,7 @@ use common::{
 use console::DoAddConsoleCommand;
 // use env_downsample::{Envmap, EnvmapDownsamplePlugin};
 
-use crate::day_night::DayNightPlugin;
+use crate::{day_night::DayNightPlugin, shell_texturing::ShellTexturingPlugin};
 
 pub struct VisualsPlugin {
     pub no_fog: bool,
@@ -49,6 +50,7 @@ impl Plugin for VisualsPlugin {
             })
             .add_plugins(WireframePlugin::default())
             .add_plugins(DayNightPlugin)
+            .add_plugins(ShellTexturingPlugin)
             .add_systems(Update, apply_global_light)
             .add_systems(Update, update_dof)
             .add_systems(Startup, setup.in_set(SetupSets::Main));
