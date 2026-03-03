@@ -15,7 +15,7 @@ const SHELL_TEXTURING_MATERIAL: Handle<ShellTexture> =
 
 #[derive(Component)]
 #[require(Transform, Visibility)]
-pub struct ShellTextureGrass {
+pub struct ParcelGrass {
     pub parcel: IVec2,
 }
 
@@ -108,9 +108,9 @@ fn setup_assets(
 }
 
 fn new_shell_texture_grass(
-    trigger: Trigger<OnAdd, ShellTextureGrass>,
+    trigger: Trigger<OnAdd, ParcelGrass>,
     mut commands: Commands,
-    shell_texturing_grasses: Query<&ShellTextureGrass>,
+    shell_texturing_grasses: Query<&ParcelGrass>,
     shell_texturing_config: Res<ShellTexturingGrassConfig>,
 ) {
     let entity = trigger.target();
