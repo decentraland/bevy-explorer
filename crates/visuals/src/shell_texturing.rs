@@ -14,9 +14,18 @@ const PARCEL_GRASS_MATERIAL: Handle<ShellTexture> =
     weak_handle!("18c8dd1e-081d-452a-9c00-327775a239ff");
 
 #[derive(Component)]
-#[require(Transform, Visibility)]
+#[require(Transform, Visibility, ParcelGrassLod = ParcelGrassLod::High)]
 pub struct ParcelGrass {
     pub parcel: IVec2,
+}
+
+#[derive(Clone, Copy, Component)]
+#[component(immutable)]
+#[repr(u8)]
+pub enum ParcelGrassLod {
+    High = 1,
+    Mid = 2,
+    Low = 3,
 }
 
 #[derive(Component)]
@@ -72,7 +81,7 @@ impl Plugin for ShellTexturingPlugin {
             Update,
             update_parcel_grass_material.run_if(resource_changed::<ParcelGrassConfig>),
         );
-        app.add_observer(new_parcel_grass);
+        app.add_observer(parcel_grass_lod_change);
     }
 }
 
@@ -120,19 +129,22 @@ fn update_parcel_grass_material(
     );
 }
 
-fn new_parcel_grass(
-    trigger: Trigger<OnAdd, ParcelGrass>,
+fn parcel_grass_lod_change(
+    trigger: Trigger<OnInsert, ParcelGrassLod>,
     mut commands: Commands,
-    parcel_grasses: Query<&ParcelGrass>,
+    parcel_grasses: Query<(&ParcelGrass, &ParcelGrassLod)>,
     parcel_grass_config: Res<ParcelGrassConfig>,
 ) {
     let entity = trigger.target();
-    let Ok(parcel_grass) = parcel_grasses.get(entity) else {
+    let Ok((parcel_grass, parcel_grass_lod)) = parcel_grasses.get(entity) else {
         unreachable!("Infallible query");
     };
+    commands.entity(entity).despawn_related::<Children>();
+
+    let lod = *parcel_grass_lod as usize;
 
     commands.entity(entity).with_children(|parent| {
-        for i in 0..parcel_grass_config.layers {
+        for i in (0..parcel_grass_config.layers).step_by(lod) {
             parent.spawn((
                 ParcelGrassShell,
                 Mesh3d(PARCEL_GRASS_MESH.clone()),
