@@ -123,23 +123,23 @@ fn update_parcel_grass_material(
 fn new_parcel_grass(
     trigger: Trigger<OnAdd, ParcelGrass>,
     mut commands: Commands,
-    shell_texturing_grasses: Query<&ParcelGrass>,
-    shell_texturing_config: Res<ParcelGrassConfig>,
+    parcel_grasses: Query<&ParcelGrass>,
+    parcel_grass_config: Res<ParcelGrassConfig>,
 ) {
     let entity = trigger.target();
-    let Ok(shell_texturing_grass) = shell_texturing_grasses.get(entity) else {
+    let Ok(shell_texturing_grass) = parcel_grasses.get(entity) else {
         unreachable!("Infallible query");
     };
 
     commands.entity(entity).with_children(|parent| {
-        for i in 0..shell_texturing_config.layers {
+        for i in 0..parcel_grass_config.layers {
             parent.spawn((
                 ParcelGrassShell,
                 Mesh3d(PARCEL_GRASS_MESH.clone()),
                 MeshMaterial3d(PARCEL_GRASS_MATERIAL.clone()),
                 Transform::from_translation(Vec3::new(
                     16. * shell_texturing_grass.parcel.x as f32 + 8.,
-                    -0.05 + (shell_texturing_config.y_displacement * i as f32),
+                    -0.05 + (parcel_grass_config.y_displacement * i as f32),
                     -(16. * shell_texturing_grass.parcel.y as f32) - 8.,
                 )),
                 MeshTag(i),
