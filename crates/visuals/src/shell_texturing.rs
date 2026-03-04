@@ -67,7 +67,11 @@ impl Plugin for ShellTexturingPlugin {
 
         app.add_plugins(MaterialPlugin::<ShellTexture>::default());
 
-        app.add_systems(Startup, setup_assets);
+        app.add_systems(Startup, setup_parcel_grass_mesh);
+        app.add_systems(
+            Update,
+            update_parcel_grass_material.run_if(resource_changed::<ParcelGrassConfig>),
+        );
         app.add_observer(new_parcel_grass);
     }
 }
@@ -77,6 +81,8 @@ pub struct ParcelGrassConfig {
     pub layers: u32,
     pub subdivisions: u32,
     pub y_displacement: f32,
+    pub root_color: Color,
+    pub tip_color: Color,
 }
 
 impl Default for ParcelGrassConfig {
@@ -85,27 +91,31 @@ impl Default for ParcelGrassConfig {
             layers: 32,
             subdivisions: 32,
             y_displacement: 0.01,
+            root_color: palettes::tailwind::LIME_800.into(),
+            tip_color: palettes::tailwind::LIME_600.into(),
         }
     }
 }
 
-fn setup_assets(
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ShellTexture>>,
-    shell_texturing_config: Res<ParcelGrassConfig>,
-) {
+fn setup_parcel_grass_mesh(mut meshes: ResMut<Assets<Mesh>>) {
     meshes.insert(
         PARCEL_GRASS_MESH.id(),
         Plane3d::new(Vec3::Y, Vec2::splat(8.)).mesh().build(),
     );
+}
+
+fn update_parcel_grass_material(
+    mut materials: ResMut<Assets<ShellTexture>>,
+    parcel_grass_config: Res<ParcelGrassConfig>,
+) {
     materials.insert(
         PARCEL_GRASS_MATERIAL.id(),
         ShellTexture {
-            subdivisions: shell_texturing_config.subdivisions,
-            layers: shell_texturing_config.layers,
+            subdivisions: parcel_grass_config.subdivisions,
+            layers: parcel_grass_config.layers,
             padding: Vec2::default(),
-            root_color: palettes::tailwind::LIME_800.into(),
-            tip_color: palettes::tailwind::LIME_600.into(),
+            root_color: parcel_grass_config.root_color.into(),
+            tip_color: parcel_grass_config.tip_color.into(),
         },
     );
 }
