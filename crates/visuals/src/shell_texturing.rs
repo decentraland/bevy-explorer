@@ -127,7 +127,7 @@ fn new_parcel_grass(
     parcel_grass_config: Res<ParcelGrassConfig>,
 ) {
     let entity = trigger.target();
-    let Ok(shell_texturing_grass) = parcel_grasses.get(entity) else {
+    let Ok(parcel_grass) = parcel_grasses.get(entity) else {
         unreachable!("Infallible query");
     };
 
@@ -138,9 +138,9 @@ fn new_parcel_grass(
                 Mesh3d(PARCEL_GRASS_MESH.clone()),
                 MeshMaterial3d(PARCEL_GRASS_MATERIAL.clone()),
                 Transform::from_translation(Vec3::new(
-                    16. * shell_texturing_grass.parcel.x as f32 + 8.,
+                    16. * parcel_grass.parcel.x as f32 + 8.,
                     -0.05 + (parcel_grass_config.y_displacement * i as f32),
-                    -(16. * shell_texturing_grass.parcel.y as f32) - 8.,
+                    -(16. * parcel_grass.parcel.y as f32) - 8.,
                 )),
                 MeshTag(i),
                 NotShadowCaster,
