@@ -19,6 +19,9 @@ pub struct ParcelGrass {
     pub parcel: IVec2,
 }
 
+#[derive(Component)]
+pub struct ParcelGrassShell;
+
 #[derive(Clone, Asset, TypePath, AsBindGroup)]
 pub struct ShellTexture {
     #[uniform(0)]
@@ -121,6 +124,7 @@ fn new_shell_texture_grass(
     commands.entity(entity).with_children(|parent| {
         for i in 0..shell_texturing_config.layers {
             parent.spawn((
+                ParcelGrassShell,
                 Mesh3d(SHELL_TEXTURING_MESH.clone()),
                 MeshMaterial3d(SHELL_TEXTURING_MATERIAL.clone()),
                 Transform::from_translation(Vec3::new(
