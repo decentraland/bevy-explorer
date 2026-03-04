@@ -83,7 +83,7 @@ impl Default for ShellTexturingGrassConfig {
     fn default() -> Self {
         Self {
             layers: 32,
-            subdivisions: 16,
+            subdivisions: 32,
             y_displacement: 0.01,
         }
     }
