@@ -1,6 +1,5 @@
 use bevy::{
     asset::{embedded_asset, embedded_path, weak_handle},
-    color::palettes,
     pbr::NotShadowCaster,
     prelude::*,
     render::{
@@ -8,6 +7,7 @@ use bevy::{
         render_resource::{AsBindGroup, ShaderRef},
     },
 };
+use common::structs::ParcelGrassConfig;
 
 const PARCEL_GRASS_MESH: Handle<Mesh> = weak_handle!("75b4bc5b-7523-4d7c-a42f-d2ddb93ac169");
 const PARCEL_GRASS_MATERIAL: Handle<ShellTexture> =
@@ -82,27 +82,6 @@ impl Plugin for ShellTexturingPlugin {
             update_parcel_grass_material.run_if(resource_changed::<ParcelGrassConfig>),
         );
         app.add_observer(parcel_grass_lod_change);
-    }
-}
-
-#[derive(Resource)]
-pub struct ParcelGrassConfig {
-    pub layers: u32,
-    pub subdivisions: u32,
-    pub y_displacement: f32,
-    pub root_color: Color,
-    pub tip_color: Color,
-}
-
-impl Default for ParcelGrassConfig {
-    fn default() -> Self {
-        Self {
-            layers: 32,
-            subdivisions: 32,
-            y_displacement: 0.01,
-            root_color: palettes::tailwind::LIME_800.into(),
-            tip_color: palettes::tailwind::LIME_600.into(),
-        }
     }
 }
 
