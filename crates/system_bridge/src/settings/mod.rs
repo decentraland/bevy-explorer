@@ -1,7 +1,10 @@
 use std::fmt::Display;
 
 use crate::{
-    settings::{imposter_settings::ImposterSetting, sensitivity::*},
+    settings::{
+        imposter_settings::ImposterSetting, parcel_grass_settings::ParcelGrassSetting,
+        sensitivity::*,
+    },
     SystemApi,
 };
 use ambient_brightness_setting::AmbientSetting;
@@ -57,6 +60,7 @@ pub mod load_distance;
 pub mod max_avatars;
 pub mod max_downloads;
 pub mod oob_setting;
+pub mod parcel_grass_settings;
 pub mod player_settings;
 pub mod scene_threads;
 pub mod sensitivity;
@@ -65,7 +69,6 @@ pub mod ssao_setting;
 pub mod video_threads;
 pub mod volume_settings;
 pub mod window_settings;
-
 pub struct SettingBridgePlugin;
 
 #[derive(Event)]
@@ -135,6 +138,7 @@ impl Plugin for SettingBridgePlugin {
         );
 
         add_enum_setting::<ImposterSetting>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<ParcelGrassSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<FogSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<BloomSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<DofSetting>(app, &mut settings, &mut schedule, &config);
