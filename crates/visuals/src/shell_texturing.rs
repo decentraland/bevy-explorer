@@ -98,6 +98,10 @@ fn update_parcel_grass_material(
     mut materials: ResMut<Assets<ShellTexture>>,
     parcel_grass_config: Res<ParcelGrassConfig>,
 ) {
+    debug!(
+        target: "visuals::parcel_grass::update_material",
+        "Updating parcel grass material due to change in ParcelGrassConfig."
+    );
     materials.insert(
         PARCEL_GRASS_MATERIAL.id(),
         ShellTexture {
@@ -115,6 +119,10 @@ fn rebuild_parcel_grass_shells(
     parcel_grass: Query<Entity, With<ParcelGrassLod>>,
     parcel_grass_lod: ComponentIdFor<ParcelGrassLod>,
 ) {
+    debug!(
+        target: "visuals::parcel_grass::rebuild_shells",
+        "Rebuilding shells due to change in ParcelGrassConfig."
+    );
     commands.trigger_targets(
         OnInsert,
         (*parcel_grass_lod, parcel_grass.iter().collect::<Vec<_>>()),
@@ -134,6 +142,10 @@ fn parcel_grass_lod_change(
     commands.entity(entity).despawn_related::<Children>();
 
     let lod = *parcel_grass_lod as usize;
+    debug!(
+        target: "visuals::parcel_grass::lod_change",
+        "Rebuilding shells for {entity} with lod {lod}."
+    );
 
     commands.entity(entity).with_children(|parent| {
         for i in (0..parcel_grass_config.layers).step_by(lod) {
