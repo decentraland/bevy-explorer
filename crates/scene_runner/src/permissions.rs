@@ -4,11 +4,11 @@ use crate::{renderer_context::RendererSceneContext, ContainingScene};
 use bevy::{ecs::system::SystemParam, prelude::*};
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
-    rpc::RpcResultSender,
-    structs::{AppConfig, PermissionType, PermissionUsed, PrimaryPlayerRes, SystemScene},
+    rpc::{RpcResultReceiver, RpcResultSender},
+    structs::{AppConfig, PermissionType, PermissionUsed, PrimaryPlayerRes, StartupScenes},
 };
 use ipfs::CurrentRealm;
-use tokio::sync::oneshot::{channel, error::TryRecvError, Receiver};
+use tokio::sync::oneshot::error::TryRecvError;
 
 pub struct PermissionRequest {
     pub realm: String,
@@ -32,14 +32,14 @@ impl PermissionManager {
         scene: Entity,
         is_portable: bool,
         additional: Option<String>,
-    ) -> Receiver<bool> {
-        let (sender, receiver) = channel();
+    ) -> RpcResultReceiver<bool> {
+        let (sender, receiver) = RpcResultSender::channel();
         self.pending.push_back(PermissionRequest {
             realm,
             scene,
             is_portable,
             ty,
-            sender: RpcResultSender::new(sender),
+            sender,
             additional,
         });
         receiver
@@ -51,14 +51,23 @@ impl PermissionManager {
 pub struct Permission<'w, 's, T: Send + Sync + 'static> {
     pub success: Local<'s, Vec<(T, PermissionType, Option<String>, Entity)>>,
     pub fail: Local<'s, Vec<(T, PermissionType, Entity)>>,
-    pub pending: Local<'s, Vec<(T, PermissionType, Entity, Option<String>, Receiver<bool>)>>,
+    pub pending: Local<
+        's,
+        Vec<(
+            T,
+            PermissionType,
+            Entity,
+            Option<String>,
+            RpcResultReceiver<bool>,
+        )>,
+    >,
     config: Res<'w, AppConfig>,
     realm: Res<'w, CurrentRealm>,
     containing_scenes: ContainingScene<'w, 's>,
     player: Res<'w, PrimaryPlayerRes>,
     scenes: Query<'w, 's, &'static RendererSceneContext>,
     manager: ResMut<'w, PermissionManager>,
-    system_scene: Option<Res<'w, SystemScene>>,
+    system_scenes: Option<Res<'w, StartupScenes>>,
     uses: EventWriter<'w, PermissionUsed>,
 }
 
@@ -83,10 +92,11 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
     }
 
     fn is_system_scene(&self, hash: &str) -> bool {
-        self.system_scene
-            .as_ref()
-            .and_then(|ss| ss.hash.as_ref())
-            .is_some_and(|sh| sh == hash)
+        self.system_scenes.as_ref().is_some_and(|ss| {
+            ss.scenes
+                .iter()
+                .any(|scene| scene.hash.as_ref().is_some_and(|sh| sh == hash) && scene.super_user)
+        })
     }
 
     pub fn check(
@@ -112,7 +122,7 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
             common::structs::PermissionValue::Ask
         } else {
             self.config
-                .get_permission(ty, &self.realm.address, hash, is_portable)
+                .get_permission(ty, &self.realm.about_url, hash, is_portable)
         };
 
         debug!(
@@ -123,7 +133,7 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
             in_scene,
             allow_out_of_scene,
             self.config
-                .get_permission(ty, &self.realm.address, hash, is_portable)
+                .get_permission(ty, &self.realm.about_url, hash, is_portable)
         );
         match perm {
             common::structs::PermissionValue::Allow => {

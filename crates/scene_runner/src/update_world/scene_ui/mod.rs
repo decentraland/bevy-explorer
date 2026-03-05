@@ -12,6 +12,7 @@ use bevy::{
     prelude::*,
     render::render_resource::Extent3d,
     ui::{CameraCursorPosition, FocusPolicy},
+    window::PrimaryWindow,
 };
 use bevy_console::ConsoleCommand;
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
@@ -26,10 +27,10 @@ use crate::{
     initialize_scene::{LiveScenes, SuperUserScene},
     renderer_context::RendererSceneContext,
     update_world::scene_ui::ui_pointer::manage_scene_ui_interact,
-    ContainerEntity, ContainingScene, SceneEntity, SceneSets,
+    ContainerEntity, ContainingScene, InteractableArea, SceneEntity, SceneSets,
 };
 use common::{
-    rpc::RpcCall,
+    rpc::{RpcCall, RpcUiFocusAction},
     structs::{AppConfig, PrimaryPlayerRes, PrimaryUser, ZOrder},
     util::{DespawnWith, ModifyComponentExt},
 };
@@ -353,7 +354,7 @@ impl From<PbUiTransform> for UiTransform {
                 border_top_width,
                 border_bottom_width_unit,
                 border_bottom_width,
-                Val::Auto
+                Val::ZERO
             ),
             border_radius: radius!(
                 value,
@@ -520,6 +521,12 @@ pub struct UiLink {
     interactors: HashSet<&'static str>,
 }
 
+#[derive(Component)]
+pub struct LinkedScene {
+    scene: Entity,
+    element_id: Option<String>,
+}
+
 impl Default for UiLink {
     fn default() -> Self {
         Self {
@@ -562,8 +569,26 @@ fn create_ui_roots(
     )>,
     images: ResMut<Assets<Image>>,
     hidden_uis: Res<HiddenSceneUis>,
+    interactable_area: Res<InteractableArea>,
+    window: Query<&Window, With<PrimaryWindow>>,
 ) {
     let images = images.into_inner();
+
+    let (width, height) = window
+        .single()
+        .map(|w| (w.width(), w.height()))
+        .unwrap_or_default();
+    let interactable_area_px = interactable_area.get_or_default(width, height);
+
+    let constrained_root_style = Node {
+        position_type: PositionType::Absolute,
+        left: Val::Px(interactable_area_px.x),
+        top: Val::Px(interactable_area_px.y),
+        right: Val::Px(interactable_area_px.z),
+        bottom: Val::Px(interactable_area_px.w),
+        overflow: Overflow::clip(),
+        ..Default::default()
+    };
 
     let current_scenes = player
         .single()
@@ -589,7 +614,9 @@ fn create_ui_roots(
             ZOrder::SceneUi
         };
 
-        if current_scenes.contains(&ent) && (maybe_link.is_none() || config.is_changed()) {
+        if current_scenes.contains(&ent)
+            && (maybe_link.is_none() || config.is_changed() || interactable_area.is_changed())
+        {
             let display = if maybe_super.is_some()
                 || hidden_uis
                     .scenes
@@ -602,16 +629,10 @@ fn create_ui_roots(
                 Display::None
             };
 
-            let root_style = if config.constrain_scene_ui {
+            let root_style = if config.constrain_scene_ui && maybe_super.is_none() {
                 Node {
                     display,
-                    position_type: PositionType::Absolute,
-                    left: Val::VMin(27.0),
-                    right: Val::VMin(12.0),
-                    top: Val::VMin(6.0),
-                    bottom: Val::VMin(6.0),
-                    overflow: Overflow::clip(),
-                    ..Default::default()
+                    ..constrained_root_style.clone()
                 }
             } else {
                 Node {
@@ -672,11 +693,11 @@ fn create_ui_roots(
                     ));
                     debug!("create texture root {:?} -> {:?}", ent, root);
 
-                    images.get_mut(&ui_texture).unwrap().resize(Extent3d {
-                        width: canvas_info.width,
-                        height: canvas_info.height,
+                    images.get_mut(&ui_texture).unwrap().texture_descriptor.size = Extent3d {
+                        width: canvas_info.width.max(16),
+                        height: canvas_info.height.max(16),
                         depth_or_array_layers: 1,
-                    });
+                    };
 
                     commands.entity(ent).try_insert(UiTextureOutput {
                         camera: root,
@@ -702,11 +723,12 @@ fn create_ui_roots(
                     images
                         .get_mut(texture.image.id())
                         .unwrap()
-                        .resize(Extent3d {
-                            width: canvas_info.width,
-                            height: canvas_info.height,
-                            depth_or_array_layers: 1,
-                        });
+                        .texture_descriptor
+                        .size = Extent3d {
+                        width: canvas_info.width.max(16),
+                        height: canvas_info.height.max(16),
+                        depth_or_array_layers: 1,
+                    };
                     texture.texture_size = UVec2::new(canvas_info.width, canvas_info.height);
                 }
             }
@@ -848,6 +870,21 @@ fn layout_scene_ui(
                     None
                 } else if link.scroll_entity.is_some() == ui_transform.scroll {
                     debug!("{scene_id} reuse linked {:?}", link.ui_entity);
+                    if let Some(scroll_entity) = link.scroll_entity {
+                        commands.entity(scroll_entity).insert(
+                            Scrollable::new()
+                                .with_direction(ScrollDirection::Both(
+                                    StartPosition::Explicit(0.0),
+                                    StartPosition::Explicit(0.0),
+                                ))
+                                .with_drag(true)
+                                .with_wheel(true)
+                                .with_bars_visible(
+                                    ui_transform.scroll_h_visible,
+                                    ui_transform.scroll_v_visible,
+                                ),
+                        );
+                    }
                     Some(link)
                 } else {
                     // queue to despawn
@@ -860,9 +897,14 @@ fn layout_scene_ui(
 
             let existing = if let Some(link) = existing_link {
                 // update parent (always, so the child order is correct)
-                commands
-                    .entity(link.ui_entity)
-                    .insert(ChildOf(parent_link.content_entity));
+                commands.entity(link.ui_entity).insert((
+                    ChildOf(parent_link.content_entity),
+                    LinkedScene {
+                        scene: scene_root,
+                        element_id: ui_transform.element_id.clone(),
+                    },
+                ));
+
                 let mut updated = UiLink {
                     opacity: FloatOrd(parent_link.opacity.0 * ui_transform.opacity),
                     is_window_ui: bevy_ui_root.is_window_ui,
@@ -886,6 +928,10 @@ fn layout_scene_ui(
                     Node::default(),
                     DespawnWith(bevy_entity),
                     ChildOf(parent_link.content_entity),
+                    LinkedScene {
+                        scene: scene_root,
+                        element_id: ui_transform.element_id.clone(),
+                    },
                 ));
                 let ui_entity = ent_cmds.id();
                 debug!("{scene_id} create linked {:?}", ui_entity);
@@ -1010,6 +1056,7 @@ fn layout_scene_ui(
                 // update inner style
                 if link.content_entity != link.ui_entity {
                     let new_style = style.clone();
+                    let padding = std::mem::take(&mut style.padding);
                     commands.entity(link.content_entity).modify_component(
                         move |style: &mut Node| {
                             style.align_content = new_style.align_content;
@@ -1018,24 +1065,35 @@ fn layout_scene_ui(
                             style.flex_direction = new_style.flex_direction;
                             style.justify_content = new_style.justify_content;
                             style.overflow = new_style.overflow;
+                            style.padding = padding;
                         },
                     );
-                    let padding = std::mem::take(&mut style.padding);
-                    commands
-                        .entity(link.scroll_entity.unwrap())
-                        .modify_component(move |style: &mut Node| {
-                            style.padding = padding;
-                        });
                 }
 
                 let mut cmds = commands.entity(link.ui_entity);
                 cmds.try_insert(style);
 
                 if ui_transform.border_color != BorderColor::DEFAULT {
-                    cmds.try_insert(ui_transform.border_color);
+                    let mut border_color = ui_transform.border_color;
+                    for edge in [
+                        &mut border_color.left,
+                        &mut border_color.top,
+                        &mut border_color.right,
+                        &mut border_color.bottom,
+                    ] {
+                        let mut srgba = edge.to_srgba();
+                        srgba.alpha *= link.opacity.0;
+                        *edge = srgba.into();
+                    }
+                    cmds.try_insert(border_color);
+                } else {
+                    cmds.remove::<BorderColor>();
+                }
+
+                if ui_transform.border_radius != BorderRadius::DEFAULT {
                     cmds.try_insert(ui_transform.border_radius);
                 } else {
-                    cmds.remove::<(BorderColor, BorderRadius)>();
+                    cmds.remove::<BorderRadius>();
                 }
 
                 let mut zindex_added = false;
@@ -1300,18 +1358,20 @@ fn set_ui_focus(
     containing_scene: ContainingScene,
     player: Res<PrimaryPlayerRes>,
     ui_data: Query<&SceneUiData>,
+    currently_focused: Query<Entity, With<Focus>>,
+    scene_hierarchy: Query<(Option<&LinkedScene>, Option<&ChildOf>)>,
 ) {
-    for (scene, element, response) in events.read().flat_map(|ev| {
-        let RpcCall::SetUiFocus {
+    'event: for (scene, action, response) in events.read().flat_map(|ev| {
+        let RpcCall::UiFocus {
             scene,
-            element_id,
+            action,
             response,
         } = ev
         else {
             return None;
         };
 
-        Some((scene, element_id, response))
+        Some((scene, action, response))
     }) {
         if !containing_scene.get(player.0).contains(scene) {
             response.send(Err("scene is not active".into()));
@@ -1323,20 +1383,53 @@ fn set_ui_focus(
             continue;
         };
 
-        let Some(target) = ui_data.named_nodes.get(element) else {
-            response.send(Err(format!(
-                "couldn't find element {element} - existing named elements are: {:?}",
-                ui_data.named_nodes.keys()
-            )));
-            continue;
-        };
+        match action {
+            RpcUiFocusAction::Focus { element_id } => {
+                let Some(target) = ui_data.named_nodes.get(element_id) else {
+                    response.send(Err(format!(
+                        "couldn't find element {element_id} - existing named elements are: {:?}",
+                        ui_data.named_nodes.keys()
+                    )));
+                    continue;
+                };
 
-        let Ok(mut commands) = commands.get_entity(*target) else {
-            response.send(Err(format!("element {element} destroyed",)));
-            continue;
-        };
+                let Ok(mut commands) = commands.get_entity(*target) else {
+                    response.send(Err(format!("element {element_id} destroyed",)));
+                    continue;
+                };
 
-        commands.insert(Focus);
-        response.send(Ok(()));
+                commands.insert(Focus);
+                response.send(Ok(Some(element_id.clone())));
+            }
+            RpcUiFocusAction::GetFocus | RpcUiFocusAction::Defocus => {
+                // find existing focus
+                for focused in currently_focused.iter() {
+                    let mut maybe_parent = Some(focused);
+
+                    while let Some(parent) = maybe_parent {
+                        let (maybe_linked_scene, maybe_next_parent) =
+                            scene_hierarchy.get(parent).unwrap_or_default();
+                        if let Some(linked_scene) = maybe_linked_scene {
+                            if &linked_scene.scene == scene {
+                                if let RpcUiFocusAction::Defocus = action {
+                                    // defocus if required
+                                    commands.entity(focused).remove::<Focus>();
+                                };
+                                // send element id
+                                response.send(Ok(linked_scene.element_id.clone()));
+                                break 'event;
+                            } else {
+                                maybe_parent = None;
+                                continue;
+                            }
+                        } else {
+                            maybe_parent = maybe_next_parent.map(|p| p.parent());
+                        }
+                    }
+                }
+
+                response.send(Ok(None));
+            }
+        }
     }
 }

@@ -1,11 +1,13 @@
-use std::{sync::mpsc::SyncSender, time::Duration};
+use std::time::Duration;
 
 use bevy::log::debug;
-use common::rpc::{CompareSnapshot, CompareSnapshotResult, RpcCall};
+use common::rpc::{CompareSnapshot, CompareSnapshotResult, RpcCall, RpcResultSender};
 use serde::{Deserialize, Serialize};
-use tokio::sync::oneshot::{channel, error::TryRecvError};
+use tokio::sync::oneshot::error::TryRecvError;
 
-use crate::{interface::crdt_context::CrdtContext, RpcCalls, SceneResponse};
+use crate::{
+    interface::crdt_context::CrdtContext, js::SceneResponseSender, RpcCalls, SceneResponse,
+};
 
 use super::State;
 
@@ -98,22 +100,22 @@ pub fn op_take_and_compare_snapshot(
     let snapshot_size = [snapshot_size.0, snapshot_size.1];
 
     let scene = state.borrow::<CrdtContext>().scene_id.0;
-    let sender = state.borrow_mut::<SyncSender<SceneResponse>>();
+    let sender = state.borrow_mut::<SceneResponseSender>();
 
     if method.grey_pixel_diff.is_none() {
         anyhow::bail!("unsupported comparison format");
     }
 
-    let (sx, mut rx) = channel();
+    let (sx, mut rx) = RpcResultSender::channel();
 
     sender
-        .send(SceneResponse::CompareSnapshot(CompareSnapshot {
+        .try_send(SceneResponse::CompareSnapshot(CompareSnapshot {
             scene,
             camera_position,
             camera_target,
             snapshot_size,
             name,
-            response: sx.into(),
+            response: sx,
         }))
         .expect("failed to send to renderer");
 

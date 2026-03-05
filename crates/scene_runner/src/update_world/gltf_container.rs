@@ -9,10 +9,10 @@ use std::{
 
 use bevy::{
     animation::AnimationTarget,
-    asset::LoadState,
+    asset::{LoadState, RenderAssetTransferPriority},
     gltf::{Gltf, GltfExtras, GltfLoaderSettings},
-    pbr::ExtendedMaterial,
-    platform::collections::HashMap,
+    pbr::{ExtendedMaterial, NotShadowCaster},
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
         mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues},
@@ -24,7 +24,7 @@ use bevy::{
 };
 use common::{
     anim_last_system,
-    structs::AppConfig,
+    structs::{AppConfig, PrimaryUser},
     util::{ModifyComponentExt, SceneSpawnerPlus},
 };
 use rapier3d_f64::prelude::*;
@@ -35,9 +35,11 @@ use crate::{
     renderer_context::RendererSceneContext,
     update_world::{
         lights::LightSource,
-        material::{dcl_material_from_standard_material, BaseMaterial},
+        material::{dcl_material_from_standard_material, BaseMaterial, PbMaterialComponent},
+        mesh_collider::{ColliderType, CtCollider},
+        trigger_area::CtTrigger,
     },
-    ContainerEntity, SceneEntity, SceneSets,
+    ContainerEntity, ContainingScene, OutOfWorld, SceneEntity, SceneSets,
 };
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
@@ -45,7 +47,8 @@ use dcl_component::{
         sdk::components::{
             common::LoadingState, pb_light_source, pb_material, pb_mesh_collider, pb_mesh_renderer,
             ColliderLayer, GltfNodeStateValue, PbGltfContainer, PbGltfContainerLoadingState,
-            PbGltfNode, PbGltfNodeState, PbLightSource, PbMaterial, PbMeshCollider, PbMeshRenderer,
+            PbGltfNode, PbGltfNodeModifiers, PbGltfNodeState, PbLightSource, PbMaterial,
+            PbMeshCollider, PbMeshRenderer,
         },
         Color3BevyToDcl,
     },
@@ -89,6 +92,11 @@ impl Plugin for GltfDefinitionPlugin {
             ComponentPosition::EntityOnly,
         );
 
+        app.add_crdt_lww_component::<PbGltfNodeModifiers, GltfNodeModifiers>(
+            SceneComponentId::GLTF_NODE_MODIFIERS,
+            ComponentPosition::EntityOnly,
+        );
+
         app.add_systems(Update, update_gltf.in_set(SceneSets::PostLoop));
         app.add_systems(SpawnScene, update_ready_gltfs.after(scene_spawner_system));
         app.add_systems(Update, check_gltfs_ready.in_set(SceneSets::PostInit));
@@ -105,6 +113,7 @@ impl Plugin for GltfDefinitionPlugin {
                 .after(anim_last_system!())
                 .before(TransformSystem::TransformPropagate),
         );
+        app.add_systems(Update, debug_modifiers);
     }
 }
 
@@ -158,7 +167,14 @@ fn update_gltf(
     mut scene_spawner: ResMut<SceneSpawner>,
     mut contexts: Query<(Entity, &mut RendererSceneContext, Has<SceneResourceLookup>)>,
     mut instances_to_despawn_when_ready: Local<Vec<InstanceId>>,
+    containing_scenes: ContainingScene,
+    oow_player: Query<Entity, (With<OutOfWorld>, With<PrimaryUser>)>,
 ) {
+    let immediate_scene = oow_player
+        .single()
+        .ok()
+        .and_then(|e| containing_scenes.get_parcel_oow(e));
+
     // clean up old instances
     instances_to_despawn_when_ready.retain(|instance| {
         if scene_spawner.instance_is_ready(*instance) {
@@ -229,14 +245,21 @@ fn update_gltf(
             continue;
         };
 
+        let transfer_priority = if immediate_scene == Some(scene_ent.root) {
+            RenderAssetTransferPriority::Priority(1)
+        } else {
+            RenderAssetTransferPriority::Priority(0)
+        };
         let h_gltf = ipfas.load_content_file_with_settings::<Gltf, GltfLoaderSettings>(
             &gltf.0.src,
             &scene_def.id,
-            |s| {
+            move |s| {
                 s.load_cameras = false;
                 s.load_lights = true;
+                s.load_meshes = RenderAssetUsages::MAIN_WORLD; // we'll modify then upload
                 s.load_materials = RenderAssetUsages::RENDER_WORLD;
                 s.include_source = true;
+                s.transfer_priority = transfer_priority;
             },
         );
 
@@ -319,15 +342,19 @@ fn update_gltf(
 #[derive(Component, Debug)]
 pub struct GltfMaterialName(String);
 
+#[derive(Clone)]
 pub struct CachedMeshData {
     pub mesh_id: AssetId<Mesh>,
-    maybe_collider: Option<Handle<Mesh>>,
+    pub is_skinned: bool,
+    pub shape: SharedShape,
+    pub maybe_collider: Option<Handle<Mesh>>,
 }
 
 #[derive(Component, Default)]
 pub struct SceneResourceLookup {
     pub materials: HashMap<Handle<StandardMaterial>, Handle<SceneMaterial>>,
-    pub meshes: HashMap<u64, CachedMeshData>,
+    pub meshes_by_hash: HashMap<u64, CachedMeshData>,
+    pub mesh_hashes_by_id: HashMap<AssetId<Mesh>, u64>,
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -363,7 +390,7 @@ fn update_ready_gltfs(
         ResMut<Assets<AnimationGraph>>,
         ResMut<Assets<Mesh>>,
     ),
-    scene_spawner: SceneSpawnerPlus,
+    mut scene_spawner: SceneSpawnerPlus,
     mut contexts: Query<(
         &mut RendererSceneContext,
         &mut SceneResourceLookup,
@@ -381,7 +408,11 @@ fn update_ready_gltfs(
     gltfs: Res<Assets<Gltf>>,
     animation_clips: Res<Assets<AnimationClip>>,
 ) {
-    for (bevy_scene_entity, dcl_scene_entity, loaded, definition, h_gltf) in ready_gltfs.iter() {
+    let mut failed = Vec::default();
+
+    'outer: for (bevy_scene_entity, dcl_scene_entity, loaded, definition, h_gltf) in
+        ready_gltfs.iter()
+    {
         if loaded.0.is_none() {
             // nothing to process
             commands
@@ -528,7 +559,7 @@ fn update_ready_gltfs(
                             // animation_roots.insert((spawned_ent, name.clone()));
                             has_animations = true;
                             commands.entity(spawned_ent).remove::<AnimationPlayer>();
-                            *tracker.0.entry("Animations").or_default() += 1;
+                            *tracker.0.entry("embedded://animations").or_default() += 1;
                         }
                     }
 
@@ -536,72 +567,154 @@ fn update_ready_gltfs(
                     let Some(h_gltf_mesh) = maybe_h_mesh else {
                         continue;
                     };
-                    let Some(mesh_data) = meshes.get_mut(h_gltf_mesh) else {
+
+                    let Some(read_only_mesh_data) = meshes.get(h_gltf_mesh) else {
                         error!("gltf contained mesh not loaded?!");
                         continue;
                     };
 
-                    let hash = &mut std::hash::DefaultHasher::new();
-                    for (attr, data) in mesh_data.attributes() {
-                        attr.id.hash(hash);
-                        data.get_bytes().hash(hash);
+                    if read_only_mesh_data.count_vertices() == 0 {
+                        commands.entity(spawned_ent).try_remove::<Mesh3d>();
+                        continue;
                     }
 
-                    let has_joints = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_INDEX).is_some();
-                    let has_weights = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
-                    let has_skin = maybe_skin.is_some();
-                    let is_skinned = has_skin && has_joints && has_weights;
-                    is_skinned.hash(hash);
+                    // get or create hash
+                    // note we must use the handle lookup rather than recomputing the hash as we may modify the mesh on first load,
+                    // then recalculating would yield a different hash result
+                    let maybe_hash = if read_only_mesh_data.has_morph_targets() {
+                        // we can't include morph targets in the hash, so just skip hashing for them
+                        // TODO: this means we reprocess these meshes even if already loaded which is not optimal
+                        None
+                    } else {
+                        Some(
+                            *resource_lookup
+                                .mesh_hashes_by_id
+                                .entry(h_gltf_mesh.id())
+                                .or_insert_with(|| {
+                                    let hasher = &mut std::hash::DefaultHasher::new();
 
-                    mesh_data.primitive_topology().hash(hash);
-
-                    if let Some(indices) = mesh_data.indices() {
-                        indices.iter().for_each(|index| index.hash(hash));
-                    }
-
-                    let hash = hash.finish();
-
-                    let cached_data = resource_lookup.meshes.get(&hash).and_then(|data| {
-                        asset_server
-                            .get_id_handle(data.mesh_id)
-                            .map(|h| (h, &data.maybe_collider))
-                    });
-
-                    // note: disable cache for meshes with morph targets as we don't include them in the hash
-                    let (h_mesh, cached_collider) =
-                        match (mesh_data.has_morph_targets(), cached_data) {
-                            (false, Some((h_mesh, cached_collider))) => {
-                                // overwrite with cached handle
-                                commands.entity(spawned_ent).insert(Mesh3d(h_mesh.clone()));
-                                (h_mesh, cached_collider.clone())
-                            }
-                            _ => {
-                                mesh_data.normalize_joint_weights();
-
-                                if !is_skinned {
-                                    // bevy crashes if unskinned models have joints and weights, or if skinned models don't
-                                    if has_joints {
-                                        mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_INDEX);
+                                    for (attr, data) in read_only_mesh_data.attributes() {
+                                        attr.id.hash(hasher);
+                                        data.get_bytes().hash(hasher);
                                     }
-                                    if has_weights {
-                                        mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT);
-                                    }
-                                }
 
-                                resource_lookup.meshes.insert(
-                                    hash,
-                                    CachedMeshData {
-                                        mesh_id: h_gltf_mesh.id(),
-                                        maybe_collider: None,
-                                    },
-                                );
-                                *tracker.0.entry("Unique Meshes").or_default() += 1;
-                                (h_gltf_mesh.0.clone(), None)
+                                    let has_joints = read_only_mesh_data
+                                        .attribute(Mesh::ATTRIBUTE_JOINT_INDEX)
+                                        .is_some();
+                                    let has_weights = read_only_mesh_data
+                                        .attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT)
+                                        .is_some();
+                                    let has_skin = maybe_skin.is_some();
+                                    let is_skinned = has_skin && has_joints && has_weights;
+
+                                    is_skinned.hash(hasher);
+
+                                    read_only_mesh_data.primitive_topology().hash(hasher);
+
+                                    if let Some(indices) = read_only_mesh_data.indices() {
+                                        indices.iter().for_each(|index| index.hash(hasher));
+                                    }
+
+                                    hasher.finish()
+                                }),
+                        )
+                    };
+
+                    // try and get existing mesh/collider data from hash
+                    let existing_data = maybe_hash
+                        .and_then(|hash| resource_lookup.meshes_by_hash.get(&hash))
+                        .and_then(|data| {
+                            asset_server.get_id_handle(data.mesh_id).map(|h| (h, data))
+                        });
+
+                    let (h_mesh, data) = if let Some((h_mesh, cached_data)) = existing_data {
+                        if h_mesh.id() != h_gltf_mesh.0.id() {
+                            // overwrite with cached handle
+                            commands.entity(spawned_ent).insert(Mesh3d(h_mesh.clone()));
+                        }
+                        (h_mesh, cached_data.clone())
+                    } else {
+                        // fix up the mesh
+                        let mesh_data = meshes.get_mut(h_gltf_mesh.0.id()).unwrap();
+                        mesh_data.normalize_joint_weights();
+
+                        if maybe_hash.is_some() {
+                            // if we won't need the mesh data again, we can push it only to gpu
+                            mesh_data.asset_usage |= RenderAssetUsages::RENDER_WORLD;
+                        } else {
+                            // if we can't make a hash to reuse the mesh, we need to keep the data cpu-side as well,
+                            // to rebuild everything next time
+                            mesh_data.asset_usage |= RenderAssetUsages::RENDER_WORLD;
+                        }
+
+                        let has_joints = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_INDEX).is_some();
+                        let has_weights =
+                            mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
+                        let has_skin = maybe_skin.is_some();
+                        let is_skinned = has_skin && has_joints && has_weights;
+
+                        if !is_skinned {
+                            // bevy crashes if unskinned models have joints and weights, or if skinned models don't
+                            if has_joints {
+                                mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_INDEX);
                             }
+                            if has_weights {
+                                mesh_data.remove_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT);
+                            }
+                        }
+
+                        let shape = mesh_to_parry_shape(mesh_data);
+
+                        let maybe_collider = if is_skinned {
+                            let mut new_mesh = Mesh::new(
+                                mesh_data.primitive_topology(),
+                                RenderAssetUsages::RENDER_WORLD,
+                            );
+                            if let Some(indices) = mesh_data.indices().cloned() {
+                                new_mesh.insert_indices(indices);
+                            }
+                            for (attribute, data) in mesh_data.attributes() {
+                                let attribute = match attribute.id {
+                                    id if id == Mesh::ATTRIBUTE_JOINT_INDEX.id => continue,
+                                    id if id == Mesh::ATTRIBUTE_JOINT_WEIGHT.id => continue,
+                                    id if id == Mesh::ATTRIBUTE_POSITION.id => {
+                                        Mesh::ATTRIBUTE_POSITION
+                                    }
+                                    id if id == Mesh::ATTRIBUTE_NORMAL.id => Mesh::ATTRIBUTE_NORMAL,
+                                    id if id == Mesh::ATTRIBUTE_UV_0.id => Mesh::ATTRIBUTE_UV_0,
+                                    id if id == Mesh::ATTRIBUTE_UV_1.id => Mesh::ATTRIBUTE_UV_1,
+                                    id if id == Mesh::ATTRIBUTE_TANGENT.id => {
+                                        Mesh::ATTRIBUTE_TANGENT
+                                    }
+                                    id if id == Mesh::ATTRIBUTE_COLOR.id => Mesh::ATTRIBUTE_COLOR,
+                                    _ => continue,
+                                };
+
+                                new_mesh.insert_attribute(attribute, data.clone());
+                            }
+                            Some(meshes.add(new_mesh))
+                        } else {
+                            None
                         };
+
+                        let data = CachedMeshData {
+                            mesh_id: h_gltf_mesh.id(),
+                            is_skinned,
+                            shape,
+                            maybe_collider,
+                        };
+
+                        if let Some(hash) = maybe_hash {
+                            // and store it for next time
+                            resource_lookup.meshes_by_hash.insert(hash, data.clone());
+                        }
+                        *tracker.0.entry("Unique Meshes").or_default() += 1;
+                        (h_gltf_mesh.0.clone(), data)
+                    };
+
                     *tracker.0.entry("Total Meshes").or_default() += 1;
 
-                    if is_skinned {
+                    if data.is_skinned {
                         // bevy doesn't calculate culling correctly for skinned entities
                         commands.entity(spawned_ent).try_insert(NoFrustumCulling);
                     } else if maybe_skin.is_some() {
@@ -633,10 +746,20 @@ fn update_ready_gltfs(
                             h_scene_material.clone()
                         } else {
                             let Some(base) = base_mats.get(h_material) else {
-                                panic!();
+                                warn!(
+                                    "error acquiring gltf material; retrying full gltf next frame"
+                                );
+                                failed.push((bevy_scene_entity, instance));
+                                break 'outer;
                             };
+
+                            // materials with anisotropy were causing issues
+                            // see https://github.com/decentraland/bevy-explorer/issues/424
+                            let mut base_clone = base.clone();
+                            base_clone.anisotropy_strength = 0.;
+
                             let h_scene_material = bound_mats.add(ExtendedMaterial {
-                                base: base.clone(),
+                                base: base_clone,
                                 extension: SceneBound::new(
                                     context.bounds.clone(),
                                     config.graphics.oob,
@@ -660,7 +783,6 @@ fn update_ready_gltfs(
                     let mut collider_base_name = maybe_name
                         .map(Name::as_str)
                         .filter(|name| name.to_ascii_lowercase().contains("_collider"));
-
                     if collider_base_name.is_none() {
                         // check parent name also
                         collider_base_name = gltf_spawned_entities
@@ -672,7 +794,22 @@ fn update_ready_gltfs(
                     }
                     let is_collider = collider_base_name.is_some();
 
-                    if is_collider {
+                    // process trigger
+                    let mut trigger_base_name = maybe_name
+                        .map(Name::as_str)
+                        .filter(|name| name.to_ascii_lowercase().contains("_trigger"));
+                    if trigger_base_name.is_none() {
+                        // check parent name also
+                        trigger_base_name = gltf_spawned_entities
+                            .get(parent.parent())
+                            .ok()
+                            .and_then(|(name, ..)| name)
+                            .map(|name| name.as_str())
+                            .filter(|name| name.to_ascii_lowercase().contains("_trigger"))
+                    }
+                    let is_trigger = trigger_base_name.is_some();
+
+                    if is_collider || is_trigger {
                         // make invisible by removing mesh handle
                         // TODO - this will break with toggling, we need to store the handle somewhere
                         commands.entity(spawned_ent).remove::<Mesh3d>();
@@ -685,7 +822,7 @@ fn update_ready_gltfs(
                             serde_json::from_str::<DclNodeExtras>(&extras.value).ok()
                         })
                         .and_then(|extras| extras.dcl_collision_mask)
-                        .unwrap_or_else(|| {
+                        .or_else(|| {
                             // then try parent node
                             gltf_spawned_entities
                                 .get(parent.parent())
@@ -694,101 +831,81 @@ fn update_ready_gltfs(
                                 .and_then(|extras| {
                                     serde_json::from_str::<DclNodeExtras>(&extras.value).ok()
                                 })
-                                .and_then(|extras| extras.dcl_collision_mask)
+                                .map(|extras| extras.dcl_collision_mask)
                                 .unwrap_or({
                                     //fall back to container-specified default
-                                    if is_collider {
-                                        definition.0.invisible_meshes_collision_mask.unwrap_or(
+                                    if is_collider || is_trigger {
+                                        definition.0.invisible_meshes_collision_mask.or(
                                             // colliders default to physics + pointers
-                                            if is_skinned {
+                                            if data.is_skinned {
                                                 // if skinned, maybe foundation uses 0 default?
-                                                0
+                                                Some(0)
                                             } else {
-                                                ColliderLayer::ClPhysics as u32
-                                                    | ColliderLayer::ClPointer as u32
+                                                None
                                             },
                                         )
                                     } else {
-                                        definition.0.visible_meshes_collision_mask.unwrap_or(
+                                        definition.0.visible_meshes_collision_mask.or(
                                             // non-colliders default to nothing
-                                            0,
+                                            Some(0),
                                         )
                                     }
                                 })
                         });
 
-                    if collider_bits != 0
-                    /* && !is_skinned */
-                    {
-                        let shape = mesh_to_parry_shape(mesh_data);
+                    // when `visible_meshes_collision_mask` is specified, we should treat all meshes as colliders but NOT make
+                    // them invisible, so we recalculate `is_collider` here
+                    let is_collider =
+                        is_collider || definition.0.visible_meshes_collision_mask.is_some();
 
+                    if is_collider && collider_bits != Some(0) {
+                        let collider_bits = collider_bits.unwrap_or(
+                            ColliderLayer::ClPhysics as u32 | ColliderLayer::ClPointer as u32,
+                        );
                         let index = collider_counter
                             .entry(collider_base_name.to_owned())
                             .or_default();
                         *index += 1u32;
 
-                        let h_collider = if is_skinned {
-                            match cached_collider {
-                                Some(collider) => collider,
-                                None => {
-                                    let mut new_mesh = Mesh::new(
-                                        mesh_data.primitive_topology(),
-                                        RenderAssetUsages::RENDER_WORLD,
-                                    );
-                                    if let Some(indices) = mesh_data.indices().cloned() {
-                                        new_mesh.insert_indices(indices);
-                                    }
-                                    for (attribute, data) in mesh_data.attributes() {
-                                        let attribute = match attribute.id {
-                                            id if id == Mesh::ATTRIBUTE_JOINT_INDEX.id => continue,
-                                            id if id == Mesh::ATTRIBUTE_JOINT_WEIGHT.id => continue,
-                                            id if id == Mesh::ATTRIBUTE_POSITION.id => {
-                                                Mesh::ATTRIBUTE_POSITION
-                                            }
-                                            id if id == Mesh::ATTRIBUTE_NORMAL.id => {
-                                                Mesh::ATTRIBUTE_NORMAL
-                                            }
-                                            id if id == Mesh::ATTRIBUTE_UV_0.id => {
-                                                Mesh::ATTRIBUTE_UV_0
-                                            }
-                                            id if id == Mesh::ATTRIBUTE_UV_1.id => {
-                                                Mesh::ATTRIBUTE_UV_1
-                                            }
-                                            id if id == Mesh::ATTRIBUTE_TANGENT.id => {
-                                                Mesh::ATTRIBUTE_TANGENT
-                                            }
-                                            id if id == Mesh::ATTRIBUTE_COLOR.id => {
-                                                Mesh::ATTRIBUTE_COLOR
-                                            }
-                                            _ => {
-                                                warn!(
-                                                    "unrecognised vertex attribute {attribute:?}"
-                                                );
-                                                continue;
-                                            }
-                                        };
-
-                                        new_mesh.insert_attribute(attribute, data.clone());
-                                    }
-                                    let h_collider = meshes.add(new_mesh);
-
-                                    if let Some(data) = resource_lookup.meshes.get_mut(&hash) {
-                                        data.maybe_collider = Some(h_collider.clone());
-                                    }
-
-                                    h_collider
-                                }
-                            }
+                        let h_collider = if data.is_skinned {
+                            data.maybe_collider.clone().unwrap()
                         } else {
                             h_mesh.clone()
                         };
 
-                        commands.entity(spawned_ent).try_insert(MeshCollider {
-                            shape: MeshColliderShape::Shape(shape, h_collider),
-                            collision_mask: collider_bits,
-                            mesh_name: collider_base_name.map(ToOwned::to_owned),
-                            index: *index,
-                        });
+                        commands
+                            .entity(spawned_ent)
+                            .try_insert(MeshCollider::<CtCollider> {
+                                shape: MeshColliderShape::Shape(data.shape.clone(), h_collider),
+                                collision_mask: collider_bits,
+                                mesh_name: collider_base_name.map(ToOwned::to_owned),
+                                index: *index,
+                                _p: Default::default(),
+                            });
+                    }
+
+                    if is_trigger && collider_bits != Some(0) {
+                        let collider_bits = collider_bits.unwrap_or(ColliderLayer::ClPlayer as u32);
+                        let index = collider_counter
+                            .entry(collider_base_name.to_owned())
+                            .or_default();
+                        *index += 1u32;
+
+                        let h_collider = if data.is_skinned {
+                            data.maybe_collider.clone().unwrap()
+                        } else {
+                            h_mesh.clone()
+                        };
+
+                        commands
+                            .entity(spawned_ent)
+                            .try_insert(MeshCollider::<CtTrigger> {
+                                shape: MeshColliderShape::Shape(data.shape.clone(), h_collider),
+                                collision_mask: collider_bits,
+                                mesh_name: collider_base_name.map(ToOwned::to_owned),
+                                index: *index,
+                                _p: Default::default(),
+                            });
                     }
                 }
             }
@@ -896,11 +1013,16 @@ fn update_ready_gltfs(
                 ));
             }
             *tracker.0.entry("Live Meshes").or_default() = resource_lookup
-                .meshes
+                .meshes_by_hash
                 .iter()
                 .filter(|(_, data)| meshes.get(data.mesh_id).is_some())
                 .count();
         }
+    }
+
+    for (bevy_scene_entity, instance) in failed {
+        commands.entity(bevy_scene_entity).remove::<()>();
+        scene_spawner.despawn_instance(*instance);
     }
 }
 
@@ -1048,6 +1170,182 @@ pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> SharedShape {
     SharedShape::trimesh_with_flags(positions_parry, indices_parry, TriMeshFlags::empty()).unwrap()
 }
 
+#[derive(Component, Debug)]
+pub struct GltfNodeModifiers(PbGltfNodeModifiers);
+
+#[derive(Component)]
+pub struct RetryNodeModifiers;
+
+impl From<PbGltfNodeModifiers> for GltfNodeModifiers {
+    fn from(value: PbGltfNodeModifiers) -> Self {
+        Self(value)
+    }
+}
+
+fn debug_modifiers(
+    mut commands: Commands,
+    q: Query<
+        (&GltfNodeModifiers, &GltfProcessed, Option<&GltfDefinition>),
+        Or<(Changed<GltfNodeModifiers>, Changed<GltfProcessed>)>,
+    >,
+    child_nodes: Query<
+        (
+            Option<&MeshMaterial3d<SceneMaterial>>,
+            Option<&HiddenMaterial>,
+        ),
+        With<Mesh3d>,
+    >,
+    removed_q: Query<&GltfProcessed>,
+    mut removed_components: RemovedComponents<GltfNodeModifiers>,
+) {
+    // turn Cube1_4 into Cube1/Primitive4
+    fn path_subsegments(segment: &str) -> Vec<String> {
+        let Some(last_underscore) = segment.rfind('_') else {
+            return vec![segment.to_owned()];
+        };
+
+        let Ok(number) = segment[last_underscore + 1..].parse::<usize>() else {
+            return vec![segment.to_owned()];
+        };
+
+        vec![
+            segment[..last_underscore].to_owned(),
+            format!("Primitive{number}"),
+        ]
+    }
+
+    for (modifiers, processed, def) in q {
+        let mut modifiers = modifiers
+            .0
+            .modifiers
+            .iter()
+            .map(|modifier| {
+                let path = if modifier.path.is_empty() {
+                    None
+                } else {
+                    Some(
+                        modifier
+                            .path
+                            .as_str()
+                            .split('/')
+                            .filter(|segment| !segment.is_empty())
+                            .flat_map(path_subsegments)
+                            .collect::<Vec<_>>(),
+                    )
+                };
+
+                (path, (modifier.cast_shadows, &modifier.material))
+            })
+            .collect::<Vec<_>>();
+
+        // sort by segment length to apply most specific last
+        modifiers.sort_by_key(|(path, _)| {
+            path.as_ref()
+                .map(|path| {
+                    (
+                        path.len(),
+                        path.iter().map(|segment| segment.len()).sum::<usize>(),
+                    )
+                })
+                .unwrap_or_default()
+        });
+
+        let mut unused = modifiers
+            .iter()
+            .flat_map(|(path, _)| path)
+            .collect::<HashSet<_>>();
+
+        for (path, child) in processed.named_nodes.iter() {
+            let Ok((existing_material, _)) = child_nodes.get(*child) else {
+                continue;
+            };
+
+            let node_path_components = path
+                .split('/')
+                .filter(|segment| !segment.is_empty())
+                .collect::<Vec<_>>();
+
+            commands.entity(*child).try_remove::<NotShadowCaster>();
+
+            let mut material_modified = false;
+            for (modifier_path, (shadows, maybe_material)) in
+                modifiers.iter().filter(|(modifier_path_components, _)| {
+                    modifier_path_components
+                        .as_ref()
+                        .is_none_or(|modifier_path_components| {
+                            node_path_components
+                                .windows(modifier_path_components.len())
+                                .any(|window| {
+                                    window.iter().zip(modifier_path_components).all(
+                                        |(node_segment, modifier_segment)| {
+                                            node_segment == modifier_segment
+                                        },
+                                    )
+                                })
+                        })
+                })
+            {
+                if let Some(modifier_path) = modifier_path {
+                    unused.remove(modifier_path);
+                }
+
+                if let Some(shadows) = shadows {
+                    if *shadows {
+                        commands.entity(*child).try_remove::<NotShadowCaster>();
+                    } else {
+                        commands.entity(*child).try_insert(NotShadowCaster);
+                    }
+                }
+
+                if let Some(material) = maybe_material {
+                    material_modified = true;
+                    if let Some(existing) = existing_material {
+                        commands
+                            .entity(*child)
+                            .try_insert(HiddenMaterial(existing.clone()));
+                    }
+                    commands
+                        .entity(*child)
+                        .try_insert(PbMaterialComponent(material.clone()));
+                }
+            }
+
+            if !material_modified {
+                commands
+                    .entity(*child)
+                    .try_remove::<(HiddenMaterial, PbMaterialComponent)>();
+
+                if let Ok((_, Some(prev_material))) = child_nodes.get(*child) {
+                    commands.entity(*child).try_insert(prev_material.0.clone());
+                }
+            }
+        }
+
+        if !unused.is_empty() {
+            warn!(
+                "no match for gltf modifiers {unused:?} in nodes {:?} from {:?}",
+                processed.named_nodes.keys().collect::<Vec<_>>(),
+                def.map(|d| &d.0.src)
+            )
+        }
+    }
+
+    for removed in removed_components.read() {
+        let Ok(processed) = removed_q.get(removed) else {
+            continue;
+        };
+
+        for (_, child) in processed.named_nodes.iter() {
+            commands
+                .entity(*child)
+                .try_remove::<(NotShadowCaster, HiddenMaterial, PbMaterialComponent)>();
+            if let Ok((_, Some(prev_material))) = child_nodes.get(*child) {
+                commands.entity(*child).try_insert(prev_material.0.clone());
+            }
+        }
+    }
+}
+
 #[derive(Component)]
 pub struct GltfNodeRequest(String);
 
@@ -1084,7 +1382,7 @@ pub enum GltfLinkState<'a> {
 pub struct HiddenMaterial(MeshMaterial3d<SceneMaterial>);
 
 #[derive(Component)]
-pub struct HiddenCollider(MeshCollider);
+pub struct HiddenCollider<T: ColliderType>(MeshCollider<T>);
 
 #[derive(Component)]
 pub struct HiddenPointLight(PointLight);
@@ -1117,7 +1415,8 @@ fn expose_gltfs(
         Option<&GltfMaterialName>,
         Option<&Mesh3d>,
         Option<&SkinnedMesh>,
-        Option<&MeshCollider>,
+        Option<&MeshCollider<CtCollider>>,
+        Option<&MeshCollider<CtTrigger>>,
         Option<&Name>,
         Option<&PointLight>,
         Option<&SpotLight>,
@@ -1279,6 +1578,7 @@ fn expose_gltfs(
                     maybe_mesh,
                     maybe_skin,
                     maybe_collider,
+                    maybe_trigger,
                     maybe_name,
                     maybe_point,
                     maybe_spot,
@@ -1311,8 +1611,8 @@ fn expose_gltfs(
                     // hide
                     commands
                         .entity(gltf_entity)
-                        .remove::<MeshCollider>()
-                        .insert(HiddenCollider(collider.clone()));
+                        .remove::<MeshCollider<CtCollider>>()
+                        .insert(HiddenCollider::<CtCollider>(collider.clone()));
                     // copy
                     commands.entity(ent).insert(collider.clone());
                     // write to scene
@@ -1331,6 +1631,34 @@ fn expose_gltfs(
                             })),
                         },
                     )
+                }
+                if let Some(trigger) = maybe_trigger {
+                    debug!("link trigger");
+                    // hide
+                    commands
+                        .entity(gltf_entity)
+                        .remove::<MeshCollider<CtTrigger>>()
+                        .insert(HiddenCollider::<CtTrigger>(trigger.clone()));
+                    // copy
+                    commands.entity(ent).insert(trigger.clone());
+                    // write to scene
+                    // TODO: extend protocol to allow Gltf type for triggers
+
+                    // scene.update_crdt(
+                    //     SceneComponentId::TRIGGER_AREA,
+                    //     CrdtType::LWW_ANY,
+                    //     scene_ent.id,
+                    //     &PbMeshCollider {
+                    //         collision_mask: Some(trigger.collision_mask),
+                    //         mesh: Some(pb_mesh_collider::Mesh::Gltf(pb_mesh_collider::GltfMesh {
+                    //             gltf_src: src.to_owned(),
+                    //             name: trigger
+                    //                 .mesh_name
+                    //                 .clone()
+                    //                 .unwrap_or_else(|| "???".to_owned()),
+                    //         })),
+                    //     },
+                    // )
                 }
                 if let Some(material) = maybe_material {
                     debug!("link material ({} / {:?})", src, maybe_mat_name);
@@ -1455,7 +1783,8 @@ fn update_gltf_linked_transforms(
         &ContainerEntity,
         &ChildOf,
         Option<&HiddenMaterial>,
-        Option<&HiddenCollider>,
+        Option<&HiddenCollider<CtCollider>>,
+        Option<&HiddenCollider<CtTrigger>>,
         Option<&HiddenPointLight>,
         Option<&HiddenSpotLight>,
     )>,
@@ -1494,6 +1823,7 @@ fn update_gltf_linked_transforms(
         parent,
         maybe_hidden_material,
         maybe_hidden_collider,
+        maybe_hidden_trigger,
         maybe_hidden_point,
         maybe_hidden_spot,
     ) in gltf_nodes.iter()
@@ -1511,7 +1841,13 @@ fn update_gltf_linked_transforms(
             if let Some(hidden) = maybe_hidden_collider {
                 commands
                     .entity(gltf_entity)
-                    .remove::<HiddenCollider>()
+                    .remove::<HiddenCollider<CtCollider>>()
+                    .insert(hidden.0.clone());
+            }
+            if let Some(hidden) = maybe_hidden_trigger {
+                commands
+                    .entity(gltf_entity)
+                    .remove::<HiddenCollider<CtTrigger>>()
                     .insert(hidden.0.clone());
             }
             if let Some(hidden) = maybe_hidden_point {

@@ -4,16 +4,20 @@ use common::{
     util::VolumePanning,
 };
 use comms::global_crdt::ForeignAudioSource;
-use kira::{manager::backend::DefaultBackend, sound::streaming::StreamingSoundData, tween::Tween};
+use kira::{
+    manager::backend::DefaultBackend,
+    sound::{streaming::StreamingSoundData, PlaybackState},
+    tween::Tween,
+};
 use scene_runner::{ContainingScene, SceneEntity};
 use tokio::sync::mpsc::error::TryRecvError;
 
-use crate::stream_processor::AVCommand;
+use crate::{stream_processor::AVCommand, InScene};
 
 #[derive(Component)]
 pub struct AudioSink {
     pub volume: f32,
-    pub command_sender: tokio::sync::mpsc::Sender<AVCommand>,
+    pub command_sender: tokio::sync::mpsc::UnboundedSender<AVCommand>,
     pub sound_data: tokio::sync::mpsc::Receiver<StreamingSoundData<AudioDecoderError>>,
     pub handle: Option<<StreamingSoundData<AudioDecoderError> as kira::sound::SoundData>::Handle>,
 }
@@ -21,7 +25,7 @@ pub struct AudioSink {
 impl AudioSink {
     pub fn new(
         volume: f32,
-        command_sender: tokio::sync::mpsc::Sender<AVCommand>,
+        command_sender: tokio::sync::mpsc::UnboundedSender<AVCommand>,
         receiver: tokio::sync::mpsc::Receiver<StreamingSoundData<AudioDecoderError>>,
     ) -> Self {
         Self {
@@ -44,6 +48,11 @@ impl Drop for AudioSpawned {
             handle.stop(Tween::default());
         }
     }
+}
+
+#[derive(Event)]
+pub struct ChangeAudioSinkVolume {
+    pub volume: f32,
 }
 
 // TODO integrate better with bevy_kira_audio to avoid logic on a main-thread system (NonSendMut forces this system to the main thread)
@@ -87,7 +96,7 @@ pub fn spawn_audio_streams(
                     commands.entity(ent).try_insert(AudioSpawned(None));
                 }
                 Err(TryRecvError::Empty) => {
-                    debug!("{ent:?} waiting for sound data");
+                    trace!("{ent:?} waiting for sound data");
                     commands.entity(ent).remove::<AudioSpawned>();
                 }
             }
@@ -124,19 +133,30 @@ pub fn spawn_and_locate_foreign_streams(
 
     for (ent, emitter_transform, render_layers, mut stream, mut maybe_spawned) in streams.iter_mut()
     {
-        match stream.0.try_recv() {
-            Ok(sound_data) => {
-                info!("{ent:?} received foreign sound data!");
-                let handle = audio_manager
-                    .manager
-                    .as_mut()
-                    .unwrap()
-                    .play(sound_data)
-                    .unwrap();
-                commands.entity(ent).try_insert(AudioSpawned(Some(handle)));
+        if let Some(spawned) = maybe_spawned.as_mut() {
+            if spawned
+                .0
+                .as_ref()
+                .is_some_and(|h| !matches!(h.state(), PlaybackState::Playing))
+            {
+                spawned.0 = None;
             }
-            Err(TryRecvError::Disconnected) => (),
-            Err(TryRecvError::Empty) => (),
+        }
+
+        if let Some(sound_data) = stream
+            .audio_receiver
+            .as_mut()
+            .and_then(|rx| rx.try_recv().ok())
+        {
+            info!("{ent:?} received foreign sound data!");
+            let handle = audio_manager
+                .manager
+                .as_mut()
+                .unwrap()
+                .play(sound_data)
+                .unwrap();
+
+            commands.entity(ent).try_insert(AudioSpawned(Some(handle)));
         }
 
         if let Some(handle) = maybe_spawned.as_mut().and_then(|a| a.0.as_mut()) {
@@ -146,6 +166,42 @@ pub fn spawn_and_locate_foreign_streams(
 
             handle.set_volume(volume as f64, Tween::default());
             handle.set_panning(panning as f64, Tween::default());
+        }
+    }
+}
+
+pub fn change_audio_sink_volume(
+    trigger: Trigger<ChangeAudioSinkVolume>,
+    mut commands: Commands,
+    mut audio_sinks: Query<(Mut<AudioSink>, Option<&mut AudioSpawned>, Has<InScene>)>,
+    audio_settings: Res<AudioSettings>,
+) {
+    let entity = trigger.target();
+    if entity == Entity::PLACEHOLDER {
+        error!("ChangeAudioSinkVolume is an entity event. Trigger it with `Commands::trigger_targets`.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    }
+    let ChangeAudioSinkVolume { volume } = trigger.event();
+
+    let Ok((mut audio_sink, maybe_audio_spawned, in_scene)) = audio_sinks.get_mut(entity) else {
+        error!("{entity} is not an AudioSink.");
+        commands.send_event(AppExit::from_code(1));
+        return;
+    };
+
+    // AudioSink is causing problems with change detection
+    // so we bypass it here
+    let audio_sink = audio_sink.bypass_change_detection();
+    audio_sink.volume = *volume;
+
+    if let Some(mut audio_spawned) = maybe_audio_spawned {
+        if let Some(handle) = audio_spawned.0.as_mut() {
+            if in_scene {
+                handle.set_volume((volume * audio_settings.scene()) as f64, Tween::default());
+            } else {
+                handle.set_volume(0.0, Tween::default());
+            }
         }
     }
 }

@@ -10,7 +10,8 @@ use dcl_component::proto_components::{
 };
 
 use crate::{
-    update_scene::pointer_results::UiPointerTarget, update_world::text_shape::make_text_section,
+    update_scene::pointer_results::UiPointerTarget,
+    update_world::text_shape::{make_text_section, UnrecognisedTags},
     SceneEntity,
 };
 
@@ -89,6 +90,8 @@ pub fn set_ui_text(
     links: Query<&UiLink>,
     children: Query<&Children>,
     prev_texts: Query<&UiTextMarker>,
+    mut node_style: Query<&mut Node>,
+    mut unrecognized_tags: ResMut<UnrecognisedTags>,
 ) {
     for ent in removed.read() {
         let Ok(link) = links.get(ent) else {
@@ -133,6 +136,7 @@ pub fn set_ui_text(
             ui_text.font,
             ui_text.h_align,
             ui_text.wrapping,
+            &mut unrecognized_tags,
         );
 
         // with text nodes the axis sizes are unusual.
@@ -235,6 +239,14 @@ pub fn set_ui_text(
             .id();
 
         ent_cmds.insert_children(0, &[text_element]);
+
+        // try and enforce wrapping ? not sure if this is a good idea but
+        // without this we are not wrapping in some cases where foundation client does
+        if ui_text.wrapping && ui_transform.max_size.width == Val::Auto {
+            if let Ok(mut style) = node_style.get_mut(link.ui_entity) {
+                style.max_width = Val::Percent(100.0);
+            }
+        }
     }
 }
 

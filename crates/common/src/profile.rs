@@ -53,7 +53,7 @@ pub struct LambdaProfiles {
     pub avatars: Vec<SerializedProfile>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SerializedProfile {
     pub user_id: Option<String>,
@@ -64,7 +64,7 @@ pub struct SerializedProfile {
     pub has_connected_web3: Option<bool>,
     pub avatar: AvatarWireFormat,
     #[serde(flatten)]
-    pub extra_fields: std::collections::HashMap<String, serde_json::Value>,
+    pub extra_fields: HashMap<String, serde_json::Value>,
 }
 
 impl Default for SerializedProfile {

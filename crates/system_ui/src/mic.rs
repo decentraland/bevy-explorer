@@ -2,11 +2,12 @@ use bevy::prelude::*;
 use common::{
     inputs::SystemAction,
     sets::SetupSets,
-    structs::{SystemAudio, ToolTips, TooltipSource},
+    structs::{MicState, SystemAudio, ToolTips, TooltipSource},
     util::TryPushChildrenEx,
 };
-use comms::{global_crdt::MicState, Transport, TransportType};
+use comms::{Transport, TransportType};
 use input_manager::{InputManager, InputPriority};
+use system_bridge::SystemApi;
 use ui_core::ui_actions::{Click, HoverEnter, HoverExit, On};
 
 use crate::{chat::BUTTON_SCALE, SystemUiRoot};
@@ -27,13 +28,13 @@ impl Plugin for MicUiPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup.in_set(SetupSets::Main));
 
-        app.add_systems(Update, update_mic_ui);
+        app.add_systems(Update, (update_mic_ui, handle_mic_requests));
 
         let asset_server = app.world().resource::<AssetServer>();
         app.insert_resource(MicImages {
-            inactive: asset_server.load("images/mic_button_inactive.png"),
-            on: asset_server.load("images/mic_button_on.png"),
-            off: asset_server.load("images/mic_button_off.png"),
+            inactive: asset_server.load("embedded://images/mic_button_inactive.png"),
+            on: asset_server.load("embedded://images/mic_button_on.png"),
+            off: asset_server.load("embedded://images/mic_button_off.png"),
         });
     }
 }
@@ -56,15 +57,19 @@ fn setup(mut commands: Commands, images: Res<MicImages>, ui_root: Res<SystemUiRo
             On::<Click>::new(|mut commands: Commands, mut mic_state: ResMut<MicState>| {
                 mic_state.enabled = !mic_state.enabled;
                 if mic_state.enabled {
-                    commands.send_event(SystemAudio("sounds/ui/voice_chat_mic_on.wav".to_owned()));
+                    commands.send_event(SystemAudio(
+                        "embedded://sounds/ui/voice_chat_mic_on.wav".to_owned(),
+                    ));
                 } else {
-                    commands.send_event(SystemAudio("sounds/ui/voice_chat_mic_off.wav".to_owned()));
+                    commands.send_event(SystemAudio(
+                        "embedded://sounds/ui/voice_chat_mic_off.wav".to_owned(),
+                    ));
                 }
             }),
             On::<HoverEnter>::new(
                 |mut tooltip: ResMut<ToolTips>,
                  transport: Query<&Transport>,
-                 state: Res<MicState>| {
+                 mic_state: ResMut<MicState>| {
                     let transport_available = transport
                         .iter()
                         .any(|t| t.transport_type == TransportType::Livekit);
@@ -72,7 +77,7 @@ fn setup(mut commands: Commands, images: Res<MicImages>, ui_root: Res<SystemUiRo
                         TooltipSource::Label("mic"),
                         vec![(
                             "LCtrl : Push to talk".to_owned(),
-                            transport_available && state.available,
+                            transport_available && mic_state.available,
                         )],
                     );
                 },
@@ -121,10 +126,28 @@ fn update_mic_ui(
     let active = mic_available && mic_state.enabled && transport_available;
     if active != *prev_active {
         if active {
-            commands.send_event(SystemAudio("sounds/ui/voice_chat_mic_on.wav".to_owned()));
+            commands.send_event(SystemAudio(
+                "embedded://sounds/ui/voice_chat_mic_on.wav".to_owned(),
+            ));
         } else {
-            commands.send_event(SystemAudio("sounds/ui/voice_chat_mic_off.wav".to_owned()));
+            commands.send_event(SystemAudio(
+                "embedded://sounds/ui/voice_chat_mic_off.wav".to_owned(),
+            ));
         }
         *prev_active = active;
+    }
+}
+
+fn handle_mic_requests(mut events: EventReader<SystemApi>, mut mic: ResMut<MicState>) {
+    for ev in events.read() {
+        match ev {
+            SystemApi::GetMicState(rpc_result_sender) => {
+                rpc_result_sender.send(mic.clone());
+            }
+            SystemApi::SetMicEnabled(enabled) => {
+                mic.enabled = mic.available && *enabled;
+            }
+            _ => (),
+        }
     }
 }

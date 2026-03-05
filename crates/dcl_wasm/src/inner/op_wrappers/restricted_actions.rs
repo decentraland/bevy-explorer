@@ -1,4 +1,4 @@
-use crate::{WasmError, WorkerContext};
+use crate::{serde_result, WasmError, WorkerContext};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -76,13 +76,12 @@ pub async fn op_open_nft_dialog(op_state: &WorkerContext, urn: String) -> Result
 }
 
 #[wasm_bindgen]
-pub async fn op_set_ui_focus(
+pub async fn op_ui_focus(
     op_state: &WorkerContext,
-    element_id: String,
-) -> Result<(), WasmError> {
-    dcl::js::restricted_actions::op_set_ui_focus(op_state.rc(), element_id)
-        .await
-        .map_err(WasmError::from)
+    apply: bool,
+    element_id: Option<String>,
+) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::restricted_actions::op_ui_focus(op_state.rc(), apply, element_id).await)
 }
 
 #[wasm_bindgen]

@@ -6,9 +6,10 @@ use crate::{
 };
 use anyhow::anyhow;
 use bevy::{
-    asset::AssetLoader,
+    asset::{AssetEvents, AssetLoader, RenderAssetTransferPriority},
     diagnostic::FrameCount,
     gltf::{Gltf, GltfLoaderSettings},
+    image::ImageLoaderSettings,
     platform::collections::{HashMap, HashSet},
     prelude::*,
     render::render_asset::RenderAssetUsages,
@@ -28,6 +29,7 @@ impl Plugin for WearablePlugin {
         app.register_asset_loader(WearableLoader);
         app.register_asset_loader(WearableMetaLoader);
         app.add_systems(Update, (load_collections, retain_wearables));
+        app.add_systems(PostUpdate, clean_images.before(AssetEvents));
     }
 }
 
@@ -329,8 +331,13 @@ impl AssetLoader for WearableLoader {
         let meta = serde_json::from_value::<WearableMeta>(metadata)?;
 
         let category = meta.data.category;
-        let thumbnail =
-            load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
+        let thumbnail = load_context
+            .path()
+            .parent()
+            .unwrap()
+            .join(&meta.thumbnail)
+            .to_string_lossy()
+            .into_owned();
 
         let mut representations = HashMap::new();
 
@@ -344,12 +351,30 @@ impl AssetLoader for WearableLoader {
                         f.to_lowercase().ends_with(".png")
                             && !f.to_lowercase().ends_with("_mask.png")
                     })
-                    .map(|f| load_context.load(load_context.path().parent().unwrap().join(f)));
+                    .map(|f| {
+                        let path = load_context.path().parent().unwrap().join(f);
+                        load_context
+                            .loader()
+                            .with_settings::<ImageLoaderSettings>(|s| {
+                                s.asset_usage = RenderAssetUsages::RENDER_WORLD;
+                                s.transfer_priority = RenderAssetTransferPriority::Priority(2);
+                            })
+                            .load(path)
+                    });
                 let mask = representation
                     .contents
                     .iter()
                     .find(|f| f.to_lowercase().ends_with("_mask.png"))
-                    .map(|f| load_context.load(load_context.path().parent().unwrap().join(f)));
+                    .map(|f| {
+                        let path = load_context.path().parent().unwrap().join(f);
+                        load_context
+                            .loader()
+                            .with_settings::<ImageLoaderSettings>(|s| {
+                                s.asset_usage = RenderAssetUsages::RENDER_WORLD;
+                                s.transfer_priority = RenderAssetTransferPriority::Priority(2);
+                            })
+                            .load(path)
+                    });
 
                 (None, texture, mask)
             } else {
@@ -372,7 +397,9 @@ impl AssetLoader for WearableLoader {
                     .with_settings::<GltfLoaderSettings>(|s| {
                         s.load_cameras = false;
                         s.load_lights = false;
+                        s.load_meshes = RenderAssetUsages::MAIN_WORLD;
                         s.load_materials = RenderAssetUsages::RENDER_WORLD;
+                        s.transfer_priority = RenderAssetTransferPriority::Priority(2);
                     })
                     .load(path);
 
@@ -393,7 +420,7 @@ impl AssetLoader for WearableLoader {
                     if representation.override_replaces.is_empty() {
                         &meta.data.replaces
                     } else {
-                        &representation.override_hides
+                        &representation.override_replaces
                     }
                     .iter()
                     .copied(),
@@ -513,8 +540,13 @@ impl AssetLoader for WearableMetaLoader {
         let meta = serde_json::from_value::<WearableMeta>(metadata)?;
 
         let category = meta.data.category;
-        let thumbnail =
-            load_context.load(load_context.path().parent().unwrap().join(&meta.thumbnail));
+        let thumbnail = load_context
+            .path()
+            .parent()
+            .unwrap()
+            .join(&meta.thumbnail)
+            .to_string_lossy()
+            .into_owned();
 
         let available_representations = meta
             .data
@@ -536,5 +568,35 @@ impl AssetLoader for WearableMetaLoader {
             available_representations,
             extra_data: WearableExtraData { category },
         })
+    }
+}
+
+fn clean_images(
+    mut ev: EventReader<AssetEvent<Image>>,
+    mut images: ResMut<Assets<Image>>,
+    mut retry: Local<Vec<AssetId<Image>>>,
+) {
+    for id in retry.drain(..) {
+        let Some(image) = images.get(id) else {
+            continue;
+        };
+        if image.asset_usage.intersects(RenderAssetUsages::MAIN_WORLD) {
+            let image = images.get_mut(id).unwrap();
+            image.asset_usage = RenderAssetUsages::RENDER_WORLD;
+        }
+    }
+
+    for ev in ev.read() {
+        if let AssetEvent::LoadedWithDependencies { id } = ev {
+            let Some(image) = images.get(*id) else {
+                // retry once next frame
+                retry.push(*id);
+                continue;
+            };
+            if image.asset_usage.intersects(RenderAssetUsages::MAIN_WORLD) {
+                let image = images.get_mut(*id).unwrap();
+                image.asset_usage = RenderAssetUsages::RENDER_WORLD;
+            }
+        }
     }
 }

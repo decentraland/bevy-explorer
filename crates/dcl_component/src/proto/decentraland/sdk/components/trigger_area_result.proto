@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package decentraland.sdk.components;
+
+import "decentraland/common/vectors.proto";
+import "decentraland/sdk/components/common/id.proto";
+
+option (common.ecs_component_id) = 1061;
+
+// The PBTriggerAreaResult component is used to transport the trigger collision event data for the PBTriggerArea component.
+// ADR: https://github.com/decentraland/adr/blob/2b30a5e2b4f359a7c22a68fb827db282f6e5f887/content/ADR-258-trigger-areas.md
+message PBTriggerAreaResult {
+  // Trigger data object
+  message Trigger {
+    uint32 entity = 1;                                          // The entity that triggered the Trigger Area
+    uint32 layers = 2;                                          // The collision layermask of the entity that triggered the Trigger Area
+    decentraland.common.Vector3 position = 3;                   // The position of the entity that triggered the trigger
+    decentraland.common.Quaternion rotation = 4;                // The rotation of the entity that triggered the trigger
+    decentraland.common.Vector3 scale = 5;                      // The scale of the entity that triggered the trigger
+  }
+  
+  uint32 triggered_entity = 1;                                  // The entity that was triggered (this is the entity that owns the trigger area)
+  decentraland.common.Vector3 triggered_entity_position = 2;    // The position of the triggered entity at the time of the trigger
+  decentraland.common.Quaternion triggered_entity_rotation = 3; // The rotation of the triggered entity at the time of the trigger
+  TriggerAreaEventType event_type = 4;                          // The state of the trigger event (ENTER, STAY, EXIT)
+  uint32 timestamp = 5;                                         // The timestamp of the trigger event
+  Trigger trigger = 6;
+}
+
+enum TriggerAreaEventType {
+  TAET_ENTER = 0;
+  TAET_STAY = 1;
+  TAET_EXIT = 2;
+}

@@ -9,12 +9,12 @@ use bevy::{
     pbr::ShadowFilteringMethod,
     render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
 };
-use common::structs::AppConfig;
 use futures_util::{
     sink::SinkExt,
     stream::{SplitSink, SplitStream},
     StreamExt,
 };
+use serde::Serialize;
 pub use tungstenite::client::IntoClientRequest;
 
 pub struct WebSocket {
@@ -83,7 +83,7 @@ pub fn project_directories() -> Option<directories::ProjectDirs> {
     directories::ProjectDirs::from("org", "decentraland", "BevyExplorer")
 }
 
-pub fn write_config_file(config: &AppConfig) {
+pub fn write_config_file<T: Serialize>(config: &T) {
     let config_file = project_directories()
         .unwrap()
         .config_dir()

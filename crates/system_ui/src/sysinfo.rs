@@ -15,12 +15,12 @@ use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     sets::{SceneSets, SetupSets},
     structs::{
-        AppConfig, CursorLocks, PreviewCommand, PrimaryUser, SettingsTab, ShowSettingsEvent,
-        SystemScene, Version, ZOrder,
+        AppConfig, CursorLocks, DebugInfo, PreviewCommand, PreviewMode, PrimaryUser, SettingsTab,
+        ShowSettingsEvent, StartupScenes, Version, ZOrder,
     },
     util::ModifyComponentExt,
 };
-use comms::{global_crdt::ForeignPlayer, preview::PreviewMode, Transport};
+use comms::{global_crdt::ForeignPlayer, Transport};
 use console::DoAddConsoleCommand;
 use ipfs::CurrentRealm;
 use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE};
@@ -31,7 +31,7 @@ use scene_runner::{
         gltf_container::{GltfLoadingCount, SceneResourceLookup},
         ComponentTracker, TrackComponents,
     },
-    ContainerEntity, ContainingScene, DebugInfo, Toaster,
+    ContainerEntity, ContainingScene, Toaster,
 };
 use ui_core::{
     bound_node::BoundedImageMaterial,
@@ -115,7 +115,7 @@ pub(crate) fn setup(
                         height: Val::VMin(3.0),
                         ..Default::default()
                     },
-                    ImageNode::new(asset_server.load("images/crosshair.png"))
+                    ImageNode::new(asset_server.load("embedded://images/crosshair.png"))
                         .with_color(Color::srgba(1.0, 1.0, 1.0, 0.7)),
                     CrossHair,
                 ));
@@ -335,29 +335,51 @@ fn setup_minimap(
     root: Res<SystemUiRoot>,
     dui: Res<DuiRegistry>,
     preview: Res<PreviewMode>,
-    system_scene: Option<Res<SystemScene>>,
+    system_scene: Option<Res<StartupScenes>>,
 ) {
     let components = commands
         .spawn_template(&dui, "minimap", Default::default())
         .unwrap();
-    commands
-        .entity(root.0)
-        .insert_children(0, &[components.root]);
 
     commands
         .entity(components.root)
         .insert((Minimap, ZOrder::Minimap.default()));
-    commands.entity(components.named("map-node")).insert((
-        MapTexture {
-            center: Default::default(),
-            parcels_per_vmin: 100.0,
-            icon_min_size_vmin: 0.03,
-        },
-        Interaction::default(),
-        ShowSettingsEvent(SettingsTab::Map).send_value_on::<Click>(),
-    ));
 
-    if preview.server.is_some() || system_scene.as_ref().is_some_and(|ss| ss.preview) {
+    if preview.server.is_some() {
+        commands
+            .entity(components.root)
+            .modify_component(|style: &mut Node| {
+                style.position_type = PositionType::Absolute;
+                style.right = Val::Percent(1.0);
+                style.bottom = Val::Percent(5.0);
+                style.top = Val::Auto;
+                style.left = Val::Auto;
+            });
+    } else {
+        commands
+            .entity(root.0)
+            .insert_children(0, &[components.root]);
+    }
+
+    if system_scene.is_none() {
+        commands.entity(components.named("map-node")).insert((
+            MapTexture {
+                center: Default::default(),
+                parcels_per_vmin: 100.0,
+                icon_min_size_vmin: 0.03,
+            },
+            Interaction::default(),
+            ShowSettingsEvent(SettingsTab::Map).send_value_on::<Click>(),
+        ));
+    } else {
+        commands.entity(components.named("map-container")).despawn();
+    }
+
+    if preview.server.is_some()
+        || system_scene
+            .as_ref()
+            .is_some_and(|ss| ss.scenes.first().is_some_and(|scene| scene.preview))
+    {
         let tracker = commands
             .entity(components.root)
             .spawn_template(
@@ -371,6 +393,9 @@ fn setup_minimap(
                         }
                     })
                 ).with_prop(
+                    "dismiss",
+                    On::<Click>::new(move |mut commands: Commands| {commands.entity(components.root).despawn()}),
+                ).with_prop(
                     "inspect",
                     On::<Click>::new(|
                         mut reload: EventWriter<PreviewCommand>,
@@ -378,11 +403,12 @@ fn setup_minimap(
                         containing_scene: ContainingScene,
                         scenes: Query<&RendererSceneContext>,
                         player: Query<Entity, With<PrimaryUser>>,
-                        system_scene: Option<Res<SystemScene>>,
+                        system_scene: Option<Res<StartupScenes>>,
                         mut toaster: Toaster,
                     | {
-                        if system_scene.as_ref().is_some_and(|ss| ss.hot_reload.is_some()) {
+                        if system_scene.as_ref().is_some_and(|ss| ss.scenes.first().is_some_and(|scene| scene.hot_reload.is_some())) {
                             let ss = system_scene.unwrap();
+                            let ss = ss.scenes.first().unwrap();
                             if let Some(hash) = ss.hash.clone() {
                                 test_data.inspect_hash = Some(hash.clone());
                                 let _ = ss.hot_reload.as_ref().unwrap().send(PreviewCommand::ReloadScene { hash });
@@ -508,14 +534,13 @@ fn update_tracker(
         return;
     };
 
-    let scenes = containing_scene.get(player);
+    let scenes = containing_scene.get_parcel(player);
     let Some(scene) = scenes.iter().next() else {
         return;
     };
 
-    let Ok(resource_lookup) = stats.get(*scene) else {
-        return;
-    };
+    let default_lookup = SceneResourceLookup::default();
+    let resource_lookup = stats.get(*scene).unwrap_or(&default_lookup);
 
     let mut display_data = Vec::default();
 
@@ -526,7 +551,7 @@ fn update_tracker(
     display_data.push((
         "Unique Gltf Meshes",
         resource_lookup
-            .meshes
+            .meshes_by_hash
             .values()
             .filter(|c| meshes.get(c.mesh_id).is_some())
             .count(),

@@ -1,20 +1,16 @@
 pub mod archipelago;
 pub mod broadcast_position;
 pub mod global_crdt;
-
-#[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
-pub mod livekit_native;
 #[cfg(feature = "livekit")]
-pub mod livekit_room;
-#[cfg(all(feature = "livekit", target_arch = "wasm32"))]
-pub mod livekit_web;
-
+pub mod livekit;
 pub mod movement_compressed;
 pub mod preview;
 pub mod profile;
 pub mod signed_login;
 #[cfg(test)]
 mod test;
+#[cfg(feature = "transport_debug")]
+mod transport_debug;
 pub mod websocket_room;
 
 use std::marker::PhantomData;
@@ -25,7 +21,10 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use bimap::BiMap;
-use common::util::{TaskCompat, TaskExt};
+use common::{
+    structs::MicState,
+    util::{TaskCompat, TaskExt},
+};
 use ethers_core::types::{Address, H160};
 use http::{StatusCode, Uri};
 use preview::PreviewPlugin;
@@ -37,6 +36,8 @@ use dcl_component::{DclWriter, ToDclWriter};
 use ipfs::{CurrentRealm, IpfsAssetServer};
 use wallet::{sign_request, Wallet};
 
+use crate::global_crdt::ChannelControl;
+
 use self::{
     archipelago::{ArchipelagoPlugin, StartArchipelago},
     broadcast_position::BroadcastPositionPlugin,
@@ -46,9 +47,11 @@ use self::{
 };
 
 #[cfg(feature = "livekit")]
-use self::livekit_room::{LivekitPlugin, StartLivekit};
+use self::livekit::{plugin::LivekitPlugin, StartLivekit};
 
 const GATEKEEPER_URL: &str = "https://comms-gatekeeper.decentraland.org/get-scene-adapter";
+const PREVIEW_GATEKEEPER_URL: &str =
+    "https://comms-gatekeeper-local.decentraland.org/get-scene-adapter";
 
 pub mod chat_marker_things {
     pub const EMOTE: char = '␐';
@@ -75,12 +78,16 @@ impl Plugin for CommsPlugin {
 
         #[cfg(feature = "livekit")]
         app.add_plugins(LivekitPlugin);
+        app.init_resource::<MicState>();
 
         app.add_systems(Update, (process_realm_change, connect_scene_room));
+
+        #[cfg(feature = "transport_debug")]
+        app.add_plugins(transport_debug::TransportDebugPlugin);
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TransportType {
     WebsocketRoom,
     Livekit,
@@ -88,10 +95,17 @@ pub enum TransportType {
     SceneRoom,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum NetworkMessageRecipient {
+    All,
+    Peer(H160),
+    AuthServer,
+}
+
 pub struct NetworkMessage {
     pub data: Vec<u8>,
     pub unreliable: bool,
-    pub recipient: Option<H160>,
+    pub recipient: NetworkMessageRecipient,
 }
 
 impl NetworkMessage {
@@ -102,7 +116,7 @@ impl NetworkMessage {
         Self {
             data,
             unreliable: true,
-            recipient: None,
+            recipient: NetworkMessageRecipient::All,
         }
     }
 
@@ -113,7 +127,10 @@ impl NetworkMessage {
         }
     }
 
-    pub fn targetted_reliable<D: ToDclWriter>(message: &D, recipient: Option<H160>) -> Self {
+    pub fn targetted_reliable<D: ToDclWriter>(
+        message: &D,
+        recipient: NetworkMessageRecipient,
+    ) -> Self {
         Self {
             unreliable: false,
             recipient,
@@ -126,6 +143,7 @@ impl NetworkMessage {
 pub struct Transport {
     pub transport_type: TransportType,
     pub sender: Sender<NetworkMessage>,
+    pub control: Option<Sender<ChannelControl>>,
     pub foreign_aliases: BiMap<u32, Address>,
 }
 
@@ -175,7 +193,7 @@ pub struct GatekeeperResponse {
 }
 
 #[derive(Component)]
-pub struct SceneRoom;
+pub struct SceneRoom(pub String);
 
 #[derive(Resource, Default)]
 pub struct SceneRoomConnection(pub Option<(SetCurrentScene, String, Entity)>);
@@ -205,10 +223,17 @@ fn connect_scene_room(
             *gatekeeper_task = None;
         } else {
             let wallet = wallet.clone();
-            let uri = Uri::try_from(GATEKEEPER_URL).unwrap();
+            let url = if ev.scene_id.starts_with("b64-") {
+                PREVIEW_GATEKEEPER_URL
+            } else {
+                GATEKEEPER_URL
+            };
+            let uri = Uri::try_from(url).unwrap();
             let client = ipfs.ipfs().client();
             *gatekeeper_task = Some(IoTaskPool::get().spawn_compat(async move {
-                let headers = sign_request("POST", &uri, &wallet, &ev).await?;
+                let headers =
+                    sign_request("POST", &uri, &wallet, serde_json::to_string(&ev).unwrap())
+                        .await?;
 
                 let mut request = client
                     .post(uri.to_string())
@@ -234,8 +259,8 @@ fn connect_scene_room(
             Some(Ok((adapter, ev))) => {
                 if let Some(ent) = manager.connect(&adapter) {
                     warn!("added scene channel {ev:?}");
+                    commands.entity(ent).insert(SceneRoom(ev.scene_id.clone()));
                     current.0 = Some((ev, adapter, ent));
-                    commands.entity(ent).insert(SceneRoom);
                 }
             }
         }

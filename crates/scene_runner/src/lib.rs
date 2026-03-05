@@ -1,10 +1,7 @@
-use std::{
-    collections::VecDeque,
-    marker::PhantomData,
-    sync::mpsc::{sync_channel, Receiver, SyncSender, TryRecvError},
-    time::Duration,
-};
+use std::{collections::VecDeque, marker::PhantomData, time::Duration};
 
+use dcl::js::TryRecvError;
+use system_bridge::SystemApi;
 use web_time::SystemTime;
 
 use bevy::{
@@ -14,6 +11,7 @@ use bevy::{
     platform::collections::{HashMap, HashSet},
     prelude::*,
     scene::scene_spawner_system,
+    time::common_conditions::on_real_timer,
     window::PrimaryWindow,
     winit::WinitWindows,
 };
@@ -21,12 +19,14 @@ use bevy::{
 use common::{
     rpc::RpcCall,
     sets::{SceneLoopSets, SceneSets},
-    structs::{AppConfig, AppError, PrimaryCamera, PrimaryUser},
+    structs::{AppConfig, AppError, DebugInfo, PrimaryCamera, PrimaryUser, TimeOfDay},
     util::{dcl_assert, TryPushChildrenEx},
 };
-use comms::{SceneRoomConnection, SetCurrentScene};
+use comms::{global_crdt::GlobalCrdtState, SceneRoomConnection, SetCurrentScene};
 use dcl::{
-    interface::CrdtType, RendererResponse, SceneId, SceneLogLevel, SceneLogMessage, SceneResponse,
+    interface::CrdtType,
+    js::{scene_response_channel, SceneResponseReceiver, SceneResponseSender},
+    RendererResponse, SceneId, SceneLogLevel, SceneLogMessage, SceneResponse,
 };
 use dcl_component::{
     proto_components::{
@@ -74,8 +74,8 @@ pub mod util;
 // bookkeeping struct for javascript execution of scenes
 #[derive(Resource)]
 pub struct SceneUpdates {
-    pub sender: SyncSender<SceneResponse>,
-    receiver: Receiver<SceneResponse>,
+    pub sender: SceneResponseSender,
+    receiver: SceneResponseReceiver,
     pub scene_ids: HashMap<SceneId, Entity>,
     pub jobs_in_flight: HashSet<Entity>,
     pub update_deadline: SystemTime,
@@ -90,8 +90,8 @@ unsafe impl Sync for SceneUpdates {}
 unsafe impl Send for SceneUpdates {}
 
 impl SceneUpdates {
-    pub fn receiver(&mut self) -> &Receiver<SceneResponse> {
-        &self.receiver
+    pub fn receiver(&mut self) -> &mut SceneResponseReceiver {
+        &mut self.receiver
     }
 }
 
@@ -125,12 +125,6 @@ pub struct ContainerEntity {
     pub container: Entity,
     pub root: Entity,
     pub container_id: SceneEntityId,
-}
-
-// resource into which systems can add debug info
-#[derive(Resource, Default, Debug)]
-pub struct DebugInfo {
-    pub info: HashMap<&'static str, String>,
 }
 
 // resource for adding toasts
@@ -208,6 +202,19 @@ pub struct SceneLoopSchedule {
     sleeper: SpinSleeper,
 }
 
+// left px, top px, right px, bottom px
+#[derive(Default, Resource)]
+pub struct InteractableArea(pub Option<Vec4>);
+
+impl InteractableArea {
+    pub fn get_or_default(&self, width: f32, height: f32) -> Vec4 {
+        self.0.unwrap_or_else(|| {
+            let vmin = width.min(height);
+            Vec4::new(vmin * 0.27, vmin * 0.06, vmin * 0.12, vmin * 0.06)
+        })
+    }
+}
+
 #[derive(ScheduleLabel, Hash, PartialEq, Eq, Clone, Copy, Debug)]
 pub struct SceneLoopLabel;
 
@@ -217,8 +224,10 @@ impl Plugin for SceneRunnerPlugin {
         app.init_resource::<DebugInfo>();
         app.init_resource::<Toasts>();
         app.init_resource::<TestingData>();
+        app.init_resource::<InteractableArea>();
 
-        let (sender, receiver) = sync_channel(1000);
+        // let (sender, receiver) = tokio::sync::mpsc::channel(1000);
+        let (sender, receiver) = scene_response_channel();
         app.insert_resource(SceneUpdates {
             sender,
             receiver,
@@ -287,6 +296,14 @@ impl Plugin for SceneRunnerPlugin {
 
         app.add_systems(Update, update_scene_room.in_set(SceneSets::PostLoop));
         app.add_systems(Update, log_app_errors.in_set(SceneSets::PostLoop));
+        app.add_systems(Update, set_ui_constraints.in_set(SceneSets::PostLoop));
+
+        app.add_systems(
+            Update,
+            push_time_to_crdt
+                .in_set(SceneSets::Input)
+                .run_if(on_real_timer(Duration::from_secs(1))),
+        );
     }
 }
 
@@ -551,7 +568,7 @@ impl ContainingScene<'_, '_> {
                 Some(gt.translation().xz() * Vec2::new(1.0, -1.0))
             }
         }) else {
-            return Default::default();
+            return self.get_portables(false);
         };
 
         let min_point = focus - Vec2::splat(radius);
@@ -643,6 +660,7 @@ fn send_scene_updates(
         &mut RendererSceneContext,
         &SceneThreadHandle,
         &GlobalTransform,
+        Has<SuperUserScene>,
     )>,
     mut updates: ResMut<SceneUpdates>,
     time: Res<Time>,
@@ -652,6 +670,7 @@ fn send_scene_updates(
     window: Query<&Window, With<PrimaryWindow>>,
     realm: Res<CurrentRealm>,
     data_channel: Res<SceneRoomConnection>,
+    interactable_area: Res<InteractableArea>,
 ) {
     let updates = &mut *updates;
 
@@ -663,7 +682,7 @@ fn send_scene_updates(
         return;
     };
 
-    let (_, mut context, handle, scene_transform) = scenes.get_mut(ent).unwrap();
+    let (_, mut context, handle, scene_transform, is_super) = scenes.get_mut(ent).unwrap();
 
     // collect components
 
@@ -724,10 +743,13 @@ fn send_scene_updates(
         .as_ref()
         .and_then(|(scene, addr, _)| (scene.scene_id == context.hash).then_some(addr));
     let base_url = realm
-        .public_url
-        .strip_suffix("/")
-        .unwrap_or(&realm.public_url);
-    let base_url = base_url.strip_suffix("/content").unwrap_or(base_url);
+        .about_url
+        .strip_suffix("/about")
+        .unwrap_or(&realm.about_url);
+    let realm_name = realm.config.realm_name.clone().unwrap_or_default();
+    let base_url = base_url
+        .strip_suffix(&format!("/{realm_name}"))
+        .unwrap_or(base_url);
     let realm_info = PbRealmInfo {
         base_url: base_url.to_owned(),
         realm_name: realm.config.realm_name.clone().unwrap_or_default(),
@@ -752,14 +774,16 @@ fn send_scene_updates(
 
     // add canvas info
     let canvas_info = if let Ok(window) = window.single() {
-        let vmin = window.resolution.width().min(window.resolution.height());
+        let width = window.resolution.width();
+        let height = window.resolution.height();
+        let interactable = interactable_area.get_or_default(width, height);
 
-        if config.constrain_scene_ui {
+        if config.constrain_scene_ui && !is_super {
             // we optionally misreport window size and constrain scene ui directly as nobody uses this info properly
             PbUiCanvasInformation {
                 device_pixel_ratio: window.resolution.scale_factor(),
-                width: (window.resolution.width() - 0.39 * vmin) as i32,
-                height: (window.resolution.height() - 0.12 * vmin) as i32,
+                width: (width - interactable.x - interactable.z) as i32,
+                height: (height - interactable.y - interactable.w) as i32,
                 interactable_area: Some(BorderRect {
                     top: 0.0,
                     left: 0.0,
@@ -770,13 +794,13 @@ fn send_scene_updates(
         } else {
             PbUiCanvasInformation {
                 device_pixel_ratio: window.resolution.scale_factor(),
-                width: (window.resolution.width()) as i32,
-                height: (window.resolution.height()) as i32,
+                width: width as i32,
+                height: height as i32,
                 interactable_area: Some(BorderRect {
-                    top: 0.06 * vmin,
-                    left: 0.27 * vmin,  // minimap
-                    right: 0.12 * vmin, // icons
-                    bottom: 0.06 * vmin,
+                    left: interactable.x,
+                    top: interactable.y,
+                    right: interactable.z,
+                    bottom: interactable.w,
                 }),
             }
         }
@@ -862,11 +886,12 @@ fn receive_scene_updates(
                 SceneResponse::Ok(scene_id, census, mut crdt, runtime, messages, rpc_calls) => {
                     let root = updates.scene_ids.get(&scene_id).unwrap();
                     debug!(
-                        "scene {:?}/{:?} received updates! [+{}, -{}]",
+                        "scene {:?}/{:?} received updates! [+{}, -{}, {} rpc",
                         census.scene_id,
                         root,
                         census.born.len(),
-                        census.died.len()
+                        census.died.len(),
+                        rpc_calls.len(),
                     );
                     if let Ok(mut context) = scenes.get_mut(*root) {
                         context.tick_number = context.tick_number.wrapping_add(1);
@@ -896,6 +921,11 @@ fn receive_scene_updates(
                         );
                     }
                     Some(*root)
+                }
+                SceneResponse::ImmediateRpcCall(rpc_call) => {
+                    debug!("immediate rpc: {rpc_call:?}");
+                    rpc_call_events.write(rpc_call);
+                    None
                 }
             },
             Err(TryRecvError::Empty) => return,
@@ -937,14 +967,6 @@ fn process_scene_entity_lifecycle(
             debug!("{:?}: death row: {:?}", root, context.death_row);
         }
 
-        for scene_entity_id in std::mem::take(&mut context.nascent) {
-            if context.bevy_entity(scene_entity_id).is_some() {
-                continue;
-            }
-
-            context.spawn_bevy_entity(&mut commands, root, scene_entity_id, &primaries);
-        }
-
         // update deleted entities list, used by crdt processors to filter results
         deleted_entities.0 = std::mem::take(&mut context.death_row);
 
@@ -968,6 +990,15 @@ fn process_scene_entity_lifecycle(
                 commands.entity(deleted_bevy_entity).despawn();
             }
             context.set_dead(*deleted_scene_entity);
+        }
+
+        // add any new entities
+        for scene_entity_id in std::mem::take(&mut context.nascent) {
+            if context.bevy_entity(scene_entity_id).is_some() {
+                continue;
+            }
+
+            context.spawn_bevy_entity(&mut commands, root, scene_entity_id, &primaries);
         }
     }
 }
@@ -1019,4 +1050,19 @@ fn log_app_errors(mut toaster: Toaster, mut errors: EventReader<AppError>, frame
     for (i, error) in errors.read().enumerate() {
         toaster.add_toast(format!("app-error {}-{i}", frame.0), format!("{error:?}"));
     }
+}
+
+fn set_ui_constraints(
+    mut events: EventReader<SystemApi>,
+    mut interactable_area: ResMut<InteractableArea>,
+) {
+    for ev in events.read() {
+        if let SystemApi::SetInteractableArea(area) = ev {
+            interactable_area.0 = Some(*area);
+        }
+    }
+}
+
+fn push_time_to_crdt(time_of_day: Res<TimeOfDay>, mut global_crdt_state: ResMut<GlobalCrdtState>) {
+    global_crdt_state.update_time(time_of_day.time);
 }

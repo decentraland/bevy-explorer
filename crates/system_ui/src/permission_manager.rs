@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
-    rpc::RpcResultSender,
+    rpc::{RpcResultReceiver, RpcResultSender, RpcStreamSender},
     structs::{
         ActiveDialog, AppConfig, PermissionLevel, PermissionStrings, PermissionTarget,
         PermissionUsed, PermissionValue, PrimaryPlayerRes, SettingsTab, ShowSettingsEvent, ZOrder,
@@ -18,7 +18,7 @@ use scene_runner::{
     ContainingScene, Toaster,
 };
 use system_bridge::{NativeUi, PermanentPermissionItem, SystemApi};
-use tokio::sync::oneshot::{channel, error::TryRecvError, Receiver};
+use tokio::sync::oneshot::error::TryRecvError;
 use ui_core::{
     button::DuiButton,
     combo_box::ComboBox,
@@ -53,7 +53,7 @@ fn update_permissions(
     dui: Res<DuiRegistry>,
     config: Res<AppConfig>,
     // scene cancel, dialog Entity, original request
-    mut displayed_dialogs: Local<Vec<(Receiver<()>, Entity, Option<PermissionRequest>)>>,
+    mut displayed_dialogs: Local<Vec<(RpcResultReceiver<()>, Entity, Option<PermissionRequest>)>>,
 ) {
     let active_scenes = containing_scene.get_area(player.0, PLAYER_COLLIDER_RADIUS);
 
@@ -150,8 +150,7 @@ fn update_permissions(
             None => req.ty.request(),
         };
 
-        let (cancel_sx, cancel_rx) = channel();
-        let cancel_sx = RpcResultSender::new(cancel_sx);
+        let (cancel_sx, cancel_rx) = RpcResultSender::channel();
 
         let send = |value: PermissionValue| {
             let sender = req.sender.clone();
@@ -175,7 +174,7 @@ fn update_permissions(
                         .insert(ty, value),
                     PermissionLevel::Global => config.default_permissions.insert(ty, value),
                 };
-                platform::write_config_file(&config);
+                platform::write_config_file(&*config);
             }
         };
 
@@ -341,10 +340,8 @@ pub fn handle_scene_permissions(
     mut manager: ResMut<PermissionManager>,
     mut config: ResMut<AppConfig>,
     mut system_events: EventReader<SystemApi>,
-    mut requests_streams: Local<
-        Vec<tokio::sync::mpsc::UnboundedSender<system_bridge::PermissionRequest>>,
-    >,
-    mut used_streams: Local<Vec<tokio::sync::mpsc::UnboundedSender<PermissionUsed>>>,
+    mut requests_streams: Local<Vec<RpcStreamSender<system_bridge::PermissionRequest>>>,
+    mut used_streams: Local<Vec<RpcStreamSender<PermissionUsed>>>,
     // corresponds to the items in the manager deque
     mut permission_ids: Local<Vec<usize>>,
     mut inc: Local<usize>,
@@ -395,7 +392,15 @@ pub fn handle_scene_permissions(
                         config.scene_permissions.entry(hash.clone()).or_default()
                     }
                     PermissionLevel::Realm(realm) => {
-                        config.realm_permissions.entry(realm.clone()).or_default()
+                        if current_realm.about_url.starts_with(realm) {
+                            config
+                                .realm_permissions
+                                .entry(current_realm.about_url.clone())
+                                .or_default()
+                        } else {
+                            warn!("permission realm didn't match current realm: {} is not initial segment of {}", realm, current_realm.about_url);
+                            continue;
+                        }
                     }
                     PermissionLevel::Global => &mut config.default_permissions,
                 };

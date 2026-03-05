@@ -6,9 +6,11 @@
 use bevy::math::Vec3Swizzles;
 use bevy::prelude::*;
 
-use common::{sets::SceneSets, structs::PrimaryCamera};
+use common::structs::PrimaryCamera;
 use dcl::interface::ComponentPosition;
 use dcl_component::{proto_components::sdk::components::PbBillboard, SceneComponentId};
+
+use crate::update_world::transform_and_parent::PostUpdateSets;
 
 use super::AddCrdtInterfaceExt;
 
@@ -21,7 +23,10 @@ impl Plugin for BillboardPlugin {
             ComponentPosition::EntityOnly,
         );
 
-        app.add_systems(Update, update_billboards.in_set(SceneSets::PostLoop));
+        app.add_systems(
+            PostUpdate,
+            update_billboards.in_set(PostUpdateSets::Billboard),
+        );
     }
 }
 

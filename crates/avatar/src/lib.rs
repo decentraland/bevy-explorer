@@ -4,14 +4,11 @@ use attach::AttachPlugin;
 use avatar_texture::AvatarTexturePlugin;
 use bevy::{
     animation::{AnimationTarget, AnimationTargetId},
-    asset::{io::AssetReader, AsyncReadExt},
+    asset::{io::AssetReader, AsyncReadExt, RenderAssetUsages},
     gltf::Gltf,
     platform::collections::{HashMap, HashSet},
     prelude::*,
-    render::{
-        mesh::skinning::SkinnedMesh,
-        view::{NoFrustumCulling, RenderLayers},
-    },
+    render::{mesh::skinning::SkinnedMesh, primitives::Aabb, view::RenderLayers},
     scene::InstanceId,
     tasks::{IoTaskPool, Task},
 };
@@ -66,6 +63,7 @@ use scene_runner::{
     util::ConsoleRelay,
     ContainingScene, SceneEntity,
 };
+use system_bridge::NativeUi;
 use world_ui::{spawn_world_ui_view, WorldUi};
 
 use crate::animate::AvatarAnimPlayer;
@@ -270,6 +268,7 @@ impl From<&UserProfile> for AvatarShape {
                 .force_render
                 .clone()
                 .unwrap_or_default(),
+            show_only_wearables: None,
         })
     }
 }
@@ -303,6 +302,7 @@ pub struct AvatarSelection {
     scene: Option<Entity>,
     shape: AvatarShape,
     automatic_delete: bool,
+    disable_dither: bool,
 }
 
 // choose the avatar shape based on current scene of the player
@@ -364,6 +364,7 @@ fn select_avatar(
                     scene: Some(scene_ent.root),
                     shape: AvatarShape(scene_avatar_shape.0.clone()),
                     automatic_delete: true,
+                    disable_dither: false,
                 });
 
                 debug!("npc avatar {:?}", scene_ent);
@@ -437,6 +438,7 @@ fn select_avatar(
                     scene: update.current_source,
                     shape,
                     automatic_delete: true,
+                    disable_dither: maybe_player.is_none(), // disable for primary avatar only
                 });
             }
         }
@@ -464,6 +466,7 @@ pub struct AvatarDefinition {
     hides: HashSet<WearableCategory>,
     bounds: Vec<BoundRegion>,
     emote: Option<EmoteCommand>,
+    disable_dither: bool,
 }
 
 #[derive(Component)]
@@ -489,6 +492,7 @@ fn update_render_avatar(
     avatar_render_entities: Query<(), With<AvatarDefinition>>,
     mut wearable_loader: CollectibleManager<Wearable>,
     scenes: Query<&RendererSceneContext>,
+    native_ui: Res<NativeUi>,
 ) {
     // remove renderable entities when avatar selection is removed
     for entity in removed_selections.read() {
@@ -509,7 +513,7 @@ fn update_render_avatar(
     for (entity, selection, maybe_children, maybe_attach_points, maybe_scene_ent, maybe_prev) in
         &query
     {
-        commands.entity(entity).remove::<RetryRenderAvatar>();
+        commands.entity(entity).try_remove::<RetryRenderAvatar>();
 
         debug!("updating render avatar");
         if let Some(attach_points) = maybe_attach_points {
@@ -556,7 +560,6 @@ fn update_render_avatar(
                 match wearable_loader.get_representation(&wearable, body_urn.as_str()) {
                     Ok(data) => Some((data.category, (data.clone(), wearable))),
                     Err(CollectibleError::Loading) => {
-                        commands.entity(entity).try_insert(RetryRenderAvatar);
                         debug!("waiting for wearable {wearable:?}");
                         all_loaded = false;
                         None
@@ -583,6 +586,7 @@ fn update_render_avatar(
                 match wearable_loader.get_representation(default.base(), body_urn.as_str()) {
                     Ok(data) => Some((data.clone(), default.base().to_owned())),
                     _ => {
+                        debug!("waiting for {default:?}");
                         all_loaded = false;
                         None
                     }
@@ -591,22 +595,44 @@ fn update_render_avatar(
             .collect();
 
         if !all_loaded {
+            commands.entity(entity).try_insert(RetryRenderAvatar);
             continue;
         }
 
         for (default, default_urn) in defaults {
             if !wearables.contains_key(&default.category) {
+                debug!("adding default {default:?}");
                 wearables.insert(default.category, (default, default_urn));
             }
         }
 
         // calculate what is hidden
-        let mut hides: HashSet<WearableCategory, _> = HashSet::default();
+        let mut hides_first_pass: HashSet<WearableCategory, _> = HashSet::new();
 
-        debug!("calculating hides");
+        debug!("calculating hides phase 1");
         for category in WearableCategory::hides_order() {
-            if hides.contains(category) {
+            if hides_first_pass.contains(category) {
                 debug!("skip {:?}, already hidden", category);
+                continue;
+            }
+
+            if let Some((wearable, _)) = wearables.get(category) {
+                hides_first_pass.extend(wearable.hides.iter());
+                debug!(
+                    "add {:?} = {:?} -> {:?}",
+                    category, wearable.hides, hides_first_pass
+                );
+            }
+
+            hides_first_pass
+                .retain(|cat| !selection.shape.0.force_render.iter().any(|h| h == cat.slot));
+        }
+
+        debug!("calculating hides phase 2");
+        let mut hides: HashSet<WearableCategory, _> = HashSet::new();
+        for category in WearableCategory::hides_order() {
+            if hides_first_pass.contains(category) {
+                debug!("skip {:?}, hidden", category);
                 continue;
             }
 
@@ -616,6 +642,10 @@ fn update_render_avatar(
             }
 
             hides.retain(|cat| !selection.shape.0.force_render.iter().any(|h| h == cat.slot));
+        }
+
+        if selection.shape.0.show_only_wearables() {
+            hides.insert(WearableCategory::BODY_SHAPE);
         }
 
         let initial_count = wearables.len();
@@ -638,19 +668,24 @@ fn update_render_avatar(
                 Transform::from_rotation(Quat::from_rotation_y(PI)),
                 Visibility::default(),
                 AvatarDefinition {
-                    label: selection.shape.0.name.as_ref().and_then(|name| {
-                        (!name.is_empty()).then_some(format!(
-                            "{}#{}",
-                            name,
-                            selection
-                                .shape
-                                .0
-                                .id
-                                .chars()
-                                .skip(selection.shape.0.id.len().saturating_sub(4))
-                                .collect::<String>()
-                        ))
-                    }),
+                    label: native_ui
+                        .nametags
+                        .then(|| {
+                            selection.shape.0.name.as_ref().and_then(|name| {
+                                (!name.is_empty()).then_some(format!(
+                                    "{}#{}",
+                                    name,
+                                    selection
+                                        .shape
+                                        .0
+                                        .id
+                                        .chars()
+                                        .skip(selection.shape.0.id.len().saturating_sub(4))
+                                        .collect::<String>()
+                                ))
+                            })
+                        })
+                        .flatten(),
                     body,
                     body_shape: body_urn.as_str().to_owned(),
                     wearables,
@@ -703,6 +738,7 @@ fn update_render_avatar(
                                 .expression_trigger_timestamp
                                 .unwrap_or_default(),
                         }),
+                    disable_dither: selection.disable_dither,
                 },
                 UsedWearables(urns),
             ));
@@ -870,15 +906,27 @@ pub struct AvatarMaterials(pub HashSet<AssetId<SceneMaterial>>);
 #[derive(Component, Debug)]
 pub struct PreviousAvatar(Entity);
 
+const AVATAR_EMISSIVE_MULTIPLIER: f32 = 4.0;
+
 // update materials and hide base parts
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn process_avatar(
     mut commands: Commands,
-    query: Query<(Entity, &AvatarDefinition, &AvatarLoaded, &ChildOf), Without<AvatarProcessed>>,
+    query: Query<
+        (
+            Entity,
+            &GlobalTransform,
+            &AvatarDefinition,
+            &AvatarLoaded,
+            &ChildOf,
+        ),
+        Without<AvatarProcessed>,
+    >,
     scene_spawner: SceneSpawnerPlus,
     mut instance_ents: Query<(
         &mut Visibility,
         &ChildOf,
+        &GlobalTransform,
         Option<&MeshMaterial3d<StandardMaterial>>,
         Option<&Mesh3d>,
         Option<&AnimationPlayer>,
@@ -910,7 +958,7 @@ fn process_avatar(
         Query<&mut RendererSceneContext>,
     ),
 ) {
-    for (avatar_ent, def, loaded_avatar, root_player_entity) in query.iter() {
+    for (avatar_ent, root_gt, def, loaded_avatar, root_player_entity) in query.iter() {
         let not_loaded = !scene_spawner.instance_is_really_ready(loaded_avatar.body_instance)
             || loaded_avatar
                 .wearable_instances
@@ -924,6 +972,12 @@ fn process_avatar(
             debug!("not loaded...");
             continue;
         }
+
+        // https://docs.decentraland.org/creator/wearables/creating-wearables/#max-width-height-and-depth-dimension-of-the-wearables
+        let aabb_bounds = (
+            Vec3::new(-1.24, 0.0, -0.7) + root_gt.translation(),
+            Vec3::new(1.24, 2.42, 0.7) + root_gt.translation(),
+        );
 
         let mut instance_scene_materials = HashMap::new();
         let mut armature_node = None;
@@ -967,7 +1021,7 @@ fn process_avatar(
 
         // hide and colour the base model
         for scene_ent in scene_spawner.iter_instance_entities(loaded_avatar.body_instance) {
-            let Ok((mut vis, parent, maybe_h_mat, maybe_h_mesh, maybe_player)) =
+            let Ok((mut vis, parent, gt, maybe_h_mat, maybe_h_mesh, maybe_player)) =
                 instance_ents.get_mut(scene_ent)
             else {
                 continue;
@@ -1005,15 +1059,20 @@ fn process_avatar(
                     commands.entity(scene_ent).try_insert(Visibility::Hidden);
                 }
 
-                if let Some(mesh_data) = meshes.get(h_mesh) {
-                    let is_skinned = mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
-                    if is_skinned {
-                        commands.entity(scene_ent).try_insert(NoFrustumCulling);
+                if let Some(mesh) = meshes.get(h_mesh) {
+                    if mesh.asset_usage == RenderAssetUsages::MAIN_WORLD {
+                        if let Some(mesh_data) = meshes.get_mut(h_mesh) {
+                            mesh_data.normalize_joint_weights();
+                            mesh_data.asset_usage |= RenderAssetUsages::RENDER_WORLD;
+                        }
                     }
-                } else {
-                    warn!("missing mesh for wearable, removing frustum culling just in case");
-                    commands.entity(scene_ent).try_insert(NoFrustumCulling);
                 }
+
+                commands.entity(scene_ent).try_insert(calculate_local_aabb(
+                    aabb_bounds.0,
+                    aabb_bounds.1,
+                    gt,
+                ));
             }
 
             if let Some(h_mat) = maybe_h_mat {
@@ -1030,15 +1089,32 @@ fn process_avatar(
                         mat.base_color
                     };
 
+                    let emissive_color_specified = mat.emissive.red != 0.0
+                        || mat.emissive.green != 0.0
+                        || mat.emissive.blue != 0.0;
+                    let new_emissive = if emissive_color_specified {
+                        LinearRgba {
+                            red: mat.emissive.red * AVATAR_EMISSIVE_MULTIPLIER,
+                            green: mat.emissive.green * AVATAR_EMISSIVE_MULTIPLIER,
+                            blue: mat.emissive.blue * AVATAR_EMISSIVE_MULTIPLIER,
+                            alpha: mat.emissive.alpha,
+                        }
+                    } else {
+                        mat.emissive
+                    };
+
                     let new_mat = SceneMaterial {
                         base: StandardMaterial {
                             base_color,
+                            emissive: new_emissive,
+                            depth_bias: -5000.0, // make base model appear under any wearables at the same position, like skinpaint
                             ..mat.clone()
                         },
                         extension: SceneBound::new_outlined(
                             def.bounds.clone(),
                             config.graphics.oob,
                             false,
+                            def.disable_dither,
                         ),
                     };
                     let instance_mat = instance_scene_materials
@@ -1104,6 +1180,7 @@ fn process_avatar(
                                     def.bounds.clone(),
                                     config.graphics.oob,
                                     true,
+                                    def.disable_dither,
                                 ),
                             };
                             let material = scene_materials.add(new_mat);
@@ -1153,24 +1230,38 @@ fn process_avatar(
         } else {
             // reparent hands
             if let Ok(attach_points) = attach_points.get(root_player_entity.parent()) {
-                if let Some(left_hand) =
-                    target_armature_entities.get(&String::from("avatar_lefthand"))
-                {
-                    commands
-                        .entity(*left_hand)
-                        .try_push_children(&[attach_points.left_hand]);
-                } else {
-                    warn!("no left hand");
-                    warn!("available: {:#?}", target_armature_entities.keys());
-                }
-                if let Some(right_hand) =
-                    target_armature_entities.get(&String::from("avatar_righthand"))
-                {
-                    commands
-                        .entity(*right_hand)
-                        .try_push_children(&[attach_points.right_hand]);
-                } else {
-                    warn!("no right hand");
+                for (key, attach_point) in [
+                    ("avatar_head", attach_points.head),
+                    ("avatar_neck", attach_points.neck),
+                    ("avatar_spine", attach_points.spine),
+                    ("avatar_spine1", attach_points.spine_1),
+                    ("avatar_spine2", attach_points.spine_2),
+                    ("avatar_hips", attach_points.hip),
+                    ("avatar_leftshoulder", attach_points.left_shoulder),
+                    ("avatar_leftarm", attach_points.left_arm),
+                    ("avatar_leftforearm", attach_points.left_forearm),
+                    ("avatar_lefthand", attach_points.left_hand),
+                    ("avatar_lefthandindex1", attach_points.left_hand_index),
+                    ("avatar_rightshoulder", attach_points.right_shoulder),
+                    ("avatar_rightarm", attach_points.righ_arm),
+                    ("avatar_rightforearm", attach_points.right_forearm),
+                    ("avatar_righthand", attach_points.right_hand),
+                    ("avatar_righthandindex1", attach_points.right_hand_index),
+                    ("avatar_leftupleg", attach_points.left_thigh),
+                    ("avatar_leftleg", attach_points.left_shin),
+                    ("avatar_leftfoot", attach_points.left_foot),
+                    ("avatar_lefttoebase", attach_points.left_toe_base),
+                    ("avatar_rightupleg", attach_points.right_thigh),
+                    ("avatar_rightleg", attach_points.right_shin),
+                    ("avatar_rightfoot", attach_points.right_foot),
+                    ("avatar_righttoebase", attach_points.right_toe_base),
+                ] {
+                    reparent_attach_point(
+                        &mut commands,
+                        &target_armature_entities,
+                        key,
+                        attach_point,
+                    );
                 }
             } else {
                 warn!("no attach points");
@@ -1194,6 +1285,11 @@ fn process_avatar(
                     player: root_player_entity.parent(),
                 });
             }
+
+            commands.entity(armature_node).try_insert(AnimationTarget {
+                id: AnimationTargetId::from_name(&Name::new("Armature")),
+                player: root_player_entity.parent(),
+            });
         }
 
         // color the components of wearables
@@ -1206,7 +1302,7 @@ fn process_avatar(
             let mut armature_map = HashMap::new();
 
             for scene_ent in scene_spawner.iter_instance_entities(*instance) {
-                let Ok((_, parent, maybe_h_mat, maybe_h_mesh, maybe_player)) =
+                let Ok((_, parent, gt, maybe_h_mat, maybe_h_mesh, maybe_player)) =
                     instance_ents.get_mut(scene_ent)
                 else {
                     continue;
@@ -1243,17 +1339,19 @@ fn process_avatar(
                 }
 
                 if let Some(h_mesh) = maybe_h_mesh {
-                    if let Some(mesh_data) = meshes.get_mut(h_mesh) {
-                        mesh_data.normalize_joint_weights();
-                        let is_skinned =
-                            mesh_data.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some();
-                        if is_skinned {
-                            commands.entity(scene_ent).try_insert(NoFrustumCulling);
+                    if let Some(mesh) = meshes.get(h_mesh) {
+                        if mesh.asset_usage == RenderAssetUsages::MAIN_WORLD {
+                            if let Some(mesh_data) = meshes.get_mut(h_mesh) {
+                                mesh_data.normalize_joint_weights();
+                                mesh_data.asset_usage |= RenderAssetUsages::RENDER_WORLD;
+                            }
                         }
-                    } else {
-                        warn!("missing mesh for wearable, removing frustum culling just in case");
-                        commands.entity(scene_ent).try_insert(NoFrustumCulling);
                     }
+                    commands.entity(scene_ent).try_insert(calculate_local_aabb(
+                        aabb_bounds.0,
+                        aabb_bounds.1,
+                        gt,
+                    ));
                 }
 
                 if let Some(h_mat) = maybe_h_mat {
@@ -1270,15 +1368,31 @@ fn process_avatar(
                             mat.base_color
                         };
 
+                        let emissive_color_specified = mat.emissive.red != 0.0
+                            || mat.emissive.green != 0.0
+                            || mat.emissive.blue != 0.0;
+                        let new_emissive = if emissive_color_specified {
+                            LinearRgba {
+                                red: mat.emissive.red * AVATAR_EMISSIVE_MULTIPLIER,
+                                green: mat.emissive.green * AVATAR_EMISSIVE_MULTIPLIER,
+                                blue: mat.emissive.blue * AVATAR_EMISSIVE_MULTIPLIER,
+                                alpha: mat.emissive.alpha,
+                            }
+                        } else {
+                            mat.emissive
+                        };
+
                         let new_mat = SceneMaterial {
                             base: StandardMaterial {
                                 base_color,
+                                emissive: new_emissive,
                                 ..mat.clone()
                             },
                             extension: SceneBound::new_outlined(
                                 def.bounds.clone(),
                                 config.graphics.oob,
                                 false,
+                                def.disable_dither,
                             ),
                         };
                         let instance_mat = instance_scene_materials
@@ -1390,6 +1504,63 @@ fn process_avatar(
                 );
             }
         }
+    }
+}
+
+fn reparent_attach_point(
+    commands: &mut Commands,
+    target_armature_entities: &HashMap<String, Entity>,
+    key: &str,
+    attach_point: Entity,
+) {
+    if let Some(bone) = target_armature_entities.get(key) {
+        commands.entity(*bone).try_push_children(&[attach_point]);
+    } else {
+        #[cfg(not(debug_assertions))]
+        warn!("no {}", key,);
+        #[cfg(debug_assertions)]
+        warn!(
+            "no {}, available: {:#?}",
+            key,
+            target_armature_entities.keys()
+        );
+    }
+}
+
+fn calculate_local_aabb(
+    global_min: Vec3,
+    global_max: Vec3,
+    global_transform: &GlobalTransform,
+) -> Aabb {
+    let transform_matrix = global_transform.compute_matrix();
+    let inverse_transform = transform_matrix.inverse();
+
+    let corners = [
+        Vec3::new(global_min.x, global_min.y, global_min.z),
+        Vec3::new(global_max.x, global_min.y, global_min.z),
+        Vec3::new(global_min.x, global_max.y, global_min.z),
+        Vec3::new(global_max.x, global_max.y, global_min.z),
+        Vec3::new(global_min.x, global_min.y, global_max.z),
+        Vec3::new(global_max.x, global_min.y, global_max.z),
+        Vec3::new(global_min.x, global_max.y, global_max.z),
+        Vec3::new(global_max.x, global_max.y, global_max.z),
+    ];
+
+    let mut local_min = Vec3::splat(f32::MAX);
+    let mut local_max = Vec3::splat(f32::MIN);
+
+    for corner in corners {
+        let local_point = inverse_transform.transform_point3(corner);
+        local_min = local_min.min(local_point);
+        local_max = local_max.max(local_point);
+    }
+
+    let center = (local_min + local_max) * 0.5;
+    let half_extents = (local_max - local_min) * 0.5;
+
+    Aabb {
+        center: center.into(),
+        half_extents: half_extents.into(),
     }
 }
 

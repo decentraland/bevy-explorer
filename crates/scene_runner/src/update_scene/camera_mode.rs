@@ -40,7 +40,7 @@ fn update_camera_mode(mut scenes: Query<&mut RendererSceneContext>, camera: Quer
     let camera_mode = PbCameraMode { mode: mode.into() };
 
     for mut context in scenes.iter_mut() {
-        context.update_crdt(
+        context.update_crdt_if_different(
             SceneComponentId::CAMERA_MODE,
             CrdtType::LWW_ENT,
             SceneEntityId::CAMERA,

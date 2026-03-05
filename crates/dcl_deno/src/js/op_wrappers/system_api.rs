@@ -1,8 +1,8 @@
 use common::{
     inputs::SystemActionEvent,
-    structs::{PermissionType, PermissionUsed, PermissionValue},
+    structs::{MicState, PermissionType, PermissionUsed, PermissionValue},
 };
-use dcl::js::system_api::{JsBindingsData, PermissionTypeDetail, RealmProviderString};
+use dcl::js::system_api::{JsBindingsData, PermissionTypeDetail};
 use dcl_component::proto_components::{
     common::Vector2,
     sdk::components::{PbAvatarBase, PbAvatarEquippedData},
@@ -10,8 +10,8 @@ use dcl_component::proto_components::{
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
-    settings::SettingInfo, ChatMessage, HomeScene, LiveSceneInfo, PermanentPermissionItem,
-    PermissionRequest,
+    settings::SettingInfo, ChatMessage, HomeScene, HoverEvent, LiveSceneInfo,
+    PermanentPermissionItem, PermissionRequest, SceneLoadingUi, VoiceMessage,
 };
 
 // list of op declarations
@@ -39,7 +39,6 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_live_scene_info(),
             op_get_home_scene(),
             op_set_home_scene(),
-            op_get_realm_provider(),
             op_get_system_action_stream(),
             op_read_system_action_stream(),
             op_get_chat_stream(),
@@ -55,6 +54,15 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_set_permanent_permission(),
             op_get_permanent_permissions(),
             op_get_permission_types(),
+            op_set_interactable_area(),
+            op_get_mic_state(),
+            op_set_mic_enabled(),
+            op_get_voice_stream(),
+            op_read_voice_stream(),
+            op_get_hover_stream(),
+            op_read_hover_stream(),
+            op_get_scene_loading_ui_stream(),
+            op_read_scene_loading_ui_stream(),
         ]
     } else {
         Vec::default()
@@ -211,14 +219,6 @@ pub fn op_set_home_scene(
 }
 
 #[op2(async)]
-#[serde]
-pub async fn op_get_realm_provider(
-    state: Rc<RefCell<OpState>>,
-) -> Result<RealmProviderString, anyhow::Error> {
-    dcl::js::system_api::op_get_realm_provider(state).await
-}
-
-#[op2(async)]
 pub async fn op_get_system_action_stream(state: Rc<RefCell<OpState>>) -> u32 {
     dcl::js::system_api::op_get_system_action_stream(state).await
 }
@@ -327,4 +327,68 @@ pub async fn op_get_permanent_permissions(
 #[serde]
 pub fn op_get_permission_types() -> Vec<PermissionTypeDetail> {
     dcl::js::system_api::op_get_permission_types()
+}
+
+#[op2(fast)]
+pub fn op_set_interactable_area(
+    state: Rc<RefCell<OpState>>,
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+) {
+    dcl::js::system_api::op_set_interactable_area(state, left, top, right, bottom);
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_mic_state(state: Rc<RefCell<OpState>>) -> Result<MicState, anyhow::Error> {
+    dcl::js::system_api::op_get_mic_state(state).await
+}
+
+#[op2(async)]
+pub async fn op_set_mic_enabled(state: Rc<RefCell<OpState>>, enabled: bool) {
+    dcl::js::system_api::op_set_mic_enabled(state, enabled).await;
+}
+
+#[op2(async)]
+pub async fn op_get_voice_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_voice_stream(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_voice_stream(
+    state: Rc<RefCell<OpState>>,
+    rid: u32,
+) -> Result<Option<VoiceMessage>, deno_core::anyhow::Error> {
+    dcl::js::system_api::op_read_voice_stream(state, rid).await
+}
+
+#[op2(async)]
+pub async fn op_get_hover_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_hover_stream(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_hover_stream(
+    state: Rc<RefCell<OpState>>,
+    rid: u32,
+) -> Result<Option<HoverEvent>, deno_core::anyhow::Error> {
+    dcl::js::system_api::op_read_hover_stream(state, rid).await
+}
+
+#[op2(async)]
+pub async fn op_get_scene_loading_ui_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_scene_loading_ui_stream(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_scene_loading_ui_stream(
+    state: Rc<RefCell<OpState>>,
+    rid: u32,
+) -> Result<Option<SceneLoadingUi>, deno_core::anyhow::Error> {
+    dcl::js::system_api::op_read_scene_loading_ui_stream(state, rid).await
 }

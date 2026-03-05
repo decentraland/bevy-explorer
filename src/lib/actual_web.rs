@@ -1,65 +1,62 @@
+use std::str::FromStr;
+
 use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
+use assets::EmbedAssetsPlugin;
 use bevy::{
     app::Propagate,
-    core_pipeline::{
-        bloom::Bloom,
-        tonemapping::{DebandDither, Tonemapping},
-    },
-    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
-    pbr::ShadowFilteringMethod,
+    diagnostic::FrameTimeDiagnosticsPlugin,
+    log::LogPlugin,
     prelude::*,
     render::{
+        render_resource::{PipelineCompilationHandler, PipelineCompilationMode},
         renderer::RenderDevice,
-        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers},
+        view::RenderLayers,
+        RenderPlugin,
     },
-    tasks::{IoTaskPool, Task},
+    tasks::BoxedFuture,
+    winit::{UpdateMode, WinitSettings},
 };
 use bevy_console::ConsoleCommand;
 use dcl_wasm::init_runtime;
-use imposters::DclImposterPlugin;
-use std::str::FromStr;
+use tracing::Level;
 
 use collectibles::CollectiblesPlugin;
 use common::{
     inputs::InputMap,
     sets::SetupSets,
     structs::{
-        AppConfig, AttachPoints, AvatarDynamicState, IVec2Arg, PreviewCommand, PrimaryCamera,
-        PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneLoadDistance, SystemScene, Version,
-        GROUND_RENDERLAYER,
+        AppConfig, AttachPoints, AvatarDynamicState, IVec2Arg, PreviewMode, PrimaryCamera,
+        PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneLoadDistance, StartupScene,
+        StartupScenes, Version, GROUND_RENDERLAYER,
     },
-    util::{TaskCompat, TaskExt, TryPushChildrenEx, UtilsPlugin},
+    util::{TryPushChildrenEx, UtilsPlugin},
 };
-use restricted_actions::{lookup_portable, RestrictedActionsPlugin};
+use image_processing::ImageProcessingPlugin;
+use imposters::DclImposterPlugin;
+use restricted_actions::{process_startup_scenes, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
-use scene_runner::{
-    initialize_scene::{PortableScenes, PortableSource, TestingData},
-    update_world::mesh_collider::GroundCollider,
-    OutOfWorld, SceneRunnerPlugin,
-};
+use scene_runner::{initialize_scene::TestingData, vec3_to_parcel, OutOfWorld, SceneRunnerPlugin};
 
-use av::AudioPlugin;
+use av::AVPlayerPlugin;
 use avatar::AvatarPlugin;
-use comms::{
-    preview::{handle_preview_socket, PreviewMode},
-    CommsPlugin,
-};
+use comms::CommsPlugin;
 use console::{ConsolePlugin, DoAddConsoleCommand};
 use futures_lite::io::AsyncReadExt;
 use input_manager::InputManagerPlugin;
-use ipfs::{IpfsAssetServer, IpfsIoPlugin};
+use ipfs::{map_realm_name, CurrentRealm, IpfsIoPlugin};
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use platform::default_camera_components;
 use social::SocialPlugin;
-use system_bridge::{NativeUi, SystemBridgePlugin};
+use system_bridge::{settings::NewCameraEvent, NativeUi, SystemBridgePlugin};
 use system_ui::SystemUiPlugin;
 use texture_camera::TextureCameraPlugin;
 use tween::TweenPlugin;
 use ui_core::UiCorePlugin;
-use user_input::UserInputPlugin;
+use user_input::{avatar_movement::GroundCollider, UserInputPlugin};
 use uuid::Uuid;
 use visuals::VisualsPlugin;
 use wallet::WalletPlugin;
+use wasm_bindgen_futures::js_sys;
 use world_ui::WorldUiPlugin;
 
 fn main_inner(
@@ -68,23 +65,29 @@ fn main_inner(
     location: &str,
     system_scene: &str,
     with_thread_loader: bool,
+    is_preview: bool,
     rabpf: usize,
-    buffer_size: u32,
 ) {
     // warnings before log init must be stored and replayed later
     let mut app = App::new();
 
     init_runtime();
 
-    let base_config = INIT_DATA.get().cloned().unwrap_or_default();
+    let base_config = INIT_DATA.get().cloned().unwrap_or_else(|| AppConfig {
+        graphics: common::structs::GraphicsSettings {
+            shadow_distance: 20.0,
+            shadow_settings: common::structs::ShadowSetting::Low,
+            ..Default::default()
+        },
+        ..Default::default()
+    });
     let base_graphics = base_config.graphics.clone();
 
     let final_config = AppConfig {
         server: server.to_owned(),
         location: IVec2Arg::from_str(location)
             .map(|l| l.0)
-            .unwrap_or(IVec2::ZERO),
-        max_concurrent_remotes: 8000,
+            .unwrap_or(base_config.location),
         graphics: common::structs::GraphicsSettings {
             gpu_bytes_per_frame: rabpf,
             ..base_graphics
@@ -103,27 +106,47 @@ fn main_inner(
     });
 
     let no_fog = false;
-    let is_preview = false;
 
-    let ui_scene = if system_scene.is_empty() {
+    let startup_scenes = if system_scene.is_empty() {
         None
     } else {
         Some(system_scene.to_owned())
     };
-    if let Some(source) = ui_scene {
-        app.add_systems(Update, process_system_ui_scene);
+
+    let mut first = true;
+    let startup_scenes = startup_scenes
+        .map(|scenes| {
+            scenes
+                .split(';')
+                .map(|scene| {
+                    let scene = StartupScene {
+                        source: scene.to_owned(),
+                        super_user: first,
+                        preview: false,
+                        hot_reload: None,
+                        hash: None,
+                    };
+                    first = false;
+                    scene
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if !startup_scenes.is_empty() {
+        app.add_systems(Update, process_startup_scenes);
         app.insert_resource(NativeUi {
             login: false,
             emote_wheel: false,
             chat: false,
             permissions: false,
             profile: false,
+            nametags: false,
+            tooltips: false,
+            loading_scene: false,
         });
-        app.insert_resource(SystemScene {
-            source: Some(source),
-            preview: false,
-            hot_reload: None,
-            hash: None,
+        app.insert_resource(StartupScenes {
+            scenes: startup_scenes,
         });
     } else {
         app.insert_resource(NativeUi {
@@ -132,6 +155,9 @@ fn main_inner(
             chat: true,
             permissions: true,
             profile: true,
+            nametags: true,
+            tooltips: true,
+            loading_scene: true,
         });
     }
 
@@ -148,37 +174,63 @@ fn main_inner(
     };
     app.insert_resource(text_bindings);
 
+    pub struct PipelineHandler;
+    impl PipelineCompilationHandler for PipelineHandler {
+        fn precreate_render_pipeline<'a>(
+            &self,
+            device: &'a RenderDevice,
+            desc: &'a wgpu::RenderPipelineDescriptor,
+        ) -> BoxedFuture<'a, ()> {
+            Box::pin(async {
+                allow_a_dummy_pipeline();
+                let _ = device.create_render_pipeline(desc);
+                if !last_pipeline_was_valid() {
+                    let _ = wasm_bindgen_futures::JsFuture::from(wait_for_async_pipelines()).await;
+                }
+            })
+        }
+    }
+
     app.insert_resource(Version(version.clone()))
         .insert_resource(final_config.audio.clone())
         .add_plugins(
             DefaultPlugins
-                .set(AssetPlugin {
-                    wasm_loader_handle,
+                .set(RenderPlugin {
+                    pipeline_compilation_mode: PipelineCompilationMode::async_with_handler(
+                        PipelineHandler,
+                    ),
                     ..default()
                 })
                 .set(WindowPlugin {
                     primary_window: Some(Window {
-                        // provide the ID selector string here
                         canvas: Some("#mygame-canvas".into()),
-                        // ... any other window properties ...
+                        fit_canvas_to_parent: true,
                         ..default()
                     }),
                     ..Default::default()
                 })
-                .set(bevy::asset::AssetPlugin {
+                .set(AssetPlugin {
                     // we manage asset server loads via ipfs module, so we don't need this protection
+                    wasm_loader_handle,
                     unapproved_path_mode: bevy::asset::UnapprovedPathMode::Allow,
                     ..Default::default()
                 })
-                .add_before::<bevy::asset::AssetPlugin>(IpfsIoPlugin {
+                .set(LogPlugin {
+                    level: Level::INFO,
+                    filter: std::option_env!("RUST_LOG").unwrap_or("").to_string(),
+                    custom_layer: |_| None,
+                })
+                .add_before::<AssetPlugin>(IpfsIoPlugin {
                     preview: is_preview,
-                    starting_realm: Some(final_config.server.clone()),
+                    starting_realm: Some(map_realm_name(&final_config.server)),
                     content_server_override,
                     assets_root: Default::default(),
                     num_slots: final_config.max_concurrent_remotes,
                 })
                 .add_before::<IpfsIoPlugin>(NftReaderPlugin),
         );
+
+    app.add_plugins(EmbedAssetsPlugin);
 
     app.insert_resource(InputMap {
         inputs: final_config.inputs.0.clone().into_iter().collect(),
@@ -193,13 +245,21 @@ fn main_inner(
     ));
 
     app.insert_resource(PreviewMode {
-        server: is_preview.then_some(final_config.server.clone()),
+        server: is_preview.then_some(map_realm_name(&final_config.server)),
         is_preview,
     });
 
     app.insert_resource(SceneLoadDistance {
-        load: final_config.scene_load_distance,
-        unload: final_config.scene_unload_extra_distance,
+        load: if is_preview {
+            1.0
+        } else {
+            final_config.scene_load_distance
+        },
+        unload: if is_preview {
+            0.0
+        } else {
+            final_config.scene_unload_extra_distance
+        },
         load_imposter: final_config
             .scene_imposter_distances
             .last()
@@ -209,14 +269,15 @@ fn main_inner(
                     (1 << (final_config.scene_imposter_distances.len() - 1)) as f32 * 16.0;
                 last + (2.0 * mip_size * mip_size).sqrt()
             })
-            .unwrap_or(0.0),
+            .unwrap_or(0.0)
+            * if is_preview { 0.0 } else { 1.0 },
     });
 
     app.insert_resource(final_config);
     app.configure_sets(Startup, SetupSets::Init.before(SetupSets::Main));
 
     app.add_plugins(FrameTimeDiagnosticsPlugin::default());
-    app.add_plugins(LogDiagnosticsPlugin::default());
+    // app.add_plugins(LogDiagnosticsPlugin::default());
 
     app.add_plugins(UtilsPlugin)
         .add_plugins(InputManagerPlugin)
@@ -234,27 +295,31 @@ fn main_inner(
         .add_plugins(TweenPlugin)
         .add_plugins(CollectiblesPlugin)
         .add_plugins(WorldUiPlugin)
-        .add_plugins(DclImposterPlugin {
+        .add_plugins(TextureCameraPlugin)
+        .add_plugins(ImageProcessingPlugin)
+        .add_plugins(SystemBridgePlugin { bare: false });
+
+    if !is_preview {
+        app.add_plugins(DclImposterPlugin {
             zip_output: None,
             download: true,
-        })
-        .add_plugins(TextureCameraPlugin)
-        .add_plugins(SystemBridgePlugin { bare: false });
+        });
+    }
 
     app.add_plugins(AvatarPlugin);
 
-    app.add_plugins(AudioPlugin {
-        buffer_size: Some(buffer_size),
-    })
-    .add_plugins(RestrictedActionsPlugin)
-    .insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER))
-    .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
-    .add_systems(Startup, setup.in_set(SetupSets::Init))
-    .insert_resource(AmbientLight {
-        color: Color::srgb(0.85, 0.85, 1.0),
-        brightness: 575.0,
-        ..Default::default()
-    });
+    app.add_plugins(AVPlayerPlugin)
+        .add_plugins(RestrictedActionsPlugin)
+        .insert_resource(PrimaryPlayerRes(Entity::PLACEHOLDER))
+        .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
+        .add_systems(Startup, setup.in_set(SetupSets::Init))
+        .add_systems(Update, update_winit_fps)
+        .add_systems(Update, update_url_params)
+        .insert_resource(AmbientLight {
+            color: Color::srgb(0.85, 0.85, 1.0),
+            brightness: 575.0,
+            ..Default::default()
+        });
 
     app.add_console_command::<ChangeLocationCommand, _>(change_location);
     app.add_console_command::<SceneDistanceCommand, _>(scene_distance);
@@ -316,7 +381,7 @@ fn setup(
             GROUND_RENDERLAYER.with(0),
         ))
         .id();
-
+    commands.send_event(NewCameraEvent(camera_id));
     player_resource.0 = player_id;
     cam_resource.0 = camera_id;
 }
@@ -407,64 +472,6 @@ fn set_fps(mut input: ConsoleCommand<FpsCommand>, mut config: ResMut<AppConfig>)
     }
 }
 
-#[allow(clippy::type_complexity)]
-pub fn process_system_ui_scene(
-    mut system_scene: ResMut<SystemScene>,
-    mut task: Local<Option<Task<Result<(String, PortableSource), String>>>>,
-    mut done: Local<bool>,
-    mut portables: ResMut<PortableScenes>,
-    ipfas: IpfsAssetServer,
-    mut channel: Local<Option<tokio::sync::mpsc::UnboundedReceiver<PreviewCommand>>>,
-    mut writer: EventWriter<PreviewCommand>,
-) {
-    if let Some(command) = channel.as_mut().and_then(|rx| rx.try_recv().ok()) {
-        writer.write(command);
-        *done = false;
-        system_scene.hash = None;
-        return;
-    }
-
-    if *done || system_scene.source.is_none() {
-        return;
-    }
-
-    if task.is_none() {
-        *task = Some(IoTaskPool::get().spawn_compat(lookup_portable(
-            None,
-            system_scene.source.clone().unwrap(),
-            true,
-            ipfas.ipfs().clone(),
-        )));
-    }
-
-    let mut t = task.take().unwrap();
-    match t.complete() {
-        Some(Ok((hash, source))) => {
-            info!("added ui scene from {}", source.pid);
-            system_scene.hash = Some(hash.clone());
-            portables.0.extend([(hash, source)]);
-            *done = true;
-
-            if system_scene.preview {
-                let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
-                IoTaskPool::get()
-                    .spawn(handle_preview_socket(
-                        system_scene.source.clone().unwrap(),
-                        sx.clone(),
-                    ))
-                    .detach();
-                *channel = Some(rx);
-                system_scene.hot_reload = Some(sx);
-            }
-        }
-        Some(Err(e)) => {
-            error!("failed to load ui scene: {e}");
-            *done = true;
-        }
-        None => *task = Some(t),
-    }
-}
-
 use once_cell::sync::OnceCell;
 use wasm_bindgen::prelude::*;
 
@@ -483,7 +490,6 @@ pub fn init_asset_load_thread() {
 #[wasm_bindgen]
 pub async fn engine_init() -> Result<JsValue, JsValue> {
     console_error_panic_hook::set_once();
-    let _ = console_log::init_with_level(log::Level::Info);
 
     let mut file = match web_fs::File::open("config.json").await {
         Ok(f) => f,
@@ -515,8 +521,8 @@ pub fn engine_run(
     location: &str,
     system_scene: &str,
     with_thread_loader: bool,
+    preview: bool,
     rabpf: usize,
-    buffer_size: u32,
 ) {
     main_inner(
         platform,
@@ -524,7 +530,90 @@ pub fn engine_run(
         location,
         system_scene,
         with_thread_loader,
+        preview,
         rabpf,
-        buffer_size,
     );
+}
+
+pub fn update_winit_fps(config: Res<AppConfig>, mut winit: ResMut<WinitSettings>) {
+    if config.is_changed() {
+        let target = config.graphics.fps_target;
+        let delay_micros = 1_000_000.0 / target as f32;
+        winit.focused_mode = UpdateMode::Reactive {
+            wait: std::time::Duration::from_micros((delay_micros) as u64),
+            react_to_device_events: false,
+            react_to_user_events: false,
+            react_to_window_events: false,
+        };
+        winit.unfocused_mode = winit.focused_mode;
+    }
+}
+
+#[wasm_bindgen(js_namespace = window)]
+extern "C" {
+    #[wasm_bindgen(js_name = set_url_params)]
+    fn set_url_params(
+        x: i32,
+        y: i32,
+        realm: String,
+        system_scene: Option<String>,
+        is_preview: bool,
+    );
+
+    #[wasm_bindgen(js_name = "allowADummyPipeline")]
+    fn allow_a_dummy_pipeline();
+
+    #[wasm_bindgen(js_name = "lastPipelineWasValid")]
+    fn last_pipeline_was_valid() -> bool;
+
+    #[wasm_bindgen(js_name = "waitForPipelines")]
+    fn wait_for_async_pipelines() -> js_sys::Promise;
+}
+
+#[derive(PartialEq, Default, Clone)]
+struct UrlParams {
+    parcel: IVec2,
+    server: String,
+    startup_scenes: Option<String>,
+    preview: bool,
+}
+
+fn update_url_params(
+    player: Query<&GlobalTransform, With<PrimaryUser>>,
+    current_realm: Res<CurrentRealm>,
+    startup_scenes: Option<Res<StartupScenes>>,
+    preview: Res<PreviewMode>,
+    mut prev: Local<UrlParams>,
+) {
+    let parcel = vec3_to_parcel(player.single().map(|p| p.translation()).unwrap_or_default());
+    let Some(server) = current_realm.about_url.strip_suffix("/about") else {
+        return;
+    };
+    let startup_scenes = startup_scenes.map(|s| {
+        let scenes = s
+            .scenes
+            .iter()
+            .map(|scene| scene.source.clone())
+            .collect::<Vec<_>>();
+        scenes.join(";")
+    });
+    let preview = preview.is_preview;
+
+    let params = UrlParams {
+        parcel,
+        server: server.to_owned(),
+        startup_scenes,
+        preview,
+    };
+
+    if params != *prev {
+        *prev = params.clone();
+        set_url_params(
+            params.parcel.x,
+            params.parcel.y,
+            params.server,
+            params.startup_scenes,
+            params.preview,
+        );
+    }
 }

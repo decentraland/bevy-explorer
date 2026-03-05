@@ -4,7 +4,8 @@ use bevy::{
     math::{IVec2, Vec3},
     transform::components::Transform,
 };
-use common::rpc::RpcCall;
+use common::rpc::{RpcCall, RpcResultSender, RpcUiFocusAction};
+use serde::Serialize;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{interface::crdt_context::CrdtContext, RpcCalls};
@@ -72,7 +73,7 @@ pub async fn op_teleport_to(
     position_y: i32,
 ) -> bool {
     debug!("op_teleport_to");
-    let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+    let (sx, rx) = RpcResultSender::<Result<(), String>>::channel();
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
     state
         .borrow_mut()
@@ -80,7 +81,7 @@ pub async fn op_teleport_to(
         .push(RpcCall::TeleportPlayer {
             scene: Some(scene),
             to: IVec2::new(position_x, position_y),
-            response: sx.into(),
+            response: sx,
         });
 
     matches!(rx.await, Ok(Ok(_)))
@@ -92,7 +93,7 @@ pub async fn op_change_realm(
     message: Option<String>,
 ) -> bool {
     debug!("op_change_realm");
-    let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+    let (sx, rx) = RpcResultSender::<Result<(), String>>::channel();
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
     state
         .borrow_mut()
@@ -101,7 +102,7 @@ pub async fn op_change_realm(
             scene,
             to: realm,
             message,
-            response: sx.into(),
+            response: sx,
         });
 
     matches!(rx.await, Ok(Ok(_)))
@@ -109,7 +110,7 @@ pub async fn op_change_realm(
 
 pub async fn op_external_url(state: Rc<RefCell<impl State>>, url: String) -> bool {
     debug!("op_external_url");
-    let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+    let (sx, rx) = RpcResultSender::<Result<(), String>>::channel();
     let scene = state.borrow().borrow::<CrdtContext>().scene_id.0;
     state
         .borrow_mut()
@@ -117,7 +118,7 @@ pub async fn op_external_url(state: Rc<RefCell<impl State>>, url: String) -> boo
         .push(RpcCall::ExternalUrl {
             scene,
             url,
-            response: sx.into(),
+            response: sx,
         });
 
     matches!(rx.await, Ok(Ok(_)))
@@ -136,6 +137,7 @@ pub async fn op_scene_emote(
     debug!("op_scene_emote");
     let scene_info = scene_information(op_state.clone()).await?;
 
+    let scene_hash = &scene_info.urn;
     let emote = emote.to_lowercase();
     let emote_hash = &scene_info
         .content
@@ -151,7 +153,8 @@ pub async fn op_scene_emote(
                 .collect::<Vec<_>>()
         ))?
         .hash;
-    let emote_urn = format!("urn:decentraland:off-chain:scene-emote:{emote_hash}-{looping}");
+    let emote_urn =
+        format!("urn:decentraland:off-chain:scene-emote:{scene_hash}-{emote_hash}-{looping}");
 
     send_emote(&mut *op_state.borrow_mut(), emote_urn, looping);
     Ok(())
@@ -171,7 +174,7 @@ pub async fn op_open_nft_dialog(
     urn: String,
 ) -> Result<(), anyhow::Error> {
     debug!("op_open_nft_dialog");
-    let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+    let (sx, rx) = RpcResultSender::<Result<(), String>>::channel();
 
     {
         let mut state = op_state.borrow_mut();
@@ -181,33 +184,50 @@ pub async fn op_open_nft_dialog(
         state.borrow_mut::<RpcCalls>().push(RpcCall::OpenNftDialog {
             scene,
             urn,
-            response: sx.into(),
+            response: sx,
         });
     }
 
     rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))
 }
 
-pub async fn op_set_ui_focus(
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UiFocusResult {
+    element_id: Option<String>,
+}
+
+pub async fn op_ui_focus(
     op_state: Rc<RefCell<impl State>>,
-    element_id: String,
-) -> Result<(), anyhow::Error> {
-    debug!("op_set_ui_focus");
-    let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+    apply: bool,
+    element_id: Option<String>,
+) -> Result<UiFocusResult, anyhow::Error> {
+    debug!("op_ui_focus");
+    let (sx, rx) = RpcResultSender::<Result<Option<String>, String>>::channel();
 
     {
         let mut state = op_state.borrow_mut();
         let context = state.borrow::<CrdtContext>();
         let scene = context.scene_id.0;
 
-        state.borrow_mut::<RpcCalls>().push(RpcCall::SetUiFocus {
+        let element_id = element_id.unwrap_or_default();
+        let action = match (apply, element_id.is_empty()) {
+            (true, true) => RpcUiFocusAction::Defocus,
+            (true, false) => RpcUiFocusAction::Focus { element_id },
+            (false, _) => RpcUiFocusAction::GetFocus,
+        };
+
+        state.borrow_mut::<RpcCalls>().push(RpcCall::UiFocus {
             scene,
-            element_id,
-            response: sx.into(),
+            action,
+            response: sx,
         });
     }
 
-    rx.await.map_err(|e| anyhow!(e))?.map_err(|e| anyhow!(e))
+    rx.await
+        .map_err(|e| anyhow!(e))?
+        .map(|element_id| UiFocusResult { element_id })
+        .map_err(|e| anyhow!(e))
 }
 
 pub async fn op_copy_to_clipboard(
@@ -215,7 +235,7 @@ pub async fn op_copy_to_clipboard(
     text: String,
 ) -> Result<(), anyhow::Error> {
     debug!("op_set_ui_focus");
-    let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+    let (sx, rx) = RpcResultSender::<Result<(), String>>::channel();
 
     {
         let mut state = state.borrow_mut();
@@ -226,7 +246,7 @@ pub async fn op_copy_to_clipboard(
             .push(RpcCall::CopyToClipboard {
                 scene,
                 text,
-                response: sx.into(),
+                response: sx,
             });
     }
 

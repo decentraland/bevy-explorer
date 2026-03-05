@@ -1,26 +1,23 @@
 use std::time::Duration;
 
 use anyhow::anyhow;
+use bevy::log::warn;
 use bevy::{
-    app::Propagate,
     core_pipeline::{
         bloom::Bloom,
+        prepass::{DepthPrepass, NormalPrepass},
         tonemapping::{DebandDither, Tonemapping},
     },
     ecs::bundle::Bundle,
     pbr::ShadowFilteringMethod,
-    render::{
-        camera::{PerspectiveProjection, Projection},
-        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
-    },
+    render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
 };
-use bevy::{ecs::component::Component, log::warn};
 
-use common::structs::AppConfig;
 use futures_util::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
+use serde::Serialize;
 pub use tungstenite::client::IntoClientRequest;
 use wasm_bindgen_futures::spawn_local;
 use ws_stream_wasm::{WsMessage, WsMeta, WsStream};
@@ -142,7 +139,7 @@ pub fn compat<F>(f: F) -> F {
 pub fn project_directories() -> Option<directories::ProjectDirs> {
     None
 }
-pub fn write_config_file(config: &AppConfig) {
+pub fn write_config_file<T: Serialize + Clone + 'static>(config: &T) {
     use futures_lite::io::AsyncWriteExt;
     let config = config.clone();
 
@@ -234,7 +231,7 @@ pub fn default_camera_components() -> impl Bundle {
             ..Bloom::OLD_SCHOOL
         },
         ShadowFilteringMethod::Gaussian,
-        // DepthPrepass,
-        // NormalPrepass,
+        DepthPrepass,
+        NormalPrepass,
     )
 }

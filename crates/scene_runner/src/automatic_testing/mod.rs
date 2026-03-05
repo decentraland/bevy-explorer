@@ -70,7 +70,9 @@ fn automatic_testing(
 ) {
     // load screenshots before entering any scenes (to ensure we don't have to async wait later)
     if screenshots.is_weak() {
-        *screenshots = ipfas.asset_server().load_folder("images/screenshots");
+        *screenshots = ipfas
+            .asset_server()
+            .load_folder("embedded://images/screenshots");
     }
 
     match ipfas.asset_server().load_state(screenshots.id()) {

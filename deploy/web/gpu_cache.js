@@ -1,3 +1,5 @@
+var count = 0;
+
 function simpleHash(s) {
   var h = 0x811c9dc5;
 
@@ -44,6 +46,30 @@ function openDB() {
     request.onerror = (event) => reject(event.target.error);
   });
   return dbPromise;
+}
+
+async function clearDatabase() {
+  const db = await openDB();
+
+  const tableNames = ["shader", "bindgroup", "layout", "pipeline", "requiredItems"];
+
+  const tx = db.transaction(tableNames, "readwrite");
+
+  const clearPromises = tableNames.map(name => {
+    const store = tx.objectStore(name);
+    const request = store.clear();
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  });
+
+  await Promise.all(clearPromises);
+  await new Promise((resolve, reject) => {
+    tx.oncomplete = resolve;
+    tx.onabort = reject;
+    tx.onerror = reject;
+  });
 }
 
 async function fetchRequiredItems() {
@@ -108,32 +134,13 @@ async function storeInstance(type, hash, value) {
   });
 }
 
-async function clearDatabase() {
-  const storeNames = ["shader", "bindgroup", "layout", "pipeline"];
-
-  const tx = await db.transaction("rqeuiredItems", "readwrite");
-  await tx.objectStore("requiredItems").clear();
-
-  const clearPromises = storeNames.map((name) => {
-    const tx = db.transaction(name, "readwrite");
-    return new Promise((resolve, reject) => {
-      const request = tx.objectStore(name).clear();
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-  });
-
-  // Wait for all clear operations to complete
-  await Promise.all(clearPromises);
-  await tx.done;
+export async function initGpuCache(key, fakeAsync) {
+  console.log(`[GPU Cache] key: ${key}`);
+  patchWebgpuAdapter(fakeAsync);
+  await createGpuCache(key);
 }
 
-export async function initGpuCache() {
-  patchWebgpuAdater();
-  await createGpuCache();
-}
-
-function patchWebgpuAdater() {
+function patchWebgpuAdapter(fakeAsync) {
   const originalRequestDevice = GPUAdapter.prototype.requestDevice;
   GPUAdapter.prototype.requestDevice = async function (descriptor) {
     const jsonDescriptor = JSON.stringify(descriptor || {});
@@ -201,16 +208,83 @@ function patchWebgpuAdater() {
       "layout",
       device.createPipelineLayout
     );
-    device.createRenderPipeline = wrapDeviceFunction(
-      "pipeline",
-      device.createRenderPipeline
-    );
+    if (fakeAsync) {
+      device.createRenderPipeline = wrapDeviceFunction(
+        "pipeline",
+        device.createRenderPipeline
+      );
+    } else {
+      let inline_function = wrapDeviceFunction("pipeline", device.createRenderPipeline);
+
+      window.pendingAsyncPipelineCount = 0;
+      window.lastPipelineWasValidFlag = false;
+      window.wgpuResolveIdle = [];
+      const itemType = "pipeline";
+      const placeholderPipeline = getPlaceholder(device);
+
+      device.createRenderPipeline = (...args) => {
+        const jsonArgs = JSON.stringify(args);
+        const hash = simpleHash(jsonArgs);
+        const cachedItem = gpuSessionState[itemType].get(hash);
+        if (cachedItem !== undefined) {
+          window.nextPipelineCanFail = false;
+          window.lastPipelineWasValidFlag = true;
+          return cachedItem;
+        }
+
+        console.log(`[GPU Cache] (async) no cached ${itemType} for ${hash}`);
+
+        if (!window.nextPipelineCanFail) {
+          return inline_function.apply(device, args);
+        }
+        document.getElementById("shader-compiling").style.display = "flex";
+        window.nextPipelineCanFail = false;
+        window.lastPipelineWasValidFlag = false;
+        window.pendingAsyncPipelineCount++;
+
+        const promise = device.createRenderPipelineAsync(args[0]).then(async (item) => {
+          item.__gpu_item_type = itemType;
+          item.__gpu_hash = hash;
+          gpuSessionState[itemType].set(hash, item);
+          window.pendingAsyncPipelineCount--;
+
+          if (!requiredItemTypes.has(itemType)) {
+            requiredItemTypes.set(itemType, new Set());
+          }
+          const requiredItems = requiredItemTypes.get(itemType);
+          if (!requiredItems.has(hash)) {
+            requiredItems.add(hash);
+            await storeRequiredItems();
+            await storeInstance(itemType, hash, args);
+          }
+
+          if (window.pendingAsyncPipelineCount === 0) {
+            while (window.wgpuResolveIdle.length > 0) {
+              window.wgpuResolveIdle.pop()();
+            }
+            document.getElementById("shader-compiling").style.display = "none";
+          }
+
+          return item;
+        })
+
+        return placeholderPipeline;
+      }
+    }
 
     return device;
   };
 }
 
-async function createGpuCache() {
+async function createGpuCache(key) {
+  const cachedKey = localStorage.getItem("gpuCacheKey");
+  if (cachedKey != key) {
+    console.log("shaders updated, clearing db");
+    await clearDatabase();
+    localStorage.setItem("gpuCacheKey", key);
+    return;
+  }
+
   const cachedDeviceDescriptor = localStorage.getItem("deviceDescriptor");
   if (cachedDeviceDescriptor === null) {
     return;
@@ -300,3 +374,39 @@ function rehydrateItem(currentObject) {
     }
   }
 }
+
+function getPlaceholder(device) {
+  // create a trivial shader and pipeline
+  const module = device.createShaderModule({
+    code: `
+        @vertex fn vs_main() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.0, 1.0); }
+        @fragment fn fs_main() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); }
+        `
+  });
+
+  return device.createRenderPipeline({
+    layout: device.createPipelineLayout({
+      bindGroupLayouts: []
+    }),
+    vertex: { module, entryPoint: 'vs_main' },
+    fragment: { module, entryPoint: 'fs_main', targets: [{ format: 'bgra8unorm' }] }, // Adjust format if needed
+    primitive: { topology: 'triangle-list' }
+  });
+}
+
+window.allowADummyPipeline = function() {
+    window.nextPipelineCanFail = true;
+}
+
+window.lastPipelineWasValid = function() {
+    return window.lastPipelineWasValidFlag;
+}
+
+window.waitForPipelines = function() {
+    if (window.pendingAsyncPipelineCount === 0) {
+        return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+        window.wgpuResolveIdle.push(resolve);
+    });
+};

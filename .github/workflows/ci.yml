@@ -1,4 +1,12 @@
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+concurrency:
+  group: ${{github.workflow}}-${{github.ref}}
+  cancel-in-progress: ${{github.event_name == 'pull_request'}}
 
 name: Continuous integration
 
@@ -105,21 +113,26 @@ jobs:
           mv ffmpeg-*/* ffmpeg/
           Add-Content $env:GITHUB_ENV "FFMPEG_DIR=${pwd}\ffmpeg`n"
           Add-Content $env:GITHUB_PATH "${pwd}\ffmpeg\bin`n"          
+      - name: Build Release
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --package dcl_deno_ipc --release
       - uses: actions-rs/cargo@v1
         if: runner.os == 'windows'
         with:
           command: test
-          args: --all --release -j8
+          args: --all --release -j8 -- --test-threads=1
       - uses: actions-rs/cargo@v1
         if: runner.os == 'linux'
         with:
           command: test
-          args: --all --release
+          args: --all --release -- --test-threads=1
       - uses: actions-rs/cargo@v1
         if: runner.os == 'macos'
         with:
           command: test
-          args: --all --release
+          args: --all --release -- --test-threads=1
       
   fmt:
     name: Rustfmt
@@ -171,14 +184,51 @@ jobs:
           command: clippy
           args: -- -D warnings
 
+  toml:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Install taplo
+        run: curl -fsSL https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86_64.gz | gzip -d - | install -m 755 /dev/stdin /usr/local/bin/taplo
+      - name: Run Taplo
+        id: taplo
+        run: taplo fmt --check --diff
+      - name: Taplo info
+        if: failure()
+        run: |
+          echo 'To fix toml fmt, please run `taplo fmt`.'
+          echo 'To check for a diff, run `taplo fmt --check --diff`.'
+          echo 'You can find taplo here: https://taplo.tamasfe.dev/'
+          echo 'Or if you use VSCode, use the `Even Better Toml` extension.'
+          echo 'You can find the extension here: https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml'
+
   build-deploy-web:
     name: Build and Deploy Web
+    # needs: [check, test, fmt, clippy]
     runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
     steps:
       - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Set package.json version
+        uses: decentraland/oddish-action@master
+        with:
+          cwd: './deploy/web'
+          deterministic-snapshot: true
+          only-update-versions: true
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2025-06-03
+          toolchain: nightly-2025-12-31
           target: wasm32-unknown-unknown
           components: rust-src
           override: true
@@ -194,15 +244,22 @@ jobs:
         run: sudo apt install -y --no-install-recommends clang curl
       - name: Build WASM package
         run: |
-          cp -r ./assets ./deploy/web/assets/
-          wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="wasm livekit"
-      - name: Deploy
+          wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="livekit"
+          rm -f ./deploy/web/pkg/.gitignore
+          WASM_SIZE=$(wc -c < ./deploy/web/pkg/webgpu_build_bg.wasm)
+          echo "{\"wasmSize\":${WASM_SIZE}}" > ./deploy/web/pkg/manifest.json
+      - name: Install
+        run: npm i
+        working-directory: deploy/web
+      - name: Publish
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'release'
+        uses: decentraland/oddish-action@master
+        with:
+          cwd: './deploy/web'
+          deterministic-snapshot: true
+          registry-url: 'https://registry.npmjs.org'
+          access: public
+          gitlab-token: ${{ secrets.GITLAB_CDN_DEPLOYER_TOKEN }}
+          gitlab-pipeline-url: ${{ secrets.GITLAB_CDN_DEPLOYER_URL }}
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.S3_WEB_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_WEB_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          COMMIT_HASH: ${{ github.sha }}
-        run: |
-          aws s3 cp ./deploy/web/ s3://bevy-web/$COMMIT_HASH/ --recursive \
-            --endpoint-url ${{ secrets.S3_WEB_ENDPOINT }} \
-            --checksum-algorithm=CRC32
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

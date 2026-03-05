@@ -18,7 +18,7 @@ impl Plugin for VisibilityComponentPlugin {
 }
 
 #[derive(Component)]
-pub struct VisibilityComponent(PbVisibilityComponent);
+pub struct VisibilityComponent(pub PbVisibilityComponent);
 
 impl From<PbVisibilityComponent> for VisibilityComponent {
     fn from(value: PbVisibilityComponent) -> Self {

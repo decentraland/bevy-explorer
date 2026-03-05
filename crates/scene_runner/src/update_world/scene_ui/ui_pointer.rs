@@ -11,10 +11,13 @@ use crate::{
 
 use super::UiLink;
 
+#[derive(Component)]
+pub struct UiPointerChanged;
+
 pub fn set_ui_pointer_events(
     mut commands: Commands,
     mut pes: Query<
-        &mut UiLink,
+        (Entity, &mut UiLink),
         (
             With<PointerEvents>,
             Or<(Changed<PointerEvents>, Changed<UiLink>)>,
@@ -31,13 +34,20 @@ pub fn set_ui_pointer_events(
         if let Ok(mut commands) = commands.get_entity(link.ui_entity) {
             commands.remove::<(On<HoverEnter>, On<HoverExit>)>();
         }
+        if let Ok(mut commands) = commands.get_entity(ent) {
+            commands.insert(UiPointerChanged);
+        }
 
         link.bypass_change_detection()
             .interactors
             .remove("pointer_events");
     }
 
-    for mut link in pes.iter_mut() {
+    for (ent, mut link) in pes.iter_mut() {
+        if let Ok(mut commands) = commands.get_entity(ent) {
+            commands.insert(UiPointerChanged);
+        }
+
         link.bypass_change_detection()
             .interactors
             .insert("pointer_events");
@@ -45,7 +55,7 @@ pub fn set_ui_pointer_events(
 }
 
 pub fn manage_scene_ui_interact(
-    q: Query<(Entity, &UiLink), Changed<UiLink>>,
+    q: Query<(Entity, &UiLink), Or<(Changed<UiLink>, Added<UiPointerChanged>)>>,
     mut commands: Commands,
     mut ui_target: ResMut<UiPointerTarget>,
 ) {
@@ -80,5 +90,7 @@ pub fn manage_scene_ui_interact(
                 }),
             ));
         }
+
+        commands.entity(entity).remove::<UiPointerChanged>();
     }
 }

@@ -14,7 +14,7 @@ self.onmessage = async (event) => {
     try {
       // init wasm
       console.log("[Asset Loader] init wasm");
-      await init({ module: compiledModule, memory: sharedMemory });
+      await init({ module_or_path: compiledModule, memory: sharedMemory });
       console.log("[Asset Loader] init asset load thread");
       await wasm_bindgen_exports.init_asset_load_thread();
       console.log("[Asset Loader] running");

@@ -16,7 +16,6 @@ platform = { workspace = true }
 bevy = { workspace = true }
 anyhow = { workspace = true }
 bevy_console = { workspace = true }
-bimap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
@@ -25,14 +24,12 @@ urn = { workspace = true }
 async-std = { workspace = true }
 reqwest = { workspace = true }
 urlencoding = { workspace = true }
-async-compat = { workspace = true }
 async-fs = { workspace = true }
 multihash-codetable = { workspace = true }
 base64 = { workspace = true }
 web-time = { workspace = true }
 
 url = "2.4.0"
-downcast-rs = "1.2"
 futures-io = "0.3"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

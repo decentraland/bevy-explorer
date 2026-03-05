@@ -1,5 +1,5 @@
 use bevy::{
-    asset::AssetLoader,
+    asset::{AssetLoader, RenderAssetUsages},
     pbr::{ExtendedMaterial, MaterialExtension},
     prelude::*,
     render::render_resource::AsBindGroup,
@@ -16,30 +16,32 @@ pub struct FloorMaterialExt {
 }
 
 impl MaterialExtension for FloorMaterialExt {
+    type Base = Imposter;
+
     fn vertex_shader() -> bevy::render::render_resource::ShaderRef {
-        "shaders/floor_vertex.wgsl".into()
+        "embedded://shaders/floor_vertex.wgsl".into()
     }
 
     fn prepass_vertex_shader() -> bevy::render::render_resource::ShaderRef {
-        "shaders/floor_vertex.wgsl".into()
+        "embedded://shaders/floor_vertex.wgsl".into()
     }
 
     fn fragment_shader() -> bevy::render::render_resource::ShaderRef {
-        "shaders/floor_fragment.wgsl".into()
+        "embedded://shaders/floor_fragment.wgsl".into()
     }
 
     fn prepass_fragment_shader() -> bevy::render::render_resource::ShaderRef {
-        "shaders/floor_fragment.wgsl".into()
+        "embedded://shaders/floor_fragment.wgsl".into()
     }
 }
 
 impl ImposterBakeMaterialExtension for FloorMaterialExt {
     fn imposter_fragment_shader() -> bevy::render::render_resource::ShaderRef {
-        "shaders/floor_bake.wgsl".into()
+        "embedded://shaders/floor_bake.wgsl".into()
     }
 }
 
-pub type FloorImposter = ExtendedMaterial<Imposter, FloorMaterialExt>;
+pub type FloorImposter = ExtendedMaterial<FloorMaterialExt>;
 
 #[derive(Default)]
 pub struct FloorImposterLoader;
@@ -61,6 +63,8 @@ impl AssetLoader for FloorImposterLoader {
                 &ImposterLoaderSettings {
                     multisample: true,
                     alpha_blend: 0.5,
+                    transfer_priority: bevy::asset::RenderAssetTransferPriority::Immediate,
+                    asset_usages: RenderAssetUsages::RENDER_WORLD,
                     ..Default::default()
                 },
                 load_context,

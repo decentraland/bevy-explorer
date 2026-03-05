@@ -16,7 +16,7 @@ pub async fn op_motd(state: &WorkerContext) -> Result<String, WasmError> {
 
 #[wasm_bindgen]
 pub fn op_get_current_login(state: &WorkerContext) -> Option<String> {
-    dcl::js::system_api::op_get_current_login(&mut *state.state.borrow_mut())
+    dcl::js::system_api::op_get_current_login(&*state.state.borrow())
 }
 
 #[wasm_bindgen]
@@ -171,11 +171,6 @@ pub fn op_set_home_scene(state: &WorkerContext, realm: String, parcel: JsValue) 
 }
 
 #[wasm_bindgen]
-pub async fn op_get_realm_provider(state: &WorkerContext) -> Result<JsValue, WasmError> {
-    serde_result!(dcl::js::system_api::op_get_realm_provider(state.rc()).await)
-}
-
-#[wasm_bindgen]
 pub async fn op_get_system_action_stream(state: &WorkerContext) -> u32 {
     dcl::js::system_api::op_get_system_action_stream(state.rc()).await
 }
@@ -293,4 +288,65 @@ pub fn op_get_permission_types(_: &WorkerContext) -> js_sys::Array {
         .into_iter()
         .map(|v| serde_wasm_bindgen::to_value(&v).unwrap())
         .collect()
+}
+
+#[wasm_bindgen]
+pub fn op_set_interactable_area(
+    state: &WorkerContext,
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+) {
+    dcl::js::system_api::op_set_interactable_area(state.rc(), left, top, right, bottom);
+}
+
+#[wasm_bindgen]
+pub async fn op_get_mic_state(state: &WorkerContext) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_get_mic_state(state.rc()).await)
+}
+
+#[wasm_bindgen]
+pub async fn op_set_mic_enabled(state: &WorkerContext, enabled: bool) {
+    dcl::js::system_api::op_set_mic_enabled(state.rc(), enabled).await;
+}
+
+#[wasm_bindgen]
+pub async fn op_get_voice_stream(state: &WorkerContext) -> u32 {
+    dcl::js::system_api::op_get_voice_stream(state.rc()).await
+}
+
+#[wasm_bindgen]
+pub async fn op_read_voice_stream(state: &WorkerContext, rid: u32) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_read_voice_stream(state.rc(), rid).await)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_hover_stream(state: &WorkerContext) -> u32 {
+    dcl::js::system_api::op_get_hover_stream(state.rc()).await
+}
+
+#[wasm_bindgen]
+pub async fn op_read_hover_stream(state: &WorkerContext, rid: u32) -> Result<JsValue, WasmError> {
+    let hover_event = dcl::js::system_api::op_read_hover_stream(state.rc(), rid).await;
+    // use a specific serializer to convert to object here, as wasm_bindgen's conversion otherwise produces a Map
+    hover_event
+        .map(|v| {
+            v.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+                .unwrap()
+        })
+        .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_scene_loading_ui_stream(state: &WorkerContext) -> u32 {
+    dcl::js::system_api::op_get_scene_loading_ui_stream(state.rc()).await
+}
+
+#[wasm_bindgen]
+pub async fn op_read_scene_loading_ui_stream(
+    state: &WorkerContext,
+    rid: u32,
+) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_read_scene_loading_ui_stream(state.rc(), rid).await)
 }

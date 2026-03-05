@@ -17,6 +17,7 @@ enum InputAction {
   IA_ACTION_4 = 11;
   IA_ACTION_5 = 12;
   IA_ACTION_6 = 13;
+  IA_MODIFIER = 14;
 }
 
 // PointerEventType is a kind of interaction that can be detected.

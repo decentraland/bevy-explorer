@@ -1,11 +1,11 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, time::Duration};
 
 mod fetch_response_body_resource;
 
 use bevy::{asset::AsyncReadExt, prelude::debug};
-use common::{rpc::RpcCall, structs::SceneMeta};
+use common::rpc::{RpcCall, RpcResultSender};
 use deno_core::{
-    anyhow::{self, anyhow},
+    anyhow,
     error::{type_error, AnyError},
     futures::{FutureExt, TryStreamExt},
     op2, AsyncRefCell, BufView, ByteString, CancelHandle, JsBuffer, OpDecl, OpState, Resource,
@@ -16,18 +16,13 @@ use deno_net::NetPermissions;
 use deno_web::TimersPermission;
 use http::{
     header::{ACCEPT_ENCODING, CONTENT_LENGTH, HOST, RANGE},
-    HeaderName, HeaderValue, Method, Uri,
+    HeaderName, HeaderValue, Method,
 };
-use ipfs::IpfsResource;
 use serde::{Deserialize, Serialize};
 
 use fetch_response_body_resource::FetchResponseBodyResource;
-use tokio::sync::oneshot::channel;
-use wallet::{sign_request, Wallet};
 
 use dcl::{interface::crdt_context::CrdtContext, RpcCalls};
-
-use dcl::js::runtime::realm_information;
 
 // we have to provide fetch perm structs even though we don't use them
 pub struct FP;
@@ -116,7 +111,21 @@ where
         let r = state.resource_table.get::<ClientResource>(rid)?;
         r.0.clone()
     } else {
-        state.borrow::<IpfsResource>().client()
+        match state.try_borrow::<reqwest::Client>() {
+            Some(client) => client,
+            None => {
+                state.put(
+                    reqwest::Client::builder()
+                        .connect_timeout(Duration::from_secs(5))
+                        .use_native_tls()
+                        .user_agent("DCLExplorer/0.1")
+                        .build()
+                        .unwrap(),
+                );
+                state.borrow::<reqwest::Client>()
+            }
+        }
+        .clone()
     };
 
     if method.len() > 50 {
@@ -223,7 +232,7 @@ pub async fn op_fetch_send(
         .expect("multiple op_fetch_send ongoing");
 
     let scene = state.borrow_mut().borrow::<CrdtContext>().scene_id.0;
-    let (sx, rx) = channel();
+    let (sx, rx) = RpcResultSender::channel();
     state
         .borrow_mut()
         .borrow_mut::<RpcCalls>()
@@ -231,14 +240,12 @@ pub async fn op_fetch_send(
             scene,
             ty: common::structs::PermissionType::Fetch,
             message: Some(url.clone()),
-            response: sx.into(),
+            response: sx,
         });
     let permit = rx.await?;
     if !permit {
         anyhow::bail!("User denied fetch request");
     }
-
-    let ipfs = state.borrow_mut().borrow_mut::<IpfsResource>().clone();
 
     let async_req = if let Some(body_id) = request_body_rid {
         let body = state.borrow_mut().resource_table.take_any(body_id)?;
@@ -248,13 +255,13 @@ pub async fn op_fetch_send(
             .read_to_end(&mut buf)
             .await?;
         let request = request.body(buf).build()?;
-        ipfs.async_request(request, client).await
+        client.execute(request).await
     } else if let Some(body) = body_bytes {
         let request = request.body(body).build()?;
-        ipfs.async_request(request, client).await
+        client.execute(request).await
     } else {
         let request = request.build()?;
-        ipfs.async_request(request, client).await
+        client.execute(request).await
     };
 
     let res = match async_req {
@@ -350,27 +357,6 @@ pub fn op_fetch_custom_client(
     Ok(state.resource_table.add(ClientResource(builder.build()?)))
 }
 
-#[derive(Serialize, Default, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct SignedFetchMetaRealm {
-    hostname: String,
-    protocol: String,
-    server_name: String,
-}
-
-#[derive(Serialize, Default, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct SignedFetchMeta {
-    origin: Option<String>,
-    scene_id: Option<String>,
-    parcel: Option<String>,
-    tld: Option<String>,
-    network: Option<String>,
-    is_guest: Option<bool>,
-    realm: SignedFetchMetaRealm,
-    signer: String,
-}
-
 #[op2(async)]
 #[serde]
 pub async fn op_signed_fetch_headers(
@@ -378,51 +364,7 @@ pub async fn op_signed_fetch_headers(
     #[string] uri: String,
     #[string] method: Option<String>,
 ) -> Result<Vec<(String, String)>, AnyError> {
-    debug!("op_signed_fetch_headers");
-
-    let is_preview = state.borrow().borrow::<CrdtContext>().preview;
-    let scheme = Uri::try_from(&uri)?;
-    let scheme = scheme.scheme_str();
-    if !is_preview && !([Some("https"), Some("wss")].contains(&scheme)) {
-        anyhow::bail!("URL scheme must be `https` (request `{}`)", uri);
-    }
-
-    let realm_info = realm_information(state.clone()).await?;
-    let wallet = state.borrow().borrow::<Wallet>().clone();
-    let urn = state.borrow().borrow::<CrdtContext>().hash.clone();
-    let ipfs = state.borrow().borrow::<IpfsResource>().clone();
-    let scene_meta = ipfs
-        .entity_definition(&urn)
-        .await
-        .and_then(|(entity, _)| {
-            serde_json::from_str::<SceneMeta>(&entity.metadata.unwrap_or_default()).ok()
-        })
-        .ok_or(anyhow!("failed to parse scene metadata"))?;
-
-    let meta = SignedFetchMeta {
-        origin: Some(realm_info.base_url.clone()),
-        scene_id: Some(urn),
-        parcel: Some(scene_meta.scene.base.clone()),
-        tld: Some("org".to_owned()),
-        network: Some("mainnet".to_owned()),
-        is_guest: Some(wallet.is_guest()),
-        realm: SignedFetchMetaRealm {
-            hostname: realm_info.base_url,
-            protocol: "v3".to_owned(),
-            server_name: realm_info.realm_name,
-        },
-        signer: "decentraland-kernel-scene".to_owned(),
-    };
-
-    debug!("signed fetch meta {:?}", meta);
-
-    sign_request(
-        method.as_deref().unwrap_or("get"),
-        &Uri::try_from(uri)?,
-        &wallet,
-        meta,
-    )
-    .await
+    dcl::js::fetch::op_signed_fetch_headers(state, uri, method).await
 }
 
 use core::future::Future;

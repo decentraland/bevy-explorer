@@ -10,9 +10,12 @@ pub enum SystemAction {
     CameraLock,
     Emote,
     HideUi,
+    ShowDebugUi,
+    HideNames,
     RollLeft,
     RollRight,
     Microphone,
+    Map,
     Chat,
     CameraZoomIn,
     CameraZoomOut,
@@ -64,6 +67,7 @@ pub enum CommonInputAction {
     IaAction4 = 11,
     IaAction5 = 12,
     IaAction6 = 13,
+    IaModifier = 14,
 }
 
 impl From<CommonInputAction> for Action {
@@ -337,6 +341,10 @@ impl Default for InputMap {
                 ),
                 (
                     Action::Scene(CommonInputAction::IaWalk),
+                    vec![InputIdentifier::Key(KeyCode::ControlLeft)],
+                ),
+                (
+                    Action::Scene(CommonInputAction::IaModifier),
                     vec![InputIdentifier::Key(KeyCode::ShiftLeft)],
                 ),
                 (
@@ -377,7 +385,7 @@ impl Default for InputMap {
                 (
                     Action::System(SystemAction::Emote),
                     vec![
-                        InputIdentifier::Key(KeyCode::AltLeft),
+                        InputIdentifier::Key(KeyCode::KeyB),
                         InputIdentifier::Gamepad(GamepadButton::West),
                     ],
                 ),
@@ -390,11 +398,22 @@ impl Default for InputMap {
                 ),
                 (
                     Action::System(SystemAction::HideUi),
+                    vec![InputIdentifier::Key(KeyCode::KeyU)],
+                ),
+                (
+                    Action::System(SystemAction::ShowDebugUi),
                     vec![InputIdentifier::Key(KeyCode::PageUp)],
                 ),
                 (
+                    Action::System(SystemAction::HideNames),
+                    vec![InputIdentifier::Key(KeyCode::KeyN)],
+                ),
+                (
                     Action::System(SystemAction::RollLeft),
-                    vec![InputIdentifier::Key(KeyCode::KeyT)],
+                    vec![
+                        InputIdentifier::Key(KeyCode::KeyT),
+                        InputIdentifier::Mouse(MouseButton::Middle),
+                    ],
                 ),
                 (
                     Action::System(SystemAction::RollRight),
@@ -402,7 +421,14 @@ impl Default for InputMap {
                 ),
                 (
                     Action::System(SystemAction::Microphone),
-                    vec![InputIdentifier::Key(KeyCode::ControlLeft)],
+                    vec![InputIdentifier::Key(KeyCode::KeyV)],
+                ),
+                (
+                    Action::System(SystemAction::Map),
+                    vec![
+                        InputIdentifier::Key(KeyCode::KeyM),
+                        InputIdentifier::Key(KeyCode::Tab),
+                    ],
                 ),
                 (
                     Action::System(SystemAction::Chat),
@@ -472,7 +498,7 @@ impl Default for InputMap {
                 (
                     Action::System(SystemAction::ShowProfile),
                     vec![
-                        InputIdentifier::Mouse(MouseButton::Middle),
+                        // InputIdentifier::Mouse(MouseButton::Middle),
                         InputIdentifier::Gamepad(GamepadButton::North),
                     ],
                 ),

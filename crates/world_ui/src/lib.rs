@@ -1,7 +1,8 @@
 use bevy::{
+    asset::RenderAssetTransferPriority,
     diagnostic::FrameCount,
     pbr::{ExtendedMaterial, MaterialExtension, NotShadowCaster},
-    platform::collections::HashMap,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
         camera::RenderTarget,
@@ -18,17 +19,26 @@ use bevy::{
 use boimp::bake::{
     ImposterBakeMaterialExtension, ImposterBakeMaterialPlugin, STANDARD_BAKE_HANDLE,
 };
-use common::{sets::SceneSets, structs::AppConfig, util::TryPushChildrenEx};
+use common::{
+    sets::SceneSets,
+    structs::{AppConfig, PreviewMode},
+    util::TryPushChildrenEx,
+};
 use scene_material::{BoundRegion, SceneBound, SceneMaterial};
 
 pub struct WorldUiPlugin;
 
 impl Plugin for WorldUiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((
-            MaterialPlugin::<TextShapeMaterial>::default(),
-            ImposterBakeMaterialPlugin::<TextShapeMaterial>::default(),
-        ));
+        app.add_plugins(MaterialPlugin::<TextShapeMaterial>::default());
+        let preview_mode = app
+            .world()
+            .get_resource::<PreviewMode>()
+            .is_some_and(|p| p.is_preview);
+        if !preview_mode {
+            app.add_plugins(ImposterBakeMaterialPlugin::<TextShapeMaterial>::default());
+        }
+
         app.add_systems(Update, add_worldui_materials.in_set(SceneSets::PostLoop));
         app.add_systems(
             PostUpdate,
@@ -73,7 +83,9 @@ pub fn spawn_world_ui_view(
             TextureFormat::Bgra8UnormSrgb,
             RenderAssetUsages::all(),
         );
+        image.data = None;
         image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
+        image.transfer_priority = RenderAssetTransferPriority::Immediate;
         images.add(image)
     });
 
@@ -130,7 +142,7 @@ pub fn add_worldui_materials(
         let material = materials.add(TextShapeMaterial {
             base: SceneMaterial {
                 base: StandardMaterial {
-                    base_color: Color::srgb(2.0, 2.0, 2.0),
+                    base_color: Color::WHITE,
                     base_color_texture: Some(target.0.clone()),
                     unlit: true,
                     alpha_mode: wui.blend_mode,
@@ -173,23 +185,36 @@ pub fn add_worldui_materials(
 
 #[allow(clippy::type_complexity)]
 pub fn update_worldui_materials(
-    q: Query<
-        (Entity, &WorldUiMaterialRef, &ComputedNode, &GlobalTransform),
+    changed: Query<
+        &WorldUiMaterialRef,
         Or<(
+            Changed<WorldUiMaterialRef>,
             Changed<ComputedNode>,
             Changed<GlobalTransform>,
-            Added<WorldUiMaterialRef>,
         )>,
     >,
+    all: Query<(Entity, &WorldUiMaterialRef, &ComputedNode, &GlobalTransform)>,
     mut mats: ResMut<Assets<TextShapeMaterial>>,
     mut images: ResMut<Assets<Image>>,
     frame: Res<FrameCount>,
     render_device: Res<RenderDevice>,
+    mut prev_changed_targets: Local<HashSet<AssetId<Image>>>,
 ) {
+    let mut changed_targets = std::mem::take(&mut *prev_changed_targets);
+    changed_targets.extend(changed.iter().map(|mat| mat.1));
+
+    if changed_targets.is_empty() {
+        return;
+    }
+
     let mut target_sizes: HashMap<AssetId<Image>, UVec2> = HashMap::new();
 
-    for (ent, ref_mat, node, gt) in q.iter() {
-        let Some(mat) = mats.get_mut(ref_mat.0) else {
+    for (ent, ref_mat, node, gt) in all.iter() {
+        if !changed_targets.contains(&ref_mat.1) {
+            continue;
+        }
+
+        let Some(mat) = mats.get(ref_mat.0) else {
             warn!("failed to update mat");
             continue;
         };
@@ -198,12 +223,15 @@ pub fn update_worldui_materials(
 
         let topleft = translation.xy() - node.size() / 2.0;
         let bottomright = translation.xy() + node.size() / 2.0;
-        mat.extension.data.uvs = Vec4::new(topleft.x, topleft.y, bottomright.x, bottomright.y);
+        let required_uvs = Vec4::new(topleft.x, topleft.y, bottomright.x, bottomright.y);
+        if mat.extension.data.uvs != required_uvs {
+            mats.get_mut(ref_mat.0).unwrap().extension.data.uvs = required_uvs;
+        }
         debug!(
             "[{}] img {:?}, {ent:?} uvs set to {} (size: {}, translation: {})",
             frame.0,
             ref_mat.1,
-            mat.extension.data.uvs,
+            required_uvs,
             node.size(),
             translation.xy()
         );
@@ -212,30 +240,38 @@ pub fn update_worldui_materials(
         *max_extent = max_extent.max(bottomright.ceil().as_uvec2());
     }
 
-    for (id, req_size) in target_sizes.into_iter() {
-        let Some(image) = images.get(id) else {
-            warn!("no image");
-            continue;
-        };
+    *prev_changed_targets = target_sizes
+        .into_iter()
+        .filter_map(|(id, req_size)| {
+            let Some(image) = images.get(id) else {
+                warn!("no image");
+                return None;
+            };
 
-        if image.size().cmplt(req_size).any() {
-            let max_size = UVec2::splat(render_device.limits().max_texture_dimension_2d);
-            if req_size.cmpge(max_size).any() {
-                warn!("too many textshapes, truncating image");
-                // TODO: split out to separate textures
+            if image.size().cmplt(req_size).any() {
+                let max_size = UVec2::splat(render_device.limits().max_texture_dimension_2d);
+                if req_size.cmpge(max_size).any() {
+                    warn!(
+                        "too many textshapes, truncating image {} to {}",
+                        req_size, max_size
+                    );
+                    // TODO: split out to separate textures
+                }
+                let req_size = req_size.min(max_size).max(image.size());
+                debug!("resized to {}", req_size);
+                images.get_mut(id).unwrap().texture_descriptor.size = Extent3d {
+                    width: req_size.x,
+                    height: req_size.y,
+                    depth_or_array_layers: 1,
+                };
             }
-            let req_size = req_size.min(max_size).max(image.size());
-            debug!("resized to {}", req_size);
-            images.get_mut(id).unwrap().resize(Extent3d {
-                width: req_size.x,
-                height: req_size.y,
-                depth_or_array_layers: 1,
-            });
-        }
-    }
+
+            Some(id)
+        })
+        .collect();
 }
 
-pub type TextShapeMaterial = ExtendedMaterial<SceneMaterial, TextQuad>;
+pub type TextShapeMaterial = ExtendedMaterial<TextQuad>;
 
 #[derive(Asset, TypePath, Clone, AsBindGroup)]
 pub struct TextQuad {
@@ -263,12 +299,14 @@ mod decl {
 pub use decl::*;
 
 impl MaterialExtension for TextQuad {
+    type Base = SceneMaterial;
+
     fn vertex_shader() -> bevy::render::render_resource::ShaderRef {
-        ShaderRef::Path("shaders/text_quad_vertex.wgsl".into())
+        ShaderRef::Path("embedded://shaders/text_quad_vertex.wgsl".into())
     }
 
     fn prepass_vertex_shader() -> ShaderRef {
-        ShaderRef::Path("shaders/text_quad_vertex.wgsl".into())
+        ShaderRef::Path("embedded://shaders/text_quad_vertex.wgsl".into())
     }
 }
 

@@ -38,6 +38,7 @@ pub struct RendererSceneContext {
     pub hash: String,
     pub storage_root: String,
     pub is_portable: bool,
+    pub start_tick: u32,
     pub title: String,
     pub base: IVec2,
     pub parcels: HashSet<IVec2>,
@@ -90,6 +91,9 @@ pub struct RendererSceneContext {
 
     // if an inspector is attached
     pub inspected: bool,
+
+    // does the scene use an authoritative multiplayer server
+    pub authoritative_multiplayer: bool,
 }
 
 pub const SCENE_LOG_BUFFER_SIZE: usize = 100;
@@ -101,6 +105,7 @@ impl RendererSceneContext {
         hash: String,
         storage_root: String,
         is_portable: bool,
+        start_tick: u32,
         title: String,
         base: IVec2,
         parcels: HashSet<IVec2>,
@@ -111,12 +116,14 @@ impl RendererSceneContext {
         log_to_stdout: bool,
         sdk_version: &'static str,
         inspected: bool,
+        authoritative_multiplayer: bool,
     ) -> Self {
         let mut new_context = Self {
             scene_id,
             hash,
             storage_root,
             is_portable,
+            start_tick,
             title,
             base,
             parcels,
@@ -142,6 +149,7 @@ impl RendererSceneContext {
             last_action_event: None,
             sdk_version,
             inspected,
+            authoritative_multiplayer,
         };
 
         new_context.live_entities[SceneEntityId::ROOT.id as usize] =
@@ -258,6 +266,23 @@ impl RendererSceneContext {
             .force_update(component_id, crdt_type, id, Some(&mut DclReader::new(&buf)));
     }
 
+    pub fn update_crdt_if_different(
+        &mut self,
+        component_id: SceneComponentId,
+        crdt_type: CrdtType,
+        id: SceneEntityId,
+        data: &impl ToDclWriter,
+    ) {
+        let mut buf = Vec::new();
+        DclWriter::new(&mut buf).write(data);
+        self.crdt_store.update_if_different(
+            component_id,
+            crdt_type,
+            id,
+            Some(&mut DclReader::new(&buf)),
+        );
+    }
+
     #[allow(dead_code)]
     pub fn clear_crdt(
         &mut self,
@@ -271,15 +296,20 @@ impl RendererSceneContext {
 
     pub fn log(&mut self, log: SceneLogMessage) {
         if self.log_to_stdout {
+            let base = if self.is_portable {
+                self.title.clone()
+            } else {
+                format!("{}", self.base)
+            };
             match log.level {
                 dcl::SceneLogLevel::Log => {
-                    info!("[{} {}] {}", self.base, log.timestamp, log.message)
+                    info!("[{} {:.2}] {}", base, log.timestamp, log.message)
                 }
                 dcl::SceneLogLevel::SceneError => {
-                    warn!("[{} {}] {}", self.base, log.timestamp, log.message)
+                    warn!("[{} {:.2}] {}", base, log.timestamp, log.message)
                 }
                 dcl::SceneLogLevel::SystemError => {
-                    error!("[{} {}] {}", self.base, log.timestamp, log.message)
+                    error!("[{} {:.2}] {}", base, log.timestamp, log.message)
                 }
             }
         }

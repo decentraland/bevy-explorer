@@ -1,6 +1,10 @@
-use std::sync::OnceLock;
+use std::{
+    hash::{Hash, Hasher},
+    sync::OnceLock,
+};
 
 use bevy::{
+    asset::RenderAssetUsages,
     ecs::system::SystemParam,
     image::{
         ImageAddressMode, ImageFilterMode, ImageLoaderSettings, ImageSampler,
@@ -8,6 +12,7 @@ use bevy::{
     },
     math::Affine2,
     pbr::NotShadowCaster,
+    platform::collections::HashMap,
     prelude::*,
     render::primitives::Aabb,
 };
@@ -22,7 +27,10 @@ use crate::{
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
-        common::{texture_union, TextureFilterMode, TextureUnion, TextureWrapMode, Vector2},
+        common::{
+            texture_union::{self, Tex},
+            TextureFilterMode, TextureUnion, TextureWrapMode, Vector2,
+        },
         sdk::components::{pb_material, MaterialTransparencyMode, PbMaterial},
         Color3BevyToDcl, Color3DclToBevy, Color4BevyToDcl, Color4DclToBevy,
     },
@@ -61,6 +69,20 @@ impl From<PbMaterial> for PbMaterialComponent {
 
 static DEFAULT_BASE: OnceLock<StandardMaterial> = OnceLock::new();
 
+fn tex_is_present(tex: &Option<TextureUnion>) -> bool {
+    tex.as_ref().is_some_and(|tex| {
+        match &tex.tex {
+            Some(Tex::Texture(inner_texture)) => {
+                // creator hub likes to emit textures with empty sources,
+                // then we have to pretend they are not specified
+                !inner_texture.src.is_empty()
+            }
+            Some(_) => true,
+            None => false,
+        }
+    })
+}
+
 impl MaterialDefinition {
     pub fn from_base_and_material(base: Option<&BaseMaterial>, pb_material: &PbMaterial) -> Self {
         let base = base
@@ -78,38 +100,43 @@ impl MaterialDefinition {
             .material
         {
             Some(pb_material::Material::Unlit(unlit)) => {
+                if tex_is_present(&unlit.alpha_texture)
+                    && tex_is_present(&unlit.texture)
+                    && unlit.alpha_texture != unlit.texture
+                {
+                    debug!("separate alpha texture not supported");
+                }
+
                 let base_color = unlit
                     .diffuse_color
                     .map(Color4DclToBevy::convert_linear_rgba)
                     .unwrap_or(base.base_color);
 
-                let alpha_mode = if base_color.alpha() < 1.0 {
-                    AlphaMode::Blend
-                } else if let Some(test) = unlit.alpha_test {
+                let alpha_mode = if let Some(test) = unlit.alpha_test {
                     AlphaMode::Mask(test)
+                } else if base_color.alpha() < 1.0 || tex_is_present(&unlit.alpha_texture) {
+                    AlphaMode::Blend
                 } else {
                     AlphaMode::Opaque
                 };
 
-                let inner_texture = unlit
-                    .texture
-                    .as_ref()
-                    .and_then(|t| t.tex.as_ref())
-                    .and_then(|t| match t {
-                        texture_union::Tex::Texture(texture) => Some(texture),
-                        _ => None,
-                    });
-                let uv_transform = Affine2 {
-                    matrix2: Mat2::from_diagonal(
-                        inner_texture
-                            .and_then(|t| t.tiling)
-                            .map(|t| Vec2::from(&t))
-                            .unwrap_or(Vec2::ONE),
-                    ),
-                    translation: inner_texture
-                        .and_then(|t| t.offset)
-                        .map(|o| Vec2::from(&o) * Vec2::new(1.0, -1.0))
-                        .unwrap_or(Vec2::ZERO),
+                let uv_transform = match &unlit.texture {
+                    Some(TextureUnion {
+                        tex: Some(texture_union::Tex::Texture(inner_texture)),
+                        ..
+                    }) => Affine2 {
+                        matrix2: Mat2::from_diagonal(
+                            inner_texture
+                                .tiling
+                                .map(|t| Vec2::from(&t))
+                                .unwrap_or(Vec2::ONE),
+                        ),
+                        translation: inner_texture
+                            .offset
+                            .map(|o| Vec2::from(&o) * Vec2::new(1.0, -1.0))
+                            .unwrap_or(Vec2::ZERO),
+                    },
+                    _ => Affine2::IDENTITY,
                 };
 
                 (
@@ -126,8 +153,8 @@ impl MaterialDefinition {
                 )
             }
             Some(pb_material::Material::Pbr(pbr)) => {
-                if pbr.alpha_texture.is_some()
-                    && pbr.texture.is_some()
+                if tex_is_present(&pbr.alpha_texture)
+                    && tex_is_present(&pbr.texture)
                     && pbr.alpha_texture != pbr.texture
                 {
                     debug!("separate alpha texture not supported");
@@ -156,10 +183,10 @@ impl MaterialDefinition {
                         AlphaMode::Blend
                     }
                     Some(MaterialTransparencyMode::MtmAuto) | None => {
-                        if base_color.alpha() < 1.0 || pbr.alpha_texture.is_some() {
-                            AlphaMode::Blend
-                        } else if let Some(test) = pbr.alpha_test {
+                        if let Some(test) = pbr.alpha_test {
                             AlphaMode::Mask(test)
+                        } else if base_color.alpha() < 1.0 || tex_is_present(&pbr.alpha_texture) {
+                            AlphaMode::Blend
                         } else {
                             AlphaMode::Opaque
                         }
@@ -175,6 +202,25 @@ impl MaterialDefinition {
                     Color::BLACK.to_linear()
                 };
 
+                let uv_transform = match &pbr.texture {
+                    Some(TextureUnion {
+                        tex: Some(texture_union::Tex::Texture(inner_texture)),
+                        ..
+                    }) => Affine2 {
+                        matrix2: Mat2::from_diagonal(
+                            inner_texture
+                                .tiling
+                                .map(|t| Vec2::from(&t))
+                                .unwrap_or(Vec2::ONE),
+                        ),
+                        translation: inner_texture
+                            .offset
+                            .map(|o| Vec2::from(&o) * Vec2::new(1.0, -1.0))
+                            .unwrap_or(Vec2::ZERO),
+                    },
+                    _ => Affine2::IDENTITY,
+                };
+
                 (
                     StandardMaterial {
                         base_color,
@@ -184,6 +230,7 @@ impl MaterialDefinition {
                         perceptual_roughness: pbr.roughness.unwrap_or(base.perceptual_roughness),
                         // TODO specular intensity
                         alpha_mode,
+                        uv_transform,
                         ..base.clone()
                     },
                     pbr.texture.clone(),
@@ -223,7 +270,12 @@ impl Plugin for MaterialDefinitionPlugin {
 
         app.add_systems(
             Update,
-            (update_materials, update_bias)
+            (
+                init_cache,
+                update_materials,
+                update_bias,
+                update_loading_materials,
+            )
                 .chain()
                 .in_set(SceneSets::PostLoop)
                 // we must run after update_mesh as that inserts a default material if none is present
@@ -313,7 +365,8 @@ impl TextureResolver<'_, '_> {
                                     min_filter: filter_mode,
                                     mipmap_filter: filter_mode,
                                     ..default()
-                                })
+                                });
+                                s.asset_usage = RenderAssetUsages::RENDER_WORLD;
                             },
                         )
                         .unwrap(),
@@ -385,15 +438,30 @@ impl TextureResolver<'_, '_> {
     }
 }
 
+#[derive(Component)]
+pub struct MeshMaterial3dLoading(Handle<SceneMaterial>);
+
+#[derive(Component, Default)]
+pub struct CachedMaterials(HashMap<u64, (AssetId<SceneMaterial>, MaterialDefinition)>);
+
+fn init_cache(
+    q: Query<Entity, (With<RendererSceneContext>, Without<CachedMaterials>)>,
+    mut commands: Commands,
+) {
+    for ent in q.iter() {
+        commands.entity(ent).try_insert(CachedMaterials::default());
+    }
+}
+
 #[allow(clippy::type_complexity)]
-fn update_materials(
+pub fn update_materials(
     mut commands: Commands,
     mut new_materials: Query<
         (
             Entity,
-            &PbMaterialComponent,
+            Ref<PbMaterialComponent>,
             &ContainerEntity,
-            &SceneEntity,
+            Option<&SceneEntity>,
             Option<&BaseMaterial>,
         ),
         Or<(
@@ -404,108 +472,126 @@ fn update_materials(
     >,
     mut materials: ResMut<Assets<SceneMaterial>>,
     sourced: Query<(Entity, &MeshMaterial3d<SceneMaterial>, &MaterialSource)>,
+    sources: Query<(
+        Option<Ref<VideoTextureOutput>>,
+        Option<Ref<UiTextureOutput>>,
+    )>,
     mut resolver: TextureResolver,
-    mut scenes: Query<&mut RendererSceneContext>,
+    mut scenes: Query<(&mut RendererSceneContext, &mut CachedMaterials)>,
     config: Res<AppConfig>,
     mut gltf_resolver: GltfMaterialResolver,
     images: Res<Assets<Image>>,
 ) {
     gltf_resolver.begin_frame();
 
-    for (ent, mat, container, scene_ent, base) in new_materials.iter_mut() {
-        let new_base;
-        let base = if let Some(gltf_def) = mat.0.gltf.as_ref() {
-            if base.is_some_and(|b| b.gltf == gltf_def.gltf_src && b.name == gltf_def.name) {
-                base
-            } else {
-                let Ok(scene_hash) = scenes.get(container.root).map(|scene| &scene.hash) else {
-                    continue;
-                };
-                match gltf_resolver.resolve_material(&gltf_def.gltf_src, scene_hash, &gltf_def.name)
-                {
-                    Err(e) => {
-                        warn!("base not found: {e:?}");
-                        None
+    for (ent, mat, container, maybe_scene_ent, base) in new_materials.iter_mut() {
+        let Ok((mut scene, mut cache)) = scenes.get_mut(container.root) else {
+            continue;
+        };
+
+        let hasher = &mut std::hash::DefaultHasher::new();
+        mat.0.hash(hasher);
+        let hash = hasher.finish();
+
+        let cached_data = cache.0.get(&hash).and_then(|(cached_handle, defn)| {
+            materials
+                .get_strong_handle(*cached_handle)
+                .map(|h| (h, defn))
+        });
+
+        let uncached_defn;
+        let (material, defn) = match cached_data {
+            Some(data) => data,
+            None => {
+                let new_base;
+                let base = if let Some(gltf_def) = mat.0.gltf.as_ref() {
+                    if base.is_some_and(|b| b.gltf == gltf_def.gltf_src && b.name == gltf_def.name)
+                    {
+                        base
+                    } else {
+                        match gltf_resolver.resolve_material(
+                            &gltf_def.gltf_src,
+                            &scene.hash,
+                            &gltf_def.name,
+                        ) {
+                            Err(e) => {
+                                warn!("base not found: {e:?}");
+                                None
+                            }
+                            Ok(None) => {
+                                // retry
+                                commands.entity(ent).insert(RetryMaterial(Vec::default()));
+                                continue;
+                            }
+                            Ok(Some(mat)) => {
+                                new_base = BaseMaterial {
+                                    material: mat.clone(),
+                                    gltf: gltf_def.gltf_src.clone(),
+                                    name: gltf_def.name.clone(),
+                                };
+                                commands.entity(ent).insert(new_base.clone());
+                                Some(&new_base)
+                            }
+                        }
                     }
-                    Ok(None) => {
-                        // retry
+                } else {
+                    None
+                };
+
+                let defn = MaterialDefinition::from_base_and_material(base, &mat.0);
+                let textures: Result<Vec<_>, _> = [
+                    &defn.base_color_texture,
+                    &defn.emmissive_texture,
+                    &defn.normal_map,
+                ]
+                .into_iter()
+                .map(
+                    |texture| match texture.as_ref().and_then(|t| t.tex.as_ref()) {
+                        Some(texture) => match resolver.resolve_texture(&scene, texture) {
+                            Ok(resolved) => Ok(Some(resolved)),
+                            Err(TextureResolveError::SourceNotReady) => Err(()),
+                            Err(_) => Ok(None),
+                        },
+                        None => Ok(None),
+                    },
+                )
+                .collect();
+
+                let textures = match textures {
+                    Ok(textures) => textures,
+                    _ => {
                         commands.entity(ent).insert(RetryMaterial(Vec::default()));
                         continue;
                     }
-                    Ok(Some(mat)) => {
-                        new_base = BaseMaterial {
-                            material: mat.clone(),
-                            gltf: gltf_def.gltf_src.clone(),
-                            name: gltf_def.name.clone(),
-                        };
-                        commands.entity(ent).insert(new_base.clone());
-                        Some(&new_base)
+                };
+
+                let mut can_cache = true;
+
+                if let Some(source) = textures
+                    .iter()
+                    .flatten()
+                    .filter_map(|t| t.source_entity)
+                    .next()
+                {
+                    commands.entity(ent).insert(MaterialSource(source));
+                    can_cache = false;
+                }
+
+                let [mut base_color_texture, emissive_texture, normal_map_texture]: [Option<
+                    ResolvedTexture,
+                >;
+                    3] = textures.try_into().unwrap();
+
+                if let Some(bct) = base_color_texture.as_mut() {
+                    if let Some(cursor) = bct.camera_target.take() {
+                        commands.entity(ent).insert(cursor);
+                        can_cache = false;
                     }
                 }
-            }
-        } else {
-            None
-        };
 
-        let defn = MaterialDefinition::from_base_and_material(base, &mat.0);
-        let textures: Result<Vec<_>, _> = [
-            &defn.base_color_texture,
-            &defn.emmissive_texture,
-            &defn.normal_map,
-        ]
-        .into_iter()
-        .map(
-            |texture| match texture.as_ref().and_then(|t| t.tex.as_ref()) {
-                Some(texture) => {
-                    let scene = scenes.get(container.root).map_err(|_| ())?;
-                    match resolver.resolve_texture(scene, texture) {
-                        Ok(resolved) => Ok(Some(resolved)),
-                        Err(TextureResolveError::SourceNotReady) => Err(()),
-                        Err(_) => Ok(None),
-                    }
-                }
-                None => Ok(None),
-            },
-        )
-        .collect();
+                let bounds = scene.bounds.clone();
 
-        let textures = match textures {
-            Ok(textures) => textures,
-            _ => {
-                commands.entity(ent).insert(RetryMaterial(Vec::default()));
-                continue;
-            }
-        };
-
-        if let Some(source) = textures
-            .iter()
-            .flatten()
-            .filter_map(|t| t.source_entity)
-            .next()
-        {
-            commands.entity(ent).insert(MaterialSource(source));
-        }
-
-        let [mut base_color_texture, emissive_texture, normal_map_texture]: [Option<
-            ResolvedTexture,
-        >; 3] = textures.try_into().unwrap();
-
-        if let Some(bct) = base_color_texture.as_mut() {
-            if let Some(cursor) = bct.camera_target.take() {
-                commands.entity(ent).insert(cursor);
-            }
-        }
-
-        let bounds = scenes
-            .get(container.root)
-            .map(|c| c.bounds.clone())
-            .unwrap_or_default();
-
-        let mut commands = commands.entity(ent);
-        commands
-            .remove::<RetryMaterial>()
-            .try_insert(MeshMaterial3d(
-                materials.add(SceneMaterial {
+                let material = materials.add(SceneMaterial {
                     base: StandardMaterial {
                         base_color_texture: base_color_texture
                             .map(|t| t.image)
@@ -519,8 +605,22 @@ fn update_materials(
                         ..defn.material.clone()
                     },
                     extension: SceneBound::new(bounds, config.graphics.oob),
-                }),
-            ));
+                });
+
+                if can_cache {
+                    cache.0.insert(hash, (material.id(), defn));
+                    (material, &cache.0.get(&hash).unwrap().1)
+                } else {
+                    uncached_defn = defn;
+                    (material, &uncached_defn)
+                }
+            }
+        };
+
+        let mut commands = commands.entity(ent);
+        commands
+            .remove::<RetryMaterial>()
+            .try_insert(MeshMaterial3dLoading(material));
         if defn.shadow_caster {
             commands.remove::<NotShadowCaster>();
         } else {
@@ -529,32 +629,119 @@ fn update_materials(
 
         // write material back if required
         if mat.0.material.is_none() {
-            if let Some(base) = base.as_ref() {
-                let Ok(mut scene) = scenes.get_mut(container.root) else {
-                    continue;
-                };
-
-                scene.update_crdt(
-                    SceneComponentId::MATERIAL,
-                    CrdtType::LWW_ANY,
-                    scene_ent.id,
-                    &PbMaterial {
-                        material: Some(dcl_material_from_standard_material(
-                            &base.material,
-                            &images,
-                        )),
-                        gltf: mat.0.gltf.clone(),
-                    },
-                );
+            if let Some(scene_ent) = maybe_scene_ent {
+                if let Some(base) = base.as_ref() {
+                    scene.update_crdt(
+                        SceneComponentId::MATERIAL,
+                        CrdtType::LWW_ANY,
+                        scene_ent.id,
+                        &PbMaterial {
+                            material: Some(dcl_material_from_standard_material(
+                                &base.material,
+                                &images,
+                            )),
+                            gltf: mat.0.gltf.clone(),
+                        },
+                    );
+                }
             }
         }
     }
 
-    for (ent, touch, source) in sourced.iter() {
-        if commands.get_entity(source.0).is_err() {
-            commands.entity(ent).insert(RetryMaterial(Vec::default()));
-        } else {
-            materials.get_mut(touch);
+    for (ent, _touch, source) in sourced.iter() {
+        let changed = sources
+            .get(source.0)
+            .map(|(maybe_video, maybe_ui)| {
+                maybe_video.is_some_and(|v| v.is_changed())
+                    || maybe_ui.is_some_and(|ui| ui.is_changed())
+            })
+            .unwrap_or(true);
+
+        if changed {
+            commands
+                .entity(ent)
+                .insert(RetryMaterial(Vec::default()))
+                .remove::<MaterialSource>();
+        }
+    }
+}
+
+fn update_loading_materials(
+    mut commands: Commands,
+    mut mats: ResMut<Assets<SceneMaterial>>,
+    asset_server: Res<AssetServer>,
+    q: Query<(Entity, &MeshMaterial3dLoading)>,
+) {
+    for (entity, loading) in q.iter() {
+        let h_mat = loading.0.id();
+        let Some(mat) = mats.get(h_mat) else {
+            continue;
+        };
+
+        #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+        pub enum State {
+            Ok,
+            Failed,
+            Pending,
+        }
+
+        let state = [
+            &mat.base.base_color_texture,
+            &mat.base.normal_map_texture,
+            &mat.base.metallic_roughness_texture,
+            &mat.base.emissive_texture,
+        ]
+        .into_iter()
+        .map(|maybe_texture| {
+            let Some(h_texture) = maybe_texture.as_ref() else {
+                return State::Ok;
+            };
+            match asset_server.load_state(h_texture.id()) {
+                bevy::asset::LoadState::NotLoaded => State::Ok, // video or avatar texture
+                bevy::asset::LoadState::Loading => State::Pending,
+                bevy::asset::LoadState::Loaded => State::Ok,
+                bevy::asset::LoadState::Failed(_) => State::Failed,
+            }
+        })
+        .reduce(State::max)
+        .unwrap();
+
+        let ready = match state {
+            State::Ok => true,
+            State::Pending => false,
+            State::Failed => {
+                let mat = mats.get_mut(h_mat).unwrap();
+
+                for item in [
+                    &mut mat.base.base_color_texture,
+                    &mut mat.base.normal_map_texture,
+                    &mut mat.base.metallic_roughness_texture,
+                    &mut mat.base.emissive_texture,
+                ]
+                .into_iter()
+                {
+                    let Some(h_texture) = item.as_ref() else {
+                        continue;
+                    };
+                    if asset_server.load_state(h_texture.id()).is_failed() {
+                        warn!(
+                            "{:?} removing missing texture {:?}",
+                            h_mat,
+                            asset_server.get_path(h_texture)
+                        );
+                        *item = None;
+                    }
+                }
+                true
+            }
+        };
+
+        if ready {
+            if let Ok(mut commands) = commands.get_entity(entity) {
+                commands
+                    .remove::<MeshMaterial3dLoading>()
+                    .insert(MeshMaterial3d(loading.0.clone()));
+            }
         }
     }
 }
@@ -626,19 +813,26 @@ pub fn dcl_material_from_standard_material(
         None
     };
 
+    let alpha_texture = if AlphaMode::Blend == base.alpha_mode {
+        base.base_color_texture.as_ref().map(dcl_texture)
+    } else {
+        None
+    };
+
     if base.unlit {
         pb_material::Material::Unlit(pb_material::UnlitMaterial {
             texture: base.base_color_texture.as_ref().map(dcl_texture),
             alpha_test,
             cast_shadows: Some(true),
             diffuse_color: Some(base.base_color.convert_linear_rgba()),
+            alpha_texture,
         })
     } else {
         pb_material::Material::Pbr(pb_material::PbrMaterial {
             texture: base.base_color_texture.as_ref().map(dcl_texture),
             alpha_test,
             cast_shadows: Some(true),
-            alpha_texture: base.base_color_texture.as_ref().map(dcl_texture),
+            alpha_texture,
             emissive_texture: base.emissive_texture.as_ref().map(dcl_texture),
             bump_texture: base.normal_map_texture.as_ref().map(dcl_texture),
             albedo_color: Some(base.base_color.convert_linear_rgba()),
