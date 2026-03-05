@@ -21,8 +21,6 @@ use bevy::{
     },
 };
 use common::{sets::SceneSets, structs::AudioSettings, util::ReportErr};
-#[cfg(feature = "livekit")]
-use comms::livekit::participant::StreamViewer;
 use dcl::interface::CrdtType;
 use dcl_component::{
     proto_components::sdk::components::{PbAudioEvent, PbVideoEvent, VideoState},
@@ -39,6 +37,11 @@ use web_sys::{
     js_sys::{self, Reflect},
     wasm_bindgen::{prelude::Closure, JsCast, JsValue},
     HtmlMediaElement, HtmlVideoElement, VideoFrame,
+};
+#[cfg(feature = "livekit")]
+use {
+    bevy::ecs::relationship::Relationship,
+    comms::livekit::participant::{ChangeVolume, StreamViewer},
 };
 
 use crate::{
@@ -458,31 +461,55 @@ impl Drop for HtmlMediaEntity {
     }
 }
 
+#[cfg(not(feature = "livekit"))]
+type AVPlayerOnInsertQuery<'a> = (&'a AVPlayer, &'a mut HtmlMediaEntity);
+#[cfg(feature = "livekit")]
+type AVPlayerOnInsertQuery<'a> = (
+    &'a AVPlayer,
+    Option<&'a StreamViewer>,
+    &'a mut HtmlMediaEntity,
+);
+
 fn av_player_on_insert(
     trigger: Trigger<OnInsert, AVPlayer>,
     mut commands: Commands,
-    mut av_players: Query<(&AVPlayer, &mut HtmlMediaEntity)>,
+    mut av_players: Query<AVPlayerOnInsertQuery>,
     audio_settings: Res<AudioSettings>,
 ) {
     info!("AVPlayer updated.");
     let entity = trigger.target();
-    let Ok((av_player, mut html_media_entity)) = av_players.get_mut(entity) else {
+    let Ok(query) = av_players.get_mut(entity) else {
         return;
     };
+    #[cfg(not(feature = "livekit"))]
+    let (av_player, mut html_media_entity) = query;
+    #[cfg(feature = "livekit")]
+    let (av_player, maybe_stream_viewer, mut html_media_entity) = query;
 
-    // This forces an update on the entity
-    commands.entity(entity).try_remove::<ShouldBePlaying>();
     if av_player.source.src == html_media_entity.source {
         debug!("Updating html media entity {entity}.");
         let av_player_volume = av_player.source.volume.unwrap_or(1.0);
-        html_media_entity.stop();
-        html_media_entity.set_loop(av_player.source.r#loop.unwrap_or(false));
-        html_media_entity.set_volume(av_player_volume * audio_settings.scene());
+        if av_player.source.src.starts_with("livekit-video://") {
+            html_media_entity.set_loop(av_player.source.r#loop.unwrap_or(false));
+            html_media_entity.set_volume(av_player_volume * audio_settings.scene());
+            #[cfg(feature = "livekit")]
+            if let Some(stream_viewer) = maybe_stream_viewer {
+                commands.trigger_targets(ChangeVolume(av_player_volume), stream_viewer.get());
+            }
+        } else {
+            // This forces an update on the entity
+            commands.entity(entity).try_remove::<ShouldBePlaying>();
+            html_media_entity.stop();
+            html_media_entity.set_loop(av_player.source.r#loop.unwrap_or(false));
+            html_media_entity.set_volume(av_player_volume * audio_settings.scene());
+        }
     } else {
         debug!("Removing html media entity {entity} due to diverging source.");
         commands
             .entity(trigger.target())
-            .try_remove::<HtmlMediaEntity>();
+            .try_remove::<(HtmlMediaEntity, ShouldBePlaying)>();
+        #[cfg(feature = "livekit")]
+        commands.entity(entity).try_remove::<StreamViewer>();
     }
 }
 

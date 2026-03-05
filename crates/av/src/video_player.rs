@@ -11,8 +11,6 @@ use bevy::{
     },
 };
 use common::{sets::SceneSets, util::ReportErr};
-#[cfg(feature = "livekit")]
-use comms::livekit::participant::{StreamImage, StreamViewer};
 use dcl::interface::CrdtType;
 use dcl_component::{
     proto_components::sdk::components::{PbVideoEvent, VideoState},
@@ -23,6 +21,11 @@ use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::material::{update_materials, VideoTextureOutput},
     ContainerEntity,
+};
+#[cfg(feature = "livekit")]
+use {
+    bevy::ecs::relationship::Relationship,
+    comms::livekit::participant::{ChangeVolume, StreamImage, StreamViewer},
 };
 
 use crate::{
@@ -62,40 +65,63 @@ fn init_ffmpeg() {
     ffmpeg_next::log::set_level(ffmpeg_next::log::Level::Error);
 }
 
+#[cfg(not(feature = "livekit"))]
+type AVPlayerOnInsertQuery<'a> = (&'a AVPlayer, Option<&'a AudioSink>, Option<&'a VideoSink>);
+#[cfg(feature = "livekit")]
+type AVPlayerOnInsertQuery<'a> = (
+    &'a AVPlayer,
+    Option<&'a StreamViewer>,
+    Option<&'a AudioSink>,
+    Option<&'a VideoSink>,
+);
+
 fn av_player_on_insert(
     trigger: Trigger<OnInsert, AVPlayer>,
     mut commands: Commands,
-    av_players: Query<(&AVPlayer, Option<&AudioSink>, Option<&VideoSink>)>,
+    av_players: Query<AVPlayerOnInsertQuery>,
 ) {
     let entity = trigger.target();
-    let Ok((av_player, maybe_audio_sink, maybe_video_sink)) = av_players.get(entity) else {
+    let Ok(query) = av_players.get(entity) else {
         unreachable!("Infallible query.");
     };
+    #[cfg(not(feature = "livekit"))]
+    let (av_player, maybe_audio_sink, maybe_video_sink) = query;
+    #[cfg(feature = "livekit")]
+    let (av_player, maybe_stream_viewer, maybe_audio_sink, maybe_video_sink) = query;
 
-    // This forces an update on the entity
-    commands.entity(entity).try_remove::<ShouldBePlaying>();
-    if !av_player.source.src.is_empty()
-        && maybe_video_sink
-            .as_ref()
-            .filter(|video_sink| av_player.source.src == video_sink.source)
-            .is_some()
-    {
-        debug!("Updating sinks of {entity}.");
-        if let Some(video_sink) = maybe_video_sink {
-            video_sink
-                .command_sender
-                .send(AVCommand::Repeat(av_player.source.r#loop.unwrap_or(false)))
-                .report();
-            video_sink.command_sender.send(AVCommand::Pause).report();
-        }
-        if let Some(audio_sink) = maybe_audio_sink {
-            commands.trigger_targets(
-                ChangeAudioSinkVolume {
-                    volume: av_player.source.volume.unwrap_or(1.),
-                },
-                entity,
-            );
-            audio_sink.command_sender.send(AVCommand::Pause).report();
+    let equal_sink = maybe_video_sink
+        .as_ref()
+        .filter(|video_sink| av_player.source.src == video_sink.source)
+        .is_some();
+    let livekit_stream = av_player.source.src.starts_with("livekit-video://");
+    if !av_player.source.src.is_empty() && (equal_sink || livekit_stream) {
+        if livekit_stream {
+            #[cfg(feature = "livekit")]
+            if let Some(stream_viewer) = maybe_stream_viewer {
+                debug!("Updating volume of stream.");
+                commands
+                    .trigger_targets(ChangeVolume(av_player.source.volume()), stream_viewer.get());
+            }
+        } else {
+            debug!("Updating sinks of {entity}.");
+            // This forces an update on the entity
+            commands.entity(entity).try_remove::<ShouldBePlaying>();
+            if let Some(video_sink) = maybe_video_sink {
+                video_sink
+                    .command_sender
+                    .send(AVCommand::Repeat(av_player.source.r#loop.unwrap_or(false)))
+                    .report();
+                video_sink.command_sender.send(AVCommand::Pause).report();
+            }
+            if let Some(audio_sink) = maybe_audio_sink {
+                commands.trigger_targets(
+                    ChangeAudioSinkVolume {
+                        volume: av_player.source.volume.unwrap_or(1.),
+                    },
+                    entity,
+                );
+                audio_sink.command_sender.send(AVCommand::Pause).report();
+            }
         }
     } else {
         if maybe_audio_sink.is_some() || maybe_video_sink.is_some() {
@@ -109,8 +135,10 @@ fn av_player_on_insert(
         }
         debug!("{entity:?} has {}.", av_player.source.src);
         commands
-            .entity(trigger.target())
-            .try_remove::<(AudioSink, VideoSink)>();
+            .entity(entity)
+            .try_remove::<(AudioSink, VideoSink, ShouldBePlaying)>();
+        #[cfg(feature = "livekit")]
+        commands.entity(entity).try_remove::<StreamViewer>();
     }
 }
 
