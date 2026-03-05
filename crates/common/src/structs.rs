@@ -1174,14 +1174,19 @@ pub struct ParcelGrassConfig {
     pub tip_color: Color,
 }
 
+impl ParcelGrassConfig {
+    pub const ROOT_COLOR: Srgba = palettes::tailwind::LIME_800;
+    pub const TIP_COLOR: Srgba = palettes::tailwind::LIME_600;
+}
+
 impl Default for ParcelGrassConfig {
     fn default() -> Self {
         Self {
             layers: 32,
             subdivisions: 32,
             y_displacement: 0.01,
-            root_color: palettes::tailwind::LIME_800.into(),
-            tip_color: palettes::tailwind::LIME_600.into(),
+            root_color: Self::ROOT_COLOR.into(),
+            tip_color: Self::TIP_COLOR.into(),
         }
     }
 }
