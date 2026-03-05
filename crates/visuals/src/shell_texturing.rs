@@ -1,5 +1,6 @@
 use bevy::{
     asset::{embedded_asset, embedded_path, weak_handle},
+    ecs::component::ComponentIdFor,
     pbr::NotShadowCaster,
     prelude::*,
     render::{
@@ -79,7 +80,8 @@ impl Plugin for ShellTexturingPlugin {
         app.add_systems(Startup, setup_parcel_grass_mesh);
         app.add_systems(
             Update,
-            update_parcel_grass_material.run_if(resource_changed::<ParcelGrassConfig>),
+            (update_parcel_grass_material, rebuild_parcel_grass_shells)
+                .run_if(resource_changed::<ParcelGrassConfig>),
         );
         app.add_observer(parcel_grass_lod_change);
     }
@@ -105,6 +107,17 @@ fn update_parcel_grass_material(
             root_color: parcel_grass_config.root_color.into(),
             tip_color: parcel_grass_config.tip_color.into(),
         },
+    );
+}
+
+fn rebuild_parcel_grass_shells(
+    mut commands: Commands,
+    parcel_grass: Query<Entity, With<ParcelGrassLod>>,
+    parcel_grass_lod: ComponentIdFor<ParcelGrassLod>,
+) {
+    commands.trigger_targets(
+        OnInsert,
+        (*parcel_grass_lod, parcel_grass.iter().collect::<Vec<_>>()),
     );
 }
 
