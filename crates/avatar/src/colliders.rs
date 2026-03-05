@@ -4,26 +4,29 @@ use bevy::{
     prelude::*,
 };
 use common::{
-    dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
+    dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_RADIUS},
     inputs::{CommonInputAction, SystemAction},
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
-    structs::{PlayerModifiers, PrimaryCamera, ShowProfileEvent, ToolTips, TooltipSource},
+    structs::{
+        PlayerModifiers, PrimaryCamera, PrimaryUser, ShowProfileEvent, ToolTips, TooltipSource,
+    },
     util::AsH160,
 };
 use comms::{global_crdt::ForeignPlayer, profile::UserProfile};
+use dcl_component::{proto_components::sdk::components::ColliderLayer, SceneEntityId};
 use input_manager::{InputManager, InputPriority, InputType};
 use rapier3d_f64::{
     na::Isometry,
-    prelude::{ColliderBuilder, SharedShape},
+    prelude::{ColliderBuilder, Group, InteractionGroups, SharedShape},
 };
 use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE_RED};
 use scene_runner::{
-    update_scene::pointer_results::{AvatarColliders, PointerTarget, PointerTargetType},
+    update_scene::pointer_results::{AvatarColliders, PointerTarget},
     update_world::mesh_collider::ColliderId,
 };
 use serde_json::json;
-use system_bridge::NativeUi;
+use system_bridge::{NativeUi, PointerTargetType};
 
 pub struct AvatarColliderPlugin;
 
@@ -42,11 +45,15 @@ impl Plugin for AvatarColliderPlugin {
 fn update_avatar_colliders(
     mut colliders: ResMut<AvatarColliders>,
     foreign_players: Query<(Entity, &ForeignPlayer, &GlobalTransform)>,
+    primary_player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
 ) {
-    let positions = foreign_players
+    let mut positions = foreign_players
         .iter()
         .map(|(e, f, t)| (f.scene_id, (e, t)))
         .collect::<HashMap<_, _>>();
+    if let Ok((e, gt)) = primary_player.single() {
+        positions.insert(SceneEntityId::PLAYER, (e, gt));
+    }
 
     let remove = colliders
         .collider_data
@@ -71,12 +78,12 @@ fn update_avatar_colliders(
             ));
             colliders
                 .collider_data
-                .update_collider_transform(&id, &transform, None);
+                .update_collider_transform(&id, &transform);
         } else {
             // collider didn't exist, make a new one
             let collider = ColliderBuilder::new(SharedShape::capsule_y(
                 (PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS) as f64,
-                (PLAYER_COLLIDER_RADIUS - PLAYER_COLLIDER_OVERLAP) as f64,
+                PLAYER_COLLIDER_RADIUS as f64,
             ))
             .position(Isometry::from_parts(
                 (transform.translation() + PLAYER_COLLIDER_HEIGHT * 0.5 * Vec3::Y)
@@ -84,8 +91,15 @@ fn update_avatar_colliders(
                     .into(),
                 Default::default(),
             ))
+            .collision_groups(InteractionGroups {
+                memberships: Group::from_bits_truncate(ColliderLayer::ClPlayer as u32),
+                filter: Group::from_bits_truncate(ColliderLayer::ClPlayer as u32),
+                test_mode: rapier3d_f64::prelude::InteractionTestMode::And,
+            })
             .build();
-            colliders.collider_data.set_collider(&id, collider, ent);
+            colliders
+                .collider_data
+                .set_collider(&id, collider, Some(ent));
             colliders.lookup.insert(id, ent);
         }
     }

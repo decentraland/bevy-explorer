@@ -196,7 +196,7 @@ impl AssetLoader for SceneJsLoader {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct ContentMap(HashMap<String, String>);
+pub struct ContentMap(pub HashMap<String, String>);
 
 impl ContentMap {
     pub fn hash<'a>(&'a self, file: &str) -> Option<Cow<'a, str>> {
@@ -482,6 +482,7 @@ impl Plugin for IpfsIoPlugin {
         };
 
         app.insert_resource(IpfsResource { inner: ipfs_io });
+        app.insert_resource(RealmInitialLocation::Base);
 
         #[cfg(feature = "hot_reload")]
         app.register_asset_source(
@@ -525,6 +526,12 @@ impl Plugin for IpfsIoPlugin {
     }
 }
 
+#[derive(Resource, PartialEq, Debug)]
+pub enum RealmInitialLocation {
+    None,
+    Base,
+}
+
 /// Switch to a new realm
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/changerealm")]
@@ -536,8 +543,11 @@ struct ChangeRealmCommand {
 fn change_realm_command(
     mut input: ConsoleCommand<ChangeRealmCommand>,
     mut writer: EventWriter<ChangeRealmEvent>,
+    mut target: ResMut<RealmInitialLocation>,
 ) {
     if let Some(Ok(command)) = input.take() {
+        *target = RealmInitialLocation::Base;
+        debug!("change realm command -> base");
         writer.write(ChangeRealmEvent {
             new_realm: command.new_realm,
             content_server_override: command.content_server_override,
@@ -605,18 +615,21 @@ pub fn change_realm(
         let ipfs = ipfs.clone();
         let request = change_realm_requests.read().last().unwrap();
 
-        let new_realm = &request.new_realm;
-        let new_realm = if new_realm.ends_with(".dcl.eth") && !new_realm.starts_with("https://") {
-            format!("https://worlds-content-server.decentraland.org/world/{new_realm}")
-        } else {
-            new_realm.to_owned()
-        };
+        let new_realm = map_realm_name(&request.new_realm);
         let content_server_override = request.content_server_override.to_owned();
         IoTaskPool::get()
             .spawn_compat(async move {
                 ipfs.set_realm(new_realm, content_server_override).await;
             })
             .detach();
+    }
+}
+
+pub fn map_realm_name(request: &str) -> String {
+    if request.ends_with(".dcl.eth") && !request.starts_with("https://") {
+        format!("https://worlds-content-server.decentraland.org/world/{request}")
+    } else {
+        request.to_owned()
     }
 }
 
@@ -653,7 +666,7 @@ pub struct IpfsIo {
     default_fs_path: Option<PathBuf>,
     realm_config_receiver: tokio::sync::watch::Receiver<Option<(String, String, ServerAbout)>>,
     realm_config_sender: tokio::sync::watch::Sender<Option<(String, String, ServerAbout)>>,
-    context: AsyncRwLock<IpfsContext>,
+    pub context: AsyncRwLock<IpfsContext>,
     request_slots: tokio::sync::Semaphore,
     reqno: AtomicU16,
     static_files: HashMap<&'static str, &'static str>,
@@ -782,7 +795,14 @@ impl IpfsIo {
 
     pub async fn get_realm_info(&self) -> (String, Option<ServerAbout>) {
         let context = self.context.read().await;
-        (context.base_url.clone(), context.about.clone())
+        (
+            context
+                .about_url
+                .strip_suffix("/about")
+                .unwrap_or(&context.about_url)
+                .to_owned(),
+            context.about.clone(),
+        )
     }
 
     async fn set_realm_inner(
@@ -1208,13 +1228,25 @@ impl AssetReader for IpfsIo {
                 let request = self
                     .client
                     .get(&remote)
-                    .timeout(Duration::from_secs(5 + 30 * attempt))
-                    .build()
-                    .map_err(|e| {
-                        AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
-                            "[{token:?}]: {e}"
-                        ))))
-                    })?;
+                    .timeout(Duration::from_secs(5 + 30 * attempt));
+
+                // in wasm we add a custom header to allow the service worker to cache ipfs requests across content servers
+                #[cfg(target_arch = "wasm32")]
+                let request = if ipfs_path.content_path().is_some()
+                    && hash
+                        .as_ref()
+                        .is_some_and(|hash| ipfs_path.should_cache(hash))
+                {
+                    request.header("X-IPFS", "true")
+                } else {
+                    request
+                };
+
+                let request = request.build().map_err(|e| {
+                    AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
+                        "[{token:?}]: {e}"
+                    ))))
+                })?;
 
                 let response = self.client.execute(request).await;
 

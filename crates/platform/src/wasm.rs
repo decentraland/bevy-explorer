@@ -1,12 +1,23 @@
 use std::time::Duration;
 
 use anyhow::anyhow;
-use bevy::{ecs::component::Component, log::warn};
-use common::structs::AppConfig;
+use bevy::log::warn;
+use bevy::{
+    core_pipeline::{
+        bloom::Bloom,
+        prepass::{DepthPrepass, NormalPrepass},
+        tonemapping::{DebandDither, Tonemapping},
+    },
+    ecs::bundle::Bundle,
+    pbr::ShadowFilteringMethod,
+    render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
+};
+
 use futures_util::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
+use serde::Serialize;
 pub use tungstenite::client::IntoClientRequest;
 use wasm_bindgen_futures::spawn_local;
 use ws_stream_wasm::{WsMessage, WsMeta, WsStream};
@@ -128,7 +139,7 @@ pub fn compat<F>(f: F) -> F {
 pub fn project_directories() -> Option<directories::ProjectDirs> {
     None
 }
-pub fn write_config_file(config: &AppConfig) {
+pub fn write_config_file<T: Serialize + Clone + 'static>(config: &T) {
     use futures_lite::io::AsyncWriteExt;
     let config = config.clone();
 
@@ -149,12 +160,6 @@ pub fn write_config_file(config: &AppConfig) {
         }
     })
 }
-
-// dummy prepass markers for webgl
-#[derive(Component)]
-pub struct DepthPrepass;
-#[derive(Component)]
-pub struct NormalPrepass;
 
 #[derive(Default)]
 pub struct AsyncRwLock<T>(spin::RwLock<T>);
@@ -197,4 +202,36 @@ pub fn platform_pointer_is_locked(_expected: bool) -> bool {
         .and_then(|w| w.document())
         .map(|d| d.pointer_lock_element().is_some())
         .unwrap_or(false)
+}
+
+pub fn default_camera_components() -> impl Bundle {
+    (
+        Tonemapping::TonyMcMapface,
+        DebandDither::Enabled,
+        ColorGrading {
+            global: ColorGradingGlobal {
+                exposure: -0.5,
+                ..Default::default()
+            },
+            shadows: ColorGradingSection {
+                gamma: 0.75,
+                ..Default::default()
+            },
+            midtones: ColorGradingSection {
+                gamma: 0.75,
+                ..Default::default()
+            },
+            highlights: ColorGradingSection {
+                gamma: 0.75,
+                ..Default::default()
+            },
+        },
+        Bloom {
+            intensity: 0.15,
+            ..Bloom::OLD_SCHOOL
+        },
+        ShadowFilteringMethod::Gaussian,
+        DepthPrepass,
+        NormalPrepass,
+    )
 }

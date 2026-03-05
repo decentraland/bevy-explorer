@@ -4,14 +4,16 @@ use bevy::{
     render::render_resource::{AsBindGroup, ShaderRef},
 };
 use boimp::bake::{ImposterBakeMaterialExtension, ImposterBakeMaterialPlugin};
-use comms::preview::PreviewMode;
+use common::structs::PreviewMode;
 
-pub type SceneMaterial = ExtendedMaterial<StandardMaterial, SceneBound>;
+pub type SceneMaterial = ExtendedMaterial<SceneBound>;
 
 pub const SCENE_MATERIAL_SHOW_OUTSIDE: u32 = 1;
 pub const SCENE_MATERIAL_OUTLINE: u32 = 2;
 pub const SCENE_MATERIAL_OUTLINE_RED: u32 = 4;
 pub const SCENE_MATERIAL_OUTLINE_FORCE: u32 = 8;
+pub const SCENE_MATERIAL_NO_DITHERING: u32 = 16;
+pub const SCENE_MATERIAL_CONE_ONLY_DITHER: u32 = 32;
 
 pub trait SceneMaterialExt {
     fn unbounded_outlined(mat: StandardMaterial, force: bool) -> Self
@@ -86,7 +88,12 @@ impl SceneBound {
         }
     }
 
-    pub fn new_outlined(bounds: Vec<BoundRegion>, distance: f32, force_outline: bool) -> Self {
+    pub fn new_outlined(
+        bounds: Vec<BoundRegion>,
+        distance: f32,
+        force_outline: bool,
+        disable_dither: bool,
+    ) -> Self {
         Self {
             data: SceneBoundData {
                 flags: SCENE_MATERIAL_OUTLINE
@@ -94,7 +101,13 @@ impl SceneBound {
                         SCENE_MATERIAL_OUTLINE_FORCE
                     } else {
                         0
-                    },
+                    }
+                    + if disable_dither {
+                        SCENE_MATERIAL_NO_DITHERING
+                    } else {
+                        0
+                    }
+                    + SCENE_MATERIAL_CONE_ONLY_DITHER,
                 ..Self::new(bounds, distance).data
             },
         }
@@ -237,12 +250,45 @@ mod test {
 }
 
 impl MaterialExtension for SceneBound {
+    type Base = StandardMaterial;
+
     fn fragment_shader() -> bevy::render::render_resource::ShaderRef {
-        ShaderRef::Path("shaders/bound_material.wgsl".into())
+        ShaderRef::Path("embedded://shaders/bound_material.wgsl".into())
+    }
+
+    fn alpha_mode(base_mode: AlphaMode) -> Option<AlphaMode> {
+        Some(match base_mode {
+            AlphaMode::Opaque => AlphaMode::Mask(0.0),
+            other => other,
+        })
     }
 
     fn prepass_fragment_shader() -> ShaderRef {
-        ShaderRef::Path("shaders/bound_prepass.wgsl".into())
+        ShaderRef::Path("embedded://shaders/bound_prepass.wgsl".into())
+    }
+
+    fn fallback_asset(&self, base: &Self::Base) -> Option<ExtendedMaterial<Self>> {
+        let (base_color, emissive) = if self.data.flags & SCENE_MATERIAL_OUTLINE != 0 {
+            (
+                Color::srgba(1.0, 1.0, 4.0, 1.0),
+                Color::srgba(1.0, 1.0, 4.0, 1.0),
+            )
+        } else {
+            (Color::srgba(1.25, 0.25, 1.25, 0.75), Color::BLACK)
+        };
+
+        Some(ExtendedMaterial::<Self> {
+            base: StandardMaterial {
+                base_color,
+                emissive: emissive.to_linear(),
+                double_sided: true,
+                cull_mode: base.cull_mode,
+                unlit: true,
+                alpha_mode: AlphaMode::Blend,
+                ..Default::default()
+            },
+            extension: self.clone(),
+        })
     }
 
     fn specialize(
@@ -267,18 +313,23 @@ impl MaterialExtension for SceneBound {
 
 impl ImposterBakeMaterialExtension for SceneBound {
     fn imposter_fragment_shader() -> bevy::render::render_resource::ShaderRef {
-        "shaders/bound_material_baker.wgsl".into()
+        "embedded://shaders/bound_material_baker.wgsl".into()
     }
 }
 pub struct SceneBoundPlugin;
 
 impl Plugin for SceneBoundPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((
-            MaterialPlugin::<SceneMaterial>::default(),
-            ImposterBakeMaterialPlugin::<SceneMaterial>::default(),
-        ))
-        .add_systems(Update, update_show_outside);
+        app.add_plugins(MaterialPlugin::<SceneMaterial>::default());
+        let preview_mode = app
+            .world()
+            .get_resource::<PreviewMode>()
+            .is_some_and(|p| p.is_preview);
+        if !preview_mode {
+            app.add_plugins(ImposterBakeMaterialPlugin::<SceneMaterial>::default());
+        }
+
+        app.add_systems(Update, update_show_outside);
     }
 }
 

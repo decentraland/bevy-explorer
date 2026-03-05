@@ -1,3 +1,5 @@
+use bevy::math::FloatOrd;
+
 use super::{FromDclReader, ToDclWriter};
 
 pub mod sdk {
@@ -118,6 +120,12 @@ impl DclProtoComponent for sdk::components::PbRealmInfo {}
 impl DclProtoComponent for sdk::components::PbVirtualCamera {}
 impl DclProtoComponent for sdk::components::PbMainCamera {}
 impl DclProtoComponent for sdk::components::PbInputModifier {}
+impl DclProtoComponent for sdk::components::PbTriggerArea {}
+impl DclProtoComponent for sdk::components::PbTriggerAreaResult {}
+impl DclProtoComponent for sdk::components::PbGltfNodeModifiers {}
+impl DclProtoComponent for sdk::components::PbSkyboxTime {}
+impl DclProtoComponent for sdk::components::PbAvatarMovement {}
+impl DclProtoComponent for sdk::components::PbAvatarMovementInfo {}
 
 // VECTOR2 conversions
 impl Copy for common::Vector2 {}
@@ -166,7 +174,12 @@ impl std::ops::Add<common::Vector3> for common::Vector3 {
 impl common::Vector3 {
     // flip z coordinate for handedness
     pub fn world_vec_to_vec3(&self) -> bevy::prelude::Vec3 {
-        bevy::prelude::Vec3::new(self.x, self.y, -self.z)
+        let vec = bevy::prelude::Vec3::new(self.x, self.y, -self.z);
+        if vec.is_nan() {
+            bevy::prelude::Vec3::ZERO
+        } else {
+            vec
+        }
     }
 
     pub fn world_vec_from_vec3(vec3: &bevy::prelude::Vec3) -> Self {
@@ -195,6 +208,28 @@ impl Copy for common::Quaternion {}
 impl From<common::Quaternion> for bevy::math::Quat {
     fn from(q: common::Quaternion) -> Self {
         bevy::math::Quat::from_xyzw(q.x, q.y, -q.z, -q.w)
+    }
+}
+
+impl common::Quaternion {
+    pub fn to_bevy_normalized(self) -> bevy::math::Quat {
+        let quat = bevy::math::Quat::from(self).normalize();
+        if quat.is_finite() {
+            quat
+        } else {
+            bevy::math::Quat::IDENTITY
+        }
+    }
+}
+
+impl From<bevy::math::Quat> for common::Quaternion {
+    fn from(q: bevy::math::Quat) -> Self {
+        common::Quaternion {
+            x: q.x,
+            y: q.y,
+            z: -q.z,
+            w: -q.w,
+        }
     }
 }
 
@@ -318,5 +353,84 @@ pub trait RoughRoundExt {
 impl RoughRoundExt for bevy::math::Vec3 {
     fn round_at_pow2(self, pow2: i8) -> Self {
         (self * 2f32.powf(-pow2 as f32)).round() * 2f32.powf(pow2 as f32)
+    }
+}
+
+impl std::hash::Hash for sdk::components::pb_material::Material {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        core::mem::discriminant(self).hash(state);
+        match self {
+            sdk::components::pb_material::Material::Unlit(unlit_material) => {
+                unlit_material.hash(state)
+            }
+            sdk::components::pb_material::Material::Pbr(pbr_material) => pbr_material.hash(state),
+        }
+    }
+}
+
+impl std::hash::Hash for common::texture_union::Tex {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        core::mem::discriminant(self).hash(state);
+        match self {
+            common::texture_union::Tex::Texture(texture) => texture.hash(state),
+            common::texture_union::Tex::AvatarTexture(avatar_texture) => avatar_texture.hash(state),
+            common::texture_union::Tex::VideoTexture(video_texture) => video_texture.hash(state),
+            common::texture_union::Tex::UiTexture(ui_canvas_texture) => {
+                ui_canvas_texture.hash(state)
+            }
+        }
+    }
+}
+impl std::hash::Hash for sdk::components::pb_material::UnlitMaterial {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.texture.hash(state);
+        self.alpha_test.map(FloatOrd).hash(state);
+        self.cast_shadows.hash(state);
+        self.diffuse_color.hash(state);
+        self.alpha_texture.hash(state);
+    }
+}
+
+impl std::hash::Hash for common::Color4 {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        FloatOrd(self.r).hash(state);
+        FloatOrd(self.g).hash(state);
+        FloatOrd(self.b).hash(state);
+        FloatOrd(self.a).hash(state);
+    }
+}
+
+impl std::hash::Hash for common::Color3 {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        FloatOrd(self.r).hash(state);
+        FloatOrd(self.g).hash(state);
+        FloatOrd(self.b).hash(state);
+    }
+}
+
+impl std::hash::Hash for common::Vector2 {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        FloatOrd(self.x).hash(state);
+        FloatOrd(self.y).hash(state);
+    }
+}
+
+impl std::hash::Hash for sdk::components::pb_material::PbrMaterial {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.texture.hash(state);
+        self.alpha_test.map(FloatOrd).hash(state);
+        self.cast_shadows.hash(state);
+        self.alpha_texture.hash(state);
+        self.emissive_texture.hash(state);
+        self.bump_texture.hash(state);
+        self.albedo_color.hash(state);
+        self.emissive_color.hash(state);
+        self.reflectivity_color.hash(state);
+        self.transparency_mode.hash(state);
+        self.metallic.map(FloatOrd).hash(state);
+        self.roughness.map(FloatOrd).hash(state);
+        self.specular_intensity.map(FloatOrd).hash(state);
+        self.emissive_intensity.map(FloatOrd).hash(state);
+        self.direct_intensity.map(FloatOrd).hash(state);
     }
 }

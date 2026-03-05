@@ -1,4 +1,4 @@
-use bevy::{ecs::system::lifetimeless::SResMut, prelude::*};
+use bevy::{ecs::system::lifetimeless::SResMut, platform::collections::HashSet, prelude::*};
 use common::structs::{AppConfig, SceneLoadDistance};
 
 use super::{AppSetting, IntAppSetting};
@@ -43,7 +43,7 @@ impl AppSetting for LoadDistanceSetting {
         Self(config.scene_load_distance as i32)
     }
 
-    fn apply(&self, mut d: ResMut<SceneLoadDistance>, _: Commands) {
+    fn apply(&self, mut d: ResMut<SceneLoadDistance>, _: Commands, _: &HashSet<Entity>) {
         d.load = self.0 as f32;
     }
 
@@ -96,7 +96,7 @@ impl AppSetting for UnloadDistanceSetting {
         super::SettingCategory::Performance
     }
 
-    fn apply(&self, mut d: ResMut<SceneLoadDistance>, _: Commands) {
+    fn apply(&self, mut d: ResMut<SceneLoadDistance>, _: Commands, _: &HashSet<Entity>) {
         d.unload = self.0 as f32;
     }
 }

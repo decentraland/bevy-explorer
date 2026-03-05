@@ -27,6 +27,6 @@ pub struct StretchUvMaterial {
 
 impl UiMaterial for StretchUvMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/stretch_uv_material.wgsl".into()
+        "embedded://shaders/stretch_uv_material.wgsl".into()
     }
 }

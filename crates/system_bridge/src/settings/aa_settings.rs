@@ -1,9 +1,9 @@
 use bevy::{
     core_pipeline::fxaa::{Fxaa, Sensitivity},
-    ecs::system::{lifetimeless::SRes, SystemParamItem},
+    ecs::system::SystemParamItem,
     prelude::*,
 };
-use common::structs::{AaSetting, AppConfig, PrimaryCameraRes};
+use common::structs::{AaSetting, AppConfig};
 
 use super::{AppSetting, EnumAppSetting, SettingCategory};
 
@@ -13,8 +13,11 @@ impl EnumAppSetting for AaSetting {
             Self::Off,
             Self::FxaaLow,
             Self::FxaaHigh,
+            #[cfg(not(target_arch = "wasm32"))]
             Self::Msaa2x,
+            #[cfg(not(target_arch = "wasm32"))]
             Self::Msaa4x,
+            #[cfg(not(target_arch = "wasm32"))]
             Self::Msaa8x,
         ]
     }
@@ -33,7 +36,7 @@ impl EnumAppSetting for AaSetting {
 }
 
 impl AppSetting for AaSetting {
-    type Param = SRes<PrimaryCameraRes>;
+    type Param = ();
 
     fn title() -> String {
         "Anti-aliasing".to_owned()
@@ -64,7 +67,12 @@ impl AppSetting for AaSetting {
         config.graphics.msaa
     }
 
-    fn apply(&self, cam_res: SystemParamItem<Self::Param>, mut commands: Commands) {
+    fn apply_to_camera(
+        &self,
+        _param: &SystemParamItem<Self::Param>,
+        mut commands: Commands,
+        camera_entity: Entity,
+    ) {
         let msaa = match self {
             AaSetting::Off | AaSetting::FxaaLow | AaSetting::FxaaHigh => Msaa::Off,
             AaSetting::Msaa2x => Msaa::Sample2,
@@ -72,27 +80,7 @@ impl AppSetting for AaSetting {
             AaSetting::Msaa8x => Msaa::Sample8,
         };
 
-        commands.entity(cam_res.0).remove::<Fxaa>().insert(msaa);
-        if let Some(sensitivity) = match self {
-            AaSetting::FxaaLow => Some(Sensitivity::Medium),
-            AaSetting::FxaaHigh => Some(Sensitivity::Ultra),
-            _ => None,
-        } {
-            commands.entity(cam_res.0).insert(Fxaa {
-                enabled: true,
-                edge_threshold: sensitivity,
-                edge_threshold_min: sensitivity,
-            });
-        }
-    }
-
-    fn apply_to_camera(
-        &self,
-        _param: &SystemParamItem<Self::Param>,
-        mut commands: Commands,
-        camera_entity: Entity,
-    ) {
-        commands.entity(camera_entity).remove::<Fxaa>();
+        commands.entity(camera_entity).remove::<Fxaa>().insert(msaa);
         if let Some(sensitivity) = match self {
             AaSetting::FxaaLow => Some(Sensitivity::Medium),
             AaSetting::FxaaHigh => Some(Sensitivity::Ultra),

@@ -1,3 +1,4 @@
+
 [package]
 name = "comms"
 version = "0.1.0"
@@ -7,6 +8,8 @@ edition = "2021"
 
 [features]
 livekit = ["dep:livekit"]
+room_debug = []
+transport_debug = ["bevy/bevy_picking"]
 
 [dependencies]
 common = { workspace = true }
@@ -15,10 +18,10 @@ dcl_component = { workspace = true }
 ipfs = { workspace = true }
 wallet = { workspace = true }
 platform = { workspace = true }
+system_bridge = { workspace = true }
 
 bevy = { workspace = true }
 bimap = { workspace = true }
-ethers-signers = { workspace = true }
 ethers-core = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
@@ -30,30 +33,31 @@ prost = { workspace = true }
 async-std = { workspace = true }
 bevy_kira_audio = { workspace = true }
 kira = { workspace = true }
-async-trait = { workspace = true }
 futures-util = { workspace = true }
-rand = { workspace = true }
 num-traits = { workspace = true }
 http = { workspace = true }
-async-compat = { workspace = true }
 multihash-codetable = { workspace = true }
 web-time = { workspace = true }
 
 modular-bitfield = "0.11"
 
 cid = "0.11.0"
-multipart = { version = "0.18.0", default-features = false, features = ["client", "lazy_static"] }
+multipart = { version = "0.18.0", default-features = false, features = [
+  "client",
+  "lazy_static",
+] }
 image = "0.25"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-livekit = { git = "https://github.com/robtfm/client-sdk-rust", rev = "3a97ae8c8f86a86ec628325e9b53b31b06c5f31d", features=["native-tls"], optional = true }
+livekit = { git = "https://github.com/robtfm/client-sdk-rust", branch = "h264-true-prefixed", features = [
+  "native-tls",
+], optional = true }
 cpal = "0.15.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 js-sys = { workspace = true }
-web-sys = { workspace = true }
 serde-wasm-bindgen = { workspace = true }
 serde_bytes = { workspace = true }
 gloo-timers = "0.3"

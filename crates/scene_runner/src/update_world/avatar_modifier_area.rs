@@ -39,12 +39,12 @@ impl From<PbAvatarModifierArea> for AvatarModifierArea {
     }
 }
 
-#[derive(Component, Debug)]
-pub struct InputModifier(pub PbInputModifier);
+#[derive(Component, Debug, Clone, Default)]
+pub struct InputModifier(pub Option<PbInputModifier>);
 
 impl From<PbInputModifier> for InputModifier {
     fn from(value: PbInputModifier) -> Self {
-        Self(value)
+        Self(Some(value))
     }
 }
 
@@ -192,12 +192,22 @@ fn update_avatar_modifier_area(
                         .filter(|player_ent| input_modifiers.get(*player_ent).is_ok())
                 })
                 .next();
-            modifiers
-                .areas
-                .extend(input_modifier.map(|e| ActiveAvatarArea {
-                    entity: e,
-                    allow_locomotion: PermissionState::NotRequested,
-                }));
+
+            let modifier_present = input_modifier.as_ref().is_some_and(|ent| {
+                modifiers
+                    .areas
+                    .iter()
+                    .any(|ActiveAvatarArea { entity, .. }| ent == entity)
+            });
+
+            if !modifier_present {
+                modifiers
+                    .areas
+                    .extend(input_modifier.map(|e| ActiveAvatarArea {
+                        entity: e,
+                        allow_locomotion: PermissionState::NotRequested,
+                    }));
+            }
         }
 
         // remove destroyed areas
@@ -284,8 +294,9 @@ fn update_avatar_modifier_area(
                 }
             }
 
-            if let Some(pb_input_modifier::Mode::Standard(modifier)) =
-                maybe_modifier.and_then(|m| m.0.mode.as_ref())
+            if let Some(pb_input_modifier::Mode::Standard(modifier)) = maybe_modifier
+                .and_then(|m| m.0.as_ref())
+                .and_then(|m| m.mode.as_ref())
             {
                 let permit = maybe_foreign.is_some()
                     || match active_area.allow_locomotion {
@@ -305,6 +316,7 @@ fn update_avatar_modifier_area(
                     };
 
                 if permit {
+                    modifiers.block_all |= modifier.disable_all();
                     modifiers.block_run |= modifier.disable_all() || modifier.disable_run();
                     modifiers.block_walk |= modifier.disable_all() || modifier.disable_walk();
                     modifiers.block_jump |= modifier.disable_all() || modifier.disable_jump();
@@ -337,6 +349,8 @@ fn update_avatar_modifier_area(
         }
 
         modifiers.areas = areas_clone;
+
+        debug!("modifiers: {modifiers:?}");
     }
 
     for allowed in perms

@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use bevy::prelude::*;
+use common::util::ReportErr;
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::ffi::AVPixelFormat;
 use ffmpeg_next::format::Pixel;
@@ -161,7 +162,7 @@ impl FfmpegContext for VideoContext {
     }
 
     fn send_frame(&mut self) {
-        debug!(
+        trace!(
             "send video frame {:?} [{} in buffer]",
             self.current_frame,
             self.buffer.len()
@@ -191,7 +192,7 @@ impl FfmpegContext for VideoContext {
     }
 
     fn update_state(&self, state: VideoState) {
-        let _ = self.sink.blocking_send(VideoData::State(state));
+        self.sink.blocking_send(VideoData::State(state)).report();
     }
 
     fn clear(&mut self) {

@@ -2,6 +2,7 @@ use std::{collections::VecDeque, time::Duration};
 
 use bevy::prelude::*;
 use common::structs::AudioDecoderError;
+use common::util::ReportErr;
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::ffi::AVSampleFormat;
 use ffmpeg_next::{decoder, format::context::Input, media::Type, util::frame, Packet};
@@ -171,7 +172,7 @@ impl kira::sound::streaming::Decoder for FfmpegKiraBridge {
                     // maybe worth trying, but it just sleeps for 1ms anyway. we can do better by sleeping
                     // until a new frame arrives (typically 50ms+).
                     if frames.is_empty() {
-                        debug!(
+                        trace!(
                             "[{:?} waiting for frames [step {}], sleep {}s",
                             std::thread::current().id(),
                             self.step,
@@ -284,7 +285,7 @@ impl AudioContext {
 
         let sound_data = kira::sound::streaming::StreamingSoundData::from_decoder(kira_decoder);
 
-        let _ = channel.blocking_send(sound_data);
+        channel.blocking_send(sound_data).report();
 
         Ok(AudioContext {
             stream_index,
@@ -327,7 +328,7 @@ impl FfmpegContext for AudioContext {
 
     fn send_frame(&mut self) {
         if !self.dead {
-            debug!(
+            trace!(
                 "send audio frame {:?} [{} in buffer]",
                 self.current_frame,
                 self.buffer.len()

@@ -2,37 +2,32 @@ pub mod gotham_state;
 pub mod local_storage;
 pub mod op_wrappers;
 
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{mpsc::SyncSender, Arc},
-};
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use bevy::{log::tracing::span::EnteredSpan, tasks::IoTaskPool};
+use common::structs::GlobalCrdtStateUpdate;
 use dcl::{
-    interface::CrdtComponentInterfaces,
-    js::{ShuttingDown, SuperUserScene},
-    RendererResponse, SceneId, SceneResponse,
+    interface::{CrdtComponentInterfaces, CrdtStore},
+    js::{CommunicatedWithRenderer, SceneResponseSender, ShuttingDown, SuperUserScene},
+    RendererResponse, SceneElapsedTime, SceneId,
 };
 use gotham_state::GothamState;
-use ipfs::{IpfsResource, SceneJsFile};
+use ipfs::SceneJsFile;
 use once_cell::sync::OnceCell;
 use system_bridge::SystemApi;
 use tokio::sync::{
     mpsc::{channel, Receiver, Sender},
     Mutex,
 };
-use wallet::Wallet;
 
 pub struct SceneInitializationData {
+    pub initial_crdt_store: CrdtStore,
     pub thread_rx: Receiver<RendererResponse>,
     pub scene_hash: String,
     pub scene_js: SceneJsFile,
     pub crdt_component_interfaces: CrdtComponentInterfaces,
-    pub renderer_sender: SyncSender<SceneResponse>,
-    pub global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
-    pub ipfs: IpfsResource,
-    pub wallet: Wallet,
+    pub renderer_sender: SceneResponseSender,
+    pub global_update_receiver: tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
     pub id: SceneId,
     pub storage_root: String,
     pub inspect: bool,
@@ -52,13 +47,12 @@ pub fn init_runtime() {
 
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_scene(
+    initial_crdt_store: CrdtStore,
     scene_hash: String,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
-    renderer_sender: SyncSender<SceneResponse>,
-    global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
-    ipfs: IpfsResource,
-    wallet: Wallet,
+    renderer_sender: SceneResponseSender,
+    global_update_receiver: tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
     id: SceneId,
     storage_root: String,
     inspect: bool,
@@ -78,14 +72,13 @@ pub fn spawn_scene(
                 .lock()
                 .await
                 .push(SceneInitializationData {
+                    initial_crdt_store,
                     thread_rx,
                     scene_hash,
                     scene_js,
                     crdt_component_interfaces,
                     renderer_sender,
                     global_update_receiver,
-                    ipfs,
-                    wallet,
                     id,
                     storage_root,
                     inspect,
@@ -126,6 +119,7 @@ pub async fn wasm_init_scene() -> Result<WorkerContext, JsValue> {
 
     dcl::js::init_state(
         &mut *context.state.borrow_mut(),
+        scene_initialization_data.initial_crdt_store,
         scene_initialization_data.scene_hash,
         scene_initialization_data.id,
         scene_initialization_data.storage_root,
@@ -134,8 +128,6 @@ pub async fn wasm_init_scene() -> Result<WorkerContext, JsValue> {
         scene_initialization_data.renderer_sender,
         scene_initialization_data.thread_rx,
         scene_initialization_data.global_update_receiver,
-        scene_initialization_data.ipfs,
-        scene_initialization_data.wallet,
         scene_initialization_data.inspect,
         scene_initialization_data.testing,
         scene_initialization_data.preview,
@@ -230,8 +222,22 @@ impl From<WasmError> for JsValue {
 }
 
 #[wasm_bindgen]
+pub fn op_set_elapsed(state: &WorkerContext, elapsed: f32) {
+    state.state.borrow_mut().put(SceneElapsedTime(elapsed));
+}
+
+#[wasm_bindgen]
 pub fn op_continue_running(state: &WorkerContext) -> bool {
     !state.state.borrow().has::<ShuttingDown>()
+}
+
+#[wasm_bindgen]
+pub fn op_communicated_with_renderer(state: &WorkerContext) -> bool {
+    state
+        .state
+        .borrow_mut()
+        .try_take::<CommunicatedWithRenderer>()
+        .is_some()
 }
 
 #[wasm_bindgen]

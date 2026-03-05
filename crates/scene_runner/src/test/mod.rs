@@ -13,9 +13,11 @@ use bevy::{
     prelude::*,
     render::mesh::MeshPlugin,
     scene::ScenePlugin,
+    state::app::StatesPlugin,
     time::TimePlugin,
 };
 use bevy_dui::DuiPlugin;
+use dcl_deno_ipc::init_runtime;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use scene_material::SceneBoundPlugin;
@@ -37,11 +39,11 @@ use common::{
     inputs::InputMap,
     rpc::RpcCall,
     structs::{
-        AppConfig, CursorLocks, GraphicsSettings, PermissionUsed, PrimaryCamera, PrimaryPlayerRes,
-        SceneGlobalLight, SceneLoadDistance, TimeOfDay, ToolTips,
+        AppConfig, CursorLocks, GraphicsSettings, PermissionUsed, PreviewMode, PrimaryCamera,
+        PrimaryPlayerRes, SceneGlobalLight, SceneLoadDistance, TimeOfDay, ToolTips,
     },
 };
-use comms::{preview::PreviewMode, CommsPlugin};
+use comms::CommsPlugin;
 use console::{self, ConsolePlugin};
 use dcl::{
     crdt::lww::CrdtLWWState,
@@ -98,6 +100,7 @@ impl PluginGroup for TestPlugins {
             .add(AnimationPlugin)
             .add(InputPlugin)
             .add(ScenePlugin)
+            .add(StatesPlugin)
             .add(ConsolePlugin { add_egui: false })
             .add(WalletPlugin)
             .add(CommsPlugin)
@@ -107,6 +110,7 @@ impl PluginGroup for TestPlugins {
 }
 
 fn init_test_app(entity_json: &str) -> App {
+    init_runtime().unwrap();
     let mut app = App::new();
 
     // Add our systems
@@ -135,8 +139,6 @@ fn init_test_app(entity_json: &str) -> App {
     app.init_resource::<SceneGlobalLight>();
     app.insert_resource(TimeOfDay {
         time: 10.0 * 3600.0,
-        target_time: None,
-        speed: 12.0,
     });
     app.add_event::<RpcCall>();
     app.add_event::<ScrollTargetEvent>();

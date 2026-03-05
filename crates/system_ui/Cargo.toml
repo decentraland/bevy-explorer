@@ -19,7 +19,6 @@ ipfs = { workspace = true }
 ui_core = { workspace = true }
 avatar = { workspace = true }
 input_manager = { workspace = true }
-av = { workspace = true }
 wallet = { workspace = true }
 collectibles = { workspace = true }
 tween = { workspace = true }
@@ -32,10 +31,8 @@ system_bridge = { workspace = true }
 platform = { workspace = true }
 
 bevy = { workspace = true }
-bevy_egui = { workspace = true }
 bevy_dui = { workspace = true }
 bevy_console = { workspace = true }
-urn = { workspace = true }
 ethers-core = { workspace = true }
 ethers-signers = { workspace = true }
 serde = { workspace = true }
@@ -45,11 +42,8 @@ tokio = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
-opener = { workspace = true }
-urlencoding = { workspace = true }
 build-time = { workspace = true }
 futures-lite = { workspace = true }
-async-compat = { workspace = true }
 web-time = { workspace = true }
 copypwasmta = { workspace = true }
 

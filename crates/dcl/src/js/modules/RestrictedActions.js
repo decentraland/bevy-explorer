@@ -26,7 +26,7 @@ module.exports.triggerEmote = async function (body) {
 }
 
 module.exports.triggerSceneEmote = async function (body) { 
-    Deno.core.ops.op_scene_emote(body.src, body.looping)
+    Deno.core.ops.op_scene_emote(body.src, body.loop)
     return {} 
 }
 
@@ -46,9 +46,14 @@ module.exports.setCommunicationsAdapter = async function (body) {
     return {} 
 }
 module.exports.setUiFocus = async function(body) {
-    return await Deno.core.ops.op_set_ui_focus(body.elementId);
+    return await Deno.core.ops.op_ui_focus(true, body.elementId);
 }
-
+module.exports.clearUiFocus = async function(body) {
+    return await Deno.core.ops.op_ui_focus(true);
+}
+module.exports.getUiFocus = async function() {
+    return await Deno.core.ops.op_ui_focus(false);
+}
 module.exports.copyToClipboard = async function(body) {
     return await Deno.core.ops.op_copy_to_clipboard(body.text);
 }

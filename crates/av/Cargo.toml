@@ -8,6 +8,8 @@ edition = "2021"
 [features]
 ffmpeg = ["dep:ffmpeg-next"]
 html = ["dep:web-sys", "dep:wasm-bindgen"]
+livekit = ["comms/livekit"]
+av_player_debug = ["bevy/bevy_picking"]
 
 [dependencies]
 common = { workspace = true }
@@ -16,19 +18,32 @@ dcl_component = { workspace = true }
 ipfs = { workspace = true }
 scene_runner = { workspace = true }
 comms = { workspace = true }
+system_bridge = { workspace = true }
 
 bevy = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 reqwest = { workspace = true }
 urlencoding = { workspace = true }
-futures-lite = { workspace = true }
 bevy_kira_audio = { workspace = true }
 kira = { workspace = true }
 wgpu = { workspace = true }
+ethers-core = { workspace = true }
 
 ffmpeg-next = { version = "6.0.0", optional = true }
 thiserror = "1.0"
 
-web-sys = { workspace = true, features = ["HtmlMediaElement", "HtmlVideoElement"], optional = true}
-wasm-bindgen = { workspace = true, optional = true}
+web-sys = { workspace = true, optional = true, features = [
+  "HtmlMediaElement",
+  "HtmlVideoElement",
+  "HtmlCollection",
+  "AudioContext",
+  "AudioBuffer",
+  "AudioBufferSourceNode",
+  "GainNode",
+  "StereoPannerNode",
+  "AudioDestinationNode",
+  "AudioParam",
+  "VideoFrame",
+] }
+wasm-bindgen = { workspace = true, optional = true }

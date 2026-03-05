@@ -2,6 +2,7 @@
 name = "decentra-bevy"
 version = "0.1.0"
 edition = "2021"
+default-run = "decentra-bevy"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -11,8 +12,8 @@ name = "webgpu_build"
 # to build wasm lib:
 # - copy ./assets to deploy/web/assets
 # - copy ./crates/dcl/src/js/modules to deploy/web/modules
-# - rustup default nightly # (tested with 2025-06-03)
-# - wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="wasm" && npx serve deploy/web
+# - rustup default nightly # (tested with 2025-12-31)
+# - wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="livekit" && npx serve deploy/web
 
 [features]
 default = ["livekit", "ffmpeg", "inspect", "social"]
@@ -23,10 +24,9 @@ gen-tests = []
 tracy = ["bevy/trace_tracy"]
 inspect = ["dcl_deno/inspect", "system_ui/inspect"]
 hot_reload = ["bevy/file_watcher", "ipfs/hot_reload"]
-livekit = ["comms/livekit", "system_ui/livekit"]
+livekit = ["av/livekit", "comms/livekit", "system_ui/livekit"]
 ffmpeg = ["av/ffmpeg"]
-social = ["dcl_component/social", "social/social"]
-wasm = ["uuid/js", "getrandom/wasm_js", "bevy/webgpu", "bevy/wasm_threaded_asset_loader", "bevy/reduce_image_sizes", "av/html"]
+social = ["social/social"]
 
 [profile.release]
 codegen-units = 1
@@ -47,73 +47,81 @@ type_complexity = "allow"
 members = ["crates/*"]
 
 [workspace.dependencies]
-analytics = { path="crates/analytics" }
-common = { path="crates/common" }
-avatar = { path="crates/avatar" }
-comms = { path="crates/comms" }
-input_manager = { path="crates/input_manager" }
-ipfs = { path="crates/ipfs" }
-system_ui = { path="crates/system_ui" }
-user_input = { path="crates/user_input" }
-visuals = { path="crates/visuals" }
-ui_core = { path="crates/ui_core" }
-scene_material = { path="crates/scene_material" }
-scene_runner = { path="crates/scene_runner" }
-console = { path="crates/console" }
-av = { path="crates/av" }
-dcl = { path="crates/dcl" }
-dcl_deno = { path="crates/dcl_deno" }
-dcl_wasm = { path="crates/dcl_wasm" }
-dcl_component = { path="crates/dcl_component" }
-restricted_actions = { path="crates/restricted_actions" }
-wallet = { path="crates/wallet" }
-nft = { path="crates/nft" }
-tween = { path="crates/tween" }
-world_ui = { path="crates/world_ui" }
-collectibles = { path="crates/collectibles" }
-social = { path="crates/social" }
-imposters = { path="crates/imposters" }
-system_bridge = { path="crates/system_bridge" }
-texture_camera = { path="crates/texture_camera" }
-platform = { path="crates/platform" }
+analytics = { path = "crates/analytics" }
+common = { path = "crates/common" }
+assets = { path = "crates/assets" }
+avatar = { path = "crates/avatar" }
+comms = { path = "crates/comms" }
+input_manager = { path = "crates/input_manager" }
+ipfs = { path = "crates/ipfs" }
+system_ui = { path = "crates/system_ui" }
+user_input = { path = "crates/user_input" }
+visuals = { path = "crates/visuals" }
+ui_core = { path = "crates/ui_core" }
+scene_material = { path = "crates/scene_material" }
+scene_runner = { path = "crates/scene_runner" }
+console = { path = "crates/console" }
+av = { path = "crates/av" }
+dcl = { path = "crates/dcl" }
+dcl_deno = { path = "crates/dcl_deno" }
+dcl_deno_ipc = { path = "crates/dcl_deno_ipc" }
+dcl_wasm = { path = "crates/dcl_wasm" }
+dcl_component = { path = "crates/dcl_component" }
+restricted_actions = { path = "crates/restricted_actions" }
+wallet = { path = "crates/wallet" }
+nft = { path = "crates/nft" }
+tween = { path = "crates/tween" }
+world_ui = { path = "crates/world_ui" }
+collectibles = { path = "crates/collectibles" }
+social = { path = "crates/social" }
+imposters = { path = "crates/imposters" }
+system_bridge = { path = "crates/system_bridge" }
+texture_camera = { path = "crates/texture_camera" }
+platform = { path = "crates/platform" }
+image_processing = { path = "crates/image_processing" }
 
-bevy = { version = "0.16.1", default-features = false, features=[
-    "animation",
-    "bevy_asset",
-    "bevy_gilrs",
-    "bevy_scene",
-    "bevy_winit",
-    "bevy_core_pipeline",
-    "bevy_pbr",
-    "bevy_gltf",
-    "bevy_render",
-    "bevy_sprite",
-    "bevy_text",
-    "bevy_ui",
-    "multi_threaded",
-    "png",
-    "tiff",
-    "jpeg",
-    "hdr",
-    "x11",
-    "bevy_gizmos",
-    "tonemapping_luts",
-    "default_font",
-    "serialize",
-    "bevy_log",
-    "std",
-    "bevy_state",
-    "pbr_light_textures",
+bevy = { version = "0.16.1", default-features = false, features = [
+  "animation",
+  "bevy_asset",
+  "bevy_gilrs",
+  "bevy_scene",
+  "bevy_winit",
+  "bevy_core_pipeline",
+  "bevy_pbr",
+  "bevy_gltf",
+  "bevy_render",
+  "bevy_sprite",
+  "bevy_text",
+  "bevy_ui",
+  "multi_threaded",
+  "png",
+  "tiff",
+  "jpeg",
+  "hdr",
+  "x11",
+  "dds",
+  "webp",
+  "bevy_gizmos",
+  "tonemapping_luts",
+  "default_font",
+  "serialize",
+  "bevy_log",
+  "std",
+  "bevy_state",
+  "pbr_light_textures",
 ] }
 wgpu = "24"
-bevy_console = { git = "https://github.com/robtfm/bevy-console", branch="0.16" }
-bevy_egui = { version = "0.34", default-features = false, features = ["default_fonts", "render"] }
+bevy_console = { git = "https://github.com/robtfm/bevy-console", branch = "0.16" }
+bevy_egui = { version = "0.34", default-features = false, features = [
+  "default_fonts",
+  "render",
+] }
 
 serde = "1.0.152"
 serde_json = { version = "1.0.92", features = ["raw_value"] }
 
 itertools = "0.12"
-tokio = { version = "1.44", features = ["sync"] }
+tokio = { version = "1.44", features = ["sync", "macros"] }
 anyhow = "1.0.70"
 http = "1.1"
 urn = "0.7.0"
@@ -124,24 +132,41 @@ bimap = "0.6.3"
 prost = "0.11.8"
 clap = "4.1.10"
 once_cell = "1.16.0"
-rapier3d-f64 = "0.25"
+rapier3d-f64 = "0.31"
 urlencoding = "2.1.2"
 async-std = "1.12.0"
-reqwest = { version = "0.12", default-features = false, features = ["native-tls", "json", "blocking"] }
+reqwest = { version = "0.12", default-features = false, features = [
+  "native-tls",
+  "json",
+  "blocking",
+] }
 kira = "0.9.6"
 data-encoding = "2.5"
 opener = { version = "0.8", git = "https://github.com/robtfm/opener" }
 chrono = { version = "0.4.31", features = ["serde"] }
 bevy_dui = { git = "https://github.com/robtfm/bevy_dui", branch = "0.16" }
 bevy_ecss = { git = "https://github.com/robtfm/bevy_ecss", branch = "0.16" }
-bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = "0.16-2", features=["flac", "mp3", "ogg", "wav"] }
-bevy_simple_text_input = { git = "https://github.com/robtfm/bevy_simple_text_input", features=["clipboard"], branch="0.16" }
+bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = "0.16-2", features = [
+  "flac",
+  "mp3",
+  "ogg",
+  "wav",
+] }
+bevy_simple_text_input = { git = "https://github.com/robtfm/bevy_simple_text_input", features = [
+  "clipboard",
+], branch = "0.16" }
 directories = "5"
 uuid = { version = "1.7", features = ["v4"] }
 build-time = "0.1.3"
 async-tungstenite = { version = "0.25", features = ["async-native-tls"] }
 tungstenite = { version = "0.21.0" }
-dcl-rpc = { version = "2.3.5", default-features = false, features=["client", "websockets", "codegen", "server", "tungstenite"] }
+dcl-rpc = { version = "2.3.5", default-features = false, features = [
+  "client",
+  "websockets",
+  "codegen",
+  "server",
+  "tungstenite",
+] }
 async-trait = "0.1.68"
 fastrand = "2"
 rand = "0.8.5"
@@ -161,12 +186,27 @@ wasm-bindgen-futures = "0.4.50"
 js-sys = "0.3"
 serde-wasm-bindgen = "0.6"
 serde_bytes = "0.11"
-web-sys = { version = "0.3", features = ["Performance", "Window", "Document", "Element", "HtmlCanvasElement", "Window"] }
+web-sys = { version = "0.3", features = [
+  "Performance",
+  "Window",
+  "Document",
+  "Element",
+  "HtmlCanvasElement",
+  "DedicatedWorkerGlobalScope",
+  "CacheStorage",
+  "Cache",
+  "Request",
+  "Response",
+  "ResponseInit",
+  "Headers",
+  "Url",
+] }
 web-time = "1.1"
 copypwasmta = { git = "https://github.com/robtfm/copypwasmta" }
 web-fs = "0.2.6"
 
 [dependencies]
+assets = { workspace = true }
 analytics = { workspace = true }
 common = { workspace = true }
 avatar = { workspace = true }
@@ -182,7 +222,6 @@ console = { workspace = true }
 av = { workspace = true }
 restricted_actions = { workspace = true }
 wallet = { workspace = true }
-dcl = { workspace = true }
 nft = { workspace = true }
 tween = { workspace = true }
 scene_material = { workspace = true }
@@ -193,12 +232,12 @@ imposters = { workspace = true }
 system_bridge = { workspace = true }
 texture_camera = { workspace = true }
 platform = { workspace = true }
+image_processing = { workspace = true }
 
 bevy = { workspace = true }
 wgpu = { workspace = true }
 bevy_console = { workspace = true }
 
-serde = { workspace = true }
 serde_json = { workspace = true }
 clap = { workspace = true }
 uuid = { workspace = true }
@@ -207,31 +246,37 @@ web-time = { workspace = true }
 
 pico-args = "0.5.0"
 chrono = { workspace = true }
+# tracing = { version = "0.1", features = ["release_max_level_info"] }
+tracing = { version = "0.1" }
 tracing-appender = "0.2.3"
 log-panics = { version = "2.1.0", features = ["with-backtrace"] }
 
 # non-main dependencies
 futures-lite = { workspace = true }
-dcl_component = { workspace = true }
 tokio = { workspace = true }
 bevy_simple_text_input = { workspace = true }
 
 
-
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dcl_deno = { workspace = true }
+dcl_deno_ipc = { workspace = true }
 mimalloc = { version = "*", default-features = false }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+av = { workspace = true, features = ["html"] }
+bevy = { workspace = true, features = [
+  "webgpu",
+  "wasm_threaded_asset_loader",
+  "reduce_image_sizes",
+] }
+uuid = { workspace = true, features = ["js"] }
 dcl_wasm = { workspace = true }
 console_error_panic_hook = "0.1.7"
-console_log = "1.0"
 log = "0.4"
-getrandom = "0.3"
+getrandom = { version = "0.3", features = ["wasm_js"] }
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 once_cell = { workspace = true }
-async-channel = "2"
 web-fs = { workspace = true }
 
 [build-dependencies]
@@ -273,8 +318,7 @@ bevy_platform = { git = "https://github.com/robtfm/bevy", branch = "release-0.16
 # bevy_platform = { path="../bevy/crates/bevy_platform" }
 
 ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-linesize-0-6.1" }
-parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "bugfix-project-local-point" }
-# rapier3d-f64 = { git = "https://github.com/robtfm/rapier", branch = "master" }
+# parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "bugfix-project-local-point" }
 deno_core = { git = "https://github.com/robtfm/deno_core", branch = "0_307_hotfix" }
 serde_v8 = { git = "https://github.com/robtfm/deno_core", branch = "0_307_hotfix" }
 deno_ops = { git = "https://github.com/robtfm/deno_core", branch = "0_307_hotfix" }
@@ -297,6 +341,10 @@ deno_webstorage = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfi
 # deno_websocket = { path = "../deno/ext/websocket" }
 # deno_webstorage = { path = "../deno/ext/webstorage" }
 
+winit = { git = "https://github.com/robtfm/winit", branch = "v0.30.x" }
+wgpu = { git = "https://github.com/robtfm/wgpu", branch = "24.0.5-dcl" }
+wgpu-types = { git = "https://github.com/robtfm/wgpu", branch = "24.0.5-dcl" }
+naga = { git = "https://github.com/robtfm/wgpu", branch = "24.0.5-dcl" }
 
 # [patch."https://github.com/robtfm/bevy"]
 # bevy = { path = "../bevy" }
@@ -312,4 +360,3 @@ deno_webstorage = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfi
 
 # [patch."https://github.com/robtfm/bevy_atmosphere"]
 # bevy_atmosphere = { path = "../bevy_atmosphere" }
-

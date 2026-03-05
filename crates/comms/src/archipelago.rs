@@ -98,6 +98,7 @@ pub fn start_archipelago(mut commands: Commands, mut archi_events: EventReader<S
             Transport {
                 transport_type: TransportType::Archipelago,
                 sender,
+                control: None,
                 foreign_aliases: Default::default(),
             },
             ArchipelagoTransport {

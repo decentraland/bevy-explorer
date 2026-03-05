@@ -1,22 +1,19 @@
 use std::f32::consts::{FRAC_PI_4, PI};
 
 use bevy::{
-    math::FloatOrd,
     prelude::*,
+    render::view::ViewUserValue,
     window::{CursorGrabMode, PrimaryWindow},
 };
 
 use common::{
-    inputs::{Action, SystemAction, POINTER_SET},
+    inputs::{Action, SystemAction, CAMERA_SET, CAMERA_ZOOM, POINTER_SET},
     structs::{AvatarDynamicState, CameraOverride, CursorLocks, PrimaryCamera, PrimaryUser},
     util::ModifyComponentExt,
 };
 use dcl_component::proto_components::sdk::components::common::camera_transition::TransitionMode;
 use input_manager::{InputManager, InputPriority};
-use scene_runner::{
-    renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
-    ContainingScene,
-};
+use scene_runner::OutOfWorld;
 use tween::SystemTween;
 
 use crate::TRANSITION_TIME;
@@ -114,9 +111,9 @@ pub fn update_camera(
         );
     }
 
-    let mut mouse_delta = Vec2::ZERO;
+    let mut mouse_delta = input_manager.get_analog(CAMERA_SET, InputPriority::Scene) * 10.0;
     if locks.0.contains("camera") {
-        mouse_delta = input_manager.get_analog(POINTER_SET, InputPriority::BindInput);
+        mouse_delta += input_manager.get_analog(POINTER_SET, InputPriority::Scroll);
     }
 
     if allow_cam_move {
@@ -138,14 +135,13 @@ pub fn update_camera(
         options.pitch = (options.pitch - mouse_delta.y * options.sensitivity / 1000.0)
             .clamp(-PI / 2.1, PI / 2.1);
         options.yaw -= mouse_delta.x * options.sensitivity / 1000.0;
-        if input_manager.is_down(SystemAction::CameraZoomIn, InputPriority::None)
-            || input_manager.just_down(SystemAction::CameraZoomIn, InputPriority::None)
-        {
-            options.distance = 0f32.max((options.distance - 0.05) * 0.9);
-        } else if input_manager.is_down(SystemAction::CameraZoomOut, InputPriority::None)
-            || input_manager.just_down(SystemAction::CameraZoomOut, InputPriority::None)
-        {
-            options.distance = 7000f32.min((options.distance / 0.9) + 0.05);
+        let zoom = input_manager
+            .get_analog(CAMERA_ZOOM, InputPriority::Scene)
+            .y;
+        if zoom != 0.0 {
+            let zoom = zoom.clamp(-1000.0, 1000.0);
+            options.distance =
+                (((options.distance + 0.5) * 1.0005f32.powf(-zoom)) - 0.5).clamp(0.0, 100.0);
         }
     }
 
@@ -173,19 +169,18 @@ pub fn update_camera_position(
         &mut Projection,
         Option<&mut SystemTween>,
     )>,
-    mut player: Query<
-        (&Transform, &AvatarDynamicState),
+    player: Query<
+        (&Transform, &AvatarDynamicState, Has<OutOfWorld>),
         (With<PrimaryUser>, Without<PrimaryCamera>),
     >,
-    containing_scene: ContainingScene,
-    mut scene_colliders: Query<(&RendererSceneContext, &mut SceneColliderData)>,
     mut prev_override: Local<Option<CameraOverride>>,
+    mut prev_oow: Local<bool>,
     gt_helper: TransformHelper,
 ) {
     let (
-        Ok((player_transform, dynamic_state)),
+        Ok((player_transform, dynamic_state, is_oow)),
         Ok((camera_ent, camera_transform, options, mut projection, maybe_tween)),
-    ) = (player.single_mut(), camera.single_mut())
+    ) = (player.single(), camera.single_mut())
     else {
         return;
     };
@@ -193,7 +188,12 @@ pub fn update_camera_position(
     let mut target_transform = *camera_transform;
     let mut target_transition = TransitionMode::Time(TRANSITION_TIME);
 
-    if let Some(CameraOverride::Cinematic(cine)) = options.scene_override.as_ref() {
+    if is_oow {
+        target_transform = Transform::from_translation(
+            player_transform.translation + Vec3::new(15.0, 75.0, 100.0),
+        )
+        .looking_at(player_transform.translation, Vec3::Y);
+    } else if let Some(CameraOverride::Cinematic(cine)) = options.scene_override.as_ref() {
         let Ok(origin) = gt_helper.compute_global_transform(cine.origin) else {
             warn!("failed to get gt");
             return;
@@ -242,6 +242,8 @@ pub fn update_camera_position(
         {
             target_transition = transition.clone();
         }
+
+        commands.entity(camera_ent).insert(ViewUserValue(0.0));
     } else {
         let target_fov = (dynamic_state.velocity.length() / 4.0).clamp(1.25, 1.25) * FRAC_PI_4;
         if let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
@@ -266,69 +268,29 @@ pub fn update_camera_position(
             + Vec3::Y * -0.08;
 
         let target_direction = target_transform.rotation.mul_vec3(Vec3::Z);
-        let mut target_translation =
+        let target_translation =
             player_head + head_offset * distance.clamp(0.0, 3.0) + target_direction * distance;
 
-        if target_translation.y < 0.1 {
-            distance -= (target_translation.y - 0.1) / target_direction.y;
-            target_translation =
-                player_head + head_offset * distance.clamp(0.0, 3.0) + target_direction * distance;
-        }
-
-        if distance > 0.0 {
-            // cast to check visibility
-            let scenes_head = containing_scene.get_position(player_head);
-            let scenes_cam =
-                containing_scene.get_position(player_head + target_direction * distance);
-
-            const OFFSET_SIZE: f32 = 0.15;
-            let offsets = [
-                Vec3::ZERO,
-                Vec3::new(-OFFSET_SIZE, 0.0, 0.0),
-                Vec3::new(OFFSET_SIZE, 0.0, 0.0),
-                Vec3::new(0.0, -OFFSET_SIZE, 0.0),
-                Vec3::new(0.0, OFFSET_SIZE, 0.0),
-            ];
-            let mut offset_distances = [FloatOrd(1.0); 5];
-            for scene in (scenes_head).union(&scenes_cam) {
-                let Ok((context, mut colliders)) = scene_colliders.get_mut(*scene) else {
-                    continue;
-                };
-
-                for ix in 0..5 {
-                    let origin = player_head + target_transform.rotation.mul_vec3(offsets[ix]);
-                    if let Some(hit) = colliders.cast_ray_nearest(
-                        context.last_update_frame,
-                        origin,
-                        target_translation - origin,
-                        1.0,
-                        u32::MAX,
-                        false,
-                    ) {
-                        offset_distances[ix] =
-                            FloatOrd(offset_distances[ix].0.min(hit.toi).max(0.0));
-                    }
-                }
-            }
-            debug!(
-                "{distance} vs {:?}",
-                offset_distances.iter().map(|d| d.0).collect::<Vec<_>>()
-            );
-            distance *= offset_distances.iter().max().unwrap().0;
+        if target_translation.y < distance * 0.25 {
+            distance = player_head.y / (0.25 - target_direction.y);
         }
 
         target_transform.translation =
             player_head + head_offset * distance.clamp(0.0, 3.0) + target_direction * distance;
+
+        commands.entity(camera_ent).insert(ViewUserValue(distance));
     }
 
     let changed = (prev_override.is_some() != options.scene_override.is_some())
         || prev_override
             .as_ref()
-            .is_some_and(|prev| !prev.effectively_equals(options.scene_override.as_ref().unwrap()));
+            .is_some_and(|prev| !prev.effectively_equals(options.scene_override.as_ref().unwrap()))
+        || *prev_oow != is_oow;
 
     if changed {
         debug!("changed cam to {:?}", options.scene_override);
         prev_override.clone_from(&options.scene_override);
+        *prev_oow = is_oow;
         let time = match target_transition {
             TransitionMode::Time(t) => t,
             TransitionMode::Speed(s) => {
@@ -364,17 +326,29 @@ pub fn update_camera_position(
 pub fn update_cursor_lock(
     locks: Res<CursorLocks>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
+    mut prev: Local<bool>,
 ) {
     let lock = !locks.0.is_empty();
 
     if lock {
         for mut window in &mut windows {
             if !window.focused {
-                continue;
+                if !*prev {
+                    // new right-click while not focussed - try to focus
+                    window.focused = true;
+                    // and skip updating window fields until focus is processed
+                    return;
+                } else {
+                    continue;
+                }
             }
 
             if window.cursor_options.grab_mode == CursorGrabMode::None {
                 window.cursor_options.grab_mode = CursorGrabMode::Locked;
+                return;
+            }
+
+            if window.cursor_options.visible {
                 window.cursor_options.visible = false;
             }
         }
@@ -382,8 +356,13 @@ pub fn update_cursor_lock(
         for mut window in &mut windows {
             if window.cursor_options.grab_mode != CursorGrabMode::None {
                 window.cursor_options.grab_mode = CursorGrabMode::None;
+            }
+
+            if !window.cursor_options.visible {
                 window.cursor_options.visible = true;
             }
         }
     }
+
+    *prev = lock;
 }

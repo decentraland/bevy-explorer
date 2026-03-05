@@ -1,5 +1,5 @@
 use core::f32;
-use std::{collections::VecDeque, marker::PhantomData};
+use std::{collections::VecDeque, marker::PhantomData, panic::Location};
 
 use bevy::{
     app::Update,
@@ -7,9 +7,12 @@ use bevy::{
     ecs::{
         component::{Component, Mutable},
         schedule::IntoScheduleConfigs,
-        system::{Commands, EntityCommand, EntityCommands, Query, ScheduleSystem, SystemParam},
+        system::{
+            Commands, EntityCommand, EntityCommands, Query, ResMut, ScheduleSystem, SystemParam,
+        },
         world::EntityWorldMut,
     },
+    log::error,
     math::Vec3,
     pbr::{MeshMaterial3d, StandardMaterial},
     prelude::{Bundle, Command, Entity, GlobalTransform, Plugin, Res, World},
@@ -531,7 +534,7 @@ impl TaskCompat for IoTaskPool {
 #[allow(clippy::type_complexity)]
 #[derive(SystemParam)]
 pub struct SceneSpawnerPlus<'w, 's> {
-    scene_spawner: Res<'w, SceneSpawner>,
+    scene_spawner: ResMut<'w, SceneSpawner>,
     asset_server: Res<'w, AssetServer>,
     query: Query<
         'w,
@@ -548,6 +551,12 @@ impl std::ops::Deref for SceneSpawnerPlus<'_, '_> {
 
     fn deref(&self) -> &Self::Target {
         &self.scene_spawner
+    }
+}
+
+impl std::ops::DerefMut for SceneSpawnerPlus<'_, '_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.scene_spawner
     }
 }
 
@@ -584,5 +593,26 @@ impl SceneSpawnerPlus<'_, '_> {
         }
 
         true
+    }
+}
+
+pub trait ReportErr {
+    fn report(self)
+    where
+        Self: Sized,
+    {
+    }
+}
+
+impl<T, E: std::fmt::Debug> ReportErr for Result<T, E> {
+    #[track_caller]
+    fn report(self)
+    where
+        Self: Sized,
+    {
+        if let Err(e) = self {
+            let caller = Location::caller();
+            error!("Unexpected application error : {e:?} @ {caller}")
+        }
     }
 }

@@ -8,6 +8,7 @@
 
 use bevy::{color::palettes::basic, prelude::*};
 use bevy_console::ConsoleCommand;
+use common::dynamics::PLAYER_COLLIDER_OVERLAP;
 
 use crate::{
     update_world::{
@@ -143,27 +144,54 @@ fn run_raycasts(
             .collision_mask
             .unwrap_or(ColliderLayer::ClPointer as u32 | ColliderLayer::ClPhysics as u32);
 
-        let results = match (context.is_portable, raycast.query_type()) {
-            (false, RaycastQueryType::RqtHitFirst) => scene_data
+        let nearest_function = |scene_data: &mut SceneColliderData| match raycast.shape() {
+            dcl_component::proto_components::sdk::components::RaycastShape::RsRay => scene_data
                 .cast_ray_nearest(
-                    context.last_update_frame,
                     origin,
                     direction,
                     raycast.max_distance,
                     mask,
                     true,
-                )
+                    false,
+                    None,
+                ),
+            dcl_component::proto_components::sdk::components::RaycastShape::RsAvatar => scene_data
+                .cast_avatar_nearest(
+                    origin.as_dvec3(),
+                    direction.as_dvec3(),
+                    raycast.max_distance as f64,
+                    mask,
+                    false,
+                    false,
+                    Default::default(),
+                    -PLAYER_COLLIDER_OVERLAP,
+                ),
+        };
+
+        let all_function = |scene_data: &mut SceneColliderData| match raycast.shape() {
+            dcl_component::proto_components::sdk::components::RaycastShape::RsRay => {
+                scene_data.cast_ray_all(origin, direction, raycast.max_distance, mask, true)
+            }
+            dcl_component::proto_components::sdk::components::RaycastShape::RsAvatar => scene_data
+                .cast_avatar_all(
+                    origin.as_dvec3(),
+                    direction.as_dvec3(),
+                    raycast.max_distance as f64,
+                    mask,
+                    false,
+                    false,
+                    -PLAYER_COLLIDER_OVERLAP,
+                ),
+        };
+
+        let results = match (
+            context.is_portable || raycast.include_world(),
+            raycast.query_type(),
+        ) {
+            (false, RaycastQueryType::RqtHitFirst) => nearest_function(&mut scene_data)
                 .map(|hit| vec![(scene_ent.root, hit)])
                 .unwrap_or_default(),
-            (false, RaycastQueryType::RqtQueryAll) => scene_data
-                .cast_ray_all(
-                    context.last_update_frame,
-                    origin,
-                    direction,
-                    raycast.max_distance,
-                    mask,
-                    true,
-                )
+            (false, RaycastQueryType::RqtQueryAll) => all_function(&mut scene_data)
                 .into_iter()
                 .map(|hit| (scene_ent.root, hit))
                 .collect(),
@@ -178,18 +206,10 @@ fn run_raycasts(
                     best_result.as_ref().is_none_or(|(_, br)| br.toi > *closest)
                 }) {
                     let scene = scenes.next().unwrap().0;
-                    let Ok((scene, context, mut colliders, _)) = scene_context.get_mut(scene)
-                    else {
+                    let Ok((scene, _, mut colliders, _)) = scene_context.get_mut(scene) else {
                         continue;
                     };
-                    if let Some(result) = colliders.cast_ray_nearest(
-                        context.last_update_frame,
-                        origin,
-                        direction,
-                        raycast.max_distance,
-                        mask,
-                        true,
-                    ) {
+                    if let Some(result) = nearest_function(&mut colliders) {
                         if best_result.as_ref().is_none_or(|(_, b)| b.toi > result.toi) {
                             best_result = Some((scene, result));
                         }
@@ -206,21 +226,10 @@ fn run_raycasts(
                 let full_ray = direction * raycast.max_distance;
                 let mut results = Vec::new();
                 for (scene, _) in containing_scene.get_ray(origin, full_ray) {
-                    let Ok((scene, context, mut colliders, _)) = scene_context.get_mut(scene)
-                    else {
+                    let Ok((scene, _, mut colliders, _)) = scene_context.get_mut(scene) else {
                         continue;
                     };
-                    for result in colliders
-                        .cast_ray_all(
-                            context.last_update_frame,
-                            origin,
-                            direction,
-                            raycast.max_distance,
-                            mask,
-                            true,
-                        )
-                        .into_iter()
-                    {
+                    for result in all_function(&mut colliders).into_iter() {
                         results.push((scene, result));
                     }
                 }

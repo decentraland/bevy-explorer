@@ -72,6 +72,7 @@ module.exports.logout = function() {
 //   maxValue: number, 
 //   namedVariants: [(variantName: string, variantDescription: string)]
 //   value: number,
+//   default: number,
 // }
 module.exports.getSettings = async function() {
     return await op_settings();
@@ -206,11 +207,6 @@ module.exports.setHomeScene = async function(args) {
     await Deno.core.ops.op_set_home_scene(args.realm, args.parcel)
 }
 
-// string
-module.exports.getRealmProvider = async function() {
-    return (await Deno.core.ops.op_get_realm_provider()).realm
-}
-
 // get system actions as a stream
 // type SystemAction = {
 //   action: string,
@@ -305,4 +301,79 @@ module.exports.getPermanentPermissions = async function(body) {
 
 module.exports.getPermissionTypes = function() {
     return Deno.core.ops.getPermissionTypes();
+}
+
+module.exports.setInteractableArea = function(body) {
+    Deno.core.ops.op_set_interactable_area(body.left, body.top, body.right, body.bottom);
+}
+
+module.exports.getMicState = function() {
+    return Deno.core.ops.op_get_mic_state();
+}
+
+module.exports.setMicEnabled = function(enabled) {
+    Deno.core.ops.op_set_mic_enabled(enabled);
+}
+
+// get voice stream / mic activations as a stream
+// type MicActivation = {
+//   senderAddress: string,
+//   active: bool,
+// }
+module.exports.getVoiceStream = async function() {
+  const rid = await Deno.core.ops.op_get_voice_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_voice_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}
+
+// get hover events as a stream
+// type HoverAction = {
+//   enabled: bool,
+//   ...pb_pointer_events::Entry
+// }
+// type HoverEvent = {
+//   entered: bool,
+//   targetType: PointerTargetType, 0 = world, 1 = ui, 2 = avatar
+//   actions: HoverAction[],
+// }
+module.exports.getHoverStream = async function() {
+  const rid = await Deno.core.ops.op_get_hover_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_hover_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}
+
+// get scene loading UI state as a stream
+// type SceneLoadingUi = {
+//   visible: boolean,
+//   title: string,
+//   pendingAssets: number | null,
+// }
+module.exports.getSceneLoadingUIStream = async function() {
+  const rid = await Deno.core.ops.op_get_scene_loading_ui_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_scene_loading_ui_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
 }

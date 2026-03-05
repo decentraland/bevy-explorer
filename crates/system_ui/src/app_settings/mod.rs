@@ -1,13 +1,23 @@
 use bevy::{ecs::system::StaticSystemParam, prelude::*, ui::RelativeCursorPosition};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiEntityCommandsExt, DuiProps, DuiRegistry};
+#[cfg(not(target_arch = "wasm32"))]
+use common::structs::SsaoSetting;
 use common::{
     structs::{
-        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, SettingsTab, ShadowSetting,
-        SsaoSetting, WindowSetting,
+        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, PreviewMode, SettingsTab,
+        ShadowSetting, WindowSetting,
     },
     util::TryPushChildrenEx,
 };
-use system_bridge::settings::{cache_size::CacheSizeSetting, EnumAppSetting, IntAppSetting};
+use system_bridge::settings::{
+    cache_size::CacheSizeSetting,
+    imposter_settings::ImposterSetting,
+    sensitivity::{
+        CameraSensitivitySetting, CameraZoomSensitivitySetting, MovementSensitivitySetting,
+        PointerSensitivitySetting, ScrollSensitivitySetting,
+    },
+    ActiveCameras, EnumAppSetting, IntAppSetting,
+};
 use ui_core::ui_actions::{Click, ClickRepeat, HoverEnter, On, UiCaller};
 
 use crate::profile::SettingsDialog;
@@ -55,6 +65,7 @@ fn set_app_settings_content(
     current_settings: Res<AppConfig>,
     mut prev_tab: Local<Option<SettingsTab>>,
     dui: Res<DuiRegistry>,
+    preview_mode: Option<Res<PreviewMode>>,
 ) {
     if dialog.is_empty() {
         *prev_tab = None;
@@ -90,7 +101,7 @@ fn set_app_settings_content(
             .apply_template(&dui, "settings-tab", DuiProps::new())
             .unwrap();
 
-        let children = vec![
+        let mut children = vec![
             commands
                 .spawn_template(
                     &dui,
@@ -106,9 +117,11 @@ fn set_app_settings_content(
             spawn_enum_setting_template::<ShadowSetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<ShadowDistanceSetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<ShadowCasterCountSetting>(&mut commands, &dui, &config),
+            spawn_enum_setting_template::<ImposterSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<FogSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<BloomSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<DofSetting>(&mut commands, &dui, &config),
+            #[cfg(not(target_arch = "wasm32"))]
             spawn_enum_setting_template::<SsaoSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<OobSetting>(&mut commands, &dui, &config),
             spawn_enum_setting_template::<ConstrainUiSetting>(&mut commands, &dui, &config),
@@ -120,8 +133,16 @@ fn set_app_settings_content(
                 )
                 .unwrap()
                 .root,
-            spawn_int_setting_template::<LoadDistanceSetting>(&mut commands, &dui, &config),
-            spawn_int_setting_template::<UnloadDistanceSetting>(&mut commands, &dui, &config),
+        ];
+
+        if preview_mode.is_none() {
+            children.extend(vec![
+                spawn_int_setting_template::<LoadDistanceSetting>(&mut commands, &dui, &config),
+                spawn_int_setting_template::<UnloadDistanceSetting>(&mut commands, &dui, &config),
+            ]);
+        }
+
+        children.extend(vec![
             spawn_enum_setting_template::<FpsTargetSetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<SceneThreadsSetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<VideoThreadsSetting>(&mut commands, &dui, &config),
@@ -155,7 +176,24 @@ fn set_app_settings_content(
             spawn_int_setting_template::<JumpSetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<GravitySetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<FallSpeedSetting>(&mut commands, &dui, &config),
-        ];
+            commands
+                .spawn_template(
+                    &dui,
+                    "settings-header",
+                    DuiProps::new().with_prop("label", "Control Sensitivity Settings".to_owned()),
+                )
+                .unwrap()
+                .root,
+            spawn_int_setting_template::<PointerSensitivitySetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<CameraZoomSensitivitySetting>(
+                &mut commands,
+                &dui,
+                &config,
+            ),
+            spawn_int_setting_template::<ScrollSensitivitySetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<MovementSensitivitySetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<CameraSensitivitySetting>(&mut commands, &dui, &config),
+        ]);
 
         commands
             .entity(components.named("settings"))
@@ -174,11 +212,12 @@ struct AppSettingDescription;
 fn bump_enum<S: EnumAppSetting, const I: isize>(
     mut q: Query<(&mut SettingsDialog, &mut AppSettingsDetail)>,
     params: StaticSystemParam<S::Param>,
-    commands: Commands,
+    mut commands: Commands,
     caller: Res<UiCaller>,
     parents: Query<(&ChildOf, Option<&DuiEntities>)>,
     mut text: Query<&mut Text, Without<AppSettingDescription>>,
     mut description: Query<&mut Text, With<AppSettingDescription>>,
+    mut cameras: ResMut<ActiveCameras>,
 ) {
     let mut variants = S::variants();
     let (mut dialog, mut config) = q.single_mut().unwrap();
@@ -188,7 +227,8 @@ fn bump_enum<S: EnumAppSetting, const I: isize>(
     let next =
         variants.remove(((index as isize + I) + variants.len() as isize) as usize % variants.len());
     S::save(&next, config);
-    S::apply(&next, params.into_inner(), commands);
+    let cameras = cameras.get(&mut commands);
+    S::apply(&next, params.into_inner(), commands, cameras);
 
     let (mut parent, mut entities) = parents.get(caller.0).unwrap();
     while entities.is_none_or(|e| e.get_named("setting-label").is_none()) {
@@ -201,21 +241,24 @@ fn bump_enum<S: EnumAppSetting, const I: isize>(
     dialog.modified = true;
 }
 
+#[allow(clippy::too_many_arguments)]
 fn bump_int<S: IntAppSetting, const I: i32>(
     mut q: Query<(&mut SettingsDialog, &mut AppSettingsDetail)>,
     params: StaticSystemParam<S::Param>,
-    commands: Commands,
+    mut commands: Commands,
     caller: Res<UiCaller>,
     parents: Query<(&ChildOf, Option<&DuiEntities>)>,
     mut style: Query<&mut Node>,
     mut text: Query<&mut Text, Without<AppSettingDescription>>,
+    mut cameras: ResMut<ActiveCameras>,
 ) {
     let (mut dialog, mut config) = q.single_mut().unwrap();
     let config = &mut config.0;
     let current = S::load(config).value();
     let next = S::from_int((current + I).clamp(S::min(), S::max()));
     S::save(&next, config);
-    S::apply(&next, params.into_inner(), commands);
+    let cameras = cameras.get(&mut commands);
+    S::apply(&next, params.into_inner(), commands, cameras);
 
     let (mut parent, mut entities) = parents.get(caller.0).unwrap();
     while entities.is_none_or(|e| e.get_named("marker").is_none()) {
@@ -308,10 +351,11 @@ fn spawn_int_setting_template<S: IntAppSetting>(
              cursor: Query<&RelativeCursorPosition>,
              mut q: Query<(&mut SettingsDialog, &mut AppSettingsDetail)>,
              params: StaticSystemParam<S::Param>,
-             commands: Commands,
+             mut commands: Commands,
              parents: Query<(&ChildOf, Option<&DuiEntities>)>,
              mut style: Query<&mut Node>,
-             mut text: Query<&mut Text, Without<AppSettingDescription>>| {
+             mut text: Query<&mut Text, Without<AppSettingDescription>>,
+             mut cameras: ResMut<ActiveCameras>| {
                 let Some(pos) = cursor.get(caller.0).ok().and_then(|rcp| rcp.normalized) else {
                     return;
                 };
@@ -322,7 +366,8 @@ fn spawn_int_setting_template<S: IntAppSetting>(
                 let (mut dialog, mut config) = q.single_mut().unwrap();
                 let config = &mut config.0;
                 S::save(&next, config);
-                S::apply(&next, params.into_inner(), commands);
+                let cameras = cameras.get(&mut commands);
+                S::apply(&next, params.into_inner(), commands, cameras);
 
                 let (mut parent, mut entities) = parents.get(caller.0).unwrap();
                 while entities.is_none_or(|e| e.get_named("marker").is_none()) {

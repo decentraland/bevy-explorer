@@ -10,7 +10,7 @@ use platform::platform_pointer_is_locked;
 
 use crate::{
     initialize_scene::SuperUserScene, renderer_context::RendererSceneContext,
-    update_world::AddCrdtInterfaceExt, SceneSets,
+    update_world::AddCrdtInterfaceExt, InteractableArea, SceneSets,
 };
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
@@ -27,7 +27,7 @@ impl Plugin for PointerLockPlugin {
     fn build(&self, app: &mut App) {
         app.add_crdt_lww_component::<PbPointerLock, PointerLock>(
             SceneComponentId::POINTER_LOCK,
-            ComponentPosition::RootOnly,
+            ComponentPosition::EntityOnly,
         );
         app.add_systems(Update, update_pointer_lock.in_set(SceneSets::Input));
     }
@@ -97,18 +97,18 @@ pub fn update_pointer_lock(
         Entity,
         &mut RendererSceneContext,
         Option<&mut CumulativePointerDelta>,
-        Option<&SuperUserScene>,
-        Option<Ref<PointerLock>>,
+        Has<SuperUserScene>,
     )>,
+    changed_pointer_locks: Query<&PointerLock, Changed<PointerLock>>,
     window: Query<&Window, With<PrimaryWindow>>,
     camera: Query<(&Camera, &GlobalTransform), With<PrimaryCamera>>,
-    mut prev_coords: Local<Option<Vec2>>,
+    mut prev_coords: Local<(Option<Vec2>, Option<Vec2>)>,
     mut locks: ResMut<CursorLocks>,
     config: Res<AppConfig>,
     mut mb_state: CameraInteractionState,
     active_dialog: Option<Res<ActiveDialog>>,
     mut toggle: Local<bool>,
-    mut last_explicit_tick: Local<u32>,
+    interactable_area: Res<InteractableArea>,
 ) {
     let Ok(window) = window.single() else {
         return;
@@ -117,32 +117,35 @@ pub fn update_pointer_lock(
         return;
     };
 
-    let screen_coordinates = if locks.0.contains("pointer") {
+    let (constrained_coordinates, unconstrained_coordinates) = if locks.0.contains("pointer") {
         *prev_coords
     } else {
         let real_window_size = Vec2::new(window.width(), window.height());
-        let vmin = real_window_size.min_element();
-        let (left, top, right, bottom) = if config.constrain_scene_ui {
-            (
-                vmin * 0.27,
-                vmin * 0.06,
-                real_window_size.x - vmin * 0.12,
-                real_window_size.y - vmin * 0.06,
-            )
+        let [left, top, right, bottom] = if config.constrain_scene_ui {
+            interactable_area.get_or_default(real_window_size.x, real_window_size.y)
         } else {
-            (0.0, 0.0, real_window_size.x, real_window_size.y)
-        };
+            Vec4::ZERO
+        }
+        .to_array();
 
+        let constrained_window_size = real_window_size - Vec2::new(right + left, bottom + top);
         if window.cursor_options.grab_mode == bevy::window::CursorGrabMode::Locked {
             // if pointer locked, just middle
-            let window_size = Vec2::new(right - left, bottom - top);
-            Some(window_size / 2.0)
+            (
+                Some(constrained_window_size / 2.0),
+                Some(real_window_size / 2.0),
+            )
         } else {
             let window_origin = Vec2::new(left, top);
-            window.cursor_position().map(|cp| cp - window_origin)
+            (
+                window
+                    .cursor_position()
+                    .map(|cp| (cp - window_origin).clamp(Vec2::ZERO, constrained_window_size)),
+                window.cursor_position(),
+            )
         }
     };
-    *prev_coords = screen_coordinates;
+    *prev_coords = (constrained_coordinates, unconstrained_coordinates);
 
     // Handle mouse input
     let mut state = mb_state.update(Action::System(SystemAction::CameraLock));
@@ -164,17 +167,10 @@ pub fn update_pointer_lock(
     let mut camera_locked =
         active_dialog.is_none_or(|ad| !ad.in_use()) && (state == ClickState::Held || *toggle);
 
-    for (_, context, _, maybe_super, maybe_lock) in scenes.iter_mut() {
-        if maybe_super.is_some()
-            && maybe_lock
-                .as_ref()
-                .is_some_and(|lock| lock.is_changed() || context.tick_number == *last_explicit_tick)
-        {
-            debug!("lock updated by scene");
-            *toggle = maybe_lock.unwrap().0.is_pointer_locked;
-            camera_locked = *toggle;
-            *last_explicit_tick = context.tick_number;
-        }
+    for changed_lock in changed_pointer_locks.iter() {
+        info!("lock updated by scene");
+        *toggle = changed_lock.0.is_pointer_locked;
+        camera_locked = *toggle;
     }
 
     if camera_locked {
@@ -189,11 +185,13 @@ pub fn update_pointer_lock(
 
     let frame_delta = input_manager.get_analog(POINTER_SET, InputPriority::Scene);
 
-    let ray = screen_coordinates
+    let ray = unconstrained_coordinates
         .and_then(|coords| camera.viewport_to_world(camera_position, coords).ok())
         .map(|ray| Vector3::world_vec_from_vec3(&ray.direction));
 
-    for (entity, mut context, maybe_pointer_delta, _, _) in scenes.iter_mut() {
+    for (entity, mut context, maybe_pointer_delta, is_super) in scenes.iter_mut() {
+        let mut screen_delta = Vec2::ZERO;
+
         if let Some(mut pointer_delta) = maybe_pointer_delta {
             if context.last_sent == pointer_delta.since {
                 pointer_delta.delta += frame_delta;
@@ -201,26 +199,33 @@ pub fn update_pointer_lock(
                 pointer_delta.delta = frame_delta;
                 pointer_delta.since = context.last_sent;
             };
-
-            let pointer_info = PbPrimaryPointerInfo {
-                pointer_type: Some(PointerType::PotMouse as i32),
-                screen_coordinates: screen_coordinates.map(Into::into),
-                screen_delta: Some(pointer_delta.delta.into()),
-                world_ray_direction: ray,
-            };
-
-            context.update_crdt(
-                SceneComponentId::PRIMARY_POINTER_INFO,
-                CrdtType::LWW_ENT,
-                SceneEntityId::ROOT,
-                &pointer_info,
-            );
+            screen_delta += pointer_delta.delta;
         } else {
             commands.entity(entity).try_insert(CumulativePointerDelta {
                 delta: frame_delta,
                 since: context.last_sent,
             });
         }
+
+        let pointer_info = PbPrimaryPointerInfo {
+            pointer_type: Some(PointerType::PotMouse as i32),
+            screen_coordinates: if is_super {
+                unconstrained_coordinates
+            } else {
+                constrained_coordinates
+            }
+            .map(Into::into),
+            screen_delta: Some(screen_delta.into()),
+            world_ray_direction: ray,
+        };
+
+        context.update_crdt(
+            SceneComponentId::PRIMARY_POINTER_INFO,
+            CrdtType::LWW_ENT,
+            SceneEntityId::ROOT,
+            &pointer_info,
+        );
+
         context.update_crdt(
             SceneComponentId::POINTER_LOCK,
             CrdtType::LWW_ENT,

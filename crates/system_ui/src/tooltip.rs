@@ -2,6 +2,7 @@ use std::collections::{btree_map::Entry, BTreeMap};
 
 use bevy::prelude::*;
 use common::structs::{ToolTips, TooltipSource, ZOrder};
+use system_bridge::NativeUi;
 use ui_core::{ui_builder::SpawnSpacer, HOVER_TEXT_STYLE};
 
 #[derive(Component)]
@@ -12,7 +13,9 @@ pub struct ToolTipPlugin;
 impl Plugin for ToolTipPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ToolTips>();
-        app.add_systems(Update, update_tooltip);
+        if app.world().resource::<NativeUi>().tooltips {
+            app.add_systems(Update, update_tooltip);
+        }
     }
 }
 
@@ -80,13 +83,18 @@ pub fn update_tooltip(
 
     let mut y_offset = 0.0;
 
-    let (left, right) = if cursor_position.x > window.width() / 2.0 {
+    let (left, right, border_radius) = if cursor_position.x > window.width() / 2.0 {
         (
             Val::Auto,
             Val::Px(window.width() - cursor_position.x + 20.0),
+            BorderRadius::all(Val::Px(1000.0)).with_top_right(Val::Px(0.0)),
         )
     } else {
-        (Val::Px(cursor_position.x + 20.0), Val::Auto)
+        (
+            Val::Px(cursor_position.x + 20.0),
+            Val::Auto,
+            BorderRadius::all(Val::Px(1000.0)).with_top_left(Val::Px(0.0)),
+        )
     };
 
     for (content, vis) in active_tips.values() {
@@ -98,13 +106,16 @@ pub fn update_tooltip(
                     left,
                     right,
                     top: Val::Px(
-                        (cursor_position.y - content.len() as f32 * 15.0).max(0.0) + y_offset,
+                        (cursor_position.y - content.len() as f32 * 15.0).max(0.0)
+                            + y_offset
+                            + 13.0,
                     ),
                     border: UiRect::all(Val::Px(1.0)),
-                    padding: UiRect::all(Val::Px(2.0)),
+                    padding: UiRect::all(Val::Px(5.0)),
                     ..Default::default()
                 },
-                BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 1.0 * *vis)),
+                BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.5 * *vis)),
+                border_radius,
                 BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5 * *vis)),
                 ZOrder::ToolTip.default(),
                 ToolTipNode,

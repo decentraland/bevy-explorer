@@ -133,7 +133,9 @@ pub fn show_conversation(
 
     if let Ok(mut style) = container.single_mut() {
         if style.display == Display::None {
-            commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+            commands.send_event(SystemAudio(
+                "embedded://sounds/ui/toggle_enable.wav".to_owned(),
+            ));
             style.display = Display::Flex;
         };
     }
@@ -200,12 +202,7 @@ pub fn show_conversation(
             None,
             button,
             false,
-            Some(UiRect::new(
-                Val::Px(1.0),
-                Val::Px(1.0),
-                Val::Px(1.0),
-                Val::Px(0.0),
-            )),
+            Some(Vec4::new(1.0, 1.0, 1.0, 0.0)),
         )
         .unwrap()
         .root;

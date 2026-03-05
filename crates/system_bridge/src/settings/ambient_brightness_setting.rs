@@ -1,5 +1,5 @@
 use super::SettingCategory;
-use bevy::{ecs::system::lifetimeless::SResMut, prelude::*};
+use bevy::{ecs::system::lifetimeless::SResMut, platform::collections::HashSet, prelude::*};
 use common::structs::AppConfig;
 
 use super::{AppSetting, IntAppSetting};
@@ -48,7 +48,7 @@ impl AppSetting for AmbientSetting {
         Self(config.graphics.ambient_brightness)
     }
 
-    fn apply(&self, mut ambient: ResMut<AmbientLight>, _: Commands) {
+    fn apply(&self, mut ambient: ResMut<AmbientLight>, _: Commands, _: &HashSet<Entity>) {
         ambient.brightness = (self.0 * 20) as f32;
     }
 }

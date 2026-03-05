@@ -15,7 +15,10 @@ use dcl_component::{
 };
 use scene_material::{SceneBound, SceneMaterial};
 
-use crate::{gltf_resolver::GltfMeshResolver, renderer_context::RendererSceneContext, SceneEntity};
+use crate::{
+    gltf_resolver::GltfMeshResolver, renderer_context::RendererSceneContext,
+    update_world::material::MeshMaterial3dLoading, SceneEntity,
+};
 
 use self::truncated_cone::TruncatedCone;
 
@@ -194,6 +197,7 @@ pub fn update_mesh(
             &SceneEntity,
             &MeshDefinition,
             Option<&MeshMaterial3d<SceneMaterial>>,
+            Option<&MeshMaterial3dLoading>,
             Option<&Mesh3d>,
         ),
         Or<(Changed<MeshDefinition>, With<RetryMeshDefinition>)>,
@@ -207,13 +211,16 @@ pub fn update_mesh(
     config: Res<AppConfig>,
     mut gltf_mesh_resolver: GltfMeshResolver,
 ) {
-    for (ent, scene_ent, prim, maybe_material, maybe_existing_mesh) in new_primitives.iter() {
+    for (ent, scene_ent, prim, maybe_material, maybe_material_loading, maybe_existing_mesh) in
+        new_primitives.iter()
+    {
         commands.entity(ent).remove::<RetryMeshDefinition>();
         let handle = match prim {
             MeshDefinition::Box { uvs } => {
-                if uvs.len() != 24 {
+                if uvs.is_empty() {
                     defaults.boxx.clone()
                 } else {
+                    let len = uvs.len();
                     let mut mesh = Mesh::from(bevy::math::primitives::Cuboid::default());
                     let Some(VertexAttributeValues::Float32x2(mesh_uvs)) =
                         mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0)
@@ -246,8 +253,8 @@ pub fn update_mesh(
                         (22, 1),
                         (23, 0),
                     ] {
-                        mesh_uvs[to][0] = uvs[from][0];
-                        mesh_uvs[to][1] = 1.0 - uvs[from][1];
+                        mesh_uvs[to][0] = uvs[from % len][0];
+                        mesh_uvs[to][1] = 1.0 - uvs[from % len][1];
                     }
                     meshes.add(mesh)
                 }
@@ -267,9 +274,10 @@ pub fn update_mesh(
                 }
             }
             MeshDefinition::Plane { uvs } => {
-                if uvs.len() != 8 {
+                if uvs.is_empty() {
                     defaults.plane.clone()
                 } else {
+                    let len = uvs.len();
                     let mut mesh = Cuboid::default()
                         .mesh()
                         .build()
@@ -289,8 +297,8 @@ pub fn update_mesh(
                         (6, 4),
                         (7, 7),
                     ] {
-                        mesh_uvs[to][0] = uvs[from][0];
-                        mesh_uvs[to][1] = 1.0 - uvs[from][1];
+                        mesh_uvs[to][0] = uvs[from % len][0];
+                        mesh_uvs[to][1] = 1.0 - uvs[from % len][1];
                     }
                     meshes.add(mesh)
                 }
@@ -317,7 +325,7 @@ pub fn update_mesh(
         };
         commands.entity(ent).try_insert(Mesh3d(handle));
 
-        if maybe_material.is_none() {
+        if maybe_material.is_none() && maybe_material_loading.is_none() {
             let mat = default_material.entry(scene_ent.root).or_insert_with(|| {
                 let bounds = scenes
                     .get(scene_ent.root)

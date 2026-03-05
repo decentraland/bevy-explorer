@@ -8,8 +8,14 @@ use common::structs::{AppConfig, PrimaryCameraRes, SsaoSetting};
 use super::{AppSetting, EnumAppSetting};
 
 impl EnumAppSetting for SsaoSetting {
+    #[cfg(not(target_arch = "wasm32"))]
     fn variants() -> Vec<Self> {
         vec![Self::Off, Self::Low, Self::High]
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn variants() -> Vec<Self> {
+        vec![Self::Off]
     }
 
     fn name(&self) -> String {
@@ -48,11 +54,6 @@ impl AppSetting for SsaoSetting {
 
     fn category() -> super::SettingCategory {
         super::SettingCategory::Graphics
-    }
-
-    fn apply(&self, cam_res: SystemParamItem<Self::Param>, commands: Commands) {
-        let primary_cam = cam_res.0;
-        self.apply_to_camera(&cam_res, commands, primary_cam);
     }
 
     fn apply_to_camera(

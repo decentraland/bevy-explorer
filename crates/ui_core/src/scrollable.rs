@@ -250,6 +250,7 @@ fn update_scrollables(
     }
 
     struct ScrollInfo {
+        ui_position: Vec2,
         content: Entity,
         ratio: f32,
         slide_amount: Vec2,
@@ -266,7 +267,7 @@ fn update_scrollables(
         .map(|ev| (ev.scrollable, ev.position))
         .collect::<HashMap<_, _>>();
 
-    for action in SCROLL_SET.0 {
+    for &action in SCROLL_SET.actions.iter().flatten() {
         input_manager
             .priorities()
             .release(InputType::Action(action), InputPriority::Scroll);
@@ -279,12 +280,11 @@ fn update_scrollables(
     let Ok(window) = window.single() else {
         return;
     };
+    let scale_factor = window.scale_factor();
 
     let bar_width = (window.width().min(window.height()) * 0.02).ceil();
 
-    let Some(window_cursor_position) = window.cursor_position() else {
-        return;
-    };
+    let window_cursor_position = window.cursor_position().unwrap_or(Vec2::NEG_ONE);
     let manual_cursor_positions: HashMap<_, _> = cursors.iter().collect();
     let cursor_position = |camera: Option<&UiTargetCamera>| -> Option<Vec2> {
         if let Some(camera) = camera {
@@ -293,7 +293,7 @@ fn update_scrollables(
             }
         }
 
-        Some(window_cursor_position)
+        Some(window_cursor_position * scale_factor)
     };
 
     if input_manager.just_up(CommonInputAction::IaPointer) {
@@ -324,8 +324,8 @@ fn update_scrollables(
 
         let cursor_position = cursor_position(maybe_target_camera);
 
-        let child_size = child_node.size();
-        let parent_size = node.size();
+        let child_size = child_node.size() / scale_factor;
+        let parent_size = node.size() / scale_factor;
         let ratio = parent_size / child_size;
         let ui_position = transform.translation().truncate() - parent_size * 0.5;
         let slide_amount = child_size - parent_size;
@@ -390,16 +390,20 @@ fn update_scrollables(
                 // - check all children for interaction (yuck)
                 // - add some context to FocusPolicy (e.g. FocusPolicy::Block(HashSet<Buttons>))
                 // - add another system to manage "container" focus based on child focus
+                let logical_ui_position = transform.translation().truncate() - node.size() * 0.5;
                 if clicked_scrollable.is_none_or(|(prev_entity, _)| prev_entity == entity)
-                    && cursor_position.clamp(ui_position, ui_position + parent_size)
+                    && cursor_position.clamp(logical_ui_position, logical_ui_position + node.size())
                         == cursor_position
                 {
-                    for action in SCROLL_SET.0 {
+                    for &action in SCROLL_SET.actions.iter().flatten() {
                         input_manager
                             .priorities()
                             .reserve(InputType::Action(action), InputPriority::Scroll);
                     }
                     let scroll_delta = input_manager.get_analog(SCROLL_SET, InputPriority::Scroll);
+                    let scroll_delta =
+                        scroll_delta.clamp(Vec2::splat(-1000.0), Vec2::splat(1000.0));
+
                     *new_slider_deltas.get_or_insert(Default::default()) +=
                         scroll_delta / slide_amount;
                 }
@@ -420,6 +424,7 @@ fn update_scrollables(
                 horizontal_scrollers.insert(
                     entity,
                     ScrollInfo {
+                        ui_position,
                         content: scroll_content.0,
                         slide_amount,
                         ratio: ratio.x,
@@ -445,6 +450,7 @@ fn update_scrollables(
                 vertical_scrollers.insert(
                     entity,
                     ScrollInfo {
+                        ui_position,
                         content: scroll_content.0,
                         slide_amount,
                         ratio: ratio.y,
@@ -465,6 +471,36 @@ fn update_scrollables(
         }
 
         scrollable.content_size = child_size;
+    }
+
+    // make sure we only update a single scrollable
+    for scrollers in [&mut vertical_scrollers, &mut horizontal_scrollers] {
+        let updated_positions = scrollers
+            .values()
+            .filter(|v| v.update_slider.is_some())
+            .map(|s| s.ui_position)
+            .collect::<Vec<_>>();
+        if updated_positions.len() > 1 {
+            let last = updated_positions
+                .into_iter()
+                .reduce(|a, b| {
+                    match a
+                        .y
+                        .partial_cmp(&b.y)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then(a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal))
+                    {
+                        std::cmp::Ordering::Greater => a,
+                        _ => b,
+                    }
+                })
+                .unwrap_or_default();
+            for scroller in scrollers.values_mut() {
+                if scroller.update_slider.is_some() && scroller.ui_position != last {
+                    scroller.update_slider = None;
+                }
+            }
+        }
     }
 
     // bars
@@ -518,7 +554,7 @@ fn update_scrollables(
         {
             // jump the slider to the clicked position
             let Vec2 { x: left, y: top } = transform.translation().xy() - node.size() * 0.5;
-            let relative_position = cursor_position - Vec2::new(left, top);
+            let relative_position = (cursor_position - Vec2::new(left, top)) / scale_factor;
             let slider_len = (info.length * info.ratio).max(bar_width);
             let position = if bar.vertical {
                 (relative_position.y - slider_len * 0.5) / (info.length - slider_len)

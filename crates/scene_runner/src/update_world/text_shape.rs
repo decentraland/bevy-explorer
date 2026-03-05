@@ -90,7 +90,7 @@ bevy: not implemented
 use bevy::{
     diagnostic::FrameCount,
     ecs::{relationship::RelatedSpawner, spawn::SpawnWith},
-    platform::collections::{HashMap, HashSet},
+    platform::collections::HashSet,
     prelude::*,
     render::view::VisibilitySystems,
     text::{ComputedTextBlock, CosmicBuffer, LineBreak},
@@ -108,7 +108,8 @@ use dcl_component::{
     },
     SceneComponentId,
 };
-use ui_core::{ui_builder::SpawnSpacer, user_font, FontName, WeightName};
+use ui_core::{ui_builder::SpawnSpacer, user_font, FontName, WeightName, FONT_SIZE_SCALE};
+use unicode_segmentation::UnicodeSegmentation;
 use world_ui::{spawn_world_ui_view, WorldUi};
 
 use crate::{renderer_context::RendererSceneContext, SceneEntity};
@@ -136,6 +137,7 @@ impl Plugin for TextShapePlugin {
                 .before(UiSystem::Stack)
                 .before(VisibilitySystems::VisibilityPropagate),
         );
+        app.init_resource::<UnrecognisedTags>();
     }
 }
 
@@ -148,41 +150,112 @@ impl From<PbTextShape> for TextShape {
     }
 }
 
-const PIX_PER_M: f32 = 200.0;
-
 #[derive(Component)]
 pub struct PriorTextShapeUi(Entity, PbTextShape);
 
 #[derive(Component, Clone, Copy)]
-pub struct SceneWorldUi {
+pub struct TextShapeUi {
     view: Entity,
     ui_root: Entity,
+    ticks: usize,
 }
+
+#[derive(Component)]
+pub struct RetryTextShape(u32);
+
+#[derive(Default, Resource, Deref, DerefMut)]
+pub struct UnrecognisedTags(HashSet<String>);
 
 fn update_text_shapes(
     mut commands: Commands,
     images: ResMut<Assets<Image>>,
-    query: Query<(Entity, &SceneEntity, &TextShape, Option<&PriorTextShapeUi>), Changed<TextShape>>,
+    query: Query<
+        (
+            Entity,
+            &SceneEntity,
+            &TextShape,
+            Option<&PriorTextShapeUi>,
+            Option<&RetryTextShape>,
+        ),
+        Or<(Changed<TextShape>, With<RetryTextShape>)>,
+    >,
     mut removed: RemovedComponents<TextShape>,
-    scenes: Query<(&RendererSceneContext, Option<&SceneWorldUi>)>,
+    scenes: Query<&RendererSceneContext>,
     frame: Res<FrameCount>,
+    mut cameras: Query<&mut Camera>,
+    mut views: Query<&mut TextShapeUi>,
+    mut unrecognized_tags: ResMut<UnrecognisedTags>,
 ) {
     // remove deleted ui nodes
     for e in removed.read() {
         if let Ok(mut commands) = commands.get_entity(e) {
             commands.remove::<WorldUi>();
         }
+
+        if let Ok(view) = views.get(e) {
+            if let Ok(mut commands) = commands.get_entity(view.view) {
+                commands.despawn();
+            }
+            if let Ok(mut commands) = commands.get_entity(view.ui_root) {
+                commands.despawn();
+            }
+        }
+
         debug!("[{}] kill textshape {e:?}", frame.0);
     }
 
-    let mut new_world_uis: HashMap<Entity, SceneWorldUi> = HashMap::new();
+    let mut active_count = 0;
+    let mut queue_count = 0;
+    let mut wait_count = 0;
+
+    const MAX_ACTIVE: usize = 10;
+
+    for mut shape in views.iter_mut() {
+        if shape.ticks > 0 && active_count < MAX_ACTIVE {
+            if cameras.get(shape.view).is_ok_and(|c| !c.is_active) {
+                cameras.get_mut(shape.view).unwrap().is_active = true;
+                active_count += 1;
+            }
+            shape.ticks -= 1;
+        } else {
+            if shape.ticks > 0 {
+                queue_count += 1;
+            }
+            if cameras.get(shape.view).is_ok_and(|c| c.is_active) {
+                cameras.get_mut(shape.view).unwrap().is_active = false;
+            }
+        }
+    }
+
     let images = images.into_inner();
 
+    let mut oldest = query
+        .iter()
+        .flat_map(|(_, _, _, _, since)| since.map(|s| s.0))
+        .collect::<Vec<_>>();
+    oldest.sort();
+
+    let stop_at = oldest.get(MAX_ACTIVE - active_count);
+
     // add new nodes
-    for (ent, scene_ent, text_shape, maybe_prior) in query.iter() {
+    for (ent, scene_ent, text_shape, maybe_prior, maybe_retry) in query.iter() {
+        let skip = active_count >= MAX_ACTIVE
+            || stop_at.is_some_and(|stop_at| maybe_retry.is_none_or(|retry| retry.0 > *stop_at));
+
+        if skip {
+            if maybe_retry.is_none() {
+                commands.entity(ent).try_insert(RetryTextShape(frame.0));
+            }
+            wait_count += 1;
+            continue;
+        }
+
+        commands.entity(ent).try_remove::<RetryTextShape>();
+
+        active_count += 1;
         debug!("ts: {:?}", text_shape.0);
 
-        let Ok((scene, world_ui)) = scenes.get(scene_ent.root) else {
+        let Ok(scene) = scenes.get(scene_ent.root) else {
             warn!("no scene!");
             continue;
         };
@@ -201,15 +274,23 @@ fn update_text_shapes(
             continue;
         }
 
-        let world_ui = world_ui.unwrap_or_else(|| {
-            new_world_uis.entry(scene_ent.root).or_insert_with(|| {
+        let world_ui = views
+            .get_mut(ent)
+            .map(|mut world_ui| {
+                // reset ticks on existing camera
+                world_ui.ticks = 2;
+                *world_ui
+            })
+            .ok()
+            .unwrap_or_else(|| {
+                debug!("make ui for {ent}");
                 let (view, _) = spawn_world_ui_view(&mut commands, images, None);
                 commands.entity(view).insert(DespawnWith(ent));
                 let ui_root = commands
                     .spawn((
                         Node {
-                            width: Val::Px(8192.0),
-                            min_width: Val::Px(8192.0),
+                            width: Val::Px(4096.0),
+                            min_width: Val::Px(4096.0),
                             max_width: Val::Px(8192.0),
                             max_height: Val::Px(8192.0),
                             flex_direction: FlexDirection::Row,
@@ -222,11 +303,19 @@ fn update_text_shapes(
                         DespawnWith(ent),
                     ))
                     .id();
-                let world_ui = SceneWorldUi { view, ui_root };
-                commands.entity(scene_ent.root).try_insert(world_ui);
+                let world_ui = TextShapeUi {
+                    view,
+                    ui_root,
+                    ticks: 2,
+                };
+                commands.entity(ent).try_insert(world_ui);
                 world_ui
-            })
-        });
+            });
+        if let Ok(mut camera) = cameras.get_mut(world_ui.ui_root) {
+            camera.is_active = false;
+        }
+
+        let wrapping = text_shape.0.text_wrapping() && !text_shape.0.font_auto_size();
 
         let text_align = text_shape
             .0
@@ -234,19 +323,21 @@ fn update_text_shapes(
             .map(|_| text_shape.0.text_align())
             .unwrap_or(TextAlignMode::TamMiddleCenter);
 
-        let valign = match text_align {
+        let (valign_wui, valign_flex) = match text_align {
             TextAlignMode::TamTopLeft
             | TextAlignMode::TamTopCenter
-            | TextAlignMode::TamTopRight => -0.5,
+            | TextAlignMode::TamTopRight => (-0.5, AlignItems::FlexStart),
             TextAlignMode::TamMiddleLeft
             | TextAlignMode::TamMiddleCenter
-            | TextAlignMode::TamMiddleRight => 0.0,
+            | TextAlignMode::TamMiddleRight => (0.0, AlignItems::Center),
             TextAlignMode::TamBottomLeft
             | TextAlignMode::TamBottomCenter
-            | TextAlignMode::TamBottomRight => 0.5,
+            | TextAlignMode::TamBottomRight => (0.5, AlignItems::FlexEnd),
         };
 
-        let (halign_wui, halign) = match text_align {
+        let valign_wui = if wrapping { 0.0 } else { valign_wui };
+
+        let (halign_wui, halign_flex) = match text_align {
             TextAlignMode::TamTopLeft
             | TextAlignMode::TamMiddleLeft
             | TextAlignMode::TamBottomLeft => (0.5, JustifyText::Left),
@@ -258,16 +349,26 @@ fn update_text_shapes(
             | TextAlignMode::TamBottomRight => (-0.5, JustifyText::Right),
         };
 
-        let add_y_pix = (text_shape.0.padding_bottom() - text_shape.0.padding_top()) * PIX_PER_M;
+        let halign_wui = if wrapping { 0.0 } else { halign_wui };
 
-        let font_size = 30.0;
+        // use constant font size to avoid small text being illegible
+        let font_size = 20.0;
 
-        let wrapping = text_shape.0.text_wrapping() && !text_shape.0.font_auto_size();
+        // use pix per meter based on font size to scale appropriately
+        let pix_per_m = 225.0 / text_shape.0.font_size.unwrap_or(10.0);
+
+        let add_y_pix = (text_shape.0.padding_bottom() - text_shape.0.padding_top()) * pix_per_m;
 
         let width = if wrapping {
-            text_shape.0.width.unwrap_or(1.0) * PIX_PER_M
+            text_shape.0.width.unwrap_or(1.0) * pix_per_m
         } else {
             4096.0
+        };
+
+        let height = if let Some(height) = text_shape.0.height {
+            Val::Px(pix_per_m * height)
+        } else {
+            Val::Auto
         };
 
         // create ui layout
@@ -276,7 +377,15 @@ fn update_text_shapes(
                 "textshape text truncated from {} to 2048 chars",
                 text_shape.0.text.len()
             );
-            &text_shape.0.text.as_str()[0..2048]
+            let end = text_shape
+                .0
+                .text
+                .as_str()
+                .char_indices()
+                .find(|(ix, _)| *ix >= 2048)
+                .map(|(ix, _)| ix)
+                .unwrap_or(text_shape.0.text.len());
+            &text_shape.0.text.as_str()[0..end]
         } else {
             text_shape.0.text.as_str()
         };
@@ -289,8 +398,9 @@ fn update_text_shapes(
                 .map(Color4DclToBevy::convert_srgba)
                 .unwrap_or(Color::WHITE),
             text_shape.0.font(),
-            halign,
+            halign_flex,
             wrapping,
+            &mut unrecognized_tags,
         );
 
         let ui_node = commands
@@ -299,6 +409,11 @@ fn update_text_shapes(
                     margin: UiRect::all(Val::Px(1.0)),
                     flex_direction: FlexDirection::Row,
                     max_width: Val::Px(width),
+                    height,
+                    max_height: height,
+                    min_height: height,
+                    align_items: valign_flex,
+                    overflow: Overflow::hidden(),
                     ..Default::default()
                 },
                 DespawnWith(ent),
@@ -306,21 +421,21 @@ fn update_text_shapes(
             .with_children(|c| {
                 if text_shape.0.padding_left.is_some() {
                     c.spawn(Node {
-                        width: Val::Px(text_shape.0.padding_left() * PIX_PER_M),
-                        min_width: Val::Px(text_shape.0.padding_left() * PIX_PER_M),
-                        max_width: Val::Px(text_shape.0.padding_left() * PIX_PER_M),
+                        width: Val::Px(text_shape.0.padding_left() * pix_per_m),
+                        min_width: Val::Px(text_shape.0.padding_left() * pix_per_m),
+                        max_width: Val::Px(text_shape.0.padding_left() * pix_per_m),
                         ..Default::default()
                     });
                 }
 
-                if halign != JustifyText::Left {
+                if halign_flex != JustifyText::Left {
                     c.spacer();
                 }
 
                 c.spawn(Node::default()).with_child((
                     text,
                     Node {
-                        align_self: match halign {
+                        align_self: match halign_flex {
                             JustifyText::Left => AlignSelf::FlexStart,
                             JustifyText::Center => AlignSelf::Center,
                             JustifyText::Right => AlignSelf::FlexEnd,
@@ -330,15 +445,15 @@ fn update_text_shapes(
                     },
                 ));
 
-                if halign != JustifyText::Right {
+                if halign_flex != JustifyText::Right {
                     c.spacer();
                 }
 
                 if text_shape.0.padding_right.is_some() {
                     c.spawn(Node {
-                        width: Val::Px(text_shape.0.padding_right() * PIX_PER_M),
-                        min_width: Val::Px(text_shape.0.padding_right() * PIX_PER_M),
-                        max_width: Val::Px(text_shape.0.padding_right() * PIX_PER_M),
+                        width: Val::Px(text_shape.0.padding_right() * pix_per_m),
+                        min_width: Val::Px(text_shape.0.padding_right() * pix_per_m),
+                        max_width: Val::Px(text_shape.0.padding_right() * pix_per_m),
                         ..Default::default()
                     });
                 }
@@ -353,8 +468,8 @@ fn update_text_shapes(
             PriorTextShapeUi(ui_node, text_shape.0.clone()),
             WorldUi {
                 dbg: format!("TextShape `{source}`"),
-                pix_per_m: 375.0 / text_shape.0.font_size.unwrap_or(10.0),
-                valign,
+                pix_per_m,
+                valign: valign_wui,
                 halign: halign_wui,
                 add_y_pix,
                 bounds: scene.bounds.clone(),
@@ -367,6 +482,8 @@ fn update_text_shapes(
 
         debug!("[{}] textshape {ent:?}", frame.0);
     }
+
+    debug!("active: {active_count}, queue: {queue_count}, wait: {wait_count}");
 }
 
 #[derive(Component)]
@@ -600,6 +717,7 @@ pub fn make_text_section(
     font: dcl_component::proto_components::sdk::components::common::Font,
     justify: JustifyText,
     wrapping: bool,
+    unrecognized_tags: &mut UnrecognisedTags,
 ) -> (impl Bundle, Vec<(usize, String)>) {
     let mut links = Vec::default();
 
@@ -682,7 +800,17 @@ pub fn make_text_section(
                     "/link" => {
                         link_data.pop();
                     }
-                    _ => warn!("unrecognised text tag `{tag}`"),
+                    other => {
+                        let tag = if let Some((tag, _)) = other.split_once("=") {
+                            tag
+                        } else {
+                            other
+                        };
+                        if !unrecognized_tags.contains(tag) {
+                            unrecognized_tags.insert(tag.to_owned());
+                            warn!("unrecognised text tag `{tag}`");
+                        }
+                    }
                 }
                 section_start = section_start + close + 1;
             } else {
@@ -711,7 +839,7 @@ pub fn make_text_section(
 
         let font = TextFont {
             font: user_font(font_name, weight),
-            font_size: font_size * 0.95,
+            font_size: font_size * FONT_SIZE_SCALE,
             ..Default::default()
         };
 
@@ -721,15 +849,50 @@ pub fn make_text_section(
             .char_indices()
             .find(|(_, c)| *c == '<')
             .map(|(ix, _)| section_start + ix.max(1))
-            .unwrap_or(usize::MAX);
+            .unwrap_or(text.len());
 
-        let span = if section_end == usize::MAX {
-            TextSpan::new(&text[section_start..])
-        } else {
-            TextSpan::new(&text[section_start..section_end])
+        // gather emoji ranges
+        let mut span_start = section_start;
+        let mut emoji_span = None;
+
+        for (char_index, grapheme) in text[section_start..section_end].grapheme_indices(true) {
+            let char_is_emoji = emojis::get(grapheme).is_some();
+
+            match emoji_span {
+                Some(span_is_emoji) if span_is_emoji == char_is_emoji => continue,
+                None => {
+                    emoji_span = Some(char_is_emoji);
+                    continue;
+                }
+                Some(span_is_emoji) => {
+                    let use_color = match span_is_emoji {
+                        true => TextColor(Color::WHITE),
+                        _ => color,
+                    };
+
+                    spans.push((
+                        TextSpan::new(&text[span_start..section_start + char_index]),
+                        font.clone(),
+                        use_color,
+                        maybe_extras,
+                    ));
+                    span_start = section_start + char_index;
+                    emoji_span = Some(char_is_emoji);
+                }
+            }
+        }
+
+        // add last range
+        let last_color = match emoji_span {
+            Some(true) => TextColor(Color::WHITE),
+            _ => color,
         };
-
-        spans.push((span, font, color, maybe_extras));
+        spans.push((
+            TextSpan::new(&text[span_start..section_end]),
+            font,
+            last_color,
+            maybe_extras,
+        ));
 
         if let Some(link) = link_data.last().cloned() {
             links.push((span_index, link));

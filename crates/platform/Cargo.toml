@@ -8,16 +8,15 @@ edition = "2021"
 [features]
 
 [dependencies]
-common = { workspace = true }
 
 bevy = { workspace = true }
-http = { workspace = true }
 anyhow = { workspace = true }
 tungstenite = { workspace = true }
 futures-util = { workspace = true }
 reqwest = { workspace = true }
 directories = { workspace = true }
 futures-lite = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -26,7 +25,6 @@ async-compat = { workspace = true }
 tokio = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-js-sys = { workspace = true }
 web-sys = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 ws_stream_wasm = { git = "https://github.com/robtfm/ws_stream_wasm", branch = "bevy-explorer" }

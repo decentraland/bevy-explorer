@@ -89,8 +89,6 @@ impl AppSetting for CacheSizeSetting {
         }
     }
 
-    fn apply(&self, _: (), _: Commands) {}
-
     fn category() -> super::SettingCategory {
         super::SettingCategory::Performance
     }

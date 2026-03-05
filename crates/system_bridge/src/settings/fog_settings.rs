@@ -42,10 +42,6 @@ impl AppSetting for FogSetting {
         config.graphics.fog
     }
 
-    fn apply(&self, _: (), _: Commands) {
-        // apply is handled by [`visuals::daylight_cycle``]
-    }
-
     fn category() -> super::SettingCategory {
         super::SettingCategory::Graphics
     }

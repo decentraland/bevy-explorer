@@ -27,7 +27,7 @@ use change_realm::ChangeRealmPlugin;
 use common::{
     inputs::SystemAction,
     sets::SetupSets,
-    structs::{ActiveDialog, UiRoot, ZOrder},
+    structs::{ActiveDialog, StartupScenes, UiRoot, ZOrder},
 };
 use emote_select::EmoteUiPlugin;
 use foreign_profile::ForeignProfilePlugin;
@@ -67,12 +67,15 @@ impl Plugin for SystemUiPlugin {
             LoginPlugin,
             EmoteUiPlugin,
             ChangeRealmPlugin,
-            MapPlugin,
             ProfileDetailPlugin,
             OowUiPlugin,
             PermissionPlugin,
             ForeignProfilePlugin,
         ));
+
+        if app.world().get_resource::<StartupScenes>().is_none() {
+            app.add_plugins(MapPlugin);
+        }
     }
 }
 
@@ -120,7 +123,7 @@ fn toggle_system_ui(
     input_manager: InputManager,
     mut root: Query<&mut Node, With<UiRoot>>,
 ) {
-    if input_manager.just_down(SystemAction::HideUi, InputPriority::None) {
+    if input_manager.just_down(SystemAction::ShowDebugUi, InputPriority::None) {
         let Ok(mut root) = root.single_mut() else {
             warn!("no root");
             return;

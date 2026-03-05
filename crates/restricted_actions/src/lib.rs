@@ -5,8 +5,9 @@ use std::{
     sync::Arc,
 };
 
+use anyhow::anyhow;
 use bevy::{
-    asset::LoadState,
+    asset::{io::AssetReader, AsyncReadExt, LoadState},
     math::Vec3Swizzles,
     platform::collections::{HashMap, HashSet},
     prelude::*,
@@ -17,31 +18,35 @@ use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::SerializedProfile,
     rpc::{
-        PortableLocation, RPCSendableMessage, RpcCall, RpcEventSender, RpcResultSender,
-        SpawnResponse,
+        EntityDefinitionResponse, PortableLocation, RPCSendableMessage, ReadFileResponse, RpcCall,
+        RpcEventSender, RpcResultSender, SpawnResponse,
     },
     sets::SceneSets,
-    structs::{AvatarDynamicState, PermissionType, PrimaryCamera, PrimaryUser, ZOrder},
+    structs::{
+        AvatarDynamicState, PermissionType, PreviewCommand, PrimaryCamera, PrimaryUser,
+        StartupScenes, ZOrder,
+    },
     util::{AsH160, TaskCompat, TaskExt},
 };
 use comms::{
     global_crdt::ForeignPlayer,
+    preview::handle_preview_socket,
     profile::{CurrentUserProfile, ProfileManager, UserProfile},
-    NetworkMessage, SceneRoom, Transport,
+    NetworkMessage, NetworkMessageRecipient, SceneRoom, Transport,
 };
 use console::DoAddConsoleCommand;
 use copypwasmta::{ClipboardContext, ClipboardProvider};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use ethers_core::types::Address;
+use http::Uri;
 use ipfs::{
-    ipfs_path::IpfsPath, ChangeRealmEvent, EntityDefinition, IpfsAssetServer, IpfsIo, ServerAbout,
+    ipfs_path::{IpfsPath, IpfsType},
+    ChangeRealmEvent, EntityDefinition, IpfsAssetServer, IpfsIo, RealmInitialLocation, ServerAbout,
 };
 use nft::asset_source::Nft;
 use reqwest::StatusCode;
 use scene_runner::{
-    initialize_scene::{
-        LiveScenes, PortableScenes, PortableSource, SceneHash, SceneLoading, PARCEL_SIZE,
-    },
+    initialize_scene::{LiveScenes, PortableScenes, PortableSource, SceneLoading, PARCEL_SIZE},
     permissions::Permission,
     renderer_context::RendererSceneContext,
     update_world::gltf_container::{GltfDefinition, GltfProcessed},
@@ -50,7 +55,7 @@ use scene_runner::{
 use serde_json::{json, Value};
 use teleport::{handle_out_of_world, teleport_player};
 use ui_core::button::DuiButton;
-use wallet::{browser_auth::remote_send_async, Wallet};
+use wallet::{browser_auth::remote_send_async, sign_request, Wallet};
 
 pub struct RestrictedActionsPlugin;
 
@@ -76,7 +81,7 @@ impl Plugin for RestrictedActionsPlugin {
                     event_player_moved_scene,
                     event_scene_ready,
                     send_scene_messages,
-                    teleport_player,
+                    teleport_player.after(change_realm),
                     handle_out_of_world,
                     open_nft_dialog,
                 ),
@@ -87,6 +92,9 @@ impl Plugin for RestrictedActionsPlugin {
                     handle_generic_perm,
                     handle_spawned_command,
                     handle_copy_to_clipboard,
+                    handle_sign_request,
+                    handle_entity_definition,
+                    handle_read_file,
                 ),
             )
                 .in_set(SceneSets::RestrictedActions),
@@ -104,6 +112,10 @@ pub fn move_player(
     containing_scene: ContainingScene,
     mut perms: Permission<(Entity, Vec3, Option<Vec3>)>,
 ) {
+    let Ok((player_entity, _, _)) = player.single() else {
+        return;
+    };
+
     for (root, translation, looking_at) in events.read().filter_map(|ev| match ev {
         RpcCall::MovePlayer {
             scene,
@@ -112,6 +124,14 @@ pub fn move_player(
         } => Some((scene, to, looking_at)),
         _ => None,
     }) {
+        let current_scenes = containing_scene.get(player_entity);
+        if !current_scenes.contains(root) {
+            warn!(
+                "move player request from {root:?} was requested with player outside scene bounds"
+            );
+            continue;
+        }
+
         perms.check(
             PermissionType::MovePlayer,
             *root,
@@ -195,6 +215,7 @@ fn change_realm(
     mut commands: Commands,
     mut events: EventReader<RpcCall>,
     mut perms: Permission<(String, RpcResultSender<Result<(), String>>)>,
+    mut target: ResMut<RealmInitialLocation>,
 ) {
     for (scene, to, message, response) in events.read().filter_map(|ev| match ev {
         RpcCall::ChangeRealm {
@@ -215,6 +236,8 @@ fn change_realm(
     }
 
     for (new_realm, response) in perms.drain_success(PermissionType::ChangeRealm) {
+        debug!("change realm action -> base");
+        *target = RealmInitialLocation::Base;
         commands.send_event(ChangeRealmEvent {
             new_realm,
             content_server_override: None,
@@ -258,17 +281,22 @@ fn external_url(
     }
 }
 
-async fn lookup_ens(
+pub async fn lookup_ens(
     parent_scene: Option<String>,
     ens: String,
+    super_user: bool,
     ipfs: Arc<IpfsIo>,
 ) -> Result<(String, PortableSource), String> {
-    lookup_portable(
-        parent_scene,
-        format!("https://worlds-content-server.decentraland.org/world/{ens}"),
-        false,
-        ipfs,
-    )
+    if ens.to_ascii_lowercase().starts_with("http") {
+        lookup_portable(parent_scene, ens.clone(), super_user, ipfs)
+    } else {
+        lookup_portable(
+            parent_scene,
+            format!("https://worlds-content-server.decentraland.org/world/{ens}"),
+            super_user,
+            ipfs,
+        )
+    }
     .await
     .map(|(hash, source)| {
         (
@@ -307,7 +335,7 @@ pub async fn lookup_portable(
 
     let mut first_scene = config.scenes_urn.and_then(|scenes| scenes.first().cloned());
 
-    if first_scene.is_none() && super_user {
+    if first_scene.is_none() {
         // try from active entities
         let content_url = about
             .content
@@ -354,7 +382,7 @@ pub async fn lookup_portable(
     ))
 }
 
-type SpawnResponseChannel = Option<tokio::sync::oneshot::Sender<Result<SpawnResponse, String>>>;
+type SpawnResponseChannel = Option<RpcResultSender<Result<SpawnResponse, String>>>;
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn spawn_portable(
@@ -428,7 +456,7 @@ fn spawn_portable(
                         super_user: false,
                     },
                 );
-                pending_responses.insert(hash, Some(response.take()));
+                pending_responses.insert(hash, Some(response.clone()));
             }
             PortableLocation::Ens(ens) => {
                 let ens = ens.clone();
@@ -436,9 +464,10 @@ fn spawn_portable(
                     IoTaskPool::get().spawn_compat(lookup_ens(
                         Some(parent_hash),
                         ens,
+                        false,
                         ipfas.ipfs().clone(),
                     )),
-                    Some(response.take()),
+                    Some(response.clone()),
                 ));
             }
         }
@@ -457,7 +486,7 @@ fn spawn_portable(
                     pending_responses.insert(hash, response.take());
                 }
                 Err(e) => {
-                    let _ = response
+                    response
                         .take()
                         .unwrap()
                         .send(Err(format!("failed to lookup ens: {e}")));
@@ -471,7 +500,7 @@ fn spawn_portable(
 
     pending_responses.retain(|hash, sender| {
         let mut fail = |msg: String| -> bool {
-            let _ = sender.take().unwrap().send(Err(msg));
+            sender.take().unwrap().send(Err(msg));
             failed_portables.insert(hash.clone());
             false
         };
@@ -492,14 +521,14 @@ fn spawn_portable(
 
         if let Some(context) = maybe_context {
             if let Some(source) = current_portables.0.get(hash) {
-                let _ = sender.take().unwrap().send(Ok(SpawnResponse {
+                sender.take().unwrap().send(Ok(SpawnResponse {
                     pid: source.pid.clone(),
                     parent_cid: source.parent_scene.clone().unwrap_or_default(),
                     name: context.title.clone(),
                     ens: source.ens.clone(),
                 }));
             } else {
-                let _ = sender
+                sender
                     .take()
                     .unwrap()
                     .send(Err("killed before load completed".to_owned()));
@@ -661,6 +690,7 @@ fn get_user_data(
                         // force scene to wait till user data is available
                         ctx.blocked.insert("get_user_data");
                     }
+                    info!("cloning response");
                     pending_primary_requests.push((*scene, response.clone()))
                 }
             },
@@ -696,6 +726,7 @@ fn get_user_data(
     if !pending_primary_requests.is_empty() {
         if let Some(profile) = profile.profile.as_ref() {
             for (scene, sender) in pending_primary_requests.drain(..) {
+                info!("replying on cloned response");
                 if let Ok(mut ctx) = scenes.get_mut(scene) {
                     ctx.blocked.remove("get_user_data");
                 }
@@ -950,7 +981,7 @@ fn event_scene_ready(
 fn send_scene_messages(
     mut events: EventReader<RpcCall>,
     transports: Query<(&Transport, Option<&SceneRoom>)>,
-    scenes: Query<&SceneHash>,
+    scenes: Query<&RendererSceneContext>,
 ) {
     for (scene, data, recipient) in events.read().filter_map(|c| match c {
         RpcCall::SendMessageBus {
@@ -960,24 +991,36 @@ fn send_scene_messages(
         } => Some((scene, data, recipient)),
         _ => None,
     }) {
-        let Ok(hash) = scenes.get(*scene) else {
+        let Ok(ctx) = scenes.get(*scene) else {
             continue;
         };
+        let hash = &ctx.hash;
 
-        debug!("messagebus sent from scene {}: {:?}", &hash.0, data);
+        debug!(
+            "messagebus sent from scene {}: {:?} (auth = {})",
+            &hash, data, ctx.authoritative_multiplayer
+        );
         let message = rfc4::Packet {
             message: Some(rfc4::packet::Message::Scene(rfc4::Scene {
-                scene_id: hash.0.clone(),
+                scene_id: hash.clone(),
                 data: data.clone(),
             })),
             protocol_version: 100,
         };
 
+        let mut recipient = recipient
+            .map(NetworkMessageRecipient::Peer)
+            .unwrap_or(NetworkMessageRecipient::All);
+
+        if ctx.authoritative_multiplayer {
+            recipient = NetworkMessageRecipient::AuthServer;
+        }
+
         for (transport, scene_room) in transports.iter() {
             if scene_room.is_some() {
                 let _ = transport
                     .sender
-                    .try_send(NetworkMessage::targetted_reliable(&message, *recipient));
+                    .try_send(NetworkMessage::targetted_reliable(&message, recipient));
             }
         }
     }
@@ -1321,6 +1364,7 @@ struct PendingPortableCommands(
 #[command(name = "/spawn")]
 struct SpawnPortableCommand {
     ens: String,
+    as_super: Option<bool>,
 }
 
 fn spawn_portable_command(
@@ -1330,7 +1374,12 @@ fn spawn_portable_command(
 ) {
     if let Some(Ok(command)) = input.take() {
         pending.0.push((
-            IoTaskPool::get().spawn_compat(lookup_ens(None, command.ens, ipfas.ipfs().clone())),
+            IoTaskPool::get().spawn_compat(lookup_ens(
+                None,
+                command.ens,
+                command.as_super.unwrap_or_default(),
+                ipfas.ipfs().clone(),
+            )),
             PortableAction::Spawn,
         ));
     }
@@ -1350,7 +1399,12 @@ fn kill_portable_command(
 ) {
     if let Some(Ok(command)) = input.take() {
         pending.0.push((
-            IoTaskPool::get().spawn_compat(lookup_ens(None, command.ens, ipfas.ipfs().clone())),
+            IoTaskPool::get().spawn_compat(lookup_ens(
+                None,
+                command.ens,
+                false,
+                ipfas.ipfs().clone(),
+            )),
             PortableAction::Kill,
         ));
     }
@@ -1388,4 +1442,215 @@ fn handle_spawned_command(
             true
         }
     })
+}
+
+#[allow(clippy::type_complexity)]
+fn handle_sign_request(
+    mut events: EventReader<RpcCall>,
+    mut tasks: Local<
+        Vec<(
+            RpcResultSender<Result<Vec<(String, String)>, String>>,
+            Task<Result<Vec<(String, String)>, anyhow::Error>>,
+        )>,
+    >,
+    wallet: Res<Wallet>,
+) {
+    for ev in events.read() {
+        if let RpcCall::SignRequest {
+            method,
+            uri,
+            meta,
+            response,
+        } = ev
+        {
+            let Ok(uri) = Uri::try_from(uri) else {
+                response.send(Err(format!("failed to parse uri: {uri}")));
+                continue;
+            };
+            let method = method.clone();
+            let meta = meta.to_owned().unwrap_or_default();
+            let wallet = wallet.clone();
+            let task = IoTaskPool::get()
+                .spawn_compat(async move { sign_request(&method, &uri, &wallet, meta).await });
+            tasks.push((response.clone(), task));
+        }
+    }
+
+    tasks.retain_mut(|(sx, task)| {
+        if let Some(result) = task.complete() {
+            sx.send(result.map_err(|e| format!("{e}")));
+            false
+        } else {
+            true
+        }
+    })
+}
+
+#[allow(clippy::type_complexity)]
+fn handle_read_file(
+    mut events: EventReader<RpcCall>,
+    mut tasks: Local<
+        Vec<(
+            RpcResultSender<Result<ReadFileResponse, String>>,
+            Task<Result<ReadFileResponse, anyhow::Error>>,
+        )>,
+    >,
+    ipfs: IpfsAssetServer,
+) {
+    for ev in events.read() {
+        if let RpcCall::ReadFile {
+            scene_hash,
+            filename,
+            response,
+        } = ev
+        {
+            let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
+                scene_hash.to_owned(),
+                filename.to_owned(),
+            ));
+            let ipfs_pathbuf = PathBuf::from(&ipfs_path);
+            let ipfs = ipfs.ipfs().clone();
+
+            let future = async move {
+                let mut reader = ipfs.read(&ipfs_pathbuf).await.map_err(|e| anyhow!(e))?;
+                let mut content = Vec::default();
+                reader.read_to_end(&mut content).await?;
+
+                let hash = ipfs.ipfs_hash(&ipfs_path).await.unwrap_or_default();
+
+                Ok(ReadFileResponse { content, hash })
+            };
+
+            let task = IoTaskPool::get().spawn(future);
+
+            tasks.push((response.clone(), task));
+        }
+    }
+
+    tasks.retain_mut(|(sx, task)| {
+        if let Some(result) = task.complete() {
+            sx.send(result.map_err(|e| format!("{e}")));
+            false
+        } else {
+            true
+        }
+    })
+}
+
+#[allow(clippy::type_complexity)]
+fn handle_entity_definition(
+    mut events: EventReader<RpcCall>,
+    mut tasks: Local<
+        Vec<(
+            RpcResultSender<Option<EntityDefinitionResponse>>,
+            Task<Option<EntityDefinitionResponse>>,
+        )>,
+    >,
+    ipfs: IpfsAssetServer,
+) {
+    for ev in events.read() {
+        if let RpcCall::EntityDefinition { urn, response } = ev {
+            let ipfs = ipfs.ipfs().clone();
+            let urn = urn.to_owned();
+
+            let future = async move {
+                let def = ipfs.entity_definition(&urn).await;
+                def.map(|def| EntityDefinitionResponse {
+                    collection: def.0.collection.0,
+                    metadata: def.0.metadata,
+                    base_url: def.1,
+                })
+            };
+
+            let task = IoTaskPool::get().spawn(future);
+
+            tasks.push((response.clone(), task));
+        }
+    }
+
+    tasks.retain_mut(|(sx, task)| {
+        if let Some(result) = task.complete() {
+            sx.send(result);
+            false
+        } else {
+            true
+        }
+    })
+}
+
+#[allow(clippy::type_complexity)]
+pub fn process_startup_scenes(
+    mut startup_scenes: ResMut<StartupScenes>,
+    mut tasks: Local<Vec<(usize, Task<Result<(String, PortableSource), String>>)>>,
+    mut done: Local<bool>,
+    mut portables: ResMut<PortableScenes>,
+    ipfas: IpfsAssetServer,
+    mut channel: Local<
+        Option<(
+            tokio::sync::mpsc::UnboundedSender<PreviewCommand>,
+            tokio::sync::mpsc::UnboundedReceiver<PreviewCommand>,
+        )>,
+    >,
+    mut writer: EventWriter<PreviewCommand>,
+) {
+    if let Some(command) = channel.as_mut().and_then(|(_, rx)| rx.try_recv().ok()) {
+        writer.write(command);
+        *done = false;
+        for scene in &mut startup_scenes.scenes {
+            scene.hash = None;
+        }
+        return;
+    }
+
+    if *done || startup_scenes.scenes.is_empty() {
+        return;
+    }
+
+    if tasks.is_empty() {
+        for (ix, scene) in startup_scenes.scenes.iter().enumerate() {
+            tasks.push((
+                ix,
+                IoTaskPool::get().spawn_compat(lookup_ens(
+                    None,
+                    scene.source.clone(),
+                    scene.super_user,
+                    ipfas.ipfs().clone(),
+                )),
+            ));
+        }
+    }
+
+    tasks.retain_mut(|(ix, t)| match t.complete() {
+        Some(Ok((hash, source))) => {
+            let scene = startup_scenes.scenes.get_mut(*ix).unwrap();
+
+            info!("added startup scene from {}", source.pid);
+            scene.hash = Some(hash.clone());
+            portables.0.extend([(hash, source)]);
+
+            if scene.preview {
+                let sx = channel
+                    .get_or_insert_with(tokio::sync::mpsc::unbounded_channel)
+                    .0
+                    .clone();
+                IoTaskPool::get()
+                    .spawn(handle_preview_socket(scene.source.clone(), sx.clone()))
+                    .detach();
+                scene.hot_reload = Some(sx);
+            }
+            false
+        }
+        Some(Err(e)) => {
+            error!(
+                "failed to load startup scene {}: {e}",
+                startup_scenes.scenes.get(*ix).unwrap().source
+            );
+            false
+        }
+        None => true,
+    });
+
+    if tasks.is_empty() {
+        *done = true;
+    }
 }

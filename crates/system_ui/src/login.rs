@@ -10,7 +10,7 @@ use bevy::{
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::SerializedProfile,
-    rpc::RpcResultSender,
+    rpc::{RpcResultReceiver, RpcResultSender},
     sets::SceneSets,
     structs::{
         ActiveDialog, AppConfig, ChainLink, DialogPermit, PreviousLogin, SystemAudio, ZOrder,
@@ -57,14 +57,12 @@ enum LoginType {
     Cancel,
 }
 
-type RpcReceiver<T> = tokio::sync::oneshot::Receiver<T>;
-
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn login(
     mut commands: Commands,
     wallet: Res<Wallet>,
-    mut req_code: Local<Option<RpcReceiver<Result<Option<i32>, String>>>>,
-    mut req_done: Local<Option<RpcReceiver<Result<(), String>>>>,
+    mut req_code: Local<Option<RpcResultReceiver<Result<Option<i32>, String>>>>,
+    mut req_done: Local<Option<RpcResultReceiver<Result<(), String>>>>,
     mut logins: EventReader<LoginType>,
     mut dialog: Local<Option<Entity>>,
     mut toaster: Toaster,
@@ -247,18 +245,22 @@ fn login(
         match login {
             LoginType::ExistingRemote => {
                 info!("existing remote");
-                commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
-                let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
-                bridge.write(SystemApi::LoginPrevious(sx.into()));
+                commands.send_event(SystemAudio(
+                    "embedded://sounds/ui/toggle_enable.wav".to_owned(),
+                ));
+                let (sx, rx) = RpcResultSender::<Result<(), String>>::channel();
+                bridge.write(SystemApi::LoginPrevious(sx));
                 *req_done = Some(rx);
             }
             LoginType::NewRemote => {
                 info!("new remote");
 
-                commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
-                let (scode, rcode) = tokio::sync::oneshot::channel::<Result<Option<i32>, String>>();
-                let (sx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
-                bridge.write(SystemApi::LoginNew(scode.into(), sx.into()));
+                commands.send_event(SystemAudio(
+                    "embedded://sounds/ui/toggle_enable.wav".to_owned(),
+                ));
+                let (scode, rcode) = RpcResultSender::<Result<Option<i32>, String>>::channel();
+                let (sx, rx) = RpcResultSender::<Result<(), String>>::channel();
+                bridge.write(SystemApi::LoginNew(scode, sx));
                 *req_code = Some(rcode);
                 *req_done = Some(rx);
 
@@ -289,14 +291,18 @@ fn login(
                     "login profile",
                     "Warning: Guest profile will not persist beyond the current session",
                 );
-                commands.send_event(SystemAudio("sounds/ui/toggle_enable.wav".to_owned()));
+                commands.send_event(SystemAudio(
+                    "embedded://sounds/ui/toggle_enable.wav".to_owned(),
+                ));
                 bridge.write(SystemApi::LoginGuest);
             }
             LoginType::Cancel => {
                 *req_code = None;
                 *req_done = None;
                 *dialog = None;
-                commands.send_event(SystemAudio("sounds/ui/toggle_disable.wav".to_owned()));
+                commands.send_event(SystemAudio(
+                    "embedded://sounds/ui/toggle_disable.wav".to_owned(),
+                ));
                 bridge.write(SystemApi::LoginCancel);
             }
         }
@@ -511,7 +517,7 @@ fn process_login_bridge(
                     ephemeral_key,
                     auth: auth.clone(),
                 });
-                platform::write_config_file(&config);
+                platform::write_config_file(&*config);
 
                 wallet.finalize(root_address, local_wallet, auth);
                 segment_config.update_identity(format!("{:#x}", wallet.address().unwrap()), false);

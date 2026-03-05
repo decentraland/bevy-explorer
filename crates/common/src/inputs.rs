@@ -10,12 +10,19 @@ pub enum SystemAction {
     CameraLock,
     Emote,
     HideUi,
+    ShowDebugUi,
+    HideNames,
     RollLeft,
     RollRight,
     Microphone,
+    Map,
     Chat,
     CameraZoomIn,
     CameraZoomOut,
+    CameraUp,
+    CameraDown,
+    CameraLeft,
+    CameraRight,
     ScrollUp,
     ScrollDown,
     ScrollLeft,
@@ -60,6 +67,7 @@ pub enum CommonInputAction {
     IaAction4 = 11,
     IaAction5 = 12,
     IaAction6 = 13,
+    IaModifier = 14,
 }
 
 impl From<CommonInputAction> for Action {
@@ -94,28 +102,69 @@ pub enum InputIdentifier {
     Analog(AxisIdentifier, InputDirection),
 }
 
-// [RIGHT, LEFT, UP, DOWN]
-#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
-pub struct InputDirectionalSet(pub [Action; 4]);
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug, Serialize, Deserialize)]
+pub enum InputDirectionSetLabel {
+    Movement,
+    Scroll,
+    Pointer,
+    Camera,
+    CameraZoom,
+}
 
-pub const MOVE_SET: InputDirectionalSet = InputDirectionalSet([
-    Action::Scene(CommonInputAction::IaRight),
-    Action::Scene(CommonInputAction::IaLeft),
-    Action::Scene(CommonInputAction::IaForward),
-    Action::Scene(CommonInputAction::IaBackward),
-]);
-pub const SCROLL_SET: InputDirectionalSet = InputDirectionalSet([
-    Action::System(SystemAction::ScrollRight),
-    Action::System(SystemAction::ScrollLeft),
-    Action::System(SystemAction::ScrollUp),
-    Action::System(SystemAction::ScrollDown),
-]);
-pub const POINTER_SET: InputDirectionalSet = InputDirectionalSet([
-    Action::System(SystemAction::PointerRight),
-    Action::System(SystemAction::PointerLeft),
-    Action::System(SystemAction::PointerDown),
-    Action::System(SystemAction::PointerUp),
-]);
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
+pub struct InputDirectionalSet {
+    pub label: InputDirectionSetLabel,
+    // [RIGHT, LEFT, UP, DOWN]
+    pub actions: [Option<Action>; 4],
+}
+
+pub const MOVE_SET: InputDirectionalSet = InputDirectionalSet {
+    label: InputDirectionSetLabel::Movement,
+    actions: [
+        Some(Action::Scene(CommonInputAction::IaRight)),
+        Some(Action::Scene(CommonInputAction::IaLeft)),
+        Some(Action::Scene(CommonInputAction::IaForward)),
+        Some(Action::Scene(CommonInputAction::IaBackward)),
+    ],
+};
+pub const SCROLL_SET: InputDirectionalSet = InputDirectionalSet {
+    label: InputDirectionSetLabel::Scroll,
+    actions: [
+        Some(Action::System(SystemAction::ScrollRight)),
+        Some(Action::System(SystemAction::ScrollLeft)),
+        Some(Action::System(SystemAction::ScrollUp)),
+        Some(Action::System(SystemAction::ScrollDown)),
+    ],
+};
+pub const POINTER_SET: InputDirectionalSet = InputDirectionalSet {
+    label: InputDirectionSetLabel::Pointer,
+    actions: [
+        Some(Action::System(SystemAction::PointerRight)),
+        Some(Action::System(SystemAction::PointerLeft)),
+        Some(Action::System(SystemAction::PointerDown)),
+        Some(Action::System(SystemAction::PointerUp)),
+    ],
+};
+
+pub const CAMERA_SET: InputDirectionalSet = InputDirectionalSet {
+    label: InputDirectionSetLabel::Camera,
+    actions: [
+        Some(Action::System(SystemAction::CameraRight)),
+        Some(Action::System(SystemAction::CameraLeft)),
+        Some(Action::System(SystemAction::CameraDown)),
+        Some(Action::System(SystemAction::CameraUp)),
+    ],
+};
+
+pub const CAMERA_ZOOM: InputDirectionalSet = InputDirectionalSet {
+    label: InputDirectionSetLabel::CameraZoom,
+    actions: [
+        None,
+        None,
+        Some(Action::System(SystemAction::CameraZoomIn)),
+        Some(Action::System(SystemAction::CameraZoomOut)),
+    ],
+};
 
 impl serde::Serialize for InputIdentifier {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -220,11 +269,19 @@ pub struct BindingsData {
 #[derive(Resource, Clone)]
 pub struct InputMap {
     pub inputs: HashMap<Action, Vec<InputIdentifier>>,
+    pub sensitivities: HashMap<InputDirectionSetLabel, f32>,
 }
 
 impl Default for InputMap {
     fn default() -> Self {
         Self {
+            sensitivities: HashMap::from_iter([
+                (InputDirectionSetLabel::Movement, 1.0),
+                (InputDirectionSetLabel::Scroll, 1.0),
+                (InputDirectionSetLabel::Pointer, 1.0),
+                (InputDirectionSetLabel::Camera, 1.0),
+                (InputDirectionSetLabel::CameraZoom, 1.0),
+            ]),
             inputs: HashMap::from_iter([
                 (
                     Action::Scene(CommonInputAction::IaPointer),
@@ -284,6 +341,10 @@ impl Default for InputMap {
                 ),
                 (
                     Action::Scene(CommonInputAction::IaWalk),
+                    vec![InputIdentifier::Key(KeyCode::ControlLeft)],
+                ),
+                (
+                    Action::Scene(CommonInputAction::IaModifier),
                     vec![InputIdentifier::Key(KeyCode::ShiftLeft)],
                 ),
                 (
@@ -324,7 +385,7 @@ impl Default for InputMap {
                 (
                     Action::System(SystemAction::Emote),
                     vec![
-                        InputIdentifier::Key(KeyCode::AltLeft),
+                        InputIdentifier::Key(KeyCode::KeyB),
                         InputIdentifier::Gamepad(GamepadButton::West),
                     ],
                 ),
@@ -337,11 +398,22 @@ impl Default for InputMap {
                 ),
                 (
                     Action::System(SystemAction::HideUi),
+                    vec![InputIdentifier::Key(KeyCode::KeyU)],
+                ),
+                (
+                    Action::System(SystemAction::ShowDebugUi),
                     vec![InputIdentifier::Key(KeyCode::PageUp)],
                 ),
                 (
+                    Action::System(SystemAction::HideNames),
+                    vec![InputIdentifier::Key(KeyCode::KeyN)],
+                ),
+                (
                     Action::System(SystemAction::RollLeft),
-                    vec![InputIdentifier::Key(KeyCode::KeyT)],
+                    vec![
+                        InputIdentifier::Key(KeyCode::KeyT),
+                        InputIdentifier::Mouse(MouseButton::Middle),
+                    ],
                 ),
                 (
                     Action::System(SystemAction::RollRight),
@@ -349,7 +421,14 @@ impl Default for InputMap {
                 ),
                 (
                     Action::System(SystemAction::Microphone),
-                    vec![InputIdentifier::Key(KeyCode::ControlLeft)],
+                    vec![InputIdentifier::Key(KeyCode::KeyV)],
+                ),
+                (
+                    Action::System(SystemAction::Map),
+                    vec![
+                        InputIdentifier::Key(KeyCode::KeyM),
+                        InputIdentifier::Key(KeyCode::Tab),
+                    ],
                 ),
                 (
                     Action::System(SystemAction::Chat),
@@ -357,6 +436,22 @@ impl Default for InputMap {
                         InputIdentifier::Key(KeyCode::Enter),
                         InputIdentifier::Key(KeyCode::NumpadEnter),
                     ],
+                ),
+                (
+                    Action::System(SystemAction::CameraUp),
+                    vec![InputIdentifier::Key(KeyCode::ArrowUp)],
+                ),
+                (
+                    Action::System(SystemAction::CameraDown),
+                    vec![InputIdentifier::Key(KeyCode::ArrowDown)],
+                ),
+                (
+                    Action::System(SystemAction::CameraLeft),
+                    vec![InputIdentifier::Key(KeyCode::ArrowLeft)],
+                ),
+                (
+                    Action::System(SystemAction::CameraRight),
+                    vec![InputIdentifier::Key(KeyCode::ArrowRight)],
                 ),
                 (
                     Action::System(SystemAction::CameraZoomIn),
@@ -403,7 +498,7 @@ impl Default for InputMap {
                 (
                     Action::System(SystemAction::ShowProfile),
                     vec![
-                        InputIdentifier::Mouse(MouseButton::Middle),
+                        // InputIdentifier::Mouse(MouseButton::Middle),
                         InputIdentifier::Gamepad(GamepadButton::North),
                     ],
                 ),
@@ -487,11 +582,18 @@ impl InputMap {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct InputMapSerialized(pub Vec<(Action, Vec<InputIdentifier>)>);
+pub struct InputMapSerialized(
+    pub Vec<(Action, Vec<InputIdentifier>)>,
+    pub HashMap<InputDirectionSetLabel, f32>,
+);
 
 impl Default for InputMapSerialized {
     fn default() -> Self {
-        Self(InputMap::default().inputs.into_iter().collect())
+        let default = InputMap::default();
+        Self(
+            default.inputs.into_iter().collect(),
+            default.sensitivities.into_iter().collect(),
+        )
     }
 }
 

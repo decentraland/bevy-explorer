@@ -1,48 +1,48 @@
 use anyhow::anyhow;
-use bevy::{asset::io::AssetReader, log::debug};
+use bevy::{log::debug, math::f32};
+use common::{
+    rpc::{ReadFileResponse, RpcCall, RpcResultSender},
+    structs::TimeOfDay,
+};
 use dcl_component::{
     proto_components::sdk::components::PbRealmInfo, DclReader, FromDclReader, SceneComponentId,
     SceneEntityId,
 };
-use futures_lite::AsyncReadExt;
-use ipfs::{
-    ipfs_path::{IpfsPath, IpfsType},
-    IpfsResource,
-};
 use serde::Serialize;
-use std::{cell::RefCell, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     interface::{crdt_context::CrdtContext, CrdtType},
-    js::RendererStore,
+    js::{RendererStore, SceneResponseSender},
+    RpcCalls, SceneResponse,
 };
 
 use super::State;
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ReadFileResponse {
-    content: Vec<u8>,
-    hash: String,
-}
 
 pub async fn op_read_file(
     op_state: Rc<RefCell<impl State>>,
     filename: String,
 ) -> Result<ReadFileResponse, anyhow::Error> {
-    debug!("op_read_file");
-    let ipfs = op_state.borrow_mut().borrow::<IpfsResource>().clone();
-    let hash = op_state.borrow_mut().borrow::<CrdtContext>().hash.clone();
-    let ipfs_path = IpfsPath::new(IpfsType::new_content_file(hash, filename));
-    let ipfs_pathbuf = PathBuf::from(&ipfs_path);
+    debug!("op_read_file {filename}");
 
-    let mut reader = ipfs.read(&ipfs_pathbuf).await.map_err(|e| anyhow!(e))?;
-    let hash = ipfs.ipfs_hash(&ipfs_path).await.unwrap_or_default();
+    let scene_hash = op_state.borrow_mut().borrow::<CrdtContext>().hash.clone();
+    let (sx, rx) = RpcResultSender::channel();
 
-    let mut content = Vec::default();
-    reader.read_to_end(&mut content).await?;
+    op_state
+        .borrow_mut()
+        .borrow_mut::<SceneResponseSender>()
+        .try_send(SceneResponse::ImmediateRpcCall(RpcCall::ReadFile {
+            scene_hash,
+            filename,
+            response: sx,
+        }))
+        .unwrap();
 
-    Ok(ReadFileResponse { content, hash })
+    let res = rx.await;
+
+    debug!("op_read_file -> {res:?}");
+
+    res?.map_err(|e| anyhow!(e))
 }
 
 #[derive(Serialize)]
@@ -72,21 +72,29 @@ pub async fn scene_information(
     op_state: Rc<RefCell<impl State>>,
 ) -> Result<SceneInfoResponse, anyhow::Error> {
     let urn = op_state.borrow().borrow::<CrdtContext>().hash.clone();
-    let ipfs = op_state.borrow().borrow::<IpfsResource>().clone();
-    ipfs.entity_definition(&urn)
-        .await
-        .map(|(entity, base_url)| SceneInfoResponse {
+
+    let (sx, rx) = RpcResultSender::channel();
+
+    op_state
+        .borrow_mut()
+        .borrow_mut::<RpcCalls>()
+        .push(RpcCall::EntityDefinition {
+            urn: urn.clone(),
+            response: sx,
+        });
+
+    let entity_definition = rx.await?;
+
+    entity_definition
+        .map(|definition| SceneInfoResponse {
             urn,
-            content: entity
+            content: definition
                 .collection
-                .values()
-                .map(|(k, v)| ContentFileEntry {
-                    file: k.to_owned(),
-                    hash: v.to_owned(),
-                })
+                .into_iter()
+                .map(|(file, hash)| ContentFileEntry { file, hash })
                 .collect(),
-            metadata_json: entity.metadata.unwrap_or_default(),
-            base_url: format!("{base_url}/contents/"),
+            metadata_json: definition.metadata.unwrap_or_default(),
+            base_url: format!("{}/contents/", definition.base_url),
         })
         .ok_or_else(|| anyhow!("Scene hash not found?!"))
 }
@@ -109,28 +117,18 @@ pub async fn realm_information(
         return PbRealmInfo::from_reader(&mut DclReader::new(raw_component))
             .map_err(|_| anyhow!("failed to read component"));
     }
+    anyhow::bail!("no realm info")
+}
 
-    // component not added, fall back to ipfs-based discovery
-    let ipfs = op_state.borrow().borrow::<IpfsResource>().clone();
-    let (base_url, info) = ipfs.get_realm_info().await;
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorldTime {
+    pub seconds: f32,
+}
 
-    let info = info.ok_or_else(|| anyhow!("Not connected?"))?;
-
-    let base_url = base_url.strip_suffix("/content").unwrap_or(&base_url);
-    let config = info.configurations.unwrap_or_default();
-
-    let is_preview = op_state.borrow().borrow::<CrdtContext>().preview;
-
-    Ok(PbRealmInfo {
-        base_url: base_url.to_owned(),
-        realm_name: config.realm_name.unwrap_or_default(),
-        network_id: config.network_id.unwrap_or_default() as i32,
-        comms_adapter: info
-            .comms
-            .and_then(|c| c.adapter.or(c.fixed_adapter))
-            .unwrap_or_default(),
-        is_preview,
-        room: None,
-        is_connected_scene_room: Some(false),
-    })
+pub async fn op_world_time(op_state: Rc<RefCell<impl State>>) -> Result<WorldTime, anyhow::Error> {
+    debug!("op_world_time");
+    let state = op_state.borrow();
+    let TimeOfDay { time } = state.borrow::<TimeOfDay>();
+    Ok(WorldTime { seconds: *time })
 }

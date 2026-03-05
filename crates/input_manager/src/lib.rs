@@ -1,5 +1,7 @@
 // input settings
 
+use bevy_console::{clap, ConsoleCommand};
+use console::DoAddConsoleCommand;
 use std::collections::BTreeSet;
 use strum::IntoEnumIterator;
 
@@ -7,7 +9,7 @@ use bevy::{
     ecs::system::SystemParam,
     input::{
         gamepad::GamepadInput,
-        mouse::{MouseMotion, MouseWheel},
+        mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
     },
     platform::collections::{HashMap, HashSet},
     prelude::*,
@@ -20,7 +22,7 @@ use common::{
         InputDirectionalSet, InputIdentifier, InputMap, InputMapSerialized, SystemAction,
         SystemActionEvent, POINTER_SET,
     },
-    rpc::RpcResultSender,
+    rpc::{RpcResultSender, RpcStreamSender},
     structs::{AppConfig, CursorLocks, PlayerModifiers},
 };
 use system_bridge::SystemApi;
@@ -104,6 +106,8 @@ impl Plugin for InputManagerPlugin {
                 handle_system_input_stream,
             ),
         );
+
+        app.add_console_command::<ResetControlsCommand, _>(reset_controls_command);
     }
 }
 
@@ -274,7 +278,10 @@ impl InputManager<'_, '_> {
     }
 
     pub fn get_analog(&self, set: InputDirectionalSet, priority: InputPriority) -> Vec2 {
-        let mut amts = set.0.iter().map(|a| {
+        let mut amts = set.actions.iter().map(|a| {
+            let Some(a) = a else {
+                return 0.0;
+            };
             self.inputs(*a)
                 .map(|item| match item {
                     InputIdentifier::Key(k) => {
@@ -322,11 +329,12 @@ impl InputManager<'_, '_> {
             Vec2::ZERO
         };
 
-        mouse
+        (mouse
             + Vec2::new(
                 amts.next().unwrap() - amts.next().unwrap(),
                 amts.next().unwrap() - amts.next().unwrap(),
-            )
+            ))
+            * self.map.sensitivities.get(&set.label).unwrap_or(&1.0)
     }
 
     // only scene actions
@@ -411,7 +419,11 @@ fn update_deltas(
         *axis_data
             .current
             .entry(AxisIdentifier::MouseWheel)
-            .or_default() += Vec2::new(ev.x, ev.y);
+            .or_default() += Vec2::new(ev.x, ev.y)
+            * match ev.unit {
+                MouseScrollUnit::Line => 16.0,
+                MouseScrollUnit::Pixel => 1.0,
+            };
     }
     for device in gamepads.iter() {
         for axis in device.get_analog_axes() {
@@ -637,9 +649,12 @@ fn handle_set_bindings(
         }
     }) {
         map.inputs = binding_data.bindings.clone();
-        config.inputs = InputMapSerialized(binding_data.bindings.clone().into_iter().collect());
+        config.inputs = InputMapSerialized(
+            binding_data.bindings.clone().into_iter().collect(),
+            config.inputs.1.clone(),
+        );
 
-        platform::write_config_file(&config);
+        platform::write_config_file(&*config);
 
         sender.send(());
     }
@@ -647,7 +662,7 @@ fn handle_set_bindings(
 
 fn handle_system_input_stream(
     mut events: EventReader<SystemApi>,
-    mut senders: Local<Vec<tokio::sync::mpsc::UnboundedSender<SystemActionEvent>>>,
+    mut senders: Local<Vec<RpcStreamSender<SystemActionEvent>>>,
     input_manager: InputManager,
     mut pressed: Local<HashSet<SystemAction>>,
     modifiers: Query<&PlayerModifiers>,
@@ -705,4 +720,22 @@ fn handle_system_input_stream(
     }
 
     *pressed = new_pressed;
+}
+
+/// manually spawn a portable
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/reset_controls")]
+struct ResetControlsCommand;
+
+fn reset_controls_command(
+    mut input: ConsoleCommand<ResetControlsCommand>,
+    mut config: ResMut<AppConfig>,
+    mut map: ResMut<InputMap>,
+) {
+    if let Some(Ok(_)) = input.take() {
+        map.inputs = InputMap::default().inputs;
+        config.inputs.0 = map.inputs.clone().into_iter().collect();
+        platform::write_config_file(&*config);
+        input.reply_ok("Controls reset to default");
+    }
 }

@@ -54,8 +54,6 @@ impl AppSetting for ConstrainUiSetting {
         }
     }
 
-    fn apply(&self, _: (), _: Commands) {}
-
     fn category() -> super::SettingCategory {
         super::SettingCategory::Gameplay
     }

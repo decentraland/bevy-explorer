@@ -9,9 +9,12 @@ pub mod transform_and_parent;
 pub mod writer;
 
 pub use reader::{DclReader, DclReaderError, FromDclReader};
+use serde::{Deserialize, Serialize};
 pub use writer::{DclWriter, ToDclWriter};
 
-#[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy, Default)]
+#[derive(
+    PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy, Default, Serialize, Deserialize,
+)]
 pub struct SceneEntityId {
     pub id: u16,
     pub generation: u16,
@@ -49,7 +52,7 @@ impl SceneEntityId {
     }
 }
 
-#[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SceneComponentId(pub u32);
 
 impl SceneComponentId {
@@ -66,6 +69,7 @@ impl SceneComponentId {
 
     pub const GLTF_CONTAINER: SceneComponentId = SceneComponentId(1041);
     pub const ANIMATOR: SceneComponentId = SceneComponentId(1042);
+    pub const GLTF_NODE_MODIFIERS: SceneComponentId = SceneComponentId(1099);
 
     pub const VIDEO_PLAYER: SceneComponentId = SceneComponentId(1043);
     pub const VIDEO_EVENT: SceneComponentId = SceneComponentId(1044);
@@ -83,6 +87,9 @@ impl SceneComponentId {
 
     pub const CANVAS_INFO: SceneComponentId = SceneComponentId(1054);
     pub const UI_CANVAS: SceneComponentId = SceneComponentId(1203);
+
+    pub const TRIGGER_AREA: SceneComponentId = SceneComponentId(1060);
+    pub const TRIGGER_AREA_RESULT: SceneComponentId = SceneComponentId(1061);
 
     pub const POINTER_EVENTS: SceneComponentId = SceneComponentId(1062);
     pub const POINTER_RESULT: SceneComponentId = SceneComponentId(1063);
@@ -128,12 +135,19 @@ impl SceneComponentId {
     pub const TEXTURE_CAMERA: SceneComponentId = SceneComponentId(1207);
     pub const CAMERA_LAYERS: SceneComponentId = SceneComponentId(1208);
     pub const PRIMARY_POINTER_INFO: SceneComponentId = SceneComponentId(1209);
-    pub const CAMERA_LAYER: SceneComponentId = SceneComponentId(1210);
+    pub const SKYBOX_TIME: SceneComponentId = SceneComponentId(1210);
+    pub const CAMERA_LAYER: SceneComponentId = SceneComponentId(1503);
 
     pub const REALM_INFO: SceneComponentId = SceneComponentId(1106);
+
+    pub const AVATAR_MOVEMENT_INFO: SceneComponentId = SceneComponentId(1500);
+    pub const AVATAR_MOVEMENT: SceneComponentId = SceneComponentId(1501);
+    pub const AVATAR_LOCOMOTION_SETTINGS: SceneComponentId = SceneComponentId(1211);
 }
 
-#[derive(PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy, Default)]
+#[derive(
+    PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy, Default, Serialize, Deserialize,
+)]
 pub struct SceneCrdtTimestamp(pub u32);
 
 impl FromDclReader for Vec3 {

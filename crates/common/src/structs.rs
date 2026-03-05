@@ -1,4 +1,11 @@
-use std::{f32::consts::PI, num::ParseIntError, ops::Range, str::FromStr, sync::Arc};
+use std::{
+    f32::consts::PI,
+    marker::PhantomData,
+    num::ParseIntError,
+    ops::Range,
+    str::FromStr,
+    sync::{atomic::AtomicU32, Arc},
+};
 
 use bevy::{
     platform::collections::{HashMap, HashSet},
@@ -18,6 +25,7 @@ pub struct Version(pub String);
 
 // main user entity
 #[derive(Component, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PrimaryUser {
     pub walk_speed: f32,
     pub run_speed: f32,
@@ -27,6 +35,7 @@ pub struct PrimaryUser {
     pub fall_speed: f32,
     pub control_type: AvatarControl,
     pub turn_speed: f32,
+    pub block_all: bool,
     pub block_run: bool,
     pub block_walk: bool,
     pub block_jump: bool,
@@ -44,6 +53,7 @@ impl Default for PrimaryUser {
             fall_speed: -15.0,
             control_type: AvatarControl::Relative,
             turn_speed: PI,
+            block_all: false,
             block_run: false,
             block_walk: false,
             block_jump: false,
@@ -52,7 +62,7 @@ impl Default for PrimaryUser {
     }
 }
 
-#[derive(Component, Default)]
+#[derive(Component, Default, Debug)]
 pub struct PlayerModifiers {
     pub hide: bool,
     pub hide_profile: bool,
@@ -64,6 +74,7 @@ pub struct PlayerModifiers {
     pub fall_speed: Option<f32>,
     pub control_type: Option<AvatarControl>,
     pub turn_speed: Option<f32>,
+    pub block_all: bool,
     pub block_run: bool,
     pub block_walk: bool,
     pub block_jump: bool,
@@ -71,7 +82,7 @@ pub struct PlayerModifiers {
     pub areas: Vec<ActiveAvatarArea>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ActiveAvatarArea {
     pub entity: Entity,
     pub allow_locomotion: PermissionState,
@@ -88,6 +99,7 @@ impl PlayerModifiers {
             fall_speed: self.fall_speed.unwrap_or(user.fall_speed),
             control_type: self.control_type.unwrap_or(user.control_type),
             turn_speed: self.turn_speed.unwrap_or(user.turn_speed),
+            block_all: self.block_all || user.block_all,
             block_run: self.block_run || user.block_run,
             block_walk: self.block_walk || user.block_walk,
             block_jump: self.block_jump || user.block_jump,
@@ -108,12 +120,41 @@ pub enum PermissionState {
 pub struct AttachPoints {
     pub position: Entity,
     pub nametag: Entity,
+    pub head: Entity,
+    pub neck: Entity,
+    pub spine: Entity,
+    pub spine_1: Entity,
+    pub spine_2: Entity,
+    pub hip: Entity,
+    pub left_shoulder: Entity,
+    pub left_arm: Entity,
+    pub left_forearm: Entity,
     pub left_hand: Entity,
+    pub left_hand_index: Entity,
+    pub right_shoulder: Entity,
+    pub righ_arm: Entity,
+    pub right_forearm: Entity,
     pub right_hand: Entity,
+    pub right_hand_index: Entity,
+    /// AAPT_LEFT_UP_LEG
+    pub left_thigh: Entity,
+    /// AAPT_LEFT_LEG
+    pub left_shin: Entity,
+    pub left_foot: Entity,
+    pub left_toe_base: Entity,
+    /// AAPT_RIGHT_UP_LEG
+    pub right_thigh: Entity,
+    /// AAPT_RIGHT_LEG
+    pub right_shin: Entity,
+    pub right_foot: Entity,
+    pub right_toe_base: Entity,
 }
 
 impl AttachPoints {
     pub fn new(commands: &mut Commands) -> Self {
+        let inverted_transform = Transform::from_rotation(Quat::from_rotation_y(PI));
+        let default_visibility = Visibility::default();
+        let default_bundle = (inverted_transform, default_visibility);
         Self {
             position: commands
                 .spawn((Transform::default(), Visibility::default()))
@@ -124,23 +165,63 @@ impl AttachPoints {
                     Visibility::default(),
                 ))
                 .id(),
-            left_hand: commands
-                .spawn((
-                    Transform::from_rotation(Quat::from_rotation_y(PI)),
-                    Visibility::default(),
-                ))
-                .id(),
-            right_hand: commands
-                .spawn((
-                    Transform::from_rotation(Quat::from_rotation_y(PI)),
-                    Visibility::default(),
-                ))
-                .id(),
+            head: commands.spawn(default_bundle).id(),
+            neck: commands.spawn(default_bundle).id(),
+            spine: commands.spawn(default_bundle).id(),
+            spine_1: commands.spawn(default_bundle).id(),
+            spine_2: commands.spawn(default_bundle).id(),
+            hip: commands.spawn(default_bundle).id(),
+            left_shoulder: commands.spawn(default_bundle).id(),
+            left_arm: commands.spawn(default_bundle).id(),
+            left_forearm: commands.spawn(default_bundle).id(),
+            left_hand: commands.spawn(default_bundle).id(),
+            left_hand_index: commands.spawn(default_bundle).id(),
+            right_shoulder: commands.spawn(default_bundle).id(),
+            righ_arm: commands.spawn(default_bundle).id(),
+            right_forearm: commands.spawn(default_bundle).id(),
+            right_hand: commands.spawn(default_bundle).id(),
+            right_hand_index: commands.spawn(default_bundle).id(),
+            left_thigh: commands.spawn(default_bundle).id(),
+            left_shin: commands.spawn(default_bundle).id(),
+            left_foot: commands.spawn(default_bundle).id(),
+            left_toe_base: commands.spawn(default_bundle).id(),
+            right_thigh: commands.spawn(default_bundle).id(),
+            right_shin: commands.spawn(default_bundle).id(),
+            right_foot: commands.spawn(default_bundle).id(),
+            right_toe_base: commands.spawn(default_bundle).id(),
         }
     }
 
-    pub fn entities(&self) -> [Entity; 4] {
-        [self.position, self.nametag, self.left_hand, self.right_hand]
+    /// AttachPoints entities ordered by their protocol id
+    pub fn entities(&self) -> [Entity; 26] {
+        [
+            self.position,
+            self.nametag,
+            self.left_hand,
+            self.right_hand,
+            self.head,
+            self.neck,
+            self.spine,
+            self.spine_1,
+            self.spine_2,
+            self.hip,
+            self.left_shoulder,
+            self.left_arm,
+            self.left_forearm,
+            self.left_hand_index,
+            self.right_shoulder,
+            self.righ_arm,
+            self.right_forearm,
+            self.right_hand_index,
+            self.left_thigh,
+            self.left_shin,
+            self.left_foot,
+            self.left_toe_base,
+            self.right_thigh,
+            self.right_shin,
+            self.right_foot,
+            self.right_toe_base,
+        ]
     }
 }
 
@@ -297,8 +378,7 @@ impl Default for AppConfig {
             scene_threads: 4,
             scene_load_distance: 50.0,
             scene_unload_extra_distance: 15.0,
-            scene_imposter_distances: vec![0.0],
-            // scene_imposter_distances: vec![150.0, 300.0, 600.0, 1200.0, 2400.0, 4800.0],
+            scene_imposter_distances: vec![100.0, 200.0, 400.0, 800.0, 1600.0, 99999.0],
             scene_imposter_multisample: false,
             scene_imposter_multisample_amount: 0.0,
             scene_imposter_bake: SceneImposterBake::Off,
@@ -399,6 +479,14 @@ impl Default for GraphicsSettings {
             gpu_bytes_per_frame: 0,
         }
     }
+}
+
+#[derive(Debug)]
+pub enum AudioType {
+    Voice,
+    Scene,
+    System,
+    Avatar,
 }
 
 #[derive(Resource, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -591,6 +679,7 @@ impl SpawnPosition {
 #[derive(Deserialize, Debug, Clone)]
 pub struct SpawnPoint {
     pub name: Option<String>,
+    #[serde(default)]
     pub default: bool,
     pub position: SpawnPosition,
 }
@@ -608,6 +697,12 @@ pub struct SceneDisplay {
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
+pub struct SkyboxConfig {
+    pub fixed_time: Option<f32>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct SceneMeta {
     pub owner: Option<String>,
     pub display: Option<SceneDisplay>,
@@ -615,6 +710,8 @@ pub struct SceneMeta {
     pub scene: SceneMetaScene,
     pub runtime_version: Option<String>,
     pub spawn_points: Option<Vec<SpawnPoint>>,
+    pub skybox_config: Option<SkyboxConfig>,
+    pub authoritative_multiplayer: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -751,7 +848,7 @@ impl PermissionStrings for PermissionType {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PermissionLevel {
     Scene(String),
     Realm(String),
@@ -883,7 +980,7 @@ impl SceneImposterBake {
 #[derive(Resource, Default)]
 pub struct CursorLocks(pub HashSet<&'static str>);
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub enum MoveKind {
     #[default]
     Idle,
@@ -898,11 +995,8 @@ pub enum MoveKind {
 
 #[derive(Component, Default)]
 pub struct AvatarDynamicState {
-    pub force: Vec2,
     pub velocity: Vec3,
     pub ground_height: f32,
-    pub tank: bool,
-    pub rotate: f32,
     pub jump_time: f32,
     pub move_kind: MoveKind,
 }
@@ -912,12 +1006,17 @@ pub enum PreviewCommand {
     ReloadScene { hash: String },
 }
 
-#[derive(Resource)]
-pub struct SystemScene {
-    pub source: Option<String>,
+pub struct StartupScene {
+    pub source: String,
+    pub super_user: bool,
     pub preview: bool,
     pub hot_reload: Option<tokio::sync::mpsc::UnboundedSender<PreviewCommand>>,
     pub hash: Option<String>,
+}
+
+#[derive(Resource)]
+pub struct StartupScenes {
+    pub scenes: Vec<StartupScene>,
 }
 
 #[derive(Resource, Default, Clone, Debug)]
@@ -933,9 +1032,8 @@ pub struct SceneGlobalLight {
 
 #[derive(Resource)]
 pub struct TimeOfDay {
-    pub time: f32, // secs since midnight
-    pub target_time: Option<f32>,
-    pub speed: f32,
+    /// secs since midnight
+    pub time: f32,
 }
 
 impl TimeOfDay {
@@ -944,13 +1042,43 @@ impl TimeOfDay {
     }
 }
 
+/// Fixed time defined on `scene.json` `skyboxConfig`
+#[derive(Component)]
+#[component(immutable)]
+pub struct SceneTime {
+    /// secs since midnight
+    pub time: f32,
+}
+
 // porting aid, used to be one component
 pub type TextStyle = (TextFont, TextColor);
 
 // non-spatial audio
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct AudioEmitter {
-    pub instances: Vec<Handle<bevy_kira_audio::AudioInstance>>,
+    pub handle: Handle<bevy_kira_audio::AudioSource>,
+    pub playing: bool,
+    pub playback_speed: f32,
+    pub r#loop: bool,
+    pub volume: f32,
+    pub global: bool,
+    pub seek_time: Option<f32>,
+    pub ty: AudioType,
+}
+
+impl Default for AudioEmitter {
+    fn default() -> Self {
+        Self {
+            handle: default(),
+            playing: true,
+            playback_speed: 1.0,
+            r#loop: false,
+            volume: 1.0,
+            global: false,
+            seek_time: None,
+            ty: AudioType::System,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -959,7 +1087,8 @@ pub enum ZOrder {
     Crosshair = -65536,
     // PortableScene -> -65535 <= value <= -1
     // default 0 => appear in world, under scene ui
-    SceneUi = 1,
+    OutOfWorldBackdrop = 1,
+    SceneUi,
     SceneUiOverlay,
     SystemSceneUi,
     SystemSceneUiOverlay,
@@ -990,4 +1119,45 @@ impl ZOrder {
 #[derive(Event, Debug)]
 pub enum AppError {
     NetworkFailure(anyhow::Error),
+}
+
+#[derive(Resource, Default, Serialize, Deserialize, Clone)]
+pub struct MicState {
+    pub available: bool,
+    pub enabled: bool,
+}
+
+#[derive(Resource, Default)]
+pub struct PreviewMode {
+    pub server: Option<String>,
+    pub is_preview: bool,
+}
+
+// resource into which systems can add debug info
+#[derive(Resource, Default, Debug)]
+pub struct DebugInfo {
+    pub info: HashMap<&'static str, String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub enum GlobalCrdtStateUpdate {
+    Crdt(Vec<u8>),
+    Time(f32),
+}
+
+// used for responses to scenes which require strict monotonic timestamps
+// by convention we use T = the protobuf struct containing the timestamp (e.g. PbPointerEventsResult, PbTriggerAreaResult)
+#[derive(Resource)]
+pub struct MonotonicTimestamp<T>(AtomicU32, PhantomData<fn() -> T>);
+
+impl<T> Default for MonotonicTimestamp<T> {
+    fn default() -> Self {
+        Self(Default::default(), Default::default())
+    }
+}
+
+impl<T> MonotonicTimestamp<T> {
+    pub fn next_timestamp(&self) -> u32 {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    }
 }

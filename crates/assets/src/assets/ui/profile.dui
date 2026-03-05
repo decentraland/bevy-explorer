@@ -1,0 +1,29 @@
+<define-template id="settings">
+    <div 
+        style="
+            position-type: absolute;
+            flex-direction: column;
+            height: 100%;
+            width: 100%;
+            background-color: #aa1fc1ff;
+            align-items: center;
+        "
+        focus="block"
+    >
+        <div id="title-bar" style="width: 100%; height: auto;" z-index="100">
+            <button label-name="change-realm-button" label="@realm" onclick="@change-realm" />
+            <space />
+            <tab-group id="title-pages" tabs="@title-tabs" onchanged="@title-onchanged" initial="@title-initial" edge-scale="1px 1px -0px 1px" />
+            <space />
+            <div id="wallet">
+                <button id="connect-wallet-button" label="Connect wallet" onclick="@connect-wallet" />
+                <button img="embedded://images/redx.png" onclick="@close-settings" image-width="4.4vmin" image-height="4.4vmin" />
+            </div>
+        </div>
+        <hr-thin />
+        <div style="width: 100%; flex-grow: 1;">
+            <div id="settings-content" />
+        </div>
+    </div>
+</define-template>
+

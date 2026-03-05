@@ -1,0 +1,45 @@
+name: Set rollout by path - Manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      packageVersion:
+        description: 'NPM Version of the release (@dcl-regenesislabs/bevy-explorer-web)'
+        required: true
+        default: ''
+      deploymentEnvironment:
+        type: 'choice'
+        description: 'Deployment environment'
+        required: true
+        default: 'zone'
+        options:
+          - zone
+          - org
+      rolloutPercentage:
+        description: 'The percentage for this rollout'
+        required: true
+        default: '100'
+
+jobs:
+  set-manual-by-path-rollout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hmarr/debug-action@v2
+      - name: Set Rollout
+        uses: decentraland/set-rollout-action@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+          # Repo deployment info
+          ref: ${{ github.event.ref }}
+          sha: ${{ github.sha }}
+
+          # CDN information
+          packageName: '@dcl-regenesislabs/bevy-explorer-web'
+          packageVersion: ${{ github.event.inputs.packageVersion }}
+
+          # Rollout information
+          deploymentPath: 'bevy-web'
+          deploymentEnvironment: ${{ github.event.inputs.deploymentEnvironment }}
+          deploymentName: '_site'
+          percentage: ${{ github.event.inputs.rolloutPercentage }}

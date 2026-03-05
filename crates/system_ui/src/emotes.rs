@@ -284,14 +284,14 @@ fn set_emotes_content(
 
         let empty_img = ipfas
             .asset_server()
-            .load::<Image>("images/backpack/empty.png");
+            .load::<Image>("embedded://images/backpack/empty.png");
 
         let slot_tabs: Vec<_> = (0usize..=9)
             .map(|slot| {
                 let emote_img = emote_settings
                     .current_emotes
                     .get(&slot)
-                    .map(|(_, data)| data.thumbnail.clone())
+                    .map(|(_, data)| ipfas.asset_server().load::<Image>(&data.thumbnail))
                     .unwrap_or_else(|| empty_img.clone());
 
                 let content = commands
@@ -756,7 +756,7 @@ fn update_emotes_list(
                     }),
                     ..Default::default()
                 }),
-                image: Some(asset_server.load("images/backpack/item_bg.png")),
+                image: Some(asset_server.load("embedded://images/backpack/item_bg.png")),
                 children: Some(content),
                 ..Default::default()
             }
@@ -833,7 +833,9 @@ fn update_emote_item(
                                 .available_representations
                                 .contains(settings.body_shape.base().as_str());
 
-                            *state = EmoteItemState::PendingImage(data.thumbnail.clone());
+                            *state = EmoteItemState::PendingImage(
+                                ipfas.asset_server().load(&data.thumbnail),
+                            );
 
                             modified = true;
 
@@ -859,9 +861,9 @@ fn update_emote_item(
                                     DuiProps::new()
                                         .with_prop(
                                             "img",
-                                            ipfas
-                                                .asset_server()
-                                                .load::<Image>("images/backback/empty.png"),
+                                            ipfas.asset_server().load::<Image>(
+                                                "embedded://images/backback/empty.png",
+                                            ),
                                         )
                                         .with_prop("rarity-color", entry.rarity.color()),
                                 )
@@ -917,9 +919,9 @@ fn update_emote_item(
                                     DuiProps::new()
                                         .with_prop(
                                             "img",
-                                            ipfas
-                                                .asset_server()
-                                                .load::<Image>("images/backback/empty.png"),
+                                            ipfas.asset_server().load::<Image>(
+                                                "embedded://images/backback/empty.png",
+                                            ),
                                         )
                                         .with_prop("rarity-color", rarity_color)
                                         .with_prop("img-color", image_color),
@@ -1070,11 +1072,11 @@ fn update_selected_item(
 
                 let empty_img = ipfas
                     .asset_server()
-                    .load::<Image>("images/backpack/empty.png");
+                    .load::<Image>("embedded://images/backpack/empty.png");
                 let emote_img = emote_settings
                     .current_emotes
                     .get(&selected_slot)
-                    .map(|(_, data)| data.thumbnail.clone())
+                    .map(|(_, data)| ipfas.asset_server().load::<Image>(&data.thumbnail))
                     .unwrap_or_else(|| empty_img.clone());
 
                 commands

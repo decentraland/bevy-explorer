@@ -1,10 +1,20 @@
 use async_tungstenite::{async_std::ConnectStream, WebSocketStream};
-use common::structs::AppConfig;
+use bevy::{
+    core_pipeline::{
+        bloom::Bloom,
+        prepass::{DepthPrepass, NormalPrepass},
+        tonemapping::{DebandDither, Tonemapping},
+    },
+    ecs::bundle::Bundle,
+    pbr::ShadowFilteringMethod,
+    render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
+};
 use futures_util::{
     sink::SinkExt,
     stream::{SplitSink, SplitStream},
     StreamExt,
 };
+use serde::Serialize;
 pub use tungstenite::client::IntoClientRequest;
 
 pub struct WebSocket {
@@ -73,7 +83,7 @@ pub fn project_directories() -> Option<directories::ProjectDirs> {
     directories::ProjectDirs::from("org", "decentraland", "BevyExplorer")
 }
 
-pub fn write_config_file(config: &AppConfig) {
+pub fn write_config_file<T: Serialize>(config: &T) {
     let config_file = project_directories()
         .unwrap()
         .config_dir()
@@ -84,9 +94,6 @@ pub fn write_config_file(config: &AppConfig) {
     }
     let _ = std::fs::write(config_file, serde_json::to_string(config).unwrap());
 }
-
-// re-export prepass types
-pub use bevy::core_pipeline::prepass::{DepthPrepass, NormalPrepass};
 
 #[derive(Default)]
 pub struct AsyncRwLock<T>(tokio::sync::RwLock<T>);
@@ -127,4 +134,36 @@ impl<T> AsyncRwLock<T> {
 
 pub fn platform_pointer_is_locked(expected: bool) -> bool {
     expected
+}
+
+pub fn default_camera_components() -> impl Bundle {
+    (
+        Tonemapping::TonyMcMapface,
+        DebandDither::Enabled,
+        ColorGrading {
+            global: ColorGradingGlobal {
+                exposure: -0.5,
+                ..Default::default()
+            },
+            shadows: ColorGradingSection {
+                gamma: 0.75,
+                ..Default::default()
+            },
+            midtones: ColorGradingSection {
+                gamma: 0.75,
+                ..Default::default()
+            },
+            highlights: ColorGradingSection {
+                gamma: 0.75,
+                ..Default::default()
+            },
+        },
+        Bloom {
+            intensity: 0.15,
+            ..Bloom::OLD_SCHOOL
+        },
+        ShadowFilteringMethod::Gaussian,
+        DepthPrepass,
+        NormalPrepass,
+    )
 }

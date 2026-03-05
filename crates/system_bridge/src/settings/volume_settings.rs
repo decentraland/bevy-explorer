@@ -38,7 +38,12 @@ macro_rules! volume_setting {
                 format!("{} Volume\n\n{}", $name, $description)
             }
 
-            fn apply(&self, mut settings: ResMut<AudioSettings>, _: Commands) {
+            fn apply(
+                &self,
+                mut settings: ResMut<AudioSettings>,
+                _: Commands,
+                _: &bevy::platform::collections::HashSet<Entity>,
+            ) {
                 $set(&mut *settings, self.0)
             }
 

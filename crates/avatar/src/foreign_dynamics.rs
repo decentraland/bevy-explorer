@@ -7,10 +7,7 @@ use comms::{
     movement_compressed::Temporal,
 };
 use dcl_component::{transform_and_parent::DclTransformAndParent, SceneEntityId};
-use scene_runner::{
-    renderer_context::RendererSceneContext, update_world::mesh_collider::SceneColliderData,
-    ContainingScene,
-};
+use scene_runner::{update_world::mesh_collider::SceneColliderData, ContainingScene};
 
 pub struct PlayerMovementPlugin;
 
@@ -127,11 +124,7 @@ fn update_foreign_user_actual_position(
         &mut Transform,
         &mut AvatarDynamicState,
     )>,
-    mut scene_datas: Query<(
-        &mut RendererSceneContext,
-        &mut SceneColliderData,
-        &GlobalTransform,
-    )>,
+    mut scene_datas: Query<(&mut SceneColliderData, &GlobalTransform)>,
     containing_scene: ContainingScene,
     time: Res<Time>,
 ) {
@@ -217,12 +210,9 @@ fn update_foreign_user_actual_position(
                 .get(foreign_ent)
                 .into_iter()
                 .for_each(|scene| {
-                    if let Ok((context, mut collider_data, _scene_transform)) =
-                        scene_datas.get_mut(scene)
-                    {
-                        if let Some(ground_height) = collider_data
-                            .get_groundheight(context.last_update_frame, actual.translation)
-                            .map(|(h, _)| h)
+                    if let Ok((mut collider_data, _scene_transform)) = scene_datas.get_mut(scene) {
+                        if let Some(ground_height) =
+                            collider_data.get_ground(actual.translation).map(|(h, _)| h)
                         {
                             dynamic_state.ground_height =
                                 dynamic_state.ground_height.min(ground_height);
@@ -242,7 +232,5 @@ fn update_foreign_user_actual_position(
                 actual.translation.y = updated_y;
             }
         }
-
-        dynamic_state.force = dynamic_state.velocity.xz();
     }
 }

@@ -1,7 +1,6 @@
 use std::{fs::File, io::Write, sync::OnceLock};
 
 use comms::{
-    preview::PreviewMode,
     profile::{CurrentUserProfile, ProfileCache, UserProfile},
     CommsPlugin,
 };
@@ -9,7 +8,10 @@ use console::ConsolePlugin;
 
 use dcl_deno::init_runtime;
 
-use imposters::{render::ImposterMissing, DclImposterPlugin};
+use imposters::{
+    render::{RetryImposter, SceneImposter},
+    DclImposterPlugin,
+};
 
 use bevy::{
     app::{ScheduleRunnerPlugin, TaskPoolThreadAssignmentPolicy},
@@ -25,8 +27,8 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, AppError, AvatarDynamicState, CursorLocks, GraphicsSettings, IVec2Arg,
-        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, SceneGlobalLight, SceneImposterBake,
-        SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips,
+        PermissionUsed, PreviewMode, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes,
+        SceneGlobalLight, SceneImposterBake, SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips,
     },
     util::UtilsPlugin,
 };
@@ -35,13 +37,13 @@ use nft::asset_source::Nft;
 use restricted_actions::RestrictedActionsPlugin;
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
-    initialize_scene::ScenePointers, permissions::PermissionManager,
-    update_world::mesh_collider::GroundCollider, OutOfWorld, SceneRunnerPlugin,
+    initialize_scene::ScenePointers, permissions::PermissionManager, OutOfWorld, SceneRunnerPlugin,
 };
 
-use ipfs::{CurrentRealm, IpfsIoPlugin};
+use ipfs::{map_realm_name, CurrentRealm, IpfsIoPlugin};
 use system_bridge::SystemBridgePlugin;
 use ui_core::{scrollable::ScrollTargetEvent, UiCorePlugin};
+use user_input::avatar_movement::GroundCollider;
 use wallet::Wallet;
 
 static SESSION_LOG: OnceLock<String> = OnceLock::new();
@@ -197,7 +199,7 @@ fn main() {
             })
             .add_before::<bevy::asset::AssetPlugin>(IpfsIoPlugin {
                 preview: false,
-                starting_realm: Some(final_config.server.clone()),
+                starting_realm: Some(map_realm_name(&final_config.server)),
                 content_server_override,
                 assets_root: Default::default(),
                 num_slots: final_config.max_concurrent_remotes,
@@ -265,13 +267,12 @@ fn main() {
         .init_resource::<SceneGlobalLight>()
         .add_event::<RpcCall>()
         .add_event::<ScrollTargetEvent>()
+        .add_event::<PermissionUsed>()
         .init_resource::<PreviewMode>()
         .init_asset::<Nft>()
         .init_resource::<CursorLocks>()
         .insert_resource(TimeOfDay {
             time: 10.0 * 3600.0,
-            target_time: None,
-            speed: 12.0,
         });
 
     // requires local version of `bevy_mod_debugdump` due to once_cell version conflict.
@@ -285,8 +286,16 @@ fn main() {
     app.run();
 }
 
+#[allow(clippy::type_complexity)]
 fn check_done(
-    q: Query<(), With<ImposterMissing>>,
+    q: Query<
+        (),
+        (
+            With<SceneImposter>,
+            Without<RetryImposter>,
+            Without<Children>,
+        ),
+    >,
     realm: Res<CurrentRealm>,
     pointers: Res<ScenePointers>,
     mut counter: Local<usize>,

@@ -270,7 +270,10 @@ fn set_discover_content(
                         "discover-category-button",
                         DuiProps::new().with_prop("text", cat.text()).with_prop(
                             "img",
-                            format!("images/discover/{}.png", cat.text().to_lowercase()),
+                            format!(
+                                "embedded://images/discover/{}.png",
+                                cat.text().to_lowercase()
+                            ),
                         ),
                     )
                     .unwrap()

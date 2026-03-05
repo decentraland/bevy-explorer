@@ -1,0 +1,57 @@
+we need to remap webrtc symbols to avoid collisions with ffmpeg. below explains how to do it for livekit 0.5.2 (the "webrtc-dac8015-5" tag name should be the only change for later versions)
+
+download the platform zip from https://github.com/livekit/rust-sdks/releases/tag/webrtc-dac8015-5
+extract and navigate to lib folder, rename symbols with below then zip and upload to the release referenced by webrtc-sys/build/src/lib.rs WEBRTC_TAG. i used "h264-true-prefixed" in the 0.5.2 livekit branch (h264-true-prefixed).
+
+### macos/linux bash:
+
+use remap.sh
+
+### win powershell:
+
+# 1. Define the prefixes we MUST rename
+# Note: SSL symbols are Case Sensitive (SSL_, not ssl_)
+$prefixes = @(
+    # FFmpeg families
+    "av_", "avio_", "avcodec_", "avformat_", "avfilter_", "avutil_", "avdevice_", 
+    "sws_", "swr_",
+    
+    # BoringSSL / OpenSSL families
+    "SSL_", "CRYPTO_", "BIO_", "EVP_", "RSA_", "X509_", "PEM_", "ERR_", "BN_", "EC_", "PKCS"
+)
+
+# Join them into a regex: "^(av_|avio_|...)"
+$regexPattern = "^(" + ($prefixes -join "|") + ")"
+
+Write-Host "Scanning for symbols matching: $regexPattern" -ForegroundColor Cyan
+
+# 2. Extract symbols using llvm-nm (Cleanest method for Windows)
+# We assume llvm-nm is in your path.
+$symbols = llvm-nm --defined-only --extern-only webrtc.lib | 
+    ForEach-Object { 
+        # Output format is usually: address type name
+        # We grab the last column (the symbol name)
+        $_.ToString().Split(" ")[-1].Trim() 
+    } | 
+    Where-Object { 
+        # Match our specific prefixes
+        $_ -match $regexPattern 
+    } | 
+    Sort-Object | Get-Unique
+
+# 3. Sanity Check
+$avCount = ($symbols | Where-Object { $_ -match "^av" }).Count
+$sslCount = ($symbols | Where-Object { $_ -match "^(SSL|CRYPTO|BIO)" }).Count
+
+if ($symbols.Count -eq 0) {
+    Write-Host "No symbols found! Check your path." -ForegroundColor Red
+} else {
+    Write-Host "Found $($symbols.Count) total collisions." -ForegroundColor Green
+    Write-Host "  - FFmpeg variants: $avCount" -ForegroundColor Gray
+    Write-Host "  - SSL variants:    $sslCount" -ForegroundColor Gray
+
+    # 4. Write to map file
+    $symbols | ForEach-Object { "$_ webrtc_$_" } | Out-File -Encoding ascii symbols.map
+    
+    Write-Host "Generated symbols.map. Run llvm-objcopy now." -ForegroundColor Yellow
+}

@@ -1,18 +1,14 @@
 use std::f32::consts::FRAC_PI_4;
 
 use bevy::{
-    app::{HierarchyPropagatePlugin, Propagate, PropagateStop},
-    core_pipeline::{
-        bloom::Bloom,
-        tonemapping::{DebandDither, Tonemapping},
-    },
-    pbr::ShadowFilteringMethod,
+    app::{HierarchyPropagatePlugin, Propagate, PropagateSet, PropagateStop},
+    asset::RenderAssetTransferPriority,
     platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureFormat, TextureUsages},
-        view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, RenderLayers},
+        view::RenderLayers,
     },
 };
 use bevy_atmosphere::plugin::AtmosphereCamera;
@@ -33,7 +29,7 @@ use dcl_component::{
     },
     SceneComponentId,
 };
-use platform::{DepthPrepass, NormalPrepass};
+use platform::default_camera_components;
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::{
@@ -73,7 +69,9 @@ impl Plugin for TextureCameraPlugin {
                 update_camera_layers,
                 update_texture_cameras,
                 update_avatar_layers,
-                update_directional_light_layers.after(update_directional_light),
+                update_directional_light_layers
+                    .after(update_directional_light)
+                    .before(PropagateSet::<RenderLayers>::default()),
             )
                 .in_set(SceneSets::PostLoop),
         );
@@ -259,7 +257,7 @@ fn update_texture_cameras(
                 Some(existing) => {
                     let prev = images.get_mut(existing.0.id()).unwrap();
                     if prev.texture_descriptor.size != image_size {
-                        prev.resize(image_size);
+                        prev.texture_descriptor.size = image_size;
                     }
                     existing.0.clone()
                 }
@@ -271,7 +269,8 @@ fn update_texture_cameras(
                         TextureFormat::bevy_default(),
                         RenderAssetUsages::all(), // RENDER_WORLD alone doesn't work..?
                     );
-
+                    image.data = None;
+                    image.transfer_priority = RenderAssetTransferPriority::Immediate;
                     image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
                     images.add(image)
                 }
@@ -285,7 +284,7 @@ fn update_texture_cameras(
             };
             debug!("create with layers {render_layers:?}");
 
-            let far = texture_cam.0.far_plane.unwrap_or(100_000.0);
+            let far = texture_cam.0.far_plane.unwrap_or(240.0);
             let projection: Projection = match &texture_cam.0.mode {
                 None => {
                     PerspectiveProjection {
@@ -326,38 +325,8 @@ fn update_texture_cameras(
                     is_active: true,
                     ..Default::default()
                 },
-                Tonemapping::TonyMcMapface,
-                DebandDither::Enabled,
-                ColorGrading {
-                    // exposure: -0.5,
-                    // gamma: 1.5,
-                    // pre_saturation: 1.0,
-                    // post_saturation: 1.0,
-                    global: ColorGradingGlobal {
-                        exposure: -0.5,
-                        ..default()
-                    },
-                    shadows: ColorGradingSection {
-                        gamma: 0.75,
-                        ..Default::default()
-                    },
-                    midtones: ColorGradingSection {
-                        gamma: 0.75,
-                        ..Default::default()
-                    },
-                    highlights: ColorGradingSection {
-                        gamma: 0.75,
-                        ..Default::default()
-                    },
-                },
-                projection,
-                Bloom {
-                    intensity: 0.15,
-                    ..Bloom::OLD_SCHOOL
-                },
-                ShadowFilteringMethod::Gaussian,
-                DepthPrepass,
-                NormalPrepass,
+                default_camera_components(),
+                projection.clone(),
                 render_layers.clone(),
                 PropagateStop::<RenderLayers>::default(),
             ));
