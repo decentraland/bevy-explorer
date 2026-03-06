@@ -1,6 +1,5 @@
 use bevy::{
     asset::{embedded_asset, embedded_path, weak_handle},
-    ecs::component::ComponentIdFor,
     pbr::NotShadowCaster,
     prelude::*,
     render::{
@@ -31,6 +30,9 @@ pub enum ParcelGrassLod {
 
 #[derive(Component)]
 pub struct ParcelGrassShell;
+
+#[derive(Clone, Copy, Component)]
+struct NeedsParcelGrass;
 
 #[derive(Clone, Asset, TypePath, AsBindGroup)]
 pub struct ShellTexture {
@@ -80,8 +82,12 @@ impl Plugin for ShellTexturingPlugin {
         app.add_systems(Startup, setup_parcel_grass_mesh);
         app.add_systems(
             Update,
-            (update_parcel_grass_material, rebuild_parcel_grass_shells)
+            (update_parcel_grass_material, parcel_grass_config_updated)
                 .run_if(resource_changed::<ParcelGrassConfig>),
+        );
+        app.add_systems(
+            Update,
+            rebuild_parcel_grasses.after(parcel_grass_config_updated),
         );
         app.add_observer(parcel_grass_lod_change);
     }
@@ -114,53 +120,58 @@ fn update_parcel_grass_material(
     );
 }
 
-fn rebuild_parcel_grass_shells(
+fn parcel_grass_config_updated(
     mut commands: Commands,
     parcel_grass: Query<Entity, With<ParcelGrassLod>>,
-    parcel_grass_lod: ComponentIdFor<ParcelGrassLod>,
 ) {
     debug!(
-        target: "visuals::parcel_grass::rebuild_shells",
+        target: "visuals::parcel_grass::config_updated",
         "Rebuilding shells due to change in ParcelGrassConfig."
     );
-    commands.trigger_targets(
-        OnInsert,
-        (*parcel_grass_lod, parcel_grass.iter().collect::<Vec<_>>()),
+    commands.insert_batch(
+        parcel_grass
+            .iter()
+            .map(|entity| (entity, NeedsParcelGrass))
+            .collect::<Vec<_>>(),
     );
 }
 
-fn parcel_grass_lod_change(
-    trigger: Trigger<OnInsert, ParcelGrassLod>,
+fn parcel_grass_lod_change(trigger: Trigger<OnInsert, ParcelGrassLod>, mut commands: Commands) {
+    commands.entity(trigger.target()).insert(NeedsParcelGrass);
+}
+
+fn rebuild_parcel_grasses(
     mut commands: Commands,
-    parcel_grasses: Query<(&ParcelGrass, &ParcelGrassLod)>,
+    parcel_grasses: Populated<(Entity, &ParcelGrass, &ParcelGrassLod), With<NeedsParcelGrass>>,
     parcel_grass_config: Res<ParcelGrassConfig>,
 ) {
-    let entity = trigger.target();
-    let Ok((parcel_grass, parcel_grass_lod)) = parcel_grasses.get(entity) else {
-        unreachable!("Infallible query");
-    };
-    commands.entity(entity).despawn_related::<Children>();
+    for (entity, parcel_grass, parcel_grass_lod) in parcel_grasses.into_inner() {
+        commands.entity(entity).despawn_related::<Children>();
 
-    let lod = *parcel_grass_lod as usize;
-    debug!(
-        target: "visuals::parcel_grass::lod_change",
-        "Rebuilding shells for {entity} with lod {lod}."
-    );
+        let lod = *parcel_grass_lod as usize;
+        debug!(
+            target: "visuals::parcel_grass::rebuild",
+            "Rebuilding shells for {entity} with lod {lod}."
+        );
 
-    commands.entity(entity).with_children(|parent| {
-        for i in (0..parcel_grass_config.layers).step_by(lod) {
-            parent.spawn((
-                ParcelGrassShell,
-                Mesh3d(PARCEL_GRASS_MESH.clone()),
-                MeshMaterial3d(PARCEL_GRASS_MATERIAL.clone()),
-                Transform::from_translation(Vec3::new(
-                    16. * parcel_grass.parcel.x as f32 + 8.,
-                    -0.05 + (parcel_grass_config.y_displacement * i as f32),
-                    -(16. * parcel_grass.parcel.y as f32) - 8.,
-                )),
-                MeshTag(i),
-                NotShadowCaster,
-            ));
-        }
-    });
+        commands
+            .entity(entity)
+            .with_children(|parent| {
+                for i in (0..parcel_grass_config.layers).step_by(lod) {
+                    parent.spawn((
+                        ParcelGrassShell,
+                        Mesh3d(PARCEL_GRASS_MESH.clone()),
+                        MeshMaterial3d(PARCEL_GRASS_MATERIAL.clone()),
+                        Transform::from_translation(Vec3::new(
+                            16. * parcel_grass.parcel.x as f32 + 8.,
+                            -0.05 + (parcel_grass_config.y_displacement * i as f32),
+                            -(16. * parcel_grass.parcel.y as f32) - 8.,
+                        )),
+                        MeshTag(i),
+                        NotShadowCaster,
+                    ));
+                }
+            })
+            .remove::<NeedsParcelGrass>();
+    }
 }
