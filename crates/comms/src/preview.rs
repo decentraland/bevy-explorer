@@ -6,10 +6,9 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use common::{
-    structs::{PreviewCommand, PreviewMode},
+    structs::{CurrentRealm, PreviewCommand, PreviewMode},
     util::TaskExt,
 };
-use ipfs::CurrentRealm;
 use platform::IntoClientRequest;
 
 pub struct PreviewPlugin;

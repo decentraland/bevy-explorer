@@ -41,7 +41,10 @@ use platform::project_directories;
 use bevy::asset::io::wasm::HttpWasmAssetReader;
 
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
-use common::{structs::AppConfig, util::TaskCompat};
+use common::{
+    structs::{AppConfig, CommsConfig, CurrentRealm, ServerConfiguration},
+    util::TaskCompat,
+};
 use ipfs_path::IpfsAsset;
 use platform::AsyncRwLock;
 use reqwest::StatusCode;
@@ -366,42 +369,6 @@ pub struct EndpointConfig {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct CommsConfig {
-    pub healthy: bool,
-    pub protocol: String,
-    pub fixed_adapter: Option<String>,
-    pub adapter: Option<String>,
-}
-
-#[derive(Deserialize, Debug, Clone, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct Region {
-    pub left: i32,
-    pub right: i32,
-    pub top: i32,
-    pub bottom: i32,
-}
-
-#[derive(Deserialize, Debug, Clone, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct MapData {
-    pub minimap_enabled: Option<bool>,
-    pub sizes: Vec<Region>,
-}
-
-#[derive(Deserialize, Debug, Clone, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct ServerConfiguration {
-    pub scenes_urn: Option<Vec<String>>,
-    pub realm_name: Option<String>,
-    pub network_id: Option<u32>,
-    pub city_loader_content_server: Option<String>,
-    pub map: Option<MapData>,
-    pub local_scene_parcels: Option<Vec<String>>,
-}
-
-#[derive(Deserialize, Debug, Clone)]
 pub struct ServerAbout {
     pub content: Option<EndpointConfig>,
     pub comms: Option<CommsConfig>,
@@ -560,15 +527,6 @@ fn change_realm_command(
 pub struct ChangeRealmEvent {
     pub new_realm: String,
     pub content_server_override: Option<String>,
-}
-
-#[derive(Resource, Default, Debug)]
-pub struct CurrentRealm {
-    pub about_url: String,
-    pub address: String,
-    pub config: ServerConfiguration,
-    pub comms: Option<CommsConfig>,
-    pub public_url: String,
 }
 
 #[allow(clippy::type_complexity)]

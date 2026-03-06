@@ -13,14 +13,15 @@ use common::{
     rpc::{RpcResultReceiver, RpcResultSender},
     sets::SceneSets,
     structs::{
-        ActiveDialog, AppConfig, ChainLink, DialogPermit, PreviousLogin, SystemAudio, ZOrder,
+        ActiveDialog, AppConfig, ChainLink, CurrentRealm, DialogPermit, PreviousLogin, SystemAudio,
+        ZOrder,
     },
     util::{TaskCompat, TaskExt},
 };
 use comms::profile::{get_remote_profile, CurrentUserProfile, UserProfile};
 use ethers_core::types::Address;
 use ethers_signers::LocalWallet;
-use ipfs::{CurrentRealm, IpfsAssetServer};
+use ipfs::IpfsAssetServer;
 use scene_runner::Toaster;
 use system_bridge::{NativeUi, SystemApi};
 use tokio::sync::oneshot::error::TryRecvError;

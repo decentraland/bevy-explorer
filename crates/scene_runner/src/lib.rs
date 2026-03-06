@@ -19,7 +19,9 @@ use bevy::{
 use common::{
     rpc::RpcCall,
     sets::{SceneLoopSets, SceneSets},
-    structs::{AppConfig, AppError, DebugInfo, PrimaryCamera, PrimaryUser, TimeOfDay},
+    structs::{
+        AppConfig, AppError, CurrentRealm, DebugInfo, PrimaryCamera, PrimaryUser, TimeOfDay,
+    },
     util::{dcl_assert, TryPushChildrenEx},
 };
 use comms::{global_crdt::GlobalCrdtState, SceneRoomConnection, SetCurrentScene};
@@ -37,7 +39,7 @@ use dcl_component::{
     DclReader, DclWriter, FromDclReader, SceneComponentId, SceneEntityId,
 };
 use initialize_scene::{PortableScenes, TestingData};
-use ipfs::{CurrentRealm, SceneIpfsLocation};
+use ipfs::SceneIpfsLocation;
 use primary_entities::PrimaryEntities;
 #[cfg(not(target_arch = "wasm32"))]
 use spin_sleep::SpinSleeper;

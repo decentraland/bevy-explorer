@@ -5,9 +5,10 @@ use bevy::{ecs::system::SystemParam, prelude::*};
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     rpc::{RpcResultReceiver, RpcResultSender},
-    structs::{AppConfig, PermissionType, PermissionUsed, PrimaryPlayerRes, StartupScenes},
+    structs::{
+        AppConfig, CurrentRealm, PermissionType, PermissionUsed, PrimaryPlayerRes, StartupScenes,
+    },
 };
-use ipfs::CurrentRealm;
 use tokio::sync::oneshot::error::TryRecvError;
 
 pub struct PermissionRequest {
