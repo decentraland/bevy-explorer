@@ -8475,8 +8475,7 @@ dependencies = [
 [[package]]
 name = "parry3d-f64"
 version = "0.25.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38fe282b81b60a2aee7f24db25ea73b3c82f6451888eeb5936b621adb87aa653"
+source = "git+https://github.com/robtfm/parry?branch=fix-bvh-negative-scale-0.25#9bf52a52cbaa8e71d76fb8ad4ce82f9f0b39461e"
 dependencies = [
  "approx",
  "arrayvec",

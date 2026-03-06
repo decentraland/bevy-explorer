@@ -1205,6 +1205,8 @@ fn render_debug_colliders<T: ColliderType>(
                 alpha_mode: AlphaMode::Blend,
                 unlit: true,
                 depth_bias: 1000.0,
+                double_sided: true,
+                cull_mode: None,
                 ..Default::default()
             }),
             materials.add(StandardMaterial {
@@ -1212,6 +1214,8 @@ fn render_debug_colliders<T: ColliderType>(
                 alpha_mode: AlphaMode::Blend,
                 unlit: true,
                 depth_bias: 1000.0,
+                double_sided: true,
+                cull_mode: None,
                 ..Default::default()
             }),
         ));
@@ -1280,7 +1284,7 @@ fn render_debug_colliders<T: ColliderType>(
                 }
             };
 
-            let debug_ent = if let MeshColliderShape::GltfShape { .. } = &collider.shape {
+            let debug_ent = if let MeshColliderShape::Shape(..) = &collider.shape {
                 commands
                     .spawn((
                         Mesh3d(h_mesh),
