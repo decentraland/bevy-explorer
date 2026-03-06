@@ -12,6 +12,11 @@ use common::structs::ParcelGrassConfig;
 const PARCEL_GRASS_MESH: Handle<Mesh> = weak_handle!("75b4bc5b-7523-4d7c-a42f-d2ddb93ac169");
 const PARCEL_GRASS_MATERIAL: Handle<ShellTexture> =
     weak_handle!("18c8dd1e-081d-452a-9c00-327775a239ff");
+const IN_SCENE_PARCEL_GRASS_MATERIAL: Handle<ShellTexture> =
+    weak_handle!("a7b403bc-917b-424e-878a-9714243bd4ce");
+
+const IN_SCENE_PARCEL_GRASS_LAYERS: u32 = 5;
+const IN_SCENE_PARCEL_GRASS_DISPLACEMENT: f32 = 0.01;
 
 #[derive(Component)]
 #[require(Transform, Visibility, ParcelGrassLod = ParcelGrassLod::High)]
@@ -26,6 +31,7 @@ pub enum ParcelGrassLod {
     High = 1,
     Mid = 2,
     Low = 3,
+    InScene = 4,
 }
 
 #[derive(Component)]
@@ -118,6 +124,16 @@ fn update_parcel_grass_material(
             tip_color: parcel_grass_config.tip_color.into(),
         },
     );
+    materials.insert(
+        IN_SCENE_PARCEL_GRASS_MATERIAL.id(),
+        ShellTexture {
+            subdivisions: parcel_grass_config.subdivisions,
+            layers: 5,
+            padding: Vec2::default(),
+            root_color: parcel_grass_config.root_color.into(),
+            tip_color: parcel_grass_config.tip_color.into(),
+        },
+    );
 }
 
 fn parcel_grass_config_updated(
@@ -148,7 +164,32 @@ fn rebuild_parcel_grasses(
     for (entity, parcel_grass, parcel_grass_lod) in parcel_grasses.into_inner() {
         commands.entity(entity).despawn_related::<Children>();
 
-        let lod = *parcel_grass_lod as usize;
+        let (lod, layers, displacement, material) = match parcel_grass_lod {
+            ParcelGrassLod::Low => (
+                3,
+                parcel_grass_config.layers,
+                parcel_grass_config.y_displacement,
+                &PARCEL_GRASS_MATERIAL,
+            ),
+            ParcelGrassLod::Mid => (
+                2,
+                parcel_grass_config.layers,
+                parcel_grass_config.y_displacement,
+                &PARCEL_GRASS_MATERIAL,
+            ),
+            ParcelGrassLod::High => (
+                1,
+                parcel_grass_config.layers,
+                parcel_grass_config.y_displacement,
+                &PARCEL_GRASS_MATERIAL,
+            ),
+            ParcelGrassLod::InScene => (
+                1,
+                IN_SCENE_PARCEL_GRASS_LAYERS,
+                IN_SCENE_PARCEL_GRASS_DISPLACEMENT,
+                &IN_SCENE_PARCEL_GRASS_MATERIAL,
+            ),
+        };
         debug!(
             target: "visuals::parcel_grass::rebuild",
             "Rebuilding shells for {entity} with lod {lod}."
@@ -157,14 +198,14 @@ fn rebuild_parcel_grasses(
         commands
             .entity(entity)
             .with_children(|parent| {
-                for i in (0..parcel_grass_config.layers).step_by(lod) {
+                for i in (0..layers).step_by(lod) {
                     parent.spawn((
                         ParcelGrassShell,
                         Mesh3d(PARCEL_GRASS_MESH.clone()),
-                        MeshMaterial3d(PARCEL_GRASS_MATERIAL.clone()),
+                        MeshMaterial3d(material.clone()),
                         Transform::from_translation(Vec3::new(
                             16. * parcel_grass.parcel.x as f32 + 8.,
-                            -0.05 + (parcel_grass_config.y_displacement * i as f32),
+                            -0.05 + (displacement * i as f32),
                             -(16. * parcel_grass.parcel.y as f32) - 8.,
                         )),
                         MeshTag(i),
