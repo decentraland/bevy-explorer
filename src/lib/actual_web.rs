@@ -25,9 +25,9 @@ use common::{
     inputs::InputMap,
     sets::SetupSets,
     structs::{
-        AppConfig, AttachPoints, AvatarDynamicState, IVec2Arg, PreviewMode, PrimaryCamera,
-        PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneLoadDistance, StartupScene,
-        StartupScenes, Version, GROUND_RENDERLAYER,
+        AppConfig, AttachPoints, AvatarDynamicState, CurrentRealm, IVec2Arg, PreviewMode,
+        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneLoadDistance,
+        StartupScene, StartupScenes, Version, GROUND_RENDERLAYER,
     },
     util::{TryPushChildrenEx, UtilsPlugin},
 };
@@ -43,7 +43,7 @@ use comms::CommsPlugin;
 use console::{ConsolePlugin, DoAddConsoleCommand};
 use futures_lite::io::AsyncReadExt;
 use input_manager::InputManagerPlugin;
-use ipfs::{map_realm_name, CurrentRealm, IpfsIoPlugin};
+use ipfs::{map_realm_name, IpfsIoPlugin};
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use platform::default_camera_components;
 use social::SocialPlugin;
