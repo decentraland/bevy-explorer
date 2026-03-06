@@ -8,13 +8,13 @@ use common::{
     rpc::{RpcCall, RpcResultSender},
     sets::SetupSets,
     structs::{
-        ActiveDialog, AppConfig, PermissionTarget, SettingsTab, ShowSettingsEvent, SystemAudio,
-        ZOrder,
+        ActiveDialog, AppConfig, CurrentRealm, PermissionTarget, SettingsTab, ShowSettingsEvent,
+        SystemAudio, ZOrder,
     },
     util::TryPushChildrenEx,
 };
 use comms::profile::{CurrentUserProfile, ProfileDeployedEvent};
-use ipfs::{ChangeRealmEvent, CurrentRealm};
+use ipfs::ChangeRealmEvent;
 use system_bridge::SystemApi;
 use ui_core::{
     button::{DuiButton, TabSelection},

@@ -5,10 +5,10 @@ use bevy::{
 };
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
-    structs::{SystemAudio, ZOrder},
+    structs::{CurrentRealm, SystemAudio, ZOrder},
     util::{TaskCompat, TaskExt},
 };
-use ipfs::{ChangeRealmEvent, CurrentRealm, IpfsAssetServer};
+use ipfs::{ChangeRealmEvent, IpfsAssetServer};
 use serde::Deserialize;
 use ui_core::{
     button::DuiButton,
