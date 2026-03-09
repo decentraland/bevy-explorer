@@ -23,8 +23,8 @@ use common::{
     },
     sets::SceneSets,
     structs::{
-        AvatarDynamicState, PermissionType, PreviewCommand, PrimaryCamera, PrimaryUser,
-        StartupScenes, ZOrder,
+        AvatarDynamicState, EngineMovementControl, PermissionType, PreviewCommand, PrimaryCamera,
+        PrimaryUser, StartupScenes, ZOrder,
     },
     util::{AsH160, TaskCompat, TaskExt},
 };
@@ -122,6 +122,7 @@ pub fn move_player(
     mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
     containing_scene: ContainingScene,
     mut perms: Permission<(Entity, Vec3, Option<Vec3>, Option<f32>, Option<RpcResultSender<bool>>)>,
+    mut movement_control: ResMut<EngineMovementControl>,
 ) {
     let Ok((player_entity, _, _)) = player.single() else {
         return;
@@ -163,6 +164,7 @@ pub fn move_player(
         let mut target_translation = translation;
         target_translation +=
             (scene.base * IVec2::new(1, -1)).as_vec2().extend(0.0).xzy() * PARCEL_SIZE;
+        target_translation.y = target_translation.y.max(0.0);
 
         let target_scenes = containing_scene.get_position(target_translation);
         if !target_scenes.contains(&root) {
@@ -171,6 +173,7 @@ pub fn move_player(
             let (player_entity, player_transform, _) = player.single().unwrap();
             let from = player_transform.translation;
             debug!("player interpolation start: {} -> {} over {}s", from, target_translation, d);
+            movement_control.suppress_avatar_physics.insert("move_player_to");
             commands.entity(player_entity).insert(PlayerMoveInterpolation {
                 from,
                 to: target_translation,
@@ -225,6 +228,7 @@ pub fn update_player_interpolation(
     mut commands: Commands,
     mut player: Query<(Entity, &mut Transform, &mut PlayerMoveInterpolation), With<PrimaryUser>>,
     time: Res<Time>,
+    mut movement_control: ResMut<EngineMovementControl>,
 ) {
     let Ok((entity, mut transform, mut interp)) = player.single_mut() else {
         return;
@@ -237,6 +241,7 @@ pub fn update_player_interpolation(
     if t >= 1.0 {
         debug!("player interpolation complete");
         interp.response.send(true);
+        movement_control.suppress_avatar_physics.remove("move_player_to");
         commands.entity(entity).remove::<PlayerMoveInterpolation>();
     }
 }
