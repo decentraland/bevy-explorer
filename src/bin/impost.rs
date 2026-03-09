@@ -26,8 +26,8 @@ use common::{
     rpc::RpcCall,
     sets::SetupSets,
     structs::{
-        AppConfig, AppError, AvatarDynamicState, CursorLocks, GraphicsSettings, IVec2Arg,
-        PermissionUsed, PreviewMode, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes,
+        AppConfig, AppError, AvatarDynamicState, CurrentRealm, CursorLocks, GraphicsSettings,
+        IVec2Arg, PermissionUsed, PreviewMode, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes,
         SceneGlobalLight, SceneImposterBake, SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips,
     },
     util::UtilsPlugin,
@@ -40,7 +40,7 @@ use scene_runner::{
     initialize_scene::ScenePointers, permissions::PermissionManager, OutOfWorld, SceneRunnerPlugin,
 };
 
-use ipfs::{map_realm_name, CurrentRealm, IpfsIoPlugin};
+use ipfs::{map_realm_name, IpfsIoPlugin};
 use system_bridge::SystemBridgePlugin;
 use ui_core::{scrollable::ScrollTargetEvent, UiCorePlugin};
 use user_input::avatar_movement::GroundCollider;

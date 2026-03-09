@@ -40,7 +40,8 @@ use common::{
     rpc::RpcCall,
     structs::{
         AppConfig, CursorLocks, GraphicsSettings, PermissionUsed, PreviewMode, PrimaryCamera,
-        PrimaryPlayerRes, SceneGlobalLight, SceneLoadDistance, TimeOfDay, ToolTips,
+        PrimaryPlayerRes, SceneGlobalLight, SceneLoadDistance, ServerConfiguration, TimeOfDay,
+        ToolTips,
     },
 };
 use comms::CommsPlugin;
@@ -54,7 +55,7 @@ use dcl_component::{
     SceneCrdtTimestamp, SceneEntityId,
 };
 use input_manager::{CumulativeAxisData, InputPriorities};
-use ipfs::{IpfsIoPlugin, IpfsResource, ServerAbout, ServerConfiguration};
+use ipfs::{IpfsIoPlugin, IpfsResource, ServerAbout};
 use wallet::WalletPlugin;
 
 use super::{initialize_scene::SceneLoading, PrimaryUser};

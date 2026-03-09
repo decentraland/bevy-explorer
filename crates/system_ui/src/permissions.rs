@@ -2,12 +2,11 @@ use bevy::prelude::*;
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     structs::{
-        AppConfig, PermissionLevel, PermissionStrings, PermissionTarget, PermissionType,
-        PermissionValue, PrimaryPlayerRes, SettingsTab,
+        AppConfig, CurrentRealm, PermissionLevel, PermissionStrings, PermissionTarget,
+        PermissionType, PermissionValue, PrimaryPlayerRes, SettingsTab,
     },
     util::{ModifyComponentExt, TryPushChildrenEx},
 };
-use ipfs::CurrentRealm;
 use scene_runner::{renderer_context::RendererSceneContext, ContainingScene};
 use ui_core::{
     bound_node::BoundedNode,

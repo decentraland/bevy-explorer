@@ -15,14 +15,13 @@ use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     sets::{SceneSets, SetupSets},
     structs::{
-        AppConfig, CursorLocks, DebugInfo, PreviewCommand, PreviewMode, PrimaryUser, SettingsTab,
-        ShowSettingsEvent, StartupScenes, Version, ZOrder,
+        AppConfig, CurrentRealm, CursorLocks, DebugInfo, PreviewCommand, PreviewMode, PrimaryUser,
+        SettingsTab, ShowSettingsEvent, StartupScenes, Version, ZOrder,
     },
     util::ModifyComponentExt,
 };
 use comms::{global_crdt::ForeignPlayer, Transport};
 use console::DoAddConsoleCommand;
-use ipfs::CurrentRealm;
 use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE};
 use scene_runner::{
     initialize_scene::{SceneLoading, TestingData, PARCEL_SIZE},
@@ -393,6 +392,9 @@ fn setup_minimap(
                         }
                     })
                 ).with_prop(
+                    "dismiss",
+                    On::<Click>::new(move |mut commands: Commands| {commands.entity(components.root).despawn()}),
+                ).with_prop(
                     "inspect",
                     On::<Click>::new(|
                         mut reload: EventWriter<PreviewCommand>,
@@ -536,9 +538,8 @@ fn update_tracker(
         return;
     };
 
-    let Ok(resource_lookup) = stats.get(*scene) else {
-        return;
-    };
+    let default_lookup = SceneResourceLookup::default();
+    let resource_lookup = stats.get(*scene).unwrap_or(&default_lookup);
 
     let mut display_data = Vec::default();
 

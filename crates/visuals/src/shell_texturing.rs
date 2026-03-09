@@ -9,7 +9,7 @@ use bevy::{
         render_resource::{AsBindGroup, ShaderRef},
     },
 };
-use common::structs::{ParcelGrassConfig, PrimaryUser};
+use common::structs::{CurrentRealm, ParcelGrassConfig, PrimaryUser};
 use scene_runner::{
     initialize_scene::{PointerResult, ScenePointers},
     vec3_to_parcel,
@@ -362,6 +362,10 @@ fn clear_parcel_grass_on_realm_change(
     mut commands: Commands,
     parcel_grass: Query<Entity, With<ParcelGrass>>,
 ) {
+    debug!(
+        target: "visuals::parcel_grass::realm_change",
+        "Clearing parcel grass due to realm change.",
+    );
     for entity in parcel_grass {
         commands.entity(entity).despawn();
     }

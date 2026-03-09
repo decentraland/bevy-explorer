@@ -18,10 +18,10 @@ use bevy::{
 use boimp::{bake::ImposterBakeMaterialPlugin, render::Imposter, ImposterLoaderSettings};
 use common::{
     sets::SceneSets,
-    structs::{AppConfig, DebugInfo, PrimaryCamera, PrimaryUser},
+    structs::{AppConfig, CurrentRealm, DebugInfo, PrimaryCamera, PrimaryUser},
     util::{TaskCompat, TaskExt},
 };
-use ipfs::{CurrentRealm, IpfsAssetServer};
+use ipfs::IpfsAssetServer;
 
 use scene_runner::{
     initialize_scene::{

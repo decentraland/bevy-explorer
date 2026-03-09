@@ -141,7 +141,6 @@ reqwest = { version = "0.12", default-features = false, features = [
   "blocking",
 ] }
 kira = "0.9.6"
-data-encoding = "2.5"
 opener = { version = "0.8", git = "https://github.com/robtfm/opener" }
 chrono = { version = "0.4.31", features = ["serde"] }
 bevy_dui = { git = "https://github.com/robtfm/bevy_dui", branch = "0.16" }
@@ -318,7 +317,7 @@ bevy_platform = { git = "https://github.com/robtfm/bevy", branch = "release-0.16
 # bevy_platform = { path="../bevy/crates/bevy_platform" }
 
 ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-linesize-0-6.1" }
-# parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "bugfix-project-local-point" }
+parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "fix-bvh-negative-scale-0.25" }
 deno_core = { git = "https://github.com/robtfm/deno_core", branch = "0_307_hotfix" }
 serde_v8 = { git = "https://github.com/robtfm/deno_core", branch = "0_307_hotfix" }
 deno_ops = { git = "https://github.com/robtfm/deno_core", branch = "0_307_hotfix" }

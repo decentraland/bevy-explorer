@@ -181,7 +181,7 @@ impl<C: Component + Clone + Default> ActivePlayerComponent<C> {
             }
 
             // prioritise newer portables
-            if ctx.is_portable && ctx.start_tick <= current_choice.scene_start_tick {
+            if ctx.is_portable && ctx.start_tick < current_choice.scene_start_tick {
                 continue;
             }
 

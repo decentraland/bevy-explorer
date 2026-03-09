@@ -6,11 +6,11 @@ use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     rpc::{RpcResultReceiver, RpcResultSender, RpcStreamSender},
     structs::{
-        ActiveDialog, AppConfig, PermissionLevel, PermissionStrings, PermissionTarget,
-        PermissionUsed, PermissionValue, PrimaryPlayerRes, SettingsTab, ShowSettingsEvent, ZOrder,
+        ActiveDialog, AppConfig, CurrentRealm, PermissionLevel, PermissionStrings,
+        PermissionTarget, PermissionUsed, PermissionValue, PrimaryPlayerRes, SettingsTab,
+        ShowSettingsEvent, ZOrder,
     },
 };
-use ipfs::CurrentRealm;
 use scene_runner::{
     initialize_scene::LiveScenes,
     permissions::{PermissionManager, PermissionRequest},

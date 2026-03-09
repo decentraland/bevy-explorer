@@ -1190,3 +1190,48 @@ impl Default for ParcelGrassConfig {
         }
     }
 }
+
+#[derive(Resource, Default, Debug)]
+pub struct CurrentRealm {
+    pub about_url: String,
+    pub address: String,
+    pub config: ServerConfiguration,
+    pub comms: Option<CommsConfig>,
+    pub public_url: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CommsConfig {
+    pub healthy: bool,
+    pub protocol: String,
+    pub fixed_adapter: Option<String>,
+    pub adapter: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerConfiguration {
+    pub scenes_urn: Option<Vec<String>>,
+    pub realm_name: Option<String>,
+    pub network_id: Option<u32>,
+    pub city_loader_content_server: Option<String>,
+    pub map: Option<MapData>,
+    pub local_scene_parcels: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MapData {
+    pub minimap_enabled: Option<bool>,
+    pub sizes: Vec<Region>,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Region {
+    pub left: i32,
+    pub right: i32,
+    pub top: i32,
+    pub bottom: i32,
+}
