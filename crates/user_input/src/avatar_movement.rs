@@ -46,13 +46,20 @@ impl Plugin for AvatarMovementPlugin {
         app.add_systems(Update, broadcast_movement_info.in_set(SceneSets::Init));
 
         app.add_systems(
+            Update,
+            (
+                ActivePlayerComponent::<AvatarMovement>::pick_latest_frame_only_by_priority,
+                ActivePlayerComponent::<AvatarLocomotionSettings>::pick_by_priority,
+                ActivePlayerComponent::<InputModifier>::pick_by_priority,
+            )
+                .in_set(SceneSets::PostLoop),
+        );
+
+        app.add_systems(
             PostUpdate,
             (
                 apply_ground_collider_movement,
                 resolve_collisions,
-                ActivePlayerComponent::<AvatarMovement>::pick_latest_frame_only_by_priority,
-                ActivePlayerComponent::<AvatarLocomotionSettings>::pick_by_priority,
-                ActivePlayerComponent::<InputModifier>::pick_by_priority,
                 apply_movement,
                 record_ground_collider,
             )
