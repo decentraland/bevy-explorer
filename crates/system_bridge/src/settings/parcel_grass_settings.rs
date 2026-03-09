@@ -71,7 +71,7 @@ impl AppSetting for ParcelGrassSetting {
 
     fn description(&self) -> String {
         format!(
-            "Distant scenes are rendered as low quality imposters to increase immersion.\n\n{}",
+            "Controls the density of the grass on empty parcels.\n\n{}",
             match self {
                 ParcelGrassSetting::Low => "Low: Sparse grass.",
                 ParcelGrassSetting::Mid => "Mid: Average density grass.",
