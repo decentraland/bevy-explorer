@@ -53,7 +53,7 @@ impl ParcelGrass {
     }
 }
 
-#[derive(Clone, Copy, Component)]
+#[derive(Clone, Copy, PartialEq, Eq, Component)]
 #[component(immutable)]
 #[repr(u8)]
 pub enum ParcelGrassLod {
@@ -211,7 +211,7 @@ fn rebuild_parcel_grasses(
                 continue;
             }
             ParcelGrassLod::Low => (
-                3,
+                4,
                 parcel_grass_config.layers,
                 parcel_grass_config.y_displacement,
                 &PARCEL_GRASS_MATERIAL,
@@ -264,13 +264,16 @@ fn rebuild_parcel_grasses(
 
 fn parcel_grass_waiting_scene_pointer(
     mut commands: Commands,
-    parcel_grasses: Populated<(Entity, &ParcelGrass), With<ParcelGrassWaitingScenePointer>>,
+    parcel_grasses: Populated<
+        (Entity, &ParcelGrass, &ParcelGrassLod),
+        With<ParcelGrassWaitingScenePointer>,
+    >,
     player: Single<&GlobalTransform, With<PrimaryUser>>,
     scene_pointers: Res<ScenePointers>,
 ) {
     let parcel = vec3_to_parcel(player.translation());
 
-    for (entity, parcel_grass) in parcel_grasses.into_inner() {
+    for (entity, parcel_grass, parcel_grass_lod) in parcel_grasses.into_inner() {
         match scene_pointers.get(parcel_grass.parcel) {
             Some(PointerResult::Nothing) => {
                 let distance = parcel.distance_squared(parcel_grass.parcel);
@@ -281,10 +284,11 @@ fn parcel_grass_waiting_scene_pointer(
                     8..16 => ParcelGrassLod::Mid,
                     16.. => ParcelGrassLod::Low,
                 };
-                commands
-                    .entity(entity)
-                    .insert((NeedsParcelGrass, lod))
-                    .remove::<ParcelGrassWaitingScenePointer>();
+                let mut entity_cmd = commands.entity(entity);
+                if lod != *parcel_grass_lod {
+                    entity_cmd.insert((NeedsParcelGrass, lod));
+                }
+                entity_cmd.remove::<ParcelGrassWaitingScenePointer>();
             }
             Some(PointerResult::Exists { .. }) => {
                 commands
