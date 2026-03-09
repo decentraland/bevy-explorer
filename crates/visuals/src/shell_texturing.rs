@@ -133,13 +133,8 @@ impl Plugin for ShellTexturingPlugin {
         );
         app.add_systems(
             PreUpdate,
-            (fill_parcel_grass, drop_far_parcel_grass).run_if(player_changed_parcels),
-        );
-        app.add_systems(
-            PreUpdate,
-            (clear_parcel_grass_on_realm_change)
-                .run_if(resource_exists_and_changed::<CurrentRealm>)
-                .before(fill_parcel_grass),
+            (fill_parcel_grass, drop_far_parcel_grass, recalculate_lod)
+                .run_if(player_changed_parcels.or(resource_exists_and_changed::<CurrentRealm>)),
         );
         app.add_observer(parcel_grass_lod_change);
     }
@@ -358,15 +353,14 @@ fn drop_far_parcel_grass(
     }
 }
 
-fn clear_parcel_grass_on_realm_change(
+fn recalculate_lod(
     mut commands: Commands,
-    parcel_grass: Query<Entity, With<ParcelGrass>>,
+    parcel_grasses: Populated<Entity, Without<ParcelGrassWaitingScenePointer>>,
 ) {
-    debug!(
-        target: "visuals::parcel_grass::realm_change",
-        "Clearing parcel grass due to realm change.",
+    commands.try_insert_batch(
+        parcel_grasses
+            .iter()
+            .map(|entity| (entity, ParcelGrassWaitingScenePointer))
+            .collect::<Vec<_>>(),
     );
-    for entity in parcel_grass {
-        commands.entity(entity).despawn();
-    }
 }
