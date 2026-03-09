@@ -1,4 +1,5 @@
 use dcl::js::restricted_actions::UiFocusResult;
+use dcl_component::proto_components::common::Vector3 as DclVector3;
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
 
@@ -17,36 +18,21 @@ pub fn ops() -> Vec<OpDecl> {
     ]
 }
 
-#[op2(fast)]
-#[allow(clippy::too_many_arguments)]
-fn op_move_player_to(
-    op_state: &mut OpState,
-    position_x: f32,
-    position_y: f32,
-    position_z: f32,
-    camera: bool,
-    maybe_camera_x: f32,
-    maybe_camera_y: f32,
-    maybe_camera_z: f32,
-    looking_at: bool,
-    maybe_looking_at_x: f32,
-    maybe_looking_at_y: f32,
-    maybe_looking_at_z: f32,
-) {
+#[op2(async)]
+async fn op_move_player_to(
+    state: Rc<RefCell<OpState>>,
+    #[serde] position: DclVector3,
+    #[serde] camera_target: Option<DclVector3>,
+    #[serde] avatar_target: Option<DclVector3>,
+    duration: Option<f32>,
+) -> bool {
     dcl::js::restricted_actions::op_move_player_to(
-        op_state,
-        position_x,
-        position_y,
-        position_z,
-        camera,
-        maybe_camera_x,
-        maybe_camera_y,
-        maybe_camera_z,
-        looking_at,
-        maybe_looking_at_x,
-        maybe_looking_at_y,
-        maybe_looking_at_z,
-    );
+        state,
+        position,
+        camera_target,
+        avatar_target,
+        duration,
+    ).await
 }
 
 #[op2(async)]

@@ -3494,6 +3494,7 @@ dependencies = [
  "bevy",
  "common",
  "dcl",
+ "dcl_component",
  "futures-lite 1.13.0",
  "ipfs",
  "js-sys",

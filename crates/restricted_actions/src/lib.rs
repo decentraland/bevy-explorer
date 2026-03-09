@@ -67,6 +67,7 @@ impl Plugin for RestrictedActionsPlugin {
             (
                 (
                     move_player,
+                    update_player_interpolation.after(move_player),
                     move_camera,
                     change_realm,
                     external_url,
@@ -105,23 +106,35 @@ impl Plugin for RestrictedActionsPlugin {
     }
 }
 
+#[derive(Component)]
+pub struct PlayerMoveInterpolation {
+    from: Vec3,
+    to: Vec3,
+    elapsed: f32,
+    duration: f32,
+    response: RpcResultSender<bool>,
+}
+
 pub fn move_player(
+    mut commands: Commands,
     mut events: EventReader<RpcCall>,
     scenes: Query<&RendererSceneContext>,
     mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
     containing_scene: ContainingScene,
-    mut perms: Permission<(Entity, Vec3, Option<Vec3>)>,
+    mut perms: Permission<(Entity, Vec3, Option<Vec3>, Option<f32>, Option<RpcResultSender<bool>>)>,
 ) {
     let Ok((player_entity, _, _)) = player.single() else {
         return;
     };
 
-    for (root, translation, looking_at) in events.read().filter_map(|ev| match ev {
+    for (root, translation, looking_at, duration, response) in events.read().filter_map(|ev| match ev {
         RpcCall::MovePlayer {
             scene,
             to,
             looking_at,
-        } => Some((scene, to, looking_at)),
+            duration,
+            response,
+        } => Some((scene, to, looking_at, duration, response)),
         _ => None,
     }) {
         let current_scenes = containing_scene.get(player_entity);
@@ -135,13 +148,13 @@ pub fn move_player(
         perms.check(
             PermissionType::MovePlayer,
             *root,
-            (*root, *translation, *looking_at),
+            (*root, *translation, *looking_at, *duration, response.clone()),
             None,
             false,
         );
     }
 
-    for (root, translation, looking_at) in perms.drain_success(PermissionType::MovePlayer) {
+    for (root, translation, looking_at, duration, response) in perms.drain_success(PermissionType::MovePlayer) {
         let Ok(scene) = scenes.get(root) else {
             warn!("move player request from invalid scene {root:?}");
             continue;
@@ -154,6 +167,30 @@ pub fn move_player(
         let target_scenes = containing_scene.get_position(target_translation);
         if !target_scenes.contains(&root) {
             warn!("move player request from {root:?} was outside scene bounds");
+        } else if let Some(d) = duration {
+            let (player_entity, player_transform, _) = player.single().unwrap();
+            let from = player_transform.translation;
+            debug!("player interpolation start: {} -> {} over {}s", from, target_translation, d);
+            commands.entity(player_entity).insert(PlayerMoveInterpolation {
+                from,
+                to: target_translation,
+                elapsed: 0.0,
+                duration: d,
+                response: response.unwrap(),
+            });
+            // apply rotation immediately if requested
+            if let Some(looking_at) = looking_at {
+                let (_, mut player_transform, mut dynamics) = player.single_mut().unwrap();
+                let rotation = Transform::IDENTITY
+                    .looking_at(
+                        (looking_at - translation) * Vec3::new(1.0, 0.0, 1.0),
+                        Vec3::Y,
+                    )
+                    .rotation;
+                dynamics.velocity =
+                    rotation * player_transform.rotation.inverse() * dynamics.velocity;
+                player_transform.rotation = rotation;
+            }
         } else {
             let (_, mut player_transform, mut dynamics) = player.single_mut().unwrap();
             player_transform.translation = target_translation;
@@ -168,14 +205,40 @@ pub fn move_player(
                     .rotation;
                 dynamics.velocity =
                     rotation * player_transform.rotation.inverse() * dynamics.velocity;
-
                 player_transform.rotation = rotation;
                 debug!("player rotation to looking at {}", looking_at);
+            }
+            if let Some(r) = response {
+                r.send(true);
             }
         }
     }
 
-    for _ in perms.drain_fail(PermissionType::MovePlayer) {}
+    for (_, _, _, _, response) in perms.drain_fail(PermissionType::MovePlayer) {
+        if let Some(r) = response {
+            r.send(false);
+        }
+    }
+}
+
+pub fn update_player_interpolation(
+    mut commands: Commands,
+    mut player: Query<(Entity, &mut Transform, &mut PlayerMoveInterpolation), With<PrimaryUser>>,
+    time: Res<Time>,
+) {
+    let Ok((entity, mut transform, mut interp)) = player.single_mut() else {
+        return;
+    };
+
+    interp.elapsed += time.delta_secs();
+    let t = (interp.elapsed / interp.duration).min(1.0);
+    transform.translation = interp.from.lerp(interp.to, t);
+
+    if t >= 1.0 {
+        debug!("player interpolation complete");
+        interp.response.send(true);
+        commands.entity(entity).remove::<PlayerMoveInterpolation>();
+    }
 }
 
 pub fn move_camera(

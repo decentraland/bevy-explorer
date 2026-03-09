@@ -11,6 +11,7 @@ default = []
 [dependencies]
 common = { workspace = true }
 dcl = { workspace = true }
+dcl_component = { workspace = true }
 ipfs = { workspace = true }
 system_bridge = { workspace = true }
 
