@@ -47,7 +47,9 @@ use ipfs::{map_realm_name, IpfsIoPlugin};
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use platform::default_camera_components;
 use social::SocialPlugin;
-use system_bridge::{settings::NewCameraEvent, NativeUi, SystemApi, SystemBridge, SystemBridgePlugin};
+use system_bridge::{
+    settings::NewCameraEvent, NativeUi, SystemApi, SystemBridge, SystemBridgePlugin,
+};
 use system_ui::SystemUiPlugin;
 use texture_camera::TextureCameraPlugin;
 use tween::TweenPlugin;
@@ -483,10 +485,7 @@ use common::rpc::{RpcResultReceiver, RpcResultSender};
 #[command(name = "/login_guest")]
 struct LoginGuestCommand;
 
-fn login_guest(
-    mut input: ConsoleCommand<LoginGuestCommand>,
-    mut bridge: EventWriter<SystemApi>,
-) {
+fn login_guest(mut input: ConsoleCommand<LoginGuestCommand>, mut bridge: EventWriter<SystemApi>) {
     if let Some(Ok(_)) = input.take() {
         bridge.write(SystemApi::LoginGuest);
         input.reply_ok("logging in as guest");
