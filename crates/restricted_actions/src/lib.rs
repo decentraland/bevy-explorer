@@ -121,7 +121,15 @@ pub fn move_player(
     mut commands: Commands,
     mut events: EventReader<RpcCall>,
     scenes: Query<&RendererSceneContext>,
-    mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
+    mut player: Query<
+        (
+            Entity,
+            &mut Transform,
+            &mut AvatarDynamicState,
+            Option<&PlayerMoveInterpolation>,
+        ),
+        With<PrimaryUser>,
+    >,
     containing_scene: ContainingScene,
     mut perms: Permission<(
         Entity,
@@ -132,7 +140,7 @@ pub fn move_player(
     )>,
     mut movement_control: ResMut<EngineMovementControl>,
 ) {
-    let Ok((player_entity, _, _)) = player.single() else {
+    let Ok((player_entity, _, _, _)) = player.single() else {
         return;
     };
 
@@ -187,43 +195,45 @@ pub fn move_player(
         let target_scenes = containing_scene.get_position(target_translation);
         if !target_scenes.contains(&root) {
             warn!("move player request from {root:?} was outside scene bounds");
-        } else if let Some(d) = duration {
-            let (player_entity, player_transform, _) = player.single().unwrap();
-            let from = player_transform.translation;
-            debug!(
-                "player interpolation start: {} -> {} over {}s",
-                from, target_translation, d
-            );
-            movement_control
-                .suppress_avatar_physics
-                .insert("move_player_to");
-            commands
-                .entity(player_entity)
-                .insert(PlayerMoveInterpolation {
-                    from,
-                    to: target_translation,
-                    elapsed: 0.0,
-                    duration: d,
-                    response: response.unwrap(),
-                });
-            // apply rotation immediately if requested
-            if let Some(looking_at) = looking_at {
-                let (_, mut player_transform, mut dynamics) = player.single_mut().unwrap();
-                let rotation = Transform::IDENTITY
-                    .looking_at(
-                        (looking_at - translation) * Vec3::new(1.0, 0.0, 1.0),
-                        Vec3::Y,
-                    )
-                    .rotation;
-                dynamics.velocity =
-                    rotation * player_transform.rotation.inverse() * dynamics.velocity;
-                player_transform.rotation = rotation;
-            }
         } else {
-            let (_, mut player_transform, mut dynamics) = player.single_mut().unwrap();
-            player_transform.translation = target_translation;
-            debug!("player transform to {}", target_translation);
+            let (_, mut player_transform, mut dynamics, maybe_previous_move) =
+                player.single_mut().unwrap();
 
+            if let Some(previous_move) = maybe_previous_move {
+                commands
+                    .entity(player_entity)
+                    .try_remove::<PlayerMoveInterpolation>();
+                movement_control
+                    .suppress_avatar_physics
+                    .remove("move_player_to");
+                previous_move.response.send(false);
+            }
+
+            if let Some(d) = duration {
+                let d = d.max(f32::EPSILON);
+                let from = player_transform.translation;
+                debug!(
+                    "player interpolation start: {} -> {} over {}s",
+                    from, target_translation, d
+                );
+                movement_control
+                    .suppress_avatar_physics
+                    .insert("move_player_to");
+                commands
+                    .entity(player_entity)
+                    .insert(PlayerMoveInterpolation {
+                        from,
+                        to: target_translation,
+                        elapsed: 0.0,
+                        duration: d,
+                        response: response.unwrap(),
+                    });
+            } else {
+                player_transform.translation = target_translation;
+                debug!("player transform to {}", target_translation);
+            }
+
+            // always apply rotation immediately if requested
             if let Some(looking_at) = looking_at {
                 let rotation = Transform::IDENTITY
                     .looking_at(
@@ -234,10 +244,6 @@ pub fn move_player(
                 dynamics.velocity =
                     rotation * player_transform.rotation.inverse() * dynamics.velocity;
                 player_transform.rotation = rotation;
-                debug!("player rotation to looking at {}", looking_at);
-            }
-            if let Some(r) = response {
-                r.send(true);
             }
         }
     }
@@ -267,14 +273,13 @@ pub fn update_player_interpolation(
     let Ok((entity, mut transform, mut interp, movement)) = player.single_mut() else {
         return;
     };
-
     // Cancel if the scene movement controller asserts a new non-zero x/z velocity or a jump.
     // Skip on the first tick (elapsed == 0) to avoid immediately cancelling due to the
     // movement component being changed when the interpolation was just inserted.
     if interp.elapsed > 0.0 && movement.is_changed() {
         let v = movement.component.velocity;
         if v.x != 0.0 || v.z != 0.0 || v.y.abs() > 2.0 {
-            error!("player interpolation cancelled by scene movement controller : {v}");
+            debug!("player interpolation cancelled by scene movement controller : {v}");
             interp.response.send(false);
             movement_control
                 .suppress_avatar_physics

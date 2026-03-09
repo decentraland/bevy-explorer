@@ -516,7 +516,9 @@ fn resolve_collisions(
     time: Res<Time>,
     movement_control: Res<EngineMovementControl>,
 ) {
-    if !movement_control.suppress_clipping.is_empty() {
+    if !movement_control.suppress_clipping.is_empty()
+        || !movement_control.suppress_avatar_physics.is_empty()
+    {
         return;
     }
 
