@@ -14,6 +14,9 @@
 @group(2) @binding(3) var<uniform> root_color: vec4<f32>;
 @group(2) @binding(4) var<uniform> tip_color: vec4<f32>;
 
+// Pre-calculated constant: (0.85 * 0.5) = 0.425
+const SCALED_DIST: f32 = 0.425;
+
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
 
@@ -40,12 +43,21 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         discard;
     }
 
-    let octave4 = (simplex_noise_3d(simplex_coord * 212.167) + 1.) / 2.;
-    let displacement_distance = fract(octave3) * 0.85;
-    let displacement_angle = fract(octave4) * 6.28;
+    let octave4 = (simplex_noise_3d(simplex_coord * 212.167) + 1.) / 2.;// 1. Shift to [-0.5, 0.5] range (1 Subtraction each)
+    let dx = fract(octave3) - 0.5;
+    let dz = fract(octave4) - 0.5;
 
-    let root_x = wpx + sin(displacement_angle) * displacement_distance;
-    let root_z = wpz + cos(displacement_angle) * displacement_distance;
+    // 2. Find the square-space "radius" (2 Abs, 1 Max)
+    // Small epsilon 1e-5 prevents division by zero
+    let edge_dist = max(abs(dx), abs(dz)) + 0.00001;
+
+    // 3. Combined Scale (1 Division, 1 Multiplication)
+    // This maps the square point back to a circle of radius 0.85
+    let scale = SCALED_DIST / edge_dist;
+
+    // 4. Final Position (2 Multiplications, 2 Additions)
+    let root_x = wpx + dx * scale;
+    let root_z = wpz + dz * scale;
 
     if distance(fract(vec2(root_x, root_z)), vec2(0.5)) >= mix(0.25, 0.45, 1. - (factor / simplex)) {
         discard;
