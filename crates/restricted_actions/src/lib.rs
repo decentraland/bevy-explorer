@@ -55,6 +55,7 @@ use scene_runner::{
 use serde_json::{json, Value};
 use teleport::{handle_out_of_world, teleport_player};
 use ui_core::button::DuiButton;
+use user_input::avatar_movement::{ActivePlayerComponent, AvatarMovement};
 use wallet::{browser_auth::remote_send_async, sign_request, Wallet};
 
 pub struct RestrictedActionsPlugin;
@@ -226,13 +227,35 @@ pub fn move_player(
 
 pub fn update_player_interpolation(
     mut commands: Commands,
-    mut player: Query<(Entity, &mut Transform, &mut PlayerMoveInterpolation), With<PrimaryUser>>,
+    mut player: Query<
+        (
+            Entity,
+            &mut Transform,
+            &mut PlayerMoveInterpolation,
+            Ref<ActivePlayerComponent<AvatarMovement>>,
+        ),
+        With<PrimaryUser>,
+    >,
     time: Res<Time>,
     mut movement_control: ResMut<EngineMovementControl>,
 ) {
-    let Ok((entity, mut transform, mut interp)) = player.single_mut() else {
+    let Ok((entity, mut transform, mut interp, movement)) = player.single_mut() else {
         return;
     };
+
+    // Cancel if the scene movement controller asserts a new non-zero x/z velocity or a jump.
+    // Skip on the first tick (elapsed == 0) to avoid immediately cancelling due to the
+    // movement component being changed when the interpolation was just inserted.
+    if interp.elapsed > 0.0 && movement.is_changed() {
+        let v = movement.component.velocity;
+        if v.x != 0.0 || v.z != 0.0 || v.y.abs() > 2.0 {
+            error!("player interpolation cancelled by scene movement controller : {v}");
+            interp.response.send(false);
+            movement_control.suppress_avatar_physics.remove("move_player_to");
+            commands.entity(entity).remove::<PlayerMoveInterpolation>();
+            return;
+        }
+    }
 
     interp.elapsed += time.delta_secs();
     let t = (interp.elapsed / interp.duration).min(1.0);

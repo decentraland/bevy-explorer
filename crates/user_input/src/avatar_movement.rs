@@ -113,7 +113,7 @@ pub struct ActivePlayerComponent<C: Component> {
     scene_last_update: u32,
     scene_start_tick: u32,
     scene_is_portable: bool,
-    component: C,
+    pub component: C,
 }
 
 impl<C: Component + Default> Default for ActivePlayerComponent<C> {

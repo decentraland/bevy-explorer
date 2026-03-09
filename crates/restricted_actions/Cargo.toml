@@ -16,6 +16,8 @@ dcl_component = { workspace = true }
 nft = { workspace = true }
 console = { workspace = true }
 
+user_input = { workspace = true }
+
 bevy = { workspace = true }
 bevy_dui = { workspace = true }
 bevy_console = { workspace = true }
