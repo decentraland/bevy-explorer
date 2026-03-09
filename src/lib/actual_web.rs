@@ -325,6 +325,8 @@ fn main_inner(
     app.add_console_command::<SceneDistanceCommand, _>(scene_distance);
     app.add_console_command::<SceneThreadsCommand, _>(scene_threads);
     app.add_console_command::<FpsCommand, _>(set_fps);
+    app.add_console_command::<LoginGuestCommand, _>(login_guest);
+    app.add_console_command::<LoginPreviousCommand, _>(login_previous);
 
     info!("Bevy-Explorer version {}", version);
 
@@ -475,7 +477,48 @@ fn set_fps(mut input: ConsoleCommand<FpsCommand>, mut config: ResMut<AppConfig>)
     }
 }
 
-use common::rpc::RpcResultSender;
+use common::rpc::{RpcResultReceiver, RpcResultSender};
+/// Login as guest (session-only, profile will not persist)
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/login_guest")]
+struct LoginGuestCommand;
+
+fn login_guest(
+    mut input: ConsoleCommand<LoginGuestCommand>,
+    mut bridge: EventWriter<SystemApi>,
+) {
+    if let Some(Ok(_)) = input.take() {
+        bridge.write(SystemApi::LoginGuest);
+        input.reply_ok("logging in as guest");
+    }
+}
+
+/// Login using previously saved credentials
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/login_previous")]
+struct LoginPreviousCommand;
+
+fn login_previous(
+    mut input: ConsoleCommand<LoginPreviousCommand>,
+    mut bridge: EventWriter<SystemApi>,
+    mut pending: Local<Option<RpcResultReceiver<Result<(), String>>>>,
+) {
+    if let Some(Ok(_)) = input.take() {
+        let (sx, rx) = RpcResultSender::<Result<(), String>>::channel();
+        bridge.write(SystemApi::LoginPrevious(sx));
+        *pending = Some(rx);
+    }
+
+    if let Some(mut rx) = pending.take() {
+        match rx.try_recv() {
+            Ok(Ok(())) => input.reply_ok("logged in with previous credentials"),
+            Ok(Err(e)) => input.reply_failed(e),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => *pending = Some(rx),
+            Err(_) => input.reply_failed("login task dropped"),
+        }
+    }
+}
+
 use once_cell::sync::OnceCell;
 use wasm_bindgen::prelude::*;
 
