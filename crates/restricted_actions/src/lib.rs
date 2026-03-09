@@ -231,6 +231,9 @@ pub fn move_player(
             } else {
                 player_transform.translation = target_translation;
                 debug!("player transform to {}", target_translation);
+                if let Some(response) = response {
+                    response.send(true);
+                }
             }
 
             // always apply rotation immediately if requested
