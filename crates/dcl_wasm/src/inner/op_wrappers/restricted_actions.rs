@@ -19,7 +19,8 @@ pub async fn op_move_player_to(
         camera_target,
         avatar_target,
         duration,
-    ).await
+    )
+    .await
 }
 
 #[wasm_bindgen]

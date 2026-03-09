@@ -116,29 +116,38 @@ pub struct PlayerMoveInterpolation {
     response: RpcResultSender<bool>,
 }
 
+#[allow(clippy::type_complexity)]
 pub fn move_player(
     mut commands: Commands,
     mut events: EventReader<RpcCall>,
     scenes: Query<&RendererSceneContext>,
     mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
     containing_scene: ContainingScene,
-    mut perms: Permission<(Entity, Vec3, Option<Vec3>, Option<f32>, Option<RpcResultSender<bool>>)>,
+    mut perms: Permission<(
+        Entity,
+        Vec3,
+        Option<Vec3>,
+        Option<f32>,
+        Option<RpcResultSender<bool>>,
+    )>,
     mut movement_control: ResMut<EngineMovementControl>,
 ) {
     let Ok((player_entity, _, _)) = player.single() else {
         return;
     };
 
-    for (root, translation, looking_at, duration, response) in events.read().filter_map(|ev| match ev {
-        RpcCall::MovePlayer {
-            scene,
-            to,
-            looking_at,
-            duration,
-            response,
-        } => Some((scene, to, looking_at, duration, response)),
-        _ => None,
-    }) {
+    for (root, translation, looking_at, duration, response) in
+        events.read().filter_map(|ev| match ev {
+            RpcCall::MovePlayer {
+                scene,
+                to,
+                looking_at,
+                duration,
+                response,
+            } => Some((scene, to, looking_at, duration, response)),
+            _ => None,
+        })
+    {
         let current_scenes = containing_scene.get(player_entity);
         if !current_scenes.contains(root) {
             warn!(
@@ -150,13 +159,21 @@ pub fn move_player(
         perms.check(
             PermissionType::MovePlayer,
             *root,
-            (*root, *translation, *looking_at, *duration, response.clone()),
+            (
+                *root,
+                *translation,
+                *looking_at,
+                *duration,
+                response.clone(),
+            ),
             None,
             false,
         );
     }
 
-    for (root, translation, looking_at, duration, response) in perms.drain_success(PermissionType::MovePlayer) {
+    for (root, translation, looking_at, duration, response) in
+        perms.drain_success(PermissionType::MovePlayer)
+    {
         let Ok(scene) = scenes.get(root) else {
             warn!("move player request from invalid scene {root:?}");
             continue;
@@ -173,15 +190,22 @@ pub fn move_player(
         } else if let Some(d) = duration {
             let (player_entity, player_transform, _) = player.single().unwrap();
             let from = player_transform.translation;
-            debug!("player interpolation start: {} -> {} over {}s", from, target_translation, d);
-            movement_control.suppress_avatar_physics.insert("move_player_to");
-            commands.entity(player_entity).insert(PlayerMoveInterpolation {
-                from,
-                to: target_translation,
-                elapsed: 0.0,
-                duration: d,
-                response: response.unwrap(),
-            });
+            debug!(
+                "player interpolation start: {} -> {} over {}s",
+                from, target_translation, d
+            );
+            movement_control
+                .suppress_avatar_physics
+                .insert("move_player_to");
+            commands
+                .entity(player_entity)
+                .insert(PlayerMoveInterpolation {
+                    from,
+                    to: target_translation,
+                    elapsed: 0.0,
+                    duration: d,
+                    response: response.unwrap(),
+                });
             // apply rotation immediately if requested
             if let Some(looking_at) = looking_at {
                 let (_, mut player_transform, mut dynamics) = player.single_mut().unwrap();
@@ -225,6 +249,7 @@ pub fn move_player(
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub fn update_player_interpolation(
     mut commands: Commands,
     mut player: Query<
@@ -251,7 +276,9 @@ pub fn update_player_interpolation(
         if v.x != 0.0 || v.z != 0.0 || v.y.abs() > 2.0 {
             error!("player interpolation cancelled by scene movement controller : {v}");
             interp.response.send(false);
-            movement_control.suppress_avatar_physics.remove("move_player_to");
+            movement_control
+                .suppress_avatar_physics
+                .remove("move_player_to");
             commands.entity(entity).remove::<PlayerMoveInterpolation>();
             return;
         }
@@ -264,7 +291,9 @@ pub fn update_player_interpolation(
     if t >= 1.0 {
         debug!("player interpolation complete");
         interp.response.send(true);
-        movement_control.suppress_avatar_physics.remove("move_player_to");
+        movement_control
+            .suppress_avatar_physics
+            .remove("move_player_to");
         commands.entity(entity).remove::<PlayerMoveInterpolation>();
     }
 }

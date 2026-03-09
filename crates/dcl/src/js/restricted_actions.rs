@@ -25,7 +25,8 @@ pub async fn op_move_player_to(
 
     let to = DclTranslation([position.x, position.y, position.z]).to_bevy_translation();
     let looking_at_source = avatar_target.or(camera_target);
-    let looking_at = looking_at_source.map(|t| DclTranslation([t.x, t.y, t.z]).to_bevy_translation());
+    let looking_at =
+        looking_at_source.map(|t| DclTranslation([t.x, t.y, t.z]).to_bevy_translation());
     let camera_rotation = camera_target.map(|camera| {
         let camera_target = DclTranslation([camera.x, camera.y, camera.z]).to_bevy_translation();
         Transform::IDENTITY
@@ -33,10 +34,12 @@ pub async fn op_move_player_to(
             .rotation
     });
 
-    let (response, rx) = duration.map(|_| {
-        let (sx, rx) = RpcResultSender::<bool>::channel();
-        (Some(sx), Some(rx))
-    }).unwrap_or((None, None));
+    let (response, rx) = duration
+        .map(|_| {
+            let (sx, rx) = RpcResultSender::<bool>::channel();
+            (Some(sx), Some(rx))
+        })
+        .unwrap_or((None, None));
 
     {
         let mut op_state = state.borrow_mut();

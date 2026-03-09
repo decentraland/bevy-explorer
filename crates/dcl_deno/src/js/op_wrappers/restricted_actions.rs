@@ -32,7 +32,8 @@ async fn op_move_player_to(
         camera_target,
         avatar_target,
         duration,
-    ).await
+    )
+    .await
 }
 
 #[op2(async)]
