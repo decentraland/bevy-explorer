@@ -133,7 +133,7 @@ impl PositionFree for sdk::components::PbPlayerIdentityData {}
 impl PositionFree for sdk::components::PbAvatarBase {}
 impl PositionFree for sdk::components::PbAvatarEquippedData {}
 
-// GlobalCrdtData impl for PbAvatarMovementInfo (contains velocity vectors that need localization)
+// GlobalCrdtData impl for PbAvatarMovementInfo (walk_target is a world-space position that needs localization)
 impl GlobalCrdtData for sdk::components::PbAvatarMovementInfo {
     fn localizer() -> Localizer {
         Localizer::AvatarMovementInfo

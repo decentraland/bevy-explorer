@@ -413,7 +413,8 @@ pub(crate) fn load_scene_javascript(
         scene_updates.scene_ids.insert(scene_id, root);
 
         // start from the global shared crdt state, with position data localized for this scene
-        let scene_origin = Vec3::new(initial_position.x, 0.0, -initial_position.y);
+        // Scene origin in DCL proto-space (z-forward, matching proto Vector3 coordinates)
+        let scene_origin = Vec3::new(initial_position.x, 0.0, initial_position.y);
         let (mut initial_crdt, global_updates) = global_scene.subscribe(scene_origin);
 
         // set the world origin (for parents of world-space entities, using world-space coords as local coords)

@@ -12,7 +12,7 @@ pub use reader::{DclReader, DclReaderError, FromDclReader};
 use serde::{Deserialize, Serialize};
 pub use writer::{DclWriter, ToDclWriter};
 
-/// Scene origin in bevy world-space, stored in scene thread state for localizer access.
+/// Scene origin in DCL proto-space (z-forward), stored in scene thread state for localizer access.
 pub struct SceneOrigin(pub Vec3);
 
 /// Describes how to localize a component's position data when delivering to a scene.
@@ -31,7 +31,7 @@ pub enum Localizer {
 
 impl Localizer {
     /// Localize a proto component payload by deserializing, adjusting position
-    /// fields, and re-encoding. `scene_origin` is in bevy world-space.
+    /// fields, and re-encoding. `scene_origin` is in DCL proto-space (z-forward).
     pub fn localize_payload(&self, payload: &[u8], scene_origin: &SceneOrigin) -> Vec<u8> {
         match self {
             Localizer::None => payload.to_vec(),
@@ -45,16 +45,12 @@ impl Localizer {
                 };
 
                 let origin = &scene_origin.0;
-                // Convert bevy scene_origin to DCL proto coords (z negated)
-                let ox = origin.x;
-                let oy = origin.y;
-                let oz = -origin.z;
 
                 // walk_target is a world-space position → make scene-relative
                 if let Some(ref mut target) = info.walk_target {
-                    target.x -= ox;
-                    target.y -= oy;
-                    target.z -= oz;
+                    target.x -= origin.x;
+                    target.y -= origin.y;
+                    target.z -= origin.z;
                 }
 
                 let mut buf = Vec::with_capacity(payload.len());
