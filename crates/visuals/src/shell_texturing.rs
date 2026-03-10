@@ -149,11 +149,10 @@ impl Plugin for ShellTexturingPlugin {
             parcel_grass_without_lod.after(parcel_grass_config_updated),
         );
         app.add_systems(
-            PostUpdate,
+            PreUpdate,
             ((fill_parcel_grass, drop_far_parcel_grass), recalculate_lod)
                 .chain()
-                .run_if(player_changed_parcels.or(resource_exists_and_changed::<CurrentRealm>))
-                .after(RealmLifecycle),
+                .run_if(player_changed_parcels.or(resource_exists_and_changed::<CurrentRealm>)),
         );
         app.add_observer(parcel_grass_lod_inserted);
         app.add_observer(parcel_grass_lod_replaced);
