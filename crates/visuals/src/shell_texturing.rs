@@ -211,10 +211,10 @@ fn parcel_grass_lod_change(trigger: Trigger<OnInsert, ParcelGrassLod>, mut comma
 
 fn rebuild_parcel_grasses(
     mut commands: Commands,
-    parcel_grasses: Populated<(Entity, &ParcelGrass, &ParcelGrassLod), With<NeedsParcelGrass>>,
+    parcel_grasses: Populated<(Entity, &ParcelGrassLod), With<NeedsParcelGrass>>,
     parcel_grass_config: Res<ParcelGrassConfig>,
 ) {
-    for (entity, parcel_grass, parcel_grass_lod) in parcel_grasses.into_inner() {
+    for (entity, parcel_grass_lod) in parcel_grasses.into_inner() {
         commands.entity(entity).despawn_related::<Children>();
 
         let (lod, layers, displacement, material) = match parcel_grass_lod {
@@ -249,8 +249,6 @@ fn rebuild_parcel_grasses(
         commands
             .entity(entity)
             .insert(Children::spawn(ParcelGrassShellSpawnList {
-                x: parcel_grass.parcel.x,
-                y: parcel_grass.parcel.y,
                 shells: layers,
                 displacement,
                 lod,
@@ -330,6 +328,11 @@ fn fill_parcel_grass(
                     ParcelGrass { parcel },
                     ParcelGrassLod::Off,
                     ParcelGrassWaitingScenePointer,
+                    Transform::from_translation(Vec3::new(
+                        16. * parcel.x as f32 + 8.,
+                        -0.05,
+                        -(16. * parcel.y as f32) - 8.,
+                    )),
                 ));
             }
         }
@@ -369,8 +372,6 @@ fn recalculate_lod(
 }
 
 struct ParcelGrassShellSpawnList<B: Bundle + Clone> {
-    x: i32,
-    y: i32,
     shells: u32,
     lod: usize,
     displacement: f32,
@@ -385,11 +386,7 @@ impl<B: Bundle + Clone> SpawnableList<ChildOf> for ParcelGrassShellSpawnList<B> 
                 ParcelGrassShell,
                 Mesh3d(PARCEL_GRASS_MESH.clone()),
                 MeshMaterial3d(self.material.clone()),
-                Transform::from_translation(Vec3::new(
-                    16. * self.x as f32 + 8.,
-                    -0.05 + (self.displacement * i as f32),
-                    -(16. * self.y as f32) - 8.,
-                )),
+                Transform::from_translation(Vec3::new(0., self.displacement * i as f32, 0.)),
                 MeshTag(i),
                 NotShadowCaster,
                 self.extras.clone(),
