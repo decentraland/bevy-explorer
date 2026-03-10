@@ -39,7 +39,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let octave2 = (simplex_noise_3d(simplex_coord) + 1.) / 2.;
     let octave3 = (simplex_noise_3d(simplex_coord * 13.167) + 1.) / 2.;
     let simplex = (octave1 + octave2 + octave3) / 3.;
-    if simplex <= factor {
+    if simplex <= factor && layer > 0 {
         discard;
     }
 
@@ -59,7 +59,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let root_x = wpx + dx * scale;
     let root_z = wpz + dz * scale;
 
-    if distance(fract(vec2(root_x, root_z)), vec2(0.5)) >= mix(0.25, 0.45, 1. - (factor / simplex)) {
+    if distance(fract(vec2(root_x, root_z)), vec2(0.5)) >= mix(0.25, 0.45, 1. - (factor / simplex)) && layer > 0 {
         discard;
     }
 
