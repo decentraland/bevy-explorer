@@ -31,7 +31,8 @@ pub async fn op_walk_player_to(
     timeout: Option<f32>,
 ) -> bool {
     let position: DclVector3 = serde_wasm_bindgen::from_value(position).unwrap_or_default();
-    dcl::js::restricted_actions::op_walk_player_to(op_state.rc(), position, stop_threshold, timeout).await
+    dcl::js::restricted_actions::op_walk_player_to(op_state.rc(), position, stop_threshold, timeout)
+        .await
 }
 
 #[wasm_bindgen]
