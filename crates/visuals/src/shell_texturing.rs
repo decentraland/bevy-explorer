@@ -57,22 +57,27 @@ impl ParcelGrass {
 
 #[derive(Clone, Copy, PartialEq, Eq, Component)]
 #[component(immutable)]
-#[repr(u8)]
 pub enum ParcelGrassLod {
-    Off = 0,
-    High = 1,
-    Mid = 2,
-    Low = 3,
+    Off,
+    High,
+    Mid,
+    Low,
+}
+
+impl ParcelGrassLod {
+    fn from_distance(player_location: IVec2, parcel: IVec2) -> Self {
+        let distance = player_location.distance_squared(parcel);
+        // TODO: make this depend of the render distance
+        match distance {
+            ..8 => ParcelGrassLod::High,
+            8..16 => ParcelGrassLod::Mid,
+            16.. => ParcelGrassLod::Low,
+        }
+    }
 }
 
 #[derive(Component)]
 pub struct ParcelGrassShell;
-
-#[derive(Clone, Copy, Component)]
-struct NeedsParcelGrass;
-
-#[derive(Clone, Copy, Component)]
-struct ParcelGrassWaitingScenePointer;
 
 /// Huge plane that covers a huge area
 #[derive(Component)]
@@ -133,22 +138,25 @@ impl Plugin for ShellTexturingPlugin {
         );
         app.add_systems(
             Update,
-            (update_parcel_grass_material, parcel_grass_config_updated)
-                .run_if(resource_changed::<ParcelGrassConfig>),
+            (
+                update_parcel_grass_material.run_if(resource_changed::<ParcelGrassConfig>),
+                parcel_grass_config_updated
+                    .run_if(resource_changed::<ParcelGrassConfig>.and(shells_need_updating)),
+            ),
         );
         app.add_systems(
             Update,
-            (parcel_grass_waiting_scene_pointer, rebuild_parcel_grasses)
-                .chain()
-                .after(parcel_grass_config_updated),
+            parcel_grass_without_lod.after(parcel_grass_config_updated),
         );
         app.add_systems(
             PostUpdate,
-            (fill_parcel_grass, drop_far_parcel_grass, recalculate_lod)
+            ((fill_parcel_grass, drop_far_parcel_grass), recalculate_lod)
+                .chain()
                 .run_if(player_changed_parcels.or(resource_exists_and_changed::<CurrentRealm>))
                 .after(RealmLifecycle),
         );
-        app.add_observer(parcel_grass_lod_change);
+        app.add_observer(parcel_grass_lod_inserted);
+        app.add_observer(parcel_grass_lod_replaced);
     }
 }
 
@@ -205,108 +213,109 @@ fn update_parcel_grass_material(
     );
 }
 
+fn shells_need_updating(
+    parcel_grass_config: Res<ParcelGrassConfig>,
+    mut layers: Local<u32>,
+    mut displacement: Local<f32>,
+) -> bool {
+    let old_layers = std::mem::replace(&mut *layers, parcel_grass_config.layers);
+    let old_displacement =
+        std::mem::replace(&mut *displacement, parcel_grass_config.y_displacement);
+
+    old_layers != parcel_grass_config.layers
+        || old_displacement != parcel_grass_config.y_displacement
+}
+
 fn parcel_grass_config_updated(
     mut commands: Commands,
-    parcel_grass: Query<Entity, With<ParcelGrassLod>>,
+    parcel_grasses: Query<Entity, With<ParcelGrassLod>>,
 ) {
     debug!(
         target: "visuals::parcel_grass::config_updated",
         "Rebuilding shells due to change in ParcelGrassConfig."
     );
-    commands.insert_batch(
-        parcel_grass
-            .iter()
-            .map(|entity| (entity, NeedsParcelGrass))
-            .collect::<Vec<_>>(),
-    );
-}
-
-fn parcel_grass_lod_change(trigger: Trigger<OnInsert, ParcelGrassLod>, mut commands: Commands) {
-    commands.entity(trigger.target()).insert(NeedsParcelGrass);
-}
-
-fn rebuild_parcel_grasses(
-    mut commands: Commands,
-    parcel_grasses: Populated<(Entity, &ParcelGrassLod), With<NeedsParcelGrass>>,
-    parcel_grass_config: Res<ParcelGrassConfig>,
-) {
-    for (entity, parcel_grass_lod) in parcel_grasses.into_inner() {
-        commands.entity(entity).despawn_related::<Children>();
-
-        let (lod, layers, displacement, material) = match parcel_grass_lod {
-            ParcelGrassLod::Off => {
-                commands.entity(entity).remove::<NeedsParcelGrass>();
-                continue;
-            }
-            ParcelGrassLod::Low => (
-                4,
-                parcel_grass_config.layers,
-                parcel_grass_config.y_displacement,
-                &PARCEL_GRASS_MATERIAL,
-            ),
-            ParcelGrassLod::Mid => (
-                2,
-                parcel_grass_config.layers,
-                parcel_grass_config.y_displacement,
-                &PARCEL_GRASS_MATERIAL,
-            ),
-            ParcelGrassLod::High => (
-                1,
-                parcel_grass_config.layers,
-                parcel_grass_config.y_displacement,
-                &PARCEL_GRASS_MATERIAL,
-            ),
-        };
-        debug!(
-            target: "visuals::parcel_grass::rebuild",
-            "Rebuilding shells for {entity} with lod {lod}."
-        );
-
-        commands
-            .entity(entity)
-            .insert(Children::spawn(ParcelGrassShellSpawnList {
-                shells: layers,
-                displacement,
-                lod,
-                material: material.clone(),
-                extras: (),
-            }))
-            .remove::<NeedsParcelGrass>();
+    for parcel_grass in parcel_grasses {
+        commands.entity(parcel_grass).remove::<ParcelGrassLod>();
     }
 }
 
-fn parcel_grass_waiting_scene_pointer(
+fn parcel_grass_lod_inserted(
+    trigger: Trigger<OnInsert, ParcelGrassLod>,
     mut commands: Commands,
-    parcel_grasses: Populated<
-        (Entity, &ParcelGrass, &ParcelGrassLod),
-        With<ParcelGrassWaitingScenePointer>,
-    >,
+    parcel_grasses: Query<&ParcelGrassLod>,
+    parcel_grass_config: Res<ParcelGrassConfig>,
+) {
+    let entity = trigger.target();
+    let Ok(parcel_grass_lod) = parcel_grasses.get(entity) else {
+        unreachable!("Infallible query");
+    };
+
+    let (lod, layers, displacement, material) = match parcel_grass_lod {
+        ParcelGrassLod::Off => {
+            return;
+        }
+        ParcelGrassLod::Low => (
+            4,
+            parcel_grass_config.layers,
+            parcel_grass_config.y_displacement,
+            &PARCEL_GRASS_MATERIAL,
+        ),
+        ParcelGrassLod::Mid => (
+            2,
+            parcel_grass_config.layers,
+            parcel_grass_config.y_displacement,
+            &PARCEL_GRASS_MATERIAL,
+        ),
+        ParcelGrassLod::High => (
+            1,
+            parcel_grass_config.layers,
+            parcel_grass_config.y_displacement,
+            &PARCEL_GRASS_MATERIAL,
+        ),
+    };
+    debug!(
+        target: "visuals::parcel_grass::rebuild",
+        "Rebuilding shells for {entity} with lod {lod}."
+    );
+
+    commands
+        .entity(entity)
+        .insert(Children::spawn(ParcelGrassShellSpawnList {
+            shells: layers,
+            displacement,
+            lod,
+            material: material.clone(),
+            extras: (),
+        }));
+}
+
+fn parcel_grass_lod_replaced(trigger: Trigger<OnReplace, ParcelGrassLod>, mut commands: Commands) {
+    let entity = trigger.target();
+    commands.entity(entity).queue_handled(
+        |mut entity: EntityWorldMut| {
+            entity.despawn_related::<Children>();
+        },
+        // This might happen on despawn, and if it is the case, just leave it be
+        bevy::ecs::error::ignore,
+    );
+}
+
+fn parcel_grass_without_lod(
+    mut commands: Commands,
+    parcel_grasses: Populated<(Entity, &ParcelGrass), Without<ParcelGrassLod>>,
     player: Single<&GlobalTransform, With<PrimaryUser>>,
     scene_pointers: Res<ScenePointers>,
 ) {
     let parcel = vec3_to_parcel(player.translation());
 
-    for (entity, parcel_grass, parcel_grass_lod) in parcel_grasses.into_inner() {
+    for (entity, parcel_grass) in parcel_grasses.into_inner() {
         match scene_pointers.get(parcel_grass.parcel) {
             Some(PointerResult::Nothing) => {
-                let distance = parcel.distance_squared(parcel_grass.parcel);
-                // TODO: make this depend of the render distance
-                let lod = match distance {
-                    ..8 => ParcelGrassLod::High,
-                    8..16 => ParcelGrassLod::Mid,
-                    16.. => ParcelGrassLod::Low,
-                };
-                let mut entity_cmd = commands.entity(entity);
-                if lod != *parcel_grass_lod {
-                    entity_cmd.insert((NeedsParcelGrass, lod));
-                }
-                entity_cmd.remove::<ParcelGrassWaitingScenePointer>();
+                let lod = ParcelGrassLod::from_distance(parcel, parcel_grass.parcel);
+                commands.entity(entity).insert(lod);
             }
             Some(PointerResult::Exists { .. }) => {
-                commands
-                    .entity(entity)
-                    .despawn_related::<Children>()
-                    .remove::<ParcelGrassWaitingScenePointer>();
+                commands.entity(entity).insert(ParcelGrassLod::Off);
             }
             None => {}
         }
@@ -315,11 +324,11 @@ fn parcel_grass_waiting_scene_pointer(
 
 fn player_changed_parcels(
     player: Single<&GlobalTransform, With<PrimaryUser>>,
-    mut last_player_parcel: Local<Option<IVec2>>,
+    mut last_player_parcel: Local<IVec2>,
 ) -> bool {
     let current_parcel = vec3_to_parcel(player.translation());
-    let old_parcel = last_player_parcel.replace(current_parcel);
-    Some(current_parcel) != old_parcel
+    let old_parcel = std::mem::replace(&mut *last_player_parcel, current_parcel);
+    current_parcel != old_parcel
 }
 
 fn fill_parcel_grass(
@@ -341,8 +350,6 @@ fn fill_parcel_grass(
                 );
                 commands.spawn((
                     ParcelGrass { parcel },
-                    ParcelGrassLod::Off,
-                    ParcelGrassWaitingScenePointer,
                     Transform::from_translation(Vec3::new(
                         16. * parcel.x as f32 + 8.,
                         -0.05,
@@ -376,14 +383,26 @@ fn drop_far_parcel_grass(
 
 fn recalculate_lod(
     mut commands: Commands,
-    parcel_grasses: Populated<Entity, Without<ParcelGrassWaitingScenePointer>>,
+    parcel_grasses: Query<(Entity, &ParcelGrass, &ParcelGrassLod)>,
+    player: Single<&GlobalTransform, With<PrimaryUser>>,
+    scene_pointers: Res<ScenePointers>,
 ) {
-    commands.try_insert_batch(
-        parcel_grasses
-            .iter()
-            .map(|entity| (entity, ParcelGrassWaitingScenePointer))
-            .collect::<Vec<_>>(),
-    );
+    let player_location = vec3_to_parcel(player.translation());
+
+    for (entity, parcel_grass, parcel_grass_lod) in parcel_grasses {
+        match scene_pointers.get(parcel_grass.parcel) {
+            Some(PointerResult::Nothing) => {
+                let lod = ParcelGrassLod::from_distance(player_location, parcel_grass.parcel);
+                if lod != *parcel_grass_lod {
+                    commands.entity(entity).insert(lod);
+                }
+            }
+            Some(PointerResult::Exists { .. }) => {
+                commands.entity(entity).insert(ParcelGrassLod::Off);
+            }
+            None => {}
+        }
+    }
 }
 
 struct ParcelGrassShellSpawnList<B: Bundle + Clone> {
