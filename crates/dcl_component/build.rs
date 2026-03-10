@@ -77,6 +77,7 @@ fn gen_sdk_components() -> Result<()> {
     let mut config = prost_build::Config::new();
     let serde_components = [
         "Vector2",
+        "Vector3",
         "Color3",
         "PBRealmInfo",
         "PBAvatarBase",

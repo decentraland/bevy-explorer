@@ -5,7 +5,7 @@ use bevy::{diagnostic::FrameCount, math::DVec3, platform::collections::HashMap, 
 use common::{
     dynamics::{PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS, PLAYER_GROUND_THRESHOLD},
     sets::SceneSets,
-    structs::{AvatarDynamicState, PrimaryPlayerRes, PrimaryUser},
+    structs::{AvatarDynamicState, EngineMovementControl, PrimaryPlayerRes, PrimaryUser},
 };
 use comms::global_crdt::GlobalCrdtState;
 use dcl::interface::{ComponentPosition, CrdtType};
@@ -46,13 +46,20 @@ impl Plugin for AvatarMovementPlugin {
         app.add_systems(Update, broadcast_movement_info.in_set(SceneSets::Init));
 
         app.add_systems(
+            Update,
+            (
+                ActivePlayerComponent::<AvatarMovement>::pick_latest_frame_only_by_priority,
+                ActivePlayerComponent::<AvatarLocomotionSettings>::pick_by_priority,
+                ActivePlayerComponent::<InputModifier>::pick_by_priority,
+            )
+                .in_set(SceneSets::PostLoop),
+        );
+
+        app.add_systems(
             PostUpdate,
             (
                 apply_ground_collider_movement,
                 resolve_collisions,
-                ActivePlayerComponent::<AvatarMovement>::pick_latest_frame_only_by_priority,
-                ActivePlayerComponent::<AvatarLocomotionSettings>::pick_by_priority,
-                ActivePlayerComponent::<InputModifier>::pick_by_priority,
                 apply_movement,
                 record_ground_collider,
             )
@@ -113,7 +120,7 @@ pub struct ActivePlayerComponent<C: Component> {
     scene_last_update: u32,
     scene_start_tick: u32,
     scene_is_portable: bool,
-    component: C,
+    pub component: C,
 }
 
 impl<C: Component + Default> Default for ActivePlayerComponent<C> {
@@ -272,15 +279,20 @@ pub fn apply_movement(
     time_res: Res<Time>,
     mut info: ResMut<AvatarMovementInfo>,
     mut jumping: Local<bool>,
+    movement_control: Res<EngineMovementControl>,
 ) {
     let Ok((mut transform, mut dynamic_state, movement)) = player.single_mut() else {
         return;
     };
 
     info.0.step_time = time_res.delta_secs();
-    transform.rotation = Quat::from_rotation_y(movement.component.orientation / 360.0 * TAU);
 
-    if movement.component.velocity == Vec3::ZERO {
+    let suppress = !movement_control.suppress_avatar_physics.is_empty();
+    if !suppress {
+        transform.rotation = Quat::from_rotation_y(movement.component.orientation / 360.0 * TAU);
+    }
+
+    if suppress || movement.component.velocity == Vec3::ZERO {
         dynamic_state.velocity = Vec3::ZERO;
         let ground_height =
             scenes
@@ -322,22 +334,24 @@ pub fn apply_movement(
         steps += 1;
         let mut step_time = time;
         let mut contact_normal = DVec3::ZERO;
-        for (e, mut collider_data) in scenes.iter_mut() {
-            if let Some(hit) = collider_data.cast_avatar_nearest(
-                position,
-                velocity,
-                step_time,
-                ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK,
-                false,
-                false,
-                disabled
-                    .get(&e)
-                    .map(|d| d.iter().collect())
-                    .unwrap_or_default(),
-                -PLAYER_COLLIDER_OVERLAP,
-            ) {
-                step_time = hit.toi as f64;
-                contact_normal = hit.normal.as_dvec3();
+        if movement_control.suppress_clipping.is_empty() {
+            for (e, mut collider_data) in scenes.iter_mut() {
+                if let Some(hit) = collider_data.cast_avatar_nearest(
+                    position,
+                    velocity,
+                    step_time,
+                    ColliderLayer::ClPhysics as u32 | GROUND_COLLISION_MASK,
+                    false,
+                    false,
+                    disabled
+                        .get(&e)
+                        .map(|d| d.iter().collect())
+                        .unwrap_or_default(),
+                    -PLAYER_COLLIDER_OVERLAP,
+                ) {
+                    step_time = hit.toi as f64;
+                    contact_normal = hit.normal.as_dvec3();
+                }
             }
         }
 
@@ -359,7 +373,7 @@ pub fn apply_movement(
     let position = position.as_vec3();
     let velocity = velocity.as_vec3();
 
-    transform.translation = position;
+    transform.translation = position.with_y(position.y.max(0.0));
 
     // for now we hack in the old dynamic state values for animations
     dynamic_state.velocity = velocity;
@@ -433,7 +447,12 @@ fn apply_ground_collider_movement(
     frame: Res<FrameCount>,
     mut info: ResMut<AvatarMovementInfo>,
     time: Res<Time>,
+    movement_control: Res<EngineMovementControl>,
 ) {
+    if !movement_control.suppress_avatar_physics.is_empty() {
+        return;
+    }
+
     let Ok((mut transform, GroundCollider(Some((ground_entity, _, _))))) = player.single_mut()
     else {
         return;
@@ -495,7 +514,14 @@ fn resolve_collisions(
     mut scenes: Query<&mut SceneColliderData>,
     mut info: ResMut<AvatarMovementInfo>,
     time: Res<Time>,
+    movement_control: Res<EngineMovementControl>,
 ) {
+    if !movement_control.suppress_clipping.is_empty()
+        || !movement_control.suppress_avatar_physics.is_empty()
+    {
+        return;
+    }
+
     let Ok(mut transform) = player.single_mut() else {
         return;
     };

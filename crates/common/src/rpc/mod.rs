@@ -127,6 +127,8 @@ pub enum RpcCall {
         scene: Entity,
         to: Vec3,
         looking_at: Option<Vec3>,
+        duration: Option<f32>,
+        response: Option<RpcResultSender<bool>>,
     },
     TeleportPlayer {
         scene: Option<Entity>,

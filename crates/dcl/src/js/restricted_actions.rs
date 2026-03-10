@@ -5,6 +5,7 @@ use bevy::{
     transform::components::Transform,
 };
 use common::rpc::{RpcCall, RpcResultSender, RpcUiFocusAction};
+use dcl_component::proto_components::common::Vector3 as DclVector3;
 use serde::Serialize;
 use std::{cell::RefCell, rc::Rc};
 
@@ -13,57 +14,54 @@ use dcl_component::transform_and_parent::DclTranslation;
 
 use super::{runtime::scene_information, State};
 
-#[allow(clippy::too_many_arguments)]
-pub fn op_move_player_to(
-    op_state: &mut impl State,
-    position_x: f32,
-    position_y: f32,
-    position_z: f32,
-    camera: bool,
-    maybe_camera_x: f32,
-    maybe_camera_y: f32,
-    maybe_camera_z: f32,
-    looking_at: bool,
-    maybe_looking_at_x: f32,
-    maybe_looking_at_y: f32,
-    maybe_looking_at_z: f32,
-) {
-    let position = [position_x, position_y, position_z];
-    let maybe_camera = if camera {
-        Some([maybe_camera_x, maybe_camera_y, maybe_camera_z])
-    } else {
-        None
-    };
-    let maybe_looking_at = if looking_at {
-        Some([maybe_looking_at_x, maybe_looking_at_y, maybe_looking_at_z])
-    } else {
-        None
-    };
+pub async fn op_move_player_to(
+    state: Rc<RefCell<impl State>>,
+    position: DclVector3,
+    camera_target: Option<DclVector3>,
+    avatar_target: Option<DclVector3>,
+    duration: Option<f32>,
+) -> bool {
+    debug!("move player to {position:?}, camera: {camera_target:?}, rotate: {avatar_target:?}, duration: {duration:?}");
 
-    debug!("move player to {position:?}, camera: {maybe_camera:?}, rotate: {maybe_looking_at:?}");
-    let scene = op_state.borrow::<CrdtContext>().scene_id.0;
-
-    let to = DclTranslation(position).to_bevy_translation();
-
-    let avatar_target = maybe_looking_at.or(maybe_camera);
-    let looking_at = avatar_target.map(|target| DclTranslation(target).to_bevy_translation());
-
-    op_state.borrow_mut::<RpcCalls>().push(RpcCall::MovePlayer {
-        scene,
-        to,
-        looking_at,
-    });
-
-    let camera_rotation = maybe_camera.map(|camera| {
-        let camera_target = DclTranslation(camera).to_bevy_translation();
+    let to = DclTranslation([position.x, position.y, position.z]).to_bevy_translation();
+    let looking_at_source = avatar_target.or(camera_target);
+    let looking_at =
+        looking_at_source.map(|t| DclTranslation([t.x, t.y, t.z]).to_bevy_translation());
+    let camera_rotation = camera_target.map(|camera| {
+        let camera_target = DclTranslation([camera.x, camera.y, camera.z]).to_bevy_translation();
         Transform::IDENTITY
             .looking_at(camera_target - to, Vec3::Y)
             .rotation
     });
-    if let Some(facing) = camera_rotation {
-        op_state
-            .borrow_mut::<RpcCalls>()
-            .push(RpcCall::MoveCamera { scene, facing });
+
+    let (response, rx) = duration
+        .map(|_| {
+            let (sx, rx) = RpcResultSender::<bool>::channel();
+            (Some(sx), Some(rx))
+        })
+        .unwrap_or((None, None));
+
+    {
+        let mut op_state = state.borrow_mut();
+        let scene = op_state.borrow::<CrdtContext>().scene_id.0;
+        op_state.borrow_mut::<RpcCalls>().push(RpcCall::MovePlayer {
+            scene,
+            to,
+            looking_at,
+            duration,
+            response,
+        });
+        if let Some(facing) = camera_rotation {
+            op_state
+                .borrow_mut::<RpcCalls>()
+                .push(RpcCall::MoveCamera { scene, facing });
+        }
+    }
+
+    if let Some(rx) = rx {
+        matches!(rx.await, Ok(true))
+    } else {
+        true
     }
 }
 

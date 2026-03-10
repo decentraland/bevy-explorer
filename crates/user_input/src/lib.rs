@@ -9,7 +9,8 @@ use camera::update_cursor_lock;
 use common::{
     sets::SceneSets,
     structs::{
-        CursorLocks, PlayerModifiers, PrimaryCamera, PrimaryUser, PRIMARY_AVATAR_LIGHT_LAYER_INDEX,
+        CursorLocks, EngineMovementControl, PlayerModifiers, PrimaryCamera, PrimaryUser,
+        PRIMARY_AVATAR_LIGHT_LAYER_INDEX,
     },
 };
 use console::DoAddConsoleCommand;
@@ -46,7 +47,7 @@ impl Plugin for UserInputPlugin {
             )
                 .chain(),
         );
-        app.insert_resource(UserClipping(true))
+        app.init_resource::<EngineMovementControl>()
             .init_resource::<CursorLocks>();
         app.add_console_command::<NoClipCommand, _>(no_clip);
         app.add_console_command::<SpeedCommand, _>(speed_cmd);
@@ -104,9 +105,6 @@ fn manage_player_visibility(
     }
 }
 
-#[derive(Resource)]
-pub struct UserClipping(pub bool);
-
 // turn clipping on/off
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/idnoclip")]
@@ -114,11 +112,19 @@ pub(crate) struct NoClipCommand {
     clip: Option<bool>,
 }
 
-pub(crate) fn no_clip(mut input: ConsoleCommand<NoClipCommand>, mut clip: ResMut<UserClipping>) {
+pub(crate) fn no_clip(
+    mut input: ConsoleCommand<NoClipCommand>,
+    mut control: ResMut<EngineMovementControl>,
+) {
     if let Some(Ok(command)) = input.take() {
-        let new_state = command.clip.unwrap_or(!clip.0);
-        clip.0 = new_state;
-        input.reply_ok(format!("clipping set to {}", clip.0));
+        let currently_clipping = !control.suppress_clipping.contains("noclip");
+        let new_clipping = command.clip.unwrap_or(!currently_clipping);
+        if new_clipping {
+            control.suppress_clipping.remove("noclip");
+        } else {
+            control.suppress_clipping.insert("noclip");
+        }
+        input.reply_ok(format!("clipping set to {}", new_clipping));
     }
 }
 
