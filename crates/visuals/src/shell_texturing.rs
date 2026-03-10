@@ -10,7 +10,7 @@ use bevy::{
     },
 };
 use common::{
-    sets::{RealmLifecycle, SetupSets},
+    sets::SetupSets,
     structs::{CurrentRealm, ParcelGrassConfig, PrimaryUser, GROUND_RENDERLAYER},
 };
 use scene_runner::{
