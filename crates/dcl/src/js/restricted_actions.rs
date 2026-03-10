@@ -65,6 +65,32 @@ pub async fn op_move_player_to(
     }
 }
 
+pub async fn op_walk_player_to(
+    state: Rc<RefCell<impl State>>,
+    position: DclVector3,
+    stop_threshold: f32,
+    timeout: Option<f32>,
+) -> bool {
+    debug!("walk player to {position:?}, stop_threshold: {stop_threshold:?}, timeout: {timeout:?}");
+
+    let to = DclTranslation([position.x, position.y, position.z]).to_bevy_translation();
+    let (sx, rx) = RpcResultSender::<bool>::channel();
+
+    {
+        let mut op_state = state.borrow_mut();
+        let scene = op_state.borrow::<CrdtContext>().scene_id.0;
+        op_state.borrow_mut::<RpcCalls>().push(RpcCall::WalkPlayer {
+            scene,
+            to,
+            stop_threshold,
+            timeout,
+            response: sx,
+        });
+    }
+
+    matches!(rx.await, Ok(true))
+}
+
 pub async fn op_teleport_to(
     state: Rc<RefCell<impl State>>,
     position_x: i32,
