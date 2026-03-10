@@ -21,11 +21,6 @@ use scene_runner::{
 const PARCEL_GRASS_MESH: Handle<Mesh> = weak_handle!("75b4bc5b-7523-4d7c-a42f-d2ddb93ac169");
 const PARCEL_GRASS_MATERIAL: Handle<ShellTexture> =
     weak_handle!("18c8dd1e-081d-452a-9c00-327775a239ff");
-const IN_SCENE_PARCEL_GRASS_MATERIAL: Handle<ShellTexture> =
-    weak_handle!("a7b403bc-917b-424e-878a-9714243bd4ce");
-
-const IN_SCENE_PARCEL_GRASS_LAYERS: u32 = 5;
-const IN_SCENE_PARCEL_GRASS_DISPLACEMENT: f32 = 0.01;
 
 #[derive(Default, Resource, Deref, DerefMut)]
 struct ParcelGrassMap(HashMap<IVec2, Entity>);
@@ -192,16 +187,6 @@ fn update_parcel_grass_material(
             tip_color: parcel_grass_config.tip_color.into(),
         },
     );
-    materials.insert(
-        IN_SCENE_PARCEL_GRASS_MATERIAL.id(),
-        ShellTexture {
-            subdivisions: parcel_grass_config.subdivisions,
-            layers: 5,
-            padding: Vec2::default(),
-            root_color: parcel_grass_config.root_color.into(),
-            tip_color: parcel_grass_config.tip_color.into(),
-        },
-    );
 }
 
 fn parcel_grass_config_updated(
@@ -233,7 +218,7 @@ fn rebuild_parcel_grasses(
         commands.entity(entity).despawn_related::<Children>();
 
         let (lod, layers, displacement, material) = match parcel_grass_lod {
-            ParcelGrassLod::Off => {
+            ParcelGrassLod::Off | ParcelGrassLod::InScene => {
                 commands.entity(entity).remove::<NeedsParcelGrass>();
                 continue;
             }
@@ -254,12 +239,6 @@ fn rebuild_parcel_grasses(
                 parcel_grass_config.layers,
                 parcel_grass_config.y_displacement,
                 &PARCEL_GRASS_MATERIAL,
-            ),
-            ParcelGrassLod::InScene => (
-                1,
-                IN_SCENE_PARCEL_GRASS_LAYERS,
-                IN_SCENE_PARCEL_GRASS_DISPLACEMENT,
-                &IN_SCENE_PARCEL_GRASS_MATERIAL,
             ),
         };
         debug!(
