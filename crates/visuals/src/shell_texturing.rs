@@ -158,14 +158,17 @@ fn setup_parcel_grass_mesh(mut meshes: ResMut<Assets<Mesh>>) {
 
 fn spawn_ground(mut commands: Commands) {
     commands.spawn((
-        Mesh3d(PARCEL_GRASS_MESH.clone()),
-        MeshMaterial3d(PARCEL_GRASS_MATERIAL.clone()),
         // Ground covers 1024 parcels
         Transform::from_scale(Vec3::new(1024., 1., 1024.))
             .with_translation(Vec3::new(0., -0.05, 0.)),
         Ground,
-        GROUND_RENDERLAYER.clone(),
-        MeshTag(0),
+        Children::spawn(ParcelGrassShellSpawnList {
+            shells: 5,
+            lod: 1,
+            displacement: 0.01,
+            material: PARCEL_GRASS_MATERIAL.clone(),
+            extras: (GROUND_RENDERLAYER,),
+        }),
     ));
 }
 
