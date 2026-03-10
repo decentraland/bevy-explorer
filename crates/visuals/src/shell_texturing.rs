@@ -10,8 +10,8 @@ use bevy::{
     },
 };
 use common::{
-    sets::RealmLifecycle,
-    structs::{CurrentRealm, ParcelGrassConfig, PrimaryUser},
+    sets::{RealmLifecycle, SetupSets},
+    structs::{CurrentRealm, ParcelGrassConfig, PrimaryUser, GROUND_RENDERLAYER},
 };
 use scene_runner::{
     initialize_scene::{PointerResult, ScenePointers},
@@ -76,6 +76,10 @@ struct NeedsParcelGrass;
 #[derive(Clone, Copy, Component)]
 struct ParcelGrassWaitingScenePointer;
 
+/// Huge plane that covers a huge area
+#[derive(Component)]
+struct Ground;
+
 #[derive(Clone, Asset, TypePath, AsBindGroup)]
 pub struct ShellTexture {
     #[uniform(0)]
@@ -122,7 +126,13 @@ impl Plugin for ShellTexturingPlugin {
 
         app.add_plugins(MaterialPlugin::<ShellTexture>::default());
 
-        app.add_systems(Startup, setup_parcel_grass_mesh);
+        app.add_systems(
+            Startup,
+            (
+                setup_parcel_grass_mesh,
+                spawn_ground.in_set(SetupSets::Main),
+            ),
+        );
         app.add_systems(
             Update,
             (update_parcel_grass_material, parcel_grass_config_updated)
@@ -149,6 +159,19 @@ fn setup_parcel_grass_mesh(mut meshes: ResMut<Assets<Mesh>>) {
         PARCEL_GRASS_MESH.id(),
         Plane3d::new(Vec3::Y, Vec2::splat(8.)).mesh().build(),
     );
+}
+
+fn spawn_ground(mut commands: Commands) {
+    commands.spawn((
+        Mesh3d(PARCEL_GRASS_MESH.clone()),
+        MeshMaterial3d(PARCEL_GRASS_MATERIAL.clone()),
+        // Ground covers 1024 parcels
+        Transform::from_scale(Vec3::new(1024., 1., 1024.))
+            .with_translation(Vec3::new(0., -0.05, 0.)),
+        Ground,
+        GROUND_RENDERLAYER.clone(),
+        MeshTag(0),
+    ));
 }
 
 fn update_parcel_grass_material(
