@@ -59,7 +59,6 @@ pub enum ParcelGrassLod {
     High = 1,
     Mid = 2,
     Low = 3,
-    InScene = 4,
 }
 
 #[derive(Component)]
@@ -221,7 +220,7 @@ fn rebuild_parcel_grasses(
         commands.entity(entity).despawn_related::<Children>();
 
         let (lod, layers, displacement, material) = match parcel_grass_lod {
-            ParcelGrassLod::Off | ParcelGrassLod::InScene => {
+            ParcelGrassLod::Off => {
                 commands.entity(entity).remove::<NeedsParcelGrass>();
                 continue;
             }
@@ -279,8 +278,7 @@ fn parcel_grass_waiting_scene_pointer(
                 let distance = parcel.distance_squared(parcel_grass.parcel);
                 // TODO: make this depend of the render distance
                 let lod = match distance {
-                    ..0 => ParcelGrassLod::InScene,
-                    0..8 => ParcelGrassLod::High,
+                    ..8 => ParcelGrassLod::High,
                     8..16 => ParcelGrassLod::Mid,
                     16.. => ParcelGrassLod::Low,
                 };
@@ -293,7 +291,7 @@ fn parcel_grass_waiting_scene_pointer(
             Some(PointerResult::Exists { .. }) => {
                 commands
                     .entity(entity)
-                    .insert((NeedsParcelGrass, ParcelGrassLod::InScene))
+                    .despawn_related::<Children>()
                     .remove::<ParcelGrassWaitingScenePointer>();
             }
             None => {}
