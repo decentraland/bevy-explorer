@@ -9,7 +9,10 @@ use bevy::{
         render_resource::{AsBindGroup, ShaderRef},
     },
 };
-use common::structs::{CurrentRealm, ParcelGrassConfig, PrimaryUser};
+use common::{
+    sets::RealmLifecycle,
+    structs::{CurrentRealm, ParcelGrassConfig, PrimaryUser},
+};
 use scene_runner::{
     initialize_scene::{PointerResult, ScenePointers},
     vec3_to_parcel,
@@ -132,9 +135,10 @@ impl Plugin for ShellTexturingPlugin {
                 .after(parcel_grass_config_updated),
         );
         app.add_systems(
-            PreUpdate,
+            PostUpdate,
             (fill_parcel_grass, drop_far_parcel_grass, recalculate_lod)
-                .run_if(player_changed_parcels.or(resource_exists_and_changed::<CurrentRealm>)),
+                .run_if(player_changed_parcels.or(resource_exists_and_changed::<CurrentRealm>))
+                .after(RealmLifecycle),
         );
         app.add_observer(parcel_grass_lod_change);
     }
