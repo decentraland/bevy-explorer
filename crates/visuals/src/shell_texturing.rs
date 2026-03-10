@@ -1,6 +1,6 @@
 use bevy::{
     asset::{embedded_asset, embedded_path, weak_handle},
-    ecs::{component::HookContext, world::DeferredWorld},
+    ecs::{component::HookContext, spawn::SpawnableList, world::DeferredWorld},
     pbr::NotShadowCaster,
     platform::collections::HashMap,
     prelude::*,
@@ -269,22 +269,15 @@ fn rebuild_parcel_grasses(
 
         commands
             .entity(entity)
-            .with_children(|parent| {
-                for i in (0..layers).step_by(lod) {
-                    parent.spawn((
-                        ParcelGrassShell,
-                        Mesh3d(PARCEL_GRASS_MESH.clone()),
-                        MeshMaterial3d(material.clone()),
-                        Transform::from_translation(Vec3::new(
-                            16. * parcel_grass.parcel.x as f32 + 8.,
-                            -0.05 + (displacement * i as f32),
-                            -(16. * parcel_grass.parcel.y as f32) - 8.,
-                        )),
-                        MeshTag(i),
-                        NotShadowCaster,
-                    ));
-                }
-            })
+            .insert(Children::spawn(ParcelGrassShellSpawnList {
+                x: parcel_grass.parcel.x,
+                y: parcel_grass.parcel.y,
+                shells: layers,
+                displacement,
+                lod,
+                material: material.clone(),
+                extras: (),
+            }))
             .remove::<NeedsParcelGrass>();
     }
 }
@@ -394,4 +387,39 @@ fn recalculate_lod(
             .map(|entity| (entity, ParcelGrassWaitingScenePointer))
             .collect::<Vec<_>>(),
     );
+}
+
+struct ParcelGrassShellSpawnList<B: Bundle + Clone> {
+    x: i32,
+    y: i32,
+    shells: u32,
+    lod: usize,
+    displacement: f32,
+    material: Handle<ShellTexture>,
+    extras: B,
+}
+
+impl<B: Bundle + Clone> SpawnableList<ChildOf> for ParcelGrassShellSpawnList<B> {
+    fn spawn(self, world: &mut World, entity: Entity) {
+        for i in (0..self.shells).step_by(self.lod) {
+            world.spawn((
+                ParcelGrassShell,
+                Mesh3d(PARCEL_GRASS_MESH.clone()),
+                MeshMaterial3d(self.material.clone()),
+                Transform::from_translation(Vec3::new(
+                    16. * self.x as f32 + 8.,
+                    -0.05 + (self.displacement * i as f32),
+                    -(16. * self.y as f32) - 8.,
+                )),
+                MeshTag(i),
+                NotShadowCaster,
+                self.extras.clone(),
+                ChildOf(entity),
+            ));
+        }
+    }
+
+    fn size_hint(&self) -> usize {
+        (0..self.shells).step_by(self.lod).len()
+    }
 }
