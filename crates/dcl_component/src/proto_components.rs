@@ -1,6 +1,6 @@
 use bevy::math::FloatOrd;
 
-use super::{FromDclReader, ToDclWriter};
+use super::{FromDclReader, GlobalCrdtData, Localizer, PositionFree, ToDclWriter};
 
 pub mod sdk {
     #[allow(clippy::all)]
@@ -126,6 +126,19 @@ impl DclProtoComponent for sdk::components::PbGltfNodeModifiers {}
 impl DclProtoComponent for sdk::components::PbSkyboxTime {}
 impl DclProtoComponent for sdk::components::PbAvatarMovement {}
 impl DclProtoComponent for sdk::components::PbAvatarMovementInfo {}
+
+// PositionFree markers for types used with GlobalCrdtState::update_crdt
+// (these contain no embedded position data requiring localization)
+impl PositionFree for sdk::components::PbPlayerIdentityData {}
+impl PositionFree for sdk::components::PbAvatarBase {}
+impl PositionFree for sdk::components::PbAvatarEquippedData {}
+
+// GlobalCrdtData impl for PbAvatarMovementInfo (contains velocity vectors that need localization)
+impl GlobalCrdtData for sdk::components::PbAvatarMovementInfo {
+    fn localizer() -> Localizer {
+        Localizer::AvatarMovementInfo
+    }
+}
 
 // VECTOR2 conversions
 impl Copy for common::Vector2 {}

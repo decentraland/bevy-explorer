@@ -197,6 +197,7 @@ pub(crate) fn scene_thread(
     testing: bool,
     preview: bool,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
+    scene_origin: bevy::prelude::Vec3,
 ) {
     let (mut runtime, inspector) = create_runtime(inspect, super_user.is_some(), &storage_root);
 
@@ -222,6 +223,7 @@ pub(crate) fn scene_thread(
         testing,
         preview,
         super_user,
+        scene_origin,
     );
 
     // store deno permission objects

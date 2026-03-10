@@ -12,6 +12,75 @@ pub use reader::{DclReader, DclReaderError, FromDclReader};
 use serde::{Deserialize, Serialize};
 pub use writer::{DclWriter, ToDclWriter};
 
+/// Scene origin in bevy world-space, stored in scene thread state for localizer access.
+pub struct SceneOrigin(pub Vec3);
+
+/// Describes how to localize a component's position data when delivering to a scene.
+/// Each variant corresponds to a known component layout so the receiver can
+/// deserialize, adjust, and re-encode position fields relative to the scene origin.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum Localizer {
+    /// No localization needed (component contains no position data).
+    None,
+    /// Localization strategy not yet defined. Acceptable at scene startup (initial CRDT store
+    /// may contain pre-localized static data), but will cause an error at global update receipt.
+    Unimplemented,
+    /// Localize `PbAvatarMovementInfo`: offset `walk_target` (field 8) by scene origin.
+    AvatarMovementInfo,
+}
+
+impl Localizer {
+    /// Localize a proto component payload by deserializing, adjusting position
+    /// fields, and re-encoding. `scene_origin` is in bevy world-space.
+    pub fn localize_payload(&self, payload: &[u8], scene_origin: &SceneOrigin) -> Vec<u8> {
+        match self {
+            Localizer::None => payload.to_vec(),
+            Localizer::Unimplemented => payload.to_vec(),
+            Localizer::AvatarMovementInfo => {
+                use prost::Message;
+                use proto_components::sdk::components::PbAvatarMovementInfo;
+
+                let Ok(mut info) = PbAvatarMovementInfo::decode(payload) else {
+                    return payload.to_vec();
+                };
+
+                let origin = &scene_origin.0;
+                // Convert bevy scene_origin to DCL proto coords (z negated)
+                let ox = origin.x;
+                let oy = origin.y;
+                let oz = -origin.z;
+
+                // walk_target is a world-space position → make scene-relative
+                if let Some(ref mut target) = info.walk_target {
+                    target.x -= ox;
+                    target.y -= oy;
+                    target.z -= oz;
+                }
+
+                let mut buf = Vec::with_capacity(payload.len());
+                info.encode(&mut buf).expect("re-encode failed");
+                buf
+            }
+        }
+    }
+}
+
+/// Trait for types that can be sent via `GlobalCrdtState::update_crdt`.
+/// Provides type-safe enforcement that localization has been considered.
+pub trait GlobalCrdtData: ToDclWriter {
+    fn localizer() -> Localizer;
+}
+
+/// Marker trait for types sent via global CRDT that contain no position data.
+/// Automatically implements `GlobalCrdtData` with `Localizer::None`.
+pub trait PositionFree: ToDclWriter {}
+
+impl<T: PositionFree> GlobalCrdtData for T {
+    fn localizer() -> Localizer {
+        Localizer::None
+    }
+}
+
 #[derive(
     PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Clone, Copy, Default, Serialize, Deserialize,
 )]

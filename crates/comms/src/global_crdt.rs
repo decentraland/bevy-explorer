@@ -30,7 +30,7 @@ use dcl_component::{
         sdk::components::PbPlayerIdentityData,
     },
     transform_and_parent::{DclQuat, DclTransformAndParent, DclTranslation},
-    DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter,
+    DclReader, DclWriter, GlobalCrdtData, Localizer, SceneComponentId, SceneEntityId, SceneOrigin,
 };
 
 use crate::{
@@ -59,6 +59,7 @@ impl Plugin for GlobalCrdtPlugin {
             store: Default::default(),
             lookup: Default::default(),
             realm_bounds: (IVec2::MAX, IVec2::MIN),
+            localizers: Default::default(),
         });
 
         let (sender, _) = tokio::sync::broadcast::channel(1_000);
@@ -143,6 +144,8 @@ pub struct GlobalCrdtState {
     store: CrdtStore,
     lookup: BiMap<Address, Entity>,
     pub(crate) realm_bounds: (IVec2, IVec2),
+    // per-component localizer registry (populated as components are first sent)
+    localizers: HashMap<SceneComponentId, Localizer>,
 }
 
 impl GlobalCrdtState {
@@ -151,9 +154,30 @@ impl GlobalCrdtState {
         self.ext_sender.clone()
     }
 
-    // get a channel from which crdt updates can be received
-    pub fn subscribe(&self) -> (CrdtStore, broadcast::Receiver<GlobalCrdtStateUpdate>) {
-        (self.store.clone(), self.int_sender.subscribe())
+    /// Get a clone of the current CRDT store (with position data localized for the given
+    /// scene origin) and a channel from which future updates can be received.
+    pub fn subscribe(
+        &self,
+        scene_origin: bevy::prelude::Vec3,
+    ) -> (CrdtStore, broadcast::Receiver<GlobalCrdtStateUpdate>) {
+        let mut store = self.store.clone();
+        let origin = SceneOrigin(scene_origin);
+
+        // Localize position-containing entries in the initial store snapshot
+        for (component_id, localizer) in &self.localizers {
+            if matches!(localizer, Localizer::None | Localizer::Unimplemented) {
+                continue;
+            }
+            if let Some(lww_state) = store.lww.get_mut(component_id) {
+                for entry in lww_state.last_write.values_mut() {
+                    if entry.is_some && !entry.data.is_empty() {
+                        entry.data = localizer.localize_payload(&entry.data, &origin);
+                    }
+                }
+            }
+        }
+
+        (store, self.int_sender.subscribe())
     }
 
     pub fn set_bounds(&mut self, min: IVec2, max: IVec2) {
@@ -161,13 +185,24 @@ impl GlobalCrdtState {
         self.realm_bounds = (min, max);
     }
 
-    pub fn update_crdt(
+    pub fn update_crdt<T: GlobalCrdtData>(
         &mut self,
         component_id: SceneComponentId,
         crdt_type: CrdtType,
         id: SceneEntityId,
-        data: &impl ToDclWriter,
+        data: &T,
     ) {
+        let localizer = T::localizer();
+        assert!(
+            matches!(crdt_type, CrdtType::LWW(_)) || matches!(localizer, Localizer::None),
+            "GO components with explicit localization are not supported"
+        );
+        if !matches!(localizer, Localizer::None) {
+            self.localizers
+                .entry(component_id)
+                .or_insert_with(|| localizer.clone());
+        }
+
         let mut buf = Vec::new();
         DclWriter::new(&mut buf).write(data);
         let timestamp =
@@ -179,7 +214,7 @@ impl GlobalCrdtState {
         };
         if let Err(e) = self
             .int_sender
-            .send(GlobalCrdtStateUpdate::Crdt(crdt_message))
+            .send(GlobalCrdtStateUpdate::Crdt(crdt_message, localizer))
         {
             error!("failed to send foreign player update to scenes: {e}");
         }
@@ -190,7 +225,7 @@ impl GlobalCrdtState {
         let crdt_message = delete_entity(&id);
         if let Err(e) = self
             .int_sender
-            .send(GlobalCrdtStateUpdate::Crdt(crdt_message))
+            .send(GlobalCrdtStateUpdate::Crdt(crdt_message, Localizer::None))
         {
             error!("failed to send foreign player update to scenes: {e}");
         }

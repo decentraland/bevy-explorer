@@ -2,7 +2,7 @@ use std::ops::{Add, Sub};
 
 use bevy::prelude::{Quat, Transform, Vec3};
 
-use super::{DclReader, DclReaderError, FromDclReader, SceneEntityId, ToDclWriter};
+use super::{DclReader, DclReaderError, FromDclReader, PositionFree, SceneEntityId, ToDclWriter};
 
 // for dcl: +z -> forward
 // for bevy: +z -> backward
@@ -161,3 +161,6 @@ impl ToDclWriter for DclTransformAndParent {
         buf.write(&self.parent);
     }
 }
+
+// Transforms are localized via WORLD_ORIGIN parenting, not payload adjustment
+impl PositionFree for DclTransformAndParent {}

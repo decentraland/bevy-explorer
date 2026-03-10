@@ -44,6 +44,7 @@ pub fn spawn_scene(
     testing: bool,
     preview: bool,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
+    scene_origin: bevy::prelude::Vec3,
 ) -> Sender<RendererResponse> {
     let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
 
@@ -66,6 +67,7 @@ pub fn spawn_scene(
                     testing,
                     preview,
                     super_user,
+                    scene_origin,
                 )
             }));
 

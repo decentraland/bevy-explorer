@@ -1150,7 +1150,7 @@ pub struct DebugInfo {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub enum GlobalCrdtStateUpdate {
-    Crdt(Vec<u8>),
+    Crdt(Vec<u8>, dcl_component::Localizer),
     Time(f32),
 }
 

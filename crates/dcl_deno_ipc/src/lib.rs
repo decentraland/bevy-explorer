@@ -37,6 +37,7 @@ pub struct NewSceneInfo {
     pub testing: bool,
     pub preview: bool,
     pub is_super: bool,
+    pub scene_origin: bevy::prelude::Vec3,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -282,6 +283,7 @@ pub fn spawn_scene(
     testing: bool,
     preview: bool,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
+    scene_origin: bevy::prelude::Vec3,
 ) -> tokio::sync::mpsc::Sender<RendererResponse> {
     let is_super = super_user.is_some();
 
@@ -304,6 +306,7 @@ pub fn spawn_scene(
                 testing,
                 preview,
                 is_super,
+                scene_origin,
             },
             renderer_channel: thread_rx,
             global_channel: global_update_receiver,

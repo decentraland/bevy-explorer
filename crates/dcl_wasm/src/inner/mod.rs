@@ -34,6 +34,7 @@ pub struct SceneInitializationData {
     pub testing: bool,
     pub preview: bool,
     pub super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
+    pub scene_origin: bevy::prelude::Vec3,
 }
 
 // Static storage shared data
@@ -59,6 +60,7 @@ pub fn spawn_scene(
     testing: bool,
     preview: bool,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
+    scene_origin: bevy::prelude::Vec3,
 ) -> Sender<RendererResponse> {
     // create engine channel
     let (thread_sx, thread_rx) = channel(1);
@@ -85,6 +87,7 @@ pub fn spawn_scene(
                     testing,
                     preview,
                     super_user,
+                    scene_origin,
                 });
 
             // spin up a scene thread to consume it
@@ -132,6 +135,7 @@ pub async fn wasm_init_scene() -> Result<WorkerContext, JsValue> {
         scene_initialization_data.testing,
         scene_initialization_data.preview,
         scene_initialization_data.super_user,
+        scene_initialization_data.scene_origin,
     );
 
     local_storage::init(&context).await;

@@ -126,6 +126,7 @@ impl State for deno_core::OpState {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 pub fn init_state(
     state: &mut impl State,
     initial_crdt_store: CrdtStore,
@@ -141,6 +142,7 @@ pub fn init_state(
     testing: bool,
     preview: bool,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
+    scene_origin: bevy::prelude::Vec3,
 ) {
     let scene_context = CrdtContext::new(scene_id, scene_hash, testing, preview);
     state.put(scene_context);
@@ -156,6 +158,7 @@ pub fn init_state(
     state.put(Vec::<SceneLogMessage>::default());
     state.put(SceneElapsedTime(0.0));
     state.put(TimeOfDay { time: 0. });
+    state.put(dcl_component::SceneOrigin(scene_origin));
     if let Some(super_user) = super_user {
         state.put(SuperUserScene(super_user));
     }
