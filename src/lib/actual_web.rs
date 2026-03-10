@@ -47,7 +47,9 @@ use ipfs::{map_realm_name, IpfsIoPlugin};
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use platform::default_camera_components;
 use social::SocialPlugin;
-use system_bridge::{settings::NewCameraEvent, NativeUi, SystemBridgePlugin};
+use system_bridge::{
+    settings::NewCameraEvent, NativeUi, SystemApi, SystemBridge, SystemBridgePlugin,
+};
 use system_ui::SystemUiPlugin;
 use texture_camera::TextureCameraPlugin;
 use tween::TweenPlugin;
@@ -325,8 +327,13 @@ fn main_inner(
     app.add_console_command::<SceneDistanceCommand, _>(scene_distance);
     app.add_console_command::<SceneThreadsCommand, _>(scene_threads);
     app.add_console_command::<FpsCommand, _>(set_fps);
+    app.add_console_command::<LoginGuestCommand, _>(login_guest);
+    app.add_console_command::<LoginPreviousCommand, _>(login_previous);
 
     info!("Bevy-Explorer version {}", version);
+
+    let bridge_sender = app.world().resource::<SystemBridge>().sender.clone();
+    let _ = CONSOLE_BRIDGE_SENDER.set(bridge_sender);
 
     app.run();
 }
@@ -472,11 +479,52 @@ fn set_fps(mut input: ConsoleCommand<FpsCommand>, mut config: ResMut<AppConfig>)
     }
 }
 
+use common::rpc::{RpcResultReceiver, RpcResultSender};
+/// Login as guest (session-only, profile will not persist)
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/login_guest")]
+struct LoginGuestCommand;
+
+fn login_guest(mut input: ConsoleCommand<LoginGuestCommand>, mut bridge: EventWriter<SystemApi>) {
+    if let Some(Ok(_)) = input.take() {
+        bridge.write(SystemApi::LoginGuest);
+        input.reply_ok("logging in as guest");
+    }
+}
+
+/// Login using previously saved credentials
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/login_previous")]
+struct LoginPreviousCommand;
+
+fn login_previous(
+    mut input: ConsoleCommand<LoginPreviousCommand>,
+    mut bridge: EventWriter<SystemApi>,
+    mut pending: Local<Option<RpcResultReceiver<Result<(), String>>>>,
+) {
+    if let Some(Ok(_)) = input.take() {
+        let (sx, rx) = RpcResultSender::<Result<(), String>>::channel();
+        bridge.write(SystemApi::LoginPrevious(sx));
+        *pending = Some(rx);
+    }
+
+    if let Some(mut rx) = pending.take() {
+        match rx.try_recv() {
+            Ok(Ok(())) => input.reply_ok("logged in with previous credentials"),
+            Ok(Err(e)) => input.reply_failed(e),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => *pending = Some(rx),
+            Err(_) => input.reply_failed("login task dropped"),
+        }
+    }
+}
+
 use once_cell::sync::OnceCell;
 use wasm_bindgen::prelude::*;
 
 static WASM_ASSET_LOADER_HANDLE: OnceCell<bevy::asset::WasmLoaderHandle> = OnceCell::new();
 static INIT_DATA: OnceCell<AppConfig> = OnceCell::new();
+static CONSOLE_BRIDGE_SENDER: OnceCell<tokio::sync::mpsc::UnboundedSender<SystemApi>> =
+    OnceCell::new();
 
 /// call from a separate worker to initialize a channel for asset load processing
 #[wasm_bindgen]
@@ -533,6 +581,37 @@ pub fn engine_run(
         preview,
         rabpf,
     );
+}
+
+/// Send a console command to the engine from JavaScript.
+/// `command_line` is the full command string, e.g. `"/teleport 10 20"`.
+/// Returns a Promise that resolves with the command output or rejects with an error message.
+#[wasm_bindgen]
+pub async fn engine_console_command(command_line: String) -> Result<JsValue, JsValue> {
+    let mut parts = command_line.split_whitespace();
+    let Some(cmd) = parts.next() else {
+        return Err(JsValue::from_str("empty command"));
+    };
+    let cmd = if cmd.starts_with('/') {
+        cmd.to_string()
+    } else {
+        format!("/{cmd}")
+    };
+    let args: Vec<String> = parts.map(String::from).collect();
+
+    let Some(sender) = CONSOLE_BRIDGE_SENDER.get() else {
+        return Err(JsValue::from_str("engine not initialized"));
+    };
+
+    let (sx, rx) = RpcResultSender::channel();
+    sender
+        .send(SystemApi::ConsoleCommand(cmd, args, sx))
+        .map_err(|_| JsValue::from_str("engine channel closed"))?;
+
+    rx.await
+        .map_err(|_| JsValue::from_str("command response dropped"))?
+        .map(|s| JsValue::from_str(&s))
+        .map_err(|e| JsValue::from_str(&e))
 }
 
 pub fn update_winit_fps(config: Res<AppConfig>, mut winit: ResMut<WinitSettings>) {

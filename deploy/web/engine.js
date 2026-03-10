@@ -1,7 +1,7 @@
 // Engine logic - ES module
 // Handles WASM/WebGPU initialization and game execution
 
-import init, { engine_init, engine_run, gpu_cache_hash } from "./pkg/webgpu_build.js";
+import init, { engine_init, engine_run, engine_console_command, gpu_cache_hash } from "./pkg/webgpu_build.js";
 import { initGpuCache } from "./gpu_cache.js";
 
 // Re-export for main.js
@@ -261,5 +261,6 @@ export function start() {
   })();
 
   engine_run(platform, realmValue, positionValue, systemScene, true, preview, 1e7);
+  window.engine_console_command = engine_console_command;
   setTimeout(showCanvas,200)
 }
