@@ -74,6 +74,8 @@ pub struct AvatarMovement {
     pub velocity: Vec3,
     pub orientation: f32,
     pub ground_direction: Vec3,
+    /// set for one frame when a walk_target ends: true = reached target, false = failed
+    pub walk_success: Option<bool>,
 }
 
 impl Default for AvatarMovement {
@@ -82,6 +84,7 @@ impl Default for AvatarMovement {
             velocity: Vec3::ZERO,
             orientation: 0.0,
             ground_direction: Vec3::NEG_Y,
+            walk_success: None,
         }
     }
 }
@@ -106,6 +109,7 @@ impl From<PbAvatarMovement> for AvatarMovement {
                 .map(Vector3::world_vec_to_vec3)
                 .map(Vec3::normalize_or_zero)
                 .unwrap_or(Vec3::NEG_Y),
+            walk_success: value.walk_success,
         }
     }
 }
@@ -626,5 +630,7 @@ fn broadcast_movement_info(
         external_velocity: None,
         active_avatar_locomotion_settings: None,
         active_input_modifier: None,
+        walk_target: None,
+        walk_threshold: None,
     }
 }

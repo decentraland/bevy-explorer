@@ -24,6 +24,17 @@ pub async fn op_move_player_to(
 }
 
 #[wasm_bindgen]
+pub async fn op_walk_player_to(
+    op_state: &WorkerContext,
+    position: JsValue,
+    stop_threshold: f32,
+    timeout: Option<f32>,
+) -> bool {
+    let position: DclVector3 = serde_wasm_bindgen::from_value(position).unwrap_or_default();
+    dcl::js::restricted_actions::op_walk_player_to(op_state.rc(), position, stop_threshold, timeout).await
+}
+
+#[wasm_bindgen]
 pub async fn op_teleport_to(state: &WorkerContext, position_x: i32, position_y: i32) -> bool {
     dcl::js::restricted_actions::op_teleport_to(state.rc(), position_x, position_y).await
 }

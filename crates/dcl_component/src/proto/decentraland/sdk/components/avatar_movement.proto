@@ -11,6 +11,7 @@ message PBAvatarMovement {
   decentraland.common.Vector3 velocity = 1;
   float orientation = 2; // 0-360, we don't allow pitch/roll
   optional decentraland.common.Vector3 ground_direction = 3;
+  optional bool walk_success = 4; // set for one frame when a walk_target ends: true = reached target, false = failed; absent = in progress or no walk
 }
 
 // engine behaviour (uses only capsule shapecasts and GJK closest point for portability):

@@ -7,6 +7,7 @@ use std::{cell::RefCell, rc::Rc};
 pub fn ops() -> Vec<OpDecl> {
     vec![
         op_move_player_to(),
+        op_walk_player_to(),
         op_teleport_to(),
         op_change_realm(),
         op_external_url(),
@@ -34,6 +35,16 @@ async fn op_move_player_to(
         duration,
     )
     .await
+}
+
+#[op2(async)]
+async fn op_walk_player_to(
+    state: Rc<RefCell<OpState>>,
+    #[serde] position: DclVector3,
+    stop_threshold: f32,
+    timeout: Option<f32>,
+) -> bool {
+    dcl::js::restricted_actions::op_walk_player_to(state, position, stop_threshold, timeout).await
 }
 
 #[op2(async)]

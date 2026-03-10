@@ -8,7 +8,16 @@ module.exports.movePlayerTo = async function (body) {
     return { success }
 }
 
-module.exports.teleportTo = async function (body) { 
+module.exports.walkPlayerTo = async function (body) {
+    const success = await Deno.core.ops.op_walk_player_to(
+        body.newRelativePosition,
+        body.stopThreshold,
+        body.timeout ?? null,
+    );
+    return { success }
+}
+
+module.exports.teleportTo = async function (body) {
     await Deno.core.ops.op_teleport_to(Number(body.worldCoordinates.x), Number(body.worldCoordinates.y));
     return {} 
 }

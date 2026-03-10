@@ -55,7 +55,7 @@ use scene_runner::{
 use serde_json::{json, Value};
 use teleport::{handle_out_of_world, teleport_player};
 use ui_core::button::DuiButton;
-use user_input::avatar_movement::{ActivePlayerComponent, AvatarMovement};
+use user_input::avatar_movement::{ActivePlayerComponent, AvatarMovement, AvatarMovementInfo};
 use wallet::{browser_auth::remote_send_async, sign_request, Wallet};
 
 pub struct RestrictedActionsPlugin;
@@ -69,6 +69,8 @@ impl Plugin for RestrictedActionsPlugin {
                 (
                     move_player,
                     update_player_interpolation.after(move_player),
+                    walk_player,
+                    update_player_walk.after(walk_player),
                     move_camera,
                     change_realm,
                     external_url,
@@ -76,6 +78,8 @@ impl Plugin for RestrictedActionsPlugin {
                     kill_portable,
                     list_portables,
                     get_user_data,
+                ),
+                (
                     get_connected_players,
                     get_players_in_scene,
                     event_player_connected,
@@ -303,6 +307,171 @@ pub fn update_player_interpolation(
             .suppress_avatar_physics
             .remove("move_player_to");
         commands.entity(entity).remove::<PlayerMoveInterpolation>();
+    }
+}
+
+/// Active walk-to-target request, attached to the player entity while a walkPlayerTo is pending.
+#[derive(Component)]
+pub struct PlayerWalkRequest {
+    /// World-space target position (scene-relative position converted to world space).
+    target: Vec3,
+    stop_threshold: f32,
+    elapsed: f32,
+    timeout: Option<f32>,
+    response: RpcResultSender<bool>,
+}
+
+#[allow(clippy::type_complexity)]
+pub fn walk_player(
+    mut commands: Commands,
+    mut events: EventReader<RpcCall>,
+    scenes: Query<&RendererSceneContext>,
+    mut player: Query<(Entity, &Transform, Option<&PlayerWalkRequest>), With<PrimaryUser>>,
+    containing_scene: ContainingScene,
+    mut perms: Permission<(Entity, Vec3, f32, Option<f32>, RpcResultSender<bool>)>,
+    mut movement_info: ResMut<AvatarMovementInfo>,
+) {
+    let Ok((player_entity, _, _)) = player.single() else {
+        return;
+    };
+
+    for (root, to, stop_threshold, timeout, response) in
+        events.read().filter_map(|ev| match ev {
+            RpcCall::WalkPlayer {
+                scene,
+                to,
+                stop_threshold,
+                timeout,
+                response,
+            } => Some((scene, to, stop_threshold, timeout, response)),
+            _ => None,
+        })
+    {
+        let current_scenes = containing_scene.get(player_entity);
+        if !current_scenes.contains(root) {
+            warn!("walk player request from {root:?} was requested with player outside scene bounds");
+            response.send(false);
+            continue;
+        }
+
+        perms.check(
+            PermissionType::MovePlayer,
+            *root,
+            (*root, *to, *stop_threshold, *timeout, response.clone()),
+            None,
+            false,
+        );
+    }
+
+    for (root, to, stop_threshold, timeout, response) in
+        perms.drain_success(PermissionType::MovePlayer)
+    {
+        let Ok(scene) = scenes.get(root) else {
+            warn!("walk player request from invalid scene {root:?}");
+            response.send(false);
+            continue;
+        };
+
+        let mut target = to;
+        target += (scene.base * IVec2::new(1, -1)).as_vec2().extend(0.0).xzy() * PARCEL_SIZE;
+        target.y = target.y.max(0.0);
+
+        let target_scenes = containing_scene.get_position(target);
+        if !target_scenes.contains(&root) {
+            warn!("walk player request target from {root:?} is outside scene bounds");
+            response.send(false);
+            continue;
+        }
+
+        let (_, _, maybe_previous) = player.single_mut().unwrap();
+        if let Some(previous) = maybe_previous {
+            previous.response.send(false);
+        }
+
+        commands.entity(player_entity).insert(PlayerWalkRequest {
+            target,
+            stop_threshold,
+            elapsed: 0.0,
+            timeout,
+            response,
+        });
+        debug!("walk player started: target={target}, threshold={stop_threshold}");
+    }
+
+    for (_, _, _, _, response) in perms.drain_fail(PermissionType::MovePlayer) {
+        response.send(false);
+    }
+
+    // Broadcast walk_target into AvatarMovementInfo each frame while active.
+    // The target is in world space (Bevy coords). AvatarMovementInfo is broadcast to all scenes,
+    // which have different origins, so we cannot use scene-relative coordinates here.
+    // The movement scene reads world-space positions from playerPosition (via Transform) and
+    // interprets walk_target the same way — as a world-space position.
+    if let Ok((_, _, Some(req))) = player.single() {
+        movement_info.0.walk_target = Some(
+            dcl_component::proto_components::common::Vector3::world_vec_from_vec3(&req.target),
+        );
+        movement_info.0.walk_threshold = Some(req.stop_threshold);
+    } else {
+        movement_info.0.walk_target = None;
+        movement_info.0.walk_threshold = None;
+    }
+}
+
+#[allow(clippy::type_complexity)]
+pub fn update_player_walk(
+    mut commands: Commands,
+    mut player: Query<
+        (
+            Entity,
+            &Transform,
+            &mut PlayerWalkRequest,
+            Ref<ActivePlayerComponent<AvatarMovement>>,
+        ),
+        With<PrimaryUser>,
+    >,
+    time: Res<Time>,
+    mut movement_info: ResMut<AvatarMovementInfo>,
+) {
+    let Ok((entity, transform, mut req, movement)) = player.single_mut() else {
+        return;
+    };
+
+    req.elapsed += time.delta_secs();
+
+    // Check for walk_success response from the movement scene.
+    // The movement scene sets walk_success on AvatarMovement for one frame when the walk ends.
+    if movement.is_changed() {
+        if let Some(success) = movement.component.walk_success {
+            debug!("walk player completed via walk_success={success}");
+            req.response.send(success);
+            commands.entity(entity).remove::<PlayerWalkRequest>();
+            movement_info.0.walk_target = None;
+            movement_info.0.walk_threshold = None;
+            return;
+        }
+    }
+
+    // Check timeout.
+    if let Some(timeout) = req.timeout {
+        if req.elapsed >= timeout {
+            debug!("walk player timed out after {}s", req.elapsed);
+            req.response.send(false);
+            commands.entity(entity).remove::<PlayerWalkRequest>();
+            movement_info.0.walk_target = None;
+            movement_info.0.walk_threshold = None;
+            return;
+        }
+    }
+
+    // Fallback: check if close enough directly (handles case where movement scene is absent).
+    let xz_dist = (transform.translation - req.target).xz().length();
+    if xz_dist <= req.stop_threshold {
+        debug!("walk player reached target (engine-side check), dist={xz_dist}");
+        req.response.send(true);
+        commands.entity(entity).remove::<PlayerWalkRequest>();
+        movement_info.0.walk_target = None;
+        movement_info.0.walk_threshold = None;
     }
 }
 

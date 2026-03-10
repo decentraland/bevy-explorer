@@ -17,4 +17,6 @@ message PBAvatarMovementInfo {
   decentraland.common.Vector3 external_velocity = 5;        // the velocity imparted by movement of the "ground" platform or pushing from other moving colliders
   decentraland.sdk.components.PBAvatarLocomotionSettings active_avatar_locomotion_settings = 6;
   decentraland.sdk.components.PBInputModifier active_input_modifier = 7;
+  optional decentraland.common.Vector3 walk_target = 8;    // if set, the movement scene should walk the player to this scene-relative position
+  optional float walk_threshold = 9;                        // stop distance for walk_target
 }
