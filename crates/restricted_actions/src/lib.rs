@@ -185,7 +185,7 @@ fn cancel_active_move(
     commands.entity(entity).remove::<ActivePlayerMove>();
 }
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn handle_player_move_requests(
     mut commands: Commands,
     mut events: EventReader<RpcCall>,
