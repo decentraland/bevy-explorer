@@ -305,12 +305,12 @@ fn parcel_grass_without_lod(
     player: Single<&GlobalTransform, With<PrimaryUser>>,
     scene_pointers: Res<ScenePointers>,
 ) {
-    let parcel = vec3_to_parcel(player.translation());
+    let player_location = vec3_to_parcel(player.translation());
 
     for (entity, parcel_grass) in parcel_grasses.into_inner() {
         match scene_pointers.get(parcel_grass.parcel) {
             Some(PointerResult::Nothing) => {
-                let lod = ParcelGrassLod::from_distance(parcel, parcel_grass.parcel);
+                let lod = ParcelGrassLod::from_distance(player_location, parcel_grass.parcel);
                 commands.entity(entity).insert(lod);
             }
             Some(PointerResult::Exists { .. }) => {
@@ -325,9 +325,9 @@ fn player_changed_parcels(
     player: Single<&GlobalTransform, With<PrimaryUser>>,
     mut last_player_parcel: Local<IVec2>,
 ) -> bool {
-    let current_parcel = vec3_to_parcel(player.translation());
-    let old_parcel = std::mem::replace(&mut *last_player_parcel, current_parcel);
-    current_parcel != old_parcel
+    let player_location = vec3_to_parcel(player.translation());
+    let old_parcel = std::mem::replace(&mut *last_player_parcel, player_location);
+    player_location != old_parcel
 }
 
 fn fill_parcel_grass(
@@ -335,13 +335,13 @@ fn fill_parcel_grass(
     player: Single<&GlobalTransform, With<PrimaryUser>>,
     parcel_grass_map: Res<ParcelGrassMap>,
 ) {
-    let parcel = vec3_to_parcel(player.translation());
+    let player_location = vec3_to_parcel(player.translation());
 
     // TODO: make this depend of the render distance
     for i in -7i32..=7 {
         let j_range = 7 - i.abs();
         for j in -j_range..=j_range {
-            let parcel = parcel + IVec2::new(i, j);
+            let parcel = player_location + IVec2::new(i, j);
             if !parcel_grass_map.contains_key(&parcel) {
                 debug!(
                     target: "visuals::parcel_grass::fill",
@@ -365,11 +365,11 @@ fn drop_far_parcel_grass(
     player: Single<&GlobalTransform, With<PrimaryUser>>,
     parcel_grass_map: Res<ParcelGrassMap>,
 ) {
-    let parcel = vec3_to_parcel(player.translation());
+    let player_location = vec3_to_parcel(player.translation());
 
     for (parcel_grass, entity) in parcel_grass_map.iter() {
         // TODO: make this depend of the render distance
-        if parcel.distance_squared(*parcel_grass) > 150 {
+        if player_location.distance_squared(*parcel_grass) > 150 {
             debug!(
                 target: "visuals::parcel_grass::drop_far",
                 "Dropping parcel grass for {} for being too far.",
