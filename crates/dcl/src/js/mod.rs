@@ -126,7 +126,6 @@ impl State for deno_core::OpState {
 }
 
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::too_many_arguments)]
 pub fn init_state(
     state: &mut impl State,
     initial_crdt_store: CrdtStore,
