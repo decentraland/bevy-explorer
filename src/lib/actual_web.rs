@@ -23,6 +23,7 @@ use tracing::Level;
 use collectibles::CollectiblesPlugin;
 use common::{
     inputs::InputMap,
+    rpc::RpcResultSender,
     sets::SetupSets,
     structs::{
         AppConfig, AttachPoints, AvatarDynamicState, CurrentRealm, IVec2Arg, PreviewMode,
