@@ -65,6 +65,7 @@ impl<T> RpcResultReceiver<T> {
 
     /// Non-blocking poll. Returns `Some(val)` if a value arrived, `None` if still pending,
     /// or `Err(())` if the sender was dropped without sending.
+    #[allow(clippy::result_unit_err)]
     pub fn poll_once(&mut self) -> Result<Option<T>, ()> {
         match self.channel.try_recv() {
             Ok(val) => Ok(Some(val)),
