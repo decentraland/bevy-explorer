@@ -1,3 +1,4 @@
+pub mod agent_commands;
 pub mod teleport;
 
 use std::{
@@ -34,9 +35,9 @@ use comms::{
     profile::{CurrentUserProfile, ProfileManager, UserProfile},
     NetworkMessage, NetworkMessageRecipient, SceneRoom, Transport,
 };
-use console::{DoAddConsoleCommand, PendingConsoleResponses};
+use console::DoAddConsoleCommand;
 use copypwasmta::{ClipboardContext, ClipboardProvider};
-use dcl_component::{proto_components::kernel::comms::rfc4, transform_and_parent::DclTranslation};
+use dcl_component::proto_components::kernel::comms::rfc4;
 use ethers_core::types::Address;
 use http::Uri;
 use ipfs::{
@@ -106,9 +107,7 @@ impl Plugin for RestrictedActionsPlugin {
         app.init_resource::<PendingPortableCommands>();
         app.add_console_command::<SpawnPortableCommand, _>(spawn_portable_command);
         app.add_console_command::<KillPortableCommand, _>(kill_portable_command);
-        app.add_console_command::<MovePlayerToCommand, _>(move_player_to_cmd);
-        app.add_console_command::<WalkPlayerToCommand, _>(walk_player_to_cmd);
-        app.add_console_command::<PlayerPositionCommand, _>(player_position_cmd);
+        app.add_plugins(agent_commands::AgentCommandsPlugin);
     }
 }
 
@@ -1987,113 +1986,5 @@ pub fn process_startup_scenes(
 
     if tasks.is_empty() {
         *done = true;
-    }
-}
-
-/// Move the player to a DCL world-space position, with optional linear interpolation.
-/// Coordinates are in Decentraland world space (x right, y up, z forward).
-#[derive(clap::Parser, ConsoleCommand)]
-#[command(name = "/move_player_to")]
-struct MovePlayerToCommand {
-    #[arg(allow_hyphen_values(true))]
-    x: f32,
-    #[arg(allow_hyphen_values(true))]
-    y: f32,
-    #[arg(allow_hyphen_values(true))]
-    z: f32,
-    /// Duration in seconds for linear interpolation. Omit for instant teleport.
-    #[arg(allow_hyphen_values(true))]
-    duration: Option<f32>,
-}
-
-fn move_player_to_cmd(
-    mut input: ConsoleCommand<MovePlayerToCommand>,
-    mut events: EventWriter<RpcCall>,
-    mut pending: ResMut<PendingConsoleResponses>,
-) {
-    if let Some(Ok(command)) = input.take() {
-        let to = DclTranslation([command.x, command.y, command.z]).to_bevy_translation();
-        let (response, rx) = RpcResultSender::<bool>::channel();
-        events.write(RpcCall::MovePlayer {
-            scene: None,
-            to,
-            looking_at: None,
-            duration: command.duration,
-            response: Some(response),
-        });
-        let (x, y, z) = (command.x, command.y, command.z);
-        let has_duration = command.duration.is_some();
-        pending.push_receiver(rx, move |success| {
-            if success {
-                Ok(if has_duration {
-                    format!("arrived at ({x}, {y}, {z})")
-                } else {
-                    format!("moved to ({x}, {y}, {z})")
-                })
-            } else {
-                Err("move cancelled".to_string())
-            }
-        });
-    }
-}
-
-/// Walk the player to a DCL world-space position using the movement scene controller.
-/// Coordinates are in Decentraland world space (x right, y up, z forward).
-#[derive(clap::Parser, ConsoleCommand)]
-#[command(name = "/walk_player_to")]
-struct WalkPlayerToCommand {
-    #[arg(allow_hyphen_values(true))]
-    x: f32,
-    #[arg(allow_hyphen_values(true))]
-    y: f32,
-    #[arg(allow_hyphen_values(true))]
-    z: f32,
-    /// Timeout in seconds before the walk is cancelled. Omit for no timeout.
-    #[arg(allow_hyphen_values(true))]
-    timeout: Option<f32>,
-}
-
-fn walk_player_to_cmd(
-    mut input: ConsoleCommand<WalkPlayerToCommand>,
-    mut events: EventWriter<RpcCall>,
-    mut pending: ResMut<PendingConsoleResponses>,
-) {
-    if let Some(Ok(command)) = input.take() {
-        let to = DclTranslation([command.x, command.y, command.z]).to_bevy_translation();
-        let (response, rx) = RpcResultSender::<bool>::channel();
-        events.write(RpcCall::WalkPlayer {
-            scene: None,
-            to,
-            stop_threshold: 0.5,
-            timeout: command.timeout,
-            response,
-        });
-        let (x, y, z) = (command.x, command.y, command.z);
-        pending.push_receiver(rx, move |success| {
-            if success {
-                Ok(format!("arrived at ({x}, {y}, {z})"))
-            } else {
-                Err("walk failed or timed out".to_string())
-            }
-        });
-    }
-}
-
-#[derive(clap::Parser, ConsoleCommand)]
-#[command(name = "/player_position")]
-struct PlayerPositionCommand;
-
-fn player_position_cmd(
-    mut input: ConsoleCommand<PlayerPositionCommand>,
-    player: Query<&Transform, With<PrimaryUser>>,
-) {
-    if let Some(Ok(_)) = input.take() {
-        match player.single() {
-            Ok(transform) => {
-                let p = transform.translation;
-                input.reply_ok(format!("({}, {}, {})", p.x, p.y, -p.z));
-            }
-            Err(_) => input.reply_failed("player not found"),
-        }
     }
 }
