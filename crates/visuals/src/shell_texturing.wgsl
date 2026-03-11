@@ -20,10 +20,11 @@ const SCALED_DIST: f32 = 0.425;
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
 
-    let layer = get_tag(in.instance_index);
-    let layer_f32 = f32(layer);
+    let tag = get_tag(in.instance_index);
+    let layer = tag & 0xFFFF;
+    let lod = f32(tag >> 16);let layer_f32 = f32(layer);
     let layers_f32 = f32(layers);
-    let factor = layer_f32 / layers_f32;
+    let factor = (layer_f32 - lod) / layers_f32;
 
     let subdivisions_f32 = f32(subdivisions);
 
@@ -77,7 +78,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 
 #ifndef PREPASS_PIPELINE
     var pbr_input = pbr_input_from_vertex_output(in, is_front, true);
-    pbr_input.material.base_color = mix(root_color, tip_color, layer_f32 / layers_f32);
+    pbr_input.material.base_color = mix(root_color, tip_color, (layer_f32 + lod * .5) / layers_f32);
 
     out.color = apply_pbr_lighting(pbr_input);
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);
