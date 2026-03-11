@@ -108,6 +108,7 @@ impl Plugin for RestrictedActionsPlugin {
         app.add_console_command::<KillPortableCommand, _>(kill_portable_command);
         app.add_console_command::<MovePlayerToCommand, _>(move_player_to_cmd);
         app.add_console_command::<WalkPlayerToCommand, _>(walk_player_to_cmd);
+        app.add_console_command::<PlayerPositionCommand, _>(player_position_cmd);
     }
 }
 
@@ -2075,5 +2076,24 @@ fn walk_player_to_cmd(
                 Err("walk failed or timed out".to_string())
             }
         });
+    }
+}
+
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/player_position")]
+struct PlayerPositionCommand;
+
+fn player_position_cmd(
+    mut input: ConsoleCommand<PlayerPositionCommand>,
+    player: Query<&Transform, With<PrimaryUser>>,
+) {
+    if let Some(Ok(_)) = input.take() {
+        match player.single() {
+            Ok(transform) => {
+                let p = transform.translation;
+                input.reply_ok(format!("({}, {}, {})", p.x, p.y, -p.z));
+            }
+            Err(_) => input.reply_failed("player not found"),
+        }
     }
 }
