@@ -45,7 +45,7 @@ pub async fn op_move_player_to(
         let mut op_state = state.borrow_mut();
         let scene = op_state.borrow::<CrdtContext>().scene_id.0;
         op_state.borrow_mut::<RpcCalls>().push(RpcCall::MovePlayer {
-            scene,
+            scene: Some(scene),
             to,
             looking_at,
             duration,
@@ -80,7 +80,7 @@ pub async fn op_walk_player_to(
         let mut op_state = state.borrow_mut();
         let scene = op_state.borrow::<CrdtContext>().scene_id.0;
         op_state.borrow_mut::<RpcCalls>().push(RpcCall::WalkPlayer {
-            scene,
+            scene: Some(scene),
             to,
             stop_threshold,
             timeout,

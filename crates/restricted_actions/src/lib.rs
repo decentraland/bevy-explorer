@@ -34,9 +34,9 @@ use comms::{
     profile::{CurrentUserProfile, ProfileManager, UserProfile},
     NetworkMessage, NetworkMessageRecipient, SceneRoom, Transport,
 };
-use console::DoAddConsoleCommand;
+use console::{DoAddConsoleCommand, PendingConsoleResponses};
 use copypwasmta::{ClipboardContext, ClipboardProvider};
-use dcl_component::proto_components::kernel::comms::rfc4;
+use dcl_component::{proto_components::kernel::comms::rfc4, transform_and_parent::DclTranslation};
 use ethers_core::types::Address;
 use http::Uri;
 use ipfs::{
@@ -106,6 +106,8 @@ impl Plugin for RestrictedActionsPlugin {
         app.init_resource::<PendingPortableCommands>();
         app.add_console_command::<SpawnPortableCommand, _>(spawn_portable_command);
         app.add_console_command::<KillPortableCommand, _>(kill_portable_command);
+        app.add_console_command::<MovePlayerToCommand, _>(move_player_to_cmd);
+        app.add_console_command::<WalkPlayerToCommand, _>(walk_player_to_cmd);
     }
 }
 
@@ -134,14 +136,14 @@ pub struct ActivePlayerMove {
 /// Pending move data queued through the permission system.
 pub enum PendingPlayerMove {
     Move {
-        scene: Entity,
+        scene: Option<Entity>,
         target: Vec3,
         looking_at: Option<Vec3>,
         duration: Option<f32>,
         response: Option<RpcResultSender<bool>>,
     },
     Walk {
-        scene: Entity,
+        scene: Option<Entity>,
         target: Vec3,
         stop_threshold: f32,
         timeout: Option<f32>,
@@ -150,7 +152,7 @@ pub enum PendingPlayerMove {
 }
 
 impl PendingPlayerMove {
-    fn scene(&self) -> Entity {
+    fn scene(&self) -> Option<Entity> {
         match self {
             Self::Move { scene, .. } | Self::Walk { scene, .. } => *scene,
         }
@@ -239,24 +241,41 @@ pub fn handle_player_move_requests(
             _ => continue,
         };
 
-        if !containing_scene
-            .get(player_entity)
-            .contains(&pending.scene())
-        {
-            warn!(
-                "player move request from {:?}: player not in scene",
-                pending.scene()
-            );
-            pending.send_fail();
-            continue;
+        match pending.scene() {
+            None => {
+                // Console-sourced: target is already in world space, bypass all checks.
+                let raw_target = match &pending {
+                    PendingPlayerMove::Move { target, .. }
+                    | PendingPlayerMove::Walk { target, .. } => *target,
+                };
+                let world_target = raw_target.with_y(raw_target.y.max(0.0));
+                apply_player_move(
+                    &mut commands,
+                    player_entity,
+                    pending,
+                    world_target,
+                    &mut player,
+                    &mut movement_control,
+                    &mut movement_info,
+                );
+            }
+            Some(scene_ent) => {
+                if !containing_scene.get(player_entity).contains(&scene_ent) {
+                    warn!(
+                        "player move request from {:?}: player not in scene",
+                        scene_ent
+                    );
+                    pending.send_fail();
+                    continue;
+                }
+                perms.check(PermissionType::MovePlayer, scene_ent, pending, None, false);
+            }
         }
-
-        let scene = pending.scene();
-        perms.check(PermissionType::MovePlayer, scene, pending, None, false);
     }
 
     for pending in perms.drain_success(PermissionType::MovePlayer) {
-        let scene_entity = pending.scene();
+        // Items that passed through perms always have a real scene entity.
+        let scene_entity = pending.scene().unwrap();
         let Ok(scene) = scenes.get(scene_entity) else {
             warn!("player move request from invalid scene {scene_entity:?}");
             pending.send_fail();
@@ -273,8 +292,7 @@ pub fn handle_player_move_requests(
                 *target
             }
         };
-        let mut world_target = raw_target + base_offset;
-        world_target.y = world_target.y.max(0.0);
+        let world_target = (raw_target + base_offset).with_y((raw_target + base_offset).y.max(0.0));
 
         if !containing_scene
             .get_position(world_target)
@@ -285,79 +303,107 @@ pub fn handle_player_move_requests(
             continue;
         }
 
-        // Target is valid — cancel any existing active move and apply the new one.
-        let (_, mut player_transform, mut dynamics, maybe_active) = player.single_mut().unwrap();
-        if let Some(active) = maybe_active {
-            cancel_active_move(
-                &mut commands,
-                player_entity,
-                active,
-                &mut movement_control,
-                &mut movement_info,
-            );
-        }
-
-        match pending {
-            PendingPlayerMove::Move {
-                target,
-                looking_at,
-                duration,
-                response,
-                ..
-            } => {
-                if let Some(d) = duration {
-                    let d = d.max(f32::EPSILON);
-                    let from = player_transform.translation;
-                    debug!("player interpolation start: {from} -> {world_target} over {d}s");
-                    movement_control
-                        .suppress_avatar_physics
-                        .insert("player_move");
-                    commands.entity(player_entity).insert(ActivePlayerMove {
-                        target: world_target,
-                        elapsed: 0.0,
-                        response: response.unwrap(),
-                        kind: PlayerMoveKind::Interpolate { from, duration: d },
-                    });
-                } else {
-                    player_transform.translation = world_target;
-                    debug!("player teleported to {world_target}");
-                    if let Some(r) = response {
-                        r.send(true);
-                    }
-                }
-
-                if let Some(looking_at) = looking_at {
-                    let rotation = Transform::IDENTITY
-                        .looking_at((looking_at - target) * Vec3::new(1.0, 0.0, 1.0), Vec3::Y)
-                        .rotation;
-                    dynamics.velocity =
-                        rotation * player_transform.rotation.inverse() * dynamics.velocity;
-                    player_transform.rotation = rotation;
-                }
-            }
-
-            PendingPlayerMove::Walk {
-                stop_threshold,
-                timeout,
-                response,
-                ..
-            } => {
-                debug!("walk player started: target={world_target}, threshold={stop_threshold}");
-                commands.entity(player_entity).insert(ActivePlayerMove {
-                    target: world_target,
-                    elapsed: 0.0,
-                    response,
-                    kind: PlayerMoveKind::Walk {
-                        stop_threshold,
-                        timeout,
-                    },
-                });
-            }
-        }
+        apply_player_move(
+            &mut commands,
+            player_entity,
+            pending,
+            world_target,
+            &mut player,
+            &mut movement_control,
+            &mut movement_info,
+        );
     }
 
     for pending in perms.drain_fail(PermissionType::MovePlayer) {
         pending.send_fail();
+    }
+}
+
+#[allow(clippy::type_complexity)]
+fn apply_player_move(
+    commands: &mut Commands,
+    player_entity: Entity,
+    pending: PendingPlayerMove,
+    world_target: Vec3,
+    player: &mut Query<
+        (
+            Entity,
+            &mut Transform,
+            &mut AvatarDynamicState,
+            Option<&ActivePlayerMove>,
+        ),
+        With<PrimaryUser>,
+    >,
+    movement_control: &mut EngineMovementControl,
+    movement_info: &mut AvatarMovementInfo,
+) {
+    let (_, mut player_transform, mut dynamics, maybe_active) = player.single_mut().unwrap();
+    if let Some(active) = maybe_active {
+        cancel_active_move(
+            commands,
+            player_entity,
+            active,
+            movement_control,
+            movement_info,
+        );
+    }
+
+    match pending {
+        PendingPlayerMove::Move {
+            target,
+            looking_at,
+            duration,
+            response,
+            ..
+        } => {
+            if let Some(d) = duration {
+                let d = d.max(f32::EPSILON);
+                let from = player_transform.translation;
+                debug!("player interpolation start: {from} -> {world_target} over {d}s");
+                movement_control
+                    .suppress_avatar_physics
+                    .insert("player_move");
+                commands.entity(player_entity).insert(ActivePlayerMove {
+                    target: world_target,
+                    elapsed: 0.0,
+                    response: response.unwrap(),
+                    kind: PlayerMoveKind::Interpolate { from, duration: d },
+                });
+            } else {
+                player_transform.translation = world_target;
+                debug!("player teleported to {world_target}");
+                if let Some(r) = response {
+                    r.send(true);
+                }
+            }
+
+            if let Some(looking_at) = looking_at {
+                let rotation = Transform::IDENTITY
+                    .looking_at((looking_at - target) * Vec3::new(1.0, 0.0, 1.0), Vec3::Y)
+                    .rotation;
+                dynamics.velocity =
+                    rotation * player_transform.rotation.inverse() * dynamics.velocity;
+                player_transform.rotation = rotation;
+            }
+        }
+
+        PendingPlayerMove::Walk {
+            stop_threshold,
+            timeout,
+            response,
+            ..
+        } => {
+            debug!("walk player started: target={world_target}, threshold={stop_threshold}");
+            commands.entity(player_entity).insert(ActivePlayerMove {
+                target: world_target,
+                elapsed: 0.0,
+                response,
+                kind: PlayerMoveKind::Walk {
+                    stop_threshold,
+                    timeout,
+                },
+            });
+        }
     }
 }
 
@@ -1940,5 +1986,94 @@ pub fn process_startup_scenes(
 
     if tasks.is_empty() {
         *done = true;
+    }
+}
+
+/// Move the player to a DCL world-space position, with optional linear interpolation.
+/// Coordinates are in Decentraland world space (x right, y up, z forward).
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/move_player_to")]
+struct MovePlayerToCommand {
+    #[arg(allow_hyphen_values(true))]
+    x: f32,
+    #[arg(allow_hyphen_values(true))]
+    y: f32,
+    #[arg(allow_hyphen_values(true))]
+    z: f32,
+    /// Duration in seconds for linear interpolation. Omit for instant teleport.
+    #[arg(allow_hyphen_values(true))]
+    duration: Option<f32>,
+}
+
+fn move_player_to_cmd(
+    mut input: ConsoleCommand<MovePlayerToCommand>,
+    mut events: EventWriter<RpcCall>,
+    mut pending: ResMut<PendingConsoleResponses>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let to = DclTranslation([command.x, command.y, command.z]).to_bevy_translation();
+        let (response, rx) = RpcResultSender::<bool>::channel();
+        events.write(RpcCall::MovePlayer {
+            scene: None,
+            to,
+            looking_at: None,
+            duration: command.duration,
+            response: Some(response),
+        });
+        let (x, y, z) = (command.x, command.y, command.z);
+        let has_duration = command.duration.is_some();
+        pending.push_receiver(rx, move |success| {
+            if success {
+                Ok(if has_duration {
+                    format!("arrived at ({x}, {y}, {z})")
+                } else {
+                    format!("moved to ({x}, {y}, {z})")
+                })
+            } else {
+                Err("move cancelled".to_string())
+            }
+        });
+    }
+}
+
+/// Walk the player to a DCL world-space position using the movement scene controller.
+/// Coordinates are in Decentraland world space (x right, y up, z forward).
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/walk_player_to")]
+struct WalkPlayerToCommand {
+    #[arg(allow_hyphen_values(true))]
+    x: f32,
+    #[arg(allow_hyphen_values(true))]
+    y: f32,
+    #[arg(allow_hyphen_values(true))]
+    z: f32,
+    /// Timeout in seconds before the walk is cancelled. Omit for no timeout.
+    #[arg(allow_hyphen_values(true))]
+    timeout: Option<f32>,
+}
+
+fn walk_player_to_cmd(
+    mut input: ConsoleCommand<WalkPlayerToCommand>,
+    mut events: EventWriter<RpcCall>,
+    mut pending: ResMut<PendingConsoleResponses>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let to = DclTranslation([command.x, command.y, command.z]).to_bevy_translation();
+        let (response, rx) = RpcResultSender::<bool>::channel();
+        events.write(RpcCall::WalkPlayer {
+            scene: None,
+            to,
+            stop_threshold: 0.5,
+            timeout: command.timeout,
+            response,
+        });
+        let (x, y, z) = (command.x, command.y, command.z);
+        pending.push_receiver(rx, move |success| {
+            if success {
+                Ok(format!("arrived at ({x}, {y}, {z})"))
+            } else {
+                Err("walk failed or timed out".to_string())
+            }
+        });
     }
 }
