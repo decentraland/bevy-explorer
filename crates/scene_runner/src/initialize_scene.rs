@@ -123,7 +123,10 @@ pub enum SceneLoading {
     MainCrdt {
         crdt: Option<Handle<SerializedCrdtStore>>,
     },
-    Javascript(Option<tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>>),
+    Javascript {
+        global_updates: Option<tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>>,
+        scene_origin: Vec3,
+    },
     Failed,
 }
 
@@ -409,8 +412,10 @@ pub(crate) fn load_scene_javascript(
 
         scene_updates.scene_ids.insert(scene_id, root);
 
-        // start from the global shared crdt state
-        let (mut initial_crdt, global_updates) = global_scene.subscribe();
+        // start from the global shared crdt state, with position data localized for this scene
+        // Scene origin in DCL proto-space (z-forward, matching proto Vector3 coordinates)
+        let scene_origin = Vec3::new(initial_position.x, 0.0, initial_position.y);
+        let (mut initial_crdt, global_updates) = global_scene.subscribe(scene_origin);
 
         // set the world origin (for parents of world-space entities, using world-space coords as local coords)
         let mut buf = Vec::new();
@@ -525,7 +530,10 @@ pub(crate) fn load_scene_javascript(
 
         commands.entity(root).try_insert((
             SceneInitialData { js: h_code },
-            SceneLoading::Javascript(Some(global_updates)),
+            SceneLoading::Javascript {
+                global_updates: Some(global_updates),
+                scene_origin,
+            },
         ));
     }
 }
@@ -596,7 +604,7 @@ pub(crate) fn initialize_scene(
     su_bridge: Res<SystemBridge>,
 ) {
     for (root, mut state, initial_data, mut context, super_user) in loading_scenes.iter_mut() {
-        if !matches!(state.as_mut(), SceneLoading::Javascript(_)) || context.tick_number != 1 {
+        if !matches!(state.as_mut(), SceneLoading::Javascript { .. }) || context.tick_number != 1 {
             continue;
         }
 
@@ -624,11 +632,13 @@ pub(crate) fn initialize_scene(
 
         let thread_sx = scene_updates.sender.clone();
 
-        let global_updates = match *state {
-            SceneLoading::Javascript(ref mut global_updates) => global_updates.take(),
+        let (global_updates, scene_origin) = match *state {
+            SceneLoading::Javascript {
+                ref mut global_updates,
+                scene_origin,
+            } => (global_updates.take().unwrap(), scene_origin),
             _ => panic!("bad state"),
-        }
-        .unwrap();
+        };
 
         let crdt_component_interfaces = CrdtComponentInterfaces(HashMap::from_iter(
             crdt_component_interfaces
@@ -657,6 +667,7 @@ pub(crate) fn initialize_scene(
             testing_data.test_mode,
             preview_mode.is_preview,
             super_user.map(|_| su_bridge.sender.clone()),
+            scene_origin,
         );
 
         // mark context as in flight so we wait for initial RPC requests

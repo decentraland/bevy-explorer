@@ -135,6 +135,7 @@ async fn scene_ipc_in(
                     new_scene_info.testing,
                     new_scene_info.preview,
                     new_scene_info.is_super.then(|| system_api_sx.clone()),
+                    new_scene_info.scene_origin,
                 );
 
                 renderer_senders.insert(id, response_sx);
