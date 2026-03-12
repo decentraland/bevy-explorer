@@ -599,6 +599,7 @@ fn debug_pointer_command(
     if let Some(Ok(command)) = input.take() {
         let new_state = command.show.unwrap_or(!debug.0);
         debug.0 = new_state;
+        input.ok();
     }
 }
 
