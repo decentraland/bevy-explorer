@@ -3,11 +3,15 @@ use std::ops::RangeInclusive;
 // structs representing dcl components and de/serialization
 use bevy::prelude::Vec3;
 
+pub mod component_name_registry;
+pub mod crdt_type;
 pub mod proto_components;
 pub mod reader;
 pub mod transform_and_parent;
 pub mod writer;
 
+pub use component_name_registry::ComponentNameRegistry;
+pub use crdt_type::{ComponentPosition, CrdtType};
 pub use reader::{DclReader, DclReaderError, FromDclReader};
 use serde::{Deserialize, Serialize};
 pub use writer::{DclWriter, ToDclWriter};

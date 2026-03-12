@@ -59,6 +59,7 @@ use self::{
     update_scene::SceneInputPlugin,
     update_world::{CrdtExtractors, SceneOutputPlugin},
 };
+use dcl_component::ComponentNameRegistry;
 
 pub mod automatic_testing;
 pub mod bounds_calc;
@@ -223,6 +224,7 @@ pub struct SceneLoopLabel;
 impl Plugin for SceneRunnerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CrdtExtractors>();
+        app.init_resource::<ComponentNameRegistry>();
         app.init_resource::<DebugInfo>();
         app.init_resource::<Toasts>();
         app.init_resource::<TestingData>();

@@ -7,7 +7,7 @@ use super::{DclReader, DclReaderError, FromDclReader, PositionFree, SceneEntityI
 // for dcl: +z -> forward
 // for bevy: +z -> backward
 // DclTranslation internal format is wire format (+z = forward)
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct DclTranslation(pub [f32; 3]);
 
 impl FromDclReader for DclTranslation {
@@ -58,7 +58,7 @@ impl Sub<DclTranslation> for DclTranslation {
 }
 
 // internal format is wire format (+z = forward)
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct DclQuat(pub [f32; 4]);
 
 impl FromDclReader for DclQuat {
@@ -93,12 +93,71 @@ impl DclQuat {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(from = "DclTransformAndParentJson", into = "DclTransformAndParentJson")]
 pub struct DclTransformAndParent {
     pub translation: DclTranslation,
     pub rotation: DclQuat,
     pub scale: Vec3,
     pub parent: SceneEntityId,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct XYZ {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct XYZW {
+    x: f32,
+    y: f32,
+    z: f32,
+    w: f32,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct DclTransformAndParentJson {
+    position: XYZ,
+    rotation: XYZW,
+    scale: XYZ,
+    parent: u32,
+}
+
+impl From<DclTransformAndParent> for DclTransformAndParentJson {
+    fn from(t: DclTransformAndParent) -> Self {
+        Self {
+            position: XYZ {
+                x: t.translation.0[0],
+                y: t.translation.0[1],
+                z: t.translation.0[2],
+            },
+            rotation: XYZW {
+                x: t.rotation.0[0],
+                y: t.rotation.0[1],
+                z: t.rotation.0[2],
+                w: t.rotation.0[3],
+            },
+            scale: XYZ {
+                x: t.scale.x,
+                y: t.scale.y,
+                z: t.scale.z,
+            },
+            parent: t.parent.as_proto_u32().unwrap_or(0),
+        }
+    }
+}
+
+impl From<DclTransformAndParentJson> for DclTransformAndParent {
+    fn from(j: DclTransformAndParentJson) -> Self {
+        Self {
+            translation: DclTranslation([j.position.x, j.position.y, j.position.z]),
+            rotation: DclQuat([j.rotation.x, j.rotation.y, j.rotation.z, j.rotation.w]),
+            scale: Vec3::new(j.scale.x, j.scale.y, j.scale.z),
+            parent: SceneEntityId::from_proto_u32(j.parent),
+        }
+    }
 }
 
 impl DclTransformAndParent {

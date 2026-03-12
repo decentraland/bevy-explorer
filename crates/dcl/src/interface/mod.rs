@@ -9,6 +9,7 @@ use bevy::{
 use num::{FromPrimitive, ToPrimitive};
 use num_derive::{FromPrimitive, ToPrimitive};
 
+pub use dcl_component::{ComponentPosition, CrdtType};
 use dcl_component::{
     DclReader, DclReaderError, DclWriter, SceneComponentId, SceneCrdtTimestamp, SceneEntityId,
     ToDclWriter,
@@ -20,34 +21,6 @@ use self::crdt_context::CrdtContext;
 use super::crdt::{growonly::CrdtGOState, lww::CrdtLWWState};
 
 pub mod crdt_context;
-
-#[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum ComponentPosition {
-    RootOnly,
-    EntityOnly,
-    Any,
-}
-
-#[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum CrdtType {
-    LWW(ComponentPosition),
-    GO(ComponentPosition),
-}
-
-impl CrdtType {
-    pub const LWW_ROOT: CrdtType = CrdtType::LWW(ComponentPosition::RootOnly);
-    pub const LWW_ENT: CrdtType = CrdtType::LWW(ComponentPosition::EntityOnly);
-    pub const LWW_ANY: CrdtType = CrdtType::LWW(ComponentPosition::Any);
-    pub const GO_ENT: CrdtType = CrdtType::GO(ComponentPosition::EntityOnly);
-    pub const GO_ANY: CrdtType = CrdtType::GO(ComponentPosition::Any);
-
-    pub fn position(&self) -> ComponentPosition {
-        match self {
-            CrdtType::LWW(pos) => *pos,
-            CrdtType::GO(pos) => *pos,
-        }
-    }
-}
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct CrdtComponentInterfaces(pub HashMap<SceneComponentId, CrdtType>);

@@ -3417,12 +3417,14 @@ dependencies = [
 name = "dcl_component"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "bevy",
  "dcl-rpc",
  "prost 0.11.9",
  "prost-build 0.11.9",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -10303,6 +10305,7 @@ dependencies = [
  "once_cell",
  "petgraph 0.6.5",
  "platform",
+ "prost 0.11.9",
  "rand 0.8.5",
  "rapier3d-f64",
  "scene_material",
