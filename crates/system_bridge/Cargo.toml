@@ -10,6 +10,8 @@ workspace = true
 
 [dependencies]
 common = { workspace = true }
+console = { workspace = true }
+clap = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }

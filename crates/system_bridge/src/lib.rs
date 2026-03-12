@@ -1,3 +1,4 @@
+pub mod agent_commands;
 pub mod settings;
 
 use std::collections::VecDeque;
@@ -42,7 +43,7 @@ impl Plugin for SystemBridgePlugin {
             return;
         }
 
-        app.add_plugins(SettingBridgePlugin);
+        app.add_plugins((SettingBridgePlugin, agent_commands::AgentCommandsPlugin));
     }
 }
 

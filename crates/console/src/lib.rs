@@ -4,8 +4,8 @@ use bevy_console::{
     PrintConsoleLine,
 };
 use clap::Parser;
-
-use common::sets::SceneSets;
+use common::{rpc::RpcResultReceiver, sets::SceneSets};
+use std::sync::Mutex;
 
 pub trait DoAddConsoleCommand {
     fn add_console_command<T: Command, U>(
@@ -73,6 +73,9 @@ impl Plugin for ConsolePlugin {
         .add_console_command::<ExitCommand, _>(exit_command)
         .init_resource::<PendingCommands>()
         .add_systems(Update, send_pending);
+
+        app.init_resource::<PendingConsoleResponses>()
+            .add_systems(Update, poll_console_responses);
 
         app.configure_sets(
             Update,
@@ -149,4 +152,56 @@ pub fn send_pending(
             args: Default::default(),
         });
     }
+}
+
+type ConsoleResponseFn = Box<dyn Fn() -> Option<Result<String, String>> + Send + Sync>;
+
+/// Stores pending async console command responses. Register a receiver with
+/// [`push_receiver`](PendingConsoleResponses::push_receiver) and a mapping function;
+/// the polling system will print `[ok]` or `[failed]` once the receiver resolves.
+#[derive(Resource, Default)]
+pub struct PendingConsoleResponses(Vec<ConsoleResponseFn>);
+
+impl PendingConsoleResponses {
+    /// Register an [`RpcResultReceiver`] to be polled each frame. When it resolves,
+    /// `map` converts the value to `Ok(message)` or `Err(message)`, and the
+    /// appropriate console line is printed followed by `[ok]` or `[failed]`.
+    pub fn push_receiver<T, F>(&mut self, receiver: RpcResultReceiver<T>, map: F)
+    where
+        T: Send + 'static,
+        F: Fn(T) -> Result<String, String> + Send + Sync + 'static,
+    {
+        let receiver = Mutex::new(receiver);
+        self.0.push(Box::new(move || {
+            let mut guard = receiver.lock().unwrap();
+            match guard.poll_once() {
+                Ok(Some(val)) => Some(map(val)),
+                Ok(None) => None,
+                Err(()) => Some(Err("cancelled".to_string())),
+            }
+        }));
+    }
+}
+
+fn poll_console_responses(
+    mut pending: ResMut<PendingConsoleResponses>,
+    mut console: EventWriter<PrintConsoleLine>,
+) {
+    pending.0.retain(|f| match f() {
+        None => true,
+        Some(Ok(msg)) => {
+            if !msg.is_empty() {
+                console.write(PrintConsoleLine::new(msg));
+            }
+            console.write(PrintConsoleLine::new("[ok]".into()));
+            false
+        }
+        Some(Err(msg)) => {
+            if !msg.is_empty() {
+                console.write(PrintConsoleLine::new(msg));
+            }
+            console.write(PrintConsoleLine::new("[failed]".into()));
+            false
+        }
+    });
 }
