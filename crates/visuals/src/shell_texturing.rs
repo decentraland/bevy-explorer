@@ -26,6 +26,10 @@ const GROUND_MATERIAL: Handle<ShellTexture> = weak_handle!("a7b403bc-917b-424e-8
 const GROUND_LAYERS: u32 = 5;
 const GROUND_DISPLACEMENT: f32 = 0.01;
 
+const LOW_LOD: usize = 4;
+const MID_LOD: usize = 2;
+const HIGH_LOD: usize = 1;
+
 #[derive(Default, Resource, Deref, DerefMut)]
 struct ParcelGrassMap(HashMap<IVec2, Entity>);
 
@@ -174,7 +178,7 @@ fn spawn_ground(mut commands: Commands) {
         Ground,
         Children::spawn(ParcelGrassShellSpawnList {
             shells: GROUND_LAYERS,
-            lod: 1,
+            lod: HIGH_LOD,
             displacement: GROUND_DISPLACEMENT,
             material: GROUND_MATERIAL.clone(),
             extras: (GROUND_RENDERLAYER,),
@@ -254,19 +258,19 @@ fn parcel_grass_lod_inserted(
             return;
         }
         ParcelGrassLod::Low => (
-            4,
+            LOW_LOD,
             parcel_grass_config.layers,
             parcel_grass_config.y_displacement,
             &PARCEL_GRASS_MATERIAL,
         ),
         ParcelGrassLod::Mid => (
-            2,
+            MID_LOD,
             parcel_grass_config.layers,
             parcel_grass_config.y_displacement,
             &PARCEL_GRASS_MATERIAL,
         ),
         ParcelGrassLod::High => (
-            1,
+            HIGH_LOD,
             parcel_grass_config.layers,
             parcel_grass_config.y_displacement,
             &PARCEL_GRASS_MATERIAL,
@@ -420,7 +424,7 @@ impl<B: Bundle + Clone> SpawnableList<ChildOf> for ParcelGrassShellSpawnList<B> 
                 Mesh3d(PARCEL_GRASS_MESH.clone()),
                 MeshMaterial3d(self.material.clone()),
                 Transform::from_translation(Vec3::new(0., self.displacement * i as f32, 0.)),
-                MeshTag(i),
+                MeshTag(i + ((self.lod as u32) << 16)),
                 NotShadowCaster,
                 self.extras.clone(),
                 ChildOf(entity),

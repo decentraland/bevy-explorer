@@ -20,10 +20,14 @@ const SCALED_DIST: f32 = 0.425;
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
 
-    let layer = get_tag(in.instance_index);
+    let tag = get_tag(in.instance_index);
+    let layer = tag & 0xFFFF;
+    let lod = tag >> 16;
+
     let layer_f32 = f32(layer);
     let layers_f32 = f32(layers);
     let factor = layer_f32 / layers_f32;
+    let color_factor = factor * color_attenuation(layers_f32, lod);
 
     let subdivisions_f32 = f32(subdivisions);
 
@@ -43,7 +47,8 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         discard;
     }
 
-    let octave4 = (simplex_noise_3d(simplex_coord * 212.167) + 1.) / 2.;// 1. Shift to [-0.5, 0.5] range (1 Subtraction each)
+    let octave4 = (simplex_noise_3d(simplex_coord * 212.167) + 1.) / 2.;
+    // 1. Shift to [-0.5, 0.5] range (1 Subtraction each)
     let dx = fract(octave3) - 0.5;
     let dz = fract(octave4) - 0.5;
 
@@ -77,11 +82,15 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 
 #ifndef PREPASS_PIPELINE
     var pbr_input = pbr_input_from_vertex_output(in, is_front, true);
-    pbr_input.material.base_color = mix(root_color, tip_color, layer_f32 / layers_f32);
+    pbr_input.material.base_color = mix(root_color, tip_color, color_factor);
 
     out.color = apply_pbr_lighting(pbr_input);
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);
 #endif // PREPASS_PIPELINE
 
     return out;
+}
+
+fn color_attenuation(layers: f32, lod: u32) -> f32 {
+    return 1 - (log(2 * layers) / (2 * log(10.))) + 0.6;
 }
