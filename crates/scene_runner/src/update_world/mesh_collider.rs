@@ -334,6 +334,12 @@ impl SceneColliderData {
 
                     let mut new_scale = *init_scale;
                     if (req_scale - *init_scale).length_squared() > SCALE_EPSILON {
+                        if req_scale.min_element() < 0.001 {
+                            // disable 0-sized colliders
+                            collider.set_enabled(false);
+                        } else {
+                            collider.set_enabled(true);
+                        }
                         new_scale = req_scale;
                         // colliders don't have a scale, we have to modify the shape directly when scale changes (significantly)
                         collider.set_shape(base_collider.shape().scale_ext(req_scale));

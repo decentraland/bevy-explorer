@@ -993,10 +993,8 @@ fn load_active_entities(
 
         // set current realm and clear
         // take map bounds
-        let (mut bounds_min, mut bounds_max) = current_realm
-            .config
-            .map
-            .as_ref()
+        let map_data = current_realm.config.map.as_ref();
+        let (mut bounds_min, mut bounds_max) = map_data
             .map(|data| data.sizes.iter())
             .unwrap_or_default()
             .fold((IVec2::MAX, IVec2::MIN), |(min, max), region| {
@@ -1033,8 +1031,12 @@ fn load_active_entities(
                 // take nearest parcel to current that is within map bounds
                 if let Ok((player_entity, player_transform)) = player.single() {
                     if let Ok(mut commands) = commands.get_entity(player_entity) {
-                        let initial_parcel = vec3_to_parcel(player_transform.translation());
-                        let parcel = initial_parcel.clamp(bounds_min, bounds_max);
+                        let parcel = if map_data.is_some() {
+                            let initial_parcel = vec3_to_parcel(player_transform.translation());
+                            initial_parcel.clamp(bounds_min, bounds_max)
+                        } else {
+                            Default::default()
+                        };
                         commands.insert(teleport_components(parcel));
                         debug!(
                             "change to no scene realm -> none ({} in {}/{} = {})",

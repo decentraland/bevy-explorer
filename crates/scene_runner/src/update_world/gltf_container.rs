@@ -1162,12 +1162,19 @@ pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> SharedShape {
         Some(Indices::U16(ixs)) => ixs.iter().map(|ix| *ix as u32).collect(),
         Some(Indices::U32(ixs)) => ixs.to_vec(),
     };
-    let indices_parry = indices
+    let indices_parry: Vec<_> = indices
         .chunks_exact(3)
         .map(|chunk| chunk.try_into().unwrap())
         .collect();
 
-    SharedShape::trimesh_with_flags(positions_parry, indices_parry, TriMeshFlags::empty()).unwrap()
+    SharedShape::trimesh_with_flags(
+        positions_parry,
+        indices_parry,
+        TriMeshFlags::DELETE_DEGENERATE_TRIANGLES
+            | TriMeshFlags::DELETE_DUPLICATE_TRIANGLES
+            | TriMeshFlags::DELETE_BAD_TOPOLOGY_TRIANGLES,
+    )
+    .unwrap()
 }
 
 #[derive(Component, Debug)]

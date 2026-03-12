@@ -983,6 +983,15 @@ impl SceneImposterBake {
 #[derive(Resource, Default)]
 pub struct CursorLocks(pub HashSet<&'static str>);
 
+/// Controls engine-level overrides to avatar movement, independent of scene-driven movement.
+#[derive(Resource, Default)]
+pub struct EngineMovementControl {
+    /// Non-empty means collision/clipping is disabled (e.g. "noclip" from /idnoclip)
+    pub suppress_clipping: HashSet<&'static str>,
+    /// Non-empty means avatar physics movement systems are suppressed (e.g. "move_player_to" during interpolation)
+    pub suppress_avatar_physics: HashSet<&'static str>,
+}
+
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub enum MoveKind {
     #[default]
