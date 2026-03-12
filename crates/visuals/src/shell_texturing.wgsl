@@ -7,7 +7,7 @@
 #endif
 #import bevy_pbr::mesh_functions::get_tag;
 
-#import "embedded://shaders/simplex.wgsl"::simplex_noise_3d
+#import "embedded://shaders/simplex.wgsl"::simplex_noise_2d
 
 @group(2) @binding(0) var<uniform> subdivisions: u32;
 @group(2) @binding(1) var<uniform> layers: u32;
@@ -17,9 +17,24 @@
 // Pre-calculated constant: (0.85 * 0.5) = 0.425
 const SCALED_DIST: f32 = 0.425;
 
+// PCG2D hash → 2 independent floats in [0, 1].
+// From "Hash Functions for GPU Rendering" (Jarzynski & Olano, 2020).
+// Good avalanche for small sequential integer inputs (typical cell coords).
+fn cell_hash2(cell: vec2<i32>) -> vec2<f32> {
+    var v = bitcast<vec2<u32>>(cell);                                                                                      
+    v = v * 1664525u + 1013904223u;                                                                                        
+    v.x += v.y * 1664525u;                                                                                                 
+    v.y += v.x * 1664525u;                                                                                                 
+    v ^= v >> vec2(16u);                                                                                                   
+    v.x += v.y * 1664525u;                                                                                                 
+    v.y += v.x * 1664525u;                                                                                                 
+    v ^= v >> vec2(16u);                                                                                                   
+    return vec2<f32>(f32(v.x), f32(v.y)) * (1.0 / 4294967296.0);    
+}
+
+
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
-
     let tag = get_tag(in.instance_index);
     let layer = tag & 0xFFFF;
     let lod = tag >> 16;
@@ -33,38 +48,38 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 
     let wpx = in.world_position.x * subdivisions_f32;
     let wpz = in.world_position.z * subdivisions_f32;
-    let simplex_coord = vec3(
-        round(wpx + 0.5) / subdivisions_f32,
-        0.,
-        round(wpz + 0.5) / subdivisions_f32,
+
+    // Snap to cell grid; integer coords feed the cheap hash.
+    let cell = vec2<i32>(i32(round(wpx + 0.5)), i32(round(wpz + 0.5)));
+    let simplex_coord = vec2(
+        f32(cell.x) / subdivisions_f32,
+        f32(cell.y) / subdivisions_f32,
     );
 
-    let octave1 = (simplex_noise_3d(simplex_coord * 0.1512) + 1.) / 2.;
-    let octave2 = (simplex_noise_3d(simplex_coord) + 1.) / 2.;
-    let octave3 = (simplex_noise_3d(simplex_coord * 13.167) + 1.) / 2.;
+    // low-frequency octaves use 2D simplex (spatial continuity matters here).
+    let octave1 = (simplex_noise_2d(simplex_coord * 0.112) + 1.) / 2.;
+    let octave2 = (simplex_noise_2d(simplex_coord) + 1.0) / 2.;
+    // independent hash calls for high-frequency octaves
+    let octave3 = cell_hash2(cell * 7).x;
     let simplex = (octave1 + octave2 + octave3) / 3.;
     if simplex <= factor && layer > 0 {
         discard;
     }
 
-    let octave4 = (simplex_noise_3d(simplex_coord * 212.167) + 1.) / 2.;
-    // 1. Shift to [-0.5, 0.5] range (1 Subtraction each)
-    let dx = fract(octave3) - 0.5;
-    let dz = fract(octave4) - 0.5;
+    let disp_hash = cell_hash2(cell * 13);
+    let dx = disp_hash.x - 0.5;
+    let dz = disp_hash.y - 0.5;
 
-    // 2. Find the square-space "radius" (2 Abs, 1 Max)
-    // Small epsilon 1e-5 prevents division by zero
     let edge_dist = max(abs(dx), abs(dz)) + 0.00001;
 
-    // 3. Combined Scale (1 Division, 1 Multiplication)
-    // This maps the square point back to a circle of radius 0.85
     let scale = SCALED_DIST / edge_dist;
 
-    // 4. Final Position (2 Multiplications, 2 Additions)
     let root_x = wpx + dx * scale;
     let root_z = wpz + dz * scale;
 
-    if distance(fract(vec2(root_x, root_z)), vec2(0.5)) >= mix(0.25, 0.45, 1. - (factor / simplex)) && layer > 0 {
+    let blade_uv = fract(vec2(root_x, root_z)) - vec2(0.5);
+    let threshold = mix(0.25, 0.45, 1. - (factor / simplex));
+    if dot(blade_uv, blade_uv) >= threshold * threshold && layer > 0 {
         discard;
     }
 
