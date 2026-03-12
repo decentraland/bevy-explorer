@@ -8,9 +8,9 @@ use bevy::{
     ecs::{event::EventReader, system::Local},
     log::debug,
     math::Vec4,
-    prelude::{Event, EventWriter, ResMut, Resource},
+    prelude::{Event, EventWriter, Res, ResMut, Resource},
 };
-use bevy_console::{ConsoleCommandEntered, PrintConsoleLine};
+use bevy_console::{ConsoleCommandEntered, ConsoleConfiguration, PrintConsoleLine};
 use common::{
     inputs::{BindingsData, InputIdentifier, SystemActionEvent},
     rpc::{RpcResultSender, RpcStreamSender},
@@ -216,6 +216,7 @@ pub fn post_events(
     mut console_response: Local<Option<RpcResultSender<Result<String, String>>>>,
     mut replies: EventReader<PrintConsoleLine>,
     mut pending: Local<VecDeque<(String, Vec<String>, RpcResultSender<Result<String, String>>)>>,
+    console_config: Res<ConsoleConfiguration>,
 ) {
     while let Ok(ev) = bridge.receiver.try_recv() {
         if let SystemApi::ConsoleCommand(cmd, args, sender) = ev {
@@ -253,11 +254,18 @@ pub fn post_events(
             }
         }
     } else if let Some((cmd, args, sender)) = pending.pop_front() {
-        console.write(ConsoleCommandEntered {
-            command_name: cmd,
-            args,
-        });
-        *console_response = Some(sender);
+        if console_config.commands.contains_key(cmd.as_str()) {
+            console.write(ConsoleCommandEntered {
+                command_name: cmd,
+                args,
+            });
+            *console_response = Some(sender);
+        } else {
+            sender.send(Err(format!(
+                "Command not recognized: `{cmd}`. Recognized commands: {:?}",
+                console_config.commands.keys().collect::<Vec<_>>()
+            )));
+        }
     }
 
     replies.clear();
