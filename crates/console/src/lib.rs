@@ -127,18 +127,18 @@ pub(crate) fn help_command(
     mut config: ResMut<ConsoleConfiguration>,
 ) {
     match cmd.take() {
-        Some(Ok(HelpCommand { command: Some(name) })) => {
-            match config.commands.get_mut(name.as_str()) {
-                Some(command_info) => {
-                    cmd.reply(command_info.render_long_help().to_string());
-                    cmd.ok();
-                }
-                None => {
-                    cmd.reply(format!("Command '{name}' does not exist"));
-                    cmd.failed();
-                }
+        Some(Ok(HelpCommand {
+            command: Some(name),
+        })) => match config.commands.get_mut(name.as_str()) {
+            Some(command_info) => {
+                cmd.reply(command_info.render_long_help().to_string());
+                cmd.ok();
             }
-        }
+            None => {
+                cmd.reply(format!("Command '{name}' does not exist"));
+                cmd.failed();
+            }
+        },
         Some(Ok(HelpCommand { command: None })) => {
             cmd.reply("Available commands:");
             let longest = config.commands.keys().map(|n| n.len()).max().unwrap_or(0);
