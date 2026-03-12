@@ -114,17 +114,47 @@ pub(crate) fn clear_command(
     }
 }
 
-//re-add default commands, unfortunately have to copy/paste
+/// List available commands, or show detailed help for a specific command
 #[derive(Parser, ConsoleCommand)]
 #[command(name = "/help")]
-pub(crate) struct HelpCommand;
+pub(crate) struct HelpCommand {
+    /// Command to show help for
+    command: Option<String>,
+}
 
 pub(crate) fn help_command(
     mut cmd: ConsoleCommand<HelpCommand>,
-    mut pending: ResMut<PendingCommands>,
+    mut config: ResMut<ConsoleConfiguration>,
 ) {
-    if let Some(Ok(_)) = cmd.take() {
-        pending.0.push("help".to_owned());
+    match cmd.take() {
+        Some(Ok(HelpCommand { command: Some(name) })) => {
+            match config.commands.get_mut(name.as_str()) {
+                Some(command_info) => {
+                    cmd.reply(command_info.render_long_help().to_string());
+                    cmd.ok();
+                }
+                None => {
+                    cmd.reply(format!("Command '{name}' does not exist"));
+                    cmd.failed();
+                }
+            }
+        }
+        Some(Ok(HelpCommand { command: None })) => {
+            cmd.reply("Available commands:");
+            let longest = config.commands.keys().map(|n| n.len()).max().unwrap_or(0);
+            for (name, command_info) in &config.commands {
+                let about = command_info
+                    .get_about()
+                    .map(|a| a.to_string())
+                    .unwrap_or_default();
+                cmd.reply(format!(
+                    "  {name}{} - {about}",
+                    " ".repeat(longest - name.len())
+                ));
+            }
+            cmd.ok();
+        }
+        _ => {}
     }
 }
 

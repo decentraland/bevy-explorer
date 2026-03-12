@@ -194,6 +194,7 @@ fn debug_chat(
             }
             _ => (),
         }
+        input.ok();
     }
 }
 
