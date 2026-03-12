@@ -27,7 +27,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let layer_f32 = f32(layer);
     let layers_f32 = f32(layers);
     let factor = layer_f32 / layers_f32;
-    let color_factor = factor * color_attenuation(layers_f32, lod);
+    let color_factor = factor * color_attenuation(layers_f32);
 
     let subdivisions_f32 = f32(subdivisions);
 
@@ -91,6 +91,6 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     return out;
 }
 
-fn color_attenuation(layers: f32, lod: u32) -> f32 {
+fn color_attenuation(layers: f32) -> f32 {
     return 1 - (log(2 * layers) / (2 * log(10.))) + 0.6;
 }
