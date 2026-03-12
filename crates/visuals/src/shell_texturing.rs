@@ -420,7 +420,7 @@ impl<B: Bundle + Clone> SpawnableList<ChildOf> for ParcelGrassShellSpawnList<B> 
                 Mesh3d(PARCEL_GRASS_MESH.clone()),
                 MeshMaterial3d(self.material.clone()),
                 Transform::from_translation(Vec3::new(0., self.displacement * i as f32, 0.)),
-                MeshTag(i + ((self.lod as u32) << 16)),
+                MeshTag(i),
                 NotShadowCaster,
                 self.extras.clone(),
                 ChildOf(entity),
