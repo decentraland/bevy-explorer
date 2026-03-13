@@ -328,6 +328,20 @@ impl CrdtStore {
         });
     }
 
+    // track the timestamps from another store without copying data.
+    // used to keep crdt_store in sync so that force_update bumps from the correct base timestamp.
+    pub fn sync_lww_timestamps_from(&mut self, other: &CrdtStore) {
+        for (id, update_lww) in &other.lww {
+            let self_lww = self.lww.entry(*id).or_default();
+            for (entity, entry) in &update_lww.last_write {
+                let store_entry = self_lww.last_write.entry(*entity).or_default();
+                if entry.timestamp > store_entry.timestamp {
+                    store_entry.timestamp = entry.timestamp;
+                }
+            }
+        }
+    }
+
     // merge entries from another store using LWW conflict resolution (higher timestamp wins).
     // use this instead of `update_from` when `self` may already contain newer data than `other`.
     pub fn merge_newer(&mut self, other: CrdtStore) {

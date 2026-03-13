@@ -924,6 +924,11 @@ fn receive_scene_updates(
                         for message in messages.into_iter() {
                             context.log(message);
                         }
+                        // Sync scene timestamps into crdt_store so renderer writes (e.g.
+                        // /set_component) use a base timestamp that wins over the scene's current.
+                        // Must happen before updates_to_entity drains `crdt`.
+                        context.crdt_store.sync_lww_timestamps_from(&crdt);
+
                         let mut commands = commands.entity(*root);
                         for (component_id, interface) in crdt_interfaces.0.iter() {
                             interface.updates_to_entity(*component_id, &mut crdt, &mut commands);

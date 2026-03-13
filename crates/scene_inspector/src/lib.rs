@@ -5,6 +5,7 @@ mod active_scene;
 mod manual_registry;
 mod read_commands;
 pub mod snapshot;
+mod write_commands;
 
 pub use active_scene::ActiveInspectionScene;
 pub use snapshot::PendingSnapshotRequests;
@@ -20,6 +21,7 @@ impl Plugin for SceneInspectorPlugin {
         manual_registry::register_engine_components(app);
 
         read_commands::add_read_commands(app);
+        write_commands::add_write_commands(app);
 
         app.add_systems(Update, snapshot::handle_snapshot_events);
     }

@@ -505,7 +505,7 @@ fn entity_alias(eid: &SceneEntityId) -> String {
     }
 }
 
-fn parse_entity_id(s: &str) -> Result<SceneEntityId, String> {
+pub fn parse_entity_id(s: &str) -> Result<SceneEntityId, String> {
     match s {
         "root" => Ok(SceneEntityId::ROOT),
         "player" => Ok(SceneEntityId::PLAYER),
