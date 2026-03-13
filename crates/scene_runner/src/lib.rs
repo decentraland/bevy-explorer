@@ -103,6 +103,14 @@ pub struct SceneThreadHandle {
     pub sender: tokio::sync::mpsc::Sender<RendererResponse>,
 }
 
+/// Emitted by [`receive_scene_updates`] when the scene thread responds to a
+/// [`RendererResponse::GetCrdtSnapshot`] request.
+#[derive(Event)]
+pub struct CrdtSnapshotEvent {
+    pub scene_entity: Entity,
+    pub crdt: dcl::interface::CrdtStore,
+}
+
 // event which can be sent from anywhere to trigger replacing the current scene with the one specified
 #[derive(Event)]
 pub struct LoadSceneEvent {
@@ -245,6 +253,7 @@ impl Plugin for SceneRunnerPlugin {
 
         app.add_event::<LoadSceneEvent>();
         app.add_event::<AppError>();
+        app.add_event::<CrdtSnapshotEvent>();
 
         app.configure_sets(
             Update,
@@ -855,10 +864,17 @@ fn receive_scene_updates(
     frame: Res<FrameCount>,
     mut rpc_call_events: EventWriter<RpcCall>,
     mut toaster: Toaster,
+    mut snapshot_events: EventWriter<CrdtSnapshotEvent>,
 ) {
     loop {
         let maybe_completed_job = match updates.receiver().try_recv() {
             Ok(response) => match response {
+                SceneResponse::CrdtSnapshot(scene_id, crdt) => {
+                    if let Some(&scene_entity) = updates.scene_ids.get(&scene_id) {
+                        snapshot_events.write(CrdtSnapshotEvent { scene_entity, crdt });
+                    }
+                    None
+                }
                 SceneResponse::WaitingForInspector => {
                     toaster.add_toast("inspector", "Scene paused waiting for inspector session");
                     None

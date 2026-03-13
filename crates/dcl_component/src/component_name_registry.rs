@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::anyhow;
 use bevy::prelude::Resource;
@@ -9,9 +9,9 @@ pub struct ComponentNameEntry {
     pub id: SceneComponentId,
     pub crdt_type: CrdtType,
     /// Decode CRDT bytes → pretty-printed JSON string.
-    pub inspect: Box<dyn Fn(&[u8]) -> anyhow::Result<String> + Send + Sync>,
+    pub inspect: Arc<dyn Fn(&[u8]) -> anyhow::Result<String> + Send + Sync>,
     /// Encode a JSON string → CRDT bytes. None for inspect-only (engine→scene only) components.
-    pub write: Option<Box<dyn Fn(&str) -> anyhow::Result<Vec<u8>> + Send + Sync>>,
+    pub write: Option<Arc<dyn Fn(&str) -> anyhow::Result<Vec<u8>> + Send + Sync>>,
 }
 
 #[derive(Resource, Default)]
@@ -26,8 +26,8 @@ impl ComponentNameRegistry {
         name: String,
         id: SceneComponentId,
         crdt_type: CrdtType,
-        inspect: Box<dyn Fn(&[u8]) -> anyhow::Result<String> + Send + Sync>,
-        write: Option<Box<dyn Fn(&str) -> anyhow::Result<Vec<u8>> + Send + Sync>>,
+        inspect: Arc<dyn Fn(&[u8]) -> anyhow::Result<String> + Send + Sync>,
+        write: Option<Arc<dyn Fn(&str) -> anyhow::Result<Vec<u8>> + Send + Sync>>,
     ) {
         self.by_id.insert(id, name.clone());
         self.by_name.insert(
@@ -57,6 +57,10 @@ impl ComponentNameRegistry {
     pub fn all_names(&self) -> impl Iterator<Item = &str> {
         self.by_name.keys().map(|s| s.as_str())
     }
+
+    pub fn all_id_name_pairs(&self) -> impl Iterator<Item = (SceneComponentId, &str)> {
+        self.by_id.iter().map(|(id, name)| (*id, name.as_str()))
+    }
 }
 
 /// Derive the PascalCase component name from a Rust type name.
@@ -69,17 +73,17 @@ pub fn derive_component_name<D>() -> String {
 
 /// Build inspect/write closures for a prost + serde type.
 pub fn make_proto_closures<D>() -> (
-    Box<dyn Fn(&[u8]) -> anyhow::Result<String> + Send + Sync>,
-    Box<dyn Fn(&str) -> anyhow::Result<Vec<u8>> + Send + Sync>,
+    Arc<dyn Fn(&[u8]) -> anyhow::Result<String> + Send + Sync>,
+    Arc<dyn Fn(&str) -> anyhow::Result<Vec<u8>> + Send + Sync>,
 )
 where
     D: prost::Message + serde::Serialize + serde::de::DeserializeOwned + Default,
 {
-    let inspect = Box::new(|bytes: &[u8]| {
+    let inspect = Arc::new(|bytes: &[u8]| {
         let msg = D::decode(bytes).map_err(|e| anyhow!("{e}"))?;
         serde_json::to_string_pretty(&msg).map_err(|e| anyhow!("{e}"))
     });
-    let write = Box::new(|json: &str| {
+    let write = Arc::new(|json: &str| {
         let msg: D = serde_json::from_str(json).map_err(|e| anyhow!("{e}"))?;
         let mut buf = Vec::new();
         prost::Message::encode(&msg, &mut buf).map_err(|e| anyhow!("{e}"))?;

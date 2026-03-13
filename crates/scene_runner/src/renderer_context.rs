@@ -196,6 +196,24 @@ impl RendererSceneContext {
         self.entity_entry(entity.id).0 > entity.generation
     }
 
+    /// Iterate over scene entities known to the renderer: those with an associated bevy entity,
+    /// plus nascent entities awaiting bevy-entity creation.
+    /// Note: entities the scene created but placed no engine-recognized components on are
+    /// invisible to the renderer and will not appear here.
+    pub fn live_scene_entities(&self) -> impl Iterator<Item = SceneEntityId> + '_ {
+        let from_table =
+            self.live_entities
+                .iter()
+                .enumerate()
+                .filter_map(|(id, (generation, bevy_ent))| {
+                    bevy_ent.map(|_| SceneEntityId {
+                        id: id as u16,
+                        generation: *generation,
+                    })
+                });
+        self.nascent.iter().copied().chain(from_table)
+    }
+
     pub fn spawn_bevy_entity(
         &mut self,
         commands: &mut Commands,

@@ -47,6 +47,7 @@ use input_manager::InputManagerPlugin;
 use ipfs::{map_realm_name, IpfsIoPlugin};
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use platform::default_camera_components;
+use scene_inspector::SceneInspectorPlugin;
 use social::SocialPlugin;
 use system_bridge::{
     settings::NewCameraEvent, NativeUi, SystemApi, SystemBridge, SystemBridgePlugin,
@@ -300,7 +301,8 @@ fn main_inner(
         .add_plugins(WorldUiPlugin)
         .add_plugins(TextureCameraPlugin)
         .add_plugins(ImageProcessingPlugin)
-        .add_plugins(SystemBridgePlugin { bare: false });
+        .add_plugins(SystemBridgePlugin { bare: false })
+        .add_plugins(SceneInspectorPlugin);
 
     if !is_preview {
         app.add_plugins(DclImposterPlugin {

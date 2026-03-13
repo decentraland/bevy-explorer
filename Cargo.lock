@@ -2822,6 +2822,7 @@ dependencies = [
  "bevy_console",
  "clap",
  "common",
+ "tokio",
 ]
 
 [[package]]
@@ -3621,6 +3622,7 @@ dependencies = [
  "platform",
  "prost-build 0.11.9",
  "restricted_actions",
+ "scene_inspector",
  "scene_material",
  "scene_runner",
  "serde_json",
@@ -10262,6 +10264,24 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.103",
+]
+
+[[package]]
+name = "scene_inspector"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bevy",
+ "bevy_console",
+ "clap",
+ "common",
+ "console",
+ "dcl",
+ "dcl_component",
+ "prost 0.11.9",
+ "scene_runner",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

@@ -211,6 +211,25 @@ impl PendingConsoleResponses {
             }
         }));
     }
+
+    /// Register a raw tokio oneshot receiver to be polled each frame.
+    pub fn push_oneshot<T, F>(&mut self, receiver: tokio::sync::oneshot::Receiver<T>, map: F)
+    where
+        T: Send + 'static,
+        F: Fn(T) -> Result<String, String> + Send + Sync + 'static,
+    {
+        let receiver = Mutex::new(receiver);
+        self.0.push(Box::new(move || {
+            let mut guard = receiver.lock().unwrap();
+            match guard.try_recv() {
+                Ok(val) => Some(map(val)),
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => None,
+                Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                    Some(Err("cancelled".to_string()))
+                }
+            }
+        }));
+    }
 }
 
 fn poll_console_responses(
