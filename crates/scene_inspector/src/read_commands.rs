@@ -449,7 +449,14 @@ fn scene_tree_cmd(
                 return;
             }
             let mut out = String::new();
-            print_tree(&mut out, SceneEntityId::ROOT.id, 0, &children, &mut visible);
+            print_tree(
+                &mut out,
+                SceneEntityId::ROOT.id,
+                0,
+                &children,
+                &mut visible,
+                &entities,
+            );
             let result = if out.is_empty() {
                 Ok("(no entities)".to_string())
             } else {
@@ -469,17 +476,19 @@ fn print_tree(
     depth: usize,
     children: &std::collections::HashMap<u16, Vec<u16>>,
     visible: &mut std::collections::HashSet<u16>,
+    matched: &std::collections::HashSet<u16>,
 ) {
     // Remove from visible before recursing to break any cycles
     let was_visible = visible.remove(&id) || id == SceneEntityId::ROOT.id;
     if was_visible {
         let indent = "  ".repeat(depth);
         let eid = SceneEntityId { id, generation: 0 };
-        out.push_str(&format!("{indent}{}\n", entity_alias(&eid)));
+        let marker = if matched.contains(&id) { " *" } else { "" };
+        out.push_str(&format!("{indent}{}{marker}\n", entity_alias(&eid)));
     }
     if let Some(kids) = children.get(&id).cloned() {
         for kid in kids {
-            print_tree(out, kid, depth + 1, children, visible);
+            print_tree(out, kid, depth + 1, children, visible, matched);
         }
     }
 }
