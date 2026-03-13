@@ -21,8 +21,8 @@ use common::structs::SsaoSetting;
 use common::{
     sets::SceneSets,
     structs::{
-        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, PreviewMode, ShadowSetting,
-        WindowSetting,
+        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, ParcelGrassSetting,
+        PreviewMode, ShadowSetting, WindowSetting,
     },
 };
 use constrain_ui::ConstrainUiSetting;
@@ -57,6 +57,7 @@ pub mod load_distance;
 pub mod max_avatars;
 pub mod max_downloads;
 pub mod oob_setting;
+pub mod parcel_grass_settings;
 pub mod player_settings;
 pub mod scene_threads;
 pub mod sensitivity;
@@ -65,7 +66,6 @@ pub mod ssao_setting;
 pub mod video_threads;
 pub mod volume_settings;
 pub mod window_settings;
-
 pub struct SettingBridgePlugin;
 
 #[derive(Event)]
@@ -135,6 +135,7 @@ impl Plugin for SettingBridgePlugin {
         );
 
         add_enum_setting::<ImposterSetting>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<ParcelGrassSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<FogSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<BloomSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<DofSetting>(app, &mut settings, &mut schedule, &config);

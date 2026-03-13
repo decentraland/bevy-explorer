@@ -2,12 +2,13 @@ use std::{
     f32::consts::PI,
     marker::PhantomData,
     num::ParseIntError,
-    ops::Range,
+    ops::{Deref, Range},
     str::FromStr,
     sync::{atomic::AtomicU32, Arc},
 };
 
 use bevy::{
+    color::palettes,
     platform::collections::{HashMap, HashSet},
     prelude::*,
     render::view::RenderLayers,
@@ -352,6 +353,7 @@ pub struct AppConfig {
     pub scene_imposter_multisample: bool,
     pub scene_imposter_multisample_amount: f32,
     pub scene_imposter_bake: SceneImposterBake,
+    pub parcel_grass_setting: ParcelGrassSetting,
     pub sysinfo_visible: bool,
     pub scene_log_to_console: bool,
     pub max_avatars: usize,
@@ -382,6 +384,7 @@ impl Default for AppConfig {
             scene_imposter_multisample: false,
             scene_imposter_multisample_amount: 0.0,
             scene_imposter_bake: SceneImposterBake::Off,
+            parcel_grass_setting: Default::default(),
             sysinfo_visible: false,
             scene_log_to_console: false,
             max_avatars: 100,
@@ -1168,6 +1171,79 @@ impl<T> Default for MonotonicTimestamp<T> {
 impl<T> MonotonicTimestamp<T> {
     pub fn next_timestamp(&self) -> u32 {
         self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ParcelGrassSetting {
+    Off,
+    #[cfg_attr(target_arch = "wasm32", default)]
+    Low,
+    Mid,
+    #[cfg_attr(not(target_arch = "wasm32"), default)]
+    High,
+}
+
+impl Deref for ParcelGrassSetting {
+    type Target = ParcelGrassConfig;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Off => &ParcelGrassConfig {
+                layers: 0,
+                subdivisions: 32,
+                y_displacement: 0.04,
+                root_color: Color::Srgba(ParcelGrassConfig::ROOT_COLOR),
+                tip_color: Color::Srgba(ParcelGrassConfig::TIP_COLOR),
+            },
+            Self::Low => &ParcelGrassConfig {
+                layers: 8,
+                subdivisions: 32,
+                y_displacement: 0.02,
+                root_color: Color::Srgba(ParcelGrassConfig::ROOT_COLOR),
+                tip_color: Color::Srgba(ParcelGrassConfig::TIP_COLOR),
+            },
+            Self::Mid => &ParcelGrassConfig {
+                layers: 16,
+                subdivisions: 32,
+                y_displacement: 0.02,
+                root_color: Color::Srgba(ParcelGrassConfig::ROOT_COLOR),
+                tip_color: Color::Srgba(ParcelGrassConfig::TIP_COLOR),
+            },
+            Self::High => &ParcelGrassConfig {
+                layers: 32,
+                subdivisions: 32,
+                y_displacement: 0.01,
+                root_color: Color::Srgba(ParcelGrassConfig::ROOT_COLOR),
+                tip_color: Color::Srgba(ParcelGrassConfig::TIP_COLOR),
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Resource, Serialize, Deserialize)]
+pub struct ParcelGrassConfig {
+    pub layers: u32,
+    pub subdivisions: u32,
+    pub y_displacement: f32,
+    pub root_color: Color,
+    pub tip_color: Color,
+}
+
+impl ParcelGrassConfig {
+    pub const ROOT_COLOR: Srgba = palettes::tailwind::LIME_800;
+    pub const TIP_COLOR: Srgba = palettes::tailwind::LIME_600;
+}
+
+impl Default for ParcelGrassConfig {
+    fn default() -> Self {
+        Self {
+            layers: 32,
+            subdivisions: 32,
+            y_displacement: 0.01,
+            root_color: Self::ROOT_COLOR.into(),
+            tip_color: Self::TIP_COLOR.into(),
+        }
     }
 }
 

@@ -27,3 +27,7 @@ pub enum SceneLoopSets {
     Lifecycle,        // manage bevy entity lifetimes
     UpdateWorld,      // systems which handle events from the current frame
 }
+
+// set for systems that deal with changes to realms
+#[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
+pub struct RealmLifecycle;
