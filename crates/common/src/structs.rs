@@ -1199,7 +1199,7 @@ impl Deref for ParcelGrassSetting {
             Self::Low => &ParcelGrassConfig {
                 layers: 8,
                 subdivisions: 32,
-                y_displacement: 0.04,
+                y_displacement: 0.02,
                 root_color: Color::Srgba(ParcelGrassConfig::ROOT_COLOR),
                 tip_color: Color::Srgba(ParcelGrassConfig::TIP_COLOR),
             },
