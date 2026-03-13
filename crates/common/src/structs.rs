@@ -1189,7 +1189,14 @@ impl Deref for ParcelGrassSetting {
 
     fn deref(&self) -> &Self::Target {
         match self {
-            Self::Off | Self::Low => &ParcelGrassConfig {
+            Self::Off => &ParcelGrassConfig {
+                layers: 0,
+                subdivisions: 32,
+                y_displacement: 0.04,
+                root_color: Color::Srgba(ParcelGrassConfig::ROOT_COLOR),
+                tip_color: Color::Srgba(ParcelGrassConfig::TIP_COLOR),
+            },
+            Self::Low => &ParcelGrassConfig {
                 layers: 8,
                 subdivisions: 32,
                 y_displacement: 0.04,
