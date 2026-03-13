@@ -7,6 +7,7 @@ use bevy::{
     render::{
         mesh::MeshTag,
         render_resource::{AsBindGroup, ShaderRef},
+        view::RenderLayers,
     },
 };
 use common::{
@@ -23,6 +24,8 @@ const PARCEL_GRASS_MATERIAL: Handle<ShellTexture> =
     weak_handle!("18c8dd1e-081d-452a-9c00-327775a239ff");
 
 const GROUND_MATERIAL: Handle<ShellTexture> = weak_handle!("a7b403bc-917b-424e-878a-9714243bd4ce");
+const GROUND_MATERIAL_FLAT_COLOR: Handle<StandardMaterial> =
+    weak_handle!("3e91f222-a374-4f7f-ba1a-4a239c9734ae");
 const GROUND_LAYERS: u32 = 5;
 const GROUND_DISPLACEMENT: f32 = 0.01;
 
@@ -128,6 +131,8 @@ impl Plugin for ShellTexturingPlugin {
     fn build(&self, app: &mut App) {
         embedded_asset!(app, "shell_texturing.wgsl");
 
+        app.init_state::<ParcelGrassState>();
+
         app.init_resource::<ParcelGrassMap>();
         app.init_resource::<ParcelGrassConfig>();
 
@@ -140,17 +145,20 @@ impl Plugin for ShellTexturingPlugin {
                 spawn_ground.in_set(SetupSets::Main),
             ),
         );
+        app.add_systems(OnEnter(ParcelGrassState::Off), swap_ground);
+        app.add_systems(OnEnter(ParcelGrassState::On), swap_ground);
         app.add_systems(
-            Update,
+            PostUpdate,
             (
-                update_parcel_grass_material.run_if(resource_changed::<ParcelGrassConfig>),
+                (state_change, update_parcel_grass_material)
+                    .run_if(resource_changed::<ParcelGrassConfig>),
                 parcel_grass_config_updated
                     .run_if(resource_changed::<ParcelGrassConfig>.and(shells_need_updating)),
             ),
         );
         app.add_systems(
             Update,
-            parcel_grass_without_lod.after(parcel_grass_config_updated),
+            parcel_grass_without_lod.run_if(in_state(ParcelGrassState::On)),
         );
         app.add_systems(
             PreUpdate,
@@ -163,6 +171,14 @@ impl Plugin for ShellTexturingPlugin {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, States)]
+enum ParcelGrassState {
+    #[default]
+    Waiting,
+    Off,
+    On,
+}
+
 fn setup_parcel_grass_mesh(mut meshes: ResMut<Assets<Mesh>>) {
     meshes.insert(
         PARCEL_GRASS_MESH.id(),
@@ -170,20 +186,72 @@ fn setup_parcel_grass_mesh(mut meshes: ResMut<Assets<Mesh>>) {
     );
 }
 
-fn spawn_ground(mut commands: Commands) {
+fn spawn_ground(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
     commands.spawn((
         // Ground covers 1024 parcels
         Transform::from_scale(Vec3::new(1024., 1., 1024.))
             .with_translation(Vec3::new(0., -0.05, 0.)),
         Ground,
-        Children::spawn(ParcelGrassShellSpawnList {
-            shells: GROUND_LAYERS,
-            lod: HIGH_LOD,
-            displacement: GROUND_DISPLACEMENT,
-            material: GROUND_MATERIAL.clone(),
-            extras: (GROUND_RENDERLAYER,),
-        }),
     ));
+    materials.insert(
+        GROUND_MATERIAL_FLAT_COLOR.id(),
+        StandardMaterial {
+            base_color: Color::srgb(0.3, 0.45, 0.2),
+            perceptual_roughness: 1.0,
+            metallic: 0.0,
+            depth_bias: -100.0,
+            fog_enabled: false,
+            ..Default::default()
+        },
+    );
+}
+
+fn state_change(mut commands: Commands, parcel_grass_config: Res<ParcelGrassConfig>) {
+    if parcel_grass_config.layers == 0 {
+        debug!(
+            target: "visuals::parcel_grass::set_state",
+            "ParcelGrass is off."
+        );
+        commands.set_state(ParcelGrassState::Off);
+    } else {
+        debug!(
+            target: "visuals::parcel_grass::set_state",
+            "ParcelGrass is on."
+        );
+        commands.set_state(ParcelGrassState::On);
+    }
+}
+
+fn swap_ground(
+    mut commands: Commands,
+    ground: Single<Entity, With<Ground>>,
+    parcel_grass_state: Res<State<ParcelGrassState>>,
+) {
+    match parcel_grass_state.get() {
+        ParcelGrassState::Waiting => {}
+        ParcelGrassState::Off => {
+            commands
+                .entity(*ground)
+                .insert((
+                    Mesh3d(PARCEL_GRASS_MESH.clone()),
+                    MeshMaterial3d(GROUND_MATERIAL_FLAT_COLOR),
+                    GROUND_RENDERLAYER.clone(),
+                ))
+                .despawn_related::<Children>();
+        }
+        ParcelGrassState::On => {
+            commands
+                .entity(*ground)
+                .insert(Children::spawn(ParcelGrassShellSpawnList {
+                    shells: GROUND_LAYERS,
+                    lod: HIGH_LOD,
+                    displacement: GROUND_DISPLACEMENT,
+                    material: GROUND_MATERIAL.clone(),
+                    extras: (GROUND_RENDERLAYER,),
+                }))
+                .remove::<(Mesh3d, MeshMaterial3d<StandardMaterial>, RenderLayers)>();
+        }
+    }
 }
 
 fn update_parcel_grass_material(
@@ -310,6 +378,11 @@ fn parcel_grass_without_lod(
     scene_pointers: Res<ScenePointers>,
 ) {
     let player_location = vec3_to_parcel(player.translation());
+    debug!(
+        target: "visuals::parcel_grass::parcel_grass_without_lod",
+        "Recalculating LOD for {} entities.",
+        parcel_grasses.iter().len()
+    );
 
     for (entity, parcel_grass) in parcel_grasses.into_inner() {
         match scene_pointers.get(parcel_grass.parcel) {
