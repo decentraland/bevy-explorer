@@ -327,4 +327,29 @@ impl CrdtStore {
             self_go.0.extend(update_go.0);
         });
     }
+
+    // merge entries from another store using LWW conflict resolution (higher timestamp wins).
+    // use this instead of `update_from` when `self` may already contain newer data than `other`.
+    pub fn merge_newer(&mut self, other: CrdtStore) {
+        other.lww.into_iter().for_each(|(id, update_lww)| {
+            let self_lww = self.lww.entry(id).or_default();
+            for (entity, entry) in update_lww.last_write {
+                let super::crdt::lww::LWWEntry {
+                    timestamp,
+                    is_some,
+                    data,
+                } = entry;
+                let maybe_data = is_some.then_some(data);
+                self_lww.try_update(
+                    entity,
+                    timestamp,
+                    maybe_data.as_deref().map(DclReader::new).as_mut(),
+                );
+            }
+        });
+        other.go.into_iter().for_each(|(id, update_go)| {
+            let self_go = self.go.entry(id).or_default();
+            self_go.0.extend(update_go.0);
+        });
+    }
 }

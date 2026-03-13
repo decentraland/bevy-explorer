@@ -119,7 +119,7 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
             // Merge renderer→scene components so the snapshot includes engine-managed
             // values (EngineInfo, RaycastResult, etc.) alongside scene-set components.
             let renderer_store = op_state.borrow_mut().take::<RendererStore>();
-            snapshot.update_from(renderer_store.0.clone());
+            snapshot.merge_newer(renderer_store.0.clone());
             op_state.borrow_mut().put(renderer_store);
             let scene_id = op_state.borrow_mut().borrow::<CrdtContext>().scene_id;
             op_state
