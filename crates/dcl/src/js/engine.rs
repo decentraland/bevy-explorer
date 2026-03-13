@@ -114,8 +114,13 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
 
         if let Some(RendererResponse::GetCrdtSnapshot) = &response {
             let crdt_store = op_state.borrow_mut().take::<CrdtStore>();
-            let snapshot = crdt_store.clone();
+            let mut snapshot = crdt_store.clone();
             op_state.borrow_mut().put(crdt_store);
+            // Merge renderer→scene components so the snapshot includes engine-managed
+            // values (EngineInfo, RaycastResult, etc.) alongside scene-set components.
+            let renderer_store = op_state.borrow_mut().take::<RendererStore>();
+            snapshot.update_from(renderer_store.0.clone());
+            op_state.borrow_mut().put(renderer_store);
             let scene_id = op_state.borrow_mut().borrow::<CrdtContext>().scene_id;
             op_state
                 .borrow_mut()

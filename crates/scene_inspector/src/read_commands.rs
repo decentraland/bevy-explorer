@@ -12,7 +12,8 @@ use crate::{
 pub fn add_read_commands(app: &mut App) {
     app.add_console_command::<SetSceneCommand, _>(set_scene_cmd);
     app.add_console_command::<SceneStatsCommand, _>(scene_stats_cmd);
-    app.add_console_command::<SceneLogsCommand, _>(scene_logs_cmd);
+    // TODO: /scene_logs always returns empty even when logs exist — investigate
+    // app.add_console_command::<SceneLogsCommand, _>(scene_logs_cmd);
     app.add_console_command::<SceneEntitiesCommand, _>(scene_entities_cmd);
     app.add_console_command::<EntityComponentsCommand, _>(entity_components_cmd);
     app.add_console_command::<InspectComponentCommand, _>(inspect_component_cmd);
@@ -190,10 +191,7 @@ fn scene_entities_cmd(
             let result = if entities.is_empty() {
                 Ok("(no entities)".to_string())
             } else {
-                let mut lines: Vec<String> = entities
-                    .iter()
-                    .map(|e| format!("{} (id={} gen={})", entity_alias(e), e.id, e.generation))
-                    .collect();
+                let mut lines: Vec<String> = entities.iter().map(|e| entity_alias(e)).collect();
                 lines.sort();
                 Ok(lines.join("\n"))
             };
@@ -417,21 +415,19 @@ fn scene_tree_cmd(
                 }))
                 .collect();
 
-            // Include ancestors of filtered entities
+            // Always walk ancestors so non-instantiated parents (e.g. player) are included.
             let mut visible: std::collections::HashSet<u16> = entities.clone();
-            if filter_id.is_some() {
-                for &eid in &entities {
-                    let mut cur = eid;
-                    while let Some(&parent) = parent_map.get(&cur) {
-                        if !visible.insert(parent) {
-                            break;
-                        }
-                        cur = parent;
+            for &eid in &entities {
+                let mut cur = eid;
+                while let Some(&parent) = parent_map.get(&cur) {
+                    if !visible.insert(parent) {
+                        break;
                     }
+                    cur = parent;
                 }
             }
 
-            // Build children map (root is always the tree root)
+            // Build children map (root is always the tree root).
             let mut children: std::collections::HashMap<u16, Vec<u16>> =
                 std::collections::HashMap::new();
             for &eid in &visible {
@@ -448,6 +444,10 @@ fn scene_tree_cmd(
                 v.sort();
             }
 
+            if visible.is_empty() && !children.contains_key(&SceneEntityId::ROOT.id) {
+                let _ = tx.send(Ok("(no entities)".to_string()));
+                return;
+            }
             let mut out = String::new();
             print_tree(&mut out, SceneEntityId::ROOT.id, 0, &children, &mut visible);
             let result = if out.is_empty() {
@@ -487,11 +487,12 @@ fn print_tree(
 // --- helpers ---
 
 fn entity_alias(eid: &SceneEntityId) -> String {
+    let id = eid.as_proto_u32().unwrap_or(eid.id as u32);
     match eid.id {
-        0 => "root(0)".to_string(),
-        1 => "player(1)".to_string(),
-        2 => "camera(2)".to_string(),
-        id => format!("{id}"),
+        0 => format!("root({id})"),
+        1 => format!("player({id})"),
+        2 => format!("camera({id})"),
+        _ => format!("{id}"),
     }
 }
 
