@@ -1,10 +1,7 @@
 use std::fmt::Display;
 
 use crate::{
-    settings::{
-        imposter_settings::ImposterSetting, parcel_grass_settings::ParcelGrassSetting,
-        sensitivity::*,
-    },
+    settings::{imposter_settings::ImposterSetting, sensitivity::*},
     SystemApi,
 };
 use ambient_brightness_setting::AmbientSetting;
@@ -24,8 +21,8 @@ use common::structs::SsaoSetting;
 use common::{
     sets::SceneSets,
     structs::{
-        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, PreviewMode, ShadowSetting,
-        WindowSetting,
+        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, ParcelGrassSetting,
+        PreviewMode, ShadowSetting, WindowSetting,
     },
 };
 use constrain_ui::ConstrainUiSetting;
