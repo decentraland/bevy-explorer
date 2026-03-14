@@ -125,6 +125,7 @@ impl DclProtoComponent for sdk::components::PbTriggerAreaResult {}
 impl DclProtoComponent for sdk::components::PbGltfNodeModifiers {}
 impl DclProtoComponent for sdk::components::PbSkyboxTime {}
 impl DclProtoComponent for sdk::components::PbAvatarMovement {}
+impl DclProtoComponent for sdk::components::PbAvatarLocomotionSettings {}
 impl DclProtoComponent for sdk::components::PbAvatarMovementInfo {}
 
 // PositionFree markers for types used with GlobalCrdtState::update_crdt

@@ -195,7 +195,6 @@ impl SceneComponentId {
     pub const TWEEN_STATE: SceneComponentId = SceneComponentId(1103);
 
     pub const LIGHT_SOURCE: SceneComponentId = SceneComponentId(1079);
-    pub const SPOTLIGHT: SceneComponentId = SceneComponentId(1205);
     pub const GLOBAL_LIGHT: SceneComponentId = SceneComponentId(1206);
     pub const TEXTURE_CAMERA: SceneComponentId = SceneComponentId(1207);
     pub const CAMERA_LAYERS: SceneComponentId = SceneComponentId(1208);

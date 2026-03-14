@@ -40,6 +40,10 @@ impl Plugin for AvatarMovementPlugin {
             SceneComponentId::AVATAR_MOVEMENT,
             ComponentPosition::EntityOnly,
         );
+        app.add_crdt_lww_component::<PbAvatarLocomotionSettings, AvatarLocomotionSettings>(
+            SceneComponentId::AVATAR_LOCOMOTION_SETTINGS,
+            ComponentPosition::EntityOnly,
+        );
 
         app.init_resource::<AvatarMovementInfo>();
 
