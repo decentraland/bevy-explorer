@@ -269,22 +269,39 @@ export function start() {
         const jsName = cmd.cmd
           .replace(/^\//, '')
           .replace(/_([a-z])/g, (_, c) => c.toUpperCase());
-        window.engine[jsName] = (...jsArgs) => {
-          const parts = [cmd.cmd];
-          for (let i = 0; i < cmd.args.length; i++) {
-            const val = jsArgs[i];
-            if (val === undefined) {
-              if (!cmd.args[i].optional)
-                throw new Error(`${jsName}: missing arg '${cmd.args[i].name}'`);
-              break;
-            }
-            parts.push(cmd.args[i].kind === 'json' ? JSON.stringify(val) : String(val));
-          }
-          return engine_console_command(parts.join(' ')).then(r => {
-            try { return JSON.parse(r); } catch { return r; }
-          });
-        };
+        const paramNames = cmd.args.map(a => a.name);
+        const body = [
+          `var parts = [${JSON.stringify(cmd.cmd)}];`,
+          `var defs = ${JSON.stringify(cmd.args)};`,
+          `for (var i = 0; i < defs.length; i++) {`,
+          `  var val = arguments[i];`,
+          `  if (val === undefined) { if (!defs[i].optional) throw new Error(${JSON.stringify(jsName)} + ": missing arg '" + defs[i].name + "'"); break; }`,
+          `  parts.push(defs[i].kind === 'json' ? JSON.stringify(val) : String(val));`,
+          `}`,
+          `return window.engine_console_command(parts.join(' ')).then(function(r) { try { return JSON.parse(r); } catch(e) { return r; } });`,
+        ].join('\n');
+        const fn = new Function(...paramNames, body);
+        const sig = cmd.args.map(a => {
+          const name = a.kind === 'json' ? `${a.name}: object` : a.name;
+          return a.optional ? `[${name}]` : `<${name}>`;
+        }).join(', ');
+        fn._sig = `(${sig})`;
+        fn._help = cmd.help || '';
+        fn.toString = () => `${jsName}${fn._sig}${fn._help ? ' — ' + fn._help : ''}`;
+        window.engine[jsName] = fn;
       }
+      window.engine.help = (name) => {
+        if (!name) {
+          const lines = ['Available commands:'];
+          for (const [k, v] of Object.entries(window.engine)) {
+            if (typeof v === 'function' && v._help) lines.push(`  ${k} - ${v._help}`);
+          }
+          return lines.join('\n');
+        }
+        const fn = window.engine[name];
+        if (!fn?._sig) return `Unknown command: ${name}`;
+        return `${name}${fn._sig}\n${fn._help || ''}`;
+      };
     } catch (e) {
       console.warn('Failed to build engine API:', e);
     }

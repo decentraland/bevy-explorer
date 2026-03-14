@@ -614,20 +614,27 @@ fn extract_js_api(config: Res<ConsoleConfiguration>) {
                     } else {
                         "string"
                     };
-                    serde_json::json!({
+                    let mut arg_json = serde_json::json!({
                         "name": id,
                         "kind": kind,
                         "optional": !arg.is_required_set(),
-                    })
+                    });
+                    if let Some(help) = arg.get_help() {
+                        arg_json["help"] = serde_json::Value::String(help.to_string());
+                    }
+                    arg_json
                 })
                 .collect();
-            serde_json::json!({ "cmd": name, "args": args })
+            let mut cmd_json = serde_json::json!({ "cmd": name, "args": args });
+            if let Some(about) = cmd.get_about() {
+                cmd_json["help"] = serde_json::Value::String(about.to_string());
+            }
+            cmd_json
         })
         .collect();
     let json = serde_json::to_string(&commands).unwrap_or_default();
     build_engine_api(&json);
 }
-
 
 pub fn update_winit_fps(config: Res<AppConfig>, mut winit: ResMut<WinitSettings>) {
     if config.is_changed() {

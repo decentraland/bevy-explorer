@@ -241,13 +241,13 @@ fn entity_components_cmd(
             for (cid, state) in &crdt.lww {
                 if state.last_write.get(&eid).is_some_and(|e| e.is_some) {
                     let name = id_to_name.get(cid).map(|s| s.as_str()).unwrap_or("unknown");
-                    components.push(format!("{name} [LWW]"));
+                    components.push(format!("{name} ({}) [LWW]", cid.0));
                 }
             }
             for (cid, state) in &crdt.go {
                 if state.0.contains_key(&eid) {
                     let name = id_to_name.get(cid).map(|s| s.as_str()).unwrap_or("unknown");
-                    components.push(format!("{name} [GO]"));
+                    components.push(format!("{name} ({}) [GO]", cid.0));
                 }
             }
 
@@ -448,6 +448,11 @@ fn scene_tree_cmd(
                 let _ = tx.send(Ok("(no entities)".to_string()));
                 return;
             }
+            let matched = if filter_id.is_some() {
+                &entities
+            } else {
+                &std::collections::HashSet::new()
+            };
             let mut out = String::new();
             print_tree(
                 &mut out,
@@ -455,7 +460,7 @@ fn scene_tree_cmd(
                 0,
                 &children,
                 &mut visible,
-                &entities,
+                matched,
             );
             let result = if out.is_empty() {
                 Ok("(no entities)".to_string())

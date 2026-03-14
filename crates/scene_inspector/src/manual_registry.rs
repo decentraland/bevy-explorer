@@ -5,8 +5,9 @@ use dcl_component::{
         PbAudioEvent, PbAvatarBase, PbAvatarEmoteCommand, PbAvatarEquippedData,
         PbAvatarMovementInfo, PbCameraMode, PbEngineInfo, PbGltfContainerLoadingState,
         PbGltfNodeState, PbPlayerIdentityData, PbPointerEventsResult, PbPointerLock,
-        PbPrimaryPointerInfo, PbRaycastResult, PbTriggerAreaResult, PbTweenState,
-        PbUiDropdownResult, PbUiInputResult, PbUiScrollResult, PbVideoEvent,
+        PbPrimaryPointerInfo, PbRaycastResult, PbRealmInfo, PbTriggerAreaResult, PbTweenState,
+        PbUiCanvasInformation, PbUiDropdownResult, PbUiInputResult, PbUiScrollResult,
+        PbVideoEvent,
     },
     ComponentNameRegistry, CrdtType, SceneComponentId,
 };
@@ -151,6 +152,19 @@ pub fn register_engine_components(app: &mut App) {
         PbAvatarMovementInfo,
         SceneComponentId::AVATAR_MOVEMENT_INFO,
         CrdtType::LWW_ANY,
+        ro
+    );
+
+    reg!(
+        PbUiCanvasInformation,
+        SceneComponentId::CANVAS_INFO,
+        CrdtType::LWW_ROOT,
+        ro
+    );
+    reg!(
+        PbRealmInfo,
+        SceneComponentId::REALM_INFO,
+        CrdtType::LWW_ROOT,
         ro
     );
 
