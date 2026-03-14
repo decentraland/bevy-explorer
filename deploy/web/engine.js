@@ -260,7 +260,38 @@ export function start() {
     return "unknown";
   })();
 
+  // Callback invoked by Rust once console command metadata is available.
+  window._buildEngineApi = (json) => {
+    try {
+      const api = JSON.parse(json);
+      window.engine = {};
+      for (const cmd of api) {
+        const jsName = cmd.cmd
+          .replace(/^\//, '')
+          .replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+        window.engine[jsName] = (...jsArgs) => {
+          const parts = [cmd.cmd];
+          for (let i = 0; i < cmd.args.length; i++) {
+            const val = jsArgs[i];
+            if (val === undefined) {
+              if (!cmd.args[i].optional)
+                throw new Error(`${jsName}: missing arg '${cmd.args[i].name}'`);
+              break;
+            }
+            parts.push(cmd.args[i].kind === 'json' ? JSON.stringify(val) : String(val));
+          }
+          return engine_console_command(parts.join(' ')).then(r => {
+            try { return JSON.parse(r); } catch { return r; }
+          });
+        };
+      }
+    } catch (e) {
+      console.warn('Failed to build engine API:', e);
+    }
+    delete window._buildEngineApi;
+  };
+
   engine_run(platform, realmValue, positionValue, systemScene, true, preview, 1e7);
   window.engine_console_command = engine_console_command;
-  setTimeout(showCanvas,200)
+  setTimeout(showCanvas, 200);
 }

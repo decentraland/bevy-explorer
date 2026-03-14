@@ -16,7 +16,7 @@ use bevy::{
     tasks::BoxedFuture,
     winit::{UpdateMode, WinitSettings},
 };
-use bevy_console::ConsoleCommand;
+use bevy_console::{ConsoleCommand, ConsoleConfiguration};
 use dcl_wasm::init_runtime;
 use tracing::Level;
 
@@ -331,6 +331,15 @@ fn main_inner(
     app.add_console_command::<SceneThreadsCommand, _>(scene_threads);
     app.add_console_command::<FpsCommand, _>(set_fps);
 
+    app.add_systems(
+        Update,
+        extract_js_api.run_if(|mut once: Local<bool>| {
+            let run = !*once;
+            *once = true;
+            run
+        }),
+    );
+
     info!("Bevy-Explorer version {}", version);
 
     let bridge_sender = app.world().resource::<SystemBridge>().sender.clone();
@@ -483,6 +492,12 @@ fn set_fps(mut input: ConsoleCommand<FpsCommand>, mut config: ResMut<AppConfig>)
 use once_cell::sync::OnceCell;
 use wasm_bindgen::prelude::*;
 
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = window, js_name = _buildEngineApi)]
+    fn build_engine_api(json: &str);
+}
+
 static WASM_ASSET_LOADER_HANDLE: OnceCell<bevy::asset::WasmLoaderHandle> = OnceCell::new();
 static INIT_DATA: OnceCell<AppConfig> = OnceCell::new();
 static CONSOLE_BRIDGE_SENDER: OnceCell<tokio::sync::mpsc::UnboundedSender<SystemApi>> =
@@ -575,6 +590,44 @@ pub async fn engine_console_command(command_line: String) -> Result<JsValue, JsV
         .map(|s| JsValue::from_str(&s))
         .map_err(|e| JsValue::from_str(&e))
 }
+
+/// Extract console command metadata from clap and store as JSON for the JS API.
+fn extract_js_api(config: Res<ConsoleConfiguration>) {
+    let commands: Vec<serde_json::Value> = config
+        .commands
+        .iter()
+        .map(|(name, cmd)| {
+            let trailing = cmd.is_trailing_var_arg_set();
+            let positional: Vec<_> = cmd
+                .get_arguments()
+                .filter(|a| a.get_long().is_none() && a.get_short().is_none())
+                .collect();
+            let last_id = positional.last().map(|a| a.get_id().as_str());
+            let args: Vec<serde_json::Value> = positional
+                .iter()
+                .map(|arg| {
+                    let id = arg.get_id().as_str();
+                    let kind = if trailing && Some(id) == last_id {
+                        "json"
+                    } else if id == "entity" {
+                        "entity"
+                    } else {
+                        "string"
+                    };
+                    serde_json::json!({
+                        "name": id,
+                        "kind": kind,
+                        "optional": !arg.is_required_set(),
+                    })
+                })
+                .collect();
+            serde_json::json!({ "cmd": name, "args": args })
+        })
+        .collect();
+    let json = serde_json::to_string(&commands).unwrap_or_default();
+    build_engine_api(&json);
+}
+
 
 pub fn update_winit_fps(config: Res<AppConfig>, mut winit: ResMut<WinitSettings>) {
     if config.is_changed() {
