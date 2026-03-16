@@ -16,6 +16,7 @@ use bevy::{
 };
 
 use common::{
+    sets::RealmLifecycle,
     structs::{
         AppConfig, AppError, CurrentRealm, GlobalCrdtStateUpdate, IVec2Arg, PreviewMode,
         SceneLoadDistance, SceneMeta, SceneTime,
@@ -109,7 +110,8 @@ impl Plugin for SceneLifecyclePlugin {
                 load_active_entities,
                 process_scene_lifecycle,
             )
-                .chain(),
+                .chain()
+                .in_set(RealmLifecycle),
         );
     }
 }

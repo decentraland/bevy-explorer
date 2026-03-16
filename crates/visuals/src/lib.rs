@@ -1,6 +1,7 @@
 mod day_night;
 pub mod env_downsample;
 mod nishita_cloud;
+pub mod shell_texturing;
 
 use bevy::{
     core_pipeline::dof::{DepthOfField, DepthOfFieldMode},
@@ -26,14 +27,13 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, DofConfig, FogSetting, PrimaryCamera, PrimaryCameraRes, PrimaryUser,
-        SceneGlobalLight, SceneLoadDistance, ShadowSetting, GROUND_RENDERLAYER,
-        PRIMARY_AVATAR_LIGHT_LAYER,
+        SceneGlobalLight, SceneLoadDistance, ShadowSetting, PRIMARY_AVATAR_LIGHT_LAYER,
     },
 };
 use console::DoAddConsoleCommand;
 // use env_downsample::{Envmap, EnvmapDownsamplePlugin};
 
-use crate::day_night::DayNightPlugin;
+use crate::{day_night::DayNightPlugin, shell_texturing::ShellTexturingPlugin};
 
 pub struct VisualsPlugin {
     pub no_fog: bool,
@@ -49,6 +49,7 @@ impl Plugin for VisualsPlugin {
             })
             .add_plugins(WireframePlugin::default())
             .add_plugins(DayNightPlugin)
+            .add_plugins(ShellTexturingPlugin)
             .add_systems(Update, apply_global_light)
             .add_systems(Update, update_dof)
             .add_systems(Startup, setup.in_set(SetupSets::Main));
@@ -93,8 +94,6 @@ struct DirectionalLightLayer(Layer);
 
 fn setup(
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
     camera: Res<PrimaryCameraRes>,
     mut atmosphere: AtmosphereMut<NishitaCloud>,
     mut images: ResMut<Assets<Image>>,
@@ -108,28 +107,6 @@ fn setup(
         directional_light_exponent: 10.0,
         falloff: FogFalloff::ExponentialSquared { density: 0.01 },
     });
-
-    commands.spawn((
-        Mesh3d(
-            meshes.add(
-                Plane3d::default()
-                    .mesh()
-                    .size(6500.0, 6500.0)
-                    .subdivisions(10),
-            ),
-        ),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgb(0.3, 0.45, 0.2),
-            perceptual_roughness: 1.0,
-            metallic: 0.0,
-            depth_bias: -100.0,
-            fog_enabled: false,
-            ..Default::default()
-        })),
-        Transform::from_translation(Vec3::Y * -0.05),
-        Ground,
-        GROUND_RENDERLAYER.clone(),
-    ));
 
     {
         commands.entity(camera.0).try_insert(AtmosphereCamera {
@@ -336,9 +313,6 @@ fn apply_global_light(
     };
     prev.1 = next_light;
 }
-
-#[derive(Component)]
-struct Ground;
 
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/shadows")]

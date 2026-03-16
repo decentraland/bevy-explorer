@@ -42,6 +42,7 @@ use bevy::asset::io::wasm::HttpWasmAssetReader;
 
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use common::{
+    sets::RealmLifecycle,
     structs::{AppConfig, CommsConfig, CurrentRealm, ServerConfiguration},
     util::TaskCompat,
 };
@@ -469,7 +470,10 @@ impl Plugin for IpfsIoPlugin {
 
         app.add_event::<ChangeRealmEvent>();
         app.init_resource::<CurrentRealm>();
-        app.add_systems(PostUpdate, (change_realm, clean_cache));
+        app.add_systems(
+            PostUpdate,
+            (change_realm, clean_cache).before(RealmLifecycle),
+        );
 
         app.add_console_command::<ChangeRealmCommand, _>(change_realm_command);
     }
