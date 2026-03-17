@@ -18,6 +18,7 @@ pub fn add_read_commands(app: &mut App) {
     app.add_console_command::<EntityComponentsCommand, _>(entity_components_cmd);
     app.add_console_command::<InspectComponentCommand, _>(inspect_component_cmd);
     app.add_console_command::<SceneTreeCommand, _>(scene_tree_cmd);
+    app.add_console_command::<CrdtSnapshotCommand, _>(crdt_snapshot_cmd);
 }
 
 // --- /set_scene ---
@@ -507,6 +508,65 @@ fn entity_alias(eid: &SceneEntityId) -> String {
         1 => format!("player({id})"),
         2 => format!("camera({id})"),
         _ => format!("{id}"),
+    }
+}
+
+// --- /crdt_snapshot ---
+
+/// Return the full CRDT state as structured JSON: { entityId: { ComponentName: value, ... }, ... }
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/crdt_snapshot")]
+struct CrdtSnapshotCommand;
+
+fn crdt_snapshot_cmd(
+    mut input: ConsoleCommand<CrdtSnapshotCommand>,
+    resolver: SceneResolver,
+    registry: Res<ComponentNameRegistry>,
+    mut pending: ResMut<PendingSnapshotRequests>,
+    mut console_responses: ResMut<PendingConsoleResponses>,
+) {
+    if let Some(Ok(_)) = input.take() {
+        let entries: Vec<_> = registry
+            .all_id_name_pairs()
+            .map(|(id, name)| {
+                let entry = registry.get_by_id(id).unwrap();
+                (id, name.to_owned(), entry.inspect.clone())
+            })
+            .collect();
+
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        match resolver.request_snapshot(&mut pending, move |crdt| {
+            // Collect all entity IDs across all LWW components
+            let mut entity_map: std::collections::BTreeMap<
+                u32,
+                serde_json::Map<String, serde_json::Value>,
+            > = std::collections::BTreeMap::new();
+
+            for (cid, name, inspect) in &entries {
+                if let Some(lww) = crdt.lww.get(cid) {
+                    for (eid, entry) in &lww.last_write {
+                        if !entry.is_some {
+                            continue;
+                        }
+                        let entity_id = eid.as_proto_u32().unwrap_or(eid.id as u32);
+                        if let Ok(json_str) = inspect(&entry.data) {
+                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&json_str) {
+                                entity_map
+                                    .entry(entity_id)
+                                    .or_default()
+                                    .insert(name.clone(), val);
+                            }
+                        }
+                    }
+                }
+            }
+
+            let result = serde_json::to_string(&entity_map).unwrap_or_default();
+            let _ = tx.send(Ok(result));
+        }) {
+            Ok(()) => console_responses.push_oneshot(rx, |r| r),
+            Err(e) => input.reply_failed(e),
+        }
     }
 }
 
