@@ -7,7 +7,7 @@ use dcl_component::{
     transform_and_parent::DclTransformAndParent, ComponentNameRegistry, DclReader, FromDclReader,
     SceneComponentId, SceneEntityId,
 };
-use scene_runner::update_world::CrdtExtractors;
+use scene_runner::{renderer_context::FROZEN_BLOCK, update_world::CrdtExtractors};
 
 use crate::{active_scene::SceneResolver, read_commands::parse_entity_id};
 
@@ -155,7 +155,6 @@ fn collect_descendants(crdt_store: &CrdtStore, root_eid: SceneEntityId) -> HashS
     to_delete
 }
 
-const FROZEN_REASON: &str = "frozen";
 
 fn delete_entity_cmd(mut input: ConsoleCommand<DeleteEntityCommand>, mut resolver: SceneResolver) {
     if let Some(Ok(cmd)) = input.take() {
@@ -211,10 +210,10 @@ fn freeze_scene_cmd(mut input: ConsoleCommand<FreezeSceneCommand>, mut resolver:
         match resolver.resolve_mut() {
             Err(e) => input.reply_failed(e),
             Ok((_scene_entity, mut ctx)) => {
-                if ctx.blocked.contains(FROZEN_REASON) {
+                if ctx.blocked.contains(FROZEN_BLOCK) {
                     input.reply_failed("scene is already frozen");
                 } else {
-                    ctx.blocked.insert(FROZEN_REASON);
+                    ctx.blocked.insert(FROZEN_BLOCK);
                     input.reply_ok(format!("frozen at tick {}", ctx.tick_number));
                 }
             }
@@ -237,10 +236,10 @@ fn unfreeze_scene_cmd(
         match resolver.resolve_mut() {
             Err(e) => input.reply_failed(e),
             Ok((_scene_entity, mut ctx)) => {
-                if !ctx.blocked.contains(FROZEN_REASON) {
+                if !ctx.blocked.contains(FROZEN_BLOCK) {
                     input.reply_failed("scene is not frozen");
                 } else {
-                    ctx.blocked.remove(FROZEN_REASON);
+                    ctx.blocked.remove(FROZEN_BLOCK);
                     ctx.refreeze_at_tick = None;
                     input.reply_ok(format!("unfrozen at tick {}", ctx.tick_number));
                 }
@@ -270,12 +269,12 @@ fn tick_scene_cmd(mut input: ConsoleCommand<TickSceneCommand>, mut resolver: Sce
         match resolver.resolve_mut() {
             Err(e) => input.reply_failed(e),
             Ok((_scene_entity, mut ctx)) => {
-                if !ctx.blocked.contains(FROZEN_REASON) {
+                if !ctx.blocked.contains(FROZEN_BLOCK) {
                     input.reply_failed("scene is not frozen (use /freeze_scene first)");
                     return;
                 }
 
-                ctx.blocked.remove(FROZEN_REASON);
+                ctx.blocked.remove(FROZEN_BLOCK);
                 ctx.refreeze_at_tick = Some(ctx.tick_number + cmd.count);
                 input.reply_ok(format!(
                     "advancing {} tick{} from {}",

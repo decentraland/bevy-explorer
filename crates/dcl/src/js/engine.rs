@@ -105,7 +105,7 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
 
     // Receive messages in a loop, handling any snapshot requests immediately (no RefMut held
     // across the await point).  Exits with the first non-snapshot response.
-    let (response, receiver) = loop {
+    let response = loop {
         let receiver = op_state
             .borrow_mut()
             .borrow_mut::<Arc<Mutex<tokio::sync::mpsc::Receiver<RendererResponse>>>>()
@@ -129,7 +129,7 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
                 .expect("failed to send crdt snapshot");
             continue;
         }
-        break (response, receiver);
+        break response;
     };
 
     let mut op_state = op_state.borrow_mut();
@@ -138,7 +138,6 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
         let span = info_span!("js update").entered();
         op_state.put(span);
     }
-    op_state.put(receiver);
 
     let mut entity_map = op_state.take::<CrdtContext>();
     let mut renderer_state = op_state.take::<RendererStore>();

@@ -89,7 +89,7 @@ pub struct RendererSceneContext {
     // sdk version
     pub sdk_version: &'static str,
 
-    // if set, re-insert "frozen" into blocked when tick_number reaches this value
+    // if set, re-insert FROZEN_BLOCK into blocked when tick_number reaches this value
     pub refreeze_at_tick: Option<u32>,
 
     // if an inspector is attached
@@ -98,6 +98,9 @@ pub struct RendererSceneContext {
     // does the scene use an authoritative multiplayer server
     pub authoritative_multiplayer: bool,
 }
+
+/// Block reason used by /freeze_scene and /tick_scene.
+pub const FROZEN_BLOCK: &str = "frozen";
 
 pub const SCENE_LOG_BUFFER_SIZE: usize = 100;
 

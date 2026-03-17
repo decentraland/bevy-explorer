@@ -919,7 +919,7 @@ fn receive_scene_updates(
                             .refreeze_at_tick
                             .is_some_and(|t| context.tick_number >= t)
                         {
-                            context.blocked.insert("frozen");
+                            context.blocked.insert(renderer_context::FROZEN_BLOCK);
                             context.refreeze_at_tick = None;
                         }
                         context.last_update_dt = runtime.0 - context.total_runtime;
