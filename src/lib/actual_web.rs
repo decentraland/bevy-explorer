@@ -609,6 +609,8 @@ fn extract_js_api(config: Res<ConsoleConfiguration>) {
                     let id = arg.get_id().as_str();
                     let kind = if trailing && Some(id) == last_id {
                         "json"
+                    } else if id == "json" {
+                        "json"
                     } else if id == "entity" {
                         "entity"
                     } else {
