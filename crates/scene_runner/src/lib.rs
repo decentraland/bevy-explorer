@@ -920,7 +920,12 @@ fn receive_scene_updates(
                         context.last_update_frame = frame.0;
                         context.in_flight = false;
                         context.nascent = census.born;
-                        context.death_row = census.died;
+                        // Merge externally-queued deaths (e.g. /delete_entity) with
+                        // scene-reported deaths, draining the old set so entries are
+                        // only processed once.
+                        let mut died = census.died;
+                        died.extend(std::mem::take(&mut context.death_row));
+                        context.death_row = died;
                         for message in messages.into_iter() {
                             context.log(message);
                         }

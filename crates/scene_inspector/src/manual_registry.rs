@@ -6,8 +6,7 @@ use dcl_component::{
         PbAvatarMovementInfo, PbCameraMode, PbEngineInfo, PbGltfContainerLoadingState,
         PbGltfNodeState, PbPlayerIdentityData, PbPointerEventsResult, PbPointerLock,
         PbPrimaryPointerInfo, PbRaycastResult, PbRealmInfo, PbTriggerAreaResult, PbTweenState,
-        PbUiCanvasInformation, PbUiDropdownResult, PbUiInputResult, PbUiScrollResult,
-        PbVideoEvent,
+        PbUiCanvasInformation, PbUiDropdownResult, PbUiInputResult, PbUiScrollResult, PbVideoEvent,
     },
     ComponentNameRegistry, CrdtType, SceneComponentId,
 };

@@ -1,14 +1,19 @@
+use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 use bevy_console::ConsoleCommand;
 use console::DoAddConsoleCommand;
 use dcl::interface::CrdtStore;
-use dcl_component::{ComponentNameRegistry, DclReader};
+use dcl_component::{
+    transform_and_parent::DclTransformAndParent, ComponentNameRegistry, DclReader, FromDclReader,
+    SceneComponentId, SceneEntityId,
+};
 use scene_runner::update_world::CrdtExtractors;
 
 use crate::{active_scene::SceneResolver, read_commands::parse_entity_id};
 
 pub fn add_write_commands(app: &mut App) {
     app.add_console_command::<SetComponentCommand, _>(set_component_cmd);
+    app.add_console_command::<DeleteEntityCommand, _>(delete_entity_cmd);
 }
 
 // --- /set_component ---
@@ -99,6 +104,91 @@ fn set_component_cmd(
                 }
 
                 input.reply_ok(format!("set {}.{} = {json}", cmd.entity, cmd.component));
+            }
+        }
+    }
+}
+
+// --- /delete_entity ---
+
+/// Delete a scene entity (and optionally its descendants)
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/delete_entity")]
+struct DeleteEntityCommand {
+    /// Entity id or alias: root, player, camera
+    entity: String,
+    /// Also delete all descendants
+    #[arg(short, long)]
+    recursive: bool,
+}
+
+/// Walk the CRDT Transform LWW entries to collect all descendants of `root_eid`.
+fn collect_descendants(crdt_store: &CrdtStore, root_eid: SceneEntityId) -> HashSet<SceneEntityId> {
+    let mut to_delete = HashSet::new();
+    to_delete.insert(root_eid);
+
+    let transform_lww = match crdt_store.lww.get(&SceneComponentId::TRANSFORM) {
+        Some(lww) => lww,
+        None => return to_delete,
+    };
+
+    // Iteratively find children whose parent is in the set
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for (eid, entry) in &transform_lww.last_write {
+            if to_delete.contains(eid) || !entry.is_some {
+                continue;
+            }
+            if let Ok(t) = DclTransformAndParent::from_reader(&mut DclReader::new(&entry.data)) {
+                if to_delete.contains(&t.parent()) {
+                    to_delete.insert(*eid);
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    to_delete
+}
+
+fn delete_entity_cmd(mut input: ConsoleCommand<DeleteEntityCommand>, mut resolver: SceneResolver) {
+    if let Some(Ok(cmd)) = input.take() {
+        let eid = match parse_entity_id(&cmd.entity) {
+            Ok(e) => e,
+            Err(e) => {
+                input.reply_failed(e);
+                return;
+            }
+        };
+
+        match resolver.resolve_mut() {
+            Err(e) => input.reply_failed(e),
+            Ok((_scene_entity, mut ctx)) => {
+                if ctx.bevy_entity(eid).is_none() {
+                    input.reply_failed(format!("entity {} does not exist", cmd.entity));
+                    return;
+                }
+
+                let to_delete = if cmd.recursive {
+                    collect_descendants(&ctx.crdt_store, eid)
+                } else {
+                    HashSet::from([eid])
+                };
+
+                let count = to_delete.len();
+                ctx.crdt_store.clean_up(&to_delete);
+                ctx.death_row.extend(to_delete);
+
+                if cmd.recursive && count > 1 {
+                    input.reply_ok(format!(
+                        "deleted {} and {} descendants",
+                        cmd.entity,
+                        count - 1
+                    ));
+                } else {
+                    input.reply_ok(format!("deleted {}", cmd.entity));
+                }
             }
         }
     }
