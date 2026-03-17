@@ -648,7 +648,7 @@ pub fn update_materials(
         }
     }
 
-    for (ent, touch, source) in sourced.iter() {
+    for (ent, _touch, source) in sourced.iter() {
         let changed = sources
             .get(source.0)
             .map(|(maybe_video, maybe_ui)| {
@@ -662,8 +662,6 @@ pub fn update_materials(
                 .entity(ent)
                 .insert(RetryMaterial(Vec::default()))
                 .remove::<MaterialSource>();
-        } else {
-            materials.get_mut(touch);
         }
     }
 }
