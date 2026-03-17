@@ -915,6 +915,13 @@ fn receive_scene_updates(
                     );
                     if let Ok(mut context) = scenes.get_mut(*root) {
                         context.tick_number = context.tick_number.wrapping_add(1);
+                        if context
+                            .refreeze_at_tick
+                            .is_some_and(|t| context.tick_number >= t)
+                        {
+                            context.blocked.insert("frozen");
+                            context.refreeze_at_tick = None;
+                        }
                         context.last_update_dt = runtime.0 - context.total_runtime;
                         context.total_runtime = runtime.0;
                         context.last_update_frame = frame.0;

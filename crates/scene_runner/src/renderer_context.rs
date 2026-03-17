@@ -89,6 +89,9 @@ pub struct RendererSceneContext {
     // sdk version
     pub sdk_version: &'static str,
 
+    // if set, re-insert "frozen" into blocked when tick_number reaches this value
+    pub refreeze_at_tick: Option<u32>,
+
     // if an inspector is attached
     pub inspected: bool,
 
@@ -146,6 +149,7 @@ impl RendererSceneContext {
             last_update_dt: 0.0,
             logs: RingBuffer::new(1000, 100),
             log_to_stdout,
+            refreeze_at_tick: None,
             last_action_event: None,
             sdk_version,
             inspected,

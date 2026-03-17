@@ -14,6 +14,9 @@ use crate::{active_scene::SceneResolver, read_commands::parse_entity_id};
 pub fn add_write_commands(app: &mut App) {
     app.add_console_command::<SetComponentCommand, _>(set_component_cmd);
     app.add_console_command::<DeleteEntityCommand, _>(delete_entity_cmd);
+    app.add_console_command::<FreezeSceneCommand, _>(freeze_scene_cmd);
+    app.add_console_command::<UnfreezeSceneCommand, _>(unfreeze_scene_cmd);
+    app.add_console_command::<TickSceneCommand, _>(tick_scene_cmd);
 }
 
 // --- /set_component ---
@@ -152,6 +155,8 @@ fn collect_descendants(crdt_store: &CrdtStore, root_eid: SceneEntityId) -> HashS
     to_delete
 }
 
+const FROZEN_REASON: &str = "frozen";
+
 fn delete_entity_cmd(mut input: ConsoleCommand<DeleteEntityCommand>, mut resolver: SceneResolver) {
     if let Some(Ok(cmd)) = input.take() {
         let eid = match parse_entity_id(&cmd.entity) {
@@ -189,6 +194,95 @@ fn delete_entity_cmd(mut input: ConsoleCommand<DeleteEntityCommand>, mut resolve
                 } else {
                     input.reply_ok(format!("deleted {}", cmd.entity));
                 }
+            }
+        }
+    }
+}
+
+// --- /freeze_scene ---
+
+/// Pause the active scene so it stops ticking
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/freeze_scene")]
+struct FreezeSceneCommand;
+
+fn freeze_scene_cmd(mut input: ConsoleCommand<FreezeSceneCommand>, mut resolver: SceneResolver) {
+    if let Some(Ok(_)) = input.take() {
+        match resolver.resolve_mut() {
+            Err(e) => input.reply_failed(e),
+            Ok((_scene_entity, mut ctx)) => {
+                if ctx.blocked.contains(FROZEN_REASON) {
+                    input.reply_failed("scene is already frozen");
+                } else {
+                    ctx.blocked.insert(FROZEN_REASON);
+                    input.reply_ok(format!("frozen at tick {}", ctx.tick_number));
+                }
+            }
+        }
+    }
+}
+
+// --- /unfreeze_scene ---
+
+/// Resume a frozen scene
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/unfreeze_scene")]
+struct UnfreezeSceneCommand;
+
+fn unfreeze_scene_cmd(
+    mut input: ConsoleCommand<UnfreezeSceneCommand>,
+    mut resolver: SceneResolver,
+) {
+    if let Some(Ok(_)) = input.take() {
+        match resolver.resolve_mut() {
+            Err(e) => input.reply_failed(e),
+            Ok((_scene_entity, mut ctx)) => {
+                if !ctx.blocked.contains(FROZEN_REASON) {
+                    input.reply_failed("scene is not frozen");
+                } else {
+                    ctx.blocked.remove(FROZEN_REASON);
+                    ctx.refreeze_at_tick = None;
+                    input.reply_ok(format!("unfrozen at tick {}", ctx.tick_number));
+                }
+            }
+        }
+    }
+}
+
+// --- /tick_scene ---
+
+/// Advance a frozen scene by N ticks (default 1)
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/tick_scene")]
+struct TickSceneCommand {
+    /// Number of ticks to advance
+    #[arg(default_value = "1")]
+    count: u32,
+}
+
+fn tick_scene_cmd(mut input: ConsoleCommand<TickSceneCommand>, mut resolver: SceneResolver) {
+    if let Some(Ok(cmd)) = input.take() {
+        if cmd.count == 0 {
+            input.reply_failed("count must be > 0");
+            return;
+        }
+
+        match resolver.resolve_mut() {
+            Err(e) => input.reply_failed(e),
+            Ok((_scene_entity, mut ctx)) => {
+                if !ctx.blocked.contains(FROZEN_REASON) {
+                    input.reply_failed("scene is not frozen (use /freeze_scene first)");
+                    return;
+                }
+
+                ctx.blocked.remove(FROZEN_REASON);
+                ctx.refreeze_at_tick = Some(ctx.tick_number + cmd.count);
+                input.reply_ok(format!(
+                    "advancing {} tick{} from {}",
+                    cmd.count,
+                    if cmd.count == 1 { "" } else { "s" },
+                    ctx.tick_number
+                ));
             }
         }
     }
