@@ -47,7 +47,7 @@ impl SceneResolver<'_, '_> {
             .map_err(|_| "could not find scene context".to_string())
     }
 
-    pub fn resolve_mut(&mut self) -> Result<(Entity, Mut<RendererSceneContext>), String> {
+    pub fn resolve_mut(&mut self) -> Result<(Entity, Mut<'_, RendererSceneContext>), String> {
         let ent = self.resolve_entity()?;
         self.scenes
             .get_mut(ent)
