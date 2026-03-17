@@ -646,7 +646,6 @@ fn receive_video_frame(
                     commands.send_event(AppExit::from_code(1));
                     return;
                 };
-                let data = frame.rgba_data();
 
                 let target_extent = Extent3d {
                     width: frame.width().max(16),
@@ -666,9 +665,9 @@ fn receive_video_frame(
                 }
 
                 if let Some(image_data) = image.data.as_mut() {
-                    image_data.copy_from_slice(data.as_slice());
+                    frame.rgba_data_into_slice(image_data);
                 } else {
-                    image.data = Some(data);
+                    image.data = Some(frame.rgba_data());
                 }
             }
             Err(TryRecvError::Empty) => (),
