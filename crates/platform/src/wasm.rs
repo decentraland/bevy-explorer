@@ -99,16 +99,11 @@ where
 }
 
 pub trait ReqwestBuilderExt {
-    fn timeout(self, timeout: Duration) -> Self;
     fn connect_timeout(self, timeout: Duration) -> Self;
     fn use_native_tls(self) -> Self;
 }
 
 impl ReqwestBuilderExt for reqwest::ClientBuilder {
-    fn timeout(self, _timeout: Duration) -> Self {
-        self
-    }
-
     fn connect_timeout(self, _timeout: Duration) -> Self {
         self
     }
@@ -119,10 +114,6 @@ impl ReqwestBuilderExt for reqwest::ClientBuilder {
 }
 
 impl ReqwestBuilderExt for reqwest::RequestBuilder {
-    fn timeout(self, _timeout: Duration) -> Self {
-        self
-    }
-
     fn connect_timeout(self, _timeout: Duration) -> Self {
         self
     }
