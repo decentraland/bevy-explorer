@@ -624,6 +624,7 @@ fn receive_video_frame(
                     height: frame.height().max(16),
                     depth_or_array_layers: 1,
                 };
+                image.transfer_priority = bevy::asset::RenderAssetTransferPriority::Priority(-2);
                 if image.texture_descriptor.size != target_extent {
                     debug!("Resizing StreamImage image to {target_extent:?}.");
                     image.data = None;
