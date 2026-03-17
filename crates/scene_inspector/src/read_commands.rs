@@ -12,8 +12,7 @@ use crate::{
 pub fn add_read_commands(app: &mut App) {
     app.add_console_command::<SetSceneCommand, _>(set_scene_cmd);
     app.add_console_command::<SceneStatsCommand, _>(scene_stats_cmd);
-    // TODO: /scene_logs always returns empty even when logs exist — investigate
-    // app.add_console_command::<SceneLogsCommand, _>(scene_logs_cmd);
+    app.add_console_command::<SceneLogsCommand, _>(scene_logs_cmd);
     app.add_console_command::<SceneEntitiesCommand, _>(scene_entities_cmd);
     app.add_console_command::<EntityComponentsCommand, _>(entity_components_cmd);
     app.add_console_command::<InspectComponentCommand, _>(inspect_component_cmd);
@@ -105,7 +104,6 @@ struct SceneLogsCommand {
     count: usize,
 }
 
-#[allow(dead_code)]
 fn scene_logs_cmd(mut input: ConsoleCommand<SceneLogsCommand>, resolver: SceneResolver) {
     if let Some(Ok(cmd)) = input.take() {
         match resolver.resolve() {

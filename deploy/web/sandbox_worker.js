@@ -72,17 +72,6 @@ var jsPreamble = undefined;
 function createJsContext(wasmApi, context) {
   const isSuper = wasmApi.is_super(context);
 
-  Object.defineProperty(jsContext, "console", {
-    value: {
-      log: console.log.bind(console),
-      info: console.info.bind(console),
-      debug: console.debug.bind(console),
-      trace: console.trace.bind(console),
-      warning: console.error.bind(console),
-      error: console.error.bind(console),
-    },
-  });
-
   const ops = Object.create(null);
   for (const exportName in wasmApi) {
     if (exportName.substring(0, 3) === "op_") {
@@ -97,6 +86,27 @@ function createJsContext(wasmApi, context) {
       });
     }
   }
+  function formatLog(...values) {
+    return values.map(v => {
+      if (v === null) return 'null';
+      if (v === undefined) return 'undefined';
+      if (typeof v === 'object') { try { return JSON.stringify(v); } catch(e) { return String(v); } }
+      return String(v);
+    }).join(' ');
+  }
+
+  Object.defineProperty(jsContext, "console", {
+    value: {
+      log: (...args) => ops.op_log("LOG " + formatLog(...args)),
+      info: (...args) => ops.op_log("LOG " + formatLog(...args)),
+      debug: (...args) => ops.op_log("LOG " + formatLog(...args)),
+      trace: (...args) => ops.op_log("TRACE " + formatLog(...args)),
+      warning: (...args) => ops.op_error("ERROR " + formatLog(...args)),
+      error: (...args) => ops.op_error("ERROR " + formatLog(...args)),
+      warn: (...args) => ops.op_log("WARN " + formatLog(...args)),
+    },
+  });
+
   const core = Object.create(null);
   Object.defineProperty(core, "ops", {
     configurable: false,

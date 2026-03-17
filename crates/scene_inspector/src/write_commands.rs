@@ -155,7 +155,6 @@ fn collect_descendants(crdt_store: &CrdtStore, root_eid: SceneEntityId) -> HashS
     to_delete
 }
 
-
 fn delete_entity_cmd(mut input: ConsoleCommand<DeleteEntityCommand>, mut resolver: SceneResolver) {
     if let Some(Ok(cmd)) = input.take() {
         let eid = match parse_entity_id(&cmd.entity) {
