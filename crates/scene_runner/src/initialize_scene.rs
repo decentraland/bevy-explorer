@@ -459,8 +459,13 @@ pub(crate) fn load_scene_javascript(
 
         if let Some(serialized_crdt) = maybe_serialized_crdt {
             // add main.crdt
-            let mut context =
-                CrdtContext::new(scene_id, renderer_context.hash.clone(), renderer_context.title.clone(), false, false);
+            let mut context = CrdtContext::new(
+                scene_id,
+                renderer_context.hash.clone(),
+                renderer_context.title.clone(),
+                false,
+                false,
+            );
             let mut stream = DclReader::new(&serialized_crdt);
             initial_crdt.process_message_stream(
                 &mut context,

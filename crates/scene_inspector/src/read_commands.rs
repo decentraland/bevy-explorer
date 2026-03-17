@@ -166,7 +166,7 @@ fn scene_entities_cmd(
                 .lww
                 .iter()
                 .flat_map(|(cid, state)| {
-                    if filter_id.map_or(true, |fid| fid == *cid) {
+                    if filter_id.is_none_or(|fid| fid == *cid) {
                         state
                             .last_write
                             .iter()
@@ -178,7 +178,7 @@ fn scene_entities_cmd(
                     }
                 })
                 .chain(crdt.go.iter().flat_map(|(cid, state)| {
-                    if filter_id.map_or(true, |fid| fid == *cid) {
+                    if filter_id.is_none_or(|fid| fid == *cid) {
                         state.0.keys().copied().collect::<Vec<_>>()
                     } else {
                         vec![]
@@ -191,7 +191,7 @@ fn scene_entities_cmd(
             let result = if entities.is_empty() {
                 Ok("(no entities)".to_string())
             } else {
-                let mut lines: Vec<String> = entities.iter().map(|e| entity_alias(e)).collect();
+                let mut lines: Vec<String> = entities.iter().map(entity_alias).collect();
                 lines.sort();
                 Ok(lines.join("\n"))
             };
@@ -395,7 +395,7 @@ fn scene_tree_cmd(
                 .lww
                 .iter()
                 .flat_map(|(cid, state)| {
-                    if filter_id.map_or(true, |fid| fid == *cid) {
+                    if filter_id.is_none_or(|fid| fid == *cid) {
                         state
                             .last_write
                             .iter()
@@ -407,7 +407,7 @@ fn scene_tree_cmd(
                     }
                 })
                 .chain(crdt.go.iter().flat_map(|(cid, state)| {
-                    if filter_id.map_or(true, |fid| fid == *cid) {
+                    if filter_id.is_none_or(|fid| fid == *cid) {
                         state.0.keys().map(|e| e.id).collect::<Vec<_>>()
                     } else {
                         vec![]

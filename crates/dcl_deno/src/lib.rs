@@ -30,6 +30,7 @@ pub fn init_runtime() {
     let _ = deno_core::v8::Platform::new(1, false);
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_scene(
     initial_crdt_store: CrdtStore,
     scene_context: CrdtContext,

@@ -43,7 +43,6 @@ impl SceneResolver<'_, '_> {
         let ent = self.resolve_entity()?;
         self.scenes
             .get(ent)
-            .map(|(e, ctx)| (e, ctx))
             .map_err(|_| "could not find scene context".to_string())
     }
 
@@ -51,7 +50,6 @@ impl SceneResolver<'_, '_> {
         let ent = self.resolve_entity()?;
         self.scenes
             .get_mut(ent)
-            .map(|(e, ctx)| (e, ctx))
             .map_err(|_| "could not find scene context".to_string())
     }
 

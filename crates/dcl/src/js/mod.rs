@@ -13,8 +13,7 @@ use tokio::sync::{mpsc::Receiver, Mutex};
 
 use crate::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
-    RendererResponse, RpcCalls, SceneElapsedTime, SceneLogLevel, SceneLogMessage,
-    SceneResponse,
+    RendererResponse, RpcCalls, SceneElapsedTime, SceneLogLevel, SceneLogMessage, SceneResponse,
 };
 
 use super::interface::CrdtStore;
