@@ -627,7 +627,19 @@ fn receive_video_frame(
             return;
         };
 
-        match video_frame_receiver.try_recv() {
+        let received_frame = {
+            let mut last = video_frame_receiver.try_recv();
+            loop {
+                let other = video_frame_receiver.try_recv();
+                if matches!(other, Err(TryRecvError::Empty)) {
+                    break last;
+                } else {
+                    last = other;
+                }
+            }
+        };
+
+        match received_frame {
             Ok(frame) => {
                 let Some(image) = images.get_mut(stream_image.id()) else {
                     error!("StreamImage holds an invalid handle.");
