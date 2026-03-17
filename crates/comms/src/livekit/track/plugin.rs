@@ -592,12 +592,19 @@ fn receive_video_frame(
         (Entity, &LivekitTrack, &mut VideoFrameReceiver, &PublishedBy),
         (With<Video>, With<Subscribed>),
     >,
-    participants: Query<(&LivekitParticipant, Option<&StreamImage>)>,
+    participants: Query<(
+        &LivekitParticipant,
+        Option<&StreamImage>,
+        Option<&StreamBroadcast>,
+    )>,
     mut images: ResMut<Assets<Image>>,
 ) {
     for (entity, livekit_track, mut video_frame_receiver, published_by) in video_tracks.into_inner()
     {
-        let Ok((participant, maybe_stream_image)) = participants.get(published_by.get()) else {
+        let participant_entity = published_by.get();
+        let Ok((participant, maybe_stream_image, maybe_stream_broadcast)) =
+            participants.get(participant_entity)
+        else {
             error!("Invalid PublishedBy relationship.");
             commands.send_event(AppExit::from_code(1));
             return;
@@ -609,6 +616,15 @@ fn receive_video_frame(
                 participant.identity()
             );
             continue;
+        };
+        let Some(stream_broadcast) = maybe_stream_broadcast else {
+            error!(
+                "Participant {} ({}) had StreamImage but not StreamBroadcast.",
+                participant.sid(),
+                participant.identity()
+            );
+            commands.send_event(AppExit::from_code(1));
+            return;
         };
 
         match video_frame_receiver.try_recv() {
@@ -630,6 +646,10 @@ fn receive_video_frame(
                     image.data = None;
                     image.texture_descriptor.size = target_extent;
                     image.transfer_priority = bevy::asset::RenderAssetTransferPriority::Immediate;
+
+                    for stream_viewer in stream_broadcast.collection() {
+                        commands.entity(*stream_viewer).insert(stream_image.clone());
+                    }
                 }
                 image.data = Some(frame.rgba_data());
             }

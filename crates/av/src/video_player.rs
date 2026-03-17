@@ -390,7 +390,7 @@ fn rebuild_sinks(
 
 #[cfg(feature = "livekit")]
 fn copy_stream_image(
-    trigger: Trigger<OnAdd, StreamImage>,
+    trigger: Trigger<OnInsert, StreamImage>,
     mut commands: Commands,
     stream_viewers: Query<&StreamImage, With<StreamViewer>>,
 ) {
@@ -399,6 +399,7 @@ fn copy_stream_image(
         // StreamImage added to something that is not a StreamViewer
         return;
     };
+    debug!("Adding VideoTextureOutput to {entity}.");
     commands
         .entity(entity)
         .insert(VideoTextureOutput((**stream_image).clone()));
