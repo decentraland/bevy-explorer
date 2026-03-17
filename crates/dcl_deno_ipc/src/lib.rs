@@ -39,7 +39,7 @@ pub struct NewSceneInfo {
 
 #[derive(Serialize, Deserialize)]
 pub enum EngineToScene {
-    NewScene(u64, NewSceneInfo),
+    NewScene(u64, Box<NewSceneInfo>),
     SceneUpdate(u64, RendererResponse),
     KillScene(u64),
     GlobalUpdate(GlobalCrdtStateUpdate),
@@ -193,7 +193,7 @@ pub async fn renderer_ipc_out(
                     let _ = renderer_sender.send(EngineToScene::KillScene(id));
                 });
 
-                write_msg(&mut stream, &EngineToScene::NewScene(id, info)).await;
+                write_msg(&mut stream, &EngineToScene::NewScene(id, Box::new(info))).await;
             }
             renderer_update = renderer_rx.recv() => {
                 let Some(engine_to_scene) = renderer_update else {

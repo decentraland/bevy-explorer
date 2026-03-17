@@ -5,13 +5,17 @@ use bevy::prelude::Resource;
 
 use crate::{CrdtType, SceneComponentId};
 
+/// Decode CRDT bytes into a pretty-printed JSON string.
+pub type InspectFn = Arc<dyn Fn(&[u8]) -> anyhow::Result<String> + Send + Sync>;
+/// Encode a JSON string into CRDT bytes.
+pub type WriteFn = Arc<dyn Fn(&str) -> anyhow::Result<Vec<u8>> + Send + Sync>;
+
 pub struct ComponentNameEntry {
     pub id: SceneComponentId,
     pub crdt_type: CrdtType,
-    /// Decode CRDT bytes → pretty-printed JSON string.
-    pub inspect: Arc<dyn Fn(&[u8]) -> anyhow::Result<String> + Send + Sync>,
-    /// Encode a JSON string → CRDT bytes. None for inspect-only (engine→scene only) components.
-    pub write: Option<Arc<dyn Fn(&str) -> anyhow::Result<Vec<u8>> + Send + Sync>>,
+    pub inspect: InspectFn,
+    /// None for inspect-only (engine→scene only) components.
+    pub write: Option<WriteFn>,
 }
 
 #[derive(Resource, Default)]
@@ -26,8 +30,8 @@ impl ComponentNameRegistry {
         name: String,
         id: SceneComponentId,
         crdt_type: CrdtType,
-        inspect: Arc<dyn Fn(&[u8]) -> anyhow::Result<String> + Send + Sync>,
-        write: Option<Arc<dyn Fn(&str) -> anyhow::Result<Vec<u8>> + Send + Sync>>,
+        inspect: InspectFn,
+        write: Option<WriteFn>,
     ) {
         self.by_id.insert(id, name.clone());
         self.by_name.insert(
@@ -72,10 +76,7 @@ pub fn derive_component_name<D>() -> String {
 }
 
 /// Build inspect/write closures for a prost + serde type.
-pub fn make_proto_closures<D>() -> (
-    Arc<dyn Fn(&[u8]) -> anyhow::Result<String> + Send + Sync>,
-    Arc<dyn Fn(&str) -> anyhow::Result<Vec<u8>> + Send + Sync>,
-)
+pub fn make_proto_closures<D>() -> (InspectFn, WriteFn)
 where
     D: prost::Message + serde::Serialize + serde::de::DeserializeOwned + Default,
 {

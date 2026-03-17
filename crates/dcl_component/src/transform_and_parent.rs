@@ -103,14 +103,14 @@ pub struct DclTransformAndParent {
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
-struct XYZ {
+struct Xyz {
     x: f32,
     y: f32,
     z: f32,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
-struct XYZW {
+struct Xyzw {
     x: f32,
     y: f32,
     z: f32,
@@ -119,27 +119,27 @@ struct XYZW {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct DclTransformAndParentJson {
-    position: XYZ,
-    rotation: XYZW,
-    scale: XYZ,
+    position: Xyz,
+    rotation: Xyzw,
+    scale: Xyz,
     parent: u32,
 }
 
 impl From<DclTransformAndParent> for DclTransformAndParentJson {
     fn from(t: DclTransformAndParent) -> Self {
         Self {
-            position: XYZ {
+            position: Xyz {
                 x: t.translation.0[0],
                 y: t.translation.0[1],
                 z: t.translation.0[2],
             },
-            rotation: XYZW {
+            rotation: Xyzw {
                 x: t.rotation.0[0],
                 y: t.rotation.0[1],
                 z: t.rotation.0[2],
                 w: t.rotation.0[3],
             },
-            scale: XYZ {
+            scale: Xyz {
                 x: t.scale.x,
                 y: t.scale.y,
                 z: t.scale.z,
