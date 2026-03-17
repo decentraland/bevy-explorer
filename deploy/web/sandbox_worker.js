@@ -71,6 +71,12 @@ var jsProxy = undefined;
 var jsPreamble = undefined;
 function createJsContext(wasmApi, context) {
   const isSuper = wasmApi.is_super(context);
+  const sceneLabel = context.get_scene_title();
+  const sceneStartTime = performance.now();
+  function scenePrefix() {
+    const elapsed = (performance.now() - sceneStartTime) / 1000;
+    return `[${sceneLabel} ${elapsed.toFixed(2)}]`;
+  }
 
   const ops = Object.create(null);
   for (const exportName in wasmApi) {
@@ -95,15 +101,24 @@ function createJsContext(wasmApi, context) {
     }).join(' ');
   }
 
+  // Save references to the real browser console before overriding
+  const browserConsole = {
+    log: console.log.bind(console),
+    warn: console.warn.bind(console),
+    error: console.error.bind(console),
+    debug: console.debug.bind(console),
+    trace: console.trace.bind(console),
+  };
+
   Object.defineProperty(jsContext, "console", {
     value: {
-      log: (...args) => ops.op_log("LOG " + formatLog(...args)),
-      info: (...args) => ops.op_log("LOG " + formatLog(...args)),
-      debug: (...args) => ops.op_log("LOG " + formatLog(...args)),
-      trace: (...args) => ops.op_log("TRACE " + formatLog(...args)),
-      warning: (...args) => ops.op_error("ERROR " + formatLog(...args)),
-      error: (...args) => ops.op_error("ERROR " + formatLog(...args)),
-      warn: (...args) => ops.op_log("WARN " + formatLog(...args)),
+      log: (...args) => { browserConsole.log(scenePrefix(), ...args); ops.op_log("LOG " + formatLog(...args)); },
+      info: (...args) => { browserConsole.log(scenePrefix(), ...args); ops.op_log("LOG " + formatLog(...args)); },
+      debug: (...args) => { browserConsole.debug(scenePrefix(), ...args); ops.op_log("LOG " + formatLog(...args)); },
+      trace: (...args) => { browserConsole.trace(scenePrefix(), ...args); ops.op_log("TRACE " + formatLog(...args)); },
+      warning: (...args) => { browserConsole.error(scenePrefix(), ...args); ops.op_error("ERROR " + formatLog(...args)); },
+      error: (...args) => { browserConsole.error(scenePrefix(), ...args); ops.op_error("ERROR " + formatLog(...args)); },
+      warn: (...args) => { browserConsole.warn(scenePrefix(), ...args); ops.op_log("WARN " + formatLog(...args)); },
     },
   });
 

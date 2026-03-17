@@ -460,7 +460,7 @@ pub(crate) fn load_scene_javascript(
         if let Some(serialized_crdt) = maybe_serialized_crdt {
             // add main.crdt
             let mut context =
-                CrdtContext::new(scene_id, renderer_context.hash.clone(), false, false);
+                CrdtContext::new(scene_id, renderer_context.hash.clone(), renderer_context.title.clone(), false, false);
             let mut stream = DclReader::new(&serialized_crdt);
             initial_crdt.process_message_stream(
                 &mut context,
@@ -647,25 +647,28 @@ pub(crate) fn initialize_scene(
                 .map(|(id, interface)| (*id, interface.crdt_type())),
         ));
 
-        let scene_id = context.scene_id;
-
         let inspected = testing_data
             .inspect_hash
             .as_ref()
             .is_some_and(|inspect_hash| inspect_hash == &context.hash);
 
+        let scene_context = CrdtContext::new(
+            context.scene_id,
+            context.hash.clone(),
+            context.title.clone(),
+            testing_data.test_mode,
+            preview_mode.is_preview,
+        );
+
         let main_sx = spawn_scene(
             context.crdt_store.clone(),
-            context.hash.clone(),
+            scene_context,
             js_file.clone(),
             crdt_component_interfaces,
             thread_sx,
             global_updates,
-            scene_id,
             context.storage_root.clone(),
             inspected,
-            testing_data.test_mode,
-            preview_mode.is_preview,
             super_user.map(|_| su_bridge.sender.clone()),
             scene_origin,
         );

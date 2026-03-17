@@ -15,7 +15,7 @@ use tokio::sync::mpsc::Sender;
 use ipfs::SceneJsFile;
 
 use dcl::{
-    interface::{CrdtComponentInterfaces, CrdtStore},
+    interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
     js::SceneResponseSender,
     RendererResponse, SceneId,
 };
@@ -30,22 +30,19 @@ pub fn init_runtime() {
     let _ = deno_core::v8::Platform::new(1, false);
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn spawn_scene(
     initial_crdt_store: CrdtStore,
-    scene_hash: String,
+    scene_context: CrdtContext,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     renderer_sender: SceneResponseSender,
     global_update_receiver: tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
-    id: SceneId,
     storage_root: String,
     inspect: bool,
-    testing: bool,
-    preview: bool,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
     scene_origin: bevy::prelude::Vec3,
 ) -> Sender<RendererResponse> {
+    let id = scene_context.scene_id;
     let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
 
     std::thread::Builder::new()
@@ -55,8 +52,7 @@ pub fn spawn_scene(
             let thread_result = panic::catch_unwind(AssertUnwindSafe(|| {
                 scene_thread(
                     initial_crdt_store,
-                    scene_hash,
-                    id,
+                    scene_context,
                     storage_root,
                     scene_js,
                     crdt_component_interfaces,
@@ -64,8 +60,6 @@ pub fn spawn_scene(
                     thread_rx,
                     global_update_receiver,
                     inspect,
-                    testing,
-                    preview,
                     super_user,
                     scene_origin,
                 )
