@@ -105,6 +105,7 @@ struct SceneLogsCommand {
     count: usize,
 }
 
+#[allow(dead_code)]
 fn scene_logs_cmd(mut input: ConsoleCommand<SceneLogsCommand>, resolver: SceneResolver) {
     if let Some(Ok(cmd)) = input.take() {
         match resolver.resolve() {
