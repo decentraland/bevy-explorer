@@ -380,7 +380,7 @@ fn parcel_grass_without_lod(
     let player_location = vec3_to_parcel(player.translation());
     debug!(
         target: "visuals::parcel_grass::parcel_grass_without_lod",
-        "Recalculating LOD for {} entities.",
+        "Calculating LOD for {} entities.",
         parcel_grasses.iter().len()
     );
 
@@ -460,10 +460,19 @@ fn drop_far_parcel_grass(
 fn recalculate_lod(
     mut commands: Commands,
     parcel_grasses: Query<(Entity, &ParcelGrass, &ParcelGrassLod)>,
-    player: Single<&GlobalTransform, With<PrimaryUser>>,
+    maybe_player: Option<Single<&GlobalTransform, With<PrimaryUser>>>,
     scene_pointers: Res<ScenePointers>,
 ) {
-    let player_location = vec3_to_parcel(player.translation());
+    let player_location = if let Some(player) = maybe_player {
+        vec3_to_parcel(player.translation())
+    } else {
+        IVec2::MAX
+    };
+    debug!(
+        target: "visuals::parcel_grass::recalculate_lod",
+        "Recalculating LOD for {} entities.",
+        parcel_grasses.iter().len()
+    );
 
     for (entity, parcel_grass, parcel_grass_lod) in parcel_grasses {
         match scene_pointers.get(parcel_grass.parcel) {
@@ -476,7 +485,9 @@ fn recalculate_lod(
             Some(PointerResult::Exists { .. }) => {
                 commands.entity(entity).insert(ParcelGrassLod::Off);
             }
-            None => {}
+            None => {
+                commands.entity(entity).remove::<ParcelGrassLod>();
+            }
         }
     }
 }
