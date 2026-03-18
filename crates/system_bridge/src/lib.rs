@@ -173,6 +173,8 @@ pub enum SystemApi {
     CancelFriendRequest(String, RpcResultSender<Result<(), String>>),
     DeleteFriend(String, RpcResultSender<Result<(), String>>),
     GetFriendshipEventStream(RpcStreamSender<FriendshipEventUpdate>),
+    GetOnlineFriends(RpcResultSender<Vec<FriendStatusData>>),
+    GetFriendConnectivityStream(RpcStreamSender<FriendConnectivityEvent>),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -231,6 +233,30 @@ pub enum FriendshipEventUpdate {
     Delete { address: String },
     #[serde(rename = "block")]
     Block { address: String },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FriendStatusData {
+    pub address: String,
+    pub name: String,
+    pub has_claimed_name: bool,
+    pub profile_picture_url: String,
+    pub name_color: Option<NameColor>,
+    /// "online", "offline", or "away"
+    pub status: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FriendConnectivityEvent {
+    pub address: String,
+    pub name: String,
+    pub has_claimed_name: bool,
+    pub profile_picture_url: String,
+    pub name_color: Option<NameColor>,
+    /// "online", "offline", or "away"
+    pub status: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

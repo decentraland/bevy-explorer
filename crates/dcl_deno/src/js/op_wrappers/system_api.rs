@@ -11,7 +11,7 @@ use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
     settings::SettingInfo, ChatMessage, FriendshipEventUpdate, HomeScene, HoverEvent,
-    FriendData, FriendRequestData, LiveSceneInfo, PermanentPermissionItem, PermissionRequest,
+    FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData, LiveSceneInfo, PermanentPermissionItem, PermissionRequest,
     SceneLoadingUi, VoiceMessage,
 };
 
@@ -71,6 +71,9 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_get_sent_friend_requests(),
             op_get_received_friend_requests(),
             op_get_social_initialized(),
+            op_get_online_friends(),
+            op_get_friend_connectivity_stream(),
+            op_read_friend_connectivity_stream(),
             op_send_friend_request(),
             op_accept_friend_request(),
             op_reject_friend_request(),
@@ -451,6 +454,28 @@ pub async fn op_get_social_initialized(
     state: Rc<RefCell<OpState>>,
 ) -> Result<bool, anyhow::Error> {
     dcl::js::system_api::op_get_social_initialized(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_online_friends(
+    state: Rc<RefCell<OpState>>,
+) -> Result<Vec<FriendStatusData>, anyhow::Error> {
+    dcl::js::system_api::op_get_online_friends(state).await
+}
+
+#[op2(async)]
+pub async fn op_get_friend_connectivity_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_friend_connectivity_stream(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_friend_connectivity_stream(
+    state: Rc<RefCell<OpState>>,
+    #[smi] rid: u32,
+) -> Result<Option<FriendConnectivityEvent>, anyhow::Error> {
+    dcl::js::system_api::op_read_friend_connectivity_stream(state, rid).await
 }
 
 #[op2(async)]

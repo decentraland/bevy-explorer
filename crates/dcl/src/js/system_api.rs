@@ -17,7 +17,7 @@ use std::{cell::RefCell, rc::Rc};
 use strum::IntoEnumIterator;
 use system_bridge::{
     settings::SettingInfo, ChatMessage, FriendshipEventUpdate, HomeScene, HoverEvent,
-    FriendData, FriendRequestData, LiveSceneInfo, PermanentPermissionItem, PermissionRequest,
+    FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData, LiveSceneInfo, PermanentPermissionItem, PermissionRequest,
     SceneLoadingUi, SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi,
     VoiceMessage,
 };
@@ -844,6 +844,53 @@ pub async fn op_get_social_initialized(
         .send(SystemApi::GetSocialInitialized(sx))?;
 
     rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_online_friends(
+    state: Rc<RefCell<impl State>>,
+) -> Result<Vec<FriendStatusData>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetOnlineFriends(sx))?;
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_friend_connectivity_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+    state.borrow_mut().put(rx);
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetFriendConnectivityStream(sx))
+        .unwrap();
+
+    6
+}
+
+pub async fn op_read_friend_connectivity_stream(
+    state: Rc<RefCell<impl State>>,
+    _rid: u32,
+) -> Result<Option<FriendConnectivityEvent>, anyhow::Error> {
+    let Some(mut receiver) = state
+        .borrow_mut()
+        .try_take::<tokio::sync::mpsc::Receiver<FriendConnectivityEvent>>()
+    else {
+        return Ok(None);
+    };
+
+    let res = match receiver.recv().await {
+        Some(data) => Ok(Some(data)),
+        None => Ok(None),
+    };
+
+    state.borrow_mut().put(receiver);
+
+    res
 }
 
 pub async fn op_send_friend_request(

@@ -389,6 +389,11 @@ pub async fn op_get_social_initialized(state: &WorkerContext) -> Result<bool, Wa
 }
 
 #[wasm_bindgen]
+pub async fn op_get_online_friends(state: &WorkerContext) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_get_online_friends(state.rc()).await)
+}
+
+#[wasm_bindgen]
 pub async fn op_send_friend_request(
     state: &WorkerContext,
     address: String,

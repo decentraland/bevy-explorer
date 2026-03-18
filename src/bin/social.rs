@@ -59,6 +59,7 @@ fn setup(
         move |ev: &FriendshipEventBody| {
             let _ = sx.send(ev.clone());
         },
+        |_address, _status| {},
         move |ev: DirectChatMessage| {
             let _ = sx_c.send(ev);
         },

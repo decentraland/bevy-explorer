@@ -402,6 +402,34 @@ module.exports.getReceivedFriendRequests = async function() {
     return await Deno.core.ops.op_get_received_friend_requests();
 }
 
+// returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number }, status: "online" | "offline" | "away" }[]
+module.exports.getOnlineFriends = async function() {
+    return await Deno.core.ops.op_get_online_friends();
+}
+
+// get friend connectivity updates as a stream
+// type FriendConnectivityEvent = {
+//   address: string,
+//   name: string,
+//   hasClaimedName: bool,
+//   profilePictureUrl: string,
+//   nameColor?: { r: number, g: number, b: number },
+//   status: "online" | "offline" | "away",
+// }
+module.exports.getFriendConnectivityStream = async function() {
+  const rid = await Deno.core.ops.op_get_friend_connectivity_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_friend_connectivity_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}
+
 // returns bool
 module.exports.getSocialInitialized = async function() {
     return await Deno.core.ops.op_get_social_initialized();

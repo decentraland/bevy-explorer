@@ -21,12 +21,21 @@ pub struct FriendshipRequestResponse {
     pub id: String,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ConnectivityStatus {
+    Online = 0,
+    #[default]
+    Offline = 1,
+    Away = 2,
+}
+
 #[derive(Default)]
 pub struct SocialClientHandler {
     pub is_initialized: bool,
     pub sent_requests: HashMap<Address, FriendshipRequestResponse>,
     pub received_requests: HashMap<Address, FriendshipRequestResponse>,
     pub friends: HashMap<Address, FriendProfile>,
+    pub friend_status: HashMap<Address, ConnectivityStatus>,
 
     pub unread_messages: HashMap<Address, usize>,
 }
@@ -35,6 +44,7 @@ impl SocialClientHandler {
     pub fn connect(
         _wallet: wallet::Wallet,
         _friend_callback: impl Fn(&FriendshipEventBody) + Send + Sync + 'static,
+        _connectivity_callback: impl Fn(Address, ConnectivityStatus) + Send + Sync + 'static,
         _chat_callback: impl Fn(DirectChatMessage) + Send + Sync + 'static,
     ) -> Option<Self> {
         Some(Self::default())

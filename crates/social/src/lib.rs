@@ -12,7 +12,7 @@ use bevy::prelude::*;
 use common::rpc::RpcStreamSender;
 use common::util::AsH160;
 use ethers_core::types::Address;
-use system_bridge::{FriendData, FriendRequestData, FriendshipEventUpdate, NameColor, SystemApi};
+use system_bridge::{FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData, FriendshipEventUpdate, NameColor, SystemApi};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 use wallet::Wallet;
 
@@ -21,6 +21,7 @@ pub struct SocialPlugin;
 impl Plugin for SocialPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         app.add_event::<FriendshipEvent>();
+        app.add_event::<ConnectivityEvent>();
         app.add_event::<DirectChatEvent>();
         app.init_resource::<SocialClient>();
         app.add_systems(PostUpdate, |mut client: ResMut<SocialClient>| {
@@ -31,7 +32,11 @@ impl Plugin for SocialPlugin {
         app.add_systems(PostUpdate, init_social_client);
         app.add_systems(
             PostUpdate,
-            (handle_social_requests, pipe_friendship_events_to_scene),
+            (
+                handle_social_requests,
+                pipe_friendship_events_to_scene,
+                pipe_connectivity_events_to_scene,
+            ),
         );
     }
 }
@@ -41,15 +46,20 @@ pub fn init_social_client(
     wallet: Res<Wallet>,
     mut social: ResMut<SocialClient>,
     mut friends: Local<Option<UnboundedReceiver<FriendshipEvent>>>,
+    mut connectivity: Local<Option<UnboundedReceiver<ConnectivityEvent>>>,
     mut chats: Local<Option<UnboundedReceiver<DirectChatEvent>>>,
 ) {
     if wallet.is_changed() && wallet.address().is_some() {
         let (f_sx, f_rx) = unbounded_channel();
+        let (conn_sx, conn_rx) = unbounded_channel();
         let (c_sx, c_rx) = unbounded_channel();
         let client = SocialClientHandler::connect(
             wallet.clone(),
             move |f| {
                 let _ = f_sx.send(FriendshipEvent(Some(f.clone())));
+            },
+            move |address, status| {
+                let _ = conn_sx.send(ConnectivityEvent { address, status: status as i32 });
             },
             move |c| {
                 let _ = c_sx.send(DirectChatEvent(c));
@@ -57,11 +67,15 @@ pub fn init_social_client(
         );
         social.0 = client;
         *friends = Some(f_rx);
+        *connectivity = Some(conn_rx);
         *chats = Some(c_rx);
     }
 
     while let Some(f) = friends.as_mut().and_then(|rx| rx.try_recv().ok()) {
         commands.send_event(f);
+    }
+    while let Some(ev) = connectivity.as_mut().and_then(|rx| rx.try_recv().ok()) {
+        commands.send_event(ev);
     }
     while let Some(c) = chats.as_mut().and_then(|rx| rx.try_recv().ok()) {
         commands.send_event(c);
@@ -318,6 +332,59 @@ fn handle_social_requests(
                 })();
                 sx.send(result.map_err(|e| e.to_string()));
             }
+            #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+            SystemApi::GetOnlineFriends(sx) => {
+                use dcl_component::proto_components::social_service::v2::ConnectivityStatus;
+                let data: Vec<FriendStatusData> = social
+                    .0
+                    .as_ref()
+                    .map(|c| {
+                        c.friends
+                            .iter()
+                            .map(|(a, profile)| {
+                                let status = c.friend_status.get(a).copied()
+                                    .unwrap_or(ConnectivityStatus::Offline);
+                                FriendStatusData {
+                                    address: format!("{a:#x}"),
+                                    name: profile.name.clone(),
+                                    has_claimed_name: profile.has_claimed_name,
+                                    profile_picture_url: profile.profile_picture_url.clone(),
+                                    name_color: convert_name_color(&profile.name_color),
+                                    status: match status {
+                                        ConnectivityStatus::Online => "online".to_owned(),
+                                        ConnectivityStatus::Offline => "offline".to_owned(),
+                                        ConnectivityStatus::Away => "away".to_owned(),
+                                    },
+                                }
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                sx.send(data);
+            }
+            #[cfg(any(target_arch = "wasm32", not(feature = "social")))]
+            SystemApi::GetOnlineFriends(sx) => {
+                let data: Vec<FriendStatusData> = social
+                    .0
+                    .as_ref()
+                    .map(|c| {
+                        c.friends
+                            .iter()
+                            .map(|(a, profile)| {
+                                FriendStatusData {
+                                    address: format!("{a:#x}"),
+                                    name: profile.name.clone(),
+                                    has_claimed_name: profile.has_claimed_name,
+                                    profile_picture_url: profile.profile_picture_url.clone(),
+                                    name_color: None,
+                                    status: "offline".to_owned(),
+                                }
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                sx.send(data);
+            }
             _ => {}
         }
     }
@@ -343,6 +410,69 @@ fn pipe_friendship_events_to_scene(
             for sender in senders.iter() {
                 let _ = sender.send(update.clone());
             }
+        }
+    }
+}
+
+/// Pipes ConnectivityEvent bevy events to scene stream subscribers
+fn pipe_connectivity_events_to_scene(
+    mut requests: EventReader<SystemApi>,
+    mut connectivity_events: EventReader<ConnectivityEvent>,
+    mut senders: Local<Vec<RpcStreamSender<FriendConnectivityEvent>>>,
+    social: Res<SocialClient>,
+) {
+    senders.extend(requests.read().filter_map(|ev| {
+        if let SystemApi::GetFriendConnectivityStream(sender) = ev {
+            Some(sender.clone())
+        } else {
+            None
+        }
+    }));
+    senders.retain(|s| !s.is_closed());
+
+    if senders.is_empty() {
+        connectivity_events.clear();
+        return;
+    }
+
+    for ev in connectivity_events.read() {
+        let status = match ev.status {
+            0 => "online",
+            2 => "away",
+            _ => "offline",
+        };
+
+        // Look up the friend profile for full data
+        let Some(client) = social.0.as_ref() else {
+            continue;
+        };
+        let event = if let Some(profile) = client.friends.get(&ev.address) {
+            #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+            let name_color = convert_name_color(&profile.name_color);
+            #[cfg(any(target_arch = "wasm32", not(feature = "social")))]
+            let name_color = None;
+
+            FriendConnectivityEvent {
+                address: format!("{:#x}", ev.address),
+                name: profile.name.clone(),
+                has_claimed_name: profile.has_claimed_name,
+                profile_picture_url: profile.profile_picture_url.clone(),
+                name_color,
+                status: status.to_owned(),
+            }
+        } else {
+            FriendConnectivityEvent {
+                address: format!("{:#x}", ev.address),
+                name: String::new(),
+                has_claimed_name: false,
+                profile_picture_url: String::new(),
+                name_color: None,
+                status: status.to_owned(),
+            }
+        };
+
+        for sender in senders.iter() {
+            let _ = sender.send(event.clone());
         }
     }
 }
@@ -452,6 +582,13 @@ fn friendship_event_to_update(
 
 #[derive(Event)]
 pub struct FriendshipEvent(pub Option<FriendshipEventBody>);
+
+#[derive(Event, Clone)]
+pub struct ConnectivityEvent {
+    pub address: Address,
+    /// 0 = Online, 1 = Offline, 2 = Away
+    pub status: i32,
+}
 
 #[derive(Event)]
 pub struct DirectChatEvent(pub DirectChatMessage);

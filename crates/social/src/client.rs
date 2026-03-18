@@ -7,8 +7,9 @@ use common::util::AsH160;
 use dcl_component::proto_components::social_service::v2::{
     friendship_update, paginated_friendship_requests_response,
     upsert_friendship_payload::{self, AcceptPayload, CancelPayload, DeletePayload, RejectPayload, RequestPayload},
-    FriendProfile, FriendshipRequestResponse, GetFriendshipRequestsPayload, GetFriendsPayload,
-    Pagination, SocialServiceClient, SocialServiceClientDefinition, UpsertFriendshipPayload, User,
+    ConnectivityStatus, FriendProfile, FriendshipRequestResponse, GetFriendshipRequestsPayload,
+    GetFriendsPayload, Pagination, SocialServiceClient, SocialServiceClientDefinition,
+    UpsertFriendshipPayload, User,
 };
 use dcl_rpc::{
     client::RpcClient,
@@ -26,7 +27,11 @@ enum FriendData {
         received_requests: HashMap<Address, FriendshipRequestResponse>,
         friends: HashMap<Address, FriendProfile>,
     },
-    Event(friendship_update::Update),
+    FriendshipEvent(friendship_update::Update),
+    ConnectivityEvent {
+        address: Address,
+        status: ConnectivityStatus,
+    },
 }
 
 pub struct SocialClientHandler {
@@ -37,10 +42,12 @@ pub struct SocialClientHandler {
     pub sent_requests: HashMap<Address, FriendshipRequestResponse>,
     pub received_requests: HashMap<Address, FriendshipRequestResponse>,
     pub friends: HashMap<Address, FriendProfile>,
+    pub friend_status: HashMap<Address, ConnectivityStatus>,
 
     pub unread_messages: HashMap<Address, usize>,
 
     friend_event_callback: Box<dyn Fn(&friendship_update::Update) + Send + Sync + 'static>,
+    connectivity_callback: Box<dyn Fn(Address, ConnectivityStatus) + Send + Sync + 'static>,
     #[allow(dead_code)]
     chat_event_callback: Box<dyn Fn(DirectChatMessage) + Send + Sync + 'static>,
 }
@@ -49,6 +56,7 @@ impl SocialClientHandler {
     pub fn connect(
         wallet: wallet::Wallet,
         friend_callback: impl Fn(&friendship_update::Update) + Send + Sync + 'static,
+        connectivity_callback: impl Fn(Address, ConnectivityStatus) + Send + Sync + 'static,
         chat_callback: impl Fn(DirectChatMessage) + Send + Sync + 'static,
     ) -> Option<Self> {
         let (event_sx, event_rx) = mpsc::unbounded_channel();
@@ -63,8 +71,10 @@ impl SocialClientHandler {
             sent_requests: Default::default(),
             received_requests: Default::default(),
             friends: Default::default(),
+            friend_status: Default::default(),
             unread_messages: Default::default(),
             friend_event_callback: Box::new(friend_callback),
+            connectivity_callback: Box::new(connectivity_callback),
             chat_event_callback: Box::new(chat_callback),
         })
     }
@@ -139,6 +149,7 @@ impl SocialClientHandler {
                 user: Self::make_user(address),
             })),
         })?;
+        self.friend_status.remove(&address);
         Ok(())
     }
 
@@ -176,7 +187,7 @@ impl SocialClientHandler {
                     self.friends = friends;
                     self.is_initialized = true;
                 }
-                FriendData::Event(ev) => {
+                FriendData::FriendshipEvent(ev) => {
                     (self.friend_event_callback)(&ev);
                     match ev {
                         friendship_update::Update::Request(body) => {
@@ -226,6 +237,7 @@ impl SocialClientHandler {
                                 continue;
                             };
                             self.friends.remove(&address);
+                            self.friend_status.remove(&address);
                         }
                         friendship_update::Update::Cancel(body) => {
                             let Some(address) =
@@ -239,6 +251,12 @@ impl SocialClientHandler {
                         friendship_update::Update::Block(_) => {
                             // TODO: handle block events
                         }
+                    }
+                }
+                FriendData::ConnectivityEvent { address, status } => {
+                    if self.friends.contains_key(&address) {
+                        self.friend_status.insert(address, status);
+                        (self.connectivity_callback)(address, status);
                     }
                 }
             }
@@ -413,6 +431,14 @@ async fn social_socket_handler_inner(
         .map_err(dbgerr)?;
     info!("[social] Subscribed to friendship updates");
 
+    // Subscribe to friend connectivity updates
+    info!("[social] Subscribing to friend connectivity updates...");
+    let mut connectivity_updates = service_module
+        .subscribe_to_friend_connectivity_updates()
+        .await
+        .map_err(dbgerr)?;
+    info!("[social] Subscribed to friend connectivity updates");
+
     // Outbound: send friendship actions
     let f_service_write = async move {
         while let Some(req) = rx.recv().await {
@@ -428,23 +454,44 @@ async fn social_socket_handler_inner(
     .fuse();
 
     // Inbound: receive friendship update events
-    let sx = response_sx.clone();
+    let sx_friendship = response_sx.clone();
     let f_service_read = async move {
         while let Some(update) = inbound_updates.next().await {
             info!("[social] Received friendship update: {update:?}");
             if let Some(ev) = update.update {
-                sx.send(FriendData::Event(ev)).map_err(dbgerr)?;
+                sx_friendship.send(FriendData::FriendshipEvent(ev)).map_err(dbgerr)?;
             }
         }
-        Ok(())
+        Result::<(), anyhow::Error>::Ok(())
+    }
+    .fuse();
+
+    // Inbound: receive friend connectivity update events
+    let sx_connectivity = response_sx.clone();
+    let f_connectivity_read = async move {
+        while let Some(update) = connectivity_updates.next().await {
+            info!("[social] Received connectivity update: {update:?}");
+            if let Some(friend) = &update.friend {
+                if let Some(address) = friend.address.as_h160() {
+                    let status = match update.status {
+                        0 => ConnectivityStatus::Online,
+                        2 => ConnectivityStatus::Away,
+                        _ => ConnectivityStatus::Offline,
+                    };
+                    sx_connectivity.send(FriendData::ConnectivityEvent { address, status }).map_err(dbgerr)?;
+                }
+            }
+        }
+        Result::<(), anyhow::Error>::Ok(())
     }
     .fuse();
 
     // Run until a stream breaks
-    pin_mut!(f_service_read, f_service_write);
+    pin_mut!(f_service_read, f_service_write, f_connectivity_read);
     select! {
         r = f_service_read => r,
         r = f_service_write => r,
+        r = f_connectivity_read => r,
     }
 }
 
