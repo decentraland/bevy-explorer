@@ -592,12 +592,19 @@ fn receive_video_frame(
         (Entity, &LivekitTrack, &mut VideoFrameReceiver, &PublishedBy),
         (With<Video>, With<Subscribed>),
     >,
-    participants: Query<(&LivekitParticipant, Option<&StreamImage>)>,
+    participants: Query<(
+        &LivekitParticipant,
+        Option<&StreamImage>,
+        Option<&StreamBroadcast>,
+    )>,
     mut images: ResMut<Assets<Image>>,
 ) {
     for (entity, livekit_track, mut video_frame_receiver, published_by) in video_tracks.into_inner()
     {
-        let Ok((participant, maybe_stream_image)) = participants.get(published_by.get()) else {
+        let participant_entity = published_by.get();
+        let Ok((participant, maybe_stream_image, maybe_stream_broadcast)) =
+            participants.get(participant_entity)
+        else {
             error!("Invalid PublishedBy relationship.");
             commands.send_event(AppExit::from_code(1));
             return;
@@ -610,8 +617,29 @@ fn receive_video_frame(
             );
             continue;
         };
+        let Some(stream_broadcast) = maybe_stream_broadcast else {
+            error!(
+                "Participant {} ({}) had StreamImage but not StreamBroadcast.",
+                participant.sid(),
+                participant.identity()
+            );
+            commands.send_event(AppExit::from_code(1));
+            return;
+        };
 
-        match video_frame_receiver.try_recv() {
+        let received_frame = {
+            let mut last = video_frame_receiver.try_recv();
+            loop {
+                let other = video_frame_receiver.try_recv();
+                if matches!(other, Err(TryRecvError::Empty)) {
+                    break last;
+                } else {
+                    last = other;
+                }
+            }
+        };
+
+        match received_frame {
             Ok(frame) => {
                 let Some(image) = images.get_mut(stream_image.id()) else {
                     error!("StreamImage holds an invalid handle.");
@@ -624,13 +652,23 @@ fn receive_video_frame(
                     height: frame.height().max(16),
                     depth_or_array_layers: 1,
                 };
+                image.transfer_priority = bevy::asset::RenderAssetTransferPriority::Priority(-2);
                 if image.texture_descriptor.size != target_extent {
                     debug!("Resizing StreamImage image to {target_extent:?}.");
                     image.data = None;
                     image.texture_descriptor.size = target_extent;
                     image.transfer_priority = bevy::asset::RenderAssetTransferPriority::Immediate;
+
+                    for stream_viewer in stream_broadcast.collection() {
+                        commands.entity(*stream_viewer).insert(stream_image.clone());
+                    }
                 }
-                image.data = Some(frame.rgba_data());
+
+                if let Some(image_data) = image.data.as_mut() {
+                    frame.rgba_data_into_slice(image_data);
+                } else {
+                    image.data = Some(frame.rgba_data());
+                }
             }
             Err(TryRecvError::Empty) => (),
             Err(TryRecvError::Disconnected) => {
