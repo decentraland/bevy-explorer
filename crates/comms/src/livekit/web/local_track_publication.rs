@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 use wasm_bindgen::{
-    JsCast, JsValue, convert::{FromWasmAbi, IntoWasmAbi}, describe::WasmDescribe, prelude::wasm_bindgen
+    convert::{FromWasmAbi, IntoWasmAbi},
+    describe::WasmDescribe,
+    prelude::wasm_bindgen,
+    JsCast, JsValue,
 };
 
 use crate::livekit::web::{GetFromJsValue, JsValueAbi, TrackKind, TrackSource};

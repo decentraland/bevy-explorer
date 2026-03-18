@@ -1,7 +1,12 @@
 use bevy::prelude::*;
 use js_sys::{Object, Reflect};
 use tokio::sync::mpsc;
-use wasm_bindgen::{JsValue, convert::{FromWasmAbi, IntoWasmAbi}, describe::WasmDescribe, prelude::*};
+use wasm_bindgen::{
+    convert::{FromWasmAbi, IntoWasmAbi},
+    describe::WasmDescribe,
+    prelude::*,
+    JsValue,
+};
 
 use crate::livekit::web::{JsValueAbi, LocalParticipant, RoomEvent, RoomOptions, RoomResult};
 
