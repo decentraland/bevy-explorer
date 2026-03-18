@@ -1,6 +1,8 @@
 use std::io::Result;
 fn gen_sdk_components() -> Result<()> {
     let components = [
+        "asset_load",
+        "asset_load_loading_state",
         "engine_info",
         "billboard",
         "raycast",
