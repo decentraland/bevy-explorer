@@ -1,0 +1,30 @@
+syntax = "proto3";
+package decentraland.social_service;
+
+message InvalidFriendshipAction {
+  optional string message = 1;
+}
+
+message InternalServerError {
+  optional string message = 1;
+}
+
+message InvalidRequest {
+  optional string message = 1;
+}
+
+message ProfileNotFound {
+  optional string message = 1;
+}
+
+message ConflictingError {
+  optional string message = 1;
+}
+
+message ForbiddenError {
+  optional string message = 1;
+}
+
+message NotFoundError {
+  optional string message = 1;
+}

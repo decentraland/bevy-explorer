@@ -10,8 +10,9 @@ use dcl_component::proto_components::{
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
-    settings::SettingInfo, ChatMessage, HomeScene, HoverEvent, LiveSceneInfo,
-    PermanentPermissionItem, PermissionRequest, SceneLoadingUi, VoiceMessage,
+    settings::SettingInfo, ChatMessage, FriendshipEventUpdate, HomeScene, HoverEvent,
+    FriendData, FriendRequestData, LiveSceneInfo, PermanentPermissionItem, PermissionRequest,
+    SceneLoadingUi, VoiceMessage,
 };
 
 // list of op declarations
@@ -63,6 +64,18 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_read_hover_stream(),
             op_get_scene_loading_ui_stream(),
             op_read_scene_loading_ui_stream(),
+            // Social / Friends
+            op_get_friendship_event_stream(),
+            op_read_friendship_event_stream(),
+            op_get_friends(),
+            op_get_sent_friend_requests(),
+            op_get_received_friend_requests(),
+            op_get_social_initialized(),
+            op_send_friend_request(),
+            op_accept_friend_request(),
+            op_reject_friend_request(),
+            op_cancel_friend_request(),
+            op_delete_friend(),
         ]
     } else {
         Vec::default()
@@ -391,4 +404,97 @@ pub async fn op_read_scene_loading_ui_stream(
     rid: u32,
 ) -> Result<Option<SceneLoadingUi>, deno_core::anyhow::Error> {
     dcl::js::system_api::op_read_scene_loading_ui_stream(state, rid).await
+}
+
+// Social / Friends
+
+#[op2(async)]
+pub async fn op_get_friendship_event_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_friendship_event_stream(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_friendship_event_stream(
+    state: Rc<RefCell<OpState>>,
+    rid: u32,
+) -> Result<Option<FriendshipEventUpdate>, deno_core::anyhow::Error> {
+    dcl::js::system_api::op_read_friendship_event_stream(state, rid).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_friends(
+    state: Rc<RefCell<OpState>>,
+) -> Result<Vec<FriendData>, anyhow::Error> {
+    dcl::js::system_api::op_get_friends(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_sent_friend_requests(
+    state: Rc<RefCell<OpState>>,
+) -> Result<Vec<FriendRequestData>, anyhow::Error> {
+    dcl::js::system_api::op_get_sent_friend_requests(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_received_friend_requests(
+    state: Rc<RefCell<OpState>>,
+) -> Result<Vec<FriendRequestData>, anyhow::Error> {
+    dcl::js::system_api::op_get_received_friend_requests(state).await
+}
+
+#[op2(async)]
+pub async fn op_get_social_initialized(
+    state: Rc<RefCell<OpState>>,
+) -> Result<bool, anyhow::Error> {
+    dcl::js::system_api::op_get_social_initialized(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_send_friend_request(
+    state: Rc<RefCell<OpState>>,
+    #[string] address: String,
+    #[string] message: Option<String>,
+) -> Result<(), anyhow::Error> {
+    dcl::js::system_api::op_send_friend_request(state, address, message).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_accept_friend_request(
+    state: Rc<RefCell<OpState>>,
+    #[string] address: String,
+) -> Result<(), anyhow::Error> {
+    dcl::js::system_api::op_accept_friend_request(state, address).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_reject_friend_request(
+    state: Rc<RefCell<OpState>>,
+    #[string] address: String,
+) -> Result<(), anyhow::Error> {
+    dcl::js::system_api::op_reject_friend_request(state, address).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_cancel_friend_request(
+    state: Rc<RefCell<OpState>>,
+    #[string] address: String,
+) -> Result<(), anyhow::Error> {
+    dcl::js::system_api::op_cancel_friend_request(state, address).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_delete_friend(
+    state: Rc<RefCell<OpState>>,
+    #[string] address: String,
+) -> Result<(), anyhow::Error> {
+    dcl::js::system_api::op_delete_friend(state, address).await
 }

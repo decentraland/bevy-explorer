@@ -16,9 +16,10 @@ use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, rc::Rc};
 use strum::IntoEnumIterator;
 use system_bridge::{
-    settings::SettingInfo, ChatMessage, HomeScene, HoverEvent, LiveSceneInfo,
-    PermanentPermissionItem, PermissionRequest, SceneLoadingUi, SetAvatarData,
-    SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
+    settings::SettingInfo, ChatMessage, FriendshipEventUpdate, HomeScene, HoverEvent,
+    FriendData, FriendRequestData, LiveSceneInfo, PermanentPermissionItem, PermissionRequest,
+    SceneLoadingUi, SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi,
+    VoiceMessage,
 };
 
 use crate::{interface::crdt_context::CrdtContext, js::player_identity, RpcCalls};
@@ -755,4 +756,173 @@ pub async fn op_read_scene_loading_ui_stream(
     state.borrow_mut().put(receiver);
 
     res
+}
+
+// Social / Friends ops
+
+pub async fn op_get_friendship_event_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+    state.borrow_mut().put(rx);
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetFriendshipEventStream(sx))
+        .unwrap();
+
+    5
+}
+
+pub async fn op_read_friendship_event_stream(
+    state: Rc<RefCell<impl State>>,
+    _rid: u32,
+) -> Result<Option<FriendshipEventUpdate>, anyhow::Error> {
+    let Some(mut receiver) = state
+        .borrow_mut()
+        .try_take::<RpcStreamReceiver<FriendshipEventUpdate>>()
+    else {
+        return Ok(None);
+    };
+
+    let res = match receiver.recv().await {
+        Some(data) => Ok(Some(data)),
+        None => Ok(None),
+    };
+
+    state.borrow_mut().put(receiver);
+
+    res
+}
+
+pub async fn op_get_friends(
+    state: Rc<RefCell<impl State>>,
+) -> Result<Vec<FriendData>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetFriends(sx))?;
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_sent_friend_requests(
+    state: Rc<RefCell<impl State>>,
+) -> Result<Vec<FriendRequestData>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetSentFriendRequests(sx))?;
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_received_friend_requests(
+    state: Rc<RefCell<impl State>>,
+) -> Result<Vec<FriendRequestData>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetReceivedFriendRequests(sx))?;
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_social_initialized(
+    state: Rc<RefCell<impl State>>,
+) -> Result<bool, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetSocialInitialized(sx))?;
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_send_friend_request(
+    state: Rc<RefCell<impl State>>,
+    address: String,
+    message: Option<String>,
+) -> Result<(), anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::SendFriendRequest(address, message, sx))?;
+
+    rx.await
+        .map_err(|e| anyhow::anyhow!(e))?
+        .map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_accept_friend_request(
+    state: Rc<RefCell<impl State>>,
+    address: String,
+) -> Result<(), anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::AcceptFriendRequest(address, sx))?;
+
+    rx.await
+        .map_err(|e| anyhow::anyhow!(e))?
+        .map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_reject_friend_request(
+    state: Rc<RefCell<impl State>>,
+    address: String,
+) -> Result<(), anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::RejectFriendRequest(address, sx))?;
+
+    rx.await
+        .map_err(|e| anyhow::anyhow!(e))?
+        .map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_cancel_friend_request(
+    state: Rc<RefCell<impl State>>,
+    address: String,
+) -> Result<(), anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::CancelFriendRequest(address, sx))?;
+
+    rx.await
+        .map_err(|e| anyhow::anyhow!(e))?
+        .map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_delete_friend(
+    state: Rc<RefCell<impl State>>,
+    address: String,
+) -> Result<(), anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::DeleteFriend(address, sx))?;
+
+    rx.await
+        .map_err(|e| anyhow::anyhow!(e))?
+        .map_err(|e| anyhow::anyhow!(e))
 }

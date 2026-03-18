@@ -9,7 +9,10 @@ mod client;
 pub use client::{FriendshipEventBody, SocialClientHandler};
 
 use bevy::prelude::*;
+use common::rpc::RpcStreamSender;
+use common::util::AsH160;
 use ethers_core::types::Address;
+use system_bridge::{FriendData, FriendRequestData, FriendshipEventUpdate, NameColor, SystemApi};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 use wallet::Wallet;
 
@@ -26,6 +29,10 @@ impl Plugin for SocialPlugin {
             }
         });
         app.add_systems(PostUpdate, init_social_client);
+        app.add_systems(
+            PostUpdate,
+            (handle_social_requests, pipe_friendship_events_to_scene),
+        );
     }
 }
 
@@ -78,16 +85,368 @@ impl SocialClient {
         let Some(client) = self.0.as_ref() else {
             return FriendshipState::Error;
         };
-        if client.friends.contains(&address) {
+        if client.friends.contains_key(&address) {
             return FriendshipState::Friends;
         }
-        if client.sent_requests.contains(&address) {
+        if client.sent_requests.contains_key(&address) {
             return FriendshipState::SentRequest;
         }
         if client.received_requests.contains_key(&address) {
             return FriendshipState::RecdRequested;
         }
         FriendshipState::NotFriends
+    }
+}
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+fn convert_name_color(
+    color: &Option<dcl_component::proto_components::common::Color3>,
+) -> Option<NameColor> {
+    color.as_ref().map(|c| NameColor {
+        r: c.r,
+        g: c.g,
+        b: c.b,
+    })
+}
+
+/// Handles request/response SystemApi messages for friends
+fn handle_social_requests(
+    mut events: EventReader<SystemApi>,
+    mut social: ResMut<SocialClient>,
+) {
+    for event in events.read() {
+        match event {
+            #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+            SystemApi::GetFriends(sx) => {
+                let friends: Vec<FriendData> = social
+                    .0
+                    .as_ref()
+                    .map(|c| {
+                        c.friends
+                            .iter()
+                            .map(|(a, profile)| FriendData {
+                                address: format!("{a:#x}"),
+                                name: profile.name.clone(),
+                                has_claimed_name: profile.has_claimed_name,
+                                profile_picture_url: profile.profile_picture_url.clone(),
+                                name_color: convert_name_color(&profile.name_color),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                sx.send(friends);
+            }
+            #[cfg(any(target_arch = "wasm32", not(feature = "social")))]
+            SystemApi::GetFriends(sx) => {
+                let friends: Vec<FriendData> = social
+                    .0
+                    .as_ref()
+                    .map(|c| {
+                        c.friends
+                            .iter()
+                            .map(|(a, profile)| FriendData {
+                                address: format!("{a:#x}"),
+                                name: profile.name.clone(),
+                                has_claimed_name: profile.has_claimed_name,
+                                profile_picture_url: profile.profile_picture_url.clone(),
+                                name_color: None,
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                sx.send(friends);
+            }
+            #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+            SystemApi::GetSentFriendRequests(sx) => {
+                let requests: Vec<FriendRequestData> = social
+                    .0
+                    .as_ref()
+                    .map(|c| {
+                        c.sent_requests
+                            .iter()
+                            .map(|(a, req)| {
+                                let profile = req.friend.as_ref();
+                                FriendRequestData {
+                                    address: format!("{a:#x}"),
+                                    name: profile.map(|p| p.name.clone()).unwrap_or_default(),
+                                    has_claimed_name: profile.map(|p| p.has_claimed_name).unwrap_or(false),
+                                    profile_picture_url: profile.map(|p| p.profile_picture_url.clone()).unwrap_or_default(),
+                                    name_color: profile.and_then(|p| convert_name_color(&p.name_color)),
+                                    created_at: req.created_at,
+                                    message: req.message.clone(),
+                                    id: req.id.clone(),
+                                }
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                sx.send(requests);
+            }
+            #[cfg(any(target_arch = "wasm32", not(feature = "social")))]
+            SystemApi::GetSentFriendRequests(sx) => {
+                let requests: Vec<FriendRequestData> = social
+                    .0
+                    .as_ref()
+                    .map(|c| {
+                        c.sent_requests
+                            .iter()
+                            .map(|(a, req)| {
+                                let profile = req.friend.as_ref();
+                                FriendRequestData {
+                                    address: format!("{a:#x}"),
+                                    name: profile.map(|p| p.name.clone()).unwrap_or_default(),
+                                    has_claimed_name: profile.map(|p| p.has_claimed_name).unwrap_or(false),
+                                    profile_picture_url: profile.map(|p| p.profile_picture_url.clone()).unwrap_or_default(),
+                                    name_color: None,
+                                    created_at: req.created_at,
+                                    message: req.message.clone(),
+                                    id: req.id.clone(),
+                                }
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                sx.send(requests);
+            }
+            #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+            SystemApi::GetReceivedFriendRequests(sx) => {
+                let requests: Vec<FriendRequestData> = social
+                    .0
+                    .as_ref()
+                    .map(|c| {
+                        c.received_requests
+                            .iter()
+                            .map(|(a, req)| {
+                                let profile = req.friend.as_ref();
+                                FriendRequestData {
+                                    address: format!("{a:#x}"),
+                                    name: profile.map(|p| p.name.clone()).unwrap_or_default(),
+                                    has_claimed_name: profile.map(|p| p.has_claimed_name).unwrap_or(false),
+                                    profile_picture_url: profile.map(|p| p.profile_picture_url.clone()).unwrap_or_default(),
+                                    name_color: profile.and_then(|p| convert_name_color(&p.name_color)),
+                                    created_at: req.created_at,
+                                    message: req.message.clone(),
+                                    id: req.id.clone(),
+                                }
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                sx.send(requests);
+            }
+            #[cfg(any(target_arch = "wasm32", not(feature = "social")))]
+            SystemApi::GetReceivedFriendRequests(sx) => {
+                let requests: Vec<FriendRequestData> = social
+                    .0
+                    .as_ref()
+                    .map(|c| {
+                        c.received_requests
+                            .iter()
+                            .map(|(a, req)| {
+                                let profile = req.friend.as_ref();
+                                FriendRequestData {
+                                    address: format!("{a:#x}"),
+                                    name: profile.map(|p| p.name.clone()).unwrap_or_default(),
+                                    has_claimed_name: profile.map(|p| p.has_claimed_name).unwrap_or(false),
+                                    profile_picture_url: profile.map(|p| p.profile_picture_url.clone()).unwrap_or_default(),
+                                    name_color: None,
+                                    created_at: req.created_at,
+                                    message: req.message.clone(),
+                                    id: req.id.clone(),
+                                }
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                sx.send(requests);
+            }
+            SystemApi::GetSocialInitialized(sx) => {
+                let initialized = social
+                    .0
+                    .as_ref()
+                    .map(|c| c.is_initialized)
+                    .unwrap_or(false);
+                sx.send(initialized);
+            }
+            SystemApi::SendFriendRequest(address, message, sx) => {
+                let result = (|| {
+                    let addr = address.as_h160().ok_or("invalid address")?;
+                    let client = social.0.as_mut().ok_or("social not initialized")?;
+                    client
+                        .friend_request(addr, message.clone())
+                        .map_err(|e| format!("{e}"))
+                })();
+                sx.send(result.map_err(|e| e.to_string()));
+            }
+            SystemApi::AcceptFriendRequest(address, sx) => {
+                let result = (|| {
+                    let addr = address.as_h160().ok_or("invalid address")?;
+                    let client = social.0.as_mut().ok_or("social not initialized")?;
+                    client
+                        .accept_request(addr)
+                        .map_err(|e| format!("{e}"))
+                })();
+                sx.send(result.map_err(|e| e.to_string()));
+            }
+            SystemApi::RejectFriendRequest(address, sx) => {
+                let result = (|| {
+                    let addr = address.as_h160().ok_or("invalid address")?;
+                    let client = social.0.as_mut().ok_or("social not initialized")?;
+                    client
+                        .reject_request(addr)
+                        .map_err(|e| format!("{e}"))
+                })();
+                sx.send(result.map_err(|e| e.to_string()));
+            }
+            SystemApi::CancelFriendRequest(address, sx) => {
+                let result = (|| {
+                    let addr = address.as_h160().ok_or("invalid address")?;
+                    let client = social.0.as_mut().ok_or("social not initialized")?;
+                    client
+                        .cancel_request(addr)
+                        .map_err(|e| format!("{e}"))
+                })();
+                sx.send(result.map_err(|e| e.to_string()));
+            }
+            SystemApi::DeleteFriend(address, sx) => {
+                let result = (|| {
+                    let addr = address.as_h160().ok_or("invalid address")?;
+                    let client = social.0.as_mut().ok_or("social not initialized")?;
+                    client
+                        .delete_friend(addr)
+                        .map_err(|e| format!("{e}"))
+                })();
+                sx.send(result.map_err(|e| e.to_string()));
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Pipes FriendshipEvent bevy events to scene stream subscribers
+fn pipe_friendship_events_to_scene(
+    mut requests: EventReader<SystemApi>,
+    mut friendship_events: EventReader<FriendshipEvent>,
+    mut senders: Local<Vec<RpcStreamSender<FriendshipEventUpdate>>>,
+) {
+    senders.extend(requests.read().filter_map(|ev| {
+        if let SystemApi::GetFriendshipEventStream(sender) = ev {
+            Some(sender.clone())
+        } else {
+            None
+        }
+    }));
+    senders.retain(|s| !s.is_closed());
+
+    for ev in friendship_events.read() {
+        if let Some(update) = friendship_event_to_update(&ev.0) {
+            for sender in senders.iter() {
+                let _ = sender.send(update.clone());
+            }
+        }
+    }
+}
+
+fn friendship_event_to_update(
+    body: &Option<FriendshipEventBody>,
+) -> Option<FriendshipEventUpdate> {
+    #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+    {
+        use dcl_component::proto_components::social_service::v2::friendship_update;
+        match body.as_ref()? {
+            friendship_update::Update::Request(r) => {
+                let profile = r.friend.as_ref()?;
+                let addr = profile.address.as_h160()?;
+                Some(FriendshipEventUpdate::Request {
+                    address: format!("{addr:#x}"),
+                    name: profile.name.clone(),
+                    has_claimed_name: profile.has_claimed_name,
+                    profile_picture_url: profile.profile_picture_url.clone(),
+                    name_color: convert_name_color(&profile.name_color),
+                    created_at: r.created_at,
+                    message: r.message.clone(),
+                    id: r.id.clone(),
+                })
+            }
+            friendship_update::Update::Accept(r) => {
+                let addr = r.user.as_ref()?.address.as_h160()?;
+                Some(FriendshipEventUpdate::Accept {
+                    address: format!("{addr:#x}"),
+                })
+            }
+            friendship_update::Update::Reject(r) => {
+                let addr = r.user.as_ref()?.address.as_h160()?;
+                Some(FriendshipEventUpdate::Reject {
+                    address: format!("{addr:#x}"),
+                })
+            }
+            friendship_update::Update::Delete(r) => {
+                let addr = r.user.as_ref()?.address.as_h160()?;
+                Some(FriendshipEventUpdate::Delete {
+                    address: format!("{addr:#x}"),
+                })
+            }
+            friendship_update::Update::Cancel(r) => {
+                let addr = r.user.as_ref()?.address.as_h160()?;
+                Some(FriendshipEventUpdate::Cancel {
+                    address: format!("{addr:#x}"),
+                })
+            }
+            friendship_update::Update::Block(r) => {
+                let addr = r.user.as_ref()?.address.as_h160()?;
+                Some(FriendshipEventUpdate::Block {
+                    address: format!("{addr:#x}"),
+                })
+            }
+        }
+    }
+    #[cfg(any(target_arch = "wasm32", not(feature = "social")))]
+    {
+        match body.as_ref()? {
+            FriendshipEventBody::Request(r) => {
+                let addr = &r.friend.as_ref()?.address;
+                Some(FriendshipEventUpdate::Request {
+                    address: addr.clone(),
+                    name: String::new(),
+                    has_claimed_name: false,
+                    profile_picture_url: String::new(),
+                    name_color: None,
+                    created_at: 0,
+                    message: None,
+                    id: String::new(),
+                })
+            }
+            FriendshipEventBody::Accept(r) => {
+                let addr = &r.user.as_ref()?.address;
+                Some(FriendshipEventUpdate::Accept {
+                    address: addr.clone(),
+                })
+            }
+            FriendshipEventBody::Reject(r) => {
+                let addr = &r.user.as_ref()?.address;
+                Some(FriendshipEventUpdate::Reject {
+                    address: addr.clone(),
+                })
+            }
+            FriendshipEventBody::Delete(r) => {
+                let addr = &r.user.as_ref()?.address;
+                Some(FriendshipEventUpdate::Delete {
+                    address: addr.clone(),
+                })
+            }
+            FriendshipEventBody::Cancel(r) => {
+                let addr = &r.user.as_ref()?.address;
+                Some(FriendshipEventUpdate::Cancel {
+                    address: addr.clone(),
+                })
+            }
+            FriendshipEventBody::Block(r) => {
+                let addr = &r.user.as_ref()?.address;
+                Some(FriendshipEventUpdate::Block {
+                    address: addr.clone(),
+                })
+            }
+        }
     }
 }
 

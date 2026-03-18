@@ -150,27 +150,32 @@ fn update_chat_history(
             FriendshipEventBody::Request(r) => (
                 "you received a friend request",
                 Color::srgb(0.8, 1.0, 1.0),
-                &r.user.as_ref().map(|u| &u.address),
+                r.friend.as_ref().map(|f| &f.address),
             ),
             FriendshipEventBody::Accept(r) => (
                 "your friend request was accepted",
                 Color::srgb(0.8, 1.0, 1.0),
-                &r.user.as_ref().map(|u| &u.address),
+                r.user.as_ref().map(|u| &u.address),
             ),
             FriendshipEventBody::Reject(r) => (
                 "your friend request was rejected",
                 Color::srgb(1.0, 0.8, 0.8),
-                &r.user.as_ref().map(|u| &u.address),
+                r.user.as_ref().map(|u| &u.address),
             ),
             FriendshipEventBody::Delete(r) => (
                 "your friendship is over",
                 Color::srgb(1.0, 0.8, 0.8),
-                &r.user.as_ref().map(|u| &u.address),
+                r.user.as_ref().map(|u| &u.address),
             ),
             FriendshipEventBody::Cancel(r) => (
                 "the friend request was cancelled",
                 Color::srgb(1.0, 0.8, 0.8),
-                &r.user.as_ref().map(|u| &u.address),
+                r.user.as_ref().map(|u| &u.address),
+            ),
+            FriendshipEventBody::Block(r) => (
+                "you were blocked",
+                Color::srgb(1.0, 0.8, 0.8),
+                r.user.as_ref().map(|u| &u.address),
             ),
         };
 

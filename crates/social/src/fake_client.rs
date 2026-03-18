@@ -1,14 +1,32 @@
-use bevy::platform::collections::{HashMap, HashSet};
+use bevy::platform::collections::HashMap;
 use ethers_core::types::Address;
 
 use crate::DirectChatMessage;
 
+/// Stub types mirroring the proto FriendProfile / FriendshipRequestResponse
+/// used when the `social` feature is disabled.
+#[derive(Clone, Debug, Default)]
+pub struct FriendProfile {
+    pub address: String,
+    pub name: String,
+    pub has_claimed_name: bool,
+    pub profile_picture_url: String,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct FriendshipRequestResponse {
+    pub friend: Option<FriendProfile>,
+    pub created_at: i64,
+    pub message: Option<String>,
+    pub id: String,
+}
+
 #[derive(Default)]
 pub struct SocialClientHandler {
     pub is_initialized: bool,
-    pub sent_requests: HashSet<Address>,
-    pub received_requests: HashMap<Address, Option<String>>,
-    pub friends: HashSet<Address>,
+    pub sent_requests: HashMap<Address, FriendshipRequestResponse>,
+    pub received_requests: HashMap<Address, FriendshipRequestResponse>,
+    pub friends: HashMap<Address, FriendProfile>,
 
     pub unread_messages: HashMap<Address, usize>,
 }
@@ -74,11 +92,17 @@ impl SocialClientHandler {
 
 #[derive(Clone, Debug)]
 pub enum FriendshipEventBody {
-    Request(BodyData),
+    Request(RequestBodyData),
     Accept(BodyData),
     Reject(BodyData),
     Delete(BodyData),
     Cancel(BodyData),
+    Block(BodyData),
+}
+
+#[derive(Clone, Debug)]
+pub struct RequestBodyData {
+    pub friend: Option<BodyDataInner>,
 }
 
 #[derive(Clone, Debug)]

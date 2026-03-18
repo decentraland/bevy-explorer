@@ -209,16 +209,16 @@ fn update(
                 }
                 "friends" => {
                     reply("friends:".to_owned());
-                    for friend in client.friends.iter() {
-                        reply(format!(" - {friend:#x?}"));
+                    for (address, profile) in client.friends.iter() {
+                        reply(format!(" - {address:#x?}: {} (claimed: {})", profile.name, profile.has_claimed_name));
                     }
                 }
                 "received" => {
                     reply("received requests:".to_owned());
-                    for (address, message) in client.received_requests.iter() {
+                    for (address, req) in client.received_requests.iter() {
                         reply(format!(
                             " - {address:#x?}: {}",
-                            message
+                            req.message
                                 .as_ref()
                                 .map(String::as_str)
                                 .unwrap_or("(no message)")
@@ -227,7 +227,7 @@ fn update(
                 }
                 "sent" => {
                     reply("sent requests:".to_owned());
-                    for address in client.sent_requests.iter() {
+                    for (address, _req) in client.sent_requests.iter() {
                         reply(format!(" - {address:#x?}",));
                     }
                 }

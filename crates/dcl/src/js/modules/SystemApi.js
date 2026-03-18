@@ -358,6 +358,80 @@ module.exports.getHoverStream = async function() {
   return streamGenerator();
 }
 
+// Social / Friends
+
+// get friendship events as a stream
+// type FriendshipEventUpdate = {
+//   type: "request" | "accept" | "reject" | "cancel" | "delete" | "block",
+//   address: string,
+//   // only for "request":
+//   name?: string,
+//   hasClaimedName?: bool,
+//   profilePictureUrl?: string,
+//   nameColor?: { r: number, g: number, b: number },
+//   createdAt?: number,
+//   message?: string,
+//   id?: string,
+// }
+module.exports.getFriendshipEventStream = async function() {
+  const rid = await Deno.core.ops.op_get_friendship_event_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_friendship_event_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}
+
+// returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number } }[]
+module.exports.getFriends = async function() {
+    return await Deno.core.ops.op_get_friends();
+}
+
+// returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number }, createdAt: number, message?: string, id: string }[]
+module.exports.getSentFriendRequests = async function() {
+    return await Deno.core.ops.op_get_sent_friend_requests();
+}
+
+// returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number }, createdAt: number, message?: string, id: string }[]
+module.exports.getReceivedFriendRequests = async function() {
+    return await Deno.core.ops.op_get_received_friend_requests();
+}
+
+// returns bool
+module.exports.getSocialInitialized = async function() {
+    return await Deno.core.ops.op_get_social_initialized();
+}
+
+// address: string, message?: string
+module.exports.sendFriendRequest = async function(address, message) {
+    await Deno.core.ops.op_send_friend_request(address, message);
+}
+
+// address: string
+module.exports.acceptFriendRequest = async function(address) {
+    await Deno.core.ops.op_accept_friend_request(address);
+}
+
+// address: string
+module.exports.rejectFriendRequest = async function(address) {
+    await Deno.core.ops.op_reject_friend_request(address);
+}
+
+// address: string
+module.exports.cancelFriendRequest = async function(address) {
+    await Deno.core.ops.op_cancel_friend_request(address);
+}
+
+// address: string
+module.exports.deleteFriend = async function(address) {
+    await Deno.core.ops.op_delete_friend(address);
+}
+
 // get scene loading UI state as a stream
 // type SceneLoadingUi = {
 //   visible: boolean,
