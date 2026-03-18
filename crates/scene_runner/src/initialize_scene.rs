@@ -1042,7 +1042,7 @@ fn load_active_entities(
                 // take nearest parcel to current that is within map bounds
                 if let Ok((player_entity, player_transform)) = player.single() {
                     if let Ok(mut commands) = commands.get_entity(player_entity) {
-                        let parcel = if map_data.is_some() {
+                        let parcel = if bounds_min.cmple(bounds_max).all() {
                             let initial_parcel = vec3_to_parcel(player_transform.translation());
                             initial_parcel.clamp(bounds_min, bounds_max)
                         } else {
