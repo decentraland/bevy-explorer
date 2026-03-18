@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use wasm_bindgen::{
-    convert::IntoWasmAbi, describe::WasmDescribe, prelude::wasm_bindgen, JsCast, JsValue,
+    JsCast, JsValue, convert::{FromWasmAbi, IntoWasmAbi}, describe::WasmDescribe, prelude::wasm_bindgen
 };
 
 use crate::livekit::web::{GetFromJsValue, JsValueAbi, TrackKind, TrackSource};
@@ -20,6 +20,16 @@ extern "C" {
 #[derive(Debug, Clone)]
 pub struct LocalTrackPublication {
     inner: JsValue,
+}
+
+impl FromWasmAbi for LocalTrackPublication {
+    type Abi = JsValueAbi;
+
+    unsafe fn from_abi(value: Self::Abi) -> Self {
+        Self {
+            inner: JsValue::from_abi(value),
+        }
+    }
 }
 
 /// SAFETY: should be fine while WASM remains single threaded

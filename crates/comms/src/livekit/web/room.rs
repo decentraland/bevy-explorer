@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use js_sys::{Object, Reflect};
 use tokio::sync::mpsc;
-use wasm_bindgen::{convert::IntoWasmAbi, describe::WasmDescribe, prelude::*, JsValue};
+use wasm_bindgen::{JsValue, convert::{FromWasmAbi, IntoWasmAbi}, describe::WasmDescribe, prelude::*};
 
 use crate::livekit::web::{JsValueAbi, LocalParticipant, RoomEvent, RoomOptions, RoomResult};
 
@@ -26,6 +26,16 @@ extern "C" {
 #[derive(Debug, Clone)]
 pub struct Room {
     inner: JsValue,
+}
+
+impl FromWasmAbi for Room {
+    type Abi = JsValueAbi;
+
+    unsafe fn from_abi(value: Self::Abi) -> Self {
+        Self {
+            inner: JsValue::from_abi(value),
+        }
+    }
 }
 
 /// SAFETY: should be fine while WASM remains single threaded
