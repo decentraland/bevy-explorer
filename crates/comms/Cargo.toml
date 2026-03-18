@@ -49,7 +49,7 @@ multipart = { version = "0.18.0", default-features = false, features = [
 image = "0.25"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-livekit = { git = "https://github.com/robtfm/client-sdk-rust", branch = "h264-true-prefixed", features = [
+livekit = { git = "https://github.com/robtfm/client-sdk-rust", branch = "decentraland-webrtc", features = [
   "native-tls",
 ], optional = true }
 cpal = "0.15.2"
