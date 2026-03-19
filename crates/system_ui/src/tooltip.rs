@@ -1,7 +1,10 @@
 use std::collections::{btree_map::Entry, BTreeMap};
 
 use bevy::prelude::*;
-use common::{structs::{ToolTips, TooltipSource, ZOrder}, util::TryPushChildrenEx};
+use common::{
+    structs::{ToolTips, TooltipSource, ZOrder},
+    util::TryPushChildrenEx,
+};
 use system_bridge::NativeUi;
 use ui_core::{ui_builder::SpawnSpacer, HOVER_TEXT_STYLE};
 

@@ -282,7 +282,9 @@ fn setup_chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<Du
             active_log_sink: None,
         });
 
-    commands.entity(components.named("tabs")).try_insert(ChatTab);
+    commands
+        .entity(components.named("tabs"))
+        .try_insert(ChatTab);
 }
 
 fn toggle_friends(container: Query<&DuiEntities, With<ChatboxContainer>>, mut commands: Commands) {

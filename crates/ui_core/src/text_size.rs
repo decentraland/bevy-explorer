@@ -106,7 +106,10 @@ impl DuiTemplate for LinkTemplate {
             ),
         ));
 
-        commands.commands().entity(label).try_insert(FontSize(self.0));
+        commands
+            .commands()
+            .entity(label)
+            .try_insert(FontSize(self.0));
         commands
             .commands()
             .entity(line)

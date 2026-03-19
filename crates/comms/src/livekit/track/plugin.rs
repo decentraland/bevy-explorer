@@ -660,7 +660,9 @@ fn receive_video_frame(
                     image.transfer_priority = bevy::asset::RenderAssetTransferPriority::Immediate;
 
                     for stream_viewer in stream_broadcast.collection() {
-                        commands.entity(*stream_viewer).try_insert(stream_image.clone());
+                        commands
+                            .entity(*stream_viewer)
+                            .try_insert(stream_image.clone());
                     }
                 }
 

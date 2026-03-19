@@ -169,25 +169,27 @@ pub(crate) fn setup(
                     ))
                     .try_with_children(|commands| {
                         let mut info_node = |label: String| {
-                            commands.spawn(Node::default()).try_with_children(|commands| {
-                                commands.spawn((
-                                    Node {
-                                        width: Val::Px(150.0),
-                                        ..Default::default()
-                                    },
-                                    Text::new(label),
-                                    TextLayout::new_with_justify(JustifyText::Right),
-                                    BODY_TEXT_STYLE.get().unwrap().clone(),
-                                ));
-                                commands.spawn((
-                                    Node {
-                                        width: Val::Px(250.0),
-                                        ..Default::default()
-                                    },
-                                    Text::default(),
-                                    BODY_TEXT_STYLE.get().unwrap().clone(),
-                                ));
-                            });
+                            commands
+                                .spawn(Node::default())
+                                .try_with_children(|commands| {
+                                    commands.spawn((
+                                        Node {
+                                            width: Val::Px(150.0),
+                                            ..Default::default()
+                                        },
+                                        Text::new(label),
+                                        TextLayout::new_with_justify(JustifyText::Right),
+                                        BODY_TEXT_STYLE.get().unwrap().clone(),
+                                    ));
+                                    commands.spawn((
+                                        Node {
+                                            width: Val::Px(250.0),
+                                            ..Default::default()
+                                        },
+                                        Text::default(),
+                                        BODY_TEXT_STYLE.get().unwrap().clone(),
+                                    ));
+                                });
                         };
 
                         if config.graphics.log_fps {

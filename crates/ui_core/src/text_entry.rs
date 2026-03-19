@@ -303,7 +303,9 @@ fn pipe_events(
         }
 
         if value.0 == "\n" {
-            commands.entity(entity).try_insert(TextInputValue::default());
+            commands
+                .entity(entity)
+                .try_insert(TextInputValue::default());
         }
     }
 }

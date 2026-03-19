@@ -630,7 +630,9 @@ fn update_ready_gltfs(
                     let (h_mesh, data) = if let Some((h_mesh, cached_data)) = existing_data {
                         if h_mesh.id() != h_gltf_mesh.0.id() {
                             // overwrite with cached handle
-                            commands.entity(spawned_ent).try_insert(Mesh3d(h_mesh.clone()));
+                            commands
+                                .entity(spawned_ent)
+                                .try_insert(Mesh3d(h_mesh.clone()));
                         }
                         (h_mesh, cached_data.clone())
                     } else {

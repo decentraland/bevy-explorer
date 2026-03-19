@@ -4,7 +4,8 @@ use bevy::{image::ImageLoaderSettings, prelude::*};
 use bevy_dui::{DuiEntities, DuiEntityCommandsExt, DuiProps};
 use common::{
     rpc::RpcStreamSender,
-    structs::{PrimaryUser, ZOrder}, util::TryPushChildrenEx,
+    structs::{PrimaryUser, ZOrder},
+    util::TryPushChildrenEx,
 };
 use scene_runner::{
     renderer_context::RendererSceneContext, update_world::gltf_container::GltfLoadingCount,

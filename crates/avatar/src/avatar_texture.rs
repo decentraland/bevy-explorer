@@ -23,7 +23,8 @@ use bevy_dui::{DuiRegistry, DuiTemplate};
 use collectibles::{urn::CollectibleUrn, Emote};
 use common::{
     sets::SetupSets,
-    structs::{AvatarDynamicState, EmoteCommand}, util::TryPushChildrenEx,
+    structs::{AvatarDynamicState, EmoteCommand},
+    util::TryPushChildrenEx,
 };
 use platform::default_camera_components;
 use ui_core::ui_actions::{DragData, Dragged, On};

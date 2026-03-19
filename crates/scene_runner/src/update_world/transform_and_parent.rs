@@ -255,7 +255,9 @@ pub(crate) fn process_transform_and_parent_updates(
                     );
                     // this entity (and all checked entities) link to the root
                     // apply parenting
-                    commands.entity(*entity).try_insert(ChildOf(parents[entity]));
+                    commands
+                        .entity(*entity)
+                        .try_insert(ChildOf(parents[entity]));
                     //  record validity of the chain
                     valid_entities.extend(checklist.into_iter());
                     // remove from the unparented list

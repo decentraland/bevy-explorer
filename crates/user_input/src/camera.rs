@@ -278,7 +278,9 @@ pub fn update_camera_position(
         target_transform.translation =
             player_head + head_offset * distance.clamp(0.0, 3.0) + target_direction * distance;
 
-        commands.entity(camera_ent).try_insert(ViewUserValue(distance));
+        commands
+            .entity(camera_ent)
+            .try_insert(ViewUserValue(distance));
     }
 
     let changed = (prev_override.is_some() != options.scene_override.is_some())

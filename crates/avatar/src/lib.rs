@@ -760,7 +760,9 @@ fn update_render_avatar(
                         panic!();
                     }
                     chose_existing = true;
-                    commands.entity(entity).try_insert(PreviousAvatar(render_child));
+                    commands
+                        .entity(entity)
+                        .try_insert(PreviousAvatar(render_child));
                 }
             }
         }
@@ -1335,7 +1337,9 @@ fn process_avatar(
 
                 // move children of the root to the body mesh
                 if parent_name.to_lowercase() == "armature" {
-                    commands.entity(scene_ent).try_insert(ChildOf(armature_node));
+                    commands
+                        .entity(scene_ent)
+                        .try_insert(ChildOf(armature_node));
                 }
 
                 if let Some(h_mesh) = maybe_h_mesh {
@@ -1457,7 +1461,9 @@ fn process_avatar(
                 .root;
 
             debug!("{:?} as child of {:?}", label_ui, ui_view.view);
-            commands.entity(label_ui).try_insert(DespawnWith(avatar_ent));
+            commands
+                .entity(label_ui)
+                .try_insert(DespawnWith(avatar_ent));
 
             commands.entity(avatar_ent).try_with_children(|commands| {
                 commands.spawn((

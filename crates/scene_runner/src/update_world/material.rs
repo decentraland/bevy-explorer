@@ -520,7 +520,9 @@ pub fn update_materials(
                             }
                             Ok(None) => {
                                 // retry
-                                commands.entity(ent).try_insert(RetryMaterial(Vec::default()));
+                                commands
+                                    .entity(ent)
+                                    .try_insert(RetryMaterial(Vec::default()));
                                 continue;
                             }
                             Ok(Some(mat)) => {
@@ -560,7 +562,9 @@ pub fn update_materials(
                 let textures = match textures {
                     Ok(textures) => textures,
                     _ => {
-                        commands.entity(ent).try_insert(RetryMaterial(Vec::default()));
+                        commands
+                            .entity(ent)
+                            .try_insert(RetryMaterial(Vec::default()));
                         continue;
                     }
                 };
