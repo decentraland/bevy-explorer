@@ -2,7 +2,7 @@ use std::{convert::Infallible, path::PathBuf};
 
 use bevy::{
     asset::AssetLoader,
-    ecs::{component::HookContext, world::DeferredWorld},
+    ecs::{component::HookContext, entity::EntityHashSet, world::DeferredWorld},
     platform::collections::HashMap,
     prelude::*,
 };
@@ -21,7 +21,7 @@ pub struct AssetPreloadPlugin;
 
 impl Plugin for AssetPreloadPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<AssetPreloadCounter>();
+        app.init_resource::<AssetPreloadBackReference>();
 
         app.init_asset::<PreloadAsset>();
         app.init_asset_loader::<PreloadAssetLoader>();
@@ -38,9 +38,10 @@ impl Plugin for AssetPreloadPlugin {
     }
 }
 
+/// Mapping between [`PreloadAsset`] [`Handle`] to entities requesting them
 #[derive(Default, Resource, Deref, DerefMut)]
-struct AssetPreloadCounter {
-    assets: HashMap<Handle<PreloadAsset>, usize>,
+struct AssetPreloadBackReference {
+    assets: HashMap<Handle<PreloadAsset>, EntityHashSet>,
 }
 
 fn asset_preload_on_insert(mut deferred_world: DeferredWorld, hook_context: HookContext) {
@@ -78,15 +79,19 @@ fn asset_preload_on_insert(mut deferred_world: DeferredWorld, hook_context: Hook
         })
         .collect::<Vec<Handle<PreloadAsset>>>();
 
-    let mut asset_preload_counter = deferred_world.resource_mut::<AssetPreloadCounter>();
+    let mut asset_preload_counter = deferred_world.resource_mut::<AssetPreloadBackReference>();
 
     for handle in asset_preload_handles {
         asset_preload_counter
             .entry(handle)
-            .and_modify(|counter| {
-                *counter += 1;
+            .and_modify(|set| {
+                debug_assert!(set.insert(entity));
             })
-            .or_insert(1);
+            .or_insert_with(|| {
+                let mut set = EntityHashSet::new();
+                set.insert(entity);
+                set
+            });
     }
 }
 
@@ -124,14 +129,15 @@ fn asset_preload_on_replace(mut deferred_world: DeferredWorld, hook_context: Hoo
         unreachable!("All assets in AssetLoad must have a handle at this point.");
     };
 
-    let mut asset_preload_counter = deferred_world.resource_mut::<AssetPreloadCounter>();
+    let mut asset_preload_counter = deferred_world.resource_mut::<AssetPreloadBackReference>();
 
     for handle in asset_preload_handles {
-        let Some(counter) = asset_preload_counter.get_mut(&handle) else {
-            unreachable!("All handles of AssetLoad must be present on AssetPreloadCounter.");
+        let Some(set) = asset_preload_counter.get_mut(&handle) else {
+            unreachable!("All handles of AssetLoad must be present on AssetPreloadBackReferenece.");
         };
 
-        if *counter == 1 {
+        debug_assert!(set.remove(&entity));
+        if set.is_empty() {
             asset_preload_counter.remove(&handle);
         } else {
             *counter -= 1;
