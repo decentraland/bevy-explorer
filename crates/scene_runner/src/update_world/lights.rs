@@ -269,7 +269,7 @@ fn update_point_lights(
                 .map(|tex| resolver.resolve_texture(ctx, tex));
             let resolved_texture = match image {
                 Some(Err(TextureResolveError::SourceNotReady)) => {
-                    commands.entity(entity).insert(RetryLightTexture);
+                    commands.entity(entity).try_insert(RetryLightTexture);
                     continue;
                 }
                 None | Some(Err(_)) => None,
@@ -294,7 +294,7 @@ fn update_point_lights(
         };
         match light.spotlight_angles {
             Some(angles) => {
-                light_cmds.insert(SpotLight {
+                light_cmds.try_insert(SpotLight {
                     color: light.color.unwrap_or(Color::WHITE),
                     intensity: lumens,
                     range,
@@ -306,7 +306,7 @@ fn update_point_lights(
                 });
 
                 if let Some(light_texture) = maybe_light_texture {
-                    light_cmds.insert(SpotLightTexture {
+                    light_cmds.try_insert(SpotLightTexture {
                         image: light_texture,
                     });
                 }
@@ -314,7 +314,7 @@ fn update_point_lights(
                 light_cmds.remove::<(PointLight, PointLightTexture)>();
             }
             None => {
-                light_cmds.insert(PointLight {
+                light_cmds.try_insert(PointLight {
                     color: light.color.unwrap_or(Color::WHITE),
                     intensity: lumens,
                     range,
@@ -324,7 +324,7 @@ fn update_point_lights(
                 });
 
                 if let Some(light_texture) = maybe_light_texture {
-                    light_cmds.insert(PointLightTexture {
+                    light_cmds.try_insert(PointLightTexture {
                         image: light_texture,
                         cubemap_layout: CubemapLayout::CrossHorizontal,
                     });

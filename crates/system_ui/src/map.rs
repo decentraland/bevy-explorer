@@ -91,7 +91,7 @@ fn set_map_content(
         commands.entity(ent).despawn_related::<Children>();
 
         if maybe_map_settings.is_none() {
-            commands.entity(ent).insert(MapSettings::default());
+            commands.entity(ent).try_insert(MapSettings::default());
         }
 
         let components = commands
@@ -108,7 +108,7 @@ fn set_map_content(
 
         debug!("using parcel {}", center);
 
-        commands.entity(components.named("map-node")).insert((
+        commands.entity(components.named("map-node")).try_insert((
             MapTexture {
                 center,
                 parcels_per_vmin: 20.0,
@@ -336,7 +336,7 @@ fn render_map(
                         },
                         ..Default::default()
                     })
-                    .with_children(|c| {
+                    .try_with_children(|c| {
                         c.spawn((
                             Node {
                                 position_type: PositionType::Absolute,

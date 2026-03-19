@@ -363,7 +363,7 @@ fn apply_player_move(
                 movement_control
                     .suppress_avatar_physics
                     .insert("player_move");
-                commands.entity(player_entity).insert(ActivePlayerMove {
+                commands.entity(player_entity).try_insert(ActivePlayerMove {
                     target: world_target,
                     elapsed: 0.0,
                     response: response.unwrap(),
@@ -394,7 +394,7 @@ fn apply_player_move(
             ..
         } => {
             debug!("walk player started: target={world_target}, threshold={stop_threshold}");
-            commands.entity(player_entity).insert(ActivePlayerMove {
+            commands.entity(player_entity).try_insert(ActivePlayerMove {
                 target: world_target,
                 elapsed: 0.0,
                 response,

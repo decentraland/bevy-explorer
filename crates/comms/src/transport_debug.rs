@@ -114,7 +114,7 @@ fn setup_av_player_debug_ui(mut commands: Commands) {
             Pickable::IGNORE,
             Visibility::Hidden,
         ))
-        .with_children(|parent| {
+        .try_with_children(|parent| {
             build_row(
                 parent,
                 1,
@@ -169,7 +169,7 @@ fn transport_on_add(
 
     commands
         .entity(transport_debug_ui_entity)
-        .with_children(|parent| {
+        .try_with_children(|parent| {
             build_row(
                 parent,
                 next_row,

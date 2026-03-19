@@ -171,7 +171,7 @@ fn av_player_is_in_scene(
         let contained = containing_scenes.contains(&container.root);
         if contained && !has_in_scene {
             // Only call `insert` on those that do not have `InScene`
-            commands.entity(ent).insert(InScene);
+            commands.entity(ent).try_insert(InScene);
         } else if !contained && has_in_scene {
             // Only call `remove` on those that have `InScene`
             commands.entity(ent).remove::<InScene>();
@@ -257,7 +257,7 @@ fn stream_should_be_played(
         debug!("AVPlayer {entity} should be playing. Linking to the stream.");
         commands
             .entity(entity)
-            .insert(<StreamViewer as Relationship>::from(*streamer));
+            .try_insert(<StreamViewer as Relationship>::from(*streamer));
         if let Ok(mut context) = scenes.get_mut(container_entity.root) {
             let event = PbVideoEvent {
                 timestamp: frame.0,
@@ -334,7 +334,7 @@ fn streamer_joined(
         if av_player.source.src.starts_with("livekit-video://") {
             commands
                 .entity(av_player_entity)
-                .insert(<StreamViewer as Relationship>::from(entity));
+                .try_insert(<StreamViewer as Relationship>::from(entity));
             if let Ok(mut context) = scenes.get_mut(container_entity.root) {
                 let event = PbVideoEvent {
                     timestamp: frame.0,

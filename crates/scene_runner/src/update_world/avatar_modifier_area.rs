@@ -107,7 +107,9 @@ fn update_avatar_modifier_area(
     // for every player
     for (player, gt, maybe_foreign, maybe_modifiers) in players.iter_mut() {
         let Some(mut modifiers) = maybe_modifiers else {
-            commands.entity(player).insert(PlayerModifiers::default());
+            commands
+                .entity(player)
+                .try_insert(PlayerModifiers::default());
             continue;
         };
 

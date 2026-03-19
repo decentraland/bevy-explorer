@@ -118,10 +118,10 @@ impl AppSetting for ShadowSetting {
         match self {
             ShadowSetting::Off => (),
             ShadowSetting::Low => {
-                cmds.insert(ShadowFilteringMethod::Hardware2x2);
+                cmds.try_insert(ShadowFilteringMethod::Hardware2x2);
             }
             ShadowSetting::High => {
-                cmds.insert(ShadowFilteringMethod::Gaussian);
+                cmds.try_insert(ShadowFilteringMethod::Gaussian);
             }
         }
     }

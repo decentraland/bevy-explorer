@@ -79,7 +79,7 @@ fn update_slices(
 
     for (ent, node, slice, maybe_material) in new_slices.iter() {
         let Some(image_size) = images.get(&slice.image).map(Image::size_f32) else {
-            commands.entity(ent).insert(Retry9Slice);
+            commands.entity(ent).try_insert(Retry9Slice);
             continue;
         };
         commands.entity(ent).remove::<Retry9Slice>();
@@ -205,7 +205,7 @@ impl DuiTemplate for Ui9SliceTemplate {
 
         debug!("border rect: {center_region:?}");
 
-        commands.insert((
+        commands.try_insert((
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::Px(0.0),

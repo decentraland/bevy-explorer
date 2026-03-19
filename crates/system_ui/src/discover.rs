@@ -294,10 +294,10 @@ fn set_discover_content(
                             let is_active = buttons.get_mut(caller.0).map(|b| b.0).unwrap_or(false);
 
                             if is_active {
-                                commands.entity(caller.0).insert(Active(false));
+                                commands.entity(caller.0).try_insert(Active(false));
                                 settings.category_filter.remove(&cat);
                             } else {
-                                commands.entity(caller.0).insert(Active(true));
+                                commands.entity(caller.0).try_insert(Active(true));
                                 settings.category_filter.insert(cat);
                             }
 
@@ -537,7 +537,7 @@ fn update_page(
                     ),
             )
             .unwrap();
-        commands.commands().entity(button.root).insert((
+        commands.commands().entity(button.root).try_insert((
             Interaction::default(),
             On::<Click>::new(
                 move |mut commands: Commands,

@@ -55,7 +55,7 @@ fn set_profile_detail_content(
             if let Some(profile) = current_profile.profile.as_ref() {
                 commands
                     .entity(settings_entity)
-                    .insert(ProfileDetail(profile.content.clone()));
+                    .try_insert(ProfileDetail(profile.content.clone()));
                 &profile.content
             } else {
                 error!("can't amend missing profile");

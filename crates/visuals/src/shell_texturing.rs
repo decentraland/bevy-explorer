@@ -232,7 +232,7 @@ fn swap_ground(
         ParcelGrassState::Off => {
             commands
                 .entity(*ground)
-                .insert((
+                .try_insert((
                     Mesh3d(PARCEL_GRASS_MESH.clone()),
                     MeshMaterial3d(GROUND_MATERIAL_FLAT_COLOR),
                     GROUND_RENDERLAYER.clone(),
@@ -242,7 +242,7 @@ fn swap_ground(
         ParcelGrassState::On => {
             commands
                 .entity(*ground)
-                .insert(Children::spawn(ParcelGrassShellSpawnList {
+                .try_insert(Children::spawn(ParcelGrassShellSpawnList {
                     shells: GROUND_LAYERS,
                     lod: HIGH_LOD,
                     displacement: GROUND_DISPLACEMENT,
@@ -351,7 +351,7 @@ fn parcel_grass_lod_inserted(
 
     commands
         .entity(entity)
-        .insert(Children::spawn(ParcelGrassShellSpawnList {
+        .try_insert(Children::spawn(ParcelGrassShellSpawnList {
             shells: layers,
             displacement,
             lod,
@@ -388,10 +388,10 @@ fn parcel_grass_without_lod(
         match scene_pointers.get(parcel_grass.parcel) {
             Some(PointerResult::Nothing) => {
                 let lod = ParcelGrassLod::from_distance(player_location, parcel_grass.parcel);
-                commands.entity(entity).insert(lod);
+                commands.entity(entity).try_insert(lod);
             }
             Some(PointerResult::Exists { .. }) => {
-                commands.entity(entity).insert(ParcelGrassLod::Off);
+                commands.entity(entity).try_insert(ParcelGrassLod::Off);
             }
             None => {}
         }
@@ -479,11 +479,11 @@ fn recalculate_lod(
             Some(PointerResult::Nothing) => {
                 let lod = ParcelGrassLod::from_distance(player_location, parcel_grass.parcel);
                 if lod != *parcel_grass_lod {
-                    commands.entity(entity).insert(lod);
+                    commands.entity(entity).try_insert(lod);
                 }
             }
             Some(PointerResult::Exists { .. }) => {
-                commands.entity(entity).insert(ParcelGrassLod::Off);
+                commands.entity(entity).try_insert(ParcelGrassLod::Off);
             }
             None => {
                 commands.entity(entity).remove::<ParcelGrassLod>();
