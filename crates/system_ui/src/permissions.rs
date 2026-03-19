@@ -69,7 +69,7 @@ fn set_permission_settings_content(
             None => {
                 commands
                     .entity(settings_entity)
-                    .insert(PermissionSettingsDetail(current_settings.clone()));
+                    .try_insert(PermissionSettingsDetail(current_settings.clone()));
                 current_settings.clone()
             }
         };
@@ -269,7 +269,7 @@ fn set_permission_settings_content(
                 .unwrap()
                 .root;
 
-            commands.entity(ent).insert((
+            commands.entity(ent).try_insert((
                 Interaction::default(),
                 On::<HoverEnter>::new(
                     move |mut q: Query<&mut Text, With<PermissionSettingDescription>>| {
@@ -281,7 +281,7 @@ fn set_permission_settings_content(
             if hilight {
                 commands
                     .entity(ent)
-                    .insert(BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.1)));
+                    .try_insert(BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.1)));
                 target_entity = Some(ent);
             }
 
@@ -327,7 +327,7 @@ fn set_permission_settings_content(
 
         commands
             .entity(components.named("permission-description"))
-            .insert(PermissionSettingDescription);
+            .try_insert(PermissionSettingDescription);
 
         if let Some(target) = target_entity {
             commands.send_event(ScrollTargetEvent {

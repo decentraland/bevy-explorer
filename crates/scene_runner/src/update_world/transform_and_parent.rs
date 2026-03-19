@@ -255,7 +255,7 @@ pub(crate) fn process_transform_and_parent_updates(
                     );
                     // this entity (and all checked entities) link to the root
                     // apply parenting
-                    commands.entity(*entity).insert(ChildOf(parents[entity]));
+                    commands.entity(*entity).try_insert(ChildOf(parents[entity]));
                     //  record validity of the chain
                     valid_entities.extend(checklist.into_iter());
                     // remove from the unparented list
@@ -264,7 +264,7 @@ pub(crate) fn process_transform_and_parent_updates(
                     debug!("{:?}: not valid, setting parent to {:?}", entity, root);
                     // this entity (and all checked entities) end in a cycle
                     // parent to the root
-                    commands.entity(*entity).insert(ChildOf(root));
+                    commands.entity(*entity).try_insert(ChildOf(root));
                     // mark as invalid
                     invalid_entities.extend(checklist.into_iter());
                     // keep the entity in the unparented list to recheck at the next hierarchy update

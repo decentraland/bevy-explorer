@@ -193,25 +193,25 @@ impl DuiTemplate for DuiButtonTemplate {
 
         if let Some(text_size) = data.text_size {
             if let Some(label) = components.get("label") {
-                new_commands.entity(*label).insert(FontSize(text_size));
+                new_commands.entity(*label).try_insert(FontSize(text_size));
             }
         }
 
         let button_id = components["button-background"];
         let mut button = new_commands.entity(button_id);
 
-        button.insert((
+        button.try_insert((
             Enabled(data.enabled),
             Interaction::default(),
             FocusPolicy::Block,
         ));
 
         if let Some(styles) = data.styles {
-            button.insert(styles);
+            button.try_insert(styles);
         }
 
         if let Some(tooltip) = data.tooltip {
-            button.insert(On::<HoverEnter>::new(
+            button.try_insert(On::<HoverEnter>::new(
                 move |mut tooltips: ResMut<ToolTips>,
                       enabled: Query<&Enabled>,
                       caller: Res<UiCaller>| {
@@ -222,7 +222,7 @@ impl DuiTemplate for DuiButtonTemplate {
                     );
                 },
             ));
-            button.insert(On::<HoverExit>::new(
+            button.try_insert(On::<HoverExit>::new(
                 move |mut tooltips: ResMut<ToolTips>| {
                     tooltips.0.remove(&TooltipSource::Entity(button_id));
                 },
@@ -231,12 +231,12 @@ impl DuiTemplate for DuiButtonTemplate {
 
         if let Some(onclick) = data.onclick {
             debug!("add on click");
-            button.insert(onclick);
+            button.try_insert(onclick);
         }
 
         if let Some(onclickrepeat) = data.onclickrepeat {
             debug!("add on click repeat");
-            button.insert(onclickrepeat);
+            button.try_insert(onclickrepeat);
         }
 
         if let Some(entity) = data.children {
@@ -325,14 +325,14 @@ impl TabManager<'_, '_> {
 
         tab.selected = index;
 
-        self.commands.entity(tab_entity).insert(DataChanged);
+        self.commands.entity(tab_entity).try_insert(DataChanged);
         for (i, child) in tab.active_entities.iter().enumerate() {
             if let Ok(mut active) = self.active.get_mut(child.named("button-background")) {
                 active.0 = Some(i) == tab.selected;
             } else {
                 self.commands
                     .entity(child.named("button-background"))
-                    .insert(Active(Some(i) == tab.selected));
+                    .try_insert(Active(Some(i) == tab.selected));
             }
         }
     }
@@ -385,7 +385,7 @@ impl TabManager<'_, '_> {
                         tab.selected = None;
                     }
                 }
-                self.commands.entity(tab_entity).insert(DataChanged);
+                self.commands.entity(tab_entity).try_insert(DataChanged);
                 for (i, child) in tab.active_entities.iter().enumerate() {
                     self.active
                         .get_mut(child.named("button-background"))
@@ -481,7 +481,7 @@ impl TabSelection {
         )?;
 
         let mut bg = commands.entity(components.named("button-background"));
-        bg.insert(Active(Some(ix) == self.selected));
+        bg.try_insert(Active(Some(ix) == self.selected));
         if let Some(flat_side) = edge_scale {
             bg.modify_component(move |bounds: &mut NodeBounds| bounds.edge_scale = flat_side);
         }
@@ -552,7 +552,7 @@ impl DuiTemplate for DuiTabGroupTemplate {
                 .map(|(i, c)| (format!("tab {i}"), c.root)),
         );
 
-        commands.insert((on_changed, selection));
+        commands.try_insert((on_changed, selection));
 
         Ok(nodemap)
     }

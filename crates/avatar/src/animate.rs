@@ -102,7 +102,7 @@ fn handle_trigger_emotes(
     }
 
     for emote in perms.drain_success(common::structs::PermissionType::PlayEmote) {
-        commands.entity(player).insert(emote.clone());
+        commands.entity(player).try_insert(emote.clone());
     }
 
     for _ in perms.drain_fail(common::structs::PermissionType::PlayEmote) {}
@@ -268,7 +268,7 @@ fn animate(
     ) in avatars.iter_mut()
     {
         let Some(mut active_emote) = active_emote else {
-            commands.entity(avatar_ent).insert((
+            commands.entity(avatar_ent).try_insert((
                 ActiveEmote::default(),
                 EmoteCommand::default(),
                 LastEmoteCommand::default(),
@@ -375,7 +375,7 @@ fn animate(
             }
             commands
                 .entity(avatar_ent)
-                .insert(LastEmoteCommand(emote.unwrap().clone()));
+                .try_insert(LastEmoteCommand(emote.unwrap().clone()));
             ActiveEmote {
                 urn: requested_emote,
                 restart: emote_changed,
@@ -696,7 +696,7 @@ fn play_current_emote(
                                 if g.is_none() {
                                     commands
                                         .entity(*ent)
-                                        .insert(AnimationGraphHandle(clip.1.clone()));
+                                        .try_insert(AnimationGraphHandle(clip.1.clone()));
                                 }
                                 true
                             } else {

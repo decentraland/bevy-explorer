@@ -53,7 +53,7 @@ impl DuiTemplate for DuiSpinnerTemplate {
             .unwrap()
             .clone();
 
-        commands.insert((
+        commands.try_insert((
             ImageNode::from_atlas_image(image, TextureAtlas { layout, index: 0 }),
             Spinner,
         ));

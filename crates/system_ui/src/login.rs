@@ -101,13 +101,13 @@ fn login(
                                         .with_prop("buttons", vec![DuiButton::new_enabled("Ok", close_ui_happy)]),
                                 )
                                 .unwrap();
-                            commands.entity(components.root).insert((permit, ZOrder::Login.default()));
+                            commands.entity(components.root).try_insert((permit, ZOrder::Login.default()));
                         }).pipe(close_ui_happy))]),
                 )
                 .unwrap();
             commands
                 .entity(components.root)
-                .insert((permit, ZOrder::Login.default()));
+                .try_insert((permit, ZOrder::Login.default()));
         } else {
             let components = commands
                 .spawn_template(
@@ -121,7 +121,7 @@ fn login(
                 .unwrap();
             commands
                 .entity(components.root)
-                .insert((permit, ZOrder::Login.default()));
+                .try_insert((permit, ZOrder::Login.default()));
         }
         *motd_shown = true;
         return;

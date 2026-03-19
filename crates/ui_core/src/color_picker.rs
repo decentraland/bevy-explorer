@@ -137,10 +137,10 @@ impl DuiTemplate for DuiColorPicker {
                 .take::<Color>("color")?
                 .ok_or(anyhow!("no initial color"))?,
         );
-        commands.insert(picker);
+        commands.try_insert(picker);
 
         if let Some(onchanged) = props.take::<On<DataChanged>>("onchanged")? {
-            commands.insert(onchanged);
+            commands.try_insert(onchanged);
         }
 
         Ok(Default::default())

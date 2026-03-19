@@ -259,7 +259,7 @@ fn connect_scene_room(
             Some(Ok((adapter, ev))) => {
                 if let Some(ent) = manager.connect(&adapter) {
                     warn!("added scene channel {ev:?}");
-                    commands.entity(ent).insert(SceneRoom(ev.scene_id.clone()));
+                    commands.entity(ent).try_insert(SceneRoom(ev.scene_id.clone()));
                     current.0 = Some((ev, adapter, ent));
                 }
             }

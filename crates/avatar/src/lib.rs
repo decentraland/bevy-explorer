@@ -663,7 +663,7 @@ fn update_render_avatar(
         urns.insert(body_urn.clone());
 
         debug!("avatar definition loaded: {wearables:?}");
-        commands.entity(entity).with_children(|commands| {
+        commands.entity(entity).try_with_children(|commands| {
             commands.spawn((
                 Transform::from_rotation(Quat::from_rotation_y(PI)),
                 Visibility::default(),
@@ -760,7 +760,7 @@ fn update_render_avatar(
                         panic!();
                     }
                     chose_existing = true;
-                    commands.entity(entity).insert(PreviousAvatar(render_child));
+                    commands.entity(entity).try_insert(PreviousAvatar(render_child));
                 }
             }
         }
@@ -1335,7 +1335,7 @@ fn process_avatar(
 
                 // move children of the root to the body mesh
                 if parent_name.to_lowercase() == "armature" {
-                    commands.entity(scene_ent).insert(ChildOf(armature_node));
+                    commands.entity(scene_ent).try_insert(ChildOf(armature_node));
                 }
 
                 if let Some(h_mesh) = maybe_h_mesh {
@@ -1439,7 +1439,7 @@ fn process_avatar(
 
         commands
             .entity(root_player_entity.parent())
-            .insert(AvatarMaterials(
+            .try_insert(AvatarMaterials(
                 instance_scene_materials.values().map(|h| h.id()).collect(),
             ));
 
@@ -1457,9 +1457,9 @@ fn process_avatar(
                 .root;
 
             debug!("{:?} as child of {:?}", label_ui, ui_view.view);
-            commands.entity(label_ui).insert(DespawnWith(avatar_ent));
+            commands.entity(label_ui).try_insert(DespawnWith(avatar_ent));
 
-            commands.entity(avatar_ent).with_children(|commands| {
+            commands.entity(avatar_ent).try_with_children(|commands| {
                 commands.spawn((
                     Transform::from_translation(Vec3::Y * 2.2),
                     Visibility::default(),

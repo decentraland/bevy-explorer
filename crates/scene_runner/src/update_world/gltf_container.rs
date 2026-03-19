@@ -546,7 +546,7 @@ fn update_ready_gltfs(
 
                     // retarget animations to our manually added root player
                     if let Some(target) = maybe_target {
-                        commands.entity(spawned_ent).insert(AnimationTarget {
+                        commands.entity(spawned_ent).try_insert(AnimationTarget {
                             player: bevy_scene_entity,
                             ..*target
                         });
@@ -556,7 +556,7 @@ fn update_ready_gltfs(
                     if maybe_player.is_some() {
                         if let Some(name) = maybe_name {
                             debug!("animator found on {name} node of {}", definition.0.src);
-                            // animation_roots.insert((spawned_ent, name.clone()));
+                            // animation_roots.try_insert((spawned_ent, name.clone()));
                             has_animations = true;
                             commands.entity(spawned_ent).remove::<AnimationPlayer>();
                             *tracker.0.entry("embedded://animations").or_default() += 1;
@@ -630,7 +630,7 @@ fn update_ready_gltfs(
                     let (h_mesh, data) = if let Some((h_mesh, cached_data)) = existing_data {
                         if h_mesh.id() != h_gltf_mesh.0.id() {
                             // overwrite with cached handle
-                            commands.entity(spawned_ent).insert(Mesh3d(h_mesh.clone()));
+                            commands.entity(spawned_ent).try_insert(Mesh3d(h_mesh.clone()));
                         }
                         (h_mesh, cached_data.clone())
                     } else {
@@ -774,8 +774,8 @@ fn update_ready_gltfs(
                         };
                         commands
                             .entity(spawned_ent)
-                            .insert(MeshMaterial3d(h_scene_material))
-                            .insert(GltfMaterialName(material_name));
+                            .try_insert(MeshMaterial3d(h_scene_material))
+                            .try_insert(GltfMaterialName(material_name));
                     }
                     *tracker.0.entry("Materials").or_default() += 1;
 
@@ -1006,7 +1006,7 @@ fn update_ready_gltfs(
                         })
                         .collect(),
                 };
-                commands.entity(bevy_scene_entity).insert((
+                commands.entity(bevy_scene_entity).try_insert((
                     AnimationPlayer::default(),
                     AnimationGraphHandle(graphs.add(graph)),
                     animation_clips,
@@ -1522,7 +1522,7 @@ fn expose_gltfs(
 
             if maybe_gltf.is_some() {
                 // this is the gltf but it's not ready yet
-                commands.entity(ent).insert(GltfNodeRequestRetry);
+                commands.entity(ent).try_insert(GltfNodeRequestRetry);
                 break GltfLinkState::Pending;
             }
 
@@ -1593,7 +1593,7 @@ fn expose_gltfs(
 
                 if let Some(mesh) = maybe_mesh {
                     debug!("link mesh");
-                    commands.entity(ent).insert(mesh.clone());
+                    commands.entity(ent).try_insert(mesh.clone());
                     // write to scene
                     scene.update_crdt(
                         SceneComponentId::MESH_RENDERER,
@@ -1611,7 +1611,7 @@ fn expose_gltfs(
                 }
                 if let Some(skin) = maybe_skin {
                     debug!("link skin");
-                    commands.entity(ent).insert(skin.clone());
+                    commands.entity(ent).try_insert(skin.clone());
                 }
                 if let Some(collider) = maybe_collider {
                     debug!("link collider");
@@ -1619,9 +1619,9 @@ fn expose_gltfs(
                     commands
                         .entity(gltf_entity)
                         .remove::<MeshCollider<CtCollider>>()
-                        .insert(HiddenCollider::<CtCollider>(collider.clone()));
+                        .try_insert(HiddenCollider::<CtCollider>(collider.clone()));
                     // copy
-                    commands.entity(ent).insert(collider.clone());
+                    commands.entity(ent).try_insert(collider.clone());
                     // write to scene
                     scene.update_crdt(
                         SceneComponentId::MESH_COLLIDER,
@@ -1645,9 +1645,9 @@ fn expose_gltfs(
                     commands
                         .entity(gltf_entity)
                         .remove::<MeshCollider<CtTrigger>>()
-                        .insert(HiddenCollider::<CtTrigger>(trigger.clone()));
+                        .try_insert(HiddenCollider::<CtTrigger>(trigger.clone()));
                     // copy
-                    commands.entity(ent).insert(trigger.clone());
+                    commands.entity(ent).try_insert(trigger.clone());
                     // write to scene
                     // TODO: extend protocol to allow Gltf type for triggers
 
@@ -1673,12 +1673,12 @@ fn expose_gltfs(
                     commands
                         .entity(gltf_entity)
                         .remove::<MeshMaterial3d<SceneMaterial>>()
-                        .insert(HiddenMaterial(material.clone()));
+                        .try_insert(HiddenMaterial(material.clone()));
                     // copy
-                    commands.entity(ent).insert(material.clone());
+                    commands.entity(ent).try_insert(material.clone());
                     // set base
                     let base = mats.get(material.id()).unwrap();
-                    commands.entity(ent).insert(BaseMaterial {
+                    commands.entity(ent).try_insert(BaseMaterial {
                         material: base.base.clone(),
                         gltf: src.to_owned(),
                         name: maybe_mat_name.unwrap().0.clone(),
@@ -1707,9 +1707,9 @@ fn expose_gltfs(
                     commands
                         .entity(gltf_entity)
                         .remove::<PointLight>()
-                        .insert(HiddenPointLight(*point));
+                        .try_insert(HiddenPointLight(*point));
                     // copy
-                    commands.entity(ent).insert(LightSource {
+                    commands.entity(ent).try_insert(LightSource {
                         enabled: true,
                         intensity: Some(point.intensity / (4.0 * PI)),
                         shadow: Some(true),
@@ -1739,9 +1739,9 @@ fn expose_gltfs(
                     commands
                         .entity(gltf_entity)
                         .remove::<SpotLight>()
-                        .insert(HiddenSpotLight(*spot));
+                        .try_insert(HiddenSpotLight(*spot));
                     // copy
-                    commands.entity(ent).insert((LightSource {
+                    commands.entity(ent).try_insert((LightSource {
                         enabled: true,
                         intensity: Some(spot.intensity / (4.0 * PI)),
                         shadow: Some(true),
@@ -1772,7 +1772,7 @@ fn expose_gltfs(
                     );
                 }
 
-                commands.entity(ent).insert(SceneNodeLink {
+                commands.entity(ent).try_insert(SceneNodeLink {
                     gltf_entity,
                     gltf_parent,
                     scene_parent,
@@ -1843,31 +1843,31 @@ fn update_gltf_linked_transforms(
                 commands
                     .entity(gltf_entity)
                     .remove::<HiddenMaterial>()
-                    .insert(hidden.0.clone());
+                    .try_insert(hidden.0.clone());
             }
             if let Some(hidden) = maybe_hidden_collider {
                 commands
                     .entity(gltf_entity)
                     .remove::<HiddenCollider<CtCollider>>()
-                    .insert(hidden.0.clone());
+                    .try_insert(hidden.0.clone());
             }
             if let Some(hidden) = maybe_hidden_trigger {
                 commands
                     .entity(gltf_entity)
                     .remove::<HiddenCollider<CtTrigger>>()
-                    .insert(hidden.0.clone());
+                    .try_insert(hidden.0.clone());
             }
             if let Some(hidden) = maybe_hidden_point {
                 commands
                     .entity(gltf_entity)
                     .remove::<HiddenPointLight>()
-                    .insert(hidden.0);
+                    .try_insert(hidden.0);
             }
             if let Some(hidden) = maybe_hidden_spot {
                 commands
                     .entity(gltf_entity)
                     .remove::<HiddenSpotLight>()
-                    .insert(hidden.0);
+                    .try_insert(hidden.0);
             }
         };
 

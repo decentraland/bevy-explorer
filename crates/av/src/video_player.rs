@@ -402,5 +402,5 @@ fn copy_stream_image(
     debug!("Adding VideoTextureOutput to {entity}.");
     commands
         .entity(entity)
-        .insert(VideoTextureOutput((**stream_image).clone()));
+        .try_insert(VideoTextureOutput((**stream_image).clone()));
 }

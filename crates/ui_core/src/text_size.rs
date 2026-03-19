@@ -43,7 +43,7 @@ impl DuiTemplate for TextTemplate {
         mut props: bevy_dui::DuiProps,
         ctx: &mut bevy_dui::DuiContext,
     ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
-        commands.insert(FontSize(self.0));
+        commands.try_insert(FontSize(self.0));
         let wrap = props.take_as::<bool>(ctx, "wrap")?.unwrap_or(true);
         commands.modify_component(move |text: &mut TextLayout| {
             text.linebreak = if wrap {
@@ -87,7 +87,7 @@ impl DuiTemplate for LinkTemplate {
 
         let line = components.named("line");
         let label = components.named("label");
-        commands.commands().entity(components.root).insert((
+        commands.commands().entity(components.root).try_insert((
             Interaction::default(),
             On::<Click>::new(move || {
                 opener::open(&link).unwrap();
@@ -106,11 +106,11 @@ impl DuiTemplate for LinkTemplate {
             ),
         ));
 
-        commands.commands().entity(label).insert(FontSize(self.0));
+        commands.commands().entity(label).try_insert(FontSize(self.0));
         commands
             .commands()
             .entity(line)
-            .insert(BackgroundColor(color));
+            .try_insert(BackgroundColor(color));
 
         Ok(Default::default())
     }

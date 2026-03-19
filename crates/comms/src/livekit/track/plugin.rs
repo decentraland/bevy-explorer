@@ -111,18 +111,18 @@ fn track_published(
     ));
     match track.kind() {
         TrackKind::Audio => {
-            entity_cmd.insert(Audio);
+            entity_cmd.try_insert(Audio);
         }
         TrackKind::Video => {
-            entity_cmd.insert(Video);
+            entity_cmd.try_insert(Video);
         }
     }
     match track.source() {
         TrackSource::Microphone => {
-            entity_cmd.insert(Microphone);
+            entity_cmd.try_insert(Microphone);
         }
         TrackSource::Camera => {
-            entity_cmd.insert(Camera);
+            entity_cmd.try_insert(Camera);
         }
         source => warn!("Track {} had {:?} source.", track.sid(), source),
     }
@@ -261,7 +261,7 @@ fn track_subscribed(
     };
 
     debug!("Subscribed to track {}.", track.sid());
-    commands.entity(entity).insert(Subscribed);
+    commands.entity(entity).try_insert(Subscribed);
 }
 
 fn track_unsubscribed(
@@ -281,7 +281,7 @@ fn track_unsubscribed(
     };
 
     debug!("Unsubscribed to track {}.", track.sid());
-    commands.entity(entity).insert(Unsubscribed);
+    commands.entity(entity).try_insert(Unsubscribed);
 }
 
 fn subscribe_to_audio_track(
@@ -322,7 +322,7 @@ fn subscribe_to_audio_track(
     let task = livekit_runtime.spawn(async move {
         track.set_subscribed(true);
     });
-    commands.entity(entity).insert((
+    commands.entity(entity).try_insert((
         Subscribing { task },
         #[cfg(not(target_arch = "wasm32"))]
         OpenAudioSender {
@@ -360,7 +360,7 @@ fn subscribe_to_track(
     let task = livekit_runtime.spawn(async move {
         track.set_subscribed(true);
     });
-    commands.entity(entity).insert(Subscribing { task });
+    commands.entity(entity).try_insert(Subscribing { task });
 }
 
 fn unsubscribe_to_track(
@@ -386,7 +386,7 @@ fn unsubscribe_to_track(
     let task = livekit_runtime.spawn(async move {
         track.set_subscribed(false);
     });
-    commands.entity(entity).insert(Unsubscribing { task });
+    commands.entity(entity).try_insert(Unsubscribing { task });
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -415,7 +415,7 @@ fn subscribed_audio_track_with_open_sender(
         let handle = runtime.spawn(kira_thread(audio, publication, snatcher_sender));
         commands
             .entity(entity)
-            .insert(LivekitTrackTask(handle))
+            .try_insert(LivekitTrackTask(handle))
             .remove::<OpenAudioSender>();
     }
 }
@@ -473,7 +473,7 @@ fn audio_track_is_now_subscribed(
 
     commands
         .entity(entity)
-        .insert(AudioStreamingHandle { handle });
+        .try_insert(AudioStreamingHandle { handle });
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -581,7 +581,7 @@ fn video_track_is_now_subscribed(
     let handle = runtime.spawn(livekit_video_thread(video, publication, sender));
     commands
         .entity(entity)
-        .insert((LivekitTrackTask(handle), VideoFrameReceiver { receiver }));
+        .try_insert((LivekitTrackTask(handle), VideoFrameReceiver { receiver }));
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -660,7 +660,7 @@ fn receive_video_frame(
                     image.transfer_priority = bevy::asset::RenderAssetTransferPriority::Immediate;
 
                     for stream_viewer in stream_broadcast.collection() {
-                        commands.entity(*stream_viewer).insert(stream_image.clone());
+                        commands.entity(*stream_viewer).try_insert(stream_image.clone());
                     }
                 }
 

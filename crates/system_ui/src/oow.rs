@@ -4,7 +4,7 @@ use bevy::{image::ImageLoaderSettings, prelude::*};
 use bevy_dui::{DuiEntities, DuiEntityCommandsExt, DuiProps};
 use common::{
     rpc::RpcStreamSender,
-    structs::{PrimaryUser, ZOrder},
+    structs::{PrimaryUser, ZOrder}, util::TryPushChildrenEx,
 };
 use scene_runner::{
     renderer_context::RendererSceneContext, update_world::gltf_container::GltfLoadingCount,
@@ -152,7 +152,7 @@ fn update_loading_backdrop(
                     BackgroundColor(Color::srgb(0.45, 0.15, 0.55)),
                     ZOrder::OutOfWorldBackdrop.default(),
                 ))
-                .with_children(|parent| {
+                .try_with_children(|parent| {
                     // gradient background
                     parent.spawn((
                         Node {
