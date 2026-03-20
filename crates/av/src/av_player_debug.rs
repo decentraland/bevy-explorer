@@ -2,19 +2,19 @@
 
 use bevy::{
     color::palettes,
-    ecs::relationship::RelatedSpawnerCommands,
     picking::Pickable,
     prelude::*,
     text::{FontSmoothing, LineHeight},
 };
-
-#[cfg(feature = "ffmpeg")]
-use crate::{audio_sink::AudioSink, video_stream::VideoSink};
-use crate::{AVPlayer, InScene, ShouldBePlaying};
+use common::util::{TryChildBuilder, TryPushChildrenEx};
 #[cfg(all(feature = "livekit", not(target_arch = "wasm32")))]
 use comms::livekit::participant::StreamImage;
 #[cfg(feature = "livekit")]
 use comms::livekit::participant::StreamViewer;
+
+#[cfg(feature = "ffmpeg")]
+use crate::{audio_sink::AudioSink, video_stream::VideoSink};
+use crate::{AVPlayer, InScene, ShouldBePlaying};
 
 const DEFAULT_FONT: TextFont = TextFont {
     font: Handle::Weak(AssetId::Uuid {
@@ -427,12 +427,7 @@ type RowTexts<'a> = (
 #[cfg(all(feature = "ffmpeg", feature = "livekit", target_arch = "wasm32"))]
 type RowTexts<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str, &'a str);
 
-fn build_row(
-    parent: &mut RelatedSpawnerCommands<'_, ChildOf>,
-    row: i16,
-    av_player: Entity,
-    row_texts: RowTexts,
-) {
+fn build_row(parent: &mut TryChildBuilder, row: i16, av_player: Entity, row_texts: RowTexts) {
     #[cfg(all(not(feature = "ffmpeg"), not(feature = "livekit")))]
     let (av_player_name, in_scene, should_play) = row_texts;
     #[cfg(all(feature = "ffmpeg", not(feature = "livekit")))]
