@@ -1,4 +1,4 @@
-use std::{convert::Infallible, path::PathBuf};
+use std::{convert::Infallible, io::ErrorKind, path::PathBuf};
 
 use bevy::{
     asset::{io::AssetReaderError, AssetLoadError, AssetLoader, RecursiveDependencyLoadState},
@@ -180,6 +180,15 @@ fn verify_preload_state(
                 let loading_state = match err.as_ref() {
                     AssetLoadError::AssetReaderError(AssetReaderError::NotFound(_)) => {
                         LoadingState::NotFound
+                    }
+                    AssetLoadError::AssetReaderError(AssetReaderError::Io(io)) => {
+                        let message = io.to_string();
+                        if io.kind() == ErrorKind::Other && message.starts_with("w: file not found")
+                        {
+                            LoadingState::NotFound
+                        } else {
+                            LoadingState::FinishedWithError
+                        }
                     }
                     _ => LoadingState::FinishedWithError,
                 };
