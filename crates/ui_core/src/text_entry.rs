@@ -171,7 +171,7 @@ pub fn pass_textinput_pointer_events(
     let position = window
         .single()
         .ok()
-        .and_then(|w| w.cursor_position())
+        .map(|w| w.cursor_position().unwrap_or_default() * w.scale_factor())
         .unwrap_or_default();
 
     if just_pressed && is_focussed {
