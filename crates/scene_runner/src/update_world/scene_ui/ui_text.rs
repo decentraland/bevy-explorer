@@ -307,14 +307,10 @@ impl TextPositionFinder<'_, '_> {
             line = 0;
 
             let len = parts.next().unwrap().len();
-            if len > index {
-                return Some((entity, span_index, entity_line_offset + index));
+            if len > index || parts.next().is_some() {
+                return Some((entity, span_index, entity_line_offset + index.min(len)));
             } else {
                 index -= len;
-            }
-
-            if parts.next().is_some() {
-                panic!();
             }
         }
 
