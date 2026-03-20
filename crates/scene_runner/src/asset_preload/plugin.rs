@@ -1,13 +1,17 @@
 use std::{convert::Infallible, path::PathBuf};
 
 use bevy::{
-    asset::AssetLoader,
-    ecs::{component::HookContext, entity::EntityHashSet, world::DeferredWorld},
-    platform::collections::HashMap,
+    asset::{io::AssetReaderError, AssetLoadError, AssetLoader, RecursiveDependencyLoadState},
+    ecs::relationship::Relationship,
     prelude::*,
 };
-use dcl::interface::ComponentPosition;
-use dcl_component::{proto_components::sdk::components::PbAssetLoad, SceneComponentId};
+use dcl::interface::{ComponentPosition, CrdtType};
+use dcl_component::{
+    proto_components::sdk::components::{
+        common::LoadingState, PbAssetLoad, PbAssetLoadLoadingState,
+    },
+    SceneComponentId,
+};
 use ipfs::ipfs_path::{IpfsPath, IpfsType};
 
 use crate::{
@@ -21,8 +25,6 @@ pub struct AssetPreloadPlugin;
 
 impl Plugin for AssetPreloadPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<AssetPreloadBackReference>();
-
         app.init_asset::<PreloadAsset>();
         app.init_asset_loader::<PreloadAssetLoader>();
 
@@ -31,116 +33,173 @@ impl Plugin for AssetPreloadPlugin {
             ComponentPosition::EntityOnly,
         );
 
-        app.world_mut()
-            .register_component_hooks::<AssetLoad>()
-            .on_insert(asset_preload_on_insert)
-            .on_replace(asset_preload_on_replace);
+        app.add_observer(asset_load_on_insert);
+        app.add_observer(asset_load_on_replace);
+
+        app.add_systems(Update, verify_preload_state);
     }
 }
 
-/// Mapping between [`PreloadAsset`] [`Handle`] to entities requesting them
-#[derive(Default, Resource, Deref, DerefMut)]
-struct AssetPreloadBackReference {
-    assets: HashMap<Handle<PreloadAsset>, EntityHashSet>,
+#[derive(Component)]
+#[relationship(relationship_target = Preloader)]
+struct PreloadedAssetOf(Entity);
+
+#[derive(Component)]
+#[relationship_target(relationship = PreloadedAssetOf, linked_spawn)]
+struct Preloader(Vec<Entity>);
+
+#[derive(Component)]
+struct PreloadedAsset {
+    file_path: String,
+    handle: Handle<PreloadAsset>,
 }
 
-fn asset_preload_on_insert(mut deferred_world: DeferredWorld, hook_context: HookContext) {
-    let entity = hook_context.entity;
+#[derive(Component)]
+struct LoadingPreloadedAsset;
 
-    let asset_server = deferred_world.resource::<AssetServer>().clone();
+fn asset_load_on_insert(
+    trigger: Trigger<OnInsert, AssetLoad>,
+    mut commands: Commands,
+    asset_loads: Query<(&AssetLoad, Option<&ContainerEntity>)>,
+    mut renderer_scene_contexts: Query<&mut RendererSceneContext>,
+    asset_server: Res<AssetServer>,
+) {
+    let entity = trigger.target();
 
-    let Some(asset_load) = deferred_world.get::<AssetLoad>(entity) else {
-        unreachable!("AssetLoad must be available on its hook");
+    let Ok((asset_load, maybe_container_entity)) = asset_loads.get(entity) else {
+        unreachable!("AssetLoad must be available to its observers.");
+    };
+    let Some(container_entity) = maybe_container_entity else {
+        panic!("AssetLoad entity did not have ContainerEntity.");
     };
     debug!(
-        "Entity {entity} is requesting assets {:?}",
-        asset_load.assets
+        "Entity {} on {} requested assets {:?}.",
+        entity, container_entity.root, asset_load.assets
     );
 
-    let Some(container_entity) = deferred_world.get::<ContainerEntity>(entity) else {
-        panic!("Entity with AssetLoad does not have ContainerEntity");
-    };
-
-    let Some(renderer_scene_context) =
-        deferred_world.get::<RendererSceneContext>(container_entity.root)
+    let Ok(mut renderer_scene_context) = renderer_scene_contexts.get_mut(container_entity.root)
     else {
-        panic!("Root of AssetLoad does not have RendererSceneContext");
+        panic!("Root of AssetLoad does not contain RendererSceneContext.");
     };
-    let scene_hash = &renderer_scene_context.hash;
 
-    let asset_preload_handles = asset_load
-        .iter()
-        .map(|file_path| {
-            let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
-                scene_hash.to_owned(),
-                file_path.to_owned(),
-            ));
-            asset_server.load(PathBuf::from(&ipfs_path))
-        })
-        .collect::<Vec<Handle<PreloadAsset>>>();
+    for file_path in &asset_load.assets {
+        let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
+            renderer_scene_context.hash.to_owned(),
+            file_path.to_owned(),
+        ));
+        let handle: Handle<PreloadAsset> = asset_server.load(PathBuf::from(&ipfs_path));
 
-    let mut asset_preload_counter = deferred_world.resource_mut::<AssetPreloadBackReference>();
+        commands.spawn((
+            PreloadedAsset {
+                file_path: file_path.to_owned(),
+                handle,
+            },
+            PreloadedAssetOf(entity),
+            LoadingPreloadedAsset,
+        ));
 
-    for handle in asset_preload_handles {
-        asset_preload_counter
-            .entry(handle)
-            .and_modify(|set| {
-                debug_assert!(set.insert(entity));
-            })
-            .or_insert_with(|| {
-                let mut set = EntityHashSet::new();
-                set.insert(entity);
-                set
-            });
+        let event = PbAssetLoadLoadingState {
+            current_state: LoadingState::Loading as i32,
+            asset: file_path.to_owned(),
+            timestamp: 0,
+        };
+        renderer_scene_context.update_crdt(
+            SceneComponentId::ASSET_LOAD_LOADING_STATE,
+            CrdtType::GO_ANY,
+            container_entity.container_id,
+            &event,
+        );
     }
 }
 
-fn asset_preload_on_replace(mut deferred_world: DeferredWorld, hook_context: HookContext) {
-    let entity = hook_context.entity;
+fn asset_load_on_replace(
+    trigger: Trigger<OnReplace, AssetLoad>,
+    mut commands: Commands,
+    asset_loads: Query<(&AssetLoad, Option<&ContainerEntity>)>,
+) {
+    let entity = trigger.target();
 
-    let asset_server = deferred_world.resource::<AssetServer>().clone();
-
-    let Some(asset_load) = deferred_world.get::<AssetLoad>(entity) else {
-        unreachable!("AssetLoad must be available on its hook");
+    let Ok((asset_load, maybe_container_entity)) = asset_loads.get(entity) else {
+        unreachable!("AssetLoad must be available to its observers.");
     };
-
-    let Some(container_entity) = deferred_world.get::<ContainerEntity>(entity) else {
-        panic!("Entity with AssetLoad does not have ContainerEntity");
+    let Some(container_entity) = maybe_container_entity else {
+        panic!("AssetLoad entity did not have ContainerEntity.");
     };
+    debug!(
+        "Entity {} on {} no longer requires assets {:?}.",
+        entity, container_entity.root, asset_load.assets
+    );
 
-    let Some(renderer_scene_context) =
-        deferred_world.get::<RendererSceneContext>(container_entity.root)
-    else {
-        panic!("Root of AssetLoad does not have RendererSceneContext");
-    };
-    let scene_hash = &renderer_scene_context.hash;
+    commands.entity(entity).queue_handled(
+        |mut entity: EntityWorldMut| {
+            entity.despawn_related::<Preloader>();
+        },
+        // This might happen on despawn, and if it is the case, just leave it be
+        bevy::ecs::error::ignore,
+    );
+}
 
-    let Some(asset_preload_handles) = asset_load
-        .iter()
-        .map(|file_path| {
-            let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
-                scene_hash.to_owned(),
-                file_path.to_owned(),
-            ));
-            asset_server.get_handle(PathBuf::from(&ipfs_path))
-        })
-        .collect::<Option<Vec<_>>>()
-    else {
-        unreachable!("All assets in AssetLoad must have a handle at this point.");
-    };
-
-    let mut asset_preload_counter = deferred_world.resource_mut::<AssetPreloadBackReference>();
-
-    for handle in asset_preload_handles {
-        let Some(set) = asset_preload_counter.get_mut(&handle) else {
-            unreachable!("All handles of AssetLoad must be present on AssetPreloadBackReferenece.");
+fn verify_preload_state(
+    mut commands: Commands,
+    preloaded_assets: Populated<
+        (Entity, &PreloadedAsset, &PreloadedAssetOf),
+        With<LoadingPreloadedAsset>,
+    >,
+    asset_loads: Query<&ContainerEntity, With<AssetLoad>>,
+    mut renderer_scene_contexts: Query<&mut RendererSceneContext>,
+    asset_server: Res<AssetServer>,
+) {
+    for (entity, preloaded_asset, preloaded_asset_of) in preloaded_assets.into_inner() {
+        let Ok(container_entity) = asset_loads.get(preloaded_asset_of.get()) else {
+            panic!("Could not get the AssetLoad of a PreloadedAsset.");
+        };
+        let Ok(mut renderer_scene_context) = renderer_scene_contexts.get_mut(container_entity.root)
+        else {
+            panic!("Root of AssetLoad does not contain RendererSceneContext.");
         };
 
-        debug_assert!(set.remove(&entity));
-        if set.is_empty() {
-            asset_preload_counter.remove(&handle);
-        } else {
-            *counter -= 1;
+        match asset_server.get_recursive_dependency_load_state(preloaded_asset.handle.id()) {
+            Some(
+                RecursiveDependencyLoadState::NotLoaded | RecursiveDependencyLoadState::Loading,
+            ) => (),
+            Some(RecursiveDependencyLoadState::Loaded) => {
+                let event = PbAssetLoadLoadingState {
+                    current_state: LoadingState::Finished as i32,
+                    asset: preloaded_asset.file_path.to_owned(),
+                    timestamp: 0,
+                };
+                renderer_scene_context.update_crdt(
+                    SceneComponentId::ASSET_LOAD_LOADING_STATE,
+                    CrdtType::GO_ANY,
+                    container_entity.container_id,
+                    &event,
+                );
+                commands.entity(entity).remove::<LoadingPreloadedAsset>();
+            }
+            Some(RecursiveDependencyLoadState::Failed(err)) => {
+                let loading_state = match err.as_ref() {
+                    AssetLoadError::AssetReaderError(AssetReaderError::NotFound(_)) => {
+                        LoadingState::NotFound
+                    }
+                    _ => LoadingState::FinishedWithError,
+                };
+
+                let event = PbAssetLoadLoadingState {
+                    current_state: loading_state as i32,
+                    asset: preloaded_asset.file_path.to_owned(),
+                    timestamp: 0,
+                };
+                renderer_scene_context.update_crdt(
+                    SceneComponentId::ASSET_LOAD_LOADING_STATE,
+                    CrdtType::GO_ANY,
+                    container_entity.container_id,
+                    &event,
+                );
+                commands.entity(entity).remove::<LoadingPreloadedAsset>();
+            }
+            None => {
+                panic!("Preload asset handle not found in asset server.")
+            }
         }
     }
 }
