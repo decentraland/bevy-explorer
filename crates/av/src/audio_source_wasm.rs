@@ -200,8 +200,8 @@ fn manage_audio_sources(
         let existing = match prev_instances.remove(&ent) {
             Some((id, instance)) => {
                 if id == emitter.handle.id()
-                    && emitter.seek_time.is_none()
-                    && instance.elapsed_time < instance.duration
+                    && !(emitter.is_changed() && emitter.seek_time.is_some())
+                    && (emitter.r#loop || instance.elapsed_time < instance.duration)
                 {
                     // reuse existing only if same source AND still playing
                     Some(&mut audio.graphs.entry(ent).insert((id, instance)).into_mut().1)
