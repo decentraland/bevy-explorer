@@ -89,12 +89,18 @@ pub struct RendererSceneContext {
     // sdk version
     pub sdk_version: &'static str,
 
+    // if set, re-insert FROZEN_BLOCK into blocked when tick_number reaches this value
+    pub refreeze_at_tick: Option<u32>,
+
     // if an inspector is attached
     pub inspected: bool,
 
     // does the scene use an authoritative multiplayer server
     pub authoritative_multiplayer: bool,
 }
+
+/// Block reason used by /freeze_scene and /tick_scene.
+pub const FROZEN_BLOCK: &str = "frozen";
 
 pub const SCENE_LOG_BUFFER_SIZE: usize = 100;
 
@@ -146,6 +152,7 @@ impl RendererSceneContext {
             last_update_dt: 0.0,
             logs: RingBuffer::new(1000, 100),
             log_to_stdout,
+            refreeze_at_tick: None,
             last_action_event: None,
             sdk_version,
             inspected,
@@ -194,6 +201,24 @@ impl RendererSceneContext {
 
     pub fn is_dead(&self, entity: SceneEntityId) -> bool {
         self.entity_entry(entity.id).0 > entity.generation
+    }
+
+    /// Iterate over scene entities known to the renderer: those with an associated bevy entity,
+    /// plus nascent entities awaiting bevy-entity creation.
+    /// Note: entities the scene created but placed no engine-recognized components on are
+    /// invisible to the renderer and will not appear here.
+    pub fn live_scene_entities(&self) -> impl Iterator<Item = SceneEntityId> + '_ {
+        let from_table =
+            self.live_entities
+                .iter()
+                .enumerate()
+                .filter_map(|(id, (generation, bevy_ent))| {
+                    bevy_ent.map(|_| SceneEntityId {
+                        id: id as u16,
+                        generation: *generation,
+                    })
+                });
+        self.nascent.iter().copied().chain(from_table)
     }
 
     pub fn spawn_bevy_entity(

@@ -75,17 +75,25 @@ fn gen_sdk_components() -> Result<()> {
     sources.push("src/proto/decentraland/social/friendships/friendships.proto".into());
 
     let mut config = prost_build::Config::new();
+    config.type_attribute(
+        ".decentraland.sdk.components",
+        "#[derive(serde::Serialize, serde::Deserialize)]\n#[serde(rename_all = \"camelCase\")]",
+    );
+    // Per-type serde for types outside decentraland.sdk.components (which gets serde in bulk above).
+    // These are in decentraland.common or similar packages.
     let serde_components = [
         "Vector2",
         "Vector3",
         "Color3",
-        "PBRealmInfo",
-        "PBAvatarBase",
-        "PBAvatarEquippedData",
-        "InputAction",
-        "PointerEventType",
-        "Entry",
-        "Info",
+        "Color4",
+        "Quaternion",
+        "TextureUnion",
+        "TextureUnion.tex",
+        "AvatarTexture",
+        "VideoTexture",
+        "UiCanvasTexture",
+        "Texture",
+        "BorderRect",
     ];
 
     for component in serde_components {
