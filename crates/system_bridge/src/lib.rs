@@ -162,6 +162,15 @@ pub enum SystemApi {
     SetInteractableArea(Vec4),
     GetMicState(RpcResultSender<MicState>),
     SetMicEnabled(bool),
+    GetAvatarModifiers(RpcResultSender<Vec<AvatarModifierState>>),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct AvatarModifierState {
+    pub user_id: String,
+    pub hide_avatar: bool,
+    pub hide_profile: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

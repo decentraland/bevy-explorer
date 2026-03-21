@@ -315,6 +315,11 @@ module.exports.setMicEnabled = function(enabled) {
     Deno.core.ops.op_set_mic_enabled(enabled);
 }
 
+// [{ userId: string, hideAvatar: bool, hideProfile: bool }]
+module.exports.getAvatarModifiers = async function() {
+    return await Deno.core.ops.op_get_avatar_modifiers();
+}
+
 // get voice stream / mic activations as a stream
 // type MicActivation = {
 //   senderAddress: string,

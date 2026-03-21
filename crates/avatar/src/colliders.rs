@@ -26,7 +26,7 @@ use scene_runner::{
     update_world::mesh_collider::ColliderId,
 };
 use serde_json::json;
-use system_bridge::{NativeUi, PointerTargetType};
+use system_bridge::{AvatarModifierState, NativeUi, PointerTargetType, SystemApi};
 
 pub struct AvatarColliderPlugin;
 
@@ -37,6 +37,7 @@ impl Plugin for AvatarColliderPlugin {
             (
                 update_avatar_colliders.in_set(SceneSets::PostInit),
                 update_avatar_collider_actions.in_set(SceneSets::Input),
+                handle_avatar_modifier_requests,
             ),
         );
     }
@@ -216,4 +217,24 @@ fn update_avatar_collider_actions(
     }
 
     senders.retain(|s| !s.is_closed());
+}
+
+fn handle_avatar_modifier_requests(
+    mut events: EventReader<SystemApi>,
+    players: Query<(&ForeignPlayer, &PlayerModifiers)>,
+) {
+    for ev in events.read() {
+        if let SystemApi::GetAvatarModifiers(sender) = ev {
+            let response: Vec<AvatarModifierState> = players
+                .iter()
+                .filter(|(_, m)| m.hide || m.hide_profile)
+                .map(|(fp, m)| AvatarModifierState {
+                    user_id: format!("{:#x}", fp.address),
+                    hide_avatar: m.hide,
+                    hide_profile: m.hide_profile,
+                })
+                .collect();
+            sender.send(response);
+        }
+    }
 }
