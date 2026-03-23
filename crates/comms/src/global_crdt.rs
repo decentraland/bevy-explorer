@@ -419,7 +419,7 @@ pub fn process_transport_updates(
                             Propagate(RenderLayers::default()),
                         ))
                         .try_push_children(&attach_points.entities())
-                        .insert(attach_points)
+                        .try_insert(attach_points)
                         .id();
 
                     state.lookup.insert(update.address, new_entity);

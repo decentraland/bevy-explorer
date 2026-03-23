@@ -1,15 +1,15 @@
 //! Debug overlay to show information about [`Transport`]s
 
-#[cfg(feature = "livekit")]
-use crate::livekit::room::LivekitRoom;
 use bevy::{
     color::palettes,
-    ecs::relationship::RelatedSpawnerCommands,
     picking::Pickable,
     prelude::*,
     text::{FontSmoothing, LineHeight},
 };
+use common::util::{TryChildBuilder, TryPushChildrenEx};
 
+#[cfg(feature = "livekit")]
+use crate::livekit::room::LivekitRoom;
 use crate::{SceneRoom, Transport};
 
 const DEFAULT_FONT: TextFont = TextFont {
@@ -114,7 +114,7 @@ fn setup_av_player_debug_ui(mut commands: Commands) {
             Pickable::IGNORE,
             Visibility::Hidden,
         ))
-        .with_children(|parent| {
+        .try_with_children(|parent| {
             build_row(
                 parent,
                 1,
@@ -169,7 +169,7 @@ fn transport_on_add(
 
     commands
         .entity(transport_debug_ui_entity)
-        .with_children(|parent| {
+        .try_with_children(|parent| {
             build_row(
                 parent,
                 next_row,
@@ -331,12 +331,7 @@ type RowTexts<'a> = (&'a str, &'a str);
 #[cfg(feature = "livekit")]
 type RowTexts<'a> = (&'a str, &'a str, &'a str);
 
-fn build_row(
-    parent: &mut RelatedSpawnerCommands<'_, ChildOf>,
-    row: i16,
-    transport: Entity,
-    row_texts: RowTexts,
-) {
+fn build_row(parent: &mut TryChildBuilder, row: i16, transport: Entity, row_texts: RowTexts) {
     #[cfg(not(feature = "livekit"))]
     let (transport_name, scene_room) = row_texts;
     #[cfg(feature = "livekit")]

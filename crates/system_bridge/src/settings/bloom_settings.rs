@@ -59,11 +59,11 @@ impl AppSetting for BloomSetting {
 
         match self {
             BloomSetting::Off => cmds.remove::<Bloom>(),
-            BloomSetting::Low => cmds.insert(Bloom {
+            BloomSetting::Low => cmds.try_insert(Bloom {
                 intensity: 0.10,
                 ..Bloom::NATURAL
             }),
-            BloomSetting::High => cmds.insert(Bloom {
+            BloomSetting::High => cmds.try_insert(Bloom {
                 intensity: 0.10,
                 ..Bloom::OLD_SCHOOL
             }),

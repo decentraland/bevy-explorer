@@ -134,7 +134,9 @@ fn automatic_testing(
             for (ent, target) in ui_roots.iter() {
                 if target.is_none() {
                     debug!("added {snapshot_cam:?} on {ent:?}");
-                    commands.entity(ent).insert(UiTargetCamera(snapshot_cam));
+                    commands
+                        .entity(ent)
+                        .try_insert(UiTargetCamera(snapshot_cam));
                 }
             }
 

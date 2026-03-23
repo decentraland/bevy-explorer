@@ -396,7 +396,7 @@ fn publish_tracks(
             u32::from(config.channels()),
         ));
 
-        commands.entity(entity).insert((
+        commands.entity(entity).try_insert((
             ParticipantWithTrack,
             LocalAudioTrackFuture(local_audio_track_future),
         ));
@@ -447,7 +447,7 @@ fn poll_local_audio_track_futures(
 
                     commands
                         .entity(entity)
-                        .insert(MicrophoneLocalTrack(local_audio_track))
+                        .try_insert(MicrophoneLocalTrack(local_audio_track))
                         .remove::<LocalAudioTrackFuture>();
                 }
                 Err(err) => {

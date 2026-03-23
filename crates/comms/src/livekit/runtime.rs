@@ -46,7 +46,7 @@ impl LivekitRuntime {
             Builder::new_current_thread()
                 .worker_threads(1)
                 .enable_all()
-                .build_local(&LocalOptions::default())
+                .build_local(LocalOptions::default())
                 .unwrap(),
         );
 

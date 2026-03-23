@@ -171,7 +171,7 @@ pub fn pass_textinput_pointer_events(
     let position = window
         .single()
         .ok()
-        .and_then(|w| w.cursor_position())
+        .map(|w| w.cursor_position().unwrap_or_default() * w.scale_factor())
         .unwrap_or_default();
 
     if just_pressed && is_focussed {
@@ -273,7 +273,7 @@ fn pipe_events(
         if let Ok(mut commands) = commands.get_entity(parent.parent()) {
             commands
                 .try_insert(Submit)
-                .insert(TextEntrySubmit(ev.value.trim().to_owned()));
+                .try_insert(TextEntrySubmit(ev.value.trim().to_owned()));
             debug!("{:?} submit to {}", commands.id(), ev.value);
         }
 
@@ -298,12 +298,14 @@ fn pipe_events(
         {
             commands
                 .try_insert(DataChanged)
-                .insert(TextEntryValue(value.0.trim().to_owned()));
+                .try_insert(TextEntryValue(value.0.trim().to_owned()));
             debug!("{:?} update to {}", commands.id(), value.0);
         }
 
         if value.0 == "\n" {
-            commands.entity(entity).insert(TextInputValue::default());
+            commands
+                .entity(entity)
+                .try_insert(TextInputValue::default());
         }
     }
 }
@@ -341,10 +343,10 @@ impl DuiTemplate for DuiTextEntryTemplate {
             ..Default::default()
         };
         debug!("initial: {}", textentry.content);
-        commands.insert(textentry);
+        commands.try_insert(textentry);
 
         if let Some(onchanged) = props.take::<On<DataChanged>>("onchanged")? {
-            commands.insert(onchanged);
+            commands.try_insert(onchanged);
         }
 
         Ok(Default::default())

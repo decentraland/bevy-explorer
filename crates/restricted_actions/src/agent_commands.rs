@@ -205,7 +205,7 @@ fn trigger_emote_cmd(
     if let Some(Ok(command)) = input.take() {
         match player.single_mut() {
             Ok((entity, maybe_prev)) => {
-                commands.entity(entity).insert(EmoteCommand {
+                commands.entity(entity).try_insert(EmoteCommand {
                     urn: command.urn.clone(),
                     r#loop: command.r#loop,
                     timestamp: maybe_prev

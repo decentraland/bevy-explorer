@@ -871,7 +871,7 @@ fn layout_scene_ui(
                 } else if link.scroll_entity.is_some() == ui_transform.scroll {
                     debug!("{scene_id} reuse linked {:?}", link.ui_entity);
                     if let Some(scroll_entity) = link.scroll_entity {
-                        commands.entity(scroll_entity).insert(
+                        commands.entity(scroll_entity).try_insert(
                             Scrollable::new()
                                 .with_direction(ScrollDirection::Both(
                                     StartPosition::Explicit(0.0),
@@ -897,7 +897,7 @@ fn layout_scene_ui(
 
             let existing = if let Some(link) = existing_link {
                 // update parent (always, so the child order is correct)
-                commands.entity(link.ui_entity).insert((
+                commands.entity(link.ui_entity).try_insert((
                     ChildOf(parent_link.content_entity),
                     LinkedScene {
                         scene: scene_root,
@@ -1398,7 +1398,7 @@ fn set_ui_focus(
                     continue;
                 };
 
-                commands.insert(Focus);
+                commands.try_insert(Focus);
                 response.send(Ok(Some(element_id.clone())));
             }
             RpcUiFocusAction::GetFocus | RpcUiFocusAction::Defocus => {

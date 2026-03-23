@@ -134,7 +134,7 @@ impl ConversationManager<'_, '_> {
             if address != Address::zero() {
                 self.commands
                     .entity(components.named("image"))
-                    .insert(ShowProfileEvent(address).send_value_on::<Click>());
+                    .try_insert(ShowProfileEvent(address).send_value_on::<Click>());
             }
             components
         } else {
@@ -150,11 +150,11 @@ impl ConversationManager<'_, '_> {
             if address != Address::zero() {
                 self.commands
                     .entity(components.named("image"))
-                    .insert(PendingProfileUiImage(address));
+                    .try_insert(PendingProfileUiImage(address));
             } else {
                 self.commands
                     .entity(components.named("image"))
-                    .insert(ImageNode::new(
+                    .try_insert(ImageNode::new(
                         self.asset_server
                             .load("embedded://images/backpack/wearable_categories/hat.png"),
                     ));
@@ -166,7 +166,7 @@ impl ConversationManager<'_, '_> {
 
         self.commands
             .entity(bubble)
-            .insert((ChatBubble(address, color), ZOrder::ChatBubble.default()));
+            .try_insert((ChatBubble(address, color), ZOrder::ChatBubble.default()));
 
         let added = self.added_this_frame.get_or_insert_with(Default::default);
         if added.0 != self.frame.0 {

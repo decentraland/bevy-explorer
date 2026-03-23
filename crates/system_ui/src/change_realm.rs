@@ -113,7 +113,7 @@ fn change_realm_dialog(
         .unwrap();
     commands
         .entity(components.named("server-list"))
-        .insert(ServerList { task, root_id });
+        .try_insert(ServerList { task, root_id });
 }
 
 fn update_server_list(

@@ -434,10 +434,10 @@ pub fn show_settings(
 
     commands
         .entity(components.named("change-realm-button"))
-        .insert(UpdateRealmText);
+        .try_insert(UpdateRealmText);
     commands
         .entity(components.named("settings-content"))
-        .insert(tab);
+        .try_insert(tab);
 
     //start on the wearables tab
 }

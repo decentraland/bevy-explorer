@@ -156,7 +156,7 @@ fn keyboard_popup(
         }
 
         if let Ok(entry) = entry.single() {
-            commands.entity(entry).insert(Focus);
+            commands.entity(entry).try_insert(Focus);
         }
     }
 }
@@ -260,7 +260,7 @@ fn setup_chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<Du
         .spawn_template(&dui, "chat", props)
         .unwrap();
 
-    commands.entity(components.root).insert((
+    commands.entity(components.root).try_insert((
         ChatboxContainer,
         On::<Click>::new(
             |mut commands: Commands, q: Query<Entity, With<ChatInput>>| {
@@ -271,18 +271,20 @@ fn setup_chat_popup(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<Du
 
     commands
         .entity(components.named("chat-entry"))
-        .insert(ChatInput);
+        .try_insert(ChatInput);
 
     commands
         .entity(components.named("chat-output-inner"))
-        .insert(ChatBox {
+        .try_insert(ChatBox {
             active_tab: "Nearby",
             chat_log: RingBuffer::new(100, 100),
             active_chat_sink: None,
             active_log_sink: None,
         });
 
-    commands.entity(components.named("tabs")).insert(ChatTab);
+    commands
+        .entity(components.named("tabs"))
+        .try_insert(ChatTab);
 }
 
 fn toggle_friends(container: Query<&DuiEntities, With<ChatboxContainer>>, mut commands: Commands) {

@@ -18,7 +18,7 @@ use common::{
         AppConfig, CurrentRealm, CursorLocks, DebugInfo, PreviewCommand, PreviewMode, PrimaryUser,
         SettingsTab, ShowSettingsEvent, StartupScenes, Version, ZOrder,
     },
-    util::ModifyComponentExt,
+    util::{ModifyComponentExt, TryPushChildrenEx},
 };
 use comms::{global_crdt::ForeignPlayer, Transport};
 use console::DoAddConsoleCommand;
@@ -92,7 +92,7 @@ pub(crate) fn setup(
     asset_server: Res<AssetServer>,
     version: Res<Version>,
 ) {
-    commands.entity(root.0).with_children(|commands| {
+    commands.entity(root.0).try_with_children(|commands| {
         commands
             .spawn((
                 Node {
@@ -107,7 +107,7 @@ pub(crate) fn setup(
                 },
                 ZOrder::Crosshair.default(),
             ))
-            .with_children(|c| {
+            .try_with_children(|c| {
                 c.spawn((
                     Node {
                         width: Val::VMin(3.0),
@@ -132,7 +132,7 @@ pub(crate) fn setup(
         ));
     });
 
-    commands.entity(root.0).with_children(|commands| {
+    commands.entity(root.0).try_with_children(|commands| {
         commands
             .spawn((
                 Node {
@@ -153,7 +153,7 @@ pub(crate) fn setup(
                 FocusPolicy::Block,
                 SysInfoContainer,
             ))
-            .with_children(|commands| {
+            .try_with_children(|commands| {
                 commands.spawn((
                     Text::new("System Info"),
                     TITLE_TEXT_STYLE.get().unwrap().clone(),
@@ -167,27 +167,29 @@ pub(crate) fn setup(
                         },
                         SysInfoMarker,
                     ))
-                    .with_children(|commands| {
+                    .try_with_children(|commands| {
                         let mut info_node = |label: String| {
-                            commands.spawn(Node::default()).with_children(|commands| {
-                                commands.spawn((
-                                    Node {
-                                        width: Val::Px(150.0),
-                                        ..Default::default()
-                                    },
-                                    Text::new(label),
-                                    TextLayout::new_with_justify(JustifyText::Right),
-                                    BODY_TEXT_STYLE.get().unwrap().clone(),
-                                ));
-                                commands.spawn((
-                                    Node {
-                                        width: Val::Px(250.0),
-                                        ..Default::default()
-                                    },
-                                    Text::default(),
-                                    BODY_TEXT_STYLE.get().unwrap().clone(),
-                                ));
-                            });
+                            commands
+                                .spawn(Node::default())
+                                .try_with_children(|commands| {
+                                    commands.spawn((
+                                        Node {
+                                            width: Val::Px(150.0),
+                                            ..Default::default()
+                                        },
+                                        Text::new(label),
+                                        TextLayout::new_with_justify(JustifyText::Right),
+                                        BODY_TEXT_STYLE.get().unwrap().clone(),
+                                    ));
+                                    commands.spawn((
+                                        Node {
+                                            width: Val::Px(250.0),
+                                            ..Default::default()
+                                        },
+                                        Text::default(),
+                                        BODY_TEXT_STYLE.get().unwrap().clone(),
+                                    ));
+                                });
                         };
 
                         if config.graphics.log_fps {
@@ -342,7 +344,7 @@ fn setup_minimap(
 
     commands
         .entity(components.root)
-        .insert((Minimap, ZOrder::Minimap.default()));
+        .try_insert((Minimap, ZOrder::Minimap.default()));
 
     if preview.server.is_some() {
         commands
@@ -361,7 +363,7 @@ fn setup_minimap(
     }
 
     if system_scene.is_none() {
-        commands.entity(components.named("map-node")).insert((
+        commands.entity(components.named("map-node")).try_insert((
             MapTexture {
                 center: Default::default(),
                 parcels_per_vmin: 100.0,
@@ -432,7 +434,7 @@ fn setup_minimap(
                 .with_prop("inspect-enabled", cfg!(feature = "inspect")),
             )
             .unwrap();
-        commands.entity(tracker.root).insert(Tracker(true));
+        commands.entity(tracker.root).try_insert(Tracker(true));
     }
 }
 

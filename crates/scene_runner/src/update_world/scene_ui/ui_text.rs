@@ -4,6 +4,7 @@ use bevy::{
     text::{cosmic_text::Cursor, ComputedTextBlock},
     window::PrimaryWindow,
 };
+use common::util::TryPushChildrenEx;
 use dcl_component::proto_components::{
     sdk::components::{self, PbUiText},
     Color4DclToBevy,
@@ -222,11 +223,11 @@ pub fn set_ui_text(
                 },
                 UiTextMarker,
             ))
-            .with_children(|c| {
-                c.spawn(inner_style).with_children(|c| {
+            .try_with_children(|c| {
+                c.spawn(inner_style).try_with_children(|c| {
                     let mut inner_child = c.spawn((text, ZIndex(1)));
                     if !links.is_empty() {
-                        inner_child.insert((
+                        inner_child.try_insert((
                             Interaction::default(),
                             TextLinks {
                                 links,
@@ -306,14 +307,10 @@ impl TextPositionFinder<'_, '_> {
             line = 0;
 
             let len = parts.next().unwrap().len();
-            if len > index {
-                return Some((entity, span_index, entity_line_offset + index));
+            if len > index || parts.next().is_some() {
+                return Some((entity, span_index, entity_line_offset + index.min(len)));
             } else {
                 index -= len;
-            }
-
-            if parts.next().is_some() {
-                panic!();
             }
         }
 

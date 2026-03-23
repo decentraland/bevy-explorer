@@ -157,7 +157,7 @@ fn show_foreign_profiles(
                 )
                 .unwrap();
 
-            commands.entity(components.root).insert((
+            commands.entity(components.root).try_insert((
                 ProfileDialog(address),
                 permit,
                 ZOrder::ProfileView.default(),

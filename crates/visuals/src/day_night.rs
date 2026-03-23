@@ -123,7 +123,7 @@ fn fetch_time_from_scene(
             .is_none()
         {
             debug!("Now using time from scene {}.", entity);
-            commands.entity(time_keeper).insert((
+            commands.entity(time_keeper).try_insert((
                 SceneTime {
                     time: scene_time.time,
                 },
@@ -165,7 +165,7 @@ fn fetch_time_from_skybox(
             .is_none()
         {
             debug!("Now using skybox time from scene {}.", entity);
-            commands.entity(time_keeper).insert((
+            commands.entity(time_keeper).try_insert((
                 SkyboxTime(PbSkyboxTime {
                     fixed_time: skybox_time.fixed_time,
                     transition_mode: skybox_time.transition_mode,
@@ -174,7 +174,7 @@ fn fetch_time_from_skybox(
             ));
         } else if skybox_time.is_changed() {
             debug!("New skybox time from scene {}.", entity);
-            commands.entity(time_keeper).insert((
+            commands.entity(time_keeper).try_insert((
                 SkyboxTime(PbSkyboxTime {
                     fixed_time: skybox_time.fixed_time,
                     transition_mode: skybox_time.transition_mode,

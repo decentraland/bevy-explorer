@@ -232,7 +232,7 @@ fn swap_ground(
         ParcelGrassState::Off => {
             commands
                 .entity(*ground)
-                .insert((
+                .try_insert((
                     Mesh3d(PARCEL_GRASS_MESH.clone()),
                     MeshMaterial3d(GROUND_MATERIAL_FLAT_COLOR),
                     GROUND_RENDERLAYER.clone(),
@@ -242,7 +242,7 @@ fn swap_ground(
         ParcelGrassState::On => {
             commands
                 .entity(*ground)
-                .insert(Children::spawn(ParcelGrassShellSpawnList {
+                .try_insert(Children::spawn(ParcelGrassShellSpawnList {
                     shells: GROUND_LAYERS,
                     lod: HIGH_LOD,
                     displacement: GROUND_DISPLACEMENT,
@@ -351,7 +351,7 @@ fn parcel_grass_lod_inserted(
 
     commands
         .entity(entity)
-        .insert(Children::spawn(ParcelGrassShellSpawnList {
+        .try_insert(Children::spawn(ParcelGrassShellSpawnList {
             shells: layers,
             displacement,
             lod,
@@ -380,7 +380,7 @@ fn parcel_grass_without_lod(
     let player_location = vec3_to_parcel(player.translation());
     debug!(
         target: "visuals::parcel_grass::parcel_grass_without_lod",
-        "Recalculating LOD for {} entities.",
+        "Calculating LOD for {} entities.",
         parcel_grasses.iter().len()
     );
 
@@ -388,10 +388,10 @@ fn parcel_grass_without_lod(
         match scene_pointers.get(parcel_grass.parcel) {
             Some(PointerResult::Nothing) => {
                 let lod = ParcelGrassLod::from_distance(player_location, parcel_grass.parcel);
-                commands.entity(entity).insert(lod);
+                commands.entity(entity).try_insert(lod);
             }
             Some(PointerResult::Exists { .. }) => {
-                commands.entity(entity).insert(ParcelGrassLod::Off);
+                commands.entity(entity).try_insert(ParcelGrassLod::Off);
             }
             None => {}
         }
@@ -460,23 +460,34 @@ fn drop_far_parcel_grass(
 fn recalculate_lod(
     mut commands: Commands,
     parcel_grasses: Query<(Entity, &ParcelGrass, &ParcelGrassLod)>,
-    player: Single<&GlobalTransform, With<PrimaryUser>>,
+    maybe_player: Option<Single<&GlobalTransform, With<PrimaryUser>>>,
     scene_pointers: Res<ScenePointers>,
 ) {
-    let player_location = vec3_to_parcel(player.translation());
+    let player_location = if let Some(player) = maybe_player {
+        vec3_to_parcel(player.translation())
+    } else {
+        IVec2::MAX
+    };
+    debug!(
+        target: "visuals::parcel_grass::recalculate_lod",
+        "Recalculating LOD for {} entities.",
+        parcel_grasses.iter().len()
+    );
 
     for (entity, parcel_grass, parcel_grass_lod) in parcel_grasses {
         match scene_pointers.get(parcel_grass.parcel) {
             Some(PointerResult::Nothing) => {
                 let lod = ParcelGrassLod::from_distance(player_location, parcel_grass.parcel);
                 if lod != *parcel_grass_lod {
-                    commands.entity(entity).insert(lod);
+                    commands.entity(entity).try_insert(lod);
                 }
             }
             Some(PointerResult::Exists { .. }) => {
-                commands.entity(entity).insert(ParcelGrassLod::Off);
+                commands.entity(entity).try_insert(ParcelGrassLod::Off);
             }
-            None => {}
+            None => {
+                commands.entity(entity).remove::<ParcelGrassLod>();
+            }
         }
     }
 }

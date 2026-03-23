@@ -684,7 +684,7 @@ fn update_av_players(
                             av.size = Some(video_size);
                             commands
                                 .entity(ent)
-                                .insert(VideoTextureOutput(image.clone()));
+                                .try_insert(VideoTextureOutput(image.clone()));
                             av.image = Some(image);
 
                             trace!("queue resized frame {:?}", video_size);
