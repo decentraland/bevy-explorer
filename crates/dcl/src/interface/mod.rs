@@ -9,6 +9,7 @@ use bevy::{
 use num::{FromPrimitive, ToPrimitive};
 use num_derive::{FromPrimitive, ToPrimitive};
 
+pub use dcl_component::{ComponentPosition, CrdtType};
 use dcl_component::{
     DclReader, DclReaderError, DclWriter, SceneComponentId, SceneCrdtTimestamp, SceneEntityId,
     ToDclWriter,
@@ -20,34 +21,6 @@ use self::crdt_context::CrdtContext;
 use super::crdt::{growonly::CrdtGOState, lww::CrdtLWWState};
 
 pub mod crdt_context;
-
-#[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum ComponentPosition {
-    RootOnly,
-    EntityOnly,
-    Any,
-}
-
-#[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum CrdtType {
-    LWW(ComponentPosition),
-    GO(ComponentPosition),
-}
-
-impl CrdtType {
-    pub const LWW_ROOT: CrdtType = CrdtType::LWW(ComponentPosition::RootOnly);
-    pub const LWW_ENT: CrdtType = CrdtType::LWW(ComponentPosition::EntityOnly);
-    pub const LWW_ANY: CrdtType = CrdtType::LWW(ComponentPosition::Any);
-    pub const GO_ENT: CrdtType = CrdtType::GO(ComponentPosition::EntityOnly);
-    pub const GO_ANY: CrdtType = CrdtType::GO(ComponentPosition::Any);
-
-    pub fn position(&self) -> ComponentPosition {
-        match self {
-            CrdtType::LWW(pos) => *pos,
-            CrdtType::GO(pos) => *pos,
-        }
-    }
-}
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct CrdtComponentInterfaces(pub HashMap<SceneComponentId, CrdtType>);
@@ -348,6 +321,45 @@ impl CrdtStore {
         other.lww.into_iter().for_each(|(id, update_lww)| {
             let self_lww = self.lww.entry(id).or_default();
             self_lww.last_write.extend(update_lww.last_write);
+        });
+        other.go.into_iter().for_each(|(id, update_go)| {
+            let self_go = self.go.entry(id).or_default();
+            self_go.0.extend(update_go.0);
+        });
+    }
+
+    // track the timestamps from another store without copying data.
+    // used to keep crdt_store in sync so that force_update bumps from the correct base timestamp.
+    pub fn sync_lww_timestamps_from(&mut self, other: &CrdtStore) {
+        for (id, update_lww) in &other.lww {
+            let self_lww = self.lww.entry(*id).or_default();
+            for (entity, entry) in &update_lww.last_write {
+                let store_entry = self_lww.last_write.entry(*entity).or_default();
+                if entry.timestamp > store_entry.timestamp {
+                    store_entry.timestamp = entry.timestamp;
+                }
+            }
+        }
+    }
+
+    // merge entries from another store using LWW conflict resolution (higher timestamp wins).
+    // use this instead of `update_from` when `self` may already contain newer data than `other`.
+    pub fn merge_newer(&mut self, other: CrdtStore) {
+        other.lww.into_iter().for_each(|(id, update_lww)| {
+            let self_lww = self.lww.entry(id).or_default();
+            for (entity, entry) in update_lww.last_write {
+                let super::crdt::lww::LWWEntry {
+                    timestamp,
+                    is_some,
+                    data,
+                } = entry;
+                let maybe_data = is_some.then_some(data);
+                self_lww.try_update(
+                    entity,
+                    timestamp,
+                    maybe_data.as_deref().map(DclReader::new).as_mut(),
+                );
+            }
         });
         other.go.into_iter().for_each(|(id, update_go)| {
             let self_go = self.go.entry(id).or_default();

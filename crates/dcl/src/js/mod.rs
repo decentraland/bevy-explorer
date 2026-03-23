@@ -13,8 +13,7 @@ use tokio::sync::{mpsc::Receiver, Mutex};
 
 use crate::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
-    RendererResponse, RpcCalls, SceneElapsedTime, SceneId, SceneLogLevel, SceneLogMessage,
-    SceneResponse,
+    RendererResponse, RpcCalls, SceneElapsedTime, SceneLogLevel, SceneLogMessage, SceneResponse,
 };
 
 use super::interface::CrdtStore;
@@ -129,21 +128,16 @@ impl State for deno_core::OpState {
 pub fn init_state(
     state: &mut impl State,
     initial_crdt_store: CrdtStore,
-    scene_hash: String,
-    scene_id: SceneId,
+    scene_context: CrdtContext,
     storage_root: String,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     thread_sx: SceneResponseSender,
     thread_rx: Receiver<RendererResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
-    _inspect: bool,
-    testing: bool,
-    preview: bool,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
     scene_origin: bevy::prelude::Vec3,
 ) {
-    let scene_context = CrdtContext::new(scene_id, scene_hash, testing, preview);
     state.put(scene_context);
     state.put(scene_js);
     state.put(storage_root);

@@ -59,6 +59,7 @@ use self::{
     update_scene::SceneInputPlugin,
     update_world::{CrdtExtractors, SceneOutputPlugin},
 };
+use dcl_component::ComponentNameRegistry;
 
 pub mod automatic_testing;
 pub mod bounds_calc;
@@ -100,6 +101,14 @@ impl SceneUpdates {
 #[derive(Component)]
 pub struct SceneThreadHandle {
     pub sender: tokio::sync::mpsc::Sender<RendererResponse>,
+}
+
+/// Emitted by [`receive_scene_updates`] when the scene thread responds to a
+/// [`RendererResponse::GetCrdtSnapshot`] request.
+#[derive(Event)]
+pub struct CrdtSnapshotEvent {
+    pub scene_entity: Entity,
+    pub crdt: dcl::interface::CrdtStore,
 }
 
 // event which can be sent from anywhere to trigger replacing the current scene with the one specified
@@ -223,6 +232,7 @@ pub struct SceneLoopLabel;
 impl Plugin for SceneRunnerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CrdtExtractors>();
+        app.init_resource::<ComponentNameRegistry>();
         app.init_resource::<DebugInfo>();
         app.init_resource::<Toasts>();
         app.init_resource::<TestingData>();
@@ -243,6 +253,7 @@ impl Plugin for SceneRunnerPlugin {
 
         app.add_event::<LoadSceneEvent>();
         app.add_event::<AppError>();
+        app.add_event::<CrdtSnapshotEvent>();
 
         app.configure_sets(
             Update,
@@ -853,10 +864,17 @@ fn receive_scene_updates(
     frame: Res<FrameCount>,
     mut rpc_call_events: EventWriter<RpcCall>,
     mut toaster: Toaster,
+    mut snapshot_events: EventWriter<CrdtSnapshotEvent>,
 ) {
     loop {
         let maybe_completed_job = match updates.receiver().try_recv() {
             Ok(response) => match response {
+                SceneResponse::CrdtSnapshot(scene_id, crdt) => {
+                    if let Some(&scene_entity) = updates.scene_ids.get(&scene_id) {
+                        snapshot_events.write(CrdtSnapshotEvent { scene_entity, crdt });
+                    }
+                    None
+                }
                 SceneResponse::WaitingForInspector => {
                     toaster.add_toast("inspector", "Scene paused waiting for inspector session");
                     None
@@ -897,15 +915,32 @@ fn receive_scene_updates(
                     );
                     if let Ok(mut context) = scenes.get_mut(*root) {
                         context.tick_number = context.tick_number.wrapping_add(1);
+                        if context
+                            .refreeze_at_tick
+                            .is_some_and(|t| context.tick_number >= t)
+                        {
+                            context.blocked.insert(renderer_context::FROZEN_BLOCK);
+                            context.refreeze_at_tick = None;
+                        }
                         context.last_update_dt = runtime.0 - context.total_runtime;
                         context.total_runtime = runtime.0;
                         context.last_update_frame = frame.0;
                         context.in_flight = false;
                         context.nascent = census.born;
-                        context.death_row = census.died;
+                        // Merge externally-queued deaths (e.g. /delete_entity) with
+                        // scene-reported deaths, draining the old set so entries are
+                        // only processed once.
+                        let mut died = census.died;
+                        died.extend(std::mem::take(&mut context.death_row));
+                        context.death_row = died;
                         for message in messages.into_iter() {
                             context.log(message);
                         }
+                        // Sync scene timestamps into crdt_store so renderer writes (e.g.
+                        // /set_component) use a base timestamp that wins over the scene's current.
+                        // Must happen before updates_to_entity drains `crdt`.
+                        context.crdt_store.sync_lww_timestamps_from(&crdt);
+
                         let mut commands = commands.entity(*root);
                         for (component_id, interface) in crdt_interfaces.0.iter() {
                             interface.updates_to_entity(*component_id, &mut crdt, &mut commands);

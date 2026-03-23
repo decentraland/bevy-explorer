@@ -5,9 +5,9 @@ use common::{
     structs::GlobalCrdtStateUpdate,
 };
 use dcl::{
-    interface::{CrdtComponentInterfaces, CrdtStore},
+    interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
     js::SceneResponseSender,
-    RendererResponse, SceneId, SceneResponse,
+    RendererResponse, SceneResponse,
 };
 use interprocess::local_socket::{
     tokio::{RecvHalf, SendHalf},
@@ -28,21 +28,18 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[derive(Serialize, Deserialize)]
 pub struct NewSceneInfo {
     pub initial_crdt_store: CrdtStore,
-    pub scene_hash: String,
+    pub scene_context: CrdtContext,
     pub scene_js: String,
     pub crdt_component_interfaces: CrdtComponentInterfaces,
-    pub id: SceneId,
     pub storage_root: String,
     pub inspect: bool,
-    pub testing: bool,
-    pub preview: bool,
     pub is_super: bool,
     pub scene_origin: bevy::prelude::Vec3,
 }
 
 #[derive(Serialize, Deserialize)]
 pub enum EngineToScene {
-    NewScene(u64, NewSceneInfo),
+    NewScene(u64, Box<NewSceneInfo>),
     SceneUpdate(u64, RendererResponse),
     KillScene(u64),
     GlobalUpdate(GlobalCrdtStateUpdate),
@@ -196,7 +193,7 @@ pub async fn renderer_ipc_out(
                     let _ = renderer_sender.send(EngineToScene::KillScene(id));
                 });
 
-                write_msg(&mut stream, &EngineToScene::NewScene(id, info)).await;
+                write_msg(&mut stream, &EngineToScene::NewScene(id, Box::new(info))).await;
             }
             renderer_update = renderer_rx.recv() => {
                 let Some(engine_to_scene) = renderer_update else {
@@ -272,20 +269,18 @@ pub async fn renderer_ipc_in(mut stream: RecvHalf) {
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_scene(
     initial_crdt_store: CrdtStore,
-    scene_hash: String,
+    scene_context: CrdtContext,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     renderer_sender: SceneResponseSender,
     global_update_receiver: tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
-    id: SceneId,
     storage_root: String,
     inspect: bool,
-    testing: bool,
-    preview: bool,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
     scene_origin: bevy::prelude::Vec3,
 ) -> tokio::sync::mpsc::Sender<RendererResponse> {
     let is_super = super_user.is_some();
+    let id = scene_context.scene_id;
 
     let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
 
@@ -297,14 +292,11 @@ pub fn spawn_scene(
             id: id.0.to_bits(),
             info: NewSceneInfo {
                 initial_crdt_store,
-                scene_hash,
+                scene_context,
                 scene_js: scene_js.0.to_string(),
                 crdt_component_interfaces,
-                id,
                 storage_root,
                 inspect,
-                testing,
-                preview,
                 is_super,
                 scene_origin,
             },
