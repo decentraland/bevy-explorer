@@ -10,7 +10,7 @@ use bevy::{
         render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
     },
 };
-use common::{sets::SceneSets, util::ReportErr};
+use common::{debug_panic, sets::SceneSets, util::ReportErr};
 use dcl::interface::CrdtType;
 use dcl_component::{
     proto_components::sdk::components::{PbVideoEvent, VideoState},
@@ -159,14 +159,11 @@ fn av_player_on_remove(trigger: Trigger<OnRemove, AVPlayer>, mut commands: Comma
 
 fn av_player_should_be_playing_on_add(
     trigger: Trigger<OnAdd, ShouldBePlaying>,
-    mut commands: Commands,
     av_players: Query<(Option<&AudioSink>, Option<&VideoSink>)>,
 ) {
     let entity = trigger.target();
     let Ok((maybe_audio_sink, maybe_video_sink)) = av_players.get(entity) else {
-        error!("ShouldBePlaying added to something that is not an AVPlayer.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("ShouldBePlaying added to something that is not an AVPlayer.");
     };
 
     if let Some(audio_sink) = maybe_audio_sink {
@@ -179,14 +176,11 @@ fn av_player_should_be_playing_on_add(
 
 fn av_player_should_be_playing_on_remove(
     trigger: Trigger<OnRemove, ShouldBePlaying>,
-    mut commands: Commands,
     av_players: Query<(Option<&AudioSink>, Option<&VideoSink>)>,
 ) {
     let entity = trigger.target();
     let Ok((maybe_audio_sink, maybe_video_sink)) = av_players.get(entity) else {
-        error!("ShouldBePlaying added to something that is not an AVPlayer.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("ShouldBePlaying added to something that is not an AVPlayer.");
     };
 
     if let Some(audio_sink) = maybe_audio_sink {

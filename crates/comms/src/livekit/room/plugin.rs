@@ -2,7 +2,7 @@ use bevy::{
     platform::{collections::HashMap, sync::Arc},
     prelude::*,
 };
-use common::{structs::AudioDecoderError, util::AsH160};
+use common::{debug_panic, structs::AudioDecoderError, util::AsH160};
 use ethers_core::types::H160;
 use http::Uri;
 use tokio::{
@@ -312,9 +312,7 @@ fn process_channel_control(
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
-                    error!("Channel control of {} was closed.", livekit_room.name());
-                    commands.send_event(AppExit::from_code(1));
-                    return;
+                    debug_panic!("Channel control of {} was closed.", livekit_room.name());
                 }
             }
         }
@@ -360,9 +358,7 @@ fn process_network_message(
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
-                    error!("Network message of {} was closed.", room.name());
-                    commands.send_event(AppExit::from_code(1));
-                    return;
+                    debug_panic!("Network message of {} was closed.", room.name())
                 }
             }
         }
@@ -387,9 +383,7 @@ fn create_local_participant(
 ) {
     let entity = trigger.target();
     let Ok(room) = rooms.get(entity) else {
-        error!("Can't create local participant because {entity} is not a LivekitRoom.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("Can't create local participant because {entity} is not a LivekitRoom.");
     };
 
     let local_participant = room.local_participant();
