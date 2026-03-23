@@ -5,6 +5,7 @@ use bevy::{
     ecs::relationship::Relationship,
     prelude::*,
 };
+use common::structs::MonotonicTimestamp;
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::sdk::components::{
@@ -27,6 +28,8 @@ impl Plugin for AssetPreloadPlugin {
     fn build(&self, app: &mut App) {
         app.init_asset::<PreloadAsset>();
         app.init_asset_loader::<PreloadAssetLoader>();
+
+        app.init_resource::<MonotonicTimestamp<PbAssetLoadLoadingState>>();
 
         app.add_crdt_lww_component::<PbAssetLoad, AssetLoad>(
             SceneComponentId::ASSET_LOAD,
@@ -63,6 +66,7 @@ fn asset_load_on_insert(
     asset_loads: Query<(&AssetLoad, Option<&ContainerEntity>)>,
     mut renderer_scene_contexts: Query<&mut RendererSceneContext>,
     asset_server: Res<AssetServer>,
+    timestamp: Res<MonotonicTimestamp<PbAssetLoadLoadingState>>,
 ) {
     let entity = trigger.target();
 
@@ -119,7 +123,7 @@ fn asset_load_on_insert(
         let event = PbAssetLoadLoadingState {
             current_state: LoadingState::Loading as i32,
             asset: file_path.to_owned(),
-            timestamp: 0,
+            timestamp: timestamp.next_timestamp(),
         };
         renderer_scene_context.update_crdt(
             SceneComponentId::ASSET_LOAD_LOADING_STATE,
@@ -178,6 +182,7 @@ fn verify_preload_state(
     asset_loads: Query<&ContainerEntity, With<AssetLoad>>,
     mut renderer_scene_contexts: Query<&mut RendererSceneContext>,
     asset_server: Res<AssetServer>,
+    timestamp: Res<MonotonicTimestamp<PbAssetLoadLoadingState>>,
 ) {
     for (entity, preloaded_asset, preloaded_asset_of) in preloaded_assets.into_inner() {
         let Ok(container_entity) = asset_loads.get(preloaded_asset_of.get()) else {
@@ -208,7 +213,7 @@ fn verify_preload_state(
                 let event = PbAssetLoadLoadingState {
                     current_state: LoadingState::Finished as i32,
                     asset: preloaded_asset.file_path.to_owned(),
-                    timestamp: 0,
+                    timestamp: timestamp.next_timestamp(),
                 };
                 renderer_scene_context.update_crdt(
                     SceneComponentId::ASSET_LOAD_LOADING_STATE,
@@ -238,7 +243,7 @@ fn verify_preload_state(
                 let event = PbAssetLoadLoadingState {
                     current_state: loading_state as i32,
                     asset: preloaded_asset.file_path.to_owned(),
-                    timestamp: 0,
+                    timestamp: timestamp.next_timestamp(),
                 };
                 renderer_scene_context.update_crdt(
                     SceneComponentId::ASSET_LOAD_LOADING_STATE,
