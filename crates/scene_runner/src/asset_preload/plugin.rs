@@ -1,4 +1,4 @@
-use std::{convert::Infallible, io::ErrorKind, path::PathBuf};
+use std::{convert::Infallible, path::PathBuf};
 
 use bevy::{
     asset::{
@@ -232,14 +232,8 @@ fn verify_preload_state(
                     AssetLoadError::AssetReaderError(AssetReaderError::NotFound(_)) => {
                         LoadingState::NotFound
                     }
-                    AssetLoadError::AssetReaderError(AssetReaderError::Io(io)) => {
-                        let message = io.to_string();
-                        if io.kind() == ErrorKind::Other && message.starts_with("w: file not found")
-                        {
-                            LoadingState::NotFound
-                        } else {
-                            LoadingState::FinishedWithError
-                        }
+                    AssetLoadError::AssetReaderError(AssetReaderError::Io(_)) => {
+                        LoadingState::FinishedWithError
                     }
                     _ => LoadingState::FinishedWithError,
                 };
