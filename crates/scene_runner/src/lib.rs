@@ -49,7 +49,7 @@ use util::SceneUtilPlugin;
 
 use web_time::Instant;
 
-use crate::initialize_scene::SuperUserScene;
+use crate::{asset_preload::plugin::AssetPreloadPlugin, initialize_scene::SuperUserScene};
 
 use self::{
     initialize_scene::{
@@ -60,6 +60,7 @@ use self::{
     update_world::{CrdtExtractors, SceneOutputPlugin},
 };
 
+mod asset_preload;
 pub mod automatic_testing;
 pub mod bounds_calc;
 pub mod gltf_resolver;
@@ -295,6 +296,7 @@ impl Plugin for SceneRunnerPlugin {
         app.add_plugins(SceneOutputPlugin);
         app.add_plugins(SceneUtilPlugin);
         app.add_plugins(LightsPlugin);
+        app.add_plugins(AssetPreloadPlugin);
 
         app.add_systems(Update, update_scene_room.in_set(SceneSets::PostLoop));
         app.add_systems(Update, log_app_errors.in_set(SceneSets::PostLoop));

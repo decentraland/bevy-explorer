@@ -1,0 +1,10 @@
+syntax = "proto3";
+package decentraland.sdk.components;
+
+import "decentraland/sdk/components/common/id.proto";
+option (common.ecs_component_id) = 1213;
+
+// AssetLoad component allows an entity to request the pre-loading of one or more assets by the renderer.
+message PBAssetLoad {
+    repeated string assets = 1;
+}
