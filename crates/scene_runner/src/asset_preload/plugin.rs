@@ -1,7 +1,10 @@
 use std::{convert::Infallible, io::ErrorKind, path::PathBuf};
 
 use bevy::{
-    asset::{io::AssetReaderError, AssetLoadError, AssetLoader, RecursiveDependencyLoadState},
+    asset::{
+        io::AssetReaderError, AssetLoadError, AssetLoader, LoadedUntypedAsset,
+        RecursiveDependencyLoadState,
+    },
     ecs::relationship::Relationship,
     prelude::*,
 };
@@ -54,7 +57,7 @@ struct Preloader(Vec<Entity>);
 #[derive(Component)]
 struct PreloadedAsset {
     file_path: String,
-    handle: Handle<PreloadAsset>,
+    handle: Handle<LoadedUntypedAsset>,
 }
 
 #[derive(Component)]
@@ -109,7 +112,8 @@ fn asset_load_on_insert(
             renderer_scene_context.hash.to_owned(),
             file_path.to_owned(),
         ));
-        let handle: Handle<PreloadAsset> = asset_server.load(PathBuf::from(&ipfs_path));
+        let handle: Handle<LoadedUntypedAsset> =
+            asset_server.load_untyped(PathBuf::from(&ipfs_path));
 
         commands.spawn((
             PreloadedAsset {
@@ -221,7 +225,7 @@ fn verify_preload_state(
                     container_entity.container_id,
                     &event,
                 );
-                commands.entity(entity).remove::<LoadingPreloadedAsset>();
+                commands.entity(entity).despawn();
             }
             Some(RecursiveDependencyLoadState::Failed(err)) => {
                 let loading_state = match err.as_ref() {
@@ -251,7 +255,7 @@ fn verify_preload_state(
                     container_entity.container_id,
                     &event,
                 );
-                commands.entity(entity).remove::<LoadingPreloadedAsset>();
+                commands.entity(entity).despawn();
             }
             None => {
                 #[cfg(debug_assertions)]
@@ -285,6 +289,7 @@ impl AssetLoader for PreloadAssetLoader {
     }
 
     fn extensions(&self) -> &[&str] {
-        &[]
+        // File extensions that do not have a proper AssetLoader
+        &["mp4"]
     }
 }
