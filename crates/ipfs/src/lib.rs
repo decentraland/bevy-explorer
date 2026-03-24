@@ -1114,8 +1114,7 @@ impl IpfsIo {
                     .filter(|scenes| !scenes.is_empty())
             }) {
                 if scenes_urn.len() != scenes.total {
-                    let ipfs_path =
-                        dbg!(IpfsPath::new_from_urn::<EntityDefinition>(&scenes_urn[0]))?;
+                    let ipfs_path = IpfsPath::new_from_urn::<EntityDefinition>(&scenes_urn[0])?;
 
                     *scenes_urn = scenes
                         .scenes
