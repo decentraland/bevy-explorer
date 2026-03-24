@@ -484,7 +484,7 @@ async fn social_socket_handler_inner(
                             info!("[social] getMutualFriends request for {address}");
                             let mut all_friends = Vec::new();
                             let mut offset = 0;
-                            let mut error_occurred = false;
+                            let mut result: Result<Vec<FriendProfile>, String> = Ok(Vec::new());
                             loop {
                                 match service_module.get_mutual_friends(GetMutualFriendsPayload {
                                     user: Some(User { address: address.clone() }),
@@ -499,15 +499,16 @@ async fn social_socket_handler_inner(
                                     }
                                     Err(e) => {
                                         warn!("[social] getMutualFriends error: {e:?}");
-                                        let _ = response.send(Err(format!("{e:?}")));
-                                        error_occurred = true;
+                                        result = Err(format!("{e:?}"));
                                         break;
                                     }
                                 }
                             }
-                            if !error_occurred {
+                            if result.is_ok() {
                                 info!("[social] getMutualFriends: {} mutual friends", all_friends.len());
                                 let _ = response.send(Ok(all_friends));
+                            } else {
+                                let _ = response.send(result);
                             }
                         }
                     }

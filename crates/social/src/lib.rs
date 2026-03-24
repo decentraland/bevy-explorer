@@ -276,6 +276,7 @@ fn handle_social_requests(
             }
             #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
             SystemApi::GetMutualFriends(address, sx) => {
+                let sx = sx.clone();
                 match social.0.as_ref().and_then(|c| c.get_mutual_friends(address.clone()).ok()) {
                     Some(rx) => {
                         std::thread::spawn(move || {
@@ -283,10 +284,10 @@ fn handle_social_requests(
                                 .enable_all()
                                 .build()
                                 .unwrap();
-                            rt.block_on(async {
+                            let result = rt.block_on(async {
                                 match rx.await {
                                     Ok(Ok(profiles)) => {
-                                        let friends: Vec<FriendData> = profiles
+                                        profiles
                                             .iter()
                                             .map(|profile| FriendData {
                                                 address: profile.address.clone(),
@@ -295,14 +296,13 @@ fn handle_social_requests(
                                                 profile_picture_url: profile.profile_picture_url.clone(),
                                                 name_color: convert_name_color(&profile.name_color),
                                             })
-                                            .collect();
-                                        sx.send(friends);
+                                            .collect()
                                     }
-                                    _ => {
-                                        sx.send(Vec::new());
-                                    }
+                                    _ => Vec::new(),
                                 }
                             });
+                            // send outside of the runtime to avoid blocking_write panic
+                            sx.send(result);
                         });
                     }
                     None => {
