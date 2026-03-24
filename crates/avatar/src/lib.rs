@@ -492,6 +492,7 @@ fn update_render_avatar(
     avatar_render_entities: Query<(), With<AvatarDefinition>>,
     mut wearable_loader: CollectibleManager<Wearable>,
     scenes: Query<&RendererSceneContext>,
+    ipfas: IpfsAssetServer,
     native_ui: Res<NativeUi>,
 ) {
     // remove renderable entities when avatar selection is removed
@@ -729,14 +730,35 @@ fn update_render_avatar(
                         .0
                         .expression_trigger_id
                         .as_ref()
-                        .map(|e| EmoteCommand {
-                            urn: e.clone(),
-                            r#loop: false,
-                            timestamp: selection
-                                .shape
-                                .0
-                                .expression_trigger_timestamp
-                                .unwrap_or_default(),
+                        .and_then(|e| {
+                            let urn = if e.starts_with("urn:") {
+                                e.clone()
+                            } else {
+                                // File path emote (e.g. "models/emotes/foo.glb") — resolve
+                                // through the scene's content map to build a scene-emote URN,
+                                // mirroring the logic in op_scene_emote.
+                                let se = maybe_scene_ent?;
+                                let ctx = scenes.get(se.root).ok()?;
+                                let scene_hash = &ctx.hash;
+                                let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
+                                    scene_hash.clone(),
+                                    e.to_lowercase(),
+                                ));
+                                let ipfs_context = ipfas.ipfs().context.blocking_read();
+                                let emote_hash = ipfs_path.hash(&ipfs_context)?;
+                                format!(
+                                    "urn:decentraland:off-chain:scene-emote:{scene_hash}-{emote_hash}-false"
+                                )
+                            };
+                            Some(EmoteCommand {
+                                urn,
+                                r#loop: false,
+                                timestamp: selection
+                                    .shape
+                                    .0
+                                    .expression_trigger_timestamp
+                                    .unwrap_or_default(),
+                            })
                         }),
                     disable_dither: selection.disable_dither,
                 },
