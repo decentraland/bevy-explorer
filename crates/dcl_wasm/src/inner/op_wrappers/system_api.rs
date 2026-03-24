@@ -351,6 +351,18 @@ pub async fn op_read_scene_loading_ui_stream(
     serde_result!(dcl::js::system_api::op_read_scene_loading_ui_stream(state.rc(), rid).await)
 }
 
+#[wasm_bindgen]
+pub async fn op_get_avatar_modifiers(state: &WorkerContext) -> Result<js_sys::Array, WasmError> {
+    dcl::js::system_api::op_get_avatar_modifiers(state.rc())
+        .await
+        .map(|r| {
+            r.into_iter()
+                .map(|v| serde_wasm_bindgen::to_value(&v).unwrap())
+                .collect()
+        })
+        .map_err(WasmError::from)
+}
+
 // Social / Friends
 
 #[wasm_bindgen]
@@ -369,6 +381,11 @@ pub async fn op_read_friendship_event_stream(
 #[wasm_bindgen]
 pub async fn op_get_friends(state: &WorkerContext) -> Result<JsValue, WasmError> {
     serde_result!(dcl::js::system_api::op_get_friends(state.rc()).await)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_mutual_friends(state: &WorkerContext, address: String) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_get_mutual_friends(state.rc(), address).await)
 }
 
 #[wasm_bindgen]

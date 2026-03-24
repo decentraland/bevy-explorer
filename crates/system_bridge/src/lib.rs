@@ -162,6 +162,7 @@ pub enum SystemApi {
     SetInteractableArea(Vec4),
     GetMicState(RpcResultSender<MicState>),
     SetMicEnabled(bool),
+    GetAvatarModifiers(RpcResultSender<Vec<AvatarModifierState>>),
     // Social / Friends
     GetFriends(RpcResultSender<Vec<FriendData>>),
     GetSentFriendRequests(RpcResultSender<Vec<FriendRequestData>>),
@@ -173,8 +174,17 @@ pub enum SystemApi {
     CancelFriendRequest(String, RpcResultSender<Result<(), String>>),
     DeleteFriend(String, RpcResultSender<Result<(), String>>),
     GetFriendshipEventStream(RpcStreamSender<FriendshipEventUpdate>),
+    GetMutualFriends(String, RpcResultSender<Vec<FriendData>>),
     GetOnlineFriends(RpcResultSender<Vec<FriendStatusData>>),
     GetFriendConnectivityStream(RpcStreamSender<FriendConnectivityEvent>),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct AvatarModifierState {
+    pub user_id: String,
+    pub hide_avatar: bool,
+    pub hide_profile: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -16,10 +16,10 @@ use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, rc::Rc};
 use strum::IntoEnumIterator;
 use system_bridge::{
-    settings::SettingInfo, ChatMessage, FriendshipEventUpdate, HomeScene, HoverEvent,
-    FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData, LiveSceneInfo, PermanentPermissionItem, PermissionRequest,
-    SceneLoadingUi, SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi,
-    VoiceMessage,
+    settings::SettingInfo, AvatarModifierState, ChatMessage, FriendConnectivityEvent, FriendData,
+    FriendRequestData, FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent,
+    LiveSceneInfo, PermanentPermissionItem, PermissionRequest, SceneLoadingUi, SetAvatarData,
+    SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
 };
 
 use crate::{interface::crdt_context::CrdtContext, js::player_identity, RpcCalls};
@@ -758,6 +758,19 @@ pub async fn op_read_scene_loading_ui_stream(
     res
 }
 
+pub async fn op_get_avatar_modifiers(
+    state: Rc<RefCell<impl State>>,
+) -> Result<Vec<AvatarModifierState>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetAvatarModifiers(sx))?;
+
+    Ok(rx.await?)
+}
+
 // Social / Friends ops
 
 pub async fn op_get_friendship_event_stream(state: Rc<RefCell<impl State>>) -> u32 {
@@ -803,6 +816,20 @@ pub async fn op_get_friends(
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
         .send(SystemApi::GetFriends(sx))?;
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_mutual_friends(
+    state: Rc<RefCell<impl State>>,
+    address: String,
+) -> Result<Vec<FriendData>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetMutualFriends(address, sx))?;
 
     rx.await.map_err(|e| anyhow::anyhow!(e))
 }

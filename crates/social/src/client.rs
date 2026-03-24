@@ -8,7 +8,7 @@ use dcl_component::proto_components::social_service::v2::{
     friendship_update, paginated_friendship_requests_response,
     upsert_friendship_payload::{self, AcceptPayload, CancelPayload, DeletePayload, RejectPayload, RequestPayload},
     ConnectivityStatus, FriendProfile, FriendshipRequestResponse, GetFriendshipRequestsPayload,
-    GetFriendsPayload, Pagination, SocialServiceClient, SocialServiceClientDefinition,
+    GetFriendsPayload, GetMutualFriendsPayload, Pagination, SocialServiceClient, SocialServiceClientDefinition,
     UpsertFriendshipPayload, User,
 };
 use dcl_rpc::{
@@ -20,6 +20,13 @@ use futures_util::{pin_mut, select, FutureExt};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
 use crate::DirectChatMessage;
+
+pub enum SocialQuery {
+    GetMutualFriends {
+        address: String,
+        response: tokio::sync::oneshot::Sender<Result<Vec<FriendProfile>, String>>,
+    },
+}
 
 enum FriendData {
     Init {
@@ -36,6 +43,7 @@ enum FriendData {
 
 pub struct SocialClientHandler {
     sender: UnboundedSender<UpsertFriendshipPayload>,
+    query_sender: UnboundedSender<SocialQuery>,
     friendship_receiver: UnboundedReceiver<FriendData>,
 
     pub is_initialized: bool,
@@ -61,12 +69,14 @@ impl SocialClientHandler {
     ) -> Option<Self> {
         let (event_sx, event_rx) = mpsc::unbounded_channel();
         let (response_sx, response_rx) = mpsc::unbounded_channel();
+        let (query_sx, query_rx) = mpsc::unbounded_channel();
 
-        std::thread::spawn(move || social_socket_handler(wallet, event_rx, response_sx));
+        std::thread::spawn(move || social_socket_handler(wallet, event_rx, query_rx, response_sx));
 
         Some(Self {
             is_initialized: false,
             sender: event_sx,
+            query_sender: query_sx,
             friendship_receiver: response_rx,
             sent_requests: Default::default(),
             received_requests: Default::default(),
@@ -151,6 +161,18 @@ impl SocialClientHandler {
         })?;
         self.friend_status.remove(&address);
         Ok(())
+    }
+
+    pub fn get_mutual_friends(
+        &self,
+        address: String,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<FriendProfile>, String>>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.query_sender.send(SocialQuery::GetMutualFriends {
+            address,
+            response: tx,
+        })?;
+        Ok(rx)
     }
 
     pub fn chat(&self, _address: Address, _message: String) -> Result<(), anyhow::Error> {
@@ -267,6 +289,7 @@ impl SocialClientHandler {
 fn social_socket_handler(
     wallet: wallet::Wallet,
     event_rx: UnboundedReceiver<UpsertFriendshipPayload>,
+    query_rx: UnboundedReceiver<SocialQuery>,
     response_sx: UnboundedSender<FriendData>,
 ) {
     let rt = std::sync::Arc::new(
@@ -278,6 +301,7 @@ fn social_socket_handler(
     if let Err(e) = rt.block_on(social_socket_handler_inner(
         wallet,
         event_rx,
+        query_rx,
         response_sx,
     )) {
         error!("[social] socket handler error: {e}");
@@ -298,6 +322,7 @@ const PAGE_SIZE: i32 = 100;
 async fn social_socket_handler_inner(
     wallet: wallet::Wallet,
     mut rx: UnboundedReceiver<UpsertFriendshipPayload>,
+    mut query_rx: UnboundedReceiver<SocialQuery>,
     response_sx: UnboundedSender<FriendData>,
 ) -> Result<(), anyhow::Error> {
     // Connect WebSocket
@@ -439,15 +464,55 @@ async fn social_socket_handler_inner(
         .map_err(dbgerr)?;
     info!("[social] Subscribed to friend connectivity updates");
 
-    // Outbound: send friendship actions
+    // Outbound: send friendship actions + handle queries
     let f_service_write = async move {
-        while let Some(req) = rx.recv().await {
-            info!("[social] upsert_friendship request: {req:?}");
-            let resp = service_module
-                .upsert_friendship(req)
-                .await
-                .map_err(dbgerr)?;
-            info!("[social] upsert_friendship response: {resp:?}");
+        loop {
+            tokio::select! {
+                req = rx.recv() => {
+                    let Some(req) = req else { break; };
+                    info!("[social] upsert_friendship request: {req:?}");
+                    let resp = service_module
+                        .upsert_friendship(req)
+                        .await
+                        .map_err(dbgerr)?;
+                    info!("[social] upsert_friendship response: {resp:?}");
+                }
+                query = query_rx.recv() => {
+                    let Some(query) = query else { break; };
+                    match query {
+                        SocialQuery::GetMutualFriends { address, response } => {
+                            info!("[social] getMutualFriends request for {address}");
+                            let mut all_friends = Vec::new();
+                            let mut offset = 0;
+                            let mut error_occurred = false;
+                            loop {
+                                match service_module.get_mutual_friends(GetMutualFriendsPayload {
+                                    user: Some(User { address: address.clone() }),
+                                    pagination: Some(Pagination { limit: PAGE_SIZE, offset }),
+                                }).await {
+                                    Ok(resp) => {
+                                        let count = resp.friends.len();
+                                        all_friends.extend(resp.friends);
+                                        let total = resp.pagination_data.as_ref().map(|p| p.total).unwrap_or(0);
+                                        offset += PAGE_SIZE;
+                                        if offset >= total || count == 0 { break; }
+                                    }
+                                    Err(e) => {
+                                        warn!("[social] getMutualFriends error: {e:?}");
+                                        let _ = response.send(Err(format!("{e:?}")));
+                                        error_occurred = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if !error_occurred {
+                                info!("[social] getMutualFriends: {} mutual friends", all_friends.len());
+                                let _ = response.send(Ok(all_friends));
+                            }
+                        }
+                    }
+                }
+            }
         }
         Result::<(), anyhow::Error>::Ok(())
     }

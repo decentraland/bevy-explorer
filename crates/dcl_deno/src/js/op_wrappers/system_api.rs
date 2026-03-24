@@ -10,9 +10,9 @@ use dcl_component::proto_components::{
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
-    settings::SettingInfo, ChatMessage, FriendshipEventUpdate, HomeScene, HoverEvent,
-    FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData, LiveSceneInfo, PermanentPermissionItem, PermissionRequest,
-    SceneLoadingUi, VoiceMessage,
+    settings::SettingInfo, AvatarModifierState, ChatMessage, FriendConnectivityEvent, FriendData,
+    FriendRequestData, FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent,
+    LiveSceneInfo, PermanentPermissionItem, PermissionRequest, SceneLoadingUi, VoiceMessage,
 };
 
 // list of op declarations
@@ -64,10 +64,12 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_read_hover_stream(),
             op_get_scene_loading_ui_stream(),
             op_read_scene_loading_ui_stream(),
+            op_get_avatar_modifiers(),
             // Social / Friends
             op_get_friendship_event_stream(),
             op_read_friendship_event_stream(),
             op_get_friends(),
+            op_get_mutual_friends(),
             op_get_sent_friend_requests(),
             op_get_received_friend_requests(),
             op_get_social_initialized(),
@@ -409,6 +411,14 @@ pub async fn op_read_scene_loading_ui_stream(
     dcl::js::system_api::op_read_scene_loading_ui_stream(state, rid).await
 }
 
+#[op2(async)]
+#[serde]
+pub async fn op_get_avatar_modifiers(
+    state: Rc<RefCell<OpState>>,
+) -> Result<Vec<AvatarModifierState>, anyhow::Error> {
+    dcl::js::system_api::op_get_avatar_modifiers(state).await
+}
+
 // Social / Friends
 
 #[op2(async)]
@@ -431,6 +441,15 @@ pub async fn op_get_friends(
     state: Rc<RefCell<OpState>>,
 ) -> Result<Vec<FriendData>, anyhow::Error> {
     dcl::js::system_api::op_get_friends(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_mutual_friends(
+    state: Rc<RefCell<OpState>>,
+    #[string] address: String,
+) -> Result<Vec<FriendData>, anyhow::Error> {
+    dcl::js::system_api::op_get_mutual_friends(state, address).await
 }
 
 #[op2(async)]

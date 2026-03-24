@@ -80,6 +80,15 @@ impl SocialClientHandler {
         Ok(())
     }
 
+    pub fn get_mutual_friends(
+        &self,
+        _address: String,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<FriendProfile>, String>>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Ok(Vec::new()));
+        Ok(rx)
+    }
+
     pub fn chat(&self, _address: Address, _message: String) -> Result<(), anyhow::Error> {
         Ok(())
     }
