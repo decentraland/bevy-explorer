@@ -1,9 +1,8 @@
-use std::{convert::Infallible, path::PathBuf};
+use std::path::PathBuf;
 
 use bevy::{
     asset::{
-        io::AssetReaderError, AssetLoadError, AssetLoader, LoadedUntypedAsset,
-        RecursiveDependencyLoadState,
+        io::AssetReaderError, AssetLoadError, LoadedUntypedAsset, RecursiveDependencyLoadState,
     },
     ecs::relationship::Relationship,
     prelude::*,
@@ -19,19 +18,14 @@ use dcl_component::{
 use ipfs::ipfs_path::{IpfsPath, IpfsType};
 
 use crate::{
-    asset_preload::{AssetLoad, PreloadAsset},
-    renderer_context::RendererSceneContext,
-    update_world::AddCrdtInterfaceExt,
-    ContainerEntity,
+    asset_preload::AssetLoad, renderer_context::RendererSceneContext,
+    update_world::AddCrdtInterfaceExt, ContainerEntity,
 };
 
 pub struct AssetPreloadPlugin;
 
 impl Plugin for AssetPreloadPlugin {
     fn build(&self, app: &mut App) {
-        app.init_asset::<PreloadAsset>();
-        app.init_asset_loader::<PreloadAssetLoader>();
-
         app.init_resource::<MonotonicTimestamp<PbAssetLoadLoadingState>>();
 
         app.add_crdt_lww_component::<PbAssetLoad, AssetLoad>(
@@ -229,11 +223,15 @@ fn verify_preload_state(
             }
             Some(RecursiveDependencyLoadState::Failed(err)) => {
                 let loading_state = match err.as_ref() {
+                    AssetLoadError::MissingAssetLoader { .. } => {
+                        // Assume that assets with missing AssetLoaders are downloaded
+                        // successfully, this is important for assets like videos
+                        // as they are fed into ffmpeg instead of being added to the
+                        // AssetServer
+                        LoadingState::Finished
+                    }
                     AssetLoadError::AssetReaderError(AssetReaderError::NotFound(_)) => {
                         LoadingState::NotFound
-                    }
-                    AssetLoadError::AssetReaderError(AssetReaderError::Io(_)) => {
-                        LoadingState::FinishedWithError
                     }
                     _ => LoadingState::FinishedWithError,
                 };
@@ -261,29 +259,5 @@ fn verify_preload_state(
                 }
             }
         }
-    }
-}
-
-#[derive(Default)]
-struct PreloadAssetLoader;
-
-impl AssetLoader for PreloadAssetLoader {
-    type Asset = PreloadAsset;
-    type Settings = ();
-    type Error = Infallible;
-
-    async fn load(
-        &self,
-        _reader: &mut dyn bevy::asset::io::Reader,
-        _settings: &Self::Settings,
-        load_context: &mut bevy::asset::LoadContext<'_>,
-    ) -> Result<Self::Asset, Self::Error> {
-        debug!("Preloaded {}", load_context.path().display());
-        Ok(PreloadAsset)
-    }
-
-    fn extensions(&self) -> &[&str] {
-        // File extensions that do not have a proper AssetLoader
-        &["mp4"]
     }
 }

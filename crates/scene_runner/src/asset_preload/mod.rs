@@ -3,9 +3,6 @@ pub mod plugin;
 use bevy::prelude::*;
 use dcl_component::proto_components::sdk::components::PbAssetLoad;
 
-#[derive(Asset, TypePath)]
-pub struct PreloadAsset;
-
 #[derive(Debug, Component, Deref, DerefMut)]
 #[component(immutable)]
 pub struct AssetLoad {
