@@ -310,5 +310,15 @@ export function start() {
 
   engine_run(platform, realmValue, positionValue, systemScene, true, preview, 1e7);
   window.engine_console_command = engine_console_command;
+  window.loadSceneUtils = () => {
+    return new Promise((resolve, reject) => {
+      const basePath = window.location.pathname.replace(/\/$/, '');
+      const s = document.createElement('script');
+      s.src = new URL(`${basePath}/sceneUtils.js`, window.location.origin);
+      s.onload = () => { console.log('sceneUtils loaded'); resolve(); };
+      s.onerror = () => reject(new Error('failed to load sceneUtils.js'));
+      document.head.appendChild(s);
+    });
+  };
   setTimeout(showCanvas, 200);
 }
