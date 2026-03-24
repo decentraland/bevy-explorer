@@ -211,6 +211,9 @@ impl SceneComponentId {
     pub const AVATAR_MOVEMENT_INFO: SceneComponentId = SceneComponentId(1500);
     pub const AVATAR_MOVEMENT: SceneComponentId = SceneComponentId(1501);
     pub const AVATAR_LOCOMOTION_SETTINGS: SceneComponentId = SceneComponentId(1211);
+
+    pub const ASSET_LOAD: SceneComponentId = SceneComponentId(1213);
+    pub const ASSET_LOAD_LOADING_STATE: SceneComponentId = SceneComponentId(1214);
 }
 
 #[derive(
