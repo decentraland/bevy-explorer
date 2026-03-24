@@ -8708,7 +8708,7 @@ dependencies = [
 [[package]]
 name = "parry3d-f64"
 version = "0.25.3"
-source = "git+https://github.com/robtfm/parry?branch=fix-bvh-negative-scale-0.25#9bf52a52cbaa8e71d76fb8ad4ce82f9f0b39461e"
+source = "git+https://github.com/robtfm/parry?branch=fix-bvh-negative-scale-0.25#8705700f2f176681c86a96be9083129690a46774"
 dependencies = [
  "approx",
  "arrayvec",
