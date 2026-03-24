@@ -270,7 +270,7 @@ fn update_permissions(
                     ),
             )
             .unwrap();
-        commands.entity(popup.root).insert((
+        commands.entity(popup.root).try_insert((
             permit,
             PermissionDialog {
                 level: None,

@@ -163,7 +163,7 @@ impl<C: Component + Clone + Default> ActivePlayerComponent<C> {
         let Ok(mut current_choice) = player.single_mut() else {
             commands
                 .entity(player_res.0)
-                .insert(ActivePlayerComponent::<C>::default());
+                .try_insert(ActivePlayerComponent::<C>::default());
             return;
         };
 
@@ -228,7 +228,7 @@ impl<C: Component + Clone + Default> ActivePlayerComponent<C> {
         let Ok(mut current_choice) = player.single_mut() else {
             commands
                 .entity(player_res.0)
-                .insert(ActivePlayerComponent::<C>::default());
+                .try_insert(ActivePlayerComponent::<C>::default());
             return;
         };
 

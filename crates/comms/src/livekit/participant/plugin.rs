@@ -195,7 +195,7 @@ fn participant_connection_quality_changed(
         return;
     };
 
-    commands.entity(entity).insert(*connection_quality);
+    commands.entity(entity).try_insert(*connection_quality);
 }
 
 fn participant_payload(
@@ -323,7 +323,7 @@ fn stream_viewer_without_stream_image(
             return;
         };
 
-        commands.entity(entity).insert(stream_image.clone());
+        commands.entity(entity).try_insert(stream_image.clone());
     }
 }
 
@@ -382,7 +382,7 @@ fn someone_wants_to_watch_stream(
 
         commands
             .entity(entity)
-            .insert(StreamImage(images.add(image)));
+            .try_insert(StreamImage(images.add(image)));
     }
 
     if let Some(publishing) = maybe_publishing {
@@ -463,6 +463,6 @@ fn change_volume_of_tracks(
             continue;
         }
 
-        commands.entity(*track).insert(TrackVolume(event.0));
+        commands.entity(*track).try_insert(TrackVolume(event.0));
     }
 }

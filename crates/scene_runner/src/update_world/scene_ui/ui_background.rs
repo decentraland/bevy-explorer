@@ -134,7 +134,7 @@ pub fn set_ui_background(
         }
 
         if let Ok(mut commands) = commands.get_entity(link.ui_entity) {
-            commands.insert(BackgroundColor::DEFAULT);
+            commands.try_insert(BackgroundColor::DEFAULT);
         }
     }
 
@@ -169,7 +169,7 @@ pub fn set_ui_background(
             let image = match image {
                 Some(Ok(t)) => t,
                 Some(Err(TextureResolveError::SourceNotReady)) => {
-                    commands.commands().entity(ent).insert(RetryBackground);
+                    commands.commands().entity(ent).try_insert(RetryBackground);
                     continue;
                 }
                 None | Some(Err(TextureResolveError::NoTexture)) => {
@@ -246,10 +246,10 @@ pub fn set_ui_background(
                             })),
                         ));
                         if let Some(source) = image.source_entity {
-                            inner.insert(UiMaterialSource(source));
+                            inner.try_insert(UiMaterialSource(source));
                         }
                         if let Some(radius) = border_radius {
-                            inner.insert(*radius);
+                            inner.try_insert(*radius);
                         }
                     })
                     .id(),
@@ -283,10 +283,10 @@ pub fn set_ui_background(
                             let mut inner = c
                                 .spawn((node, ImageNode::new(image.image).with_color(image_color)));
                             if let Some(source) = image.source_entity {
-                                inner.insert(UiMaterialSource(source));
+                                inner.try_insert(UiMaterialSource(source));
                             }
                             if let Some(radius) = border_radius {
-                                inner.insert(*radius);
+                                inner.try_insert(*radius);
                             }
                             c.spacer();
                         });
@@ -298,13 +298,13 @@ pub fn set_ui_background(
             commands.insert_children(0, &[background_entity]);
         } else if let Some(color) = background.color {
             let background_color = color.with_alpha(color.alpha() * link.opacity.0);
-            commands.insert(BackgroundColor(background_color));
+            commands.try_insert(BackgroundColor(background_color));
         }
     }
 
     for (ent, _maybe_stretch, source) in sourced.iter() {
         if commands.get_entity(source.0).is_err() {
-            commands.entity(ent).insert(RetryBackground);
+            commands.entity(ent).try_insert(RetryBackground);
         }
     }
 }

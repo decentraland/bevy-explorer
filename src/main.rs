@@ -578,7 +578,7 @@ fn setup(
             Propagate(RenderLayers::default()),
         ))
         .try_push_children(&attach_points.entities())
-        .insert(attach_points)
+        .try_insert(attach_points)
         .id();
 
     // add a camera

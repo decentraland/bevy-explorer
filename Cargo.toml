@@ -164,7 +164,7 @@ dcl-rpc = { version = "2.3.5", default-features = false, features = [
   "websockets",
   "codegen",
   "server",
-  "tungstenite",
+  "tungstenite-native-tls",
 ] }
 async-trait = "0.1.68"
 fastrand = "2"

@@ -46,7 +46,7 @@ fn setup_chat_history(mut commands: Commands, root: Res<SystemUiRoot>, dui: Res<
         .unwrap();
     commands
         .entity(history.named("chat-content"))
-        .insert(ChatHistory::default());
+        .try_insert(ChatHistory::default());
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -190,7 +190,7 @@ fn update_chat_history(
 
         let (bubble, message) =
             convo.add_message(entity, Some(h160), color.with_alpha(0.3), message, false);
-        commands.entity(bubble).insert((
+        commands.entity(bubble).try_insert((
             Interaction::default(),
             ShowProfileEvent(h160).send_value_on::<Click>(),
         ));
@@ -211,7 +211,7 @@ fn update_chat_history(
             chat.message,
             false,
         );
-        commands.entity(bubble).insert((
+        commands.entity(bubble).try_insert((
             Interaction::default(),
             ShowConversationEvent(chat.partner).send_value_on::<Click>(),
         ));
@@ -228,7 +228,7 @@ fn update_chat_history(
             chat.message,
             false,
         );
-        commands.entity(bubble).insert((
+        commands.entity(bubble).try_insert((
             Interaction::default(),
             On::<Click>::new(
                 |mut commands: Commands,
@@ -246,7 +246,7 @@ fn update_chat_history(
                     }
 
                     if let Ok(entry) = entry.single() {
-                        commands.entity(entry).insert(Focus);
+                        commands.entity(entry).try_insert(Focus);
                     }
 
                     let Ok(tab_entity) = tab_entity.single() else {

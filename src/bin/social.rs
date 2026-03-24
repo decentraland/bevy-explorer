@@ -77,7 +77,7 @@ fn setup(
                 ..Default::default()
             },
         )
-            .with_children(|c| {
+            .try_with_children(|c| {
             c.spawn((
                 Node {
                         flex_grow: 1.0,
@@ -86,7 +86,7 @@ fn setup(
                     },
                 OutputMarker,
             ))
-            .with_children(|c| {
+            .try_with_children(|c| {
                 c.spawn(
                     Text::new(
                         format!("address: {:#x}", wallet.address().unwrap())),

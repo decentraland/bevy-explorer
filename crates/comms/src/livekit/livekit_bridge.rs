@@ -130,18 +130,25 @@ impl kira::sound::streaming::Decoder for AudioTrackKiraBridge {
 
 pub trait I420BufferExt {
     fn rgba_data(&self) -> Vec<u8>;
+    fn rgba_data_into_slice(&self, dst: &mut [u8]);
 }
 
 impl I420BufferExt for I420Buffer {
     fn rgba_data(&self) -> Vec<u8> {
         let width = self.width();
         let height = self.height();
+        let mut dst = vec![0; (width * height * 4) as usize];
+        self.rgba_data_into_slice(&mut dst);
+        dst
+    }
+
+    fn rgba_data_into_slice(&self, dst: &mut [u8]) {
+        let width = self.width();
+        let height = self.height();
         let stride = width * 4;
 
         let (stride_y, stride_u, stride_v) = self.strides();
         let (data_y, data_u, data_v) = self.data();
-
-        let mut dst = vec![0; (width * height * 4) as usize];
 
         yuv_helper::i420_to_abgr(
             data_y,
@@ -150,13 +157,11 @@ impl I420BufferExt for I420Buffer {
             stride_u,
             data_v,
             stride_v,
-            &mut dst,
+            dst,
             stride,
             width as i32,
             height as i32,
         );
-
-        dst
     }
 }
 

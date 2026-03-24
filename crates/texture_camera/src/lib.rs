@@ -337,7 +337,7 @@ fn update_texture_cameras(
                         .max(scene_distance.load_imposter * 0.333),
                 );
 
-                camera.insert(DistanceFog {
+                camera.try_insert(DistanceFog {
                     color: Color::srgb(0.3, 0.2, 0.1),
                     directional_light_color: Color::srgb(1.0, 1.0, 0.7),
                     directional_light_exponent: 10.0,
@@ -348,7 +348,7 @@ fn update_texture_cameras(
             if maybe_layer.is_some_and(|l| l.show_skybox())
                 && !matches!(texture_cam.0.mode, Some(dcl_component::proto_components::sdk::components::pb_texture_camera::Mode::Orthographic(_)))
             {
-                camera.insert(AtmosphereCamera {
+                camera.try_insert(AtmosphereCamera {
                         render_layers: Some(render_layers.clone()),
                     }
                 );
@@ -357,7 +357,7 @@ fn update_texture_cameras(
             if maybe_layer.is_some_and(|l| {
                 l.ambient_brightness_override.is_some() || l.ambient_color_override.is_some()
             }) {
-                camera.insert(AmbientLight {
+                camera.try_insert(AmbientLight {
                     color: maybe_layer
                         .and_then(|l| l.ambient_color_override)
                         .map(Color3DclToBevy::convert_srgb)
@@ -373,7 +373,7 @@ fn update_texture_cameras(
 
             // set audio receiver
             if texture_cam.0.volume() > 0.0 {
-                camera.insert(AudioReceiver {
+                camera.try_insert(AudioReceiver {
                     layers: render_layers,
                 });
             }
@@ -383,7 +383,7 @@ fn update_texture_cameras(
             commands
                 .entity(ent)
                 .try_push_children(&[camera_id])
-                .insert((TextureCamEntity(camera_id), VideoTextureOutput(image)));
+                .try_insert((TextureCamEntity(camera_id), VideoTextureOutput(image)));
 
             new_cam_events.write(NewCameraEvent(camera_id));
         } else {

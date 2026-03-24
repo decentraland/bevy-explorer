@@ -359,7 +359,7 @@ fn show_emote_ui(
             .unwrap();
 
         let output = buttons.named("output");
-        commands.entity(output).insert((EmoteOutput, permit));
+        commands.entity(output).try_insert((EmoteOutput, permit));
 
         let mut all_slots = (0..=9).collect::<HashSet<u32>>();
         for emote in player_emotes {
@@ -371,7 +371,7 @@ fn show_emote_ui(
                 .map(|e| e.name.clone())
                 .unwrap_or("???".to_owned());
             let name2 = name.clone();
-            commands.entity(button).insert((
+            commands.entity(button).try_insert((
                 EmoteButton(emote.urn.clone(), emote.slot),
                 Interaction::default(),
                 FocusPolicy::Block,

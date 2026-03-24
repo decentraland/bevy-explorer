@@ -1042,13 +1042,13 @@ fn load_active_entities(
                 // take nearest parcel to current that is within map bounds
                 if let Ok((player_entity, player_transform)) = player.single() {
                     if let Ok(mut commands) = commands.get_entity(player_entity) {
-                        let parcel = if map_data.is_some() {
+                        let parcel = if bounds_min.cmple(bounds_max).all() {
                             let initial_parcel = vec3_to_parcel(player_transform.translation());
                             initial_parcel.clamp(bounds_min, bounds_max)
                         } else {
                             Default::default()
                         };
-                        commands.insert(teleport_components(parcel));
+                        commands.try_insert(teleport_components(parcel));
                         debug!(
                             "change to no scene realm -> none ({} in {}/{} = {})",
                             vec3_to_parcel(player_transform.translation()),
@@ -1181,7 +1181,7 @@ fn load_active_entities(
                         .ok()
                         .and_then(|(p, _)| commands.get_entity(p).ok())
                     {
-                        commands.insert(teleport_components(*parcel));
+                        commands.try_insert(teleport_components(*parcel));
                         debug!("already got the hash -> none");
                         *teleport_target = RealmInitialLocation::None;
                     }
@@ -1308,7 +1308,7 @@ fn load_active_entities(
             {
                 if let Ok(mut commands) = commands.get_entity(player_entity) {
                     let parcel = parcels.first().copied().unwrap_or_default();
-                    commands.insert(teleport_components(parcel));
+                    commands.try_insert(teleport_components(parcel));
                     debug!("resolved the target -> none (@ {parcel})");
                 }
                 *teleport_target = RealmInitialLocation::None;
