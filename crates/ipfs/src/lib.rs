@@ -401,7 +401,7 @@ impl Default for ServerAbout {
 
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct ServerScenes {
-    scenes: Vec<Scene>,
+    scenes: Vec<ServerScene>,
     total: usize,
 }
 
@@ -409,7 +409,7 @@ pub struct ServerScenes {
 // for multi-scene worlds, only `entity_id` is needed
 #[expect(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
-pub struct Scene {
+pub struct ServerScene {
     #[serde(rename = "worldName")]
     world_name: String,
     deployer: String,
