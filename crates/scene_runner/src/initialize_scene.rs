@@ -737,6 +737,10 @@ impl ScenePointers {
     }
 
     pub fn get(&self, parcel: impl Borrow<IVec2>) -> Option<&PointerResult> {
+        if self.realm_bounds.0.cmpgt(self.realm_bounds.1).any() {
+            // Invalid realm or still being loaded
+            return None;
+        }
         let parcel: &IVec2 = parcel.borrow();
         if parcel.cmplt(self.realm_bounds.0).any() || parcel.cmpgt(self.realm_bounds.1).any() {
             return Some(&PointerResult::NOTHING);
