@@ -10,8 +10,6 @@ use crate::plugin::desktop::NativeNotificationsPlugin;
 #[cfg(target_arch = "wasm32")]
 use crate::plugin::web::NativeNotificationsPlugin;
 use crate::{Notification, NotificationTimeout, PushNotification};
-use std::time::Duration;
-use bevy::time::common_conditions::on_timer;
 
 pub struct NotificationsPlugin;
 
@@ -23,8 +21,6 @@ impl Plugin for NotificationsPlugin {
         app.add_plugins(NativeNotificationsPlugin);
 
         app.add_systems(Update, (tick_notifications, notification_pushed));
-
-        app.add_systems(Update, spam.run_if(on_timer(Duration::from_secs(8))));
     }
 }
 
@@ -66,16 +62,4 @@ fn notification_pushed(
             )),
         ));
     }
-}
-
-fn spam(mut commands: Commands) {
-    commands.send_event(PushNotification {
-        title: "Spam".to_owned(),
-        #[cfg(not(target_arch = "wasm32"))]
-        icon: Some("file://home/hukasu/.local/share/bevyexplorer/cache/Sk2HvA9W6QYIHGSOj5YBuyutJbOgNGgWg9VPpoWmpK0".to_owned()),
-        #[cfg(target_arch = "wasm32")]
-        icon: Some("favicon/favicon-96x96.png".to_owned()),
-        body: Some("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Fusce eleifend auctor velit. Curabitur ultricies molestie finibus. Praesent nec imperdiet velit. Morbi vulputate tellus tellus, eget blandit mauris finibus a. Praesent commodo erat et metus finibus, et cursus turpis varius. Donec non nibh vel dolor pharetra ultrices. Aenean eget massa risus. Aliquam erat volutpat.".to_owned()),
-        timeout: 4.,
-    });
 }
