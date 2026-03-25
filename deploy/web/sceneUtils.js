@@ -83,3 +83,49 @@ function printEntitiesByDistance(componentName) {
     )
   );
 }
+
+async function uiTree() {
+  const snapshot = await engine_console_command("/crdt_snapshot").then(JSON.parse);
+  const rows = Object.entries(snapshot)
+    .filter(([, c]) => c.UiText || c.UiTransform)
+    .map(([id, c]) => ({
+      id,
+      parent: c.UiTransform?.parent ?? 0,
+      rightOf: c.UiTransform?.rightOf ?? 0,
+      value: c.UiText?.value,
+    }));
+
+  const byParent = {};
+  rows.forEach(r => {
+    byParent[r.parent] = byParent[r.parent] || [];
+    byParent[r.parent].push(r);
+  });
+
+  const orderChildren = (kids) => {
+    const byRight = {};
+    kids.forEach(k => { byRight[k.rightOf] = k; });
+    const ordered = [];
+    let cur = kids.find(k => !kids.some(o => String(o.id) === String(k.rightOf)));
+    while (cur) {
+      ordered.push(cur);
+      cur = byRight[cur.id];
+    }
+    kids.filter(k => !ordered.includes(k)).forEach(k => ordered.push(k));
+    return ordered;
+  };
+
+  const sorted = [];
+  const visit = (parentId) => {
+    const kids = byParent[parentId];
+    if (!kids) return;
+    orderChildren(kids).forEach(k => {
+      sorted.push(k);
+      visit(k.id);
+    });
+  };
+  visit(0);
+  rows.filter(r => !sorted.includes(r)).forEach(r => sorted.push(r));
+
+  console.table(sorted);
+  return sorted;
+}
