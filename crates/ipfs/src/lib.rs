@@ -835,14 +835,7 @@ impl IpfsIo {
             }
         }
 
-        if about
-            .configurations
-            .as_ref()
-            .filter(|config| config.realm_name.as_deref() != Some("main"))
-            .is_some()
-        {
-            self.update_scene_urns(&mut about, &new_realm).await?;
-        }
+        self.update_scene_urns(&mut about, &new_realm).await?;
 
         let mut write = self.context.write().await;
         if let (Some(cs), Some(content)) = (&content_server_override, about.content.as_mut()) {
@@ -1098,7 +1091,9 @@ impl IpfsIo {
             .send()
             .await
             .map_err(|e| anyhow!(e))?;
-        if scenes_raw.status() != StatusCode::OK {
+        if scenes_raw.status() == StatusCode::NOT_FOUND {
+            return Ok(());
+        } else if scenes_raw.status() != StatusCode::OK {
             return Err(anyhow!("status: {}", scenes_raw.status()));
         }
         let scenes = scenes_raw
