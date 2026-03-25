@@ -524,8 +524,8 @@ checksum = "c96bf972d85afc50bf5ab8fe2d54d1586b4e0b46c97c50a0c9e71e2f7bcd812a"
 dependencies = [
  "async-task",
  "concurrent-queue",
- "fastrand 2.3.0",
- "futures-lite 2.6.1",
+ "fastrand",
+ "futures-lite",
  "pin-project-lite",
  "slab",
 ]
@@ -538,7 +538,7 @@ checksum = "8034a681df4aed8b8edbd7fbe472401ecf009251c8b40556b304567052e294c5"
 dependencies = [
  "async-lock",
  "blocking",
- "futures-lite 2.6.1",
+ "futures-lite",
 ]
 
 [[package]]
@@ -552,7 +552,7 @@ dependencies = [
  "async-io",
  "async-lock",
  "blocking",
- "futures-lite 2.6.1",
+ "futures-lite",
  "once_cell",
 ]
 
@@ -566,7 +566,7 @@ dependencies = [
  "cfg-if",
  "concurrent-queue",
  "futures-io",
- "futures-lite 2.6.1",
+ "futures-lite",
  "parking",
  "polling",
  "rustix 1.1.4",
@@ -611,7 +611,7 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-io",
- "futures-lite 2.6.1",
+ "futures-lite",
  "gloo-timers 0.3.0",
  "kv-log-macro",
  "log",
@@ -1054,7 +1054,7 @@ dependencies = [
  "downcast-rs 2.0.2",
  "either",
  "futures-io",
- "futures-lite 2.6.1",
+ "futures-lite",
  "js-sys",
  "notify-debouncer-full",
  "parking_lot",
@@ -1405,7 +1405,7 @@ dependencies = [
  "bitflags 2.11.0",
  "bytemuck",
  "ddsfile",
- "futures-lite 2.6.1",
+ "futures-lite",
  "guillotiere",
  "half",
  "image",
@@ -1747,7 +1747,7 @@ dependencies = [
  "downcast-rs 2.0.2",
  "encase",
  "fixedbitset 0.5.7",
- "futures-lite 2.6.1",
+ "futures-lite",
  "image",
  "indexmap",
  "js-sys",
@@ -1808,7 +1808,7 @@ source = "git+https://github.com/robtfm/bevy_simple_text_input?branch=0.16#65edf
 dependencies = [
  "bevy",
  "copypwasmta",
- "futures-lite 2.6.1",
+ "futures-lite",
  "once_cell",
 ]
 
@@ -1880,7 +1880,7 @@ dependencies = [
  "crossbeam-queue",
  "derive_more",
  "futures-channel",
- "futures-lite 2.6.1",
+ "futures-lite",
  "heapless",
  "pin-project",
  "wasm-bindgen-futures",
@@ -2309,7 +2309,7 @@ dependencies = [
  "async-channel 2.5.0",
  "async-task",
  "futures-io",
- "futures-lite 2.6.1",
+ "futures-lite",
  "piper",
 ]
 
@@ -2782,7 +2782,7 @@ dependencies = [
  "bevy_kira_audio",
  "common",
  "console",
- "fastrand 2.3.0",
+ "fastrand",
  "ipfs",
  "itertools 0.12.1",
  "once_cell",
@@ -2823,7 +2823,7 @@ dependencies = [
  "bevy_kira_audio",
  "dcl_component",
  "ethers-core",
- "futures-lite 1.13.0",
+ "futures-lite",
  "hex",
  "pin-project",
  "platform",
@@ -2854,7 +2854,7 @@ dependencies = [
  "dcl",
  "dcl_component",
  "ethers-core",
- "futures-lite 1.13.0",
+ "futures-lite",
  "futures-util",
  "gloo-timers 0.3.0",
  "http 1.4.0",
@@ -3497,7 +3497,7 @@ dependencies = [
  "dcl_component",
  "deno_core",
  "ethers-providers",
- "futures-lite 1.13.0",
+ "futures-lite",
  "http 1.4.0",
  "ipfs",
  "num",
@@ -3591,7 +3591,7 @@ dependencies = [
  "dcl_component",
  "dcl_deno",
  "ethers-core",
- "fastrand 2.3.0",
+ "fastrand",
  "http 1.4.0",
  "interprocess",
  "ipfs",
@@ -3615,7 +3615,7 @@ dependencies = [
  "common",
  "dcl",
  "dcl_component",
- "futures-lite 1.13.0",
+ "futures-lite",
  "ipfs",
  "js-sys",
  "log",
@@ -3725,7 +3725,7 @@ dependencies = [
  "dcl_deno",
  "dcl_deno_ipc",
  "dcl_wasm",
- "futures-lite 1.13.0",
+ "futures-lite",
  "getrandom 0.3.4",
  "image_processing",
  "imposters",
@@ -4787,15 +4787,6 @@ dependencies = [
 
 [[package]]
 name = "fastrand"
-version = "1.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e51093e27b0797c359783294ca4f0a911c270184cb10f85783b118614a1501be"
-dependencies = [
- "instant",
-]
-
-[[package]]
-name = "fastrand"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
@@ -5176,26 +5167,11 @@ checksum = "cecba35d7ad927e23624b22ad55235f2239cfa44fd10428eecbeba6d6a717718"
 
 [[package]]
 name = "futures-lite"
-version = "1.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49a9d51ce47660b1e808d3c990b4709f2f415d928835a17dfd16991515c46bce"
-dependencies = [
- "fastrand 1.9.0",
- "futures-core",
- "futures-io",
- "memchr",
- "parking",
- "pin-project-lite",
- "waker-fn",
-]
-
-[[package]]
-name = "futures-lite"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f78e10609fe0e0b3f4157ffab1876319b5b0db102a2c60dc4626306dc46b44ad"
 dependencies = [
- "fastrand 2.3.0",
+ "fastrand",
  "futures-core",
  "futures-io",
  "parking",
@@ -6299,7 +6275,7 @@ dependencies = [
  "console",
  "ddsfile",
  "futures-io",
- "futures-lite 1.13.0",
+ "futures-lite",
  "gltf",
  "gltf-json",
  "image",
@@ -6416,7 +6392,7 @@ dependencies = [
  "common",
  "console",
  "crc",
- "futures-lite 1.13.0",
+ "futures-lite",
  "ipfs",
  "reqwest 0.12.15",
  "scene_material",
@@ -6588,7 +6564,7 @@ dependencies = [
  "common",
  "console",
  "futures-io",
- "futures-lite 1.13.0",
+ "futures-lite",
  "multihash-codetable",
  "platform",
  "reqwest 0.12.15",
@@ -8971,7 +8947,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c835479a4443ded371d6c535cbfd8d31ad92c5d23ae9770a61bc155e4992a3c1"
 dependencies = [
  "atomic-waker",
- "fastrand 2.3.0",
+ "fastrand",
  "futures-io",
 ]
 
@@ -9006,7 +8982,7 @@ dependencies = [
  "async-tungstenite",
  "bevy",
  "directories",
- "futures-lite 1.13.0",
+ "futures-lite",
  "futures-util",
  "reqwest 0.12.15",
  "serde",
@@ -9935,7 +9911,7 @@ dependencies = [
  "copypwasmta",
  "dcl_component",
  "ethers-core",
- "futures-lite 1.13.0",
+ "futures-lite",
  "http 1.4.0",
  "ipfs",
  "nft",
@@ -10608,7 +10584,7 @@ dependencies = [
  "dcl_deno_ipc",
  "dcl_wasm",
  "emojis",
- "futures-lite 1.13.0",
+ "futures-lite",
  "image",
  "input_manager",
  "ipfs",
@@ -11665,7 +11641,7 @@ dependencies = [
  "dcl_component",
  "ethers-core",
  "ethers-signers",
- "futures-lite 1.13.0",
+ "futures-lite",
  "input_manager",
  "ipfs",
  "platform",
@@ -11709,7 +11685,7 @@ version = "3.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
- "fastrand 2.3.0",
+ "fastrand",
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
@@ -12977,12 +12953,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "waker-fn"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "317211a0dc0ceedd78fb2ca9a44aed3d7b9b26f81870d485c07122b4350673b7"
-
-[[package]]
 name = "walkdir"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13295,7 +13265,7 @@ version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4fb51b7f3873e1c8de85a07fc00b590dfddc990938ec92829f97f27cd3186f91"
 dependencies = [
- "futures-lite 2.6.1",
+ "futures-lite",
  "js-sys",
  "wasm-bindgen",
  "wasm-bindgen-futures",
