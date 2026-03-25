@@ -291,7 +291,23 @@ impl From<PbUiTransform> for UiTransform {
                 YgDisplay::YgdFlex => Display::Flex,
                 YgDisplay::YgdNone => Display::None,
             },
-            basis: val!(value, flex_basis_unit, flex_basis, Val::Auto),
+            // TAFFY-VS-YOGA: Two layout differences are addressed here:
+            //
+            // 1. flex-basis for flexGrow items: When flex-basis is unset and
+            //    flexGrow > 0, Yoga computes the flex base size with percentage
+            //    children resolving to 0 (unknown parent), yielding a small base.
+            //    Taffy resolves them to auto, propagating deep content sizes and
+            //    inflating the base. Setting flex-basis: 0 for these items avoids
+            //    the content propagation and lets them simply grow to fill space.
+            //
+            // 2. min-size: Yoga does not implement CSS `min-size: auto` (content-
+            //    based minimum). Taffy does, preventing flex items from shrinking
+            //    below their content. Defaulting to 0 matches Yoga's behaviour.
+            basis: if value.flex_grow > 0.0 && value.flex_basis_unit() == YgUnit::YguUndefined {
+                Val::Px(0.0)
+            } else {
+                val!(value, flex_basis_unit, flex_basis, Val::Auto)
+            },
             grow: value.flex_grow,
             size: maybe_size!(value, width_unit, width, height_unit, height, Val::Auto),
             min_size: size!(
@@ -300,7 +316,7 @@ impl From<PbUiTransform> for UiTransform {
                 min_width,
                 min_height_unit,
                 min_height,
-                Val::Auto
+                Val::Px(0.0)
             ),
             max_size: size!(
                 value,
@@ -828,10 +844,6 @@ fn layout_scene_ui(
             Vec<(SceneEntityId, (Entity, UiTransform, bool, Entity))>,
         > = HashMap::new();
 
-        // Track each node's flex_direction so children can look up their parent's
-        // main axis for the TAFFY-VS-YOGA min-size fix (see comment at Node construction).
-        let mut flex_directions: HashMap<SceneEntityId, FlexDirection> = HashMap::new();
-
         while let Some((scene_id, (bevy_entity, ui_transform, transform_is_changed, root_node))) =
             unprocessed_uis.pop_front()
         {
@@ -1027,47 +1039,9 @@ fn layout_scene_ui(
             };
 
             let link = valid_nodes.get(&scene_id).unwrap();
-            flex_directions.insert(scene_id, ui_transform.flex_direction);
 
             // update style
             if !existing || transform_is_changed {
-                // TAFFY-VS-YOGA: Yoga does not implement CSS `min-size: auto`
-                // (automatic minimum size from content). Taffy does, which causes
-                // flex items to refuse to shrink below their content size when
-                // overflow is visible. This inflates layout through deep content
-                // chains (e.g. percentage-height wrappers around long lists),
-                // pushing siblings off-screen. For flexGrow items, zero the
-                // min-size in the parent's main axis to match Yoga's behaviour.
-                // See also: overflow mapping — Taffy only zeroes auto min-size
-                // for Overflow::Hidden/Scroll (not Clip/Visible), but Yoga
-                // always uses 0.
-                let parent_dir = flex_directions
-                    .get(&ui_transform.parent)
-                    .copied()
-                    .unwrap_or(FlexDirection::Column);
-                let (min_width, min_height) = if ui_transform.grow > 0.0 {
-                    match parent_dir {
-                        FlexDirection::Column | FlexDirection::ColumnReverse => (
-                            ui_transform.min_size.width,
-                            if ui_transform.min_size.height == Val::Auto {
-                                Val::Px(0.0)
-                            } else {
-                                ui_transform.min_size.height
-                            },
-                        ),
-                        FlexDirection::Row | FlexDirection::RowReverse => (
-                            if ui_transform.min_size.width == Val::Auto {
-                                Val::Px(0.0)
-                            } else {
-                                ui_transform.min_size.width
-                            },
-                            ui_transform.min_size.height,
-                        ),
-                    }
-                } else {
-                    (ui_transform.min_size.width, ui_transform.min_size.height)
-                };
-
                 let mut style = Node {
                     align_content: ui_transform.align_content,
                     align_items: ui_transform.align_items,
@@ -1083,8 +1057,8 @@ fn layout_scene_ui(
                     flex_grow: ui_transform.grow,
                     width: ui_transform.size.width.unwrap_or_default(),
                     height: ui_transform.size.height.unwrap_or_default(),
-                    min_width,
-                    min_height,
+                    min_width: ui_transform.min_size.width,
+                    min_height: ui_transform.min_size.height,
                     max_width: ui_transform.max_size.width,
                     max_height: ui_transform.max_size.height,
                     left: ui_transform.position.left,
