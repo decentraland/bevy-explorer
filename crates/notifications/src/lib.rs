@@ -16,7 +16,7 @@ pub struct NotificationTimeout(Timer);
 pub struct PushNotification {
     pub title: String,
     #[cfg_attr(
-        not(target_os = "linux"),
+        all(not(target_os = "linux"), not(target_arch = "wasm32")),
         expect(dead_code, reason = "Only works on linux and web")
     )]
     pub icon: Option<String>,
