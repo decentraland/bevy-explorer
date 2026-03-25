@@ -3,7 +3,7 @@
 
 // Constants
 const DEFAULT_SERVER = "https://realm-provider-ea.decentraland.org/main";
-const DEFAULT_SYSTEMSCENE = "https://dcl-regenesislabs.github.io/bevy-ui-scene/BevyUiScene";
+const DEFAULT_SYSTEMSCENE = "https://dcl-regenesislabs.github.io/bevy-ui-scene/BevyUiScene;basiccontroller.dcl.eth";
 
 // DOM references
 const realmInput = document.getElementById("realm");
@@ -87,6 +87,8 @@ function showCanvas(){
   if (canvas) canvas.style.display = "block";
   const logo = document.getElementById("loading-logo");
   if (logo) logo.style.display = "none";
+  const bevyBadge = document.getElementById("bevy-badge");
+  if (bevyBadge) bevyBadge.style.display = "none";
 }
 
 /**

@@ -124,17 +124,15 @@ async fn scene_ipc_in(
             EngineToScene::NewScene(id, new_scene_info) => {
                 let response_sx = dcl_deno::spawn_scene(
                     new_scene_info.initial_crdt_store,
-                    new_scene_info.scene_hash,
+                    new_scene_info.scene_context,
                     ipfs::SceneJsFile(Arc::new(new_scene_info.scene_js)),
                     new_scene_info.crdt_component_interfaces,
                     scene_sx.clone(),
                     global_sx.subscribe(),
-                    new_scene_info.id,
                     new_scene_info.storage_root,
                     new_scene_info.inspect,
-                    new_scene_info.testing,
-                    new_scene_info.preview,
                     new_scene_info.is_super.then(|| system_api_sx.clone()),
+                    new_scene_info.scene_origin,
                 );
 
                 renderer_senders.insert(id, response_sx);

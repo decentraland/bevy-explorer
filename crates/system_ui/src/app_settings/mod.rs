@@ -90,7 +90,7 @@ fn set_app_settings_content(
             None => {
                 commands
                     .entity(settings_entity)
-                    .insert(AppSettingsDetail(current_settings.clone()));
+                    .try_insert(AppSettingsDetail(current_settings.clone()));
                 current_settings.clone()
             }
         };
@@ -201,7 +201,7 @@ fn set_app_settings_content(
 
         commands
             .entity(components.named("settings-description"))
-            .insert(AppSettingDescription);
+            .try_insert(AppSettingDescription);
     }
 }
 
@@ -298,7 +298,7 @@ fn spawn_enum_setting_template<S: EnumAppSetting>(
         )
         .unwrap();
 
-    commands.entity(components.root).insert((
+    commands.entity(components.root).try_insert((
         Interaction::default(),
         On::<HoverEnter>::new(
             |q: Query<&AppSettingsDetail>,
@@ -332,7 +332,7 @@ fn spawn_int_setting_template<S: IntAppSetting>(
         )
         .unwrap();
 
-    commands.entity(components.root).insert((
+    commands.entity(components.root).try_insert((
         Interaction::default(),
         On::<HoverEnter>::new(
             |q: Query<&AppSettingsDetail>,
@@ -343,7 +343,7 @@ fn spawn_int_setting_template<S: IntAppSetting>(
         ),
     ));
 
-    commands.entity(components.named("container")).insert((
+    commands.entity(components.named("container")).try_insert((
         Interaction::default(),
         RelativeCursorPosition::default(),
         On::<ClickRepeat>::new(

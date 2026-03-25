@@ -364,6 +364,10 @@ fn publish_tracks(
     #[cfg(not(target_arch = "wasm32"))] local_audio_source: Res<LocalAudioSource>,
     #[cfg(not(target_arch = "wasm32"))] microphone_device: Res<MicrophoneDevice>,
 ) {
+    if local_participants.is_empty() {
+        return;
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     let Ok(config) = microphone_device
         .default_input_config()
@@ -392,7 +396,7 @@ fn publish_tracks(
             u32::from(config.channels()),
         ));
 
-        commands.entity(entity).insert((
+        commands.entity(entity).try_insert((
             ParticipantWithTrack,
             LocalAudioTrackFuture(local_audio_track_future),
         ));
@@ -443,7 +447,7 @@ fn poll_local_audio_track_futures(
 
                     commands
                         .entity(entity)
-                        .insert(MicrophoneLocalTrack(local_audio_track))
+                        .try_insert(MicrophoneLocalTrack(local_audio_track))
                         .remove::<LocalAudioTrackFuture>();
                 }
                 Err(err) => {

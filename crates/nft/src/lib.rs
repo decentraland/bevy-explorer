@@ -97,7 +97,7 @@ fn update_nft_shapes(
                 Visibility::default(),
                 NftShapeMarker,
             ))
-            .with_children(|c| {
+            .try_with_children(|c| {
                 // spawn frame
                 c.spawn((
                     Transform::default(),

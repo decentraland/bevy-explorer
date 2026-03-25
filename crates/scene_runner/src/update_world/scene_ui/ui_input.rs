@@ -11,7 +11,7 @@ use dcl_component::{
 use ui_core::{
     text_entry::{TextEntry, TextEntrySubmit, TextEntryValue},
     ui_actions::{DataChanged, On, Submit, UiCaller},
-    user_font, FontName,
+    user_font, FontName, FONT_SIZE_SCALE,
 };
 
 use crate::{renderer_context::RendererSceneContext, SceneEntity};
@@ -102,7 +102,7 @@ pub fn set_ui_input(
             }
             //and some size if not given
             if style.height == Val::Px(0.0) {
-                style.height = Val::Px(font_size * 1.3);
+                style.height = Val::Px(font_size * FONT_SIZE_SCALE * 1.3);
             }
         });
 
@@ -121,7 +121,7 @@ pub fn set_ui_input(
                 text_style: Some((
                     TextFont {
                         font: user_font(font_name, ui_core::WeightName::Regular),
-                        font_size,
+                        font_size: font_size * FONT_SIZE_SCALE,
                         ..Default::default()
                     },
                     TextColor(

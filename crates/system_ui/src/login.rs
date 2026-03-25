@@ -13,14 +13,15 @@ use common::{
     rpc::{RpcResultReceiver, RpcResultSender},
     sets::SceneSets,
     structs::{
-        ActiveDialog, AppConfig, ChainLink, DialogPermit, PreviousLogin, SystemAudio, ZOrder,
+        ActiveDialog, AppConfig, ChainLink, CurrentRealm, DialogPermit, PreviousLogin, SystemAudio,
+        ZOrder,
     },
     util::{TaskCompat, TaskExt},
 };
 use comms::profile::{get_remote_profile, CurrentUserProfile, UserProfile};
 use ethers_core::types::Address;
 use ethers_signers::LocalWallet;
-use ipfs::{CurrentRealm, IpfsAssetServer};
+use ipfs::IpfsAssetServer;
 use scene_runner::Toaster;
 use system_bridge::{NativeUi, SystemApi};
 use tokio::sync::oneshot::error::TryRecvError;
@@ -100,13 +101,13 @@ fn login(
                                         .with_prop("buttons", vec![DuiButton::new_enabled("Ok", close_ui_happy)]),
                                 )
                                 .unwrap();
-                            commands.entity(components.root).insert((permit, ZOrder::Login.default()));
+                            commands.entity(components.root).try_insert((permit, ZOrder::Login.default()));
                         }).pipe(close_ui_happy))]),
                 )
                 .unwrap();
             commands
                 .entity(components.root)
-                .insert((permit, ZOrder::Login.default()));
+                .try_insert((permit, ZOrder::Login.default()));
         } else {
             let components = commands
                 .spawn_template(
@@ -120,7 +121,7 @@ fn login(
                 .unwrap();
             commands
                 .entity(components.root)
-                .insert((permit, ZOrder::Login.default()));
+                .try_insert((permit, ZOrder::Login.default()));
         }
         *motd_shown = true;
         return;

@@ -27,6 +27,7 @@ world_ui = { workspace = true }
 platform = { workspace = true }
 
 bevy = { workspace = true }
+prost = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -34,10 +35,10 @@ anyhow = { workspace = true }
 bevy_console = { workspace = true }
 clap = { workspace = true }
 bimap = { workspace = true }
-nalgebra = { version = "0.33.2", features = ["convert-glam029"] }
+nalgebra = { version = "0.34.1", features = ["convert-glam029"] }
 futures-lite = { workspace = true }
 once_cell = { workspace = true }
-rapier3d = { workspace = true }
+rapier3d-f64 = { workspace = true }
 urlencoding = { workspace = true }
 itertools = { workspace = true }
 analytics = { workspace = true }

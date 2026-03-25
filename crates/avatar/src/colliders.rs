@@ -4,7 +4,7 @@ use bevy::{
     prelude::*,
 };
 use common::{
-    dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
+    dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_RADIUS},
     inputs::{CommonInputAction, SystemAction},
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
@@ -16,7 +16,7 @@ use common::{
 use comms::{global_crdt::ForeignPlayer, profile::UserProfile};
 use dcl_component::{proto_components::sdk::components::ColliderLayer, SceneEntityId};
 use input_manager::{InputManager, InputPriority, InputType};
-use rapier3d::{
+use rapier3d_f64::{
     na::Isometry,
     prelude::{ColliderBuilder, Group, InteractionGroups, SharedShape},
 };
@@ -26,7 +26,7 @@ use scene_runner::{
     update_world::mesh_collider::ColliderId,
 };
 use serde_json::json;
-use system_bridge::{NativeUi, PointerTargetType};
+use system_bridge::{AvatarModifierState, NativeUi, PointerTargetType, SystemApi};
 
 pub struct AvatarColliderPlugin;
 
@@ -37,6 +37,7 @@ impl Plugin for AvatarColliderPlugin {
             (
                 update_avatar_colliders.in_set(SceneSets::PostInit),
                 update_avatar_collider_actions.in_set(SceneSets::Input),
+                handle_avatar_modifier_requests,
             ),
         );
     }
@@ -78,20 +79,23 @@ fn update_avatar_colliders(
             ));
             colliders
                 .collider_data
-                .update_collider_transform(&id, &transform, None);
+                .update_collider_transform(&id, &transform);
         } else {
             // collider didn't exist, make a new one
             let collider = ColliderBuilder::new(SharedShape::capsule_y(
-                PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS,
-                PLAYER_COLLIDER_RADIUS - PLAYER_COLLIDER_OVERLAP,
+                (PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS) as f64,
+                PLAYER_COLLIDER_RADIUS as f64,
             ))
             .position(Isometry::from_parts(
-                (transform.translation() + PLAYER_COLLIDER_HEIGHT * 0.5 * Vec3::Y).into(),
+                (transform.translation() + PLAYER_COLLIDER_HEIGHT * 0.5 * Vec3::Y)
+                    .as_dvec3()
+                    .into(),
                 Default::default(),
             ))
             .collision_groups(InteractionGroups {
                 memberships: Group::from_bits_truncate(ColliderLayer::ClPlayer as u32),
                 filter: Group::from_bits_truncate(ColliderLayer::ClPlayer as u32),
+                test_mode: rapier3d_f64::prelude::InteractionTestMode::And,
             })
             .build();
             colliders
@@ -213,4 +217,24 @@ fn update_avatar_collider_actions(
     }
 
     senders.retain(|s| !s.is_closed());
+}
+
+fn handle_avatar_modifier_requests(
+    mut events: EventReader<SystemApi>,
+    players: Query<(&ForeignPlayer, &PlayerModifiers)>,
+) {
+    for ev in events.read() {
+        if let SystemApi::GetAvatarModifiers(sender) = ev {
+            let response: Vec<AvatarModifierState> = players
+                .iter()
+                .filter(|(_, m)| m.hide || m.hide_profile)
+                .map(|(fp, m)| AvatarModifierState {
+                    user_id: format!("{:#x}", fp.address),
+                    hide_avatar: m.hide,
+                    hide_profile: m.hide_profile,
+                })
+                .collect();
+            sender.send(response);
+        }
+    }
 }

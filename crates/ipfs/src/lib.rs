@@ -41,7 +41,11 @@ use platform::project_directories;
 use bevy::asset::io::wasm::HttpWasmAssetReader;
 
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
-use common::{structs::AppConfig, util::TaskCompat};
+use common::{
+    sets::RealmLifecycle,
+    structs::{AppConfig, CommsConfig, CurrentRealm, ServerConfiguration},
+    util::TaskCompat,
+};
 use ipfs_path::IpfsAsset;
 use platform::AsyncRwLock;
 use reqwest::StatusCode;
@@ -366,42 +370,6 @@ pub struct EndpointConfig {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct CommsConfig {
-    pub healthy: bool,
-    pub protocol: String,
-    pub fixed_adapter: Option<String>,
-    pub adapter: Option<String>,
-}
-
-#[derive(Deserialize, Debug, Clone, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct Region {
-    pub left: i32,
-    pub right: i32,
-    pub top: i32,
-    pub bottom: i32,
-}
-
-#[derive(Deserialize, Debug, Clone, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct MapData {
-    pub minimap_enabled: Option<bool>,
-    pub sizes: Vec<Region>,
-}
-
-#[derive(Deserialize, Debug, Clone, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct ServerConfiguration {
-    pub scenes_urn: Option<Vec<String>>,
-    pub realm_name: Option<String>,
-    pub network_id: Option<u32>,
-    pub city_loader_content_server: Option<String>,
-    pub map: Option<MapData>,
-    pub local_scene_parcels: Option<Vec<String>>,
-}
-
-#[derive(Deserialize, Debug, Clone)]
 pub struct ServerAbout {
     pub content: Option<EndpointConfig>,
     pub comms: Option<CommsConfig>,
@@ -502,7 +470,10 @@ impl Plugin for IpfsIoPlugin {
 
         app.add_event::<ChangeRealmEvent>();
         app.init_resource::<CurrentRealm>();
-        app.add_systems(PostUpdate, (change_realm, clean_cache));
+        app.add_systems(
+            PostUpdate,
+            (change_realm, clean_cache).before(RealmLifecycle),
+        );
 
         app.add_console_command::<ChangeRealmCommand, _>(change_realm_command);
     }
@@ -560,15 +531,6 @@ fn change_realm_command(
 pub struct ChangeRealmEvent {
     pub new_realm: String,
     pub content_server_override: Option<String>,
-}
-
-#[derive(Resource, Default, Debug)]
-pub struct CurrentRealm {
-    pub about_url: String,
-    pub address: String,
-    pub config: ServerConfiguration,
-    pub comms: Option<CommsConfig>,
-    pub public_url: String,
 }
 
 #[allow(clippy::type_complexity)]
@@ -1128,10 +1090,14 @@ impl AssetReader for IpfsIo {
         path: &'a std::path::Path,
     ) -> Result<impl Reader + 'a, bevy::asset::io::AssetReaderError> {
         platform::compat(async move {
-            let wrap_err = |e| {
-                bevy::asset::io::AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
-                    "w: {e}"
-                ))))
+            let wrap_err = |e: anyhow::Error| {
+                if e.to_string().contains("file not found") {
+                    bevy::asset::io::AssetReaderError::NotFound(path.to_owned())
+                } else {
+                    bevy::asset::io::AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
+                        "w: {e}"
+                    ))))
+                }
             };
 
             debug!("request: {:?}", path);

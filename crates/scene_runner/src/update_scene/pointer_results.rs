@@ -29,7 +29,7 @@ use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     inputs::{Action, CommonInputAction, POINTER_SET},
     rpc::RpcStreamSender,
-    structs::{CursorLocks, DebugInfo, PrimaryCamera},
+    structs::{CursorLocks, DebugInfo, MonotonicTimestamp, PrimaryCamera},
     util::DespawnWith,
 };
 use dcl::interface::CrdtType;
@@ -67,6 +67,7 @@ impl IaToDcl for CommonInputAction {
             CommonInputAction::IaAction4 => InputAction::IaAction4,
             CommonInputAction::IaAction5 => InputAction::IaAction5,
             CommonInputAction::IaAction6 => InputAction::IaAction6,
+            CommonInputAction::IaModifier => InputAction::IaModifier,
         }
     }
 }
@@ -92,6 +93,7 @@ impl IaToCommon for InputAction {
             InputAction::IaAction4 => CommonInputAction::IaAction4,
             InputAction::IaAction5 => CommonInputAction::IaAction5,
             InputAction::IaAction6 => CommonInputAction::IaAction6,
+            InputAction::IaModifier => CommonInputAction::IaModifier,
         }
     }
 }
@@ -106,7 +108,8 @@ impl Plugin for PointerResultPlugin {
             .init_resource::<UiPointerTarget>()
             .init_resource::<WorldPointerTarget>()
             .init_resource::<DebugPointers>()
-            .init_resource::<AvatarColliders>();
+            .init_resource::<AvatarColliders>()
+            .init_resource::<MonotonicTimestamp<PbPointerEventsResult>>();
 
         app.add_systems(
             PreUpdate,
@@ -201,7 +204,6 @@ fn update_pointer_target(
     containing_scenes: ContainingScene,
     mut scenes: Query<(Entity, &mut RendererSceneContext, &mut SceneColliderData)>,
     mut avatar_colliders: ResMut<AvatarColliders>,
-    frame: Res<FrameCount>,
     mut world_target: ResMut<WorldPointerTarget>,
     mut pointer_ray: ResMut<PointerRay>,
 ) {
@@ -246,9 +248,8 @@ fn update_pointer_target(
         .filter(|(scene_entity, ..)| nearby_scenes.contains(scene_entity))
         .fold(
             None,
-            |maybe_prior_nearest, (scene_entity, context, mut collider_data)| {
+            |maybe_prior_nearest, (scene_entity, _, mut collider_data)| {
                 let maybe_nearest = collider_data.cast_ray_nearest(
-                    context.last_update_frame,
                     ray.origin,
                     ray.direction.into(),
                     f32::MAX,
@@ -272,7 +273,6 @@ fn update_pointer_target(
         );
 
     let maybe_nearest_avatar = avatar_colliders.collider_data.cast_ray_nearest(
-        frame.0,
         ray.origin,
         ray.direction.into(),
         maybe_nearest_hit
@@ -289,7 +289,7 @@ fn update_pointer_target(
     if let Some(avatar_hit) = maybe_nearest_avatar {
         let nearest_point = avatar_colliders
             .collider_data
-            .closest_point(frame.0, player_translation, |cid| cid == &avatar_hit.id)
+            .closest_point(player_translation, |cid| cid == &avatar_hit.id)
             .unwrap_or(player_translation);
         let distance = (nearest_point - player_translation).length();
 
@@ -310,9 +310,7 @@ fn update_pointer_target(
 
         // get player distance
         let nearest_point = collider_data
-            .closest_point(context.last_update_frame, player_translation, |cid| {
-                cid == &hit.id
-            })
+            .closest_point(player_translation, |cid| cid == &hit.id)
             .unwrap_or(player_translation);
         let distance = (nearest_point - player_translation).length();
 
@@ -601,6 +599,7 @@ fn debug_pointer_command(
     if let Some(Ok(command)) = input.take() {
         let new_state = command.show.unwrap_or(!debug.0);
         debug.0 = new_state;
+        input.ok();
     }
 }
 
@@ -666,7 +665,7 @@ fn send_hover_events(
     new_target: Res<PointerTarget>,
     pointer_requests: Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
     mut scenes: Query<(&mut RendererSceneContext, &GlobalTransform)>,
-    frame: Res<FrameCount>,
+    timestamp: Res<MonotonicTimestamp<PbPointerEventsResult>>,
     mut input_manager: InputManager,
     mut previously_entered: Local<HashSet<(Entity, Option<String>, PointerTargetType)>>,
     scene_ui_ent: Query<&UiLink>,
@@ -738,7 +737,7 @@ fn send_hover_events(
                                         entity_id: scene_entity_id.as_proto_u32(),
                                     }),
                                     state: ev_type as i32,
-                                    timestamp: frame.0,
+                                    timestamp: timestamp.next_timestamp(),
                                     analog: None,
                                     tick_number,
                                 },
@@ -820,7 +819,7 @@ fn send_action_events(
     pointer_requests: Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
     mut scenes: Query<(Entity, &mut RendererSceneContext, &GlobalTransform)>,
     input_mgr: InputManager,
-    frame: Res<FrameCount>,
+    timestamp: Res<MonotonicTimestamp<PbPointerEventsResult>>,
     time: Res<Time>,
     mut drag_target: ResMut<PointerDragTarget>,
     mut locks: ResMut<CursorLocks>,
@@ -908,7 +907,7 @@ fn send_action_events(
                             button: action as i32,
                             hit: Some(hit),
                             state: ev_type as i32,
-                            timestamp: frame.0,
+                            timestamp: timestamp.next_timestamp(),
                             analog: None,
                             tick_number,
                         },
@@ -1044,7 +1043,7 @@ fn send_action_events(
                     button: button as i32,
                     hit: None,
                     state: pet as i32,
-                    timestamp: frame.0,
+                    timestamp: timestamp.next_timestamp(),
                     analog: None,
                     tick_number,
                 },

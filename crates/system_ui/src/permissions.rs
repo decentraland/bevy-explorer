@@ -2,12 +2,11 @@ use bevy::prelude::*;
 use bevy_dui::{DuiCommandsExt, DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     structs::{
-        AppConfig, PermissionLevel, PermissionStrings, PermissionTarget, PermissionType,
-        PermissionValue, PrimaryPlayerRes, SettingsTab,
+        AppConfig, CurrentRealm, PermissionLevel, PermissionStrings, PermissionTarget,
+        PermissionType, PermissionValue, PrimaryPlayerRes, SettingsTab,
     },
     util::{ModifyComponentExt, TryPushChildrenEx},
 };
-use ipfs::CurrentRealm;
 use scene_runner::{renderer_context::RendererSceneContext, ContainingScene};
 use ui_core::{
     bound_node::BoundedNode,
@@ -70,7 +69,7 @@ fn set_permission_settings_content(
             None => {
                 commands
                     .entity(settings_entity)
-                    .insert(PermissionSettingsDetail(current_settings.clone()));
+                    .try_insert(PermissionSettingsDetail(current_settings.clone()));
                 current_settings.clone()
             }
         };
@@ -270,7 +269,7 @@ fn set_permission_settings_content(
                 .unwrap()
                 .root;
 
-            commands.entity(ent).insert((
+            commands.entity(ent).try_insert((
                 Interaction::default(),
                 On::<HoverEnter>::new(
                     move |mut q: Query<&mut Text, With<PermissionSettingDescription>>| {
@@ -282,7 +281,7 @@ fn set_permission_settings_content(
             if hilight {
                 commands
                     .entity(ent)
-                    .insert(BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.1)));
+                    .try_insert(BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.1)));
                 target_entity = Some(ent);
             }
 
@@ -328,7 +327,7 @@ fn set_permission_settings_content(
 
         commands
             .entity(components.named("permission-description"))
-            .insert(PermissionSettingDescription);
+            .try_insert(PermissionSettingDescription);
 
         if let Some(target) = target_entity {
             commands.send_event(ScrollTargetEvent {

@@ -35,7 +35,7 @@ pub fn set_ui_pointer_events(
             commands.remove::<(On<HoverEnter>, On<HoverExit>)>();
         }
         if let Ok(mut commands) = commands.get_entity(ent) {
-            commands.insert(UiPointerChanged);
+            commands.try_insert(UiPointerChanged);
         }
 
         link.bypass_change_detection()
@@ -45,7 +45,7 @@ pub fn set_ui_pointer_events(
 
     for (ent, mut link) in pes.iter_mut() {
         if let Ok(mut commands) = commands.get_entity(ent) {
-            commands.insert(UiPointerChanged);
+            commands.try_insert(UiPointerChanged);
         }
 
         link.bypass_change_detection()
@@ -63,7 +63,7 @@ pub fn manage_scene_ui_interact(
         if link.interactors.is_empty() {
             commands
                 .entity(link.ui_entity)
-                .insert(FocusPolicy::Pass)
+                .try_insert(FocusPolicy::Pass)
                 .remove::<(Interaction, On<HoverEnter>, On<HoverExit>)>();
             if ui_target.0.entity() == Some(entity) {
                 ui_target.0 = UiPointerTargetValue::None;

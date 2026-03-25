@@ -8,13 +8,13 @@ use common::{
     rpc::{RpcCall, RpcResultSender},
     sets::SetupSets,
     structs::{
-        ActiveDialog, AppConfig, PermissionTarget, SettingsTab, ShowSettingsEvent, SystemAudio,
-        ZOrder,
+        ActiveDialog, AppConfig, CurrentRealm, PermissionTarget, SettingsTab, ShowSettingsEvent,
+        SystemAudio, ZOrder,
     },
     util::TryPushChildrenEx,
 };
 use comms::profile::{CurrentUserProfile, ProfileDeployedEvent};
-use ipfs::{ChangeRealmEvent, CurrentRealm};
+use ipfs::ChangeRealmEvent;
 use system_bridge::SystemApi;
 use ui_core::{
     button::{DuiButton, TabSelection},
@@ -434,10 +434,10 @@ pub fn show_settings(
 
     commands
         .entity(components.named("change-realm-button"))
-        .insert(UpdateRealmText);
+        .try_insert(UpdateRealmText);
     commands
         .entity(components.named("settings-content"))
-        .insert(tab);
+        .try_insert(tab);
 
     //start on the wearables tab
 }

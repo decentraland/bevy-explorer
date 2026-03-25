@@ -108,7 +108,7 @@ use dcl_component::{
     },
     SceneComponentId,
 };
-use ui_core::{ui_builder::SpawnSpacer, user_font, FontName, WeightName};
+use ui_core::{ui_builder::SpawnSpacer, user_font, FontName, WeightName, FONT_SIZE_SCALE};
 use unicode_segmentation::UnicodeSegmentation;
 use world_ui::{spawn_world_ui_view, WorldUi};
 
@@ -285,7 +285,7 @@ fn update_text_shapes(
             .unwrap_or_else(|| {
                 debug!("make ui for {ent}");
                 let (view, _) = spawn_world_ui_view(&mut commands, images, None);
-                commands.entity(view).insert(DespawnWith(ent));
+                commands.entity(view).try_insert(DespawnWith(ent));
                 let ui_root = commands
                     .spawn((
                         Node {
@@ -418,7 +418,7 @@ fn update_text_shapes(
                 },
                 DespawnWith(ent),
             ))
-            .with_children(|c| {
+            .try_with_children(|c| {
                 if text_shape.0.padding_left.is_some() {
                     c.spawn(Node {
                         width: Val::Px(text_shape.0.padding_left() * pix_per_m),
@@ -660,7 +660,7 @@ fn apply_text_extras(
             ));
 
             if let Some(target_camera) = maybe_camera.as_ref() {
-                cmds.insert(UiTargetCamera(target_camera.0));
+                cmds.try_insert(UiTargetCamera(target_camera.0));
             }
 
             cmds.id()
@@ -839,7 +839,7 @@ pub fn make_text_section(
 
         let font = TextFont {
             font: user_font(font_name, weight),
-            font_size: font_size * 0.95,
+            font_size: font_size * FONT_SIZE_SCALE,
             ..Default::default()
         };
 

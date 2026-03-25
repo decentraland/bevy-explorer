@@ -71,17 +71,12 @@ var jsProxy = undefined;
 var jsPreamble = undefined;
 function createJsContext(wasmApi, context) {
   const isSuper = wasmApi.is_super(context);
-
-  Object.defineProperty(jsContext, "console", {
-    value: {
-      log: console.log.bind(console),
-      info: console.info.bind(console),
-      debug: console.debug.bind(console),
-      trace: console.trace.bind(console),
-      warning: console.error.bind(console),
-      error: console.error.bind(console),
-    },
-  });
+  const sceneLabel = context.get_scene_title();
+  const sceneStartTime = performance.now();
+  function scenePrefix() {
+    const elapsed = (performance.now() - sceneStartTime) / 1000;
+    return `[${sceneLabel} ${elapsed.toFixed(2)}]`;
+  }
 
   const ops = Object.create(null);
   for (const exportName in wasmApi) {
@@ -97,6 +92,36 @@ function createJsContext(wasmApi, context) {
       });
     }
   }
+  function formatLog(...values) {
+    return values.map(v => {
+      if (v === null) return 'null';
+      if (v === undefined) return 'undefined';
+      if (typeof v === 'object') { try { return JSON.stringify(v); } catch(e) { return String(v); } }
+      return String(v);
+    }).join(' ');
+  }
+
+  // Save references to the real browser console before overriding
+  const browserConsole = {
+    log: console.log.bind(console),
+    warn: console.warn.bind(console),
+    error: console.error.bind(console),
+    debug: console.debug.bind(console),
+    trace: console.trace.bind(console),
+  };
+
+  Object.defineProperty(jsContext, "console", {
+    value: {
+      log: (...args) => { browserConsole.log(scenePrefix(), ...args); ops.op_log("LOG " + formatLog(...args)); },
+      info: (...args) => { browserConsole.log(scenePrefix(), ...args); ops.op_log("LOG " + formatLog(...args)); },
+      debug: (...args) => { browserConsole.debug(scenePrefix(), ...args); ops.op_log("LOG " + formatLog(...args)); },
+      trace: (...args) => { browserConsole.trace(scenePrefix(), ...args); ops.op_log("TRACE " + formatLog(...args)); },
+      warning: (...args) => { browserConsole.error(scenePrefix(), ...args); ops.op_error("ERROR " + formatLog(...args)); },
+      error: (...args) => { browserConsole.error(scenePrefix(), ...args); ops.op_error("ERROR " + formatLog(...args)); },
+      warn: (...args) => { browserConsole.warn(scenePrefix(), ...args); ops.op_log("WARN " + formatLog(...args)); },
+    },
+  });
+
   const core = Object.create(null);
   Object.defineProperty(core, "ops", {
     configurable: false,
@@ -312,6 +337,7 @@ self.onmessage = async (event) => {
       var consecutiveErrorsWithoutInteraction = 0;
       while (ops.op_continue_running()) {
         const dt = (elapsed - prevElapsed) / 1000;
+        ops.op_set_elapsed(elapsed / 1000);
         try {
           await module.onUpdate(dt);
           consecutiveErrorsWithoutInteraction = 0;

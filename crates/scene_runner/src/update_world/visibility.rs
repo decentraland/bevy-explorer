@@ -18,7 +18,7 @@ impl Plugin for VisibilityComponentPlugin {
 }
 
 #[derive(Component)]
-pub struct VisibilityComponent(PbVisibilityComponent);
+pub struct VisibilityComponent(pub PbVisibilityComponent);
 
 impl From<PbVisibilityComponent> for VisibilityComponent {
     fn from(value: PbVisibilityComponent) -> Self {
@@ -40,7 +40,7 @@ fn update_visibility(
 
     for ent in removed.read() {
         if let Ok(mut commands) = commands.get_entity(ent) {
-            commands.insert(Visibility::Inherited);
+            commands.try_insert(Visibility::Inherited);
         }
     }
 }

@@ -9,7 +9,7 @@ use bevy::{
 use bimap::BiMap;
 use common::{
     rpc::{RpcCall, RpcEventSender, RpcStreamSender},
-    structs::{AttachPoints, AudioDecoderError, EmoteCommand},
+    structs::{AttachPoints, AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate},
     util::TryPushChildrenEx,
 };
 use ethers_core::types::Address;
@@ -30,7 +30,7 @@ use dcl_component::{
         sdk::components::PbPlayerIdentityData,
     },
     transform_and_parent::{DclQuat, DclTransformAndParent, DclTranslation},
-    DclReader, DclWriter, SceneComponentId, SceneEntityId, ToDclWriter,
+    DclReader, DclWriter, GlobalCrdtData, Localizer, SceneComponentId, SceneEntityId, SceneOrigin,
 };
 
 use crate::{
@@ -55,10 +55,17 @@ impl Plugin for GlobalCrdtPlugin {
             ext_receiver,
             ext_sender,
             int_sender,
-            context: CrdtContext::new(SceneId::DUMMY, "Global Crdt".into(), false, false),
+            context: CrdtContext::new(
+                SceneId::DUMMY,
+                "Global Crdt".into(),
+                "Global Crdt".into(),
+                false,
+                false,
+            ),
             store: Default::default(),
             lookup: Default::default(),
             realm_bounds: (IVec2::MAX, IVec2::MIN),
+            localizers: Default::default(),
         });
 
         let (sender, _) = tokio::sync::broadcast::channel(1_000);
@@ -138,11 +145,13 @@ pub struct GlobalCrdtState {
     // sender for sockets to post to
     ext_sender: mpsc::Sender<NetworkUpdate>,
     // sender for broadcast updates
-    int_sender: broadcast::Sender<Vec<u8>>,
+    int_sender: broadcast::Sender<GlobalCrdtStateUpdate>,
     context: CrdtContext,
     store: CrdtStore,
     lookup: BiMap<Address, Entity>,
     pub(crate) realm_bounds: (IVec2, IVec2),
+    // per-component localizer registry (populated as components are first sent)
+    localizers: HashMap<SceneComponentId, Localizer>,
 }
 
 impl GlobalCrdtState {
@@ -151,22 +160,55 @@ impl GlobalCrdtState {
         self.ext_sender.clone()
     }
 
-    // get a channel from which crdt updates can be received
-    pub fn subscribe(&self) -> (CrdtStore, broadcast::Receiver<Vec<u8>>) {
-        (self.store.clone(), self.int_sender.subscribe())
+    /// Get a clone of the current CRDT store (with position data localized for the given
+    /// scene origin) and a channel from which future updates can be received.
+    pub fn subscribe(
+        &self,
+        scene_origin: bevy::prelude::Vec3,
+    ) -> (CrdtStore, broadcast::Receiver<GlobalCrdtStateUpdate>) {
+        let mut store = self.store.clone();
+        let origin = SceneOrigin(scene_origin);
+
+        // Localize position-containing entries in the initial store snapshot
+        for (component_id, localizer) in &self.localizers {
+            if matches!(localizer, Localizer::None | Localizer::Unimplemented) {
+                continue;
+            }
+            if let Some(lww_state) = store.lww.get_mut(component_id) {
+                for entry in lww_state.last_write.values_mut() {
+                    if entry.is_some && !entry.data.is_empty() {
+                        entry.data = localizer.localize_payload(&entry.data, &origin);
+                    }
+                }
+            }
+        }
+
+        (store, self.int_sender.subscribe())
     }
 
     pub fn set_bounds(&mut self, min: IVec2, max: IVec2) {
         info!("bounds: {min}-{max}");
         self.realm_bounds = (min, max);
     }
-    pub fn update_crdt(
+
+    pub fn update_crdt<T: GlobalCrdtData>(
         &mut self,
         component_id: SceneComponentId,
         crdt_type: CrdtType,
         id: SceneEntityId,
-        data: &impl ToDclWriter,
+        data: &T,
     ) {
+        let localizer = T::localizer();
+        assert!(
+            matches!(crdt_type, CrdtType::LWW(_)) || matches!(localizer, Localizer::None),
+            "GO components with explicit localization are not supported"
+        );
+        if !matches!(localizer, Localizer::None) {
+            self.localizers
+                .entry(component_id)
+                .or_insert_with(|| localizer.clone());
+        }
+
         let mut buf = Vec::new();
         DclWriter::new(&mut buf).write(data);
         let timestamp =
@@ -176,7 +218,10 @@ impl GlobalCrdtState {
             CrdtType::LWW(_) => put_component(&id, &component_id, &timestamp, Some(&buf)),
             CrdtType::GO(_) => append_component(&id, &component_id, &buf),
         };
-        if let Err(e) = self.int_sender.send(crdt_message) {
+        if let Err(e) = self
+            .int_sender
+            .send(GlobalCrdtStateUpdate::Crdt(crdt_message, localizer))
+        {
             error!("failed to send foreign player update to scenes: {e}");
         }
     }
@@ -184,8 +229,17 @@ impl GlobalCrdtState {
     pub fn delete_entity(&mut self, id: SceneEntityId) {
         self.store.clean_up(&HashSet::from_iter(Some(id)));
         let crdt_message = delete_entity(&id);
-        if let Err(e) = self.int_sender.send(crdt_message) {
+        if let Err(e) = self
+            .int_sender
+            .send(GlobalCrdtStateUpdate::Crdt(crdt_message, Localizer::None))
+        {
             error!("failed to send foreign player update to scenes: {e}");
+        }
+    }
+
+    pub fn update_time(&mut self, time: f32) {
+        if let Err(e) = self.int_sender.send(GlobalCrdtStateUpdate::Time(time)) {
+            error!("failed to send time update to scenes: {e}");
         }
     }
 }
@@ -371,7 +425,7 @@ pub fn process_transport_updates(
                             Propagate(RenderLayers::default()),
                         ))
                         .try_push_children(&attach_points.entities())
-                        .insert(attach_points)
+                        .try_insert(attach_points)
                         .id();
 
                     state.lookup.insert(update.address, new_entity);

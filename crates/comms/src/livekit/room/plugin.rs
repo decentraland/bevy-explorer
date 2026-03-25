@@ -78,7 +78,7 @@ struct RoomTask(JoinHandle<Result<(), RoomError>>);
 
 fn livekit_transport_added(trigger: Trigger<OnAdd, LivekitTransport>, mut commands: Commands) {
     let entity = trigger.target();
-    commands.entity(entity).insert(Connecting);
+    commands.entity(entity).try_insert(Connecting);
 }
 
 fn initiate_room_connection(
@@ -117,7 +117,7 @@ fn initiate_room_connection(
     debug!("{params:?}");
     let token = params.get("access_token").cloned().unwrap_or_default();
 
-    commands.entity(entity).insert(ConnectingLivekitRoom(
+    commands.entity(entity).try_insert(ConnectingLivekitRoom(
         livekit_runtime.spawn(connect_to_room(address, token)),
     ));
 }
@@ -140,7 +140,7 @@ fn poll_connecting_rooms(
                 Ok((room, room_event_receiver)) => {
                     commands
                         .entity(entity)
-                        .insert(LivekitRoom {
+                        .try_insert(LivekitRoom {
                             room: Arc::new(room),
                             room_event_receiver,
                         })
@@ -204,13 +204,13 @@ fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mu
                 }
                 RoomEvent::ConnectionStateChanged(state) => match state {
                     ConnectionState::Connected => {
-                        commands.entity(entity).insert(Connected);
+                        commands.entity(entity).try_insert(Connected);
                     }
                     ConnectionState::Reconnecting => {
-                        commands.entity(entity).insert(Reconnecting);
+                        commands.entity(entity).try_insert(Reconnecting);
                     }
                     ConnectionState::Disconnected => {
-                        commands.entity(entity).insert(Disconnected);
+                        commands.entity(entity).try_insert(Disconnected);
                     }
                 },
                 RoomEvent::DataReceived {
@@ -375,7 +375,7 @@ fn process_network_message(
             )]
             commands
                 .entity(entity)
-                .insert(RoomTasks(new_room_tasks.drain(..).collect()));
+                .try_insert(RoomTasks(new_room_tasks.drain(..).collect()));
         }
     }
 }
@@ -582,6 +582,6 @@ fn close_rooms_on_app_exit(rooms: Query<&LivekitRoom>, livekit_runtime: Res<Live
 
 fn try_reconnect(mut commands: Commands, rooms: Populated<Entity, With<Disconnected>>) {
     for entity in rooms.into_inner() {
-        commands.entity(entity).insert(Connecting);
+        commands.entity(entity).try_insert(Connecting);
     }
 }

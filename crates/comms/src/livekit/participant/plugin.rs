@@ -20,13 +20,13 @@ use crate::{
     global_crdt::{GlobalCrdtState, NonPlayerUpdate, PlayerMessage, PlayerUpdate},
     livekit::{
         participant::{
-            HostedBy, HostingParticipants, LivekitParticipant, Local, ParticipantConnected,
-            ParticipantConnectionQuality, ParticipantDisconnected, ParticipantMetadataChanged,
-            ParticipantPayload, StreamBroadcast, Streamer,
+            ChangeVolume, HostedBy, HostingParticipants, LivekitParticipant, Local,
+            ParticipantConnected, ParticipantConnectionQuality, ParticipantDisconnected,
+            ParticipantMetadataChanged, ParticipantPayload, StreamBroadcast, Streamer,
         },
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
-        track::{Audio, LivekitTrack, Publishing, SubscribeToTrack, Video},
+        track::{Audio, LivekitTrack, Publishing, SubscribeToTrack, TrackVolume, Video},
         LivekitRuntime,
     },
 };
@@ -51,6 +51,7 @@ impl Plugin for LivekitParticipantPlugin {
         );
         app.add_observer(someone_wants_to_watch_stream);
         app.add_observer(noone_is_watching_stream);
+        app.add_observer(change_volume_of_tracks);
     }
 }
 
@@ -194,7 +195,7 @@ fn participant_connection_quality_changed(
         return;
     };
 
-    commands.entity(entity).insert(*connection_quality);
+    commands.entity(entity).try_insert(*connection_quality);
 }
 
 fn participant_payload(
@@ -322,7 +323,7 @@ fn stream_viewer_without_stream_image(
             return;
         };
 
-        commands.entity(entity).insert(stream_image.clone());
+        commands.entity(entity).try_insert(stream_image.clone());
     }
 }
 
@@ -381,7 +382,7 @@ fn someone_wants_to_watch_stream(
 
         commands
             .entity(entity)
-            .insert(StreamImage(images.add(image)));
+            .try_insert(StreamImage(images.add(image)));
     }
 
     if let Some(publishing) = maybe_publishing {
@@ -440,5 +441,28 @@ fn noone_is_watching_stream(
                 track.set_subscribed(false);
             });
         }
+    }
+}
+
+fn change_volume_of_tracks(
+    trigger: Trigger<ChangeVolume>,
+    mut commands: Commands,
+    participants: Query<&Publishing>,
+    tracks: Query<(), With<Audio>>,
+) {
+    let entity = trigger.target();
+    let event = trigger.event();
+
+    let Ok(publishing) = participants.get(entity) else {
+        error!("{} is not publishing any tracks.", entity);
+        return;
+    };
+
+    for track in publishing.collection() {
+        if !tracks.contains(*track) {
+            continue;
+        }
+
+        commands.entity(*track).try_insert(TrackVolume(event.0));
     }
 }

@@ -520,7 +520,9 @@ pub fn update_materials(
                             }
                             Ok(None) => {
                                 // retry
-                                commands.entity(ent).insert(RetryMaterial(Vec::default()));
+                                commands
+                                    .entity(ent)
+                                    .try_insert(RetryMaterial(Vec::default()));
                                 continue;
                             }
                             Ok(Some(mat)) => {
@@ -529,7 +531,7 @@ pub fn update_materials(
                                     gltf: gltf_def.gltf_src.clone(),
                                     name: gltf_def.name.clone(),
                                 };
-                                commands.entity(ent).insert(new_base.clone());
+                                commands.entity(ent).try_insert(new_base.clone());
                                 Some(&new_base)
                             }
                         }
@@ -560,7 +562,9 @@ pub fn update_materials(
                 let textures = match textures {
                     Ok(textures) => textures,
                     _ => {
-                        commands.entity(ent).insert(RetryMaterial(Vec::default()));
+                        commands
+                            .entity(ent)
+                            .try_insert(RetryMaterial(Vec::default()));
                         continue;
                     }
                 };
@@ -573,7 +577,7 @@ pub fn update_materials(
                     .filter_map(|t| t.source_entity)
                     .next()
                 {
-                    commands.entity(ent).insert(MaterialSource(source));
+                    commands.entity(ent).try_insert(MaterialSource(source));
                     can_cache = false;
                 }
 
@@ -584,7 +588,7 @@ pub fn update_materials(
 
                 if let Some(bct) = base_color_texture.as_mut() {
                     if let Some(cursor) = bct.camera_target.take() {
-                        commands.entity(ent).insert(cursor);
+                        commands.entity(ent).try_insert(cursor);
                         can_cache = false;
                     }
                 }
@@ -660,7 +664,7 @@ pub fn update_materials(
         if changed {
             commands
                 .entity(ent)
-                .insert(RetryMaterial(Vec::default()))
+                .try_insert(RetryMaterial(Vec::default()))
                 .remove::<MaterialSource>();
         }
     }
@@ -740,7 +744,7 @@ fn update_loading_materials(
             if let Ok(mut commands) = commands.get_entity(entity) {
                 commands
                     .remove::<MeshMaterial3dLoading>()
-                    .insert(MeshMaterial3d(loading.0.clone()));
+                    .try_insert(MeshMaterial3d(loading.0.clone()));
             }
         }
     }

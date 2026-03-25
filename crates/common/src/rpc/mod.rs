@@ -124,9 +124,18 @@ pub enum RpcCall {
         response: RpcResultSender<Result<(), String>>,
     },
     MovePlayer {
-        scene: Entity,
+        scene: Option<Entity>,
         to: Vec3,
         looking_at: Option<Vec3>,
+        duration: Option<f32>,
+        response: Option<RpcResultSender<bool>>,
+    },
+    WalkPlayer {
+        scene: Option<Entity>,
+        to: Vec3,
+        stop_threshold: f32,
+        timeout: Option<f32>,
+        response: RpcResultSender<bool>,
     },
     TeleportPlayer {
         scene: Option<Entity>,

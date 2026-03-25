@@ -22,7 +22,7 @@ use bevy::{
 };
 use bimap::BiMap;
 use common::{
-    structs::MicState,
+    structs::{CurrentRealm, MicState},
     util::{TaskCompat, TaskExt},
 };
 use ethers_core::types::{Address, H160};
@@ -33,7 +33,7 @@ use signed_login::{SignedLoginPlugin, StartSignedLogin};
 use tokio::sync::mpsc::Sender;
 
 use dcl_component::{DclWriter, ToDclWriter};
-use ipfs::{CurrentRealm, IpfsAssetServer};
+use ipfs::IpfsAssetServer;
 use wallet::{sign_request, Wallet};
 
 use crate::global_crdt::ChannelControl;
@@ -259,7 +259,9 @@ fn connect_scene_room(
             Some(Ok((adapter, ev))) => {
                 if let Some(ent) = manager.connect(&adapter) {
                     warn!("added scene channel {ev:?}");
-                    commands.entity(ent).insert(SceneRoom(ev.scene_id.clone()));
+                    commands
+                        .entity(ent)
+                        .try_insert(SceneRoom(ev.scene_id.clone()));
                     current.0 = Some((ev, adapter, ent));
                 }
             }

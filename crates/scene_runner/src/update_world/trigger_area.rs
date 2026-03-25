@@ -1,5 +1,5 @@
-use bevy::{diagnostic::FrameCount, platform::collections::HashMap, prelude::*};
-use common::sets::SceneSets;
+use bevy::{platform::collections::HashMap, prelude::*};
+use common::{sets::SceneSets, structs::MonotonicTimestamp};
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::{
@@ -74,6 +74,8 @@ pub struct TriggerAreaPlugin;
 
 impl Plugin for TriggerAreaPlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<MonotonicTimestamp<PbTriggerAreaResult>>();
+
         app.add_crdt_lww_component::<PbTriggerArea, MeshCollider<CtTrigger>>(
             SceneComponentId::TRIGGER_AREA,
             ComponentPosition::EntityOnly,
@@ -105,8 +107,8 @@ fn update_triggers(
     mut scenes: Query<(&mut RendererSceneContext, &mut SceneColliderData)>,
     mut avatar_colliders: ResMut<AvatarColliders>,
     triggers: Query<(&MeshCollider<CtTrigger>, &GlobalTransform)>,
-    frame: Res<FrameCount>,
     pointer_ray: Res<PointerRay>,
+    timestamp: Res<MonotonicTimestamp<PbTriggerAreaResult>>,
 ) {
     let make_trigger = |colliders: &SceneColliderData, collider_id: &ColliderId| -> Trigger {
         colliders
@@ -135,7 +137,7 @@ fn update_triggers(
                        container: &ContainerEntity,
                        translation: Vec3,
                        rotation: Quat,
-                       timestamp: u32,
+                       timestamp: &MonotonicTimestamp<PbTriggerAreaResult>,
                        collider_id: &ColliderId,
                        ty: TriggerAreaEventType|
      -> PbTriggerAreaResult {
@@ -144,7 +146,7 @@ fn update_triggers(
             triggered_entity_position: Some(Vector3::world_vec_from_vec3(&translation)),
             triggered_entity_rotation: Some(rotation.into()),
             event_type: ty as i32,
-            timestamp,
+            timestamp: timestamp.next_timestamp(),
             trigger: Some(make_trigger(colliders, collider_id)),
         }
     };
@@ -155,13 +157,14 @@ fn update_triggers(
                        container: &ContainerEntity,
                        translation: Vec3,
                        rotation: Quat,
-                       timestamp: u32|
+                       tick: u32,
+                       timestamp: &MonotonicTimestamp<PbTriggerAreaResult>|
      -> Vec<(SceneEntityId, PbTriggerAreaResult)> {
         let mut results = Vec::default();
 
         for (prev_collider, prev_frame) in active_colliders {
             if new_colliders.contains(prev_collider) {
-                if prev_frame != &timestamp {
+                if prev_frame != &tick {
                     // send only 1 stay per scene tick
                     results.push((
                         container.container_id,
@@ -220,11 +223,7 @@ fn update_triggers(
         let (_, rotation, translation) = gt.to_scale_rotation_translation();
 
         // get intersecting colliders
-        let new_colliders = colliders.intersect_id(
-            scene.last_update_frame,
-            &collider.0,
-            trigger_def.collision_mask,
-        );
+        let new_colliders = colliders.intersect_id(&collider.0, trigger_def.collision_mask);
 
         let empty_active = HashMap::default();
         let mut results = make_events(
@@ -238,6 +237,7 @@ fn update_triggers(
             translation,
             rotation,
             scene.last_update_frame,
+            &timestamp,
         );
 
         // get avatar colliders
@@ -246,11 +246,9 @@ fn update_triggers(
             new_avatars = colliders
                 .get_collider(&collider.0)
                 .map(|c| {
-                    avatar_colliders.collider_data.intersect_collider(
-                        frame.0,
-                        c,
-                        trigger_def.collision_mask,
-                    )
+                    avatar_colliders
+                        .collider_data
+                        .intersect_collider(c, trigger_def.collision_mask)
                 })
                 .unwrap_or_default();
             results.extend(make_events(
@@ -264,6 +262,7 @@ fn update_triggers(
                 translation,
                 rotation,
                 scene.last_update_frame,
+                &timestamp,
             ));
         } else {
             Default::default()
@@ -274,7 +273,6 @@ fn update_triggers(
         if trigger_def.collision_mask & (ColliderLayer::ClPointer as u32) != 0 {
             if let Some(ray) = pointer_ray.0 {
                 let pointer_hit = colliders.cast_ray_nearest(
-                    scene.last_update_frame,
                     ray.origin,
                     ray.direction.as_vec3(),
                     f32::MAX,
@@ -301,6 +299,7 @@ fn update_triggers(
                     translation,
                     rotation,
                     scene.last_update_frame,
+                    &timestamp,
                 ));
             }
         }

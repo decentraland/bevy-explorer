@@ -83,7 +83,7 @@ pub async fn write_file_internal(filename: &str, data: &[u8]) -> Result<(), JsVa
     init.set_status_text(&status_text);
     init.set_headers(&headers);
 
-    let js_body = js_sys::Uint8Array::from(&data[..]);
+    let js_body = js_sys::Uint8Array::from(data);
     let new_response = Response::new_with_opt_buffer_source_and_init(Some(&js_body), &init)?;
 
     let put_promise = cache.put_with_str(filename, &new_response);

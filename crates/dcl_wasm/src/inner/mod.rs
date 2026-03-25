@@ -5,10 +5,11 @@ pub mod op_wrappers;
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use bevy::{log::tracing::span::EnteredSpan, tasks::IoTaskPool};
+use common::structs::GlobalCrdtStateUpdate;
 use dcl::{
-    interface::{CrdtComponentInterfaces, CrdtStore},
+    interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
     js::{CommunicatedWithRenderer, SceneResponseSender, ShuttingDown, SuperUserScene},
-    RendererResponse, SceneId,
+    RendererResponse, SceneElapsedTime,
 };
 use gotham_state::GothamState;
 use ipfs::SceneJsFile;
@@ -21,18 +22,15 @@ use tokio::sync::{
 
 pub struct SceneInitializationData {
     pub initial_crdt_store: CrdtStore,
+    pub scene_context: CrdtContext,
     pub thread_rx: Receiver<RendererResponse>,
-    pub scene_hash: String,
     pub scene_js: SceneJsFile,
     pub crdt_component_interfaces: CrdtComponentInterfaces,
     pub renderer_sender: SceneResponseSender,
-    pub global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
-    pub id: SceneId,
+    pub global_update_receiver: tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
     pub storage_root: String,
-    pub inspect: bool,
-    pub testing: bool,
-    pub preview: bool,
     pub super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
+    pub scene_origin: bevy::prelude::Vec3,
 }
 
 // Static storage shared data
@@ -44,20 +42,17 @@ pub fn init_runtime() {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn spawn_scene(
     initial_crdt_store: CrdtStore,
-    scene_hash: String,
+    scene_context: CrdtContext,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     renderer_sender: SceneResponseSender,
-    global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
-    id: SceneId,
+    global_update_receiver: tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
     storage_root: String,
-    inspect: bool,
-    testing: bool,
-    preview: bool,
+    _inspect: bool,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
+    scene_origin: bevy::prelude::Vec3,
 ) -> Sender<RendererResponse> {
     // create engine channel
     let (thread_sx, thread_rx) = channel(1);
@@ -72,18 +67,15 @@ pub fn spawn_scene(
                 .await
                 .push(SceneInitializationData {
                     initial_crdt_store,
+                    scene_context,
                     thread_rx,
-                    scene_hash,
                     scene_js,
                     crdt_component_interfaces,
                     renderer_sender,
                     global_update_receiver,
-                    id,
                     storage_root,
-                    inspect,
-                    testing,
-                    preview,
                     super_user,
+                    scene_origin,
                 });
 
             // spin up a scene thread to consume it
@@ -119,18 +111,15 @@ pub async fn wasm_init_scene() -> Result<WorkerContext, JsValue> {
     dcl::js::init_state(
         &mut *context.state.borrow_mut(),
         scene_initialization_data.initial_crdt_store,
-        scene_initialization_data.scene_hash,
-        scene_initialization_data.id,
+        scene_initialization_data.scene_context,
         scene_initialization_data.storage_root,
         scene_initialization_data.scene_js,
         scene_initialization_data.crdt_component_interfaces,
         scene_initialization_data.renderer_sender,
         scene_initialization_data.thread_rx,
         scene_initialization_data.global_update_receiver,
-        scene_initialization_data.inspect,
-        scene_initialization_data.testing,
-        scene_initialization_data.preview,
         scene_initialization_data.super_user,
+        scene_initialization_data.scene_origin,
     );
 
     local_storage::init(&context).await;
@@ -149,6 +138,10 @@ impl WorkerContext {
         (*self.state.borrow().borrow::<SceneJsFile>().0)
             .clone()
             .into()
+    }
+
+    pub fn get_scene_title(&self) -> String {
+        self.state.borrow().borrow::<CrdtContext>().title.clone()
     }
 
     pub(crate) fn rc(&self) -> Rc<RefCell<GothamState>> {
@@ -218,6 +211,11 @@ impl From<WasmError> for JsValue {
     fn from(value: WasmError) -> Self {
         js_sys::Error::new(&value.0.to_string()).into()
     }
+}
+
+#[wasm_bindgen]
+pub fn op_set_elapsed(state: &WorkerContext, elapsed: f32) {
+    state.state.borrow_mut().put(SceneElapsedTime(elapsed));
 }
 
 #[wasm_bindgen]

@@ -13,50 +13,50 @@ use bevy::{
         view::RenderLayers,
         RenderPlugin,
     },
-    tasks::{BoxedFuture, IoTaskPool, Task},
+    tasks::BoxedFuture,
     winit::{UpdateMode, WinitSettings},
 };
-use bevy_console::ConsoleCommand;
+use bevy_console::{ConsoleCommand, ConsoleConfiguration};
 use collectibles::CollectiblesPlugin;
 use common::{
     inputs::InputMap,
+    rpc::RpcResultSender,
     sets::SetupSets,
     structs::{
-        AppConfig, AttachPoints, AvatarDynamicState, IVec2Arg, PreviewCommand, PreviewMode,
+        AppConfig, AttachPoints, AvatarDynamicState, CurrentRealm, IVec2Arg, PreviewMode,
         PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneLoadDistance,
-        SystemScene, Version, GROUND_RENDERLAYER,
+        StartupScene, StartupScenes, Version, GROUND_RENDERLAYER,
     },
-    util::{TaskCompat, TaskExt, TryPushChildrenEx, UtilsPlugin},
+    util::{TryPushChildrenEx, UtilsPlugin},
 };
 use dcl_wasm::init_runtime;
 use image_processing::ImageProcessingPlugin;
 use imposters::DclImposterPlugin;
 use notifications::plugin::NotificationsPlugin;
-use restricted_actions::{lookup_portable, RestrictedActionsPlugin};
+use restricted_actions::{process_startup_scenes, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
-use scene_runner::{
-    initialize_scene::{PortableScenes, PortableSource, TestingData},
-    update_world::mesh_collider::GroundCollider,
-    vec3_to_parcel, OutOfWorld, SceneRunnerPlugin,
-};
+use scene_runner::{initialize_scene::TestingData, vec3_to_parcel, OutOfWorld, SceneRunnerPlugin};
 use tracing::Level;
 
 use av::AVPlayerPlugin;
 use avatar::AvatarPlugin;
-use comms::{preview::handle_preview_socket, CommsPlugin};
+use comms::CommsPlugin;
 use console::{ConsolePlugin, DoAddConsoleCommand};
 use futures_lite::io::AsyncReadExt;
 use input_manager::InputManagerPlugin;
-use ipfs::{map_realm_name, CurrentRealm, IpfsAssetServer, IpfsIoPlugin};
+use ipfs::{map_realm_name, IpfsIoPlugin};
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use platform::default_camera_components;
+use scene_inspector::SceneInspectorPlugin;
 use social::SocialPlugin;
-use system_bridge::{settings::NewCameraEvent, NativeUi, SystemBridgePlugin};
+use system_bridge::{
+    settings::NewCameraEvent, NativeUi, SystemApi, SystemBridge, SystemBridgePlugin,
+};
 use system_ui::SystemUiPlugin;
 use texture_camera::TextureCameraPlugin;
 use tween::TweenPlugin;
 use ui_core::UiCorePlugin;
-use user_input::UserInputPlugin;
+use user_input::{avatar_movement::GroundCollider, UserInputPlugin};
 use uuid::Uuid;
 use visuals::VisualsPlugin;
 use wallet::WalletPlugin;
@@ -111,13 +111,34 @@ fn main_inner(
 
     let no_fog = false;
 
-    let ui_scene = if system_scene.is_empty() {
+    let startup_scenes = if system_scene.is_empty() {
         None
     } else {
         Some(system_scene.to_owned())
     };
-    if let Some(source) = ui_scene {
-        app.add_systems(Update, process_system_ui_scene);
+
+    let mut first = true;
+    let startup_scenes = startup_scenes
+        .map(|scenes| {
+            scenes
+                .split(';')
+                .map(|scene| {
+                    let scene = StartupScene {
+                        source: scene.to_owned(),
+                        super_user: first,
+                        preview: false,
+                        hot_reload: None,
+                        hash: None,
+                    };
+                    first = false;
+                    scene
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if !startup_scenes.is_empty() {
+        app.add_systems(Update, process_startup_scenes);
         app.insert_resource(NativeUi {
             login: false,
             emote_wheel: false,
@@ -128,11 +149,8 @@ fn main_inner(
             tooltips: false,
             loading_scene: false,
         });
-        app.insert_resource(SystemScene {
-            source: Some(source),
-            preview: false,
-            hot_reload: None,
-            hash: None,
+        app.insert_resource(StartupScenes {
+            scenes: startup_scenes,
         });
     } else {
         app.insert_resource(NativeUi {
@@ -284,7 +302,8 @@ fn main_inner(
         .add_plugins(TextureCameraPlugin)
         .add_plugins(ImageProcessingPlugin)
         .add_plugins(NotificationsPlugin)
-        .add_plugins(SystemBridgePlugin { bare: false });
+        .add_plugins(SystemBridgePlugin { bare: false })
+        .add_plugins(SceneInspectorPlugin);
 
     if !is_preview {
         app.add_plugins(DclImposterPlugin {
@@ -313,7 +332,19 @@ fn main_inner(
     app.add_console_command::<SceneThreadsCommand, _>(scene_threads);
     app.add_console_command::<FpsCommand, _>(set_fps);
 
+    app.add_systems(
+        Update,
+        extract_js_api.run_if(|mut once: Local<bool>| {
+            let run = !*once;
+            *once = true;
+            run
+        }),
+    );
+
     info!("Bevy-Explorer version {}", version);
+
+    let bridge_sender = app.world().resource::<SystemBridge>().sender.clone();
+    let _ = CONSOLE_BRIDGE_SENDER.set(bridge_sender);
 
     app.run();
 }
@@ -459,69 +490,19 @@ fn set_fps(mut input: ConsoleCommand<FpsCommand>, mut config: ResMut<AppConfig>)
     }
 }
 
-#[allow(clippy::type_complexity)]
-pub fn process_system_ui_scene(
-    mut system_scene: ResMut<SystemScene>,
-    mut task: Local<Option<Task<Result<(String, PortableSource), String>>>>,
-    mut done: Local<bool>,
-    mut portables: ResMut<PortableScenes>,
-    ipfas: IpfsAssetServer,
-    mut channel: Local<Option<tokio::sync::mpsc::UnboundedReceiver<PreviewCommand>>>,
-    mut writer: EventWriter<PreviewCommand>,
-) {
-    if let Some(command) = channel.as_mut().and_then(|rx| rx.try_recv().ok()) {
-        writer.write(command);
-        *done = false;
-        system_scene.hash = None;
-        return;
-    }
-
-    if *done || system_scene.source.is_none() {
-        return;
-    }
-
-    if task.is_none() {
-        *task = Some(IoTaskPool::get().spawn_compat(lookup_portable(
-            None,
-            system_scene.source.clone().unwrap(),
-            true,
-            ipfas.ipfs().clone(),
-        )));
-    }
-
-    let mut t = task.take().unwrap();
-    match t.complete() {
-        Some(Ok((hash, source))) => {
-            info!("added ui scene from {}", source.pid);
-            system_scene.hash = Some(hash.clone());
-            portables.0.extend([(hash, source)]);
-            *done = true;
-
-            if system_scene.preview {
-                let (sx, rx) = tokio::sync::mpsc::unbounded_channel();
-                IoTaskPool::get()
-                    .spawn(handle_preview_socket(
-                        system_scene.source.clone().unwrap(),
-                        sx.clone(),
-                    ))
-                    .detach();
-                *channel = Some(rx);
-                system_scene.hot_reload = Some(sx);
-            }
-        }
-        Some(Err(e)) => {
-            error!("failed to load ui scene: {e}");
-            *done = true;
-        }
-        None => *task = Some(t),
-    }
-}
-
 use once_cell::sync::OnceCell;
 use wasm_bindgen::prelude::*;
 
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = window, js_name = _buildEngineApi)]
+    fn build_engine_api(json: &str);
+}
+
 static WASM_ASSET_LOADER_HANDLE: OnceCell<bevy::asset::WasmLoaderHandle> = OnceCell::new();
 static INIT_DATA: OnceCell<AppConfig> = OnceCell::new();
+static CONSOLE_BRIDGE_SENDER: OnceCell<tokio::sync::mpsc::UnboundedSender<SystemApi>> =
+    OnceCell::new();
 
 /// call from a separate worker to initialize a channel for asset load processing
 #[wasm_bindgen]
@@ -580,6 +561,84 @@ pub fn engine_run(
     );
 }
 
+/// Send a console command to the engine from JavaScript.
+/// `command_line` is the full command string, e.g. `"/teleport 10 20"`.
+/// Returns a Promise that resolves with the command output or rejects with an error message.
+#[wasm_bindgen]
+pub async fn engine_console_command(command_line: String) -> Result<JsValue, JsValue> {
+    let mut parts = command_line.split_whitespace();
+    let Some(cmd) = parts.next() else {
+        return Err(JsValue::from_str("empty command"));
+    };
+    let cmd = if cmd.starts_with('/') {
+        cmd.to_string()
+    } else {
+        format!("/{cmd}")
+    };
+    let args: Vec<String> = parts.map(String::from).collect();
+
+    let Some(sender) = CONSOLE_BRIDGE_SENDER.get() else {
+        return Err(JsValue::from_str("engine not initialized"));
+    };
+
+    let (sx, rx) = RpcResultSender::channel();
+    sender
+        .send(SystemApi::ConsoleCommand(cmd, args, sx))
+        .map_err(|_| JsValue::from_str("engine channel closed"))?;
+
+    rx.await
+        .map_err(|_| JsValue::from_str("command response dropped"))?
+        .map(|s| JsValue::from_str(&s))
+        .map_err(|e| JsValue::from_str(&e))
+}
+
+/// Extract console command metadata from clap and store as JSON for the JS API.
+fn extract_js_api(config: Res<ConsoleConfiguration>) {
+    let commands: Vec<serde_json::Value> = config
+        .commands
+        .iter()
+        .map(|(name, cmd)| {
+            let trailing = cmd.is_trailing_var_arg_set();
+            let positional: Vec<_> = cmd
+                .get_arguments()
+                .filter(|a| a.get_long().is_none() && a.get_short().is_none())
+                .collect();
+            let last_id = positional.last().map(|a| a.get_id().as_str());
+            let args: Vec<serde_json::Value> = positional
+                .iter()
+                .map(|arg| {
+                    let id = arg.get_id().as_str();
+                    let kind = if trailing && Some(id) == last_id {
+                        "json"
+                    } else if id == "json" {
+                        "json"
+                    } else if id == "entity" {
+                        "entity"
+                    } else {
+                        "string"
+                    };
+                    let mut arg_json = serde_json::json!({
+                        "name": id,
+                        "kind": kind,
+                        "optional": !arg.is_required_set(),
+                    });
+                    if let Some(help) = arg.get_help() {
+                        arg_json["help"] = serde_json::Value::String(help.to_string());
+                    }
+                    arg_json
+                })
+                .collect();
+            let mut cmd_json = serde_json::json!({ "cmd": name, "args": args });
+            if let Some(about) = cmd.get_about() {
+                cmd_json["help"] = serde_json::Value::String(about.to_string());
+            }
+            cmd_json
+        })
+        .collect();
+    let json = serde_json::to_string(&commands).unwrap_or_default();
+    build_engine_api(&json);
+}
+
 pub fn update_winit_fps(config: Res<AppConfig>, mut winit: ResMut<WinitSettings>) {
     if config.is_changed() {
         let target = config.graphics.fps_target;
@@ -619,14 +678,14 @@ extern "C" {
 struct UrlParams {
     parcel: IVec2,
     server: String,
-    system_scene: Option<String>,
+    startup_scenes: Option<String>,
     preview: bool,
 }
 
 fn update_url_params(
     player: Query<&GlobalTransform, With<PrimaryUser>>,
     current_realm: Res<CurrentRealm>,
-    system_scene: Option<Res<SystemScene>>,
+    startup_scenes: Option<Res<StartupScenes>>,
     preview: Res<PreviewMode>,
     mut prev: Local<UrlParams>,
 ) {
@@ -634,13 +693,20 @@ fn update_url_params(
     let Some(server) = current_realm.about_url.strip_suffix("/about") else {
         return;
     };
-    let system_scene = system_scene.and_then(|s| s.source.clone());
+    let startup_scenes = startup_scenes.map(|s| {
+        let scenes = s
+            .scenes
+            .iter()
+            .map(|scene| scene.source.clone())
+            .collect::<Vec<_>>();
+        scenes.join(";")
+    });
     let preview = preview.is_preview;
 
     let params = UrlParams {
         parcel,
         server: server.to_owned(),
-        system_scene,
+        startup_scenes,
         preview,
     };
 
@@ -650,7 +716,7 @@ fn update_url_params(
             params.parcel.x,
             params.parcel.y,
             params.server,
-            params.system_scene,
+            params.startup_scenes,
             params.preview,
         );
     }

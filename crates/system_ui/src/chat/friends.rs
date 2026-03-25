@@ -141,7 +141,7 @@ pub fn show_conversation(
     }
 
     if let Ok(entry) = entry.single() {
-        commands.entity(entry).insert(Focus);
+        commands.entity(entry).try_insert(Focus);
     }
 
     if let Some((existing, _)) = existing_chats.iter().find(|(_, c)| c.address == friend) {
@@ -188,7 +188,7 @@ pub fn show_conversation(
 
     commands
         .entity(button_content.named("name"))
-        .insert(BoldUnread(friend));
+        .try_insert(BoldUnread(friend));
 
     let button = DuiButton {
         enabled: true,
@@ -217,7 +217,7 @@ pub fn show_conversation(
         return;
     };
 
-    commands.entity(new_tab).insert(PrivateChat {
+    commands.entity(new_tab).try_insert(PrivateChat {
         address: friend,
         history_receiver,
         wants_history_count: 10,
@@ -275,8 +275,8 @@ pub fn update_friends(
 
                     commands
                         .entity(components.named("name"))
-                        .insert(PendingProfileName(friend))
-                        .insert(BoldUnread(friend));
+                        .try_insert(PendingProfileName(friend))
+                        .try_insert(BoldUnread(friend));
                     components.root
                 })
                 .collect::<Vec<_>>();
@@ -316,8 +316,8 @@ pub fn update_friends(
 
                     commands
                         .entity(components.named("name"))
-                        .insert(PendingProfileName(friend))
-                        .insert(BoldUnread(friend));
+                        .try_insert(PendingProfileName(friend))
+                        .try_insert(BoldUnread(friend));
                     components.root
                 })
                 .collect::<Vec<_>>();
@@ -370,8 +370,8 @@ pub fn update_friends(
 
                     commands
                         .entity(components.named("name"))
-                        .insert(PendingProfileName(friend))
-                        .insert(BoldUnread(friend));
+                        .try_insert(PendingProfileName(friend))
+                        .try_insert(BoldUnread(friend));
                     components.root
                 })
                 .collect::<Vec<_>>();

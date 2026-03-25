@@ -62,7 +62,7 @@ impl SpawnScrollable for ChildSpawnerCommands<'_> {
         let mut content = Entity::PLACEHOLDER;
 
         self.spawn((bundle, scrollable))
-            .with_children(|commands| {
+            .try_with_children(|commands| {
                 commands
                     .spawn(Node {
                         width: panel_size.0,
@@ -71,7 +71,7 @@ impl SpawnScrollable for ChildSpawnerCommands<'_> {
                         flex_direction: FlexDirection::Column,
                         ..Default::default()
                     })
-                    .with_children(|commands| {
+                    .try_with_children(|commands| {
                         // TODO need one more layer for bidirectional scrolling
                         content = commands
                             .spawn(Node::default())
@@ -851,7 +851,7 @@ impl DuiTemplate for ScrollableTemplate {
         };
 
         commands
-            .insert(Node {
+            .try_insert(Node {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
                 min_width: Val::Percent(0.0),
@@ -861,7 +861,7 @@ impl DuiTemplate for ScrollableTemplate {
                 overflow: Overflow::clip(),
                 ..Default::default()
             })
-            .with_children(|c| {
+            .try_with_children(|c| {
                 c.spawn(Node {
                     width: panel_size.0,
                     height: panel_size.1,

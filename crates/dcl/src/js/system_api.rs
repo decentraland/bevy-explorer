@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, rc::Rc};
 use strum::IntoEnumIterator;
 use system_bridge::{
-    settings::SettingInfo, ChatMessage, HomeScene, HoverEvent, LiveSceneInfo,
+    settings::SettingInfo, AvatarModifierState, ChatMessage, HomeScene, HoverEvent, LiveSceneInfo,
     PermanentPermissionItem, PermissionRequest, SceneLoadingUi, SetAvatarData,
     SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
 };
@@ -755,4 +755,17 @@ pub async fn op_read_scene_loading_ui_stream(
     state.borrow_mut().put(receiver);
 
     res
+}
+
+pub async fn op_get_avatar_modifiers(
+    state: Rc<RefCell<impl State>>,
+) -> Result<Vec<AvatarModifierState>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetAvatarModifiers(sx))?;
+
+    Ok(rx.await?)
 }

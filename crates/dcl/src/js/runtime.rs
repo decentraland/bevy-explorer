@@ -1,6 +1,9 @@
 use anyhow::anyhow;
-use bevy::log::debug;
-use common::rpc::{ReadFileResponse, RpcCall, RpcResultSender};
+use bevy::{log::debug, math::f32};
+use common::{
+    rpc::{ReadFileResponse, RpcCall, RpcResultSender},
+    structs::TimeOfDay,
+};
 use dcl_component::{
     proto_components::sdk::components::PbRealmInfo, DclReader, FromDclReader, SceneComponentId,
     SceneEntityId,
@@ -115,4 +118,17 @@ pub async fn realm_information(
             .map_err(|_| anyhow!("failed to read component"));
     }
     anyhow::bail!("no realm info")
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorldTime {
+    pub seconds: f32,
+}
+
+pub async fn op_world_time(op_state: Rc<RefCell<impl State>>) -> Result<WorldTime, anyhow::Error> {
+    debug!("op_world_time");
+    let state = op_state.borrow();
+    let TimeOfDay { time } = state.borrow::<TimeOfDay>();
+    Ok(WorldTime { seconds: *time })
 }

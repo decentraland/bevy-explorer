@@ -2,6 +2,7 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use anyhow::anyhow;
 use bevy::log::debug;
+use common::structs::{GlobalCrdtStateUpdate, TimeOfDay};
 use dcl_component::{
     proto_components::sdk::components::PbPlayerIdentityData, DclReader, FromDclReader,
     SceneComponentId, SceneEntityId,
@@ -12,8 +13,7 @@ use tokio::sync::{mpsc::Receiver, Mutex};
 
 use crate::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
-    RendererResponse, RpcCalls, SceneElapsedTime, SceneId, SceneLogLevel, SceneLogMessage,
-    SceneResponse,
+    RendererResponse, RpcCalls, SceneElapsedTime, SceneLogLevel, SceneLogMessage, SceneResponse,
 };
 
 use super::interface::CrdtStore;
@@ -128,20 +128,16 @@ impl State for deno_core::OpState {
 pub fn init_state(
     state: &mut impl State,
     initial_crdt_store: CrdtStore,
-    scene_hash: String,
-    scene_id: SceneId,
+    scene_context: CrdtContext,
     storage_root: String,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     thread_sx: SceneResponseSender,
     thread_rx: Receiver<RendererResponse>,
-    global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
-    _inspect: bool,
-    testing: bool,
-    preview: bool,
+    global_update_receiver: tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
+    scene_origin: bevy::prelude::Vec3,
 ) {
-    let scene_context = CrdtContext::new(scene_id, scene_hash, testing, preview);
     state.put(scene_context);
     state.put(scene_js);
     state.put(storage_root);
@@ -154,6 +150,8 @@ pub fn init_state(
     state.put(RendererStore(initial_crdt_store));
     state.put(Vec::<SceneLogMessage>::default());
     state.put(SceneElapsedTime(0.0));
+    state.put(TimeOfDay { time: 0. });
+    state.put(dcl_component::SceneOrigin(scene_origin));
     if let Some(super_user) = super_user {
         state.put(SuperUserScene(super_user));
     }

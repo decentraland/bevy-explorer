@@ -206,7 +206,22 @@ function set_room_event_handler(room, handler) {
                     audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 }
 
-                track_rig_new(remote_track);
+                if (remote_participant.identity.endsWith("-streamer")) {
+                    if (remote_track.audioElement) {
+                        error(`Rebuilding audio element of ${remote_track.sid} for ${remote_participant.sid} (${remote_participant.identity}).`);
+                        const audioElement = remote_track.audioElement;
+                        delete remote_track.audioElement;
+                        remote_track.detach(audioElement);
+                    }
+                    const streamPlayerContainer = window.document.querySelector("#stream-player-container");
+                    if (streamPlayerContainer) {
+                        const audioElement = remote_track.attach();
+                        streamPlayerContainer.append(audioElement);
+                        remote_track.audioElement = audioElement;
+                    }
+                } else {
+                    track_rig_new(remote_track);
+                }
             } else if (remote_track.kind == "video") {
                 if (remote_track.videoElement) {
                     error(`Rebuilding video element of ${remote_track.sid} for ${remote_participant.sid} (${remote_participant.identity}).`);
@@ -239,6 +254,12 @@ function set_room_event_handler(room, handler) {
             log(`Unsubscribed to track ${remote_track.sid} of ${remote_participant.sid} (${remote_participant.identity}).`);
             if (remote_track.kind === "audio") {
                 track_rig_drop(remote_track);
+            }
+            if (remote_track.audioElement) {
+                const audioElement = remote_track.audioElement;
+                delete remote_track.audioElement;
+                remote_track.detach(audioElement);
+                audioElement.remove();
             }
 
             handler({
@@ -401,14 +422,12 @@ export function remote_track_publication_set_subscribed(remote_track_publication
     remote_track_publication.setSubscribed(subscribed);
 }
 
-
 /**
  * 
  * @param {livekit.RemoteTrackPublication} remote_track_publication 
  * @returns livekit.RemoteTrack | null
  */
 export function remote_track_publication_track(remote_track_publication) {
-    log(remote_track_publication);
     return remote_track_publication.track;
 }
 
@@ -512,4 +531,13 @@ export function remote_track_pan_and_volume(remote_track, pan, volume) {
     // }
 
     // log(`[${audioContext.state}] Set spatial audio for ${participantIdentity} : pan=${nodes.pannerNode.pan.value}, volume=${nodes.gainNode.gain.value}`);
+}
+
+/**
+ * 
+ * @param {LivekitClient.RemoteAudioTrack} remote_audio_track 
+ * @param {number} volume 
+ */
+export function remote_audio_track_set_volume(remote_audio_track, volume) {
+    remote_audio_track.setVolume(volume);
 }

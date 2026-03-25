@@ -1,6 +1,14 @@
-use std::{f32::consts::PI, num::ParseIntError, ops::Range, str::FromStr, sync::Arc};
+use std::{
+    f32::consts::PI,
+    marker::PhantomData,
+    num::ParseIntError,
+    ops::{Deref, Range},
+    str::FromStr,
+    sync::{atomic::AtomicU32, Arc},
+};
 
 use bevy::{
+    color::palettes,
     platform::collections::{HashMap, HashSet},
     prelude::*,
     render::view::RenderLayers,
@@ -345,6 +353,7 @@ pub struct AppConfig {
     pub scene_imposter_multisample: bool,
     pub scene_imposter_multisample_amount: f32,
     pub scene_imposter_bake: SceneImposterBake,
+    pub parcel_grass_setting: ParcelGrassSetting,
     pub sysinfo_visible: bool,
     pub scene_log_to_console: bool,
     pub max_avatars: usize,
@@ -375,6 +384,7 @@ impl Default for AppConfig {
             scene_imposter_multisample: false,
             scene_imposter_multisample_amount: 0.0,
             scene_imposter_bake: SceneImposterBake::Off,
+            parcel_grass_setting: Default::default(),
             sysinfo_visible: false,
             scene_log_to_console: false,
             max_avatars: 100,
@@ -672,6 +682,7 @@ impl SpawnPosition {
 #[derive(Deserialize, Debug, Clone)]
 pub struct SpawnPoint {
     pub name: Option<String>,
+    #[serde(default)]
     pub default: bool,
     pub position: SpawnPosition,
 }
@@ -689,6 +700,12 @@ pub struct SceneDisplay {
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
+pub struct SkyboxConfig {
+    pub fixed_time: Option<f32>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct SceneMeta {
     pub owner: Option<String>,
     pub display: Option<SceneDisplay>,
@@ -696,6 +713,7 @@ pub struct SceneMeta {
     pub scene: SceneMetaScene,
     pub runtime_version: Option<String>,
     pub spawn_points: Option<Vec<SpawnPoint>>,
+    pub skybox_config: Option<SkyboxConfig>,
     pub authoritative_multiplayer: Option<bool>,
 }
 
@@ -965,6 +983,15 @@ impl SceneImposterBake {
 #[derive(Resource, Default)]
 pub struct CursorLocks(pub HashSet<&'static str>);
 
+/// Controls engine-level overrides to avatar movement, independent of scene-driven movement.
+#[derive(Resource, Default)]
+pub struct EngineMovementControl {
+    /// Non-empty means collision/clipping is disabled (e.g. "noclip" from /idnoclip)
+    pub suppress_clipping: HashSet<&'static str>,
+    /// Non-empty means avatar physics movement systems are suppressed (e.g. "move_player_to" during interpolation)
+    pub suppress_avatar_physics: HashSet<&'static str>,
+}
+
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub enum MoveKind {
     #[default]
@@ -980,11 +1007,8 @@ pub enum MoveKind {
 
 #[derive(Component, Default)]
 pub struct AvatarDynamicState {
-    pub force: Vec2,
     pub velocity: Vec3,
     pub ground_height: f32,
-    pub tank: bool,
-    pub rotate: f32,
     pub jump_time: f32,
     pub move_kind: MoveKind,
 }
@@ -994,12 +1018,17 @@ pub enum PreviewCommand {
     ReloadScene { hash: String },
 }
 
-#[derive(Resource)]
-pub struct SystemScene {
-    pub source: Option<String>,
+pub struct StartupScene {
+    pub source: String,
+    pub super_user: bool,
     pub preview: bool,
     pub hot_reload: Option<tokio::sync::mpsc::UnboundedSender<PreviewCommand>>,
     pub hash: Option<String>,
+}
+
+#[derive(Resource)]
+pub struct StartupScenes {
+    pub scenes: Vec<StartupScene>,
 }
 
 #[derive(Resource, Default, Clone, Debug)]
@@ -1015,15 +1044,22 @@ pub struct SceneGlobalLight {
 
 #[derive(Resource)]
 pub struct TimeOfDay {
-    pub time: f32, // secs since midnight
-    pub target_time: Option<f32>,
-    pub speed: f32,
+    /// secs since midnight
+    pub time: f32,
 }
 
 impl TimeOfDay {
     pub fn elapsed_secs(&self) -> f32 {
         self.time
     }
+}
+
+/// Fixed time defined on `scene.json` `skyboxConfig`
+#[derive(Component)]
+#[component(immutable)]
+pub struct SceneTime {
+    /// secs since midnight
+    pub time: f32,
 }
 
 // porting aid, used to be one component
@@ -1113,4 +1149,145 @@ pub struct PreviewMode {
 #[derive(Resource, Default, Debug)]
 pub struct DebugInfo {
     pub info: HashMap<&'static str, String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub enum GlobalCrdtStateUpdate {
+    Crdt(Vec<u8>, dcl_component::Localizer),
+    Time(f32),
+}
+
+// used for responses to scenes which require strict monotonic timestamps
+// by convention we use T = the protobuf struct containing the timestamp (e.g. PbPointerEventsResult, PbTriggerAreaResult)
+#[derive(Resource)]
+pub struct MonotonicTimestamp<T>(AtomicU32, PhantomData<fn() -> T>);
+
+impl<T> Default for MonotonicTimestamp<T> {
+    fn default() -> Self {
+        Self(Default::default(), Default::default())
+    }
+}
+
+impl<T> MonotonicTimestamp<T> {
+    pub fn next_timestamp(&self) -> u32 {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ParcelGrassSetting {
+    Off,
+    #[cfg_attr(target_arch = "wasm32", default)]
+    Low,
+    Mid,
+    #[cfg_attr(not(target_arch = "wasm32"), default)]
+    High,
+}
+
+impl Deref for ParcelGrassSetting {
+    type Target = ParcelGrassConfig;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Off => &ParcelGrassConfig {
+                layers: 0,
+                subdivisions: 32,
+                y_displacement: 0.04,
+                root_color: Color::Srgba(ParcelGrassConfig::ROOT_COLOR),
+                tip_color: Color::Srgba(ParcelGrassConfig::TIP_COLOR),
+            },
+            Self::Low => &ParcelGrassConfig {
+                layers: 8,
+                subdivisions: 32,
+                y_displacement: 0.02,
+                root_color: Color::Srgba(ParcelGrassConfig::ROOT_COLOR),
+                tip_color: Color::Srgba(ParcelGrassConfig::TIP_COLOR),
+            },
+            Self::Mid => &ParcelGrassConfig {
+                layers: 16,
+                subdivisions: 32,
+                y_displacement: 0.02,
+                root_color: Color::Srgba(ParcelGrassConfig::ROOT_COLOR),
+                tip_color: Color::Srgba(ParcelGrassConfig::TIP_COLOR),
+            },
+            Self::High => &ParcelGrassConfig {
+                layers: 32,
+                subdivisions: 32,
+                y_displacement: 0.01,
+                root_color: Color::Srgba(ParcelGrassConfig::ROOT_COLOR),
+                tip_color: Color::Srgba(ParcelGrassConfig::TIP_COLOR),
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Resource, Serialize, Deserialize)]
+pub struct ParcelGrassConfig {
+    pub layers: u32,
+    pub subdivisions: u32,
+    pub y_displacement: f32,
+    pub root_color: Color,
+    pub tip_color: Color,
+}
+
+impl ParcelGrassConfig {
+    pub const ROOT_COLOR: Srgba = palettes::tailwind::LIME_800;
+    pub const TIP_COLOR: Srgba = palettes::tailwind::LIME_600;
+}
+
+impl Default for ParcelGrassConfig {
+    fn default() -> Self {
+        Self {
+            layers: 32,
+            subdivisions: 32,
+            y_displacement: 0.01,
+            root_color: Self::ROOT_COLOR.into(),
+            tip_color: Self::TIP_COLOR.into(),
+        }
+    }
+}
+
+#[derive(Resource, Default, Debug)]
+pub struct CurrentRealm {
+    pub about_url: String,
+    pub address: String,
+    pub config: ServerConfiguration,
+    pub comms: Option<CommsConfig>,
+    pub public_url: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CommsConfig {
+    pub healthy: bool,
+    pub protocol: String,
+    pub fixed_adapter: Option<String>,
+    pub adapter: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerConfiguration {
+    pub scenes_urn: Option<Vec<String>>,
+    pub realm_name: Option<String>,
+    pub network_id: Option<u32>,
+    pub city_loader_content_server: Option<String>,
+    pub map: Option<MapData>,
+    pub local_scene_parcels: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MapData {
+    pub minimap_enabled: Option<bool>,
+    pub sizes: Vec<Region>,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Region {
+    pub left: i32,
+    pub right: i32,
+    pub top: i32,
+    pub bottom: i32,
 }

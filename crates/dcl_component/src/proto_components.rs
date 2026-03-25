@@ -1,6 +1,6 @@
 use bevy::math::FloatOrd;
 
-use super::{FromDclReader, ToDclWriter};
+use super::{FromDclReader, GlobalCrdtData, Localizer, PositionFree, ToDclWriter};
 
 pub mod sdk {
     #[allow(clippy::all)]
@@ -123,6 +123,25 @@ impl DclProtoComponent for sdk::components::PbInputModifier {}
 impl DclProtoComponent for sdk::components::PbTriggerArea {}
 impl DclProtoComponent for sdk::components::PbTriggerAreaResult {}
 impl DclProtoComponent for sdk::components::PbGltfNodeModifiers {}
+impl DclProtoComponent for sdk::components::PbSkyboxTime {}
+impl DclProtoComponent for sdk::components::PbAvatarMovement {}
+impl DclProtoComponent for sdk::components::PbAvatarLocomotionSettings {}
+impl DclProtoComponent for sdk::components::PbAvatarMovementInfo {}
+impl DclProtoComponent for sdk::components::PbAssetLoad {}
+impl DclProtoComponent for sdk::components::PbAssetLoadLoadingState {}
+
+// PositionFree markers for types used with GlobalCrdtState::update_crdt
+// (these contain no embedded position data requiring localization)
+impl PositionFree for sdk::components::PbPlayerIdentityData {}
+impl PositionFree for sdk::components::PbAvatarBase {}
+impl PositionFree for sdk::components::PbAvatarEquippedData {}
+
+// GlobalCrdtData impl for PbAvatarMovementInfo (walk_target is a world-space position that needs localization)
+impl GlobalCrdtData for sdk::components::PbAvatarMovementInfo {
+    fn localizer() -> Localizer {
+        Localizer::AvatarMovementInfo
+    }
+}
 
 // VECTOR2 conversions
 impl Copy for common::Vector2 {}
@@ -171,7 +190,12 @@ impl std::ops::Add<common::Vector3> for common::Vector3 {
 impl common::Vector3 {
     // flip z coordinate for handedness
     pub fn world_vec_to_vec3(&self) -> bevy::prelude::Vec3 {
-        bevy::prelude::Vec3::new(self.x, self.y, -self.z)
+        let vec = bevy::prelude::Vec3::new(self.x, self.y, -self.z);
+        if vec.is_nan() {
+            bevy::prelude::Vec3::ZERO
+        } else {
+            vec
+        }
     }
 
     pub fn world_vec_from_vec3(vec3: &bevy::prelude::Vec3) -> Self {

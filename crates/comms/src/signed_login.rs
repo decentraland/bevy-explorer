@@ -3,9 +3,11 @@ use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
-use common::util::{TaskCompat, TaskExt};
+use common::{
+    structs::CurrentRealm,
+    util::{TaskCompat, TaskExt},
+};
 use http::Uri;
-use ipfs::CurrentRealm;
 use wallet::{
     signed_login::{signed_login, SignedLoginResponse},
     SignedLoginMeta, Wallet,

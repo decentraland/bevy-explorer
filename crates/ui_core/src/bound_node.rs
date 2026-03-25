@@ -283,7 +283,7 @@ impl DuiTemplate for DuiNodeBounds {
         mut props: bevy_dui::DuiProps,
         ctx: &mut bevy_dui::DuiContext,
     ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
-        commands.insert(NodeBounds {
+        commands.try_insert(NodeBounds {
             corner_size: props
                 .take_as::<Val>(ctx, "corner-size")?
                 .unwrap_or_default(),
@@ -311,10 +311,10 @@ impl DuiTemplate for DuiNodeBounds {
                 .unwrap_or_default(),
         });
         if let Some(styles) = props.take_as::<InteractStyles>(ctx, "styles")? {
-            commands.insert(styles);
+            commands.try_insert(styles);
         }
         if let Some(sounds) = props.take_as::<InteractSounds>(ctx, "sounds")? {
-            commands.insert(sounds);
+            commands.try_insert(sounds);
         }
         DuiBoundNode.render(commands, props, ctx)
     }
@@ -330,7 +330,7 @@ impl DuiTemplate for DuiBoundNode {
     ) -> Result<bevy_dui::NodeMap, anyhow::Error> {
         let image = props.take_as::<Handle<Image>>(ctx, "bound-image")?;
         let color = props.take_as::<Color>(ctx, "color")?;
-        commands.insert((BoundedNode { image, color }, BackgroundColor::DEFAULT));
+        commands.try_insert((BoundedNode { image, color }, BackgroundColor::DEFAULT));
         commands.remove::<ImageNode>();
         Ok(Default::default())
     }

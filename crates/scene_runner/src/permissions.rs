@@ -5,9 +5,10 @@ use bevy::{ecs::system::SystemParam, prelude::*};
 use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     rpc::{RpcResultReceiver, RpcResultSender},
-    structs::{AppConfig, PermissionType, PermissionUsed, PrimaryPlayerRes, SystemScene},
+    structs::{
+        AppConfig, CurrentRealm, PermissionType, PermissionUsed, PrimaryPlayerRes, StartupScenes,
+    },
 };
-use ipfs::CurrentRealm;
 use tokio::sync::oneshot::error::TryRecvError;
 
 pub struct PermissionRequest {
@@ -67,7 +68,7 @@ pub struct Permission<'w, 's, T: Send + Sync + 'static> {
     player: Res<'w, PrimaryPlayerRes>,
     scenes: Query<'w, 's, &'static RendererSceneContext>,
     manager: ResMut<'w, PermissionManager>,
-    system_scene: Option<Res<'w, SystemScene>>,
+    system_scenes: Option<Res<'w, StartupScenes>>,
     uses: EventWriter<'w, PermissionUsed>,
 }
 
@@ -92,10 +93,11 @@ impl<T: Send + Sync + 'static> Permission<'_, '_, T> {
     }
 
     fn is_system_scene(&self, hash: &str) -> bool {
-        self.system_scene
-            .as_ref()
-            .and_then(|ss| ss.hash.as_ref())
-            .is_some_and(|sh| sh == hash)
+        self.system_scenes.as_ref().is_some_and(|ss| {
+            ss.scenes
+                .iter()
+                .any(|scene| scene.hash.as_ref().is_some_and(|sh| sh == hash) && scene.super_user)
+        })
     }
 
     pub fn check(
