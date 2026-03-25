@@ -85,6 +85,10 @@ pub struct SceneUpdates {
     pub eligible_jobs: usize,
     pub loop_end_time: Instant,
     pub scene_queue: VecDeque<(Entity, FloatOrd)>,
+    /// Named scene entities that must be scheduled every frame (e.g. the
+    /// movement controller). These scenes bypass the `scene_threads` limit
+    /// but still occupy slots, preventing non-priority scenes from running.
+    pub priority_scenes: HashMap<&'static str, Entity>,
 }
 
 // safety: struct is sync except for the receiver.
@@ -249,6 +253,7 @@ impl Plugin for SceneRunnerPlugin {
             eligible_jobs: 0,
             scene_queue: Default::default(),
             loop_end_time: Instant::now(),
+            priority_scenes: Default::default(),
         });
 
         app.add_event::<LoadSceneEvent>();
@@ -687,13 +692,20 @@ fn send_scene_updates(
 ) {
     let updates = &mut *updates;
 
-    if updates.jobs_in_flight.len() >= config.scene_threads {
+    // Peek at the next scene before popping. Priority scenes bypass the thread
+    // limit (but still occupy slots, preventing non-priority scenes from
+    // running). Non-priority scenes respect the limit.
+    let Some(&(ent, _)) = updates.scene_queue.front() else {
+        return;
+    };
+
+    if updates.jobs_in_flight.len() >= config.scene_threads
+        && !updates.priority_scenes.values().any(|&e| e == ent)
+    {
         return;
     }
 
-    let Some((ent, _)) = updates.scene_queue.pop_front() else {
-        return;
-    };
+    updates.scene_queue.pop_front();
 
     let (_, mut context, handle, scene_transform, is_super) = scenes.get_mut(ent).unwrap();
 

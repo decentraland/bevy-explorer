@@ -609,6 +609,7 @@ pub(crate) fn initialize_scene(
     testing_data: Res<TestingData>,
     preview_mode: Res<PreviewMode>,
     su_bridge: Res<SystemBridge>,
+    time: Res<Time>,
 ) {
     for (root, mut state, initial_data, mut context, super_user) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript { .. }) || context.tick_number != 1 {
@@ -683,6 +684,9 @@ pub(crate) fn initialize_scene(
         // mark context as in flight so we wait for initial RPC requests
         context.in_flight = true;
         context.inspected = inspected;
+        // set last_sent so the scene doesn't get extreme starvation priority
+        // when it first becomes eligible after initialization completes
+        context.last_sent = time.elapsed_secs();
 
         commands
             .entity(root)
