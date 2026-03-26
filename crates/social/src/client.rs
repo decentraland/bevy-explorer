@@ -474,7 +474,7 @@ async fn social_socket_handler_inner(
                     let resp = service_module
                         .upsert_friendship(req)
                         .await
-                        .map_err(dbgerr)?;
+                        .map_err(|e| anyhow!("[social] upsert_friendship transport error: {e:?}"))?;
                     info!("[social] upsert_friendship response: {resp:?}");
                 }
                 query = query_rx.recv() => {
