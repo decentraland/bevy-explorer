@@ -102,11 +102,35 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
     }
 
     debug!("op_crdt_recv_from_renderer");
-    let receiver = op_state
-        .borrow_mut()
-        .borrow_mut::<Arc<Mutex<tokio::sync::mpsc::Receiver<RendererResponse>>>>()
-        .clone();
-    let response = receiver.lock().await.recv().await;
+
+    // Receive messages in a loop, handling any snapshot requests immediately (no RefMut held
+    // across the await point).  Exits with the first non-snapshot response.
+    let response = loop {
+        let receiver = op_state
+            .borrow_mut()
+            .borrow_mut::<Arc<Mutex<tokio::sync::mpsc::Receiver<RendererResponse>>>>()
+            .clone();
+        let response = receiver.lock().await.recv().await;
+
+        if let Some(RendererResponse::GetCrdtSnapshot) = &response {
+            let crdt_store = op_state.borrow_mut().take::<CrdtStore>();
+            let mut snapshot = crdt_store.clone();
+            op_state.borrow_mut().put(crdt_store);
+            // Merge renderer→scene components so the snapshot includes engine-managed
+            // values (EngineInfo, RaycastResult, etc.) alongside scene-set components.
+            let renderer_store = op_state.borrow_mut().take::<RendererStore>();
+            snapshot.merge_newer(renderer_store.0.clone());
+            op_state.borrow_mut().put(renderer_store);
+            let scene_id = op_state.borrow_mut().borrow::<CrdtContext>().scene_id;
+            op_state
+                .borrow_mut()
+                .borrow_mut::<SceneResponseSender>()
+                .try_send(SceneResponse::CrdtSnapshot(scene_id, snapshot))
+                .expect("failed to send crdt snapshot");
+            continue;
+        }
+        break response;
+    };
 
     let mut op_state = op_state.borrow_mut();
     #[cfg(feature = "span_scene_loop")]
@@ -114,7 +138,6 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
         let span = info_span!("js update").entered();
         op_state.put(span);
     }
-    op_state.put(receiver);
 
     let mut entity_map = op_state.take::<CrdtContext>();
     let mut renderer_state = op_state.take::<RendererStore>();
@@ -156,6 +179,8 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
             op_state.put(ShuttingDown);
             Default::default()
         }
+        // GetCrdtSnapshot is handled before this match in the loop above.
+        Some(RendererResponse::GetCrdtSnapshot) => unreachable!(),
     };
 
     let mut global_update_receiver =

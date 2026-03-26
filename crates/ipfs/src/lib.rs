@@ -1090,10 +1090,14 @@ impl AssetReader for IpfsIo {
         path: &'a std::path::Path,
     ) -> Result<impl Reader + 'a, bevy::asset::io::AssetReaderError> {
         platform::compat(async move {
-            let wrap_err = |e| {
-                bevy::asset::io::AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
-                    "w: {e}"
-                ))))
+            let wrap_err = |e: anyhow::Error| {
+                if e.to_string().contains("file not found") {
+                    bevy::asset::io::AssetReaderError::NotFound(path.to_owned())
+                } else {
+                    bevy::asset::io::AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
+                        "w: {e}"
+                    ))))
+                }
             };
 
             debug!("request: {:?}", path);

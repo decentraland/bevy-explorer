@@ -24,13 +24,9 @@ use crate::{
         gltf_container::mesh_to_parry_shape, mesh_renderer::truncated_cone::TruncatedCone,
         transform_and_parent::PostUpdateSets,
     },
-    ContainerEntity, DeletedSceneEntities, PrimaryUser, RendererSceneContext, SceneLoopSchedule,
-    SceneSets,
+    ContainerEntity, PrimaryUser, RendererSceneContext, SceneSets,
 };
-use common::{
-    dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
-    sets::SceneLoopSets,
-};
+use common::dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS};
 use console::DoAddConsoleCommand;
 use dcl::interface::ComponentPosition;
 use dcl_component::{
@@ -150,6 +146,9 @@ pub fn add_collider_systems<T: ColliderType>(app: &mut App) {
         update_collider_transforms::<T>.in_set(PostUpdateSets::ColliderUpdate),
     );
 
+    // clean up colliders from SceneColliderData whenever HasCollider is removed (including entity despawn)
+    app.add_observer(on_collider_removed::<T>);
+
     // show debugs whenever
     app.add_systems(Update, render_debug_colliders::<T>);
 }
@@ -173,13 +172,6 @@ impl Plugin for MeshColliderPlugin {
 
         // in postinit - update collider transforms
         add_collider_systems::<CtCollider>(app);
-
-        // collider deletion has to occur within the scene loop, as the DeletedSceneEntities resource is only
-        // valid within the loop
-        app.world_mut()
-            .resource_mut::<SceneLoopSchedule>()
-            .schedule
-            .add_systems(remove_deleted_colliders.in_set(SceneLoopSets::UpdateWorld));
 
         app.init_resource::<DebugColliders>();
         app.add_console_command::<DebugColliderCommand, _>(debug_colliders);
@@ -832,19 +824,6 @@ impl SceneColliderData {
         self.collider_state.remove(id);
     }
 
-    pub fn remove_colliders(&mut self, ids: &HashSet<SceneEntityId>) {
-        let remove_keys = self
-            .collider_state
-            .keys()
-            .filter(|k| ids.contains(&k.entity))
-            .cloned()
-            .collect::<Vec<_>>();
-
-        for key in remove_keys {
-            self.remove_collider(&key);
-        }
-    }
-
     pub fn get_collider_handle(&self, id: &ColliderId) -> Option<ColliderHandle> {
         self.scaled_collider.get_by_left(id).copied()
     }
@@ -1052,11 +1031,16 @@ fn update_colliders<T: ColliderType>(
     }
 }
 
-fn remove_deleted_colliders(
-    mut scene_data: Query<(&mut SceneColliderData, &DeletedSceneEntities)>,
+fn on_collider_removed<T: ColliderType>(
+    trigger: Trigger<OnRemove, HasCollider<T>>,
+    collider_query: Query<(&HasCollider<T>, &ContainerEntity)>,
+    mut scene_data: Query<&mut SceneColliderData>,
 ) {
-    for (mut scene_data, deleted_entities) in &mut scene_data {
-        scene_data.remove_colliders(&deleted_entities.0);
+    let entity = trigger.target();
+    if let Ok((has_collider, container)) = collider_query.get(entity) {
+        if let Ok(mut scene_data) = scene_data.get_mut(container.root) {
+            scene_data.remove_collider(&has_collider.0);
+        }
     }
 }
 

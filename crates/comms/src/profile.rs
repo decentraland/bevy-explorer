@@ -9,7 +9,7 @@ use bevy::{
 };
 use dcl::interface::CrdtType;
 use ethers_core::types::Address;
-use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer, IpfsIo, TypedIpfsRef};
+use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer, IpfsIo};
 use multihash_codetable::MultihashDigest;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -510,7 +510,6 @@ pub struct Deployment<'a> {
     ty: &'a str,
     pointers: Vec<String>,
     timestamp: u128,
-    content: Vec<TypedIpfsRef>,
     metadata: serde_json::Value,
 }
 
@@ -530,34 +529,13 @@ async fn deploy_profile(
         .unwrap()
         .as_millis();
 
-    let snapshots = profile
-        .content
-        .avatar
-        .snapshots
-        .as_mut()
-        .ok_or(anyhow!("no snapshots"))?;
-    if let Some(hash) = snapshots.body.rsplit('/').nth(1).map(ToOwned::to_owned) {
-        snapshots.body = hash;
-    }
-    if let Some(hash) = snapshots.face256.rsplit('/').nth(1).map(ToOwned::to_owned) {
-        snapshots.face256 = hash;
-    }
+    profile.content.avatar.snapshots = None;
 
     let deployment = serde_json::to_string(&Deployment {
         version: "v3",
         ty: "profile",
         pointers: vec![profile.content.eth_address.clone()],
         timestamp: unix_time,
-        content: vec![
-            TypedIpfsRef {
-                file: "body.png".to_owned(),
-                hash: snapshots.body.clone(),
-            },
-            TypedIpfsRef {
-                file: "face256.png".to_owned(),
-                hash: snapshots.face256.clone(),
-            },
-        ],
         metadata: serde_json::json!({
             "avatars": [
                 profile.content

@@ -1,31 +1,53 @@
 use std::ops::RangeInclusive;
 
 use bevy::{platform::collections::HashSet, prelude::debug};
+use serde::{Deserialize, Serialize};
 
 use crate::{SceneCensus, SceneId};
 use dcl_component::SceneEntityId;
 
 type LiveTable = Vec<(u16, bool)>;
 
+#[derive(Serialize, Deserialize)]
 pub struct CrdtContext {
     pub scene_id: SceneId,
     pub hash: String,
+    pub title: String,
     pub testing: bool,
     pub preview: bool,
+    #[serde(skip, default = "default_live_entities")]
     live_entities: LiveTable,
+    #[serde(skip)]
     nascent: HashSet<SceneEntityId>,
+    #[serde(skip)]
     death_row: HashSet<SceneEntityId>,
+    #[serde(skip, default = "default_last_new")]
     last_new: u16,
 }
 
+fn default_live_entities() -> LiveTable {
+    vec![(0, false); u16::MAX as usize]
+}
+
+fn default_last_new() -> u16 {
+    u16::MAX
+}
+
 impl CrdtContext {
-    pub fn new(scene_id: SceneId, hash: String, testing: bool, preview: bool) -> Self {
+    pub fn new(
+        scene_id: SceneId,
+        hash: String,
+        title: String,
+        testing: bool,
+        preview: bool,
+    ) -> Self {
         Self {
             scene_id,
             hash,
+            title,
             testing,
             preview,
-            live_entities: vec![(0, false); u16::MAX as usize],
+            live_entities: default_live_entities(),
             nascent: Default::default(),
             death_row: Default::default(),
             last_new: u16::MAX,
