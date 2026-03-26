@@ -351,8 +351,8 @@ naga = { git = "https://github.com/robtfm/wgpu", branch = "24.0.5-dcl" }
 # [patch."https://github.com/robtfm/bevy_dui"]
 # bevy_dui = { path = "../bevy_dui" }
 
-# [patch."https://github.com/robtfm/bevy_simple_text_input"]
-# bevy_simple_text_input = { path = "../bevy_simple_text_input" }
+[patch."https://github.com/robtfm/bevy_simple_text_input"]
+bevy_simple_text_input = { path = "../bevy_simple_text_input" }
 
 # [patch."https://github.com/robtfm/boimp"]
 # boimp = { path = "../boimp" }

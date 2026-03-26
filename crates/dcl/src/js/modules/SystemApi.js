@@ -365,109 +365,111 @@ module.exports.getHoverStream = async function() {
 
 // Social / Friends
 
-// get friendship events as a stream
-// type FriendshipEventUpdate = {
-//   type: "request" | "accept" | "reject" | "cancel" | "delete" | "block",
-//   address: string,
-//   // only for "request":
-//   name?: string,
-//   hasClaimedName?: bool,
-//   profilePictureUrl?: string,
-//   nameColor?: { r: number, g: number, b: number },
-//   createdAt?: number,
-//   message?: string,
-//   id?: string,
-// }
-module.exports.getFriendshipEventStream = async function() {
-  const rid = await Deno.core.ops.op_get_friendship_event_stream();
+module.exports.social = {
+  // get friendship events as a stream
+  // type FriendshipEventUpdate = {
+  //   type: "request" | "accept" | "reject" | "cancel" | "delete" | "block",
+  //   address: string,
+  //   // only for "request":
+  //   name?: string,
+  //   hasClaimedName?: bool,
+  //   profilePictureUrl?: string,
+  //   nameColor?: { r: number, g: number, b: number },
+  //   createdAt?: number,
+  //   message?: string,
+  //   id?: string,
+  // }
+  getFriendshipEventStream: async function() {
+    const rid = await Deno.core.ops.op_get_friendship_event_stream();
 
-  async function* streamGenerator() {
-    while (true) {
-      const next = await Deno.core.ops.op_read_friendship_event_stream(rid);
-      if (next === null) break;
-      yield next;
+    async function* streamGenerator() {
+      while (true) {
+        const next = await Deno.core.ops.op_read_friendship_event_stream(rid);
+        if (next === null) break;
+        yield next;
+      }
     }
-  }
 
-  return streamGenerator();
-}
+    return streamGenerator();
+  },
 
-// returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number } }[]
-module.exports.getFriends = async function() {
-    return await Deno.core.ops.op_get_friends();
-}
+  // returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number } }[]
+  getFriends: async function() {
+      return await Deno.core.ops.op_get_friends();
+  },
 
-// returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number } }[]
-module.exports.getMutualFriends = async function(address) {
-    return await Deno.core.ops.op_get_mutual_friends(address);
-}
+  // returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number } }[]
+  getMutualFriends: async function(address) {
+      return await Deno.core.ops.op_get_mutual_friends(address);
+  },
 
-// returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number }, createdAt: number, message?: string, id: string }[]
-module.exports.getSentFriendRequests = async function() {
-    return await Deno.core.ops.op_get_sent_friend_requests();
-}
+  // returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number }, createdAt: number, message?: string, id: string }[]
+  getSentFriendRequests: async function() {
+      return await Deno.core.ops.op_get_sent_friend_requests();
+  },
 
-// returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number }, createdAt: number, message?: string, id: string }[]
-module.exports.getReceivedFriendRequests = async function() {
-    return await Deno.core.ops.op_get_received_friend_requests();
-}
+  // returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number }, createdAt: number, message?: string, id: string }[]
+  getReceivedFriendRequests: async function() {
+      return await Deno.core.ops.op_get_received_friend_requests();
+  },
 
-// returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number }, status: "online" | "offline" | "away" }[]
-module.exports.getOnlineFriends = async function() {
-    return await Deno.core.ops.op_get_online_friends();
-}
+  // returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number }, status: "online" | "offline" | "away" }[]
+  getOnlineFriends: async function() {
+      return await Deno.core.ops.op_get_online_friends();
+  },
 
-// get friend connectivity updates as a stream
-// type FriendConnectivityEvent = {
-//   address: string,
-//   name: string,
-//   hasClaimedName: bool,
-//   profilePictureUrl: string,
-//   nameColor?: { r: number, g: number, b: number },
-//   status: "online" | "offline" | "away",
-// }
-module.exports.getFriendConnectivityStream = async function() {
-  const rid = await Deno.core.ops.op_get_friend_connectivity_stream();
+  // get friend connectivity updates as a stream
+  // type FriendConnectivityEvent = {
+  //   address: string,
+  //   name: string,
+  //   hasClaimedName: bool,
+  //   profilePictureUrl: string,
+  //   nameColor?: { r: number, g: number, b: number },
+  //   status: "online" | "offline" | "away",
+  // }
+  getFriendConnectivityStream: async function() {
+    const rid = await Deno.core.ops.op_get_friend_connectivity_stream();
 
-  async function* streamGenerator() {
-    while (true) {
-      const next = await Deno.core.ops.op_read_friend_connectivity_stream(rid);
-      if (next === null) break;
-      yield next;
+    async function* streamGenerator() {
+      while (true) {
+        const next = await Deno.core.ops.op_read_friend_connectivity_stream(rid);
+        if (next === null) break;
+        yield next;
+      }
     }
+
+    return streamGenerator();
+  },
+
+  // returns bool
+  getSocialInitialized: async function() {
+      return await Deno.core.ops.op_get_social_initialized();
+  },
+
+  // address: string, message?: string
+  sendFriendRequest: async function(address, message) {
+      await Deno.core.ops.op_send_friend_request(address, message);
+  },
+
+  // address: string
+  acceptFriendRequest: async function(address) {
+      await Deno.core.ops.op_accept_friend_request(address);
+  },
+
+  // address: string
+  rejectFriendRequest: async function(address) {
+      await Deno.core.ops.op_reject_friend_request(address);
+  },
+
+  // address: string
+  cancelFriendRequest: async function(address) {
+      await Deno.core.ops.op_cancel_friend_request(address);
+  },
+
+  // address: string
+  deleteFriend: async function(address) {
+      await Deno.core.ops.op_delete_friend(address);
   }
-
-  return streamGenerator();
-}
-
-// returns bool
-module.exports.getSocialInitialized = async function() {
-    return await Deno.core.ops.op_get_social_initialized();
-}
-
-// address: string, message?: string
-module.exports.sendFriendRequest = async function(address, message) {
-    await Deno.core.ops.op_send_friend_request(address, message);
-}
-
-// address: string
-module.exports.acceptFriendRequest = async function(address) {
-    await Deno.core.ops.op_accept_friend_request(address);
-}
-
-// address: string
-module.exports.rejectFriendRequest = async function(address) {
-    await Deno.core.ops.op_reject_friend_request(address);
-}
-
-// address: string
-module.exports.cancelFriendRequest = async function(address) {
-    await Deno.core.ops.op_cancel_friend_request(address);
-}
-
-// address: string
-module.exports.deleteFriend = async function(address) {
-    await Deno.core.ops.op_delete_friend(address);
 }
 
 // get scene loading UI state as a stream
