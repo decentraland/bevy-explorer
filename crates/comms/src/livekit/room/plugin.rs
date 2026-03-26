@@ -358,7 +358,7 @@ fn process_network_message(
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
-                    debug_panic!("Network message of {} was closed.", room.name())
+                    debug_panic!("Network message of {} was closed.", room.name());
                 }
             }
         }
