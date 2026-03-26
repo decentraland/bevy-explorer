@@ -29,7 +29,7 @@ use scene_runner::{
         transform_and_parent::PostUpdateSets,
         AddCrdtInterfaceExt,
     },
-    ContainingScene, SceneEntity,
+    ContainingScene, SceneEntity, SceneUpdates,
 };
 
 pub struct AvatarMovementPlugin;
@@ -55,6 +55,9 @@ impl Plugin for AvatarMovementPlugin {
                 ActivePlayerComponent::<AvatarMovement>::pick_latest_frame_only_by_priority,
                 ActivePlayerComponent::<AvatarLocomotionSettings>::pick_by_priority,
                 ActivePlayerComponent::<InputModifier>::pick_by_priority,
+                update_priority_scene.after(
+                    ActivePlayerComponent::<AvatarMovement>::pick_latest_frame_only_by_priority,
+                ),
             )
                 .in_set(SceneSets::PostLoop),
         );
@@ -70,6 +73,26 @@ impl Plugin for AvatarMovementPlugin {
                 .chain()
                 .in_set(PostUpdateSets::PlayerUpdate),
         );
+    }
+}
+
+fn update_priority_scene(
+    player: Query<&ActivePlayerComponent<AvatarMovement>, With<PrimaryUser>>,
+    mut updates: ResMut<SceneUpdates>,
+) {
+    let scene = player
+        .single()
+        .ok()
+        .map(|active| active.scene())
+        .filter(|&e| e != Entity::PLACEHOLDER);
+
+    match scene {
+        Some(scene) => {
+            updates.priority_scenes.insert("movement_controller", scene);
+        }
+        None => {
+            updates.priority_scenes.remove("movement_controller");
+        }
     }
 }
 
@@ -129,6 +152,12 @@ pub struct ActivePlayerComponent<C: Component> {
     scene_start_tick: u32,
     scene_is_portable: bool,
     pub component: C,
+}
+
+impl<C: Component> ActivePlayerComponent<C> {
+    pub fn scene(&self) -> Entity {
+        self.scene
+    }
 }
 
 impl<C: Component + Default> Default for ActivePlayerComponent<C> {

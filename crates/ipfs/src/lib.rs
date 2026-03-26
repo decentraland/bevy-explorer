@@ -56,7 +56,7 @@ use console::DoAddConsoleCommand;
 #[allow(unused_imports)]
 use platform::ReqwestBuilderExt;
 
-use self::ipfs_path::{normalize_path, IpfsPath, IpfsType};
+use self::ipfs_path::{normalize_path, IpfsKey, IpfsPath, IpfsType};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TypedIpfsRef {
@@ -397,6 +397,24 @@ impl Default for ServerAbout {
             lambdas: Default::default(),
         }
     }
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct ServerScenes {
+    scenes: Vec<ServerScene>,
+    total: usize,
+}
+
+// This replicates the structure of a `scene.json`, maybe extend if needed, but
+// for multi-scene worlds, only `entity_id` is needed
+#[expect(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct ServerScene {
+    #[serde(rename = "worldName")]
+    world_name: String,
+    deployer: String,
+    #[serde(rename = "entityId")]
+    entity_id: String,
 }
 
 pub struct IpfsIoPlugin {
@@ -817,6 +835,8 @@ impl IpfsIo {
             }
         }
 
+        self.update_scene_urns(&mut about, &new_realm).await?;
+
         let mut write = self.context.write().await;
         if let (Some(cs), Some(content)) = (&content_server_override, about.content.as_mut()) {
             content.public_url = format!("{cs}/content/");
@@ -1059,6 +1079,58 @@ impl IpfsIo {
             .and_then(|(_, _, about)| about.content.as_ref())
             .map(|content| format!("{}/entities/", &content.public_url))
     }
+
+    async fn update_scene_urns(
+        &self,
+        about: &mut ServerAbout,
+        new_realm: &str,
+    ) -> Result<(), anyhow::Error> {
+        let scenes_raw = self
+            .client
+            .get(format!("{new_realm}/scenes"))
+            .send()
+            .await
+            .map_err(|e| anyhow!(e))?;
+        if scenes_raw.status() == StatusCode::NOT_FOUND {
+            return Ok(());
+        } else if scenes_raw.status() != StatusCode::OK {
+            return Err(anyhow!("status: {}", scenes_raw.status()));
+        }
+        let scenes = scenes_raw
+            .json::<ServerScenes>()
+            .await
+            .map_err(|e| anyhow!(e))?;
+
+        if scenes.total > 0 {
+            if let Some(scenes_urn) = about.configurations.as_mut().and_then(|config| {
+                config
+                    .scenes_urn
+                    .as_mut()
+                    .filter(|scenes| !scenes.is_empty())
+            }) {
+                if scenes_urn.len() != scenes.total {
+                    let ipfs_path = IpfsPath::new_from_urn::<EntityDefinition>(&scenes_urn[0])?;
+
+                    *scenes_urn = scenes
+                        .scenes
+                        .into_iter()
+                        .map(|scene| {
+                            format!(
+                                "urn:decentraland:entity:{}{}",
+                                scene.entity_id,
+                                if let Some(base_url) = ipfs_path.get(&IpfsKey::BaseUrl) {
+                                    format!("?=&baseUrl={}", base_url)
+                                } else {
+                                    "".to_owned()
+                                }
+                            )
+                        })
+                        .collect();
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 pub type ActiveEntityTask = Task<Result<Vec<EntityDefinition>, anyhow::Error>>;
@@ -1090,10 +1162,14 @@ impl AssetReader for IpfsIo {
         path: &'a std::path::Path,
     ) -> Result<impl Reader + 'a, bevy::asset::io::AssetReaderError> {
         platform::compat(async move {
-            let wrap_err = |e| {
-                bevy::asset::io::AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
-                    "w: {e}"
-                ))))
+            let wrap_err = |e: anyhow::Error| {
+                if e.to_string().contains("file not found") {
+                    bevy::asset::io::AssetReaderError::NotFound(path.to_owned())
+                } else {
+                    bevy::asset::io::AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
+                        "w: {e}"
+                    ))))
+                }
             };
 
             debug!("request: {:?}", path);

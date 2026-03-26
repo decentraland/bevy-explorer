@@ -260,7 +260,65 @@ export function start() {
     return "unknown";
   })();
 
+  // Callback invoked by Rust once console command metadata is available.
+  window._buildEngineApi = (json) => {
+    try {
+      const api = JSON.parse(json);
+      window.engine = {};
+      for (const cmd of api) {
+        const jsName = cmd.cmd
+          .replace(/^\//, '')
+          .replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+        const paramNames = cmd.args.map(a => a.name);
+        const body = [
+          `var parts = [${JSON.stringify(cmd.cmd)}];`,
+          `var defs = ${JSON.stringify(cmd.args)};`,
+          `for (var i = 0; i < defs.length; i++) {`,
+          `  var val = arguments[i];`,
+          `  if (val === undefined) { if (!defs[i].optional) throw new Error(${JSON.stringify(jsName)} + ": missing arg '" + defs[i].name + "'"); break; }`,
+          `  parts.push(defs[i].kind === 'json' ? JSON.stringify(val) : String(val));`,
+          `}`,
+          `return window.engine_console_command(parts.join(' ')).then(function(r) { try { return JSON.parse(r); } catch(e) { return r; } });`,
+        ].join('\n');
+        const fn = new Function(...paramNames, body);
+        const sig = cmd.args.map(a => {
+          const name = a.kind === 'json' ? `${a.name}: object` : a.name;
+          return a.optional ? `[${name}]` : `<${name}>`;
+        }).join(', ');
+        fn._sig = `(${sig})`;
+        fn._help = cmd.help || '';
+        fn.toString = () => `${jsName}${fn._sig}${fn._help ? ' — ' + fn._help : ''}`;
+        window.engine[jsName] = fn;
+      }
+      window.engine.help = (name) => {
+        if (!name) {
+          const lines = ['Available commands:'];
+          for (const [k, v] of Object.entries(window.engine)) {
+            if (typeof v === 'function' && v._help) lines.push(`  ${k} - ${v._help}`);
+          }
+          return lines.join('\n');
+        }
+        const fn = window.engine[name];
+        if (!fn?._sig) return `Unknown command: ${name}`;
+        return `${name}${fn._sig}\n${fn._help || ''}`;
+      };
+    } catch (e) {
+      console.warn('Failed to build engine API:', e);
+    }
+    delete window._buildEngineApi;
+  };
+
   engine_run(platform, realmValue, positionValue, systemScene, true, preview, 1e7);
   window.engine_console_command = engine_console_command;
-  setTimeout(showCanvas,200)
+  window.loadSceneUtils = () => {
+    return new Promise((resolve, reject) => {
+      const basePath = window.location.pathname.replace(/\/$/, '');
+      const s = document.createElement('script');
+      s.src = new URL(`${basePath}/sceneUtils.js`, window.location.origin);
+      s.onload = () => { console.log('sceneUtils loaded'); resolve(); };
+      s.onerror = () => reject(new Error('failed to load sceneUtils.js'));
+      document.head.appendChild(s);
+    });
+  };
+  setTimeout(showCanvas, 200);
 }

@@ -142,6 +142,8 @@ impl DclProtoComponent for sdk::components::PbSkyboxTime {}
 impl DclProtoComponent for sdk::components::PbAvatarMovement {}
 impl DclProtoComponent for sdk::components::PbAvatarLocomotionSettings {}
 impl DclProtoComponent for sdk::components::PbAvatarMovementInfo {}
+impl DclProtoComponent for sdk::components::PbAssetLoad {}
+impl DclProtoComponent for sdk::components::PbAssetLoadLoadingState {}
 
 // PositionFree markers for types used with GlobalCrdtState::update_crdt
 // (these contain no embedded position data requiring localization)

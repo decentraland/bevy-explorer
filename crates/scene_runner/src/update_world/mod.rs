@@ -13,9 +13,12 @@ use bevy::{
 
 use dcl::{
     crdt::{growonly::CrdtGOState, lww::CrdtLWWState},
-    interface::{ComponentPosition, CrdtStore, CrdtType},
+    interface::{ComponentPosition, CrdtStore},
 };
-use dcl_component::{DclReader, FromDclReader, SceneComponentId};
+use dcl_component::{
+    component_name_registry::{derive_component_name, make_proto_closures},
+    ComponentNameRegistry, CrdtType, DclReader, FromDclReader, SceneComponentId,
+};
 use scene_material::SceneMaterial;
 
 use crate::{update_world::trigger_area::TriggerAreaPlugin, ContainerEntity};
@@ -198,7 +201,15 @@ pub trait AddCrdtInterfaceExt {
         position: ComponentPosition,
     );
 
-    fn add_crdt_lww_component<D: FromDclReader + std::fmt::Debug, C: Component + TryFrom<D>>(
+    fn add_crdt_lww_component<
+        D: FromDclReader
+            + std::fmt::Debug
+            + prost::Message
+            + Default
+            + serde::Serialize
+            + serde::de::DeserializeOwned,
+        C: Component + TryFrom<D>,
+    >(
         &mut self,
         id: SceneComponentId,
         position: ComponentPosition,
@@ -206,7 +217,12 @@ pub trait AddCrdtInterfaceExt {
         <C as TryFrom<D>>::Error: std::fmt::Display;
 
     fn add_crdt_go_component<
-        D: FromDclReader + std::fmt::Debug,
+        D: FromDclReader
+            + std::fmt::Debug
+            + prost::Message
+            + Default
+            + serde::Serialize
+            + serde::de::DeserializeOwned,
         C: Component<Mutability = Mutable> + DerefMut<Target = VecDeque<D>> + Default,
     >(
         &mut self,
@@ -233,7 +249,15 @@ impl AddCrdtInterfaceExt for App {
         assert!(existing.is_none(), "duplicate registration for {id:?}");
     }
 
-    fn add_crdt_lww_component<D: FromDclReader + std::fmt::Debug, C: Component + TryFrom<D>>(
+    fn add_crdt_lww_component<
+        D: FromDclReader
+            + std::fmt::Debug
+            + prost::Message
+            + Default
+            + serde::Serialize
+            + serde::de::DeserializeOwned,
+        C: Component + TryFrom<D>,
+    >(
         &mut self,
         id: SceneComponentId,
         position: ComponentPosition,
@@ -241,6 +265,17 @@ impl AddCrdtInterfaceExt for App {
         <C as TryFrom<D>>::Error: std::fmt::Display,
     {
         self.add_crdt_lww_interface::<D>(id, position);
+        // register in ComponentNameRegistry for inspection
+        let (inspect, write) = make_proto_closures::<D>();
+        self.world_mut()
+            .resource_mut::<ComponentNameRegistry>()
+            .register(
+                derive_component_name::<D>(),
+                id,
+                CrdtType::LWW(position),
+                inspect,
+                Some(write),
+            );
         // add a system to process the update
         self.world_mut()
             .resource_mut::<SceneLoopSchedule>()
@@ -254,7 +289,12 @@ impl AddCrdtInterfaceExt for App {
     }
 
     fn add_crdt_go_component<
-        D: FromDclReader + std::fmt::Debug,
+        D: FromDclReader
+            + std::fmt::Debug
+            + prost::Message
+            + Default
+            + serde::Serialize
+            + serde::de::DeserializeOwned,
         C: Component<Mutability = Mutable> + DerefMut<Target = VecDeque<D>> + Default,
     >(
         &mut self,
@@ -271,6 +311,18 @@ impl AddCrdtInterfaceExt for App {
         );
 
         assert!(existing.is_none(), "duplicate registration for {id:?}");
+
+        // register in ComponentNameRegistry for inspection
+        let (inspect, write) = make_proto_closures::<D>();
+        self.world_mut()
+            .resource_mut::<ComponentNameRegistry>()
+            .register(
+                derive_component_name::<D>(),
+                id,
+                CrdtType::GO(position),
+                inspect,
+                Some(write),
+            );
 
         self.world_mut()
             .resource_mut::<SceneLoopSchedule>()

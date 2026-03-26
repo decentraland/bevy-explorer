@@ -461,8 +461,13 @@ pub(crate) fn load_scene_javascript(
 
         if let Some(serialized_crdt) = maybe_serialized_crdt {
             // add main.crdt
-            let mut context =
-                CrdtContext::new(scene_id, renderer_context.hash.clone(), false, false);
+            let mut context = CrdtContext::new(
+                scene_id,
+                renderer_context.hash.clone(),
+                renderer_context.title.clone(),
+                false,
+                false,
+            );
             let mut stream = DclReader::new(&serialized_crdt);
             initial_crdt.process_message_stream(
                 &mut context,
@@ -604,6 +609,7 @@ pub(crate) fn initialize_scene(
     testing_data: Res<TestingData>,
     preview_mode: Res<PreviewMode>,
     su_bridge: Res<SystemBridge>,
+    time: Res<Time>,
 ) {
     for (root, mut state, initial_data, mut context, super_user) in loading_scenes.iter_mut() {
         if !matches!(state.as_mut(), SceneLoading::Javascript { .. }) || context.tick_number != 1 {
@@ -649,25 +655,28 @@ pub(crate) fn initialize_scene(
                 .map(|(id, interface)| (*id, interface.crdt_type())),
         ));
 
-        let scene_id = context.scene_id;
-
         let inspected = testing_data
             .inspect_hash
             .as_ref()
             .is_some_and(|inspect_hash| inspect_hash == &context.hash);
 
+        let scene_context = CrdtContext::new(
+            context.scene_id,
+            context.hash.clone(),
+            context.title.clone(),
+            testing_data.test_mode,
+            preview_mode.is_preview,
+        );
+
         let main_sx = spawn_scene(
             context.crdt_store.clone(),
-            context.hash.clone(),
+            scene_context,
             js_file.clone(),
             crdt_component_interfaces,
             thread_sx,
             global_updates,
-            scene_id,
             context.storage_root.clone(),
             inspected,
-            testing_data.test_mode,
-            preview_mode.is_preview,
             super_user.map(|_| su_bridge.sender.clone()),
             scene_origin,
         );
@@ -675,6 +684,9 @@ pub(crate) fn initialize_scene(
         // mark context as in flight so we wait for initial RPC requests
         context.in_flight = true;
         context.inspected = inspected;
+        // set last_sent so the scene doesn't get extreme starvation priority
+        // when it first becomes eligible after initialization completes
+        context.last_sent = time.elapsed_secs();
 
         commands
             .entity(root)
@@ -729,6 +741,10 @@ impl ScenePointers {
     }
 
     pub fn get(&self, parcel: impl Borrow<IVec2>) -> Option<&PointerResult> {
+        if self.realm_bounds.0.cmpgt(self.realm_bounds.1).any() {
+            // Invalid realm or still being loaded
+            return None;
+        }
         let parcel: &IVec2 = parcel.borrow();
         if parcel.cmplt(self.realm_bounds.0).any() || parcel.cmpgt(self.realm_bounds.1).any() {
             return Some(&PointerResult::NOTHING);

@@ -2,6 +2,16 @@ use crate::WorkerContext;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
+pub fn op_log(state: &WorkerContext, message: String) {
+    dcl::js::op_log(state.rc(), message);
+}
+
+#[wasm_bindgen]
+pub fn op_error(state: &WorkerContext, message: String) {
+    dcl::js::op_error(state.rc(), message);
+}
+
+#[wasm_bindgen]
 pub fn op_crdt_send_to_renderer(op_state: &WorkerContext, messages: js_sys::ArrayBuffer) {
     let view = js_sys::Uint8Array::new(&messages);
     dcl::js::engine::crdt_send_to_renderer(op_state.rc(), &view.to_vec())
