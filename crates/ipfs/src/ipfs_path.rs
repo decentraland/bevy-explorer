@@ -34,6 +34,7 @@ use std::{
     collections::BTreeMap,
     ffi::OsStr,
     iter::Peekable,
+    ops::Deref,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -537,6 +538,10 @@ impl IpfsPath {
         } else {
             None
         }
+    }
+
+    pub fn get(&self, key: &IpfsKey) -> Option<&str> {
+        self.key_values.get(key).map(Deref::deref)
     }
 }
 
