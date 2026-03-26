@@ -431,9 +431,7 @@ fn subscribe_to_voice(
     let (room_entity, address, _) = input;
 
     let Ok((room, maybe_hosting)) = rooms.get(room_entity) else {
-        error!("{} is not an well formed room.", room_entity);
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("{} is not an well formed room.", room_entity);
     };
 
     let Some(hosting) = maybe_hosting else {
@@ -489,9 +487,7 @@ fn unsubscribe_to_voice(
     tracks: Query<Entity, With<track::Microphone>>,
 ) {
     let Ok((room, maybe_hosting)) = rooms.get(room_entity) else {
-        error!("{} is not an well formed room.", room_entity);
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("{} is not an well formed room.", room_entity);
     };
 
     let Some(hosting) = maybe_hosting else {
@@ -534,7 +530,6 @@ fn unsubscribe_to_voice(
 }
 
 fn verify_room_tasks(
-    mut commands: Commands,
     rooms: Query<&mut RoomTasks, With<LivekitRoom>>,
     livekit_runtime: Res<LivekitRuntime>,
 ) {
@@ -551,9 +546,7 @@ fn verify_room_tasks(
                         error!("Failed to complete room task due to {err}.");
                     }
                     Err(err) => {
-                        error!("Failed to pull RoomTask due to '{err}'.");
-                        commands.send_event(AppExit::from_code(1));
-                        return;
+                        debug_panic!("Failed to pull RoomTask due to '{err}'.");
                     }
                 }
             } else {

@@ -403,7 +403,7 @@ fn someone_wants_to_watch_stream(
 
 fn noone_is_watching_stream(
     trigger: Trigger<OnRemove, StreamBroadcast>,
-    mut commands: Commands,
+    #[cfg(not(target_arch = "wasm32"))] mut commands: Commands,
     participants: Query<(&LivekitParticipant, Option<&Publishing>), With<Streamer>>,
     tracks: Query<&LivekitTrack>,
     livekit_runtime: Res<LivekitRuntime>,
