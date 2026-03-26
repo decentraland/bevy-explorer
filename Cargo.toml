@@ -155,7 +155,7 @@ bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = 
 bevy_simple_text_input = { git = "https://github.com/robtfm/bevy_simple_text_input", features = [
   "clipboard",
 ], branch = "0.16" }
-directories = "5"
+directories = "6"
 uuid = { version = "1.7", features = ["v4"] }
 build-time = "0.1.3"
 async-tungstenite = { version = "0.25", features = ["async-native-tls"] }
