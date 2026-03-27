@@ -32,10 +32,13 @@ fn dynamic_nametag_position(
         let head_position = head_position_gt.compute_transform();
         let head_aabb = aabbs.get(attach_points.head).ok();
 
-        let Some(highest_y) = [FloatOrd(nametag_offset(head_position_gt, head_aabb))]
-            .into_iter()
-            .max()
-        else {
+        let Some(highest_y) = [FloatOrd(nametag_offset(
+            head_position_gt,
+            &position.translation,
+            head_aabb,
+        ))]
+        .into_iter()
+        .max() else {
             unreachable!("List is never empty.");
         };
 
@@ -55,13 +58,18 @@ fn dynamic_nametag_position(
     }
 }
 
-fn nametag_offset(global_transform: &GlobalTransform, maybe_aabb: Option<&Aabb>) -> f32 {
+fn nametag_offset(
+    global_transform: &GlobalTransform,
+    root_position: &Vec3,
+    maybe_aabb: Option<&Aabb>,
+) -> f32 {
     let transform = global_transform.compute_transform();
+    let y = transform.translation.y - root_position.y;
     if let Some(aabb) = maybe_aabb {
         let model_radius = global_transform.radius_vec3a(aabb.half_extents);
-        transform.translation.y + model_radius + 0.125
+        y + model_radius + 0.125
     } else {
-        transform.translation.y + 40. * transform.scale.y
+        y + 40. * transform.scale.y
     }
 }
 
