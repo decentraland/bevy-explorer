@@ -12,13 +12,13 @@ macro_rules! debug_panic {
     ($($content:expr),+) => {
         debug_panic!(keyword: return, $($content),+);
     };
-    (keyword: $never:tt, $($content:expr),+) => {
+    (keyword: $branch:tt, $($content:expr),+) => {
         #[cfg(debug_assertions)]
         panic!($($content),+);
         #[cfg(not(debug_assertions))]
         {
             error!($($content),+);
-            $never;
+            $branch;
         }
     };
 }
