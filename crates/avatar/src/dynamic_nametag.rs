@@ -39,39 +39,11 @@ fn dynamic_nametag_position(
             head_position.translation + Vec3::Y,
             palettes::basic::RED,
         );
-        let right_hand = global_transforms
-            .get(attach_points.right_hand)
-            .map(|gt| gt.compute_transform())
-            .unwrap_or(position);
-        gizmos.arrow(
-            right_hand.translation,
-            right_hand.translation + Vec3::Y,
-            palettes::basic::RED,
-        );
-        let left_hand = global_transforms
-            .get(attach_points.left_hand)
-            .map(|gt| gt.compute_transform())
-            .unwrap_or(position);
-        gizmos.arrow(
-            left_hand.translation,
-            left_hand.translation + Vec3::Y,
-            palettes::basic::RED,
-        );
 
-        let Some(highest_y) = [
-            FloatOrd(nametag_offset(
-                head_position.translation.y - position.translation.y,
-                head_position.scale.y,
-            )),
-            FloatOrd(nametag_offset(
-                right_hand.translation.y - position.translation.y,
-                right_hand.scale.y,
-            )),
-            FloatOrd(nametag_offset(
-                left_hand.translation.y - position.translation.y,
-                left_hand.scale.y,
-            )),
-        ]
+        let Some(highest_y) = [FloatOrd(nametag_offset(
+            head_position.translation.y - position.translation.y,
+            head_position.scale.y,
+        ))]
         .into_iter()
         .max() else {
             unreachable!("List is never empty.");
@@ -80,7 +52,11 @@ fn dynamic_nametag_position(
         let Ok(mut nametag_transform) = transforms.get_mut(attach_points.nametag) else {
             panic!("Nametag must have Transform.");
         };
-        nametag_transform.translation = Vec3::new(0., highest_y.0, 0.);
+        nametag_transform.translation = Vec3::new(
+            head_position.translation.x - position.translation.x,
+            highest_y.0,
+            head_position.translation.z - position.translation.z,
+        );
         gizmos.arrow(
             position.translation + nametag_transform.translation,
             position.translation + nametag_transform.translation + Vec3::Y,
