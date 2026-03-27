@@ -469,6 +469,21 @@ module.exports.social = {
   // address: string
   deleteFriend: async function(address) {
       await Deno.core.ops.op_delete_friend(address);
+  },
+
+  // address: string
+  blockUser: async function(address) {
+      await Deno.core.ops.op_block_user(address);
+  },
+
+  // address: string
+  unblockUser: async function(address) {
+      await Deno.core.ops.op_unblock_user(address);
+  },
+
+  // returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number } }[]
+  getBlockedUsers: async function() {
+      return await Deno.core.ops.op_get_blocked_users();
   }
 }
 

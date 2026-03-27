@@ -7,9 +7,9 @@ use common::util::AsH160;
 use dcl_component::proto_components::social_service::v2::{
     friendship_update, paginated_friendship_requests_response,
     upsert_friendship_payload::{self, AcceptPayload, CancelPayload, DeletePayload, RejectPayload, RequestPayload},
-    ConnectivityStatus, FriendProfile, FriendshipRequestResponse, GetFriendshipRequestsPayload,
-    GetFriendsPayload, GetMutualFriendsPayload, Pagination, SocialServiceClient, SocialServiceClientDefinition,
-    UpsertFriendshipPayload, User,
+    BlockUserPayload, ConnectivityStatus, FriendProfile, FriendshipRequestResponse, GetBlockedUsersPayload,
+    GetFriendshipRequestsPayload, GetFriendsPayload, GetMutualFriendsPayload, Pagination,
+    SocialServiceClient, SocialServiceClientDefinition, UnblockUserPayload, UpsertFriendshipPayload, User,
 };
 use dcl_rpc::{
     client::RpcClient,
@@ -24,6 +24,17 @@ use crate::DirectChatMessage;
 pub enum SocialQuery {
     GetMutualFriends {
         address: String,
+        response: tokio::sync::oneshot::Sender<Result<Vec<FriendProfile>, String>>,
+    },
+    BlockUser {
+        address: String,
+        response: tokio::sync::oneshot::Sender<Result<(), String>>,
+    },
+    UnblockUser {
+        address: String,
+        response: tokio::sync::oneshot::Sender<Result<(), String>>,
+    },
+    GetBlockedUsers {
         response: tokio::sync::oneshot::Sender<Result<Vec<FriendProfile>, String>>,
     },
 }
@@ -175,6 +186,40 @@ impl SocialClientHandler {
         Ok(rx)
     }
 
+    pub fn block_user(
+        &self,
+        address: String,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.query_sender.send(SocialQuery::BlockUser {
+            address,
+            response: tx,
+        })?;
+        Ok(rx)
+    }
+
+    pub fn unblock_user(
+        &self,
+        address: String,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.query_sender.send(SocialQuery::UnblockUser {
+            address,
+            response: tx,
+        })?;
+        Ok(rx)
+    }
+
+    pub fn get_blocked_users(
+        &self,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<FriendProfile>, String>>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.query_sender.send(SocialQuery::GetBlockedUsers {
+            response: tx,
+        })?;
+        Ok(rx)
+    }
+
     pub fn chat(&self, _address: Address, _message: String) -> Result<(), anyhow::Error> {
         // DM chat not supported in V2 (no Matrix)
         Err(anyhow!("chat not available in V2"))
@@ -270,8 +315,18 @@ impl SocialClientHandler {
                             };
                             self.received_requests.remove(&address);
                         }
-                        friendship_update::Update::Block(_) => {
-                            // TODO: handle block events
+                        friendship_update::Update::Block(body) => {
+                            let Some(address) =
+                                body.user.as_ref().and_then(|u| u.address.as_h160())
+                            else {
+                                warn!("invalid block event (no address): {body:?}");
+                                continue;
+                            };
+                            // When someone blocks us, remove them from friends and requests
+                            self.friends.remove(&address);
+                            self.friend_status.remove(&address);
+                            self.sent_requests.remove(&address);
+                            self.received_requests.remove(&address);
                         }
                     }
                 }
@@ -507,6 +562,121 @@ async fn social_socket_handler_inner(
                             if result.is_ok() {
                                 info!("[social] getMutualFriends: {} mutual friends", all_friends.len());
                                 let _ = response.send(Ok(all_friends));
+                            } else {
+                                let _ = response.send(result);
+                            }
+                        }
+                        SocialQuery::BlockUser { address, response } => {
+                            info!("[social] blockUser request for {address}");
+                            match service_module.block_user(BlockUserPayload {
+                                user: Some(User { address: address.clone() }),
+                            }).await {
+                                Ok(resp) => {
+                                    use dcl_component::proto_components::social_service::v2::block_user_response::Response;
+                                    match resp.response {
+                                        Some(Response::Ok(_)) => {
+                                            info!("[social] blockUser success for {address}");
+                                            let _ = response.send(Ok(()));
+                                        }
+                                        Some(Response::InternalServerError(e)) => {
+                                            let msg = e.message.unwrap_or_default();
+                                            warn!("[social] blockUser internal error: {msg}");
+                                            let _ = response.send(Err(msg));
+                                        }
+                                        Some(Response::InvalidRequest(e)) => {
+                                            let msg = e.message.unwrap_or_default();
+                                            warn!("[social] blockUser invalid request: {msg}");
+                                            let _ = response.send(Err(msg));
+                                        }
+                                        Some(Response::ProfileNotFound(e)) => {
+                                            let msg = e.message.unwrap_or_else(|| "profile not found".to_string());
+                                            warn!("[social] blockUser profile not found: {msg}");
+                                            let _ = response.send(Err(msg));
+                                        }
+                                        None => {
+                                            let _ = response.send(Err("empty response".to_string()));
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("[social] blockUser error: {e:?}");
+                                    let _ = response.send(Err(format!("{e:?}")));
+                                }
+                            }
+                        }
+                        SocialQuery::UnblockUser { address, response } => {
+                            info!("[social] unblockUser request for {address}");
+                            match service_module.unblock_user(UnblockUserPayload {
+                                user: Some(User { address: address.clone() }),
+                            }).await {
+                                Ok(resp) => {
+                                    use dcl_component::proto_components::social_service::v2::unblock_user_response::Response;
+                                    match resp.response {
+                                        Some(Response::Ok(_)) => {
+                                            info!("[social] unblockUser success for {address}");
+                                            let _ = response.send(Ok(()));
+                                        }
+                                        Some(Response::InternalServerError(e)) => {
+                                            let msg = e.message.unwrap_or_default();
+                                            warn!("[social] unblockUser internal error: {msg}");
+                                            let _ = response.send(Err(msg));
+                                        }
+                                        Some(Response::InvalidRequest(e)) => {
+                                            let msg = e.message.unwrap_or_default();
+                                            warn!("[social] unblockUser invalid request: {msg}");
+                                            let _ = response.send(Err(msg));
+                                        }
+                                        Some(Response::ProfileNotFound(e)) => {
+                                            let msg = e.message.unwrap_or_else(|| "profile not found".to_string());
+                                            warn!("[social] unblockUser profile not found: {msg}");
+                                            let _ = response.send(Err(msg));
+                                        }
+                                        None => {
+                                            let _ = response.send(Err("empty response".to_string()));
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("[social] unblockUser error: {e:?}");
+                                    let _ = response.send(Err(format!("{e:?}")));
+                                }
+                            }
+                        }
+                        SocialQuery::GetBlockedUsers { response } => {
+                            info!("[social] getBlockedUsers request");
+                            let mut all_profiles = Vec::new();
+                            let mut offset = 0;
+                            let mut result: Result<Vec<FriendProfile>, String> = Ok(Vec::new());
+                            loop {
+                                match service_module.get_blocked_users(GetBlockedUsersPayload {
+                                    pagination: Some(Pagination { limit: PAGE_SIZE, offset }),
+                                }).await {
+                                    Ok(resp) => {
+                                        let count = resp.profiles.len();
+                                        // Convert BlockedUserProfile to FriendProfile
+                                        for blocked in &resp.profiles {
+                                            all_profiles.push(FriendProfile {
+                                                address: blocked.address.clone(),
+                                                name: blocked.name.clone(),
+                                                has_claimed_name: blocked.has_claimed_name,
+                                                profile_picture_url: blocked.profile_picture_url.clone(),
+                                                name_color: blocked.name_color.clone(),
+                                            });
+                                        }
+                                        let total = resp.pagination_data.as_ref().map(|p| p.total).unwrap_or(0);
+                                        offset += PAGE_SIZE;
+                                        if offset >= total || count == 0 { break; }
+                                    }
+                                    Err(e) => {
+                                        warn!("[social] getBlockedUsers error: {e:?}");
+                                        result = Err(format!("{e:?}"));
+                                        break;
+                                    }
+                                }
+                            }
+                            if result.is_ok() {
+                                info!("[social] getBlockedUsers: {} blocked users", all_profiles.len());
+                                let _ = response.send(Ok(all_profiles));
                             } else {
                                 let _ = response.send(result);
                             }

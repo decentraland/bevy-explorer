@@ -16,10 +16,11 @@ use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, rc::Rc};
 use strum::IntoEnumIterator;
 use system_bridge::{
-    settings::SettingInfo, AvatarModifierState, ChatMessage, FriendConnectivityEvent, FriendData,
-    FriendRequestData, FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent,
-    LiveSceneInfo, PermanentPermissionItem, PermissionRequest, SceneLoadingUi, SetAvatarData,
-    SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
+    settings::SettingInfo, AvatarModifierState, BlockedUserData, ChatMessage,
+    FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
+    FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo, PermanentPermissionItem,
+    PermissionRequest, SceneLoadingUi, SetAvatarData, SetPermanentPermission, SetSinglePermission,
+    SystemApi, VoiceMessage,
 };
 
 use crate::{interface::crdt_context::CrdtContext, js::player_identity, RpcCalls};
@@ -999,4 +1000,49 @@ pub async fn op_delete_friend(
     rx.await
         .map_err(|e| anyhow::anyhow!(e))?
         .map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_block_user(
+    state: Rc<RefCell<impl State>>,
+    address: String,
+) -> Result<(), anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::BlockUser(address, sx))?;
+
+    rx.await
+        .map_err(|e| anyhow::anyhow!(e))?
+        .map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_unblock_user(
+    state: Rc<RefCell<impl State>>,
+    address: String,
+) -> Result<(), anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::UnblockUser(address, sx))?;
+
+    rx.await
+        .map_err(|e| anyhow::anyhow!(e))?
+        .map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_blocked_users(
+    state: Rc<RefCell<impl State>>,
+) -> Result<Vec<BlockedUserData>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetBlockedUsers(sx))?;
+
+    rx.await.map_err(|e| anyhow::anyhow!(e))
 }

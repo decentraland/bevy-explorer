@@ -131,6 +131,58 @@ message FriendConnectivityUpdate {
   ConnectivityStatus status = 2;
 }
 
+message BlockedUserProfile {
+  string address = 1;
+  string name = 2;
+  bool has_claimed_name = 3;
+  string profile_picture_url = 4;
+  optional int64 blocked_at = 5;
+  optional decentraland.common.Color3 name_color = 6;
+}
+
+message BlockUserPayload {
+  User user = 1;
+}
+
+message BlockUserResponse {
+  message Ok {
+    BlockedUserProfile profile = 1;
+  }
+
+  oneof response {
+    Ok ok = 1;
+    decentraland.social_service.InternalServerError internal_server_error = 2;
+    decentraland.social_service.InvalidRequest invalid_request = 3;
+    decentraland.social_service.ProfileNotFound profile_not_found = 4;
+  }
+}
+
+message UnblockUserPayload {
+  User user = 1;
+}
+
+message UnblockUserResponse {
+  message Ok {
+    BlockedUserProfile profile = 1;
+  }
+
+  oneof response {
+    Ok ok = 1;
+    decentraland.social_service.InternalServerError internal_server_error = 2;
+    decentraland.social_service.InvalidRequest invalid_request = 3;
+    decentraland.social_service.ProfileNotFound profile_not_found = 4;
+  }
+}
+
+message GetBlockedUsersPayload {
+  optional Pagination pagination = 1;
+}
+
+message GetBlockedUsersResponse {
+  repeated BlockedUserProfile profiles = 1;
+  PaginatedResponse pagination_data = 2;
+}
+
 message GetFriendshipStatusPayload {
   User user = 1;
 }
@@ -186,4 +238,13 @@ service SocialService {
   // Subscribe to connectivity updates of friends: ONLINE, OFFLINE, AWAY
   rpc SubscribeToFriendConnectivityUpdates(google.protobuf.Empty)
       returns (stream FriendConnectivityUpdate) {}
+
+  // Block a user
+  rpc BlockUser(BlockUserPayload) returns (BlockUserResponse) {}
+
+  // Unblock a user
+  rpc UnblockUser(UnblockUserPayload) returns (UnblockUserResponse) {}
+
+  // Get the list of blocked users
+  rpc GetBlockedUsers(GetBlockedUsersPayload) returns (GetBlockedUsersResponse) {}
 }

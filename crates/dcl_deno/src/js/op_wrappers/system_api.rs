@@ -10,9 +10,10 @@ use dcl_component::proto_components::{
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
-    settings::SettingInfo, AvatarModifierState, ChatMessage, FriendConnectivityEvent, FriendData,
-    FriendRequestData, FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent,
-    LiveSceneInfo, PermanentPermissionItem, PermissionRequest, SceneLoadingUi, VoiceMessage,
+    settings::SettingInfo, AvatarModifierState, BlockedUserData, ChatMessage,
+    FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
+    FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo, PermanentPermissionItem,
+    PermissionRequest, SceneLoadingUi, VoiceMessage,
 };
 
 // list of op declarations
@@ -81,6 +82,10 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_reject_friend_request(),
             op_cancel_friend_request(),
             op_delete_friend(),
+            // Social / Blocking
+            op_block_user(),
+            op_unblock_user(),
+            op_get_blocked_users(),
         ]
     } else {
         Vec::default()
@@ -541,4 +546,32 @@ pub async fn op_delete_friend(
     #[string] address: String,
 ) -> Result<(), anyhow::Error> {
     dcl::js::system_api::op_delete_friend(state, address).await
+}
+
+// Social / Blocking
+
+#[op2(async)]
+#[serde]
+pub async fn op_block_user(
+    state: Rc<RefCell<OpState>>,
+    #[string] address: String,
+) -> Result<(), anyhow::Error> {
+    dcl::js::system_api::op_block_user(state, address).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_unblock_user(
+    state: Rc<RefCell<OpState>>,
+    #[string] address: String,
+) -> Result<(), anyhow::Error> {
+    dcl::js::system_api::op_unblock_user(state, address).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_blocked_users(
+    state: Rc<RefCell<OpState>>,
+) -> Result<Vec<BlockedUserData>, anyhow::Error> {
+    dcl::js::system_api::op_get_blocked_users(state).await
 }

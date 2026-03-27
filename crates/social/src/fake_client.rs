@@ -89,6 +89,32 @@ impl SocialClientHandler {
         Ok(rx)
     }
 
+    pub fn block_user(
+        &self,
+        _address: String,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Ok(()));
+        Ok(rx)
+    }
+
+    pub fn unblock_user(
+        &self,
+        _address: String,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Ok(()));
+        Ok(rx)
+    }
+
+    pub fn get_blocked_users(
+        &self,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<FriendProfile>, String>>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Ok(Vec::new()));
+        Ok(rx)
+    }
+
     pub fn chat(&self, _address: Address, _message: String) -> Result<(), anyhow::Error> {
         Ok(())
     }

@@ -177,6 +177,10 @@ pub enum SystemApi {
     GetMutualFriends(String, RpcResultSender<Vec<FriendData>>),
     GetOnlineFriends(RpcResultSender<Vec<FriendStatusData>>),
     GetFriendConnectivityStream(RpcStreamSender<FriendConnectivityEvent>),
+    // Social / Blocking
+    BlockUser(String, RpcResultSender<Result<(), String>>),
+    UnblockUser(String, RpcResultSender<Result<(), String>>),
+    GetBlockedUsers(RpcResultSender<Vec<BlockedUserData>>),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -255,6 +259,16 @@ pub struct FriendStatusData {
     pub name_color: Option<NameColor>,
     /// "online", "offline", or "away"
     pub status: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockedUserData {
+    pub address: String,
+    pub name: String,
+    pub has_claimed_name: bool,
+    pub profile_picture_url: String,
+    pub name_color: Option<NameColor>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
