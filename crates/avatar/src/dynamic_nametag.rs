@@ -34,11 +34,6 @@ fn dynamic_nametag_position(
             .get(attach_points.head)
             .map(|gt| gt.compute_transform())
             .unwrap_or(position);
-        gizmos.arrow(
-            head_position.translation,
-            head_position.translation + Vec3::Y,
-            palettes::basic::RED,
-        );
 
         let Some(highest_y) = [FloatOrd(nametag_offset(
             head_position.translation.y - position.translation.y,
@@ -52,16 +47,16 @@ fn dynamic_nametag_position(
         let Ok(mut nametag_transform) = transforms.get_mut(attach_points.nametag) else {
             panic!("Nametag must have Transform.");
         };
-        nametag_transform.translation = Vec3::new(
-            head_position.translation.x - position.translation.x,
-            highest_y.0,
-            head_position.translation.z - position.translation.z,
-        );
-        gizmos.arrow(
-            position.translation + nametag_transform.translation,
-            position.translation + nametag_transform.translation + Vec3::Y,
-            palettes::basic::OLIVE,
-        );
+        let position_rotation = {
+            let (axis, angle) = position.rotation.to_axis_angle();
+            Quat::from_axis_angle(axis, -angle)
+        };
+        nametag_transform.translation = position_rotation
+            * Vec3::new(
+                head_position.translation.x - position.translation.x,
+                highest_y.0,
+                head_position.translation.z - position.translation.z,
+            );
     }
 }
 
