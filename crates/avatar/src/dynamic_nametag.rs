@@ -1,4 +1,4 @@
-use bevy::{color::palettes, math::FloatOrd, prelude::*};
+use bevy::{math::FloatOrd, prelude::*, render::primitives::Aabb};
 use common::structs::AttachPoints;
 
 pub struct DynamicNametagPlugin;
@@ -9,6 +9,8 @@ impl Plugin for DynamicNametagPlugin {
             PostUpdate,
             dynamic_nametag_position.after(TransformSystem::TransformPropagate),
         );
+
+        app.add_observer(aabb_gizmos);
     }
 }
 
@@ -16,7 +18,6 @@ fn dynamic_nametag_position(
     attach_points_query: Query<&AttachPoints>,
     mut transforms: Query<&mut Transform>,
     global_transforms: Query<&GlobalTransform>,
-    mut gizmos: Gizmos,
 ) {
     for attach_points in attach_points_query {
         let Ok(position) = global_transforms
@@ -25,11 +26,6 @@ fn dynamic_nametag_position(
         else {
             continue;
         };
-        gizmos.arrow(
-            position.translation,
-            position.translation + Vec3::Y,
-            palettes::basic::RED,
-        );
         let head_position = global_transforms
             .get(attach_points.head)
             .map(|gt| gt.compute_transform())
@@ -62,4 +58,10 @@ fn dynamic_nametag_position(
 
 fn nametag_offset(y: f32, y_scale: f32) -> f32 {
     y + 40. * y_scale
+}
+
+fn aabb_gizmos(trigger: Trigger<OnAdd, Aabb>, mut commands: Commands) {
+    commands
+        .entity(trigger.target())
+        .insert(ShowAabbGizmo::default());
 }
