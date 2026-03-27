@@ -18,25 +18,24 @@ fn dynamic_nametag_position(
     attach_points_query: Query<&AttachPoints>,
     mut transforms: Query<&mut Transform>,
     global_transforms: Query<&GlobalTransform>,
+    aabbs: Query<&Aabb>,
 ) {
     for attach_points in attach_points_query {
-        let Ok(position) = global_transforms
-            .get(attach_points.position)
-            .map(|gt| gt.compute_transform())
-        else {
+        let Ok(position_gt) = global_transforms.get(attach_points.position) else {
             continue;
         };
-        let head_position = global_transforms
-            .get(attach_points.head)
-            .map(|gt| gt.compute_transform())
-            .unwrap_or(position);
+        let position = position_gt.compute_transform();
 
-        let Some(highest_y) = [FloatOrd(nametag_offset(
-            head_position.translation.y - position.translation.y,
-            head_position.scale.y,
-        ))]
-        .into_iter()
-        .max() else {
+        let head_position_gt = global_transforms
+            .get(attach_points.head)
+            .unwrap_or(position_gt);
+        let head_position = head_position_gt.compute_transform();
+        let head_aabb = aabbs.get(attach_points.head).ok();
+
+        let Some(highest_y) = [FloatOrd(nametag_offset(head_position_gt, head_aabb))]
+            .into_iter()
+            .max()
+        else {
             unreachable!("List is never empty.");
         };
 
@@ -56,8 +55,14 @@ fn dynamic_nametag_position(
     }
 }
 
-fn nametag_offset(y: f32, y_scale: f32) -> f32 {
-    y + 40. * y_scale
+fn nametag_offset(global_transform: &GlobalTransform, maybe_aabb: Option<&Aabb>) -> f32 {
+    let transform = global_transform.compute_transform();
+    if let Some(aabb) = maybe_aabb {
+        let model_radius = global_transform.radius_vec3a(aabb.half_extents);
+        transform.translation.y + model_radius + 0.125
+    } else {
+        transform.translation.y + 40. * transform.scale.y
+    }
 }
 
 fn aabb_gizmos(trigger: Trigger<OnAdd, Aabb>, mut commands: Commands) {
