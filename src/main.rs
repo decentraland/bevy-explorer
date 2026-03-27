@@ -18,6 +18,8 @@ use std::{fs::File, io::Write, sync::OnceLock};
 use analytics::{metrics::MetricsPlugin, segment_system::SegmentConfig};
 use imposters::DclImposterPlugin;
 
+#[cfg(feature = "remote")]
+use bevy::remote::{http::RemoteHttpPlugin, RemotePlugin};
 use bevy::{
     app::{Propagate, TaskPoolThreadAssignmentPolicy},
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
@@ -26,7 +28,6 @@ use bevy::{
     window::WindowResolution,
 };
 use bevy_console::ConsoleCommand;
-
 use collectibles::CollectiblesPlugin;
 use common::{
     inputs::InputMap,
@@ -416,6 +417,8 @@ fn main() {
                 })
                 .add_before::<IpfsIoPlugin>(NftReaderPlugin),
         );
+    #[cfg(feature = "remote")]
+    app.add_plugins((RemotePlugin::default(), RemoteHttpPlugin::default()));
 
     app.add_plugins(EmbedAssetsPlugin);
 
