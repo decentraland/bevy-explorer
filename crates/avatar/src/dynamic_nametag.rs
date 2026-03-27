@@ -9,8 +9,6 @@ impl Plugin for DynamicNametagPlugin {
             PostUpdate,
             dynamic_nametag_position.after(TransformSystem::TransformPropagate),
         );
-
-        app.add_observer(aabb_gizmos);
     }
 }
 
@@ -71,10 +69,4 @@ fn nametag_offset(
     } else {
         y + 40. * transform.scale.y
     }
-}
-
-fn aabb_gizmos(trigger: Trigger<OnAdd, Aabb>, mut commands: Commands) {
-    commands
-        .entity(trigger.target())
-        .insert(ShowAabbGizmo::default());
 }
