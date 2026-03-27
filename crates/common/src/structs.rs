@@ -11,7 +11,7 @@ use bevy::{
     color::palettes,
     platform::collections::{HashMap, HashSet},
     prelude::*,
-    render::view::RenderLayers,
+    render::{primitives::Aabb, view::RenderLayers},
 };
 use dcl_component::proto_components::sdk::components::common::CameraTransition;
 use ethers_core::abi::Address;
@@ -166,7 +166,13 @@ impl AttachPoints {
                     Visibility::default(),
                 ))
                 .id(),
-            head: commands.spawn(default_bundle).id(),
+            head: commands
+                .spawn((
+                    default_bundle,
+                    // This Aabb roughly encloses the head
+                    Aabb::from_min_max(Vec3::new(-16., -21., -22.), Vec3::new(16., 21., 22.)),
+                ))
+                .id(),
             neck: commands.spawn(default_bundle).id(),
             spine: commands.spawn(default_bundle).id(),
             spine_1: commands.spawn(default_bundle).id(),
