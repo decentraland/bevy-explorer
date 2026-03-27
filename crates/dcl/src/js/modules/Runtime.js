@@ -24,7 +24,7 @@ module.exports.getSceneInformation = async function (body) {
 module.exports.getExplorerInformation = async function (body) {
     return {
         agent: 'bevy',
-        platform: 'desktop',
+        platform: Deno.core.ops.op_get_platform(),
         configurations: {}
     }
 }
