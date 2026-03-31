@@ -16,9 +16,9 @@ use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, rc::Rc};
 use strum::IntoEnumIterator;
 use system_bridge::{
-    settings::SettingInfo, AvatarModifierState, ChatMessage, HomeScene, HoverEvent, LiveSceneInfo,
-    PermanentPermissionItem, PermissionRequest, SceneLoadingUi, SetAvatarData,
-    SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
+    settings::SettingInfo, AvatarModifierState, ChatMessage, FeatureFlagsData, HomeScene,
+    HoverEvent, LiveSceneInfo, PermanentPermissionItem, PermissionRequest, SceneLoadingUi,
+    SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
 };
 
 use crate::{interface::crdt_context::CrdtContext, js::player_identity, RpcCalls};
@@ -766,6 +766,19 @@ pub async fn op_get_avatar_modifiers(
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
         .send(SystemApi::GetAvatarModifiers(sx))?;
+
+    Ok(rx.await?)
+}
+
+pub async fn op_get_feature_flags(
+    state: Rc<RefCell<impl State>>,
+) -> Result<FeatureFlagsData, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetFeatureFlags(sx))?;
 
     Ok(rx.await?)
 }

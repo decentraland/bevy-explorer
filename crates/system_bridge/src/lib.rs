@@ -16,6 +16,7 @@ use common::{
     rpc::{RpcResultSender, RpcStreamSender},
     structs::{
         AppConfig, MicState, PermissionLevel, PermissionType, PermissionUsed, PermissionValue,
+        PreviewMode,
     },
 };
 use dcl_component::proto_components::{
@@ -37,7 +38,10 @@ impl Plugin for SystemBridgePlugin {
         app.add_event::<SystemApi>();
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         app.insert_resource(SystemBridge { sender, receiver });
-        app.add_systems(Update, (post_events, handle_home_scene, handle_exit));
+        app.add_systems(
+            Update,
+            (post_events, handle_home_scene, handle_exit, handle_feature_flags),
+        );
 
         if self.bare {
             return;
@@ -163,6 +167,7 @@ pub enum SystemApi {
     GetMicState(RpcResultSender<MicState>),
     SetMicEnabled(bool),
     GetAvatarModifiers(RpcResultSender<Vec<AvatarModifierState>>),
+    GetFeatureFlags(RpcResultSender<FeatureFlagsData>),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -171,6 +176,15 @@ pub struct AvatarModifierState {
     pub user_id: String,
     pub hide_avatar: bool,
     pub hide_profile: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct FeatureFlagsData {
+    pub minimap: bool,
+    pub chat: bool,
+    pub discover_map: bool,
+    pub notifications: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -305,5 +319,19 @@ fn handle_exit(mut ev: EventReader<SystemApi>, mut exit: EventWriter<AppExit>) {
         .is_some()
     {
         exit.write_default();
+    }
+}
+
+fn handle_feature_flags(mut ev: EventReader<SystemApi>, preview_mode: Res<PreviewMode>) {
+    for ev in ev.read() {
+        if let SystemApi::GetFeatureFlags(sender) = ev {
+            let is_preview = preview_mode.is_preview;
+            sender.send(FeatureFlagsData {
+                minimap: !is_preview,
+                chat: !is_preview,
+                discover_map: !is_preview,
+                notifications: !is_preview,
+            });
+        }
     }
 }

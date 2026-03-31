@@ -362,3 +362,8 @@ pub async fn op_get_avatar_modifiers(state: &WorkerContext) -> Result<js_sys::Ar
         })
         .map_err(WasmError::from)
 }
+
+#[wasm_bindgen]
+pub async fn op_get_feature_flags(state: &WorkerContext) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_get_feature_flags(state.rc()).await)
+}

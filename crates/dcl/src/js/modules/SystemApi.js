@@ -320,6 +320,11 @@ module.exports.getAvatarModifiers = async function() {
     return await Deno.core.ops.op_get_avatar_modifiers();
 }
 
+// { minimap: bool, chat: bool, discoverMap: bool, notifications: bool }
+module.exports.getFeatureFlags = async function() {
+    return await Deno.core.ops.op_get_feature_flags();
+}
+
 // get voice stream / mic activations as a stream
 // type MicActivation = {
 //   senderAddress: string,
