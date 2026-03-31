@@ -1,4 +1,5 @@
 use crate::{serde_parse, serde_result, WasmError, WorkerContext};
+use js_sys;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
@@ -365,5 +366,12 @@ pub async fn op_get_avatar_modifiers(state: &WorkerContext) -> Result<js_sys::Ar
 
 #[wasm_bindgen]
 pub async fn op_get_params(state: &WorkerContext) -> Result<JsValue, WasmError> {
-    serde_result!(dcl::js::system_api::op_get_params(state.rc()).await)
+    let map = dcl::js::system_api::op_get_params(state.rc())
+        .await
+        .map_err(WasmError::from)?;
+    let obj = js_sys::Object::new();
+    for (k, v) in map {
+        js_sys::Reflect::set(&obj, &k.into(), &v.into()).unwrap();
+    }
+    Ok(obj.into())
 }
