@@ -16,7 +16,6 @@ use common::{
     rpc::{RpcResultSender, RpcStreamSender},
     structs::{
         AppConfig, MicState, PermissionLevel, PermissionType, PermissionUsed, PermissionValue,
-        PreviewMode,
     },
 };
 use dcl_component::proto_components::{
@@ -187,6 +186,41 @@ pub struct FeatureFlagsData {
     pub notifications: bool,
 }
 
+#[derive(Resource, Clone)]
+pub struct FeatureFlagsConfig {
+    pub minimap: bool,
+    pub chat: bool,
+    pub discover_map: bool,
+    pub notifications: bool,
+}
+
+impl Default for FeatureFlagsConfig {
+    fn default() -> Self {
+        Self {
+            minimap: true,
+            chat: true,
+            discover_map: true,
+            notifications: true,
+        }
+    }
+}
+
+impl FeatureFlagsConfig {
+    pub fn with_disabled(disabled: &str) -> Self {
+        let mut flags = Self::default();
+        for feature in disabled.split(',') {
+            match feature.trim() {
+                "minimap" => flags.minimap = false,
+                "chat" => flags.chat = false,
+                "discoverMap" => flags.discover_map = false,
+                "notifications" => flags.notifications = false,
+                _ => {}
+            }
+        }
+        flags
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct PermanentPermissionItem {
     pub ty: PermissionType,
@@ -322,15 +356,14 @@ fn handle_exit(mut ev: EventReader<SystemApi>, mut exit: EventWriter<AppExit>) {
     }
 }
 
-fn handle_feature_flags(mut ev: EventReader<SystemApi>, preview_mode: Res<PreviewMode>) {
+fn handle_feature_flags(mut ev: EventReader<SystemApi>, flags: Res<FeatureFlagsConfig>) {
     for ev in ev.read() {
         if let SystemApi::GetFeatureFlags(sender) = ev {
-            let is_preview = preview_mode.is_preview;
             sender.send(FeatureFlagsData {
-                minimap: !is_preview,
-                chat: !is_preview,
-                discover_map: !is_preview,
-                notifications: !is_preview,
+                minimap: flags.minimap,
+                chat: flags.chat,
+                discover_map: flags.discover_map,
+                notifications: flags.notifications,
             });
         }
     }

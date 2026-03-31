@@ -248,6 +248,7 @@ export function start() {
   const positionValue = positionInput.value;
   const systemScene = systemSceneInput.value;
   const preview = previewInput.checked;
+  const disableFeatures = new URLSearchParams(window.location.search).get("disableFeatures") || "";
   console.log(
     `[Main JS] "Launch" button clicked. Initial Realm: "${realmValue}", Position (coords): "${positionValue}", System Scene: "${systemScene}"`
   );
@@ -308,7 +309,7 @@ export function start() {
     delete window._buildEngineApi;
   };
 
-  engine_run(platform, realmValue, positionValue, systemScene, true, preview, 1e7);
+  engine_run(platform, realmValue, positionValue, systemScene, true, preview, 1e7, disableFeatures);
   window.engine_console_command = engine_console_command;
   window.loadSceneUtils = () => {
     return new Promise((resolve, reject) => {
