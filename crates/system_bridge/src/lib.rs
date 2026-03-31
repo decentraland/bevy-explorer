@@ -1,7 +1,7 @@
 pub mod agent_commands;
 pub mod settings;
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 use bevy::{
     app::{AppExit, Plugin, Update},
@@ -37,14 +37,14 @@ impl Plugin for SystemBridgePlugin {
         app.add_event::<SystemApi>();
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         app.insert_resource(SystemBridge { sender, receiver });
-        app.init_resource::<FeatureFlagsConfig>();
+        app.init_resource::<SceneParams>();
         app.add_systems(
             Update,
             (
                 post_events,
                 handle_home_scene,
                 handle_exit,
-                handle_feature_flags,
+                handle_get_params,
             ),
         );
 
@@ -172,7 +172,7 @@ pub enum SystemApi {
     GetMicState(RpcResultSender<MicState>),
     SetMicEnabled(bool),
     GetAvatarModifiers(RpcResultSender<Vec<AvatarModifierState>>),
-    GetFeatureFlags(RpcResultSender<FeatureFlagsData>),
+    GetParams(RpcResultSender<HashMap<String, String>>),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -183,47 +183,22 @@ pub struct AvatarModifierState {
     pub hide_profile: bool,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct FeatureFlagsData {
-    pub minimap: bool,
-    pub chat: bool,
-    pub discover_map: bool,
-    pub notifications: bool,
-}
+#[derive(Resource, Default, Clone, Debug)]
+pub struct SceneParams(pub HashMap<String, String>);
 
-#[derive(Resource, Clone)]
-pub struct FeatureFlagsConfig {
-    pub minimap: bool,
-    pub chat: bool,
-    pub discover_map: bool,
-    pub notifications: bool,
-}
-
-impl Default for FeatureFlagsConfig {
-    fn default() -> Self {
-        Self {
-            minimap: true,
-            chat: true,
-            discover_map: true,
-            notifications: true,
-        }
-    }
-}
-
-impl FeatureFlagsConfig {
-    pub fn with_disabled(disabled: &str) -> Self {
-        let mut flags = Self::default();
-        for feature in disabled.split(',') {
-            match feature.trim() {
-                "minimap" => flags.minimap = false,
-                "chat" => flags.chat = false,
-                "discoverMap" => flags.discover_map = false,
-                "notifications" => flags.notifications = false,
-                _ => {}
-            }
-        }
-        flags
+impl SceneParams {
+    pub fn from_query_string(query: &str) -> Self {
+        let map = query
+            .split('&')
+            .filter(|s| !s.is_empty())
+            .filter_map(|pair| {
+                let mut parts = pair.splitn(2, '=');
+                let key = parts.next()?.to_owned();
+                let value = parts.next().unwrap_or("").to_owned();
+                Some((key, value))
+            })
+            .collect();
+        Self(map)
     }
 }
 
@@ -362,15 +337,10 @@ fn handle_exit(mut ev: EventReader<SystemApi>, mut exit: EventWriter<AppExit>) {
     }
 }
 
-fn handle_feature_flags(mut ev: EventReader<SystemApi>, flags: Res<FeatureFlagsConfig>) {
+fn handle_get_params(mut ev: EventReader<SystemApi>, params: Res<SceneParams>) {
     for ev in ev.read() {
-        if let SystemApi::GetFeatureFlags(sender) = ev {
-            sender.send(FeatureFlagsData {
-                minimap: flags.minimap,
-                chat: flags.chat,
-                discover_map: flags.discover_map,
-                notifications: flags.notifications,
-            });
+        if let SystemApi::GetParams(sender) = ev {
+            sender.send(params.0.clone());
         }
     }
 }

@@ -50,8 +50,7 @@ use platform::default_camera_components;
 use scene_inspector::SceneInspectorPlugin;
 use social::SocialPlugin;
 use system_bridge::{
-    settings::NewCameraEvent, FeatureFlagsConfig, NativeUi, SystemApi, SystemBridge,
-    SystemBridgePlugin,
+    settings::NewCameraEvent, NativeUi, SceneParams, SystemApi, SystemBridge, SystemBridgePlugin,
 };
 use system_ui::SystemUiPlugin;
 use texture_camera::TextureCameraPlugin;
@@ -72,7 +71,7 @@ fn main_inner(
     with_thread_loader: bool,
     is_preview: bool,
     rabpf: usize,
-    disable_features: &str,
+    params: &str,
 ) {
     // warnings before log init must be stored and replayed later
     let mut app = App::new();
@@ -254,7 +253,7 @@ fn main_inner(
         server: is_preview.then_some(map_realm_name(&final_config.server)),
         is_preview,
     });
-    app.insert_resource(FeatureFlagsConfig::with_disabled(disable_features));
+    app.insert_resource(SceneParams::from_query_string(params));
 
     app.insert_resource(SceneLoadDistance {
         load: if is_preview {
@@ -551,7 +550,7 @@ pub fn engine_run(
     with_thread_loader: bool,
     preview: bool,
     rabpf: usize,
-    disable_features: &str,
+    params: &str,
 ) {
     main_inner(
         platform,
@@ -561,7 +560,7 @@ pub fn engine_run(
         with_thread_loader,
         preview,
         rabpf,
-        disable_features,
+        params,
     );
 }
 

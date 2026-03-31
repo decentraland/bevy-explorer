@@ -10,7 +10,6 @@ const realmInput = document.getElementById("realm");
 const positionInput = document.getElementById("position");
 const systemSceneInput = document.getElementById("systemScene");
 const previewInput = document.getElementById("preview");
-const disableFeaturesInput = document.getElementById("disableFeatures");
 const initButton = document.getElementById("initButton");
 const canvas = document.getElementById("canvas-parent");
 const header = document.getElementById("header");
@@ -58,13 +57,6 @@ function populateInputsFromQueryParams() {
     previewInput.checked = false;
   }
 
-  const disableFeaturesParam = queryParams.get("disableFeatures");
-  if (disableFeaturesInput && disableFeaturesParam) {
-    disableFeaturesInput.value = decodeURIComponent(disableFeaturesParam);
-  } else if (disableFeaturesInput) {
-    disableFeaturesInput.value = "";
-  }
-
   // Show form only when manualParams is present (autoStart is false)
   if (!autoStart) {
     const form = document.querySelector('form');
@@ -103,7 +95,7 @@ function showCanvas(){
  * Updates the browser URL with the current game state.
  * Called from the WASM engine to keep URL in sync.
  */
-window.set_url_params = (x, y, server, system_scene, preview, disableFeatures) => {
+window.set_url_params = (x, y, server, system_scene, preview) => {
   try {
     const urlParams = new URLSearchParams(window.location.search);
 
@@ -125,12 +117,6 @@ window.set_url_params = (x, y, server, system_scene, preview, disableFeatures) =
       urlParams.set("preview", true);
     } else {
       urlParams.delete("preview");
-    }
-
-    if (disableFeatures) {
-      urlParams.set("disableFeatures", disableFeatures);
-    } else {
-      urlParams.delete("disableFeatures");
     }
 
     const newPath = window.location.pathname + '?' + urlParams.toString();

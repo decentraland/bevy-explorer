@@ -13,12 +13,13 @@ use dcl_component::proto_components::{
     sdk::components::{PbAvatarBase, PbAvatarEquippedData},
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
 use strum::IntoEnumIterator;
 use system_bridge::{
-    settings::SettingInfo, AvatarModifierState, ChatMessage, FeatureFlagsData, HomeScene,
-    HoverEvent, LiveSceneInfo, PermanentPermissionItem, PermissionRequest, SceneLoadingUi,
-    SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
+    settings::SettingInfo, AvatarModifierState, ChatMessage, HomeScene, HoverEvent, LiveSceneInfo,
+    PermanentPermissionItem, PermissionRequest, SceneLoadingUi, SetAvatarData,
+    SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
 };
 
 use crate::{interface::crdt_context::CrdtContext, js::player_identity, RpcCalls};
@@ -770,15 +771,15 @@ pub async fn op_get_avatar_modifiers(
     Ok(rx.await?)
 }
 
-pub async fn op_get_feature_flags(
+pub async fn op_get_params(
     state: Rc<RefCell<impl State>>,
-) -> Result<FeatureFlagsData, anyhow::Error> {
+) -> Result<HashMap<String, String>, anyhow::Error> {
     let (sx, rx) = RpcResultSender::channel();
 
     state
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
-        .send(SystemApi::GetFeatureFlags(sx))?;
+        .send(SystemApi::GetParams(sx))?;
 
     Ok(rx.await?)
 }

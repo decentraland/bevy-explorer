@@ -8,11 +8,11 @@ use dcl_component::proto_components::{
     sdk::components::{PbAvatarBase, PbAvatarEquippedData},
 };
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
+use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
-    settings::SettingInfo, AvatarModifierState, ChatMessage, FeatureFlagsData, HomeScene,
-    HoverEvent, LiveSceneInfo, PermanentPermissionItem, PermissionRequest, SceneLoadingUi,
-    VoiceMessage,
+    settings::SettingInfo, AvatarModifierState, ChatMessage, HomeScene, HoverEvent, LiveSceneInfo,
+    PermanentPermissionItem, PermissionRequest, SceneLoadingUi, VoiceMessage,
 };
 
 // list of op declarations
@@ -65,7 +65,7 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_get_scene_loading_ui_stream(),
             op_read_scene_loading_ui_stream(),
             op_get_avatar_modifiers(),
-            op_get_feature_flags(),
+            op_get_params(),
         ]
     } else {
         Vec::default()
@@ -406,8 +406,8 @@ pub async fn op_get_avatar_modifiers(
 
 #[op2(async)]
 #[serde]
-pub async fn op_get_feature_flags(
+pub async fn op_get_params(
     state: Rc<RefCell<OpState>>,
-) -> Result<FeatureFlagsData, anyhow::Error> {
-    dcl::js::system_api::op_get_feature_flags(state).await
+) -> Result<HashMap<String, String>, anyhow::Error> {
+    dcl::js::system_api::op_get_params(state).await
 }

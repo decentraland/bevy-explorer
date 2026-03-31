@@ -320,9 +320,9 @@ module.exports.getAvatarModifiers = async function() {
     return await Deno.core.ops.op_get_avatar_modifiers();
 }
 
-// { minimap: bool, chat: bool, discoverMap: bool, notifications: bool }
-module.exports.getFeatureFlags = async function() {
-    return await Deno.core.ops.op_get_feature_flags();
+// Returns key-value params passed via --params (desktop) or URL query string (web)
+module.exports.getParams = async function() {
+    return await Deno.core.ops.op_get_params();
 }
 
 // get voice stream / mic activations as a stream
