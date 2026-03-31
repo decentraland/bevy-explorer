@@ -39,7 +39,12 @@ impl Plugin for SystemBridgePlugin {
         app.insert_resource(SystemBridge { sender, receiver });
         app.add_systems(
             Update,
-            (post_events, handle_home_scene, handle_exit, handle_feature_flags),
+            (
+                post_events,
+                handle_home_scene,
+                handle_exit,
+                handle_feature_flags,
+            ),
         );
 
         if self.bare {
