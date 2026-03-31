@@ -37,6 +37,7 @@ impl Plugin for SystemBridgePlugin {
         app.add_event::<SystemApi>();
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         app.insert_resource(SystemBridge { sender, receiver });
+        app.init_resource::<FeatureFlagsConfig>();
         app.add_systems(
             Update,
             (
