@@ -248,7 +248,7 @@ export function start() {
   const positionValue = positionInput.value;
   const systemScene = systemSceneInput.value;
   const preview = previewInput.checked;
-  const disableFeatures = new URLSearchParams(window.location.search).get("disableFeatures") || "";
+  const disableFeatures = document.getElementById("disableFeatures")?.value || "";
   console.log(
     `[Main JS] "Launch" button clicked. Initial Realm: "${realmValue}", Position (coords): "${positionValue}", System Scene: "${systemScene}"`
   );
