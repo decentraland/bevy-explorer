@@ -320,6 +320,11 @@ module.exports.getAvatarModifiers = async function() {
     return await Deno.core.ops.op_get_avatar_modifiers();
 }
 
+// Returns key-value params passed via --params (desktop) or URL query string (web)
+module.exports.getParams = async function() {
+    return await Deno.core.ops.op_get_params();
+}
+
 // get voice stream / mic activations as a stream
 // type MicActivation = {
 //   senderAddress: string,

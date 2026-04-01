@@ -8,6 +8,7 @@ use dcl_component::proto_components::{
     sdk::components::{PbAvatarBase, PbAvatarEquippedData},
 };
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
+use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockedUserData, ChatMessage,
@@ -86,6 +87,7 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_block_user(),
             op_unblock_user(),
             op_get_blocked_users(),
+            op_get_params(),
         ]
     } else {
         Vec::default()
@@ -442,9 +444,7 @@ pub async fn op_read_friendship_event_stream(
 
 #[op2(async)]
 #[serde]
-pub async fn op_get_friends(
-    state: Rc<RefCell<OpState>>,
-) -> Result<Vec<FriendData>, anyhow::Error> {
+pub async fn op_get_friends(state: Rc<RefCell<OpState>>) -> Result<Vec<FriendData>, anyhow::Error> {
     dcl::js::system_api::op_get_friends(state).await
 }
 
@@ -474,9 +474,7 @@ pub async fn op_get_received_friend_requests(
 }
 
 #[op2(async)]
-pub async fn op_get_social_initialized(
-    state: Rc<RefCell<OpState>>,
-) -> Result<bool, anyhow::Error> {
+pub async fn op_get_social_initialized(state: Rc<RefCell<OpState>>) -> Result<bool, anyhow::Error> {
     dcl::js::system_api::op_get_social_initialized(state).await
 }
 
@@ -574,4 +572,12 @@ pub async fn op_get_blocked_users(
     state: Rc<RefCell<OpState>>,
 ) -> Result<Vec<BlockedUserData>, anyhow::Error> {
     dcl::js::system_api::op_get_blocked_users(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_params(
+    state: Rc<RefCell<OpState>>,
+) -> Result<HashMap<String, String>, anyhow::Error> {
+    dcl::js::system_api::op_get_params(state).await
 }

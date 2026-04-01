@@ -27,6 +27,7 @@ hot_reload = ["bevy/file_watcher", "ipfs/hot_reload"]
 livekit = ["av/livekit", "comms/livekit", "system_ui/livekit"]
 ffmpeg = ["av/ffmpeg"]
 social = ["social/social"]
+remote = ["bevy/bevy_remote"]
 
 [profile.release]
 codegen-units = 1

@@ -1,4 +1,5 @@
 use crate::{serde_parse, serde_result, WasmError, WorkerContext};
+use js_sys;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
@@ -384,7 +385,10 @@ pub async fn op_get_friends(state: &WorkerContext) -> Result<JsValue, WasmError>
 }
 
 #[wasm_bindgen]
-pub async fn op_get_mutual_friends(state: &WorkerContext, address: String) -> Result<JsValue, WasmError> {
+pub async fn op_get_mutual_friends(
+    state: &WorkerContext,
+    address: String,
+) -> Result<JsValue, WasmError> {
     serde_result!(dcl::js::system_api::op_get_mutual_friends(state.rc(), address).await)
 }
 
@@ -452,11 +456,20 @@ pub async fn op_cancel_friend_request(
 }
 
 #[wasm_bindgen]
-pub async fn op_delete_friend(
-    state: &WorkerContext,
-    address: String,
-) -> Result<(), WasmError> {
+pub async fn op_delete_friend(state: &WorkerContext, address: String) -> Result<(), WasmError> {
     dcl::js::system_api::op_delete_friend(state.rc(), address)
         .await
         .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_params(state: &WorkerContext) -> Result<JsValue, WasmError> {
+    let map = dcl::js::system_api::op_get_params(state.rc())
+        .await
+        .map_err(WasmError::from)?;
+    let obj = js_sys::Object::new();
+    for (k, v) in map {
+        js_sys::Reflect::set(&obj, &k.into(), &v.into()).unwrap();
+    }
+    Ok(obj.into())
 }
