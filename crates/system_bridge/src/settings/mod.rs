@@ -144,7 +144,9 @@ impl Plugin for SettingBridgePlugin {
         add_enum_setting::<OobSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<AaSetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<AmbientSetting>(app, &mut settings, &mut schedule, &config);
-        add_enum_setting::<WindowSetting>(app, &mut settings, &mut schedule, &config);
+        if is_fullscreen_available() {
+            add_enum_setting::<WindowSetting>(app, &mut settings, &mut schedule, &config);
+        }
 
         if !is_preview {
             add_int_setting::<LoadDistanceSetting>(app, &mut settings, &mut schedule, &config);
@@ -454,4 +456,19 @@ pub fn record_cameras(
     for ev in new_cams.read() {
         cameras.0.insert(ev.0);
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[inline(always)]
+fn is_fullscreen_available() -> bool {
+    true
+}
+
+#[cfg(target_arch = "wasm32")]
+#[inline(always)]
+fn is_fullscreen_available() -> bool {
+    let window = web_sys::window().unwrap();
+    let document = window.document().unwrap();
+
+    document.fullscreen_enabled()
 }
