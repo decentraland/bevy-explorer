@@ -211,7 +211,10 @@ fn update(
                 "friends" => {
                     reply("friends:".to_owned());
                     for (address, profile) in client.friends.iter() {
-                        reply(format!(" - {address:#x?}: {} (claimed: {})", profile.name, profile.has_claimed_name));
+                        reply(format!(
+                            " - {address:#x?}: {} (claimed: {})",
+                            profile.name, profile.has_claimed_name
+                        ));
                     }
                 }
                 "received" => {

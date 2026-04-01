@@ -6,10 +6,13 @@ use bevy::{
 use common::util::AsH160;
 use dcl_component::proto_components::social_service::v2::{
     friendship_update, paginated_friendship_requests_response,
-    upsert_friendship_payload::{self, AcceptPayload, CancelPayload, DeletePayload, RejectPayload, RequestPayload},
-    BlockUserPayload, ConnectivityStatus, FriendProfile, FriendshipRequestResponse, GetBlockedUsersPayload,
-    GetFriendshipRequestsPayload, GetFriendsPayload, GetMutualFriendsPayload, Pagination,
-    SocialServiceClient, SocialServiceClientDefinition, UnblockUserPayload, UpsertFriendshipPayload, User,
+    upsert_friendship_payload::{
+        self, AcceptPayload, CancelPayload, DeletePayload, RejectPayload, RequestPayload,
+    },
+    BlockUserPayload, ConnectivityStatus, FriendProfile, FriendshipRequestResponse,
+    GetBlockedUsersPayload, GetFriendsPayload, GetFriendshipRequestsPayload,
+    GetMutualFriendsPayload, Pagination, SocialServiceClient, SocialServiceClientDefinition,
+    UnblockUserPayload, UpsertFriendshipPayload, User,
 };
 use dcl_rpc::{
     client::RpcClient,
@@ -177,7 +180,8 @@ impl SocialClientHandler {
     pub fn get_mutual_friends(
         &self,
         address: String,
-    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<FriendProfile>, String>>, anyhow::Error> {
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<FriendProfile>, String>>, anyhow::Error>
+    {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.query_sender.send(SocialQuery::GetMutualFriends {
             address,
@@ -212,11 +216,11 @@ impl SocialClientHandler {
 
     pub fn get_blocked_users(
         &self,
-    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<FriendProfile>, String>>, anyhow::Error> {
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<FriendProfile>, String>>, anyhow::Error>
+    {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        self.query_sender.send(SocialQuery::GetBlockedUsers {
-            response: tx,
-        })?;
+        self.query_sender
+            .send(SocialQuery::GetBlockedUsers { response: tx })?;
         Ok(rx)
     }
 
@@ -266,12 +270,15 @@ impl SocialClientHandler {
                                 warn!("invalid friend request (no address): {body:?}");
                                 continue;
                             };
-                            self.received_requests.insert(address, FriendshipRequestResponse {
-                                friend: body.friend.clone(),
-                                created_at: body.created_at,
-                                message: body.message.clone(),
-                                id: body.id.clone(),
-                            });
+                            self.received_requests.insert(
+                                address,
+                                FriendshipRequestResponse {
+                                    friend: body.friend.clone(),
+                                    created_at: body.created_at,
+                                    message: body.message.clone(),
+                                    id: body.id.clone(),
+                                },
+                            );
                         }
                         friendship_update::Update::Accept(body) => {
                             let Some(address) =
@@ -382,10 +389,9 @@ async fn social_socket_handler_inner(
 ) -> Result<(), anyhow::Error> {
     // Connect WebSocket
     info!("[social] Connecting to social service at {SOCIAL_URL}");
-    let ws =
-        dcl_rpc::transports::web_sockets::tungstenite::WebSocketClient::connect(SOCIAL_URL)
-            .await
-            .map_err(dbgerr)?;
+    let ws = dcl_rpc::transports::web_sockets::tungstenite::WebSocketClient::connect(SOCIAL_URL)
+        .await
+        .map_err(dbgerr)?;
     info!("[social] Successfully connected to social service at {SOCIAL_URL}");
 
     // V2 auth: send signed headers as first WS message
@@ -393,15 +399,21 @@ async fn social_socket_handler_inner(
     let signed_headers = wallet::sign_request("get", &uri, &wallet, "{}".to_owned())
         .await
         .map_err(dbgerr)?;
-    let headers_map: std::collections::HashMap<String, String> = signed_headers.into_iter().collect();
+    let headers_map: std::collections::HashMap<String, String> =
+        signed_headers.into_iter().collect();
     let auth_json = serde_json::to_string(&headers_map)?;
     info!("[social] Sending auth headers: {auth_json}");
     ws.send(Message::Text(auth_json)).await.map_err(dbgerr)?;
 
     // Create RPC client
     let service_transport = WebSocketTransport::new(ws);
-    let mut service_client = RpcClient::new(service_transport).await.map_err(|e| anyhow!("[social] Failed to create RPC client: {e:?}"))?;
-    let port = service_client.create_port("social").await.map_err(|e| anyhow!("[social] Failed to create port: {e:?}"))?;
+    let mut service_client = RpcClient::new(service_transport)
+        .await
+        .map_err(|e| anyhow!("[social] Failed to create RPC client: {e:?}"))?;
+    let port = service_client
+        .create_port("social")
+        .await
+        .map_err(|e| anyhow!("[social] Failed to create port: {e:?}"))?;
     let service_module = port
         .load_module::<SocialServiceClient<_>>("SocialService")
         .await
@@ -422,7 +434,11 @@ async fn social_socket_handler_inner(
             .await
             .map_err(dbgerr)?;
 
-        info!("[social] get_friends(offset={offset}): got {} friends, raw response: {:?}", resp.friends.len(), resp.pagination_data);
+        info!(
+            "[social] get_friends(offset={offset}): got {} friends, raw response: {:?}",
+            resp.friends.len(),
+            resp.pagination_data
+        );
 
         for friend in resp.friends {
             if let Some(address) = friend.address.as_h160() {
@@ -430,11 +446,7 @@ async fn social_socket_handler_inner(
             }
         }
 
-        let total = resp
-            .pagination_data
-            .as_ref()
-            .map(|p| p.total)
-            .unwrap_or(0);
+        let total = resp.pagination_data.as_ref().map(|p| p.total).unwrap_or(0);
         offset += PAGE_SIZE;
         if offset >= total || friends.is_empty() {
             break;
@@ -454,7 +466,10 @@ async fn social_socket_handler_inner(
         })
         .await
         .map_err(dbgerr)?;
-    info!("[social] get_pending_friendship_requests response: {:?}", pending_resp.response);
+    info!(
+        "[social] get_pending_friendship_requests response: {:?}",
+        pending_resp.response
+    );
 
     if let Some(paginated_friendship_requests_response::Response::Requests(reqs)) =
         pending_resp.response
@@ -467,7 +482,10 @@ async fn social_socket_handler_inner(
             }
         }
     }
-    info!("[social] Pending requests loaded: {}", received_requests.len());
+    info!(
+        "[social] Pending requests loaded: {}",
+        received_requests.len()
+    );
 
     // Gather initial data: sent requests
     info!("[social] Fetching sent friendship requests...");
@@ -481,7 +499,10 @@ async fn social_socket_handler_inner(
         })
         .await
         .map_err(dbgerr)?;
-    info!("[social] get_sent_friendship_requests response: {:?}", sent_resp.response);
+    info!(
+        "[social] get_sent_friendship_requests response: {:?}",
+        sent_resp.response
+    );
 
     if let Some(paginated_friendship_requests_response::Response::Requests(reqs)) =
         sent_resp.response
@@ -496,7 +517,12 @@ async fn social_socket_handler_inner(
     }
     info!("[social] Sent requests loaded: {}", sent_requests.len());
 
-    info!("[social] Init complete — friends: {}, received_requests: {}, sent_requests: {}", friends.len(), received_requests.len(), sent_requests.len());
+    info!(
+        "[social] Init complete — friends: {}, received_requests: {}, sent_requests: {}",
+        friends.len(),
+        received_requests.len(),
+        sent_requests.len()
+    );
     response_sx.send(FriendData::Init {
         sent_requests,
         received_requests,
@@ -695,7 +721,9 @@ async fn social_socket_handler_inner(
         while let Some(update) = inbound_updates.next().await {
             info!("[social] Received friendship update: {update:?}");
             if let Some(ev) = update.update {
-                sx_friendship.send(FriendData::FriendshipEvent(ev)).map_err(dbgerr)?;
+                sx_friendship
+                    .send(FriendData::FriendshipEvent(ev))
+                    .map_err(dbgerr)?;
             }
         }
         Result::<(), anyhow::Error>::Ok(())
@@ -714,7 +742,9 @@ async fn social_socket_handler_inner(
                         2 => ConnectivityStatus::Away,
                         _ => ConnectivityStatus::Offline,
                     };
-                    sx_connectivity.send(FriendData::ConnectivityEvent { address, status }).map_err(dbgerr)?;
+                    sx_connectivity
+                        .send(FriendData::ConnectivityEvent { address, status })
+                        .map_err(dbgerr)?;
                 }
             }
         }

@@ -12,7 +12,10 @@ use bevy::prelude::*;
 use common::rpc::RpcStreamSender;
 use common::util::AsH160;
 use ethers_core::types::Address;
-use system_bridge::{BlockedUserData, FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData, FriendshipEventUpdate, NameColor, SystemApi};
+use system_bridge::{
+    BlockedUserData, FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
+    FriendshipEventUpdate, NameColor, SystemApi,
+};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 use wallet::Wallet;
 
@@ -59,7 +62,10 @@ pub fn init_social_client(
                 let _ = f_sx.send(FriendshipEvent(Some(f.clone())));
             },
             move |address, status| {
-                let _ = conn_sx.send(ConnectivityEvent { address, status: status as i32 });
+                let _ = conn_sx.send(ConnectivityEvent {
+                    address,
+                    status: status as i32,
+                });
             },
             move |c| {
                 let _ = c_sx.send(DirectChatEvent(c));
@@ -124,10 +130,7 @@ fn convert_name_color(
 }
 
 /// Handles request/response SystemApi messages for friends
-fn handle_social_requests(
-    mut events: EventReader<SystemApi>,
-    mut social: ResMut<SocialClient>,
-) {
+fn handle_social_requests(mut events: EventReader<SystemApi>, mut social: ResMut<SocialClient>) {
     for event in events.read() {
         match event {
             #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
@@ -183,9 +186,14 @@ fn handle_social_requests(
                                 FriendRequestData {
                                     address: format!("{a:#x}"),
                                     name: profile.map(|p| p.name.clone()).unwrap_or_default(),
-                                    has_claimed_name: profile.map(|p| p.has_claimed_name).unwrap_or(false),
-                                    profile_picture_url: profile.map(|p| p.profile_picture_url.clone()).unwrap_or_default(),
-                                    name_color: profile.and_then(|p| convert_name_color(&p.name_color)),
+                                    has_claimed_name: profile
+                                        .map(|p| p.has_claimed_name)
+                                        .unwrap_or(false),
+                                    profile_picture_url: profile
+                                        .map(|p| p.profile_picture_url.clone())
+                                        .unwrap_or_default(),
+                                    name_color: profile
+                                        .and_then(|p| convert_name_color(&p.name_color)),
                                     created_at: req.created_at,
                                     message: req.message.clone(),
                                     id: req.id.clone(),
@@ -209,8 +217,12 @@ fn handle_social_requests(
                                 FriendRequestData {
                                     address: format!("{a:#x}"),
                                     name: profile.map(|p| p.name.clone()).unwrap_or_default(),
-                                    has_claimed_name: profile.map(|p| p.has_claimed_name).unwrap_or(false),
-                                    profile_picture_url: profile.map(|p| p.profile_picture_url.clone()).unwrap_or_default(),
+                                    has_claimed_name: profile
+                                        .map(|p| p.has_claimed_name)
+                                        .unwrap_or(false),
+                                    profile_picture_url: profile
+                                        .map(|p| p.profile_picture_url.clone())
+                                        .unwrap_or_default(),
                                     name_color: None,
                                     created_at: req.created_at,
                                     message: req.message.clone(),
@@ -235,9 +247,14 @@ fn handle_social_requests(
                                 FriendRequestData {
                                     address: format!("{a:#x}"),
                                     name: profile.map(|p| p.name.clone()).unwrap_or_default(),
-                                    has_claimed_name: profile.map(|p| p.has_claimed_name).unwrap_or(false),
-                                    profile_picture_url: profile.map(|p| p.profile_picture_url.clone()).unwrap_or_default(),
-                                    name_color: profile.and_then(|p| convert_name_color(&p.name_color)),
+                                    has_claimed_name: profile
+                                        .map(|p| p.has_claimed_name)
+                                        .unwrap_or(false),
+                                    profile_picture_url: profile
+                                        .map(|p| p.profile_picture_url.clone())
+                                        .unwrap_or_default(),
+                                    name_color: profile
+                                        .and_then(|p| convert_name_color(&p.name_color)),
                                     created_at: req.created_at,
                                     message: req.message.clone(),
                                     id: req.id.clone(),
@@ -261,8 +278,12 @@ fn handle_social_requests(
                                 FriendRequestData {
                                     address: format!("{a:#x}"),
                                     name: profile.map(|p| p.name.clone()).unwrap_or_default(),
-                                    has_claimed_name: profile.map(|p| p.has_claimed_name).unwrap_or(false),
-                                    profile_picture_url: profile.map(|p| p.profile_picture_url.clone()).unwrap_or_default(),
+                                    has_claimed_name: profile
+                                        .map(|p| p.has_claimed_name)
+                                        .unwrap_or(false),
+                                    profile_picture_url: profile
+                                        .map(|p| p.profile_picture_url.clone())
+                                        .unwrap_or_default(),
                                     name_color: None,
                                     created_at: req.created_at,
                                     message: req.message.clone(),
@@ -277,7 +298,11 @@ fn handle_social_requests(
             #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
             SystemApi::GetMutualFriends(address, sx) => {
                 let sx = sx.clone();
-                match social.0.as_ref().and_then(|c| c.get_mutual_friends(address.clone()).ok()) {
+                match social
+                    .0
+                    .as_ref()
+                    .and_then(|c| c.get_mutual_friends(address.clone()).ok())
+                {
                     Some(rx) => {
                         std::thread::spawn(move || {
                             let rt = tokio::runtime::Builder::new_current_thread()
@@ -286,18 +311,18 @@ fn handle_social_requests(
                                 .unwrap();
                             let result = rt.block_on(async {
                                 match rx.await {
-                                    Ok(Ok(profiles)) => {
-                                        profiles
-                                            .iter()
-                                            .map(|profile| FriendData {
-                                                address: profile.address.clone(),
-                                                name: profile.name.clone(),
-                                                has_claimed_name: profile.has_claimed_name,
-                                                profile_picture_url: profile.profile_picture_url.clone(),
-                                                name_color: convert_name_color(&profile.name_color),
-                                            })
-                                            .collect()
-                                    }
+                                    Ok(Ok(profiles)) => profiles
+                                        .iter()
+                                        .map(|profile| FriendData {
+                                            address: profile.address.clone(),
+                                            name: profile.name.clone(),
+                                            has_claimed_name: profile.has_claimed_name,
+                                            profile_picture_url: profile
+                                                .profile_picture_url
+                                                .clone(),
+                                            name_color: convert_name_color(&profile.name_color),
+                                        })
+                                        .collect(),
                                     _ => Vec::new(),
                                 }
                             });
@@ -315,11 +340,7 @@ fn handle_social_requests(
                 sx.send(Vec::new());
             }
             SystemApi::GetSocialInitialized(sx) => {
-                let initialized = social
-                    .0
-                    .as_ref()
-                    .map(|c| c.is_initialized)
-                    .unwrap_or(false);
+                let initialized = social.0.as_ref().map(|c| c.is_initialized).unwrap_or(false);
                 sx.send(initialized);
             }
             SystemApi::SendFriendRequest(address, message, sx) => {
@@ -336,9 +357,7 @@ fn handle_social_requests(
                 let result = (|| {
                     let addr = address.as_h160().ok_or("invalid address")?;
                     let client = social.0.as_mut().ok_or("social not initialized")?;
-                    client
-                        .accept_request(addr)
-                        .map_err(|e| format!("{e}"))
+                    client.accept_request(addr).map_err(|e| format!("{e}"))
                 })();
                 sx.send(result.map_err(|e| e.to_string()));
             }
@@ -346,9 +365,7 @@ fn handle_social_requests(
                 let result = (|| {
                     let addr = address.as_h160().ok_or("invalid address")?;
                     let client = social.0.as_mut().ok_or("social not initialized")?;
-                    client
-                        .reject_request(addr)
-                        .map_err(|e| format!("{e}"))
+                    client.reject_request(addr).map_err(|e| format!("{e}"))
                 })();
                 sx.send(result.map_err(|e| e.to_string()));
             }
@@ -356,9 +373,7 @@ fn handle_social_requests(
                 let result = (|| {
                     let addr = address.as_h160().ok_or("invalid address")?;
                     let client = social.0.as_mut().ok_or("social not initialized")?;
-                    client
-                        .cancel_request(addr)
-                        .map_err(|e| format!("{e}"))
+                    client.cancel_request(addr).map_err(|e| format!("{e}"))
                 })();
                 sx.send(result.map_err(|e| e.to_string()));
             }
@@ -366,9 +381,7 @@ fn handle_social_requests(
                 let result = (|| {
                     let addr = address.as_h160().ok_or("invalid address")?;
                     let client = social.0.as_mut().ok_or("social not initialized")?;
-                    client
-                        .delete_friend(addr)
-                        .map_err(|e| format!("{e}"))
+                    client.delete_friend(addr).map_err(|e| format!("{e}"))
                 })();
                 sx.send(result.map_err(|e| e.to_string()));
             }
@@ -382,7 +395,10 @@ fn handle_social_requests(
                         c.friends
                             .iter()
                             .map(|(a, profile)| {
-                                let status = c.friend_status.get(a).copied()
+                                let status = c
+                                    .friend_status
+                                    .get(a)
+                                    .copied()
                                     .unwrap_or(ConnectivityStatus::Offline);
                                 FriendStatusData {
                                     address: format!("{a:#x}"),
@@ -410,15 +426,13 @@ fn handle_social_requests(
                     .map(|c| {
                         c.friends
                             .iter()
-                            .map(|(a, profile)| {
-                                FriendStatusData {
-                                    address: format!("{a:#x}"),
-                                    name: profile.name.clone(),
-                                    has_claimed_name: profile.has_claimed_name,
-                                    profile_picture_url: profile.profile_picture_url.clone(),
-                                    name_color: None,
-                                    status: "offline".to_owned(),
-                                }
+                            .map(|(a, profile)| FriendStatusData {
+                                address: format!("{a:#x}"),
+                                name: profile.name.clone(),
+                                has_claimed_name: profile.has_claimed_name,
+                                profile_picture_url: profile.profile_picture_url.clone(),
+                                name_color: None,
+                                status: "offline".to_owned(),
                             })
                             .collect()
                     })
@@ -428,7 +442,11 @@ fn handle_social_requests(
             #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
             SystemApi::BlockUser(address, sx) => {
                 let sx = sx.clone();
-                match social.0.as_ref().and_then(|c| c.block_user(address.clone()).ok()) {
+                match social
+                    .0
+                    .as_ref()
+                    .and_then(|c| c.block_user(address.clone()).ok())
+                {
                     Some(rx) => {
                         std::thread::spawn(move || {
                             let rt = tokio::runtime::Builder::new_current_thread()
@@ -456,7 +474,11 @@ fn handle_social_requests(
             #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
             SystemApi::UnblockUser(address, sx) => {
                 let sx = sx.clone();
-                match social.0.as_ref().and_then(|c| c.unblock_user(address.clone()).ok()) {
+                match social
+                    .0
+                    .as_ref()
+                    .and_then(|c| c.unblock_user(address.clone()).ok())
+                {
                     Some(rx) => {
                         std::thread::spawn(move || {
                             let rt = tokio::runtime::Builder::new_current_thread()
@@ -493,18 +515,18 @@ fn handle_social_requests(
                                 .unwrap();
                             let result = rt.block_on(async {
                                 match rx.await {
-                                    Ok(Ok(profiles)) => {
-                                        profiles
-                                            .iter()
-                                            .map(|profile| BlockedUserData {
-                                                address: profile.address.clone(),
-                                                name: profile.name.clone(),
-                                                has_claimed_name: profile.has_claimed_name,
-                                                profile_picture_url: profile.profile_picture_url.clone(),
-                                                name_color: convert_name_color(&profile.name_color),
-                                            })
-                                            .collect()
-                                    }
+                                    Ok(Ok(profiles)) => profiles
+                                        .iter()
+                                        .map(|profile| BlockedUserData {
+                                            address: profile.address.clone(),
+                                            name: profile.name.clone(),
+                                            has_claimed_name: profile.has_claimed_name,
+                                            profile_picture_url: profile
+                                                .profile_picture_url
+                                                .clone(),
+                                            name_color: convert_name_color(&profile.name_color),
+                                        })
+                                        .collect(),
                                     _ => Vec::new(),
                                 }
                             });
@@ -612,9 +634,7 @@ fn pipe_connectivity_events_to_scene(
     }
 }
 
-fn friendship_event_to_update(
-    body: &Option<FriendshipEventBody>,
-) -> Option<FriendshipEventUpdate> {
+fn friendship_event_to_update(body: &Option<FriendshipEventBody>) -> Option<FriendshipEventUpdate> {
     #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
     {
         use dcl_component::proto_components::social_service::v2::friendship_update;

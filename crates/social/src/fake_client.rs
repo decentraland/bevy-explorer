@@ -83,7 +83,8 @@ impl SocialClientHandler {
     pub fn get_mutual_friends(
         &self,
         _address: String,
-    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<FriendProfile>, String>>, anyhow::Error> {
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<FriendProfile>, String>>, anyhow::Error>
+    {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let _ = tx.send(Ok(Vec::new()));
         Ok(rx)
@@ -109,7 +110,8 @@ impl SocialClientHandler {
 
     pub fn get_blocked_users(
         &self,
-    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<FriendProfile>, String>>, anyhow::Error> {
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<FriendProfile>, String>>, anyhow::Error>
+    {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let _ = tx.send(Ok(Vec::new()));
         Ok(rx)
