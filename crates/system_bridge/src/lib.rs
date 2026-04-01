@@ -187,19 +187,22 @@ pub struct AvatarModifierState {
 pub struct SceneParams(pub HashMap<String, String>);
 
 impl SceneParams {
-    pub fn from_query_string(query: &str) -> Self {
+    pub fn from_query_string(query: &str, decode: bool) -> Self {
         let map = query
             .split('&')
             .filter(|s| !s.is_empty())
             .filter_map(|pair| {
                 let mut parts = pair.splitn(2, '=');
-                let key = urlencoding::decode(parts.next()?)
-                    .unwrap_or_default()
-                    .into_owned();
-                let value = urlencoding::decode(parts.next().unwrap_or(""))
-                    .unwrap_or_default()
-                    .into_owned();
-                Some((key, value))
+                let key = parts.next()?.to_owned();
+                let value = parts.next().unwrap_or("").to_owned();
+                if decode {
+                    Some((
+                        urlencoding::decode(&key).unwrap_or_default().into_owned(),
+                        urlencoding::decode(&value).unwrap_or_default().into_owned(),
+                    ))
+                } else {
+                    Some((key, value))
+                }
             })
             .collect();
         Self(map)

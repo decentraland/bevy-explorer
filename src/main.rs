@@ -473,7 +473,7 @@ fn main() {
     });
 
     app.insert_resource(final_config);
-    app.insert_resource(SceneParams::from_query_string(&scene_params));
+    app.insert_resource(SceneParams::from_query_string(&scene_params, false));
     if no_gltf {
         app.insert_resource(NoGltf(true));
     }

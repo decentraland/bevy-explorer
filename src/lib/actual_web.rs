@@ -253,7 +253,7 @@ fn main_inner(
         server: is_preview.then_some(map_realm_name(&final_config.server)),
         is_preview,
     });
-    app.insert_resource(SceneParams::from_query_string(params));
+    app.insert_resource(SceneParams::from_query_string(params, true));
 
     app.insert_resource(SceneLoadDistance {
         load: if is_preview {
