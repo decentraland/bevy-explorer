@@ -1,11 +1,9 @@
+#[cfg(not(target_arch = "wasm32"))]
+use bevy::{ecs::system::lifetimeless::Write, window::PrimaryWindow};
 use bevy::{
-    ecs::system::{
-        lifetimeless::{SQuery, Write},
-        SystemParamItem,
-    },
+    ecs::system::{lifetimeless::SQuery, SystemParamItem},
     platform::collections::HashSet,
     prelude::*,
-    window::PrimaryWindow,
 };
 use common::structs::{AppConfig, WindowSetting};
 
@@ -33,7 +31,10 @@ impl EnumAppSetting for WindowSetting {
 }
 
 impl AppSetting for WindowSetting {
+    #[cfg(not(target_arch = "wasm32"))]
     type Param = SQuery<Write<Window>, With<PrimaryWindow>>;
+    #[cfg(target_arch = "wasm32")]
+    type Param = SQuery<()>;
 
     fn title() -> String {
         "Window mode".to_owned()
@@ -62,6 +63,7 @@ impl AppSetting for WindowSetting {
         super::SettingCategory::Graphics
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn apply(&self, mut window: SystemParamItem<Self::Param>, _: Commands, _: &HashSet<Entity>) {
         let mut window = window.single_mut().unwrap();
         window.mode = match self {
@@ -70,11 +72,34 @@ impl AppSetting for WindowSetting {
                 VideoModeSelection::Current,
             ),
             WindowSetting::Windowed => bevy::window::WindowMode::Windowed,
-            #[cfg(not(target_arch = "wasm32"))]
             WindowSetting::Borderless => {
                 bevy::window::WindowMode::BorderlessFullscreen(MonitorSelection::Current)
             }
         };
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn apply(&self, _: SystemParamItem<Self::Param>, _: Commands, _: &HashSet<Entity>) {
+        let window = web_sys::window().unwrap();
+        let document = window.document().unwrap();
+
+        let already_fullscreen = document.fullscreen_element().is_some();
+        match self {
+            Self::Fullscreen => {
+                if !already_fullscreen {
+                    let Some(canvas) = document.get_element_by_id("mygame-canvas") else {
+                        error!("No game canvas to make fullscreen.");
+                        return;
+                    };
+                    canvas.request_fullscreen().unwrap();
+                }
+            }
+            Self::Windowed => {
+                if already_fullscreen {
+                    document.exit_fullscreen();
+                }
+            }
+        }
     }
 }
 

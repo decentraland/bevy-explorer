@@ -25,3 +25,4 @@ platform = { workspace = true }
 
 serde_repr = "0.1"
 urlencoding = { workspace = true }
+web-sys = { workspace = true }
