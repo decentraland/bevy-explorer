@@ -24,3 +24,4 @@ dcl_component = { workspace = true }
 platform = { workspace = true }
 
 serde_repr = "0.1"
+urlencoding = { workspace = true }
