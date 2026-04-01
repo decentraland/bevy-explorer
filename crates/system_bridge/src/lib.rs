@@ -193,8 +193,12 @@ impl SceneParams {
             .filter(|s| !s.is_empty())
             .filter_map(|pair| {
                 let mut parts = pair.splitn(2, '=');
-                let key = parts.next()?.to_owned();
-                let value = parts.next().unwrap_or("").to_owned();
+                let key = urlencoding::decode(parts.next()?)
+                    .unwrap_or_default()
+                    .into_owned();
+                let value = urlencoding::decode(parts.next().unwrap_or(""))
+                    .unwrap_or_default()
+                    .into_owned();
                 Some((key, value))
             })
             .collect();
