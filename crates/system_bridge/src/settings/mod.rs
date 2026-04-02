@@ -38,11 +38,15 @@ use player_settings::{
 use scene_threads::SceneThreadsSetting;
 use serde::{Deserialize, Serialize};
 use shadow_settings::{ShadowCasterCountSetting, ShadowDistanceSetting};
+#[cfg(target_arch = "wasm32")]
+use tokio::sync::watch;
 use video_threads::VideoThreadsSetting;
 use volume_settings::{
     AvatarVolumeSetting, MasterVolumeSetting, SceneVolumeSetting, SystemVolumeSetting,
     VoiceVolumeSetting,
 };
+#[cfg(target_arch = "wasm32")]
+use {js_sys::Function, wasm_bindgen::prelude::*, web_sys::Event};
 
 pub mod aa_settings;
 pub mod ambient_brightness_setting;
@@ -191,6 +195,10 @@ impl Plugin for SettingBridgePlugin {
             )
                 .chain(),
         );
+        #[cfg(target_arch = "wasm32")]
+        app.add_systems(Startup, setup_fullscreen_listeners_and_callbacks);
+        #[cfg(target_arch = "wasm32")]
+        app.add_systems(Update, listen_to_fullscreen_updates);
     }
 }
 
@@ -471,4 +479,66 @@ fn is_fullscreen_available() -> bool {
     let document = window.document().unwrap();
 
     document.fullscreen_enabled()
+}
+
+#[cfg(target_arch = "wasm32")]
+#[derive(Resource, Deref, DerefMut)]
+struct FullscreenListener(watch::Receiver<WindowSetting>);
+
+#[cfg(target_arch = "wasm32")]
+fn setup_fullscreen_listeners_and_callbacks(mut commands: Commands, app_config: Res<AppConfig>) {
+    let window = web_sys::window().unwrap();
+    let document = window.document().unwrap();
+    let canvas = document.get_element_by_id("mygame-canvas").unwrap();
+
+    let (sender, receiver) = tokio::sync::watch::channel(app_config.graphics.window);
+
+    let listener = Closure::wrap(Box::new(move |_event: Event| {
+        let window = web_sys::window().unwrap();
+        let document = window.document().unwrap();
+
+        let new = if document.fullscreen_element().is_some() {
+            error!("Detected change to fullscreen.");
+            WindowSetting::Fullscreen
+        } else {
+            error!("Detected exit from fullscreen.");
+            WindowSetting::Windowed
+        };
+        if let Err(err) = sender.send(new) {
+            error!("{err}");
+        }
+    }) as Box<dyn FnMut(Event)>);
+    let listener_ref: &Function = listener.as_ref().unchecked_ref();
+
+    canvas
+        .add_event_listener_with_callback("fullscreenchange", listener_ref)
+        .unwrap();
+    canvas
+        .add_event_listener_with_callback("fullscreenerror", listener_ref)
+        .unwrap();
+
+    listener.forget();
+
+    commands.insert_resource(FullscreenListener(receiver));
+    debug!("Fullscreen listeners setup.");
+}
+
+#[cfg(target_arch = "wasm32")]
+fn listen_to_fullscreen_updates(
+    mut fullscreen_listener: ResMut<FullscreenListener>,
+    mut app_config: ResMut<AppConfig>,
+) {
+    match fullscreen_listener.has_changed() {
+        Ok(changed) => {
+            if changed {
+                error!("AppConfig2.");
+                let new_value = fullscreen_listener.borrow_and_update();
+                if *new_value != app_config.graphics.window {
+                    error!("Setting {new_value:?} to AppConfig.");
+                    app_config.graphics.window = *new_value;
+                }
+            }
+        }
+        Err(err) => error!("{err}"),
+    }
 }

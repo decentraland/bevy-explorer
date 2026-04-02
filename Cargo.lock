@@ -11648,12 +11648,14 @@ dependencies = [
  "console",
  "dcl_component",
  "ipfs",
+ "js-sys",
  "platform",
  "serde",
  "serde_json",
  "serde_repr",
  "tokio",
  "urlencoding",
+ "wasm-bindgen",
  "web-sys",
 ]
 
