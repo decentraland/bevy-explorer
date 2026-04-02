@@ -187,7 +187,7 @@ impl Plugin for SettingBridgePlugin {
             Update,
             (
                 record_cameras,
-                apply_settings.run_if(|config: Res<AppConfig>| config.is_changed()),
+                apply_settings.run_if(resource_changed::<AppConfig>),
             )
                 .chain(),
         );
