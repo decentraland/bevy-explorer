@@ -336,4 +336,6 @@ export function start() {
     });
   };
   setTimeout(showCanvas, 200);
+
+  document.getElementById("mygame-canvas").started = true;
 }
