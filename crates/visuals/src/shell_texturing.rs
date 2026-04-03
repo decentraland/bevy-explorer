@@ -191,6 +191,7 @@ fn spawn_ground(mut commands: Commands, mut materials: ResMut<Assets<StandardMat
         // Ground covers 1024 parcels
         Transform::from_scale(Vec3::new(1024., 1., 1024.))
             .with_translation(Vec3::new(0., -0.05, 0.)),
+        Visibility::Inherited,
         Ground,
     ));
     materials.insert(
