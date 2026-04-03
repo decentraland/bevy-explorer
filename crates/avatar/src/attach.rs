@@ -57,7 +57,7 @@ pub fn update_attached(
     mut removed_attachments: RemovedComponents<AvatarAttachment>,
     visibility_component: Query<&VisibilityComponent>,
     primary_user: Query<&AttachPoints, With<PrimaryUser>>,
-    all_users: Query<(&AttachPoints, &UserProfile, Option<&PrimaryUser>)>,
+    all_users: Query<(&AttachPoints, &UserProfile, Has<PrimaryUser>)>,
 ) {
     for removed in removed_attachments.read() {
         if let Ok(mut commands) = commands.get_entity(removed) {
@@ -91,7 +91,7 @@ pub fn update_attached(
             }
             Some(id) => {
                 let id = id.to_lowercase();
-                let Some((attach, _, maybe_primary)) = all_users
+                let Some((attach, _, has_primary)) = all_users
                     .iter()
                     .find(|(_, profile, _)| profile.content.eth_address.to_lowercase() == id)
                 else {
@@ -105,7 +105,7 @@ pub fn update_attached(
                     );
                     continue;
                 };
-                (maybe_primary.is_some(), attach)
+                (has_primary, attach)
             }
         };
 
