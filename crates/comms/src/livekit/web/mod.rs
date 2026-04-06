@@ -17,6 +17,7 @@ mod traits;
 use std::{
     error::Error,
     fmt::{Display, Formatter},
+    mem::ManuallyDrop,
 };
 
 use bevy::prelude::*;
@@ -52,20 +53,33 @@ pub struct RoomOptions {
     pub join_retries: u32,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-pub enum RoomError {
-    Other(String),
+#[derive(Debug)]
+pub struct RoomError {
+    error: JsValueAbi,
 }
 
 impl Display for RoomError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{self:?}")?;
-        Ok(())
+        let room_error = ManuallyDrop::new(unsafe { JsValue::from_abi(self.error) });
+        write!(f, "{room_error:?}")
     }
 }
 
 impl Error for RoomError {}
+
+impl Drop for RoomError {
+    fn drop(&mut self) {
+        let _ = unsafe { JsValue::from_abi(self.error) };
+    }
+}
+
+impl From<JsValue> for RoomError {
+    fn from(value: JsValue) -> Self {
+        Self {
+            error: value.into_abi(),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct DataPacket {
@@ -123,13 +137,6 @@ pub struct ParticipantSid(String);
 impl std::fmt::Display for ParticipantSid {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
-    }
-}
-
-impl From<JsValue> for RoomError {
-    fn from(value: JsValue) -> Self {
-        error!("{value:?}");
-        serde_wasm_bindgen::from_value(value).expect("Room error")
     }
 }
 
