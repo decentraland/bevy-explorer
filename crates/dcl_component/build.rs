@@ -74,7 +74,7 @@ fn gen_sdk_components() -> Result<()> {
     sources.push("src/proto/decentraland/kernel/comms/rfc5/ws_comms.proto".into());
     sources.push("src/proto/decentraland/kernel/comms/rfc4/comms.proto".into());
     sources.push("src/proto/decentraland/kernel/comms/v3/archipelago.proto".into());
-    sources.push("src/proto/decentraland/social/friendships/friendships.proto".into());
+    sources.push("src/proto/decentraland/social_service/v1/social_service_v1.proto".into());
 
     let mut config = prost_build::Config::new();
     config.type_attribute(
@@ -133,7 +133,7 @@ fn gen_social_service() -> Result<()> {
     conf.service_generator(Box::new(dcl_rpc::codegen::RPCServiceGenerator::new()));
     conf.type_attribute("*", "#[derive(Debug)]");
     conf.compile_protos(
-        &["src/proto/decentraland/social/friendships/friendships.proto"],
+        &["src/proto/decentraland/social_service/v1/social_service_v1.proto"],
         &["src/proto"],
     )?;
     Ok(())
