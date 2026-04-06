@@ -1,9 +1,0 @@
-syntax = "proto3";
-
-package decentraland.sdk.components.common;
-
-enum CameraType {
-  CT_FIRST_PERSON = 0;
-  CT_THIRD_PERSON = 1;
-  CT_CINEMATIC = 2;    // controlled by the scene
-}
