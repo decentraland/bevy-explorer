@@ -80,15 +80,13 @@ jobs:
         os: [windows-latest, ubuntu-latest, macos-15]
     runs-on: ${{ matrix.os }}
     steps:
-      - name: Set Windows git config
-        if: runner.os == 'windows' && matrix.os != 'self-hosted-windows'
-        # Enable Developer Mode via registry and symbolic link resolution
-        run: |
-          reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /t REG_DWORD /f /v "AllowDevelopmentWithoutDevLicense" /d "1"
-          git config --global core.symlinks true
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v2
         with:
           submodules: true
+      - name: Set Windows git config
+        if: runner.os == 'windows' && matrix.os != 'self-hosted-windows'
+        run: |
+          mklink /j crates/dcl_component/src/proto protocol/proto
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
