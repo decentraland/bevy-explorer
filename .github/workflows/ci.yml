@@ -80,6 +80,9 @@ jobs:
         os: [windows-latest, ubuntu-latest, macos-15]
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Set Windows git config
+        if: runner.os == 'windows' && matrix.os != 'self-hosted-windows'
+        run: git config --global core.symlinks=true
       - uses: actions/checkout@v2
         with:
           submodules: true
