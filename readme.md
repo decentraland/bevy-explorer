@@ -6,7 +6,7 @@ visit our [Releases](https://github.com/decentraland/bevy-explorer/releases/late
 
 ![screenshots](montage.png)
 
-This implementation uses [rust](https://www.rust-lang.org/) and the [Bevy](https://bevyengine.org) engine, and targets desktop clients.
+This implementation uses [rust](https://www.rust-lang.org/) and the [Bevy](https://bevy.org) engine, and targets desktop clients.
 
 This project's goals are to:
 - document current and future protocol standards
