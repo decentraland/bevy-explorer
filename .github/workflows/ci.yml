@@ -86,7 +86,7 @@ jobs:
         run: |
           reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /t REG_DWORD /f /v "AllowDevelopmentWithoutDevLicense" /d "1"
           git config --global core.symlinks true
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
         with:
           submodules: true
       - uses: actions-rs/toolchain@v1
