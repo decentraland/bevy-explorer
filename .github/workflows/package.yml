@@ -14,8 +14,6 @@ jobs:
         steps:
           - name: Clone repo
             uses: actions/checkout@v3
-            with:
-              submodules: true
 
           - name: Get current time with underscores
             uses: 1466587594/get-current-time@v2.1.1
@@ -63,9 +61,7 @@ jobs:
         steps:
           - name: Clone repo
             uses: actions/checkout@v3
-            with:
-              submodules: true
-
+            
           - uses: actions-rs/toolchain@v1
             with:
                 profile: minimal
