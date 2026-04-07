@@ -87,7 +87,7 @@ jobs:
         if: runner.os == 'windows'
         shell: cmd
         run: |
-          mklink /j crates/dcl_component/src/proto protocol/proto
+          mklink /j crates\\dcl_component\\src\\proto protocol\\proto
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
