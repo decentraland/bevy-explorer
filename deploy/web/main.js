@@ -83,3 +83,19 @@ initEngine()
         initButton.style.display = 'block';
         initButton.textContent = "Load Failed";
     });
+
+window.addEventListener("keydown", (event) => {
+    if (event.key == "F11" || event.code == "F11") {
+        event.preventDefault();
+        const canvas = window.document.getElementById("mygame-canvas");
+        if (canvas && canvas.started) {
+            if (document.fullscreenElement) {
+                document.exitFullscreen();
+            } else {
+                canvas.requestFullscreen();
+            }
+        } else {
+            console.log("Fullscreen is unavailable on the starting page.");
+        }
+    }
+});

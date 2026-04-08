@@ -248,6 +248,21 @@ export function start() {
   const positionValue = positionInput.value;
   const systemScene = systemSceneInput.value;
   const preview = previewInput.checked;
+
+  // Build params from URL, overriding with form field values
+  const urlParams = new URLSearchParams(window.location.search);
+  urlParams.set("realm", realmValue);
+  if (positionValue) {
+    urlParams.set("position", positionValue);
+  }
+  urlParams.set("systemScene", systemScene);
+  urlParams.delete("initialRealm");
+  if (preview) {
+    urlParams.set("preview", "true");
+  } else {
+    urlParams.delete("preview");
+  }
+  const params = urlParams.toString();
   console.log(
     `[Main JS] "Launch" button clicked. Initial Realm: "${realmValue}", Position (coords): "${positionValue}", System Scene: "${systemScene}"`
   );
@@ -308,7 +323,7 @@ export function start() {
     delete window._buildEngineApi;
   };
 
-  engine_run(platform, realmValue, positionValue, systemScene, true, preview, 1e7);
+  engine_run(platform, realmValue, positionValue, systemScene, true, preview, 1e7, params);
   window.engine_console_command = engine_console_command;
   window.loadSceneUtils = () => {
     return new Promise((resolve, reject) => {
@@ -321,4 +336,6 @@ export function start() {
     });
   };
   setTimeout(showCanvas, 200);
+
+  document.getElementById("mygame-canvas").started = true;
 }

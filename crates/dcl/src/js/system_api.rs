@@ -13,6 +13,7 @@ use dcl_component::proto_components::{
     sdk::components::{PbAvatarBase, PbAvatarEquippedData},
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
 use strum::IntoEnumIterator;
 use system_bridge::{
@@ -766,6 +767,19 @@ pub async fn op_get_avatar_modifiers(
         .borrow_mut()
         .borrow_mut::<SuperUserScene>()
         .send(SystemApi::GetAvatarModifiers(sx))?;
+
+    Ok(rx.await?)
+}
+
+pub async fn op_get_params(
+    state: Rc<RefCell<impl State>>,
+) -> Result<HashMap<String, String>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetParams(sx))?;
 
     Ok(rx.await?)
 }

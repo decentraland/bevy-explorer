@@ -555,6 +555,7 @@ pub enum AaSetting {
 pub enum WindowSetting {
     Fullscreen,
     Windowed,
+    #[cfg(not(target_arch = "wasm32"))]
     Borderless,
 }
 

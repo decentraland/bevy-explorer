@@ -24,3 +24,9 @@ dcl_component = { workspace = true }
 platform = { workspace = true }
 
 serde_repr = "0.1"
+urlencoding = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { workspace = true }
+js-sys = { workspace = true }
+web-sys = { workspace = true }

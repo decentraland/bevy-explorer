@@ -6,7 +6,7 @@ visit our [Releases](https://github.com/decentraland/bevy-explorer/releases/late
 
 ![screenshots](montage.png)
 
-This implementation uses [rust](https://www.rust-lang.org/) and the [Bevy](https://bevyengine.org) engine, and targets desktop clients.
+This implementation uses [rust](https://www.rust-lang.org/) and the [Bevy](https://bevy.org) engine, and targets desktop clients.
 
 This project's goals are to:
 - document current and future protocol standards
@@ -78,6 +78,13 @@ We try to keep these instructions up to date, but the [github ci](.github/workfl
 `--inspect <scene_hash>`
 - when the scene with the input hash is first loaded, the js runtime will pause waiting for a debugger session (such as `chrome://inspect`) to connect, and allow you to debug the scene code. requires a build with --features "inspect"
 
+`--params "key1=value1&key2=value2"`
+  - pass arbitrary key-value parameters to the system scene, accessible via `BevyApi.getParams()`.
+  - format is URL query string style: `key=value` pairs separated by `&`.
+  - values are passed as-is (no URL decoding on desktop).
+  - on web, all URL query parameters are automatically forwarded as params, with URL decoding applied.
+  - example: `--params "disableFeatures=minimap,chat&debug=true"`
+  
 # Testing
 
 `cargo test --all` executes all the tests.

@@ -57,7 +57,7 @@ use ipfs::{map_realm_name, IpfsIoPlugin};
 use nft::{asset_source::NftReaderPlugin, NftShapePlugin};
 use scene_inspector::SceneInspectorPlugin;
 use social::SocialPlugin;
-use system_bridge::{settings::NewCameraEvent, NativeUi, SystemBridgePlugin};
+use system_bridge::{settings::NewCameraEvent, NativeUi, SceneParams, SystemBridgePlugin};
 use system_ui::{crash_report::CrashReportPlugin, SystemUiPlugin};
 use texture_camera::TextureCameraPlugin;
 use tween::TweenPlugin;
@@ -248,6 +248,7 @@ fn main() {
 
     let is_preview = args.contains("--preview");
     let startup_scenes_preview = args.contains("--ui-preview");
+    let scene_params: String = args.value_from_str("--params").unwrap_or_default();
 
     let mut startup_scenes: Vec<StartupScene> = args
         .value_from_str::<_, String>("--portables")
@@ -472,6 +473,7 @@ fn main() {
     });
 
     app.insert_resource(final_config);
+    app.insert_resource(SceneParams::from_query_string(&scene_params, false));
     if no_gltf {
         app.insert_resource(NoGltf(true));
     }
