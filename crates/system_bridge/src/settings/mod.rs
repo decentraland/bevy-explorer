@@ -499,7 +499,7 @@ fn setup_fullscreen_listeners_and_callbacks(mut commands: Commands, app_config: 
 
         let new = if document.fullscreen_element().is_some() {
             debug!("Detected change to fullscreen.");
-            WindowSetting::Fullscreen
+            WindowSetting::Borderless
         } else {
             debug!("Detected exit from fullscreen.");
             WindowSetting::Windowed

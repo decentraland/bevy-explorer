@@ -547,9 +547,9 @@ pub enum AaSetting {
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum WindowSetting {
+    #[cfg(not(target_arch = "wasm32"))]
     Fullscreen,
     Windowed,
-    #[cfg(not(target_arch = "wasm32"))]
     Borderless,
 }
 

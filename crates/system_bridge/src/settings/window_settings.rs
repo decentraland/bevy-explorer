@@ -1,9 +1,11 @@
-#[cfg(not(target_arch = "wasm32"))]
-use bevy::{ecs::system::lifetimeless::Write, window::PrimaryWindow};
 use bevy::{
-    ecs::system::{lifetimeless::SQuery, SystemParamItem},
+    ecs::system::{
+        lifetimeless::{SQuery, Write},
+        SystemParamItem,
+    },
     platform::collections::HashSet,
     prelude::*,
+    window::PrimaryWindow,
 };
 use common::structs::{AppConfig, WindowSetting};
 
@@ -13,17 +15,17 @@ impl EnumAppSetting for WindowSetting {
     fn variants() -> Vec<Self> {
         vec![
             Self::Windowed,
-            Self::Fullscreen,
             #[cfg(not(target_arch = "wasm32"))]
+            Self::Fullscreen,
             Self::Borderless,
         ]
     }
 
     fn name(&self) -> String {
         match self {
+            #[cfg(not(target_arch = "wasm32"))]
             WindowSetting::Fullscreen => "Fullscreen",
             WindowSetting::Windowed => "Window",
-            #[cfg(not(target_arch = "wasm32"))]
             WindowSetting::Borderless => "Borderless Fullscreen",
         }
         .to_owned()
@@ -31,10 +33,7 @@ impl EnumAppSetting for WindowSetting {
 }
 
 impl AppSetting for WindowSetting {
-    #[cfg(not(target_arch = "wasm32"))]
     type Param = SQuery<Write<Window>, With<PrimaryWindow>>;
-    #[cfg(target_arch = "wasm32")]
-    type Param = SQuery<()>;
 
     fn title() -> String {
         "Window mode".to_owned()
@@ -43,9 +42,9 @@ impl AppSetting for WindowSetting {
     fn description(&self) -> String {
         format!("Window mode.\n\n{}", 
             match self {
+                #[cfg(not(target_arch = "wasm32"))]
                 WindowSetting::Fullscreen => "Fullscreen: Native fullscreen mode.",
                 WindowSetting::Windowed => "Windowed: Not fullscreen.",
-                #[cfg(not(target_arch = "wasm32"))]
                 WindowSetting::Borderless => "Borderless Fullscreen: Use a fullscreen window at native resultion, changing resolution will have no effect.",
             }
         )
@@ -63,10 +62,10 @@ impl AppSetting for WindowSetting {
         super::SettingCategory::Graphics
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     fn apply(&self, mut window: SystemParamItem<Self::Param>, _: Commands, _: &HashSet<Entity>) {
         let mut window = window.single_mut().unwrap();
         window.mode = match self {
+            #[cfg(not(target_arch = "wasm32"))]
             WindowSetting::Fullscreen => bevy::window::WindowMode::Fullscreen(
                 MonitorSelection::Current,
                 VideoModeSelection::Current,
@@ -76,30 +75,6 @@ impl AppSetting for WindowSetting {
                 bevy::window::WindowMode::BorderlessFullscreen(MonitorSelection::Current)
             }
         };
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    fn apply(&self, _: SystemParamItem<Self::Param>, _: Commands, _: &HashSet<Entity>) {
-        let window = web_sys::window().unwrap();
-        let document = window.document().unwrap();
-
-        let already_fullscreen = document.fullscreen_element().is_some();
-        match self {
-            Self::Fullscreen => {
-                if !already_fullscreen {
-                    let Some(canvas) = document.get_element_by_id("mygame-canvas") else {
-                        error!("No game canvas to make fullscreen.");
-                        return;
-                    };
-                    canvas.request_fullscreen().unwrap();
-                }
-            }
-            Self::Windowed => {
-                if already_fullscreen {
-                    document.exit_fullscreen();
-                }
-            }
-        }
     }
 }
 
