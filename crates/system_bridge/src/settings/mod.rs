@@ -498,10 +498,10 @@ fn setup_fullscreen_listeners_and_callbacks(mut commands: Commands, app_config: 
         let document = window.document().unwrap();
 
         let new = if document.fullscreen_element().is_some() {
-            error!("Detected change to fullscreen.");
+            debug!("Detected change to fullscreen.");
             WindowSetting::Fullscreen
         } else {
-            error!("Detected exit from fullscreen.");
+            debug!("Detected exit from fullscreen.");
             WindowSetting::Windowed
         };
         if let Err(err) = sender.send(new) {
@@ -531,10 +531,9 @@ fn listen_to_fullscreen_updates(
     match fullscreen_listener.has_changed() {
         Ok(changed) => {
             if changed {
-                error!("AppConfig2.");
                 let new_value = fullscreen_listener.borrow_and_update();
                 if *new_value != app_config.graphics.window {
-                    error!("Setting {new_value:?} to AppConfig.");
+                    debug!("Setting {new_value:?} to AppConfig.");
                     app_config.graphics.window = *new_value;
                 }
             }
