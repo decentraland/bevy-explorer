@@ -85,9 +85,10 @@ jobs:
           submodules: true
       - name: Set Windows git config
         if: runner.os == 'windows'
+        shell: cmd
         run: |
-          git config --global core.symlinks true
-          git checkout .
+          del crates\dcl_component\src\proto
+          mklink /j crates\dcl_component\src\proto protocol\proto
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
