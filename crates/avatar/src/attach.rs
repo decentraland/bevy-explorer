@@ -7,7 +7,6 @@ use common::{
     sets::SceneSets,
     structs::{AttachPoints, PrimaryUser},
 };
-use comms::profile::UserProfile;
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::sdk::components::{AvatarAnchorPointType, PbAvatarAttach},
@@ -20,6 +19,8 @@ use scene_runner::update_world::{
     visibility::VisibilityComponent,
     AddCrdtInterfaceExt,
 };
+
+use crate::AvatarShape;
 
 pub struct AttachPlugin;
 
@@ -57,7 +58,7 @@ pub fn update_attached(
     mut removed_attachments: RemovedComponents<AvatarAttachment>,
     visibility_component: Query<&VisibilityComponent>,
     primary_user: Query<&AttachPoints, With<PrimaryUser>>,
-    all_users: Query<(&AttachPoints, &UserProfile, Option<&PrimaryUser>)>,
+    all_users: Query<(&AttachPoints, &AvatarShape, Has<PrimaryUser>)>,
 ) {
     for removed in removed_attachments.read() {
         if let Ok(mut commands) = commands.get_entity(removed) {
@@ -91,21 +92,21 @@ pub fn update_attached(
             }
             Some(id) => {
                 let id = id.to_lowercase();
-                let Some((attach, _, maybe_primary)) = all_users
+                let Some((attach_points, _, has_primary)) = all_users
                     .iter()
-                    .find(|(_, profile, _)| profile.content.eth_address.to_lowercase() == id)
+                    .find(|(_, avatar_shape, _)| avatar_shape.0.id.to_lowercase() == id)
                 else {
-                    warn!("user {:?} not found", id);
+                    warn!("avatar shape id {:?} not found", id);
                     warn!(
-                        "available users: {:?}",
+                        "available avatar shapes: {:?}",
                         all_users
                             .iter()
-                            .map(|(_, profile, _)| &profile.content)
+                            .map(|(_, avatar_shape, _)| &avatar_shape.0.id)
                             .collect::<Vec<_>>()
                     );
                     continue;
                 };
-                (maybe_primary.is_some(), attach)
+                (has_primary, attach_points)
             }
         };
 

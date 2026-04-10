@@ -110,6 +110,9 @@ impl Plugin for AvatarPlugin {
         );
 
         app.add_console_command::<DebugDumpAvatar, _>(debug_dump_avatar);
+
+        app.add_observer(add_attach_points_to_avatar_shape);
+        app.add_observer(remove_attach_points_from_avatar_shape);
     }
 }
 
@@ -1770,4 +1773,29 @@ fn debug_dump_avatar(
     }
 
     tasks.retain_mut(|t| t.complete().is_none());
+}
+
+fn add_attach_points_to_avatar_shape(trigger: Trigger<OnAdd, AvatarShape>, mut commands: Commands) {
+    let entity = trigger.target();
+
+    let attach_points = AttachPoints::new(&mut commands);
+
+    commands
+        .entity(entity)
+        .try_push_children(&attach_points.entities())
+        .try_insert(attach_points);
+}
+
+fn remove_attach_points_from_avatar_shape(
+    trigger: Trigger<OnRemove, AvatarShape>,
+    mut commands: Commands,
+    attach_points_query: Query<&AttachPoints>,
+) {
+    let entity = trigger.target();
+
+    if let Ok(attach_points) = attach_points_query.get(entity) {
+        for attach_point in attach_points.entities() {
+            commands.entity(attach_point).try_despawn();
+        }
+    }
 }

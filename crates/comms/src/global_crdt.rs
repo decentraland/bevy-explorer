@@ -9,8 +9,7 @@ use bevy::{
 use bimap::BiMap;
 use common::{
     rpc::{RpcCall, RpcEventSender, RpcStreamSender},
-    structs::{AttachPoints, AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate},
-    util::TryPushChildrenEx,
+    structs::{AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate},
 };
 use ethers_core::types::Address;
 use serde::{Deserialize, Serialize};
@@ -402,8 +401,6 @@ pub fn process_transport_updates(
 
                     let (audio_sender, audio_receiver) = mpsc::channel::<ForeignAudioData>(10);
 
-                    let attach_points = AttachPoints::new(&mut commands);
-
                     let new_entity = commands
                         .spawn((
                             Transform::default(),
@@ -424,8 +421,6 @@ pub fn process_transport_updates(
                             },
                             Propagate(RenderLayers::default()),
                         ))
-                        .try_push_children(&attach_points.entities())
-                        .try_insert(attach_points)
                         .id();
 
                     state.lookup.insert(update.address, new_entity);
