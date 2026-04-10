@@ -29,7 +29,7 @@ use dcl::{
     SceneElapsedTime, SceneId, SceneResponse,
 };
 use dcl_component::{
-    proto_components::sdk::components::{PbMainCamera, PbRealmInfo},
+    proto_components::sdk::components::{PbMainCamera, PbRealmInfo, PbVisibilityComponent},
     transform_and_parent::DclTransformAndParent,
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
@@ -42,9 +42,11 @@ use system_bridge::{LiveSceneInfo, SystemApi, SystemBridge};
 
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets, SceneUpdates};
 use crate::{
-    bounds_calc::scene_regions, renderer_context::RendererSceneContext,
-    update_world::ComponentTracker, vec3_to_parcel, ContainerEntity, DeletedSceneEntities,
-    OutOfWorld, SceneEntity, SceneThreadHandle,
+    bounds_calc::scene_regions,
+    renderer_context::RendererSceneContext,
+    update_world::{visibility::VisibilityComponent, ComponentTracker},
+    vec3_to_parcel, ContainerEntity, DeletedSceneEntities, OutOfWorld, SceneEntity,
+    SceneThreadHandle,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -519,6 +521,11 @@ pub(crate) fn load_scene_javascript(
                 -1000.0,
                 -initial_position.y,
             )),
+            // Garantees that there is always a parent with `propagate_to_children = true`
+            VisibilityComponent(PbVisibilityComponent {
+                visible: Some(true),
+                propagate_to_children: Some(true),
+            }),
             Visibility::default(),
             renderer_context,
             ComponentTracker::default(),
