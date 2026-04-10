@@ -1,5 +1,6 @@
 use bevy::{prelude::*, render::view::RenderLayers};
 use common::{
+    debug_panic,
     structs::{AudioDecoderError, AudioSettings, PrimaryUser},
     util::VolumePanning,
 };
@@ -172,22 +173,17 @@ pub fn spawn_and_locate_foreign_streams(
 
 pub fn change_audio_sink_volume(
     trigger: Trigger<ChangeAudioSinkVolume>,
-    mut commands: Commands,
     mut audio_sinks: Query<(Mut<AudioSink>, Option<&mut AudioSpawned>, Has<InScene>)>,
     audio_settings: Res<AudioSettings>,
 ) {
     let entity = trigger.target();
     if entity == Entity::PLACEHOLDER {
-        error!("ChangeAudioSinkVolume is an entity event. Trigger it with `Commands::trigger_targets`.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("ChangeAudioSinkVolume is an entity event. Trigger it with `Commands::trigger_targets`.");
     }
     let ChangeAudioSinkVolume { volume } = trigger.event();
 
     let Ok((mut audio_sink, maybe_audio_spawned, in_scene)) = audio_sinks.get_mut(entity) else {
-        error!("{entity} is not an AudioSink.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("{entity} is not an AudioSink.");
     };
 
     // AudioSink is causing problems with change detection

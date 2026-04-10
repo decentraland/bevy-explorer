@@ -1,7 +1,7 @@
 use bevy::{ecs::relationship::Relationship, prelude::*};
 #[cfg(target_arch = "wasm32")]
 use common::structs::AudioSettings;
-use common::util::AsH160;
+use common::{debug_panic, util::AsH160};
 #[cfg(not(target_arch = "wasm32"))]
 use {
     bevy::{ecs::world::OnDespawn, render::render_resource::Extent3d},
@@ -88,9 +88,7 @@ fn track_published(
         .iter()
         .find(|(_, livekit_participant, _)| livekit_participant.sid() == participant.sid())
     else {
-        error!("No participant entity with sid {}.", participant.sid());
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("No participant entity with sid {}.", participant.sid());
     };
 
     let room_entity = hosted_by.get();
@@ -172,9 +170,7 @@ fn track_unpublished(
         .iter()
         .find(|(_, livekit_participant, _)| livekit_participant.sid() == participant.sid())
     else {
-        error!("No participant entity with sid {}.", participant.sid());
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("No participant entity with sid {}.", participant.sid());
     };
     let room_entity = hosted_by.get();
 
@@ -189,19 +185,15 @@ fn track_unpublished(
                 }
             })
     else {
-        error!("No track entity with sid {}.", track.sid());
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("No track entity with sid {}.", track.sid());
     };
 
     if published_by.get() != participant_entity {
-        error!(
+        debug_panic!(
             "Unpublished track {} was not published by {}.",
             track.sid(),
             participant.sid()
         );
-        commands.send_event(AppExit::from_code(1));
-        return;
     }
 
     debug!(
@@ -255,9 +247,7 @@ fn track_subscribed(
         .iter()
         .find(|(_, subscribing)| subscribing.sid() == track.sid())
     else {
-        error!("No subscribing track with sid {}.", track.sid());
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("No subscribing track with sid {}.", track.sid());
     };
 
     debug!("Subscribed to track {}.", track.sid());
@@ -275,9 +265,7 @@ fn track_unsubscribed(
         .iter()
         .find(|(_, unsubscribing)| unsubscribing.sid() == track.sid())
     else {
-        error!("No unsubscribing track with sid {}.", track.sid());
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("No unsubscribing track with sid {}.", track.sid());
     };
 
     debug!("Unsubscribed to track {}.", track.sid());
@@ -404,9 +392,7 @@ fn subscribed_audio_track_with_open_sender(
         let publication = track.track.clone();
 
         let Some(RemoteTrack::Audio(audio)) = track.track() else {
-            error!("A subscribed audio track did not have a audio RemoteTrack.");
-            commands.send_event(AppExit::from_code(1));
-            return;
+            debug_panic!("A subscribed audio track did not have a audio RemoteTrack.");
         };
 
         let (mut snatcher_sender, _) = oneshot::channel();
@@ -440,9 +426,7 @@ fn audio_track_is_now_subscribed(
     let Ok((track, is_audio, has_audio_streaming_sound, has_open_audio_sender)) =
         tracks.get(entity)
     else {
-        error!("Subscribed track did not have LivekitTrack.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("Subscribed track did not have LivekitTrack.");
     };
     if !is_audio {
         trace!("Subscribed track was not an audio track.");
@@ -459,9 +443,7 @@ fn audio_track_is_now_subscribed(
     }
 
     let Some(RemoteTrack::Audio(audio)) = track.track() else {
-        error!("A subscribed audio track did not have a audio RemoteTrack.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("A subscribed audio track did not have a audio RemoteTrack.");
     };
 
     let decoder = AudioTrackKiraBridge::new(audio, 48_000);
@@ -480,7 +462,6 @@ fn audio_track_is_now_subscribed(
 #[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn audio_track_is_now_subscribed(
     trigger: Trigger<OnAdd, Subscribed>,
-    mut commands: Commands,
     tracks: Query<
         (
             &LivekitTrack,
@@ -496,9 +477,7 @@ fn audio_track_is_now_subscribed(
     let entity = trigger.target();
     let Ok((livekit_track, published_by, maybe_track_volume, has_audio)) = tracks.get(entity)
     else {
-        error!("Subscribed added to something that is not a track.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("Subscribed added to something that is not a track.");
     };
     if !has_audio {
         return;
@@ -528,14 +507,11 @@ fn audio_track_is_now_subscribed(
 #[cfg(not(target_arch = "wasm32"))]
 fn audio_track_unpublished(
     trigger: Trigger<OnDespawn, Audio>,
-    mut commands: Commands,
     mut tracks: Query<(&LivekitTrack, Option<&mut AudioStreamingHandle>), With<Audio>>,
 ) {
     let entity = trigger.target();
     let Ok((livekit_track, maybe_audio_streaming_handle)) = tracks.get_mut(entity) else {
-        error!("Audio track did not have LivekitTrack.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("Audio track did not have LivekitTrack.");
     };
 
     let Some(mut audio_streaming_sound) = maybe_audio_streaming_handle else {
@@ -559,9 +535,7 @@ fn video_track_is_now_subscribed(
 ) {
     let entity = trigger.target();
     let Ok((track, is_video)) = tracks.get(entity) else {
-        error!("Subscribed track did not have LivekitTrack.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("Subscribed track did not have LivekitTrack.");
     };
     if !is_video {
         trace!("Subscribed track was not a video track.");
@@ -572,9 +546,7 @@ fn video_track_is_now_subscribed(
     let publication = track.track.clone();
 
     let Some(RemoteTrack::Video(video)) = track.track() else {
-        error!("A subscribed video track did not have a video RemoteTrack.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("A subscribed video track did not have a video RemoteTrack.");
     };
 
     let (sender, receiver) = mpsc::channel(60);
@@ -605,9 +577,7 @@ fn receive_video_frame(
         let Ok((participant, maybe_stream_image, maybe_stream_broadcast)) =
             participants.get(participant_entity)
         else {
-            error!("Invalid PublishedBy relationship.");
-            commands.send_event(AppExit::from_code(1));
-            return;
+            debug_panic!("Invalid PublishedBy relationship.");
         };
         let Some(stream_image) = maybe_stream_image else {
             debug!(
@@ -618,13 +588,11 @@ fn receive_video_frame(
             continue;
         };
         let Some(stream_broadcast) = maybe_stream_broadcast else {
-            error!(
+            debug_panic!(
                 "Participant {} ({}) had StreamImage but not StreamBroadcast.",
                 participant.sid(),
                 participant.identity()
             );
-            commands.send_event(AppExit::from_code(1));
-            return;
         };
 
         let received_frame = {
@@ -642,9 +610,7 @@ fn receive_video_frame(
         match received_frame {
             Ok(frame) => {
                 let Some(image) = images.get_mut(stream_image.id()) else {
-                    error!("StreamImage holds an invalid handle.");
-                    commands.send_event(AppExit::from_code(1));
-                    return;
+                    debug_panic!("StreamImage holds an invalid handle.");
                 };
 
                 let target_extent = Extent3d {
@@ -689,14 +655,10 @@ fn track_of_watched_streamer_published<C: Component>(
 ) {
     let entity = trigger.target();
     let Ok(published_by) = tracks.get(entity) else {
-        error!("Malformed track.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("Malformed track.");
     };
     let Ok(has_stream_broadcast) = participants.get(published_by.get()) else {
-        error!("Invalid PublishedBy relationship.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("Invalid PublishedBy relationship.");
     };
 
     if has_stream_broadcast {

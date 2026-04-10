@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use common::structs::AudioSettings;
+use common::{debug_panic, structs::AudioSettings};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use kira::{
     manager::{AudioManager, AudioManagerSettings, DefaultBackend},
@@ -101,10 +101,7 @@ fn start_livekit(
     }
 }
 
-fn verify_player_update_tasks(
-    mut commands: Commands,
-    mut player_update_tasks: ResMut<PlayerUpdateTasks>,
-) {
+fn verify_player_update_tasks(mut player_update_tasks: ResMut<PlayerUpdateTasks>) {
     let mut done = vec![];
     for (
         i,
@@ -120,15 +117,11 @@ fn verify_player_update_tasks(
             match res {
                 Ok(res) => {
                     if let Err(err) = res {
-                        error!("Failed to send PlayerUpdate due to {err}.");
-                        commands.send_event(AppExit::from_code(1));
-                        return;
+                        debug_panic!("Failed to send PlayerUpdate due to {err}.");
                     }
                 }
                 Err(err) => {
-                    error!("Failed to pull PlayerUpdateTask due to '{err}'.");
-                    commands.send_event(AppExit::from_code(1));
-                    return;
+                    debug_panic!("Failed to pull PlayerUpdateTask due to '{err}'.");
                 }
             }
         }
@@ -146,8 +139,7 @@ fn build_kira_audio_manager(mut commands: Commands) {
             commands.insert_resource(LivekitAudioManager { manager });
         }
         Err(err) => {
-            error!("Failed to livekit build AudioManager due to '{err}'.");
-            commands.send_event(AppExit::from_code(1));
+            debug_panic!("Failed to livekit build AudioManager due to '{err}'.");
         }
     };
 }

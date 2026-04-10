@@ -1,5 +1,5 @@
 use bevy::{ecs::relationship::Relationship, prelude::*};
-use common::util::AsH160;
+use common::{debug_panic, util::AsH160};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use prost::Message;
 #[cfg(not(target_arch = "wasm32"))]
@@ -65,9 +65,7 @@ fn participant_connected(
         room: room_entity,
     } = trigger.event();
     let Ok(room) = rooms.get(*room_entity) else {
-        error!("Room {room_entity} given to ParticipantConnected was invalid.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("Room {room_entity} given to ParticipantConnected was invalid.");
     };
     debug!(
         "Participant '{}' ({}) connected to room {}.",
@@ -114,9 +112,7 @@ fn participant_disconnected(
         room: room_entity,
     } = trigger.event();
     let Ok((room, maybe_hosting_participants)) = rooms.get(*room_entity) else {
-        error!("Room {room_entity} given to ParticipantDisconnected was invalid.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("Room {room_entity} given to ParticipantDisconnected was invalid.");
     };
     debug!(
         "Participant '{}' ({}) disconnected from room {}.",
@@ -126,9 +122,7 @@ fn participant_disconnected(
     );
 
     let Some(hosting_participants) = maybe_hosting_participants else {
-        error!("Room {} is not hosting participants.", room.name());
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("Room {} is not hosting participants.", room.name());
     };
 
     let Some(entity) = participants
@@ -164,9 +158,7 @@ fn participant_connection_quality_changed(
         connection_quality,
     } = trigger.event();
     let Ok((livekit_room, hosting_participants)) = rooms.get(*room) else {
-        error!("Room given to ParticipantConnectionQuality was invalid.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("Room given to ParticipantConnectionQuality was invalid.");
     };
 
     debug!(
@@ -318,9 +310,7 @@ fn stream_viewer_without_stream_image(
 ) {
     for (entity, stream_viewer) in stream_viewers.into_inner() {
         let Ok(stream_image) = stream_broadcasts.get(stream_viewer.get()) else {
-            error!("Invalid StreamBroadcast relationship.");
-            commands.send_event(AppExit::from_code(1));
-            return;
+            debug_panic!("Invalid StreamBroadcast relationship.");
         };
 
         commands.entity(entity).try_insert(stream_image.clone());
@@ -355,9 +345,7 @@ fn someone_wants_to_watch_stream(
 ) {
     let entity = trigger.target();
     let Ok((participant, maybe_publishing)) = participants.get(entity) else {
-        error!("StreamBroadcast on a non-Streamer participant.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("StreamBroadcast on a non-Streamer participant.");
     };
 
     debug!(
@@ -415,16 +403,14 @@ fn someone_wants_to_watch_stream(
 
 fn noone_is_watching_stream(
     trigger: Trigger<OnRemove, StreamBroadcast>,
-    mut commands: Commands,
+    #[cfg(not(target_arch = "wasm32"))] mut commands: Commands,
     participants: Query<(&LivekitParticipant, Option<&Publishing>), With<Streamer>>,
     tracks: Query<&LivekitTrack>,
     livekit_runtime: Res<LivekitRuntime>,
 ) {
     let entity = trigger.target();
     let Ok((participant, maybe_publishing)) = participants.get(entity) else {
-        error!("StreamBroadcast on a non-Streamer participant.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("StreamBroadcast on a non-Streamer participant.");
     };
     debug!(
         "Streamer {} ({}) no longer being watched.",
