@@ -225,9 +225,7 @@ fn update(
                     for (address, req) in client.received_requests.iter() {
                         reply(format!(
                             " - {address:#x?}: {}",
-                            req.message
-                                .as_deref()
-                                .unwrap_or("(no message)")
+                            req.message.as_deref().unwrap_or("(no message)")
                         ));
                     }
                 }
