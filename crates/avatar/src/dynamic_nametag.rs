@@ -76,11 +76,14 @@ fn dynamic_nametag_position(
         let head_position = head_position_gt.compute_transform();
         let head_aabb = aabbs.get(attach_points.head).ok();
 
-        let Some(highest_y) = [FloatOrd(nametag_offset(
-            head_position_gt,
-            &position.translation,
-            head_aabb,
-        ))]
+        let Some(highest_y) = [
+            FloatOrd(nametag_offset(
+                head_position_gt,
+                &position.translation,
+                head_aabb,
+            )),
+            // TODO extend with the heights of headgear
+        ]
         .into_iter()
         .max() else {
             unreachable!("List is never empty.");
