@@ -672,7 +672,7 @@ async fn social_socket_handler_inner(
                                                 name: blocked.name.clone(),
                                                 has_claimed_name: blocked.has_claimed_name,
                                                 profile_picture_url: blocked.profile_picture_url.clone(),
-                                                name_color: blocked.name_color.clone(),
+                                                name_color: blocked.name_color,
                                             });
                                         }
                                         let total = resp.pagination_data.as_ref().map(|p| p.total).unwrap_or(0);
