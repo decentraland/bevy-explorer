@@ -226,8 +226,7 @@ fn update(
                         reply(format!(
                             " - {address:#x?}: {}",
                             req.message
-                                .as_ref()
-                                .map(String::as_str)
+                                .as_deref()
                                 .unwrap_or("(no message)")
                         ));
                     }
