@@ -28,4 +28,3 @@ tungstenite = { workspace = true }
 
 dcl-rpc = { workspace = true, optional = true }
 futures-util = { workspace = true }
-
