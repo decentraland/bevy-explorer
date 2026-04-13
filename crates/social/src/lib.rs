@@ -1,20 +1,30 @@
-#[cfg(any(target_arch = "wasm32", not(feature = "social")))]
+#[cfg(not(feature = "social"))]
 mod fake_client;
-#[cfg(any(target_arch = "wasm32", not(feature = "social")))]
+#[cfg(not(feature = "social"))]
 pub use fake_client::{FriendshipEventBody, SocialClientHandler};
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+#[cfg(feature = "social")]
 mod client;
-#[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+#[cfg(feature = "social")]
+mod rpc_websocket;
+#[cfg(feature = "social")]
+pub mod runtime;
+#[cfg(feature = "social")]
 pub use client::{FriendshipEventBody, SocialClientHandler};
 
 use bevy::prelude::*;
+#[cfg(feature = "social")]
+use bevy::tasks::IoTaskPool;
 use common::rpc::RpcStreamSender;
 use common::util::AsH160;
 use ethers_core::types::Address;
+#[cfg(feature = "social")]
+use system_bridge::BlockedUserData;
+#[cfg(feature = "social")]
+use system_bridge::NameColor;
 use system_bridge::{
-    BlockedUserData, FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
-    FriendshipEventUpdate, NameColor, SystemApi,
+    FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
+    FriendshipEventUpdate, SystemApi,
 };
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 use wallet::Wallet;
@@ -23,6 +33,8 @@ pub struct SocialPlugin;
 
 impl Plugin for SocialPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
+        #[cfg(feature = "social")]
+        app.add_plugins(runtime::SocialRuntimePlugin);
         app.add_event::<FriendshipEvent>();
         app.add_event::<ConnectivityEvent>();
         app.add_event::<DirectChatEvent>();
@@ -44,7 +56,47 @@ impl Plugin for SocialPlugin {
     }
 }
 
-pub fn init_social_client(
+#[cfg(feature = "social")]
+fn init_social_client(
+    mut commands: Commands,
+    wallet: Res<Wallet>,
+    mut social: ResMut<SocialClient>,
+    mut friends: Local<Option<UnboundedReceiver<FriendshipEvent>>>,
+    mut connectivity: Local<Option<UnboundedReceiver<ConnectivityEvent>>>,
+    mut chats: Local<Option<UnboundedReceiver<DirectChatEvent>>>,
+    social_runtime: Res<runtime::SocialRuntime>,
+) {
+    if wallet.is_changed() && wallet.address().is_some() {
+        let (f_sx, f_rx) = unbounded_channel();
+        let (conn_sx, conn_rx) = unbounded_channel();
+        let (c_sx, c_rx) = unbounded_channel();
+        let client = SocialClientHandler::connect(
+            wallet.clone(),
+            &social_runtime,
+            move |f| {
+                let _ = f_sx.send(FriendshipEvent(Some(f.clone())));
+            },
+            move |address, status| {
+                let _ = conn_sx.send(ConnectivityEvent {
+                    address,
+                    status: status as i32,
+                });
+            },
+            move |c| {
+                let _ = c_sx.send(DirectChatEvent(c));
+            },
+        );
+        social.0 = client;
+        *friends = Some(f_rx);
+        *connectivity = Some(conn_rx);
+        *chats = Some(c_rx);
+    }
+
+    drain_events(&mut commands, &mut friends, &mut connectivity, &mut chats);
+}
+
+#[cfg(not(feature = "social"))]
+fn init_social_client(
     mut commands: Commands,
     wallet: Res<Wallet>,
     mut social: ResMut<SocialClient>,
@@ -77,6 +129,15 @@ pub fn init_social_client(
         *chats = Some(c_rx);
     }
 
+    drain_events(&mut commands, &mut friends, &mut connectivity, &mut chats);
+}
+
+fn drain_events(
+    commands: &mut Commands,
+    friends: &mut Option<UnboundedReceiver<FriendshipEvent>>,
+    connectivity: &mut Option<UnboundedReceiver<ConnectivityEvent>>,
+    chats: &mut Option<UnboundedReceiver<DirectChatEvent>>,
+) {
     while let Some(f) = friends.as_mut().and_then(|rx| rx.try_recv().ok()) {
         commands.send_event(f);
     }
@@ -118,7 +179,7 @@ impl SocialClient {
     }
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+#[cfg(feature = "social")]
 fn convert_name_color(
     color: &Option<dcl_component::proto_components::common::Color3>,
 ) -> Option<NameColor> {
@@ -133,7 +194,7 @@ fn convert_name_color(
 fn handle_social_requests(mut events: EventReader<SystemApi>, mut social: ResMut<SocialClient>) {
     for event in events.read() {
         match event {
-            #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+            #[cfg(feature = "social")]
             SystemApi::GetFriends(sx) => {
                 let friends: Vec<FriendData> = social
                     .0
@@ -153,7 +214,7 @@ fn handle_social_requests(mut events: EventReader<SystemApi>, mut social: ResMut
                     .unwrap_or_default();
                 sx.send(friends);
             }
-            #[cfg(any(target_arch = "wasm32", not(feature = "social")))]
+            #[cfg(not(feature = "social"))]
             SystemApi::GetFriends(sx) => {
                 let friends: Vec<FriendData> = social
                     .0
@@ -173,7 +234,7 @@ fn handle_social_requests(mut events: EventReader<SystemApi>, mut social: ResMut
                     .unwrap_or_default();
                 sx.send(friends);
             }
-            #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+            #[cfg(feature = "social")]
             SystemApi::GetSentFriendRequests(sx) => {
                 let requests: Vec<FriendRequestData> = social
                     .0
@@ -204,7 +265,7 @@ fn handle_social_requests(mut events: EventReader<SystemApi>, mut social: ResMut
                     .unwrap_or_default();
                 sx.send(requests);
             }
-            #[cfg(any(target_arch = "wasm32", not(feature = "social")))]
+            #[cfg(not(feature = "social"))]
             SystemApi::GetSentFriendRequests(sx) => {
                 let requests: Vec<FriendRequestData> = social
                     .0
@@ -234,7 +295,7 @@ fn handle_social_requests(mut events: EventReader<SystemApi>, mut social: ResMut
                     .unwrap_or_default();
                 sx.send(requests);
             }
-            #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+            #[cfg(feature = "social")]
             SystemApi::GetReceivedFriendRequests(sx) => {
                 let requests: Vec<FriendRequestData> = social
                     .0
@@ -265,7 +326,7 @@ fn handle_social_requests(mut events: EventReader<SystemApi>, mut social: ResMut
                     .unwrap_or_default();
                 sx.send(requests);
             }
-            #[cfg(any(target_arch = "wasm32", not(feature = "social")))]
+            #[cfg(not(feature = "social"))]
             SystemApi::GetReceivedFriendRequests(sx) => {
                 let requests: Vec<FriendRequestData> = social
                     .0
@@ -295,7 +356,7 @@ fn handle_social_requests(mut events: EventReader<SystemApi>, mut social: ResMut
                     .unwrap_or_default();
                 sx.send(requests);
             }
-            #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+            #[cfg(feature = "social")]
             SystemApi::GetMutualFriends(address, sx) => {
                 let sx = sx.clone();
                 match social
@@ -304,13 +365,9 @@ fn handle_social_requests(mut events: EventReader<SystemApi>, mut social: ResMut
                     .and_then(|c| c.get_mutual_friends(address.clone()).ok())
                 {
                     Some(rx) => {
-                        std::thread::spawn(move || {
-                            let rt = tokio::runtime::Builder::new_current_thread()
-                                .enable_all()
-                                .build()
-                                .unwrap();
-                            let result = rt.block_on(async {
-                                match rx.await {
+                        IoTaskPool::get()
+                            .spawn(async move {
+                                let result = match rx.await {
                                     Ok(Ok(profiles)) => profiles
                                         .iter()
                                         .map(|profile| FriendData {
@@ -324,18 +381,17 @@ fn handle_social_requests(mut events: EventReader<SystemApi>, mut social: ResMut
                                         })
                                         .collect(),
                                     _ => Vec::new(),
-                                }
-                            });
-                            // send outside of the runtime to avoid blocking_write panic
-                            sx.send(result);
-                        });
+                                };
+                                sx.send(result);
+                            })
+                            .detach();
                     }
                     None => {
                         sx.send(Vec::new());
                     }
                 }
             }
-            #[cfg(any(target_arch = "wasm32", not(feature = "social")))]
+            #[cfg(not(feature = "social"))]
             SystemApi::GetMutualFriends(_, sx) => {
                 sx.send(Vec::new());
             }
@@ -385,7 +441,7 @@ fn handle_social_requests(mut events: EventReader<SystemApi>, mut social: ResMut
                 })();
                 sx.send(result.map_err(|e| e.to_string()));
             }
-            #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+            #[cfg(feature = "social")]
             SystemApi::GetOnlineFriends(sx) => {
                 use dcl_component::proto_components::social_service::v2::ConnectivityStatus;
                 let data: Vec<FriendStatusData> = social
@@ -418,7 +474,7 @@ fn handle_social_requests(mut events: EventReader<SystemApi>, mut social: ResMut
                     .unwrap_or_default();
                 sx.send(data);
             }
-            #[cfg(any(target_arch = "wasm32", not(feature = "social")))]
+            #[cfg(not(feature = "social"))]
             SystemApi::GetOnlineFriends(sx) => {
                 let data: Vec<FriendStatusData> = social
                     .0
@@ -439,7 +495,7 @@ fn handle_social_requests(mut events: EventReader<SystemApi>, mut social: ResMut
                     .unwrap_or_default();
                 sx.send(data);
             }
-            #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+            #[cfg(feature = "social")]
             SystemApi::BlockUser(address, sx) => {
                 let sx = sx.clone();
                 match social
@@ -448,30 +504,26 @@ fn handle_social_requests(mut events: EventReader<SystemApi>, mut social: ResMut
                     .and_then(|c| c.block_user(address.clone()).ok())
                 {
                     Some(rx) => {
-                        std::thread::spawn(move || {
-                            let rt = tokio::runtime::Builder::new_current_thread()
-                                .enable_all()
-                                .build()
-                                .unwrap();
-                            let result = rt.block_on(async {
-                                match rx.await {
+                        IoTaskPool::get()
+                            .spawn(async move {
+                                let result = match rx.await {
                                     Ok(r) => r,
                                     Err(_) => Err("channel closed".to_string()),
-                                }
-                            });
-                            sx.send(result);
-                        });
+                                };
+                                sx.send(result);
+                            })
+                            .detach();
                     }
                     None => {
                         sx.send(Err("social not initialized".to_string()));
                     }
                 }
             }
-            #[cfg(any(target_arch = "wasm32", not(feature = "social")))]
+            #[cfg(not(feature = "social"))]
             SystemApi::BlockUser(_, sx) => {
                 sx.send(Err("social not available".to_string()));
             }
-            #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+            #[cfg(feature = "social")]
             SystemApi::UnblockUser(address, sx) => {
                 let sx = sx.clone();
                 match social
@@ -480,41 +532,33 @@ fn handle_social_requests(mut events: EventReader<SystemApi>, mut social: ResMut
                     .and_then(|c| c.unblock_user(address.clone()).ok())
                 {
                     Some(rx) => {
-                        std::thread::spawn(move || {
-                            let rt = tokio::runtime::Builder::new_current_thread()
-                                .enable_all()
-                                .build()
-                                .unwrap();
-                            let result = rt.block_on(async {
-                                match rx.await {
+                        IoTaskPool::get()
+                            .spawn(async move {
+                                let result = match rx.await {
                                     Ok(r) => r,
                                     Err(_) => Err("channel closed".to_string()),
-                                }
-                            });
-                            sx.send(result);
-                        });
+                                };
+                                sx.send(result);
+                            })
+                            .detach();
                     }
                     None => {
                         sx.send(Err("social not initialized".to_string()));
                     }
                 }
             }
-            #[cfg(any(target_arch = "wasm32", not(feature = "social")))]
+            #[cfg(not(feature = "social"))]
             SystemApi::UnblockUser(_, sx) => {
                 sx.send(Err("social not available".to_string()));
             }
-            #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+            #[cfg(feature = "social")]
             SystemApi::GetBlockedUsers(sx) => {
                 let sx = sx.clone();
                 match social.0.as_ref().and_then(|c| c.get_blocked_users().ok()) {
                     Some(rx) => {
-                        std::thread::spawn(move || {
-                            let rt = tokio::runtime::Builder::new_current_thread()
-                                .enable_all()
-                                .build()
-                                .unwrap();
-                            let result = rt.block_on(async {
-                                match rx.await {
+                        IoTaskPool::get()
+                            .spawn(async move {
+                                let result = match rx.await {
                                     Ok(Ok(profiles)) => profiles
                                         .iter()
                                         .map(|profile| BlockedUserData {
@@ -528,17 +572,17 @@ fn handle_social_requests(mut events: EventReader<SystemApi>, mut social: ResMut
                                         })
                                         .collect(),
                                     _ => Vec::new(),
-                                }
-                            });
-                            sx.send(result);
-                        });
+                                };
+                                sx.send(result);
+                            })
+                            .detach();
                     }
                     None => {
                         sx.send(Vec::new());
                     }
                 }
             }
-            #[cfg(any(target_arch = "wasm32", not(feature = "social")))]
+            #[cfg(not(feature = "social"))]
             SystemApi::GetBlockedUsers(sx) => {
                 sx.send(Vec::new());
             }
@@ -604,9 +648,9 @@ fn pipe_connectivity_events_to_scene(
             continue;
         };
         let event = if let Some(profile) = client.friends.get(&ev.address) {
-            #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+            #[cfg(feature = "social")]
             let name_color = convert_name_color(&profile.name_color);
-            #[cfg(any(target_arch = "wasm32", not(feature = "social")))]
+            #[cfg(not(feature = "social"))]
             let name_color = None;
 
             FriendConnectivityEvent {
@@ -635,7 +679,7 @@ fn pipe_connectivity_events_to_scene(
 }
 
 fn friendship_event_to_update(body: &Option<FriendshipEventBody>) -> Option<FriendshipEventUpdate> {
-    #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+    #[cfg(feature = "social")]
     {
         use dcl_component::proto_components::social_service::v2::friendship_update;
         match body.as_ref()? {
@@ -685,7 +729,7 @@ fn friendship_event_to_update(body: &Option<FriendshipEventBody>) -> Option<Frie
             }
         }
     }
-    #[cfg(any(target_arch = "wasm32", not(feature = "social")))]
+    #[cfg(not(feature = "social"))]
     {
         match body.as_ref()? {
             FriendshipEventBody::Request(r) => {

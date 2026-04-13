@@ -11,6 +11,7 @@ social = ["dep:dcl-rpc", "dcl_component/social"]
 [dependencies]
 common = { workspace = true }
 dcl_component = { workspace = true }
+platform = { workspace = true }
 system_bridge = { workspace = true }
 wallet = { workspace = true }
 
@@ -20,8 +21,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 web-time = { workspace = true }
 http = { workspace = true }
+tungstenite = { workspace = true }
 
 dcl-rpc = { workspace = true, optional = true }
 futures-util = { workspace = true }

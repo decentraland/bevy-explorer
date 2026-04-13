@@ -4,7 +4,8 @@ use bevy_simple_text_input::{
 };
 use common::util::{AsH160, TryPushChildrenEx};
 use social::{
-    DirectChatMessage, FriendshipEventBody, SocialClient, SocialClientHandler, SocialPlugin,
+    runtime::SocialRuntime, DirectChatMessage, FriendshipEventBody, SocialClient,
+    SocialClientHandler, SocialPlugin,
 };
 use tokio::sync::mpsc::unbounded_channel;
 use wallet::{Wallet, WalletPlugin};
@@ -39,6 +40,7 @@ fn setup(
     mut wallet: ResMut<Wallet>,
     seed: Res<WalletSeed>,
     mut client: ResMut<SocialClient>,
+    social_runtime: Res<SocialRuntime>,
 ) {
     match seed.0 {
         Some(seed) => {
@@ -56,6 +58,7 @@ fn setup(
     commands.insert_resource(SocEvents(rx, rx_c));
     client.0 = SocialClientHandler::connect(
         wallet.clone(),
+        &social_runtime,
         move |ev: &FriendshipEventBody| {
             let _ = sx.send(ev.clone());
         },

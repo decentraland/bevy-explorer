@@ -3350,9 +3350,7 @@ dependencies = [
 
 [[package]]
 name = "dcl-rpc"
-version = "2.3.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f4c84cdb85aa902ea46e6da791ff41085491e9b4b2a07f1164012ee25a43416"
+version = "2.3.7"
 dependencies = [
  "async-channel 1.9.0",
  "async-trait",
@@ -3365,7 +3363,6 @@ dependencies = [
  "prost-build 0.11.9",
  "quote",
  "tokio",
- "tokio-tungstenite 0.24.0",
  "tokio-util",
 ]
 
@@ -4398,7 +4395,7 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
  "tokio",
- "tokio-tungstenite 0.20.1",
+ "tokio-tungstenite",
  "tracing",
  "tracing-futures",
  "url",
@@ -6667,7 +6664,7 @@ dependencies = [
  "sha2",
  "thiserror 1.0.69",
  "tokio",
- "tokio-tungstenite 0.20.1",
+ "tokio-tungstenite",
  "url",
 ]
 
@@ -10240,6 +10237,7 @@ name = "social"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bevy",
  "common",
  "dcl-rpc",
@@ -10247,10 +10245,12 @@ dependencies = [
  "ethers-core",
  "futures-util",
  "http 1.4.0",
+ "platform",
  "serde",
  "serde_json",
  "system_bridge",
  "tokio",
+ "tungstenite 0.21.0",
  "wallet",
  "web-time",
 ]
@@ -11074,20 +11074,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tokio-tungstenite"
-version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edc5f74e248dc973e0dbb7b74c7e0d6fcc301c694ff50049504004ef4d0cdcd9"
-dependencies = [
- "futures-util",
- "log",
- "native-tls",
- "tokio",
- "tokio-native-tls",
- "tungstenite 0.24.0",
-]
-
-[[package]]
 name = "tokio-util"
 version = "0.7.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11498,25 +11484,6 @@ dependencies = [
  "sha1",
  "thiserror 1.0.69",
  "url",
- "utf-8",
-]
-
-[[package]]
-name = "tungstenite"
-version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18e5b8366ee7a95b16d32197d0b2604b43a0be89dc5fac9f8e96ccafbaedda8a"
-dependencies = [
- "byteorder",
- "bytes",
- "data-encoding",
- "http 1.4.0",
- "httparse",
- "log",
- "native-tls",
- "rand 0.8.5",
- "sha1",
- "thiserror 1.0.69",
  "utf-8",
 ]
 

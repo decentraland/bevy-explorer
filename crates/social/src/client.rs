@@ -22,6 +22,8 @@ use ethers_core::types::Address;
 use futures_util::{pin_mut, select, FutureExt};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
+use crate::rpc_websocket::PlatformRpcWebSocket;
+use crate::runtime::SocialRuntime;
 use crate::DirectChatMessage;
 
 pub enum SocialQuery {
@@ -77,6 +79,7 @@ pub struct SocialClientHandler {
 impl SocialClientHandler {
     pub fn connect(
         wallet: wallet::Wallet,
+        runtime: &SocialRuntime,
         friend_callback: impl Fn(&friendship_update::Update) + Send + Sync + 'static,
         connectivity_callback: impl Fn(Address, ConnectivityStatus) + Send + Sync + 'static,
         chat_callback: impl Fn(DirectChatMessage) + Send + Sync + 'static,
@@ -85,7 +88,15 @@ impl SocialClientHandler {
         let (response_sx, response_rx) = mpsc::unbounded_channel();
         let (query_sx, query_rx) = mpsc::unbounded_channel();
 
-        std::thread::spawn(move || social_socket_handler(wallet, event_rx, query_rx, response_sx));
+        runtime.spawn(async move {
+            if let Err(e) =
+                social_socket_handler_inner(wallet, event_rx, query_rx, response_sx).await
+            {
+                error!("[social] socket handler error: {e}");
+            } else {
+                debug!("[social] socket handler finished");
+            }
+        });
 
         Some(Self {
             is_initialized: false,
@@ -348,30 +359,6 @@ impl SocialClientHandler {
     }
 }
 
-fn social_socket_handler(
-    wallet: wallet::Wallet,
-    event_rx: UnboundedReceiver<UpsertFriendshipPayload>,
-    query_rx: UnboundedReceiver<SocialQuery>,
-    response_sx: UnboundedSender<FriendData>,
-) {
-    let rt = std::sync::Arc::new(
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap(),
-    );
-    if let Err(e) = rt.block_on(social_socket_handler_inner(
-        wallet,
-        event_rx,
-        query_rx,
-        response_sx,
-    )) {
-        error!("[social] socket handler error: {e}");
-    } else {
-        debug!("social socket handler finished");
-    }
-}
-
 fn dbgerr<E: std::fmt::Debug>(e: E) -> anyhow::Error {
     anyhow!(format!("{e:?}"))
 }
@@ -380,7 +367,6 @@ const SOCIAL_URL: &str = "wss://rpc-social-service-ea.decentraland.org";
 
 const PAGE_SIZE: i32 = 100;
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
 async fn social_socket_handler_inner(
     wallet: wallet::Wallet,
     mut rx: UnboundedReceiver<UpsertFriendshipPayload>,
@@ -389,7 +375,7 @@ async fn social_socket_handler_inner(
 ) -> Result<(), anyhow::Error> {
     // Connect WebSocket
     info!("[social] Connecting to social service at {SOCIAL_URL}");
-    let ws = dcl_rpc::transports::web_sockets::tungstenite::WebSocketClient::connect(SOCIAL_URL)
+    let ws = PlatformRpcWebSocket::connect(SOCIAL_URL)
         .await
         .map_err(dbgerr)?;
     info!("[social] Successfully connected to social service at {SOCIAL_URL}");

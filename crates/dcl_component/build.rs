@@ -127,7 +127,7 @@ fn gen_sdk_components() -> Result<()> {
     Ok(())
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+#[cfg(feature = "social")]
 fn gen_social_service() -> Result<()> {
     let mut conf = prost_build::Config::new();
     conf.service_generator(Box::new(dcl_rpc::codegen::RPCServiceGenerator::new()));
@@ -143,7 +143,7 @@ fn gen_social_service() -> Result<()> {
 
 fn main() -> Result<()> {
     gen_sdk_components()?;
-    #[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+    #[cfg(feature = "social")]
     gen_social_service()?;
     Ok(())
 }

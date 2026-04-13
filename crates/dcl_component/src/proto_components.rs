@@ -49,7 +49,7 @@ pub mod social {
     ));
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
+#[cfg(feature = "social")]
 pub mod social_service {
     include!(concat!(env!("OUT_DIR"), "/decentraland.social_service.rs"));
 
