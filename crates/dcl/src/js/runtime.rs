@@ -132,3 +132,14 @@ pub async fn op_world_time(op_state: Rc<RefCell<impl State>>) -> Result<WorldTim
     let TimeOfDay { time } = state.borrow::<TimeOfDay>();
     Ok(WorldTime { seconds: *time })
 }
+
+pub fn get_platform() -> &'static str {
+    #[cfg(target_arch = "wasm32")]
+    {
+        "web"
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        "desktop"
+    }
+}

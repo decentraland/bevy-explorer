@@ -2,7 +2,7 @@ use bevy::{
     platform::{collections::HashMap, sync::Arc},
     prelude::*,
 };
-use common::{structs::AudioDecoderError, util::AsH160};
+use common::{debug_panic, structs::AudioDecoderError, util::AsH160};
 use ethers_core::types::H160;
 use http::Uri;
 use tokio::{
@@ -312,9 +312,7 @@ fn process_channel_control(
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
-                    error!("Channel control of {} was closed.", livekit_room.name());
-                    commands.send_event(AppExit::from_code(1));
-                    return;
+                    debug_panic!("Channel control of {} was closed.", livekit_room.name());
                 }
             }
         }
@@ -360,9 +358,7 @@ fn process_network_message(
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
-                    error!("Network message of {} was closed.", room.name());
-                    commands.send_event(AppExit::from_code(1));
-                    return;
+                    debug_panic!("Network message of {} was closed.", room.name());
                 }
             }
         }
@@ -387,9 +383,7 @@ fn create_local_participant(
 ) {
     let entity = trigger.target();
     let Ok(room) = rooms.get(entity) else {
-        error!("Can't create local participant because {entity} is not a LivekitRoom.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("Can't create local participant because {entity} is not a LivekitRoom.");
     };
 
     let local_participant = room.local_participant();
@@ -437,9 +431,7 @@ fn subscribe_to_voice(
     let (room_entity, address, _) = input;
 
     let Ok((room, maybe_hosting)) = rooms.get(room_entity) else {
-        error!("{} is not an well formed room.", room_entity);
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("{} is not an well formed room.", room_entity);
     };
 
     let Some(hosting) = maybe_hosting else {
@@ -495,9 +487,7 @@ fn unsubscribe_to_voice(
     tracks: Query<Entity, With<track::Microphone>>,
 ) {
     let Ok((room, maybe_hosting)) = rooms.get(room_entity) else {
-        error!("{} is not an well formed room.", room_entity);
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("{} is not an well formed room.", room_entity);
     };
 
     let Some(hosting) = maybe_hosting else {
@@ -540,7 +530,6 @@ fn unsubscribe_to_voice(
 }
 
 fn verify_room_tasks(
-    mut commands: Commands,
     rooms: Query<&mut RoomTasks, With<LivekitRoom>>,
     livekit_runtime: Res<LivekitRuntime>,
 ) {
@@ -557,9 +546,7 @@ fn verify_room_tasks(
                         error!("Failed to complete room task due to {err}.");
                     }
                     Err(err) => {
-                        error!("Failed to pull RoomTask due to '{err}'.");
-                        commands.send_event(AppExit::from_code(1));
-                        return;
+                        debug_panic!("Failed to pull RoomTask due to '{err}'.");
                     }
                 }
             } else {

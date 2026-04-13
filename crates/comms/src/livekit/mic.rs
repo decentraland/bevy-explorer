@@ -2,7 +2,7 @@
 use std::{borrow::Cow, sync::Arc};
 
 use bevy::prelude::*;
-use common::structs::MicState;
+use common::{debug_panic, structs::MicState};
 use tokio::task::JoinHandle;
 #[cfg(target_arch = "wasm32")]
 use {
@@ -378,13 +378,11 @@ fn publish_tracks(
 
     for (entity, livekit_participant) in local_participants {
         if !matches!(**livekit_participant, Participant::Local(_)) {
-            error!(
+            debug_panic!(
                 "Participant {} ({}) has 'Local', but was remote.",
                 livekit_participant.sid(),
                 livekit_participant.identity()
             );
-            commands.send_event(AppExit::from_code(1));
-            return;
         }
 
         #[cfg(target_arch = "wasm32")]
@@ -412,13 +410,11 @@ fn poll_local_audio_track_futures(
         local_audio_tracks.into_inner()
     {
         let Participant::Local(ref local_participant) = **livekit_participant else {
-            error!(
+            debug_panic!(
                 "Participant {} ({}) has 'Local', but was remote.",
                 livekit_participant.sid(),
                 livekit_participant.identity()
             );
-            commands.send_event(AppExit::from_code(1));
-            return;
         };
 
         if local_audio_track_future.is_finished() {
@@ -451,13 +447,11 @@ fn poll_local_audio_track_futures(
                         .remove::<LocalAudioTrackFuture>();
                 }
                 Err(err) => {
-                    error!(
+                    debug_panic!(
                         "Failed to poll local audio track of {} ({}) due to '{err}'.",
                         livekit_participant.sid(),
                         livekit_participant.identity()
                     );
-                    commands.send_event(AppExit::from_code(1));
-                    return;
                 }
             }
         }
@@ -476,13 +470,11 @@ fn unpublish_tracks(
 ) {
     for (entity, livekit_participant, microphone_local_track) in local_participants.into_inner() {
         let Participant::Local(ref local_participant) = **livekit_participant else {
-            error!(
+            debug_panic!(
                 "Participant {} ({}) has 'Local', but was remote.",
                 livekit_participant.sid(),
                 livekit_participant.identity()
             );
-            commands.send_event(AppExit::from_code(1));
-            return;
         };
 
         let local_participant_clone = local_participant.clone();

@@ -33,11 +33,11 @@ use common::{
     inputs::InputMap,
     sets::SetupSets,
     structs::{
-        AppConfig, AttachPoints, AvatarDynamicState, GraphicsSettings, IVec2Arg, PreviewMode,
-        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneImposterBake,
-        SceneLoadDistance, StartupScene, StartupScenes, Version, GROUND_RENDERLAYER,
+        AppConfig, AvatarDynamicState, GraphicsSettings, IVec2Arg, PreviewMode, PrimaryCamera,
+        PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneImposterBake, SceneLoadDistance,
+        StartupScene, StartupScenes, Version, GROUND_RENDERLAYER,
     },
-    util::{TryPushChildrenEx, UtilsPlugin},
+    util::UtilsPlugin,
 };
 use restricted_actions::{process_startup_scenes, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
@@ -569,7 +569,6 @@ fn setup(
 ) {
     info!("main::setup");
     // create the main player
-    let attach_points = AttachPoints::new(&mut commands);
     let player_id = commands
         .spawn((
             Transform::from_translation(Vec3::new(
@@ -584,8 +583,6 @@ fn setup(
             GroundCollider::default(),
             Propagate(RenderLayers::default()),
         ))
-        .try_push_children(&attach_points.entities())
-        .try_insert(attach_points)
         .id();
 
     // add a camera

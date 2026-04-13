@@ -7,7 +7,7 @@ use bevy::{
     ecs::relationship::Relationship,
     prelude::*,
 };
-use common::structs::MonotonicTimestamp;
+use common::{debug_panic, structs::MonotonicTimestamp};
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
     proto_components::sdk::components::{
@@ -68,22 +68,10 @@ fn asset_load_on_insert(
     let entity = trigger.target();
 
     let Ok((asset_load, maybe_container_entity)) = asset_loads.get(entity) else {
-        #[cfg(debug_assertions)]
-        unreachable!("AssetLoad must be available to its observers.");
-        #[cfg(not(debug_assertions))]
-        {
-            error!("AssetLoad must be available to its observers.");
-            return;
-        }
+        debug_panic!("AssetLoad must be available to its observers.");
     };
     let Some(container_entity) = maybe_container_entity else {
-        #[cfg(debug_assertions)]
-        panic!("AssetLoad entity did not have ContainerEntity.");
-        #[cfg(not(debug_assertions))]
-        {
-            error!("AssetLoad entity did not have ContainerEntity.");
-            return;
-        }
+        debug_panic!("AssetLoad entity did not have ContainerEntity.");
     };
     debug!(
         "Entity {} on {} requested assets {:?}.",
@@ -92,13 +80,7 @@ fn asset_load_on_insert(
 
     let Ok(mut renderer_scene_context) = renderer_scene_contexts.get_mut(container_entity.root)
     else {
-        #[cfg(debug_assertions)]
-        panic!("Root of AssetLoad does not contain RendererSceneContext.");
-        #[cfg(not(debug_assertions))]
-        {
-            error!("Root of AssetLoad does not contain RendererSceneContext.");
-            return;
-        }
+        debug_panic!("Root of AssetLoad does not contain RendererSceneContext.");
     };
 
     for file_path in &asset_load.assets {
@@ -140,22 +122,10 @@ fn asset_load_on_replace(
     let entity = trigger.target();
 
     let Ok((asset_load, maybe_container_entity)) = asset_loads.get(entity) else {
-        #[cfg(debug_assertions)]
-        unreachable!("AssetLoad must be available to its observers.");
-        #[cfg(not(debug_assertions))]
-        {
-            error!("AssetLoad must be available to its observers.");
-            return;
-        }
+        debug_panic!("AssetLoad must be available to its observers.");
     };
     let Some(container_entity) = maybe_container_entity else {
-        #[cfg(debug_assertions)]
-        panic!("AssetLoad entity did not have ContainerEntity.");
-        #[cfg(not(debug_assertions))]
-        {
-            error!("AssetLoad entity did not have ContainerEntity.");
-            return;
-        }
+        debug_panic!("AssetLoad entity did not have ContainerEntity.");
     };
     debug!(
         "Entity {} on {} no longer requires assets {:?}.",
@@ -184,23 +154,11 @@ fn verify_preload_state(
 ) {
     for (entity, preloaded_asset, preloaded_asset_of) in preloaded_assets.into_inner() {
         let Ok(container_entity) = asset_loads.get(preloaded_asset_of.get()) else {
-            #[cfg(debug_assertions)]
-            panic!("Could not get the AssetLoad of a PreloadedAsset.");
-            #[cfg(not(debug_assertions))]
-            {
-                error!("Could not get the AssetLoad of a PreloadedAsset.");
-                continue;
-            }
+            debug_panic!("Could not get the AssetLoad of a PreloadedAsset.");
         };
         let Ok(mut renderer_scene_context) = renderer_scene_contexts.get_mut(container_entity.root)
         else {
-            #[cfg(debug_assertions)]
-            panic!("Root of AssetLoad does not contain RendererSceneContext.");
-            #[cfg(not(debug_assertions))]
-            {
-                error!("Root of AssetLoad does not contain RendererSceneContext.");
-                continue;
-            }
+            debug_panic!("Root of AssetLoad does not contain RendererSceneContext.");
         };
 
         match asset_server.get_recursive_dependency_load_state(preloaded_asset.handle.id()) {
@@ -250,13 +208,7 @@ fn verify_preload_state(
                 commands.entity(entity).despawn();
             }
             None => {
-                #[cfg(debug_assertions)]
-                panic!("Preload asset handle not found in asset server.");
-                #[cfg(not(debug_assertions))]
-                {
-                    error!("Preload asset handle not found in asset server.");
-                    continue;
-                }
+                debug_panic!("Preload asset handle not found in asset server.");
             }
         }
     }

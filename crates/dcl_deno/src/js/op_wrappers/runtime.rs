@@ -11,6 +11,7 @@ pub fn ops() -> Vec<OpDecl> {
         op_scene_information(),
         op_realm_information(),
         op_world_time(),
+        op_get_platform(),
     ]
 }
 
@@ -41,4 +42,10 @@ async fn op_realm_information(op_state: Rc<RefCell<OpState>>) -> Result<PbRealmI
 #[serde]
 async fn op_world_time(op_state: Rc<RefCell<OpState>>) -> Result<WorldTime, AnyError> {
     dcl::js::runtime::op_world_time(op_state).await
+}
+
+#[op2]
+#[string]
+fn op_get_platform() -> &'static str {
+    dcl::js::runtime::get_platform()
 }
