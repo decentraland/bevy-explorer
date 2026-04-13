@@ -188,6 +188,7 @@ fn setup_parcel_grass_mesh(mut meshes: ResMut<Assets<Mesh>>) {
 
 fn spawn_ground(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
     commands.spawn((
+        Name::new("Ground"),
         // Ground covers 1024 parcels
         Transform::from_scale(Vec3::new(1024., 1., 1024.))
             .with_translation(Vec3::new(0., -0.05, 0.)),
@@ -426,6 +427,7 @@ fn fill_parcel_grass(
                     "Creating parcel grass on parcel {parcel}."
                 );
                 commands.spawn((
+                    Name::new("Parcel Grass"),
                     ParcelGrass { parcel },
                     Transform::from_translation(Vec3::new(
                         16. * parcel.x as f32 + 8.,
