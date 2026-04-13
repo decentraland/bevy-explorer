@@ -3351,6 +3351,7 @@ dependencies = [
 [[package]]
 name = "dcl-rpc"
 version = "2.3.7"
+source = "git+https://github.com/decentraland/rpc-rust?branch=feat%2Fwasm-compat#cc6f792e91873f3aee65d19a5ed7e7f1352b73a1"
 dependencies = [
  "async-channel 1.9.0",
  "async-trait",
