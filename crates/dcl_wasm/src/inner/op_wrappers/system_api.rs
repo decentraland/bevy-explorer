@@ -364,6 +364,104 @@ pub async fn op_get_avatar_modifiers(state: &WorkerContext) -> Result<js_sys::Ar
         .map_err(WasmError::from)
 }
 
+// Social / Friends
+
+#[wasm_bindgen]
+pub async fn op_get_friendship_event_stream(state: &WorkerContext) -> u32 {
+    dcl::js::system_api::op_get_friendship_event_stream(state.rc()).await
+}
+
+#[wasm_bindgen]
+pub async fn op_read_friendship_event_stream(
+    state: &WorkerContext,
+    rid: u32,
+) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_read_friendship_event_stream(state.rc(), rid).await)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_friends(state: &WorkerContext) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_get_friends(state.rc()).await)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_mutual_friends(
+    state: &WorkerContext,
+    address: String,
+) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_get_mutual_friends(state.rc(), address).await)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_sent_friend_requests(state: &WorkerContext) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_get_sent_friend_requests(state.rc()).await)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_received_friend_requests(state: &WorkerContext) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_get_received_friend_requests(state.rc()).await)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_social_initialized(state: &WorkerContext) -> Result<bool, WasmError> {
+    dcl::js::system_api::op_get_social_initialized(state.rc())
+        .await
+        .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_online_friends(state: &WorkerContext) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_get_online_friends(state.rc()).await)
+}
+
+#[wasm_bindgen]
+pub async fn op_send_friend_request(
+    state: &WorkerContext,
+    address: String,
+    message: Option<String>,
+) -> Result<(), WasmError> {
+    dcl::js::system_api::op_send_friend_request(state.rc(), address, message)
+        .await
+        .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
+pub async fn op_accept_friend_request(
+    state: &WorkerContext,
+    address: String,
+) -> Result<(), WasmError> {
+    dcl::js::system_api::op_accept_friend_request(state.rc(), address)
+        .await
+        .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
+pub async fn op_reject_friend_request(
+    state: &WorkerContext,
+    address: String,
+) -> Result<(), WasmError> {
+    dcl::js::system_api::op_reject_friend_request(state.rc(), address)
+        .await
+        .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
+pub async fn op_cancel_friend_request(
+    state: &WorkerContext,
+    address: String,
+) -> Result<(), WasmError> {
+    dcl::js::system_api::op_cancel_friend_request(state.rc(), address)
+        .await
+        .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
+pub async fn op_delete_friend(state: &WorkerContext, address: String) -> Result<(), WasmError> {
+    dcl::js::system_api::op_delete_friend(state.rc(), address)
+        .await
+        .map_err(WasmError::from)
+}
+
 #[wasm_bindgen]
 pub async fn op_get_params(state: &WorkerContext) -> Result<JsValue, WasmError> {
     let map = dcl::js::system_api::op_get_params(state.rc())

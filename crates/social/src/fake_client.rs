@@ -1,14 +1,41 @@
-use bevy::platform::collections::{HashMap, HashSet};
+use bevy::platform::collections::HashMap;
 use ethers_core::types::Address;
 
 use crate::DirectChatMessage;
 
+/// Stub types mirroring the proto FriendProfile / FriendshipRequestResponse
+/// used when the `social` feature is disabled.
+#[derive(Clone, Debug, Default)]
+pub struct FriendProfile {
+    pub address: String,
+    pub name: String,
+    pub has_claimed_name: bool,
+    pub profile_picture_url: String,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct FriendshipRequestResponse {
+    pub friend: Option<FriendProfile>,
+    pub created_at: i64,
+    pub message: Option<String>,
+    pub id: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ConnectivityStatus {
+    Online = 0,
+    #[default]
+    Offline = 1,
+    Away = 2,
+}
+
 #[derive(Default)]
 pub struct SocialClientHandler {
     pub is_initialized: bool,
-    pub sent_requests: HashSet<Address>,
-    pub received_requests: HashMap<Address, Option<String>>,
-    pub friends: HashSet<Address>,
+    pub sent_requests: HashMap<Address, FriendshipRequestResponse>,
+    pub received_requests: HashMap<Address, FriendshipRequestResponse>,
+    pub friends: HashMap<Address, FriendProfile>,
+    pub friend_status: HashMap<Address, ConnectivityStatus>,
 
     pub unread_messages: HashMap<Address, usize>,
 }
@@ -17,6 +44,7 @@ impl SocialClientHandler {
     pub fn connect(
         _wallet: wallet::Wallet,
         _friend_callback: impl Fn(&FriendshipEventBody) + Send + Sync + 'static,
+        _connectivity_callback: impl Fn(Address, ConnectivityStatus) + Send + Sync + 'static,
         _chat_callback: impl Fn(DirectChatMessage) + Send + Sync + 'static,
     ) -> Option<Self> {
         Some(Self::default())
@@ -52,6 +80,43 @@ impl SocialClientHandler {
         Ok(())
     }
 
+    pub fn get_mutual_friends(
+        &self,
+        _address: String,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<FriendProfile>, String>>, anyhow::Error>
+    {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Ok(Vec::new()));
+        Ok(rx)
+    }
+
+    pub fn block_user(
+        &self,
+        _address: String,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Ok(()));
+        Ok(rx)
+    }
+
+    pub fn unblock_user(
+        &self,
+        _address: String,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Ok(()));
+        Ok(rx)
+    }
+
+    pub fn get_blocked_users(
+        &self,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<FriendProfile>, String>>, anyhow::Error>
+    {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Ok(Vec::new()));
+        Ok(rx)
+    }
+
     pub fn chat(&self, _address: Address, _message: String) -> Result<(), anyhow::Error> {
         Ok(())
     }
@@ -74,11 +139,17 @@ impl SocialClientHandler {
 
 #[derive(Clone, Debug)]
 pub enum FriendshipEventBody {
-    Request(BodyData),
+    Request(RequestBodyData),
     Accept(BodyData),
     Reject(BodyData),
     Delete(BodyData),
     Cancel(BodyData),
+    Block(BodyData),
+}
+
+#[derive(Clone, Debug)]
+pub struct RequestBodyData {
+    pub friend: Option<BodyDataInner>,
 }
 
 #[derive(Clone, Debug)]

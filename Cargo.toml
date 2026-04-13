@@ -161,12 +161,12 @@ uuid = { version = "1.7", features = ["v4"] }
 build-time = "0.1.3"
 async-tungstenite = { version = "0.25", features = ["async-native-tls"] }
 tungstenite = { version = "0.21.0" }
-dcl-rpc = { version = "2.3.5", default-features = false, features = [
+dcl-rpc = { version = "2.3.6", default-features = false, features = [
   "client",
   "websockets",
   "codegen",
   "server",
-  "tungstenite",
+  "tungstenite-native-tls",
 ] }
 async-trait = "0.1.68"
 fastrand = "2"

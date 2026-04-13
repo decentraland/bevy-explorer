@@ -6,11 +6,12 @@ edition = "2021"
 [lib]
 
 [features]
-social = ["dep:dcl-rpc", "dep:matrix-sdk", "dcl_component/social"]
+social = ["dep:dcl-rpc", "dcl_component/social"]
 
 [dependencies]
 common = { workspace = true }
 dcl_component = { workspace = true }
+system_bridge = { workspace = true }
 wallet = { workspace = true }
 
 bevy = { workspace = true }
@@ -19,14 +20,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
-chrono = { workspace = true }
-opener = { workspace = true }
 web-time = { workspace = true }
+http = { workspace = true }
 
 dcl-rpc = { workspace = true, optional = true }
 futures-util = { workspace = true }
 
-matrix-sdk = { version = "0.10", default-features = false, features = [
-  "e2e-encryption",
-  "native-tls",
-], optional = true }

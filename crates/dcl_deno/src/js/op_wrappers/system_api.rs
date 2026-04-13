@@ -11,8 +11,10 @@ use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
-    settings::SettingInfo, AvatarModifierState, ChatMessage, HomeScene, HoverEvent, LiveSceneInfo,
-    PermanentPermissionItem, PermissionRequest, SceneLoadingUi, VoiceMessage,
+    settings::SettingInfo, AvatarModifierState, BlockedUserData, ChatMessage,
+    FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
+    FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo, PermanentPermissionItem,
+    PermissionRequest, SceneLoadingUi, VoiceMessage,
 };
 
 // list of op declarations
@@ -65,6 +67,26 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_get_scene_loading_ui_stream(),
             op_read_scene_loading_ui_stream(),
             op_get_avatar_modifiers(),
+            // Social / Friends
+            op_get_friendship_event_stream(),
+            op_read_friendship_event_stream(),
+            op_get_friends(),
+            op_get_mutual_friends(),
+            op_get_sent_friend_requests(),
+            op_get_received_friend_requests(),
+            op_get_social_initialized(),
+            op_get_online_friends(),
+            op_get_friend_connectivity_stream(),
+            op_read_friend_connectivity_stream(),
+            op_send_friend_request(),
+            op_accept_friend_request(),
+            op_reject_friend_request(),
+            op_cancel_friend_request(),
+            op_delete_friend(),
+            // Social / Blocking
+            op_block_user(),
+            op_unblock_user(),
+            op_get_blocked_users(),
             op_get_params(),
         ]
     } else {
@@ -402,6 +424,154 @@ pub async fn op_get_avatar_modifiers(
     state: Rc<RefCell<OpState>>,
 ) -> Result<Vec<AvatarModifierState>, anyhow::Error> {
     dcl::js::system_api::op_get_avatar_modifiers(state).await
+}
+
+// Social / Friends
+
+#[op2(async)]
+pub async fn op_get_friendship_event_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_friendship_event_stream(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_friendship_event_stream(
+    state: Rc<RefCell<OpState>>,
+    rid: u32,
+) -> Result<Option<FriendshipEventUpdate>, deno_core::anyhow::Error> {
+    dcl::js::system_api::op_read_friendship_event_stream(state, rid).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_friends(state: Rc<RefCell<OpState>>) -> Result<Vec<FriendData>, anyhow::Error> {
+    dcl::js::system_api::op_get_friends(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_mutual_friends(
+    state: Rc<RefCell<OpState>>,
+    #[string] address: String,
+) -> Result<Vec<FriendData>, anyhow::Error> {
+    dcl::js::system_api::op_get_mutual_friends(state, address).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_sent_friend_requests(
+    state: Rc<RefCell<OpState>>,
+) -> Result<Vec<FriendRequestData>, anyhow::Error> {
+    dcl::js::system_api::op_get_sent_friend_requests(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_received_friend_requests(
+    state: Rc<RefCell<OpState>>,
+) -> Result<Vec<FriendRequestData>, anyhow::Error> {
+    dcl::js::system_api::op_get_received_friend_requests(state).await
+}
+
+#[op2(async)]
+pub async fn op_get_social_initialized(state: Rc<RefCell<OpState>>) -> Result<bool, anyhow::Error> {
+    dcl::js::system_api::op_get_social_initialized(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_online_friends(
+    state: Rc<RefCell<OpState>>,
+) -> Result<Vec<FriendStatusData>, anyhow::Error> {
+    dcl::js::system_api::op_get_online_friends(state).await
+}
+
+#[op2(async)]
+pub async fn op_get_friend_connectivity_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_friend_connectivity_stream(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_friend_connectivity_stream(
+    state: Rc<RefCell<OpState>>,
+    #[smi] rid: u32,
+) -> Result<Option<FriendConnectivityEvent>, anyhow::Error> {
+    dcl::js::system_api::op_read_friend_connectivity_stream(state, rid).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_send_friend_request(
+    state: Rc<RefCell<OpState>>,
+    #[string] address: String,
+    #[string] message: Option<String>,
+) -> Result<(), anyhow::Error> {
+    dcl::js::system_api::op_send_friend_request(state, address, message).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_accept_friend_request(
+    state: Rc<RefCell<OpState>>,
+    #[string] address: String,
+) -> Result<(), anyhow::Error> {
+    dcl::js::system_api::op_accept_friend_request(state, address).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_reject_friend_request(
+    state: Rc<RefCell<OpState>>,
+    #[string] address: String,
+) -> Result<(), anyhow::Error> {
+    dcl::js::system_api::op_reject_friend_request(state, address).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_cancel_friend_request(
+    state: Rc<RefCell<OpState>>,
+    #[string] address: String,
+) -> Result<(), anyhow::Error> {
+    dcl::js::system_api::op_cancel_friend_request(state, address).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_delete_friend(
+    state: Rc<RefCell<OpState>>,
+    #[string] address: String,
+) -> Result<(), anyhow::Error> {
+    dcl::js::system_api::op_delete_friend(state, address).await
+}
+
+// Social / Blocking
+
+#[op2(async)]
+#[serde]
+pub async fn op_block_user(
+    state: Rc<RefCell<OpState>>,
+    #[string] address: String,
+) -> Result<(), anyhow::Error> {
+    dcl::js::system_api::op_block_user(state, address).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_unblock_user(
+    state: Rc<RefCell<OpState>>,
+    #[string] address: String,
+) -> Result<(), anyhow::Error> {
+    dcl::js::system_api::op_unblock_user(state, address).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_blocked_users(
+    state: Rc<RefCell<OpState>>,
+) -> Result<Vec<BlockedUserData>, anyhow::Error> {
+    dcl::js::system_api::op_get_blocked_users(state).await
 }
 
 #[op2(async)]

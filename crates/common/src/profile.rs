@@ -57,9 +57,12 @@ pub struct LambdaProfiles {
 #[serde(rename_all = "camelCase")]
 pub struct SerializedProfile {
     pub user_id: Option<String>,
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub version: i64,
     pub eth_address: String,
+    #[serde(default)]
     pub has_claimed_name: bool,
     pub has_connected_web3: Option<bool>,
     pub avatar: AvatarWireFormat,

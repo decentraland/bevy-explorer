@@ -509,9 +509,9 @@ fn main() {
     }
 
     if let Some(crashed) = crash_file {
-        app.add_plugins(CrashReportPlugin {
-            file: crashed.canonicalize().unwrap(),
-        });
+        if let Ok(file) = std::path::Path::canonicalize(&crashed) {
+            app.add_plugins(CrashReportPlugin { file });
+        }
     }
 
     if !no_avatar {
