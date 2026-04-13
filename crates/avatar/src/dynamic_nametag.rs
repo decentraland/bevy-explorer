@@ -1,5 +1,6 @@
 use bevy::{math::FloatOrd, prelude::*, render::primitives::Aabb};
 use common::structs::AttachPoints;
+use scene_runner::update_world::transform_and_parent::PostUpdateSets;
 
 pub struct DynamicNametagPlugin;
 
@@ -7,7 +8,9 @@ impl Plugin for DynamicNametagPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             PostUpdate,
-            dynamic_nametag_position.after(TransformSystem::TransformPropagate),
+            dynamic_nametag_position
+                .after(PostUpdateSets::PlayerUpdate)
+                .before(PostUpdateSets::AttachSync),
         );
     }
 }
