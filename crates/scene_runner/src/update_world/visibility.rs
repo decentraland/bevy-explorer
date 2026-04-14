@@ -379,8 +379,10 @@ mod tests {
             .id();
         let visible_children =
             std::iter::successors(Some(parent), |prev| Some(world.spawn(ChildOf(*prev)).id()))
+                .skip(1)
                 .take(4)
                 .collect::<Vec<_>>();
+        assert!(!visible_children.contains(&parent));
         let midway_descendant = world
             .spawn((
                 VisibilityComponent(PbVisibilityComponent {
@@ -393,8 +395,10 @@ mod tests {
         let hidden_children = std::iter::successors(Some(midway_descendant), |prev| {
             Some(world.spawn(ChildOf(*prev)).id())
         })
+        .skip(1)
         .take(4)
         .collect::<Vec<_>>();
+        assert!(!hidden_children.contains(&midway_descendant));
 
         app.update();
 
@@ -421,7 +425,8 @@ mod tests {
                 propagate_to_children: Some(true),
             }));
 
-        for _ in 0..10 {
+        // this one requires 2 updates for some reason
+        for _ in 0..2 {
             app.update();
         }
 
@@ -442,9 +447,7 @@ mod tests {
                 propagate_to_children: Some(false),
             }));
 
-        for _ in 0..10 {
-            app.update();
-        }
+        app.update();
 
         let world = app.world_mut();
         assert_eq!(world.get(parent).unwrap(), Visibility::Hidden);
@@ -453,7 +456,41 @@ mod tests {
         }
         assert_eq!(world.get(midway_descendant).unwrap(), Visibility::Visible);
         for child in &hidden_children {
-            println!("a");
+            assert_eq!(world.get(*child).unwrap(), Visibility::Hidden);
+        }
+
+        world
+            .entity_mut(midway_descendant)
+            .insert(VisibilityComponent(PbVisibilityComponent {
+                visible: Some(true),
+                propagate_to_children: Some(true),
+            }));
+
+        app.update();
+
+        let world = app.world_mut();
+        assert_eq!(world.get(parent).unwrap(), Visibility::Hidden);
+        for child in &visible_children {
+            assert_eq!(world.get(*child).unwrap(), Visibility::Hidden);
+        }
+        assert_eq!(world.get(midway_descendant).unwrap(), Visibility::Visible);
+        for child in &hidden_children {
+            assert_eq!(world.get(*child).unwrap(), Visibility::Visible);
+        }
+
+        world
+            .entity_mut(midway_descendant)
+            .remove::<VisibilityComponent>();
+
+        app.update();
+
+        let world = app.world_mut();
+        assert_eq!(world.get(parent).unwrap(), Visibility::Hidden);
+        for child in &visible_children {
+            assert_eq!(world.get(*child).unwrap(), Visibility::Hidden);
+        }
+        assert_eq!(world.get(midway_descendant).unwrap(), Visibility::Hidden);
+        for child in &hidden_children {
             assert_eq!(world.get(*child).unwrap(), Visibility::Hidden);
         }
     }
