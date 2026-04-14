@@ -415,6 +415,19 @@ pub async fn op_get_online_friends(state: &WorkerContext) -> Result<JsValue, Was
 }
 
 #[wasm_bindgen]
+pub async fn op_get_friend_connectivity_stream(state: &WorkerContext) -> u32 {
+    dcl::js::system_api::op_get_friend_connectivity_stream(state.rc()).await
+}
+
+#[wasm_bindgen]
+pub async fn op_read_friend_connectivity_stream(
+    state: &WorkerContext,
+    rid: u32,
+) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_read_friend_connectivity_stream(state.rc(), rid).await)
+}
+
+#[wasm_bindgen]
 pub async fn op_send_friend_request(
     state: &WorkerContext,
     address: String,
@@ -460,6 +473,27 @@ pub async fn op_delete_friend(state: &WorkerContext, address: String) -> Result<
     dcl::js::system_api::op_delete_friend(state.rc(), address)
         .await
         .map_err(WasmError::from)
+}
+
+// Social / Blocking
+
+#[wasm_bindgen]
+pub async fn op_block_user(state: &WorkerContext, address: String) -> Result<(), WasmError> {
+    dcl::js::system_api::op_block_user(state.rc(), address)
+        .await
+        .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
+pub async fn op_unblock_user(state: &WorkerContext, address: String) -> Result<(), WasmError> {
+    dcl::js::system_api::op_unblock_user(state.rc(), address)
+        .await
+        .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_blocked_users(state: &WorkerContext) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_get_blocked_users(state.rc()).await)
 }
 
 #[wasm_bindgen]
