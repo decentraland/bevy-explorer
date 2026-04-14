@@ -48,12 +48,10 @@ struct AncestorVisibility(Visibility);
 fn visibility_component_on_insert(
     trigger: Trigger<OnInsert, VisibilityComponent>,
     mut commands: Commands,
-    mut visibility_components: Query<(&VisibilityComponent, &mut Visibility, Option<&ChildOf>)>,
+    mut visibility_components: Query<(&VisibilityComponent, &mut Visibility)>,
 ) {
     let entity = trigger.target();
-    let Ok((visibility_component, mut visibility, maybe_child_of)) =
-        visibility_components.get_mut(entity)
-    else {
+    let Ok((visibility_component, mut visibility)) = visibility_components.get_mut(entity) else {
         unreachable!("Infallible query.");
     };
 
@@ -70,10 +68,6 @@ fn visibility_component_on_insert(
         commands
             .entity(entity)
             .try_insert(PropagateOver::<AncestorVisibility>::default());
-    }
-
-    if let Some(child_of) = maybe_child_of {
-        commands.entity(entity).try_insert(child_of.clone());
     }
 }
 
