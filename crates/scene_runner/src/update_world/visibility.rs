@@ -80,23 +80,19 @@ fn visibility_component_on_insert(
 fn visibility_component_on_replace(
     trigger: Trigger<OnReplace, VisibilityComponent>,
     mut commands: Commands,
-    mut visibility_components: Query<(&VisibilityComponent, &mut Visibility, Option<&ChildOf>)>,
+    mut visibility_components: Query<(&mut Visibility, Option<&ChildOf>)>,
 ) {
     let entity = trigger.target();
-    let Ok((visibility_component, mut visibility, maybe_child_of)) =
-        visibility_components.get_mut(entity)
-    else {
+    let Ok((mut visibility, maybe_child_of)) = visibility_components.get_mut(entity) else {
         unreachable!("Infallible query.");
     };
 
     *visibility = Visibility::Inherited;
 
-    if visibility_component.propagate_to_children() {
-        commands.entity(entity).try_remove::<(
-            Propagate<AncestorVisibility>,
-            PropagateOver<AncestorVisibility>,
-        )>();
-    }
+    commands.entity(entity).try_remove::<(
+        Propagate<AncestorVisibility>,
+        PropagateOver<AncestorVisibility>,
+    )>();
 
     if let Some(child_of) = maybe_child_of {
         commands.entity(entity).try_insert(child_of.clone());
@@ -402,10 +398,22 @@ mod tests {
 
         let world = app.world_mut();
         assert_eq!(world.get(parent).unwrap(), Visibility::Visible);
+        assert!(world
+            .entity(parent)
+            .contains::<Propagate<AncestorVisibility>>());
+        assert!(!world
+            .entity(parent)
+            .contains::<PropagateOver<AncestorVisibility>>());
         for child in &visible_children {
             assert_eq!(world.get(*child).unwrap(), Visibility::Visible);
         }
         assert_eq!(world.get(midway_descendant).unwrap(), Visibility::Hidden);
+        assert!(world
+            .entity(midway_descendant)
+            .contains::<Propagate<AncestorVisibility>>());
+        assert!(!world
+            .entity(midway_descendant)
+            .contains::<PropagateOver<AncestorVisibility>>());
         for child in &hidden_children {
             assert_eq!(world.get(*child).unwrap(), Visibility::Hidden);
         }
@@ -430,10 +438,22 @@ mod tests {
 
         let world = app.world_mut();
         assert_eq!(world.get(parent).unwrap(), Visibility::Hidden);
+        assert!(world
+            .entity(parent)
+            .contains::<Propagate<AncestorVisibility>>());
+        assert!(!world
+            .entity(parent)
+            .contains::<PropagateOver<AncestorVisibility>>());
         for child in &visible_children {
             assert_eq!(world.get(*child).unwrap(), Visibility::Hidden);
         }
         assert_eq!(world.get(midway_descendant).unwrap(), Visibility::Visible);
+        assert!(world
+            .entity(midway_descendant)
+            .contains::<Propagate<AncestorVisibility>>());
+        assert!(!world
+            .entity(midway_descendant)
+            .contains::<PropagateOver<AncestorVisibility>>());
         for child in &hidden_children {
             assert_eq!(world.get(*child).unwrap(), Visibility::Visible);
         }
@@ -449,10 +469,22 @@ mod tests {
 
         let world = app.world_mut();
         assert_eq!(world.get(parent).unwrap(), Visibility::Hidden);
+        assert!(world
+            .entity(parent)
+            .contains::<Propagate<AncestorVisibility>>());
+        assert!(!world
+            .entity(parent)
+            .contains::<PropagateOver<AncestorVisibility>>());
         for child in &visible_children {
             assert_eq!(world.get(*child).unwrap(), Visibility::Hidden);
         }
         assert_eq!(world.get(midway_descendant).unwrap(), Visibility::Visible);
+        assert!(!world
+            .entity(midway_descendant)
+            .contains::<Propagate<AncestorVisibility>>());
+        assert!(world
+            .entity(midway_descendant)
+            .contains::<PropagateOver<AncestorVisibility>>());
         for child in &hidden_children {
             assert_eq!(world.get(*child).unwrap(), Visibility::Hidden);
         }
@@ -468,10 +500,22 @@ mod tests {
 
         let world = app.world_mut();
         assert_eq!(world.get(parent).unwrap(), Visibility::Hidden);
+        assert!(world
+            .entity(parent)
+            .contains::<Propagate<AncestorVisibility>>());
+        assert!(!world
+            .entity(parent)
+            .contains::<PropagateOver<AncestorVisibility>>());
         for child in &visible_children {
             assert_eq!(world.get(*child).unwrap(), Visibility::Hidden);
         }
         assert_eq!(world.get(midway_descendant).unwrap(), Visibility::Visible);
+        assert!(world
+            .entity(midway_descendant)
+            .contains::<Propagate<AncestorVisibility>>());
+        assert!(!world
+            .entity(midway_descendant)
+            .contains::<PropagateOver<AncestorVisibility>>());
         for child in &hidden_children {
             assert_eq!(world.get(*child).unwrap(), Visibility::Visible);
         }
@@ -484,10 +528,22 @@ mod tests {
 
         let world = app.world_mut();
         assert_eq!(world.get(parent).unwrap(), Visibility::Hidden);
+        assert!(world
+            .entity(parent)
+            .contains::<Propagate<AncestorVisibility>>());
+        assert!(!world
+            .entity(parent)
+            .contains::<PropagateOver<AncestorVisibility>>());
         for child in &visible_children {
             assert_eq!(world.get(*child).unwrap(), Visibility::Hidden);
         }
         assert_eq!(world.get(midway_descendant).unwrap(), Visibility::Hidden);
+        assert!(!world
+            .entity(midway_descendant)
+            .contains::<Propagate<AncestorVisibility>>());
+        assert!(!world
+            .entity(midway_descendant)
+            .contains::<PropagateOver<AncestorVisibility>>());
         for child in &hidden_children {
             assert_eq!(world.get(*child).unwrap(), Visibility::Hidden);
         }
