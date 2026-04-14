@@ -141,7 +141,7 @@ fn smooth_out_height(nametags: Query<(&mut Transform, &NametagHeightHistory)>) {
 }
 
 fn add_nametag_height_history(
-    trigger: Trigger<OnAdd, AttachPoints>,
+    trigger: Trigger<OnInsert, AttachPoints>,
     mut commands: Commands,
     attach_points_query: Query<&AttachPoints>,
 ) {
