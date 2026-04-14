@@ -73,7 +73,6 @@ fn visibility_component_on_insert(
     }
 
     if let Some(child_of) = maybe_child_of {
-        println!("Had inherited");
         commands.entity(entity).try_insert(child_of.clone());
     }
 }
@@ -100,7 +99,6 @@ fn visibility_component_on_replace(
     }
 
     if let Some(child_of) = maybe_child_of {
-        println!("Had childof");
         commands.entity(entity).try_insert(child_of.clone());
     }
 }
