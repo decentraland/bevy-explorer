@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use bevy::{log::{debug, error}, math::Vec4};
+use bevy::{log::debug, math::Vec4};
 use common::{
     inputs::{Action, BindingsData, InputIdentifier, SystemActionEvent},
     rpc::{RpcCall, RpcResultReceiver, RpcResultSender, RpcStreamReceiver, RpcStreamSender},
@@ -889,7 +889,6 @@ pub async fn op_get_online_friends(
 }
 
 pub async fn op_get_friend_connectivity_stream(state: Rc<RefCell<impl State>>) -> u32 {
-    error!("friendconn: get stream");
     let (sx, rx) = RpcStreamSender::channel();
     state.borrow_mut().put(rx);
 
