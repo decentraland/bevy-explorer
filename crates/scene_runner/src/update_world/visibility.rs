@@ -77,6 +77,8 @@ fn visibility_component_on_insert(
     }
 }
 
+/// Removes [`Propagate`] and [`PropagateOver`] when [`VisibilityComponent`] is
+/// replaced or removed.
 fn visibility_component_on_replace(
     trigger: Trigger<OnReplace, VisibilityComponent>,
     mut commands: Commands,
