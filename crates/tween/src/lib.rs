@@ -1,6 +1,8 @@
 #[cfg(feature = "tween_debug")]
 mod tween_debug;
 
+use std::ops::Deref;
+
 use bevy::prelude::*;
 use common::sets::SceneSets;
 use dcl::interface::{ComponentPosition, CrdtType};
@@ -21,7 +23,7 @@ use scene_runner::{
     ContainerEntity, SceneEntity,
 };
 
-#[derive(Component, Debug)]
+#[derive(Debug, Component, Deref, DerefMut)]
 pub struct Tween(PbTween);
 
 impl From<PbTween> for Tween {
@@ -39,7 +41,7 @@ impl Tween {
     }
 
     #[cfg(feature = "adr285")]
-    fn is_continuous(&self) -> bool {
+    pub fn is_continuous(&self) -> bool {
         matches!(
             &self.0.mode,
             Some(
@@ -50,15 +52,10 @@ impl Tween {
         )
     }
 
-    fn apply(
-        &self,
-        time: f32,
-        transform: &mut Transform,
-        maybe_mat: Option<&mut PbMaterialComponent>,
-    ) {
+    fn easing_function(&self) -> fn(f32) -> f32 {
         use simple_easing::*;
         use EasingFunction::*;
-        let f = match self.0.easing_function() {
+        match self.deref().easing_function() {
             EfLinear => linear,
             EfEaseinquad => quad_in,
             EfEaseoutquad => quad_out,
@@ -90,11 +87,20 @@ impl Tween {
             EfEaseinback => back_in,
             EfEaseoutback => back_out,
             EfEaseback => back_in_out,
-        };
+        }
+    }
+
+    fn apply(
+        &self,
+        time: f32,
+        transform: &mut Transform,
+        maybe_mat: Option<&mut PbMaterialComponent>,
+    ) {
+        let f = self.easing_function();
 
         let ease_value = f(time);
 
-        match &self.0.mode {
+        match &self.mode {
             Some(Mode::Move(data)) => {
                 let start = data.start.unwrap_or_default().world_vec_to_vec3();
                 let end = data.end.unwrap_or_default().world_vec_to_vec3();
@@ -237,21 +243,11 @@ impl Tween {
     }
 }
 
-#[derive(Component, Debug, PartialEq)]
+#[derive(Debug, PartialEq, Component, Deref, DerefMut)]
 pub struct TweenState(PbTweenState);
 
 #[derive(Event)]
 struct TweenUpdatedTexture(Entity);
-
-/// Cache of information needed to calculate continuous tweens in a
-/// frame independent way
-#[derive(Component)]
-#[component(immutable)]
-#[cfg(feature = "adr285")]
-struct ContinuousTweenAnchor {
-    ///  Caches the [`Transform`] at the moment [`Tween`] was inserted
-    transform: Transform,
-}
 
 pub struct TweenPlugin;
 
@@ -275,18 +271,11 @@ impl Plugin for TweenPlugin {
         );
         app.add_observer(clean_scene_tween_state);
 
-        #[cfg(feature = "adr285")]
-        {
-            app.add_observer(tween_inserted);
-            app.add_observer(tween_replaced);
-        }
-
         #[cfg(feature = "tween_debug")]
         app.add_plugins(tween_debug::TweenDebugPlugin);
     }
 }
 
-#[cfg(not(feature = "adr285"))]
 type TweenUpdateComponents<'a> = (
     Entity,
     Ref<'a, ContainerEntity>,
@@ -294,17 +283,6 @@ type TweenUpdateComponents<'a> = (
     Ref<'a, Tween>,
     Mut<'a, Transform>,
     Option<Mut<'a, TweenState>>,
-    Option<Mut<'a, PbMaterialComponent>>,
-);
-#[cfg(feature = "adr285")]
-type TweenUpdateComponents<'a> = (
-    Entity,
-    Ref<'a, ContainerEntity>,
-    Ref<'a, ChildOf>,
-    Ref<'a, Tween>,
-    Mut<'a, Transform>,
-    Option<Mut<'a, TweenState>>,
-    Option<Ref<'a, ContinuousTweenAnchor>>,
     Option<Mut<'a, PbMaterialComponent>>,
 );
 
@@ -314,206 +292,110 @@ fn update_tween(
     mut tweens: Query<TweenUpdateComponents>,
     mut scenes: Query<&mut RendererSceneContext>,
     parents: Query<&SceneEntity>,
-    #[cfg(feature = "adr285")] mut tween_updated_texture_writer: EventWriter<TweenUpdatedTexture>,
+    mut tween_updated_texture_writer: EventWriter<TweenUpdatedTexture>,
 ) {
-    for tween_update_components in tweens.iter_mut() {
-        let Ok(scene) = scenes.get_mut(tween_update_components.1.root) else {
+    for (ent, scene_ent, parent, tween, mut transform, state, maybe_material) in tweens.iter_mut() {
+        let Ok(mut scene) = scenes.get_mut(scene_ent.root) else {
             continue;
         };
 
-        #[cfg(feature = "adr285")]
-        if tween_update_components.3.is_continuous() {
-            continuous_tween_update(
-                &mut commands,
-                tween_update_components,
-                scene,
-                parents,
-                &time,
-                &mut tween_updated_texture_writer,
-            );
-        } else {
-            discrete_tween_update(
-                &mut commands,
-                tween_update_components,
-                scene,
-                parents,
-                &time,
-            );
-        }
-        #[cfg(not(feature = "adr285"))]
-        discrete_tween_update(
-            &mut commands,
-            tween_update_components,
-            scene,
-            parents,
-            &time,
-        );
-    }
-}
-
-fn discrete_tween_update(
-    commands: &mut Commands,
-    tween_update_components: TweenUpdateComponents,
-    mut scene: Mut<RendererSceneContext>,
-    parents: Query<&SceneEntity>,
-    time: &Time,
-) {
-    #[cfg(not(feature = "adr285"))]
-    let (ent, scene_ent, parent, tween, mut transform, state, maybe_material) =
-        tween_update_components;
-    #[cfg(feature = "adr285")]
-    let (ent, scene_ent, parent, tween, mut transform, state, _, maybe_material) =
-        tween_update_components;
-
-    let playing = tween.0.playing.unwrap_or(true);
-    let delta = if playing {
-        time.delta_secs() * 1000.0 / tween.0.duration
-    } else {
-        0.0
-    };
-
-    let updated_time = if tween.is_changed() {
-        tween.0.current_time.unwrap_or(0.0)
-    } else {
-        state
-            .as_ref()
-            .map(|state| state.0.current_time + delta)
-            .unwrap_or(0.0)
-            .min(1.0)
-    };
-
-    let updated_status = if playing && updated_time == 1.0 {
-        TweenStateStatus::TsCompleted
-    } else if playing {
-        TweenStateStatus::TsActive
-    } else {
-        TweenStateStatus::TsPaused
-    };
-
-    let updated_state = TweenState(PbTweenState {
-        state: updated_status as i32,
-        current_time: updated_time,
-    });
-
-    if state.as_deref() != Some(&updated_state) {
-        scene.update_crdt(
-            SceneComponentId::TWEEN_STATE,
-            CrdtType::LWW_ENT,
-            scene_ent.container_id,
-            &updated_state.0,
-        );
-
-        if let Some(mut state) = state {
-            state.0 = updated_state.0;
-        } else {
-            commands.entity(ent).try_insert(updated_state);
-        }
-
-        tween.apply(
-            updated_time,
-            &mut transform,
-            if tween.is_texture_move() {
-                maybe_material.map(Mut::into_inner)
+        let playing = tween.playing.unwrap_or(true);
+        let delta = if playing {
+            if tween.is_continuous() && tween.duration <= 0. {
+                time.delta_secs()
             } else {
-                None
-            },
-        );
-
-        let Ok(parent) = parents.get(parent.parent()) else {
-            warn!("no parent for tweened ent");
-            return;
-        };
-
-        scene.update_crdt(
-            SceneComponentId::TRANSFORM,
-            CrdtType::LWW_ENT,
-            scene_ent.container_id,
-            &DclTransformAndParent::from_bevy_transform_and_parent(&transform, parent.id),
-        );
-    }
-}
-
-#[cfg(feature = "adr285")]
-fn continuous_tween_update(
-    commands: &mut Commands,
-    (
-        ent,
-        scene_ent,
-        parent,
-        tween,
-        mut transform,
-        state,
-        maybe_continuous_tween_anchor,
-        maybe_mat,
-    ): TweenUpdateComponents,
-    mut scene: Mut<RendererSceneContext>,
-    parents: Query<&SceneEntity>,
-    time: &Time,
-    tween_updated_texture_writer: &mut EventWriter<TweenUpdatedTexture>,
-) {
-    let Some(continuous_tween_anchor) = maybe_continuous_tween_anchor else {
-        unreachable!("ContinuousTweenAnchor must be present on a continuous tween.");
-    };
-
-    let playing = tween.0.playing.unwrap_or(true);
-    let delta = if playing {
-        time.delta_secs() * 1000.
-    } else {
-        0.0
-    };
-
-    let updated_time = if tween.is_changed() {
-        tween.0.current_time.unwrap_or(0.0)
-    } else {
-        state
-            .as_ref()
-            .map(|state| state.0.current_time + delta)
-            .unwrap_or(0.0)
-    };
-
-    let updated_status = if playing {
-        TweenStateStatus::TsActive
-    } else {
-        TweenStateStatus::TsPaused
-    };
-
-    let updated_state = TweenState(PbTweenState {
-        state: updated_status as i32,
-        current_time: updated_time,
-    });
-
-    if state.as_deref() != Some(&updated_state) {
-        scene.update_crdt(
-            SceneComponentId::TWEEN_STATE,
-            CrdtType::LWW_ENT,
-            scene_ent.container_id,
-            &updated_state.0,
-        );
-
-        if let Some(mut state) = state {
-            state.0 = updated_state.0;
+                time.delta_secs() * 1000.0 / tween.duration
+            }
         } else {
-            commands.entity(ent).try_insert(updated_state);
-        }
-
-        // This weirdness is due to the fact that the continuous tweens
-        // are implemented in a frame independent way
-        *transform = continuous_tween_anchor.transform;
-        tween.apply(updated_time, &mut transform, maybe_mat.map(Mut::into_inner));
-
-        let Ok(parent) = parents.get(parent.parent()) else {
-            warn!("no parent for tweened ent");
-            return;
+            0.0
         };
-
-        scene.update_crdt(
-            SceneComponentId::TRANSFORM,
-            CrdtType::LWW_ENT,
-            scene_ent.container_id,
-            &DclTransformAndParent::from_bevy_transform_and_parent(&transform, parent.id),
+        debug!(
+            "Updating {} tween with delta of {}.",
+            if tween.is_continuous() {
+                "continuous"
+            } else {
+                "simple"
+            },
+            delta
         );
-        if tween.is_texture_move() {
-            tween_updated_texture_writer.write(TweenUpdatedTexture(ent));
+
+        let updated_time = if tween.is_changed() {
+            tween.current_time()
+        } else {
+            let updated_time = state
+                .as_ref()
+                .map(|state| state.current_time + delta)
+                .unwrap_or(0.0);
+            if tween.is_continuous() {
+                updated_time
+            } else {
+                updated_time.min(1.0)
+            }
+        };
+        debug!(
+            "{} tween now has time {}.",
+            if tween.is_continuous() {
+                "Continuous"
+            } else {
+                "Simple"
+            },
+            updated_time
+        );
+
+        let updated_status = if playing && updated_time == 1.0 && !tween.is_continuous() {
+            TweenStateStatus::TsCompleted
+        } else if playing {
+            TweenStateStatus::TsActive
+        } else {
+            TweenStateStatus::TsPaused
+        };
+        let updated_state = TweenState(PbTweenState {
+            state: updated_status as i32,
+            current_time: updated_time,
+        });
+
+        if state.as_deref() != Some(&updated_state) {
+            scene.update_crdt(
+                SceneComponentId::TWEEN_STATE,
+                CrdtType::LWW_ENT,
+                scene_ent.container_id,
+                &updated_state.0,
+            );
+
+            if let Some(mut state) = state {
+                state.0 = updated_state.0;
+            } else {
+                commands.entity(ent).try_insert(updated_state);
+            }
+
+            tween.apply(
+                if tween.is_continuous() {
+                    delta
+                } else {
+                    updated_time
+                },
+                &mut transform,
+                if tween.is_texture_move() {
+                    maybe_material.map(Mut::into_inner)
+                } else {
+                    None
+                },
+            );
+
+            let Ok(parent) = parents.get(parent.parent()) else {
+                warn!("no parent for tweened ent");
+                return;
+            };
+
+            scene.update_crdt(
+                SceneComponentId::TRANSFORM,
+                CrdtType::LWW_ENT,
+                scene_ent.container_id,
+                &DclTransformAndParent::from_bevy_transform_and_parent(&transform, parent.id),
+            );
+            if tween.is_texture_move() {
+                tween_updated_texture_writer.write(TweenUpdatedTexture(ent));
+            }
         }
     }
 }
@@ -694,30 +576,4 @@ pub fn update_system_tween(
             }
         }
     }
-}
-
-#[cfg(feature = "adr285")]
-fn tween_inserted(
-    trigger: Trigger<OnInsert, Tween>,
-    mut commands: Commands,
-    tweens: Query<(&Tween, &Transform)>,
-) {
-    let entity = trigger.target();
-    let Ok((tween, transform)) = tweens.get(entity) else {
-        unreachable!("Tween must be available.");
-    };
-
-    if tween.is_continuous() {
-        commands.entity(entity).insert(ContinuousTweenAnchor {
-            transform: *transform,
-        });
-    }
-}
-
-#[cfg(feature = "adr285")]
-fn tween_replaced(trigger: Trigger<OnReplace, Tween>, mut commands: Commands) {
-    let entity = trigger.target();
-    commands
-        .entity(entity)
-        .try_remove::<ContinuousTweenAnchor>();
 }
