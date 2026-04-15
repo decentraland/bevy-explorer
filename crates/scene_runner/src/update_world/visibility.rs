@@ -2,24 +2,24 @@ use bevy::{
     app::{HierarchyPropagatePlugin, Propagate, PropagateOver},
     prelude::*,
 };
-#[cfg(not(test))]
 use dcl::interface::ComponentPosition;
 use dcl_component::proto_components::sdk::components::PbVisibilityComponent;
-#[cfg(not(test))]
 use dcl_component::SceneComponentId;
 
-#[cfg(not(test))]
 use super::AddCrdtInterfaceExt;
 
-pub struct VisibilityComponentPlugin;
+pub struct VisibilityComponentPlugin {
+    pub setup_crdt_lww: bool,
+}
 
 impl Plugin for VisibilityComponentPlugin {
     fn build(&self, app: &mut App) {
-        #[cfg(not(test))]
-        app.add_crdt_lww_component::<PbVisibilityComponent, VisibilityComponent>(
-            SceneComponentId::VISIBILITY,
-            ComponentPosition::EntityOnly,
-        );
+        if self.setup_crdt_lww {
+            app.add_crdt_lww_component::<PbVisibilityComponent, VisibilityComponent>(
+                SceneComponentId::VISIBILITY,
+                ComponentPosition::EntityOnly,
+            );
+        }
 
         app.add_plugins(HierarchyPropagatePlugin::<AncestorVisibility>::default());
 
@@ -123,7 +123,9 @@ mod tests {
     fn parent_visible_child_visible() {
         let mut app = App::new();
 
-        app.add_plugins(VisibilityComponentPlugin);
+        app.add_plugins(VisibilityComponentPlugin {
+            setup_crdt_lww: false,
+        });
 
         app.finish();
 
@@ -156,7 +158,9 @@ mod tests {
     fn parent_visible_child_hidden() {
         let mut app = App::new();
 
-        app.add_plugins(VisibilityComponentPlugin);
+        app.add_plugins(VisibilityComponentPlugin {
+            setup_crdt_lww: false,
+        });
 
         let world = app.world_mut();
 
@@ -187,7 +191,9 @@ mod tests {
     fn parent_hidden_child_visible() {
         let mut app = App::new();
 
-        app.add_plugins(VisibilityComponentPlugin);
+        app.add_plugins(VisibilityComponentPlugin {
+            setup_crdt_lww: false,
+        });
 
         let world = app.world_mut();
 
@@ -218,7 +224,9 @@ mod tests {
     fn parent_hidden_child_hidden() {
         let mut app = App::new();
 
-        app.add_plugins(VisibilityComponentPlugin);
+        app.add_plugins(VisibilityComponentPlugin {
+            setup_crdt_lww: false,
+        });
 
         app.finish();
 
@@ -251,7 +259,9 @@ mod tests {
     fn parent_visible_propagate_child_none() {
         let mut app = App::new();
 
-        app.add_plugins(VisibilityComponentPlugin);
+        app.add_plugins(VisibilityComponentPlugin {
+            setup_crdt_lww: false,
+        });
 
         app.finish();
 
@@ -276,7 +286,9 @@ mod tests {
     fn parent_visible_propagate_children_none() {
         let mut app = App::new();
 
-        app.add_plugins(VisibilityComponentPlugin);
+        app.add_plugins(VisibilityComponentPlugin {
+            setup_crdt_lww: false,
+        });
 
         app.finish();
 
@@ -315,7 +327,9 @@ mod tests {
     fn parent_visible_propagate_ancestors_none() {
         let mut app = App::new();
 
-        app.add_plugins(VisibilityComponentPlugin);
+        app.add_plugins(VisibilityComponentPlugin {
+            setup_crdt_lww: false,
+        });
 
         app.finish();
 
@@ -355,7 +369,9 @@ mod tests {
     fn two_propagate_and_update() {
         let mut app = App::new();
 
-        app.add_plugins(VisibilityComponentPlugin);
+        app.add_plugins(VisibilityComponentPlugin {
+            setup_crdt_lww: false,
+        });
 
         app.finish();
 
