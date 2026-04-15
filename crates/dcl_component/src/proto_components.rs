@@ -129,6 +129,8 @@ impl DclProtoComponent for sdk::components::PbAvatarLocomotionSettings {}
 impl DclProtoComponent for sdk::components::PbAvatarMovementInfo {}
 impl DclProtoComponent for sdk::components::PbAssetLoad {}
 impl DclProtoComponent for sdk::components::PbAssetLoadLoadingState {}
+impl DclProtoComponent for sdk::components::PbPhysicsCombinedForce {}
+impl DclProtoComponent for sdk::components::PbPhysicsCombinedImpulse {}
 
 // PositionFree markers for types used with GlobalCrdtState::update_crdt
 // (these contain no embedded position data requiring localization)

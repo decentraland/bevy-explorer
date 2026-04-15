@@ -12,13 +12,12 @@ use common::{
 use comms::global_crdt::GlobalCrdtState;
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
-    proto_components::{
+    SceneComponentId, SceneEntityId, proto_components::{
         common::Vector3,
         sdk::components::{
-            ColliderLayer, PbAvatarLocomotionSettings, PbAvatarMovement, PbAvatarMovementInfo,
+            ColliderLayer, PbAvatarLocomotionSettings, PbAvatarMovement, PbAvatarMovementInfo, PbPhysicsCombinedForce, PbPhysicsCombinedImpulse,
         },
-    },
-    SceneComponentId, SceneEntityId,
+    }
 };
 
 use scene_runner::{
@@ -198,6 +197,12 @@ impl<T: Default> FromConfig for T {
     }
 }
 
+#[derive(Component)]
+pub struct PhysicsCombinedForce(pub PbPhysicsCombinedForce);
+
+#[derive(Component)]
+pub struct PhysicsCombinedImpulse(pub PbPhysicsCombinedImpulse);
+
 #[derive(Resource, Default)]
 pub struct AvatarMovementInfo(pub PbAvatarMovementInfo);
 
@@ -345,6 +350,8 @@ pub fn apply_movement(
     mut info: ResMut<AvatarMovementInfo>,
     mut jumping: Local<bool>,
     movement_control: Res<EngineMovementControl>,
+    impulses: Query<&PhysicsCombinedImpulse>,
+    forces: Query<&PhysicsCombinedForce>,
 ) {
     let Ok((mut transform, mut dynamic_state, movement)) = player.single_mut() else {
         return;

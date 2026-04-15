@@ -64,6 +64,8 @@ fn gen_sdk_components() -> Result<()> {
         "avatar_movement_info",
         "avatar_movement",
         "avatar_locomotion_settings",
+        "physics_combined_force",
+        "physics_combined_impulse",
     ];
 
     let mut sources = components
