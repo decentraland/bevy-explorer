@@ -155,6 +155,7 @@ impl Tween {
                             &mut material.0,
                             None,
                             Some(start + ((end - start) * ease_value)),
+                            false,
                         );
                     }
                     TextureMovementType::TmtTiling => {
@@ -162,6 +163,7 @@ impl Tween {
                             &mut material.0,
                             Some(start + ((end - start) * ease_value)),
                             None,
+                            false,
                         );
                     }
                 }
@@ -219,6 +221,7 @@ impl Tween {
                             &mut material.0,
                             None,
                             Some(direction * data.speed * factor * Vec2::new(1.0, -1.0)),
+                            true,
                         );
                     }
                     TextureMovementType::TmtTiling => {
@@ -226,6 +229,7 @@ impl Tween {
                             &mut material.0,
                             Some(direction * data.speed * factor),
                             None,
+                            true,
                         );
                     }
                 }
@@ -392,56 +396,44 @@ fn update_tween(
     }
 }
 
-fn update_pb_material(pb_material: &mut PbMaterial, tiling: Option<Vec2>, offset: Option<Vec2>) {
+/// Updates the tiling and offset of [`PbMaterial`] textures.
+///
+/// If `delta` is `true`, the values in `tiling` and `offset`
+/// are deltas and should be incremented to the existing
+/// value.
+fn update_pb_material(
+    pb_material: &mut PbMaterial,
+    tiling: Option<Vec2>,
+    offset: Option<Vec2>,
+    delta: bool,
+) {
+    let update_tex =
+        |texture_union: Option<&mut dcl_component::proto_components::common::TextureUnion>| {
+            let Some(Tex::Texture(texture)) =
+                texture_union.and_then(|texture_union| texture_union.tex.as_mut())
+            else {
+                return;
+            };
+            if delta {
+                increment_texture(texture, tiling, offset);
+            } else {
+                update_texture(texture, tiling, offset);
+            }
+        };
+
     if let Some(material) = pb_material.material.as_mut() {
         match material {
             pb_material::Material::Pbr(pbr_material) => {
-                if let Some(Tex::Texture(texture)) = pbr_material
-                    .texture
-                    .as_mut()
-                    .and_then(|texture_union| texture_union.tex.as_mut())
-                {
-                    update_texture(texture, tiling, offset);
-                }
-                if let Some(Tex::Texture(texture)) = pbr_material
-                    .alpha_texture
-                    .as_mut()
-                    .and_then(|texture_union| texture_union.tex.as_mut())
-                {
-                    update_texture(texture, tiling, offset);
-                }
-                if let Some(Tex::Texture(texture)) = pbr_material
-                    .emissive_texture
-                    .as_mut()
-                    .and_then(|texture_union| texture_union.tex.as_mut())
-                {
-                    update_texture(texture, tiling, offset);
-                }
-                if let Some(Tex::Texture(texture)) = pbr_material
-                    .bump_texture
-                    .as_mut()
-                    .and_then(|texture_union| texture_union.tex.as_mut())
-                {
-                    update_texture(texture, tiling, offset);
-                }
+                update_tex(pbr_material.texture.as_mut());
+                update_tex(pbr_material.alpha_texture.as_mut());
+                update_tex(pbr_material.emissive_texture.as_mut());
+                update_tex(pbr_material.bump_texture.as_mut());
             }
             pb_material::Material::Unlit(unlit_material) => {
-                if let Some(Tex::Texture(texture)) = unlit_material
-                    .texture
-                    .as_mut()
-                    .and_then(|texture_union| texture_union.tex.as_mut())
-                {
-                    update_texture(texture, tiling, offset);
-                }
-                if let Some(Tex::Texture(texture)) = unlit_material
-                    .alpha_texture
-                    .as_mut()
-                    .and_then(|texture_union| texture_union.tex.as_mut())
-                {
-                    update_texture(texture, tiling, offset);
-                }
+                update_tex(unlit_material.texture.as_mut());
+                update_tex(unlit_material.alpha_texture.as_mut());
             }
-        }
+        };
     }
 }
 
@@ -470,6 +462,26 @@ fn transfer_material_to_scene(
             container_entity.container_id,
             &pb_material_component.0,
         );
+    }
+}
+
+fn increment_texture(
+    texture: &mut Texture,
+    tiling_delta: Option<Vec2>,
+    offset_delta: Option<Vec2>,
+) {
+    if let Some(tiling_delta) = tiling_delta {
+        if let Some(tiling) = &mut texture.tiling {
+            tiling.x += tiling_delta.x;
+            tiling.y += tiling_delta.y;
+        }
+    }
+
+    if let Some(offset_delta) = offset_delta {
+        if let Some(offset) = &mut texture.offset {
+            offset.x += offset_delta.x;
+            offset.y += offset_delta.y;
+        }
     }
 }
 
