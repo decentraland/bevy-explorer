@@ -265,7 +265,7 @@ fn tween_picking(
             }
             #[cfg(feature = "adr285")]
             Some(Mode::TextureMoveContinuous(data)) => {
-                plate_head(&mut commands, 1, root, "MoveContinuouus");
+                plate_head(&mut commands, 1, root, "TextureMoveContinuouus");
                 plate_display_row(&mut commands, 2, root, "Duration", &tween.0.duration);
                 plate_display_row(
                     &mut commands,
