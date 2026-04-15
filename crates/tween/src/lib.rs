@@ -32,17 +32,10 @@ impl From<PbTween> for Tween {
 
 impl Tween {
     fn is_texture_move(&self) -> bool {
-        #[cfg(feature = "adr285")]
-        {
-            matches!(
-                &self.0.mode,
-                Some(Mode::TextureMove(_) | Mode::TextureMoveContinuous(_))
-            )
-        }
-        #[cfg(not(feature = "adr285"))]
-        {
-            matches!(&self.0.mode, Some(Mode::TextureMove(_)))
-        }
+        matches!(
+            &self.mode,
+            Some(Mode::TextureMove(_) | Mode::TextureMoveContinuous(_))
+        )
     }
 
     #[cfg(feature = "adr285")]
