@@ -98,7 +98,11 @@ impl Tween {
     ) {
         let f = self.easing_function();
 
-        let ease_value = f(time);
+        let ease_value = if self.is_continuous() && self.duration <= 0. {
+            time
+        } else {
+            f(time)
+        };
 
         match &self.mode {
             Some(Mode::Move(data)) => {
@@ -185,20 +189,8 @@ impl Tween {
             }
             #[cfg(feature = "adr285")]
             Some(Mode::MoveContinuous(data)) => {
-                // A new position is desired.
-                // The speed and time is provided.
-                // The new position is then calculated by integrating the
-                // speed function.
-                // The integral of a constant speed is `speed * time`.
-                let startup_factor = if self.0.duration > 0. { todo!() } else { 0. };
-                let post_startup_factor = if time > self.0.duration {
-                    (time - self.0.duration) / 1000.
-                } else {
-                    0.
-                };
-                let factor = startup_factor + post_startup_factor;
                 transform.translation +=
-                    data.direction.unwrap().world_vec_to_vec3() * data.speed * factor;
+                    data.direction.unwrap().world_vec_to_vec3() * data.speed * ease_value;
             }
             #[cfg(feature = "adr285")]
             Some(Mode::TextureMoveContinuous(data)) => {
