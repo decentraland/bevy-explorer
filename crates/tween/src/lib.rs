@@ -293,7 +293,7 @@ fn update_tween(
         } else {
             0.0
         };
-        debug!(
+        trace!(
             "Updating {} tween with delta of {}.",
             if tween.is_continuous() {
                 "continuous"
@@ -316,7 +316,7 @@ fn update_tween(
                 updated_time.min(1.0)
             }
         };
-        debug!(
+        trace!(
             "{} tween now has time {}.",
             if tween.is_continuous() {
                 "Continuous"
