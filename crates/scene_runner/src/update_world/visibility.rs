@@ -559,5 +559,36 @@ mod tests {
         for child in &hidden_children {
             assert_eq!(world.get(*child).unwrap(), Visibility::Hidden);
         }
+
+        world
+            .entity_mut(midway_descendant)
+            .insert(VisibilityComponent(PbVisibilityComponent {
+                visible: Some(true),
+                propagate_to_children: Some(true),
+            }));
+
+        app.update();
+
+        let world = app.world_mut();
+        assert_eq!(world.get(parent).unwrap(), Visibility::Hidden);
+        assert!(world
+            .entity(parent)
+            .contains::<Propagate<AncestorVisibility>>());
+        assert!(!world
+            .entity(parent)
+            .contains::<PropagateOver<AncestorVisibility>>());
+        for child in &visible_children {
+            assert_eq!(world.get(*child).unwrap(), Visibility::Hidden);
+        }
+        assert_eq!(world.get(midway_descendant).unwrap(), Visibility::Visible);
+        assert!(world
+            .entity(midway_descendant)
+            .contains::<Propagate<AncestorVisibility>>());
+        assert!(!world
+            .entity(midway_descendant)
+            .contains::<PropagateOver<AncestorVisibility>>());
+        for child in &hidden_children {
+            assert_eq!(world.get(*child).unwrap(), Visibility::Visible);
+        }
     }
 }
