@@ -389,16 +389,10 @@ fn axis_gizmos(mut gizmos: Gizmos, tweens: Query<(&Tween, &GlobalTransform)>) {
                     Isometry3d::from_translation(global_transform.translation()),
                     2.5,
                 );
-                let axis = if cfg!(feature = "alt_rotate_continuous") {
+                let axis = {
                     let direction = data.direction.unwrap();
                     let (axis, _) = direction.to_bevy_normalized().to_axis_angle();
                     axis
-                } else {
-                    let dcl_quat = data.direction.unwrap();
-                    // +Z forward to Bevy's -Z forward
-                    let quat =
-                        dcl_quat.to_bevy_normalized() * Quat::from_axis_angle(Vec3::Y, FRAC_2_PI);
-                    quat * Vec3::NEG_Y
                 };
                 gizmos.arrow(
                     global_transform.translation(),
