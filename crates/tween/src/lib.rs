@@ -200,18 +200,6 @@ impl Tween {
                     return;
                 };
 
-                // A new texture uv is desired.
-                // The speed and time is provided.
-                // The new texture uv is then calculated by integrating the
-                // speed function.
-                // The integral of a constant speed is `speed * time`.
-                let startup_factor = if self.0.duration > 0. { todo!() } else { 0. };
-                let post_startup_factor = if time > self.0.duration {
-                    (time - self.0.duration) / 1000.
-                } else {
-                    0.
-                };
-                let factor = startup_factor + post_startup_factor;
                 let dcl_vec2 = data.direction.unwrap();
                 let direction = Vec2::new(dcl_vec2.x, dcl_vec2.y);
 
@@ -220,14 +208,14 @@ impl Tween {
                         update_pb_material(
                             &mut material.0,
                             None,
-                            Some(direction * data.speed * factor * Vec2::new(1.0, -1.0)),
+                            Some(direction * data.speed * ease_value * Vec2::new(1.0, -1.0)),
                             true,
                         );
                     }
                     TextureMovementType::TmtTiling => {
                         update_pb_material(
                             &mut material.0,
-                            Some(direction * data.speed * factor),
+                            Some(direction * data.speed * ease_value),
                             None,
                             true,
                         );
@@ -471,17 +459,15 @@ fn increment_texture(
     offset_delta: Option<Vec2>,
 ) {
     if let Some(tiling_delta) = tiling_delta {
-        if let Some(tiling) = &mut texture.tiling {
-            tiling.x += tiling_delta.x;
-            tiling.y += tiling_delta.y;
-        }
+        let tiling = texture.tiling.get_or_insert_default();
+        tiling.x += tiling_delta.x;
+        tiling.y += tiling_delta.y;
     }
 
     if let Some(offset_delta) = offset_delta {
-        if let Some(offset) = &mut texture.offset {
-            offset.x += offset_delta.x;
-            offset.y += offset_delta.y;
-        }
+        let offset = texture.offset.get_or_insert_default();
+        offset.x += offset_delta.x;
+        offset.y += offset_delta.y;
     }
 }
 
