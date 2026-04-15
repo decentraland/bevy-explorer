@@ -9,10 +9,10 @@ use dcl_component::proto_components::social_service::v2::{
     upsert_friendship_payload::{
         self, AcceptPayload, CancelPayload, DeletePayload, RejectPayload, RequestPayload,
     },
-    BlockUserPayload, ConnectivityStatus, FriendProfile, FriendshipRequestResponse,
-    GetBlockedUsersPayload, GetFriendsPayload, GetFriendshipRequestsPayload,
-    GetMutualFriendsPayload, Pagination, SocialServiceClient, SocialServiceClientDefinition,
-    UnblockUserPayload, UpsertFriendshipPayload, User,
+    upsert_friendship_response, BlockUserPayload, ConnectivityStatus, FriendProfile,
+    FriendshipRequestResponse, GetBlockedUsersPayload, GetFriendsPayload,
+    GetFriendshipRequestsPayload, GetMutualFriendsPayload, Pagination, SocialServiceClient,
+    SocialServiceClientDefinition, UnblockUserPayload, UpsertFriendshipPayload, User,
 };
 use dcl_rpc::{
     client::RpcClient,
@@ -54,6 +54,17 @@ enum FriendData {
     ConnectivityEvent {
         address: Address,
         status: ConnectivityStatus,
+    },
+    OwnRequestSent {
+        address: Address,
+        req: FriendshipRequestResponse,
+    },
+    OwnRequestAccepted {
+        address: Address,
+        profile: FriendProfile,
+    },
+    OwnBlock {
+        address: Address,
     },
 }
 
@@ -354,6 +365,19 @@ impl SocialClientHandler {
                         (self.connectivity_callback)(address, status);
                     }
                 }
+                FriendData::OwnRequestSent { address, req } => {
+                    self.sent_requests.insert(address, req);
+                }
+                FriendData::OwnRequestAccepted { address, profile } => {
+                    self.received_requests.remove(&address);
+                    self.friends.insert(address, profile);
+                }
+                FriendData::OwnBlock { address } => {
+                    self.friends.remove(&address);
+                    self.friend_status.remove(&address);
+                    self.sent_requests.remove(&address);
+                    self.received_requests.remove(&address);
+                }
             }
         }
     }
@@ -532,17 +556,46 @@ async fn social_socket_handler_inner(
     info!("[social] Subscribed to friend connectivity updates");
 
     // Outbound: send friendship actions + handle queries
+    let response_sx_write = response_sx.clone();
     let f_service_write = async move {
+        let response_sx = response_sx_write;
         loop {
             tokio::select! {
                 req = rx.recv() => {
                     let Some(req) = req else { break; };
                     info!("[social] upsert_friendship request: {req:?}");
+                    let action = req.action.clone();
                     let resp = service_module
                         .upsert_friendship(req)
                         .await
                         .map_err(|e| anyhow!("[social] upsert_friendship transport error: {e:?}"))?;
                     info!("[social] upsert_friendship response: {resp:?}");
+
+                    // The server doesn't echo our own actions back via the subscription,
+                    // so update local state from the RPC response.
+                    if let Some(upsert_friendship_response::Response::Accepted(accepted)) = resp.response {
+                        match action {
+                            Some(upsert_friendship_payload::Action::Request(_)) => {
+                                if let Some(friend) = accepted.friend.as_ref() {
+                                    if let Some(address) = friend.address.as_h160() {
+                                        let req = FriendshipRequestResponse {
+                                            friend: accepted.friend.clone(),
+                                            created_at: accepted.created_at,
+                                            message: accepted.message,
+                                            id: accepted.id,
+                                        };
+                                        let _ = response_sx.send(FriendData::OwnRequestSent { address, req });
+                                    }
+                                }
+                            }
+                            Some(upsert_friendship_payload::Action::Accept(AcceptPayload { user: Some(user) })) => {
+                                if let (Some(address), Some(profile)) = (user.address.as_h160(), accepted.friend) {
+                                    let _ = response_sx.send(FriendData::OwnRequestAccepted { address, profile });
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
                 }
                 query = query_rx.recv() => {
                     let Some(query) = query else { break; };
@@ -588,6 +641,9 @@ async fn social_socket_handler_inner(
                                     match resp.response {
                                         Some(Response::Ok(_)) => {
                                             info!("[social] blockUser success for {address}");
+                                            if let Some(addr) = address.as_h160() {
+                                                let _ = response_sx.send(FriendData::OwnBlock { address: addr });
+                                            }
                                             let _ = response.send(Ok(()));
                                         }
                                         Some(Response::InternalServerError(e)) => {
