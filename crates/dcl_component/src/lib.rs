@@ -214,6 +214,9 @@ impl SceneComponentId {
 
     pub const ASSET_LOAD: SceneComponentId = SceneComponentId(1213);
     pub const ASSET_LOAD_LOADING_STATE: SceneComponentId = SceneComponentId(1214);
+
+    pub const PHYSICS_COMBINED_IMPULSE: SceneComponentId = SceneComponentId(1215);
+    pub const PHYSICS_COMBINED_FORCE: SceneComponentId = SceneComponentId(1216);
 }
 
 #[derive(

@@ -1,7 +1,12 @@
 use core::f32;
 use std::f32::consts::TAU;
 
-use bevy::{diagnostic::FrameCount, math::DVec3, platform::collections::HashMap, prelude::*};
+use bevy::{
+    diagnostic::FrameCount,
+    math::DVec3,
+    platform::collections::{HashMap, HashSet},
+    prelude::*,
+};
 use common::{
     dynamics::{PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS, PLAYER_GROUND_THRESHOLD},
     sets::SceneSets,
@@ -12,12 +17,14 @@ use common::{
 use comms::global_crdt::GlobalCrdtState;
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
-    SceneComponentId, SceneEntityId, proto_components::{
+    proto_components::{
         common::Vector3,
         sdk::components::{
-            ColliderLayer, PbAvatarLocomotionSettings, PbAvatarMovement, PbAvatarMovementInfo, PbPhysicsCombinedForce, PbPhysicsCombinedImpulse,
+            ColliderLayer, PbAvatarLocomotionSettings, PbAvatarMovement, PbAvatarMovementInfo,
+            PbPhysicsCombinedForce, PbPhysicsCombinedImpulse,
         },
-    }
+    },
+    SceneComponentId, SceneEntityId,
 };
 
 use scene_runner::{
@@ -45,6 +52,14 @@ impl Plugin for AvatarMovementPlugin {
             SceneComponentId::AVATAR_LOCOMOTION_SETTINGS,
             ComponentPosition::EntityOnly,
         );
+        app.add_crdt_lww_component::<PbPhysicsCombinedImpulse, PhysicsCombinedImpulse>(
+            SceneComponentId::PHYSICS_COMBINED_IMPULSE,
+            ComponentPosition::EntityOnly,
+        );
+        app.add_crdt_lww_component::<PbPhysicsCombinedForce, PhysicsCombinedForce>(
+            SceneComponentId::PHYSICS_COMBINED_FORCE,
+            ComponentPosition::EntityOnly,
+        );
 
         app.init_resource::<AvatarMovementInfo>();
 
@@ -68,6 +83,7 @@ impl Plugin for AvatarMovementPlugin {
             (
                 apply_ground_collider_movement,
                 resolve_collisions,
+                apply_impulses,
                 apply_movement,
                 record_ground_collider,
             )
@@ -200,8 +216,20 @@ impl<T: Default> FromConfig for T {
 #[derive(Component)]
 pub struct PhysicsCombinedForce(pub PbPhysicsCombinedForce);
 
+impl From<PbPhysicsCombinedForce> for PhysicsCombinedForce {
+    fn from(value: PbPhysicsCombinedForce) -> Self {
+        Self(value)
+    }
+}
+
 #[derive(Component)]
 pub struct PhysicsCombinedImpulse(pub PbPhysicsCombinedImpulse);
+
+impl From<PbPhysicsCombinedImpulse> for PhysicsCombinedImpulse {
+    fn from(value: PbPhysicsCombinedImpulse) -> Self {
+        Self(value)
+    }
+}
 
 #[derive(Resource, Default)]
 pub struct AvatarMovementInfo(pub PbAvatarMovementInfo);
@@ -336,6 +364,52 @@ impl<C: Component + Clone + FromConfig> ActivePlayerComponent<C> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+pub fn apply_impulses(
+    impulses: Query<(&PhysicsCombinedImpulse, &SceneEntity)>,
+    forces: Query<(&PhysicsCombinedForce, &SceneEntity)>,
+    player: Res<PrimaryPlayerRes>,
+    containing_scenes: ContainingScene,
+    mut last_impulses: Local<HashMap<Entity, u32>>,
+    mut info: ResMut<AvatarMovementInfo>,
+    time: Res<Time>,
+    live_scenes: Query<Entity, With<RendererSceneContext>>,
+) {
+    let containing_scenes = containing_scenes.get(player.0);
+
+    let live: HashSet<Entity> = live_scenes.iter().collect();
+    last_impulses.retain(|k, _| live.contains(k));
+
+    for (impulse, entity) in impulses {
+        if last_impulses
+            .get(&entity.root)
+            .is_some_and(|prev_id| *prev_id == impulse.0.event_id)
+        {
+            continue;
+        }
+
+        last_impulses.insert(entity.root, impulse.0.event_id);
+        if !containing_scenes.contains(&entity.root) {
+            continue;
+        }
+
+        info.0.external_velocity = Some(
+            info.0.external_velocity.unwrap_or_default() + impulse.0.vector.unwrap_or_default(),
+        );
+    }
+
+    for (force, entity) in forces {
+        if !containing_scenes.contains(&entity.root) {
+            continue;
+        }
+
+        info.0.external_velocity = Some(
+            info.0.external_velocity.unwrap_or_default()
+                + force.0.vector.unwrap_or_default() * time.delta_secs(),
+        );
+    }
+}
+
 pub fn apply_movement(
     mut player: Query<
         (
@@ -350,8 +424,6 @@ pub fn apply_movement(
     mut info: ResMut<AvatarMovementInfo>,
     mut jumping: Local<bool>,
     movement_control: Res<EngineMovementControl>,
-    impulses: Query<&PhysicsCombinedImpulse>,
-    forces: Query<&PhysicsCombinedForce>,
 ) {
     let Ok((mut transform, mut dynamic_state, movement)) = player.single_mut() else {
         return;
@@ -517,8 +589,8 @@ fn apply_ground_collider_movement(
     ground_transforms: Query<(&GlobalTransform, &PreviousColliderTransform)>,
     mut player: Query<(&mut Transform, &GroundCollider), With<PrimaryUser>>,
     frame: Res<FrameCount>,
-    mut info: ResMut<AvatarMovementInfo>,
-    time: Res<Time>,
+    // mut info: ResMut<AvatarMovementInfo>,
+    // time: Res<Time>,
     movement_control: Res<EngineMovementControl>,
 ) {
     if !movement_control.suppress_avatar_physics.is_empty() {
@@ -562,18 +634,7 @@ fn apply_ground_collider_movement(
         );
 
         if (new_translation - transform.translation).length() < 5.0 {
-            let add_external_velocity =
-                (new_translation - transform.translation) / time.delta_secs();
-            let existing_external_velocity = info
-                .0
-                .external_velocity
-                .as_ref()
-                .map(Vector3::world_vec_to_vec3)
-                .unwrap_or_default();
-            info.0.external_velocity = Some(Vector3::world_vec_from_vec3(
-                &(existing_external_velocity + add_external_velocity),
-            ));
-
+            // don't add ground collider movement to external_velocity, else we bounce/slide off everything
             transform.translation = new_translation;
         } else {
             debug!("skipped");
