@@ -20,7 +20,7 @@ module.exports.isPreviewMode = async function (body) {
 
 module.exports.getPlatform = async function (body) {
     return {
-        platform: 'desktop' // TODO: Implement `vr`, `web`, `mobile` it's ready
+        platform: Deno.core.ops.op_get_platform()
     }
 }
 module.exports.areUnsafeRequestAllowed = async function (body) {

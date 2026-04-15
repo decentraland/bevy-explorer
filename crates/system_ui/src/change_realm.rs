@@ -5,10 +5,10 @@ use bevy::{
 };
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use common::{
-    structs::{SystemAudio, ZOrder},
+    structs::{CurrentRealm, SystemAudio, ZOrder},
     util::{TaskCompat, TaskExt},
 };
-use ipfs::{ChangeRealmEvent, CurrentRealm, IpfsAssetServer};
+use ipfs::{ChangeRealmEvent, IpfsAssetServer};
 use serde::Deserialize;
 use ui_core::{
     button::DuiButton,
@@ -113,7 +113,7 @@ fn change_realm_dialog(
         .unwrap();
     commands
         .entity(components.named("server-list"))
-        .insert(ServerList { task, root_id });
+        .try_insert(ServerList { task, root_id });
 }
 
 fn update_server_list(

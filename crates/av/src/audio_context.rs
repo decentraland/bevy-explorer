@@ -2,6 +2,7 @@ use std::{collections::VecDeque, time::Duration};
 
 use bevy::prelude::*;
 use common::structs::AudioDecoderError;
+use common::util::ReportErr;
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::ffi::AVSampleFormat;
 use ffmpeg_next::{decoder, format::context::Input, media::Type, util::frame, Packet};
@@ -284,7 +285,7 @@ impl AudioContext {
 
         let sound_data = kira::sound::streaming::StreamingSoundData::from_decoder(kira_decoder);
 
-        let _ = channel.blocking_send(sound_data);
+        channel.blocking_send(sound_data).report();
 
         Ok(AudioContext {
             stream_index,

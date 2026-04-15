@@ -191,7 +191,7 @@ fn update_comboboxen(
         } else {
             commands
                 .entity(components.named("text"))
-                .insert(FontSize(0.03 / 1.3));
+                .try_insert(FontSize(0.03 / 1.3));
         }
         let entity = components.root;
         commands.entity(components.root).try_insert((
@@ -200,7 +200,7 @@ fn update_comboboxen(
             Interaction::default(),
             On::<Click>::new(move |mut commands: Commands| {
                 if let Ok(mut commands) = commands.get_entity(entity) {
-                    commands.insert(Focus);
+                    commands.try_insert(Focus);
                 }
             }),
             On::<Focus>::new(
@@ -297,7 +297,7 @@ fn update_comboboxen(
                                         .modify_component(move |combo: &mut ComboBox| {
                                             combo.selected = ix as isize;
                                         })
-                                        .insert(DataChanged);
+                                        .try_insert(DataChanged);
                                 }),
                                 InteractStyles {
                                     active: Some(InteractStyle {
@@ -319,7 +319,7 @@ fn update_comboboxen(
                                 },
                             ));
 
-                            cmds.with_children(|c| {
+                            cmds.try_with_children(|c| {
                                 let mut cmds = c.spawn((
                                     Text::new(option),
                                     cbox.style.clone().unwrap_or_default(),
@@ -333,12 +333,12 @@ fn update_comboboxen(
                                 ));
 
                                 if cbox.style.is_none() {
-                                    cmds.insert(FontSize(0.03 / 1.3));
+                                    cmds.try_insert(FontSize(0.03 / 1.3));
                                 }
                             });
 
                             if cbox.selected == ix as isize {
-                                cmds.insert(Active(true));
+                                cmds.try_insert(Active(true));
                                 target = Some(cmds.id());
                             }
 
@@ -360,7 +360,7 @@ fn update_comboboxen(
                     if let Some(target_camera) = props.target_camera {
                         commands
                             .entity(popup.root)
-                            .insert((target_camera.clone(), DespawnWith(ent)));
+                            .try_insert((target_camera.clone(), DespawnWith(ent)));
                     }
                 },
             ),
@@ -391,10 +391,10 @@ impl DuiTemplate for DuiComboBoxTemplate {
                     .unwrap_or(ZOrder::DefaultComboPopup as i32),
             ),
         };
-        commands.insert(combobox);
+        commands.try_insert(combobox);
 
         if let Some(onchanged) = props.take::<On<DataChanged>>("onchanged")? {
-            commands.insert(onchanged);
+            commands.try_insert(onchanged);
         }
 
         Ok(Default::default())

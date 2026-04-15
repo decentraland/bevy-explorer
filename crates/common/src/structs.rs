@@ -1,6 +1,14 @@
-use std::{f32::consts::PI, num::ParseIntError, ops::Range, str::FromStr, sync::Arc};
+use std::{
+    f32::consts::PI,
+    marker::PhantomData,
+    num::ParseIntError,
+    ops::{Deref, Range},
+    str::FromStr,
+    sync::{atomic::AtomicU32, Arc},
+};
 
 use bevy::{
+    color::palettes,
     platform::collections::{HashMap, HashSet},
     prelude::*,
     render::view::RenderLayers,
@@ -113,12 +121,41 @@ pub enum PermissionState {
 pub struct AttachPoints {
     pub position: Entity,
     pub nametag: Entity,
+    pub head: Entity,
+    pub neck: Entity,
+    pub spine: Entity,
+    pub spine_1: Entity,
+    pub spine_2: Entity,
+    pub hip: Entity,
+    pub left_shoulder: Entity,
+    pub left_arm: Entity,
+    pub left_forearm: Entity,
     pub left_hand: Entity,
+    pub left_hand_index: Entity,
+    pub right_shoulder: Entity,
+    pub righ_arm: Entity,
+    pub right_forearm: Entity,
     pub right_hand: Entity,
+    pub right_hand_index: Entity,
+    /// AAPT_LEFT_UP_LEG
+    pub left_thigh: Entity,
+    /// AAPT_LEFT_LEG
+    pub left_shin: Entity,
+    pub left_foot: Entity,
+    pub left_toe_base: Entity,
+    /// AAPT_RIGHT_UP_LEG
+    pub right_thigh: Entity,
+    /// AAPT_RIGHT_LEG
+    pub right_shin: Entity,
+    pub right_foot: Entity,
+    pub right_toe_base: Entity,
 }
 
 impl AttachPoints {
     pub fn new(commands: &mut Commands) -> Self {
+        let inverted_transform = Transform::from_rotation(Quat::from_rotation_y(PI));
+        let default_visibility = Visibility::default();
+        let default_bundle = (inverted_transform, default_visibility);
         Self {
             position: commands
                 .spawn((Transform::default(), Visibility::default()))
@@ -129,23 +166,63 @@ impl AttachPoints {
                     Visibility::default(),
                 ))
                 .id(),
-            left_hand: commands
-                .spawn((
-                    Transform::from_rotation(Quat::from_rotation_y(PI)),
-                    Visibility::default(),
-                ))
-                .id(),
-            right_hand: commands
-                .spawn((
-                    Transform::from_rotation(Quat::from_rotation_y(PI)),
-                    Visibility::default(),
-                ))
-                .id(),
+            head: commands.spawn(default_bundle).id(),
+            neck: commands.spawn(default_bundle).id(),
+            spine: commands.spawn(default_bundle).id(),
+            spine_1: commands.spawn(default_bundle).id(),
+            spine_2: commands.spawn(default_bundle).id(),
+            hip: commands.spawn(default_bundle).id(),
+            left_shoulder: commands.spawn(default_bundle).id(),
+            left_arm: commands.spawn(default_bundle).id(),
+            left_forearm: commands.spawn(default_bundle).id(),
+            left_hand: commands.spawn(default_bundle).id(),
+            left_hand_index: commands.spawn(default_bundle).id(),
+            right_shoulder: commands.spawn(default_bundle).id(),
+            righ_arm: commands.spawn(default_bundle).id(),
+            right_forearm: commands.spawn(default_bundle).id(),
+            right_hand: commands.spawn(default_bundle).id(),
+            right_hand_index: commands.spawn(default_bundle).id(),
+            left_thigh: commands.spawn(default_bundle).id(),
+            left_shin: commands.spawn(default_bundle).id(),
+            left_foot: commands.spawn(default_bundle).id(),
+            left_toe_base: commands.spawn(default_bundle).id(),
+            right_thigh: commands.spawn(default_bundle).id(),
+            right_shin: commands.spawn(default_bundle).id(),
+            right_foot: commands.spawn(default_bundle).id(),
+            right_toe_base: commands.spawn(default_bundle).id(),
         }
     }
 
-    pub fn entities(&self) -> [Entity; 4] {
-        [self.position, self.nametag, self.left_hand, self.right_hand]
+    /// AttachPoints entities ordered by their protocol id
+    pub fn entities(&self) -> [Entity; 26] {
+        [
+            self.position,
+            self.nametag,
+            self.left_hand,
+            self.right_hand,
+            self.head,
+            self.neck,
+            self.spine,
+            self.spine_1,
+            self.spine_2,
+            self.hip,
+            self.left_shoulder,
+            self.left_arm,
+            self.left_forearm,
+            self.left_hand_index,
+            self.right_shoulder,
+            self.righ_arm,
+            self.right_forearm,
+            self.right_hand_index,
+            self.left_thigh,
+            self.left_shin,
+            self.left_foot,
+            self.left_toe_base,
+            self.right_thigh,
+            self.right_shin,
+            self.right_foot,
+            self.right_toe_base,
+        ]
     }
 }
 
@@ -276,6 +353,7 @@ pub struct AppConfig {
     pub scene_imposter_multisample: bool,
     pub scene_imposter_multisample_amount: f32,
     pub scene_imposter_bake: SceneImposterBake,
+    pub parcel_grass_setting: ParcelGrassSetting,
     pub sysinfo_visible: bool,
     pub scene_log_to_console: bool,
     pub max_avatars: usize,
@@ -306,6 +384,7 @@ impl Default for AppConfig {
             scene_imposter_multisample: false,
             scene_imposter_multisample_amount: 0.0,
             scene_imposter_bake: SceneImposterBake::Off,
+            parcel_grass_setting: Default::default(),
             sysinfo_visible: false,
             scene_log_to_console: false,
             max_avatars: 100,
@@ -468,6 +547,7 @@ pub enum AaSetting {
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum WindowSetting {
+    #[cfg(not(target_arch = "wasm32"))]
     Fullscreen,
     Windowed,
     Borderless,
@@ -603,6 +683,7 @@ impl SpawnPosition {
 #[derive(Deserialize, Debug, Clone)]
 pub struct SpawnPoint {
     pub name: Option<String>,
+    #[serde(default)]
     pub default: bool,
     pub position: SpawnPosition,
 }
@@ -620,6 +701,12 @@ pub struct SceneDisplay {
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
+pub struct SkyboxConfig {
+    pub fixed_time: Option<f32>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct SceneMeta {
     pub owner: Option<String>,
     pub display: Option<SceneDisplay>,
@@ -627,6 +714,7 @@ pub struct SceneMeta {
     pub scene: SceneMetaScene,
     pub runtime_version: Option<String>,
     pub spawn_points: Option<Vec<SpawnPoint>>,
+    pub skybox_config: Option<SkyboxConfig>,
     pub authoritative_multiplayer: Option<bool>,
 }
 
@@ -896,7 +984,16 @@ impl SceneImposterBake {
 #[derive(Resource, Default)]
 pub struct CursorLocks(pub HashSet<&'static str>);
 
-#[derive(Default, Clone, Copy)]
+/// Controls engine-level overrides to avatar movement, independent of scene-driven movement.
+#[derive(Resource, Default)]
+pub struct EngineMovementControl {
+    /// Non-empty means collision/clipping is disabled (e.g. "noclip" from /idnoclip)
+    pub suppress_clipping: HashSet<&'static str>,
+    /// Non-empty means avatar physics movement systems are suppressed (e.g. "move_player_to" during interpolation)
+    pub suppress_avatar_physics: HashSet<&'static str>,
+}
+
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub enum MoveKind {
     #[default]
     Idle,
@@ -911,11 +1008,8 @@ pub enum MoveKind {
 
 #[derive(Component, Default)]
 pub struct AvatarDynamicState {
-    pub force: Vec2,
     pub velocity: Vec3,
     pub ground_height: f32,
-    pub tank: bool,
-    pub rotate: f32,
     pub jump_time: f32,
     pub move_kind: MoveKind,
 }
@@ -925,12 +1019,17 @@ pub enum PreviewCommand {
     ReloadScene { hash: String },
 }
 
-#[derive(Resource)]
-pub struct SystemScene {
-    pub source: Option<String>,
+pub struct StartupScene {
+    pub source: String,
+    pub super_user: bool,
     pub preview: bool,
     pub hot_reload: Option<tokio::sync::mpsc::UnboundedSender<PreviewCommand>>,
     pub hash: Option<String>,
+}
+
+#[derive(Resource)]
+pub struct StartupScenes {
+    pub scenes: Vec<StartupScene>,
 }
 
 #[derive(Resource, Default, Clone, Debug)]
@@ -946,15 +1045,22 @@ pub struct SceneGlobalLight {
 
 #[derive(Resource)]
 pub struct TimeOfDay {
-    pub time: f32, // secs since midnight
-    pub target_time: Option<f32>,
-    pub speed: f32,
+    /// secs since midnight
+    pub time: f32,
 }
 
 impl TimeOfDay {
     pub fn elapsed_secs(&self) -> f32 {
         self.time
     }
+}
+
+/// Fixed time defined on `scene.json` `skyboxConfig`
+#[derive(Component)]
+#[component(immutable)]
+pub struct SceneTime {
+    /// secs since midnight
+    pub time: f32,
 }
 
 // porting aid, used to be one component
@@ -994,7 +1100,8 @@ pub enum ZOrder {
     Crosshair = -65536,
     // PortableScene -> -65535 <= value <= -1
     // default 0 => appear in world, under scene ui
-    SceneUi = 1,
+    OutOfWorldBackdrop = 1,
+    SceneUi,
     SceneUiOverlay,
     SystemSceneUi,
     SystemSceneUiOverlay,
@@ -1043,4 +1150,145 @@ pub struct PreviewMode {
 #[derive(Resource, Default, Debug)]
 pub struct DebugInfo {
     pub info: HashMap<&'static str, String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub enum GlobalCrdtStateUpdate {
+    Crdt(Vec<u8>, dcl_component::Localizer),
+    Time(f32),
+}
+
+// used for responses to scenes which require strict monotonic timestamps
+// by convention we use T = the protobuf struct containing the timestamp (e.g. PbPointerEventsResult, PbTriggerAreaResult)
+#[derive(Resource)]
+pub struct MonotonicTimestamp<T>(AtomicU32, PhantomData<fn() -> T>);
+
+impl<T> Default for MonotonicTimestamp<T> {
+    fn default() -> Self {
+        Self(Default::default(), Default::default())
+    }
+}
+
+impl<T> MonotonicTimestamp<T> {
+    pub fn next_timestamp(&self) -> u32 {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ParcelGrassSetting {
+    Off,
+    #[cfg_attr(target_arch = "wasm32", default)]
+    Low,
+    Mid,
+    #[cfg_attr(not(target_arch = "wasm32"), default)]
+    High,
+}
+
+impl Deref for ParcelGrassSetting {
+    type Target = ParcelGrassConfig;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Off => &ParcelGrassConfig {
+                layers: 0,
+                subdivisions: 32,
+                y_displacement: 0.04,
+                root_color: Color::Srgba(ParcelGrassConfig::ROOT_COLOR),
+                tip_color: Color::Srgba(ParcelGrassConfig::TIP_COLOR),
+            },
+            Self::Low => &ParcelGrassConfig {
+                layers: 8,
+                subdivisions: 32,
+                y_displacement: 0.02,
+                root_color: Color::Srgba(ParcelGrassConfig::ROOT_COLOR),
+                tip_color: Color::Srgba(ParcelGrassConfig::TIP_COLOR),
+            },
+            Self::Mid => &ParcelGrassConfig {
+                layers: 16,
+                subdivisions: 32,
+                y_displacement: 0.02,
+                root_color: Color::Srgba(ParcelGrassConfig::ROOT_COLOR),
+                tip_color: Color::Srgba(ParcelGrassConfig::TIP_COLOR),
+            },
+            Self::High => &ParcelGrassConfig {
+                layers: 32,
+                subdivisions: 32,
+                y_displacement: 0.01,
+                root_color: Color::Srgba(ParcelGrassConfig::ROOT_COLOR),
+                tip_color: Color::Srgba(ParcelGrassConfig::TIP_COLOR),
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Resource, Serialize, Deserialize)]
+pub struct ParcelGrassConfig {
+    pub layers: u32,
+    pub subdivisions: u32,
+    pub y_displacement: f32,
+    pub root_color: Color,
+    pub tip_color: Color,
+}
+
+impl ParcelGrassConfig {
+    pub const ROOT_COLOR: Srgba = palettes::tailwind::LIME_800;
+    pub const TIP_COLOR: Srgba = palettes::tailwind::LIME_600;
+}
+
+impl Default for ParcelGrassConfig {
+    fn default() -> Self {
+        Self {
+            layers: 32,
+            subdivisions: 32,
+            y_displacement: 0.01,
+            root_color: Self::ROOT_COLOR.into(),
+            tip_color: Self::TIP_COLOR.into(),
+        }
+    }
+}
+
+#[derive(Resource, Default, Debug)]
+pub struct CurrentRealm {
+    pub about_url: String,
+    pub address: String,
+    pub config: ServerConfiguration,
+    pub comms: Option<CommsConfig>,
+    pub public_url: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CommsConfig {
+    pub healthy: bool,
+    pub protocol: String,
+    pub fixed_adapter: Option<String>,
+    pub adapter: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerConfiguration {
+    pub scenes_urn: Option<Vec<String>>,
+    pub realm_name: Option<String>,
+    pub network_id: Option<u32>,
+    pub city_loader_content_server: Option<String>,
+    pub map: Option<MapData>,
+    pub local_scene_parcels: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MapData {
+    pub minimap_enabled: Option<bool>,
+    pub sizes: Vec<Region>,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Region {
+    pub left: i32,
+    pub right: i32,
+    pub top: i32,
+    pub bottom: i32,
 }

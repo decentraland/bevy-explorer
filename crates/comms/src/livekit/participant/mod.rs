@@ -132,3 +132,7 @@ impl From<LivekitConnectionQuality> for ConnectionQuality {
         }
     }
 }
+
+/// Changes volume of audio tracks of this participant
+#[derive(Clone, Copy, Event)]
+pub struct ChangeVolume(pub f32);

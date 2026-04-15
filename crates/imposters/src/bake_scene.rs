@@ -19,10 +19,10 @@ use boimp::{
 };
 use common::{
     sets::SceneSets,
-    structs::{AppConfig, DebugInfo, PrimaryUser, SceneImposterBake},
+    structs::{AppConfig, CurrentRealm, DebugInfo, PrimaryUser, SceneImposterBake},
 };
 use crc::CRC_32_CKSUM;
-use ipfs::{CurrentRealm, IpfsAssetServer};
+use ipfs::IpfsAssetServer;
 use scene_material::{BoundRegion, SceneBound, SceneMaterial};
 
 use scene_runner::{

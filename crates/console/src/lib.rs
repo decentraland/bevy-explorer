@@ -4,8 +4,8 @@ use bevy_console::{
     PrintConsoleLine,
 };
 use clap::Parser;
-
-use common::sets::SceneSets;
+use common::{rpc::RpcResultReceiver, sets::SceneSets};
+use std::sync::Mutex;
 
 pub trait DoAddConsoleCommand {
     fn add_console_command<T: Command, U>(
@@ -74,6 +74,9 @@ impl Plugin for ConsolePlugin {
         .init_resource::<PendingCommands>()
         .add_systems(Update, send_pending);
 
+        app.init_resource::<PendingConsoleResponses>()
+            .add_systems(Update, poll_console_responses);
+
         app.configure_sets(
             Update,
             (
@@ -111,17 +114,47 @@ pub(crate) fn clear_command(
     }
 }
 
-//re-add default commands, unfortunately have to copy/paste
+/// List available commands, or show detailed help for a specific command
 #[derive(Parser, ConsoleCommand)]
 #[command(name = "/help")]
-pub(crate) struct HelpCommand;
+pub(crate) struct HelpCommand {
+    /// Command to show help for
+    command: Option<String>,
+}
 
 pub(crate) fn help_command(
     mut cmd: ConsoleCommand<HelpCommand>,
-    mut pending: ResMut<PendingCommands>,
+    mut config: ResMut<ConsoleConfiguration>,
 ) {
-    if let Some(Ok(_)) = cmd.take() {
-        pending.0.push("help".to_owned());
+    match cmd.take() {
+        Some(Ok(HelpCommand {
+            command: Some(name),
+        })) => match config.commands.get_mut(name.as_str()) {
+            Some(command_info) => {
+                cmd.reply(command_info.render_long_help().to_string());
+                cmd.ok();
+            }
+            None => {
+                cmd.reply(format!("Command '{name}' does not exist"));
+                cmd.failed();
+            }
+        },
+        Some(Ok(HelpCommand { command: None })) => {
+            cmd.reply("Available commands:");
+            let longest = config.commands.keys().map(|n| n.len()).max().unwrap_or(0);
+            for (name, command_info) in &config.commands {
+                let about = command_info
+                    .get_about()
+                    .map(|a| a.to_string())
+                    .unwrap_or_default();
+                cmd.reply(format!(
+                    "  {name}{} - {about}",
+                    " ".repeat(longest - name.len())
+                ));
+            }
+            cmd.ok();
+        }
+        _ => {}
     }
 }
 
@@ -149,4 +182,75 @@ pub fn send_pending(
             args: Default::default(),
         });
     }
+}
+
+type ConsoleResponseFn = Box<dyn Fn() -> Option<Result<String, String>> + Send + Sync>;
+
+/// Stores pending async console command responses. Register a receiver with
+/// [`push_receiver`](PendingConsoleResponses::push_receiver) and a mapping function;
+/// the polling system will print `[ok]` or `[failed]` once the receiver resolves.
+#[derive(Resource, Default)]
+pub struct PendingConsoleResponses(Vec<ConsoleResponseFn>);
+
+impl PendingConsoleResponses {
+    /// Register an [`RpcResultReceiver`] to be polled each frame. When it resolves,
+    /// `map` converts the value to `Ok(message)` or `Err(message)`, and the
+    /// appropriate console line is printed followed by `[ok]` or `[failed]`.
+    pub fn push_receiver<T, F>(&mut self, receiver: RpcResultReceiver<T>, map: F)
+    where
+        T: Send + 'static,
+        F: Fn(T) -> Result<String, String> + Send + Sync + 'static,
+    {
+        let receiver = Mutex::new(receiver);
+        self.0.push(Box::new(move || {
+            let mut guard = receiver.lock().unwrap();
+            match guard.poll_once() {
+                Ok(Some(val)) => Some(map(val)),
+                Ok(None) => None,
+                Err(()) => Some(Err("cancelled".to_string())),
+            }
+        }));
+    }
+
+    /// Register a raw tokio oneshot receiver to be polled each frame.
+    pub fn push_oneshot<T, F>(&mut self, receiver: tokio::sync::oneshot::Receiver<T>, map: F)
+    where
+        T: Send + 'static,
+        F: Fn(T) -> Result<String, String> + Send + Sync + 'static,
+    {
+        let receiver = Mutex::new(receiver);
+        self.0.push(Box::new(move || {
+            let mut guard = receiver.lock().unwrap();
+            match guard.try_recv() {
+                Ok(val) => Some(map(val)),
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => None,
+                Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                    Some(Err("cancelled".to_string()))
+                }
+            }
+        }));
+    }
+}
+
+fn poll_console_responses(
+    mut pending: ResMut<PendingConsoleResponses>,
+    mut console: EventWriter<PrintConsoleLine>,
+) {
+    pending.0.retain(|f| match f() {
+        None => true,
+        Some(Ok(msg)) => {
+            if !msg.is_empty() {
+                console.write(PrintConsoleLine::new(msg));
+            }
+            console.write(PrintConsoleLine::new("[ok]".into()));
+            false
+        }
+        Some(Err(msg)) => {
+            if !msg.is_empty() {
+                console.write(PrintConsoleLine::new(msg));
+            }
+            console.write(PrintConsoleLine::new("[failed]".into()));
+            false
+        }
+    });
 }

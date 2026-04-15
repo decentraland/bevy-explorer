@@ -34,7 +34,7 @@ impl DuiTemplate for ToggleTemplate {
         let on = props.take::<bool>("toggled")?.unwrap_or_default();
         let id = commands.id();
 
-        commands.insert((
+        commands.try_insert((
             Node {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),

@@ -102,7 +102,7 @@ fn handle_trigger_emotes(
     }
 
     for emote in perms.drain_success(common::structs::PermissionType::PlayEmote) {
-        commands.entity(player).insert(emote.clone());
+        commands.entity(player).try_insert(emote.clone());
     }
 
     for _ in perms.drain_fail(common::structs::PermissionType::PlayEmote) {}
@@ -141,6 +141,7 @@ fn broadcast_emote(
                 message: Some(rfc4::packet::Message::PlayerEmote(PlayerEmote {
                     incremental_id: *count as u32,
                     urn: emote.urn.clone(),
+                    timestamp: time.elapsed_secs(),
                 })),
                 protocol_version: 100,
             };
@@ -267,7 +268,7 @@ fn animate(
     ) in avatars.iter_mut()
     {
         let Some(mut active_emote) = active_emote else {
-            commands.entity(avatar_ent).insert((
+            commands.entity(avatar_ent).try_insert((
                 ActiveEmote::default(),
                 EmoteCommand::default(),
                 LastEmoteCommand::default(),
@@ -281,8 +282,7 @@ fn animate(
             .copied()
             .unwrap_or(Vec3::ZERO);
         let ratio = time.delta_secs().clamp(0.0, 0.1) / 0.1;
-        let damped_velocity =
-            dynamic_state.force.extend(0.0).xzy() * ratio + prior_velocity * (1.0 - ratio);
+        let damped_velocity = dynamic_state.velocity * ratio + prior_velocity * (1.0 - ratio);
         let damped_velocity_len = damped_velocity.xz().length();
         velocities.insert(avatar_ent, damped_velocity);
 
@@ -375,7 +375,7 @@ fn animate(
             }
             commands
                 .entity(avatar_ent)
-                .insert(LastEmoteCommand(emote.unwrap().clone()));
+                .try_insert(LastEmoteCommand(emote.unwrap().clone()));
             ActiveEmote {
                 urn: requested_emote,
                 restart: emote_changed,
@@ -396,7 +396,7 @@ fn animate(
                 }
                 ActiveEmote {
                     urn: EmoteUrn::new("jump").unwrap(),
-                    speed: time_to_peak.recip() * 0.75,
+                    speed: time_to_peak.recip() * 0.5,
                     repeat: true,
                     restart: dynamic_state.jump_time > time.elapsed_secs() - time.delta_secs(),
                     transition_seconds: 0.1,
@@ -426,6 +426,7 @@ fn animate(
                             speed: directional_velocity_len / 1.5,
                             restart: false,
                             repeat: true,
+                            transition_seconds: 0.4,
                             ..Default::default()
                         }
                     } else {
@@ -435,6 +436,7 @@ fn animate(
                             speed: directional_velocity_len / 4.5,
                             restart: false,
                             repeat: true,
+                            transition_seconds: 0.4,
                             ..Default::default()
                         }
                     }
@@ -445,6 +447,7 @@ fn animate(
                         speed: 1.0,
                         restart: false,
                         repeat: true,
+                        transition_seconds: 0.4,
                         ..Default::default()
                     }
                 }
@@ -693,7 +696,7 @@ fn play_current_emote(
                                 if g.is_none() {
                                     commands
                                         .entity(*ent)
-                                        .insert(AnimationGraphHandle(clip.1.clone()));
+                                        .try_insert(AnimationGraphHandle(clip.1.clone()));
                                 }
                                 true
                             } else {
@@ -802,6 +805,12 @@ fn play_current_emote(
                 active_animation.set_speed(active_emote.speed);
 
                 // nasty hack for falling animation
+                if active_emote.urn.as_str() == "urn:decentraland:off-chain:base-emotes:jump"
+                    && active_animation.seek_time() >= 0.4
+                    && active_emote.repeat
+                {
+                    active_animation.set_speed(active_emote.speed * 0.125);
+                }
                 if active_emote.urn.as_str() == "urn:decentraland:off-chain:base-emotes:jump"
                     && active_animation.seek_time() >= 0.5833
                     && active_emote.repeat

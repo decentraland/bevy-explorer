@@ -1,4 +1,5 @@
 use crate::{serde_parse, serde_result, WasmError, WorkerContext};
+use js_sys;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
@@ -319,4 +320,58 @@ pub async fn op_get_voice_stream(state: &WorkerContext) -> u32 {
 #[wasm_bindgen]
 pub async fn op_read_voice_stream(state: &WorkerContext, rid: u32) -> Result<JsValue, WasmError> {
     serde_result!(dcl::js::system_api::op_read_voice_stream(state.rc(), rid).await)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_hover_stream(state: &WorkerContext) -> u32 {
+    dcl::js::system_api::op_get_hover_stream(state.rc()).await
+}
+
+#[wasm_bindgen]
+pub async fn op_read_hover_stream(state: &WorkerContext, rid: u32) -> Result<JsValue, WasmError> {
+    let hover_event = dcl::js::system_api::op_read_hover_stream(state.rc(), rid).await;
+    // use a specific serializer to convert to object here, as wasm_bindgen's conversion otherwise produces a Map
+    hover_event
+        .map(|v| {
+            v.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+                .unwrap()
+        })
+        .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_scene_loading_ui_stream(state: &WorkerContext) -> u32 {
+    dcl::js::system_api::op_get_scene_loading_ui_stream(state.rc()).await
+}
+
+#[wasm_bindgen]
+pub async fn op_read_scene_loading_ui_stream(
+    state: &WorkerContext,
+    rid: u32,
+) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_read_scene_loading_ui_stream(state.rc(), rid).await)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_avatar_modifiers(state: &WorkerContext) -> Result<js_sys::Array, WasmError> {
+    dcl::js::system_api::op_get_avatar_modifiers(state.rc())
+        .await
+        .map(|r| {
+            r.into_iter()
+                .map(|v| serde_wasm_bindgen::to_value(&v).unwrap())
+                .collect()
+        })
+        .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_params(state: &WorkerContext) -> Result<JsValue, WasmError> {
+    let map = dcl::js::system_api::op_get_params(state.rc())
+        .await
+        .map_err(WasmError::from)?;
+    let obj = js_sys::Object::new();
+    for (k, v) in map {
+        js_sys::Reflect::set(&obj, &k.into(), &v.into()).unwrap();
+    }
+    Ok(obj.into())
 }

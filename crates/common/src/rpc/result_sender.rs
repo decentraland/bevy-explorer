@@ -62,6 +62,17 @@ impl<T> RpcResultReceiver<T> {
     pub fn try_recv(&mut self) -> Result<T, tokio::sync::oneshot::error::TryRecvError> {
         self.channel.try_recv()
     }
+
+    /// Non-blocking poll. Returns `Some(val)` if a value arrived, `None` if still pending,
+    /// or `Err(())` if the sender was dropped without sending.
+    #[allow(clippy::result_unit_err)]
+    pub fn poll_once(&mut self) -> Result<Option<T>, ()> {
+        match self.channel.try_recv() {
+            Ok(val) => Ok(Some(val)),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => Ok(None),
+            Err(tokio::sync::oneshot::error::TryRecvError::Closed) => Err(()),
+        }
+    }
 }
 
 impl<T> Future for RpcResultReceiver<T> {

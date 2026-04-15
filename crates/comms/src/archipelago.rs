@@ -6,7 +6,6 @@ use bevy::{
 };
 use futures_util::{pin_mut, select, FutureExt};
 use http::HeaderValue;
-use ipfs::CurrentRealm;
 use platform::IntoClientRequest;
 use prost::Message;
 use serde_json::json;
@@ -14,6 +13,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 use common::{
     rpc::{RpcCall, RpcEventSender},
+    structs::CurrentRealm,
     util::TaskExt,
 };
 use wallet::Wallet;

@@ -1,15 +1,16 @@
+pub mod agent_commands;
 pub mod settings;
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 use bevy::{
     app::{AppExit, Plugin, Update},
     ecs::{event::EventReader, system::Local},
     log::debug,
     math::Vec4,
-    prelude::{Event, EventWriter, ResMut, Resource},
+    prelude::{Event, EventWriter, Res, ResMut, Resource},
 };
-use bevy_console::{ConsoleCommandEntered, PrintConsoleLine};
+use bevy_console::{ConsoleCommandEntered, ConsoleConfiguration, PrintConsoleLine};
 use common::{
     inputs::{BindingsData, InputIdentifier, SystemActionEvent},
     rpc::{RpcResultSender, RpcStreamSender},
@@ -19,9 +20,10 @@ use common::{
 };
 use dcl_component::proto_components::{
     common::Vector2,
-    sdk::components::{PbAvatarBase, PbAvatarEquippedData},
+    sdk::components::{pb_pointer_events, PbAvatarBase, PbAvatarEquippedData},
 };
 use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use settings::SettingBridgePlugin;
 
 use crate::settings::SettingInfo;
@@ -35,13 +37,22 @@ impl Plugin for SystemBridgePlugin {
         app.add_event::<SystemApi>();
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         app.insert_resource(SystemBridge { sender, receiver });
-        app.add_systems(Update, (post_events, handle_home_scene, handle_exit));
+        app.init_resource::<SceneParams>();
+        app.add_systems(
+            Update,
+            (
+                post_events,
+                handle_home_scene,
+                handle_exit,
+                handle_get_params,
+            ),
+        );
 
         if self.bare {
             return;
         }
 
-        app.add_plugins(SettingBridgePlugin);
+        app.add_plugins((SettingBridgePlugin, agent_commands::AgentCommandsPlugin));
     }
 }
 
@@ -87,6 +98,38 @@ pub struct VoiceMessage {
     pub active: bool,
 }
 
+#[derive(Hash, Clone, Copy, Serialize_repr, Deserialize_repr, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum PointerTargetType {
+    World = 0,
+    Ui = 1,
+    Avatar = 2,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HoverAction {
+    #[serde(flatten)]
+    pub event: pb_pointer_events::Entry,
+    pub enabled: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HoverEvent {
+    pub entered: bool,
+    pub target_type: PointerTargetType,
+    pub actions: Vec<HoverAction>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneLoadingUi {
+    pub visible: bool,
+    pub title: String,
+    pub pending_assets: Option<u32>,
+}
+
 #[derive(Event, Clone, Debug, Serialize, Deserialize)]
 pub enum SystemApi {
     ConsoleCommand(String, Vec<String>, RpcResultSender<Result<String, String>>),
@@ -113,6 +156,8 @@ pub enum SystemApi {
     GetSystemActionStream(RpcStreamSender<SystemActionEvent>),
     GetChatStream(RpcStreamSender<ChatMessage>),
     GetVoiceStream(RpcStreamSender<VoiceMessage>),
+    GetHoverStream(RpcStreamSender<HoverEvent>),
+    GetSceneLoadingUiStream(RpcStreamSender<SceneLoadingUi>),
     SendChat(String, String),
     Quit,
     GetPermissionRequestStream(RpcStreamSender<PermissionRequest>),
@@ -126,6 +171,42 @@ pub enum SystemApi {
     SetInteractableArea(Vec4),
     GetMicState(RpcResultSender<MicState>),
     SetMicEnabled(bool),
+    GetAvatarModifiers(RpcResultSender<Vec<AvatarModifierState>>),
+    GetParams(RpcResultSender<HashMap<String, String>>),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct AvatarModifierState {
+    pub user_id: String,
+    pub hide_avatar: bool,
+    pub hide_profile: bool,
+}
+
+#[derive(Resource, Default, Clone, Debug)]
+pub struct SceneParams(pub HashMap<String, String>);
+
+impl SceneParams {
+    pub fn from_query_string(query: &str, decode: bool) -> Self {
+        let map = query
+            .split('&')
+            .filter(|s| !s.is_empty())
+            .filter_map(|pair| {
+                let mut parts = pair.splitn(2, '=');
+                let key = parts.next()?.to_owned();
+                let value = parts.next().unwrap_or("").to_owned();
+                if decode {
+                    Some((
+                        urlencoding::decode(&key).unwrap_or_default().into_owned(),
+                        urlencoding::decode(&value).unwrap_or_default().into_owned(),
+                    ))
+                } else {
+                    Some((key, value))
+                }
+            })
+            .collect();
+        Self(map)
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -163,6 +244,8 @@ pub struct NativeUi {
     pub permissions: bool,
     pub profile: bool,
     pub nametags: bool,
+    pub tooltips: bool,
+    pub loading_scene: bool,
 }
 
 #[derive(Resource)]
@@ -178,6 +261,7 @@ pub fn post_events(
     mut console_response: Local<Option<RpcResultSender<Result<String, String>>>>,
     mut replies: EventReader<PrintConsoleLine>,
     mut pending: Local<VecDeque<(String, Vec<String>, RpcResultSender<Result<String, String>>)>>,
+    console_config: Res<ConsoleConfiguration>,
 ) {
     while let Ok(ev) = bridge.receiver.try_recv() {
         if let SystemApi::ConsoleCommand(cmd, args, sender) = ev {
@@ -215,11 +299,18 @@ pub fn post_events(
             }
         }
     } else if let Some((cmd, args, sender)) = pending.pop_front() {
-        console.write(ConsoleCommandEntered {
-            command_name: cmd,
-            args,
-        });
-        *console_response = Some(sender);
+        if console_config.commands.contains_key(cmd.as_str()) {
+            console.write(ConsoleCommandEntered {
+                command_name: cmd,
+                args,
+            });
+            *console_response = Some(sender);
+        } else {
+            sender.send(Err(format!(
+                "Command not recognized: `{cmd}`. Recognized commands: {:?}",
+                console_config.commands.keys().collect::<Vec<_>>()
+            )));
+        }
     }
 
     replies.clear();
@@ -250,5 +341,13 @@ fn handle_exit(mut ev: EventReader<SystemApi>, mut exit: EventWriter<AppExit>) {
         .is_some()
     {
         exit.write_default();
+    }
+}
+
+fn handle_get_params(mut ev: EventReader<SystemApi>, params: Res<SceneParams>) {
+    for ev in ev.read() {
+        if let SystemApi::GetParams(sender) = ev {
+            sender.send(params.0.clone());
+        }
     }
 }

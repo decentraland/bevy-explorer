@@ -37,7 +37,7 @@ pub trait FfmpegContext {
 pub fn process_streams(
     mut input_context: impl PacketIter,
     streams: &mut [&mut dyn FfmpegContext],
-    mut commands: tokio::sync::mpsc::Receiver<AVCommand>,
+    mut commands: tokio::sync::mpsc::UnboundedReceiver<AVCommand>,
 ) -> Result<(), anyhow::Error> {
     let mut start_instant: Option<Instant> = None;
     let mut repeat = false;

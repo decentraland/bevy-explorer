@@ -145,7 +145,7 @@ globalThis.localStorage = webstorage.localStorage();
 import * as performance from "ext:deno_web/15_performance.js"
 globalThis.performance = performance.performance;
 
-Deno.core.ops.op_set_handled_promise_rejection_handler((type, promise, reason) => {
-    console.error('Unhandled promise: ', reason)
-    Deno.core.ops.op_promise_reject();
+Deno.core.setUnhandledPromiseRejectionHandler((promise, reason) => {
+    console.error('Unhandled promise rejection: ', reason)
+    return true;
 })

@@ -24,6 +24,7 @@ use collectibles::{urn::CollectibleUrn, Emote};
 use common::{
     sets::SetupSets,
     structs::{AvatarDynamicState, EmoteCommand},
+    util::TryPushChildrenEx,
 };
 use platform::default_camera_components;
 use ui_core::ui_actions::{DragData, Dragged, On};
@@ -248,7 +249,7 @@ fn add_booth_camera(
     let avatar_texture = images.add(avatar_texture);
 
     let mut camera = None;
-    commands.entity(entity).with_children(|c| {
+    commands.entity(entity).try_with_children(|c| {
         camera = Some(
             c.spawn((
                 Camera3d::default(),
@@ -462,7 +463,7 @@ impl DuiTemplate for DuiBooth {
             .take::<BoothInstance>("booth-instance")?
             .ok_or(anyhow!("no booth provided"))?;
 
-        commands.insert((
+        commands.try_insert((
             Node {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),

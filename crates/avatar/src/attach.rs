@@ -7,7 +7,6 @@ use common::{
     sets::SceneSets,
     structs::{AttachPoints, PrimaryUser},
 };
-use comms::profile::UserProfile;
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::sdk::components::{AvatarAnchorPointType, PbAvatarAttach},
@@ -17,8 +16,11 @@ use scene_material::{SceneMaterial, SCENE_MATERIAL_CONE_ONLY_DITHER, SCENE_MATER
 use scene_runner::update_world::{
     mesh_collider::DisableCollisions,
     transform_and_parent::{AvatarAttachStage, ParentPositionSync},
+    visibility::VisibilityComponent,
     AddCrdtInterfaceExt,
 };
+
+use crate::AvatarShape;
 
 pub struct AttachPlugin;
 
@@ -54,8 +56,9 @@ pub fn update_attached(
     mut commands: Commands,
     attachments: Query<(Entity, &AvatarAttachment), Changed<AvatarAttachment>>,
     mut removed_attachments: RemovedComponents<AvatarAttachment>,
+    visibility_component: Query<&VisibilityComponent>,
     primary_user: Query<&AttachPoints, With<PrimaryUser>>,
-    all_users: Query<(&AttachPoints, &UserProfile, Option<&PrimaryUser>)>,
+    all_users: Query<(&AttachPoints, &AvatarShape, Has<PrimaryUser>)>,
 ) {
     for removed in removed_attachments.read() {
         if let Ok(mut commands) = commands.get_entity(removed) {
@@ -64,6 +67,17 @@ pub fn update_attached(
                 DisableCollisions,
                 Propagate<AttachedToPlayer>,
             )>();
+
+            //restore visiblity after it got overwritten by the attach-parent
+            let required_visibility = match visibility_component.get(removed) {
+                Ok(VisibilityComponent(inner)) => match inner.visible.unwrap_or(true) {
+                    true => Visibility::Visible,
+                    false => Visibility::Hidden,
+                },
+                Err(_) => Visibility::Inherited,
+            };
+
+            commands.try_insert(required_visibility);
         }
     }
 
@@ -78,36 +92,51 @@ pub fn update_attached(
             }
             Some(id) => {
                 let id = id.to_lowercase();
-                let Some((attach, _, maybe_primary)) = all_users
+                let Some((attach_points, _, has_primary)) = all_users
                     .iter()
-                    .find(|(_, profile, _)| profile.content.eth_address.to_lowercase() == id)
+                    .find(|(_, avatar_shape, _)| avatar_shape.0.id.to_lowercase() == id)
                 else {
-                    warn!("user {:?} not found", id);
+                    warn!("avatar shape id {:?} not found", id);
                     warn!(
-                        "available users: {:?}",
+                        "available avatar shapes: {:?}",
                         all_users
                             .iter()
-                            .map(|(_, profile, _)| &profile.content)
+                            .map(|(_, avatar_shape, _)| &avatar_shape.0.id)
                             .collect::<Vec<_>>()
                     );
                     continue;
                 };
-                (maybe_primary.is_some(), attach)
+                (has_primary, attach_points)
             }
         };
 
         let sync_entity = match attach.0.anchor_point_id() {
             AvatarAnchorPointType::AaptPosition => attach_points.position,
             AvatarAnchorPointType::AaptNameTag => attach_points.nametag,
+            AvatarAnchorPointType::AaptHead => attach_points.head,
+            AvatarAnchorPointType::AaptNeck => attach_points.neck,
+            AvatarAnchorPointType::AaptSpine => attach_points.spine,
+            AvatarAnchorPointType::AaptSpine1 => attach_points.spine_1,
+            AvatarAnchorPointType::AaptSpine2 => attach_points.spine_2,
+            AvatarAnchorPointType::AaptHip => attach_points.hip,
+            AvatarAnchorPointType::AaptLeftShoulder => attach_points.left_shoulder,
+            AvatarAnchorPointType::AaptLeftArm => attach_points.left_arm,
+            AvatarAnchorPointType::AaptLeftForearm => attach_points.left_forearm,
             AvatarAnchorPointType::AaptLeftHand => attach_points.left_hand,
+            AvatarAnchorPointType::AaptLeftHandIndex => attach_points.left_hand_index,
+            AvatarAnchorPointType::AaptRightShoulder => attach_points.right_shoulder,
+            AvatarAnchorPointType::AaptRightArm => attach_points.righ_arm,
+            AvatarAnchorPointType::AaptRightForearm => attach_points.right_forearm,
             AvatarAnchorPointType::AaptRightHand => attach_points.right_hand,
-            _ => {
-                warn!(
-                    "unimplemented attach point {:?}",
-                    attach.0.anchor_point_id()
-                );
-                continue;
-            }
+            AvatarAnchorPointType::AaptRightHandIndex => attach_points.right_hand_index,
+            AvatarAnchorPointType::AaptLeftUpLeg => attach_points.left_thigh,
+            AvatarAnchorPointType::AaptLeftLeg => attach_points.left_shin,
+            AvatarAnchorPointType::AaptLeftFoot => attach_points.left_foot,
+            AvatarAnchorPointType::AaptLeftToeBase => attach_points.left_toe_base,
+            AvatarAnchorPointType::AaptRightUpLeg => attach_points.right_thigh,
+            AvatarAnchorPointType::AaptRightLeg => attach_points.right_shin,
+            AvatarAnchorPointType::AaptRightFoot => attach_points.right_foot,
+            AvatarAnchorPointType::AaptRightToeBase => attach_points.right_toe_base,
         };
 
         let mut commands = commands.entity(ent);

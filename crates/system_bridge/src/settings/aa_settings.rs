@@ -80,13 +80,16 @@ impl AppSetting for AaSetting {
             AaSetting::Msaa8x => Msaa::Sample8,
         };
 
-        commands.entity(camera_entity).remove::<Fxaa>().insert(msaa);
+        commands
+            .entity(camera_entity)
+            .remove::<Fxaa>()
+            .try_insert(msaa);
         if let Some(sensitivity) = match self {
             AaSetting::FxaaLow => Some(Sensitivity::Medium),
             AaSetting::FxaaHigh => Some(Sensitivity::Ultra),
             _ => None,
         } {
-            commands.entity(camera_entity).insert(Fxaa {
+            commands.entity(camera_entity).try_insert(Fxaa {
                 enabled: true,
                 edge_threshold: sensitivity,
                 edge_threshold_min: sensitivity,

@@ -68,11 +68,20 @@ pub struct LightSource {
 
 impl From<PbLightSource> for LightSource {
     fn from(value: PbLightSource) -> Self {
+        // rescale colors > 1 to 1, and multiply intensity by pow(max^2.2)
+        // to match unity
+        let color_scale = value
+            .color
+            .map(|c| c.r.max(c.g).max(c.b).max(1.0))
+            .unwrap_or(1.0);
+
         Self {
             enabled: value.active.unwrap_or(true),
-            intensity: value.intensity,
+            intensity: Some(value.intensity.unwrap_or(16000.0) * color_scale.powf(2.2)),
             shadow: value.shadow,
-            color: value.color.map(Color3DclToBevy::convert_linear_rgb),
+            color: value.color.map(|c| {
+                Color::linear_rgb(c.r / color_scale, c.g / color_scale, c.b / color_scale)
+            }),
             range: value.range,
             spotlight_angles: if let Some(pb_light_source::Type::Spot(spot)) = value.r#type {
                 Some((
@@ -260,7 +269,7 @@ fn update_point_lights(
                 .map(|tex| resolver.resolve_texture(ctx, tex));
             let resolved_texture = match image {
                 Some(Err(TextureResolveError::SourceNotReady)) => {
-                    commands.entity(entity).insert(RetryLightTexture);
+                    commands.entity(entity).try_insert(RetryLightTexture);
                     continue;
                 }
                 None | Some(Err(_)) => None,
@@ -285,7 +294,7 @@ fn update_point_lights(
         };
         match light.spotlight_angles {
             Some(angles) => {
-                light_cmds.insert(SpotLight {
+                light_cmds.try_insert(SpotLight {
                     color: light.color.unwrap_or(Color::WHITE),
                     intensity: lumens,
                     range,
@@ -297,7 +306,7 @@ fn update_point_lights(
                 });
 
                 if let Some(light_texture) = maybe_light_texture {
-                    light_cmds.insert(SpotLightTexture {
+                    light_cmds.try_insert(SpotLightTexture {
                         image: light_texture,
                     });
                 }
@@ -305,7 +314,7 @@ fn update_point_lights(
                 light_cmds.remove::<(PointLight, PointLightTexture)>();
             }
             None => {
-                light_cmds.insert(PointLight {
+                light_cmds.try_insert(PointLight {
                     color: light.color.unwrap_or(Color::WHITE),
                     intensity: lumens,
                     range,
@@ -315,7 +324,7 @@ fn update_point_lights(
                 });
 
                 if let Some(light_texture) = maybe_light_texture {
-                    light_cmds.insert(PointLightTexture {
+                    light_cmds.try_insert(PointLightTexture {
                         image: light_texture,
                         cubemap_layout: CubemapLayout::CrossHorizontal,
                     });

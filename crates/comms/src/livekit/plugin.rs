@@ -1,6 +1,10 @@
 use bevy::prelude::*;
+use common::{debug_panic, structs::AudioSettings};
 use dcl_component::proto_components::kernel::comms::rfc4;
-use kira::manager::{AudioManager, AudioManagerSettings, DefaultBackend};
+use kira::{
+    manager::{AudioManager, AudioManagerSettings, DefaultBackend},
+    tween::Tween,
+};
 use tokio::{sync::mpsc, task::JoinHandle};
 
 #[cfg(feature = "room_debug")]
@@ -10,8 +14,9 @@ use crate::{
     livekit::{
         mic::MicPlugin, participant::plugin::LivekitParticipantPlugin,
         room::plugin::LivekitRoomPlugin, runtime::LivekitRuntimePlugin,
-        track::plugin::LivekitTrackPlugin, LivekitAudioManager, LivekitChannelControl,
-        LivekitNetworkMessage, LivekitRuntime, LivekitTransport, StartLivekit,
+        track::plugin::LivekitTrackPlugin, ConnectionAvailability, LivekitAudioManager,
+        LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime, LivekitTransport,
+        StartLivekit,
     },
     profile::CurrentUserProfile,
     NetworkMessage, Transport, TransportType,
@@ -22,6 +27,7 @@ pub struct LivekitPlugin;
 impl Plugin for LivekitPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PlayerUpdateTasks>();
+        app.init_state::<ConnectionAvailability>();
 
         app.add_plugins(MicPlugin);
         app.add_plugins(LivekitRuntimePlugin);
@@ -31,6 +37,10 @@ impl Plugin for LivekitPlugin {
 
         app.add_systems(Update, (start_livekit, verify_player_update_tasks));
         app.add_systems(Startup, build_kira_audio_manager);
+        app.add_systems(
+            Update,
+            respond_to_audio_settings_change.run_if(resource_exists_and_changed::<AudioSettings>),
+        );
 
         app.add_event::<StartLivekit>();
 
@@ -55,7 +65,7 @@ fn start_livekit(
     for ev in room_events.read() {
         info!("starting livekit protocol");
         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
-        let (control_sender, control_receiver) = tokio::sync::mpsc::channel(10);
+        let (control_sender, control_receiver) = tokio::sync::mpsc::channel(128);
 
         let Some(current_profile) = current_profile.profile.as_ref() else {
             return;
@@ -91,10 +101,7 @@ fn start_livekit(
     }
 }
 
-fn verify_player_update_tasks(
-    mut commands: Commands,
-    mut player_update_tasks: ResMut<PlayerUpdateTasks>,
-) {
+fn verify_player_update_tasks(mut player_update_tasks: ResMut<PlayerUpdateTasks>) {
     let mut done = vec![];
     for (
         i,
@@ -110,15 +117,11 @@ fn verify_player_update_tasks(
             match res {
                 Ok(res) => {
                     if let Err(err) = res {
-                        error!("Failed to send PlayerUpdate due to {err}.");
-                        commands.send_event(AppExit::from_code(1));
-                        return;
+                        debug_panic!("Failed to send PlayerUpdate due to {err}.");
                     }
                 }
                 Err(err) => {
-                    error!("Failed to pull PlayerUpdateTask due to '{err}'.");
-                    commands.send_event(AppExit::from_code(1));
-                    return;
+                    debug_panic!("Failed to pull PlayerUpdateTask due to '{err}'.");
                 }
             }
         }
@@ -136,8 +139,16 @@ fn build_kira_audio_manager(mut commands: Commands) {
             commands.insert_resource(LivekitAudioManager { manager });
         }
         Err(err) => {
-            error!("Failed to livekit build AudioManager due to '{err}'.");
-            commands.send_event(AppExit::from_code(1));
+            debug_panic!("Failed to livekit build AudioManager due to '{err}'.");
         }
     };
+}
+
+fn respond_to_audio_settings_change(
+    mut livekit_audio_manager: ResMut<LivekitAudioManager>,
+    audio_settings: Res<AudioSettings>,
+) {
+    livekit_audio_manager
+        .main_track()
+        .set_volume(audio_settings.scene() as f64, Tween::default());
 }

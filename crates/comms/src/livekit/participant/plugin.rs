@@ -1,5 +1,5 @@
 use bevy::{ecs::relationship::Relationship, prelude::*};
-use common::util::AsH160;
+use common::{debug_panic, util::AsH160};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use prost::Message;
 #[cfg(not(target_arch = "wasm32"))]
@@ -20,13 +20,13 @@ use crate::{
     global_crdt::{GlobalCrdtState, NonPlayerUpdate, PlayerMessage, PlayerUpdate},
     livekit::{
         participant::{
-            HostedBy, HostingParticipants, LivekitParticipant, Local, ParticipantConnected,
-            ParticipantConnectionQuality, ParticipantDisconnected, ParticipantMetadataChanged,
-            ParticipantPayload, StreamBroadcast, Streamer,
+            ChangeVolume, HostedBy, HostingParticipants, LivekitParticipant, Local,
+            ParticipantConnected, ParticipantConnectionQuality, ParticipantDisconnected,
+            ParticipantMetadataChanged, ParticipantPayload, StreamBroadcast, Streamer,
         },
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
-        track::{Audio, LivekitTrack, Publishing, SubscribeToTrack, Video},
+        track::{Audio, LivekitTrack, Publishing, SubscribeToTrack, TrackVolume, Video},
         LivekitRuntime,
     },
 };
@@ -51,6 +51,7 @@ impl Plugin for LivekitParticipantPlugin {
         );
         app.add_observer(someone_wants_to_watch_stream);
         app.add_observer(noone_is_watching_stream);
+        app.add_observer(change_volume_of_tracks);
     }
 }
 
@@ -64,9 +65,7 @@ fn participant_connected(
         room: room_entity,
     } = trigger.event();
     let Ok(room) = rooms.get(*room_entity) else {
-        error!("Room {room_entity} given to ParticipantConnected was invalid.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("Room {room_entity} given to ParticipantConnected was invalid.");
     };
     debug!(
         "Participant '{}' ({}) connected to room {}.",
@@ -113,9 +112,7 @@ fn participant_disconnected(
         room: room_entity,
     } = trigger.event();
     let Ok((room, maybe_hosting_participants)) = rooms.get(*room_entity) else {
-        error!("Room {room_entity} given to ParticipantDisconnected was invalid.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("Room {room_entity} given to ParticipantDisconnected was invalid.");
     };
     debug!(
         "Participant '{}' ({}) disconnected from room {}.",
@@ -125,9 +122,7 @@ fn participant_disconnected(
     );
 
     let Some(hosting_participants) = maybe_hosting_participants else {
-        error!("Room {} is not hosting participants.", room.name());
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("Room {} is not hosting participants.", room.name());
     };
 
     let Some(entity) = participants
@@ -163,9 +158,7 @@ fn participant_connection_quality_changed(
         connection_quality,
     } = trigger.event();
     let Ok((livekit_room, hosting_participants)) = rooms.get(*room) else {
-        error!("Room given to ParticipantConnectionQuality was invalid.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("Room given to ParticipantConnectionQuality was invalid.");
     };
 
     debug!(
@@ -194,7 +187,7 @@ fn participant_connection_quality_changed(
         return;
     };
 
-    commands.entity(entity).insert(*connection_quality);
+    commands.entity(entity).try_insert(*connection_quality);
 }
 
 fn participant_payload(
@@ -317,12 +310,10 @@ fn stream_viewer_without_stream_image(
 ) {
     for (entity, stream_viewer) in stream_viewers.into_inner() {
         let Ok(stream_image) = stream_broadcasts.get(stream_viewer.get()) else {
-            error!("Invalid StreamBroadcast relationship.");
-            commands.send_event(AppExit::from_code(1));
-            return;
+            debug_panic!("Invalid StreamBroadcast relationship.");
         };
 
-        commands.entity(entity).insert(stream_image.clone());
+        commands.entity(entity).try_insert(stream_image.clone());
     }
 }
 
@@ -354,9 +345,7 @@ fn someone_wants_to_watch_stream(
 ) {
     let entity = trigger.target();
     let Ok((participant, maybe_publishing)) = participants.get(entity) else {
-        error!("StreamBroadcast on a non-Streamer participant.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("StreamBroadcast on a non-Streamer participant.");
     };
 
     debug!(
@@ -381,7 +370,7 @@ fn someone_wants_to_watch_stream(
 
         commands
             .entity(entity)
-            .insert(StreamImage(images.add(image)));
+            .try_insert(StreamImage(images.add(image)));
     }
 
     if let Some(publishing) = maybe_publishing {
@@ -414,16 +403,14 @@ fn someone_wants_to_watch_stream(
 
 fn noone_is_watching_stream(
     trigger: Trigger<OnRemove, StreamBroadcast>,
-    mut commands: Commands,
+    #[cfg(not(target_arch = "wasm32"))] mut commands: Commands,
     participants: Query<(&LivekitParticipant, Option<&Publishing>), With<Streamer>>,
     tracks: Query<&LivekitTrack>,
     livekit_runtime: Res<LivekitRuntime>,
 ) {
     let entity = trigger.target();
     let Ok((participant, maybe_publishing)) = participants.get(entity) else {
-        error!("StreamBroadcast on a non-Streamer participant.");
-        commands.send_event(AppExit::from_code(1));
-        return;
+        debug_panic!("StreamBroadcast on a non-Streamer participant.");
     };
     debug!(
         "Streamer {} ({}) no longer being watched.",
@@ -440,5 +427,28 @@ fn noone_is_watching_stream(
                 track.set_subscribed(false);
             });
         }
+    }
+}
+
+fn change_volume_of_tracks(
+    trigger: Trigger<ChangeVolume>,
+    mut commands: Commands,
+    participants: Query<&Publishing>,
+    tracks: Query<(), With<Audio>>,
+) {
+    let entity = trigger.target();
+    let event = trigger.event();
+
+    let Ok(publishing) = participants.get(entity) else {
+        error!("{} is not publishing any tracks.", entity);
+        return;
+    };
+
+    for track in publishing.collection() {
+        if !tracks.contains(*track) {
+            continue;
+        }
+
+        commands.entity(*track).try_insert(TrackVolume(event.0));
     }
 }

@@ -1,16 +1,18 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Duration};
 
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use bevy::log::{debug, error, info_span};
+use common::structs::GlobalCrdtStateUpdate;
 use dcl::{
-    interface::{CrdtComponentInterfaces, CrdtStore},
+    interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore},
     js::{
         engine::crdt_send_to_renderer, init_state, CommunicatedWithRenderer, SceneResponseSender,
         ShuttingDown, SuperUserScene,
     },
-    RendererResponse, RpcCalls, SceneElapsedTime, SceneId, SceneResponse,
+    RendererResponse, RpcCalls, SceneElapsedTime, SceneResponse,
 };
 use deno_core::{
+    anyhow::anyhow,
     ascii_str,
     error::{generic_error, AnyError},
     include_js_files, op2, v8, Extension, JsRuntime, OpDecl, OpState, PollEventLoopOptions,
@@ -19,7 +21,7 @@ use deno_core::{
 use multihash_codetable::MultihashDigest;
 use platform::project_directories;
 use system_bridge::SystemApi;
-use tokio::sync::mpsc::Receiver;
+use tokio::{sync::mpsc::Receiver, time::timeout};
 
 use ipfs::SceneJsFile;
 
@@ -183,19 +185,19 @@ pub struct StorageRoot(pub String);
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn scene_thread(
     initial_crdt_store: CrdtStore,
-    scene_hash: String,
-    scene_id: SceneId,
+    scene_context: CrdtContext,
     storage_root: String,
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     thread_sx: SceneResponseSender,
     thread_rx: Receiver<RendererResponse>,
-    global_update_receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
+    global_update_receiver: tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
     inspect: bool,
-    testing: bool,
-    preview: bool,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
+    scene_origin: bevy::prelude::Vec3,
 ) {
+    let scene_id = scene_context.scene_id;
+    let preview = scene_context.preview;
     let (mut runtime, inspector) = create_runtime(inspect, super_user.is_some(), &storage_root);
 
     // store handle
@@ -208,18 +210,15 @@ pub(crate) fn scene_thread(
     init_state(
         &mut *state.borrow_mut(),
         initial_crdt_store,
-        scene_hash,
-        scene_id,
+        scene_context,
         storage_root,
         scene_js,
         crdt_component_interfaces,
         thread_sx,
         thread_rx,
         global_update_receiver,
-        inspect,
-        testing,
-        preview,
         super_user,
+        scene_origin,
     );
 
     // store deno permission objects
@@ -404,25 +403,21 @@ async fn run_script(
     };
 
     let f = runtime.resolve(promise);
-    let result = runtime
-        .with_event_loop_promise(f, PollEventLoopOptions::default())
-        .await
-        .map(|_| ());
 
-    if result.is_err() {
-        debug!("rerunning event loop");
-        for _ in 0..100 {
-            let x = runtime
-                .run_event_loop(PollEventLoopOptions::default())
-                .await;
-            if x.is_err() {
-                error!("repeat error: {x:?}");
-            } else {
-                break;
-            }
-        }
-        debug!("done rerunning event loop");
-    }
+    let result = if true {
+        runtime
+            .with_event_loop_promise(f, PollEventLoopOptions::default())
+            .await
+            .map(|_| ())
+    } else {
+        timeout(
+            Duration::from_secs(30),
+            runtime.with_event_loop_promise(f, PollEventLoopOptions::default()),
+        )
+        .await
+        .map_err(|_| anyhow!("script timed out"))?
+        .map(|_| ())
+    };
 
     result
 }

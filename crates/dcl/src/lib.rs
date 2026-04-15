@@ -32,6 +32,8 @@ pub struct SceneElapsedTime(pub f32);
 #[derive(Debug, Serialize, Deserialize)]
 pub enum RendererResponse {
     Ok(CrdtStore),
+    /// Request the scene thread to send back a full clone of its current CRDT state.
+    GetCrdtSnapshot,
 }
 
 pub type RpcCalls = Vec<RpcCall>;
@@ -52,6 +54,8 @@ pub enum SceneResponse {
     ImmediateRpcCall(RpcCall),
     WaitingForInspector,
     CompareSnapshot(CompareSnapshot),
+    /// Response to [`RendererResponse::GetCrdtSnapshot`]: the full scene-side CRDT state.
+    CrdtSnapshot(SceneId, CrdtStore),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]

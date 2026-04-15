@@ -793,7 +793,7 @@ fn update_emotes_list(
 
     commands
         .entity(components.named("items"))
-        .insert(item_components);
+        .try_insert(item_components);
 }
 
 #[derive(Component, Debug)]

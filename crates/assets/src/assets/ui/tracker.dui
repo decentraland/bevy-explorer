@@ -7,6 +7,7 @@
         </div>
         <div id="content" style="flex-direction: column; margin: 0px 2vmin 2vmin 2vmin;" />
         <button label="Inspect" onclick="@inspect" enabled="@inspect-enabled" />
+        <button label="Dismiss" onclick="@dismiss" />
     </div>
 </define-template>
 

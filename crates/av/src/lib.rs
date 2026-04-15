@@ -58,8 +58,11 @@ use {
 };
 #[cfg(feature = "livekit")]
 use {
-    bevy::ecs::relationship::Relationship,
+    bevy::{diagnostic::FrameCount, ecs::relationship::Relationship},
     comms::livekit::participant::{StreamViewer, Streamer},
+    dcl::interface::CrdtType,
+    dcl_component::proto_components::sdk::components::{PbVideoEvent, VideoState},
+    scene_runner::renderer_context::RendererSceneContext,
 };
 
 #[derive(Component, Debug)]
@@ -130,7 +133,9 @@ impl Plugin for AVPlayerPlugin {
         );
         app.add_systems(
             Update,
-            (av_player_is_in_scene, av_player_should_be_playing).in_set(SceneSets::PostLoop),
+            (av_player_is_in_scene, av_player_should_be_playing)
+                .chain()
+                .in_set(SceneSets::PostLoop),
         );
 
         #[cfg(feature = "ffmpeg")]
@@ -166,7 +171,7 @@ fn av_player_is_in_scene(
         let contained = containing_scenes.contains(&container.root);
         if contained && !has_in_scene {
             // Only call `insert` on those that do not have `InScene`
-            commands.entity(ent).insert(InScene);
+            commands.entity(ent).try_insert(InScene);
         } else if !contained && has_in_scene {
             // Only call `remove` on those that have `InScene`
             commands.entity(ent).remove::<InScene>();
@@ -237,19 +242,37 @@ fn av_player_should_be_playing(
 fn stream_should_be_played(
     trigger: Trigger<OnAdd, ShouldBePlaying>,
     mut commands: Commands,
-    av_players: Query<(Entity, &AVPlayer)>,
+    av_players: Query<(&AVPlayer, &ContainerEntity)>,
     streamer: Single<Entity, With<Streamer>>,
+    mut scenes: Query<&mut RendererSceneContext>,
+    frame: Res<FrameCount>,
 ) {
     let entity = trigger.target();
-    let Ok((av_player_entity, av_player)) = av_players.get(entity) else {
-        unreachable!("ShouldBePlaying must only be added to AVPlayers.");
+    let Ok((av_player, container_entity)) = av_players.get(entity) else {
+        error!("ShouldBePlaying must only be added to AVPlayers.");
+        return;
     };
 
     if av_player.source.src.starts_with("livekit-video://") {
-        debug!("AVPlayer {av_player_entity} should be playing. Linking to the stream.");
+        debug!("AVPlayer {entity} should be playing. Linking to the stream.");
         commands
             .entity(entity)
-            .insert(<StreamViewer as Relationship>::from(*streamer));
+            .try_insert(<StreamViewer as Relationship>::from(*streamer));
+        if let Ok(mut context) = scenes.get_mut(container_entity.root) {
+            let event = PbVideoEvent {
+                timestamp: frame.0,
+                tick_number: context.tick_number,
+                current_offset: 0.,
+                video_length: 0.,
+                state: VideoState::VsPlaying.into(),
+            };
+            context.update_crdt(
+                SceneComponentId::VIDEO_EVENT,
+                CrdtType::GO_ANY,
+                container_entity.container_id,
+                &event,
+            );
+        }
     }
 }
 
@@ -257,11 +280,18 @@ fn stream_should_be_played(
 fn stream_shouldnt_be_played(
     trigger: Trigger<OnRemove, ShouldBePlaying>,
     mut commands: Commands,
-    av_players: Query<(Entity, &AVPlayer, Has<StreamViewer>)>,
+    av_players: Query<(&AVPlayer, &ContainerEntity, Has<StreamViewer>)>,
+    mut removed_av_players: RemovedComponents<AVPlayer>,
+    mut scenes: Query<&mut RendererSceneContext>,
+    frame: Res<FrameCount>,
 ) {
     let entity = trigger.target();
-    let Ok((av_player_entity, av_player, has_stream_viewer)) = av_players.get(entity) else {
-        unreachable!("ShouldBePlaying must have only been added to AVPlayers.");
+    if removed_av_players.read().any(|removed| removed == entity) {
+        return;
+    }
+    let Ok((av_player, container_entity, has_stream_viewer)) = av_players.get(entity) else {
+        warn!("ShouldBePlaying must have only been added to AVPlayers.");
+        return;
     };
     if !has_stream_viewer {
         // Noop if AVPlayer does not have `StreamViewer`
@@ -269,8 +299,23 @@ fn stream_shouldnt_be_played(
     }
 
     if av_player.source.src.starts_with("livekit-video://") {
-        debug!("AVPlayer {av_player_entity} no longer playing. Unlinking to the stream.");
+        debug!("AVPlayer {entity} no longer playing. Unlinking to the stream.");
         commands.entity(entity).try_remove::<StreamViewer>();
+    }
+    if let Ok(mut context) = scenes.get_mut(container_entity.root) {
+        let event = PbVideoEvent {
+            timestamp: frame.0,
+            tick_number: context.tick_number,
+            current_offset: 0.,
+            video_length: 0.,
+            state: VideoState::VsPaused.into(),
+        };
+        context.update_crdt(
+            SceneComponentId::VIDEO_EVENT,
+            CrdtType::GO_ANY,
+            container_entity.container_id,
+            &event,
+        );
     }
 }
 
@@ -278,16 +323,33 @@ fn stream_shouldnt_be_played(
 fn streamer_joined(
     trigger: Trigger<OnAdd, Streamer>,
     mut commands: Commands,
-    av_players: Query<(Entity, &AVPlayer), With<ShouldBePlaying>>,
+    av_players: Query<(Entity, &AVPlayer, &ContainerEntity), With<ShouldBePlaying>>,
+    mut scenes: Query<&mut RendererSceneContext>,
+    frame: Res<FrameCount>,
 ) {
     let entity = trigger.target();
     debug!("Streamer {entity} has connected. Linking to AVPlayers in range.");
 
-    for (av_player_entity, av_player) in av_players {
+    for (av_player_entity, av_player, container_entity) in av_players {
         if av_player.source.src.starts_with("livekit-video://") {
             commands
                 .entity(av_player_entity)
-                .insert(<StreamViewer as Relationship>::from(entity));
+                .try_insert(<StreamViewer as Relationship>::from(entity));
+            if let Ok(mut context) = scenes.get_mut(container_entity.root) {
+                let event = PbVideoEvent {
+                    timestamp: frame.0,
+                    tick_number: context.tick_number,
+                    current_offset: 0.,
+                    video_length: 0.,
+                    state: VideoState::VsLoading.into(),
+                };
+                context.update_crdt(
+                    SceneComponentId::VIDEO_EVENT,
+                    CrdtType::GO_ANY,
+                    container_entity.container_id,
+                    &event,
+                );
+            }
         }
     }
 }

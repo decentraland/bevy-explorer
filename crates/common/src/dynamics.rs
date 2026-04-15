@@ -5,6 +5,6 @@ pub const MAX_CLIMBABLE_INCLINE: f32 = 1.5 * PI / 4.0; // radians from up - equa
 pub const MAX_STEP_HEIGHT: f32 = 0.5;
 pub const PLAYER_GROUND_THRESHOLD: f32 = 0.05;
 
-pub const PLAYER_COLLIDER_RADIUS: f32 = 0.35;
+pub const PLAYER_COLLIDER_RADIUS: f32 = 0.3;
 pub const PLAYER_COLLIDER_HEIGHT: f32 = 2.0;
-pub const PLAYER_COLLIDER_OVERLAP: f32 = 0.01;
+pub const PLAYER_COLLIDER_OVERLAP: f32 = 1e-5;

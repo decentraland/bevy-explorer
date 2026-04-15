@@ -9,15 +9,41 @@ function error(...args) {
 }
 
 var audioContext = null;
+var microphonePermission = "denied";
+
+export function setupMicrophonePermission() {
+    navigator.permissions.query({ name: "microphone" }).then((permissionState) => {
+        microphonePermission = permissionState.state;
+
+        permissionState.onchange = () => {
+            microphonePermission = permissionState.state;
+        };
+    });
+}
 
 /**
- * 
+ * Tests if the browser can accept requests for microphone streams
  * @returns boolean
  */
 export function is_microphone_available() {
-    // Check if getUserMedia is available
-    const res = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
-    return res;
+    return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+}
+
+/**
+ * Requests current microphone permission state
+ * @returns "granted" | "prompt" | "denied"
+ */
+export function microphonePermissionState() {
+    return microphonePermission;
+}
+
+/**
+ * Prompts for microphone permission
+ */
+export function promptMicrophonePermission() {
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ audio: true });
+    }
 }
 
 /**
@@ -84,6 +110,12 @@ function set_room_event_handler(room, handler) {
         handler({
             type: 'connected',
             participants_with_tracks
+        })
+    });
+    room.on(LivekitClient.RoomEvent.Disconnected, (disconnectReason) => {
+        handler({
+            type: 'disconnected',
+            disconnectReason
         })
     });
     room.on(LivekitClient.RoomEvent.ConnectionStateChanged, (state) => {
@@ -174,7 +206,22 @@ function set_room_event_handler(room, handler) {
                     audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 }
 
-                track_rig_new(remote_track);
+                if (remote_participant.identity.endsWith("-streamer")) {
+                    if (remote_track.audioElement) {
+                        error(`Rebuilding audio element of ${remote_track.sid} for ${remote_participant.sid} (${remote_participant.identity}).`);
+                        const audioElement = remote_track.audioElement;
+                        delete remote_track.audioElement;
+                        remote_track.detach(audioElement);
+                    }
+                    const streamPlayerContainer = window.document.querySelector("#stream-player-container");
+                    if (streamPlayerContainer) {
+                        const audioElement = remote_track.attach();
+                        streamPlayerContainer.append(audioElement);
+                        remote_track.audioElement = audioElement;
+                    }
+                } else {
+                    track_rig_new(remote_track);
+                }
             } else if (remote_track.kind == "video") {
                 if (remote_track.videoElement) {
                     error(`Rebuilding video element of ${remote_track.sid} for ${remote_participant.sid} (${remote_participant.identity}).`);
@@ -207,6 +254,12 @@ function set_room_event_handler(room, handler) {
             log(`Unsubscribed to track ${remote_track.sid} of ${remote_participant.sid} (${remote_participant.identity}).`);
             if (remote_track.kind === "audio") {
                 track_rig_drop(remote_track);
+            }
+            if (remote_track.audioElement) {
+                const audioElement = remote_track.audioElement;
+                delete remote_track.audioElement;
+                remote_track.detach(audioElement);
+                audioElement.remove();
             }
 
             handler({
@@ -369,14 +422,12 @@ export function remote_track_publication_set_subscribed(remote_track_publication
     remote_track_publication.setSubscribed(subscribed);
 }
 
-
 /**
  * 
  * @param {livekit.RemoteTrackPublication} remote_track_publication 
  * @returns livekit.RemoteTrack | null
  */
 export function remote_track_publication_track(remote_track_publication) {
-    log(remote_track_publication);
     return remote_track_publication.track;
 }
 
@@ -480,4 +531,13 @@ export function remote_track_pan_and_volume(remote_track, pan, volume) {
     // }
 
     // log(`[${audioContext.state}] Set spatial audio for ${participantIdentity} : pan=${nodes.pannerNode.pan.value}, volume=${nodes.gainNode.gain.value}`);
+}
+
+/**
+ * 
+ * @param {LivekitClient.RemoteAudioTrack} remote_audio_track 
+ * @param {number} volume 
+ */
+export function remote_audio_track_set_volume(remote_audio_track, volume) {
+    remote_audio_track.setVolume(volume);
 }

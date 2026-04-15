@@ -1,3 +1,4 @@
+pub mod agent_commands;
 pub mod teleport;
 
 use std::{
@@ -22,11 +23,15 @@ use common::{
         RpcEventSender, RpcResultSender, SpawnResponse,
     },
     sets::SceneSets,
-    structs::{AvatarDynamicState, PermissionType, PrimaryCamera, PrimaryUser, ZOrder},
+    structs::{
+        AvatarDynamicState, EngineMovementControl, PermissionType, PreviewCommand, PrimaryCamera,
+        PrimaryUser, StartupScenes, ZOrder,
+    },
     util::{AsH160, TaskCompat, TaskExt},
 };
 use comms::{
     global_crdt::ForeignPlayer,
+    preview::handle_preview_socket,
     profile::{CurrentUserProfile, ProfileManager, UserProfile},
     NetworkMessage, NetworkMessageRecipient, SceneRoom, Transport,
 };
@@ -51,6 +56,7 @@ use scene_runner::{
 use serde_json::{json, Value};
 use teleport::{handle_out_of_world, teleport_player};
 use ui_core::button::DuiButton;
+use user_input::avatar_movement::{ActivePlayerComponent, AvatarMovement, AvatarMovementInfo};
 use wallet::{browser_auth::remote_send_async, sign_request, Wallet};
 
 pub struct RestrictedActionsPlugin;
@@ -62,7 +68,8 @@ impl Plugin for RestrictedActionsPlugin {
             Update,
             (
                 (
-                    move_player,
+                    handle_player_move_requests,
+                    update_player_move.after(handle_player_move_requests),
                     move_camera,
                     change_realm,
                     external_url,
@@ -70,6 +77,8 @@ impl Plugin for RestrictedActionsPlugin {
                     kill_portable,
                     list_portables,
                     get_user_data,
+                ),
+                (
                     get_connected_players,
                     get_players_in_scene,
                     event_player_connected,
@@ -98,80 +107,409 @@ impl Plugin for RestrictedActionsPlugin {
         app.init_resource::<PendingPortableCommands>();
         app.add_console_command::<SpawnPortableCommand, _>(spawn_portable_command);
         app.add_console_command::<KillPortableCommand, _>(kill_portable_command);
+        app.add_plugins(agent_commands::AgentCommandsPlugin);
     }
 }
 
-pub fn move_player(
+/// The kind of active player move, each with its own completion and cancellation semantics.
+enum PlayerMoveKind {
+    /// Physics-suppressed linear interpolation from `from` to `target` over `duration` seconds.
+    Interpolate { from: Vec3, duration: f32 },
+    /// Movement-scene-driven walk to `target`; the engine broadcasts the target each frame and
+    /// waits for the movement scene to confirm completion via `AvatarMovement::walk_success`.
+    Walk {
+        stop_threshold: f32,
+        timeout: Option<f32>,
+    },
+}
+
+/// Active engine-driven move request, attached to the player entity until resolved.
+/// Any new MovePlayer or WalkPlayer request cancels the existing one (sends false).
+#[derive(Component)]
+pub struct ActivePlayerMove {
+    target: Vec3,
+    elapsed: f32,
+    response: RpcResultSender<bool>,
+    kind: PlayerMoveKind,
+}
+
+/// Pending move data queued through the permission system.
+pub enum PendingPlayerMove {
+    Move {
+        scene: Option<Entity>,
+        target: Vec3,
+        looking_at: Option<Vec3>,
+        duration: Option<f32>,
+        response: Option<RpcResultSender<bool>>,
+    },
+    Walk {
+        scene: Option<Entity>,
+        target: Vec3,
+        stop_threshold: f32,
+        timeout: Option<f32>,
+        response: RpcResultSender<bool>,
+    },
+}
+
+impl PendingPlayerMove {
+    fn scene(&self) -> Option<Entity> {
+        match self {
+            Self::Move { scene, .. } | Self::Walk { scene, .. } => *scene,
+        }
+    }
+
+    fn send_fail(self) {
+        match self {
+            Self::Move {
+                response: Some(r), ..
+            } => r.send(false),
+            Self::Walk { response, .. } => response.send(false),
+            _ => {}
+        }
+    }
+}
+
+fn cancel_active_move(
+    commands: &mut Commands,
+    entity: Entity,
+    active: &ActivePlayerMove,
+    movement_control: &mut EngineMovementControl,
+    movement_info: &mut AvatarMovementInfo,
+) {
+    active.response.send(false);
+    if matches!(active.kind, PlayerMoveKind::Interpolate { .. }) {
+        movement_control
+            .suppress_avatar_physics
+            .remove("player_move");
+    }
+    movement_info.0.walk_target = None;
+    movement_info.0.walk_threshold = None;
+    commands.entity(entity).remove::<ActivePlayerMove>();
+}
+
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+pub fn handle_player_move_requests(
+    mut commands: Commands,
     mut events: EventReader<RpcCall>,
     scenes: Query<&RendererSceneContext>,
-    mut player: Query<(Entity, &mut Transform, &mut AvatarDynamicState), With<PrimaryUser>>,
+    mut player: Query<
+        (
+            Entity,
+            &mut Transform,
+            &mut AvatarDynamicState,
+            Option<&ActivePlayerMove>,
+        ),
+        With<PrimaryUser>,
+    >,
     containing_scene: ContainingScene,
-    mut perms: Permission<(Entity, Vec3, Option<Vec3>)>,
+    mut perms: Permission<PendingPlayerMove>,
+    mut movement_control: ResMut<EngineMovementControl>,
+    mut movement_info: ResMut<AvatarMovementInfo>,
 ) {
-    let Ok((player_entity, _, _)) = player.single() else {
+    let Ok((player_entity, _, _, _)) = player.single() else {
         return;
     };
 
-    for (root, translation, looking_at) in events.read().filter_map(|ev| match ev {
-        RpcCall::MovePlayer {
-            scene,
-            to,
-            looking_at,
-        } => Some((scene, to, looking_at)),
-        _ => None,
-    }) {
-        let current_scenes = containing_scene.get(player_entity);
-        if !current_scenes.contains(root) {
-            warn!(
-                "move player request from {root:?} was requested with player outside scene bounds"
-            );
-            continue;
-        }
-
-        perms.check(
-            PermissionType::MovePlayer,
-            *root,
-            (*root, *translation, *looking_at),
-            None,
-            false,
-        );
-    }
-
-    for (root, translation, looking_at) in perms.drain_success(PermissionType::MovePlayer) {
-        let Ok(scene) = scenes.get(root) else {
-            warn!("move player request from invalid scene {root:?}");
-            continue;
+    for ev in events.read() {
+        let pending = match ev {
+            RpcCall::MovePlayer {
+                scene,
+                to,
+                looking_at,
+                duration,
+                response,
+            } => PendingPlayerMove::Move {
+                scene: *scene,
+                target: *to,
+                looking_at: *looking_at,
+                duration: *duration,
+                response: response.clone(),
+            },
+            RpcCall::WalkPlayer {
+                scene,
+                to,
+                stop_threshold,
+                timeout,
+                response,
+            } => PendingPlayerMove::Walk {
+                scene: *scene,
+                target: *to,
+                stop_threshold: *stop_threshold,
+                timeout: *timeout,
+                response: response.clone(),
+            },
+            _ => continue,
         };
 
-        let mut target_translation = translation;
-        target_translation +=
-            (scene.base * IVec2::new(1, -1)).as_vec2().extend(0.0).xzy() * PARCEL_SIZE;
-
-        let target_scenes = containing_scene.get_position(target_translation);
-        if !target_scenes.contains(&root) {
-            warn!("move player request from {root:?} was outside scene bounds");
-        } else {
-            let (_, mut player_transform, mut dynamics) = player.single_mut().unwrap();
-            player_transform.translation = target_translation;
-            debug!("player transform to {}", target_translation);
-
-            if let Some(looking_at) = looking_at {
-                let rotation = Transform::IDENTITY
-                    .looking_at(
-                        (looking_at - translation) * Vec3::new(1.0, 0.0, 1.0),
-                        Vec3::Y,
-                    )
-                    .rotation;
-                dynamics.velocity =
-                    rotation * player_transform.rotation.inverse() * dynamics.velocity;
-
-                player_transform.rotation = rotation;
-                debug!("player rotation to looking at {}", looking_at);
+        match pending.scene() {
+            None => {
+                // Console-sourced: target is already in world space, bypass all checks.
+                let raw_target = match &pending {
+                    PendingPlayerMove::Move { target, .. }
+                    | PendingPlayerMove::Walk { target, .. } => *target,
+                };
+                let world_target = raw_target.with_y(raw_target.y.max(0.0));
+                apply_player_move(
+                    &mut commands,
+                    player_entity,
+                    pending,
+                    world_target,
+                    &mut player,
+                    &mut movement_control,
+                    &mut movement_info,
+                );
+            }
+            Some(scene_ent) => {
+                if !containing_scene.get(player_entity).contains(&scene_ent) {
+                    warn!(
+                        "player move request from {:?}: player not in scene",
+                        scene_ent
+                    );
+                    pending.send_fail();
+                    continue;
+                }
+                perms.check(PermissionType::MovePlayer, scene_ent, pending, None, false);
             }
         }
     }
 
-    for _ in perms.drain_fail(PermissionType::MovePlayer) {}
+    for pending in perms.drain_success(PermissionType::MovePlayer) {
+        // Items that passed through perms always have a real scene entity.
+        let scene_entity = pending.scene().unwrap();
+        let Ok(scene) = scenes.get(scene_entity) else {
+            warn!("player move request from invalid scene {scene_entity:?}");
+            pending.send_fail();
+            continue;
+        };
+
+        let base_offset =
+            (scene.base * IVec2::new(1, -1)).as_vec2().extend(0.0).xzy() * PARCEL_SIZE;
+
+        // Compute world-space target and validate bounds before doing anything else.
+        // An invalid request must not cancel the currently active move.
+        let raw_target = match &pending {
+            PendingPlayerMove::Move { target, .. } | PendingPlayerMove::Walk { target, .. } => {
+                *target
+            }
+        };
+        let world_target = (raw_target + base_offset).with_y((raw_target + base_offset).y.max(0.0));
+
+        if !containing_scene
+            .get_position(world_target)
+            .contains(&scene_entity)
+        {
+            warn!("player move request from {scene_entity:?}: target is outside scene bounds");
+            pending.send_fail();
+            continue;
+        }
+
+        apply_player_move(
+            &mut commands,
+            player_entity,
+            pending,
+            world_target,
+            &mut player,
+            &mut movement_control,
+            &mut movement_info,
+        );
+    }
+
+    for pending in perms.drain_fail(PermissionType::MovePlayer) {
+        pending.send_fail();
+    }
+}
+
+#[allow(clippy::type_complexity)]
+fn apply_player_move(
+    commands: &mut Commands,
+    player_entity: Entity,
+    pending: PendingPlayerMove,
+    world_target: Vec3,
+    player: &mut Query<
+        (
+            Entity,
+            &mut Transform,
+            &mut AvatarDynamicState,
+            Option<&ActivePlayerMove>,
+        ),
+        With<PrimaryUser>,
+    >,
+    movement_control: &mut EngineMovementControl,
+    movement_info: &mut AvatarMovementInfo,
+) {
+    let (_, mut player_transform, mut dynamics, maybe_active) = player.single_mut().unwrap();
+    if let Some(active) = maybe_active {
+        cancel_active_move(
+            commands,
+            player_entity,
+            active,
+            movement_control,
+            movement_info,
+        );
+    }
+
+    match pending {
+        PendingPlayerMove::Move {
+            target,
+            looking_at,
+            duration,
+            response,
+            ..
+        } => {
+            if let Some(d) = duration {
+                let d = d.max(f32::EPSILON);
+                let from = player_transform.translation;
+                debug!("player interpolation start: {from} -> {world_target} over {d}s");
+                movement_control
+                    .suppress_avatar_physics
+                    .insert("player_move");
+                commands.entity(player_entity).try_insert(ActivePlayerMove {
+                    target: world_target,
+                    elapsed: 0.0,
+                    response: response.unwrap(),
+                    kind: PlayerMoveKind::Interpolate { from, duration: d },
+                });
+            } else {
+                player_transform.translation = world_target;
+                debug!("player teleported to {world_target}");
+                if let Some(r) = response {
+                    r.send(true);
+                }
+            }
+
+            if let Some(looking_at) = looking_at {
+                let rotation = Transform::IDENTITY
+                    .looking_at((looking_at - target) * Vec3::new(1.0, 0.0, 1.0), Vec3::Y)
+                    .rotation;
+                dynamics.velocity =
+                    rotation * player_transform.rotation.inverse() * dynamics.velocity;
+                player_transform.rotation = rotation;
+            }
+        }
+
+        PendingPlayerMove::Walk {
+            stop_threshold,
+            timeout,
+            response,
+            ..
+        } => {
+            debug!("walk player started: target={world_target}, threshold={stop_threshold}");
+            commands.entity(player_entity).try_insert(ActivePlayerMove {
+                target: world_target,
+                elapsed: 0.0,
+                response,
+                kind: PlayerMoveKind::Walk {
+                    stop_threshold,
+                    timeout,
+                },
+            });
+        }
+    }
+}
+
+#[allow(clippy::type_complexity)]
+pub fn update_player_move(
+    mut commands: Commands,
+    mut player: Query<
+        (
+            Entity,
+            &mut Transform,
+            &mut ActivePlayerMove,
+            Ref<ActivePlayerComponent<AvatarMovement>>,
+        ),
+        With<PrimaryUser>,
+    >,
+    time: Res<Time>,
+    mut movement_control: ResMut<EngineMovementControl>,
+    mut movement_info: ResMut<AvatarMovementInfo>,
+) {
+    let Ok((entity, mut transform, mut active, movement)) = player.single_mut() else {
+        movement_info.0.walk_target = None;
+        movement_info.0.walk_threshold = None;
+        return;
+    };
+
+    active.elapsed += time.delta_secs();
+
+    match &active.kind {
+        PlayerMoveKind::Interpolate { from, duration } => {
+            // Cancel if the scene movement controller asserts a new non-zero x/z velocity or jump.
+            // Skip the first tick (elapsed just became > 0) to avoid cancelling immediately.
+            if active.elapsed > time.delta_secs() && movement.is_changed() {
+                let v = movement.component.velocity;
+                if v.x != 0.0 || v.z != 0.0 || v.y.abs() > 2.0 {
+                    debug!("player interpolation cancelled by scene movement controller: {v}");
+                    active.response.send(false);
+                    movement_control
+                        .suppress_avatar_physics
+                        .remove("player_move");
+                    commands.entity(entity).remove::<ActivePlayerMove>();
+                    return;
+                }
+            }
+
+            let t = (active.elapsed / duration).min(1.0);
+            transform.translation = from.lerp(active.target, t);
+
+            if t >= 1.0 {
+                debug!("player interpolation complete");
+                active.response.send(true);
+                movement_control
+                    .suppress_avatar_physics
+                    .remove("player_move");
+                commands.entity(entity).remove::<ActivePlayerMove>();
+            }
+        }
+
+        PlayerMoveKind::Walk {
+            stop_threshold,
+            timeout,
+        } => {
+            // Broadcast walk_target in world space each frame so the movement scene can drive the player.
+            // AvatarMovementInfo is sent to all scenes (which have different origins), so world space
+            // is the correct coordinate space here.
+            movement_info.0.walk_target = Some(
+                dcl_component::proto_components::common::Vector3::world_vec_from_vec3(
+                    &active.target,
+                ),
+            );
+            movement_info.0.walk_threshold = Some(*stop_threshold);
+
+            // The movement scene signals completion via walk_success on AvatarMovement.
+            if movement.is_changed() {
+                if let Some(success) = movement.component.walk_success {
+                    debug!("walk player completed via walk_success={success}");
+                    active.response.send(success);
+                    movement_info.0.walk_target = None;
+                    movement_info.0.walk_threshold = None;
+                    commands.entity(entity).remove::<ActivePlayerMove>();
+                    return;
+                }
+            }
+
+            // Timeout.
+            if let Some(t) = timeout {
+                if active.elapsed >= *t {
+                    debug!("walk player timed out after {}s", active.elapsed);
+                    active.response.send(false);
+                    movement_info.0.walk_target = None;
+                    movement_info.0.walk_threshold = None;
+                    commands.entity(entity).remove::<ActivePlayerMove>();
+                    return;
+                }
+            }
+
+            // Fallback proximity check (handles movement scene being absent).
+            let xz_dist = (transform.translation - active.target).xz().length();
+            if xz_dist <= *stop_threshold {
+                debug!("walk player reached target (engine-side check), dist={xz_dist}");
+                active.response.send(true);
+                movement_info.0.walk_target = None;
+                movement_info.0.walk_threshold = None;
+                commands.entity(entity).remove::<ActivePlayerMove>();
+            }
+        }
+    }
 }
 
 pub fn move_camera(
@@ -277,17 +615,22 @@ fn external_url(
     }
 }
 
-async fn lookup_ens(
+pub async fn lookup_ens(
     parent_scene: Option<String>,
     ens: String,
+    super_user: bool,
     ipfs: Arc<IpfsIo>,
 ) -> Result<(String, PortableSource), String> {
-    lookup_portable(
-        parent_scene,
-        format!("https://worlds-content-server.decentraland.org/world/{ens}"),
-        false,
-        ipfs,
-    )
+    if ens.to_ascii_lowercase().starts_with("http") {
+        lookup_portable(parent_scene, ens.clone(), super_user, ipfs)
+    } else {
+        lookup_portable(
+            parent_scene,
+            format!("https://worlds-content-server.decentraland.org/world/{ens}"),
+            super_user,
+            ipfs,
+        )
+    }
     .await
     .map(|(hash, source)| {
         (
@@ -326,7 +669,7 @@ pub async fn lookup_portable(
 
     let mut first_scene = config.scenes_urn.and_then(|scenes| scenes.first().cloned());
 
-    if first_scene.is_none() && super_user {
+    if first_scene.is_none() {
         // try from active entities
         let content_url = about
             .content
@@ -455,6 +798,7 @@ fn spawn_portable(
                     IoTaskPool::get().spawn_compat(lookup_ens(
                         Some(parent_hash),
                         ens,
+                        false,
                         ipfas.ipfs().clone(),
                     )),
                     Some(response.clone()),
@@ -1354,6 +1698,7 @@ struct PendingPortableCommands(
 #[command(name = "/spawn")]
 struct SpawnPortableCommand {
     ens: String,
+    as_super: Option<bool>,
 }
 
 fn spawn_portable_command(
@@ -1363,7 +1708,12 @@ fn spawn_portable_command(
 ) {
     if let Some(Ok(command)) = input.take() {
         pending.0.push((
-            IoTaskPool::get().spawn_compat(lookup_ens(None, command.ens, ipfas.ipfs().clone())),
+            IoTaskPool::get().spawn_compat(lookup_ens(
+                None,
+                command.ens,
+                command.as_super.unwrap_or_default(),
+                ipfas.ipfs().clone(),
+            )),
             PortableAction::Spawn,
         ));
     }
@@ -1383,7 +1733,12 @@ fn kill_portable_command(
 ) {
     if let Some(Ok(command)) = input.take() {
         pending.0.push((
-            IoTaskPool::get().spawn_compat(lookup_ens(None, command.ens, ipfas.ipfs().clone())),
+            IoTaskPool::get().spawn_compat(lookup_ens(
+                None,
+                command.ens,
+                false,
+                ipfas.ipfs().clone(),
+            )),
             PortableAction::Kill,
         ));
     }
@@ -1555,4 +1910,81 @@ fn handle_entity_definition(
             true
         }
     })
+}
+
+#[allow(clippy::type_complexity)]
+pub fn process_startup_scenes(
+    mut startup_scenes: ResMut<StartupScenes>,
+    mut tasks: Local<Vec<(usize, Task<Result<(String, PortableSource), String>>)>>,
+    mut done: Local<bool>,
+    mut portables: ResMut<PortableScenes>,
+    ipfas: IpfsAssetServer,
+    mut channel: Local<
+        Option<(
+            tokio::sync::mpsc::UnboundedSender<PreviewCommand>,
+            tokio::sync::mpsc::UnboundedReceiver<PreviewCommand>,
+        )>,
+    >,
+    mut writer: EventWriter<PreviewCommand>,
+) {
+    if let Some(command) = channel.as_mut().and_then(|(_, rx)| rx.try_recv().ok()) {
+        writer.write(command);
+        *done = false;
+        for scene in &mut startup_scenes.scenes {
+            scene.hash = None;
+        }
+        return;
+    }
+
+    if *done || startup_scenes.scenes.is_empty() {
+        return;
+    }
+
+    if tasks.is_empty() {
+        for (ix, scene) in startup_scenes.scenes.iter().enumerate() {
+            tasks.push((
+                ix,
+                IoTaskPool::get().spawn_compat(lookup_ens(
+                    None,
+                    scene.source.clone(),
+                    scene.super_user,
+                    ipfas.ipfs().clone(),
+                )),
+            ));
+        }
+    }
+
+    tasks.retain_mut(|(ix, t)| match t.complete() {
+        Some(Ok((hash, source))) => {
+            let scene = startup_scenes.scenes.get_mut(*ix).unwrap();
+
+            info!("added startup scene from {}", source.pid);
+            scene.hash = Some(hash.clone());
+            portables.0.extend([(hash, source)]);
+
+            if scene.preview {
+                let sx = channel
+                    .get_or_insert_with(tokio::sync::mpsc::unbounded_channel)
+                    .0
+                    .clone();
+                IoTaskPool::get()
+                    .spawn(handle_preview_socket(scene.source.clone(), sx.clone()))
+                    .detach();
+                scene.hot_reload = Some(sx);
+            }
+            false
+        }
+        Some(Err(e)) => {
+            error!(
+                "failed to load startup scene {}: {e}",
+                startup_scenes.scenes.get(*ix).unwrap().source
+            );
+            false
+        }
+        None => true,
+    });
+
+    if tasks.is_empty() {
+        *done = true;
+    }
 }

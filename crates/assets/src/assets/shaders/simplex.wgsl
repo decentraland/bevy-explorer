@@ -68,6 +68,56 @@ fn simplex_noise_3d(v: vec3<f32>) -> f32 {
     return 42. * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
 }
 
+fn simplex_noise_2d(v: vec2<f32>) -> f32 {
+    // Skew/unskew factors for 2D
+    let C = vec4(
+         0.211324865405187,  // (3.0 - sqrt(3.0)) / 6.0
+         0.366025403784439,  // 0.5 * (sqrt(3.0) - 1.0)
+        -0.577350269189626,  // -1.0 + 2.0 * C.x
+         0.024390243902439,  // 1.0 / 41.0
+    );
+
+    // First corner
+    var i = floor(v + dot(v, C.yy));
+    let x0 = v - i + dot(i, C.xx);
+
+    // Other corners (2D simplex triangle)
+    let i1 = select(vec2(0., 1.), vec2(1., 0.), x0.x > x0.y);
+    let x1 = x0 - i1 + C.xx;
+    let x2 = x0 + C.zz;
+
+    // Permutations
+    i = i % vec2(289.);
+    let p = permute_3_(
+        permute_3_(i.y + vec3(0., i1.y, 1.)) + i.x + vec3(0., i1.x, 1.)
+    );
+
+    // Gradients: 41 points uniformly over a line, mapped onto a diamond
+    var m = max(vec3(0.5) - vec3(dot(x0, x0), dot(x1, x1), dot(x2, x2)), vec3(0.));
+    m *= m;
+    m *= m;
+
+    let x = 2. * fract(p * C.www) - 1.;
+    let h = abs(x) - 0.5;
+    let ox = floor(x + 0.5);
+    let a0 = x - ox;
+
+    // Normalise gradients implicitly by scaling m
+    m *= 1.79284291400159 - 0.85373472095314 * (a0 * a0 + h * h);
+
+    // Compute final noise value
+    let g = vec3(
+        a0.x * x0.x + h.x * x0.y,
+        a0.y * x1.x + h.y * x1.y,
+        a0.z * x2.x + h.z * x2.y,
+    );
+    return 130. * dot(m, g);
+}
+
+fn permute_3_(x: vec3<f32>) -> vec3<f32> {
+    return ((x * 34. + 1.) * x) % vec3<f32>(289.);
+}
+
 fn permute_4_(x: vec4<f32>) -> vec4<f32> {
     return ((x * 34. + 1.) * x) % vec4<f32>(289.);
 }

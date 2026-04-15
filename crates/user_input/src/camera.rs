@@ -243,7 +243,7 @@ pub fn update_camera_position(
             target_transition = transition.clone();
         }
 
-        commands.entity(camera_ent).insert(ViewUserValue(0.0));
+        commands.entity(camera_ent).try_insert(ViewUserValue(0.0));
     } else {
         let target_fov = (dynamic_state.velocity.length() / 4.0).clamp(1.25, 1.25) * FRAC_PI_4;
         if let Projection::Perspective(PerspectiveProjection { ref mut fov, .. }) = &mut *projection
@@ -278,7 +278,9 @@ pub fn update_camera_position(
         target_transform.translation =
             player_head + head_offset * distance.clamp(0.0, 3.0) + target_direction * distance;
 
-        commands.entity(camera_ent).insert(ViewUserValue(distance));
+        commands
+            .entity(camera_ent)
+            .try_insert(ViewUserValue(distance));
     }
 
     let changed = (prev_override.is_some() != options.scene_override.is_some())

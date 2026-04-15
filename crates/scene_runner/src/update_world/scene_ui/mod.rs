@@ -266,6 +266,10 @@ impl From<PbUiTransform> for UiTransform {
                 YgJustify::YgjSpaceAround => JustifyContent::SpaceAround,
                 YgJustify::YgjSpaceEvenly => JustifyContent::SpaceEvenly,
             },
+            // TAFFY-VS-YOGA: YgoHidden maps to Clip (not Hidden) because Taffy's
+            // Overflow::Hidden is a "scroll container" which affects layout (e.g.
+            // percentage resolution, automatic min-size). Yoga's hidden is purely
+            // visual clipping. If layout mismatches arise from overflow, revisit this.
             overflow: match value.overflow() {
                 YgOverflow::YgoVisible => Overflow::DEFAULT,
                 YgOverflow::YgoHidden => Overflow::clip(),
@@ -287,7 +291,23 @@ impl From<PbUiTransform> for UiTransform {
                 YgDisplay::YgdFlex => Display::Flex,
                 YgDisplay::YgdNone => Display::None,
             },
-            basis: val!(value, flex_basis_unit, flex_basis, Val::Auto),
+            // TAFFY-VS-YOGA: Two layout differences are addressed here:
+            //
+            // 1. flex-basis for flexGrow items: When flex-basis is unset and
+            //    flexGrow > 0, Yoga computes the flex base size with percentage
+            //    children resolving to 0 (unknown parent), yielding a small base.
+            //    Taffy resolves them to auto, propagating deep content sizes and
+            //    inflating the base. Setting flex-basis: 0 for these items avoids
+            //    the content propagation and lets them simply grow to fill space.
+            //
+            // 2. min-size: Yoga does not implement CSS `min-size: auto` (content-
+            //    based minimum). Taffy does, preventing flex items from shrinking
+            //    below their content. Defaulting to 0 matches Yoga's behaviour.
+            basis: if value.flex_grow > 0.0 && value.flex_basis_unit() == YgUnit::YguUndefined {
+                Val::Px(0.0)
+            } else {
+                val!(value, flex_basis_unit, flex_basis, Val::Auto)
+            },
             grow: value.flex_grow,
             size: maybe_size!(value, width_unit, width, height_unit, height, Val::Auto),
             min_size: size!(
@@ -296,7 +316,7 @@ impl From<PbUiTransform> for UiTransform {
                 min_width,
                 min_height_unit,
                 min_height,
-                Val::Auto
+                Val::Px(0.0)
             ),
             max_size: size!(
                 value,
@@ -871,7 +891,7 @@ fn layout_scene_ui(
                 } else if link.scroll_entity.is_some() == ui_transform.scroll {
                     debug!("{scene_id} reuse linked {:?}", link.ui_entity);
                     if let Some(scroll_entity) = link.scroll_entity {
-                        commands.entity(scroll_entity).insert(
+                        commands.entity(scroll_entity).try_insert(
                             Scrollable::new()
                                 .with_direction(ScrollDirection::Both(
                                     StartPosition::Explicit(0.0),
@@ -897,7 +917,7 @@ fn layout_scene_ui(
 
             let existing = if let Some(link) = existing_link {
                 // update parent (always, so the child order is correct)
-                commands.entity(link.ui_entity).insert((
+                commands.entity(link.ui_entity).try_insert((
                     ChildOf(parent_link.content_entity),
                     LinkedScene {
                         scene: scene_root,
@@ -1398,7 +1418,7 @@ fn set_ui_focus(
                     continue;
                 };
 
-                commands.insert(Focus);
+                commands.try_insert(Focus);
                 response.send(Ok(Some(element_id.clone())));
             }
             RpcUiFocusAction::GetFocus | RpcUiFocusAction::Defocus => {

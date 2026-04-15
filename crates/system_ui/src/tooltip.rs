@@ -1,7 +1,11 @@
 use std::collections::{btree_map::Entry, BTreeMap};
 
 use bevy::prelude::*;
-use common::structs::{ToolTips, TooltipSource, ZOrder};
+use common::{
+    structs::{ToolTips, TooltipSource, ZOrder},
+    util::TryPushChildrenEx,
+};
+use system_bridge::NativeUi;
 use ui_core::{ui_builder::SpawnSpacer, HOVER_TEXT_STYLE};
 
 #[derive(Component)]
@@ -12,7 +16,9 @@ pub struct ToolTipPlugin;
 impl Plugin for ToolTipPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ToolTips>();
-        app.add_systems(Update, update_tooltip);
+        if app.world().resource::<NativeUi>().tooltips {
+            app.add_systems(Update, update_tooltip);
+        }
     }
 }
 
@@ -117,13 +123,13 @@ pub fn update_tooltip(
                 ZOrder::ToolTip.default(),
                 ToolTipNode,
             ))
-            .with_children(|c| {
+            .try_with_children(|c| {
                 for i in 0..columns {
                     c.spawn(Node {
                         flex_direction: FlexDirection::Column,
                         ..Default::default()
                     })
-                    .with_children(|c| {
+                    .try_with_children(|c| {
                         for (text, active) in content.iter() {
                             let hover_index =
                                 (*vis * 9.0 * if *active { 1.0 } else { 0.3 }) as usize;

@@ -39,8 +39,36 @@ self.addEventListener('fetch', (event) => {
     if (request.headers.has(CUSTOM_HEADER)) {
         // If it does, use our caching strategy.
         event.respondWith(cacheFirstStrategy(request));
+        return;
+    }
+
+    // For same-origin requests, add COOP/COEP headers to enable SharedArrayBuffer
+    if (request.mode === 'navigate' || request.destination === 'document') {
+        event.respondWith(addCrossOriginIsolationHeaders(request));
     }
 });
+
+/**
+ * Fetches a request and adds Cross-Origin-Isolation headers to enable SharedArrayBuffer.
+ */
+async function addCrossOriginIsolationHeaders(request) {
+    const response = await fetch(request);
+
+    // Only modify same-origin responses
+    if (response.type === 'basic') {
+        const newHeaders = new Headers(response.headers);
+        newHeaders.set('Cross-Origin-Opener-Policy', 'same-origin');
+        newHeaders.set('Cross-Origin-Embedder-Policy', 'credentialless');
+
+        return new Response(response.body, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: newHeaders
+        });
+    }
+
+    return response;
+}
 
 async function cacheFirstStrategy(request) {
     //Generate a cache key from the path only

@@ -26,8 +26,8 @@ use common::{
     rpc::RpcCall,
     sets::SetupSets,
     structs::{
-        AppConfig, AppError, AvatarDynamicState, CursorLocks, GraphicsSettings, IVec2Arg,
-        PermissionUsed, PreviewMode, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes,
+        AppConfig, AppError, AvatarDynamicState, CurrentRealm, CursorLocks, GraphicsSettings,
+        IVec2Arg, PermissionUsed, PreviewMode, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes,
         SceneGlobalLight, SceneImposterBake, SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips,
     },
     util::UtilsPlugin,
@@ -37,13 +37,13 @@ use nft::asset_source::Nft;
 use restricted_actions::RestrictedActionsPlugin;
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
-    initialize_scene::ScenePointers, permissions::PermissionManager,
-    update_world::mesh_collider::GroundCollider, OutOfWorld, SceneRunnerPlugin,
+    initialize_scene::ScenePointers, permissions::PermissionManager, OutOfWorld, SceneRunnerPlugin,
 };
 
-use ipfs::{map_realm_name, CurrentRealm, IpfsIoPlugin};
+use ipfs::{map_realm_name, IpfsIoPlugin};
 use system_bridge::SystemBridgePlugin;
 use ui_core::{scrollable::ScrollTargetEvent, UiCorePlugin};
+use user_input::avatar_movement::GroundCollider;
 use wallet::Wallet;
 
 static SESSION_LOG: OnceLock<String> = OnceLock::new();
@@ -273,8 +273,6 @@ fn main() {
         .init_resource::<CursorLocks>()
         .insert_resource(TimeOfDay {
             time: 10.0 * 3600.0,
-            target_time: None,
-            speed: 12.0,
         });
 
     // requires local version of `bevy_mod_debugdump` due to once_cell version conflict.

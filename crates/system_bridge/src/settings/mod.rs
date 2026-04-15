@@ -21,8 +21,8 @@ use common::structs::SsaoSetting;
 use common::{
     sets::SceneSets,
     structs::{
-        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, PreviewMode, ShadowSetting,
-        WindowSetting,
+        AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, ParcelGrassSetting,
+        PreviewMode, ShadowSetting, WindowSetting,
     },
 };
 use constrain_ui::ConstrainUiSetting;
@@ -38,11 +38,15 @@ use player_settings::{
 use scene_threads::SceneThreadsSetting;
 use serde::{Deserialize, Serialize};
 use shadow_settings::{ShadowCasterCountSetting, ShadowDistanceSetting};
+#[cfg(target_arch = "wasm32")]
+use tokio::sync::watch;
 use video_threads::VideoThreadsSetting;
 use volume_settings::{
     AvatarVolumeSetting, MasterVolumeSetting, SceneVolumeSetting, SystemVolumeSetting,
     VoiceVolumeSetting,
 };
+#[cfg(target_arch = "wasm32")]
+use {js_sys::Function, wasm_bindgen::prelude::*, web_sys::Event};
 
 pub mod aa_settings;
 pub mod ambient_brightness_setting;
@@ -57,6 +61,7 @@ pub mod load_distance;
 pub mod max_avatars;
 pub mod max_downloads;
 pub mod oob_setting;
+pub mod parcel_grass_settings;
 pub mod player_settings;
 pub mod scene_threads;
 pub mod sensitivity;
@@ -65,7 +70,6 @@ pub mod ssao_setting;
 pub mod video_threads;
 pub mod volume_settings;
 pub mod window_settings;
-
 pub struct SettingBridgePlugin;
 
 #[derive(Event)]
@@ -135,6 +139,7 @@ impl Plugin for SettingBridgePlugin {
         );
 
         add_enum_setting::<ImposterSetting>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<ParcelGrassSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<FogSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<BloomSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<DofSetting>(app, &mut settings, &mut schedule, &config);
@@ -143,7 +148,9 @@ impl Plugin for SettingBridgePlugin {
         add_enum_setting::<OobSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<AaSetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<AmbientSetting>(app, &mut settings, &mut schedule, &config);
-        add_enum_setting::<WindowSetting>(app, &mut settings, &mut schedule, &config);
+        if is_fullscreen_available() {
+            add_enum_setting::<WindowSetting>(app, &mut settings, &mut schedule, &config);
+        }
 
         if !is_preview {
             add_int_setting::<LoadDistanceSetting>(app, &mut settings, &mut schedule, &config);
@@ -184,10 +191,14 @@ impl Plugin for SettingBridgePlugin {
             Update,
             (
                 record_cameras,
-                apply_settings.run_if(|config: Res<AppConfig>| config.is_changed()),
+                apply_settings.run_if(resource_changed::<AppConfig>),
             )
                 .chain(),
         );
+        #[cfg(target_arch = "wasm32")]
+        app.add_systems(Startup, setup_fullscreen_listeners_and_callbacks);
+        #[cfg(target_arch = "wasm32")]
+        app.add_systems(Update, listen_to_fullscreen_updates);
     }
 }
 
@@ -452,5 +463,81 @@ pub fn record_cameras(
 ) {
     for ev in new_cams.read() {
         cameras.0.insert(ev.0);
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[inline(always)]
+fn is_fullscreen_available() -> bool {
+    true
+}
+
+#[cfg(target_arch = "wasm32")]
+#[inline(always)]
+fn is_fullscreen_available() -> bool {
+    let window = web_sys::window().unwrap();
+    let document = window.document().unwrap();
+
+    document.fullscreen_enabled()
+}
+
+#[cfg(target_arch = "wasm32")]
+#[derive(Resource, Deref, DerefMut)]
+struct FullscreenListener(watch::Receiver<WindowSetting>);
+
+#[cfg(target_arch = "wasm32")]
+fn setup_fullscreen_listeners_and_callbacks(mut commands: Commands, app_config: Res<AppConfig>) {
+    let window = web_sys::window().unwrap();
+    let document = window.document().unwrap();
+    let canvas = document.get_element_by_id("mygame-canvas").unwrap();
+
+    let (sender, receiver) = tokio::sync::watch::channel(app_config.graphics.window);
+
+    let listener = Closure::wrap(Box::new(move |_event: Event| {
+        let window = web_sys::window().unwrap();
+        let document = window.document().unwrap();
+
+        let new = if document.fullscreen_element().is_some() {
+            debug!("Detected change to fullscreen.");
+            WindowSetting::Borderless
+        } else {
+            debug!("Detected exit from fullscreen.");
+            WindowSetting::Windowed
+        };
+        if let Err(err) = sender.send(new) {
+            error!("{err}");
+        }
+    }) as Box<dyn FnMut(Event)>);
+    let listener_ref: &Function = listener.as_ref().unchecked_ref();
+
+    canvas
+        .add_event_listener_with_callback("fullscreenchange", listener_ref)
+        .unwrap();
+    canvas
+        .add_event_listener_with_callback("fullscreenerror", listener_ref)
+        .unwrap();
+
+    listener.forget();
+
+    commands.insert_resource(FullscreenListener(receiver));
+    debug!("Fullscreen listeners setup.");
+}
+
+#[cfg(target_arch = "wasm32")]
+fn listen_to_fullscreen_updates(
+    mut fullscreen_listener: ResMut<FullscreenListener>,
+    mut app_config: ResMut<AppConfig>,
+) {
+    match fullscreen_listener.has_changed() {
+        Ok(changed) => {
+            if changed {
+                let new_value = fullscreen_listener.borrow_and_update();
+                if *new_value != app_config.graphics.window {
+                    debug!("Setting {new_value:?} to AppConfig.");
+                    app_config.graphics.window = *new_value;
+                }
+            }
+        }
+        Err(err) => error!("{err}"),
     }
 }

@@ -6,7 +6,7 @@ use bevy::{
 use boimp::bake::{ImposterBakeMaterialExtension, ImposterBakeMaterialPlugin};
 use common::structs::PreviewMode;
 
-pub type SceneMaterial = ExtendedMaterial<StandardMaterial, SceneBound>;
+pub type SceneMaterial = ExtendedMaterial<SceneBound>;
 
 pub const SCENE_MATERIAL_SHOW_OUTSIDE: u32 = 1;
 pub const SCENE_MATERIAL_OUTLINE: u32 = 2;
@@ -250,6 +250,8 @@ mod test {
 }
 
 impl MaterialExtension for SceneBound {
+    type Base = StandardMaterial;
+
     fn fragment_shader() -> bevy::render::render_resource::ShaderRef {
         ShaderRef::Path("embedded://shaders/bound_material.wgsl".into())
     }
@@ -263,6 +265,30 @@ impl MaterialExtension for SceneBound {
 
     fn prepass_fragment_shader() -> ShaderRef {
         ShaderRef::Path("embedded://shaders/bound_prepass.wgsl".into())
+    }
+
+    fn fallback_asset(&self, base: &Self::Base) -> Option<ExtendedMaterial<Self>> {
+        let (base_color, emissive) = if self.data.flags & SCENE_MATERIAL_OUTLINE != 0 {
+            (
+                Color::srgba(1.0, 1.0, 4.0, 1.0),
+                Color::srgba(1.0, 1.0, 4.0, 1.0),
+            )
+        } else {
+            (Color::srgba(1.25, 0.25, 1.25, 0.75), Color::BLACK)
+        };
+
+        Some(ExtendedMaterial::<Self> {
+            base: StandardMaterial {
+                base_color,
+                emissive: emissive.to_linear(),
+                double_sided: true,
+                cull_mode: base.cull_mode,
+                unlit: true,
+                alpha_mode: AlphaMode::Blend,
+                ..Default::default()
+            },
+            extension: self.clone(),
+        })
     }
 
     fn specialize(

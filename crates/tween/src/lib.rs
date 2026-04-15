@@ -1,26 +1,24 @@
 #[cfg(feature = "tween_debug")]
 mod tween_debug;
 
-#[cfg(feature = "adr285")]
-use std::f32::consts::FRAC_2_PI;
-
-#[cfg(feature = "adr285")]
-use bevy::math::Affine2;
 use bevy::prelude::*;
 use common::sets::SceneSets;
 use dcl::interface::{ComponentPosition, CrdtType};
 use dcl_component::{
-    proto_components::sdk::components::{
-        pb_tween::Mode, EasingFunction, PbTween, PbTweenState, TextureMovementType,
-        TweenStateStatus,
+    proto_components::{
+        common::{texture_union::Tex, Texture},
+        sdk::components::{
+            pb_material, pb_tween::Mode, EasingFunction, PbMaterial, PbTween, PbTweenState,
+            TextureMovementType, TweenStateStatus,
+        },
     },
     transform_and_parent::DclTransformAndParent,
     SceneComponentId,
 };
-use scene_material::SceneMaterial;
 use scene_runner::{
-    renderer_context::RendererSceneContext, update_world::AddCrdtInterfaceExt, ContainerEntity,
-    SceneEntity,
+    renderer_context::RendererSceneContext,
+    update_world::{material::PbMaterialComponent, AddCrdtInterfaceExt},
+    ContainerEntity, SceneEntity,
 };
 
 #[derive(Component, Debug)]
@@ -33,6 +31,20 @@ impl From<PbTween> for Tween {
 }
 
 impl Tween {
+    fn is_texture_move(&self) -> bool {
+        #[cfg(feature = "adr285")]
+        {
+            matches!(
+                &self.0.mode,
+                Some(Mode::TextureMove(_) | Mode::TextureMoveContinuous(_))
+            )
+        }
+        #[cfg(not(feature = "adr285"))]
+        {
+            matches!(&self.0.mode, Some(Mode::TextureMove(_)))
+        }
+    }
+
     #[cfg(feature = "adr285")]
     fn is_continuous(&self) -> bool {
         matches!(
@@ -49,8 +61,7 @@ impl Tween {
         &self,
         time: f32,
         transform: &mut Transform,
-        maybe_h_mat: Option<&MeshMaterial3d<SceneMaterial>>,
-        materials: &mut Assets<SceneMaterial>,
+        maybe_mat: Option<&mut PbMaterialComponent>,
     ) {
         use simple_easing::*;
         use EasingFunction::*;
@@ -131,22 +142,24 @@ impl Tween {
             Some(Mode::TextureMove(data)) => {
                 let start: Vec2 = (&data.start.unwrap_or_default()).into();
                 let end: Vec2 = (&data.end.unwrap_or_default()).into();
-                let Some(h_mat) = maybe_h_mat else {
-                    return;
-                };
-
-                let Some(material) = materials.get_mut(h_mat) else {
+                let Some(material) = maybe_mat else {
                     return;
                 };
 
                 match data.movement_type() {
                     TextureMovementType::TmtOffset => {
-                        material.base.uv_transform.translation =
-                            (start + ((end - start) * ease_value)) * Vec2::new(1.0, -1.0);
+                        update_pb_material(
+                            &mut material.0,
+                            None,
+                            Some(start + ((end - start) * ease_value)),
+                        );
                     }
                     TextureMovementType::TmtTiling => {
-                        material.base.uv_transform.matrix2 =
-                            Mat2::from_diagonal(start + ((end - start) * ease_value));
+                        update_pb_material(
+                            &mut material.0,
+                            Some(start + ((end - start) * ease_value)),
+                            None,
+                        );
                     }
                 }
             }
@@ -169,7 +182,7 @@ impl Tween {
                     axis
                 };
                 let factor = startup_factor + post_startup_factor;
-                transform.rotation = Quat::from_axis_angle(axis, factor * data.speed.to_radians());
+                transform.rotation = Quat::from_axis_angle(axis, factor * -data.speed.to_radians());
             }
             #[cfg(feature = "adr285")]
             Some(Mode::MoveContinuous(data)) => {
@@ -190,10 +203,7 @@ impl Tween {
             }
             #[cfg(feature = "adr285")]
             Some(Mode::TextureMoveContinuous(data)) => {
-                let Some(h_mat) = maybe_h_mat else {
-                    return;
-                };
-                let Some(material) = materials.get_mut(h_mat) else {
+                let Some(material) = maybe_mat else {
                     return;
                 };
 
@@ -214,12 +224,18 @@ impl Tween {
 
                 match data.movement_type() {
                     TextureMovementType::TmtOffset => {
-                        material.base.uv_transform.translation =
-                            direction * data.speed * factor * Vec2::new(1.0, -1.0);
+                        update_pb_material(
+                            &mut material.0,
+                            None,
+                            Some(direction * data.speed * factor * Vec2::new(1.0, -1.0)),
+                        );
                     }
                     TextureMovementType::TmtTiling => {
-                        material.base.uv_transform.matrix2 =
-                            Mat2::from_diagonal(direction * data.speed * factor);
+                        update_pb_material(
+                            &mut material.0,
+                            Some(direction * data.speed * factor),
+                            None,
+                        );
                     }
                 }
             }
@@ -231,6 +247,9 @@ impl Tween {
 #[derive(Component, Debug, PartialEq)]
 pub struct TweenState(PbTweenState);
 
+#[derive(Event)]
+struct TweenUpdatedTexture(Entity);
+
 /// Cache of information needed to calculate continuous tweens in a
 /// frame independent way
 #[derive(Component)]
@@ -239,20 +258,29 @@ pub struct TweenState(PbTweenState);
 struct ContinuousTweenAnchor {
     ///  Caches the [`Transform`] at the moment [`Tween`] was inserted
     transform: Transform,
-    ///  Caches the [`StandardMaterial::uv_transform`] at the moment [`Tween`] was inserted
-    uv_transform: Affine2,
 }
 
 pub struct TweenPlugin;
 
 impl Plugin for TweenPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
+        app.add_event::<TweenUpdatedTexture>();
+
         app.add_crdt_lww_component::<PbTween, Tween>(
             SceneComponentId::TWEEN,
             ComponentPosition::EntityOnly,
         );
-        app.add_systems(Update, update_tween.in_set(SceneSets::PostLoop));
-        app.add_systems(PostUpdate, update_system_tween);
+        app.add_systems(
+            Update,
+            (update_tween, transfer_material_to_scene)
+                .chain()
+                .in_set(SceneSets::PostLoop),
+        );
+        app.add_systems(
+            PostUpdate,
+            update_system_tween.before(TransformSystem::TransformPropagate),
+        );
+        app.add_observer(clean_scene_tween_state);
 
         #[cfg(feature = "adr285")]
         {
@@ -268,35 +296,33 @@ impl Plugin for TweenPlugin {
 #[cfg(not(feature = "adr285"))]
 type TweenUpdateComponents<'a> = (
     Entity,
-    &'a ContainerEntity,
-    &'a ChildOf,
+    Ref<'a, ContainerEntity>,
+    Ref<'a, ChildOf>,
     Ref<'a, Tween>,
     Mut<'a, Transform>,
     Option<Mut<'a, TweenState>>,
-    Option<&'a MeshMaterial3d<SceneMaterial>>,
+    Option<Mut<'a, PbMaterialComponent>>,
 );
 #[cfg(feature = "adr285")]
 type TweenUpdateComponents<'a> = (
     Entity,
-    &'a ContainerEntity,
-    &'a ChildOf,
+    Ref<'a, ContainerEntity>,
+    Ref<'a, ChildOf>,
     Ref<'a, Tween>,
     Mut<'a, Transform>,
     Option<Mut<'a, TweenState>>,
-    Option<&'a ContinuousTweenAnchor>,
-    Option<&'a MeshMaterial3d<SceneMaterial>>,
+    Option<Ref<'a, ContinuousTweenAnchor>>,
+    Option<Mut<'a, PbMaterialComponent>>,
 );
 
-#[allow(clippy::type_complexity)]
 fn update_tween(
     mut commands: Commands,
     time: Res<Time>,
     mut tweens: Query<TweenUpdateComponents>,
     mut scenes: Query<&mut RendererSceneContext>,
     parents: Query<&SceneEntity>,
-    materials: ResMut<Assets<SceneMaterial>>,
+    #[cfg(feature = "adr285")] mut tween_updated_texture_writer: EventWriter<TweenUpdatedTexture>,
 ) {
-    let materials = materials.into_inner();
     for tween_update_components in tweens.iter_mut() {
         let Ok(scene) = scenes.get_mut(tween_update_components.1.root) else {
             continue;
@@ -309,8 +335,8 @@ fn update_tween(
                 tween_update_components,
                 scene,
                 parents,
-                materials,
                 &time,
+                &mut tween_updated_texture_writer,
             );
         } else {
             discrete_tween_update(
@@ -318,7 +344,6 @@ fn update_tween(
                 tween_update_components,
                 scene,
                 parents,
-                materials,
                 &time,
             );
         }
@@ -328,7 +353,6 @@ fn update_tween(
             tween_update_components,
             scene,
             parents,
-            materials,
             &time,
         );
     }
@@ -339,14 +363,13 @@ fn discrete_tween_update(
     tween_update_components: TweenUpdateComponents,
     mut scene: Mut<RendererSceneContext>,
     parents: Query<&SceneEntity>,
-    materials: &mut Assets<SceneMaterial>,
     time: &Time,
 ) {
     #[cfg(not(feature = "adr285"))]
-    let (ent, scene_ent, parent, tween, mut transform, state, maybe_h_mat) =
+    let (ent, scene_ent, parent, tween, mut transform, state, maybe_material) =
         tween_update_components;
     #[cfg(feature = "adr285")]
-    let (ent, scene_ent, parent, tween, mut transform, state, _, maybe_h_mat) =
+    let (ent, scene_ent, parent, tween, mut transform, state, _, maybe_material) =
         tween_update_components;
 
     let playing = tween.0.playing.unwrap_or(true);
@@ -393,7 +416,15 @@ fn discrete_tween_update(
             commands.entity(ent).try_insert(updated_state);
         }
 
-        tween.apply(updated_time, &mut transform, maybe_h_mat, materials);
+        tween.apply(
+            updated_time,
+            &mut transform,
+            if tween.is_texture_move() {
+                maybe_material.map(Mut::into_inner)
+            } else {
+                None
+            },
+        );
 
         let Ok(parent) = parents.get(parent.parent()) else {
             warn!("no parent for tweened ent");
@@ -420,12 +451,12 @@ fn continuous_tween_update(
         mut transform,
         state,
         maybe_continuous_tween_anchor,
-        maybe_h_mat,
+        maybe_mat,
     ): TweenUpdateComponents,
     mut scene: Mut<RendererSceneContext>,
     parents: Query<&SceneEntity>,
-    materials: &mut Assets<SceneMaterial>,
     time: &Time,
+    tween_updated_texture_writer: &mut EventWriter<TweenUpdatedTexture>,
 ) {
     let Some(continuous_tween_anchor) = maybe_continuous_tween_anchor else {
         unreachable!("ContinuousTweenAnchor must be present on a continuous tween.");
@@ -475,12 +506,7 @@ fn continuous_tween_update(
         // This weirdness is due to the fact that the continuous tweens
         // are implemented in a frame independent way
         *transform = continuous_tween_anchor.transform;
-        if let Some(scene_material) =
-            maybe_h_mat.and_then(|mesh_material| materials.get_mut(mesh_material.id()))
-        {
-            scene_material.base.uv_transform = continuous_tween_anchor.uv_transform;
-        }
-        tween.apply(updated_time, &mut transform, maybe_h_mat, materials);
+        tween.apply(updated_time, &mut transform, maybe_mat.map(Mut::into_inner));
 
         let Ok(parent) = parents.get(parent.parent()) else {
             warn!("no parent for tweened ent");
@@ -492,6 +518,124 @@ fn continuous_tween_update(
             CrdtType::LWW_ENT,
             scene_ent.container_id,
             &DclTransformAndParent::from_bevy_transform_and_parent(&transform, parent.id),
+        );
+        if tween.is_texture_move() {
+            tween_updated_texture_writer.write(TweenUpdatedTexture(ent));
+        }
+    }
+}
+
+fn update_pb_material(pb_material: &mut PbMaterial, tiling: Option<Vec2>, offset: Option<Vec2>) {
+    if let Some(material) = pb_material.material.as_mut() {
+        match material {
+            pb_material::Material::Pbr(pbr_material) => {
+                if let Some(Tex::Texture(texture)) = pbr_material
+                    .texture
+                    .as_mut()
+                    .and_then(|texture_union| texture_union.tex.as_mut())
+                {
+                    update_texture(texture, tiling, offset);
+                }
+                if let Some(Tex::Texture(texture)) = pbr_material
+                    .alpha_texture
+                    .as_mut()
+                    .and_then(|texture_union| texture_union.tex.as_mut())
+                {
+                    update_texture(texture, tiling, offset);
+                }
+                if let Some(Tex::Texture(texture)) = pbr_material
+                    .emissive_texture
+                    .as_mut()
+                    .and_then(|texture_union| texture_union.tex.as_mut())
+                {
+                    update_texture(texture, tiling, offset);
+                }
+                if let Some(Tex::Texture(texture)) = pbr_material
+                    .bump_texture
+                    .as_mut()
+                    .and_then(|texture_union| texture_union.tex.as_mut())
+                {
+                    update_texture(texture, tiling, offset);
+                }
+            }
+            pb_material::Material::Unlit(unlit_material) => {
+                if let Some(Tex::Texture(texture)) = unlit_material
+                    .texture
+                    .as_mut()
+                    .and_then(|texture_union| texture_union.tex.as_mut())
+                {
+                    update_texture(texture, tiling, offset);
+                }
+                if let Some(Tex::Texture(texture)) = unlit_material
+                    .alpha_texture
+                    .as_mut()
+                    .and_then(|texture_union| texture_union.tex.as_mut())
+                {
+                    update_texture(texture, tiling, offset);
+                }
+            }
+        }
+    }
+}
+
+fn transfer_material_to_scene(
+    mut tween_updated_texture: EventReader<TweenUpdatedTexture>,
+    mut tweens: Query<(&ContainerEntity, Option<&PbMaterialComponent>), With<Tween>>,
+    mut scenes: Query<&mut RendererSceneContext>,
+) {
+    for TweenUpdatedTexture(entity) in tween_updated_texture.read() {
+        let Ok((container_entity, maybe_pb_material_component)) = tweens.get_mut(*entity) else {
+            error!("TweenUpdatedTexture triggered for an entity that is not a tween.");
+            continue;
+        };
+        let Some(pb_material_component) = maybe_pb_material_component else {
+            debug!("Material not ready.");
+            continue;
+        };
+        let Ok(mut scene) = scenes.get_mut(container_entity.root) else {
+            error!("Entity in invalid scene.");
+            continue;
+        };
+
+        scene.update_crdt(
+            SceneComponentId::MATERIAL,
+            CrdtType::LWW_ENT,
+            container_entity.container_id,
+            &pb_material_component.0,
+        );
+    }
+}
+
+fn update_texture(texture: &mut Texture, new_tiling: Option<Vec2>, new_offset: Option<Vec2>) {
+    if let Some(new_tiling) = new_tiling {
+        texture.tiling = Some(new_tiling.into());
+    }
+
+    if let Some(new_offset) = new_offset {
+        texture.offset = Some(new_offset.into());
+    }
+}
+
+// remove scene TWEEN_STATE data when TWEEN is removed
+fn clean_scene_tween_state(
+    trigger: Trigger<OnRemove, Tween>,
+    mut commands: Commands,
+    scene_ent: Query<&ContainerEntity>,
+    mut scenes: Query<&mut RendererSceneContext>,
+) {
+    let entity = trigger.target();
+    if let Ok(mut commands) = commands.get_entity(entity) {
+        commands.try_remove::<TweenState>();
+    }
+
+    let Ok(scene_ent) = scene_ent.get(entity) else {
+        return;
+    };
+    if let Ok(mut ctx) = scenes.get_mut(scene_ent.root) {
+        ctx.clear_crdt(
+            SceneComponentId::TWEEN_STATE,
+            CrdtType::LWW_ANY,
+            scene_ent.container_id,
         );
     }
 }
@@ -563,22 +707,16 @@ pub fn update_system_tween(
 fn tween_inserted(
     trigger: Trigger<OnInsert, Tween>,
     mut commands: Commands,
-    tweens: Query<(&Tween, &Transform, Option<&MeshMaterial3d<SceneMaterial>>)>,
-    scene_materials: Res<Assets<SceneMaterial>>,
+    tweens: Query<(&Tween, &Transform)>,
 ) {
     let entity = trigger.target();
-    let Ok((tween, transform, maybe_scene_material)) = tweens.get(entity) else {
+    let Ok((tween, transform)) = tweens.get(entity) else {
         unreachable!("Tween must be available.");
     };
 
     if tween.is_continuous() {
-        let uv_transform = maybe_scene_material
-            .and_then(|mesh_material_handle| scene_materials.get(mesh_material_handle.id()))
-            .map(|scene_material| scene_material.base.uv_transform)
-            .unwrap_or_default();
         commands.entity(entity).insert(ContinuousTweenAnchor {
             transform: *transform,
-            uv_transform,
         });
     }
 }

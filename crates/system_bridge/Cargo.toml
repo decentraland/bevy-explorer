@@ -10,6 +10,8 @@ workspace = true
 
 [dependencies]
 common = { workspace = true }
+console = { workspace = true }
+clap = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }
@@ -20,3 +22,11 @@ ipfs = { workspace = true }
 serde_json = { workspace = true }
 dcl_component = { workspace = true }
 platform = { workspace = true }
+
+serde_repr = "0.1"
+urlencoding = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { workspace = true }
+js-sys = { workspace = true }
+web-sys = { workspace = true }

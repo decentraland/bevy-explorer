@@ -1,7 +1,7 @@
 use bevy::{platform::collections::HashMap, prelude::*, render::view::RenderLayers};
 use common::{
     structs::{AudioEmitter, AudioSettings, AudioType, PrimaryUser, SystemAudio},
-    util::VolumePanning,
+    util::{ReportErr, VolumePanning},
 };
 use ipfs::IpfsAssetServer;
 use scene_runner::{ContainingScene, SceneEntity};
@@ -138,12 +138,12 @@ pub struct AudioGraphHtmlElements {
 
 impl AudioGraphHtmlElements {
     pub fn stop(&self, now: f64) {
-        let _ = self
-            .gain_node
+        self.gain_node
             .gain()
-            .linear_ramp_to_value_at_time(0.0, now + 0.01);
+            .linear_ramp_to_value_at_time(0.0, now + 0.01)
+            .report();
         let node: &AudioScheduledSourceNode = self.source_node.as_ref();
-        let _ = node.stop_with_when(now + 0.01);
+        node.stop_with_when(now + 0.01).report();
     }
 }
 
@@ -200,8 +200,8 @@ fn manage_audio_sources(
         let existing = match prev_instances.remove(&ent) {
             Some((id, instance)) => {
                 if id == emitter.handle.id()
-                    && emitter.seek_time.is_none()
-                    && instance.elapsed_time < instance.duration
+                    && !(emitter.is_changed() && emitter.seek_time.is_some())
+                    && (emitter.r#loop || instance.elapsed_time < instance.duration)
                 {
                     // reuse existing only if same source AND still playing
                     Some(&mut audio.graphs.entry(ent).insert((id, instance)).into_mut().1)

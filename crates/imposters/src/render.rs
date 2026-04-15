@@ -18,10 +18,10 @@ use bevy::{
 use boimp::{bake::ImposterBakeMaterialPlugin, render::Imposter, ImposterLoaderSettings};
 use common::{
     sets::SceneSets,
-    structs::{AppConfig, DebugInfo, PrimaryCamera, PrimaryUser},
-    util::{TaskCompat, TaskExt},
+    structs::{AppConfig, CurrentRealm, DebugInfo, PrimaryCamera, PrimaryUser},
+    util::{TaskCompat, TaskExt, TryPushChildrenEx},
 };
-use ipfs::{CurrentRealm, IpfsAssetServer};
+use ipfs::IpfsAssetServer;
 
 use scene_runner::{
     initialize_scene::{
@@ -946,9 +946,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                                         alpha: 1.0,
                                         alpha_blend: 0.0, // blend
                                         multisample_amount: 0.0,
-                                        transfer_priority: RenderAssetTransferPriority::Priority(
-                                            -1,
-                                        ),
+                                        transfer_priority: RenderAssetTransferPriority::Immediate,
                                         asset_usages: RenderAssetUsages::RENDER_WORLD,
                                     }
                                 },
@@ -1128,7 +1126,7 @@ fn load_imposters(
                 continue;
             }
             ImposterState::Pending(error) => {
-                commands.entity(entity).insert(RetryImposter(error));
+                commands.entity(entity).try_insert(RetryImposter(error));
                 continue;
             }
             ImposterState::Ready(imposter, floor) => {
@@ -1141,7 +1139,7 @@ fn load_imposters(
             }
             ImposterState::PendingWithPrevious(ents, error) => {
                 for prev_child in ents {
-                    commands.entity(prev_child).insert(ChildOf(entity));
+                    commands.entity(prev_child).try_insert(ChildOf(entity));
 
                     // if let Ok(children) = _children.get(prev_child) {
                     //     for child in children {
@@ -1151,7 +1149,7 @@ fn load_imposters(
                     //     }
                     // }
                 }
-                commands.entity(entity).insert(RetryImposter(error));
+                commands.entity(entity).try_insert(RetryImposter(error));
                 continue;
             }
         };
@@ -1165,7 +1163,7 @@ fn load_imposters(
             }
             commands
                 .entity(entity)
-                .insert((RetryImposter(error), SubstituteImposter(scene_imposter)));
+                .try_insert((RetryImposter(error), SubstituteImposter(scene_imposter)));
         }
 
         commands.entity(entity).despawn_related::<Children>();
@@ -1189,13 +1187,14 @@ fn load_imposters(
         commands
             .entity(entity)
             .despawn_related::<Children>()
-            .with_children(|c| {
+            .try_with_children(|c| {
                 if let Some((imposter, spec)) = maybe_imposter {
                     let (mesh, aabb) = if error == 0 {
                         (imposter_meshes.cube.clone(), imposter_meshes.aabb)
                     } else {
-                        let mesh = ImposterMesh::from_spec(&spec, base_imposter);
+                        let mut mesh = ImposterMesh::from_spec(&spec, base_imposter);
                         let aabb = mesh.compute_aabb().unwrap();
+                        mesh.transfer_priority = RenderAssetTransferPriority::Immediate;
 
                         (meshes.add(mesh), aabb)
                     };
@@ -1251,7 +1250,7 @@ fn load_imposters(
                             uv[1] = 0.0 / 18.0
                                 + 17.0 / 18.0 * (1.0 - bottomleft.y - (1.0 - uv[1]) * parcel_size);
                         }
-                        floor.transfer_priority = RenderAssetTransferPriority::Priority(-1);
+                        floor.transfer_priority = RenderAssetTransferPriority::Immediate;
 
                         meshes.add(floor)
                     };

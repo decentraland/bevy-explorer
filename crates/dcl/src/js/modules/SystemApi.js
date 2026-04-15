@@ -315,6 +315,16 @@ module.exports.setMicEnabled = function(enabled) {
     Deno.core.ops.op_set_mic_enabled(enabled);
 }
 
+// [{ userId: string, hideAvatar: bool, hideProfile: bool }]
+module.exports.getAvatarModifiers = async function() {
+    return await Deno.core.ops.op_get_avatar_modifiers();
+}
+
+// Returns key-value params passed via --params (desktop) or URL query string (web)
+module.exports.getParams = async function() {
+    return await Deno.core.ops.op_get_params();
+}
+
 // get voice stream / mic activations as a stream
 // type MicActivation = {
 //   senderAddress: string,
@@ -326,6 +336,50 @@ module.exports.getVoiceStream = async function() {
   async function* streamGenerator() {
     while (true) {
       const next = await Deno.core.ops.op_read_voice_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}
+
+// get hover events as a stream
+// type HoverAction = {
+//   enabled: bool,
+//   ...pb_pointer_events::Entry
+// }
+// type HoverEvent = {
+//   entered: bool,
+//   targetType: PointerTargetType, 0 = world, 1 = ui, 2 = avatar
+//   actions: HoverAction[],
+// }
+module.exports.getHoverStream = async function() {
+  const rid = await Deno.core.ops.op_get_hover_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_hover_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}
+
+// get scene loading UI state as a stream
+// type SceneLoadingUi = {
+//   visible: boolean,
+//   title: string,
+//   pendingAssets: number | null,
+// }
+module.exports.getSceneLoadingUIStream = async function() {
+  const rid = await Deno.core.ops.op_get_scene_loading_ui_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_scene_loading_ui_stream(rid);
       if (next === null) break;
       yield next;
     }

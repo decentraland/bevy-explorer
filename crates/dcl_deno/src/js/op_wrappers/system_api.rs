@@ -8,10 +8,11 @@ use dcl_component::proto_components::{
     sdk::components::{PbAvatarBase, PbAvatarEquippedData},
 };
 use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
+use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
-    settings::SettingInfo, ChatMessage, HomeScene, LiveSceneInfo, PermanentPermissionItem,
-    PermissionRequest, VoiceMessage,
+    settings::SettingInfo, AvatarModifierState, ChatMessage, HomeScene, HoverEvent, LiveSceneInfo,
+    PermanentPermissionItem, PermissionRequest, SceneLoadingUi, VoiceMessage,
 };
 
 // list of op declarations
@@ -59,6 +60,12 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_set_mic_enabled(),
             op_get_voice_stream(),
             op_read_voice_stream(),
+            op_get_hover_stream(),
+            op_read_hover_stream(),
+            op_get_scene_loading_ui_stream(),
+            op_read_scene_loading_ui_stream(),
+            op_get_avatar_modifiers(),
+            op_get_params(),
         ]
     } else {
         Vec::default()
@@ -359,4 +366,48 @@ pub async fn op_read_voice_stream(
     rid: u32,
 ) -> Result<Option<VoiceMessage>, deno_core::anyhow::Error> {
     dcl::js::system_api::op_read_voice_stream(state, rid).await
+}
+
+#[op2(async)]
+pub async fn op_get_hover_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_hover_stream(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_hover_stream(
+    state: Rc<RefCell<OpState>>,
+    rid: u32,
+) -> Result<Option<HoverEvent>, deno_core::anyhow::Error> {
+    dcl::js::system_api::op_read_hover_stream(state, rid).await
+}
+
+#[op2(async)]
+pub async fn op_get_scene_loading_ui_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_scene_loading_ui_stream(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_scene_loading_ui_stream(
+    state: Rc<RefCell<OpState>>,
+    rid: u32,
+) -> Result<Option<SceneLoadingUi>, deno_core::anyhow::Error> {
+    dcl::js::system_api::op_read_scene_loading_ui_stream(state, rid).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_avatar_modifiers(
+    state: Rc<RefCell<OpState>>,
+) -> Result<Vec<AvatarModifierState>, anyhow::Error> {
+    dcl::js::system_api::op_get_avatar_modifiers(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_params(
+    state: Rc<RefCell<OpState>>,
+) -> Result<HashMap<String, String>, anyhow::Error> {
+    dcl::js::system_api::op_get_params(state).await
 }

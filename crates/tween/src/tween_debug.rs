@@ -1,5 +1,3 @@
-#[cfg(feature = "adr285")]
-use std::f32::consts::FRAC_2_PI;
 use std::fmt::Debug;
 
 use bevy::{

@@ -49,6 +49,15 @@ pub struct LivekitAudioManager {
     manager: AudioManager,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, States)]
+pub enum ConnectionAvailability {
+    #[default]
+    Available,
+    /// If client is disconnected from room due to duplicate identity
+    /// or from being kicked, client won't try connecting again
+    Unavailable,
+}
+
 #[macro_export]
 macro_rules! make_hooks {
     ($inserted:ty, ($($to_remove:ty),+)) => {

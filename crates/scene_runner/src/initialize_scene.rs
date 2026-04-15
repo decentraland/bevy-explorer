@@ -3,16 +3,24 @@ use std::{borrow::Borrow, collections::VecDeque, num::ParseIntError, str::FromSt
 use analytics::segment_system::SegmentConfig;
 use bevy::{
     asset::{io::Reader, AssetLoader, LoadContext},
+    diagnostic::FrameCount,
     math::{FloatOrd, Vec3Swizzles},
     pbr::NotShadowCaster,
     platform::collections::{HashMap, HashSet},
     prelude::*,
     reflect::TypePath,
-    render::render_resource::{AsBindGroup, ShaderRef},
+    render::{
+        primitives::Aabb,
+        render_resource::{AsBindGroup, ShaderRef},
+    },
 };
 
 use common::{
-    structs::{AppConfig, AppError, IVec2Arg, PreviewMode, SceneLoadDistance, SceneMeta},
+    sets::RealmLifecycle,
+    structs::{
+        AppConfig, AppError, CurrentRealm, GlobalCrdtStateUpdate, IVec2Arg, PreviewMode,
+        SceneLoadDistance, SceneMeta, SceneTime,
+    },
     util::{TaskExt, TryPushChildrenEx},
 };
 use comms::global_crdt::GlobalCrdtState;
@@ -26,8 +34,8 @@ use dcl_component::{
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
 use ipfs::{
-    ipfs_path::IpfsPath, ActiveEntityTask, CurrentRealm, EntityDefinition, IpfsAssetServer,
-    RealmInitialLocation, SceneIpfsLocation, SceneJsFile,
+    ipfs_path::IpfsPath, ActiveEntityTask, EntityDefinition, IpfsAssetServer, RealmInitialLocation,
+    SceneIpfsLocation, SceneJsFile,
 };
 use scene_material::BoundRegion;
 use system_bridge::{LiveSceneInfo, SystemApi, SystemBridge};
@@ -102,7 +110,8 @@ impl Plugin for SceneLifecyclePlugin {
                 load_active_entities,
                 process_scene_lifecycle,
             )
-                .chain(),
+                .chain()
+                .in_set(RealmLifecycle),
         );
     }
 }
@@ -116,7 +125,10 @@ pub enum SceneLoading {
     MainCrdt {
         crdt: Option<Handle<SerializedCrdtStore>>,
     },
-    Javascript(Option<tokio::sync::broadcast::Receiver<Vec<u8>>>),
+    Javascript {
+        global_updates: Option<tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>>,
+        scene_origin: Vec3,
+    },
     Failed,
 }
 
@@ -127,6 +139,10 @@ pub struct SceneEntityDefinitionHandle(pub Handle<EntityDefinition>);
 pub struct SceneInitialData {
     pub js: Handle<SceneJsFile>,
 }
+
+/// Marker component for grid planes that are part of preview mode
+#[derive(Component)]
+struct PreviewGridPlane;
 
 pub(crate) fn load_scene_entity(
     mut commands: Commands,
@@ -236,6 +252,7 @@ pub(crate) fn load_scene_javascript(
     global_scene: Res<GlobalCrdtState>,
     portable_scenes: Res<PortableScenes>,
     realm: Res<CurrentRealm>,
+    frame: Res<FrameCount>,
 ) {
     for (root, state, h_scene) in loading_scenes
         .iter()
@@ -366,12 +383,22 @@ pub(crate) fn load_scene_javascript(
             }
         };
 
+        if let Some(fixed_time) = meta
+            .skybox_config
+            .and_then(|skybox_config| skybox_config.fixed_time)
+        {
+            commands
+                .entity(root)
+                .try_insert(SceneTime { time: fixed_time });
+        }
+
         info!("{root:?}: started scene (location: {base:?}, scene thread id: {scene_id:?}, is sdk7: {is_sdk7:?}), storage root: {storage_root}");
         let mut renderer_context = RendererSceneContext::new(
             scene_id,
             definition.id.clone(),
             storage_root,
             portable.is_some(),
+            frame.0,
             title,
             base,
             parcels,
@@ -387,8 +414,10 @@ pub(crate) fn load_scene_javascript(
 
         scene_updates.scene_ids.insert(scene_id, root);
 
-        // start from the global shared crdt state
-        let (mut initial_crdt, global_updates) = global_scene.subscribe();
+        // start from the global shared crdt state, with position data localized for this scene
+        // Scene origin in DCL proto-space (z-forward, matching proto Vector3 coordinates)
+        let scene_origin = Vec3::new(initial_position.x, 0.0, initial_position.y);
+        let (mut initial_crdt, global_updates) = global_scene.subscribe(scene_origin);
 
         // set the world origin (for parents of world-space entities, using world-space coords as local coords)
         let mut buf = Vec::new();
@@ -432,8 +461,13 @@ pub(crate) fn load_scene_javascript(
 
         if let Some(serialized_crdt) = maybe_serialized_crdt {
             // add main.crdt
-            let mut context =
-                CrdtContext::new(scene_id, renderer_context.hash.clone(), false, false);
+            let mut context = CrdtContext::new(
+                scene_id,
+                renderer_context.hash.clone(),
+                renderer_context.title.clone(),
+                false,
+                false,
+            );
             let mut stream = DclReader::new(&serialized_crdt);
             initial_crdt.process_message_stream(
                 &mut context,
@@ -503,7 +537,10 @@ pub(crate) fn load_scene_javascript(
 
         commands.entity(root).try_insert((
             SceneInitialData { js: h_code },
-            SceneLoading::Javascript(Some(global_updates)),
+            SceneLoading::Javascript {
+                global_updates: Some(global_updates),
+                scene_origin,
+            },
         ));
     }
 }
@@ -572,9 +609,10 @@ pub(crate) fn initialize_scene(
     testing_data: Res<TestingData>,
     preview_mode: Res<PreviewMode>,
     su_bridge: Res<SystemBridge>,
+    time: Res<Time>,
 ) {
     for (root, mut state, initial_data, mut context, super_user) in loading_scenes.iter_mut() {
-        if !matches!(state.as_mut(), SceneLoading::Javascript(_)) || context.tick_number != 1 {
+        if !matches!(state.as_mut(), SceneLoading::Javascript { .. }) || context.tick_number != 1 {
             continue;
         }
 
@@ -602,11 +640,13 @@ pub(crate) fn initialize_scene(
 
         let thread_sx = scene_updates.sender.clone();
 
-        let global_updates = match *state {
-            SceneLoading::Javascript(ref mut global_updates) => global_updates.take(),
+        let (global_updates, scene_origin) = match *state {
+            SceneLoading::Javascript {
+                ref mut global_updates,
+                scene_origin,
+            } => (global_updates.take().unwrap(), scene_origin),
             _ => panic!("bad state"),
-        }
-        .unwrap();
+        };
 
         let crdt_component_interfaces = CrdtComponentInterfaces(HashMap::from_iter(
             crdt_component_interfaces
@@ -615,31 +655,38 @@ pub(crate) fn initialize_scene(
                 .map(|(id, interface)| (*id, interface.crdt_type())),
         ));
 
-        let scene_id = context.scene_id;
-
         let inspected = testing_data
             .inspect_hash
             .as_ref()
             .is_some_and(|inspect_hash| inspect_hash == &context.hash);
 
+        let scene_context = CrdtContext::new(
+            context.scene_id,
+            context.hash.clone(),
+            context.title.clone(),
+            testing_data.test_mode,
+            preview_mode.is_preview,
+        );
+
         let main_sx = spawn_scene(
             context.crdt_store.clone(),
-            context.hash.clone(),
+            scene_context,
             js_file.clone(),
             crdt_component_interfaces,
             thread_sx,
             global_updates,
-            scene_id,
             context.storage_root.clone(),
             inspected,
-            testing_data.test_mode,
-            preview_mode.is_preview,
             super_user.map(|_| su_bridge.sender.clone()),
+            scene_origin,
         );
 
         // mark context as in flight so we wait for initial RPC requests
         context.in_flight = true;
         context.inspected = inspected;
+        // set last_sent so the scene doesn't get extreme starvation priority
+        // when it first becomes eligible after initialization completes
+        context.last_sent = time.elapsed_secs();
 
         commands
             .entity(root)
@@ -694,6 +741,10 @@ impl ScenePointers {
     }
 
     pub fn get(&self, parcel: impl Borrow<IVec2>) -> Option<&PointerResult> {
+        if self.realm_bounds.0.cmpgt(self.realm_bounds.1).any() {
+            // Invalid realm or still being loaded
+            return None;
+        }
         let parcel: &IVec2 = parcel.borrow();
         if parcel.cmplt(self.realm_bounds.0).any() || parcel.cmpgt(self.realm_bounds.1).any() {
             return Some(&PointerResult::NOTHING);
@@ -969,10 +1020,8 @@ fn load_active_entities(
 
         // set current realm and clear
         // take map bounds
-        let (mut bounds_min, mut bounds_max) = current_realm
-            .config
-            .map
-            .as_ref()
+        let map_data = current_realm.config.map.as_ref();
+        let (mut bounds_min, mut bounds_max) = map_data
             .map(|data| data.sizes.iter())
             .unwrap_or_default()
             .fold((IVec2::MAX, IVec2::MIN), |(min, max), region| {
@@ -1009,9 +1058,13 @@ fn load_active_entities(
                 // take nearest parcel to current that is within map bounds
                 if let Ok((player_entity, player_transform)) = player.single() {
                     if let Ok(mut commands) = commands.get_entity(player_entity) {
-                        let initial_parcel = vec3_to_parcel(player_transform.translation());
-                        let parcel = initial_parcel.clamp(bounds_min, bounds_max);
-                        commands.insert(teleport_components(parcel));
+                        let parcel = if bounds_min.cmple(bounds_max).all() {
+                            let initial_parcel = vec3_to_parcel(player_transform.translation());
+                            initial_parcel.clamp(bounds_min, bounds_max)
+                        } else {
+                            Default::default()
+                        };
+                        commands.try_insert(teleport_components(parcel));
                         debug!(
                             "change to no scene realm -> none ({} in {}/{} = {})",
                             vec3_to_parcel(player_transform.translation()),
@@ -1144,7 +1197,7 @@ fn load_active_entities(
                         .ok()
                         .and_then(|(p, _)| commands.get_entity(p).ok())
                     {
-                        commands.insert(teleport_components(*parcel));
+                        commands.try_insert(teleport_components(*parcel));
                         debug!("already got the hash -> none");
                         *teleport_target = RealmInitialLocation::None;
                     }
@@ -1226,12 +1279,17 @@ fn load_active_entities(
         for active_entity in retrieved_parcels {
             // TODO check for portables
 
-            let Some(meta) = active_entity
-                .metadata
-                .and_then(|meta| serde_json::from_value::<SceneMeta>(meta).ok())
-            else {
-                warn!("active entity scene.json did not resolve to expected format");
+            let Some(active_entity_metadata) = active_entity.metadata else {
+                debug!("Active entity did not have any metadata.");
                 continue;
+            };
+
+            let meta = match serde_json::from_value::<SceneMeta>(active_entity_metadata) {
+                Ok(metadata) => metadata,
+                Err(err) => {
+                    error!("Failed to deserialize active entity metadata due to '{err}'.");
+                    continue;
+                }
             };
 
             let mut urn = urn_lookup.remove(&active_entity.id);
@@ -1266,7 +1324,7 @@ fn load_active_entities(
             {
                 if let Ok(mut commands) = commands.get_entity(player_entity) {
                     let parcel = parcels.first().copied().unwrap_or_default();
-                    commands.insert(teleport_components(parcel));
+                    commands.try_insert(teleport_components(parcel));
                     debug!("resolved the target -> none (@ {parcel})");
                 }
                 *teleport_target = RealmInitialLocation::None;
@@ -1570,6 +1628,11 @@ fn animate_ready_scene(
                     children.push(
                         commands
                             .spawn((
+                                PreviewGridPlane,
+                                Aabb::from_min_max(
+                                    Vec3::new(-PARCEL_SIZE / 2., -PARCEL_SIZE / 2., 0.),
+                                    Vec3::new(PARCEL_SIZE / 2., PARCEL_SIZE / 2., 0.),
+                                ),
                                 Mesh3d(handles.as_ref().unwrap().0.clone()),
                                 MeshMaterial3d(handles.as_ref().unwrap().1.clone()),
                                 Transform::from_translation(

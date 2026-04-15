@@ -9,7 +9,7 @@ use bevy::{
 };
 use dcl::interface::CrdtType;
 use ethers_core::types::Address;
-use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer, IpfsIo, TypedIpfsRef};
+use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer, IpfsIo};
 use multihash_codetable::MultihashDigest;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -21,7 +21,7 @@ use super::{
     NetworkMessage, Transport,
 };
 use common::{
-    profile::{AvatarSnapshots, LambdaProfiles, SerializedProfile},
+    profile::{LambdaProfiles, SerializedProfile},
     rpc::RpcEventSender,
     sets::SceneSets,
     structs::PrimaryUser,
@@ -156,10 +156,9 @@ pub fn setup_primary_profile(
     transports: Query<&Transport>,
     mut senders: Local<Vec<RpcEventSender>>,
     mut subscribe_events: EventReader<RpcCall>,
-    mut deploy_task: Local<Option<(u32, Task<Result<Option<(String, String)>, anyhow::Error>>)>>,
+    mut deploy_task: Local<Option<(u32, Task<Result<(), anyhow::Error>>)>>,
     wallet: Res<Wallet>,
     ipfas: IpfsAssetServer,
-    images: Res<Assets<Image>>,
     mut global_crdt: ResMut<GlobalCrdtState>,
     mut cache: ProfileManager,
     mut last_announce: Local<f32>,
@@ -232,21 +231,7 @@ pub fn setup_primary_profile(
                 let wallet = wallet.clone();
                 *deploy_task = Some((
                     profile.version,
-                    IoTaskPool::get().spawn_compat(deploy_profile(
-                        ipfs,
-                        wallet,
-                        profile,
-                        current_profile.snapshots.as_ref().and_then(|sn| {
-                            if let (Some(face), Some(body)) = (
-                                images.get(sn.0.id()).cloned(),
-                                images.get(sn.1.id()).cloned(),
-                            ) {
-                                Some((face, body))
-                            } else {
-                                None
-                            }
-                        }),
-                    )),
+                    IoTaskPool::get().spawn_compat(deploy_profile(ipfs, wallet, profile)),
                 ));
                 current_profile.is_deployed = true;
             }
@@ -272,24 +257,8 @@ pub fn setup_primary_profile(
 
     if let Some((version, mut task)) = deploy_task.take() {
         match task.complete() {
-            Some(Ok(None)) => {
+            Some(Ok(())) => {
                 info!("deployed profile ok");
-                commands.send_event(ProfileDeployedEvent {
-                    version,
-                    success: true,
-                });
-            }
-            Some(Ok(Some((face256, body)))) => {
-                info!("deployed profile ok (with snapshots)");
-                current_profile
-                    .profile
-                    .as_mut()
-                    .unwrap()
-                    .content
-                    .avatar
-                    .snapshots = Some(AvatarSnapshots { face256, body });
-                current_profile.snapshots = None;
-                cache.update(current_profile.profile.clone().unwrap());
                 commands.send_event(ProfileDeployedEvent {
                     version,
                     success: true,
@@ -541,7 +510,6 @@ pub struct Deployment<'a> {
     ty: &'a str,
     pointers: Vec<String>,
     timestamp: u128,
-    content: Vec<TypedIpfsRef>,
     metadata: serde_json::Value,
 }
 
@@ -555,64 +523,19 @@ async fn deploy_profile(
     ipfs: Arc<IpfsIo>,
     wallet: Wallet,
     mut profile: UserProfile,
-    snapshots: Option<(Image, Image)>,
-) -> Result<Option<(String, String)>, anyhow::Error> {
-    let snap_details = if let Some((face, body)) = snapshots {
-        let process = |img: Image| -> Result<_, anyhow::Error> {
-            let img = img.clone().try_into_dynamic()?;
-            let mut cursor = std::io::Cursor::new(Vec::default());
-            img.write_to(&mut cursor, image::ImageFormat::Png)?;
-            let bytes = cursor.into_inner();
-            let hash = multihash_codetable::Code::Sha2_256.digest(bytes.as_slice());
-            let cid = cid::Cid::new_v1(0x55, hash).to_string();
-            Ok((bytes, cid))
-        };
-
-        let (face_bytes, face_cid) = process(face)?;
-        let (body_bytes, body_cid) = process(body)?;
-
-        profile.content.avatar.snapshots = Some(AvatarSnapshots {
-            face256: face_cid.clone(),
-            body: body_cid.clone(),
-        });
-        Some((face_bytes, face_cid, body_bytes, body_cid))
-    } else {
-        None
-    };
-
+) -> Result<(), anyhow::Error> {
     let unix_time = web_time::SystemTime::now()
         .duration_since(web_time::UNIX_EPOCH)
         .unwrap()
         .as_millis();
 
-    let snapshots = profile
-        .content
-        .avatar
-        .snapshots
-        .as_mut()
-        .ok_or(anyhow!("no snapshots"))?;
-    if let Some(hash) = snapshots.body.rsplit('/').nth(1).map(ToOwned::to_owned) {
-        snapshots.body = hash;
-    }
-    if let Some(hash) = snapshots.face256.rsplit('/').nth(1).map(ToOwned::to_owned) {
-        snapshots.face256 = hash;
-    }
+    profile.content.avatar.snapshots = None;
 
     let deployment = serde_json::to_string(&Deployment {
         version: "v3",
         ty: "profile",
         pointers: vec![profile.content.eth_address.clone()],
         timestamp: unix_time,
-        content: vec![
-            TypedIpfsRef {
-                file: "body.png".to_owned(),
-                hash: snapshots.body.clone(),
-            },
-            TypedIpfsRef {
-                file: "face256.png".to_owned(),
-                hash: snapshots.face256.clone(),
-            },
-        ],
         metadata: serde_json::json!({
             "avatars": [
                 profile.content
@@ -637,23 +560,6 @@ async fn deploy_profile(
             None,
         );
 
-        if let Some((face_bytes, face_cid, body_bytes, body_cid)) = snap_details.clone() {
-            debug!("deplying profile face: {face_cid}");
-            form_data.add_stream(
-                face_cid,
-                std::io::Cursor::new(face_bytes),
-                Option::<&str>::None,
-                None,
-            );
-            debug!("deplying profile body: {body_cid}");
-            form_data.add_stream(
-                body_cid,
-                std::io::Cursor::new(body_bytes),
-                Option::<&str>::None,
-                None,
-            );
-        }
-
         let mut prepared = form_data.prepare()?;
         let mut prepared_data = Vec::default();
         prepared.read_to_end(&mut prepared_data)?;
@@ -675,7 +581,7 @@ async fn deploy_profile(
     let response = post.send().await?;
 
     match response.status() {
-        StatusCode::OK => Ok(snap_details.map(|(_, face_cid, _, body_cid)| (face_cid, body_cid))),
+        StatusCode::OK => Ok(()),
         _ => Err(anyhow!(
             "bad response: {}: {}",
             response.status(),
@@ -697,12 +603,19 @@ pub async fn get_remote_profile(
 
     let response = ipfs
         .client()
-        .get(format!("{endpoint}/profiles/{address:#x}"))
+        .post("https://asset-bundle-registry.decentraland.org/profiles")
+        .body(format!("{{ \"ids\": [\"{:#x}\"] }}", address))
+        .header("content-type", "application/json")
         .send()
         .await?;
-    let content = response
-        .json::<LambdaProfiles>()
-        .await?
+
+    let mut content = response.json::<Vec<LambdaProfiles>>().await.unwrap();
+    if content.is_empty() {
+        anyhow::bail!("not found");
+    }
+
+    let content = content
+        .remove(0)
         .avatars
         .into_iter()
         .next()

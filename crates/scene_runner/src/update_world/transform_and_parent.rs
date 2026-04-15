@@ -7,15 +7,16 @@ use bevy::{
         hash::FixedHasher,
     },
     prelude::*,
-    transform::TransformSystem,
+    transform::systems::{mark_dirty_trees, propagate_parent_transforms, sync_simple_transforms},
 };
 use common::{anim_last_system, util::ModifyComponentExt};
 use dcl::{crdt::lww::CrdtLWWState, interface::ComponentPosition};
 
 use crate::{
-    initialize_scene::process_scene_lifecycle, primary_entities::PrimaryEntities,
-    update_world::billboard::update_billboards, DeletedSceneEntities, RendererSceneContext,
-    SceneEntity, SceneLoopSchedule, TargetParent,
+    initialize_scene::process_scene_lifecycle,
+    primary_entities::PrimaryEntities,
+    update_world::{gltf_container::GltfLinkSet, visibility::VisibilityComponent},
+    DeletedSceneEntities, RendererSceneContext, SceneEntity, SceneLoopSchedule, TargetParent,
 };
 use common::sets::SceneLoopSets;
 use dcl_component::{
@@ -23,12 +24,39 @@ use dcl_component::{
     SceneEntityId,
 };
 
-use super::{gltf_container::GltfLinkSet, AddCrdtInterfaceExt, CrdtStateComponent};
+use super::{AddCrdtInterfaceExt, CrdtStateComponent};
 
 pub struct TransformAndParentPlugin;
 
+#[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
+pub enum PostUpdateSets {
+    EarlyTransformPropagate,
+    ColliderUpdate,
+    PlayerUpdate,
+    CameraUpdate,
+    AttachSync,
+    Billboard,
+}
+
 impl Plugin for TransformAndParentPlugin {
     fn build(&self, app: &mut App) {
+        app.configure_sets(
+            PostUpdate,
+            (
+                PostUpdateSets::EarlyTransformPropagate,
+                PostUpdateSets::ColliderUpdate,
+                PostUpdateSets::PlayerUpdate,
+                PostUpdateSets::CameraUpdate,
+                PostUpdateSets::AttachSync,
+                PostUpdateSets::Billboard,
+            )
+                .chain()
+                .after(GltfLinkSet)
+                .after(anim_last_system!())
+                .before(TransformSystem::TransformPropagate)
+                .before(process_scene_lifecycle),
+        );
+
         app.add_crdt_lww_interface::<DclTransformAndParent>(
             SceneComponentId::TRANSFORM,
             ComponentPosition::EntityOnly,
@@ -40,20 +68,26 @@ impl Plugin for TransformAndParentPlugin {
         app.add_systems(
             PostUpdate,
             (
-                parent_position_sync::<AvatarAttachStage>
-                    .after(anim_last_system!())
-                    .after(GltfLinkSet)
-                    .before(TransformSystem::TransformPropagate)
-                    .before(process_scene_lifecycle)
-                    .before(update_billboards),
-                parent_position_sync::<SceneProxyStage>
-                    .after(anim_last_system!())
-                    .after(GltfLinkSet)
-                    .after(parent_position_sync::<AvatarAttachStage>)
-                    .before(TransformSystem::TransformPropagate)
-                    .before(process_scene_lifecycle)
-                    .before(update_billboards),
-            ),
+                parent_position_sync::<AvatarAttachStage>,
+                parent_position_sync::<SceneProxyStage>,
+            )
+                .in_set(PostUpdateSets::AttachSync),
+        );
+
+        // rerun the entire transform tree update
+        // TODO efficiency, either:
+        // - make propagate_parent_transforms generic over TransformTreeChanged type?
+        // - only update things with colliders below?
+        // - manually calculate collider global transforms?
+        app.add_systems(
+            PostUpdate,
+            (
+                mark_dirty_trees,
+                propagate_parent_transforms,
+                sync_simple_transforms,
+            )
+                .chain()
+                .in_set(PostUpdateSets::EarlyTransformPropagate),
         );
     }
 }
@@ -221,7 +255,9 @@ pub(crate) fn process_transform_and_parent_updates(
                     );
                     // this entity (and all checked entities) link to the root
                     // apply parenting
-                    commands.entity(*entity).insert(ChildOf(parents[entity]));
+                    commands
+                        .entity(*entity)
+                        .try_insert(ChildOf(parents[entity]));
                     //  record validity of the chain
                     valid_entities.extend(checklist.into_iter());
                     // remove from the unparented list
@@ -230,7 +266,7 @@ pub(crate) fn process_transform_and_parent_updates(
                     debug!("{:?}: not valid, setting parent to {:?}", entity, root);
                     // this entity (and all checked entities) end in a cycle
                     // parent to the root
-                    commands.entity(*entity).insert(ChildOf(root));
+                    commands.entity(*entity).try_insert(ChildOf(root));
                     // mark as invalid
                     invalid_entities.extend(checklist.into_iter());
                     // keep the entity in the unparented list to recheck at the next hierarchy update
@@ -268,11 +304,17 @@ impl ParentPositionSyncStage for SceneProxyStage {}
 
 pub fn parent_position_sync<T: ParentPositionSyncStage>(
     mut commands: Commands,
-    syncees: Query<(Entity, &ParentPositionSync<T>, &ChildOf)>,
+    syncees: Query<(
+        Entity,
+        &ParentPositionSync<T>,
+        &ChildOf,
+        Option<&VisibilityComponent>,
+    )>,
     globals: Query<&GlobalTransform>,
     gt_helper: TransformHelperPub,
+    inherited_visibility: Query<&InheritedVisibility>,
 ) {
-    for (ent, sync, parent) in syncees.iter() {
+    for (ent, sync, parent, maybe_explicit_visibility) in syncees.iter() {
         let Ok(parent_transform) = globals.get(parent.parent()) else {
             continue;
         };
@@ -282,10 +324,25 @@ pub fn parent_position_sync<T: ParentPositionSyncStage>(
         };
 
         let transform = gt.reparented_to(parent_transform);
+        let maybe_override_visibility = if maybe_explicit_visibility.is_some() {
+            None
+        } else {
+            let inherited_visibility = inherited_visibility.get(sync.0).unwrap();
+
+            Some(match inherited_visibility.get() {
+                true => Visibility::Visible,
+                false => Visibility::Hidden,
+            })
+        };
 
         commands
             .entity(ent)
-            .modify_component(move |t: &mut Transform| *t = transform.with_scale(t.scale));
+            .modify_component(move |t: &mut Transform| *t = transform.with_scale(t.scale))
+            .modify_component(move |v: &mut Visibility| {
+                if let Some(override_visibility) = maybe_override_visibility {
+                    *v = override_visibility;
+                }
+            });
     }
 }
 

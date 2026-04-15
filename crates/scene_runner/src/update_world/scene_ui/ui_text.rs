@@ -4,13 +4,15 @@ use bevy::{
     text::{cosmic_text::Cursor, ComputedTextBlock},
     window::PrimaryWindow,
 };
+use common::util::TryPushChildrenEx;
 use dcl_component::proto_components::{
     sdk::components::{self, PbUiText},
     Color4DclToBevy,
 };
 
 use crate::{
-    update_scene::pointer_results::UiPointerTarget, update_world::text_shape::make_text_section,
+    update_scene::pointer_results::UiPointerTarget,
+    update_world::text_shape::{make_text_section, UnrecognisedTags},
     SceneEntity,
 };
 
@@ -90,6 +92,7 @@ pub fn set_ui_text(
     children: Query<&Children>,
     prev_texts: Query<&UiTextMarker>,
     mut node_style: Query<&mut Node>,
+    mut unrecognized_tags: ResMut<UnrecognisedTags>,
 ) {
     for ent in removed.read() {
         let Ok(link) = links.get(ent) else {
@@ -134,6 +137,7 @@ pub fn set_ui_text(
             ui_text.font,
             ui_text.h_align,
             ui_text.wrapping,
+            &mut unrecognized_tags,
         );
 
         // with text nodes the axis sizes are unusual.
@@ -219,11 +223,11 @@ pub fn set_ui_text(
                 },
                 UiTextMarker,
             ))
-            .with_children(|c| {
-                c.spawn(inner_style).with_children(|c| {
+            .try_with_children(|c| {
+                c.spawn(inner_style).try_with_children(|c| {
                     let mut inner_child = c.spawn((text, ZIndex(1)));
                     if !links.is_empty() {
-                        inner_child.insert((
+                        inner_child.try_insert((
                             Interaction::default(),
                             TextLinks {
                                 links,
@@ -303,14 +307,10 @@ impl TextPositionFinder<'_, '_> {
             line = 0;
 
             let len = parts.next().unwrap().len();
-            if len > index {
-                return Some((entity, span_index, entity_line_offset + index));
+            if len > index || parts.next().is_some() {
+                return Some((entity, span_index, entity_line_offset + index.min(len)));
             } else {
                 index -= len;
-            }
-
-            if parts.next().is_some() {
-                panic!();
             }
         }
 

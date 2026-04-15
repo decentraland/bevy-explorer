@@ -12,7 +12,7 @@ use bevy::{
     asset::{LoadState, RenderAssetTransferPriority},
     gltf::{Gltf, GltfExtras, GltfLoaderSettings},
     pbr::{ExtendedMaterial, NotShadowCaster},
-    platform::collections::HashMap,
+    platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
         mesh::{skinning::SkinnedMesh, Indices, VertexAttributeValues},
@@ -27,7 +27,7 @@ use common::{
     structs::{AppConfig, PrimaryUser},
     util::{ModifyComponentExt, SceneSpawnerPlus},
 };
-use rapier3d::prelude::*;
+use rapier3d_f64::prelude::*;
 use serde::Deserialize;
 
 use crate::{
@@ -546,7 +546,7 @@ fn update_ready_gltfs(
 
                     // retarget animations to our manually added root player
                     if let Some(target) = maybe_target {
-                        commands.entity(spawned_ent).insert(AnimationTarget {
+                        commands.entity(spawned_ent).try_insert(AnimationTarget {
                             player: bevy_scene_entity,
                             ..*target
                         });
@@ -556,7 +556,7 @@ fn update_ready_gltfs(
                     if maybe_player.is_some() {
                         if let Some(name) = maybe_name {
                             debug!("animator found on {name} node of {}", definition.0.src);
-                            // animation_roots.insert((spawned_ent, name.clone()));
+                            // animation_roots.try_insert((spawned_ent, name.clone()));
                             has_animations = true;
                             commands.entity(spawned_ent).remove::<AnimationPlayer>();
                             *tracker.0.entry("embedded://animations").or_default() += 1;
@@ -572,6 +572,11 @@ fn update_ready_gltfs(
                         error!("gltf contained mesh not loaded?!");
                         continue;
                     };
+
+                    if read_only_mesh_data.count_vertices() == 0 {
+                        commands.entity(spawned_ent).try_remove::<Mesh3d>();
+                        continue;
+                    }
 
                     // get or create hash
                     // note we must use the handle lookup rather than recomputing the hash as we may modify the mesh on first load,
@@ -625,7 +630,9 @@ fn update_ready_gltfs(
                     let (h_mesh, data) = if let Some((h_mesh, cached_data)) = existing_data {
                         if h_mesh.id() != h_gltf_mesh.0.id() {
                             // overwrite with cached handle
-                            commands.entity(spawned_ent).insert(Mesh3d(h_mesh.clone()));
+                            commands
+                                .entity(spawned_ent)
+                                .try_insert(Mesh3d(h_mesh.clone()));
                         }
                         (h_mesh, cached_data.clone())
                     } else {
@@ -747,8 +754,14 @@ fn update_ready_gltfs(
                                 failed.push((bevy_scene_entity, instance));
                                 break 'outer;
                             };
+
+                            // materials with anisotropy were causing issues
+                            // see https://github.com/decentraland/bevy-explorer/issues/424
+                            let mut base_clone = base.clone();
+                            base_clone.anisotropy_strength = 0.;
+
                             let h_scene_material = bound_mats.add(ExtendedMaterial {
-                                base: base.clone(),
+                                base: base_clone,
                                 extension: SceneBound::new(
                                     context.bounds.clone(),
                                     config.graphics.oob,
@@ -763,8 +776,8 @@ fn update_ready_gltfs(
                         };
                         commands
                             .entity(spawned_ent)
-                            .insert(MeshMaterial3d(h_scene_material))
-                            .insert(GltfMaterialName(material_name));
+                            .try_insert(MeshMaterial3d(h_scene_material))
+                            .try_insert(GltfMaterialName(material_name));
                     }
                     *tracker.0.entry("Materials").or_default() += 1;
 
@@ -804,11 +817,6 @@ fn update_ready_gltfs(
                         commands.entity(spawned_ent).remove::<Mesh3d>();
                     }
 
-                    // when `visible_meshes_collision_mask` is specified, we should treat all meshes as colliders but NOT make
-                    // them invisible, so we recalculate `is_collider` here
-                    let is_collider =
-                        is_collider || definition.0.visible_meshes_collision_mask.is_some();
-
                     // get specified or default collider bits
                     // try mesh node first
                     let collider_bits = maybe_extras
@@ -846,6 +854,11 @@ fn update_ready_gltfs(
                                     }
                                 })
                         });
+
+                    // when `visible_meshes_collision_mask` is specified, we should treat all meshes as colliders but NOT make
+                    // them invisible, so we recalculate `is_collider` here
+                    let is_collider =
+                        is_collider || definition.0.visible_meshes_collision_mask.is_some();
 
                     if is_collider && collider_bits != Some(0) {
                         let collider_bits = collider_bits.unwrap_or(
@@ -995,7 +1008,7 @@ fn update_ready_gltfs(
                         })
                         .collect(),
                 };
-                commands.entity(bevy_scene_entity).insert((
+                commands.entity(bevy_scene_entity).try_insert((
                     AnimationPlayer::default(),
                     AnimationGraphHandle(graphs.add(graph)),
                     animation_clips,
@@ -1143,7 +1156,7 @@ pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> SharedShape {
 
     let positions_parry: Vec<_> = positions_ref
         .iter()
-        .map(|pos| Point::from([pos[0], pos[1], pos[2]]))
+        .map(|pos| Point::from([pos[0] as f64, pos[1] as f64, pos[2] as f64]))
         .collect();
 
     let indices: Vec<u32> = match mesh_data.indices() {
@@ -1151,12 +1164,19 @@ pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> SharedShape {
         Some(Indices::U16(ixs)) => ixs.iter().map(|ix| *ix as u32).collect(),
         Some(Indices::U32(ixs)) => ixs.to_vec(),
     };
-    let indices_parry = indices
+    let indices_parry: Vec<_> = indices
         .chunks_exact(3)
         .map(|chunk| chunk.try_into().unwrap())
         .collect();
 
-    SharedShape::trimesh_with_flags(positions_parry, indices_parry, TriMeshFlags::empty()).unwrap()
+    SharedShape::trimesh_with_flags(
+        positions_parry,
+        indices_parry,
+        TriMeshFlags::DELETE_DEGENERATE_TRIANGLES
+            | TriMeshFlags::DELETE_DUPLICATE_TRIANGLES
+            | TriMeshFlags::DELETE_BAD_TOPOLOGY_TRIANGLES,
+    )
+    .unwrap()
 }
 
 #[derive(Component, Debug)]
@@ -1174,7 +1194,7 @@ impl From<PbGltfNodeModifiers> for GltfNodeModifiers {
 fn debug_modifiers(
     mut commands: Commands,
     q: Query<
-        (&GltfNodeModifiers, &GltfProcessed),
+        (&GltfNodeModifiers, &GltfProcessed, Option<&GltfDefinition>),
         Or<(Changed<GltfNodeModifiers>, Changed<GltfProcessed>)>,
     >,
     child_nodes: Query<
@@ -1187,8 +1207,24 @@ fn debug_modifiers(
     removed_q: Query<&GltfProcessed>,
     mut removed_components: RemovedComponents<GltfNodeModifiers>,
 ) {
-    for (modifiers, processed) in q {
-        let modifiers = modifiers
+    // turn Cube1_4 into Cube1/Primitive4
+    fn path_subsegments(segment: &str) -> Vec<String> {
+        let Some(last_underscore) = segment.rfind('_') else {
+            return vec![segment.to_owned()];
+        };
+
+        let Ok(number) = segment[last_underscore + 1..].parse::<usize>() else {
+            return vec![segment.to_owned()];
+        };
+
+        vec![
+            segment[..last_underscore].to_owned(),
+            format!("Primitive{number}"),
+        ]
+    }
+
+    for (modifiers, processed, def) in q {
+        let mut modifiers = modifiers
             .0
             .modifiers
             .iter()
@@ -1196,35 +1232,82 @@ fn debug_modifiers(
                 let path = if modifier.path.is_empty() {
                     None
                 } else {
-                    Some(modifier.path.as_str())
+                    Some(
+                        modifier
+                            .path
+                            .as_str()
+                            .split('/')
+                            .filter(|segment| !segment.is_empty())
+                            .flat_map(path_subsegments)
+                            .collect::<Vec<_>>(),
+                    )
                 };
 
-                (
-                    path,
-                    (modifier.cast_shadows.unwrap_or(true), &modifier.material),
-                )
+                (path, (modifier.cast_shadows, &modifier.material))
             })
-            .collect::<HashMap<_, _>>();
+            .collect::<Vec<_>>();
 
-        let mut found = false;
+        // sort by segment length to apply most specific last
+        modifiers.sort_by_key(|(path, _)| {
+            path.as_ref()
+                .map(|path| {
+                    (
+                        path.len(),
+                        path.iter().map(|segment| segment.len()).sum::<usize>(),
+                    )
+                })
+                .unwrap_or_default()
+        });
+
+        let mut unused = modifiers
+            .iter()
+            .flat_map(|(path, _)| path)
+            .collect::<HashSet<_>>();
 
         for (path, child) in processed.named_nodes.iter() {
             let Ok((existing_material, _)) = child_nodes.get(*child) else {
                 continue;
             };
 
-            found = true;
+            let node_path_components = path
+                .split('/')
+                .filter(|segment| !segment.is_empty())
+                .collect::<Vec<_>>();
 
-            let maybe_path_modifiers = modifiers
-                .get(&Some(path.as_str()))
-                .or_else(|| modifiers.get(&None));
+            commands.entity(*child).try_remove::<NotShadowCaster>();
 
-            if let Some((shadows, maybe_material)) = maybe_path_modifiers {
-                if !shadows {
-                    commands.entity(*child).try_insert(NotShadowCaster);
+            let mut material_modified = false;
+            for (modifier_path, (shadows, maybe_material)) in
+                modifiers.iter().filter(|(modifier_path_components, _)| {
+                    modifier_path_components
+                        .as_ref()
+                        .is_none_or(|modifier_path_components| {
+                            node_path_components
+                                .windows(modifier_path_components.len())
+                                .any(|window| {
+                                    window.iter().zip(modifier_path_components).all(
+                                        |(node_segment, modifier_segment)| {
+                                            node_segment == modifier_segment
+                                        },
+                                    )
+                                })
+                        })
+                })
+            {
+                if let Some(modifier_path) = modifier_path {
+                    unused.remove(modifier_path);
+                }
+
+                if let Some(shadows) = shadows {
+                    if *shadows {
+                        commands.entity(*child).try_remove::<NotShadowCaster>();
+                    } else {
+                        commands.entity(*child).try_insert(NotShadowCaster);
+                    }
                 }
 
                 if let Some(material) = maybe_material {
+                    material_modified = true;
                     if let Some(existing) = existing_material {
                         commands
                             .entity(*child)
@@ -1234,17 +1317,26 @@ fn debug_modifiers(
                         .entity(*child)
                         .try_insert(PbMaterialComponent(material.clone()));
                 }
-            } else {
+            }
+
+            if !material_modified {
                 commands
                     .entity(*child)
-                    .try_remove::<(NotShadowCaster, HiddenMaterial, PbMaterialComponent)>();
+                    .try_remove::<(HiddenMaterial, PbMaterialComponent)>();
+
                 if let Ok((_, Some(prev_material))) = child_nodes.get(*child) {
                     commands.entity(*child).try_insert(prev_material.0.clone());
                 }
             }
         }
 
-        debug!("applying GltfNodeModifiers (found a path match = {found}): {modifiers:?}");
+        if !unused.is_empty() {
+            warn!(
+                "no match for gltf modifiers {unused:?} in nodes {:?} from {:?}",
+                processed.named_nodes.keys().collect::<Vec<_>>(),
+                def.map(|d| &d.0.src)
+            )
+        }
     }
 
     for removed in removed_components.read() {
@@ -1432,7 +1524,7 @@ fn expose_gltfs(
 
             if maybe_gltf.is_some() {
                 // this is the gltf but it's not ready yet
-                commands.entity(ent).insert(GltfNodeRequestRetry);
+                commands.entity(ent).try_insert(GltfNodeRequestRetry);
                 break GltfLinkState::Pending;
             }
 
@@ -1503,7 +1595,7 @@ fn expose_gltfs(
 
                 if let Some(mesh) = maybe_mesh {
                     debug!("link mesh");
-                    commands.entity(ent).insert(mesh.clone());
+                    commands.entity(ent).try_insert(mesh.clone());
                     // write to scene
                     scene.update_crdt(
                         SceneComponentId::MESH_RENDERER,
@@ -1521,7 +1613,7 @@ fn expose_gltfs(
                 }
                 if let Some(skin) = maybe_skin {
                     debug!("link skin");
-                    commands.entity(ent).insert(skin.clone());
+                    commands.entity(ent).try_insert(skin.clone());
                 }
                 if let Some(collider) = maybe_collider {
                     debug!("link collider");
@@ -1529,9 +1621,9 @@ fn expose_gltfs(
                     commands
                         .entity(gltf_entity)
                         .remove::<MeshCollider<CtCollider>>()
-                        .insert(HiddenCollider::<CtCollider>(collider.clone()));
+                        .try_insert(HiddenCollider::<CtCollider>(collider.clone()));
                     // copy
-                    commands.entity(ent).insert(collider.clone());
+                    commands.entity(ent).try_insert(collider.clone());
                     // write to scene
                     scene.update_crdt(
                         SceneComponentId::MESH_COLLIDER,
@@ -1555,9 +1647,9 @@ fn expose_gltfs(
                     commands
                         .entity(gltf_entity)
                         .remove::<MeshCollider<CtTrigger>>()
-                        .insert(HiddenCollider::<CtTrigger>(trigger.clone()));
+                        .try_insert(HiddenCollider::<CtTrigger>(trigger.clone()));
                     // copy
-                    commands.entity(ent).insert(trigger.clone());
+                    commands.entity(ent).try_insert(trigger.clone());
                     // write to scene
                     // TODO: extend protocol to allow Gltf type for triggers
 
@@ -1583,12 +1675,12 @@ fn expose_gltfs(
                     commands
                         .entity(gltf_entity)
                         .remove::<MeshMaterial3d<SceneMaterial>>()
-                        .insert(HiddenMaterial(material.clone()));
+                        .try_insert(HiddenMaterial(material.clone()));
                     // copy
-                    commands.entity(ent).insert(material.clone());
+                    commands.entity(ent).try_insert(material.clone());
                     // set base
                     let base = mats.get(material.id()).unwrap();
-                    commands.entity(ent).insert(BaseMaterial {
+                    commands.entity(ent).try_insert(BaseMaterial {
                         material: base.base.clone(),
                         gltf: src.to_owned(),
                         name: maybe_mat_name.unwrap().0.clone(),
@@ -1617,9 +1709,9 @@ fn expose_gltfs(
                     commands
                         .entity(gltf_entity)
                         .remove::<PointLight>()
-                        .insert(HiddenPointLight(*point));
+                        .try_insert(HiddenPointLight(*point));
                     // copy
-                    commands.entity(ent).insert(LightSource {
+                    commands.entity(ent).try_insert(LightSource {
                         enabled: true,
                         intensity: Some(point.intensity / (4.0 * PI)),
                         shadow: Some(true),
@@ -1649,9 +1741,9 @@ fn expose_gltfs(
                     commands
                         .entity(gltf_entity)
                         .remove::<SpotLight>()
-                        .insert(HiddenSpotLight(*spot));
+                        .try_insert(HiddenSpotLight(*spot));
                     // copy
-                    commands.entity(ent).insert((LightSource {
+                    commands.entity(ent).try_insert((LightSource {
                         enabled: true,
                         intensity: Some(spot.intensity / (4.0 * PI)),
                         shadow: Some(true),
@@ -1682,7 +1774,7 @@ fn expose_gltfs(
                     );
                 }
 
-                commands.entity(ent).insert(SceneNodeLink {
+                commands.entity(ent).try_insert(SceneNodeLink {
                     gltf_entity,
                     gltf_parent,
                     scene_parent,
@@ -1753,31 +1845,31 @@ fn update_gltf_linked_transforms(
                 commands
                     .entity(gltf_entity)
                     .remove::<HiddenMaterial>()
-                    .insert(hidden.0.clone());
+                    .try_insert(hidden.0.clone());
             }
             if let Some(hidden) = maybe_hidden_collider {
                 commands
                     .entity(gltf_entity)
                     .remove::<HiddenCollider<CtCollider>>()
-                    .insert(hidden.0.clone());
+                    .try_insert(hidden.0.clone());
             }
             if let Some(hidden) = maybe_hidden_trigger {
                 commands
                     .entity(gltf_entity)
                     .remove::<HiddenCollider<CtTrigger>>()
-                    .insert(hidden.0.clone());
+                    .try_insert(hidden.0.clone());
             }
             if let Some(hidden) = maybe_hidden_point {
                 commands
                     .entity(gltf_entity)
                     .remove::<HiddenPointLight>()
-                    .insert(hidden.0);
+                    .try_insert(hidden.0);
             }
             if let Some(hidden) = maybe_hidden_spot {
                 commands
                     .entity(gltf_entity)
                     .remove::<HiddenSpotLight>()
-                    .insert(hidden.0);
+                    .try_insert(hidden.0);
             }
         };
 

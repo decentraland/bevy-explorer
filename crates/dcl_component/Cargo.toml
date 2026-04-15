@@ -12,6 +12,8 @@ social = ["dep:dcl-rpc"]
 bevy = { workspace = true }
 prost = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
 dcl-rpc = { workspace = true, optional = true }
 async-trait = { workspace = true }
 

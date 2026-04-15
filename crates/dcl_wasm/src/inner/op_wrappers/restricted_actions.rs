@@ -1,36 +1,38 @@
 use crate::{serde_result, WasmError, WorkerContext};
+use dcl_component::proto_components::common::Vector3 as DclVector3;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
-#[allow(clippy::too_many_arguments)]
-pub fn op_move_player_to(
+pub async fn op_move_player_to(
     op_state: &WorkerContext,
-    position_x: f32,
-    position_y: f32,
-    position_z: f32,
-    camera: bool,
-    maybe_camera_x: f32,
-    maybe_camera_y: f32,
-    maybe_camera_z: f32,
-    looking_at: bool,
-    maybe_looking_at_x: f32,
-    maybe_looking_at_y: f32,
-    maybe_looking_at_z: f32,
-) {
+    position: JsValue,
+    camera_target: JsValue,
+    avatar_target: JsValue,
+    duration: Option<f32>,
+) -> bool {
+    let position: DclVector3 = serde_wasm_bindgen::from_value(position).unwrap_or_default();
+    let camera_target: Option<DclVector3> = serde_wasm_bindgen::from_value(camera_target).ok();
+    let avatar_target: Option<DclVector3> = serde_wasm_bindgen::from_value(avatar_target).ok();
     dcl::js::restricted_actions::op_move_player_to(
-        &mut *op_state.state.borrow_mut(),
-        position_x,
-        position_y,
-        position_z,
-        camera,
-        maybe_camera_x,
-        maybe_camera_y,
-        maybe_camera_z,
-        looking_at,
-        maybe_looking_at_x,
-        maybe_looking_at_y,
-        maybe_looking_at_z,
-    );
+        op_state.rc(),
+        position,
+        camera_target,
+        avatar_target,
+        duration,
+    )
+    .await
+}
+
+#[wasm_bindgen]
+pub async fn op_walk_player_to(
+    op_state: &WorkerContext,
+    position: JsValue,
+    stop_threshold: f32,
+    timeout: Option<f32>,
+) -> bool {
+    let position: DclVector3 = serde_wasm_bindgen::from_value(position).unwrap_or_default();
+    dcl::js::restricted_actions::op_walk_player_to(op_state.rc(), position, stop_threshold, timeout)
+        .await
 }
 
 #[wasm_bindgen]

@@ -108,7 +108,7 @@ use dcl_component::{
     },
     SceneComponentId,
 };
-use ui_core::{ui_builder::SpawnSpacer, user_font, FontName, WeightName};
+use ui_core::{ui_builder::SpawnSpacer, user_font, FontName, WeightName, FONT_SIZE_SCALE};
 use unicode_segmentation::UnicodeSegmentation;
 use world_ui::{spawn_world_ui_view, WorldUi};
 
@@ -137,6 +137,7 @@ impl Plugin for TextShapePlugin {
                 .before(UiSystem::Stack)
                 .before(VisibilitySystems::VisibilityPropagate),
         );
+        app.init_resource::<UnrecognisedTags>();
     }
 }
 
@@ -162,6 +163,9 @@ pub struct TextShapeUi {
 #[derive(Component)]
 pub struct RetryTextShape(u32);
 
+#[derive(Default, Resource, Deref, DerefMut)]
+pub struct UnrecognisedTags(HashSet<String>);
+
 fn update_text_shapes(
     mut commands: Commands,
     images: ResMut<Assets<Image>>,
@@ -180,6 +184,7 @@ fn update_text_shapes(
     frame: Res<FrameCount>,
     mut cameras: Query<&mut Camera>,
     mut views: Query<&mut TextShapeUi>,
+    mut unrecognized_tags: ResMut<UnrecognisedTags>,
 ) {
     // remove deleted ui nodes
     for e in removed.read() {
@@ -280,7 +285,7 @@ fn update_text_shapes(
             .unwrap_or_else(|| {
                 debug!("make ui for {ent}");
                 let (view, _) = spawn_world_ui_view(&mut commands, images, None);
-                commands.entity(view).insert(DespawnWith(ent));
+                commands.entity(view).try_insert(DespawnWith(ent));
                 let ui_root = commands
                     .spawn((
                         Node {
@@ -395,6 +400,7 @@ fn update_text_shapes(
             text_shape.0.font(),
             halign_flex,
             wrapping,
+            &mut unrecognized_tags,
         );
 
         let ui_node = commands
@@ -412,7 +418,7 @@ fn update_text_shapes(
                 },
                 DespawnWith(ent),
             ))
-            .with_children(|c| {
+            .try_with_children(|c| {
                 if text_shape.0.padding_left.is_some() {
                     c.spawn(Node {
                         width: Val::Px(text_shape.0.padding_left() * pix_per_m),
@@ -654,7 +660,7 @@ fn apply_text_extras(
             ));
 
             if let Some(target_camera) = maybe_camera.as_ref() {
-                cmds.insert(UiTargetCamera(target_camera.0));
+                cmds.try_insert(UiTargetCamera(target_camera.0));
             }
 
             cmds.id()
@@ -711,6 +717,7 @@ pub fn make_text_section(
     font: dcl_component::proto_components::sdk::components::common::Font,
     justify: JustifyText,
     wrapping: bool,
+    unrecognized_tags: &mut UnrecognisedTags,
 ) -> (impl Bundle, Vec<(usize, String)>) {
     let mut links = Vec::default();
 
@@ -793,7 +800,17 @@ pub fn make_text_section(
                     "/link" => {
                         link_data.pop();
                     }
-                    _ => warn!("unrecognised text tag `{tag}`"),
+                    other => {
+                        let tag = if let Some((tag, _)) = other.split_once("=") {
+                            tag
+                        } else {
+                            other
+                        };
+                        if !unrecognized_tags.contains(tag) {
+                            unrecognized_tags.insert(tag.to_owned());
+                            warn!("unrecognised text tag `{tag}`");
+                        }
+                    }
                 }
                 section_start = section_start + close + 1;
             } else {
@@ -822,7 +839,7 @@ pub fn make_text_section(
 
         let font = TextFont {
             font: user_font(font_name, weight),
-            font_size: font_size * 0.95,
+            font_size: font_size * FONT_SIZE_SCALE,
             ..Default::default()
         };
 

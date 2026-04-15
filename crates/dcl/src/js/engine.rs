@@ -1,10 +1,11 @@
+use std::{cell::RefCell, rc::Rc, sync::Arc};
+
 // Engine module
 use bevy::log::{debug, info, warn};
-
 #[cfg(feature = "span_scene_loop")]
 use bevy::log::{info_span, tracing::span::EnteredSpan};
-
-use std::{cell::RefCell, rc::Rc, sync::Arc};
+use common::structs::{GlobalCrdtStateUpdate, TimeOfDay};
+use dcl_component::{DclReader, Localizer, SceneOrigin};
 use tokio::sync::{broadcast::error::TryRecvError, Mutex};
 
 use crate::{
@@ -14,9 +15,47 @@ use crate::{
     CrdtComponentInterfaces, CrdtStore, RendererResponse, RpcCalls, SceneElapsedTime,
     SceneLogMessage, SceneResponse,
 };
-use dcl_component::DclReader;
 
 use super::State;
+
+/// Localize the payload within a CRDT wire-format message.
+/// CRDT PutComponent format: length(4) + type(4) + entity(4) + component(4) + timestamp(4) + content_len(4) + payload
+fn localize_crdt_message(
+    data: Vec<u8>,
+    localizer: &Localizer,
+    scene_origin: &SceneOrigin,
+) -> Vec<u8> {
+    // Minimum size for a PutComponent message with payload: 24 bytes header + payload
+    if data.len() < 24 {
+        return data;
+    }
+
+    let content_len = u32::from_le_bytes([data[20], data[21], data[22], data[23]]) as usize;
+    let payload_start = 24;
+    let payload_end = payload_start + content_len;
+
+    if payload_end > data.len() || content_len == 0 {
+        return data;
+    }
+
+    let new_payload = localizer.localize_payload(&data[payload_start..payload_end], scene_origin);
+
+    // Rebuild the message with the new payload
+    let entity_id: dcl_component::SceneEntityId = {
+        let mut r = DclReader::new(&data[8..12]);
+        r.read().unwrap()
+    };
+    let component_id: dcl_component::SceneComponentId = {
+        let mut r = DclReader::new(&data[12..16]);
+        r.read().unwrap()
+    };
+    let timestamp: dcl_component::SceneCrdtTimestamp = {
+        let mut r = DclReader::new(&data[16..20]);
+        r.read().unwrap()
+    };
+
+    put_component(&entity_id, &component_id, &timestamp, Some(&new_payload))
+}
 
 pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8]) {
     let mut op_state = op_state.borrow_mut();
@@ -63,11 +102,35 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
     }
 
     debug!("op_crdt_recv_from_renderer");
-    let receiver = op_state
-        .borrow_mut()
-        .borrow_mut::<Arc<Mutex<tokio::sync::mpsc::Receiver<RendererResponse>>>>()
-        .clone();
-    let response = receiver.lock().await.recv().await;
+
+    // Receive messages in a loop, handling any snapshot requests immediately (no RefMut held
+    // across the await point).  Exits with the first non-snapshot response.
+    let response = loop {
+        let receiver = op_state
+            .borrow_mut()
+            .borrow_mut::<Arc<Mutex<tokio::sync::mpsc::Receiver<RendererResponse>>>>()
+            .clone();
+        let response = receiver.lock().await.recv().await;
+
+        if let Some(RendererResponse::GetCrdtSnapshot) = &response {
+            let crdt_store = op_state.borrow_mut().take::<CrdtStore>();
+            let mut snapshot = crdt_store.clone();
+            op_state.borrow_mut().put(crdt_store);
+            // Merge renderer→scene components so the snapshot includes engine-managed
+            // values (EngineInfo, RaycastResult, etc.) alongside scene-set components.
+            let renderer_store = op_state.borrow_mut().take::<RendererStore>();
+            snapshot.merge_newer(renderer_store.0.clone());
+            op_state.borrow_mut().put(renderer_store);
+            let scene_id = op_state.borrow_mut().borrow::<CrdtContext>().scene_id;
+            op_state
+                .borrow_mut()
+                .borrow_mut::<SceneResponseSender>()
+                .try_send(SceneResponse::CrdtSnapshot(scene_id, snapshot))
+                .expect("failed to send crdt snapshot");
+            continue;
+        }
+        break response;
+    };
 
     let mut op_state = op_state.borrow_mut();
     #[cfg(feature = "span_scene_loop")]
@@ -75,7 +138,6 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
         let span = info_span!("js update").entered();
         op_state.put(span);
     }
-    op_state.put(receiver);
 
     let mut entity_map = op_state.take::<CrdtContext>();
     let mut renderer_state = op_state.take::<RendererStore>();
@@ -117,21 +179,41 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
             op_state.put(ShuttingDown);
             Default::default()
         }
+        // GetCrdtSnapshot is handled before this match in the loop above.
+        Some(RendererResponse::GetCrdtSnapshot) => unreachable!(),
     };
 
-    let mut global_update_receiver = op_state.take::<tokio::sync::broadcast::Receiver<Vec<u8>>>();
+    let mut global_update_receiver =
+        op_state.take::<tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>>();
     loop {
         match global_update_receiver.try_recv() {
-            Ok(next) => {
-                let mut stream = DclReader::new(&next);
-                renderer_state.0.process_message_stream(
-                    &mut entity_map,
-                    &writers,
-                    &mut stream,
-                    false,
-                );
-                results.push(next);
-            }
+            Ok(next) => match next {
+                GlobalCrdtStateUpdate::Crdt(data, localizer) => {
+                    let data = match localizer {
+                        Localizer::None => data,
+                        Localizer::Unimplemented => {
+                            warn!("received global CRDT update with Unimplemented localizer");
+                            data
+                        }
+                        _ => {
+                            let scene_origin = op_state.borrow::<SceneOrigin>();
+                            localize_crdt_message(data, &localizer, scene_origin)
+                        }
+                    };
+                    let mut stream = DclReader::new(&data);
+                    renderer_state.0.process_message_stream(
+                        &mut entity_map,
+                        &writers,
+                        &mut stream,
+                        false,
+                    );
+                    results.push(data);
+                }
+                GlobalCrdtStateUpdate::Time(time) => {
+                    let time_of_day = op_state.borrow_mut::<TimeOfDay>();
+                    time_of_day.time = time;
+                }
+            },
             Err(TryRecvError::Empty) => break,
             Err(TryRecvError::Lagged(_)) => (), // continue on with whatever we can still get
             Err(TryRecvError::Closed) => {

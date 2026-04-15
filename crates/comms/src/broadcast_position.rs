@@ -2,7 +2,7 @@ use std::f32::consts::TAU;
 
 use bevy::prelude::*;
 
-use common::structs::{AvatarDynamicState, PrimaryUser};
+use common::structs::{AvatarDynamicState, MoveKind, PrimaryUser};
 use dcl_component::{
     proto_components::kernel::comms::rfc4,
     transform_and_parent::{DclQuat, DclTranslation},
@@ -123,6 +123,7 @@ fn broadcast_position(
         is_long_fall: movement_compressed.temporal.long_falling(),
         is_falling: movement_compressed.temporal.falling(),
         is_stunned: movement_compressed.temporal.stunned(),
+        is_emoting: dynamics.move_kind == MoveKind::Emote,
     };
 
     // let movement_packet = rfc4::MovementCompressed {

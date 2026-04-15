@@ -110,6 +110,9 @@ impl Plugin for AvatarPlugin {
         );
 
         app.add_console_command::<DebugDumpAvatar, _>(debug_dump_avatar);
+
+        app.add_observer(add_attach_points_to_avatar_shape);
+        app.add_observer(remove_attach_points_from_avatar_shape);
     }
 }
 
@@ -492,6 +495,7 @@ fn update_render_avatar(
     avatar_render_entities: Query<(), With<AvatarDefinition>>,
     mut wearable_loader: CollectibleManager<Wearable>,
     scenes: Query<&RendererSceneContext>,
+    ipfas: IpfsAssetServer,
     native_ui: Res<NativeUi>,
 ) {
     // remove renderable entities when avatar selection is removed
@@ -663,7 +667,7 @@ fn update_render_avatar(
         urns.insert(body_urn.clone());
 
         debug!("avatar definition loaded: {wearables:?}");
-        commands.entity(entity).with_children(|commands| {
+        commands.entity(entity).try_with_children(|commands| {
             commands.spawn((
                 Transform::from_rotation(Quat::from_rotation_y(PI)),
                 Visibility::default(),
@@ -729,14 +733,35 @@ fn update_render_avatar(
                         .0
                         .expression_trigger_id
                         .as_ref()
-                        .map(|e| EmoteCommand {
-                            urn: e.clone(),
-                            r#loop: false,
-                            timestamp: selection
-                                .shape
-                                .0
-                                .expression_trigger_timestamp
-                                .unwrap_or_default(),
+                        .and_then(|e| {
+                            let urn = if e.starts_with("urn:") {
+                                e.clone()
+                            } else {
+                                // File path emote (e.g. "models/emotes/foo.glb") — resolve
+                                // through the scene's content map to build a scene-emote URN,
+                                // mirroring the logic in op_scene_emote.
+                                let se = maybe_scene_ent?;
+                                let ctx = scenes.get(se.root).ok()?;
+                                let scene_hash = &ctx.hash;
+                                let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
+                                    scene_hash.clone(),
+                                    e.to_lowercase(),
+                                ));
+                                let ipfs_context = ipfas.ipfs().context.blocking_read();
+                                let emote_hash = ipfs_path.hash(&ipfs_context)?;
+                                format!(
+                                    "urn:decentraland:off-chain:scene-emote:{scene_hash}-{emote_hash}-false"
+                                )
+                            };
+                            Some(EmoteCommand {
+                                urn,
+                                r#loop: false,
+                                timestamp: selection
+                                    .shape
+                                    .0
+                                    .expression_trigger_timestamp
+                                    .unwrap_or_default(),
+                            })
                         }),
                     disable_dither: selection.disable_dither,
                 },
@@ -760,7 +785,9 @@ fn update_render_avatar(
                         panic!();
                     }
                     chose_existing = true;
-                    commands.entity(entity).insert(PreviousAvatar(render_child));
+                    commands
+                        .entity(entity)
+                        .try_insert(PreviousAvatar(render_child));
                 }
             }
         }
@@ -1230,24 +1257,38 @@ fn process_avatar(
         } else {
             // reparent hands
             if let Ok(attach_points) = attach_points.get(root_player_entity.parent()) {
-                if let Some(left_hand) =
-                    target_armature_entities.get(&String::from("avatar_lefthand"))
-                {
-                    commands
-                        .entity(*left_hand)
-                        .try_push_children(&[attach_points.left_hand]);
-                } else {
-                    warn!("no left hand");
-                    warn!("available: {:#?}", target_armature_entities.keys());
-                }
-                if let Some(right_hand) =
-                    target_armature_entities.get(&String::from("avatar_righthand"))
-                {
-                    commands
-                        .entity(*right_hand)
-                        .try_push_children(&[attach_points.right_hand]);
-                } else {
-                    warn!("no right hand");
+                for (key, attach_point) in [
+                    ("avatar_head", attach_points.head),
+                    ("avatar_neck", attach_points.neck),
+                    ("avatar_spine", attach_points.spine),
+                    ("avatar_spine1", attach_points.spine_1),
+                    ("avatar_spine2", attach_points.spine_2),
+                    ("avatar_hips", attach_points.hip),
+                    ("avatar_leftshoulder", attach_points.left_shoulder),
+                    ("avatar_leftarm", attach_points.left_arm),
+                    ("avatar_leftforearm", attach_points.left_forearm),
+                    ("avatar_lefthand", attach_points.left_hand),
+                    ("avatar_lefthandindex1", attach_points.left_hand_index),
+                    ("avatar_rightshoulder", attach_points.right_shoulder),
+                    ("avatar_rightarm", attach_points.righ_arm),
+                    ("avatar_rightforearm", attach_points.right_forearm),
+                    ("avatar_righthand", attach_points.right_hand),
+                    ("avatar_righthandindex1", attach_points.right_hand_index),
+                    ("avatar_leftupleg", attach_points.left_thigh),
+                    ("avatar_leftleg", attach_points.left_shin),
+                    ("avatar_leftfoot", attach_points.left_foot),
+                    ("avatar_lefttoebase", attach_points.left_toe_base),
+                    ("avatar_rightupleg", attach_points.right_thigh),
+                    ("avatar_rightleg", attach_points.right_shin),
+                    ("avatar_rightfoot", attach_points.right_foot),
+                    ("avatar_righttoebase", attach_points.right_toe_base),
+                ] {
+                    reparent_attach_point(
+                        &mut commands,
+                        &target_armature_entities,
+                        key,
+                        attach_point,
+                    );
                 }
             } else {
                 warn!("no attach points");
@@ -1271,6 +1312,11 @@ fn process_avatar(
                     player: root_player_entity.parent(),
                 });
             }
+
+            commands.entity(armature_node).try_insert(AnimationTarget {
+                id: AnimationTargetId::from_name(&Name::new("Armature")),
+                player: root_player_entity.parent(),
+            });
         }
 
         // color the components of wearables
@@ -1316,7 +1362,9 @@ fn process_avatar(
 
                 // move children of the root to the body mesh
                 if parent_name.to_lowercase() == "armature" {
-                    commands.entity(scene_ent).insert(ChildOf(armature_node));
+                    commands
+                        .entity(scene_ent)
+                        .try_insert(ChildOf(armature_node));
                 }
 
                 if let Some(h_mesh) = maybe_h_mesh {
@@ -1420,7 +1468,7 @@ fn process_avatar(
 
         commands
             .entity(root_player_entity.parent())
-            .insert(AvatarMaterials(
+            .try_insert(AvatarMaterials(
                 instance_scene_materials.values().map(|h| h.id()).collect(),
             ));
 
@@ -1438,9 +1486,11 @@ fn process_avatar(
                 .root;
 
             debug!("{:?} as child of {:?}", label_ui, ui_view.view);
-            commands.entity(label_ui).insert(DespawnWith(avatar_ent));
+            commands
+                .entity(label_ui)
+                .try_insert(DespawnWith(avatar_ent));
 
-            commands.entity(avatar_ent).with_children(|commands| {
+            commands.entity(avatar_ent).try_with_children(|commands| {
                 commands.spawn((
                     Transform::from_translation(Vec3::Y * 2.2),
                     Visibility::default(),
@@ -1485,6 +1535,26 @@ fn process_avatar(
                 );
             }
         }
+    }
+}
+
+fn reparent_attach_point(
+    commands: &mut Commands,
+    target_armature_entities: &HashMap<String, Entity>,
+    key: &str,
+    attach_point: Entity,
+) {
+    if let Some(bone) = target_armature_entities.get(key) {
+        commands.entity(*bone).try_push_children(&[attach_point]);
+    } else {
+        #[cfg(not(debug_assertions))]
+        warn!("no {}", key,);
+        #[cfg(debug_assertions)]
+        warn!(
+            "no {}, available: {:#?}",
+            key,
+            target_armature_entities.keys()
+        );
     }
 }
 
@@ -1703,4 +1773,29 @@ fn debug_dump_avatar(
     }
 
     tasks.retain_mut(|t| t.complete().is_none());
+}
+
+fn add_attach_points_to_avatar_shape(trigger: Trigger<OnAdd, AvatarShape>, mut commands: Commands) {
+    let entity = trigger.target();
+
+    let attach_points = AttachPoints::new(&mut commands);
+
+    commands
+        .entity(entity)
+        .try_push_children(&attach_points.entities())
+        .try_insert(attach_points);
+}
+
+fn remove_attach_points_from_avatar_shape(
+    trigger: Trigger<OnRemove, AvatarShape>,
+    mut commands: Commands,
+    attach_points_query: Query<&AttachPoints>,
+) {
+    let entity = trigger.target();
+
+    if let Ok(attach_points) = attach_points_query.get(entity) {
+        for attach_point in attach_points.entities() {
+            commands.entity(attach_point).try_despawn();
+        }
+    }
 }

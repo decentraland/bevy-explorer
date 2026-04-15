@@ -15,14 +15,13 @@ use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
     sets::{SceneSets, SetupSets},
     structs::{
-        AppConfig, CursorLocks, DebugInfo, PreviewCommand, PreviewMode, PrimaryUser, SettingsTab,
-        ShowSettingsEvent, SystemScene, Version, ZOrder,
+        AppConfig, CurrentRealm, CursorLocks, DebugInfo, PreviewCommand, PreviewMode, PrimaryUser,
+        SettingsTab, ShowSettingsEvent, StartupScenes, Version, ZOrder,
     },
-    util::ModifyComponentExt,
+    util::{ModifyComponentExt, TryPushChildrenEx},
 };
 use comms::{global_crdt::ForeignPlayer, Transport};
 use console::DoAddConsoleCommand;
-use ipfs::CurrentRealm;
 use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE};
 use scene_runner::{
     initialize_scene::{SceneLoading, TestingData, PARCEL_SIZE},
@@ -93,7 +92,7 @@ pub(crate) fn setup(
     asset_server: Res<AssetServer>,
     version: Res<Version>,
 ) {
-    commands.entity(root.0).with_children(|commands| {
+    commands.entity(root.0).try_with_children(|commands| {
         commands
             .spawn((
                 Node {
@@ -108,7 +107,7 @@ pub(crate) fn setup(
                 },
                 ZOrder::Crosshair.default(),
             ))
-            .with_children(|c| {
+            .try_with_children(|c| {
                 c.spawn((
                     Node {
                         width: Val::VMin(3.0),
@@ -133,7 +132,7 @@ pub(crate) fn setup(
         ));
     });
 
-    commands.entity(root.0).with_children(|commands| {
+    commands.entity(root.0).try_with_children(|commands| {
         commands
             .spawn((
                 Node {
@@ -154,7 +153,7 @@ pub(crate) fn setup(
                 FocusPolicy::Block,
                 SysInfoContainer,
             ))
-            .with_children(|commands| {
+            .try_with_children(|commands| {
                 commands.spawn((
                     Text::new("System Info"),
                     TITLE_TEXT_STYLE.get().unwrap().clone(),
@@ -168,27 +167,29 @@ pub(crate) fn setup(
                         },
                         SysInfoMarker,
                     ))
-                    .with_children(|commands| {
+                    .try_with_children(|commands| {
                         let mut info_node = |label: String| {
-                            commands.spawn(Node::default()).with_children(|commands| {
-                                commands.spawn((
-                                    Node {
-                                        width: Val::Px(150.0),
-                                        ..Default::default()
-                                    },
-                                    Text::new(label),
-                                    TextLayout::new_with_justify(JustifyText::Right),
-                                    BODY_TEXT_STYLE.get().unwrap().clone(),
-                                ));
-                                commands.spawn((
-                                    Node {
-                                        width: Val::Px(250.0),
-                                        ..Default::default()
-                                    },
-                                    Text::default(),
-                                    BODY_TEXT_STYLE.get().unwrap().clone(),
-                                ));
-                            });
+                            commands
+                                .spawn(Node::default())
+                                .try_with_children(|commands| {
+                                    commands.spawn((
+                                        Node {
+                                            width: Val::Px(150.0),
+                                            ..Default::default()
+                                        },
+                                        Text::new(label),
+                                        TextLayout::new_with_justify(JustifyText::Right),
+                                        BODY_TEXT_STYLE.get().unwrap().clone(),
+                                    ));
+                                    commands.spawn((
+                                        Node {
+                                            width: Val::Px(250.0),
+                                            ..Default::default()
+                                        },
+                                        Text::default(),
+                                        BODY_TEXT_STYLE.get().unwrap().clone(),
+                                    ));
+                                });
                         };
 
                         if config.graphics.log_fps {
@@ -335,7 +336,7 @@ fn setup_minimap(
     root: Res<SystemUiRoot>,
     dui: Res<DuiRegistry>,
     preview: Res<PreviewMode>,
-    system_scene: Option<Res<SystemScene>>,
+    system_scene: Option<Res<StartupScenes>>,
 ) {
     let components = commands
         .spawn_template(&dui, "minimap", Default::default())
@@ -343,7 +344,7 @@ fn setup_minimap(
 
     commands
         .entity(components.root)
-        .insert((Minimap, ZOrder::Minimap.default()));
+        .try_insert((Minimap, ZOrder::Minimap.default()));
 
     if preview.server.is_some() {
         commands
@@ -362,7 +363,7 @@ fn setup_minimap(
     }
 
     if system_scene.is_none() {
-        commands.entity(components.named("map-node")).insert((
+        commands.entity(components.named("map-node")).try_insert((
             MapTexture {
                 center: Default::default(),
                 parcels_per_vmin: 100.0,
@@ -375,7 +376,11 @@ fn setup_minimap(
         commands.entity(components.named("map-container")).despawn();
     }
 
-    if preview.server.is_some() || system_scene.as_ref().is_some_and(|ss| ss.preview) {
+    if preview.server.is_some()
+        || system_scene
+            .as_ref()
+            .is_some_and(|ss| ss.scenes.first().is_some_and(|scene| scene.preview))
+    {
         let tracker = commands
             .entity(components.root)
             .spawn_template(
@@ -389,6 +394,9 @@ fn setup_minimap(
                         }
                     })
                 ).with_prop(
+                    "dismiss",
+                    On::<Click>::new(move |mut commands: Commands| {commands.entity(components.root).despawn()}),
+                ).with_prop(
                     "inspect",
                     On::<Click>::new(|
                         mut reload: EventWriter<PreviewCommand>,
@@ -396,11 +404,12 @@ fn setup_minimap(
                         containing_scene: ContainingScene,
                         scenes: Query<&RendererSceneContext>,
                         player: Query<Entity, With<PrimaryUser>>,
-                        system_scene: Option<Res<SystemScene>>,
+                        system_scene: Option<Res<StartupScenes>>,
                         mut toaster: Toaster,
                     | {
-                        if system_scene.as_ref().is_some_and(|ss| ss.hot_reload.is_some()) {
+                        if system_scene.as_ref().is_some_and(|ss| ss.scenes.first().is_some_and(|scene| scene.hot_reload.is_some())) {
                             let ss = system_scene.unwrap();
+                            let ss = ss.scenes.first().unwrap();
                             if let Some(hash) = ss.hash.clone() {
                                 test_data.inspect_hash = Some(hash.clone());
                                 let _ = ss.hot_reload.as_ref().unwrap().send(PreviewCommand::ReloadScene { hash });
@@ -425,7 +434,7 @@ fn setup_minimap(
                 .with_prop("inspect-enabled", cfg!(feature = "inspect")),
             )
             .unwrap();
-        commands.entity(tracker.root).insert(Tracker(true));
+        commands.entity(tracker.root).try_insert(Tracker(true));
     }
 }
 
@@ -531,9 +540,8 @@ fn update_tracker(
         return;
     };
 
-    let Ok(resource_lookup) = stats.get(*scene) else {
-        return;
-    };
+    let default_lookup = SceneResourceLookup::default();
+    let resource_lookup = stats.get(*scene).unwrap_or(&default_lookup);
 
     let mut display_data = Vec::default();
 

@@ -68,11 +68,11 @@ impl AppSetting for SsaoSetting {
 
         match self {
             SsaoSetting::Off => cmds.remove::<ScreenSpaceAmbientOcclusion>(),
-            SsaoSetting::Low => cmds.insert(ScreenSpaceAmbientOcclusion {
+            SsaoSetting::Low => cmds.try_insert(ScreenSpaceAmbientOcclusion {
                 quality_level: bevy::pbr::ScreenSpaceAmbientOcclusionQualityLevel::Medium,
                 constant_object_thickness: 0.25,
             }),
-            SsaoSetting::High => cmds.insert(ScreenSpaceAmbientOcclusion {
+            SsaoSetting::High => cmds.try_insert(ScreenSpaceAmbientOcclusion {
                 quality_level: bevy::pbr::ScreenSpaceAmbientOcclusionQualityLevel::Ultra,
                 constant_object_thickness: 0.25,
             }),

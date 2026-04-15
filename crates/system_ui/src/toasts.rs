@@ -19,7 +19,7 @@ fn setup(mut commands: Commands, dui: Res<DuiRegistry>) {
         .spawn_template(&dui, "toaster", DuiProps::default())
         .unwrap()
         .named("inner");
-    commands.entity(inner).insert(ToastMarker);
+    commands.entity(inner).try_insert(ToastMarker);
 }
 
 fn update_toasts(
@@ -48,7 +48,7 @@ fn update_toasts(
                 .unwrap();
             displays.insert(key.clone(), Some(components.root));
             if let Some(on_click) = toast.on_click.take() {
-                commands.entity(components.root).insert((
+                commands.entity(components.root).try_insert((
                     Interaction::default(),
                     on_click,
                     ZOrder::Toast.default(),

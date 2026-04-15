@@ -13,12 +13,13 @@ use dcl_component::proto_components::{
     sdk::components::{PbAvatarBase, PbAvatarEquippedData},
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
 use strum::IntoEnumIterator;
 use system_bridge::{
-    settings::SettingInfo, ChatMessage, HomeScene, LiveSceneInfo, PermanentPermissionItem,
-    PermissionRequest, SetAvatarData, SetPermanentPermission, SetSinglePermission, SystemApi,
-    VoiceMessage,
+    settings::SettingInfo, AvatarModifierState, ChatMessage, HomeScene, HoverEvent, LiveSceneInfo,
+    PermanentPermissionItem, PermissionRequest, SceneLoadingUi, SetAvatarData,
+    SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
 };
 
 use crate::{interface::crdt_context::CrdtContext, js::player_identity, RpcCalls};
@@ -687,4 +688,98 @@ pub async fn op_read_voice_stream(
     state.borrow_mut().put(receiver);
 
     res
+}
+
+pub async fn op_get_hover_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+    state.borrow_mut().put(rx);
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetHoverStream(sx))
+        .unwrap();
+
+    4
+}
+
+pub async fn op_read_hover_stream(
+    state: Rc<RefCell<impl State>>,
+    _rid: u32,
+) -> Result<Option<HoverEvent>, anyhow::Error> {
+    let Some(mut receiver) = state
+        .borrow_mut()
+        .try_take::<RpcStreamReceiver<HoverEvent>>()
+    else {
+        return Ok(None);
+    };
+
+    let res = match receiver.recv().await {
+        Some(data) => Ok(Some(data)),
+        None => Ok(None),
+    };
+
+    state.borrow_mut().put(receiver);
+
+    res
+}
+
+pub async fn op_get_scene_loading_ui_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+    state.borrow_mut().put(rx);
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetSceneLoadingUiStream(sx))
+        .unwrap();
+
+    3
+}
+
+pub async fn op_read_scene_loading_ui_stream(
+    state: Rc<RefCell<impl State>>,
+    _rid: u32,
+) -> Result<Option<SceneLoadingUi>, anyhow::Error> {
+    let Some(mut receiver) = state
+        .borrow_mut()
+        .try_take::<RpcStreamReceiver<SceneLoadingUi>>()
+    else {
+        return Ok(None);
+    };
+
+    let res = match receiver.recv().await {
+        Some(data) => Ok(Some(data)),
+        None => Ok(None),
+    };
+
+    state.borrow_mut().put(receiver);
+
+    res
+}
+
+pub async fn op_get_avatar_modifiers(
+    state: Rc<RefCell<impl State>>,
+) -> Result<Vec<AvatarModifierState>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetAvatarModifiers(sx))?;
+
+    Ok(rx.await?)
+}
+
+pub async fn op_get_params(
+    state: Rc<RefCell<impl State>>,
+) -> Result<HashMap<String, String>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetParams(sx))?;
+
+    Ok(rx.await?)
 }
