@@ -259,7 +259,7 @@ pub(crate) fn process_transform_and_parent_updates(
                         .entity(*entity)
                         .try_insert(ChildOf(parents[entity]));
                     //  record validity of the chain
-                    valid_entities.extend(checklist.into_iter());
+                    valid_entities.extend(checklist);
                     // remove from the unparented list
                     false
                 } else {
@@ -268,7 +268,7 @@ pub(crate) fn process_transform_and_parent_updates(
                     // parent to the root
                     commands.entity(*entity).try_insert(ChildOf(root));
                     // mark as invalid
-                    invalid_entities.extend(checklist.into_iter());
+                    invalid_entities.extend(checklist);
                     // keep the entity in the unparented list to recheck at the next hierarchy update
                     true
                 }
