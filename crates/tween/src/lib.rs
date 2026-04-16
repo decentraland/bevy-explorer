@@ -170,24 +170,13 @@ impl Tween {
             }
             #[cfg(feature = "adr285")]
             Some(Mode::RotateContinuous(data)) => {
-                // The rotation is desired.
-                // The speed and time is provided.
-                // The rotation is then calculated by integrating the
-                // speed function.
-                // The integral of a constant speed is `speed * time`.
-                let startup_factor = if self.0.duration > 0. { todo!() } else { 0. };
-                let post_startup_factor = if time > self.0.duration {
-                    (time - self.0.duration) / 1000.
-                } else {
-                    0.
-                };
                 let axis = {
                     let dcl_quat = data.direction.unwrap();
                     let (axis, _) = dcl_quat.to_bevy_normalized().to_axis_angle();
                     axis
                 };
-                let factor = startup_factor + post_startup_factor;
-                transform.rotation = Quat::from_axis_angle(axis, factor * -data.speed.to_radians());
+                transform.rotation *=
+                    Quat::from_axis_angle(axis, ease_value * -data.speed.to_radians());
             }
             #[cfg(feature = "adr285")]
             Some(Mode::MoveContinuous(data)) => {
