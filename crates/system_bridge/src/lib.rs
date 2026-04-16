@@ -233,7 +233,7 @@ pub struct FriendRequestData {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all_fields = "camelCase")]
 #[serde(tag = "type")]
 pub enum FriendshipEventUpdate {
     #[serde(rename = "request")]
