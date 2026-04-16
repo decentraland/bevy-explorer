@@ -176,7 +176,9 @@ impl Plugin for SceneOutputPlugin {
         app.add_plugins(SceneUiPlugin);
         app.add_plugins(TextShapePlugin);
         app.add_plugins(CameraModeAreaPlugin);
-        app.add_plugins(VisibilityComponentPlugin);
+        app.add_plugins(VisibilityComponentPlugin {
+            setup_crdt_lww: true,
+        });
         app.add_plugins(AvatarModifierAreaPlugin);
 
         app.init_resource::<TrackComponents>();
