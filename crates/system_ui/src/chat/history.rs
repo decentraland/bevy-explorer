@@ -100,11 +100,7 @@ fn update_chat_history(
     };
 
     // remove expired
-    loop {
-        let Some((bubble, message, exp)) = history.current.front() else {
-            break;
-        };
-
+    while let Some((bubble, message, exp)) = history.current.front() {
         // fade the bubbles
         let Ok(mut node) = node.get_mut(*bubble) else {
             warn!("no");
