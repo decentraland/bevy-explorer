@@ -21,6 +21,7 @@ use dcl_rpc::{
 use ethers_core::types::Address;
 use futures_util::{pin_mut, select, FutureExt};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use web_time::Duration;
 
 use crate::rpc_websocket::PlatformRpcWebSocket;
 use crate::runtime::SocialRuntime;
@@ -66,6 +67,7 @@ enum FriendData {
     OwnBlock {
         address: Address,
     },
+    Disconnected,
 }
 
 pub struct SocialClientHandler {
@@ -378,6 +380,10 @@ impl SocialClientHandler {
                     self.sent_requests.remove(&address);
                     self.received_requests.remove(&address);
                 }
+                FriendData::Disconnected => {
+                    self.is_initialized = false;
+                    self.friend_status.clear();
+                }
             }
         }
     }
@@ -397,16 +403,57 @@ async fn social_socket_handler_inner(
     mut query_rx: UnboundedReceiver<SocialQuery>,
     response_sx: UnboundedSender<FriendData>,
 ) -> Result<(), anyhow::Error> {
+    let initial_backoff = Duration::from_secs(1);
+    let max_backoff = Duration::from_secs(30);
+    let mut backoff = initial_backoff;
+
+    loop {
+        let start = web_time::Instant::now();
+        let result = run_one_connection(&wallet, &mut rx, &mut query_rx, &response_sx).await;
+        let lasted = start.elapsed();
+        match &result {
+            Ok(()) => info!("[social] connection closed after {lasted:?}"),
+            Err(e) => error!("[social] connection error after {lasted:?}: {e}"),
+        }
+
+        // If the client handle was dropped, exit cleanly — no point reconnecting.
+        if response_sx.is_closed() || rx.is_closed() {
+            info!("[social] handler shutting down (client dropped)");
+            return Ok(());
+        }
+
+        // Notify subscribers of the disconnect so JS can gate UI off `is_initialized`.
+        if response_sx.send(FriendData::Disconnected).is_err() {
+            return Ok(());
+        }
+
+        // Reset backoff once a connection has lasted long enough to be considered healthy.
+        if lasted > Duration::from_secs(60) {
+            backoff = initial_backoff;
+        }
+
+        info!("[social] reconnecting in {backoff:?}...");
+        async_std::task::sleep(backoff).await;
+        backoff = (backoff * 2).min(max_backoff);
+    }
+}
+
+async fn run_one_connection(
+    wallet: &wallet::Wallet,
+    rx: &mut UnboundedReceiver<UpsertFriendshipPayload>,
+    query_rx: &mut UnboundedReceiver<SocialQuery>,
+    response_sx: &UnboundedSender<FriendData>,
+) -> Result<(), anyhow::Error> {
     // Connect WebSocket
     info!("[social] Connecting to social service at {SOCIAL_URL}");
-    let ws = PlatformRpcWebSocket::connect(SOCIAL_URL)
+    let (ws, ws_closed) = PlatformRpcWebSocket::connect(SOCIAL_URL)
         .await
         .map_err(dbgerr)?;
     info!("[social] Successfully connected to social service at {SOCIAL_URL}");
 
     // V2 auth: send signed headers as first WS message
     let uri: http::Uri = SOCIAL_URL.parse().map_err(dbgerr)?;
-    let signed_headers = wallet::sign_request("get", &uri, &wallet, "{}".to_owned())
+    let signed_headers = wallet::sign_request("get", &uri, wallet, "{}".to_owned())
         .await
         .map_err(dbgerr)?;
     let headers_map: std::collections::HashMap<String, String> =
@@ -414,6 +461,10 @@ async fn social_socket_handler_inner(
     let auth_json = serde_json::to_string(&headers_map)?;
     info!("[social] Sending auth headers: {auth_json}");
     ws.send(Message::Text(auth_json)).await.map_err(dbgerr)?;
+
+    // Keep an Arc handle to the websocket so the keepalive task can send pings while the
+    // RPC transport owns its own clone for normal traffic.
+    let ws_for_ping = ws.clone();
 
     // Create RPC client
     let service_transport = WebSocketTransport::new(ws);
@@ -562,7 +613,7 @@ async fn social_socket_handler_inner(
         loop {
             tokio::select! {
                 req = rx.recv() => {
-                    let Some(req) = req else { break; };
+                    let Some(req) = req else { return Result::<(), anyhow::Error>::Ok(()); };
                     info!("[social] upsert_friendship request: {req:?}");
                     let action = req.action.clone();
                     let resp = service_module
@@ -598,7 +649,7 @@ async fn social_socket_handler_inner(
                     }
                 }
                 query = query_rx.recv() => {
-                    let Some(query) = query else { break; };
+                    let Some(query) = query else { return Result::<(), anyhow::Error>::Ok(()); };
                     match query {
                         SocialQuery::GetMutualFriends { address, response } => {
                             info!("[social] getMutualFriends request for {address}");
@@ -753,7 +804,6 @@ async fn social_socket_handler_inner(
                 }
             }
         }
-        Result::<(), anyhow::Error>::Ok(())
     }
     .fuse();
 
@@ -768,7 +818,7 @@ async fn social_socket_handler_inner(
                     .map_err(dbgerr)?;
             }
         }
-        Result::<(), anyhow::Error>::Ok(())
+        Err(anyhow!("[social] friendship update stream ended"))
     }
     .fuse();
 
@@ -790,16 +840,49 @@ async fn social_socket_handler_inner(
                 }
             }
         }
+        Err(anyhow!("[social] connectivity update stream ended"))
+    }
+    .fuse();
+
+    // Keepalive: send a websocket ping every 30s. Both proxies / load balancers and
+    // the server itself may close idle connections; this also surfaces broken sockets
+    // promptly (the send will fail rather than appearing healthy).
+    let f_keepalive = async move {
+        loop {
+            async_std::task::sleep(Duration::from_secs(30)).await;
+            ws_for_ping
+                .send(Message::Ping)
+                .await
+                .map_err(|e| anyhow!("[social] keepalive ping failed: {e:?}"))?;
+        }
+        #[allow(unreachable_code)]
         Result::<(), anyhow::Error>::Ok(())
     }
     .fuse();
 
-    // Run until a stream breaks
-    pin_mut!(f_service_read, f_service_write, f_connectivity_read);
+    // Watch for the underlying websocket closing. dcl-rpc's dispatcher does not
+    // surface transport closure to its per-subscription channels, so without this
+    // the read futures would hang forever after a server-side disconnect.
+    let f_ws_closed = async move {
+        ws_closed.wait().await;
+        Err(anyhow!("[social] websocket transport closed"))
+    }
+    .fuse();
+
+    // Run until a stream breaks, the keepalive fails, or the websocket closes
+    pin_mut!(
+        f_service_read,
+        f_service_write,
+        f_connectivity_read,
+        f_keepalive,
+        f_ws_closed
+    );
     select! {
         r = f_service_read => r,
         r = f_service_write => r,
         r = f_connectivity_read => r,
+        r = f_keepalive => r,
+        r = f_ws_closed => r,
     }
 }
 
