@@ -1,7 +1,0 @@
-syntax = "proto3";
-package decentraland.common;
-
-message ContentMapping {
-    string file = 1;
-    string hash = 2;
-}

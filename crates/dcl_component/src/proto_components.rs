@@ -45,7 +45,7 @@ pub mod common {
 pub mod social {
     include!(concat!(
         env!("OUT_DIR"),
-        "/decentraland.social.friendships.rs"
+        "/decentraland.social_service.v1.rs"
     ));
 }
 

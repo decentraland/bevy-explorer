@@ -1,0 +1,4 @@
+[submodule "protocol"]
+	path = protocol
+	url = https://github.com/decentraland/protocol
+	branch = protocol-squad

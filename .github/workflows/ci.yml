@@ -32,6 +32,8 @@ jobs:
       - name: install livekit deps
         run: sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev
       - uses: actions/checkout@v2
+        with:
+          submodules: true
       - uses: actions-rs/cargo@v1
         with:
           command: check
@@ -63,6 +65,8 @@ jobs:
       - name: install livekit deps
         run: sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev
       - uses: actions/checkout@v2
+        with:
+          submodules: true
       - name: Test Scenes
         continue-on-error: true
         run: |
@@ -77,6 +81,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v2
+        with:
+          submodules: true
+      - name: Set Windows git config
+        if: runner.os == 'windows'
+        shell: cmd
+        run: |
+          del crates\dcl_component\src\proto
+          mklink /j crates\dcl_component\src\proto protocol\proto
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -139,6 +151,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+        with:
+          submodules: true
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -164,6 +178,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+        with:
+          submodules: true
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -191,6 +207,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+          submodules: true
       - name: Install taplo
         run: curl -fsSL https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86_64.gz | gzip -d - | install -m 755 /dev/stdin /usr/local/bin/taplo
       - name: Run Taplo
@@ -216,6 +233,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:

@@ -123,6 +123,9 @@ fn broadcast_position(
         is_long_fall: movement_compressed.temporal.long_falling(),
         is_falling: movement_compressed.temporal.falling(),
         is_stunned: movement_compressed.temporal.stunned(),
+        is_instant: Default::default(),
+        // TODO
+        // is_instant: movement_compressed.temporal.instant(),
         is_emoting: dynamics.move_kind == MoveKind::Emote,
     };
 
