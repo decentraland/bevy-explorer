@@ -591,4 +591,95 @@ mod tests {
             assert_eq!(world.get(*child).unwrap(), Visibility::Visible);
         }
     }
+
+    #[test]
+    fn remove_from_grandchild() {
+        let mut app = App::new();
+
+        app.add_plugins(VisibilityComponentPlugin {
+            setup_crdt_lww: false,
+        });
+
+        app.finish();
+
+        let world = app.world_mut();
+
+        let one = world
+            .spawn(VisibilityComponent(PbVisibilityComponent {
+                visible: Some(true),
+                propagate_to_children: Some(true),
+            }))
+            .id();
+        let two = world
+            .spawn((
+                VisibilityComponent(PbVisibilityComponent {
+                    visible: Some(false),
+                    propagate_to_children: Some(false),
+                }),
+                ChildOf(one),
+            ))
+            .id();
+        let three = world
+            .spawn((
+                VisibilityComponent(PbVisibilityComponent {
+                    visible: Some(true),
+                    propagate_to_children: Some(true),
+                }),
+                ChildOf(two),
+            ))
+            .id();
+
+        app.update();
+
+        let world = app.world_mut();
+        assert_eq!(world.get(one).unwrap(), Visibility::Visible);
+        assert!(world
+            .entity(one)
+            .contains::<Propagate<AncestorVisibility>>());
+        assert!(!world
+            .entity(one)
+            .contains::<PropagateOver<AncestorVisibility>>());
+        assert_eq!(world.get(two).unwrap(), Visibility::Hidden);
+        assert!(!world
+            .entity(two)
+            .contains::<Propagate<AncestorVisibility>>());
+        assert!(world
+            .entity(two)
+            .contains::<PropagateOver<AncestorVisibility>>());
+        assert_eq!(world.get(three).unwrap(), Visibility::Visible);
+        assert!(world
+            .entity(three)
+            .contains::<Propagate<AncestorVisibility>>());
+        assert!(!world
+            .entity(three)
+            .contains::<PropagateOver<AncestorVisibility>>());
+
+        // Remove VisibilityComponent from grandchild
+        world.entity_mut(three).remove::<VisibilityComponent>();
+
+        app.update();
+
+        let world = app.world_mut();
+        assert_eq!(world.get(one).unwrap(), Visibility::Visible);
+        assert!(world
+            .entity(one)
+            .contains::<Propagate<AncestorVisibility>>());
+        assert!(!world
+            .entity(one)
+            .contains::<PropagateOver<AncestorVisibility>>());
+        assert_eq!(world.get(two).unwrap(), Visibility::Hidden);
+        assert!(!world
+            .entity(two)
+            .contains::<Propagate<AncestorVisibility>>());
+        assert!(world
+            .entity(two)
+            .contains::<PropagateOver<AncestorVisibility>>());
+        assert_eq!(world.get(three).unwrap(), Visibility::Visible);
+        assert!(!world
+            .entity(three)
+            .contains::<Propagate<AncestorVisibility>>());
+        assert!(!world
+            .entity(three)
+            .contains::<PropagateOver<AncestorVisibility>>());
+    }
 }
