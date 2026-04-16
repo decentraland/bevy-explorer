@@ -118,8 +118,13 @@ fn update_mic_ui(
         *button.single_mut().unwrap() = mic_images.inactive.clone_weak().into();
     }
 
-    if input_manager.is_down(SystemAction::Microphone, InputPriority::None) != *pressed {
-        *pressed = !*pressed;
+    if *pressed {
+        if input_manager.just_up(SystemAction::Microphone) {
+            *pressed = false;
+            mic_state.enabled = !mic_state.enabled;
+        }
+    } else if input_manager.just_down(SystemAction::Microphone, InputPriority::None) {
+        *pressed = true;
         mic_state.enabled = !mic_state.enabled;
     }
 
