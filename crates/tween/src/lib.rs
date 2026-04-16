@@ -40,7 +40,6 @@ impl Tween {
         )
     }
 
-    #[cfg(feature = "adr285")]
     pub fn is_continuous(&self) -> bool {
         matches!(
             &self.0.mode,
@@ -168,7 +167,6 @@ impl Tween {
                     }
                 }
             }
-            #[cfg(feature = "adr285")]
             Some(Mode::RotateContinuous(data)) => {
                 let axis = {
                     let dcl_quat = data.direction.unwrap();
@@ -178,12 +176,10 @@ impl Tween {
                 transform.rotation *=
                     Quat::from_axis_angle(axis, ease_value * -data.speed.to_radians());
             }
-            #[cfg(feature = "adr285")]
             Some(Mode::MoveContinuous(data)) => {
                 transform.translation +=
                     data.direction.unwrap().world_vec_to_vec3() * data.speed * ease_value;
             }
-            #[cfg(feature = "adr285")]
             Some(Mode::TextureMoveContinuous(data)) => {
                 let Some(material) = maybe_mat else {
                     return;

@@ -219,7 +219,6 @@ fn tween_picking(
                     &tween.0.current_time,
                 );
             }
-            #[cfg(feature = "adr285")]
             Some(Mode::RotateContinuous(data)) => {
                 plate_head(&mut commands, 1, root, "Continuous rotation");
                 plate_display_row(&mut commands, 2, root, "Duration", &tween.0.duration);
@@ -241,7 +240,6 @@ fn tween_picking(
                     &tween.0.current_time,
                 );
             }
-            #[cfg(feature = "adr285")]
             Some(Mode::MoveContinuous(data)) => {
                 plate_head(&mut commands, 1, root, "MoveContinuouus");
                 plate_display_row(&mut commands, 2, root, "Duration", &tween.0.duration);
@@ -263,7 +261,6 @@ fn tween_picking(
                     &tween.0.current_time,
                 );
             }
-            #[cfg(feature = "adr285")]
             Some(Mode::TextureMoveContinuous(data)) => {
                 plate_head(&mut commands, 1, root, "TextureMoveContinuouus");
                 plate_display_row(&mut commands, 2, root, "Duration", &tween.0.duration);
@@ -381,7 +378,6 @@ fn axis_gizmos(mut gizmos: Gizmos, tweens: Query<(&Tween, &GlobalTransform)>) {
                     palettes::tailwind::RED_700,
                 );
             }
-            #[cfg(feature = "adr285")]
             Some(Mode::RotateContinuous(data)) => {
                 gizmos.axes(
                     Isometry3d::from_translation(global_transform.translation()),
@@ -398,7 +394,6 @@ fn axis_gizmos(mut gizmos: Gizmos, tweens: Query<(&Tween, &GlobalTransform)>) {
                     palettes::tailwind::RED_700,
                 );
             }
-            #[cfg(feature = "adr285")]
             Some(Mode::MoveContinuous(data)) => {
                 let direction = data.direction.unwrap().world_vec_to_vec3();
                 let speed = data.speed;
@@ -408,7 +403,6 @@ fn axis_gizmos(mut gizmos: Gizmos, tweens: Query<(&Tween, &GlobalTransform)>) {
                     palettes::tailwind::ORANGE_500,
                 );
             }
-            #[cfg(feature = "adr285")]
             Some(Mode::TextureMoveContinuous(data)) => {
                 let dcl_vec2 = data.direction.unwrap();
                 // The direction is in pixels, so we scale it down for the gizmo
