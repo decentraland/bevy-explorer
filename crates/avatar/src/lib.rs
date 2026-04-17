@@ -1824,5 +1824,6 @@ fn remove_attach_points_from_avatar_shape(
         for attach_point in attach_points.entities() {
             commands.entity(attach_point).try_despawn();
         }
+        commands.entity(entity).remove::<AttachPoints>();
     }
 }
