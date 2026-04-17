@@ -249,7 +249,7 @@ pub fn update_friends(
             let client = client.0.as_ref().unwrap();
             let new_friends = client
                 .friends
-                .iter()
+                .keys()
                 .map(|friend| {
                     let friend = *friend;
                     let mut root = commands.spawn_empty();
@@ -286,7 +286,7 @@ pub fn update_friends(
 
             let new_sent = client
                 .sent_requests
-                .iter()
+                .keys()
                 .map(|friend| {
                     let friend = *friend;
                     let components = commands

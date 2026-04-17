@@ -172,6 +172,24 @@ pub enum SystemApi {
     GetMicState(RpcResultSender<MicState>),
     SetMicEnabled(bool),
     GetAvatarModifiers(RpcResultSender<Vec<AvatarModifierState>>),
+    // Social / Friends
+    GetFriends(RpcResultSender<Vec<FriendData>>),
+    GetSentFriendRequests(RpcResultSender<Vec<FriendRequestData>>),
+    GetReceivedFriendRequests(RpcResultSender<Vec<FriendRequestData>>),
+    GetSocialInitialized(RpcResultSender<bool>),
+    SendFriendRequest(String, Option<String>, RpcResultSender<Result<(), String>>),
+    AcceptFriendRequest(String, RpcResultSender<Result<(), String>>),
+    RejectFriendRequest(String, RpcResultSender<Result<(), String>>),
+    CancelFriendRequest(String, RpcResultSender<Result<(), String>>),
+    DeleteFriend(String, RpcResultSender<Result<(), String>>),
+    GetFriendshipEventStream(RpcStreamSender<FriendshipEventUpdate>),
+    GetMutualFriends(String, RpcResultSender<Vec<FriendData>>),
+    GetOnlineFriends(RpcResultSender<Vec<FriendStatusData>>),
+    GetFriendConnectivityStream(RpcStreamSender<FriendConnectivityEvent>),
+    // Social / Blocking
+    BlockUser(String, RpcResultSender<Result<(), String>>),
+    UnblockUser(String, RpcResultSender<Result<(), String>>),
+    GetBlockedUsers(RpcResultSender<Vec<BlockedUserData>>),
     GetParams(RpcResultSender<HashMap<String, String>>),
 }
 
@@ -181,6 +199,98 @@ pub struct AvatarModifierState {
     pub user_id: String,
     pub hide_avatar: bool,
     pub hide_profile: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NameColor {
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FriendData {
+    pub address: String,
+    pub name: String,
+    pub has_claimed_name: bool,
+    pub profile_picture_url: String,
+    pub name_color: Option<NameColor>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FriendRequestData {
+    pub address: String,
+    pub name: String,
+    pub has_claimed_name: bool,
+    pub profile_picture_url: String,
+    pub name_color: Option<NameColor>,
+    pub created_at: i64,
+    pub message: Option<String>,
+    pub id: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all_fields = "camelCase")]
+#[serde(tag = "type")]
+pub enum FriendshipEventUpdate {
+    #[serde(rename = "request")]
+    Request {
+        address: String,
+        name: String,
+        has_claimed_name: bool,
+        profile_picture_url: String,
+        name_color: Option<NameColor>,
+        created_at: i64,
+        message: Option<String>,
+        id: String,
+    },
+    #[serde(rename = "accept")]
+    Accept { address: String },
+    #[serde(rename = "reject")]
+    Reject { address: String },
+    #[serde(rename = "cancel")]
+    Cancel { address: String },
+    #[serde(rename = "delete")]
+    Delete { address: String },
+    #[serde(rename = "block")]
+    Block { address: String },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FriendStatusData {
+    pub address: String,
+    pub name: String,
+    pub has_claimed_name: bool,
+    pub profile_picture_url: String,
+    pub name_color: Option<NameColor>,
+    /// "online", "offline", or "away"
+    pub status: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockedUserData {
+    pub address: String,
+    pub name: String,
+    pub has_claimed_name: bool,
+    pub profile_picture_url: String,
+    pub name_color: Option<NameColor>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FriendConnectivityEvent {
+    pub address: String,
+    pub name: String,
+    pub has_claimed_name: bool,
+    pub profile_picture_url: String,
+    pub name_color: Option<NameColor>,
+    /// "online", "offline", or "away"
+    pub status: String,
 }
 
 #[derive(Resource, Default, Clone, Debug)]

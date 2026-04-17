@@ -244,7 +244,7 @@ jobs:
         run: sudo apt install -y --no-install-recommends clang curl
       - name: Build WASM package
         run: |
-          wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="livekit"
+          wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="livekit,social"
           rm -f ./deploy/web/pkg/.gitignore
           WASM_SIZE=$(wc -c < ./deploy/web/pkg/webgpu_build_bg.wasm)
           echo "{\"wasmSize\":${WASM_SIZE}}" > ./deploy/web/pkg/manifest.json

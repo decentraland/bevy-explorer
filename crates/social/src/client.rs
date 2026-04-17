@@ -1,144 +1,128 @@
 use anyhow::anyhow;
 use bevy::{
-    log::{debug, warn},
-    platform::collections::{HashMap, HashSet},
+    log::{debug, error, info, warn},
+    platform::collections::HashMap,
 };
 use common::util::AsH160;
-use dcl_component::proto_components::social::{
-    friendship_event_payload, friendship_event_response, request_events_response,
-    subscribe_friendship_events_updates_response, users_response, AcceptPayload, CancelPayload,
-    DeletePayload, FriendshipEventPayload, FriendshipsServiceClient,
-    FriendshipsServiceClientDefinition, Payload, RejectPayload, RequestEvents, RequestPayload,
-    RequestResponse, SubscribeFriendshipEventsUpdatesResponse, UpdateFriendshipPayload, User,
-    Users,
+use dcl_component::proto_components::social_service::v2::{
+    friendship_update, paginated_friendship_requests_response,
+    upsert_friendship_payload::{
+        self, AcceptPayload, CancelPayload, DeletePayload, RejectPayload, RequestPayload,
+    },
+    upsert_friendship_response, BlockUserPayload, ConnectivityStatus, FriendProfile,
+    FriendshipRequestResponse, GetBlockedUsersPayload, GetFriendsPayload,
+    GetFriendshipRequestsPayload, GetMutualFriendsPayload, Pagination, SocialServiceClient,
+    SocialServiceClientDefinition, UnblockUserPayload, UpsertFriendshipPayload, User,
 };
-use dcl_rpc::{client::RpcClient, transports::web_sockets::WebSocketTransport};
+use dcl_rpc::{
+    client::RpcClient,
+    transports::web_sockets::{Message, WebSocket, WebSocketTransport},
+};
 use ethers_core::types::Address;
 use futures_util::{pin_mut, select, FutureExt};
-use matrix_sdk::{
-    config::SyncSettings,
-    event_handler::Ctx,
-    room::MessagesOptions,
-    ruma::{
-        api::client::{
-            filter::{FilterDefinition, RoomEventFilter},
-            receipt::create_receipt::v3::ReceiptType,
-        },
-        events::{
-            receipt::ReceiptThread,
-            room::message::{MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent},
-            AnyMessageLikeEventContent, AnySyncTimelineEvent, MessageLikeEventType,
-        },
-        RoomOrAliasId, UserId,
-    },
-    Room, RoomMemberships,
-};
-use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc::{self, channel, Receiver, Sender, UnboundedReceiver, UnboundedSender};
-use wallet::SimpleAuthChain;
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use web_time::Duration;
 
+use crate::rpc_websocket::PlatformRpcWebSocket;
+use crate::runtime::SocialRuntime;
 use crate::DirectChatMessage;
 
-#[derive(Serialize, Deserialize)]
-struct SocialIdentifier {
-    r#type: String,
-    user: String,
-}
-
-impl SocialIdentifier {
-    fn new(address: Address) -> Self {
-        Self {
-            r#type: "m.id.user".to_owned(),
-            user: format!("{address:#x}"),
-        }
-    }
-}
-
-#[derive(Serialize)]
-struct SocialLogin {
-    auth_chain: SimpleAuthChain,
-    identifier: SocialIdentifier,
-    timestamp: String,
-    r#type: String,
-}
-
-impl SocialLogin {
-    async fn try_new(wallet: &wallet::Wallet) -> Result<Self, anyhow::Error> {
-        let timestamp: chrono::DateTime<chrono::Utc> = chrono::DateTime::from_timestamp_millis(
-            web_time::SystemTime::now()
-                .duration_since(web_time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as i64,
-        )
-        .unwrap();
-        let timestamp = format!("{}", timestamp.timestamp_millis());
-
-        let auth_chain = wallet
-            .sign_message(timestamp.clone())
-            .await
-            .map_err(dbgerr)?;
-        let identifier = SocialIdentifier::new(wallet.address().ok_or(anyhow!("not connected"))?);
-
-        Ok(Self {
-            auth_chain,
-            identifier,
-            timestamp,
-            r#type: "m.login.decentraland".to_owned(),
-        })
-    }
+pub enum SocialQuery {
+    GetMutualFriends {
+        address: String,
+        response: tokio::sync::oneshot::Sender<Result<Vec<FriendProfile>, String>>,
+    },
+    BlockUser {
+        address: String,
+        response: tokio::sync::oneshot::Sender<Result<(), String>>,
+    },
+    UnblockUser {
+        address: String,
+        response: tokio::sync::oneshot::Sender<Result<(), String>>,
+    },
+    GetBlockedUsers {
+        response: tokio::sync::oneshot::Sender<Result<Vec<FriendProfile>, String>>,
+    },
 }
 
 enum FriendData {
     Init {
-        sent_requests: HashSet<Address>,
-        received_requests: HashMap<Address, Option<String>>,
-        friends: HashSet<Address>,
+        sent_requests: HashMap<Address, FriendshipRequestResponse>,
+        received_requests: HashMap<Address, FriendshipRequestResponse>,
+        friends: HashMap<Address, FriendProfile>,
     },
-    Event(friendship_event_response::Body),
-    Chat(DirectChatMessage),
-}
-
-enum FriendshipOutbound {
-    FriendshipEvent(FriendshipEventPayload),
-    ChatMessage(DirectChatMessage),
-    HistoryRequest(Address, Sender<DirectChatMessage>),
+    FriendshipEvent(friendship_update::Update),
+    ConnectivityEvent {
+        address: Address,
+        status: ConnectivityStatus,
+    },
+    OwnRequestSent {
+        address: Address,
+        req: FriendshipRequestResponse,
+    },
+    OwnRequestAccepted {
+        address: Address,
+        profile: FriendProfile,
+    },
+    OwnBlock {
+        address: Address,
+    },
+    Disconnected,
 }
 
 pub struct SocialClientHandler {
-    sender: UnboundedSender<FriendshipOutbound>,
+    sender: UnboundedSender<UpsertFriendshipPayload>,
+    query_sender: UnboundedSender<SocialQuery>,
     friendship_receiver: UnboundedReceiver<FriendData>,
 
     pub is_initialized: bool,
-    pub sent_requests: HashSet<Address>,
-    pub received_requests: HashMap<Address, Option<String>>,
-    pub friends: HashSet<Address>,
+    pub sent_requests: HashMap<Address, FriendshipRequestResponse>,
+    pub received_requests: HashMap<Address, FriendshipRequestResponse>,
+    pub friends: HashMap<Address, FriendProfile>,
+    pub friend_status: HashMap<Address, ConnectivityStatus>,
 
     pub unread_messages: HashMap<Address, usize>,
 
-    friend_event_callback: Box<dyn Fn(&friendship_event_response::Body) + Send + Sync + 'static>,
+    friend_event_callback: Box<dyn Fn(&friendship_update::Update) + Send + Sync + 'static>,
+    connectivity_callback: Box<dyn Fn(Address, ConnectivityStatus) + Send + Sync + 'static>,
+    #[allow(dead_code)]
     chat_event_callback: Box<dyn Fn(DirectChatMessage) + Send + Sync + 'static>,
 }
 
 impl SocialClientHandler {
     pub fn connect(
         wallet: wallet::Wallet,
-        friend_callback: impl Fn(&friendship_event_response::Body) + Send + Sync + 'static,
+        runtime: &SocialRuntime,
+        friend_callback: impl Fn(&friendship_update::Update) + Send + Sync + 'static,
+        connectivity_callback: impl Fn(Address, ConnectivityStatus) + Send + Sync + 'static,
         chat_callback: impl Fn(DirectChatMessage) + Send + Sync + 'static,
     ) -> Option<Self> {
         let (event_sx, event_rx) = mpsc::unbounded_channel();
         let (response_sx, response_rx) = mpsc::unbounded_channel();
+        let (query_sx, query_rx) = mpsc::unbounded_channel();
 
-        std::thread::spawn(move || social_socket_handler(wallet, event_rx, response_sx));
+        runtime.spawn(async move {
+            if let Err(e) =
+                social_socket_handler_inner(wallet, event_rx, query_rx, response_sx).await
+            {
+                error!("[social] socket handler error: {e}");
+            } else {
+                debug!("[social] socket handler finished");
+            }
+        });
 
         Some(Self {
             is_initialized: false,
             sender: event_sx,
+            query_sender: query_sx,
             friendship_receiver: response_rx,
             sent_requests: Default::default(),
             received_requests: Default::default(),
             friends: Default::default(),
+            friend_status: Default::default(),
             unread_messages: Default::default(),
             friend_event_callback: Box::new(friend_callback),
+            connectivity_callback: Box::new(connectivity_callback),
             chat_event_callback: Box::new(chat_callback),
         })
     }
@@ -147,35 +131,32 @@ impl SocialClientHandler {
         !self.friendship_receiver.is_closed()
     }
 
+    fn make_user(address: Address) -> Option<User> {
+        Some(User {
+            address: format!("{address:#x}"),
+        })
+    }
+
     pub fn friend_request(
         &mut self,
         address: Address,
         message: Option<String>,
     ) -> Result<(), anyhow::Error> {
-        self.sender.send(FriendshipOutbound::FriendshipEvent(
-            FriendshipEventPayload {
-                body: Some(friendship_event_payload::Body::Request(RequestPayload {
-                    user: Some(User {
-                        address: format!("{address:#x}"),
-                    }),
-                    message,
-                })),
-            },
-        ))?;
-        self.sent_requests.insert(address);
+        self.sender.send(UpsertFriendshipPayload {
+            action: Some(upsert_friendship_payload::Action::Request(RequestPayload {
+                user: Self::make_user(address),
+                message,
+            })),
+        })?;
         Ok(())
     }
 
     pub fn cancel_request(&mut self, address: Address) -> Result<(), anyhow::Error> {
-        self.sender.send(FriendshipOutbound::FriendshipEvent(
-            FriendshipEventPayload {
-                body: Some(friendship_event_payload::Body::Cancel(CancelPayload {
-                    user: Some(User {
-                        address: format!("{address:#x}"),
-                    }),
-                })),
-            },
-        ))?;
+        self.sender.send(UpsertFriendshipPayload {
+            action: Some(upsert_friendship_payload::Action::Cancel(CancelPayload {
+                user: Self::make_user(address),
+            })),
+        })?;
         self.sent_requests.remove(&address);
         Ok(())
     }
@@ -185,16 +166,11 @@ impl SocialClientHandler {
             return Err(anyhow!("no request"));
         };
 
-        self.sender.send(FriendshipOutbound::FriendshipEvent(
-            FriendshipEventPayload {
-                body: Some(friendship_event_payload::Body::Accept(AcceptPayload {
-                    user: Some(User {
-                        address: format!("{address:#x}"),
-                    }),
-                })),
-            },
-        ))?;
-        self.friends.insert(address);
+        self.sender.send(UpsertFriendshipPayload {
+            action: Some(upsert_friendship_payload::Action::Accept(AcceptPayload {
+                user: Self::make_user(address),
+            })),
+        })?;
         Ok(())
     }
 
@@ -203,53 +179,86 @@ impl SocialClientHandler {
             return Err(anyhow!("no request"));
         };
 
-        self.sender.send(FriendshipOutbound::FriendshipEvent(
-            FriendshipEventPayload {
-                body: Some(friendship_event_payload::Body::Reject(RejectPayload {
-                    user: Some(User {
-                        address: format!("{address:#x}"),
-                    }),
-                })),
-            },
-        ))?;
+        self.sender.send(UpsertFriendshipPayload {
+            action: Some(upsert_friendship_payload::Action::Reject(RejectPayload {
+                user: Self::make_user(address),
+            })),
+        })?;
         Ok(())
     }
 
     pub fn delete_friend(&mut self, address: Address) -> Result<(), anyhow::Error> {
-        if !self.friends.remove(&address) {
+        if self.friends.remove(&address).is_none() {
             return Err(anyhow!("no request"));
         };
 
-        self.sender.send(FriendshipOutbound::FriendshipEvent(
-            FriendshipEventPayload {
-                body: Some(friendship_event_payload::Body::Delete(DeletePayload {
-                    user: Some(User {
-                        address: format!("{address:#x}"),
-                    }),
-                })),
-            },
-        ))?;
+        self.sender.send(UpsertFriendshipPayload {
+            action: Some(upsert_friendship_payload::Action::Delete(DeletePayload {
+                user: Self::make_user(address),
+            })),
+        })?;
+        self.friend_status.remove(&address);
         Ok(())
     }
 
-    pub fn chat(&self, address: Address, message: String) -> Result<(), anyhow::Error> {
-        self.sender
-            .send(FriendshipOutbound::ChatMessage(DirectChatMessage {
-                partner: address,
-                me_speaking: true,
-                message,
-            }))
-            .map_err(dbgerr)
+    pub fn get_mutual_friends(
+        &self,
+        address: String,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<FriendProfile>, String>>, anyhow::Error>
+    {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.query_sender.send(SocialQuery::GetMutualFriends {
+            address,
+            response: tx,
+        })?;
+        Ok(rx)
+    }
+
+    pub fn block_user(
+        &self,
+        address: String,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.query_sender.send(SocialQuery::BlockUser {
+            address,
+            response: tx,
+        })?;
+        Ok(rx)
+    }
+
+    pub fn unblock_user(
+        &self,
+        address: String,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.query_sender.send(SocialQuery::UnblockUser {
+            address,
+            response: tx,
+        })?;
+        Ok(rx)
+    }
+
+    pub fn get_blocked_users(
+        &self,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<Vec<FriendProfile>, String>>, anyhow::Error>
+    {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.query_sender
+            .send(SocialQuery::GetBlockedUsers { response: tx })?;
+        Ok(rx)
+    }
+
+    pub fn chat(&self, _address: Address, _message: String) -> Result<(), anyhow::Error> {
+        // DM chat not supported in V2 (no Matrix)
+        Err(anyhow!("chat not available in V2"))
     }
 
     pub fn get_chat_history(
         &self,
-        address: Address,
-    ) -> Result<Receiver<DirectChatMessage>, anyhow::Error> {
-        let (sx, rx) = channel(1);
-        self.sender
-            .send(FriendshipOutbound::HistoryRequest(address, sx))?;
-        Ok(rx)
+        _address: Address,
+    ) -> Result<tokio::sync::mpsc::Receiver<DirectChatMessage>, anyhow::Error> {
+        // Chat history via Matrix is no longer supported in V2
+        Err(anyhow!("chat history not available in V2"))
     }
 
     pub fn mark_as_read(&mut self, address: Address) {
@@ -273,29 +282,43 @@ impl SocialClientHandler {
                     self.friends = friends;
                     self.is_initialized = true;
                 }
-                FriendData::Event(ev) => {
+                FriendData::FriendshipEvent(ev) => {
                     (self.friend_event_callback)(&ev);
                     match ev {
-                        friendship_event_response::Body::Request(body) => {
-                            let Some(address) =
-                                body.user.as_ref().and_then(|u| u.address.as_h160())
-                            else {
+                        friendship_update::Update::Request(body) => {
+                            let Some(friend_profile) = body.friend.as_ref() else {
+                                warn!("invalid friend request (no friend profile): {body:?}");
+                                continue;
+                            };
+                            let Some(address) = friend_profile.address.as_h160() else {
                                 warn!("invalid friend request (no address): {body:?}");
                                 continue;
                             };
-                            self.received_requests.insert(address, body.message);
+                            self.received_requests.insert(
+                                address,
+                                FriendshipRequestResponse {
+                                    friend: body.friend.clone(),
+                                    created_at: body.created_at,
+                                    message: body.message.clone(),
+                                    id: body.id.clone(),
+                                },
+                            );
                         }
-                        friendship_event_response::Body::Accept(body) => {
+                        friendship_update::Update::Accept(body) => {
                             let Some(address) =
                                 body.user.as_ref().and_then(|u| u.address.as_h160())
                             else {
                                 warn!("invalid friend accept (no address): {body:?}");
                                 continue;
                             };
-                            self.sent_requests.remove(&address);
-                            self.friends.insert(address);
+                            // Move from sent_requests to friends
+                            if let Some(req) = self.sent_requests.remove(&address) {
+                                if let Some(profile) = req.friend {
+                                    self.friends.insert(address, profile);
+                                }
+                            }
                         }
-                        friendship_event_response::Body::Reject(body) => {
+                        friendship_update::Update::Reject(body) => {
                             let Some(address) =
                                 body.user.as_ref().and_then(|u| u.address.as_h160())
                             else {
@@ -304,7 +327,7 @@ impl SocialClientHandler {
                             };
                             self.sent_requests.remove(&address);
                         }
-                        friendship_event_response::Body::Delete(body) => {
+                        friendship_update::Update::Delete(body) => {
                             let Some(address) =
                                 body.user.as_ref().and_then(|u| u.address.as_h160())
                             else {
@@ -312,48 +335,57 @@ impl SocialClientHandler {
                                 continue;
                             };
                             self.friends.remove(&address);
+                            self.friend_status.remove(&address);
                         }
-                        friendship_event_response::Body::Cancel(body) => {
+                        friendship_update::Update::Cancel(body) => {
                             let Some(address) =
                                 body.user.as_ref().and_then(|u| u.address.as_h160())
                             else {
-                                warn!("invalid friend accept (no address): {body:?}");
+                                warn!("invalid friend cancel (no address): {body:?}");
                                 continue;
                             };
                             self.received_requests.remove(&address);
                         }
+                        friendship_update::Update::Block(body) => {
+                            let Some(address) =
+                                body.user.as_ref().and_then(|u| u.address.as_h160())
+                            else {
+                                warn!("invalid block event (no address): {body:?}");
+                                continue;
+                            };
+                            // When someone blocks us, remove them from friends and requests
+                            self.friends.remove(&address);
+                            self.friend_status.remove(&address);
+                            self.sent_requests.remove(&address);
+                            self.received_requests.remove(&address);
+                        }
                     }
                 }
-                FriendData::Chat(chat) => {
-                    if !chat.me_speaking {
-                        *self.unread_messages.entry(chat.partner).or_default() += 1;
+                FriendData::ConnectivityEvent { address, status } => {
+                    if self.friends.contains_key(&address) {
+                        self.friend_status.insert(address, status);
+                        (self.connectivity_callback)(address, status);
                     }
-                    (self.chat_event_callback)(chat);
+                }
+                FriendData::OwnRequestSent { address, req } => {
+                    self.sent_requests.insert(address, req);
+                }
+                FriendData::OwnRequestAccepted { address, profile } => {
+                    self.received_requests.remove(&address);
+                    self.friends.insert(address, profile);
+                }
+                FriendData::OwnBlock { address } => {
+                    self.friends.remove(&address);
+                    self.friend_status.remove(&address);
+                    self.sent_requests.remove(&address);
+                    self.received_requests.remove(&address);
+                }
+                FriendData::Disconnected => {
+                    self.is_initialized = false;
+                    self.friend_status.clear();
                 }
             }
         }
-    }
-}
-
-fn social_socket_handler(
-    wallet: wallet::Wallet,
-    event_rx: UnboundedReceiver<FriendshipOutbound>,
-    response_sx: UnboundedSender<FriendData>,
-) {
-    let rt = std::sync::Arc::new(
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap(),
-    );
-    if let Err(e) = rt.block_on(social_socket_handler_inner(
-        wallet.clone(),
-        event_rx,
-        response_sx,
-    )) {
-        warn!("social socket handler print: {e}");
-    } else {
-        debug!("k");
     }
 }
 
@@ -361,579 +393,497 @@ fn dbgerr<E: std::fmt::Debug>(e: E) -> anyhow::Error {
     anyhow!(format!("{e:?}"))
 }
 
-#[cfg(test)]
-const MATRIX_URL: &str = "https://social.decentraland.org"; // zone doesn't work
-#[cfg(not(test))]
-const MATRIX_URL: &str = "https://social.decentraland.org";
+const SOCIAL_URL: &str = "wss://rpc-social-service-ea.decentraland.org";
 
-#[cfg(test)]
-const SOCIAL_URL: &str = "wss://rpc-social-service.decentraland.org"; // zone doesn't work
-#[cfg(not(test))]
-const SOCIAL_URL: &str = "wss://rpc-social-service.decentraland.org";
+const PAGE_SIZE: i32 = 100;
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "social"))]
 async fn social_socket_handler_inner(
     wallet: wallet::Wallet,
-    mut rx: UnboundedReceiver<FriendshipOutbound>,
+    mut rx: UnboundedReceiver<UpsertFriendshipPayload>,
+    mut query_rx: UnboundedReceiver<SocialQuery>,
     response_sx: UnboundedSender<FriendData>,
 ) -> Result<(), anyhow::Error> {
-    let req = SocialLogin::try_new(&wallet).await?;
-    let req = serde_json::to_value(&req)
-        .unwrap()
-        .as_object()
-        .unwrap()
-        .clone();
-    let matrix_client = matrix_sdk::Client::builder()
-        .homeserver_url(MATRIX_URL)
-        .build()
-        .await?;
-    let login = matrix_client
-        .matrix_auth()
-        .login_custom("m.login.decentraland", req)
-        .unwrap()
-        .send()
-        .await?;
-    let synapse_token = login.access_token;
+    let initial_backoff = Duration::from_secs(1);
+    let max_backoff = Duration::from_secs(30);
+    let mut backoff = initial_backoff;
 
-    // create connection
-    let service_connection =
-        dcl_rpc::transports::web_sockets::tungstenite::WebSocketClient::connect(SOCIAL_URL)
+    loop {
+        let start = web_time::Instant::now();
+        let result = run_one_connection(&wallet, &mut rx, &mut query_rx, &response_sx).await;
+        let lasted = start.elapsed();
+        match &result {
+            Ok(()) => info!("[social] connection closed after {lasted:?}"),
+            Err(e) => error!("[social] connection error after {lasted:?}: {e}"),
+        }
+
+        // If the client handle was dropped, exit cleanly — no point reconnecting.
+        if response_sx.is_closed() || rx.is_closed() {
+            info!("[social] handler shutting down (client dropped)");
+            return Ok(());
+        }
+
+        // Notify subscribers of the disconnect so JS can gate UI off `is_initialized`.
+        if response_sx.send(FriendData::Disconnected).is_err() {
+            return Ok(());
+        }
+
+        // Reset backoff once a connection has lasted long enough to be considered healthy.
+        if lasted > Duration::from_secs(60) {
+            backoff = initial_backoff;
+        }
+
+        info!("[social] reconnecting in {backoff:?}...");
+        async_std::task::sleep(backoff).await;
+        backoff = (backoff * 2).min(max_backoff);
+    }
+}
+
+async fn run_one_connection(
+    wallet: &wallet::Wallet,
+    rx: &mut UnboundedReceiver<UpsertFriendshipPayload>,
+    query_rx: &mut UnboundedReceiver<SocialQuery>,
+    response_sx: &UnboundedSender<FriendData>,
+) -> Result<(), anyhow::Error> {
+    // Connect WebSocket
+    info!("[social] Connecting to social service at {SOCIAL_URL}");
+    let (ws, ws_closed) = PlatformRpcWebSocket::connect(SOCIAL_URL)
+        .await
+        .map_err(dbgerr)?;
+    info!("[social] Successfully connected to social service at {SOCIAL_URL}");
+
+    // V2 auth: send signed headers as first WS message
+    let uri: http::Uri = SOCIAL_URL.parse().map_err(dbgerr)?;
+    let signed_headers = wallet::sign_request("get", &uri, wallet, "{}".to_owned())
+        .await
+        .map_err(dbgerr)?;
+    let headers_map: std::collections::HashMap<String, String> =
+        signed_headers.into_iter().collect();
+    let auth_json = serde_json::to_string(&headers_map)?;
+    info!("[social] Sending auth headers: {auth_json}");
+    ws.send(Message::Text(auth_json)).await.map_err(dbgerr)?;
+
+    // Keep an Arc handle to the websocket so the keepalive task can send pings while the
+    // RPC transport owns its own clone for normal traffic.
+    let ws_for_ping = ws.clone();
+
+    // Create RPC client
+    let service_transport = WebSocketTransport::new(ws);
+    let mut service_client = RpcClient::new(service_transport)
+        .await
+        .map_err(|e| anyhow!("[social] Failed to create RPC client: {e:?}"))?;
+    let port = service_client
+        .create_port("social")
+        .await
+        .map_err(|e| anyhow!("[social] Failed to create port: {e:?}"))?;
+    let service_module = port
+        .load_module::<SocialServiceClient<_>>("SocialService")
+        .await
+        .map_err(dbgerr)?;
+
+    // Gather initial data: friends list (paginated)
+    info!("[social] Fetching friends list...");
+    let mut friends = HashMap::default();
+    let mut offset = 0;
+    loop {
+        let resp = service_module
+            .get_friends(GetFriendsPayload {
+                pagination: Some(Pagination {
+                    limit: PAGE_SIZE,
+                    offset,
+                }),
+            })
             .await
             .map_err(dbgerr)?;
-    let service_transport = WebSocketTransport::new(service_connection);
-    let mut service_client = RpcClient::new(service_transport).await.unwrap();
-    let port = service_client.create_port("whatever").await.unwrap();
-    let service_module = port
-        .load_module::<FriendshipsServiceClient<_>>("FriendshipsService")
-        .await
-        .map_err(dbgerr)?;
 
-    // gather and send initial data
-    let mut friends_req = service_module
-        .get_friends(Payload {
-            synapse_token: Some(synapse_token.clone()),
-        })
-        .await
-        .map_err(dbgerr)?;
-    let requests_req = service_module
-        .get_request_events(Payload {
-            synapse_token: Some(synapse_token.clone()),
-        })
-        .await
-        .map_err(dbgerr)?;
+        info!(
+            "[social] get_friends(offset={offset}): got {} friends, raw response: {:?}",
+            resp.friends.len(),
+            resp.pagination_data
+        );
 
-    let mut friends = HashSet::default();
-    while let Some(f) = friends_req.next().await {
-        if let Some(users_response::Response::Users(Users { users })) = f.response {
-            for user in users {
-                if let Some(address) = user.address.as_h160() {
-                    friends.insert(address);
-                }
+        for friend in resp.friends {
+            if let Some(address) = friend.address.as_h160() {
+                friends.insert(address, friend);
             }
         }
-    }
 
+        let total = resp.pagination_data.as_ref().map(|p| p.total).unwrap_or(0);
+        offset += PAGE_SIZE;
+        if offset >= total || friends.is_empty() {
+            break;
+        }
+    }
+    info!("[social] Total friends loaded: {}", friends.len());
+
+    // Gather initial data: received (pending) requests
+    info!("[social] Fetching pending friendship requests...");
     let mut received_requests = HashMap::new();
-    let mut sent_requests = HashSet::default();
-    if let Some(request_events_response::Response::Events(RequestEvents { incoming, outgoing })) =
-        requests_req.response
+    let pending_resp = service_module
+        .get_pending_friendship_requests(GetFriendshipRequestsPayload {
+            pagination: Some(Pagination {
+                limit: PAGE_SIZE,
+                offset: 0,
+            }),
+        })
+        .await
+        .map_err(dbgerr)?;
+    info!(
+        "[social] get_pending_friendship_requests response: {:?}",
+        pending_resp.response
+    );
+
+    if let Some(paginated_friendship_requests_response::Response::Requests(reqs)) =
+        pending_resp.response
     {
-        if let Some(incoming) = incoming {
-            for RequestResponse { user, message, .. } in incoming.items {
-                if let Some(address) = user.and_then(|u| u.address.as_h160()) {
-                    received_requests.insert(address, message);
-                }
-            }
-        }
-        if let Some(outgoing) = outgoing {
-            for RequestResponse { user, .. } in outgoing.items {
-                if let Some(address) = user.and_then(|u| u.address.as_h160()) {
-                    sent_requests.insert(address);
+        for req in reqs.requests {
+            if let Some(friend) = &req.friend {
+                if let Some(address) = friend.address.as_h160() {
+                    received_requests.insert(address, req);
                 }
             }
         }
     }
+    info!(
+        "[social] Pending requests loaded: {}",
+        received_requests.len()
+    );
 
+    // Gather initial data: sent requests
+    info!("[social] Fetching sent friendship requests...");
+    let mut sent_requests = HashMap::new();
+    let sent_resp = service_module
+        .get_sent_friendship_requests(GetFriendshipRequestsPayload {
+            pagination: Some(Pagination {
+                limit: PAGE_SIZE,
+                offset: 0,
+            }),
+        })
+        .await
+        .map_err(dbgerr)?;
+    info!(
+        "[social] get_sent_friendship_requests response: {:?}",
+        sent_resp.response
+    );
+
+    if let Some(paginated_friendship_requests_response::Response::Requests(reqs)) =
+        sent_resp.response
+    {
+        for req in reqs.requests {
+            if let Some(friend) = &req.friend {
+                if let Some(address) = friend.address.as_h160() {
+                    sent_requests.insert(address, req);
+                }
+            }
+        }
+    }
+    info!("[social] Sent requests loaded: {}", sent_requests.len());
+
+    info!(
+        "[social] Init complete — friends: {}, received_requests: {}, sent_requests: {}",
+        friends.len(),
+        received_requests.len(),
+        sent_requests.len()
+    );
     response_sx.send(FriendData::Init {
         sent_requests,
         received_requests,
         friends,
     })?;
 
-    // build workers
-    let mut inbound_service_events = service_module
-        .subscribe_friendship_events_updates(Payload {
-            synapse_token: Some(synapse_token.clone()),
-        })
+    // Subscribe to friendship updates
+    info!("[social] Subscribing to friendship updates...");
+    let mut inbound_updates = service_module
+        .subscribe_to_friendship_updates()
         .await
         .map_err(dbgerr)?;
+    info!("[social] Subscribed to friendship updates");
 
-    // demux the received data
-    let (sx_friend, mut rx_friend) = mpsc::channel(10);
-    let (sx_chat, mut rx_chat) = mpsc::channel(10);
-    let (sx_history, mut rx_history) = mpsc::channel(10);
-    tokio::spawn(async move {
-        while let Some(message) = rx.recv().await {
-            match message {
-                FriendshipOutbound::FriendshipEvent(data) => {
-                    let _ = sx_friend.send(data).await;
-                }
-                FriendshipOutbound::ChatMessage(chat) => {
-                    let _ = sx_chat.send(chat).await;
-                }
-                FriendshipOutbound::HistoryRequest(address, sender) => {
-                    let _ = sx_history.send((address, sender)).await;
-                }
-            }
-        }
-    });
+    // Subscribe to friend connectivity updates
+    info!("[social] Subscribing to friend connectivity updates...");
+    let mut connectivity_updates = service_module
+        .subscribe_to_friend_connectivity_updates()
+        .await
+        .map_err(dbgerr)?;
+    info!("[social] Subscribed to friend connectivity updates");
 
-    struct RoomAliasConverter(String);
-    impl RoomAliasConverter {
-        fn as_ref(&self) -> Result<&RoomOrAliasId, anyhow::Error> {
-            self.0.as_str().try_into().map_err(dbgerr)
-        }
-    }
-
-    let room_alias = |other: Address| -> Result<RoomAliasConverter, anyhow::Error> {
-        let me = format!(
-            "{:#x}",
-            wallet.address().ok_or(anyhow!("wallet disconnected!"))?
-        );
-        let other = format!("{other:#x}");
-        let alias = format!(
-            "#{}+{}:{}",
-            (&me).min(&other),
-            (&me).max(&other),
-            "decentraland.org"
-        )
-        .to_ascii_lowercase();
-        Ok(RoomAliasConverter(alias))
-    };
-
-    // outbound matrix events
-    let client = matrix_client.clone();
-    let f_matrix_write = async move {
-        while let Some(chat) = rx_chat.recv().await {
-            let alias = room_alias(chat.partner)?;
-            match client.join_room_by_id_or_alias(alias.as_ref()?, &[]).await {
-                Err(e) => {
-                    warn!("failed to find room for address {:#?}", chat.partner);
-                    warn!("err: {e}");
-                    continue;
-                }
-                Ok(room) => {
-                    room.send(RoomMessageEventContent::text_plain(chat.message))
-                        .await?
-                }
-            };
-        }
-
-        Ok(())
-    }
-    .fuse();
-
-    async fn handle_history(
-        address: Address,
-        alias: RoomAliasConverter,
-        client: matrix_sdk::Client,
-        sx: Sender<DirectChatMessage>,
-    ) -> Result<(), anyhow::Error> {
-        warn!("history requested for {address:#?}");
-        let room = client
-            .join_room_by_id_or_alias(alias.as_ref()?, &[])
-            .await?;
-        let mut token = None;
-        let mut filter = RoomEventFilter::default();
-        filter.types = Some(vec!["m.room.message".to_owned()]);
-
-        loop {
-            let mut options = MessagesOptions::backward();
-            options.limit = 10u32.into();
-            options.filter = filter.clone();
-            options.from = token.take();
-
-            let history = room.messages(options).await?;
-            debug!("got -> {:?}", (&history.start, &history.end));
-            for event in history.chunk {
-                if let Ok(AnySyncTimelineEvent::MessageLike(m)) = event.raw().deserialize() {
-                    if m.event_type() == MessageLikeEventType::RoomMessage {
-                        let Some(sender) = matrix_to_h160(m.sender()) else {
-                            warn!("no h160 from {:?}", m.sender());
-                            continue;
-                        };
-                        let Some(AnyMessageLikeEventContent::RoomMessage(content)) =
-                            m.original_content()
-                        else {
-                            continue;
-                        };
-                        let MessageType::Text(text_content) = content.msgtype else {
-                            continue;
-                        };
-                        sx.send(DirectChatMessage {
-                            partner: address,
-                            me_speaking: address != sender,
-                            message: text_content.body,
-                        })
-                        .await?;
-                    }
-                }
-            }
-            debug!("next -> {:?}", &history.end);
-            token = history.end;
-            if token.is_none() {
-                return Ok(());
-            }
-        }
-    }
-
-    // history requests
-    let client = matrix_client.clone();
-    let f_matrix_history = async move {
-        while let Some((address, sx)) = rx_history.recv().await {
-            let Ok(alias) = room_alias(address) else {
-                warn!("failed to get room alias");
-                continue;
-            };
-            let client = client.clone();
-            tokio::spawn(async move {
-                if let Err(e) = handle_history(address, alias, client, sx).await {
-                    warn!("history err: {e}");
-                }
-            });
-        }
-        Result::<(), anyhow::Error>::Ok(())
-    }
-    .fuse();
-
-    // outbound service events
+    // Outbound: send friendship actions + handle queries
+    let response_sx_write = response_sx.clone();
     let f_service_write = async move {
-        while let Some(req) = rx_friend.recv().await {
-            service_module
-                .update_friendship_event(UpdateFriendshipPayload {
-                    event: Some(req),
-                    auth_token: Some(Payload {
-                        synapse_token: Some(synapse_token.clone()),
-                    }),
-                })
-                .await
-                .map_err(dbgerr)?;
+        let response_sx = response_sx_write;
+        loop {
+            tokio::select! {
+                req = rx.recv() => {
+                    let Some(req) = req else { return Result::<(), anyhow::Error>::Ok(()); };
+                    info!("[social] upsert_friendship request: {req:?}");
+                    let action = req.action.clone();
+                    let resp = service_module
+                        .upsert_friendship(req)
+                        .await
+                        .map_err(|e| anyhow!("[social] upsert_friendship transport error: {e:?}"))?;
+                    info!("[social] upsert_friendship response: {resp:?}");
+
+                    // The server doesn't echo our own actions back via the subscription,
+                    // so update local state from the RPC response.
+                    if let Some(upsert_friendship_response::Response::Accepted(accepted)) = resp.response {
+                        match action {
+                            Some(upsert_friendship_payload::Action::Request(_)) => {
+                                if let Some(friend) = accepted.friend.as_ref() {
+                                    if let Some(address) = friend.address.as_h160() {
+                                        let req = FriendshipRequestResponse {
+                                            friend: accepted.friend.clone(),
+                                            created_at: accepted.created_at,
+                                            message: accepted.message,
+                                            id: accepted.id,
+                                        };
+                                        let _ = response_sx.send(FriendData::OwnRequestSent { address, req });
+                                    }
+                                }
+                            }
+                            Some(upsert_friendship_payload::Action::Accept(AcceptPayload { user: Some(user) })) => {
+                                if let (Some(address), Some(profile)) = (user.address.as_h160(), accepted.friend) {
+                                    let _ = response_sx.send(FriendData::OwnRequestAccepted { address, profile });
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                query = query_rx.recv() => {
+                    let Some(query) = query else { return Result::<(), anyhow::Error>::Ok(()); };
+                    match query {
+                        SocialQuery::GetMutualFriends { address, response } => {
+                            info!("[social] getMutualFriends request for {address}");
+                            let mut all_friends = Vec::new();
+                            let mut offset = 0;
+                            let mut result: Result<Vec<FriendProfile>, String> = Ok(Vec::new());
+                            loop {
+                                match service_module.get_mutual_friends(GetMutualFriendsPayload {
+                                    user: Some(User { address: address.clone() }),
+                                    pagination: Some(Pagination { limit: PAGE_SIZE, offset }),
+                                }).await {
+                                    Ok(resp) => {
+                                        let count = resp.friends.len();
+                                        all_friends.extend(resp.friends);
+                                        let total = resp.pagination_data.as_ref().map(|p| p.total).unwrap_or(0);
+                                        offset += PAGE_SIZE;
+                                        if offset >= total || count == 0 { break; }
+                                    }
+                                    Err(e) => {
+                                        warn!("[social] getMutualFriends error: {e:?}");
+                                        result = Err(format!("{e:?}"));
+                                        break;
+                                    }
+                                }
+                            }
+                            if result.is_ok() {
+                                info!("[social] getMutualFriends: {} mutual friends", all_friends.len());
+                                let _ = response.send(Ok(all_friends));
+                            } else {
+                                let _ = response.send(result);
+                            }
+                        }
+                        SocialQuery::BlockUser { address, response } => {
+                            info!("[social] blockUser request for {address}");
+                            match service_module.block_user(BlockUserPayload {
+                                user: Some(User { address: address.clone() }),
+                            }).await {
+                                Ok(resp) => {
+                                    use dcl_component::proto_components::social_service::v2::block_user_response::Response;
+                                    match resp.response {
+                                        Some(Response::Ok(_)) => {
+                                            info!("[social] blockUser success for {address}");
+                                            if let Some(addr) = address.as_h160() {
+                                                let _ = response_sx.send(FriendData::OwnBlock { address: addr });
+                                            }
+                                            let _ = response.send(Ok(()));
+                                        }
+                                        Some(Response::InternalServerError(e)) => {
+                                            let msg = e.message.unwrap_or_default();
+                                            warn!("[social] blockUser internal error: {msg}");
+                                            let _ = response.send(Err(msg));
+                                        }
+                                        Some(Response::InvalidRequest(e)) => {
+                                            let msg = e.message.unwrap_or_default();
+                                            warn!("[social] blockUser invalid request: {msg}");
+                                            let _ = response.send(Err(msg));
+                                        }
+                                        Some(Response::ProfileNotFound(e)) => {
+                                            let msg = e.message.unwrap_or_else(|| "profile not found".to_string());
+                                            warn!("[social] blockUser profile not found: {msg}");
+                                            let _ = response.send(Err(msg));
+                                        }
+                                        None => {
+                                            let _ = response.send(Err("empty response".to_string()));
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("[social] blockUser error: {e:?}");
+                                    let _ = response.send(Err(format!("{e:?}")));
+                                }
+                            }
+                        }
+                        SocialQuery::UnblockUser { address, response } => {
+                            info!("[social] unblockUser request for {address}");
+                            match service_module.unblock_user(UnblockUserPayload {
+                                user: Some(User { address: address.clone() }),
+                            }).await {
+                                Ok(resp) => {
+                                    use dcl_component::proto_components::social_service::v2::unblock_user_response::Response;
+                                    match resp.response {
+                                        Some(Response::Ok(_)) => {
+                                            info!("[social] unblockUser success for {address}");
+                                            let _ = response.send(Ok(()));
+                                        }
+                                        Some(Response::InternalServerError(e)) => {
+                                            let msg = e.message.unwrap_or_default();
+                                            warn!("[social] unblockUser internal error: {msg}");
+                                            let _ = response.send(Err(msg));
+                                        }
+                                        Some(Response::InvalidRequest(e)) => {
+                                            let msg = e.message.unwrap_or_default();
+                                            warn!("[social] unblockUser invalid request: {msg}");
+                                            let _ = response.send(Err(msg));
+                                        }
+                                        Some(Response::ProfileNotFound(e)) => {
+                                            let msg = e.message.unwrap_or_else(|| "profile not found".to_string());
+                                            warn!("[social] unblockUser profile not found: {msg}");
+                                            let _ = response.send(Err(msg));
+                                        }
+                                        None => {
+                                            let _ = response.send(Err("empty response".to_string()));
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("[social] unblockUser error: {e:?}");
+                                    let _ = response.send(Err(format!("{e:?}")));
+                                }
+                            }
+                        }
+                        SocialQuery::GetBlockedUsers { response } => {
+                            info!("[social] getBlockedUsers request");
+                            let mut all_profiles = Vec::new();
+                            let mut offset = 0;
+                            let mut result: Result<Vec<FriendProfile>, String> = Ok(Vec::new());
+                            loop {
+                                match service_module.get_blocked_users(GetBlockedUsersPayload {
+                                    pagination: Some(Pagination { limit: PAGE_SIZE, offset }),
+                                }).await {
+                                    Ok(resp) => {
+                                        let count = resp.profiles.len();
+                                        // Convert BlockedUserProfile to FriendProfile
+                                        for blocked in &resp.profiles {
+                                            all_profiles.push(FriendProfile {
+                                                address: blocked.address.clone(),
+                                                name: blocked.name.clone(),
+                                                has_claimed_name: blocked.has_claimed_name,
+                                                profile_picture_url: blocked.profile_picture_url.clone(),
+                                                name_color: blocked.name_color,
+                                            });
+                                        }
+                                        let total = resp.pagination_data.as_ref().map(|p| p.total).unwrap_or(0);
+                                        offset += PAGE_SIZE;
+                                        if offset >= total || count == 0 { break; }
+                                    }
+                                    Err(e) => {
+                                        warn!("[social] getBlockedUsers error: {e:?}");
+                                        result = Err(format!("{e:?}"));
+                                        break;
+                                    }
+                                }
+                            }
+                            if result.is_ok() {
+                                info!("[social] getBlockedUsers: {} blocked users", all_profiles.len());
+                                let _ = response.send(Ok(all_profiles));
+                            } else {
+                                let _ = response.send(result);
+                            }
+                        }
+                    }
+                }
+            }
         }
+    }
+    .fuse();
+
+    // Inbound: receive friendship update events
+    let sx_friendship = response_sx.clone();
+    let f_service_read = async move {
+        while let Some(update) = inbound_updates.next().await {
+            info!("[social] Received friendship update: {update:?}");
+            if let Some(ev) = update.update {
+                sx_friendship
+                    .send(FriendData::FriendshipEvent(ev))
+                    .map_err(dbgerr)?;
+            }
+        }
+        Err(anyhow!("[social] friendship update stream ended"))
+    }
+    .fuse();
+
+    // Inbound: receive friend connectivity update events
+    let sx_connectivity = response_sx.clone();
+    let f_connectivity_read = async move {
+        while let Some(update) = connectivity_updates.next().await {
+            info!("[social] Received connectivity update: {update:?}");
+            if let Some(friend) = &update.friend {
+                if let Some(address) = friend.address.as_h160() {
+                    let status = match update.status {
+                        0 => ConnectivityStatus::Online,
+                        2 => ConnectivityStatus::Away,
+                        _ => ConnectivityStatus::Offline,
+                    };
+                    sx_connectivity
+                        .send(FriendData::ConnectivityEvent { address, status })
+                        .map_err(dbgerr)?;
+                }
+            }
+        }
+        Err(anyhow!("[social] connectivity update stream ended"))
+    }
+    .fuse();
+
+    // Keepalive: send a websocket ping every 30s. Both proxies / load balancers and
+    // the server itself may close idle connections; this also surfaces broken sockets
+    // promptly (the send will fail rather than appearing healthy).
+    let f_keepalive = async move {
+        loop {
+            async_std::task::sleep(Duration::from_secs(30)).await;
+            ws_for_ping
+                .send(Message::Ping)
+                .await
+                .map_err(|e| anyhow!("[social] keepalive ping failed: {e:?}"))?;
+        }
+        #[allow(unreachable_code)]
         Result::<(), anyhow::Error>::Ok(())
     }
     .fuse();
 
-    // inbound service events
-    let sx = response_sx.clone();
-    let f_service_read = async move {
-        while let Some(SubscribeFriendshipEventsUpdatesResponse {
-            response: Some(response),
-        }) = inbound_service_events.next().await
-        {
-            match response {
-                subscribe_friendship_events_updates_response::Response::Events(evs) => {
-                    for ev in evs.responses.into_iter().flat_map(|r| r.body) {
-                        sx.send(FriendData::Event(ev)).map_err(dbgerr)?;
-                    }
-                }
-                other => return Err(dbgerr(other)),
-            }
-        }
-
-        Ok(())
+    // Watch for the underlying websocket closing. dcl-rpc's dispatcher does not
+    // surface transport closure to its per-subscription channels, so without this
+    // the read futures would hang forever after a server-side disconnect.
+    let f_ws_closed = async move {
+        ws_closed.wait().await;
+        Err(anyhow!("[social] websocket transport closed"))
     }
     .fuse();
 
-    fn matrix_to_h160(s: &UserId) -> Option<Address> {
-        let base = s.as_str().get(1..)?;
-        base.split_once(':')
-            .map(|(init, _)| init)
-            .unwrap_or(base)
-            .as_h160()
-    }
-
-    #[derive(Clone)]
-    pub struct IsStartup(bool);
-
-    // fn as async closures are unstable
-    async fn handle_message(
-        event: OriginalSyncRoomMessageEvent,
-        room: Room,
-        response_sx: Ctx<UnboundedSender<FriendData>>,
-        is_startup: Ctx<IsStartup>,
-        client: matrix_sdk::Client,
-    ) {
-        debug!("inbound process {event:?}");
-        let Some(sender) = matrix_to_h160(&event.sender) else {
-            debug!("skip 1");
-            return;
-        };
-        let MessageType::Text(text_content) = event.content.msgtype else {
-            debug!("skip 3");
-            return;
-        };
-        let Some(user) = client.user_id() else {
-            debug!("skip 4");
-            return;
-        };
-
-        let Ok(members) = room.members(RoomMemberships::all()).await else {
-            warn!("failed to fetch members");
-            return;
-        };
-        let Some(partner) = members
-            .iter()
-            .filter(|member| !member.is_account_user())
-            .flat_map(|member| matrix_to_h160(member.user_id()))
-            .next()
-        else {
-            warn!("failed to determine partner");
-            return;
-        };
-
-        if (*is_startup).0 {
-            // skip if last read event is this event (we only read 1 so this should be fine, otherwise we'd need to fetch the receipt event as well to compare age)
-            let read_receipt_event_id = room
-                .load_user_receipt(
-                    matrix_sdk::ruma::events::receipt::ReceiptType::Read,
-                    ReceiptThread::Unthreaded,
-                    user,
-                )
-                .await
-                .unwrap_or(None);
-            if read_receipt_event_id.is_some_and(|receipt| receipt.0 == event.event_id) {
-                debug!("skip on read");
-                return;
-            }
-        }
-
-        let _ = response_sx.send(FriendData::Chat(DirectChatMessage {
-            partner,
-            me_speaking: sender != partner,
-            message: text_content.body,
-        }));
-        if let Err(e) = room
-            .send_single_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, event.event_id)
-            .await
-        {
-            debug!("receipt err: {e:?}");
-        };
-        debug!("processed");
-    }
-
-    // inbound matrix events
-    matrix_client.add_event_handler(handle_message);
-    matrix_client.add_event_handler_context(response_sx.clone());
-    matrix_client.add_event_handler_context(IsStartup(true));
-
-    let f_matrix_read = async move {
-        // limit initial history to 1 message so we can check for unread
-        let mut filter = FilterDefinition::default();
-        filter.room.timeline.types = Some(vec!["m.room.message".to_owned()]);
-        filter.room.timeline.limit = Some(1u32.into());
-        let settings = SyncSettings::default().filter(filter.into());
-        matrix_client.sync(settings).await.map_err(dbgerr)?;
-        matrix_client.add_event_handler_context(IsStartup(false));
-        loop {
-            matrix_client
-                .sync(SyncSettings::default())
-                .await
-                .map_err(dbgerr)?;
-        }
-    }
-    .fuse();
-
-    // until a stream is broken
+    // Run until a stream breaks, the keepalive fails, or the websocket closes
     pin_mut!(
         f_service_read,
-        f_matrix_read,
         f_service_write,
-        f_matrix_write,
-        f_matrix_history,
+        f_connectivity_read,
+        f_keepalive,
+        f_ws_closed
     );
     select! {
         r = f_service_read => r,
-        r = f_matrix_read => r,
         r = f_service_write => r,
-        r = f_matrix_write => r,
-        r = f_matrix_history => r,
+        r = f_connectivity_read => r,
+        r = f_keepalive => r,
+        r = f_ws_closed => r,
     }
 }
 
-// #[cfg(test)]
-// mod test {
-//     use std::{thread, time::Duration};
-
-//     use bevy::tasks::{IoTaskPool, TaskPoolBuilder};
-//     use dcl_component::proto_components::social::{
-//         friendship_event_response::Body, AcceptResponse, DeleteResponse, RequestResponse,
-//     };
-//     use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
-//     use wallet::Wallet;
-
-//     use crate::client::DirectChatMessage;
-
-//     use super::SocialClientHandler;
-
-//     fn blocking_recv_timeout<T>(
-//         client: &mut SocialClientHandler,
-//         r: &mut UnboundedReceiver<T>,
-//     ) -> Option<T> {
-//         for _ in 0..10 {
-//             client.update();
-//             if let Ok(data) = r.try_recv() {
-//                 return Some(data);
-//             }
-//             thread::sleep(Duration::from_secs(1));
-//         }
-
-//         None
-//     }
-
-//     #[test]
-//     fn social_test() {
-//         IoTaskPool::get_or_init(|| TaskPoolBuilder::new().num_threads(4).build());
-
-//         let mut wallet_a = Wallet::default();
-//         wallet_a.finalize_as_guest();
-//         let mut wallet_b = Wallet::default();
-//         wallet_b.finalize_as_guest();
-
-//         let (chat_a_sx, mut chat_a) = unbounded_channel();
-//         let (friend_a_sx, mut friend_a) = unbounded_channel();
-
-//         let (chat_b_sx, mut chat_b) = unbounded_channel();
-//         let (friend_b_sx, mut friend_b) = unbounded_channel();
-
-//         let mut client_a = SocialClientHandler::connect(
-//             wallet_a.clone(),
-//             move |ev| {
-//                 friend_a_sx.send(ev.clone()).unwrap();
-//             },
-//             move |chat| {
-//                 chat_a_sx.send(chat).unwrap();
-//             },
-//         )
-//         .unwrap();
-//         let mut client_b = SocialClientHandler::connect(
-//             wallet_b.clone(),
-//             move |ev| {
-//                 friend_b_sx.send(ev.clone()).unwrap();
-//             },
-//             move |chat| {
-//                 chat_b_sx.send(chat).unwrap();
-//             },
-//         )
-//         .unwrap();
-
-//         let mut i = 0;
-//         while (!client_a.is_initialized || !client_b.is_initialized) && i < 10 {
-//             println!("waiting for connection...");
-//             thread::sleep(Duration::from_secs(1));
-//             client_a.update();
-//             client_b.update();
-//             i += 1;
-//         }
-
-//         if !client_a.is_initialized || !client_b.is_initialized {
-//             // we can't connect, the server is probably down.
-//             // unfortunately this happens often enough that we can't fail CI for it, so we pass here if the server is down.
-//             return;
-//         }
-
-//         assert!(client_a.is_initialized);
-//         assert!(client_b.is_initialized);
-
-//         client_a
-//             .friend_request(wallet_b.address().unwrap(), None)
-//             .unwrap();
-//         println!("waiting for request...");
-//         let Some(Body::Request(RequestResponse {
-//             user: Some(user), ..
-//         })) = blocking_recv_timeout(&mut client_b, &mut friend_b)
-//         else {
-//             panic!()
-//         };
-//         assert_eq!(user.address, format!("{:#x}", wallet_a.address().unwrap()));
-
-//         client_b
-//             .accept_request(wallet_a.address().unwrap())
-//             .unwrap();
-//         println!("waiting for accept...");
-//         let Some(Body::Accept(AcceptResponse {
-//             user: Some(user), ..
-//         })) = blocking_recv_timeout(&mut client_a, &mut friend_a)
-//         else {
-//             panic!()
-//         };
-//         assert_eq!(user.address, format!("{:#x}", wallet_b.address().unwrap()));
-
-//         client_a
-//             .chat(wallet_b.address().unwrap(), "Hi".to_owned())
-//             .unwrap();
-//         println!("waiting for chat a->b");
-//         let Some(chat) = blocking_recv_timeout(&mut client_a, &mut chat_a) else {
-//             panic!()
-//         };
-//         assert_eq!(
-//             chat,
-//             DirectChatMessage {
-//                 partner: wallet_b.address().unwrap(),
-//                 me_speaking: true,
-//                 message: "Hi".to_owned()
-//             }
-//         );
-//         let Some(chat) = blocking_recv_timeout(&mut client_b, &mut chat_b) else {
-//             panic!()
-//         };
-//         assert_eq!(
-//             chat,
-//             DirectChatMessage {
-//                 partner: wallet_a.address().unwrap(),
-//                 me_speaking: false,
-//                 message: "Hi".to_owned()
-//             }
-//         );
-
-//         client_b
-//             .chat(wallet_a.address().unwrap(), "Hello!".to_owned())
-//             .unwrap();
-//         println!("waiting for chat b->a");
-//         let Some(chat) = blocking_recv_timeout(&mut client_a, &mut chat_a) else {
-//             panic!()
-//         };
-//         assert_eq!(
-//             chat,
-//             DirectChatMessage {
-//                 partner: wallet_b.address().unwrap(),
-//                 me_speaking: false,
-//                 message: "Hello!".to_owned()
-//             }
-//         );
-//         let Some(chat) = blocking_recv_timeout(&mut client_b, &mut chat_b) else {
-//             panic!()
-//         };
-//         assert_eq!(
-//             chat,
-//             DirectChatMessage {
-//                 partner: wallet_a.address().unwrap(),
-//                 me_speaking: true,
-//                 message: "Hello!".to_owned()
-//             }
-//         );
-
-//         client_a.delete_friend(wallet_b.address().unwrap()).unwrap();
-//         println!("waiting for delete");
-//         let Some(Body::Delete(DeleteResponse {
-//             user: Some(user), ..
-//         })) = blocking_recv_timeout(&mut client_b, &mut friend_b)
-//         else {
-//             panic!()
-//         };
-//         assert_eq!(user.address, format!("{:#x}", wallet_a.address().unwrap()));
-
-//         println!("done");
-//     }
-// }
-
-pub type FriendshipEventBody = friendship_event_response::Body;
+pub type FriendshipEventBody = friendship_update::Update;
