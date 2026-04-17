@@ -12,6 +12,7 @@ use common::{
 use system_bridge::settings::{
     cache_size::CacheSizeSetting,
     imposter_settings::ImposterSetting,
+    player_settings::{JogSpeedSetting, RunJumpSetting},
     sensitivity::{
         CameraSensitivitySetting, CameraZoomSensitivitySetting, MovementSensitivitySetting,
         PointerSensitivitySetting, ScrollSensitivitySetting,
@@ -30,10 +31,7 @@ use system_bridge::settings::{
     max_avatars::MaxAvatarsSetting,
     max_downloads::MaxDownloadsSetting,
     oob_setting::OobSetting,
-    player_settings::{
-        FallSpeedSetting, FrictionSetting, GravitySetting, JumpSetting, RunSpeedSetting,
-        WalkSpeedSetting,
-    },
+    player_settings::{JumpSetting, RunSpeedSetting, WalkSpeedSetting},
     scene_threads::SceneThreadsSetting,
     shadow_settings::ShadowCasterCountSetting,
     shadow_settings::ShadowDistanceSetting,
@@ -170,12 +168,11 @@ fn set_app_settings_content(
                 )
                 .unwrap()
                 .root,
-            spawn_int_setting_template::<RunSpeedSetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<WalkSpeedSetting>(&mut commands, &dui, &config),
-            spawn_int_setting_template::<FrictionSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<JogSpeedSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<RunSpeedSetting>(&mut commands, &dui, &config),
             spawn_int_setting_template::<JumpSetting>(&mut commands, &dui, &config),
-            spawn_int_setting_template::<GravitySetting>(&mut commands, &dui, &config),
-            spawn_int_setting_template::<FallSpeedSetting>(&mut commands, &dui, &config),
+            spawn_int_setting_template::<RunJumpSetting>(&mut commands, &dui, &config),
             commands
                 .spawn_template(
                     &dui,
