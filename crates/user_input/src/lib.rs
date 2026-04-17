@@ -132,8 +132,9 @@ pub(crate) fn no_clip(
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/speed")]
 pub(crate) struct SpeedCommand {
+    walk: f32,
+    jog: f32,
     run: f32,
-    friction: f32,
 }
 
 pub(crate) fn speed_cmd(
@@ -143,10 +144,11 @@ pub(crate) fn speed_cmd(
     if let Some(Ok(command)) = input.take() {
         let mut user = user.single_mut().unwrap();
         user.run_speed = command.run;
-        user.friction = command.friction;
+        user.walk_speed = command.walk;
+        user.jog_speed = command.jog;
         input.reply_ok(format!(
-            "run speed: {}, friction: {}",
-            command.run, command.friction
+            "run speed: {}, jog speed: {}, walk speed: {}",
+            command.run, command.walk, command.jog
         ));
     }
 }
@@ -156,19 +158,17 @@ pub(crate) fn speed_cmd(
 #[command(name = "/jump")]
 pub(crate) struct JumpCommand {
     jump_height: f32,
-    gravity: f32,
-    fall_speed: f32,
+    run_jump_height: f32,
 }
 
 pub(crate) fn jump_cmd(mut input: ConsoleCommand<JumpCommand>, mut user: Query<&mut PrimaryUser>) {
     if let Some(Ok(command)) = input.take() {
         let mut user = user.single_mut().unwrap();
         user.jump_height = command.jump_height;
-        user.gravity = -command.gravity;
-        user.fall_speed = -command.fall_speed;
+        user.run_jump_height = command.run_jump_height;
         input.reply_ok(format!(
-            "jump height: {}, gravity: -{}, max fallspeed: -{}",
-            command.jump_height, command.gravity, command.fall_speed
+            "jump height: {}, running jump height: {}",
+            command.jump_height, command.run_jump_height
         ));
     }
 }

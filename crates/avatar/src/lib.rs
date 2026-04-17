@@ -28,6 +28,7 @@ pub mod animate;
 pub mod attach;
 pub mod avatar_texture;
 pub mod colliders;
+mod dynamic_nametag;
 pub mod foreign_dynamics;
 pub mod mask_material;
 pub mod npc_dynamics;
@@ -66,7 +67,7 @@ use scene_runner::{
 use system_bridge::NativeUi;
 use world_ui::{spawn_world_ui_view, WorldUi};
 
-use crate::animate::AvatarAnimPlayer;
+use crate::{animate::AvatarAnimPlayer, dynamic_nametag::DynamicNametagPlugin};
 
 use self::{
     animate::AvatarAnimationPlugin,
@@ -85,6 +86,7 @@ impl Plugin for AvatarPlugin {
         app.add_plugins(AttachPlugin);
         app.add_plugins(AvatarColliderPlugin);
         app.add_plugins(AvatarTexturePlugin);
+        app.add_plugins(DynamicNametagPlugin);
         app.add_systems(
             Update,
             (
@@ -969,7 +971,7 @@ fn process_avatar(
     (ui_view, dui, config): (Res<AvatarWorldUi>, Res<DuiRegistry>, Res<AppConfig>),
     mut emote_loader: CollectibleManager<Emote>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
-    (names, previous_avatar, scene_ent, previous_animator, mut contexts): (
+    (name_and_parent, previous_avatar, scene_ent, previous_animator, mut contexts): (
         Query<(&Name, &ChildOf)>,
         Query<&PreviousAvatar>,
         Query<&SceneEntity>,
@@ -1299,7 +1301,7 @@ fn process_avatar(
                 let mut path = VecDeque::default();
                 let mut e = *ent;
                 loop {
-                    let (name, parent) = names.get(e).unwrap();
+                    let (name, parent) = name_and_parent.get(e).unwrap();
                     path.push_front(name);
                     if name.to_lowercase() == "armature" {
                         break;
@@ -1327,6 +1329,8 @@ fn process_avatar(
             };
 
             let mut armature_map = HashMap::new();
+            // defer despawn until after we've reparented any springbones
+            let mut wearable_armature_to_despawn = HashSet::new();
 
             for scene_ent in scene_spawner.iter_instance_entities(*instance) {
                 let Ok((_, parent, gt, maybe_h_mat, maybe_h_mesh, maybe_player)) =
@@ -1355,7 +1359,7 @@ fn process_avatar(
                         armature_map.insert(scene_ent, target);
                     }
                     if parent_name == "armature" {
-                        commands.entity(scene_ent).despawn();
+                        wearable_armature_to_despawn.insert(scene_ent);
                     }
                     continue;
                 }
@@ -1437,20 +1441,43 @@ fn process_avatar(
             // remap bones
             for scene_ent in scene_spawner.iter_instance_entities(*instance) {
                 if let Ok(mut skin) = skins.get_mut(scene_ent) {
-                    let joints =
-                        skin.joints
-                            .iter()
-                            .map(|joint| {
-                                *armature_map.get(joint).unwrap_or_else(|| {
-                            let original_name = named_ents.get(*joint);
-                            warn!("missing armature node in wearable mapping: {original_name:?}");
-                            armature_map.values().next().unwrap()
-                        })
+                    let joints = skin
+                        .joints
+                        .iter()
+                        .map(|joint| {
+                            *armature_map.get(joint).unwrap_or_else(|| {
+                                let original_name = named_ents.get(*joint);
+                                warn!(
+                                    "missing armature node in wearable mapping: {original_name:?}"
+                                );
+
+                                // try and reparent the node to an armature parent
+                                if let Some(armature_entity) = name_and_parent
+                                    .get(*joint)
+                                    .and_then(|(_, parent)| named_ents.get(parent.parent()))
+                                    .ok()
+                                    .and_then(|parent_name| {
+                                        target_armature_entities
+                                            .get(&parent_name.as_str().to_ascii_lowercase())
+                                    })
+                                {
+                                    commands
+                                        .entity(*joint)
+                                        .try_insert(ChildOf(*armature_entity));
+                                }
+
+                                &joint
                             })
-                            .copied()
-                            .collect();
+                        })
+                        .copied()
+                        .collect();
                     skin.joints = joints;
                 }
+            }
+
+            // despawn wearable's own armature
+            for scene_ent in wearable_armature_to_despawn {
+                commands.entity(scene_ent).despawn();
             }
         }
 

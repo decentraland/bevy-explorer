@@ -162,7 +162,13 @@ function patchWebgpuAdapter(fakeAsync) {
       pipeline: new Map(),
     };
     gpuSessionState.deviceDescriptor = jsonDescriptor;
-    const device = await originalRequestDevice.apply(this, [descriptor]);
+    var device = undefined;
+    try {
+      device = await originalRequestDevice.apply(this, [descriptor]);
+    } catch (err) {
+      console.warn("Failed to request a device with descriptor, requesting device with default parameters.");
+      device = await originalRequestDevice.apply(this, []);
+    }
     gpuSessionState.device = device;
     localStorage.setItem("deviceDescriptor", jsonDescriptor);
 

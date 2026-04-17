@@ -43,7 +43,7 @@ fn setup(
     match seed.0 {
         Some(seed) => {
             let mut seed_bytes: [u8; 32] = [43; 32];
-            for (to, from) in seed_bytes.iter_mut().zip(seed.to_le_bytes().into_iter()) {
+            for (to, from) in seed_bytes.iter_mut().zip(seed.to_le_bytes()) {
                 *to = from;
             }
             wallet.finalize_as_guest_with_seed(seed_bytes)

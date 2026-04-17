@@ -1,7 +1,11 @@
 use std::fmt::Display;
 
 use crate::{
-    settings::{imposter_settings::ImposterSetting, sensitivity::*},
+    settings::{
+        imposter_settings::ImposterSetting,
+        player_settings::{JogSpeedSetting, RunJumpSetting},
+        sensitivity::*,
+    },
     SystemApi,
 };
 use ambient_brightness_setting::AmbientSetting;
@@ -31,10 +35,7 @@ use load_distance::{LoadDistanceSetting, UnloadDistanceSetting};
 use max_avatars::MaxAvatarsSetting;
 use max_downloads::MaxDownloadsSetting;
 use oob_setting::OobSetting;
-use player_settings::{
-    FallSpeedSetting, FrictionSetting, GravitySetting, JumpSetting, RunSpeedSetting,
-    WalkSpeedSetting,
-};
+use player_settings::{JumpSetting, RunSpeedSetting, WalkSpeedSetting};
 use scene_threads::SceneThreadsSetting;
 use serde::{Deserialize, Serialize};
 use shadow_settings::{ShadowCasterCountSetting, ShadowDistanceSetting};
@@ -167,12 +168,11 @@ impl Plugin for SettingBridgePlugin {
         add_int_setting::<AvatarVolumeSetting>(app, &mut settings, &mut schedule, &config);
 
         add_enum_setting::<ConstrainUiSetting>(app, &mut settings, &mut schedule, &config);
-        add_int_setting::<RunSpeedSetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<WalkSpeedSetting>(app, &mut settings, &mut schedule, &config);
-        add_int_setting::<FrictionSetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<JogSpeedSetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<RunSpeedSetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<JumpSetting>(app, &mut settings, &mut schedule, &config);
-        add_int_setting::<GravitySetting>(app, &mut settings, &mut schedule, &config);
-        add_int_setting::<FallSpeedSetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<RunJumpSetting>(app, &mut settings, &mut schedule, &config);
 
         add_int_setting::<PointerSensitivitySetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<CameraZoomSensitivitySetting>(app, &mut settings, &mut schedule, &config);

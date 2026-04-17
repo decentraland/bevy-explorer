@@ -98,6 +98,7 @@ impl Plugin for InputManagerPlugin {
         app.add_systems(
             PreUpdate,
             (
+                clear_stuck_modifier_keys.after(bevy::input::InputSystem),
                 update_deltas,
                 handle_native_input,
                 handle_get_bindings,
@@ -405,6 +406,47 @@ impl InputManager<'_, '_> {
 struct CurrentNativeInputRequest {
     sender: RpcResultSender<InputIdentifier>,
     axes: HashMap<AxisIdentifier, Vec2>,
+}
+
+// macOS suppresses keyUp events for non-modifier keys while Cmd is held, leaving
+// those keys stuck as `pressed` in winit's input state (e.g. Cmd+V leaves V
+// stuck). This system tracks non-modifier keys pressed while any modifier is
+// held, then synthesizes releases for them once all modifiers are released.
+fn clear_stuck_modifier_keys(
+    mut key_input: ResMut<ButtonInput<KeyCode>>,
+    mut tracked: Local<HashSet<KeyCode>>,
+    mut had_modifier: Local<bool>,
+) {
+    const MODIFIERS: [KeyCode; 6] = [
+        KeyCode::SuperLeft,
+        KeyCode::SuperRight,
+        KeyCode::ControlLeft,
+        KeyCode::ControlRight,
+        KeyCode::AltLeft,
+        KeyCode::AltRight,
+    ];
+
+    let modifier_held = MODIFIERS.iter().any(|k| key_input.pressed(*k));
+
+    if modifier_held {
+        let newly_pressed: Vec<KeyCode> = key_input
+            .get_just_pressed()
+            .copied()
+            .filter(|k| !MODIFIERS.contains(k))
+            .collect();
+        for key in newly_pressed {
+            tracked.insert(key);
+        }
+        *had_modifier = true;
+    } else if *had_modifier {
+        *had_modifier = false;
+        let stuck: Vec<KeyCode> = tracked.drain().collect();
+        for key in stuck {
+            if key_input.pressed(key) {
+                key_input.release(key);
+            }
+        }
+    }
 }
 
 fn update_deltas(

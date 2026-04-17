@@ -247,7 +247,7 @@ fn animate(
     let (gravity, jump_height) = player
         .single()
         .map(|(p, m)| m.map(|m| m.combine(p)).unwrap_or(p.clone()))
-        .map(|p| (p.gravity, p.jump_height))
+        .map(|p| (-10.0f32, p.jump_height))
         .unwrap_or((-20.0, 1.25));
     let gravity = gravity.min(-0.1);
     let jump_height = jump_height.max(0.1);

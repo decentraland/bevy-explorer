@@ -82,6 +82,7 @@ initEngine()
         // Show error state
         initButton.style.display = 'block';
         initButton.textContent = "Load Failed";
+        initButton.disabled = true;
     });
 
 window.addEventListener("keydown", (event) => {

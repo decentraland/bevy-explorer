@@ -5,7 +5,9 @@ use bevy::{diagnostic::FrameCount, math::DVec3, platform::collections::HashMap, 
 use common::{
     dynamics::{PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS, PLAYER_GROUND_THRESHOLD},
     sets::SceneSets,
-    structs::{AvatarDynamicState, EngineMovementControl, PrimaryPlayerRes, PrimaryUser},
+    structs::{
+        AppConfig, AvatarDynamicState, EngineMovementControl, PrimaryPlayerRes, PrimaryUser,
+    },
 };
 use comms::global_crdt::GlobalCrdtState;
 use dcl::interface::{ComponentPosition, CrdtType};
@@ -116,12 +118,25 @@ impl Default for AvatarMovement {
     }
 }
 
-#[derive(Default, Component, Clone, Debug)]
-pub struct AvatarLocomotionSettings(pub Option<PbAvatarLocomotionSettings>);
+#[derive(Component, Clone, Debug)]
+pub struct AvatarLocomotionSettings(PbAvatarLocomotionSettings);
 
 impl From<PbAvatarLocomotionSettings> for AvatarLocomotionSettings {
     fn from(value: PbAvatarLocomotionSettings) -> Self {
-        Self(Some(value))
+        Self(value)
+    }
+}
+
+impl FromConfig for AvatarLocomotionSettings {
+    fn from_config(config: &AppConfig) -> Self {
+        Self(PbAvatarLocomotionSettings {
+            walk_speed: Some(config.player_settings.walk_speed),
+            jog_speed: Some(config.player_settings.jog_speed),
+            run_speed: Some(config.player_settings.run_speed),
+            jump_height: Some(config.player_settings.jump_height),
+            run_jump_height: Some(config.player_settings.run_jump_height),
+            hard_landing_cooldown: Some(0.0),
+        })
     }
 }
 
@@ -160,24 +175,35 @@ impl<C: Component> ActivePlayerComponent<C> {
     }
 }
 
-impl<C: Component + Default> Default for ActivePlayerComponent<C> {
-    fn default() -> Self {
+impl<C: Component + FromConfig> FromConfig for ActivePlayerComponent<C> {
+    fn from_config(config: &AppConfig) -> Self {
         Self {
             scene: Entity::PLACEHOLDER,
             entity: Entity::PLACEHOLDER,
             scene_last_update: 0,
             scene_start_tick: 0,
             scene_is_portable: true,
-            component: C::default(),
+            component: C::from_config(config),
         }
+    }
+}
+
+pub trait FromConfig {
+    fn from_config(config: &AppConfig) -> Self;
+}
+
+impl<T: Default> FromConfig for T {
+    fn from_config(_: &AppConfig) -> Self {
+        Self::default()
     }
 }
 
 #[derive(Resource, Default)]
 pub struct AvatarMovementInfo(pub PbAvatarMovementInfo);
 
-impl<C: Component + Clone + Default> ActivePlayerComponent<C> {
+impl<C: Component + Clone + FromConfig> ActivePlayerComponent<C> {
     // pick from available of any write-time, based on priority
+    #[allow(clippy::too_many_arguments)]
     fn pick_by_priority(
         mut commands: Commands,
         q: Query<(Entity, Ref<C>, &SceneEntity)>,
@@ -186,13 +212,14 @@ impl<C: Component + Clone + Default> ActivePlayerComponent<C> {
         containing_scenes: ContainingScene,
         mut player: Query<&mut ActivePlayerComponent<C>, With<PrimaryUser>>,
         player_res: Res<PrimaryPlayerRes>,
+        config: Res<AppConfig>,
     ) {
         let containing_scenes = containing_scenes.get(player_res.0);
 
         let Ok(mut current_choice) = player.single_mut() else {
             commands
                 .entity(player_res.0)
-                .try_insert(ActivePlayerComponent::<C>::default());
+                .try_insert(ActivePlayerComponent::<C>::from_config(&config));
             return;
         };
 
@@ -203,7 +230,7 @@ impl<C: Component + Clone + Default> ActivePlayerComponent<C> {
                 .any(|e| e == current_choice.entity);
 
         if !current_choice_valid {
-            *current_choice = Default::default();
+            *current_choice = FromConfig::from_config(&config);
         }
 
         // find best choice: parcel first, then portables by most-recently spawned
@@ -251,13 +278,14 @@ impl<C: Component + Clone + Default> ActivePlayerComponent<C> {
         containing_scenes: ContainingScene,
         mut player: Query<&mut ActivePlayerComponent<C>, With<PrimaryUser>>,
         player_res: Res<PrimaryPlayerRes>,
+        config: Res<AppConfig>,
     ) {
         let containing_scenes = containing_scenes.get(player_res.0);
 
         let Ok(mut current_choice) = player.single_mut() else {
             commands
                 .entity(player_res.0)
-                .try_insert(ActivePlayerComponent::<C>::default());
+                .try_insert(ActivePlayerComponent::<C>::from_config(&config));
             return;
         };
 
@@ -268,7 +296,7 @@ impl<C: Component + Clone + Default> ActivePlayerComponent<C> {
                 .is_ok_and(|ctx| ctx.last_update_frame == current_choice.scene_last_update);
 
         if !current_choice_valid {
-            *current_choice = Default::default();
+            *current_choice = FromConfig::from_config(&config);
         }
 
         // find best choice: parcel first, then portables by most-recently spawned
@@ -644,7 +672,7 @@ fn broadcast_movement_info(
 ) {
     let (maybe_locomotion, maybe_modifier) = active_components.single().unwrap_or_default();
 
-    info.0.active_avatar_locomotion_settings = maybe_locomotion.and_then(|l| l.component.0.clone());
+    info.0.active_avatar_locomotion_settings = maybe_locomotion.map(|l| l.component.0.clone());
     info.0.active_input_modifier = maybe_modifier.and_then(|l| l.component.0.clone());
 
     debug!("broadcast {:?}", info.0);

@@ -11,7 +11,7 @@ use bevy::{
     color::palettes,
     platform::collections::{HashMap, HashSet},
     prelude::*,
-    render::view::RenderLayers,
+    render::{primitives::Aabb, view::RenderLayers},
 };
 use dcl_component::proto_components::sdk::components::common::CameraTransition;
 use ethers_core::abi::Address;
@@ -29,13 +29,10 @@ pub struct Version(pub String);
 #[serde(default)]
 pub struct PrimaryUser {
     pub walk_speed: f32,
+    pub jog_speed: f32,
     pub run_speed: f32,
-    pub friction: f32,
-    pub gravity: f32,
     pub jump_height: f32,
-    pub fall_speed: f32,
-    pub control_type: AvatarControl,
-    pub turn_speed: f32,
+    pub run_jump_height: f32,
     pub block_all: bool,
     pub block_run: bool,
     pub block_walk: bool,
@@ -47,13 +44,10 @@ impl Default for PrimaryUser {
     fn default() -> Self {
         Self {
             walk_speed: 2.5,
-            run_speed: 8.0,
-            friction: 6.0,
-            gravity: -10.0,
-            jump_height: 1.25,
-            fall_speed: -15.0,
-            control_type: AvatarControl::Relative,
-            turn_speed: PI,
+            jog_speed: 8.18,
+            run_speed: 11.0,
+            jump_height: 1.9,
+            run_jump_height: 2.95,
             block_all: false,
             block_run: false,
             block_walk: false,
@@ -93,13 +87,10 @@ impl PlayerModifiers {
     pub fn combine(&self, user: &PrimaryUser) -> PrimaryUser {
         PrimaryUser {
             walk_speed: self.walk_speed.unwrap_or(user.walk_speed),
+            jog_speed: self.run_speed.unwrap_or(user.jog_speed),
             run_speed: self.run_speed.unwrap_or(user.run_speed),
-            friction: self.friction.unwrap_or(user.friction),
-            gravity: self.gravity.unwrap_or(user.gravity),
             jump_height: self.jump_height.unwrap_or(user.jump_height),
-            fall_speed: self.fall_speed.unwrap_or(user.fall_speed),
-            control_type: self.control_type.unwrap_or(user.control_type),
-            turn_speed: self.turn_speed.unwrap_or(user.turn_speed),
+            run_jump_height: self.jump_height.unwrap_or(user.run_jump_height),
             block_all: self.block_all || user.block_all,
             block_run: self.block_run || user.block_run,
             block_walk: self.block_walk || user.block_walk,
@@ -166,7 +157,13 @@ impl AttachPoints {
                     Visibility::default(),
                 ))
                 .id(),
-            head: commands.spawn(default_bundle).id(),
+            head: commands
+                .spawn((
+                    default_bundle,
+                    // This Aabb roughly encloses the head
+                    Aabb::from_min_max(Vec3::new(-16., -21., -22.), Vec3::new(16., 21., 22.)),
+                ))
+                .id(),
             neck: commands.spawn(default_bundle).id(),
             spine: commands.spawn(default_bundle).id(),
             spine_1: commands.spawn(default_bundle).id(),
