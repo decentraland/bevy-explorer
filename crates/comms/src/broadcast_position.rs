@@ -78,11 +78,19 @@ fn broadcast_position(
     }
 
     let (_, rotation, translation) = player.to_scale_rotation_translation();
+    // A URN change (e.g. jump → idle on landing) must go out promptly: when the
+    // player comes to rest, velocity/position stop changing, and without this
+    // bypass the transition would wait on the STATIC_FREQ keepalive.
+    let current_urn = scene_anim
+        .and_then(|s| s.active.as_ref())
+        .map(|a| a.urn.clone());
+    let urn_changed = current_urn != last_anim.urn;
     if elapsed < STATIC_FREQ
         && (translation - last_position.0).length_squared() < 0.01
         && rotation == last_position.1
         && (dynamics.velocity - last_position.2).length_squared() < 0.01
         && last_anim.pending_seek.is_none()
+        && !urn_changed
     {
         return;
     }
@@ -146,8 +154,6 @@ fn broadcast_position(
     // `anim_playback_time` is only sent when the scene explicitly requested a
     // seek this frame.
     let active_anim = scene_anim.and_then(|s| s.active.as_ref());
-    let current_urn = active_anim.map(|a| a.urn.clone());
-    let urn_changed = current_urn != last_anim.urn;
     let keepalive_due = active_anim.is_some() && time - last_anim.sent_at >= ANIM_URN_KEEPALIVE;
     let anim_urn = if urn_changed {
         // Send current URN (or empty string to clear a prior active anim).
