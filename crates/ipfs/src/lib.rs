@@ -332,6 +332,20 @@ impl IpfsAssetServer<'_, '_> {
         self.server.load(path)
     }
 
+    // Load a raw content hash that lives inside a scene's collection. Routes
+    // the request through the scene's registered modifier (e.g. a portable's
+    // local content server) so b64-prefixed content hashes resolve to the
+    // scene's origin rather than the realm content URL.
+    pub fn load_scene_content_hash<T: IpfsAsset>(
+        &self,
+        scene_hash: &str,
+        content_hash: &str,
+    ) -> Handle<T> {
+        let ext = T::ext();
+        let path = format!("$ipfs/$scene_content/{scene_hash}/{content_hash}.{ext}");
+        self.server.load(path)
+    }
+
     pub fn active_endpoint(&self) -> Option<String> {
         self.ipfs()
             .realm_config_receiver

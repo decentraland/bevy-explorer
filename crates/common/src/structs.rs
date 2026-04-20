@@ -230,6 +230,46 @@ pub struct EmoteCommand {
     pub r#loop: bool,
 }
 
+// Current scene-driven movement animation request for the primary player.
+// Written by the bridge system in `user_input` (after resolving the scene-relative
+// path against the active scene's content map) and read by `animate` in the avatar crate.
+#[derive(Resource, Default)]
+pub struct SceneDrivenAnimation {
+    pub active: Option<SceneDrivenAnimationRequest>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SceneDrivenAnimationRequest {
+    pub src: String,
+    pub scene_hash: String,
+    pub content_hash: String,
+    pub r#loop: bool,
+    pub speed: f32,
+    pub idle: bool,
+    pub transition_seconds: f32,
+    pub seek: Option<f32>,
+}
+
+// Current scene-driven animation playback state, written by `play_current_emote` in
+// the avatar crate and mirrored into `AvatarMovementInfo.active_animation_state` by
+// `broadcast_movement_info` in `user_input`.
+// `playback_time` freezes while a triggerSceneEmote overrides the animation.
+#[derive(Resource, Default)]
+pub struct SceneDrivenAnimationFeedback {
+    pub state: Option<SceneDrivenAnimationFeedbackState>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SceneDrivenAnimationFeedbackState {
+    pub src: String,
+    pub r#loop: bool,
+    pub speed: f32,
+    pub idle: bool,
+    pub playback_time: f32,
+    pub duration: f32,
+    pub loop_count: u32,
+}
+
 // main camera entity
 #[derive(Component)]
 pub struct PrimaryCamera {

@@ -9,38 +9,51 @@ option (common.ecs_component_id) = 1501;
 
 message PBAvatarMovement {
   decentraland.common.Vector3 velocity = 1;
-  float orientation = 2; // 0-360, we don't allow pitch/roll
+  float orientation = 2;                                    // 0-360, we don't allow pitch/roll
   optional decentraland.common.Vector3 ground_direction = 3;
-  optional bool walk_success = 4; // set for one frame when a walk_target ends: true = reached target, false = failed; absent = in progress or no walk
+  optional bool walk_success = 4;                           // set for one frame when a walk_target ends: true = reached target, false = failed; absent = in progress or no walk
+  optional MovementAnimation animation = 5;                 // if set, the engine plays this animation instead of selecting one from velocity heuristics
+}
+
+// Describes the animation the movement scene wants the avatar to play.
+// One GLB = one clip (following the scene-emote convention: single clip, or a clip named with `_Avatar` suffix).
+// When absent the engine falls back to its built-in velocity-based selection (walk/run/jump/idle).
+message MovementAnimation {
+  string src = 1;                                           // scene-relative path to the gltf/glb asset (resolved via the scene content map)
+  bool loop = 2;                                            // whether the clip repeats once it reaches the end
+  float speed = 3;                                          // playback speed multiplier (1.0 = clip's native rate)
+  bool idle = 4;                                            // true: a triggerSceneEmote may take over; false: emotes are suppressed while this animation plays
+  optional float transition_seconds = 5;                    // cross-fade duration when `src` changes; defaults to 0.2 when unset. Not applied to loop/speed/idle changes.
+  optional float playback_time = 6;                         // if set, the engine seeks to this position (in seconds) this frame. Clear on subsequent frames to allow normal playback. The scene can read `AvatarAnimationState.playback_time` first to decide.
 }
 
 // engine behaviour (uses only capsule shapecasts and GJK closest point for portability):
-// 1: set avatar orientation from movement info -> P0
-// 2: apply velocity (collide and slide)
-//   disable anything we are initially colliding with
-//   shapecast avatar from P3+N to p3+N+velocity*timestep
-//   on impact:
-//       project velocity onto slide plane (standard "Collide & Slide")
-//       velocity = old velocity - (normal * dot(velocity, normal))
-//       continue with residual velocity and residual time
-//    -> P1
-// 3: record "ground collider" - nearest collider within threshold distance in ground_direction using avatar collider shapecast from P1
-// 4: update all colliders, record previous transform and new transform.
-// 5: apply ground collider movement: take collider closest point, modify P1 translation and rotation by closest point translation and rotation change -> P2
-// 6: apply all other pseudo-ground collider movement:
-//   for each collider[i] that collides with the P2 player:
-//       let CTC = collider translation change
-//       if length(CTC) > max_move_threshold
-//           ignore / continue
-//       if dot(CTC, ground_direction) < 0 (i.e. collider is moving into the player from the ground direction)
-//           calculate collider_impact[i] => shapecast avatar from P2 + CTC[i] to P2. collider_impact[i] = CTC * (1 - time of impact)
-//   add max_by_length(collider_impact[i]) to player translation -> P3
-// 7: resolve collisions using position-based-dynamics
-//   while still colliding / until iteration N = max iterations
+// 1: set avatar orientation from movement info -> P1
+// 2: record "ground collider" - nearest collider within threshold distance in ground_direction using avatar collider shapecast
+// 3: update all colliders, record previous transform and new transform.
+// 4: apply ground collider movement: take collider closest point, modify P1 translation and rotation by closest point translation and rotation change -> P2
+// 5: resolve collisions using position-based constraints
+//   initialize constraints to -inf, +inf
+//   repeat
 //       for each collider[i] that collides with the P3+N player:
 //           if closest point = capsule middle (i.e. collider collides with P3 collider but with radius 0), 
 //               ignore / continue
 //           else 
-//               calculate depenetration vector[i] => closest point avatar - closest point collider
-//       add average(depenetration vector) to P3 -> P3+N
-//   repeat
+//               update constraints based on minimum movement to escape collision
+//               e.g. if avatar is 1cm into the floor, constraint_min = max(constraint_min, vec3(0, 0.01, 0))
+//       reposition player to satisfy constraints for each axis:
+//           y: satsify floor before ceiling: new position = max(constraint_min, min(constraint_max, current position))
+//           x and z: if squashed, take average, else satisfy the required constraint
+//           if constraint_min > constraint_max then new position = average(constraint_min, constraint_max) 
+//           else new position = clamp(current position, constraint_min, constraint_max)
+//   while position !~= previous position
+// 6: apply velocity (collide and slide)
+//   disable anything we are initially colliding with
+//   shapecast avatar from position to position + velocity * timestep
+//   on impact:
+//       project velocity onto slide plane (standard "Collide & Slide")
+//       velocity = old velocity - (normal * dot(velocity, normal))
+//       repeat continue with residual velocity and residual time
+// 7: provide AvatarMovementInfo values
+//      actual velocity = (final - P3+N) / timestep
+//      external_velocity = (P3+N - P1) / timestep

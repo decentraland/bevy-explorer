@@ -69,6 +69,14 @@ pub enum IpfsType {
         hash: String,
         ext: String,
     },
+    // A content hash loaded in the context of a scene. Routes through the
+    // scene's registered modifier (e.g. a portable's local content server)
+    // rather than falling back to the realm content URL.
+    SceneContent {
+        scene_hash: String,
+        content_hash: String,
+        ext: String,
+    },
     UrlCached {
         url: String,
         ext: String,
@@ -93,7 +101,9 @@ impl IpfsType {
 
     fn base_url_extension(&self) -> &str {
         match self {
-            IpfsType::ContentFile { .. } | IpfsType::Entity { .. } => "/contents/",
+            IpfsType::ContentFile { .. }
+            | IpfsType::Entity { .. }
+            | IpfsType::SceneContent { .. } => "/contents/",
             IpfsType::UrlCached { .. } => "",
             IpfsType::UrlUncached { .. } => "",
             IpfsType::IndexDb { .. } => "",
@@ -124,6 +134,9 @@ impl IpfsType {
                     anyhow::anyhow!("file not found in content map: {file_path:?} in {scene_hash}")
                 }),
             IpfsType::Entity { hash, .. } => Ok(format!("{base_url}{hash}")),
+            IpfsType::SceneContent { content_hash, .. } => {
+                Ok(format!("{base_url}{content_hash}"))
+            }
             IpfsType::UrlCached { url, .. } | IpfsType::UrlUncached { url, .. } => {
                 Ok(format!("{}", urlencoding::decode(url)?))
             }
@@ -149,6 +162,7 @@ impl IpfsType {
                 }),
             IpfsType::UrlCached { hash, .. } => Some(Cow::Borrowed(hash)),
             IpfsType::Entity { hash, .. } => Some(Cow::Borrowed(hash)),
+            IpfsType::SceneContent { content_hash, .. } => Some(Cow::Borrowed(content_hash)),
             IpfsType::UrlUncached { .. } | IpfsType::IndexDb { .. } => None,
         };
         x
@@ -162,6 +176,7 @@ impl IpfsType {
             | IpfsType::UrlUncached { .. }
             | IpfsType::IndexDb { .. } => None,
             IpfsType::Entity { hash, .. } => Some(hash),
+            IpfsType::SceneContent { scene_hash, .. } => Some(scene_hash),
         }
     }
 
@@ -169,6 +184,9 @@ impl IpfsType {
         match self {
             IpfsType::ContentFile { .. } => {
                 anyhow::bail!("Can't get hash for content files without context")
+            }
+            IpfsType::SceneContent { .. } => {
+                anyhow::bail!("Can't get hash for scene content without context")
             }
             IpfsType::UrlCached { .. }
             | IpfsType::UrlUncached { .. }
@@ -204,6 +222,13 @@ impl From<&IpfsType> for PathBuf {
             IpfsType::Entity { hash, ext } => {
                 PathBuf::from("$entity").join(format!("{hash}.{ext}"))
             }
+            IpfsType::SceneContent {
+                scene_hash,
+                content_hash,
+                ext,
+            } => PathBuf::from("$scene_content")
+                .join(scene_hash)
+                .join(format!("{content_hash}.{ext}")),
             IpfsType::UrlCached { url, ext, .. } => PathBuf::from("$urlc").join(format!(
                 "{}.{}",
                 urlencoding::encode(url).into_owned(),
@@ -268,6 +293,23 @@ where
                     .ok_or(anyhow::anyhow!("entity specified malformed (no '.')"))?;
                 Ok(IpfsType::Entity {
                     hash: hash.to_owned(),
+                    ext: ext.to_owned(),
+                })
+            }
+            "$scene_content" => {
+                let scene_hash = components
+                    .next()
+                    .ok_or(anyhow::anyhow!("scene content specifier missing scene hash"))?
+                    .to_owned();
+                let hash_ext: &str = components
+                    .next()
+                    .ok_or(anyhow::anyhow!("scene content specifier missing content hash"))?;
+                let (content_hash, ext) = hash_ext
+                    .split_once('.')
+                    .ok_or(anyhow::anyhow!("scene content specified malformed (no '.')"))?;
+                Ok(IpfsType::SceneContent {
+                    scene_hash,
+                    content_hash: content_hash.to_owned(),
                     ext: ext.to_owned(),
                 })
             }

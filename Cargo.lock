@@ -11777,6 +11777,7 @@ dependencies = [
  "dcl",
  "dcl_component",
  "input_manager",
+ "ipfs",
  "rapier3d-f64",
  "scene_runner",
  "tween",

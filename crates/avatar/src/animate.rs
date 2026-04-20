@@ -19,7 +19,8 @@ use common::{
     sets::SceneSets,
     structs::{
         AudioEmitter, AudioType, AvatarDynamicState, EmoteCommand, MoveKind, PlayerModifiers,
-        PrimaryUser,
+        PrimaryUser, SceneDrivenAnimation, SceneDrivenAnimationFeedback,
+        SceneDrivenAnimationFeedbackState,
     },
     util::TryPushChildrenEx,
 };
@@ -196,6 +197,19 @@ fn receive_emotes(mut commands: Commands, mut chat_events: EventReader<ChatEvent
     }
 }
 
+/// Where the current ActiveEmote came from. Controls override precedence and whether
+/// the `SceneDrivenAnimationFeedback` resource is updated from this emote's playback.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ActiveEmoteSource {
+    /// Engine-selected from velocity heuristics (the historical default).
+    #[default]
+    VelocitySelected,
+    /// A scene invoked triggerSceneEmote.
+    TriggeredEmote,
+    /// The movement scene published a `MovementAnimation` block in `AvatarMovement`.
+    SceneMovementAnim,
+}
+
 #[derive(Component)]
 pub struct ActiveEmote {
     urn: EmoteUrn,
@@ -205,6 +219,17 @@ pub struct ActiveEmote {
     finished: bool,
     transition_seconds: f32,
     initial_audio_mark: Option<f32>,
+    /// Whether a `triggerSceneEmote` should be allowed to take over. Mirrors the movement
+    /// scene's `idle` flag when `source == SceneMovementAnim`; otherwise unused.
+    overridable: bool,
+    /// Set by the animate system when the scene publishes a `playback_time` this frame.
+    /// Consumed exactly once by `play_current_emote`.
+    pending_seek: Option<f32>,
+    /// Origin of the current selection; dictates override rules and feedback publishing.
+    source: ActiveEmoteSource,
+    /// Source path from `MovementAnimation.src`; used to populate feedback and detect
+    /// cross-fade boundaries between scene-driven animations.
+    scene_anim_src: Option<String>,
 }
 
 impl Default for ActiveEmote {
@@ -217,6 +242,10 @@ impl Default for ActiveEmote {
             finished: false,
             transition_seconds: 0.2,
             initial_audio_mark: None,
+            overridable: true,
+            pending_seek: None,
+            source: ActiveEmoteSource::VelocitySelected,
+            scene_anim_src: None,
         }
     }
 }
@@ -243,6 +272,7 @@ fn animate(
     player: Query<(&PrimaryUser, Option<&PlayerModifiers>)>,
     containing_scene: ContainingScene,
     mut scenes: Query<&mut RendererSceneContext>,
+    scene_driven_animation: Res<SceneDrivenAnimation>,
 ) {
     let (gravity, jump_height) = player
         .single()
@@ -286,6 +316,12 @@ fn animate(
         let damped_velocity_len = damped_velocity.xz().length();
         velocities.insert(avatar_ent, damped_velocity);
 
+        // A scene-driven movement animation is only meaningful for the primary player.
+        let scene_anim = maybe_primary
+            .is_some()
+            .then(|| scene_driven_animation.active.as_ref())
+            .flatten();
+
         // get requested emote
         let (mut requested_emote, given_urn, request_loop) =
             if let Some(EmoteCommand { urn, r#loop, .. }) = emote {
@@ -301,13 +337,23 @@ fn animate(
             requested_emote = None;
         }
 
+        // If the current animation is a non-overridable scene-driven one, silently drop
+        // any triggerSceneEmote request so the movement scene retains control.
+        if active_emote.source == ActiveEmoteSource::SceneMovementAnim && !active_emote.overridable
+        {
+            requested_emote = None;
+        }
+
         // check / cancel requested emote
         if Some(&active_emote.urn) == requested_emote.as_ref() {
             let playing_min_vel = prior_min_velocities
                 .get(&avatar_ent)
                 .copied()
                 .unwrap_or_default();
-            if damped_velocity_len * 0.9 > playing_min_vel {
+            // Scene-driven animations handle their own motion semantics; don't cancel on move.
+            let velocity_cancels =
+                scene_anim.is_none() && active_emote.source != ActiveEmoteSource::SceneMovementAnim;
+            if velocity_cancels && damped_velocity_len * 0.9 > playing_min_vel {
                 // stop emotes on move
                 debug!(
                     "clear on motion {} > {}",
@@ -380,7 +426,36 @@ fn animate(
                 urn: requested_emote,
                 restart: emote_changed,
                 repeat: request_loop,
+                source: ActiveEmoteSource::TriggeredEmote,
                 ..Default::default()
+            }
+        } else if let Some(scene_anim_req) = scene_anim.and_then(|req| {
+            let urn_str = format!(
+                "urn:decentraland:off-chain:scene-emote:{}-{}-false",
+                req.scene_hash, req.content_hash
+            );
+            EmoteUrn::new(urn_str.as_str()).ok().map(|urn| (req, urn))
+        }) {
+            let (req, urn) = scene_anim_req;
+            dynamic_state.move_kind = if req.idle {
+                MoveKind::Idle
+            } else {
+                MoveKind::Walk
+            };
+            let is_new_anim = active_emote.source != ActiveEmoteSource::SceneMovementAnim
+                || active_emote.scene_anim_src.as_deref() != Some(req.src.as_str());
+            ActiveEmote {
+                urn,
+                speed: req.speed,
+                restart: is_new_anim,
+                repeat: req.r#loop,
+                finished: false,
+                transition_seconds: req.transition_seconds,
+                initial_audio_mark: None,
+                overridable: req.idle,
+                pending_seek: req.seek,
+                source: ActiveEmoteSource::SceneMovementAnim,
+                scene_anim_src: Some(req.src.clone()),
             }
         } else {
             // otherwise play a default emote based on motion
@@ -479,7 +554,13 @@ impl SpawnedExtras {
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn play_current_emote(
     mut commands: Commands,
-    mut q: Query<(Entity, &mut ActiveEmote, &AvatarAnimPlayer, &Children)>,
+    mut q: Query<(
+        Entity,
+        &mut ActiveEmote,
+        &AvatarAnimPlayer,
+        &Children,
+        Option<&PrimaryUser>,
+    )>,
     definitions: Query<&AvatarDefinition>,
     mut emote_loader: CollectibleManager<Emote>,
     mut gltfs: ResMut<Assets<Gltf>>,
@@ -501,11 +582,15 @@ fn play_current_emote(
     ),
     mut emitters: Query<&mut AudioEmitter>,
     prop_details: Query<(Option<&Name>, &Transform, &ChildOf)>,
+    (mut feedback, mut frozen_feedback): (
+        ResMut<SceneDrivenAnimationFeedback>,
+        Local<Option<SceneDrivenAnimationFeedbackState>>,
+    ),
 ) {
     let prior_playing = std::mem::take(&mut *playing);
     let mut prev_spawned_extras = std::mem::take(&mut *spawned_extras);
 
-    for (entity, mut active_emote, target_entity, children) in q.iter_mut() {
+    for (entity, mut active_emote, target_entity, children, maybe_primary) in q.iter_mut() {
         debug!("emote {}", active_emote.urn);
         let Some(definition) = children.iter().flat_map(|c| definitions.get(c).ok()).next() else {
             warn!("no definition");
@@ -534,15 +619,25 @@ fn play_current_emote(
 
         if let Some(scene_emote) = active_emote.urn.scene_emote() {
             debug!("got {scene_emote:?}");
-            let mut split = scene_emote.split('-');
-            let maybe_hash = if split.next() == Some("b64") {
-                // stupid to have "-" as a separator and also part of the hash itself for local hashes
-                let parts = split.skip(1).take(2).collect::<Vec<_>>();
-                (parts.len() == 2).then_some(parts.join("-"))
-            } else {
-                split.next().map(ToOwned::to_owned)
+            let mut split = scene_emote.split('-').peekable();
+            // take_hash reads a hash, recombining "b64-<payload>" back into one
+            // token because we used '-' as the separator and b64 hashes also
+            // contain '-'. for non-b64 hashes it just takes the next token.
+            let take_hash = |split: &mut std::iter::Peekable<std::str::Split<'_, char>>| {
+                let first = split.next()?;
+                if first == "b64" {
+                    let tail = split.next()?;
+                    Some(format!("b64-{tail}"))
+                } else {
+                    Some(first.to_owned())
+                }
             };
-            let Some(hash) = maybe_hash.as_ref() else {
+            let Some(scene_hash) = take_hash(&mut split) else {
+                debug!("failed to split scene emote {scene_emote:?}");
+                active_emote.finished = true;
+                continue;
+            };
+            let Some(hash) = take_hash(&mut split) else {
                 debug!("failed to split scene emote {scene_emote:?}");
                 active_emote.finished = true;
                 continue;
@@ -552,8 +647,10 @@ fn play_current_emote(
                 .get_representation(&active_emote.urn, bodyshape.as_str())
                 .is_err()
             {
-                // load the gltf
-                let handle = ipfas.load_hash::<Gltf>(hash);
+                // load the gltf through the scene's modifier context so b64
+                // hashes (local preview / portable) resolve to the scene's
+                // origin rather than the realm content URL.
+                let handle = ipfas.load_scene_content_hash::<Gltf>(&scene_hash, &hash);
                 let gltf = match gltfs.get_mut(handle.id()) {
                     Some(gltf) => {
                         cached_gltf_handles.remove(&handle);
@@ -772,7 +869,8 @@ fn play_current_emote(
         let play = |transitions: Option<Mut<AnimationTransitions>>,
                     player: &mut AnimationPlayer,
                     clip_ix: AnimationNodeIndex,
-                    active_emote: &ActiveEmote|
+                    active_emote: &ActiveEmote,
+                    pending_seek: Option<f32>|
          -> f32 {
             let active_animation =
                 if Some(&active_emote.urn) != prior_playing.get(&ent) || active_emote.restart {
@@ -803,6 +901,11 @@ fn play_current_emote(
 
                 // println!("active weight {}", active_animation.weight());
                 active_animation.set_speed(active_emote.speed);
+
+                if let Some(seek) = pending_seek {
+                    active_animation.seek_to(seek.clamp(0.0, clip_duration));
+                    active_animation.replay();
+                }
 
                 // nasty hack for falling animation
                 if active_emote.urn.as_str() == "urn:decentraland:off-chain:base-emotes:jump"
@@ -843,7 +946,14 @@ fn play_current_emote(
                 (graph.add_clip(clip, 1.0, graph.root), 0.0)
             });
 
-        let elapsed = play(transitions, &mut player, *clip_ix, &active_emote);
+        let pending_seek = active_emote.pending_seek.take();
+        let elapsed = play(
+            transitions,
+            &mut player,
+            *clip_ix,
+            &active_emote,
+            pending_seek,
+        );
         // reset audio mark if we've rewound (jump hacks again)
         if let Some(mark) = spawned_extras
             .get_mut(&entity)
@@ -862,7 +972,43 @@ fn play_current_emote(
         if let Some((prop_player_ents, clip_ix)) = prop_player_and_clip {
             for ent in prop_player_ents {
                 if let Ok((mut player, transitions, _, _)) = players.get_mut(ent) {
-                    play(transitions, &mut player, clip_ix, &active_emote);
+                    play(transitions, &mut player, clip_ix, &active_emote, None);
+                }
+            }
+        }
+
+        if maybe_primary.is_some() {
+            match active_emote.source {
+                ActiveEmoteSource::SceneMovementAnim => {
+                    let loops = elapsed / clip_duration;
+                    let playback_time = if active_emote.repeat && clip_duration > 0.0 {
+                        elapsed - loops.floor() * clip_duration
+                    } else {
+                        elapsed.min(clip_duration)
+                    };
+                    let loop_count = if clip_duration > 0.0 {
+                        loops.floor().max(0.0) as u32
+                    } else {
+                        0
+                    };
+                    let state = SceneDrivenAnimationFeedbackState {
+                        src: active_emote.scene_anim_src.clone().unwrap_or_default(),
+                        r#loop: active_emote.repeat,
+                        speed: active_emote.speed,
+                        idle: active_emote.overridable,
+                        playback_time,
+                        duration: clip_duration,
+                        loop_count,
+                    };
+                    *frozen_feedback = Some(state.clone());
+                    feedback.state = Some(state);
+                }
+                ActiveEmoteSource::TriggeredEmote => {
+                    feedback.state = frozen_feedback.clone();
+                }
+                ActiveEmoteSource::VelocitySelected => {
+                    *frozen_feedback = None;
+                    feedback.state = None;
                 }
             }
         }
