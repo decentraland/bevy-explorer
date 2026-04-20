@@ -449,8 +449,16 @@ fn main() {
     });
 
     app.insert_resource(SceneLoadDistance {
-        load: final_config.scene_load_distance,
-        unload: final_config.scene_unload_extra_distance,
+        load: if is_preview {
+            1.0
+        } else {
+            final_config.scene_load_distance
+        },
+        unload: if is_preview {
+            0.0
+        } else {
+            final_config.scene_unload_extra_distance
+        },
         load_imposter: final_config
             .scene_imposter_distances
             .last()
