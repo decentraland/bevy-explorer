@@ -350,10 +350,15 @@ fn animate(
                 .get(&avatar_ent)
                 .copied()
                 .unwrap_or_default();
+            // A non-idle scene-driven animation takes precedence over a triggered emote.
+            let scene_cancels = scene_anim.is_some_and(|req| !req.idle);
             // Scene-driven animations handle their own motion semantics; don't cancel on move.
             let velocity_cancels =
                 scene_anim.is_none() && active_emote.source != ActiveEmoteSource::SceneMovementAnim;
-            if velocity_cancels && damped_velocity_len * 0.9 > playing_min_vel {
+            if scene_cancels {
+                debug!("clear on scene anim {:?}", active_emote.urn);
+                requested_emote = None;
+            } else if velocity_cancels && damped_velocity_len * 0.9 > playing_min_vel {
                 // stop emotes on move
                 debug!(
                     "clear on motion {} > {}",
