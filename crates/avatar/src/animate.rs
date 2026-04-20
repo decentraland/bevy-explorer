@@ -533,7 +533,7 @@ fn animate(
 
 struct SpawnedExtras {
     urn: EmoteUrn,
-    scene: Option<InstanceId>,
+    scene: Option<(Entity, InstanceId)>,
     scene_initialized: bool,
     audio: Option<(Entity, f32)>,
     clip: Option<(AnimationNodeIndex, Handle<AnimationGraph>)>,
@@ -600,8 +600,11 @@ fn play_current_emote(
         // clean up old extras
         if let Some(extras) = prev_spawned_extras.remove(&entity) {
             if extras.urn != active_emote.urn {
-                if let Some(scene) = extras.scene {
+                if let Some((wrapper, scene)) = extras.scene {
                     scene_spawner.despawn_instance(scene);
+                    if let Ok(mut commands) = commands.get_entity(wrapper) {
+                        commands.despawn();
+                    }
                 }
 
                 if let Some((audio_ent, _)) = extras.audio.as_ref() {
@@ -739,7 +742,7 @@ fn play_current_emote(
         if let Ok(Some(props)) = emote.prop_scene(&gltfs) {
             debug!("got props");
             if let Some(extras) = spawned_extras.get_mut(&entity) {
-                let Some(instance) = extras.scene else {
+                let Some((wrapper, instance)) = extras.scene else {
                     continue;
                 };
 
@@ -764,19 +767,18 @@ fn play_current_emote(
                                 }
                             }
 
-                            if parent.parent() == entity {
+                            if parent.parent() == wrapper {
                                 // children of root nodes -> rotate
-                                if parent.parent() == entity {
-                                    let mut rotated = *transform;
-                                    rotated.rotate_around(
-                                        Vec3::ZERO,
-                                        Quat::from_rotation_y(std::f32::consts::PI),
-                                    );
-                                    commands.entity(spawned_ent).try_insert(rotated);
-                                }
+                                let mut rotated = *transform;
+                                rotated.rotate_around(
+                                    Vec3::ZERO,
+                                    Quat::from_rotation_y(std::f32::consts::PI),
+                                );
+                                commands.entity(spawned_ent).try_insert(rotated);
                             }
                         }
                     }
+                    commands.entity(wrapper).try_insert(Visibility::Inherited);
                     extras.scene_initialized = true;
                 }
 
@@ -806,11 +808,18 @@ fn play_current_emote(
                     }
                 }
             } else {
-                let scene = scene_spawner.spawn_as_child(props, entity);
+                let wrapper = commands
+                    .spawn((
+                        Transform::default(),
+                        Visibility::Hidden,
+                        ChildOf(entity),
+                    ))
+                    .id();
+                let scene = scene_spawner.spawn_as_child(props, wrapper);
                 spawned_extras
                     .entry(entity)
                     .or_insert_with(|| SpawnedExtras::new(active_emote.urn.clone()))
-                    .scene = Some(scene);
+                    .scene = Some((wrapper, scene));
                 continue;
             }
         }
