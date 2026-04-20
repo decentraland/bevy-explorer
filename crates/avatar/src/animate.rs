@@ -230,6 +230,10 @@ pub struct ActiveEmote {
     /// Source path from `MovementAnimation.src`; used to populate feedback and detect
     /// cross-fade boundaries between scene-driven animations.
     scene_anim_src: Option<String>,
+    /// Alternate state to play if the primary URN fails to resolve. Populated by
+    /// `animate` for scene-driven selections with the velocity-based choice;
+    /// `play_current_emote` swaps to it on resolution failure.
+    fallback: Option<Box<ActiveEmote>>,
 }
 
 impl Default for ActiveEmote {
@@ -246,6 +250,7 @@ impl Default for ActiveEmote {
             pending_seek: None,
             source: ActiveEmoteSource::VelocitySelected,
             scene_anim_src: None,
+            fallback: None,
         }
     }
 }
@@ -375,6 +380,89 @@ fn animate(
             current_emote_min_velocities.insert(avatar_ent, damped_velocity_len);
         }
 
+        // Precompute the velocity-based selection up-front so we can use it both as the
+        // fallback for scene-driven anims (in case the URN fails to resolve) and as the
+        // final default when nothing else claims the avatar.
+        let time_to_peak = (jump_height * -gravity * 2.0).sqrt() / -gravity;
+        let just_jumped =
+            dynamic_state.jump_time > (time.elapsed_secs() - time_to_peak / 2.0).max(0.0);
+        let (velocity_emote, velocity_move_kind) = if dynamic_state.ground_height > 0.2
+            || (dynamic_state.velocity.y > 0.0 && just_jumped)
+        {
+            let move_kind = if just_jumped {
+                MoveKind::Jump
+            } else {
+                MoveKind::Falling
+            };
+            (
+                ActiveEmote {
+                    urn: EmoteUrn::new("jump").unwrap(),
+                    speed: time_to_peak.recip() * 0.5,
+                    repeat: true,
+                    restart: dynamic_state.jump_time > time.elapsed_secs() - time.delta_secs(),
+                    transition_seconds: 0.1,
+                    initial_audio_mark: if !just_jumped { Some(0.1) } else { None },
+                    ..Default::default()
+                },
+                move_kind,
+            )
+        } else if active_emote.urn == EmoteUrn::new("jump").unwrap() && !active_emote.finished {
+            (
+                ActiveEmote {
+                    urn: EmoteUrn::new("jump").unwrap(),
+                    speed: 1.5,
+                    repeat: false,
+                    restart: false,
+                    transition_seconds: 0.1,
+                    initial_audio_mark: Some(0.1),
+                    ..Default::default()
+                },
+                dynamic_state.move_kind,
+            )
+        } else {
+            let directional_velocity_len =
+                (damped_velocity * (Vec3::X + Vec3::Z)).dot(gt.forward().as_vec3());
+            if damped_velocity_len.abs() > 0.1 {
+                if damped_velocity_len.abs() <= 2.6 {
+                    (
+                        ActiveEmote {
+                            urn: EmoteUrn::new("walk").unwrap(),
+                            speed: directional_velocity_len / 1.5,
+                            restart: false,
+                            repeat: true,
+                            transition_seconds: 0.4,
+                            ..Default::default()
+                        },
+                        MoveKind::Walk,
+                    )
+                } else {
+                    (
+                        ActiveEmote {
+                            urn: EmoteUrn::new("run").unwrap(),
+                            speed: directional_velocity_len / 4.5,
+                            restart: false,
+                            repeat: true,
+                            transition_seconds: 0.4,
+                            ..Default::default()
+                        },
+                        MoveKind::Jog,
+                    )
+                }
+            } else {
+                (
+                    ActiveEmote {
+                        urn: EmoteUrn::new("idle_male").unwrap(),
+                        speed: 1.0,
+                        restart: false,
+                        repeat: true,
+                        transition_seconds: 0.4,
+                        ..Default::default()
+                    },
+                    MoveKind::Idle,
+                )
+            }
+        };
+
         // play requested emote
         *active_emote = if let Some(requested_emote) = requested_emote {
             if emote_changed {
@@ -456,77 +544,11 @@ fn animate(
                 pending_seek: req.seek,
                 source: ActiveEmoteSource::SceneMovementAnim,
                 scene_anim_src: Some(req.src.clone()),
+                fallback: Some(Box::new(velocity_emote)),
             }
         } else {
-            // otherwise play a default emote based on motion
-            let time_to_peak = (jump_height * -gravity * 2.0).sqrt() / -gravity;
-            let just_jumped =
-                dynamic_state.jump_time > (time.elapsed_secs() - time_to_peak / 2.0).max(0.0);
-            if dynamic_state.ground_height > 0.2 || (dynamic_state.velocity.y > 0.0 && just_jumped)
-            {
-                if just_jumped {
-                    dynamic_state.move_kind = MoveKind::Jump;
-                } else {
-                    dynamic_state.move_kind = MoveKind::Falling;
-                }
-                ActiveEmote {
-                    urn: EmoteUrn::new("jump").unwrap(),
-                    speed: time_to_peak.recip() * 0.5,
-                    repeat: true,
-                    restart: dynamic_state.jump_time > time.elapsed_secs() - time.delta_secs(),
-                    transition_seconds: 0.1,
-                    initial_audio_mark: if !just_jumped { Some(0.1) } else { None },
-                    ..Default::default()
-                }
-            } else if active_emote.urn == EmoteUrn::new("jump").unwrap() && !active_emote.finished {
-                // finish the jump - we use `repeat: false` to signal that we are landing...
-                ActiveEmote {
-                    urn: EmoteUrn::new("jump").unwrap(),
-                    speed: 1.5,
-                    repeat: false,
-                    restart: false,
-                    transition_seconds: 0.1,
-                    initial_audio_mark: Some(0.1),
-                    ..Default::default()
-                }
-            } else {
-                let directional_velocity_len =
-                    (damped_velocity * (Vec3::X + Vec3::Z)).dot(gt.forward().as_vec3());
-
-                if damped_velocity_len.abs() > 0.1 {
-                    if damped_velocity_len.abs() <= 2.6 {
-                        dynamic_state.move_kind = MoveKind::Walk;
-                        ActiveEmote {
-                            urn: EmoteUrn::new("walk").unwrap(),
-                            speed: directional_velocity_len / 1.5,
-                            restart: false,
-                            repeat: true,
-                            transition_seconds: 0.4,
-                            ..Default::default()
-                        }
-                    } else {
-                        dynamic_state.move_kind = MoveKind::Jog;
-                        ActiveEmote {
-                            urn: EmoteUrn::new("run").unwrap(),
-                            speed: directional_velocity_len / 4.5,
-                            restart: false,
-                            repeat: true,
-                            transition_seconds: 0.4,
-                            ..Default::default()
-                        }
-                    }
-                } else {
-                    dynamic_state.move_kind = MoveKind::Idle;
-                    ActiveEmote {
-                        urn: EmoteUrn::new("idle_male").unwrap(),
-                        speed: 1.0,
-                        restart: false,
-                        repeat: true,
-                        transition_seconds: 0.4,
-                        ..Default::default()
-                    }
-                }
-            }
+            dynamic_state.move_kind = velocity_move_kind;
+            velocity_emote
         }
     }
 }
@@ -620,121 +642,159 @@ fn play_current_emote(
         let ent = target_entity.0;
         let bodyshape = &definition.body_shape;
 
-        if let Some(scene_emote) = active_emote.urn.scene_emote() {
-            debug!("got {scene_emote:?}");
-            let mut split = scene_emote.split('-').peekable();
-            // take_hash reads a hash, recombining "b64-<payload>" back into one
-            // token because we used '-' as the separator and b64 hashes also
-            // contain '-'. for non-b64 hashes it just takes the next token.
-            let take_hash = |split: &mut std::iter::Peekable<std::str::Split<'_, char>>| {
-                let first = split.next()?;
-                if first == "b64" {
-                    let tail = split.next()?;
-                    Some(format!("b64-{tail}"))
-                } else {
-                    Some(first.to_owned())
-                }
-            };
-            let Some(scene_hash) = take_hash(&mut split) else {
-                debug!("failed to split scene emote {scene_emote:?}");
-                active_emote.finished = true;
-                continue;
-            };
-            let Some(hash) = take_hash(&mut split) else {
-                debug!("failed to split scene emote {scene_emote:?}");
-                active_emote.finished = true;
-                continue;
-            };
-
-            if emote_loader
-                .get_representation(&active_emote.urn, bodyshape.as_str())
-                .is_err()
-            {
-                // load the gltf through the scene's modifier context so b64
-                // hashes (local preview / portable) resolve to the scene's
-                // origin rather than the realm content URL.
-                let handle = ipfas.load_scene_content_hash::<Gltf>(&scene_hash, &hash);
-                let gltf = match gltfs.get_mut(handle.id()) {
-                    Some(gltf) => {
-                        cached_gltf_handles.remove(&handle);
-                        gltf
+        // Resolve the URN. On permanent failure, if a fallback is present (populated by
+        // `animate` for scene-driven anims with the velocity-based choice), swap to it
+        // and retry. The swap persists so downstream `SceneDrivenAnimationFeedback`
+        // publishing reports the fallback source, not the failed scene-driven one.
+        enum Outcome {
+            Ready,
+            Loading,
+            Failed,
+        }
+        let outcome = 'resolve: loop {
+            if let Some(scene_emote) = active_emote.urn.scene_emote() {
+                debug!("got {scene_emote:?}");
+                let mut split = scene_emote.split('-').peekable();
+                // take_hash reads a hash, recombining "b64-<payload>" back into one
+                // token because we used '-' as the separator and b64 hashes also
+                // contain '-'. for non-b64 hashes it just takes the next token.
+                let take_hash =
+                    |split: &mut std::iter::Peekable<std::str::Split<'_, char>>| -> Option<String> {
+                        let first = split.next()?;
+                        if first == "b64" {
+                            let tail = split.next()?;
+                            Some(format!("b64-{tail}"))
+                        } else {
+                            Some(first.to_owned())
+                        }
+                    };
+                let Some(scene_hash) = take_hash(&mut split) else {
+                    debug!("failed to split scene emote {scene_emote:?}");
+                    if let Some(fb) = active_emote.fallback.take() {
+                        *active_emote = *fb;
+                        continue 'resolve;
                     }
-                    None => {
-                        cached_gltf_handles.insert(handle);
-                        continue;
+                    break 'resolve Outcome::Failed;
+                };
+                let Some(hash) = take_hash(&mut split) else {
+                    debug!("failed to split scene emote {scene_emote:?}");
+                    if let Some(fb) = active_emote.fallback.take() {
+                        *active_emote = *fb;
+                        continue 'resolve;
                     }
+                    break 'resolve Outcome::Failed;
                 };
 
-                // fix up the gltf if possible/required
-                if !gltf.named_animations.keys().any(|k| k.ends_with("_Avatar")) {
-                    let Some(anim) = gltf.animations.first() else {
-                        warn!("scene emote has no animations");
-                        active_emote.finished = true;
-                        continue;
+                if emote_loader
+                    .get_representation(&active_emote.urn, bodyshape.as_str())
+                    .is_err()
+                {
+                    // load the gltf through the scene's modifier context so b64
+                    // hashes (local preview / portable) resolve to the scene's
+                    // origin rather than the realm content URL.
+                    let handle = ipfas.load_scene_content_hash::<Gltf>(&scene_hash, &hash);
+                    let gltf = match gltfs.get_mut(handle.id()) {
+                        Some(gltf) => {
+                            cached_gltf_handles.remove(&handle);
+                            gltf
+                        }
+                        None => {
+                            cached_gltf_handles.insert(handle);
+                            break 'resolve Outcome::Loading;
+                        }
                     };
 
-                    gltf.named_animations.insert("_Avatar".into(), anim.clone());
-                }
+                    // fix up the gltf if possible/required
+                    if !gltf.named_animations.keys().any(|k| k.ends_with("_Avatar")) {
+                        let Some(anim) = gltf.animations.first() else {
+                            warn!("scene emote has no animations");
+                            if let Some(fb) = active_emote.fallback.take() {
+                                *active_emote = *fb;
+                                continue 'resolve;
+                            }
+                            break 'resolve Outcome::Failed;
+                        };
 
-                // add repr
-                emote_loader.add_builtin(
-                    active_emote.urn.clone(),
-                    Collectible {
-                        representations: HashMap::from_iter([(
-                            bodyshape.to_owned(),
-                            Emote {
-                                gltf: handle,
-                                default_repeat: false,
-                                sound: Vec::default(),
+                        gltf.named_animations.insert("_Avatar".into(), anim.clone());
+                    }
+
+                    // add repr
+                    emote_loader.add_builtin(
+                        active_emote.urn.clone(),
+                        Collectible {
+                            representations: HashMap::from_iter([(
+                                bodyshape.to_owned(),
+                                Emote {
+                                    gltf: handle,
+                                    default_repeat: false,
+                                    sound: Vec::default(),
+                                },
+                            )]),
+                            data: CollectibleData::<Emote> {
+                                hash: hash.to_owned(),
+                                urn: active_emote.urn.as_str().to_owned(),
+                                thumbnail: "embedded://images/redx.png".to_owned(),
+                                available_representations: HashSet::from_iter([
+                                    bodyshape.to_owned()
+                                ]),
+                                name: active_emote.urn.to_string(),
+                                description: active_emote.urn.to_string(),
+                                extra_data: (),
                             },
-                        )]),
-                        data: CollectibleData::<Emote> {
-                            hash: hash.to_owned(),
-                            urn: active_emote.urn.as_str().to_owned(),
-                            thumbnail: "embedded://images/redx.png".to_owned(),
-                            available_representations: HashSet::from_iter([bodyshape.to_owned()]),
-                            name: active_emote.urn.to_string(),
-                            description: active_emote.urn.to_string(),
-                            extra_data: (),
                         },
-                    },
-                );
+                    );
+                }
+            }
+
+            match emote_loader.get_representation(&active_emote.urn, bodyshape.as_str()) {
+                Ok(emote) => match emote.avatar_animation(&gltfs) {
+                    Ok(Some(_)) => break 'resolve Outcome::Ready,
+                    Err(e) => {
+                        debug!("animation error: {:?}", e);
+                        break 'resolve Outcome::Loading;
+                    }
+                    Ok(None) => {
+                        debug!("{} -> no clip", active_emote.urn);
+                        if let Some(fb) = active_emote.fallback.take() {
+                            *active_emote = *fb;
+                            continue 'resolve;
+                        }
+                        break 'resolve Outcome::Failed;
+                    }
+                },
+                Err(CollectibleError::Loading) => {
+                    debug!("{} -> loading", active_emote.urn);
+                    break 'resolve Outcome::Loading;
+                }
+                Err(e) => {
+                    debug!("{} -> {:?}", active_emote.urn, e);
+                    if let Some(fb) = active_emote.fallback.take() {
+                        *active_emote = *fb;
+                        continue 'resolve;
+                    }
+                    break 'resolve Outcome::Failed;
+                }
+            }
+        };
+
+        match outcome {
+            Outcome::Ready => {}
+            Outcome::Loading => continue,
+            Outcome::Failed => {
+                active_emote.finished = true;
+                continue;
             }
         }
 
         let emote = match emote_loader.get_representation(&active_emote.urn, bodyshape.as_str()) {
             Ok(emote) => emote,
-            e @ Err(CollectibleError::Failed)
-            | e @ Err(CollectibleError::Missing)
-            | e @ Err(CollectibleError::NoRepresentation) => {
-                debug!("{} -> {:?}", active_emote.urn, e);
-                active_emote.finished = true;
-                continue;
-            }
-            Err(CollectibleError::Loading) => {
-                debug!("{} -> loading", active_emote.urn);
-                continue;
-            }
+            _ => continue,
         };
         active_emote.repeat |= emote.default_repeat;
 
         let clip = match emote.avatar_animation(&gltfs) {
-            Err(e) => {
-                debug!("animation error: {:?}", e);
-                continue;
-            }
-            Ok(None) => {
-                debug!("{} -> no clip", active_emote.urn);
-                debug!(
-                    "available : {:?}",
-                    gltfs
-                        .get(emote.gltf.id())
-                        .map(|gltf| gltf.named_animations.keys().collect::<Vec<_>>())
-                );
-                active_emote.finished = true;
-                continue;
-            }
             Ok(Some(clip)) => clip,
+            _ => continue,
         };
 
         // extract props and prop anim

@@ -94,6 +94,15 @@ fn update_foreign_user_target_position(
                     let update_freq = LAG_DECAY_SECS
                         / ((LAG_DECAY_SECS - delta).max(0.0) / pos.update_freq
                             + (LAG_DECAY_SECS / delta).min(1.0));
+                    // Apply-before-overwrite: if the previous event's scene_anim never
+                    // reached its deadline, push it now so bursts of events (stalls,
+                    // multi-event frames) don't silently drop one-shot seeks or
+                    // intermediate transitions.
+                    if !pos.anim_applied {
+                        commands.entity(ev.player).try_insert(SceneDrivenAnim {
+                            active: pos.scene_anim.clone(),
+                        });
+                    }
                     *pos = PlayerTargetPosition {
                         time: ev.time,
                         timestamp: ev.timestamp,
