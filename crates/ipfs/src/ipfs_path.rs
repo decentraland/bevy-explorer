@@ -134,9 +134,7 @@ impl IpfsType {
                     anyhow::anyhow!("file not found in content map: {file_path:?} in {scene_hash}")
                 }),
             IpfsType::Entity { hash, .. } => Ok(format!("{base_url}{hash}")),
-            IpfsType::SceneContent { content_hash, .. } => {
-                Ok(format!("{base_url}{content_hash}"))
-            }
+            IpfsType::SceneContent { content_hash, .. } => Ok(format!("{base_url}{content_hash}")),
             IpfsType::UrlCached { url, .. } | IpfsType::UrlUncached { url, .. } => {
                 Ok(format!("{}", urlencoding::decode(url)?))
             }
@@ -299,14 +297,16 @@ where
             "$scene_content" => {
                 let scene_hash = components
                     .next()
-                    .ok_or(anyhow::anyhow!("scene content specifier missing scene hash"))?
+                    .ok_or(anyhow::anyhow!(
+                        "scene content specifier missing scene hash"
+                    ))?
                     .to_owned();
-                let hash_ext: &str = components
-                    .next()
-                    .ok_or(anyhow::anyhow!("scene content specifier missing content hash"))?;
-                let (content_hash, ext) = hash_ext
-                    .split_once('.')
-                    .ok_or(anyhow::anyhow!("scene content specified malformed (no '.')"))?;
+                let hash_ext: &str = components.next().ok_or(anyhow::anyhow!(
+                    "scene content specifier missing content hash"
+                ))?;
+                let (content_hash, ext) = hash_ext.split_once('.').ok_or(anyhow::anyhow!(
+                    "scene content specified malformed (no '.')"
+                ))?;
                 Ok(IpfsType::SceneContent {
                     scene_hash,
                     content_hash: content_hash.to_owned(),

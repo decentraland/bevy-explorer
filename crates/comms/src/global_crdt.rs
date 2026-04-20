@@ -9,7 +9,9 @@ use bevy::{
 use bimap::BiMap;
 use common::{
     rpc::{RpcCall, RpcEventSender, RpcStreamSender},
-    structs::{AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate},
+    structs::{
+        AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate, SceneDrivenAnimationRequest,
+    },
 };
 use ethers_core::types::Address;
 use serde::{Deserialize, Serialize};
@@ -309,6 +311,12 @@ pub struct PlayerPositionEvent {
     pub velocity: Option<Vec3>,
     pub grounded: Option<bool>,
     pub jumping: Option<bool>,
+    /// Resolved scene-driven animation state carried alongside this position packet.
+    /// `None` means the sender is not running a scene-driven animation. `Some` is
+    /// the full state (after URN latching for keepalive resolution). Applied with
+    /// interpolation delay in `foreign_dynamics` so the animation lines up with
+    /// the visibly-interpolated position.
+    pub scene_anim: Option<SceneDrivenAnimationRequest>,
 }
 
 pub enum ProfileEventType {
@@ -345,6 +353,7 @@ pub fn process_transport_updates(
     mut subscribers: EventReader<RpcCall>,
     mut profile_meta_cache: ResMut<ProfileMetaCache>,
     mut duplicate_chat_filter: Local<HashMap<Entity, f64>>,
+    mut last_remote_anim_urn: Local<HashMap<Entity, String>>,
 ) {
     // gather any event receivers
     for ev in subscribers.read() {
@@ -507,6 +516,7 @@ pub fn process_transport_updates(
                             velocity: None,
                             grounded: None,
                             jumping: None,
+                            scene_anim: None,
                         });
                     }
                     PlayerMessage::PlayerData(Message::ProfileVersion(version)) => {
@@ -568,6 +578,15 @@ pub fn process_transport_updates(
                             scene_id,
                             &dcl_transform,
                         );
+                        let scene_anim = resolve_remote_anim(
+                            entity,
+                            &mut last_remote_anim_urn,
+                            m.anim_urn,
+                            m.anim_speed,
+                            m.anim_playback_time,
+                            m.anim_transition_seconds,
+                            m.anim_loop,
+                        );
                         position_events.write(PlayerPositionEvent {
                             index: None,
                             time: time.elapsed_secs(),
@@ -579,10 +598,20 @@ pub fn process_transport_updates(
                             grounded: Some(m.is_grounded),
                             // Some(true) if either is Some(true), else Some(false) if either is Some(false), else None
                             jumping: Some(m.is_jumping || m.is_long_jump),
+                            scene_anim,
                         });
                     }
                     PlayerMessage::PlayerData(Message::MovementCompressed(m)) => {
                         debug!("movement compressed data: {m:?}");
+                        let scene_anim = resolve_remote_anim(
+                            entity,
+                            &mut last_remote_anim_urn,
+                            m.anim_urn.clone(),
+                            m.anim_speed,
+                            m.anim_playback_time,
+                            m.anim_transition_seconds,
+                            m.anim_loop,
+                        );
                         let movement = MovementCompressed::from_proto(m);
                         let pos = movement.position(state.realm_bounds.0, state.realm_bounds.1);
                         let vel = movement.velocity();
@@ -617,6 +646,7 @@ pub fn process_transport_updates(
                                 .jump_or_err()
                                 .ok()
                                 .max(movement.temporal.long_jump_or_err().ok()),
+                            scene_anim,
                         });
                     }
                     PlayerMessage::PlayerData(Message::PlayerEmote(emote)) => {
@@ -658,6 +688,51 @@ pub fn process_transport_updates(
             }
         }
     }
+}
+
+// Resolves scene-driven animation fields from a Movement / MovementCompressed
+// packet into the full state. An empty `anim_urn` clears the state; an absent
+// `anim_urn` (None) reuses the last cached URN for this entity so we keep
+// animating between keepalives. Returns `None` when the sender has no active
+// scene-driven animation. The resolved state rides on `PlayerPositionEvent` so
+// `foreign_dynamics` can apply it with the same interpolation delay as the
+// visible position.
+fn resolve_remote_anim(
+    entity: Entity,
+    last_urn: &mut HashMap<Entity, String>,
+    anim_urn: Option<String>,
+    anim_speed: Option<f32>,
+    anim_playback_time: Option<f32>,
+    anim_transition_seconds: Option<f32>,
+    anim_loop: Option<bool>,
+) -> Option<SceneDrivenAnimationRequest> {
+    let effective_urn = match anim_urn {
+        Some(u) if u.is_empty() => {
+            last_urn.remove(&entity);
+            return None;
+        }
+        Some(u) => {
+            last_urn.insert(entity, u.clone());
+            u
+        }
+        None => last_urn.get(&entity)?.clone(),
+    };
+
+    let speed = anim_speed?;
+    let r#loop = anim_loop.unwrap_or(false);
+    let transition_seconds = anim_transition_seconds.unwrap_or(0.2);
+
+    Some(SceneDrivenAnimationRequest {
+        src: String::new(),
+        urn: effective_urn,
+        r#loop,
+        speed,
+        // `idle` is only consulted for primary-player overridability; for remote
+        // players there's no triggerSceneEmote interaction so we don't need it.
+        idle: false,
+        transition_seconds,
+        seek: anim_playback_time,
+    })
 }
 
 fn process_messagebus(

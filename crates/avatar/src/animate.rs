@@ -19,7 +19,7 @@ use common::{
     sets::SceneSets,
     structs::{
         AudioEmitter, AudioType, AvatarDynamicState, EmoteCommand, MoveKind, PlayerModifiers,
-        PrimaryUser, SceneDrivenAnimation, SceneDrivenAnimationFeedback,
+        PrimaryUser, SceneDrivenAnim, SceneDrivenAnimationFeedback,
         SceneDrivenAnimationFeedbackState,
     },
     util::TryPushChildrenEx,
@@ -265,6 +265,7 @@ fn animate(
         Option<&ContainerEntity>,
         Option<&PrimaryUser>,
         Option<&mut LastEmoteCommand>,
+        Option<&SceneDrivenAnim>,
     )>,
     mut velocities: Local<HashMap<Entity, Vec3>>,
     mut current_emote_min_velocities: Local<HashMap<Entity, f32>>,
@@ -272,7 +273,6 @@ fn animate(
     player: Query<(&PrimaryUser, Option<&PlayerModifiers>)>,
     containing_scene: ContainingScene,
     mut scenes: Query<&mut RendererSceneContext>,
-    scene_driven_animation: Res<SceneDrivenAnimation>,
 ) {
     let (gravity, jump_height) = player
         .single()
@@ -295,6 +295,7 @@ fn animate(
         maybe_container,
         maybe_primary,
         last_emote,
+        maybe_scene_anim,
     ) in avatars.iter_mut()
     {
         let Some(mut active_emote) = active_emote else {
@@ -316,11 +317,7 @@ fn animate(
         let damped_velocity_len = damped_velocity.xz().length();
         velocities.insert(avatar_ent, damped_velocity);
 
-        // A scene-driven movement animation is only meaningful for the primary player.
-        let scene_anim = maybe_primary
-            .is_some()
-            .then(|| scene_driven_animation.active.as_ref())
-            .flatten();
+        let scene_anim = maybe_scene_anim.and_then(|a| a.active.as_ref());
 
         // get requested emote
         let (mut requested_emote, given_urn, request_loop) =
@@ -434,21 +431,19 @@ fn animate(
                 source: ActiveEmoteSource::TriggeredEmote,
                 ..Default::default()
             }
-        } else if let Some(scene_anim_req) = scene_anim.and_then(|req| {
-            let urn_str = format!(
-                "urn:decentraland:off-chain:scene-emote:{}-{}-false",
-                req.scene_hash, req.content_hash
-            );
-            EmoteUrn::new(urn_str.as_str()).ok().map(|urn| (req, urn))
-        }) {
+        } else if let Some(scene_anim_req) =
+            scene_anim.and_then(|req| EmoteUrn::new(req.urn.as_str()).ok().map(|urn| (req, urn)))
+        {
             let (req, urn) = scene_anim_req;
             dynamic_state.move_kind = if req.idle {
                 MoveKind::Idle
             } else {
                 MoveKind::Walk
             };
+            // Detect anim change via URN (stable across local/remote sources) rather than src,
+            // which is empty for requests received over the network.
             let is_new_anim = active_emote.source != ActiveEmoteSource::SceneMovementAnim
-                || active_emote.scene_anim_src.as_deref() != Some(req.src.as_str());
+                || active_emote.urn != urn;
             ActiveEmote {
                 urn,
                 speed: req.speed,
@@ -814,11 +809,7 @@ fn play_current_emote(
                 }
             } else {
                 let wrapper = commands
-                    .spawn((
-                        Transform::default(),
-                        Visibility::Hidden,
-                        ChildOf(entity),
-                    ))
+                    .spawn((Transform::default(), Visibility::Hidden, ChildOf(entity)))
                     .id();
                 let scene = scene_spawner.spawn_as_child(props, wrapper);
                 spawned_extras

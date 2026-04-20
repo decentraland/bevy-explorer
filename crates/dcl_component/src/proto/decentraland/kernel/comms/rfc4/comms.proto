@@ -57,14 +57,32 @@ message Movement {
   bool is_falling = 14;
 
   bool is_stunned = 15;
-  
+
   float rotation_y = 16;
   bool is_emoting = 18;
+
+  // Scene-driven movement animation (local extension, pending multi-clip-per-glb work).
+  // anim_urn is a scene-emote URN encoding scene_hash + content_hash; omitted when unchanged
+  // since the last send (receivers cache it) and forced every ~1s as a keepalive for joiners.
+  // The other fields are sent every frame the animation is active.
+  optional string anim_urn = 19;
+  optional float anim_speed = 20;
+  optional float anim_playback_time = 21;
+  optional float anim_transition_seconds = 22;
+  optional bool anim_loop = 23;
 }
 
 message MovementCompressed {
-  int32 temporal_data = 1; // bit-compressed: timestamp + animations 
-  int64 movement_data = 2; // bit-compressed: position + velocity 
+  int32 temporal_data = 1; // bit-compressed: timestamp + animations
+  int64 movement_data = 2; // bit-compressed: position + velocity
+
+  // See Movement.anim_* fields. Mirror here so the compressed variant can carry the same
+  // scene-driven animation state if/when MovementCompressed is re-enabled on the sender.
+  optional string anim_urn = 3;
+  optional float anim_speed = 4;
+  optional float anim_playback_time = 5;
+  optional float anim_transition_seconds = 6;
+  optional bool anim_loop = 7;
 }
 
 message PlayerEmote {

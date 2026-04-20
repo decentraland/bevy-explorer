@@ -12,7 +12,7 @@ use common::{
     sets::SceneSets,
     structs::{
         AppConfig, AvatarDynamicState, EngineMovementControl, PrimaryPlayerRes, PrimaryUser,
-        SceneDrivenAnimation, SceneDrivenAnimationFeedback, SceneDrivenAnimationRequest,
+        SceneDrivenAnim, SceneDrivenAnimationFeedback, SceneDrivenAnimationRequest,
     },
 };
 use comms::global_crdt::GlobalCrdtState;
@@ -68,7 +68,6 @@ impl Plugin for AvatarMovementPlugin {
         );
 
         app.init_resource::<AvatarMovementInfo>();
-        app.init_resource::<SceneDrivenAnimation>();
         app.init_resource::<SceneDrivenAnimationFeedback>();
 
         app.add_systems(Update, broadcast_movement_info.in_set(SceneSets::Init));
@@ -125,16 +124,19 @@ fn update_priority_scene(
 }
 
 // Resolves the active scene's `MovementAnimation.src` against the scene content map
-// (path -> content hash) and publishes a ready-to-play request in the
-// `SceneDrivenAnimation` resource for the avatar animation system to consume.
+// (path -> content hash) and writes a ready-to-play request onto the primary player's
+// `SceneDrivenAnim` component for the avatar animation system to consume.
 fn update_scene_driven_animation(
-    player: Query<&ActivePlayerComponent<AvatarMovement>, With<PrimaryUser>>,
+    mut commands: Commands,
+    player: Query<(Entity, &ActivePlayerComponent<AvatarMovement>), With<PrimaryUser>>,
     scenes: Query<&RendererSceneContext>,
     ipfas: IpfsAssetServer,
-    mut resource: ResMut<SceneDrivenAnimation>,
     mut logged_failures: Local<HashSet<String>>,
 ) {
-    let request = player.single().ok().and_then(|active| {
+    let Ok((primary, active)) = player.single() else {
+        return;
+    };
+    let request = (|| {
         let anim = active.component.animation.as_ref()?;
         let scene_ent = active.scene();
         if scene_ent == Entity::PLACEHOLDER {
@@ -156,19 +158,26 @@ fn update_scene_driven_animation(
             return None;
         };
 
+        // The `-false` suffix is a fixed part of the scene-emote URN format here;
+        // loop behavior is carried separately in SceneDrivenAnimationRequest.r#loop.
+        let urn = format!(
+            "urn:decentraland:off-chain:scene-emote:{}-{}-false",
+            ctx.hash, content_hash
+        );
         Some(SceneDrivenAnimationRequest {
             src: anim.src.clone(),
-            scene_hash: ctx.hash.clone(),
-            content_hash,
+            urn,
             r#loop: anim.r#loop,
             speed: anim.speed,
             idle: anim.idle,
             transition_seconds: anim.transition_seconds.unwrap_or(0.2),
             seek: anim.playback_time,
         })
-    });
+    })();
 
-    resource.active = request;
+    commands
+        .entity(primary)
+        .try_insert(SceneDrivenAnim { active: request });
 }
 
 #[derive(Component, Clone, Debug)]

@@ -230,19 +230,24 @@ pub struct EmoteCommand {
     pub r#loop: bool,
 }
 
-// Current scene-driven movement animation request for the primary player.
-// Written by the bridge system in `user_input` (after resolving the scene-relative
-// path against the active scene's content map) and read by `animate` in the avatar crate.
-#[derive(Resource, Default)]
-pub struct SceneDrivenAnimation {
+// Current scene-driven movement animation request for a player avatar. For the
+// primary player, written by the bridge system in `user_input` (after resolving
+// the scene-relative path against the active scene's content map). For foreign
+// players, written by the comms crate when a Movement packet with anim fields
+// arrives. Read by `animate` in the avatar crate uniformly for both.
+#[derive(Component, Default, Clone, Debug)]
+pub struct SceneDrivenAnim {
     pub active: Option<SceneDrivenAnimationRequest>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SceneDrivenAnimationRequest {
+    // scene-relative path (e.g. "assets/walk.glb") — used for feedback to the controlling
+    // scene. Empty for remote requests received over the network.
     pub src: String,
-    pub scene_hash: String,
-    pub content_hash: String,
+    // Pre-built scene-emote URN encoding scene_hash + content_hash. For local requests
+    // this is constructed by user_input; for remote requests it arrives on the wire.
+    pub urn: String,
     pub r#loop: bool,
     pub speed: f32,
     pub idle: bool,
