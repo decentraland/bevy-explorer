@@ -26,12 +26,14 @@ impl Plugin for BroadcastPositionPlugin {
 
 const STATIC_FREQ: f64 = 1.0;
 const DYNAMIC_FREQ: f64 = 0.1;
-// Re-send anim_urn at least this often so late joiners pick up the active clip.
+// Re-send the anim hash pair at least this often so late joiners pick up the active clip.
 const ANIM_URN_KEEPALIVE: f64 = 1.0;
 
 #[derive(Default)]
 struct LastAnim {
-    urn: Option<String>,
+    // The (scene_hash, content_hash) pair we last broadcast. Tracked as one unit so we
+    // can detect transitions between clips and drive keepalives.
+    hashes: Option<(String, String)>,
     sent_at: f64,
     // Latched seek from the scene. The scene publishes `seek` for a single frame;
     // we hold it here until a broadcast goes out so we don't miss it between the
@@ -78,19 +80,19 @@ fn broadcast_position(
     }
 
     let (_, rotation, translation) = player.to_scale_rotation_translation();
-    // A URN change (e.g. jump → idle on landing) must go out promptly: when the
+    // An anim change (e.g. jump → idle on landing) must go out promptly: when the
     // player comes to rest, velocity/position stop changing, and without this
     // bypass the transition would wait on the STATIC_FREQ keepalive.
-    let current_urn = scene_anim
+    let current_hashes = scene_anim
         .and_then(|s| s.active.as_ref())
-        .map(|a| a.urn.clone());
-    let urn_changed = current_urn != last_anim.urn;
+        .map(|a| (a.scene_hash.clone(), a.content_hash.clone()));
+    let anim_changed = current_hashes != last_anim.hashes;
     if elapsed < STATIC_FREQ
         && (translation - last_position.0).length_squared() < 0.01
         && rotation == last_position.1
         && (dynamics.velocity - last_position.2).length_squared() < 0.01
         && last_anim.pending_seek.is_none()
-        && !urn_changed
+        && !anim_changed
     {
         return;
     }
@@ -147,26 +149,31 @@ fn broadcast_position(
 
     let movement_compressed = crate::movement_compressed::MovementCompressed { temporal, movement };
 
-    // Scene-driven animation fields. `anim_urn` is sent on transition (new clip,
-    // or clearing with empty string to signal stop) and re-sent every
-    // ANIM_URN_KEEPALIVE seconds while active so late joiners pick it up. The
-    // other fields ride along whenever an animation is active.
-    // `anim_playback_time` is only sent when the scene explicitly requested a
-    // seek this frame.
+    // Scene-driven animation fields. The hash pair is sent on transition (new clip, or
+    // an empty `anim_scene_hash` to clear a prior active anim) and re-sent every
+    // ANIM_URN_KEEPALIVE seconds while active so late joiners pick it up. The other
+    // fields ride along whenever an animation is active. `anim_playback_time` is only
+    // sent when the scene explicitly requested a seek this frame.
     let active_anim = scene_anim.and_then(|s| s.active.as_ref());
     let keepalive_due = active_anim.is_some() && time - last_anim.sent_at >= ANIM_URN_KEEPALIVE;
-    let anim_urn = if urn_changed {
-        // Send current URN (or empty string to clear a prior active anim).
-        Some(current_urn.clone().unwrap_or_default())
+    let (anim_scene_hash, anim_content_hash) = if anim_changed {
+        match &current_hashes {
+            Some((s, c)) => (Some(s.clone()), Some(c.clone())),
+            // Transition active → none: signal clear with an empty scene_hash.
+            None => (Some(String::new()), None),
+        }
     } else if keepalive_due {
-        current_urn.clone()
+        current_hashes
+            .as_ref()
+            .map(|(s, c)| (Some(s.clone()), Some(c.clone())))
+            .unwrap_or((None, None))
     } else {
-        None
+        (None, None)
     };
-    if anim_urn.is_some() {
+    if anim_scene_hash.is_some() {
         last_anim.sent_at = time;
     }
-    last_anim.urn = current_urn;
+    last_anim.hashes = current_hashes;
 
     let anim_speed = active_anim.map(|a| a.speed);
     let anim_transition_seconds = active_anim.map(|a| a.transition_seconds);
@@ -193,7 +200,8 @@ fn broadcast_position(
         is_falling: movement_compressed.temporal.falling(),
         is_stunned: movement_compressed.temporal.stunned(),
         is_emoting: dynamics.move_kind == MoveKind::Emote,
-        anim_urn,
+        anim_scene_hash,
+        anim_content_hash,
         anim_speed,
         anim_playback_time,
         anim_transition_seconds,

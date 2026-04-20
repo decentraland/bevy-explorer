@@ -353,7 +353,7 @@ pub fn process_transport_updates(
     mut subscribers: EventReader<RpcCall>,
     mut profile_meta_cache: ResMut<ProfileMetaCache>,
     mut duplicate_chat_filter: Local<HashMap<Entity, f64>>,
-    mut last_remote_anim_urn: Local<HashMap<Entity, String>>,
+    mut last_remote_anim_urn: Local<HashMap<Entity, (String, String)>>,
 ) {
     // gather any event receivers
     for ev in subscribers.read() {
@@ -581,7 +581,8 @@ pub fn process_transport_updates(
                         let scene_anim = resolve_remote_anim(
                             entity,
                             &mut last_remote_anim_urn,
-                            m.anim_urn,
+                            m.anim_scene_hash,
+                            m.anim_content_hash,
                             m.anim_speed,
                             m.anim_playback_time,
                             m.anim_transition_seconds,
@@ -606,7 +607,8 @@ pub fn process_transport_updates(
                         let scene_anim = resolve_remote_anim(
                             entity,
                             &mut last_remote_anim_urn,
-                            m.anim_urn.clone(),
+                            m.anim_scene_hash.clone(),
+                            m.anim_content_hash.clone(),
                             m.anim_speed,
                             m.anim_playback_time,
                             m.anim_transition_seconds,
@@ -691,40 +693,49 @@ pub fn process_transport_updates(
 }
 
 // Resolves scene-driven animation fields from a Movement / MovementCompressed
-// packet into the full state. An empty `anim_urn` clears the state; an absent
-// `anim_urn` (None) reuses the last cached URN for this entity so we keep
+// packet into the full state. An empty `anim_scene_hash` clears the state; absent
+// hash fields (None) reuse the last cached pair for this entity so we keep
 // animating between keepalives. Returns `None` when the sender has no active
 // scene-driven animation. The resolved state rides on `PlayerPositionEvent` so
 // `foreign_dynamics` can apply it with the same interpolation delay as the
 // visible position.
+#[allow(clippy::too_many_arguments)]
 fn resolve_remote_anim(
     entity: Entity,
-    last_urn: &mut HashMap<Entity, String>,
-    anim_urn: Option<String>,
+    last_hashes: &mut HashMap<Entity, (String, String)>,
+    anim_scene_hash: Option<String>,
+    anim_content_hash: Option<String>,
     anim_speed: Option<f32>,
     anim_playback_time: Option<f32>,
     anim_transition_seconds: Option<f32>,
     anim_loop: Option<bool>,
 ) -> Option<SceneDrivenAnimationRequest> {
-    let effective_urn = match anim_urn {
-        Some(u) if u.is_empty() => {
-            last_urn.remove(&entity);
+    // Wire convention: on transition the sender ships both hashes (or an empty
+    // scene_hash to clear); between transitions both are omitted and we re-apply the
+    // cached pair so ride-along fields (speed, loop, seek) keep updating.
+    let (scene_hash, content_hash) = match anim_scene_hash {
+        Some(s) if s.is_empty() => {
+            last_hashes.remove(&entity);
             return None;
         }
-        Some(u) => {
-            last_urn.insert(entity, u.clone());
-            u
+        Some(s) => {
+            let c = anim_content_hash?;
+            last_hashes.insert(entity, (s.clone(), c.clone()));
+            (s, c)
         }
-        None => last_urn.get(&entity)?.clone(),
+        None => last_hashes.get(&entity)?.clone(),
     };
 
     let speed = anim_speed?;
     let r#loop = anim_loop.unwrap_or(false);
     let transition_seconds = anim_transition_seconds.unwrap_or(0.2);
+    let urn = format!("urn:decentraland:off-chain:scene-emote:{scene_hash}-{content_hash}-false");
 
     Some(SceneDrivenAnimationRequest {
         src: String::new(),
-        urn: effective_urn,
+        urn,
+        scene_hash,
+        content_hash,
         r#loop,
         speed,
         // `idle` is only consulted for primary-player overridability; for remote

@@ -167,6 +167,8 @@ fn update_scene_driven_animation(
         Some(SceneDrivenAnimationRequest {
             src: anim.src.clone(),
             urn,
+            scene_hash: ctx.hash.clone(),
+            content_hash,
             r#loop: anim.r#loop,
             speed: anim.speed,
             idle: anim.idle,

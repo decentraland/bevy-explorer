@@ -62,14 +62,18 @@ message Movement {
   bool is_emoting = 18;
 
   // Scene-driven movement animation (local extension, pending multi-clip-per-glb work).
-  // anim_urn is a scene-emote URN encoding scene_hash + content_hash; omitted when unchanged
-  // since the last send (receivers cache it) and forced every ~1s as a keepalive for joiners.
-  // The other fields are sent every frame the animation is active.
-  optional string anim_urn = 19;
+  // anim_scene_hash + anim_content_hash identify a scene-emote clip — the receiver wraps
+  // them as `urn:decentraland:off-chain:scene-emote:{scene}-{content}-false`. Sending the
+  // hashes directly keeps the fixed URN preamble off the wire. Both fields are omitted when
+  // unchanged since the last send (receivers cache them) and forced every ~1s as a
+  // keepalive for joiners. An empty anim_scene_hash clears a prior active anim. The other
+  // fields are sent every frame the animation is active.
+  optional string anim_scene_hash = 19;
   optional float anim_speed = 20;
   optional float anim_playback_time = 21;
   optional float anim_transition_seconds = 22;
   optional bool anim_loop = 23;
+  optional string anim_content_hash = 24;
 }
 
 message MovementCompressed {
@@ -78,11 +82,12 @@ message MovementCompressed {
 
   // See Movement.anim_* fields. Mirror here so the compressed variant can carry the same
   // scene-driven animation state if/when MovementCompressed is re-enabled on the sender.
-  optional string anim_urn = 3;
+  optional string anim_scene_hash = 3;
   optional float anim_speed = 4;
   optional float anim_playback_time = 5;
   optional float anim_transition_seconds = 6;
   optional bool anim_loop = 7;
+  optional string anim_content_hash = 8;
 }
 
 message PlayerEmote {

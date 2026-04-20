@@ -246,8 +246,13 @@ pub struct SceneDrivenAnimationRequest {
     // scene. Empty for remote requests received over the network.
     pub src: String,
     // Pre-built scene-emote URN encoding scene_hash + content_hash. For local requests
-    // this is constructed by user_input; for remote requests it arrives on the wire.
+    // this is constructed by user_input; for remote requests it's reassembled from the
+    // hash pair received on the wire.
     pub urn: String,
+    // The two hashes that compose the URN. Kept alongside `urn` so the broadcaster can
+    // ship them to remotes without repeating the fixed URN preamble on every packet.
+    pub scene_hash: String,
+    pub content_hash: String,
     pub r#loop: bool,
     pub speed: f32,
     pub idle: bool,
