@@ -48,7 +48,7 @@ use dcl_component::{
         common::Color3,
         sdk::components::{
             common::LoadingState, PbAvatarBase, PbAvatarEquippedData, PbAvatarShape,
-            PbGltfContainerLoadingState,
+            PbGltfContainerLoadingState, PbVisibilityComponent,
         },
         Color3DclToBevy,
     },
@@ -60,7 +60,7 @@ use ipfs::{
 };
 use scene_runner::{
     renderer_context::RendererSceneContext,
-    update_world::{animation::Clips, AddCrdtInterfaceExt},
+    update_world::{animation::Clips, visibility::VisibilityComponent, AddCrdtInterfaceExt},
     util::ConsoleRelay,
     ContainingScene, SceneEntity,
 };
@@ -1242,7 +1242,12 @@ fn process_avatar(
                             .iter()
                             .any(|w| w.category == WearableCategory::SKIN || w.category == category)
                     {
-                        *vis = Visibility::Hidden;
+                        commands.entity(scene_ent).try_insert(VisibilityComponent(
+                            PbVisibilityComponent {
+                                visible: Some(false),
+                                propagate_to_children: Some(false),
+                            },
+                        ));
                     }
                 }
             }
