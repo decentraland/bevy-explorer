@@ -74,6 +74,12 @@ message Movement {
   optional float anim_transition_seconds = 22;
   optional bool anim_loop = 23;
   optional string anim_content_hash = 24;
+
+  // Scene-requested avatar-bus sound triggers that accumulated since the last broadcast.
+  // Each entry is the content_hash of an audio clip hosted in the same scene as the active
+  // animation (so `anim_scene_hash` — latched or re-asserted via keepalive — identifies the
+  // scene). Receivers play each hash once on receipt. Fire-and-forget; no stop mechanism.
+  repeated string anim_sound_content_hashes = 25;
 }
 
 message MovementCompressed {
@@ -88,6 +94,7 @@ message MovementCompressed {
   optional float anim_transition_seconds = 6;
   optional bool anim_loop = 7;
   optional string anim_content_hash = 8;
+  repeated string anim_sound_content_hashes = 9;
 }
 
 message PlayerEmote {

@@ -59,6 +59,7 @@ impl Plugin for AvatarAnimationPlugin {
             (
                 (handle_trigger_emotes, broadcast_emote, receive_emotes).before(animate),
                 (animate, play_current_emote).chain().after(process_avatar),
+                play_scene_driven_sounds.after(process_avatar),
             )
                 .in_set(SceneSets::PostLoop),
         );
@@ -1164,4 +1165,52 @@ fn emote_console_command(
         };
         input.ok();
     }
+}
+
+// Plays avatar-bus audio clips requested by a scene-driven movement animation.
+// Dedups against the last observed sound list per avatar so that the scene holding
+// the same list across frames doesn't re-fire sounds — a new play is triggered
+// only when the list transitions to a different value (including the scene clearing
+// and re-asserting it on a later frame).
+fn play_scene_driven_sounds(
+    mut commands: Commands,
+    avatars: Query<(Entity, &SceneDrivenAnim)>,
+    ipfas: IpfsAssetServer,
+    mut last_sounds: Local<HashMap<Entity, Vec<String>>>,
+) {
+    let mut seen: HashSet<Entity> = HashSet::default();
+    for (entity, scene_anim) in avatars.iter() {
+        seen.insert(entity);
+        let Some(active) = scene_anim.active.as_ref() else {
+            last_sounds.remove(&entity);
+            continue;
+        };
+        let prev = last_sounds.get(&entity);
+        if prev.map(|v| v.as_slice()) == Some(active.sounds.as_slice()) {
+            continue;
+        }
+        for content_hash in &active.sounds {
+            let handle = ipfas.load_scene_content_hash::<bevy_kira_audio::AudioSource>(
+                &active.scene_hash,
+                content_hash,
+            );
+            let audio_entity = commands
+                .spawn((
+                    Transform::default(),
+                    Visibility::default(),
+                    AudioEmitter {
+                        handle,
+                        ty: AudioType::Avatar,
+                        ..Default::default()
+                    },
+                ))
+                .id();
+            if let Ok(mut entity_commands) = commands.get_entity(entity) {
+                entity_commands.try_push_children(&[audio_entity]);
+            }
+        }
+        last_sounds.insert(entity, active.sounds.clone());
+    }
+    // Drop tracked state for avatars that no longer have the component.
+    last_sounds.retain(|e, _| seen.contains(e));
 }

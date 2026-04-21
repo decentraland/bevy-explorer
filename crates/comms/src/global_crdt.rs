@@ -587,6 +587,7 @@ pub fn process_transport_updates(
                             m.anim_playback_time,
                             m.anim_transition_seconds,
                             m.anim_loop,
+                            m.anim_sound_content_hashes,
                         );
                         position_events.write(PlayerPositionEvent {
                             index: None,
@@ -613,6 +614,7 @@ pub fn process_transport_updates(
                             m.anim_playback_time,
                             m.anim_transition_seconds,
                             m.anim_loop,
+                            m.anim_sound_content_hashes.clone(),
                         );
                         let movement = MovementCompressed::from_proto(m);
                         let pos = movement.position(state.realm_bounds.0, state.realm_bounds.1);
@@ -709,6 +711,7 @@ fn resolve_remote_anim(
     anim_playback_time: Option<f32>,
     anim_transition_seconds: Option<f32>,
     anim_loop: Option<bool>,
+    anim_sound_content_hashes: Vec<String>,
 ) -> Option<SceneDrivenAnimationRequest> {
     // Wire convention: on transition the sender ships both hashes (or an empty
     // scene_hash to clear); between transitions both are omitted and we re-apply the
@@ -743,6 +746,7 @@ fn resolve_remote_anim(
         idle: false,
         transition_seconds,
         seek: anim_playback_time,
+        sounds: anim_sound_content_hashes,
     })
 }
 

@@ -39,6 +39,13 @@ struct LastAnim {
     // we hold it here until a broadcast goes out so we don't miss it between the
     // 10Hz dynamic / 1Hz static broadcast intervals.
     pending_seek: Option<f32>,
+    // Latched sound content hashes from the scene. Accumulated across frames so
+    // single-frame sound triggers still make it out on the next broadcast; drained
+    // on send.
+    pending_sounds: Vec<String>,
+    // Previous frame's sound list, used to avoid re-latching the same list multiple
+    // times when the scene holds it across frames between broadcasts.
+    last_seen_sounds: Vec<String>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -71,6 +78,20 @@ fn broadcast_position(
         .and_then(|a| a.seek)
     {
         last_anim.pending_seek = Some(seek);
+    }
+
+    // Latch new sound triggers from the scene. Scene owns the lifecycle: a new list
+    // (including a one-frame write that clears next frame) gets accumulated once per
+    // transition. Holding the same list across frames doesn't re-latch.
+    let current_sounds: &[String] = scene_anim
+        .and_then(|s| s.active.as_ref())
+        .map(|a| a.sounds.as_slice())
+        .unwrap_or(&[]);
+    if current_sounds != last_anim.last_seen_sounds.as_slice() {
+        last_anim
+            .pending_sounds
+            .extend(current_sounds.iter().cloned());
+        last_anim.last_seen_sounds = current_sounds.to_vec();
     }
 
     let elapsed = time - *last_sent;
@@ -181,6 +202,14 @@ fn broadcast_position(
     // The latch above already mirrors the freshest `seek` seen since the last
     // broadcast. Only send if there's an active anim to apply it to.
     let anim_playback_time = active_anim.and(last_anim.pending_seek.take());
+    // Drain pending sounds on every broadcast. Sounds depend on `anim_scene_hash`
+    // to identify their host scene, so only ship them while an anim is active.
+    let anim_sound_content_hashes = if active_anim.is_some() {
+        std::mem::take(&mut last_anim.pending_sounds)
+    } else {
+        last_anim.pending_sounds.clear();
+        Vec::new()
+    };
 
     let movement_uncompressed = dcl_component::proto_components::kernel::comms::rfc4::Movement {
         timestamp: time as f32,
@@ -206,6 +235,7 @@ fn broadcast_position(
         anim_playback_time,
         anim_transition_seconds,
         anim_loop,
+        anim_sound_content_hashes,
     };
 
     // let movement_packet = rfc4::MovementCompressed {

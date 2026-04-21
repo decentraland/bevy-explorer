@@ -6171,6 +6171,7 @@ dependencies = [
  "base64 0.22.1",
  "bevy",
  "bevy_console",
+ "bevy_kira_audio",
  "clap",
  "common",
  "console",

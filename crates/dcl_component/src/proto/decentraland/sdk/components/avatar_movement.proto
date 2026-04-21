@@ -25,6 +25,7 @@ message MovementAnimation {
   bool idle = 4;                                            // true: a triggerSceneEmote may take over; false: emotes are suppressed while this animation plays
   optional float transition_seconds = 5;                    // cross-fade duration when `src` changes; defaults to 0.2 when unset. Not applied to loop/speed/idle changes.
   optional float playback_time = 6;                         // if set, the engine seeks to this position (in seconds) this frame. Clear on subsequent frames to allow normal playback. The scene can read `AvatarAnimationState.playback_time` first to decide.
+  repeated string sounds = 7;                               // scene-relative paths to audio clips (.mp3/.ogg) to play this frame on the avatar audio bus. Fire-and-forget: each listed clip plays once per frame it appears; leaving a clip set for multiple frames re-triggers it. No stop mechanism. Use `AvatarAnimationState.playback_time` to trigger sounds at the right point in the clip (e.g. foot plants).
 }
 
 // engine behaviour (uses only capsule shapecasts and GJK closest point for portability):

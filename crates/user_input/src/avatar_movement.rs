@@ -158,6 +158,30 @@ fn update_scene_driven_animation(
             return None;
         };
 
+        // Resolve each scene-relative audio path to a content hash against the same
+        // scene content map. Drop (and warn once per src) any path that doesn't resolve.
+        let sounds = anim
+            .sounds
+            .iter()
+            .filter_map(|sound_src| {
+                let sound_path = IpfsPath::new(IpfsType::new_content_file(
+                    ctx.hash.clone(),
+                    sound_src.to_lowercase(),
+                ));
+                match sound_path.hash(&ipfs_ctx) {
+                    Some(h) => Some(h),
+                    None => {
+                        if logged_failures.insert(sound_src.clone()) {
+                            warn!(
+                                "scene-driven movement sound path not found in scene content map: {sound_src}"
+                            );
+                        }
+                        None
+                    }
+                }
+            })
+            .collect();
+
         // The `-false` suffix is a fixed part of the scene-emote URN format here;
         // loop behavior is carried separately in SceneDrivenAnimationRequest.r#loop.
         let urn = format!(
@@ -174,6 +198,7 @@ fn update_scene_driven_animation(
             idle: anim.idle,
             transition_seconds: anim.transition_seconds.unwrap_or(0.2),
             seek: anim.playback_time,
+            sounds,
         })
     })();
 

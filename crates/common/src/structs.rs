@@ -258,6 +258,11 @@ pub struct SceneDrivenAnimationRequest {
     pub idle: bool,
     pub transition_seconds: f32,
     pub seek: Option<f32>,
+    // Scene-requested avatar-bus sound clips to play this update. Each entry is the
+    // content_hash of a file hosted in the same scene as the animation. The consumer
+    // dedups per-avatar so leaving identical entries across consecutive updates doesn't
+    // re-fire; the scene clears the list on frames it doesn't want sound.
+    pub sounds: Vec<String>,
 }
 
 // Current scene-driven animation playback state, written by `play_current_emote` in

@@ -59,6 +59,15 @@ impl IpfsAsset for bevy::gltf::Gltf {
     }
 }
 
+// Loaded via the custom `.audio` AssetLoader in the `av` crate: kira's
+// symphonia pipeline already sniffs the container format, so we strip the real
+// extension on the wire and pick it back up by MIME on the client.
+impl IpfsAsset for bevy_kira_audio::AudioSource {
+    fn ext() -> &'static str {
+        "audio"
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum IpfsType {
     ContentFile {
