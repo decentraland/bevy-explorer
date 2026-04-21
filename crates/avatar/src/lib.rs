@@ -953,7 +953,6 @@ fn process_avatar(
     >,
     scene_spawner: SceneSpawnerPlus,
     mut instance_ents: Query<(
-        &mut Visibility,
         &ChildOf,
         &GlobalTransform,
         Option<&MeshMaterial3d<StandardMaterial>>,
@@ -1050,7 +1049,7 @@ fn process_avatar(
 
         // hide and colour the base model
         for scene_ent in scene_spawner.iter_instance_entities(loaded_avatar.body_instance) {
-            let Ok((mut vis, parent, gt, maybe_h_mat, maybe_h_mesh, maybe_player)) =
+            let Ok((parent, gt, maybe_h_mat, maybe_h_mesh, maybe_player)) =
                 instance_ents.get_mut(scene_ent)
             else {
                 continue;
@@ -1175,7 +1174,10 @@ fn process_avatar(
 
             for (suffix, color, category, no_mask_means_ignore_color) in masks.into_iter() {
                 if parent_name.ends_with(suffix) {
-                    *vis = Visibility::Hidden;
+                    let mut entity_vis = Some(VisibilityComponent(PbVisibilityComponent {
+                        visible: Some(false),
+                        propagate_to_children: Some(true),
+                    }));
 
                     if let Some(wearable) = def.wearables.iter().find(|w| w.category == category) {
                         debug!("setting {suffix} color {:?}", color);
@@ -1217,7 +1219,11 @@ fn process_avatar(
                                 .entity(scene_ent)
                                 .try_insert(MeshMaterial3d(material));
                         };
-                        *vis = Visibility::Inherited;
+                        entity_vis = None;
+                    }
+
+                    if let Some(entity_vis) = entity_vis {
+                        commands.entity(scene_ent).try_insert(entity_vis);
                     }
                 }
             }
@@ -1338,7 +1344,7 @@ fn process_avatar(
             let mut wearable_armature_to_despawn = HashSet::new();
 
             for scene_ent in scene_spawner.iter_instance_entities(*instance) {
-                let Ok((_, parent, gt, maybe_h_mat, maybe_h_mesh, maybe_player)) =
+                let Ok((parent, gt, maybe_h_mat, maybe_h_mesh, maybe_player)) =
                     instance_ents.get_mut(scene_ent)
                 else {
                     continue;
