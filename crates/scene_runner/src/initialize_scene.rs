@@ -401,7 +401,7 @@ pub(crate) fn load_scene_javascript(
             storage_root,
             portable.is_some(),
             frame.0,
-            title,
+            title.clone(),
             base,
             parcels,
             bounds,
@@ -516,6 +516,7 @@ pub(crate) fn load_scene_javascript(
         renderer_context.crdt_store = initial_crdt;
 
         commands.entity(root).try_insert((
+            Name::new(title),
             Transform::from_translation(Vec3::new(
                 initial_position.x,
                 -1000.0,
