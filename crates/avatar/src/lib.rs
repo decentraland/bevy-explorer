@@ -1245,7 +1245,7 @@ fn process_avatar(
                         commands.entity(scene_ent).try_insert(VisibilityComponent(
                             PbVisibilityComponent {
                                 visible: Some(false),
-                                propagate_to_children: Some(false),
+                                propagate_to_children: Some(true),
                             },
                         ));
                     }
