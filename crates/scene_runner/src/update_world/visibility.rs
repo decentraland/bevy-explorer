@@ -40,6 +40,15 @@ impl From<PbVisibilityComponent> for VisibilityComponent {
     }
 }
 
+impl VisibilityComponent {
+    pub fn new(visible: bool, propagate_to_children: bool) -> Self {
+        Self(PbVisibilityComponent {
+            visible: Some(visible),
+            propagate_to_children: Some(propagate_to_children),
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Component)]
 #[component(immutable)]
 #[require(Visibility)]
@@ -131,20 +140,9 @@ mod tests {
 
         let world = app.world_mut();
 
-        let parent = world
-            .spawn(VisibilityComponent(PbVisibilityComponent {
-                visible: Some(true),
-                propagate_to_children: Some(false),
-            }))
-            .id();
+        let parent = world.spawn(VisibilityComponent::new(true, false)).id();
         let child = world
-            .spawn((
-                VisibilityComponent(PbVisibilityComponent {
-                    visible: Some(true),
-                    propagate_to_children: Some(false),
-                }),
-                ChildOf(parent),
-            ))
+            .spawn((VisibilityComponent::new(true, false), ChildOf(parent)))
             .id();
 
         app.update();
@@ -164,20 +162,9 @@ mod tests {
 
         let world = app.world_mut();
 
-        let parent = world
-            .spawn(VisibilityComponent(PbVisibilityComponent {
-                visible: Some(true),
-                propagate_to_children: Some(false),
-            }))
-            .id();
+        let parent = world.spawn(VisibilityComponent::new(true, false)).id();
         let child = world
-            .spawn((
-                VisibilityComponent(PbVisibilityComponent {
-                    visible: Some(false),
-                    propagate_to_children: Some(false),
-                }),
-                ChildOf(parent),
-            ))
+            .spawn((VisibilityComponent::new(false, false), ChildOf(parent)))
             .id();
 
         app.update();
@@ -197,20 +184,9 @@ mod tests {
 
         let world = app.world_mut();
 
-        let parent = world
-            .spawn(VisibilityComponent(PbVisibilityComponent {
-                visible: Some(false),
-                propagate_to_children: Some(false),
-            }))
-            .id();
+        let parent = world.spawn(VisibilityComponent::new(false, false)).id();
         let child = world
-            .spawn((
-                VisibilityComponent(PbVisibilityComponent {
-                    visible: Some(true),
-                    propagate_to_children: Some(false),
-                }),
-                ChildOf(parent),
-            ))
+            .spawn((VisibilityComponent::new(true, false), ChildOf(parent)))
             .id();
 
         app.update();
@@ -232,20 +208,9 @@ mod tests {
 
         let world = app.world_mut();
 
-        let parent = world
-            .spawn(VisibilityComponent(PbVisibilityComponent {
-                visible: Some(false),
-                propagate_to_children: Some(false),
-            }))
-            .id();
+        let parent = world.spawn(VisibilityComponent::new(false, false)).id();
         let child = world
-            .spawn((
-                VisibilityComponent(PbVisibilityComponent {
-                    visible: Some(false),
-                    propagate_to_children: Some(false),
-                }),
-                ChildOf(parent),
-            ))
+            .spawn((VisibilityComponent::new(false, false), ChildOf(parent)))
             .id();
 
         app.update();
@@ -267,12 +232,7 @@ mod tests {
 
         let world = app.world_mut();
 
-        let parent = world
-            .spawn(VisibilityComponent(PbVisibilityComponent {
-                visible: Some(true),
-                propagate_to_children: Some(true),
-            }))
-            .id();
+        let parent = world.spawn(VisibilityComponent::new(true, true)).id();
         let child = world.spawn(ChildOf(parent)).id();
 
         app.update();
@@ -294,23 +254,12 @@ mod tests {
 
         let world = app.world_mut();
 
-        let parent = world
-            .spawn(VisibilityComponent(PbVisibilityComponent {
-                visible: Some(true),
-                propagate_to_children: Some(true),
-            }))
-            .id();
+        let parent = world.spawn(VisibilityComponent::new(true, true)).id();
         let children = (0..10)
             .map(|_| world.spawn(ChildOf(parent)).id())
             .collect::<Vec<_>>();
         let child = world
-            .spawn((
-                VisibilityComponent(PbVisibilityComponent {
-                    visible: Some(false),
-                    propagate_to_children: Some(false),
-                }),
-                ChildOf(parent),
-            ))
+            .spawn((VisibilityComponent::new(false, false), ChildOf(parent)))
             .id();
 
         app.update();
@@ -335,22 +284,14 @@ mod tests {
 
         let world = app.world_mut();
 
-        let parent = world
-            .spawn(VisibilityComponent(PbVisibilityComponent {
-                visible: Some(true),
-                propagate_to_children: Some(true),
-            }))
-            .id();
+        let parent = world.spawn(VisibilityComponent::new(true, true)).id();
         let children =
             std::iter::successors(Some(parent), |prev| Some(world.spawn(ChildOf(*prev)).id()))
                 .take(20)
                 .collect::<Vec<_>>();
         let child = world
             .spawn((
-                VisibilityComponent(PbVisibilityComponent {
-                    visible: Some(false),
-                    propagate_to_children: Some(false),
-                }),
+                VisibilityComponent::new(false, false),
                 ChildOf(children[19]),
             ))
             .id();
@@ -377,12 +318,7 @@ mod tests {
 
         let world = app.world_mut();
 
-        let parent = world
-            .spawn(VisibilityComponent(PbVisibilityComponent {
-                visible: Some(true),
-                propagate_to_children: Some(true),
-            }))
-            .id();
+        let parent = world.spawn(VisibilityComponent::new(true, true)).id();
         let visible_children =
             std::iter::successors(Some(parent), |prev| Some(world.spawn(ChildOf(*prev)).id()))
                 .skip(1)
@@ -391,10 +327,7 @@ mod tests {
         assert!(!visible_children.contains(&parent));
         let midway_descendant = world
             .spawn((
-                VisibilityComponent(PbVisibilityComponent {
-                    visible: Some(false),
-                    propagate_to_children: Some(true),
-                }),
+                VisibilityComponent::new(false, true),
                 ChildOf(visible_children[3]),
             ))
             .id();
@@ -432,16 +365,10 @@ mod tests {
 
         world
             .entity_mut(parent)
-            .insert(VisibilityComponent(PbVisibilityComponent {
-                visible: Some(false),
-                propagate_to_children: Some(true),
-            }));
+            .insert(VisibilityComponent::new(false, true));
         world
             .entity_mut(midway_descendant)
-            .insert(VisibilityComponent(PbVisibilityComponent {
-                visible: Some(true),
-                propagate_to_children: Some(true),
-            }));
+            .insert(VisibilityComponent::new(true, true));
 
         // this one requires 2 updates for some reason
         for _ in 0..2 {
@@ -472,10 +399,7 @@ mod tests {
 
         world
             .entity_mut(midway_descendant)
-            .insert(VisibilityComponent(PbVisibilityComponent {
-                visible: Some(true),
-                propagate_to_children: Some(false),
-            }));
+            .insert(VisibilityComponent::new(true, false));
 
         app.update();
 
@@ -503,10 +427,7 @@ mod tests {
 
         world
             .entity_mut(midway_descendant)
-            .insert(VisibilityComponent(PbVisibilityComponent {
-                visible: Some(true),
-                propagate_to_children: Some(true),
-            }));
+            .insert(VisibilityComponent::new(true, true));
 
         app.update();
 
@@ -562,10 +483,7 @@ mod tests {
 
         world
             .entity_mut(midway_descendant)
-            .insert(VisibilityComponent(PbVisibilityComponent {
-                visible: Some(true),
-                propagate_to_children: Some(true),
-            }));
+            .insert(VisibilityComponent::new(true, true));
 
         app.update();
 
@@ -604,29 +522,12 @@ mod tests {
 
         let world = app.world_mut();
 
-        let one = world
-            .spawn(VisibilityComponent(PbVisibilityComponent {
-                visible: Some(true),
-                propagate_to_children: Some(true),
-            }))
-            .id();
+        let one = world.spawn(VisibilityComponent::new(true, true)).id();
         let two = world
-            .spawn((
-                VisibilityComponent(PbVisibilityComponent {
-                    visible: Some(false),
-                    propagate_to_children: Some(false),
-                }),
-                ChildOf(one),
-            ))
+            .spawn((VisibilityComponent::new(false, false), ChildOf(one)))
             .id();
         let three = world
-            .spawn((
-                VisibilityComponent(PbVisibilityComponent {
-                    visible: Some(true),
-                    propagate_to_children: Some(true),
-                }),
-                ChildOf(two),
-            ))
+            .spawn((VisibilityComponent::new(true, true), ChildOf(two)))
             .id();
 
         app.update();

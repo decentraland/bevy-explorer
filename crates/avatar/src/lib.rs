@@ -48,7 +48,7 @@ use dcl_component::{
         common::Color3,
         sdk::components::{
             common::LoadingState, PbAvatarBase, PbAvatarEquippedData, PbAvatarShape,
-            PbGltfContainerLoadingState, PbVisibilityComponent,
+            PbGltfContainerLoadingState,
         },
         Color3DclToBevy,
     },
@@ -1076,7 +1076,9 @@ fn process_avatar(
 
             if let Some(h_mesh) = maybe_h_mesh {
                 if def.hides.contains(&WearableCategory::BODY_SHAPE) {
-                    commands.entity(scene_ent).try_insert(Visibility::Hidden);
+                    commands
+                        .entity(scene_ent)
+                        .try_insert(VisibilityComponent::new(false, true));
                 }
 
                 if name == "head" && def.hides.contains(&WearableCategory::HEAD) {
@@ -1174,10 +1176,7 @@ fn process_avatar(
 
             for (suffix, color, category, no_mask_means_ignore_color) in masks.into_iter() {
                 if parent_name.ends_with(suffix) {
-                    let mut entity_vis = Some(VisibilityComponent(PbVisibilityComponent {
-                        visible: Some(false),
-                        propagate_to_children: Some(true),
-                    }));
+                    let mut entity_vis = Some(VisibilityComponent::new(false, true));
 
                     if let Some(wearable) = def.wearables.iter().find(|w| w.category == category) {
                         debug!("setting {suffix} color {:?}", color);
@@ -1248,12 +1247,9 @@ fn process_avatar(
                             .iter()
                             .any(|w| w.category == WearableCategory::SKIN || w.category == category)
                     {
-                        commands.entity(scene_ent).try_insert(VisibilityComponent(
-                            PbVisibilityComponent {
-                                visible: Some(false),
-                                propagate_to_children: Some(true),
-                            },
-                        ));
+                        commands
+                            .entity(scene_ent)
+                            .try_insert(VisibilityComponent::new(false, true));
                     }
                 }
             }

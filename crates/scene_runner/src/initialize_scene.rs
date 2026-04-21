@@ -29,7 +29,7 @@ use dcl::{
     SceneElapsedTime, SceneId, SceneResponse,
 };
 use dcl_component::{
-    proto_components::sdk::components::{PbMainCamera, PbRealmInfo, PbVisibilityComponent},
+    proto_components::sdk::components::{PbMainCamera, PbRealmInfo},
     transform_and_parent::DclTransformAndParent,
     DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
@@ -523,10 +523,7 @@ pub(crate) fn load_scene_javascript(
                 -initial_position.y,
             )),
             // Garantees that there is always a parent with `propagate_to_children = true`
-            VisibilityComponent(PbVisibilityComponent {
-                visible: Some(true),
-                propagate_to_children: Some(true),
-            }),
+            VisibilityComponent::new(true, true),
             Visibility::default(),
             renderer_context,
             ComponentTracker::default(),
