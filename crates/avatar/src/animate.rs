@@ -34,14 +34,16 @@ use dcl::interface::CrdtType;
 use dcl_component::{
     proto_components::{
         kernel::comms::rfc4::{self, Chat, PlayerEmote},
-        sdk::components::PbAvatarEmoteCommand,
+        sdk::components::{PbAvatarEmoteCommand, PbVisibilityComponent},
     },
     SceneComponentId, SceneEntityId,
 };
 use ipfs::IpfsAssetServer;
 use scene_runner::{
-    permissions::Permission, renderer_context::RendererSceneContext,
-    update_world::animation::Clips, ContainerEntity, ContainingScene,
+    permissions::Permission,
+    renderer_context::RendererSceneContext,
+    update_world::{animation::Clips, visibility::VisibilityComponent},
+    ContainerEntity, ContainingScene,
 };
 
 use crate::{process_avatar, AvatarDefinition};
@@ -662,7 +664,12 @@ fn play_current_emote(
                                     || name.ends_with("_basemesh")
                                     || name.starts_with("m_mask_")
                                 {
-                                    commands.entity(spawned_ent).try_insert(Visibility::Hidden);
+                                    commands.entity(spawned_ent).try_insert(VisibilityComponent(
+                                        PbVisibilityComponent {
+                                            visible: Some(false),
+                                            propagate_to_children: Some(true),
+                                        },
+                                    ));
                                     warn!("hiding emote prop `{name}` due to name");
                                 }
                             }
