@@ -68,18 +68,20 @@ message Movement {
   // unchanged since the last send (receivers cache them) and forced every ~1s as a
   // keepalive for joiners. An empty anim_scene_hash clears a prior active anim. The other
   // fields are sent every frame the animation is active.
-  optional string anim_scene_hash = 19;
-  optional float anim_speed = 20;
-  optional float anim_playback_time = 21;
-  optional float anim_transition_seconds = 22;
-  optional bool anim_loop = 23;
-  optional string anim_content_hash = 24;
+  // Tag numbers 19-28 are reserved upstream for head-sync / glide / jump_count / point-at,
+  // so these local extensions start at 29 to avoid wire collisions with upstream senders.
+  optional string anim_scene_hash = 29;
+  optional float anim_speed = 30;
+  optional float anim_playback_time = 31;
+  optional float anim_transition_seconds = 32;
+  optional bool anim_loop = 33;
+  optional string anim_content_hash = 34;
 
   // Scene-requested avatar-bus sound triggers that accumulated since the last broadcast.
   // Each entry is the content_hash of an audio clip hosted in the same scene as the active
   // animation (so `anim_scene_hash` — latched or re-asserted via keepalive — identifies the
   // scene). Receivers play each hash once on receipt. Fire-and-forget; no stop mechanism.
-  repeated string anim_sound_content_hashes = 25;
+  repeated string anim_sound_content_hashes = 35;
 }
 
 message MovementCompressed {
@@ -88,13 +90,15 @@ message MovementCompressed {
 
   // See Movement.anim_* fields. Mirror here so the compressed variant can carry the same
   // scene-driven animation state if/when MovementCompressed is re-enabled on the sender.
-  optional string anim_scene_hash = 3;
-  optional float anim_speed = 4;
-  optional float anim_playback_time = 5;
-  optional float anim_transition_seconds = 6;
-  optional bool anim_loop = 7;
-  optional string anim_content_hash = 8;
-  repeated string anim_sound_content_hashes = 9;
+  // Tags 3 and 4 are reserved upstream for head_sync_data / point_at_data, so local
+  // extensions start at 5.
+  optional string anim_scene_hash = 5;
+  optional float anim_speed = 6;
+  optional float anim_playback_time = 7;
+  optional float anim_transition_seconds = 8;
+  optional bool anim_loop = 9;
+  optional string anim_content_hash = 10;
+  repeated string anim_sound_content_hashes = 11;
 }
 
 message PlayerEmote {
