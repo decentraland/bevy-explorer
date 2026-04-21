@@ -969,8 +969,13 @@ fn play_current_emote(
                 active_animation.set_speed(active_emote.speed);
 
                 if let Some(seek) = pending_seek {
-                    active_animation.seek_to(seek.clamp(0.0, clip_duration));
+                    // `replay()` in bevy_animation resets `seek_time` to 0.0
+                    // (among other state), so it must run BEFORE `seek_to`
+                    // or the seek is clobbered. We still call it so a non-
+                    // looping clip that has completed can be restarted by a
+                    // new seek.
                     active_animation.replay();
+                    active_animation.seek_to(seek.clamp(0.0, clip_duration));
                 }
 
                 // nasty hack for falling animation
