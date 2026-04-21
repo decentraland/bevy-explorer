@@ -1381,6 +1381,7 @@ pub fn process_scene_lifecycle(
     mut spawn: EventWriter<LoadSceneEvent>,
     pointers: Res<ScenePointers>,
     imposter_scene: Res<CurrentImposterScene>,
+    preview_mode: Res<PreviewMode>,
 ) {
     let mut required_scene_ids: HashMap<(String, Option<String>), bool> = HashMap::new();
 
@@ -1393,6 +1394,9 @@ pub fn process_scene_lifecycle(
         .first()
         .and_then(|(p, _)| pointers.get(p))
         .and_then(PointerResult::hash_and_urn);
+    if preview_mode.is_preview && current_scene.is_none() {
+        return;
+    }
 
     let pir = parcels_in_range(
         focus,
