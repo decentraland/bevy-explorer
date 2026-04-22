@@ -88,11 +88,13 @@ fn main_inner(
     });
     let base_graphics = base_config.graphics.clone();
 
+    let location = IVec2Arg::from_str(location)
+        .map(|l| l.0)
+        .unwrap_or(base_config.location);
+
     let final_config = AppConfig {
         server: server.to_owned(),
-        location: IVec2Arg::from_str(location)
-            .map(|l| l.0)
-            .unwrap_or(base_config.location),
+        location,
         graphics: common::structs::GraphicsSettings {
             gpu_bytes_per_frame: rabpf,
             ..base_graphics
@@ -252,6 +254,7 @@ fn main_inner(
     app.insert_resource(PreviewMode {
         server: is_preview.then_some(map_realm_name(&final_config.server)),
         is_preview,
+        preview_parcel: is_preview.then_some(location),
     });
     app.insert_resource(SceneParams::from_query_string(params, true));
 

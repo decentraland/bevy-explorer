@@ -149,16 +149,18 @@ fn main() {
             Default::default()
         });
 
+    let location = args
+        .value_from_str::<_, IVec2Arg>("--location")
+        .ok()
+        .map(|va| va.0)
+        .unwrap_or(base_config.location);
+
     let final_config = AppConfig {
         server: args
             .value_from_str("--server")
             .ok()
             .unwrap_or(base_config.server),
-        location: args
-            .value_from_str::<_, IVec2Arg>("--location")
-            .ok()
-            .map(|va| va.0)
-            .unwrap_or(base_config.location),
+        location,
         previous_login: base_config.previous_login,
         graphics: GraphicsSettings {
             vsync: args
@@ -446,6 +448,7 @@ fn main() {
     app.insert_resource(PreviewMode {
         server: is_preview.then_some(map_realm_name(&final_config.server)),
         is_preview,
+        preview_parcel: is_preview.then_some(location),
     });
 
     app.insert_resource(SceneLoadDistance {

@@ -1137,10 +1137,11 @@ pub struct MicState {
     pub enabled: bool,
 }
 
-#[derive(Resource, Default)]
+#[derive(Debug, Resource, Default)]
 pub struct PreviewMode {
     pub server: Option<String>,
     pub is_preview: bool,
+    pub preview_parcel: Option<IVec2>,
 }
 
 // resource into which systems can add debug info
