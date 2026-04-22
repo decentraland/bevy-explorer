@@ -410,7 +410,7 @@ fn manage_shadow_casters(
     // sort by scene-active and distance
     lights.sort_by_key(|(_, scene_active, importance, _)| (*scene_active, *importance));
     // enable up to limit
-    let mut max_enabled = usize::MAX;
+    let mut max_enabled = config.graphics.light_count;
     let mut max_casters = match config.graphics.shadow_settings {
         common::structs::ShadowSetting::Off => 0,
         _ => config.graphics.shadow_caster_count,

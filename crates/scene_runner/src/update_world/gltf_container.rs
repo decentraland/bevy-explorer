@@ -508,7 +508,7 @@ fn update_ready_gltfs(
                                 scene: dcl_scene_entity.root,
                                 enabled: true,
                                 shadows_enabled: true,
-                                range: point.range,                                
+                                range: point.range,
                             },
                         ));
                     }
