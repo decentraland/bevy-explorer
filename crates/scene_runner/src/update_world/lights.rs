@@ -214,6 +214,9 @@ pub fn update_directional_light(
 #[derive(Component)]
 pub struct LightEntity {
     pub scene: Entity,
+    pub enabled: bool,
+    pub shadows_enabled: bool,
+    pub range: f32,
 }
 
 fn update_point_lights(
@@ -241,15 +244,38 @@ fn update_point_lights(
                 .find(|child| child_lights.get(*child).is_ok())
         });
 
+        let range = light.range.unwrap_or(-1.0);
+        let range = if range < 0.0 {
+            light.intensity.unwrap_or(16000.0).powf(0.25)
+        } else {
+            range.min(light.intensity.unwrap_or(16000.0).powf(0.25))
+        };
+
         let mut light_cmds = match previous_light_entity {
-            Some(prev) => commands.entity(prev),
+            Some(prev) => {
+                let mut cmds = commands.entity(prev);
+                cmds.insert((
+                    LightEntity {
+                        scene: container.root,
+                        enabled: light.enabled,
+                        shadows_enabled: light.shadow.unwrap_or(false),
+                        range,
+                    },
+                    Visibility::Hidden,
+                ));
+                cmds
+            }
             None => {
                 let mut cmds = commands.spawn((
                     LightEntity {
                         scene: container.root,
+                        enabled: light.enabled,
+                        shadows_enabled: light.shadow.unwrap_or(false),
+                        range,
                     },
                     // light hidden avatars too
                     RenderLayers::default().union(&PRIMARY_AVATAR_LIGHT_LAYER),
+                    Visibility::Hidden,
                 ));
                 let light_id = cmds.id();
                 cmds.commands()
@@ -281,17 +307,7 @@ fn update_point_lights(
             None
         };
 
-        let lumens = if light.enabled {
-            light.intensity.unwrap_or(16000.0) * 4.0 * PI
-        } else {
-            0.0
-        };
-        let range = light.range.unwrap_or(-1.0);
-        let range = if range < 0.0 {
-            light.intensity.unwrap_or(16000.0).powf(0.25)
-        } else {
-            range
-        };
+        let lumens = light.intensity.unwrap_or(16000.0) * 4.0 * PI;
         match light.spotlight_angles {
             Some(angles) => {
                 light_cmds.try_insert(SpotLight {
@@ -351,17 +367,13 @@ fn update_point_lights(
 pub struct RetryLightTexture;
 
 fn manage_shadow_casters(
-    mut q: Query<
-        (
-            Entity,
-            &GlobalTransform,
-            &LightEntity,
-            Option<&mut PointLight>,
-            Option<&mut SpotLight>,
-            &LightSource,
-        ),
-        Or<(With<PointLight>, With<SpotLight>)>,
-    >,
+    read_lights: Query<(Entity, &GlobalTransform, &LightEntity, &ChildOf)>,
+    mut write_lights: Query<(
+        Option<&mut PointLight>,
+        Option<&mut SpotLight>,
+        &mut Visibility,
+    )>,
+    parent_visibility: Query<&InheritedVisibility>,
     player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
     containing_scene: ContainingScene,
     config: Res<AppConfig>,
@@ -375,53 +387,66 @@ fn manage_shadow_casters(
     let active_scenes = containing_scene.get_area(player, PLAYER_COLLIDER_RADIUS);
 
     // collect lights
-    lights.extend(
-        q.iter()
-            .map(|(entity, gt, container, maybe_p, maybe_s, _)| {
-                (
-                    entity,
-                    active_scenes.contains(&container.scene),
-                    FloatOrd(gt.translation().distance_squared(player_t)),
-                    maybe_p
-                        .map(|p| p.shadows_enabled)
-                        .unwrap_or_else(|| maybe_s.unwrap().shadows_enabled),
-                )
-            }),
-    );
+    lights.extend(read_lights.iter().map(|(entity, gt, light, parent)| {
+        let enabled = light.enabled
+            && parent_visibility
+                .get(parent.parent())
+                .is_ok_and(|pv| pv.get());
+        let importance = if enabled {
+            let distance = (gt.translation() - player_t).length();
+            let importance = light.range / distance;
+            FloatOrd(importance)
+        } else {
+            FloatOrd(0.0)
+        };
+
+        (
+            entity,
+            active_scenes.contains(&light.scene),
+            importance,
+            light.shadows_enabled,
+        )
+    }));
     // sort by scene-active and distance
-    lights.sort_by_key(|(_, scene_active, distance, _)| (*scene_active, *distance));
+    lights.sort_by_key(|(_, scene_active, importance, _)| (*scene_active, *importance));
     // enable up to limit
-    let max_casters = match config.graphics.shadow_settings {
+    let mut max_enabled = usize::MAX;
+    let mut max_casters = match config.graphics.shadow_settings {
         common::structs::ShadowSetting::Off => 0,
         _ => config.graphics.shadow_caster_count,
     };
     debug!(
-        "found {} lights, enabling up to {}",
+        "found {} lights, enabling up to {} with {} casters",
         lights.len(),
+        max_enabled,
         max_casters
     );
-    let mut iter = lights.drain(..);
-    for (light, _, _, enabled) in iter.by_ref().take(max_casters) {
-        if !enabled {
-            let (_, _, _, maybe_p, maybe_s, _) = q.get_mut(light).unwrap();
-            if let Some(mut p) = maybe_p {
-                p.shadows_enabled = true;
+    for (light, _, importance, shadows_enabled) in lights.drain(..).rev() {
+        let (maybe_p, maybe_s, mut vis) = write_lights.get_mut(light).unwrap();
+
+        if importance.0 != 0.0 && max_enabled > 0 {
+            *vis = Visibility::Visible;
+            max_enabled -= 1;
+
+            if shadows_enabled && max_casters > 0 {
+                if let Some(mut p) = maybe_p {
+                    p.shadows_enabled = true;
+                }
+                if let Some(mut s) = maybe_s {
+                    s.shadows_enabled = true;
+                }
+
+                max_casters -= 1;
+            } else {
+                if let Some(mut p) = maybe_p {
+                    p.shadows_enabled = false;
+                }
+                if let Some(mut s) = maybe_s {
+                    s.shadows_enabled = false;
+                }
             }
-            if let Some(mut s) = maybe_s {
-                s.shadows_enabled = true;
-            }
-        }
-    }
-    // disable over limit
-    for (light, _, _, enabled) in iter {
-        if enabled {
-            let (_, _, _, maybe_p, maybe_s, _) = q.get_mut(light).unwrap();
-            if let Some(mut p) = maybe_p {
-                p.shadows_enabled = false;
-            }
-            if let Some(mut s) = maybe_s {
-                s.shadows_enabled = false;
-            }
+        } else {
+            *vis = Visibility::Hidden;
         }
     }
 }
