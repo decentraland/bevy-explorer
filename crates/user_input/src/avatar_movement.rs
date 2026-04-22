@@ -12,6 +12,7 @@ use common::{
     sets::SceneSets,
     structs::{
         AppConfig, AvatarDynamicState, EngineMovementControl, PrimaryPlayerRes, PrimaryUser,
+        SceneDrivenAnim, SceneDrivenAnimationFeedback, SceneDrivenAnimationRequest,
     },
 };
 use comms::global_crdt::GlobalCrdtState;
@@ -20,11 +21,16 @@ use dcl_component::{
     proto_components::{
         common::Vector3,
         sdk::components::{
-            ColliderLayer, PbAvatarLocomotionSettings, PbAvatarMovement, PbAvatarMovementInfo,
-            PbPhysicsCombinedForce, PbPhysicsCombinedImpulse,
+            AvatarAnimationState, ColliderLayer, MovementAnimation, PbAvatarLocomotionSettings,
+            PbAvatarMovement, PbAvatarMovementInfo, PbPhysicsCombinedForce,
+            PbPhysicsCombinedImpulse,
         },
     },
     SceneComponentId, SceneEntityId,
+};
+use ipfs::{
+    ipfs_path::{IpfsPath, IpfsType},
+    IpfsAssetServer,
 };
 
 use scene_runner::{
@@ -62,6 +68,7 @@ impl Plugin for AvatarMovementPlugin {
         );
 
         app.init_resource::<AvatarMovementInfo>();
+        app.init_resource::<SceneDrivenAnimationFeedback>();
 
         app.add_systems(Update, broadcast_movement_info.in_set(SceneSets::Init));
 
@@ -72,6 +79,9 @@ impl Plugin for AvatarMovementPlugin {
                 ActivePlayerComponent::<AvatarLocomotionSettings>::pick_by_priority,
                 ActivePlayerComponent::<InputModifier>::pick_by_priority,
                 update_priority_scene.after(
+                    ActivePlayerComponent::<AvatarMovement>::pick_latest_frame_only_by_priority,
+                ),
+                update_scene_driven_animation.after(
                     ActivePlayerComponent::<AvatarMovement>::pick_latest_frame_only_by_priority,
                 ),
             )
@@ -113,13 +123,99 @@ fn update_priority_scene(
     }
 }
 
-#[derive(Component, Clone, Copy, Debug)]
+// Resolves the active scene's `MovementAnimation.src` against the scene content map
+// (path -> content hash) and writes a ready-to-play request onto the primary player's
+// `SceneDrivenAnim` component for the avatar animation system to consume.
+fn update_scene_driven_animation(
+    mut commands: Commands,
+    player: Query<(Entity, &ActivePlayerComponent<AvatarMovement>), With<PrimaryUser>>,
+    scenes: Query<&RendererSceneContext>,
+    ipfas: IpfsAssetServer,
+    mut logged_failures: Local<HashSet<String>>,
+) {
+    let Ok((primary, active)) = player.single() else {
+        return;
+    };
+    let request = (|| {
+        let anim = active.component.animation.as_ref()?;
+        let scene_ent = active.scene();
+        if scene_ent == Entity::PLACEHOLDER {
+            return None;
+        }
+        let ctx = scenes.get(scene_ent).ok()?;
+        let ipfs_path = IpfsPath::new(IpfsType::new_content_file(
+            ctx.hash.clone(),
+            anim.src.to_lowercase(),
+        ));
+        let ipfs_ctx = ipfas.ipfs().context.blocking_read();
+        let Some(content_hash) = ipfs_path.hash(&ipfs_ctx) else {
+            if logged_failures.insert(anim.src.clone()) {
+                warn!(
+                    "scene-driven movement animation path not found in scene content map: {}",
+                    anim.src
+                );
+            }
+            return None;
+        };
+
+        // Resolve each scene-relative audio path to a content hash against the same
+        // scene content map. Drop (and warn once per src) any path that doesn't resolve.
+        let sounds = anim
+            .sounds
+            .iter()
+            .filter_map(|sound_src| {
+                let sound_path = IpfsPath::new(IpfsType::new_content_file(
+                    ctx.hash.clone(),
+                    sound_src.to_lowercase(),
+                ));
+                match sound_path.hash(&ipfs_ctx) {
+                    Some(h) => Some(h),
+                    None => {
+                        if logged_failures.insert(sound_src.clone()) {
+                            warn!(
+                                "scene-driven movement sound path not found in scene content map: {sound_src}"
+                            );
+                        }
+                        None
+                    }
+                }
+            })
+            .collect();
+
+        // The `-false` suffix is a fixed part of the scene-emote URN format here;
+        // loop behavior is carried separately in SceneDrivenAnimationRequest.r#loop.
+        let urn = format!(
+            "urn:decentraland:off-chain:scene-emote:{}-{}-false",
+            ctx.hash, content_hash
+        );
+        Some(SceneDrivenAnimationRequest {
+            src: anim.src.clone(),
+            urn,
+            scene_hash: ctx.hash.clone(),
+            content_hash,
+            r#loop: anim.r#loop,
+            speed: anim.speed,
+            idle: anim.idle,
+            transition_seconds: anim.transition_seconds.unwrap_or(0.2),
+            seek: anim.playback_time,
+            sounds,
+        })
+    })();
+
+    commands
+        .entity(primary)
+        .try_insert(SceneDrivenAnim { active: request });
+}
+
+#[derive(Component, Clone, Debug)]
 pub struct AvatarMovement {
     pub velocity: Vec3,
     pub orientation: f32,
     pub ground_direction: Vec3,
     /// set for one frame when a walk_target ends: true = reached target, false = failed
     pub walk_success: Option<bool>,
+    /// scene-driven movement animation request; if absent, engine falls back to velocity-based selection
+    pub animation: Option<MovementAnimation>,
 }
 
 impl Default for AvatarMovement {
@@ -129,6 +225,7 @@ impl Default for AvatarMovement {
             orientation: 0.0,
             ground_direction: Vec3::NEG_Y,
             walk_success: None,
+            animation: None,
         }
     }
 }
@@ -167,6 +264,7 @@ impl From<PbAvatarMovement> for AvatarMovement {
                 .map(Vec3::normalize_or_zero)
                 .unwrap_or(Vec3::NEG_Y),
             walk_success: value.walk_success,
+            animation: value.animation,
         }
     }
 }
@@ -735,6 +833,7 @@ fn broadcast_movement_info(
         ),
         With<PrimaryUser>,
     >,
+    feedback: Res<SceneDrivenAnimationFeedback>,
     mut global_crdt: ResMut<GlobalCrdtState>,
     time: Res<Time>,
 ) {
@@ -742,6 +841,15 @@ fn broadcast_movement_info(
 
     info.0.active_avatar_locomotion_settings = maybe_locomotion.map(|l| l.component.0.clone());
     info.0.active_input_modifier = maybe_modifier.and_then(|l| l.component.0.clone());
+    info.0.active_animation_state = feedback.state.as_ref().map(|s| AvatarAnimationState {
+        src: s.src.clone(),
+        r#loop: s.r#loop,
+        speed: s.speed,
+        idle: s.idle,
+        playback_time: s.playback_time,
+        duration: s.duration,
+        loop_count: s.loop_count,
+    });
 
     debug!("broadcast {:?}", info.0);
 
@@ -761,5 +869,6 @@ fn broadcast_movement_info(
         active_input_modifier: None,
         walk_target: None,
         walk_threshold: None,
+        active_animation_state: None,
     }
 }

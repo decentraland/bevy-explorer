@@ -16,6 +16,7 @@ pub mod video_context;
 pub mod video_stream;
 
 // audio source (non-streaming audio)
+pub mod audio_loader;
 pub mod audio_source;
 #[cfg(not(feature = "html"))]
 pub mod audio_source_native;

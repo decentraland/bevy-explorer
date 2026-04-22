@@ -33,6 +33,9 @@ impl Plugin for AudioSourcePlugin {
     fn build(&self, app: &mut App) {
         // we use kira for audio source asset management, regardless of native / wasm
         app.add_plugins(bevy_kira_audio::AudioPlugin);
+        // Custom `.audio` loader for scene-content clips fetched by content hash
+        // (no on-wire extension). Format is detected from the byte stream.
+        app.register_asset_loader(crate::audio_loader::AudioAssetLoader);
         app.add_event::<SystemAudio>();
         app.add_crdt_lww_component::<PbAudioSource, AudioSource>(
             SceneComponentId::AUDIO_SOURCE,

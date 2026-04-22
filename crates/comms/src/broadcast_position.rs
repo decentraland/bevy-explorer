@@ -2,7 +2,7 @@ use std::f32::consts::TAU;
 
 use bevy::prelude::*;
 
-use common::structs::{AvatarDynamicState, MoveKind, PrimaryUser};
+use common::structs::{AvatarDynamicState, MoveKind, PrimaryUser, SceneDrivenAnim};
 use dcl_component::{
     proto_components::kernel::comms::rfc4,
     transform_and_parent::{DclQuat, DclTranslation},
@@ -26,30 +26,94 @@ impl Plugin for BroadcastPositionPlugin {
 
 const STATIC_FREQ: f64 = 1.0;
 const DYNAMIC_FREQ: f64 = 0.1;
+// Re-send the anim hash pair at least this often so late joiners pick up the active clip.
+const ANIM_URN_KEEPALIVE: f64 = 1.0;
 
+#[derive(Default)]
+struct LastAnim {
+    // The (scene_hash, content_hash) pair we last broadcast. Tracked as one unit so we
+    // can detect transitions between clips and drive keepalives.
+    hashes: Option<(String, String)>,
+    sent_at: f64,
+    // Latched seek from the scene. The scene publishes `seek` for a single frame;
+    // we hold it here until a broadcast goes out so we don't miss it between the
+    // 10Hz dynamic / 1Hz static broadcast intervals.
+    pending_seek: Option<f32>,
+    // Latched sound content hashes from the scene. Accumulated across frames so
+    // single-frame sound triggers still make it out on the next broadcast; drained
+    // on send.
+    pending_sounds: Vec<String>,
+    // Previous frame's sound list, used to avoid re-latching the same list multiple
+    // times when the scene holds it across frames between broadcasts.
+    last_seen_sounds: Vec<String>,
+}
+
+#[allow(clippy::too_many_arguments)]
 fn broadcast_position(
-    player: Query<(&GlobalTransform, &AvatarDynamicState), With<PrimaryUser>>,
+    player: Query<
+        (
+            &GlobalTransform,
+            &AvatarDynamicState,
+            Option<&SceneDrivenAnim>,
+        ),
+        With<PrimaryUser>,
+    >,
     transports: Query<&Transport>,
     mut last_position: Local<(Vec3, Quat, Vec3)>,
     mut last_sent: Local<f64>,
     mut last_index: Local<u32>,
+    mut last_anim: Local<LastAnim>,
     time: Res<Time>,
     global_crdt: Res<GlobalCrdtState>,
 ) {
-    let Ok((player, dynamics)) = player.single() else {
+    let Ok((player, dynamics, scene_anim)) = player.single() else {
         return;
     };
     let time = time.elapsed_secs_f64();
+
+    // Latch any single-frame seek from the scene so we still send it even if the
+    // broadcast cadence skipped the frame it was published on.
+    if let Some(seek) = scene_anim
+        .and_then(|s| s.active.as_ref())
+        .and_then(|a| a.seek)
+    {
+        last_anim.pending_seek = Some(seek);
+    }
+
+    // Latch new sound triggers from the scene. Scene owns the lifecycle: a new list
+    // (including a one-frame write that clears next frame) gets accumulated once per
+    // transition. Holding the same list across frames doesn't re-latch.
+    let current_sounds: &[String] = scene_anim
+        .and_then(|s| s.active.as_ref())
+        .map(|a| a.sounds.as_slice())
+        .unwrap_or(&[]);
+    if current_sounds != last_anim.last_seen_sounds.as_slice() {
+        last_anim
+            .pending_sounds
+            .extend(current_sounds.iter().cloned());
+        last_anim.last_seen_sounds = current_sounds.to_vec();
+    }
+
     let elapsed = time - *last_sent;
-    if elapsed < DYNAMIC_FREQ {
+    // A pending seek bypasses the dynamic-rate gate so remotes receive it promptly.
+    if elapsed < DYNAMIC_FREQ && last_anim.pending_seek.is_none() {
         return;
     }
 
     let (_, rotation, translation) = player.to_scale_rotation_translation();
+    // An anim change (e.g. jump → idle on landing) must go out promptly: when the
+    // player comes to rest, velocity/position stop changing, and without this
+    // bypass the transition would wait on the STATIC_FREQ keepalive.
+    let current_hashes = scene_anim
+        .and_then(|s| s.active.as_ref())
+        .map(|a| (a.scene_hash.clone(), a.content_hash.clone()));
+    let anim_changed = current_hashes != last_anim.hashes;
     if elapsed < STATIC_FREQ
         && (translation - last_position.0).length_squared() < 0.01
         && rotation == last_position.1
         && (dynamics.velocity - last_position.2).length_squared() < 0.01
+        && last_anim.pending_seek.is_none()
+        && !anim_changed
     {
         return;
     }
@@ -106,6 +170,47 @@ fn broadcast_position(
 
     let movement_compressed = crate::movement_compressed::MovementCompressed { temporal, movement };
 
+    // Scene-driven animation fields. The hash pair is sent on transition (new clip, or
+    // an empty `anim_scene_hash` to clear a prior active anim) and re-sent every
+    // ANIM_URN_KEEPALIVE seconds while active so late joiners pick it up. The other
+    // fields ride along whenever an animation is active. `anim_playback_time` is only
+    // sent when the scene explicitly requested a seek this frame.
+    let active_anim = scene_anim.and_then(|s| s.active.as_ref());
+    let keepalive_due = active_anim.is_some() && time - last_anim.sent_at >= ANIM_URN_KEEPALIVE;
+    let (anim_scene_hash, anim_content_hash) = if anim_changed {
+        match &current_hashes {
+            Some((s, c)) => (Some(s.clone()), Some(c.clone())),
+            // Transition active → none: signal clear with an empty scene_hash.
+            None => (Some(String::new()), None),
+        }
+    } else if keepalive_due {
+        current_hashes
+            .as_ref()
+            .map(|(s, c)| (Some(s.clone()), Some(c.clone())))
+            .unwrap_or((None, None))
+    } else {
+        (None, None)
+    };
+    if anim_scene_hash.is_some() {
+        last_anim.sent_at = time;
+    }
+    last_anim.hashes = current_hashes;
+
+    let anim_speed = active_anim.map(|a| a.speed);
+    let anim_transition_seconds = active_anim.map(|a| a.transition_seconds);
+    let anim_loop = active_anim.map(|a| a.r#loop);
+    // The latch above already mirrors the freshest `seek` seen since the last
+    // broadcast. Only send if there's an active anim to apply it to.
+    let anim_playback_time = active_anim.and(last_anim.pending_seek.take());
+    // Drain pending sounds on every broadcast. Sounds depend on `anim_scene_hash`
+    // to identify their host scene, so only ship them while an anim is active.
+    let anim_sound_content_hashes = if active_anim.is_some() {
+        std::mem::take(&mut last_anim.pending_sounds)
+    } else {
+        last_anim.pending_sounds.clear();
+        Vec::new()
+    };
+
     let movement_uncompressed = dcl_component::proto_components::kernel::comms::rfc4::Movement {
         timestamp: time as f32,
         position_x: dcl_position.0[0],
@@ -124,6 +229,13 @@ fn broadcast_position(
         is_falling: movement_compressed.temporal.falling(),
         is_stunned: movement_compressed.temporal.stunned(),
         is_emoting: dynamics.move_kind == MoveKind::Emote,
+        anim_scene_hash,
+        anim_content_hash,
+        anim_speed,
+        anim_playback_time,
+        anim_transition_seconds,
+        anim_loop,
+        anim_sound_content_hashes,
     };
 
     // let movement_packet = rfc4::MovementCompressed {

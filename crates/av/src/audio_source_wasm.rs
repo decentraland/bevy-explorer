@@ -165,7 +165,15 @@ fn manage_audio_sources(
             Option<&RenderLayers>,
             Option<&RetryEmitter>,
         ),
-        Or<(Changed<AudioEmitter>, With<Playing>)>,
+        Or<(
+            Changed<AudioEmitter>,
+            With<Playing>,
+            // Include entities queued for retry: on wasm we can't start
+            // playback until the web AudioBuffer is decoded, so the first
+            // frame often fails and we insert RetryEmitter without a Playing
+            // marker. Without this term the retry never fires.
+            With<RetryEmitter>,
+        )>,
     >,
     mut audio: NonSendMut<HtmlAudioContext>,
     containing_scene: ContainingScene,

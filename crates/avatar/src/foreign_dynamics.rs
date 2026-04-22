@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 
-use common::{structs::AvatarDynamicState, util::QuatNormalizeExt};
+use common::{
+    structs::{AvatarDynamicState, SceneDrivenAnim, SceneDrivenAnimationRequest},
+    util::QuatNormalizeExt,
+};
 
 use comms::{
     global_crdt::{ForeignPlayer, PlayerPositionEvent},
@@ -35,6 +38,12 @@ struct PlayerTargetPosition {
     update_freq: f32,
     grounded: Option<bool>,
     jumping: Option<bool>,
+    // Scene-driven animation state carried with this target. Applied to
+    // `SceneDrivenAnim` at `anim_apply_at` so it lines up with the interpolated
+    // position, then `anim_applied` blocks re-application until the next packet.
+    scene_anim: Option<SceneDrivenAnimationRequest>,
+    anim_apply_at: f32,
+    anim_applied: bool,
 }
 
 fn update_foreign_user_target_position(
@@ -85,6 +94,15 @@ fn update_foreign_user_target_position(
                     let update_freq = LAG_DECAY_SECS
                         / ((LAG_DECAY_SECS - delta).max(0.0) / pos.update_freq
                             + (LAG_DECAY_SECS / delta).min(1.0));
+                    // Apply-before-overwrite: if the previous event's scene_anim never
+                    // reached its deadline, push it now so bursts of events (stalls,
+                    // multi-event frames) don't silently drop one-shot seeks or
+                    // intermediate transitions.
+                    if !pos.anim_applied {
+                        commands.entity(ev.player).try_insert(SceneDrivenAnim {
+                            active: pos.scene_anim.clone(),
+                        });
+                    }
                     *pos = PlayerTargetPosition {
                         time: ev.time,
                         timestamp: ev.timestamp,
@@ -95,6 +113,9 @@ fn update_foreign_user_target_position(
                         update_freq,
                         grounded: ev.grounded,
                         jumping: ev.jumping,
+                        scene_anim: ev.scene_anim.clone(),
+                        anim_apply_at: ev.time + update_freq,
+                        anim_applied: false,
                     }
                 }
             } else {
@@ -109,6 +130,9 @@ fn update_foreign_user_target_position(
                         update_freq: 0.01,
                         grounded: ev.grounded,
                         jumping: ev.jumping,
+                        scene_anim: ev.scene_anim.clone(),
+                        anim_apply_at: ev.time + 0.01,
+                        anim_applied: false,
                     },
                     AvatarDynamicState::default(),
                 ));
@@ -118,9 +142,10 @@ fn update_foreign_user_target_position(
 }
 
 fn update_foreign_user_actual_position(
+    mut commands: Commands,
     mut avatars: Query<(
         Entity,
-        &PlayerTargetPosition,
+        &mut PlayerTargetPosition,
         &mut Transform,
         &mut AvatarDynamicState,
     )>,
@@ -128,7 +153,7 @@ fn update_foreign_user_actual_position(
     containing_scene: ContainingScene,
     time: Res<Time>,
 ) {
-    for (foreign_ent, target, mut actual, mut dynamic_state) in avatars.iter_mut() {
+    for (foreign_ent, mut target, mut actual, mut dynamic_state) in avatars.iter_mut() {
         debug!(
             "positioning foreign {foreign_ent:?}, target {}, current {}",
             target.translation, actual.translation
@@ -231,6 +256,18 @@ fn update_foreign_user_actual_position(
                 dynamic_state.ground_height += updated_y - actual.translation.y;
                 actual.translation.y = updated_y;
             }
+        }
+
+        // Push the scene-driven animation state once the interpolation has had
+        // time to line up with this target. Ensures jump/walk/etc. transitions
+        // fire when the avatar visibly does the motion, not when the packet
+        // lands. `anim_apply_at` was set to `ev.time + update_freq` so it
+        // tracks the same catch-up window as the position blend.
+        if !target.anim_applied && time.elapsed_secs() >= target.anim_apply_at {
+            commands.entity(foreign_ent).try_insert(SceneDrivenAnim {
+                active: target.scene_anim.clone(),
+            });
+            target.anim_applied = true;
         }
     }
 }
