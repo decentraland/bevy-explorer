@@ -7,6 +7,7 @@ use dcl_component::{
     proto_components::kernel::comms::rfc4,
     transform_and_parent::{DclQuat, DclTranslation},
 };
+use wallet::Wallet;
 
 use crate::{
     global_crdt::GlobalCrdtState,
@@ -65,6 +66,7 @@ fn broadcast_position(
     mut last_anim: Local<LastAnim>,
     time: Res<Time>,
     global_crdt: Res<GlobalCrdtState>,
+    wallet: Res<Wallet>,
 ) {
     let Ok((player, dynamics, scene_anim)) = player.single() else {
         return;
@@ -170,14 +172,17 @@ fn broadcast_position(
 
     let movement_compressed = crate::movement_compressed::MovementCompressed { temporal, movement };
 
-    // Scene-driven animation fields. The hash pair is sent on transition (new clip, or
-    // an empty `anim_scene_hash` to clear a prior active anim) and re-sent every
+    // Scene-driven animation carrier. The hash pair is sent on transition (new clip, or
+    // an empty `scene_hash` to clear a prior active anim) and re-sent every
     // ANIM_URN_KEEPALIVE seconds while active so late joiners pick it up. The other
-    // fields ride along whenever an animation is active. `anim_playback_time` is only
-    // sent when the scene explicitly requested a seek this frame.
+    // fields ride along whenever an animation is active. `playback_time` is only sent
+    // when the scene explicitly requested a seek this frame. The nested message itself
+    // is only attached to the packet when there's something anim-related to say —
+    // that way a receiver that's not interested (or that never sees us transition out
+    // of an inactive state) costs no bytes.
     let active_anim = scene_anim.and_then(|s| s.active.as_ref());
     let keepalive_due = active_anim.is_some() && time - last_anim.sent_at >= ANIM_URN_KEEPALIVE;
-    let (anim_scene_hash, anim_content_hash) = if anim_changed {
+    let (scene_hash, content_hash) = if anim_changed {
         match &current_hashes {
             Some((s, c)) => (Some(s.clone()), Some(c.clone())),
             // Transition active → none: signal clear with an empty scene_hash.
@@ -191,24 +196,45 @@ fn broadcast_position(
     } else {
         (None, None)
     };
-    if anim_scene_hash.is_some() {
+    if scene_hash.is_some() {
         last_anim.sent_at = time;
     }
     last_anim.hashes = current_hashes;
 
-    let anim_speed = active_anim.map(|a| a.speed);
-    let anim_transition_seconds = active_anim.map(|a| a.transition_seconds);
-    let anim_loop = active_anim.map(|a| a.r#loop);
+    let speed = active_anim.map(|a| a.speed);
+    let transition_seconds = active_anim.map(|a| a.transition_seconds);
+    let r#loop = active_anim.map(|a| a.r#loop);
     // The latch above already mirrors the freshest `seek` seen since the last
     // broadcast. Only send if there's an active anim to apply it to.
-    let anim_playback_time = active_anim.and(last_anim.pending_seek.take());
-    // Drain pending sounds on every broadcast. Sounds depend on `anim_scene_hash`
-    // to identify their host scene, so only ship them while an anim is active.
-    let anim_sound_content_hashes = if active_anim.is_some() {
+    let playback_time = active_anim.and(last_anim.pending_seek.take());
+    // Drain pending sounds on every broadcast. Sounds depend on `scene_hash` to
+    // identify their host scene, so only ship them while an anim is active.
+    let sound_content_hashes = if active_anim.is_some() {
         std::mem::take(&mut last_anim.pending_sounds)
     } else {
         last_anim.pending_sounds.clear();
         Vec::new()
+    };
+
+    // Attach the nested message only when there's anim state to communicate — that is,
+    // when we have an active animation (ride-along, keepalive, or transition-in) or
+    // when we're transitioning out (scene_hash == Some("")). Otherwise leave it None
+    // so the field isn't serialized at all.
+    let scene_driven_animation = if active_anim.is_some() || scene_hash.is_some() {
+        Some(
+            dcl_component::proto_components::kernel::comms::rfc4::SceneDrivenAnimation {
+                scene_hash,
+                content_hash,
+                speed,
+                playback_time,
+                transition_seconds,
+                r#loop,
+                sound_content_hashes,
+                origin_address: wallet.address().map(|a| format!("{a:#x}")),
+            },
+        )
+    } else {
+        None
     };
 
     let movement_uncompressed = dcl_component::proto_components::kernel::comms::rfc4::Movement {
@@ -229,13 +255,7 @@ fn broadcast_position(
         is_falling: movement_compressed.temporal.falling(),
         is_stunned: movement_compressed.temporal.stunned(),
         is_emoting: dynamics.move_kind == MoveKind::Emote,
-        anim_scene_hash,
-        anim_content_hash,
-        anim_speed,
-        anim_playback_time,
-        anim_transition_seconds,
-        anim_loop,
-        anim_sound_content_hashes,
+        scene_driven_animation,
     };
 
     // let movement_packet = rfc4::MovementCompressed {
