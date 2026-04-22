@@ -506,6 +506,9 @@ fn update_ready_gltfs(
                             },
                             LightEntity {
                                 scene: dcl_scene_entity.root,
+                                enabled: true,
+                                shadows_enabled: true,
+                                range: point.range,
                             },
                         ));
                     }
@@ -517,6 +520,9 @@ fn update_ready_gltfs(
                             },
                             LightEntity {
                                 scene: dcl_scene_entity.root,
+                                enabled: true,
+                                shadows_enabled: true,
+                                range: spot.range,
                             },
                         ));
                     }

@@ -38,7 +38,7 @@ use oob_setting::OobSetting;
 use player_settings::{JumpSetting, RunSpeedSetting, WalkSpeedSetting};
 use scene_threads::SceneThreadsSetting;
 use serde::{Deserialize, Serialize};
-use shadow_settings::{ShadowCasterCountSetting, ShadowDistanceSetting};
+use shadow_settings::{LightCountSetting, ShadowCasterCountSetting, ShadowDistanceSetting};
 #[cfg(target_arch = "wasm32")]
 use tokio::sync::watch;
 use video_threads::VideoThreadsSetting;
@@ -131,6 +131,7 @@ impl Plugin for SettingBridgePlugin {
         let config = app.world().resource::<AppConfig>().clone();
 
         add_int_setting::<ShadowDistanceSetting>(app, &mut settings, &mut schedule, &config);
+        add_int_setting::<LightCountSetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<ShadowCasterCountSetting>(app, &mut settings, &mut schedule, &config);
 
         // special case for ordering
