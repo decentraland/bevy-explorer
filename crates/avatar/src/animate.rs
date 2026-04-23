@@ -1043,7 +1043,13 @@ fn play_current_emote(
         if let Some((prop_player_ents, clip_ix)) = prop_player_and_clip {
             for ent in prop_player_ents {
                 if let Ok((mut player, transitions, _, _)) = players.get_mut(ent) {
-                    play(transitions, &mut player, clip_ix, &active_emote, None);
+                    play(
+                        transitions,
+                        &mut player,
+                        clip_ix,
+                        &active_emote,
+                        pending_seek,
+                    );
                 }
             }
         }
