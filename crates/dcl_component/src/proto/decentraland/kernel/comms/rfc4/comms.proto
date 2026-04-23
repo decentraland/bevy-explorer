@@ -61,44 +61,46 @@ message Movement {
   float rotation_y = 16;
   bool is_emoting = 18;
 
-  // Scene-driven movement animation (local extension, pending multi-clip-per-glb work).
-  // anim_scene_hash + anim_content_hash identify a scene-emote clip — the receiver wraps
-  // them as `urn:decentraland:off-chain:scene-emote:{scene}-{content}-false`. Sending the
-  // hashes directly keeps the fixed URN preamble off the wire. Both fields are omitted when
-  // unchanged since the last send (receivers cache them) and forced every ~1s as a
-  // keepalive for joiners. An empty anim_scene_hash clears a prior active anim. The other
-  // fields are sent every frame the animation is active.
-  // Tag numbers 19-28 are reserved upstream for head-sync / glide / jump_count / point-at,
-  // so these local extensions start at 29 to avoid wire collisions with upstream senders.
-  optional string anim_scene_hash = 29;
-  optional float anim_speed = 30;
-  optional float anim_playback_time = 31;
-  optional float anim_transition_seconds = 32;
-  optional bool anim_loop = 33;
-  optional string anim_content_hash = 34;
+  // Scene-driven movement animation (bevy-explorer local extension). Wrapped in a nested
+  // message at a high private tag so that other clients (Unity, web) can't accidentally
+  // populate these fields by reusing the same tag numbers at the Movement level — an
+  // unrelated payload at tag 10000 will fail to decode as SceneDrivenAnimation and prost
+  // drops the whole field, instead of handing us a plausible-looking string we'd try to
+  // resolve as a GLB hash.
+  optional SceneDrivenAnimation scene_driven_animation = 10000;
+}
 
-  // Scene-requested avatar-bus sound triggers that accumulated since the last broadcast.
-  // Each entry is the content_hash of an audio clip hosted in the same scene as the active
-  // animation (so `anim_scene_hash` — latched or re-asserted via keepalive — identifies the
-  // scene). Receivers play each hash once on receipt. Fire-and-forget; no stop mechanism.
-  repeated string anim_sound_content_hashes = 35;
+// Nested carrier for scene-driven movement animation state. All fields are optional so
+// that between transitions only ride-along fields (speed, loop, seek) need to be sent;
+// the hash pair is sent on transition or every ~1s as a keepalive for joiners. An empty
+// `scene_hash` clears a previously active animation.
+message SceneDrivenAnimation {
+  optional string scene_hash = 1;
+  optional string content_hash = 2;
+  optional float speed = 3;
+  optional float playback_time = 4;
+  optional float transition_seconds = 5;
+  optional bool loop = 6;
+  // Scene-requested avatar-bus sound triggers accumulated since the last broadcast. Each
+  // entry is the content_hash of an audio clip hosted in the same scene as the active
+  // animation (scene_hash — latched or re-asserted via keepalive — identifies the scene).
+  // Receivers play each hash once on receipt. Fire-and-forget; no stop mechanism.
+  repeated string sound_content_hashes = 7;
+  // Hex-encoded wallet address of the sender, e.g. "0x6f39…". Defence against buggy
+  // remotes that parse-then-re-emit this whole sub-message byte-for-byte (observed in
+  // the wild). Receivers drop the anim when this is set and doesn't match the packet
+  // sender's address. Absent on packets from old senders — in that case we accept,
+  // since those clients predate the mirror-class bug we're defending against.
+  optional string origin_address = 8;
 }
 
 message MovementCompressed {
   int32 temporal_data = 1; // bit-compressed: timestamp + animations
   int64 movement_data = 2; // bit-compressed: position + velocity
 
-  // See Movement.anim_* fields. Mirror here so the compressed variant can carry the same
-  // scene-driven animation state if/when MovementCompressed is re-enabled on the sender.
-  // Tags 3 and 4 are reserved upstream for head_sync_data / point_at_data, so local
-  // extensions start at 5.
-  optional string anim_scene_hash = 5;
-  optional float anim_speed = 6;
-  optional float anim_playback_time = 7;
-  optional float anim_transition_seconds = 8;
-  optional bool anim_loop = 9;
-  optional string anim_content_hash = 10;
-  repeated string anim_sound_content_hashes = 11;
+  // Mirror of Movement.scene_driven_animation — see that field for semantics and the
+  // collision-avoidance rationale behind the high nested tag.
+  optional SceneDrivenAnimation scene_driven_animation = 10000;
 }
 
 message PlayerEmote {

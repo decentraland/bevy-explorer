@@ -580,14 +580,9 @@ pub fn process_transport_updates(
                         );
                         let scene_anim = resolve_remote_anim(
                             entity,
+                            update.address,
                             &mut last_remote_anim_urn,
-                            m.anim_scene_hash,
-                            m.anim_content_hash,
-                            m.anim_speed,
-                            m.anim_playback_time,
-                            m.anim_transition_seconds,
-                            m.anim_loop,
-                            m.anim_sound_content_hashes,
+                            m.scene_driven_animation,
                         );
                         position_events.write(PlayerPositionEvent {
                             index: None,
@@ -607,14 +602,9 @@ pub fn process_transport_updates(
                         debug!("movement compressed data: {m:?}");
                         let scene_anim = resolve_remote_anim(
                             entity,
+                            update.address,
                             &mut last_remote_anim_urn,
-                            m.anim_scene_hash.clone(),
-                            m.anim_content_hash.clone(),
-                            m.anim_speed,
-                            m.anim_playback_time,
-                            m.anim_transition_seconds,
-                            m.anim_loop,
-                            m.anim_sound_content_hashes.clone(),
+                            m.scene_driven_animation.clone(),
                         );
                         let movement = MovementCompressed::from_proto(m);
                         let pos = movement.position(state.realm_bounds.0, state.realm_bounds.1);
@@ -694,44 +684,62 @@ pub fn process_transport_updates(
     }
 }
 
-// Resolves scene-driven animation fields from a Movement / MovementCompressed
-// packet into the full state. An empty `anim_scene_hash` clears the state; absent
-// hash fields (None) reuse the last cached pair for this entity so we keep
-// animating between keepalives. Returns `None` when the sender has no active
-// scene-driven animation. The resolved state rides on `PlayerPositionEvent` so
-// `foreign_dynamics` can apply it with the same interpolation delay as the
-// visible position.
-#[allow(clippy::too_many_arguments)]
+// Resolves the `SceneDrivenAnimation` nested message from a Movement /
+// MovementCompressed packet into the full state. An empty `scene_hash` clears the
+// state; absent hash fields (None) reuse the last cached pair for this entity so we
+// keep animating between keepalives. Returns `None` when the sender has no active
+// scene-driven animation, or when the nested message is absent entirely (the
+// common case for senders that don't speak our extension). The resolved state rides
+// on `PlayerPositionEvent` so `foreign_dynamics` can apply it with the same
+// interpolation delay as the visible position.
 fn resolve_remote_anim(
     entity: Entity,
+    sender: Address,
     last_hashes: &mut HashMap<Entity, (String, String)>,
-    anim_scene_hash: Option<String>,
-    anim_content_hash: Option<String>,
-    anim_speed: Option<f32>,
-    anim_playback_time: Option<f32>,
-    anim_transition_seconds: Option<f32>,
-    anim_loop: Option<bool>,
-    anim_sound_content_hashes: Vec<String>,
+    anim: Option<dcl_component::proto_components::kernel::comms::rfc4::SceneDrivenAnimation>,
 ) -> Option<SceneDrivenAnimationRequest> {
+    // Sender didn't attach the nested carrier; nothing to do (and nothing to clear,
+    // since we only cache hashes the sender itself told us about).
+    let anim = anim?;
+
+    // Guard against mirror-class bugs where a buggy remote re-emits someone else's
+    // nested message byte-for-byte (observed against a Unity client that pooled
+    // protobuf instances without discarding unknown fields). `origin_address` must be
+    // present and match the packet sender; anything else is either a mirror or a
+    // sender that predates this field and is therefore also potentially a mirror
+    // victim. Be strict and drop it.
+    let sender_str = format!("{sender:#x}");
+    match anim.origin_address.as_deref() {
+        Some(origin) if origin.eq_ignore_ascii_case(&sender_str) => {}
+        _ => {
+            debug!(
+                "dropping scene_driven_animation without matching origin_address: origin={:?} sender={}",
+                anim.origin_address, sender_str
+            );
+            last_hashes.remove(&entity);
+            return None;
+        }
+    }
+
     // Wire convention: on transition the sender ships both hashes (or an empty
     // scene_hash to clear); between transitions both are omitted and we re-apply the
     // cached pair so ride-along fields (speed, loop, seek) keep updating.
-    let (scene_hash, content_hash) = match anim_scene_hash {
+    let (scene_hash, content_hash) = match anim.scene_hash {
         Some(s) if s.is_empty() => {
             last_hashes.remove(&entity);
             return None;
         }
         Some(s) => {
-            let c = anim_content_hash?;
+            let c = anim.content_hash?;
             last_hashes.insert(entity, (s.clone(), c.clone()));
             (s, c)
         }
         None => last_hashes.get(&entity)?.clone(),
     };
 
-    let speed = anim_speed?;
-    let r#loop = anim_loop.unwrap_or(false);
-    let transition_seconds = anim_transition_seconds.unwrap_or(0.2);
+    let speed = anim.speed?;
+    let r#loop = anim.r#loop.unwrap_or(false);
+    let transition_seconds = anim.transition_seconds.unwrap_or(0.2);
     let urn = format!("urn:decentraland:off-chain:scene-emote:{scene_hash}-{content_hash}-false");
 
     Some(SceneDrivenAnimationRequest {
@@ -745,8 +753,8 @@ fn resolve_remote_anim(
         // players there's no triggerSceneEmote interaction so we don't need it.
         idle: false,
         transition_seconds,
-        seek: anim_playback_time,
-        sounds: anim_sound_content_hashes,
+        seek: anim.playback_time,
+        sounds: anim.sound_content_hashes,
     })
 }
 
