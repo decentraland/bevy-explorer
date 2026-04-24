@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use common::{
-    structs::{AvatarDynamicState, SceneDrivenAnim, SceneDrivenAnimationRequest},
+    structs::{AvatarDynamicState, MoveKind, SceneDrivenAnim, SceneDrivenAnimationRequest},
     util::QuatNormalizeExt,
 };
 
@@ -37,7 +37,11 @@ struct PlayerTargetPosition {
     index: Option<u32>,
     update_freq: f32,
     grounded: Option<bool>,
-    jumping: Option<bool>,
+    // Jump / DoubleJump / Glide inferred from the rfc4::Movement packet. Applied to the
+    // avatar's move_kind so the velocity picker can drive jump_time (Jump) or select the
+    // matching emote (DoubleJump / Glide); None resets a previously-applied remote state
+    // back to Idle so the picker reclaims.
+    remote_move_kind: Option<MoveKind>,
     // Scene-driven animation state carried with this target. Applied to
     // `SceneDrivenAnim` at `anim_apply_at` so it lines up with the interpolated
     // position, then `anim_applied` blocks re-application until the next packet.
@@ -112,7 +116,7 @@ fn update_foreign_user_target_position(
                         index: ev.index,
                         update_freq,
                         grounded: ev.grounded,
-                        jumping: ev.jumping,
+                        remote_move_kind: ev.remote_move_kind,
                         scene_anim: ev.scene_anim.clone(),
                         anim_apply_at: ev.time + update_freq,
                         anim_applied: false,
@@ -129,7 +133,7 @@ fn update_foreign_user_target_position(
                         index: ev.index,
                         update_freq: 0.01,
                         grounded: ev.grounded,
-                        jumping: ev.jumping,
+                        remote_move_kind: ev.remote_move_kind,
                         scene_anim: ev.scene_anim.clone(),
                         anim_apply_at: ev.time + 0.01,
                         anim_applied: false,
@@ -218,9 +222,23 @@ fn update_foreign_user_actual_position(
             actual.rotation = actual.rotation.lerp(target.rotation, turn_fraction);
         }
 
-        if let Some(jumping) = target.jumping {
-            if jumping && dynamic_state.jump_time == -1.0 {
-                dynamic_state.jump_time = time.elapsed_secs();
+        // Apply the remote-derived move_kind. Jump drives jump_time (the velocity picker
+        // reads it to size the jump clip); DoubleJump / Glide select the matching emote.
+        // None clears a previously-applied DoubleJump / Glide so the picker reclaims.
+        match target.remote_move_kind {
+            Some(MoveKind::Jump) => {
+                if dynamic_state.jump_time == -1.0 {
+                    dynamic_state.jump_time = time.elapsed_secs();
+                }
+            }
+            Some(k) => dynamic_state.move_kind = k,
+            None => {
+                if matches!(
+                    dynamic_state.move_kind,
+                    MoveKind::DoubleJump | MoveKind::Glide
+                ) {
+                    dynamic_state.move_kind = MoveKind::Idle;
+                }
             }
         }
 

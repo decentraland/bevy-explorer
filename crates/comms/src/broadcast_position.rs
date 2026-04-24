@@ -237,6 +237,26 @@ fn broadcast_position(
         None
     };
 
+    // For cross-client compatibility with the Unity / web clients, infer a jump_count /
+    // glide_state from the active scene-driven animation's src. The movement-scene uses
+    // glb filenames containing "double" (DoubleJump_Base2.glb) or "glide" (glide.glb);
+    // lowercase substring match keeps this resilient to small naming variations. A glide
+    // is only reachable after the air-jump slot has been consumed, so jump_count is also
+    // 2 during a glide — matching what Unity's state machine expects.
+    let anim_src_lower = active_anim.map(|a| a.src.to_lowercase());
+    let is_double_jump = anim_src_lower
+        .as_deref()
+        .is_some_and(|s| s.contains("double"));
+    let is_glide = anim_src_lower
+        .as_deref()
+        .is_some_and(|s| s.contains("glide"));
+    let jump_count = if is_double_jump || is_glide { 2 } else { 0 };
+    let glide_state = if is_glide {
+        rfc4::movement::GlideState::Gliding as i32
+    } else {
+        rfc4::movement::GlideState::PropClosed as i32
+    };
+
     let movement_uncompressed = dcl_component::proto_components::kernel::comms::rfc4::Movement {
         timestamp: time as f32,
         position_x: dcl_position.0[0],
@@ -255,6 +275,8 @@ fn broadcast_position(
         is_falling: movement_compressed.temporal.falling(),
         is_stunned: movement_compressed.temporal.stunned(),
         is_emoting: dynamics.move_kind == MoveKind::Emote,
+        jump_count,
+        glide_state,
         scene_driven_animation,
     };
 

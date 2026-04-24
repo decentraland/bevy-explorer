@@ -387,82 +387,111 @@ fn animate(
         let time_to_peak = (jump_height * -gravity * 2.0).sqrt() / -gravity;
         let just_jumped =
             dynamic_state.jump_time > (time.elapsed_secs() - time_to_peak / 2.0).max(0.0);
-        let (velocity_emote, velocity_move_kind) = if dynamic_state.ground_height > 0.2
-            || (dynamic_state.velocity.y > 0.0 && just_jumped)
-        {
-            let move_kind = if just_jumped {
-                MoveKind::Jump
+        let (velocity_emote, velocity_move_kind) =
+            if dynamic_state.move_kind == MoveKind::DoubleJump {
+                // Set on foreign avatars from rfc4::Movement.jump_count >= 2 (see foreign_dynamics).
+                (
+                    ActiveEmote {
+                        urn: EmoteUrn::new("double_jump").unwrap(),
+                        speed: 1.0,
+                        repeat: false,
+                        restart: false,
+                        transition_seconds: 0.1,
+                        ..Default::default()
+                    },
+                    MoveKind::DoubleJump,
+                )
+            } else if dynamic_state.move_kind == MoveKind::Glide {
+                // Set on foreign avatars from rfc4::Movement.glide_state ∈ {OPENING_PROP, GLIDING}.
+                // Frozen at the neutral (straight) pose since we have no tilt input available.
+                (
+                    ActiveEmote {
+                        urn: EmoteUrn::new("glide").unwrap(),
+                        speed: 0.0,
+                        repeat: true,
+                        restart: false,
+                        transition_seconds: 0.1,
+                        pending_seek: Some(2.0 / 24.0),
+                        ..Default::default()
+                    },
+                    MoveKind::Glide,
+                )
+            } else if dynamic_state.ground_height > 0.2
+                || (dynamic_state.velocity.y > 0.0 && just_jumped)
+            {
+                let move_kind = if just_jumped {
+                    MoveKind::Jump
+                } else {
+                    MoveKind::Falling
+                };
+                (
+                    ActiveEmote {
+                        urn: EmoteUrn::new("jump").unwrap(),
+                        speed: time_to_peak.recip() * 0.5,
+                        repeat: true,
+                        restart: dynamic_state.jump_time > time.elapsed_secs() - time.delta_secs(),
+                        transition_seconds: 0.1,
+                        initial_audio_mark: if !just_jumped { Some(0.1) } else { None },
+                        ..Default::default()
+                    },
+                    move_kind,
+                )
+            } else if active_emote.urn == EmoteUrn::new("jump").unwrap() && !active_emote.finished {
+                (
+                    ActiveEmote {
+                        urn: EmoteUrn::new("jump").unwrap(),
+                        speed: 1.5,
+                        repeat: false,
+                        restart: false,
+                        transition_seconds: 0.1,
+                        initial_audio_mark: Some(0.1),
+                        ..Default::default()
+                    },
+                    dynamic_state.move_kind,
+                )
             } else {
-                MoveKind::Falling
-            };
-            (
-                ActiveEmote {
-                    urn: EmoteUrn::new("jump").unwrap(),
-                    speed: time_to_peak.recip() * 0.5,
-                    repeat: true,
-                    restart: dynamic_state.jump_time > time.elapsed_secs() - time.delta_secs(),
-                    transition_seconds: 0.1,
-                    initial_audio_mark: if !just_jumped { Some(0.1) } else { None },
-                    ..Default::default()
-                },
-                move_kind,
-            )
-        } else if active_emote.urn == EmoteUrn::new("jump").unwrap() && !active_emote.finished {
-            (
-                ActiveEmote {
-                    urn: EmoteUrn::new("jump").unwrap(),
-                    speed: 1.5,
-                    repeat: false,
-                    restart: false,
-                    transition_seconds: 0.1,
-                    initial_audio_mark: Some(0.1),
-                    ..Default::default()
-                },
-                dynamic_state.move_kind,
-            )
-        } else {
-            let directional_velocity_len =
-                (damped_velocity * (Vec3::X + Vec3::Z)).dot(gt.forward().as_vec3());
-            if damped_velocity_len.abs() > 0.1 {
-                if damped_velocity_len.abs() <= 2.6 {
-                    (
-                        ActiveEmote {
-                            urn: EmoteUrn::new("walk").unwrap(),
-                            speed: directional_velocity_len / 1.5,
-                            restart: false,
-                            repeat: true,
-                            transition_seconds: 0.4,
-                            ..Default::default()
-                        },
-                        MoveKind::Walk,
-                    )
+                let directional_velocity_len =
+                    (damped_velocity * (Vec3::X + Vec3::Z)).dot(gt.forward().as_vec3());
+                if damped_velocity_len.abs() > 0.1 {
+                    if damped_velocity_len.abs() <= 2.6 {
+                        (
+                            ActiveEmote {
+                                urn: EmoteUrn::new("walk").unwrap(),
+                                speed: directional_velocity_len / 1.5,
+                                restart: false,
+                                repeat: true,
+                                transition_seconds: 0.4,
+                                ..Default::default()
+                            },
+                            MoveKind::Walk,
+                        )
+                    } else {
+                        (
+                            ActiveEmote {
+                                urn: EmoteUrn::new("run").unwrap(),
+                                speed: directional_velocity_len / 4.5,
+                                restart: false,
+                                repeat: true,
+                                transition_seconds: 0.4,
+                                ..Default::default()
+                            },
+                            MoveKind::Jog,
+                        )
+                    }
                 } else {
                     (
                         ActiveEmote {
-                            urn: EmoteUrn::new("run").unwrap(),
-                            speed: directional_velocity_len / 4.5,
+                            urn: EmoteUrn::new("idle_male").unwrap(),
+                            speed: 1.0,
                             restart: false,
                             repeat: true,
                             transition_seconds: 0.4,
                             ..Default::default()
                         },
-                        MoveKind::Jog,
+                        MoveKind::Idle,
                     )
                 }
-            } else {
-                (
-                    ActiveEmote {
-                        urn: EmoteUrn::new("idle_male").unwrap(),
-                        speed: 1.0,
-                        restart: false,
-                        repeat: true,
-                        transition_seconds: 0.4,
-                        ..Default::default()
-                    },
-                    MoveKind::Idle,
-                )
-            }
-        };
+            };
 
         // play requested emote
         *active_emote = if let Some(requested_emote) = requested_emote {

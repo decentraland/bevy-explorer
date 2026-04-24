@@ -61,6 +61,22 @@ message Movement {
   float rotation_y = 16;
   bool is_emoting = 18;
 
+  // Number of jumps in the current air period (0 grounded, 1 after ground jump,
+  // 2 after an in-air / double jump). Matches field 24 in the Unity client's
+  // rfc4::Movement so receivers can drive a distinct double-jump animation
+  // when no scene-driven animation is supplied.
+  int32 jump_count = 24;
+  // Whether the sender is currently gliding, and the transition state of the
+  // glider prop. Matches field 23 in the Unity client's rfc4::Movement.
+  GlideState glide_state = 23;
+
+  enum GlideState {
+    PROP_CLOSED = 0;
+    OPENING_PROP = 1;
+    GLIDING = 2;
+    CLOSING_PROP = 3;
+  }
+
   // Scene-driven movement animation (bevy-explorer local extension). Wrapped in a nested
   // message at a high private tag so that other clients (Unity, web) can't accidentally
   // populate these fields by reusing the same tag numbers at the Movement level — an
