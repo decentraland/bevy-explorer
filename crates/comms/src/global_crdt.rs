@@ -10,7 +10,8 @@ use bimap::BiMap;
 use common::{
     rpc::{RpcCall, RpcEventSender, RpcStreamSender},
     structs::{
-        AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate, SceneDrivenAnimationRequest,
+        AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate, MoveKind,
+        SceneDrivenAnimationRequest,
     },
 };
 use ethers_core::types::Address;
@@ -310,7 +311,15 @@ pub struct PlayerPositionEvent {
     pub rotation: DclQuat,
     pub velocity: Option<Vec3>,
     pub grounded: Option<bool>,
-    pub jumping: Option<bool>,
+    /// MoveKind inferred from the rfc4::Movement packet:
+    ///   - `jump_count >= 2` → `DoubleJump`
+    ///   - `glide_state` is `OPENING_PROP` or `GLIDING` → `Glide`
+    ///   - `is_jumping` or `is_long_jump` → `Jump`
+    ///
+    /// `None` means the packet has no movement state indicator — the velocity
+    /// fallback picks. Used to drive `jump_time` (Jump) and the matching emote
+    /// (DoubleJump / Glide) on foreign avatars.
+    pub remote_move_kind: Option<MoveKind>,
     /// Resolved scene-driven animation state carried alongside this position packet.
     /// `None` means the sender is not running a scene-driven animation. `Some` is
     /// the full state (after URN latching for keepalive resolution). Applied with
@@ -515,7 +524,7 @@ pub fn process_transport_updates(
                             ]),
                             velocity: None,
                             grounded: None,
-                            jumping: None,
+                            remote_move_kind: None,
                             scene_anim: None,
                         });
                     }
@@ -578,6 +587,24 @@ pub fn process_transport_updates(
                             scene_id,
                             &dcl_transform,
                         );
+                        // Glide is checked before DoubleJump because Unity keeps `jump_count`
+                        // at its last value (usually 2) through the whole glide — so the
+                        // DoubleJump-first ordering would mask an active glide.
+                        let remote_move_kind = match (
+                            m.glide_state(),
+                            m.jump_count,
+                            m.is_jumping || m.is_long_jump,
+                        ) {
+                            (
+                                rfc4::movement::GlideState::OpeningProp
+                                | rfc4::movement::GlideState::Gliding,
+                                _,
+                                _,
+                            ) => Some(MoveKind::Glide),
+                            (_, c, _) if c >= 2 => Some(MoveKind::DoubleJump),
+                            (_, _, true) => Some(MoveKind::Jump),
+                            _ => None,
+                        };
                         let scene_anim = resolve_remote_anim(
                             entity,
                             update.address,
@@ -593,8 +620,7 @@ pub fn process_transport_updates(
                             rotation: dcl_transform.rotation,
                             velocity: Some(vel),
                             grounded: Some(m.is_grounded),
-                            // Some(true) if either is Some(true), else Some(false) if either is Some(false), else None
-                            jumping: Some(m.is_jumping || m.is_long_jump),
+                            remote_move_kind,
                             scene_anim,
                         });
                     }
@@ -634,12 +660,15 @@ pub fn process_transport_updates(
                             rotation: dcl_transform.rotation,
                             velocity: Some(vel),
                             grounded: movement.temporal.grounded_or_err().ok(),
-                            // Some(true) if either is Some(true), else Some(false) if either is Some(false), else None
-                            jumping: movement
+                            remote_move_kind: match movement
                                 .temporal
                                 .jump_or_err()
                                 .ok()
-                                .max(movement.temporal.long_jump_or_err().ok()),
+                                .max(movement.temporal.long_jump_or_err().ok())
+                            {
+                                Some(true) => Some(MoveKind::Jump),
+                                _ => None,
+                            },
                             scene_anim,
                         });
                     }

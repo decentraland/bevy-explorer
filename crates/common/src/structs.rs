@@ -1055,8 +1055,16 @@ pub enum MoveKind {
     Jog,
     Run,
     Jump,
+    /// In-air second jump. Set on foreign avatars when the incoming rfc4::Movement
+    /// reports jump_count >= 2 and there's no scene-driven animation to take
+    /// precedence; the velocity picker emits the `double_jump` emote for it.
+    DoubleJump,
     Falling,
     LongFalling,
+    /// Gliding state. Set on foreign avatars when rfc4::Movement.glide_state is
+    /// OPENING_PROP or GLIDING and there's no scene-driven animation; the
+    /// velocity picker emits the `glide` emote.
+    Glide,
     Emote,
 }
 

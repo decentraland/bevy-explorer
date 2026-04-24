@@ -102,10 +102,10 @@ impl Temporal {
             MoveKind::Walk => val.set_movement_kind(Kind::Walk),
             MoveKind::Jog => val.set_movement_kind(Kind::Jog),
             MoveKind::Run => val.set_movement_kind(Kind::Run),
-            MoveKind::Jump => val.set_jump(true),
+            MoveKind::Jump | MoveKind::DoubleJump => val.set_jump(true),
             MoveKind::Falling => val.set_falling(true),
             MoveKind::LongFalling => val.set_long_falling(true),
-            MoveKind::Emote => (),
+            MoveKind::Glide | MoveKind::Emote => (),
         }
 
         val

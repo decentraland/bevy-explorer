@@ -107,6 +107,8 @@ fn load_animations(
                 asset_server.load("embedded://animations/Hands_Air.glb"),
                 asset_server.load("embedded://animations/idle.glb"),
                 asset_server.load("embedded://animations/jump2.glb"),
+                asset_server.load("embedded://animations/double_jump.glb"),
+                asset_server.load("embedded://animations/glide.glb"),
                 asset_server.load("embedded://animations/kiss.glb"),
                 asset_server.load("embedded://animations/mchammer-dance.glb"),
                 asset_server.load("embedded://animations/M_FistPump.glb"),
@@ -127,7 +129,26 @@ fn load_animations(
             h_gltfs.retain(
                 |h_gltf| match gltfs.get(h_gltf).map(|gltf| &gltf.named_animations) {
                     Some(anims) => {
-                        for (clip_name, h_clip) in anims.clone() {
+                        let anims_owned = anims.clone();
+                        // Snapshot source scene + _Prop clip once per source glb, so each
+                        // synthesized emote can reference the glider (or any future prop) the
+                        // source carries alongside its avatar clip. Cloning handles is cheap.
+                        let (source_prop_clip, source_scenes, source_meshes, source_default_scene) =
+                            gltfs
+                                .get(h_gltf)
+                                .map(|g| {
+                                    (
+                                        g.named_animations
+                                            .iter()
+                                            .find(|(n, _)| n.ends_with("_Prop"))
+                                            .map(|(_, h)| h.clone()),
+                                        g.scenes.clone(),
+                                        g.meshes.clone(),
+                                        g.default_scene.clone(),
+                                    )
+                                })
+                                .unwrap_or_default();
+                        for (clip_name, h_clip) in anims_owned {
                             let Some((
                                 network_name,
                                 friendly_name,
@@ -157,20 +178,22 @@ fn load_animations(
                                 continue;
                             };
 
+                            let mut named_animations =
+                                HashMap::from_iter([("_Avatar".into(), h_clip.clone())]);
+                            if let Some(ref prop) = source_prop_clip {
+                                named_animations.insert("_Prop".into(), prop.clone());
+                            }
                             let new_gltf = Gltf {
-                                named_animations: HashMap::from_iter([(
-                                    "_Avatar".into(),
-                                    h_clip.clone(),
-                                )]),
-                                scenes: Default::default(),
+                                named_animations,
+                                scenes: source_scenes.clone(),
                                 named_scenes: Default::default(),
-                                meshes: Default::default(),
+                                meshes: source_meshes.clone(),
                                 named_meshes: Default::default(),
                                 materials: Default::default(),
                                 named_materials: Default::default(),
                                 nodes: Default::default(),
                                 named_nodes: Default::default(),
-                                default_scene: Default::default(),
+                                default_scene: source_default_scene.clone(),
                                 animations: Default::default(),
                                 source: Default::default(),
                                 skins: Default::default(),
@@ -418,6 +441,20 @@ static DEFAULT_ANIMATION_LOOKUP: Lazy<HashMap<&str, DefaultAnim>> = Lazy::new(||
                 ),
                 (0.6, &["avatar_footstep_land01", "avatar_footstep_land02"]),
             ]),
+        ),
+        (
+            "double_jump",
+            DefaultAnim::new(
+                "double_jump",
+                "Double_Jump_Base",
+                "Double_Jump_Base",
+                false,
+                false,
+            ),
+        ),
+        (
+            "glide",
+            DefaultAnim::new("glide", "Glide_Avatar", "Glide_Avatar", true, false),
         ),
     ])
 });
