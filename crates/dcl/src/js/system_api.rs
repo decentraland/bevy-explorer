@@ -20,8 +20,8 @@ use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockedUserData, ChatMessage,
     FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
     FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo, PermanentPermissionItem,
-    PermissionRequest, SceneLoadingUi, SetAvatarData, SetPermanentPermission, SetSinglePermission,
-    SystemApi, VoiceMessage,
+    PermissionRequest, PickFileOptions, PickedFile, SceneLoadingUi, SetAvatarData,
+    SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
 };
 
 use crate::{interface::crdt_context::CrdtContext, js::player_identity, RpcCalls};
@@ -1059,4 +1059,28 @@ pub async fn op_get_params(
         .send(SystemApi::GetParams(sx))?;
 
     Ok(rx.await?)
+}
+
+pub async fn op_pick_file(
+    state: Rc<RefCell<impl State>>,
+    options: Option<PickFileOptions>,
+) -> Result<Option<PickedFile>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::PickFile(options.unwrap_or_default(), sx))?;
+    rx.await.map_err(|e| anyhow::anyhow!(e))?.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_pick_files(
+    state: Rc<RefCell<impl State>>,
+    options: Option<PickFileOptions>,
+) -> Result<Vec<PickedFile>, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::PickFiles(options.unwrap_or_default(), sx))?;
+    rx.await.map_err(|e| anyhow::anyhow!(e))?.map_err(|e| anyhow::anyhow!(e))
 }

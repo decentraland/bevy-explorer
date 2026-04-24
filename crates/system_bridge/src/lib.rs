@@ -45,6 +45,7 @@ impl Plugin for SystemBridgePlugin {
                 handle_home_scene,
                 handle_exit,
                 handle_get_params,
+                handle_file_pickers,
             ),
         );
 
@@ -62,6 +63,34 @@ pub struct SetAvatarData {
     pub equip: Option<PbAvatarEquippedData>,
     pub has_claimed_name: Option<bool>,
     pub profile_extras: Option<std::collections::HashMap<String, serde_json::Value>>,
+}
+
+/// One filter group for the native file picker (e.g. Images / .png .jpg).
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PickFileFilter {
+    pub name: String,
+    pub extensions: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PickFileOptions {
+    pub title: Option<String>,
+    pub filters: Vec<PickFileFilter>,
+}
+
+/// File returned by the native picker. `bytes` is base64-encoded so the value
+/// crosses the deno boundary as a `string` (we don't have a binary path yet
+/// for op return values).
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PickedFile {
+    pub name: String,
+    pub mime: String,
+    pub size: usize,
+    /// Base64 of the raw file contents.
+    pub bytes_base64: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -191,6 +220,18 @@ pub enum SystemApi {
     UnblockUser(String, RpcResultSender<Result<(), String>>),
     GetBlockedUsers(RpcResultSender<Vec<BlockedUserData>>),
     GetParams(RpcResultSender<HashMap<String, String>>),
+    /// Ask the OS to open a native single-file picker. Resolves to `None`
+    /// when the user cancels.
+    PickFile(
+        PickFileOptions,
+        RpcResultSender<Result<Option<PickedFile>, String>>,
+    ),
+    /// Same as `PickFile` but multi-select. Resolves to an empty vec when the
+    /// user cancels.
+    PickFiles(
+        PickFileOptions,
+        RpcResultSender<Result<Vec<PickedFile>, String>>,
+    ),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -459,5 +500,311 @@ fn handle_get_params(mut ev: EventReader<SystemApi>, params: Res<SceneParams>) {
         if let SystemApi::GetParams(sender) = ev {
             sender.send(params.0.clone());
         }
+    }
+}
+
+fn handle_file_pickers(mut ev: EventReader<SystemApi>) {
+    for ev in ev.read().cloned() {
+        match ev {
+            SystemApi::PickFile(options, sender) => {
+                spawn_pick_file(options, sender, false);
+            }
+            SystemApi::PickFiles(options, sender) => {
+                spawn_pick_files(options, sender);
+            }
+            _ => (),
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn spawn_pick_file(
+    options: PickFileOptions,
+    sender: RpcResultSender<Result<Option<PickedFile>, String>>,
+    _multi: bool,
+) {
+    bevy::tasks::IoTaskPool::get()
+        .spawn(async move {
+            let result = async {
+                let mut dialog = rfd::AsyncFileDialog::new();
+                if let Some(title) = options.title.as_deref() {
+                    dialog = dialog.set_title(title);
+                }
+                for filter in &options.filters {
+                    let exts: Vec<&str> =
+                        filter.extensions.iter().map(String::as_str).collect();
+                    dialog = dialog.add_filter(&filter.name, &exts);
+                }
+                let picked = dialog.pick_file().await;
+                match picked {
+                    None => Ok::<Option<PickedFile>, String>(None),
+                    Some(handle) => {
+                        let name = handle.file_name();
+                        let bytes = handle.read().await;
+                        Ok(Some(encode_picked_file(name, bytes)))
+                    }
+                }
+            }
+            .await;
+            sender.send(result);
+        })
+        .detach();
+}
+
+#[cfg(target_arch = "wasm32")]
+fn spawn_pick_file(
+    options: PickFileOptions,
+    sender: RpcResultSender<Result<Option<PickedFile>, String>>,
+    _multi: bool,
+) {
+    let req_id = web_picker::next_request_id();
+    let receiver = web_picker::register_single(req_id);
+    if let Err(e) = web_picker::post_pick_request("pickFile", req_id, &options) {
+        sender.send(Err(e));
+        return;
+    }
+    wasm_bindgen_futures::spawn_local(async move {
+        let result = match receiver.await {
+            Ok(r) => r,
+            Err(_) => Err("file picker channel cancelled".to_owned()),
+        };
+        sender.send(result);
+    });
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn spawn_pick_files(
+    options: PickFileOptions,
+    sender: RpcResultSender<Result<Vec<PickedFile>, String>>,
+) {
+    bevy::tasks::IoTaskPool::get()
+        .spawn(async move {
+            let result = async {
+                let mut dialog = rfd::AsyncFileDialog::new();
+                if let Some(title) = options.title.as_deref() {
+                    dialog = dialog.set_title(title);
+                }
+                for filter in &options.filters {
+                    let exts: Vec<&str> =
+                        filter.extensions.iter().map(String::as_str).collect();
+                    dialog = dialog.add_filter(&filter.name, &exts);
+                }
+                let picked = dialog.pick_files().await.unwrap_or_default();
+                let mut out = Vec::with_capacity(picked.len());
+                for handle in picked {
+                    let name = handle.file_name();
+                    let bytes = handle.read().await;
+                    out.push(encode_picked_file(name, bytes));
+                }
+                Ok::<Vec<PickedFile>, String>(out)
+            }
+            .await;
+            sender.send(result);
+        })
+        .detach();
+}
+
+#[cfg(target_arch = "wasm32")]
+fn spawn_pick_files(
+    options: PickFileOptions,
+    sender: RpcResultSender<Result<Vec<PickedFile>, String>>,
+) {
+    let req_id = web_picker::next_request_id();
+    let receiver = web_picker::register_multi(req_id);
+    if let Err(e) = web_picker::post_pick_request("pickFiles", req_id, &options) {
+        sender.send(Err(e));
+        return;
+    }
+    wasm_bindgen_futures::spawn_local(async move {
+        let result = match receiver.await {
+            Ok(r) => r,
+            Err(_) => Err("file picker channel cancelled".to_owned()),
+        };
+        sender.send(result);
+    });
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn encode_picked_file(name: String, bytes: Vec<u8>) -> PickedFile {
+    use base64::Engine;
+    let size = bytes.len();
+    let mime = guess_mime(&name);
+    let bytes_base64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    PickedFile {
+        name,
+        mime,
+        size,
+        bytes_base64,
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn guess_mime(name: &str) -> String {
+    let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase());
+    match ext.as_deref() {
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("svg") => "image/svg+xml",
+        Some("pdf") => "application/pdf",
+        Some("json") => "application/json",
+        Some("txt") => "text/plain",
+        _ => "application/octet-stream",
+    }
+    .to_owned()
+}
+
+/// On wasm the bevy-explorer runs inside a Web Worker, which cannot open a
+/// native file picker. We forward each `pickFile` / `pickFiles` request to the
+/// host page via `postMessage` and wait for a `pickFileResult` reply.
+///
+/// Wire-format (worker → main):
+///   `{ type: 'pickFile' | 'pickFiles', reqId: number, options: PickFileOptions }`
+/// Wire-format (main → worker):
+///   `{ type: 'pickFileResult', reqId: number, files?: PickedFile[], error?: string, cancelled?: boolean }`
+#[cfg(target_arch = "wasm32")]
+mod web_picker {
+    use super::{PickFileOptions, PickedFile};
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::sync::Mutex;
+    use wasm_bindgen::prelude::*;
+    use wasm_bindgen::JsCast;
+
+    enum Pending {
+        Single(tokio::sync::oneshot::Sender<Result<Option<PickedFile>, String>>),
+        Multi(tokio::sync::oneshot::Sender<Result<Vec<PickedFile>, String>>),
+    }
+
+    static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+    static LISTENER_INSTALLED: AtomicBool = AtomicBool::new(false);
+    static PENDING: once_cell::sync::Lazy<Mutex<HashMap<u64, Pending>>> =
+        once_cell::sync::Lazy::new(|| Mutex::new(HashMap::new()));
+
+    pub fn next_request_id() -> u64 {
+        NEXT_ID.fetch_add(1, Ordering::SeqCst)
+    }
+
+    pub fn register_single(
+        req_id: u64,
+    ) -> tokio::sync::oneshot::Receiver<Result<Option<PickedFile>, String>> {
+        ensure_listener();
+        let (sx, rx) = tokio::sync::oneshot::channel();
+        PENDING.lock().unwrap().insert(req_id, Pending::Single(sx));
+        rx
+    }
+
+    pub fn register_multi(
+        req_id: u64,
+    ) -> tokio::sync::oneshot::Receiver<Result<Vec<PickedFile>, String>> {
+        ensure_listener();
+        let (sx, rx) = tokio::sync::oneshot::channel();
+        PENDING.lock().unwrap().insert(req_id, Pending::Multi(sx));
+        rx
+    }
+
+    pub fn post_pick_request(
+        kind: &str,
+        req_id: u64,
+        options: &PickFileOptions,
+    ) -> Result<(), String> {
+        let scope = js_sys::global()
+            .dyn_into::<web_sys::DedicatedWorkerGlobalScope>()
+            .map_err(|_| "pickFile: not running inside a Web Worker".to_owned())?;
+        let payload = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(&payload, &"type".into(), &JsValue::from_str(kind));
+        let _ = js_sys::Reflect::set(
+            &payload,
+            &"reqId".into(),
+            &JsValue::from_f64(req_id as f64),
+        );
+        let opts_js = serde_wasm_bindgen::to_value(options)
+            .map_err(|e| format!("pickFile: serialize options failed: {e:?}"))?;
+        let _ = js_sys::Reflect::set(&payload, &"options".into(), &opts_js);
+        scope
+            .post_message(&payload)
+            .map_err(|e| format!("pickFile: postMessage failed: {e:?}"))
+    }
+
+    fn ensure_listener() {
+        if LISTENER_INSTALLED.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let scope = match js_sys::global().dyn_into::<web_sys::DedicatedWorkerGlobalScope>() {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let cb = Closure::wrap(Box::new(move |ev: web_sys::MessageEvent| {
+            on_message(ev.data());
+        }) as Box<dyn FnMut(web_sys::MessageEvent)>);
+        let _ = scope.add_event_listener_with_callback("message", cb.as_ref().unchecked_ref());
+        cb.forget();
+    }
+
+    fn on_message(data: JsValue) {
+        let ty = js_sys::Reflect::get(&data, &"type".into())
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_default();
+        if ty != "pickFileResult" {
+            return;
+        }
+        let req_id = match js_sys::Reflect::get(&data, &"reqId".into())
+            .ok()
+            .and_then(|v| v.as_f64())
+        {
+            Some(n) => n as u64,
+            None => return,
+        };
+        let pending = PENDING.lock().unwrap().remove(&req_id);
+        let Some(pending) = pending else {
+            return;
+        };
+
+        let error = js_sys::Reflect::get(&data, &"error".into())
+            .ok()
+            .and_then(|v| v.as_string());
+        let cancelled = js_sys::Reflect::get(&data, &"cancelled".into())
+            .ok()
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        match pending {
+            Pending::Single(sender) => {
+                let result = if let Some(err) = error {
+                    Err(err)
+                } else if cancelled {
+                    Ok(None)
+                } else {
+                    let files_js = js_sys::Reflect::get(&data, &"files".into()).ok();
+                    parse_files(files_js)
+                        .and_then(|mut v| Ok(v.pop()))
+                };
+                let _ = sender.send(result);
+            }
+            Pending::Multi(sender) => {
+                let result = if let Some(err) = error {
+                    Err(err)
+                } else if cancelled {
+                    Ok(Vec::new())
+                } else {
+                    let files_js = js_sys::Reflect::get(&data, &"files".into()).ok();
+                    parse_files(files_js)
+                };
+                let _ = sender.send(result);
+            }
+        }
+    }
+
+    fn parse_files(files_js: Option<JsValue>) -> Result<Vec<PickedFile>, String> {
+        let Some(files_js) = files_js else {
+            return Ok(Vec::new());
+        };
+        if files_js.is_null() || files_js.is_undefined() {
+            return Ok(Vec::new());
+        }
+        serde_wasm_bindgen::from_value(files_js)
+            .map_err(|e| format!("pickFileResult: bad files payload: {e:?}"))
     }
 }

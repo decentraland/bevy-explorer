@@ -82,7 +82,23 @@ module.exports.setSetting = async function(name, value) {
     await op_set_setting(name, value);
 }
 
-module.exports.kernelFetch = async function (body) { 
+// Open the OS-native file picker.
+// options: {
+//   title?: string,
+//   filters?: [{ name: string, extensions: string[] }]
+// }
+// returns: { name: string, mime: string, size: number, bytesBase64: string } | null
+//   (null if the user cancels)
+module.exports.pickFile = async function (options) {
+    return await Deno.core.ops.op_pick_file(options);
+}
+
+// Like pickFile but multi-select. Returns [] when the user cancels.
+module.exports.pickFiles = async function (options) {
+    return await Deno.core.ops.op_pick_files(options);
+}
+
+module.exports.kernelFetch = async function (body) {
     const headers = await Deno.core.ops.op_kernel_fetch_headers(body.url, body.init?.method, body.meta);
 
     if (!body.init) {

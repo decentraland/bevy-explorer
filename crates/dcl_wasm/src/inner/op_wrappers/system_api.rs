@@ -507,3 +507,28 @@ pub async fn op_get_params(state: &WorkerContext) -> Result<JsValue, WasmError> 
     }
     Ok(obj.into())
 }
+
+#[wasm_bindgen]
+pub async fn op_pick_file(
+    state: &WorkerContext,
+    options: JsValue,
+) -> Result<JsValue, WasmError> {
+    serde_parse!(options);
+    serde_result!(dcl::js::system_api::op_pick_file(state.rc(), options).await)
+}
+
+#[wasm_bindgen]
+pub async fn op_pick_files(
+    state: &WorkerContext,
+    options: JsValue,
+) -> Result<js_sys::Array, WasmError> {
+    serde_parse!(options);
+    dcl::js::system_api::op_pick_files(state.rc(), options)
+        .await
+        .map(|r| {
+            r.into_iter()
+                .map(|v| serde_wasm_bindgen::to_value(&v).unwrap())
+                .collect()
+        })
+        .map_err(WasmError::from)
+}

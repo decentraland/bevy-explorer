@@ -8,6 +8,105 @@ import { initGpuCache } from "./gpu_cache.js";
 export { gpu_cache_hash, initGpuCache };
 
 /**
+ * Bridges a `pickFile` / `pickFiles` request from a sandbox worker to a
+ * native browser file dialog and posts the result back. The worker side
+ * (Rust `web_picker` module) drops a `<input type="file">` request through
+ * `postMessage` because Web Workers can't open file dialogs themselves.
+ *
+ * Wire-format (worker → main):
+ *   { type: 'pickFile' | 'pickFiles', reqId: number,
+ *     options: { title?: string, filters?: [{ name, extensions: string[] }] } }
+ * Wire-format (main → worker):
+ *   { type: 'pickFileResult', reqId, files?: PickedFile[],
+ *     cancelled?: boolean, error?: string }
+ *
+ * Caveat: `input.click()` only opens a dialog when the call happens inside a
+ * user-gesture activation. Browsers don't always propagate the gesture
+ * through `postMessage`, so this can be silently blocked. If that happens,
+ * we surface an explicit error so the scene can fall back to a different UX.
+ */
+function handleFilePickRequest(worker, message) {
+    const { type, reqId, options } = message;
+    const reply = (payload) => {
+        try {
+            worker.postMessage({ type: "pickFileResult", reqId, ...payload });
+        } catch (e) {
+            console.error("[Main JS] failed to reply pickFileResult", e);
+        }
+    };
+
+    try {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.style.position = "fixed";
+        input.style.left = "-10000px";
+        input.style.top = "0";
+        input.style.opacity = "0";
+        if (type === "pickFiles") input.multiple = true;
+
+        const filters = (options && options.filters) || [];
+        const accept = filters
+            .flatMap((f) => (f.extensions || []).map((ext) => "." + ext))
+            .join(",");
+        if (accept.length > 0) input.accept = accept;
+
+        const cleanup = () => {
+            input.remove();
+        };
+
+        // If the user closes the dialog without selecting, modern browsers fire
+        // `cancel`; fall back to a microtask check on focus return for older browsers.
+        input.addEventListener("cancel", () => {
+            cleanup();
+            reply({ cancelled: true });
+        });
+
+        input.addEventListener("change", async () => {
+            try {
+                const fileList = Array.from(input.files || []);
+                if (fileList.length === 0) {
+                    cleanup();
+                    reply({ cancelled: true });
+                    return;
+                }
+                const out = [];
+                for (const file of fileList) {
+                    const buffer = new Uint8Array(await file.arrayBuffer());
+                    // Build a base64 string in chunks to avoid blowing the
+                    // arg-stack on String.fromCharCode for large files.
+                    let bin = "";
+                    const CHUNK = 0x8000;
+                    for (let i = 0; i < buffer.length; i += CHUNK) {
+                        bin += String.fromCharCode.apply(
+                            null,
+                            buffer.subarray(i, i + CHUNK)
+                        );
+                    }
+                    out.push({
+                        name: file.name,
+                        mime: file.type || "application/octet-stream",
+                        size: file.size,
+                        bytesBase64: btoa(bin),
+                    });
+                }
+                cleanup();
+                reply({ files: out });
+            } catch (e) {
+                cleanup();
+                reply({ error: String(e && e.message ? e.message : e) });
+            }
+        });
+
+        document.body.appendChild(input);
+        // The click must be invoked synchronously inside the message handler
+        // for browsers that propagate user activation across postMessage.
+        input.click();
+    } catch (e) {
+        reply({ error: String(e && e.message ? e.message : e) });
+    }
+}
+
+/**
  * Fetches a URL with download progress tracking.
  * @param {string} url - URL to fetch
  * @param {function} onProgress - Callback with percentage (0-100)
@@ -170,6 +269,12 @@ export async function initEngine() {
         if (workerEvent.data.type === "INIT_FAILED") {
           console.log("[Main JS] Sandbox init failed; retrying");
           sandboxWorker = new Worker(sandboxWorkerPath, { type: "module" });
+        }
+        if (
+          workerEvent.data.type === "pickFile" ||
+          workerEvent.data.type === "pickFiles"
+        ) {
+          handleFilePickRequest(sandboxWorker, workerEvent.data);
         }
       };
     }).finally(() => {

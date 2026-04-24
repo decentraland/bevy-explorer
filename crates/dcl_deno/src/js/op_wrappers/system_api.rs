@@ -14,7 +14,7 @@ use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockedUserData, ChatMessage,
     FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
     FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo, PermanentPermissionItem,
-    PermissionRequest, SceneLoadingUi, VoiceMessage,
+    PermissionRequest, PickFileOptions, PickedFile, SceneLoadingUi, VoiceMessage,
 };
 
 // list of op declarations
@@ -88,6 +88,8 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_unblock_user(),
             op_get_blocked_users(),
             op_get_params(),
+            op_pick_file(),
+            op_pick_files(),
         ]
     } else {
         Vec::default()
@@ -580,4 +582,22 @@ pub async fn op_get_params(
     state: Rc<RefCell<OpState>>,
 ) -> Result<HashMap<String, String>, anyhow::Error> {
     dcl::js::system_api::op_get_params(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_pick_file(
+    state: Rc<RefCell<OpState>>,
+    #[serde] options: Option<PickFileOptions>,
+) -> Result<Option<PickedFile>, anyhow::Error> {
+    dcl::js::system_api::op_pick_file(state, options).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_pick_files(
+    state: Rc<RefCell<OpState>>,
+    #[serde] options: Option<PickFileOptions>,
+) -> Result<Vec<PickedFile>, anyhow::Error> {
+    dcl::js::system_api::op_pick_files(state, options).await
 }
