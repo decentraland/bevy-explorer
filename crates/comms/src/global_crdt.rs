@@ -842,7 +842,7 @@ fn despawn_players(
     time: Res<Time>,
 ) {
     for (entity, player) in players.iter() {
-        if player.last_update + 5.0 < time.elapsed_secs() {
+        if player.last_update + 10.0 < time.elapsed_secs() {
             if let Ok(mut commands) = commands.get_entity(entity) {
                 info!("removing stale player: {entity:?} : {player:?}");
                 commands.despawn();
