@@ -97,8 +97,10 @@ fn broadcast_position(
     }
 
     let elapsed = time - *last_sent;
-    // A pending seek bypasses the dynamic-rate gate so remotes receive it promptly.
-    if elapsed < DYNAMIC_FREQ && last_anim.pending_seek.is_none() {
+    // Pending seeks do NOT bypass the 10Hz gate — sending faster than that gets us
+    // shadowbanned. The latch above already holds the most recent seek; it rides out
+    // on the next scheduled broadcast.
+    if elapsed < DYNAMIC_FREQ {
         return;
     }
 
