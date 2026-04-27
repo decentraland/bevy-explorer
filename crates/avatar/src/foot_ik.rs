@@ -4,6 +4,7 @@ use bevy::{
 };
 use bevy_console::ConsoleCommand;
 use common::structs::PrimaryUser;
+use comms::global_crdt::ForeignPlayer;
 use console::DoAddConsoleCommand;
 use dcl_component::proto_components::sdk::components::ColliderLayer;
 use scene_runner::{
@@ -15,6 +16,8 @@ use scene_runner::{
 };
 
 use crate::animate::ActiveEmote;
+
+type AvatarFilter = Or<(With<PrimaryUser>, With<ForeignPlayer>)>;
 
 pub struct FootIkPlugin;
 
@@ -129,8 +132,8 @@ fn foot_ik_console_command(
 fn cache_foot_ik_rig(
     mut commands: Commands,
     config: Res<FootIkConfig>,
-    needs_rig: Query<Entity, (With<PrimaryUser>, Without<FootIkRig>)>,
-    has_rig: Query<(Entity, &FootIkRig), With<PrimaryUser>>,
+    needs_rig: Query<Entity, (AvatarFilter, Without<FootIkRig>)>,
+    has_rig: Query<(Entity, &FootIkRig), AvatarFilter>,
     children_q: Query<&Children>,
     name_q: Query<&Name>,
     globals: Query<&GlobalTransform>,
@@ -173,19 +176,22 @@ fn cache_foot_ik_rig(
                 "foot_ik: cached rig for {:?} (hips: {:?}, l: {:?}/{:?}/{:?}, r: {:?}/{:?}/{:?})",
                 avatar, hips, lu, ll, lf, ru, rl, rf
             );
-            commands.entity(avatar).try_insert(FootIkRig {
-                hips,
-                left: LegBones {
-                    upper: lu,
-                    lower: ll,
-                    foot: lf,
+            commands.entity(avatar).try_insert((
+                FootIkRig {
+                    hips,
+                    left: LegBones {
+                        upper: lu,
+                        lower: ll,
+                        foot: lf,
+                    },
+                    right: LegBones {
+                        upper: ru,
+                        lower: rl,
+                        foot: rf,
+                    },
                 },
-                right: LegBones {
-                    upper: ru,
-                    lower: rl,
-                    foot: rf,
-                },
-            });
+                FootIkRuntime::default(),
+            ));
         } else if config.enabled {
             *log_counter = log_counter.wrapping_add(1);
             if *log_counter % 120 == 1 {
@@ -275,236 +281,243 @@ struct LegEngState {
     last_final_y: f32,
 }
 
+/// Per-avatar runtime state for the IK system. Inserted alongside `FootIkRig`
+/// when the rig is first cached.
+#[derive(Component, Default)]
+struct FootIkRuntime {
+    /// Animation-driven IK strength, ramped toward 1.0 while in an idle pose.
+    anim_w: f32,
+    /// Per-leg engagement + rate-limited final-Y state.
+    legs: [LegEngState; 2],
+}
+
 #[allow(clippy::too_many_arguments)]
 fn apply_foot_ik(
     config: Res<FootIkConfig>,
     time: Res<Time>,
-    primary: Query<(&FootIkRig, Option<&ActiveEmote>, &GlobalTransform), With<PrimaryUser>>,
+    mut avatars: Query<
+        (
+            Entity,
+            &FootIkRig,
+            Option<&ActiveEmote>,
+            &GlobalTransform,
+            &mut FootIkRuntime,
+        ),
+        AvatarFilter,
+    >,
     containing: ContainingScene,
     mut scenes: Query<&mut SceneColliderData>,
     parents: Query<&ChildOf>,
     globals: Query<&GlobalTransform>,
     mut transforms: Query<&mut Transform>,
-    mut anim_w: Local<f32>,
-    mut leg_state: Local<[LegEngState; 2]>,
     mut log_tick: Local<u32>,
 ) {
     if !config.enabled {
-        // Reset ramps so re-enabling doesn't pop in at full strength.
-        *anim_w = 0.0;
-        *leg_state = [LegEngState::default(); 2];
+        // Reset all per-avatar runtime state so re-enabling doesn't pop in.
+        for (_, _, _, _, mut runtime) in &mut avatars {
+            *runtime = FootIkRuntime::default();
+        }
         return;
     }
     *log_tick = log_tick.wrapping_add(1);
     let log_now = *log_tick % 60 == 1;
-
-    let Ok((rig, active_emote, player_global)) = primary.single() else {
-        if log_now {
-            warn!("foot_ik: no primary user with FootIkRig");
-        }
-        return;
-    };
-
-    // Animation-driven IK strength: ramp toward 1.0 while the active emote is
-    // an idle pose, otherwise toward 0.0, at a rate set by the emote's
-    // declared transition_seconds. No active emote → ramp out.
-    let target = active_emote
-        .map(|e| if e.is_idle() { 1.0 } else { 0.0 })
-        .unwrap_or(0.0);
-    let transition = active_emote
-        .map(|e| e.transition_seconds())
-        .unwrap_or(config.min_transition_seconds)
-        .max(config.min_transition_seconds);
     let dt = time.delta_secs();
-    *anim_w = if target > *anim_w {
-        (*anim_w + dt / transition).min(target)
-    } else {
-        (*anim_w - dt / transition).max(target)
-    };
-    let w_anim = *anim_w;
 
-    let scene_ents: Vec<Entity> = containing
-        .get_position(player_global.translation())
-        .into_iter()
-        .collect();
-
-    // Pole hint: avatar's forward direction. The Decentraland avatar rig faces
-    // local -Z (knees bend toward -Z), so use that as the pole.
-    let pole_dir = player_global.compute_transform().rotation * Vec3::NEG_Z;
-    let player_y = player_global.translation().y;
-
-    // Pass 1: per-leg raycast. plan_leg returns geometry + reach_ok; we
-    // always run it (even when w_anim is small) so engagement and rate-limit
-    // state stay current across walk→idle transitions.
-    let raw = [
-        plan_leg(
-            "L",
-            rig.left,
-            &config,
-            player_y,
-            &scene_ents,
-            &mut scenes,
-            &globals,
-            log_now,
-        ),
-        plan_leg(
-            "R",
-            rig.right,
-            &config,
-            player_y,
-            &scene_ents,
-            &mut scenes,
-            &globals,
-            log_now,
-        ),
-    ];
-
-    let eng_step = dt / config.engage_transition_seconds.max(1e-3);
-    let mut effective: [Option<LegPlan>; 2] = [None, None];
-    let mut leg_w = [0.0f32; 2];
-
-    for i in 0..2 {
-        let state = &mut leg_state[i];
-        let was_engaged = state.engaged > 1e-3;
-
-        // Update engagement target.
-        let target_eng = match raw[i].as_ref() {
-            Some(p) if p.reach_ok => 1.0,
-            _ => 0.0,
-        };
-        state.engaged = if target_eng > state.engaged {
-            (state.engaged + eng_step).min(target_eng)
+    for (avatar_ent, rig, active_emote, avatar_global, mut runtime) in &mut avatars {
+        // Animation-driven IK strength: ramp toward 1.0 while the active emote
+        // is an idle pose, otherwise toward 0.0, at a rate set by the emote's
+        // declared transition_seconds. No active emote → ramp out.
+        let target = active_emote
+            .map(|e| if e.is_idle() { 1.0 } else { 0.0 })
+            .unwrap_or(0.0);
+        let transition = active_emote
+            .map(|e| e.transition_seconds())
+            .unwrap_or(config.min_transition_seconds)
+            .max(config.min_transition_seconds);
+        runtime.anim_w = if target > runtime.anim_w {
+            (runtime.anim_w + dt / transition).min(target)
         } else {
-            (state.engaged - eng_step).max(target_eng)
+            (runtime.anim_w - dt / transition).max(target)
         };
+        let w_anim = runtime.anim_w;
 
-        // Engagement clamped by (not multiplied with) the animation weight —
-        // both act as independent gates and the lower wins.
-        let w = w_anim.min(state.engaged);
-        leg_w[i] = w;
+        // Bound the raycasts to scenes containing *this* avatar's position.
+        let scene_ents: Vec<Entity> = containing
+            .get_position(avatar_global.translation())
+            .into_iter()
+            .collect();
 
-        if state.engaged <= 1e-3 {
-            state.engaged = 0.0;
-            continue;
+        let pole_dir = avatar_global.compute_transform().rotation * Vec3::NEG_Z;
+        let avatar_y = avatar_global.translation().y;
+
+        // Pass 1: per-leg raycast.
+        let raw = [
+            plan_leg(
+                "L",
+                rig.left,
+                &config,
+                avatar_y,
+                &scene_ents,
+                &mut scenes,
+                &globals,
+                log_now,
+            ),
+            plan_leg(
+                "R",
+                rig.right,
+                &config,
+                avatar_y,
+                &scene_ents,
+                &mut scenes,
+                &globals,
+                log_now,
+            ),
+        ];
+
+        let eng_step = dt / config.engage_transition_seconds.max(1e-3);
+        let mut effective: [Option<LegPlan>; 2] = [None, None];
+        let mut leg_w = [0.0f32; 2];
+
+        for i in 0..2 {
+            let state = &mut runtime.legs[i];
+            let was_engaged = state.engaged > 1e-3;
+
+            let target_eng = match raw[i].as_ref() {
+                Some(p) if p.reach_ok => 1.0,
+                _ => 0.0,
+            };
+            state.engaged = if target_eng > state.engaged {
+                (state.engaged + eng_step).min(target_eng)
+            } else {
+                (state.engaged - eng_step).max(target_eng)
+            };
+
+            // Engagement clamped by (not multiplied with) w_anim; both gate
+            // independently and the lower wins.
+            let w = w_anim.min(state.engaged);
+            leg_w[i] = w;
+
+            if state.engaged <= 1e-3 {
+                state.engaged = 0.0;
+                continue;
+            }
+            let Some(p) = raw[i].as_ref() else {
+                continue;
+            };
+
+            // Velocity-limit the foot's final world Y so step-discontinuities
+            // in the raycast (cliff edges traversed by foot xz while turning)
+            // don't snap. On (re-)engagement after a disengaged frame, snap.
+            let animated_y = p.c.y;
+            let raw_target_y = p.target_c.y;
+            let desired_final_y = animated_y + (raw_target_y - animated_y) * w;
+            let final_y = if was_engaged {
+                let max_step = config.target_velocity_limit * dt;
+                let delta = (desired_final_y - state.last_final_y).clamp(-max_step, max_step);
+                state.last_final_y + delta
+            } else {
+                desired_final_y
+            };
+            state.last_final_y = final_y;
+
+            // Back-derive the IK target so the slerped foot lands at final_y.
+            // No hip-relative clamp here — pelvis drop expands reach, and the
+            // IK math clamps l_at internally.
+            let new_target_y = if w > 1e-3 {
+                animated_y + (final_y - animated_y) / w
+            } else {
+                raw_target_y
+            };
+            let target_c = Vec3::new(p.target_c.x, new_target_y, p.target_c.z);
+
+            // Pelvis drop sized to final_y (where the foot actually ends up).
+            let total = (p.l_ab + p.l_bc - 1e-3).max(0.0);
+            let dx = p.a.x - p.target_c.x;
+            let dz = p.a.z - p.target_c.z;
+            let horiz2 = dx * dx + dz * dz;
+            let hv = p.a.y - final_y;
+            let inside = total * total - horiz2;
+            let required_drop = if inside > 0.0 {
+                (hv - inside.sqrt()).max(0.0)
+            } else {
+                0.0
+            };
+
+            effective[i] = Some(LegPlan {
+                a: p.a,
+                b: p.b,
+                c: p.c,
+                l_ab: p.l_ab,
+                l_bc: p.l_bc,
+                reach_ok: p.reach_ok,
+                target_c,
+                contact_normal: p.contact_normal,
+                required_drop,
+                cur_hip_global_rot: p.cur_hip_global_rot,
+                cur_knee_global_rot: p.cur_knee_global_rot,
+                cur_foot_global_rot: p.cur_foot_global_rot,
+            });
         }
-        let Some(p) = raw[i].as_ref() else {
-            continue;
-        };
 
-        // Velocity limit on the foot's *final* world Y (linear approximation
-        // of IK output: animated_y + (target_y - animated_y) * w). On the
-        // first engaged frame, snap. Otherwise rate-limit the per-frame
-        // change. Then back-derive a new target_y for the IK math so the
-        // post-weight foot lands at the rate-limited final Y.
-        let animated_y = p.c.y;
-        let raw_target_y = p.target_c.y;
-        let desired_final_y = animated_y + (raw_target_y - animated_y) * w;
-        let final_y = if was_engaged {
-            let max_step = config.target_velocity_limit * dt;
-            let delta = (desired_final_y - state.last_final_y).clamp(-max_step, max_step);
-            state.last_final_y + delta
-        } else {
-            desired_final_y
-        };
-        state.last_final_y = final_y;
-
-        // Back-derive an IK target so that, after the slerp blend at weight w,
-        // the foot lands at final_y. The IK math itself clamps l_at to within
-        // physical reach, so we don't need (and must not apply) a hip-relative
-        // clamp here — the pelvis is about to drop, expanding the reach.
-        let new_target_y = if w > 1e-3 {
-            animated_y + (final_y - animated_y) / w
-        } else {
-            raw_target_y
-        };
-        let target_c = Vec3::new(p.target_c.x, new_target_y, p.target_c.z);
-
-        // Pelvis drop is sized to where the foot will *actually* end up
-        // (final_y), using the raw raycast XZ.
-        let total_reach = p.l_ab + p.l_bc;
-        let total = (total_reach - 1e-3).max(0.0);
-        let dx = p.a.x - p.target_c.x;
-        let dz = p.a.z - p.target_c.z;
-        let horiz2 = dx * dx + dz * dz;
-        let hv = p.a.y - final_y;
-        let inside = total * total - horiz2;
-        let required_drop = if inside > 0.0 {
-            (hv - inside.sqrt()).max(0.0)
-        } else {
-            0.0
-        };
-
-        effective[i] = Some(LegPlan {
-            a: p.a,
-            b: p.b,
-            c: p.c,
-            l_ab: p.l_ab,
-            l_bc: p.l_bc,
-            reach_ok: p.reach_ok,
-            target_c,
-            contact_normal: p.contact_normal,
-            required_drop,
-            cur_hip_global_rot: p.cur_hip_global_rot,
-            cur_knee_global_rot: p.cur_knee_global_rot,
-            cur_foot_global_rot: p.cur_foot_global_rot,
-        });
-    }
-
-    if log_now {
-        info!(
-            "foot_ik: w_anim={:.2} engaged=[{:.2},{:.2}] leg_w=[{:.2},{:.2}]",
-            w_anim, leg_state[0].engaged, leg_state[1].engaged, leg_w[0], leg_w[1]
-        );
-    }
-
-    // Pass 2: pelvis drop = max required across engaged legs, scaled per leg.
-    let mut pelvis_drop = 0.0f32;
-    for i in 0..2 {
-        if let Some(eff) = &effective[i] {
-            pelvis_drop = pelvis_drop.max(eff.required_drop * leg_w[i]);
+        if log_now {
+            info!(
+                "foot_ik[{:?}]: w_anim={:.2} engaged=[{:.2},{:.2}] leg_w=[{:.2},{:.2}]",
+                avatar_ent,
+                w_anim,
+                runtime.legs[0].engaged,
+                runtime.legs[1].engaged,
+                leg_w[0],
+                leg_w[1]
+            );
         }
-    }
-    if log_now {
-        info!("foot_ik: pelvis_drop={:.3}", pelvis_drop);
-    }
 
-    // Apply pelvis drop to hips bone. Convert the world-Y delta into the hips'
-    // parent-local frame using the parent's full affine inverse — this accounts
-    // for cumulative ancestor scale (the avatar rig is imported with a ~0.01x
-    // scale, so a rotation-only conversion would produce a ~1cm-instead-of-1m
-    // delta).
-    if pelvis_drop > 1e-4 {
-        if let Ok(hips_parent) = parents.get(rig.hips) {
-            if let Ok(parent_global) = globals.get(hips_parent.parent()) {
-                if let Ok(mut t) = transforms.get_mut(rig.hips) {
-                    let local_delta = parent_global
-                        .affine()
-                        .inverse()
-                        .transform_vector3(Vec3::new(0.0, pelvis_drop, 0.0));
-                    t.translation -= local_delta;
+        // Pass 2: pelvis drop.
+        let mut pelvis_drop = 0.0f32;
+        for i in 0..2 {
+            if let Some(eff) = &effective[i] {
+                pelvis_drop = pelvis_drop.max(eff.required_drop * leg_w[i]);
+            }
+        }
+        if log_now {
+            info!("foot_ik[{:?}]: pelvis_drop={:.3}", avatar_ent, pelvis_drop);
+        }
+
+        // Apply pelvis drop. Convert the world-Y delta into hips' parent-local
+        // frame via the parent's full affine inverse — this accounts for the
+        // ~0.01x cumulative ancestor scale on the imported avatar rig.
+        if pelvis_drop > 1e-4 {
+            if let Ok(hips_parent) = parents.get(rig.hips) {
+                if let Ok(parent_global) = globals.get(hips_parent.parent()) {
+                    if let Ok(mut t) = transforms.get_mut(rig.hips) {
+                        let local_delta = parent_global
+                            .affine()
+                            .inverse()
+                            .transform_vector3(Vec3::new(0.0, pelvis_drop, 0.0));
+                        t.translation -= local_delta;
+                    }
                 }
             }
         }
-    }
 
-    let drop_vec = Vec3::new(0.0, pelvis_drop, 0.0);
+        let drop_vec = Vec3::new(0.0, pelvis_drop, 0.0);
 
-    // Pass 3: per-leg IK using the rate-limited effective plans.
-    let [eff_l, eff_r] = effective;
-    for (leg, eff, w) in [(rig.left, eff_l, leg_w[0]), (rig.right, eff_r, leg_w[1])] {
-        if let Some(plan) = eff {
-            if w > 1e-3 {
-                apply_leg_ik(
-                    leg,
-                    plan,
-                    w,
-                    drop_vec,
-                    pole_dir,
-                    &config,
-                    &parents,
-                    &globals,
-                    &mut transforms,
-                );
+        // Pass 3: per-leg IK using the rate-limited effective plans.
+        let [eff_l, eff_r] = effective;
+        for (leg, eff, w) in [(rig.left, eff_l, leg_w[0]), (rig.right, eff_r, leg_w[1])] {
+            if let Some(plan) = eff {
+                if w > 1e-3 {
+                    apply_leg_ik(
+                        leg,
+                        plan,
+                        w,
+                        drop_vec,
+                        pole_dir,
+                        &config,
+                        &parents,
+                        &globals,
+                        &mut transforms,
+                    );
+                }
             }
         }
     }
