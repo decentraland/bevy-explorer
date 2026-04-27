@@ -65,6 +65,16 @@ pub struct FootIkConfig {
     /// the contact-normal of the ground beneath it. Caps stylised aesthetics
     /// (toes don't dive into steep slopes).
     pub max_foot_tilt_deg: f32,
+    /// Time in seconds for a leg to engage/disengage when its reachability
+    /// flips (e.g. crossing a cliff edge while turning).
+    pub engage_transition_seconds: f32,
+    /// Maximum vertical change per second of the foot's final world Y (the
+    /// post-weight, post-IK output). Smooths step-discontinuities in the
+    /// raycast result (cliff edges traversed by foot xz while turning) and
+    /// is invariant under continuous platform motion (avatar moves with the
+    /// platform, so the *relative* offset doesn't change). Snaps on the
+    /// first engaged frame after a disengaged one.
+    pub target_velocity_limit: f32,
 }
 
 impl Default for FootIkConfig {
@@ -78,6 +88,8 @@ impl Default for FootIkConfig {
             max_pelvis_drop: 0.4,
             min_transition_seconds: 0.05,
             max_foot_tilt_deg: 30.0,
+            engage_transition_seconds: 0.5,
+            target_velocity_limit: 1.5,
         }
     }
 }
@@ -239,7 +251,9 @@ struct LegPlan {
     target_c: Vec3,
     l_ab: f32,
     l_bc: f32,
-    w: f32,
+    /// True if the leg can physically reach `target_c` within the configured
+    /// step-up / pelvis-drop limits this frame.
+    reach_ok: bool,
     /// Pelvis drop required for this leg to physically reach `target_c`.
     /// 0 if the leg can already reach without any drop.
     required_drop: f32,
@@ -248,6 +262,17 @@ struct LegPlan {
     cur_hip_global_rot: Quat,
     cur_knee_global_rot: Quat,
     cur_foot_global_rot: Quat,
+}
+
+#[derive(Default, Clone, Copy)]
+struct LegEngState {
+    /// Per-leg engagement, ramped over `engage_transition_seconds` toward
+    /// 1.0 while `reach_ok` and 0.0 otherwise.
+    engaged: f32,
+    /// Last frame's final foot Y (animated_y + (target_y - animated_y) * w)
+    /// after the velocity limit. Snapped to the desired value on the first
+    /// engaged frame, then rate-limited per-frame thereafter.
+    last_final_y: f32,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -261,11 +286,13 @@ fn apply_foot_ik(
     globals: Query<&GlobalTransform>,
     mut transforms: Query<&mut Transform>,
     mut anim_w: Local<f32>,
+    mut leg_state: Local<[LegEngState; 2]>,
     mut log_tick: Local<u32>,
 ) {
     if !config.enabled {
-        // Reset the ramp so re-enabling doesn't pop in at full strength.
+        // Reset ramps so re-enabling doesn't pop in at full strength.
         *anim_w = 0.0;
+        *leg_state = [LegEngState::default(); 2];
         return;
     }
     *log_tick = log_tick.wrapping_add(1);
@@ -288,25 +315,13 @@ fn apply_foot_ik(
         .map(|e| e.transition_seconds())
         .unwrap_or(config.min_transition_seconds)
         .max(config.min_transition_seconds);
-    let step = time.delta_secs() / transition;
+    let dt = time.delta_secs();
     *anim_w = if target > *anim_w {
-        (*anim_w + step).min(target)
+        (*anim_w + dt / transition).min(target)
     } else {
-        (*anim_w - step).max(target)
+        (*anim_w - dt / transition).max(target)
     };
     let w_anim = *anim_w;
-    if log_now {
-        info!(
-            "foot_ik: w_anim={:.2} target={:.1} transition={:.2}s emote={:?}",
-            w_anim,
-            target,
-            transition,
-            active_emote.map(|e| e.is_idle())
-        );
-    }
-    if w_anim <= 1e-3 {
-        return;
-    }
 
     let scene_ents: Vec<Entity> = containing
         .get_position(player_global.translation())
@@ -318,36 +333,136 @@ fn apply_foot_ik(
     let pole_dir = player_global.compute_transform().rotation * Vec3::NEG_Z;
     let player_y = player_global.translation().y;
 
-    // Pass 1: plan both legs (raycast, target, weights, lengths).
-    let plan_l = plan_leg(
-        "L",
-        rig.left,
-        &config,
-        w_anim,
-        player_y,
-        &scene_ents,
-        &mut scenes,
-        &globals,
-        log_now,
-    );
-    let plan_r = plan_leg(
-        "R",
-        rig.right,
-        &config,
-        w_anim,
-        player_y,
-        &scene_ents,
-        &mut scenes,
-        &globals,
-        log_now,
-    );
+    // Pass 1: per-leg raycast. plan_leg returns geometry + reach_ok; we
+    // always run it (even when w_anim is small) so engagement and rate-limit
+    // state stay current across walk→idle transitions.
+    let raw = [
+        plan_leg(
+            "L",
+            rig.left,
+            &config,
+            player_y,
+            &scene_ents,
+            &mut scenes,
+            &globals,
+            log_now,
+        ),
+        plan_leg(
+            "R",
+            rig.right,
+            &config,
+            player_y,
+            &scene_ents,
+            &mut scenes,
+            &globals,
+            log_now,
+        ),
+    ];
 
-    // Pass 2: pelvis drop = max required across engaged legs, scaled by w_anim.
-    // Each engaged leg has finite required_drop ≤ max_pelvis_drop by
-    // construction (others were filtered out in plan_leg).
+    let eng_step = dt / config.engage_transition_seconds.max(1e-3);
+    let mut effective: [Option<LegPlan>; 2] = [None, None];
+    let mut leg_w = [0.0f32; 2];
+
+    for i in 0..2 {
+        let state = &mut leg_state[i];
+        let was_engaged = state.engaged > 1e-3;
+
+        // Update engagement target.
+        let target_eng = match raw[i].as_ref() {
+            Some(p) if p.reach_ok => 1.0,
+            _ => 0.0,
+        };
+        state.engaged = if target_eng > state.engaged {
+            (state.engaged + eng_step).min(target_eng)
+        } else {
+            (state.engaged - eng_step).max(target_eng)
+        };
+
+        // Engagement clamped by (not multiplied with) the animation weight —
+        // both act as independent gates and the lower wins.
+        let w = w_anim.min(state.engaged);
+        leg_w[i] = w;
+
+        if state.engaged <= 1e-3 {
+            state.engaged = 0.0;
+            continue;
+        }
+        let Some(p) = raw[i].as_ref() else {
+            continue;
+        };
+
+        // Velocity limit on the foot's *final* world Y (linear approximation
+        // of IK output: animated_y + (target_y - animated_y) * w). On the
+        // first engaged frame, snap. Otherwise rate-limit the per-frame
+        // change. Then back-derive a new target_y for the IK math so the
+        // post-weight foot lands at the rate-limited final Y.
+        let animated_y = p.c.y;
+        let raw_target_y = p.target_c.y;
+        let desired_final_y = animated_y + (raw_target_y - animated_y) * w;
+        let final_y = if was_engaged {
+            let max_step = config.target_velocity_limit * dt;
+            let delta = (desired_final_y - state.last_final_y).clamp(-max_step, max_step);
+            state.last_final_y + delta
+        } else {
+            desired_final_y
+        };
+        state.last_final_y = final_y;
+
+        // Back-derive an IK target so that, after the slerp blend at weight w,
+        // the foot lands at final_y. The IK math itself clamps l_at to within
+        // physical reach, so we don't need (and must not apply) a hip-relative
+        // clamp here — the pelvis is about to drop, expanding the reach.
+        let new_target_y = if w > 1e-3 {
+            animated_y + (final_y - animated_y) / w
+        } else {
+            raw_target_y
+        };
+        let target_c = Vec3::new(p.target_c.x, new_target_y, p.target_c.z);
+
+        // Pelvis drop is sized to where the foot will *actually* end up
+        // (final_y), using the raw raycast XZ.
+        let total_reach = p.l_ab + p.l_bc;
+        let total = (total_reach - 1e-3).max(0.0);
+        let dx = p.a.x - p.target_c.x;
+        let dz = p.a.z - p.target_c.z;
+        let horiz2 = dx * dx + dz * dz;
+        let hv = p.a.y - final_y;
+        let inside = total * total - horiz2;
+        let required_drop = if inside > 0.0 {
+            (hv - inside.sqrt()).max(0.0)
+        } else {
+            0.0
+        };
+
+        effective[i] = Some(LegPlan {
+            a: p.a,
+            b: p.b,
+            c: p.c,
+            l_ab: p.l_ab,
+            l_bc: p.l_bc,
+            reach_ok: p.reach_ok,
+            target_c,
+            contact_normal: p.contact_normal,
+            required_drop,
+            cur_hip_global_rot: p.cur_hip_global_rot,
+            cur_knee_global_rot: p.cur_knee_global_rot,
+            cur_foot_global_rot: p.cur_foot_global_rot,
+        });
+    }
+
+    if log_now {
+        info!(
+            "foot_ik: w_anim={:.2} engaged=[{:.2},{:.2}] leg_w=[{:.2},{:.2}]",
+            w_anim, leg_state[0].engaged, leg_state[1].engaged, leg_w[0], leg_w[1]
+        );
+    }
+
+    // Pass 2: pelvis drop = max required across engaged legs, scaled per leg.
     let mut pelvis_drop = 0.0f32;
-    for plan in [plan_l.as_ref(), plan_r.as_ref()].into_iter().flatten() {
-        pelvis_drop = pelvis_drop.max(plan.required_drop * w_anim);
+    for i in 0..2 {
+        if let Some(eff) = &effective[i] {
+            pelvis_drop = pelvis_drop.max(eff.required_drop * leg_w[i]);
+        }
     }
     if log_now {
         info!("foot_ik: pelvis_drop={:.3}", pelvis_drop);
@@ -374,20 +489,23 @@ fn apply_foot_ik(
 
     let drop_vec = Vec3::new(0.0, pelvis_drop, 0.0);
 
-    // Pass 3: per-leg IK. Hip world position is shifted by the pelvis drop;
-    // bone rotations and lengths are unchanged, so we just translate (a, b, c).
-    for (leg, plan_opt) in [(rig.left, plan_l), (rig.right, plan_r)] {
-        if let Some(plan) = plan_opt {
-            apply_leg_ik(
-                leg,
-                plan,
-                drop_vec,
-                pole_dir,
-                &config,
-                &parents,
-                &globals,
-                &mut transforms,
-            );
+    // Pass 3: per-leg IK using the rate-limited effective plans.
+    let [eff_l, eff_r] = effective;
+    for (leg, eff, w) in [(rig.left, eff_l, leg_w[0]), (rig.right, eff_r, leg_w[1])] {
+        if let Some(plan) = eff {
+            if w > 1e-3 {
+                apply_leg_ik(
+                    leg,
+                    plan,
+                    w,
+                    drop_vec,
+                    pole_dir,
+                    &config,
+                    &parents,
+                    &globals,
+                    &mut transforms,
+                );
+            }
         }
     }
 }
@@ -397,7 +515,6 @@ fn plan_leg(
     label: &str,
     leg: LegBones,
     config: &FootIkConfig,
-    w_anim: f32,
     player_y: f32,
     scene_ents: &[Entity],
     scenes: &mut Query<&mut SceneColliderData>,
@@ -472,17 +589,12 @@ fn plan_leg(
     } else {
         required_drop <= config.max_pelvis_drop
     };
-    let reach_w = if reach_ok { 1.0 } else { 0.0 };
-    let w = (w_anim * reach_w).clamp(0.0, 1.0);
     if log_now {
         let dy_anim = target_c.y - c.y;
         info!(
-            "foot_ik[{label}]: foot_y={:.3} ground_y={:.3} target_y={:.3} dy_anim={:.3} dy_player={:.3} required_drop={:.3} reach_w={:.2} w={:.2}",
-            c.y, ground_y, target_c.y, dy_anim, dy_player, required_drop, reach_w, w
+            "foot_ik[{label}]: foot_y={:.3} ground_y={:.3} target_y={:.3} dy_anim={:.3} dy_player={:.3} required_drop={:.3} reach_ok={}",
+            c.y, ground_y, target_c.y, dy_anim, dy_player, required_drop, reach_ok
         );
-    }
-    if w <= 1e-3 {
-        return None;
     }
 
     Some(LegPlan {
@@ -492,7 +604,7 @@ fn plan_leg(
         target_c,
         l_ab,
         l_bc,
-        w,
+        reach_ok,
         required_drop,
         contact_normal,
         cur_hip_global_rot: hip_g.compute_transform().rotation,
@@ -505,6 +617,7 @@ fn plan_leg(
 fn apply_leg_ik(
     leg: LegBones,
     plan: LegPlan,
+    w: f32,
     drop_vec: Vec3,
     pole_dir: Vec3,
     config: &FootIkConfig,
@@ -554,8 +667,8 @@ fn apply_leg_ik(
     let new_dir_bc = (target_c - new_b).normalize_or_zero();
     let r_knee = Quat::from_rotation_arc(dir_bc_after_hip, new_dir_bc);
 
-    let r_hip_b = Quat::IDENTITY.slerp(r_hip, plan.w);
-    let r_knee_b = Quat::IDENTITY.slerp(r_knee, plan.w);
+    let r_hip_b = Quat::IDENTITY.slerp(r_hip, w);
+    let r_knee_b = Quat::IDENTITY.slerp(r_knee, w);
 
     let new_hip_global_rot = r_hip_b * plan.cur_hip_global_rot;
     let new_knee_global_rot = r_knee_b * r_hip_b * plan.cur_knee_global_rot;
@@ -578,7 +691,7 @@ fn apply_leg_ik(
     let (axis, angle) = align_full.to_axis_angle();
     let max_tilt = config.max_foot_tilt_deg.to_radians();
     let align_clamped = Quat::from_axis_angle(axis, angle.min(max_tilt));
-    let align_blended = Quat::IDENTITY.slerp(align_clamped, plan.w);
+    let align_blended = Quat::IDENTITY.slerp(align_clamped, w);
     let new_foot_global_rot = align_blended * plan.cur_foot_global_rot;
     let new_foot_local_rot = new_knee_global_rot.inverse() * new_foot_global_rot;
 
