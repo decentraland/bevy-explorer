@@ -17,4 +17,5 @@ message PBUiInput {
   optional common.Font font = 11; // default=0
   optional int32 font_size = 12; // default=10
   optional string value = 13;
+  optional bool multi_line = 14; // default=false; when true, the input accepts newlines and behaves as a textarea
 }
