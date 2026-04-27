@@ -3,8 +3,6 @@ use bevy::{
     transform::systems::{mark_dirty_trees, propagate_parent_transforms, sync_simple_transforms},
 };
 use bevy_console::ConsoleCommand;
-use common::structs::PrimaryUser;
-use comms::global_crdt::ForeignPlayer;
 use console::DoAddConsoleCommand;
 use dcl_component::proto_components::sdk::components::ColliderLayer;
 use scene_runner::{
@@ -15,9 +13,7 @@ use scene_runner::{
     ContainingScene,
 };
 
-use crate::animate::ActiveEmote;
-
-type AvatarFilter = Or<(With<PrimaryUser>, With<ForeignPlayer>)>;
+use crate::{animate::ActiveEmote, AvatarShape};
 
 pub struct FootIkPlugin;
 
@@ -132,8 +128,8 @@ fn foot_ik_console_command(
 fn cache_foot_ik_rig(
     mut commands: Commands,
     config: Res<FootIkConfig>,
-    needs_rig: Query<Entity, (AvatarFilter, Without<FootIkRig>)>,
-    has_rig: Query<(Entity, &FootIkRig), AvatarFilter>,
+    needs_rig: Query<Entity, (With<AvatarShape>, Without<FootIkRig>)>,
+    has_rig: Query<(Entity, &FootIkRig), With<AvatarShape>>,
     children_q: Query<&Children>,
     name_q: Query<&Name>,
     globals: Query<&GlobalTransform>,
@@ -291,7 +287,7 @@ struct FootIkRuntime {
     legs: [LegEngState; 2],
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn apply_foot_ik(
     config: Res<FootIkConfig>,
     time: Res<Time>,
@@ -303,7 +299,7 @@ fn apply_foot_ik(
             &GlobalTransform,
             &mut FootIkRuntime,
         ),
-        AvatarFilter,
+        With<AvatarShape>,
     >,
     containing: ContainingScene,
     mut scenes: Query<&mut SceneColliderData>,
