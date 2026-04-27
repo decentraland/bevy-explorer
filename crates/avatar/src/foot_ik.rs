@@ -61,6 +61,10 @@ pub struct FootIkConfig {
     /// Floor on the per-emote transition_seconds used to ramp IK weight; avoids
     /// instantaneous snaps when an emote declares 0s.
     pub min_transition_seconds: f32,
+    /// Maximum angle (degrees) the foot will tilt away from world-up to match
+    /// the contact-normal of the ground beneath it. Caps stylised aesthetics
+    /// (toes don't dive into steep slopes).
+    pub max_foot_tilt_deg: f32,
 }
 
 impl Default for FootIkConfig {
@@ -73,6 +77,7 @@ impl Default for FootIkConfig {
             max_step_up: 0.4,
             max_pelvis_drop: 0.4,
             min_transition_seconds: 0.05,
+            max_foot_tilt_deg: 30.0,
         }
     }
 }
@@ -238,8 +243,11 @@ struct LegPlan {
     /// Pelvis drop required for this leg to physically reach `target_c`.
     /// 0 if the leg can already reach without any drop.
     required_drop: f32,
+    /// World-space normal of the ground surface beneath the foot.
+    contact_normal: Vec3,
     cur_hip_global_rot: Quat,
     cur_knee_global_rot: Quat,
+    cur_foot_global_rot: Quat,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -375,6 +383,7 @@ fn apply_foot_ik(
                 plan,
                 drop_vec,
                 pole_dir,
+                &config,
                 &parents,
                 &globals,
                 &mut transforms,
@@ -406,7 +415,7 @@ fn plan_leg(
     let dir = Vec3::NEG_Y;
     let max_dist = config.raycast_up + config.raycast_down;
 
-    let mut best: Option<f32> = None;
+    let mut best: Option<(f32, Vec3)> = None;
     for scene_ent in scene_ents {
         let Ok(mut collider_data) = scenes.get_mut(*scene_ent) else {
             continue;
@@ -421,13 +430,13 @@ fn plan_leg(
             None,
         ) {
             let hit_y = origin.y - hit.toi;
-            if best.is_none_or(|y| hit_y > y) {
-                best = Some(hit_y);
+            if best.is_none_or(|(y, _)| hit_y > y) {
+                best = Some((hit_y, hit.normal.try_normalize().unwrap_or(Vec3::Y)));
             }
         }
     }
 
-    let Some(ground_y) = best else {
+    let Some((ground_y, contact_normal)) = best else {
         if log_now {
             info!(
                 "foot_ik[{label}]: no ground hit (foot=({:.2},{:.2},{:.2}) origin_y={:.2} max_dist={:.2} scenes={})",
@@ -485,16 +494,20 @@ fn plan_leg(
         l_bc,
         w,
         required_drop,
+        contact_normal,
         cur_hip_global_rot: hip_g.compute_transform().rotation,
         cur_knee_global_rot: knee_g.compute_transform().rotation,
+        cur_foot_global_rot: foot_g.compute_transform().rotation,
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn apply_leg_ik(
     leg: LegBones,
     plan: LegPlan,
     drop_vec: Vec3,
     pole_dir: Vec3,
+    config: &FootIkConfig,
     parents: &Query<&ChildOf>,
     globals: &Query<&GlobalTransform>,
     transforms: &mut Query<&mut Transform>,
@@ -558,10 +571,24 @@ fn apply_leg_ik(
     let new_hip_local_rot = parent_global_rot.inverse() * new_hip_global_rot;
     let new_knee_local_rot = new_hip_global_rot.inverse() * new_knee_global_rot;
 
+    // Foot orientation: tilt the animated foot pose toward the contact normal,
+    // capped at max_foot_tilt_deg, then write the foot's local rotation
+    // (parent = knee bone in world after our update).
+    let align_full = Quat::from_rotation_arc(Vec3::Y, plan.contact_normal);
+    let (axis, angle) = align_full.to_axis_angle();
+    let max_tilt = config.max_foot_tilt_deg.to_radians();
+    let align_clamped = Quat::from_axis_angle(axis, angle.min(max_tilt));
+    let align_blended = Quat::IDENTITY.slerp(align_clamped, plan.w);
+    let new_foot_global_rot = align_blended * plan.cur_foot_global_rot;
+    let new_foot_local_rot = new_knee_global_rot.inverse() * new_foot_global_rot;
+
     if let Ok(mut t) = transforms.get_mut(leg.upper) {
         t.rotation = new_hip_local_rot;
     }
     if let Ok(mut t) = transforms.get_mut(leg.lower) {
         t.rotation = new_knee_local_rot;
+    }
+    if let Ok(mut t) = transforms.get_mut(leg.foot) {
+        t.rotation = new_foot_local_rot;
     }
 }
