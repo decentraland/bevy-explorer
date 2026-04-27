@@ -3,7 +3,7 @@ use bevy::{
     transform::systems::{mark_dirty_trees, propagate_parent_transforms, sync_simple_transforms},
 };
 use bevy_console::ConsoleCommand;
-use common::structs::{AvatarDynamicState, PrimaryUser};
+use common::structs::PrimaryUser;
 use console::DoAddConsoleCommand;
 use dcl_component::proto_components::sdk::components::ColliderLayer;
 use scene_runner::{
@@ -13,6 +13,8 @@ use scene_runner::{
     },
     ContainingScene,
 };
+
+use crate::animate::ActiveEmote;
 
 pub struct FootIkPlugin;
 
@@ -45,10 +47,6 @@ pub struct FootIkConfig {
     /// Local-space Y of the foot bone when planted on flat ground.
     /// Hardcoded guess; tune by observation.
     pub plant_y: f32,
-    /// Speed below which IK is at full strength.
-    pub idle_speed_threshold: f32,
-    /// Speed above which IK is fully off.
-    pub run_speed_threshold: f32,
     /// Start the down-cast this far above the animated foot.
     pub raycast_up: f32,
     /// Search this far below the animated foot.
@@ -60,6 +58,9 @@ pub struct FootIkConfig {
     /// gate going downward: if a leg would need a larger pelvis drop than this
     /// to plant, the leg disengages (e.g. dangling off a cliff edge).
     pub max_pelvis_drop: f32,
+    /// Floor on the per-emote transition_seconds used to ramp IK weight; avoids
+    /// instantaneous snaps when an emote declares 0s.
+    pub min_transition_seconds: f32,
 }
 
 impl Default for FootIkConfig {
@@ -67,12 +68,11 @@ impl Default for FootIkConfig {
         Self {
             enabled: false,
             plant_y: 0.091,
-            idle_speed_threshold: 0.1,
-            run_speed_threshold: 1.5,
             raycast_up: 0.3,
             raycast_down: 0.6,
             max_step_up: 0.4,
             max_pelvis_drop: 0.4,
+            min_transition_seconds: 0.05,
         }
     }
 }
@@ -245,38 +245,58 @@ struct LegPlan {
 #[allow(clippy::too_many_arguments)]
 fn apply_foot_ik(
     config: Res<FootIkConfig>,
-    primary: Query<(&FootIkRig, &AvatarDynamicState, &GlobalTransform), With<PrimaryUser>>,
+    time: Res<Time>,
+    primary: Query<(&FootIkRig, Option<&ActiveEmote>, &GlobalTransform), With<PrimaryUser>>,
     containing: ContainingScene,
     mut scenes: Query<&mut SceneColliderData>,
     parents: Query<&ChildOf>,
     globals: Query<&GlobalTransform>,
     mut transforms: Query<&mut Transform>,
+    mut anim_w: Local<f32>,
     mut log_tick: Local<u32>,
 ) {
     if !config.enabled {
+        // Reset the ramp so re-enabling doesn't pop in at full strength.
+        *anim_w = 0.0;
         return;
     }
     *log_tick = log_tick.wrapping_add(1);
     let log_now = *log_tick % 60 == 1;
 
-    let Ok((rig, dyn_state, player_global)) = primary.single() else {
+    let Ok((rig, active_emote, player_global)) = primary.single() else {
         if log_now {
             warn!("foot_ik: no primary user with FootIkRig");
         }
         return;
     };
 
-    let speed = Vec3::new(dyn_state.velocity.x, 0.0, dyn_state.velocity.z).length();
-    let w_speed = 1.0
-        - smoothstep(
-            config.idle_speed_threshold,
-            config.run_speed_threshold,
-            speed,
+    // Animation-driven IK strength: ramp toward 1.0 while the active emote is
+    // an idle pose, otherwise toward 0.0, at a rate set by the emote's
+    // declared transition_seconds. No active emote → ramp out.
+    let target = active_emote
+        .map(|e| if e.is_idle() { 1.0 } else { 0.0 })
+        .unwrap_or(0.0);
+    let transition = active_emote
+        .map(|e| e.transition_seconds())
+        .unwrap_or(config.min_transition_seconds)
+        .max(config.min_transition_seconds);
+    let step = time.delta_secs() / transition;
+    *anim_w = if target > *anim_w {
+        (*anim_w + step).min(target)
+    } else {
+        (*anim_w - step).max(target)
+    };
+    let w_anim = *anim_w;
+    if log_now {
+        info!(
+            "foot_ik: w_anim={:.2} target={:.1} transition={:.2}s emote={:?}",
+            w_anim,
+            target,
+            transition,
+            active_emote.map(|e| e.is_idle())
         );
-    if w_speed <= 0.0 {
-        if log_now {
-            info!("foot_ik: gated by speed ({:.2} m/s)", speed);
-        }
+    }
+    if w_anim <= 1e-3 {
         return;
     }
 
@@ -295,7 +315,7 @@ fn apply_foot_ik(
         "L",
         rig.left,
         &config,
-        w_speed,
+        w_anim,
         player_y,
         &scene_ents,
         &mut scenes,
@@ -306,7 +326,7 @@ fn apply_foot_ik(
         "R",
         rig.right,
         &config,
-        w_speed,
+        w_anim,
         player_y,
         &scene_ents,
         &mut scenes,
@@ -314,12 +334,12 @@ fn apply_foot_ik(
         log_now,
     );
 
-    // Pass 2: pelvis drop = max required across engaged legs, scaled by w_speed.
+    // Pass 2: pelvis drop = max required across engaged legs, scaled by w_anim.
     // Each engaged leg has finite required_drop ≤ max_pelvis_drop by
     // construction (others were filtered out in plan_leg).
     let mut pelvis_drop = 0.0f32;
     for plan in [plan_l.as_ref(), plan_r.as_ref()].into_iter().flatten() {
-        pelvis_drop = pelvis_drop.max(plan.required_drop * w_speed);
+        pelvis_drop = pelvis_drop.max(plan.required_drop * w_anim);
     }
     if log_now {
         info!("foot_ik: pelvis_drop={:.3}", pelvis_drop);
@@ -368,7 +388,7 @@ fn plan_leg(
     label: &str,
     leg: LegBones,
     config: &FootIkConfig,
-    w_speed: f32,
+    w_anim: f32,
     player_y: f32,
     scene_ents: &[Entity],
     scenes: &mut Query<&mut SceneColliderData>,
@@ -444,7 +464,7 @@ fn plan_leg(
         required_drop <= config.max_pelvis_drop
     };
     let reach_w = if reach_ok { 1.0 } else { 0.0 };
-    let w = (w_speed * reach_w).clamp(0.0, 1.0);
+    let w = (w_anim * reach_w).clamp(0.0, 1.0);
     if log_now {
         let dy_anim = target_c.y - c.y;
         info!(
@@ -544,9 +564,4 @@ fn apply_leg_ik(
     if let Ok(mut t) = transforms.get_mut(leg.lower) {
         t.rotation = new_knee_local_rot;
     }
-}
-
-fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
-    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
 }
