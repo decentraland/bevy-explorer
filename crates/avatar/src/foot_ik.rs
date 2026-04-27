@@ -79,7 +79,7 @@ pub struct FootIkConfig {
 impl Default for FootIkConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             plant_y: 0.091,
             raycast_up: 0.3,
             raycast_down: 0.6,
@@ -456,7 +456,7 @@ fn apply_foot_ik(
         }
 
         if log_now {
-            info!(
+            debug!(
                 "foot_ik[{:?}]: w_anim={:.2} engaged=[{:.2},{:.2}] leg_w=[{:.2},{:.2}]",
                 avatar_ent,
                 w_anim,
@@ -475,7 +475,7 @@ fn apply_foot_ik(
             }
         }
         if log_now {
-            info!("foot_ik[{:?}]: pelvis_drop={:.3}", avatar_ent, pelvis_drop);
+            debug!("foot_ik[{:?}]: pelvis_drop={:.3}", avatar_ent, pelvis_drop);
         }
 
         // Apply pelvis drop. Convert the world-Y delta into hips' parent-local
@@ -564,7 +564,7 @@ fn plan_leg(
 
     let Some((ground_y, contact_normal)) = best else {
         if log_now {
-            info!(
+            debug!(
                 "foot_ik[{label}]: no ground hit (foot=({:.2},{:.2},{:.2}) origin_y={:.2} max_dist={:.2} scenes={})",
                 c.x, c.y, c.z, origin.y, max_dist, scene_ents.len()
             );
@@ -600,7 +600,7 @@ fn plan_leg(
     };
     if log_now {
         let dy_anim = target_c.y - c.y;
-        info!(
+        debug!(
             "foot_ik[{label}]: foot_y={:.3} ground_y={:.3} target_y={:.3} dy_anim={:.3} dy_player={:.3} required_drop={:.3} reach_ok={}",
             c.y, ground_y, target_c.y, dy_anim, dy_player, required_drop, reach_ok
         );
