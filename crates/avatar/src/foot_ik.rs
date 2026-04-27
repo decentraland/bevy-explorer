@@ -108,15 +108,39 @@ fn foot_ik_console_command(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cache_foot_ik_rig(
     mut commands: Commands,
     config: Res<FootIkConfig>,
-    avatars: Query<Entity, (With<PrimaryUser>, Without<FootIkRig>)>,
+    needs_rig: Query<Entity, (With<PrimaryUser>, Without<FootIkRig>)>,
+    has_rig: Query<(Entity, &FootIkRig), With<PrimaryUser>>,
     children_q: Query<&Children>,
     name_q: Query<&Name>,
+    globals: Query<&GlobalTransform>,
     mut log_counter: Local<u32>,
 ) {
-    for avatar in &avatars {
+    // Invalidate any cached rig whose bones no longer exist (e.g. a wearable
+    // reload despawned the old armature). On the next frame the rebuild
+    // pass below installs a fresh rig.
+    for (avatar, rig) in &has_rig {
+        let alive = [
+            rig.hips,
+            rig.left.upper,
+            rig.left.lower,
+            rig.left.foot,
+            rig.right.upper,
+            rig.right.lower,
+            rig.right.foot,
+        ]
+        .iter()
+        .all(|e| globals.get(*e).is_ok());
+        if !alive {
+            info!("foot_ik: invalidating stale rig on {:?}", avatar);
+            commands.entity(avatar).remove::<FootIkRig>();
+        }
+    }
+
+    for avatar in &needs_rig {
         let hips = find_bone(avatar, "avatar_hips", &children_q, &name_q);
         let lu = find_bone(avatar, "avatar_leftupleg", &children_q, &name_q);
         let ll = find_bone(avatar, "avatar_leftleg", &children_q, &name_q);
