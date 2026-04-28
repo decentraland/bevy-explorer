@@ -9,7 +9,7 @@ use bevy::{
 };
 use common::{
     dynamics::{PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS, PLAYER_GROUND_THRESHOLD},
-    sets::SceneSets,
+    sets::{PostUpdateSets, SceneSets},
     structs::{
         AppConfig, AvatarDynamicState, EngineMovementControl, PrimaryPlayerRes, PrimaryUser,
         SceneDrivenAnim, SceneDrivenAnimationFeedback, SceneDrivenAnimationRequest,
@@ -40,7 +40,6 @@ use scene_runner::{
         mesh_collider::{
             ColliderId, PreviousColliderTransform, SceneColliderData, GROUND_COLLISION_MASK,
         },
-        transform_and_parent::PostUpdateSets,
         AddCrdtInterfaceExt,
     },
     ContainingScene, SceneEntity, SceneUpdates,
