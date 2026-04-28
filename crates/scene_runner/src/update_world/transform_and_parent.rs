@@ -9,7 +9,7 @@ use bevy::{
     prelude::*,
     transform::systems::{mark_dirty_trees, propagate_parent_transforms, sync_simple_transforms},
 };
-use common::{anim_last_system, util::ModifyComponentExt};
+use common::{anim_last_system, sets::PostUpdateSets, util::ModifyComponentExt};
 use dcl::{crdt::lww::CrdtLWWState, interface::ComponentPosition};
 
 use crate::{
@@ -28,16 +28,6 @@ use super::{AddCrdtInterfaceExt, CrdtStateComponent};
 
 pub struct TransformAndParentPlugin;
 
-#[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
-pub enum PostUpdateSets {
-    EarlyTransformPropagate,
-    ColliderUpdate,
-    PlayerUpdate,
-    CameraUpdate,
-    AttachSync,
-    Billboard,
-}
-
 impl Plugin for TransformAndParentPlugin {
     fn build(&self, app: &mut App) {
         app.configure_sets(
@@ -47,6 +37,8 @@ impl Plugin for TransformAndParentPlugin {
                 PostUpdateSets::ColliderUpdate,
                 PostUpdateSets::PlayerUpdate,
                 PostUpdateSets::CameraUpdate,
+                PostUpdateSets::FootIk,
+                PostUpdateSets::Nametag,
                 PostUpdateSets::AttachSync,
                 PostUpdateSets::Billboard,
             )

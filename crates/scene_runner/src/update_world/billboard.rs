@@ -6,11 +6,9 @@
 use bevy::math::Vec3Swizzles;
 use bevy::prelude::*;
 
-use common::structs::PrimaryCamera;
+use common::{sets::PostUpdateSets, structs::PrimaryCamera};
 use dcl::interface::ComponentPosition;
 use dcl_component::{proto_components::sdk::components::PbBillboard, SceneComponentId};
-
-use crate::update_world::transform_and_parent::PostUpdateSets;
 
 use super::AddCrdtInterfaceExt;
 

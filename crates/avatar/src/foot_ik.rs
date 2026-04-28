@@ -3,26 +3,17 @@ use bevy::{
     transform::systems::{mark_dirty_trees, propagate_parent_transforms, sync_simple_transforms},
 };
 use bevy_console::ConsoleCommand;
+use common::sets::PostUpdateSets;
 use console::DoAddConsoleCommand;
 use dcl_component::proto_components::sdk::components::ColliderLayer;
 use scene_runner::{
-    update_world::{
-        mesh_collider::{SceneColliderData, GROUND_COLLISION_MASK},
-        transform_and_parent::PostUpdateSets,
-    },
+    update_world::mesh_collider::{SceneColliderData, GROUND_COLLISION_MASK},
     ContainingScene,
 };
 
 use crate::{animate::ActiveEmote, AvatarShape};
 
 pub struct FootIkPlugin;
-
-/// Public marker for the foot-IK pipeline (compute + transform-propagate).
-/// Other PostUpdate systems that read post-IK bone globals (e.g. the nametag
-/// height, which sits under the head bone and is sensitive to pelvis drop)
-/// should be ordered `.after(FootIkSet)`.
-#[derive(SystemSet, Hash, PartialEq, Eq, Clone, Debug)]
-pub struct FootIkSet;
 
 impl Plugin for FootIkPlugin {
     fn build(&self, app: &mut App) {
@@ -40,9 +31,7 @@ impl Plugin for FootIkPlugin {
                     .chain(),
             )
                 .chain()
-                .in_set(FootIkSet)
-                .after(PostUpdateSets::PlayerUpdate)
-                .before(PostUpdateSets::AttachSync),
+                .in_set(PostUpdateSets::FootIk),
         );
         app.add_console_command::<FootIkConsoleCommand, _>(foot_ik_console_command);
     }
