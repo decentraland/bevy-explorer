@@ -230,6 +230,61 @@ pub struct EmoteCommand {
     pub r#loop: bool,
 }
 
+// Current scene-driven movement animation request for a player avatar. For the
+// primary player, written by the bridge system in `user_input` (after resolving
+// the scene-relative path against the active scene's content map). For foreign
+// players, written by the comms crate when a Movement packet with anim fields
+// arrives. Read by `animate` in the avatar crate uniformly for both.
+#[derive(Component, Default, Clone, Debug)]
+pub struct SceneDrivenAnim {
+    pub active: Option<SceneDrivenAnimationRequest>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SceneDrivenAnimationRequest {
+    // scene-relative path (e.g. "assets/walk.glb") — used for feedback to the controlling
+    // scene. Empty for remote requests received over the network.
+    pub src: String,
+    // Pre-built scene-emote URN encoding scene_hash + content_hash. For local requests
+    // this is constructed by user_input; for remote requests it's reassembled from the
+    // hash pair received on the wire.
+    pub urn: String,
+    // The two hashes that compose the URN. Kept alongside `urn` so the broadcaster can
+    // ship them to remotes without repeating the fixed URN preamble on every packet.
+    pub scene_hash: String,
+    pub content_hash: String,
+    pub r#loop: bool,
+    pub speed: f32,
+    pub idle: bool,
+    pub transition_seconds: f32,
+    pub seek: Option<f32>,
+    // Scene-requested avatar-bus sound clips to play this update. Each entry is the
+    // content_hash of a file hosted in the same scene as the animation. The consumer
+    // dedups per-avatar so leaving identical entries across consecutive updates doesn't
+    // re-fire; the scene clears the list on frames it doesn't want sound.
+    pub sounds: Vec<String>,
+}
+
+// Current scene-driven animation playback state, written by `play_current_emote` in
+// the avatar crate and mirrored into `AvatarMovementInfo.active_animation_state` by
+// `broadcast_movement_info` in `user_input`.
+// `playback_time` freezes while a triggerSceneEmote overrides the animation.
+#[derive(Resource, Default)]
+pub struct SceneDrivenAnimationFeedback {
+    pub state: Option<SceneDrivenAnimationFeedbackState>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SceneDrivenAnimationFeedbackState {
+    pub src: String,
+    pub r#loop: bool,
+    pub speed: f32,
+    pub idle: bool,
+    pub playback_time: f32,
+    pub duration: f32,
+    pub loop_count: u32,
+}
+
 // main camera entity
 #[derive(Component)]
 pub struct PrimaryCamera {
@@ -445,6 +500,7 @@ pub struct GraphicsSettings {
     pub fps_target: usize,
     pub shadow_distance: f32,
     pub shadow_settings: ShadowSetting,
+    pub light_count: usize,
     pub shadow_caster_count: usize,
     pub window: WindowSetting,
     // removed until bevy window resizing bugs are fixed
@@ -467,6 +523,7 @@ impl Default for GraphicsSettings {
             fps_target: 60,
             shadow_distance: 200.0,
             shadow_settings: ShadowSetting::High,
+            light_count: 32,
             shadow_caster_count: 8,
             window: WindowSetting::Windowed,
             // fullscreen_res: FullscreenResSetting(UVec2::new(1280,720)),
@@ -998,8 +1055,16 @@ pub enum MoveKind {
     Jog,
     Run,
     Jump,
+    /// In-air second jump. Set on foreign avatars when the incoming rfc4::Movement
+    /// reports jump_count >= 2 and there's no scene-driven animation to take
+    /// precedence; the velocity picker emits the `double_jump` emote for it.
+    DoubleJump,
     Falling,
     LongFalling,
+    /// Gliding state. Set on foreign avatars when rfc4::Movement.glide_state is
+    /// OPENING_PROP or GLIDING and there's no scene-driven animation; the
+    /// velocity picker emits the `glide` emote.
+    Glide,
     Emote,
 }
 

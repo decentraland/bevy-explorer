@@ -57,14 +57,66 @@ message Movement {
   bool is_falling = 14;
 
   bool is_stunned = 15;
-  
+
   float rotation_y = 16;
   bool is_emoting = 18;
+
+  // Number of jumps in the current air period (0 grounded, 1 after ground jump,
+  // 2 after an in-air / double jump). Matches field 24 in the Unity client's
+  // rfc4::Movement so receivers can drive a distinct double-jump animation
+  // when no scene-driven animation is supplied.
+  int32 jump_count = 24;
+  // Whether the sender is currently gliding, and the transition state of the
+  // glider prop. Matches field 23 in the Unity client's rfc4::Movement.
+  GlideState glide_state = 23;
+
+  enum GlideState {
+    PROP_CLOSED = 0;
+    OPENING_PROP = 1;
+    GLIDING = 2;
+    CLOSING_PROP = 3;
+  }
+
+  // Scene-driven movement animation (bevy-explorer local extension). Wrapped in a nested
+  // message at a high private tag so that other clients (Unity, web) can't accidentally
+  // populate these fields by reusing the same tag numbers at the Movement level — an
+  // unrelated payload at tag 10000 will fail to decode as SceneDrivenAnimation and prost
+  // drops the whole field, instead of handing us a plausible-looking string we'd try to
+  // resolve as a GLB hash.
+  optional SceneDrivenAnimation scene_driven_animation = 10000;
+}
+
+// Nested carrier for scene-driven movement animation state. All fields are optional so
+// that between transitions only ride-along fields (speed, loop, seek) need to be sent;
+// the hash pair is sent on transition or every ~1s as a keepalive for joiners. An empty
+// `scene_hash` clears a previously active animation.
+message SceneDrivenAnimation {
+  optional string scene_hash = 1;
+  optional string content_hash = 2;
+  optional float speed = 3;
+  optional float playback_time = 4;
+  optional float transition_seconds = 5;
+  optional bool loop = 6;
+  // Scene-requested avatar-bus sound triggers accumulated since the last broadcast. Each
+  // entry is the content_hash of an audio clip hosted in the same scene as the active
+  // animation (scene_hash — latched or re-asserted via keepalive — identifies the scene).
+  // Receivers play each hash once on receipt. Fire-and-forget; no stop mechanism.
+  repeated string sound_content_hashes = 7;
+  // Hex-encoded wallet address of the sender, e.g. "0x6f39…". Defence against buggy
+  // remotes that parse-then-re-emit this whole sub-message byte-for-byte (observed in
+  // the wild). Receivers drop the anim when this is set and doesn't match the packet
+  // sender's address. Absent on packets from old senders — in that case we accept,
+  // since those clients predate the mirror-class bug we're defending against.
+  optional string origin_address = 8;
 }
 
 message MovementCompressed {
-  int32 temporal_data = 1; // bit-compressed: timestamp + animations 
-  int64 movement_data = 2; // bit-compressed: position + velocity 
+  int32 temporal_data = 1; // bit-compressed: timestamp + animations
+  int64 movement_data = 2; // bit-compressed: position + velocity
+
+  // Mirror of Movement.scene_driven_animation — see that field for semantics and the
+  // collision-avoidance rationale behind the high nested tag.
+  optional SceneDrivenAnimation scene_driven_animation = 10000;
 }
 
 message PlayerEmote {

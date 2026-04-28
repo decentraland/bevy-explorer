@@ -6,6 +6,8 @@ use dcl::interface::ComponentPosition;
 use dcl_component::proto_components::sdk::components::PbVisibilityComponent;
 use dcl_component::SceneComponentId;
 
+use crate::SceneEntity;
+
 use super::AddCrdtInterfaceExt;
 
 pub struct VisibilityComponentPlugin {
@@ -21,7 +23,10 @@ impl Plugin for VisibilityComponentPlugin {
             );
         }
 
-        app.add_plugins(HierarchyPropagatePlugin::<AncestorVisibility>::default());
+        app.add_plugins(HierarchyPropagatePlugin::<
+            AncestorVisibility,
+            With<SceneEntity>,
+        >::default());
 
         app.add_observer(visibility_component_on_insert);
         app.add_observer(visibility_component_on_replace);
@@ -117,6 +122,9 @@ fn ancestor_visibility_on_insert(
 
 #[cfg(test)]
 mod tests {
+    use dcl::SceneId;
+    use dcl_component::SceneEntityId;
+
     use super::*;
 
     #[test]
@@ -131,12 +139,18 @@ mod tests {
 
         let world = app.world_mut();
 
-        let parent = world
-            .spawn(VisibilityComponent(PbVisibilityComponent {
+        let parent = world.spawn_empty().id();
+        world.entity_mut(parent).insert((
+            VisibilityComponent(PbVisibilityComponent {
                 visible: Some(true),
                 propagate_to_children: Some(false),
-            }))
-            .id();
+            }),
+            SceneEntity {
+                root: parent,
+                scene_id: SceneId(parent),
+                id: SceneEntityId::ROOT,
+            },
+        ));
         let child = world
             .spawn((
                 VisibilityComponent(PbVisibilityComponent {
@@ -144,6 +158,11 @@ mod tests {
                     propagate_to_children: Some(false),
                 }),
                 ChildOf(parent),
+                SceneEntity {
+                    root: parent,
+                    scene_id: SceneId(parent),
+                    id: SceneEntityId::PLAYER,
+                },
             ))
             .id();
 
@@ -164,12 +183,18 @@ mod tests {
 
         let world = app.world_mut();
 
-        let parent = world
-            .spawn(VisibilityComponent(PbVisibilityComponent {
+        let parent = world.spawn_empty().id();
+        world.entity_mut(parent).insert((
+            VisibilityComponent(PbVisibilityComponent {
                 visible: Some(true),
                 propagate_to_children: Some(false),
-            }))
-            .id();
+            }),
+            SceneEntity {
+                root: parent,
+                scene_id: SceneId(parent),
+                id: SceneEntityId::ROOT,
+            },
+        ));
         let child = world
             .spawn((
                 VisibilityComponent(PbVisibilityComponent {
@@ -177,6 +202,11 @@ mod tests {
                     propagate_to_children: Some(false),
                 }),
                 ChildOf(parent),
+                SceneEntity {
+                    root: parent,
+                    scene_id: SceneId(parent),
+                    id: SceneEntityId::PLAYER,
+                },
             ))
             .id();
 
@@ -197,12 +227,18 @@ mod tests {
 
         let world = app.world_mut();
 
-        let parent = world
-            .spawn(VisibilityComponent(PbVisibilityComponent {
+        let parent = world.spawn_empty().id();
+        world.entity_mut(parent).insert((
+            VisibilityComponent(PbVisibilityComponent {
                 visible: Some(false),
                 propagate_to_children: Some(false),
-            }))
-            .id();
+            }),
+            SceneEntity {
+                root: parent,
+                scene_id: SceneId(parent),
+                id: SceneEntityId::ROOT,
+            },
+        ));
         let child = world
             .spawn((
                 VisibilityComponent(PbVisibilityComponent {
@@ -210,6 +246,11 @@ mod tests {
                     propagate_to_children: Some(false),
                 }),
                 ChildOf(parent),
+                SceneEntity {
+                    root: parent,
+                    scene_id: SceneId(parent),
+                    id: SceneEntityId::PLAYER,
+                },
             ))
             .id();
 
@@ -232,12 +273,18 @@ mod tests {
 
         let world = app.world_mut();
 
-        let parent = world
-            .spawn(VisibilityComponent(PbVisibilityComponent {
+        let parent = world.spawn_empty().id();
+        world.entity_mut(parent).insert((
+            VisibilityComponent(PbVisibilityComponent {
                 visible: Some(false),
                 propagate_to_children: Some(false),
-            }))
-            .id();
+            }),
+            SceneEntity {
+                root: parent,
+                scene_id: SceneId(parent),
+                id: SceneEntityId::ROOT,
+            },
+        ));
         let child = world
             .spawn((
                 VisibilityComponent(PbVisibilityComponent {
@@ -245,6 +292,11 @@ mod tests {
                     propagate_to_children: Some(false),
                 }),
                 ChildOf(parent),
+                SceneEntity {
+                    root: parent,
+                    scene_id: SceneId(parent),
+                    id: SceneEntityId::PLAYER,
+                },
             ))
             .id();
 
@@ -267,13 +319,28 @@ mod tests {
 
         let world = app.world_mut();
 
-        let parent = world
-            .spawn(VisibilityComponent(PbVisibilityComponent {
+        let parent = world.spawn_empty().id();
+        world.entity_mut(parent).insert((
+            VisibilityComponent(PbVisibilityComponent {
                 visible: Some(true),
                 propagate_to_children: Some(true),
-            }))
+            }),
+            SceneEntity {
+                root: parent,
+                scene_id: SceneId(parent),
+                id: SceneEntityId::ROOT,
+            },
+        ));
+        let child = world
+            .spawn((
+                ChildOf(parent),
+                SceneEntity {
+                    root: parent,
+                    scene_id: SceneId(parent),
+                    id: SceneEntityId::PLAYER,
+                },
+            ))
             .id();
-        let child = world.spawn(ChildOf(parent)).id();
 
         app.update();
 
@@ -294,14 +361,31 @@ mod tests {
 
         let world = app.world_mut();
 
-        let parent = world
-            .spawn(VisibilityComponent(PbVisibilityComponent {
+        let parent = world.spawn_empty().id();
+        world.entity_mut(parent).insert((
+            VisibilityComponent(PbVisibilityComponent {
                 visible: Some(true),
                 propagate_to_children: Some(true),
-            }))
-            .id();
+            }),
+            SceneEntity {
+                root: parent,
+                scene_id: SceneId(parent),
+                id: SceneEntityId::ROOT,
+            },
+        ));
         let children = (0..10)
-            .map(|_| world.spawn(ChildOf(parent)).id())
+            .map(|_| {
+                world
+                    .spawn((
+                        ChildOf(parent),
+                        SceneEntity {
+                            root: parent,
+                            scene_id: SceneId(parent),
+                            id: SceneEntityId::PLAYER,
+                        },
+                    ))
+                    .id()
+            })
             .collect::<Vec<_>>();
         let child = world
             .spawn((
@@ -310,6 +394,11 @@ mod tests {
                     propagate_to_children: Some(false),
                 }),
                 ChildOf(parent),
+                SceneEntity {
+                    root: parent,
+                    scene_id: SceneId(parent),
+                    id: SceneEntityId::PLAYER,
+                },
             ))
             .id();
 
@@ -335,16 +424,35 @@ mod tests {
 
         let world = app.world_mut();
 
-        let parent = world
-            .spawn(VisibilityComponent(PbVisibilityComponent {
+        let parent = world.spawn_empty().id();
+        world.entity_mut(parent).insert((
+            VisibilityComponent(PbVisibilityComponent {
                 visible: Some(true),
                 propagate_to_children: Some(true),
-            }))
-            .id();
-        let children =
-            std::iter::successors(Some(parent), |prev| Some(world.spawn(ChildOf(*prev)).id()))
-                .take(20)
-                .collect::<Vec<_>>();
+            }),
+            SceneEntity {
+                root: parent,
+                scene_id: SceneId(parent),
+                id: SceneEntityId::ROOT,
+            },
+        ));
+        let children = std::iter::successors(Some(parent), |prev| {
+            Some(
+                world
+                    .spawn((
+                        ChildOf(*prev),
+                        SceneEntity {
+                            root: parent,
+                            scene_id: SceneId(parent),
+                            id: SceneEntityId::PLAYER,
+                        },
+                    ))
+                    .id(),
+            )
+        })
+        .skip(1)
+        .take(20)
+        .collect::<Vec<_>>();
         let child = world
             .spawn((
                 VisibilityComponent(PbVisibilityComponent {
@@ -352,6 +460,11 @@ mod tests {
                     propagate_to_children: Some(false),
                 }),
                 ChildOf(children[19]),
+                SceneEntity {
+                    root: parent,
+                    scene_id: SceneId(parent),
+                    id: SceneEntityId::PLAYER,
+                },
             ))
             .id();
 
@@ -377,17 +490,35 @@ mod tests {
 
         let world = app.world_mut();
 
-        let parent = world
-            .spawn(VisibilityComponent(PbVisibilityComponent {
+        let parent = world.spawn_empty().id();
+        world.entity_mut(parent).insert((
+            VisibilityComponent(PbVisibilityComponent {
                 visible: Some(true),
                 propagate_to_children: Some(true),
-            }))
-            .id();
-        let visible_children =
-            std::iter::successors(Some(parent), |prev| Some(world.spawn(ChildOf(*prev)).id()))
-                .skip(1)
-                .take(4)
-                .collect::<Vec<_>>();
+            }),
+            SceneEntity {
+                root: parent,
+                scene_id: SceneId(parent),
+                id: SceneEntityId::ROOT,
+            },
+        ));
+        let visible_children = std::iter::successors(Some(parent), |prev| {
+            Some(
+                world
+                    .spawn((
+                        ChildOf(*prev),
+                        SceneEntity {
+                            root: parent,
+                            scene_id: SceneId(parent),
+                            id: SceneEntityId::PLAYER,
+                        },
+                    ))
+                    .id(),
+            )
+        })
+        .skip(1)
+        .take(4)
+        .collect::<Vec<_>>();
         assert!(!visible_children.contains(&parent));
         let midway_descendant = world
             .spawn((
@@ -396,10 +527,26 @@ mod tests {
                     propagate_to_children: Some(true),
                 }),
                 ChildOf(visible_children[3]),
+                SceneEntity {
+                    root: parent,
+                    scene_id: SceneId(parent),
+                    id: SceneEntityId::PLAYER,
+                },
             ))
             .id();
         let hidden_children = std::iter::successors(Some(midway_descendant), |prev| {
-            Some(world.spawn(ChildOf(*prev)).id())
+            Some(
+                world
+                    .spawn((
+                        ChildOf(*prev),
+                        SceneEntity {
+                            root: parent,
+                            scene_id: SceneId(parent),
+                            id: SceneEntityId::PLAYER,
+                        },
+                    ))
+                    .id(),
+            )
         })
         .skip(1)
         .take(4)
@@ -604,12 +751,18 @@ mod tests {
 
         let world = app.world_mut();
 
-        let one = world
-            .spawn(VisibilityComponent(PbVisibilityComponent {
+        let one = world.spawn_empty().id();
+        world.entity_mut(one).insert((
+            VisibilityComponent(PbVisibilityComponent {
                 visible: Some(true),
                 propagate_to_children: Some(true),
-            }))
-            .id();
+            }),
+            SceneEntity {
+                root: one,
+                scene_id: SceneId(one),
+                id: SceneEntityId::ROOT,
+            },
+        ));
         let two = world
             .spawn((
                 VisibilityComponent(PbVisibilityComponent {
@@ -617,6 +770,11 @@ mod tests {
                     propagate_to_children: Some(false),
                 }),
                 ChildOf(one),
+                SceneEntity {
+                    root: one,
+                    scene_id: SceneId(one),
+                    id: SceneEntityId::ROOT,
+                },
             ))
             .id();
         let three = world
@@ -626,6 +784,11 @@ mod tests {
                     propagate_to_children: Some(true),
                 }),
                 ChildOf(two),
+                SceneEntity {
+                    root: one,
+                    scene_id: SceneId(one),
+                    id: SceneEntityId::ROOT,
+                },
             ))
             .id();
 

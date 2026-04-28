@@ -9,7 +9,10 @@ use bevy::{
 use bimap::BiMap;
 use common::{
     rpc::{RpcCall, RpcEventSender, RpcStreamSender},
-    structs::{AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate},
+    structs::{
+        AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate, MoveKind,
+        SceneDrivenAnimationRequest,
+    },
 };
 use ethers_core::types::Address;
 use serde::{Deserialize, Serialize};
@@ -308,7 +311,21 @@ pub struct PlayerPositionEvent {
     pub rotation: DclQuat,
     pub velocity: Option<Vec3>,
     pub grounded: Option<bool>,
-    pub jumping: Option<bool>,
+    /// MoveKind inferred from the rfc4::Movement packet:
+    ///   - `jump_count >= 2` → `DoubleJump`
+    ///   - `glide_state` is `OPENING_PROP` or `GLIDING` → `Glide`
+    ///   - `is_jumping` or `is_long_jump` → `Jump`
+    ///
+    /// `None` means the packet has no movement state indicator — the velocity
+    /// fallback picks. Used to drive `jump_time` (Jump) and the matching emote
+    /// (DoubleJump / Glide) on foreign avatars.
+    pub remote_move_kind: Option<MoveKind>,
+    /// Resolved scene-driven animation state carried alongside this position packet.
+    /// `None` means the sender is not running a scene-driven animation. `Some` is
+    /// the full state (after URN latching for keepalive resolution). Applied with
+    /// interpolation delay in `foreign_dynamics` so the animation lines up with
+    /// the visibly-interpolated position.
+    pub scene_anim: Option<SceneDrivenAnimationRequest>,
 }
 
 pub enum ProfileEventType {
@@ -345,6 +362,7 @@ pub fn process_transport_updates(
     mut subscribers: EventReader<RpcCall>,
     mut profile_meta_cache: ResMut<ProfileMetaCache>,
     mut duplicate_chat_filter: Local<HashMap<Entity, f64>>,
+    mut last_remote_anim_urn: Local<HashMap<Entity, (String, String)>>,
 ) {
     // gather any event receivers
     for ev in subscribers.read() {
@@ -506,7 +524,8 @@ pub fn process_transport_updates(
                             ]),
                             velocity: None,
                             grounded: None,
-                            jumping: None,
+                            remote_move_kind: None,
+                            scene_anim: None,
                         });
                     }
                     PlayerMessage::PlayerData(Message::ProfileVersion(version)) => {
@@ -568,6 +587,30 @@ pub fn process_transport_updates(
                             scene_id,
                             &dcl_transform,
                         );
+                        // Glide is checked before DoubleJump because Unity keeps `jump_count`
+                        // at its last value (usually 2) through the whole glide — so the
+                        // DoubleJump-first ordering would mask an active glide.
+                        let remote_move_kind = match (
+                            m.glide_state(),
+                            m.jump_count,
+                            m.is_jumping || m.is_long_jump,
+                        ) {
+                            (
+                                rfc4::movement::GlideState::OpeningProp
+                                | rfc4::movement::GlideState::Gliding,
+                                _,
+                                _,
+                            ) => Some(MoveKind::Glide),
+                            (_, c, _) if c >= 2 => Some(MoveKind::DoubleJump),
+                            (_, _, true) => Some(MoveKind::Jump),
+                            _ => None,
+                        };
+                        let scene_anim = resolve_remote_anim(
+                            entity,
+                            update.address,
+                            &mut last_remote_anim_urn,
+                            m.scene_driven_animation,
+                        );
                         position_events.write(PlayerPositionEvent {
                             index: None,
                             time: time.elapsed_secs(),
@@ -577,12 +620,18 @@ pub fn process_transport_updates(
                             rotation: dcl_transform.rotation,
                             velocity: Some(vel),
                             grounded: Some(m.is_grounded),
-                            // Some(true) if either is Some(true), else Some(false) if either is Some(false), else None
-                            jumping: Some(m.is_jumping || m.is_long_jump),
+                            remote_move_kind,
+                            scene_anim,
                         });
                     }
                     PlayerMessage::PlayerData(Message::MovementCompressed(m)) => {
                         debug!("movement compressed data: {m:?}");
+                        let scene_anim = resolve_remote_anim(
+                            entity,
+                            update.address,
+                            &mut last_remote_anim_urn,
+                            m.scene_driven_animation.clone(),
+                        );
                         let movement = MovementCompressed::from_proto(m);
                         let pos = movement.position(state.realm_bounds.0, state.realm_bounds.1);
                         let vel = movement.velocity();
@@ -611,12 +660,16 @@ pub fn process_transport_updates(
                             rotation: dcl_transform.rotation,
                             velocity: Some(vel),
                             grounded: movement.temporal.grounded_or_err().ok(),
-                            // Some(true) if either is Some(true), else Some(false) if either is Some(false), else None
-                            jumping: movement
+                            remote_move_kind: match movement
                                 .temporal
                                 .jump_or_err()
                                 .ok()
-                                .max(movement.temporal.long_jump_or_err().ok()),
+                                .max(movement.temporal.long_jump_or_err().ok())
+                            {
+                                Some(true) => Some(MoveKind::Jump),
+                                _ => None,
+                            },
+                            scene_anim,
                         });
                     }
                     PlayerMessage::PlayerData(Message::PlayerEmote(emote)) => {
@@ -658,6 +711,80 @@ pub fn process_transport_updates(
             }
         }
     }
+}
+
+// Resolves the `SceneDrivenAnimation` nested message from a Movement /
+// MovementCompressed packet into the full state. An empty `scene_hash` clears the
+// state; absent hash fields (None) reuse the last cached pair for this entity so we
+// keep animating between keepalives. Returns `None` when the sender has no active
+// scene-driven animation, or when the nested message is absent entirely (the
+// common case for senders that don't speak our extension). The resolved state rides
+// on `PlayerPositionEvent` so `foreign_dynamics` can apply it with the same
+// interpolation delay as the visible position.
+fn resolve_remote_anim(
+    entity: Entity,
+    sender: Address,
+    last_hashes: &mut HashMap<Entity, (String, String)>,
+    anim: Option<dcl_component::proto_components::kernel::comms::rfc4::SceneDrivenAnimation>,
+) -> Option<SceneDrivenAnimationRequest> {
+    // Sender didn't attach the nested carrier; nothing to do (and nothing to clear,
+    // since we only cache hashes the sender itself told us about).
+    let anim = anim?;
+
+    // Guard against mirror-class bugs where a buggy remote re-emits someone else's
+    // nested message byte-for-byte (observed against a Unity client that pooled
+    // protobuf instances without discarding unknown fields). `origin_address` must be
+    // present and match the packet sender; anything else is either a mirror or a
+    // sender that predates this field and is therefore also potentially a mirror
+    // victim. Be strict and drop it.
+    let sender_str = format!("{sender:#x}");
+    match anim.origin_address.as_deref() {
+        Some(origin) if origin.eq_ignore_ascii_case(&sender_str) => {}
+        _ => {
+            debug!(
+                "dropping scene_driven_animation without matching origin_address: origin={:?} sender={}",
+                anim.origin_address, sender_str
+            );
+            last_hashes.remove(&entity);
+            return None;
+        }
+    }
+
+    // Wire convention: on transition the sender ships both hashes (or an empty
+    // scene_hash to clear); between transitions both are omitted and we re-apply the
+    // cached pair so ride-along fields (speed, loop, seek) keep updating.
+    let (scene_hash, content_hash) = match anim.scene_hash {
+        Some(s) if s.is_empty() => {
+            last_hashes.remove(&entity);
+            return None;
+        }
+        Some(s) => {
+            let c = anim.content_hash?;
+            last_hashes.insert(entity, (s.clone(), c.clone()));
+            (s, c)
+        }
+        None => last_hashes.get(&entity)?.clone(),
+    };
+
+    let speed = anim.speed?;
+    let r#loop = anim.r#loop.unwrap_or(false);
+    let transition_seconds = anim.transition_seconds.unwrap_or(0.2);
+    let urn = format!("urn:decentraland:off-chain:scene-emote:{scene_hash}-{content_hash}-false");
+
+    Some(SceneDrivenAnimationRequest {
+        src: String::new(),
+        urn,
+        scene_hash,
+        content_hash,
+        r#loop,
+        speed,
+        // `idle` is only consulted for primary-player overridability; for remote
+        // players there's no triggerSceneEmote interaction so we don't need it.
+        idle: false,
+        transition_seconds,
+        seek: anim.playback_time,
+        sounds: anim.sound_content_hashes,
+    })
 }
 
 fn process_messagebus(
@@ -715,7 +842,7 @@ fn despawn_players(
     time: Res<Time>,
 ) {
     for (entity, player) in players.iter() {
-        if player.last_update + 5.0 < time.elapsed_secs() {
+        if player.last_update + 10.0 < time.elapsed_secs() {
             if let Ok(mut commands) = commands.get_entity(entity) {
                 info!("removing stale player: {entity:?} : {player:?}");
                 commands.despawn();

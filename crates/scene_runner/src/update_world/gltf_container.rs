@@ -506,6 +506,9 @@ fn update_ready_gltfs(
                             },
                             LightEntity {
                                 scene: dcl_scene_entity.root,
+                                enabled: true,
+                                shadows_enabled: true,
+                                range: point.range,
                             },
                         ));
                     }
@@ -517,6 +520,9 @@ fn update_ready_gltfs(
                             },
                             LightEntity {
                                 scene: dcl_scene_entity.root,
+                                enabled: true,
+                                shadows_enabled: true,
+                                range: spot.range,
                             },
                         ));
                     }
@@ -1174,7 +1180,7 @@ pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> SharedShape {
         indices_parry,
         TriMeshFlags::DELETE_DEGENERATE_TRIANGLES
             | TriMeshFlags::DELETE_DUPLICATE_TRIANGLES
-            | TriMeshFlags::DELETE_BAD_TOPOLOGY_TRIANGLES,
+            | TriMeshFlags::MERGE_DUPLICATE_VERTICES,
     )
     .unwrap()
 }

@@ -19,4 +19,4 @@ async-trait = { workspace = true }
 
 [build-dependencies]
 prost-build = "0.11.8"
-dcl-rpc = { workspace = true, optional = true }
+dcl-rpc = { workspace = true, optional = true, features = ["codegen"] }

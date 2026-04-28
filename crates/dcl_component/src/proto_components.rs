@@ -49,6 +49,18 @@ pub mod social {
     ));
 }
 
+#[cfg(feature = "social")]
+pub mod social_service {
+    include!(concat!(env!("OUT_DIR"), "/decentraland.social_service.rs"));
+
+    pub mod v2 {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/decentraland.social_service.v2.rs"
+        ));
+    }
+}
+
 trait DclProtoComponent: prost::Message + Default {}
 
 impl<T: DclProtoComponent + Sync + Send + 'static> FromDclReader for T {
@@ -129,6 +141,8 @@ impl DclProtoComponent for sdk::components::PbAvatarLocomotionSettings {}
 impl DclProtoComponent for sdk::components::PbAvatarMovementInfo {}
 impl DclProtoComponent for sdk::components::PbAssetLoad {}
 impl DclProtoComponent for sdk::components::PbAssetLoadLoadingState {}
+impl DclProtoComponent for sdk::components::PbPhysicsCombinedForce {}
+impl DclProtoComponent for sdk::components::PbPhysicsCombinedImpulse {}
 
 // PositionFree markers for types used with GlobalCrdtState::update_crdt
 // (these contain no embedded position data requiring localization)

@@ -609,7 +609,7 @@ pub async fn get_remote_profile(
         .send()
         .await?;
 
-    let mut content = response.json::<Vec<LambdaProfiles>>().await.unwrap();
+    let mut content = response.json::<Vec<LambdaProfiles>>().await?;
     if content.is_empty() {
         anyhow::bail!("not found");
     }
