@@ -43,7 +43,7 @@ use bevy::asset::io::wasm::HttpWasmAssetReader;
 use bevy_console::{ConsoleCommand, PrintConsoleLine};
 use common::{
     sets::RealmLifecycle,
-    structs::{AppConfig, CommsConfig, CurrentRealm, ServerConfiguration},
+    structs::{AppConfig, CommsConfig, CurrentRealm, PreviewMode, ServerConfiguration},
     util::TaskCompat,
 };
 use ipfs_path::IpfsAsset;
@@ -574,6 +574,7 @@ pub fn change_realm(
     >,
     mut current_realm: ResMut<CurrentRealm>,
     mut print: EventWriter<PrintConsoleLine>,
+    preview_mode: Res<PreviewMode>,
 ) {
     match *realm_change {
         None => *realm_change = Some(ipfs.realm_config_receiver.clone()),
@@ -606,16 +607,23 @@ pub fn change_realm(
     }
 
     if !change_realm_requests.is_empty() {
-        let ipfs = ipfs.clone();
-        let request = change_realm_requests.read().last().unwrap();
+        if preview_mode.is_preview {
+            print.write(PrintConsoleLine {
+                line: "Changing realm is disabled in preview mode.".to_owned(),
+            });
+            change_realm_requests.clear();
+        } else {
+            let ipfs = ipfs.clone();
+            let request = change_realm_requests.read().last().unwrap();
 
-        let new_realm = map_realm_name(&request.new_realm);
-        let content_server_override = request.content_server_override.to_owned();
-        IoTaskPool::get()
-            .spawn_compat(async move {
-                ipfs.set_realm(new_realm, content_server_override).await;
-            })
-            .detach();
+            let new_realm = map_realm_name(&request.new_realm);
+            let content_server_override = request.content_server_override.to_owned();
+            IoTaskPool::get()
+                .spawn_compat(async move {
+                    ipfs.set_realm(new_realm, content_server_override).await;
+                })
+                .detach();
+        }
     }
 }
 
