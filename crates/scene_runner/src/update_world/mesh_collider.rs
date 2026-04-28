@@ -22,11 +22,13 @@ use crate::{
     gltf_resolver::GltfMeshResolver,
     update_world::{
         gltf_container::mesh_to_parry_shape, mesh_renderer::truncated_cone::TruncatedCone,
-        transform_and_parent::PostUpdateSets,
     },
     ContainerEntity, PrimaryUser, RendererSceneContext, SceneSets,
 };
-use common::dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS};
+use common::{
+    dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS},
+    sets::PostUpdateSets,
+};
 use console::DoAddConsoleCommand;
 use dcl::interface::ComponentPosition;
 use dcl_component::{

@@ -1,8 +1,7 @@
 use std::collections::VecDeque;
 
 use bevy::{math::FloatOrd, prelude::*, render::primitives::Aabb};
-use common::structs::AttachPoints;
-use scene_runner::update_world::transform_and_parent::PostUpdateSets;
+use common::{sets::PostUpdateSets, structs::AttachPoints};
 
 pub struct DynamicNametagPlugin;
 
@@ -12,8 +11,7 @@ impl Plugin for DynamicNametagPlugin {
             PostUpdate,
             dynamic_nametag_position
                 .chain()
-                .after(PostUpdateSets::PlayerUpdate)
-                .before(PostUpdateSets::AttachSync),
+                .in_set(PostUpdateSets::Nametag),
         );
 
         app.add_observer(add_nametag_height_history);

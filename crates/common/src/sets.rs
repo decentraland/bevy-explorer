@@ -31,3 +31,23 @@ pub enum SceneLoopSets {
 // set for systems that deal with changes to realms
 #[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
 pub struct RealmLifecycle;
+
+// PostUpdate ordering for systems that need to slot in around the avatar /
+// camera / collider transform pipeline. Variants are chained in the order
+// declared here by `TransformAndParentPlugin`.
+#[derive(SystemSet, Debug, PartialEq, Eq, Hash, Clone)]
+pub enum PostUpdateSets {
+    EarlyTransformPropagate,
+    ColliderUpdate,
+    PlayerUpdate,
+    CameraUpdate,
+    /// Foot-IK chain: pelvis-drop / leg rotations + a transform-propagate
+    /// for the avatar subtree. Producers run `.in_set(FootIk)`; consumers
+    /// that need post-IK bone globals (e.g. nametag) run `.after(FootIk)`.
+    FootIk,
+    /// Per-frame nametag positioning. Reads post-IK head/position globals,
+    /// so it sits after `FootIk` in the chain.
+    Nametag,
+    AttachSync,
+    Billboard,
+}

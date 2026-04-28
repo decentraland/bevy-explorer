@@ -7,17 +7,14 @@ use bevy::{app::Propagate, ecs::query::Has, prelude::*, render::view::RenderLaye
 use bevy_console::ConsoleCommand;
 use camera::update_cursor_lock;
 use common::{
-    sets::SceneSets,
+    sets::{PostUpdateSets, SceneSets},
     structs::{
         CursorLocks, EngineMovementControl, PlayerModifiers, PrimaryCamera, PrimaryUser,
         PRIMARY_AVATAR_LIGHT_LAYER_INDEX,
     },
 };
 use console::DoAddConsoleCommand;
-use scene_runner::{
-    update_scene::pointer_lock::update_pointer_lock,
-    update_world::transform_and_parent::PostUpdateSets, OutOfWorld,
-};
+use scene_runner::{update_scene::pointer_lock::update_pointer_lock, OutOfWorld};
 
 use crate::avatar_movement::AvatarMovementPlugin;
 
