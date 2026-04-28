@@ -17,6 +17,13 @@ use crate::{animate::ActiveEmote, AvatarShape};
 
 pub struct FootIkPlugin;
 
+/// Public marker for the foot-IK pipeline (compute + transform-propagate).
+/// Other PostUpdate systems that read post-IK bone globals (e.g. the nametag
+/// height, which sits under the head bone and is sensitive to pelvis drop)
+/// should be ordered `.after(FootIkSet)`.
+#[derive(SystemSet, Hash, PartialEq, Eq, Clone, Debug)]
+pub struct FootIkSet;
+
 impl Plugin for FootIkPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<FootIkConfig>();
@@ -33,6 +40,7 @@ impl Plugin for FootIkPlugin {
                     .chain(),
             )
                 .chain()
+                .in_set(FootIkSet)
                 .after(PostUpdateSets::PlayerUpdate)
                 .before(PostUpdateSets::AttachSync),
         );
@@ -67,12 +75,12 @@ pub struct FootIkConfig {
     /// Time in seconds for a leg to engage/disengage when its reachability
     /// flips (e.g. crossing a cliff edge while turning).
     pub engage_transition_seconds: f32,
-    /// Maximum vertical change per second of the foot's final world Y (the
-    /// post-weight, post-IK output). Smooths step-discontinuities in the
-    /// raycast result (cliff edges traversed by foot xz while turning) and
-    /// is invariant under continuous platform motion (avatar moves with the
-    /// platform, so the *relative* offset doesn't change). Snaps on the
-    /// first engaged frame after a disengaged one.
+    /// Maximum vertical change per second of the foot's final Y *relative
+    /// to the avatar root*. Smooths step-discontinuities in the raycast
+    /// result (cliff edges traversed by foot xz while turning) without
+    /// fighting continuous avatar/platform motion (which moves the avatar
+    /// and the foot together, leaving the relative offset unchanged).
+    /// Snaps on the first engaged frame after a disengaged one.
     pub target_velocity_limit: f32,
 }
 
@@ -271,10 +279,11 @@ struct LegEngState {
     /// Per-leg engagement, ramped over `engage_transition_seconds` toward
     /// 1.0 while `reach_ok` and 0.0 otherwise.
     engaged: f32,
-    /// Last frame's final foot Y (animated_y + (target_y - animated_y) * w)
-    /// after the velocity limit. Snapped to the desired value on the first
-    /// engaged frame, then rate-limited per-frame thereafter.
-    last_final_y: f32,
+    /// Last frame's final foot Y *relative to the avatar root* after the
+    /// velocity limit. Tracking the avatar-relative offset means continuous
+    /// avatar/platform motion is excluded from the rate cap. Snapped to
+    /// the desired value on the first engaged frame.
+    last_final_rel: f32,
 }
 
 /// Per-avatar runtime state for the IK system. Inserted alongside `FootIkRig`
@@ -287,30 +296,73 @@ struct FootIkRuntime {
     legs: [LegEngState; 2],
 }
 
+/// Fresh (post-PlayerUpdate) globals for one avatar's relevant rig nodes.
+/// The cached `GlobalTransform` components are stale at this point in
+/// PostUpdate — the prior propagation ran before PlayerUpdate moved the
+/// primary avatar — so we recompute via `TransformHelper`.
+struct AvatarGlobals {
+    avatar: GlobalTransform,
+    l_hip: Option<GlobalTransform>,
+    l_knee: Option<GlobalTransform>,
+    l_foot: Option<GlobalTransform>,
+    r_hip: Option<GlobalTransform>,
+    r_knee: Option<GlobalTransform>,
+    r_foot: Option<GlobalTransform>,
+    /// Parent of the hips bone — needed to convert the world-Y pelvis-drop
+    /// into hips-local translation via the parent's affine inverse.
+    hips_parent: Option<GlobalTransform>,
+    /// Parent of each upper-leg bone — needed to convert IK-derived global
+    /// rotations into upper-leg-local rotations.
+    l_upper_parent: Option<GlobalTransform>,
+    r_upper_parent: Option<GlobalTransform>,
+}
+
+fn read_avatar_globals(
+    avatar_ent: Entity,
+    rig: &FootIkRig,
+    helper: &TransformHelper,
+    parents: &Query<&ChildOf>,
+) -> Option<AvatarGlobals> {
+    let avatar = helper.compute_global_transform(avatar_ent).ok()?;
+    let parent_global = |child: Entity| {
+        parents
+            .get(child)
+            .ok()
+            .and_then(|c| helper.compute_global_transform(c.parent()).ok())
+    };
+    Some(AvatarGlobals {
+        avatar,
+        l_hip: helper.compute_global_transform(rig.left.upper).ok(),
+        l_knee: helper.compute_global_transform(rig.left.lower).ok(),
+        l_foot: helper.compute_global_transform(rig.left.foot).ok(),
+        r_hip: helper.compute_global_transform(rig.right.upper).ok(),
+        r_knee: helper.compute_global_transform(rig.right.lower).ok(),
+        r_foot: helper.compute_global_transform(rig.right.foot).ok(),
+        hips_parent: parent_global(rig.hips),
+        l_upper_parent: parent_global(rig.left.upper),
+        r_upper_parent: parent_global(rig.right.upper),
+    })
+}
+
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn apply_foot_ik(
     config: Res<FootIkConfig>,
     time: Res<Time>,
     mut avatars: Query<
-        (
-            Entity,
-            &FootIkRig,
-            Option<&ActiveEmote>,
-            &GlobalTransform,
-            &mut FootIkRuntime,
-        ),
+        (Entity, &FootIkRig, Option<&ActiveEmote>, &mut FootIkRuntime),
         With<AvatarShape>,
     >,
     containing: ContainingScene,
     mut scenes: Query<&mut SceneColliderData>,
     parents: Query<&ChildOf>,
-    globals: Query<&GlobalTransform>,
-    mut transforms: Query<&mut Transform>,
+    // ParamSet because TransformHelper's `Query<&Transform>` and our writer
+    // `Query<&mut Transform>` conflict on the Transform component.
+    mut tx: ParamSet<(Query<&mut Transform>, TransformHelper)>,
     mut log_tick: Local<u32>,
 ) {
     if !config.enabled {
         // Reset all per-avatar runtime state so re-enabling doesn't pop in.
-        for (_, _, _, _, mut runtime) in &mut avatars {
+        for (_, _, _, mut runtime) in &mut avatars {
             *runtime = FootIkRuntime::default();
         }
         return;
@@ -319,7 +371,13 @@ fn apply_foot_ik(
     let log_now = *log_tick % 60 == 1;
     let dt = time.delta_secs();
 
-    for (avatar_ent, rig, active_emote, avatar_global, mut runtime) in &mut avatars {
+    for (avatar_ent, rig, active_emote, mut runtime) in &mut avatars {
+        // Phase 1: fresh globals (see `read_avatar_globals`).
+        let Some(g) = read_avatar_globals(avatar_ent, rig, &tx.p1(), &parents) else {
+            continue;
+        };
+        let avatar_global = g.avatar;
+
         // Animation-driven IK strength: ramp toward 1.0 while the active emote
         // is an idle pose, otherwise toward 0.0, at a rate set by the emote's
         // declared transition_seconds. No active emote → ramp out.
@@ -348,26 +406,32 @@ fn apply_foot_ik(
 
         // Pass 1: per-leg raycast.
         let raw = [
-            plan_leg(
-                "L",
-                rig.left,
-                &config,
-                avatar_y,
-                &scene_ents,
-                &mut scenes,
-                &globals,
-                log_now,
-            ),
-            plan_leg(
-                "R",
-                rig.right,
-                &config,
-                avatar_y,
-                &scene_ents,
-                &mut scenes,
-                &globals,
-                log_now,
-            ),
+            g.l_hip.zip(g.l_knee).zip(g.l_foot).and_then(|((h, k), f)| {
+                plan_leg(
+                    "L",
+                    &config,
+                    avatar_y,
+                    &scene_ents,
+                    &mut scenes,
+                    h,
+                    k,
+                    f,
+                    log_now,
+                )
+            }),
+            g.r_hip.zip(g.r_knee).zip(g.r_foot).and_then(|((h, k), f)| {
+                plan_leg(
+                    "R",
+                    &config,
+                    avatar_y,
+                    &scene_ents,
+                    &mut scenes,
+                    h,
+                    k,
+                    f,
+                    log_now,
+                )
+            }),
         ];
 
         let eng_step = dt / config.engage_transition_seconds.max(1e-3);
@@ -401,20 +465,24 @@ fn apply_foot_ik(
                 continue;
             };
 
-            // Velocity-limit the foot's final world Y so step-discontinuities
-            // in the raycast (cliff edges traversed by foot xz while turning)
-            // don't snap. On (re-)engagement after a disengaged frame, snap.
+            // Velocity-limit the foot's final Y *relative to the avatar
+            // root* so step-discontinuities in the raycast (cliff edges
+            // traversed by foot xz while turning) don't snap, while
+            // continuous platform/avatar motion passes through unclamped.
+            // On (re-)engagement after a disengaged frame, snap.
             let animated_y = p.c.y;
             let raw_target_y = p.target_c.y;
             let desired_final_y = animated_y + (raw_target_y - animated_y) * w;
-            let final_y = if was_engaged {
+            let desired_rel = desired_final_y - avatar_y;
+            let final_rel = if was_engaged {
                 let max_step = config.target_velocity_limit * dt;
-                let delta = (desired_final_y - state.last_final_y).clamp(-max_step, max_step);
-                state.last_final_y + delta
+                let delta = (desired_rel - state.last_final_rel).clamp(-max_step, max_step);
+                state.last_final_rel + delta
             } else {
-                desired_final_y
+                desired_rel
             };
-            state.last_final_y = final_y;
+            state.last_final_rel = final_rel;
+            let final_y = avatar_y + final_rel;
 
             // Back-derive the IK target so the slerped foot lands at final_y.
             // No hip-relative clamp here — pelvis drop expands reach, and the
@@ -478,42 +546,53 @@ fn apply_foot_ik(
             debug!("foot_ik[{:?}]: pelvis_drop={:.3}", avatar_ent, pelvis_drop);
         }
 
-        // Apply pelvis drop. Convert the world-Y delta into hips' parent-local
-        // frame via the parent's full affine inverse — this accounts for the
-        // ~0.01x cumulative ancestor scale on the imported avatar rig.
-        if pelvis_drop > 1e-4 {
-            if let Ok(hips_parent) = parents.get(rig.hips) {
-                if let Ok(parent_global) = globals.get(hips_parent.parent()) {
-                    if let Ok(mut t) = transforms.get_mut(rig.hips) {
-                        let local_delta = parent_global
-                            .affine()
-                            .inverse()
-                            .transform_vector3(Vec3::new(0.0, pelvis_drop, 0.0));
-                        t.translation -= local_delta;
-                    }
-                }
-            }
-        }
+        // Compute the pelvis-drop translation delta in hips' parent-local
+        // frame via the parent's full affine inverse — this accounts for
+        // the ~0.01x cumulative ancestor scale on the imported avatar rig.
+        let pelvis_local_delta = if pelvis_drop > 1e-4 {
+            g.hips_parent.map(|hp| {
+                hp.affine()
+                    .inverse()
+                    .transform_vector3(Vec3::new(0.0, pelvis_drop, 0.0))
+            })
+        } else {
+            None
+        };
 
         let drop_vec = Vec3::new(0.0, pelvis_drop, 0.0);
 
-        // Pass 3: per-leg IK using the rate-limited effective plans.
+        // Compute per-leg IK rotations from the rate-limited effective plans.
         let [eff_l, eff_r] = effective;
-        for (leg, eff, w) in [(rig.left, eff_l, leg_w[0]), (rig.right, eff_r, leg_w[1])] {
-            if let Some(plan) = eff {
-                if w > 1e-3 {
-                    apply_leg_ik(
-                        leg,
-                        plan,
-                        w,
-                        drop_vec,
-                        pole_dir,
-                        &config,
-                        &parents,
-                        &globals,
-                        &mut transforms,
-                    );
-                }
+        let leg_results = [
+            eff_l.zip(g.l_upper_parent).and_then(|(plan, parent_g)| {
+                (leg_w[0] > 1e-3)
+                    .then(|| compute_leg_ik(plan, leg_w[0], drop_vec, pole_dir, &config, parent_g))
+                    .flatten()
+            }),
+            eff_r.zip(g.r_upper_parent).and_then(|(plan, parent_g)| {
+                (leg_w[1] > 1e-3)
+                    .then(|| compute_leg_ik(plan, leg_w[1], drop_vec, pole_dir, &config, parent_g))
+                    .flatten()
+            }),
+        ];
+
+        // Phase 3: write Transforms.
+        let mut transforms = tx.p0();
+        if let Some(local_delta) = pelvis_local_delta {
+            if let Ok(mut t) = transforms.get_mut(rig.hips) {
+                t.translation -= local_delta;
+            }
+        }
+        for (leg, result) in [(rig.left, leg_results[0]), (rig.right, leg_results[1])] {
+            let Some(ik) = result else { continue };
+            if let Ok(mut t) = transforms.get_mut(leg.upper) {
+                t.rotation = ik.hip_local_rot;
+            }
+            if let Ok(mut t) = transforms.get_mut(leg.lower) {
+                t.rotation = ik.knee_local_rot;
+            }
+            if let Ok(mut t) = transforms.get_mut(leg.foot) {
+                t.rotation = ik.foot_local_rot;
             }
         }
     }
@@ -522,17 +601,15 @@ fn apply_foot_ik(
 #[allow(clippy::too_many_arguments)]
 fn plan_leg(
     label: &str,
-    leg: LegBones,
     config: &FootIkConfig,
     player_y: f32,
     scene_ents: &[Entity],
     scenes: &mut Query<&mut SceneColliderData>,
-    globals: &Query<&GlobalTransform>,
+    hip_g: GlobalTransform,
+    knee_g: GlobalTransform,
+    foot_g: GlobalTransform,
     log_now: bool,
 ) -> Option<LegPlan> {
-    let hip_g = globals.get(leg.upper).ok()?;
-    let knee_g = globals.get(leg.lower).ok()?;
-    let foot_g = globals.get(leg.foot).ok()?;
     let a = hip_g.translation();
     let b = knee_g.translation();
     let c = foot_g.translation();
@@ -622,18 +699,21 @@ fn plan_leg(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
-fn apply_leg_ik(
-    leg: LegBones,
+#[derive(Clone, Copy)]
+struct LegIkResult {
+    hip_local_rot: Quat,
+    knee_local_rot: Quat,
+    foot_local_rot: Quat,
+}
+
+fn compute_leg_ik(
     plan: LegPlan,
     w: f32,
     drop_vec: Vec3,
     pole_dir: Vec3,
     config: &FootIkConfig,
-    parents: &Query<&ChildOf>,
-    globals: &Query<&GlobalTransform>,
-    transforms: &mut Query<&mut Transform>,
-) {
+    upper_parent_global: GlobalTransform,
+) -> Option<LegIkResult> {
     // After pelvis drop, all leg bones translate by -drop_vec in world space.
     let a = plan.a - drop_vec;
     let b = plan.b - drop_vec;
@@ -643,7 +723,7 @@ fn apply_leg_ik(
     let at = target_c - a;
     let l_at_raw = at.length();
     if l_at_raw < 1e-4 {
-        return;
+        return None;
     }
     let l_at = l_at_raw.clamp(1e-4, plan.l_ab + plan.l_bc - 1e-4);
     let dir_at = at / l_at_raw;
@@ -682,16 +762,10 @@ fn apply_leg_ik(
     let new_hip_global_rot = r_hip_b * plan.cur_hip_global_rot;
     let new_knee_global_rot = r_knee_b * r_hip_b * plan.cur_knee_global_rot;
 
-    let Ok(parent_of_hip) = parents.get(leg.upper) else {
-        return;
-    };
-    let Ok(parent_global) = globals.get(parent_of_hip.parent()) else {
-        return;
-    };
-    let parent_global_rot = parent_global.compute_transform().rotation;
+    let parent_global_rot = upper_parent_global.compute_transform().rotation;
 
-    let new_hip_local_rot = parent_global_rot.inverse() * new_hip_global_rot;
-    let new_knee_local_rot = new_hip_global_rot.inverse() * new_knee_global_rot;
+    let hip_local_rot = parent_global_rot.inverse() * new_hip_global_rot;
+    let knee_local_rot = new_hip_global_rot.inverse() * new_knee_global_rot;
 
     // Foot orientation: tilt the animated foot pose toward the contact normal,
     // capped at max_foot_tilt_deg, then write the foot's local rotation
@@ -702,15 +776,11 @@ fn apply_leg_ik(
     let align_clamped = Quat::from_axis_angle(axis, angle.min(max_tilt));
     let align_blended = Quat::IDENTITY.slerp(align_clamped, w);
     let new_foot_global_rot = align_blended * plan.cur_foot_global_rot;
-    let new_foot_local_rot = new_knee_global_rot.inverse() * new_foot_global_rot;
+    let foot_local_rot = new_knee_global_rot.inverse() * new_foot_global_rot;
 
-    if let Ok(mut t) = transforms.get_mut(leg.upper) {
-        t.rotation = new_hip_local_rot;
-    }
-    if let Ok(mut t) = transforms.get_mut(leg.lower) {
-        t.rotation = new_knee_local_rot;
-    }
-    if let Ok(mut t) = transforms.get_mut(leg.foot) {
-        t.rotation = new_foot_local_rot;
-    }
+    Some(LegIkResult {
+        hip_local_rot,
+        knee_local_rot,
+        foot_local_rot,
+    })
 }

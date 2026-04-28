@@ -4,6 +4,8 @@ use bevy::{math::FloatOrd, prelude::*, render::primitives::Aabb};
 use common::structs::AttachPoints;
 use scene_runner::update_world::transform_and_parent::PostUpdateSets;
 
+use crate::foot_ik::FootIkSet;
+
 pub struct DynamicNametagPlugin;
 
 impl Plugin for DynamicNametagPlugin {
@@ -13,6 +15,7 @@ impl Plugin for DynamicNametagPlugin {
             dynamic_nametag_position
                 .chain()
                 .after(PostUpdateSets::PlayerUpdate)
+                .after(FootIkSet)
                 .before(PostUpdateSets::AttachSync),
         );
 
