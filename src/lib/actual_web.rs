@@ -254,7 +254,7 @@ fn main_inner(
     app.insert_resource(PreviewMode {
         server: is_preview.then_some(map_realm_name(&final_config.server)),
         is_preview,
-        preview_parcel: is_preview.then_some(location),
+        preview_parcel: None,
     });
     app.insert_resource(SceneParams::from_query_string(params, true));
 
