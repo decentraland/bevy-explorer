@@ -256,6 +256,24 @@ impl Default for ActiveEmote {
     }
 }
 
+impl ActiveEmote {
+    /// True when this represents an idle pose. For scene-driven anims the
+    /// movement scene's idle flag is mirrored on `overridable`; for engine
+    /// velocity-selected anims, the URN identifies it; triggered emotes
+    /// (dances etc.) are never considered idle.
+    pub fn is_idle(&self) -> bool {
+        match self.source {
+            ActiveEmoteSource::SceneMovementAnim => self.overridable,
+            ActiveEmoteSource::VelocitySelected => self.urn.as_str().contains("idle"),
+            ActiveEmoteSource::TriggeredEmote => false,
+        }
+    }
+
+    pub fn transition_seconds(&self) -> f32 {
+        self.transition_seconds
+    }
+}
+
 // TODO this function is a POS
 // lots of magic numbers that don't even deserve to be constants, needs reworking
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
