@@ -15,8 +15,14 @@ pub use client::{FriendshipEventBody, SocialClientHandler};
 use bevy::prelude::*;
 #[cfg(feature = "social")]
 use bevy::tasks::IoTaskPool;
+#[cfg(feature = "social")]
+use bevy_console::ConsoleCommand;
 use common::rpc::RpcStreamSender;
+#[cfg(feature = "social")]
+use common::structs::DebugInfo;
 use common::util::AsH160;
+#[cfg(feature = "social")]
+use console::DoAddConsoleCommand;
 use ethers_core::types::Address;
 #[cfg(feature = "social")]
 use system_bridge::BlockedUserData;
@@ -53,10 +59,117 @@ impl Plugin for SocialPlugin {
                 pipe_connectivity_events_to_scene,
             ),
         );
+        #[cfg(feature = "social")]
+        {
+            app.init_resource::<DebugSocialEnabled>();
+            app.init_resource::<RestartSocialRequested>();
+            app.add_console_command::<DebugSocialCommand, _>(toggle_debug_social);
+            app.add_console_command::<RestartSocialCommand, _>(restart_social);
+            app.add_systems(
+                PostUpdate,
+                debug_write_social.run_if(|e: Res<DebugSocialEnabled>| e.0),
+            );
+        }
     }
 }
 
 #[cfg(feature = "social")]
+#[derive(Resource, Default)]
+struct RestartSocialRequested(bool);
+
+#[cfg(feature = "social")]
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/restart_social")]
+struct RestartSocialCommand;
+
+#[cfg(feature = "social")]
+fn restart_social(
+    mut input: ConsoleCommand<RestartSocialCommand>,
+    mut restart: ResMut<RestartSocialRequested>,
+) {
+    if let Some(Ok(_)) = input.take() {
+        restart.0 = true;
+        input.reply_ok("social client restart requested");
+    }
+}
+
+#[cfg(feature = "social")]
+#[derive(Resource, Default)]
+struct DebugSocialEnabled(bool);
+
+#[cfg(feature = "social")]
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/debug_social")]
+struct DebugSocialCommand {
+    on: Option<bool>,
+}
+
+#[cfg(feature = "social")]
+fn toggle_debug_social(
+    mut input: ConsoleCommand<DebugSocialCommand>,
+    mut enabled: ResMut<DebugSocialEnabled>,
+    mut debug: ResMut<DebugInfo>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        enabled.0 = command.on.unwrap_or(!enabled.0);
+        if !enabled.0 {
+            debug.info.remove("Social client");
+            debug.info.remove("Social friends");
+            debug.info.remove("Social connectivity");
+        }
+        input.reply_ok(format!("social debug info: {}", enabled.0));
+    }
+}
+
+#[cfg(feature = "social")]
+fn debug_write_social(social: Res<SocialClient>, mut debug: ResMut<DebugInfo>) {
+    let Some(client) = social.0.as_ref() else {
+        debug
+            .info
+            .insert("Social client", "not connected".to_string());
+        debug.info.remove("Social friends");
+        debug.info.remove("Social connectivity");
+        return;
+    };
+    debug.info.insert(
+        "Social client",
+        format!(
+            "live={}, initialized={}",
+            client.live(),
+            client.is_initialized
+        ),
+    );
+    debug.info.insert(
+        "Social friends",
+        format!(
+            "friends: {}, sent: {}, received: {}",
+            client.friends.len(),
+            client.sent_requests.len(),
+            client.received_requests.len(),
+        ),
+    );
+    use dcl_component::proto_components::social_service::v2::ConnectivityStatus;
+    let online = client
+        .friend_status
+        .values()
+        .filter(|s| matches!(s, ConnectivityStatus::Online))
+        .count();
+    let away = client
+        .friend_status
+        .values()
+        .filter(|s| matches!(s, ConnectivityStatus::Away))
+        .count();
+    debug.info.insert(
+        "Social connectivity",
+        format!(
+            "online: {online}, away: {away}, tracked: {}",
+            client.friend_status.len()
+        ),
+    );
+}
+
+#[cfg(feature = "social")]
+#[allow(clippy::too_many_arguments)]
 fn init_social_client(
     mut commands: Commands,
     wallet: Res<Wallet>,
@@ -65,8 +178,18 @@ fn init_social_client(
     mut connectivity: Local<Option<UnboundedReceiver<ConnectivityEvent>>>,
     mut chats: Local<Option<UnboundedReceiver<DirectChatEvent>>>,
     social_runtime: Res<runtime::SocialRuntime>,
+    mut restart: ResMut<RestartSocialRequested>,
 ) {
-    if wallet.is_changed() && wallet.address().is_some() {
+    let restart_requested = std::mem::take(&mut restart.0);
+    if (wallet.is_changed() || restart_requested) && wallet.address().is_some() {
+        // Drop the old handler (and its event channels) before opening a new
+        // connection so the old async task observes its channels closed and tears
+        // down its WS, rather than overlapping with the new one.
+        social.0 = None;
+        *friends = None;
+        *connectivity = None;
+        *chats = None;
+
         let (f_sx, f_rx) = unbounded_channel();
         let (conn_sx, conn_rx) = unbounded_channel();
         let (c_sx, c_rx) = unbounded_channel();
