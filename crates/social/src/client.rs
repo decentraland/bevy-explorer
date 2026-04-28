@@ -4,6 +4,8 @@ use bevy::{
     platform::collections::HashMap,
 };
 use common::util::AsH160;
+#[cfg(target_arch = "wasm32")]
+use dcl_component::proto_components::social_service::v2::GetFriendshipStatusPayload;
 use dcl_component::proto_components::social_service::v2::{
     friendship_update, paginated_friendship_requests_response,
     upsert_friendship_payload::{
@@ -14,8 +16,6 @@ use dcl_component::proto_components::social_service::v2::{
     GetFriendshipRequestsPayload, GetMutualFriendsPayload, Pagination, SocialServiceClient,
     SocialServiceClientDefinition, UnblockUserPayload, UpsertFriendshipPayload, User,
 };
-#[cfg(target_arch = "wasm32")]
-use dcl_component::proto_components::social_service::v2::GetFriendshipStatusPayload;
 use dcl_rpc::{
     client::RpcClient,
     transports::web_sockets::{Message, WebSocket, WebSocketTransport},
