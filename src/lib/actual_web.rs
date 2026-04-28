@@ -36,7 +36,10 @@ use image_processing::ImageProcessingPlugin;
 use imposters::DclImposterPlugin;
 use restricted_actions::{process_startup_scenes, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
-use scene_runner::{initialize_scene::TestingData, vec3_to_parcel, OutOfWorld, SceneRunnerPlugin};
+use scene_runner::{
+    initialize_scene::{parcels_in_range, ScenePointers, TestingData},
+    vec3_to_parcel, OutOfWorld, SceneRunnerPlugin,
+};
 
 use av::AVPlayerPlugin;
 use avatar::AvatarPlugin;
