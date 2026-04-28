@@ -14,6 +14,8 @@ use dcl_component::proto_components::social_service::v2::{
     GetFriendshipRequestsPayload, GetMutualFriendsPayload, Pagination, SocialServiceClient,
     SocialServiceClientDefinition, UnblockUserPayload, UpsertFriendshipPayload, User,
 };
+#[cfg(target_arch = "wasm32")]
+use dcl_component::proto_components::social_service::v2::GetFriendshipStatusPayload;
 use dcl_rpc::{
     client::RpcClient,
     transports::web_sockets::{Message, WebSocket, WebSocketTransport},
@@ -197,7 +199,12 @@ impl SocialClientHandler {
                 user: Self::make_user(address),
             })),
         })?;
-        self.friend_status.remove(&address);
+        // The server doesn't echo own actions back over the connectivity stream, so
+        // emit a synthetic offline transition so subscribers (UI online list) drop
+        // them. No-op if we never had a status for them.
+        if self.friend_status.remove(&address).is_some() {
+            (self.connectivity_callback)(address, ConnectivityStatus::Offline);
+        }
         Ok(())
     }
 
@@ -376,7 +383,12 @@ impl SocialClientHandler {
                 }
                 FriendData::OwnBlock { address } => {
                     self.friends.remove(&address);
-                    self.friend_status.remove(&address);
+                    // Synthesize an offline transition for subscribers (UI online
+                    // list) since the server doesn't echo own actions over the
+                    // connectivity stream.
+                    if self.friend_status.remove(&address).is_some() {
+                        (self.connectivity_callback)(address, ConnectivityStatus::Offline);
+                    }
                     self.sent_requests.remove(&address);
                     self.received_requests.remove(&address);
                 }
@@ -463,7 +475,9 @@ async fn run_one_connection(
     ws.send(Message::Text(auth_json)).await.map_err(dbgerr)?;
 
     // Keep an Arc handle to the websocket so the keepalive task can send pings while the
-    // RPC transport owns its own clone for normal traffic.
+    // RPC transport owns its own clone for normal traffic. Only used on native — wasm
+    // can't send WS Ping frames and uses an RPC-level heartbeat instead.
+    #[cfg(not(target_arch = "wasm32"))]
     let ws_for_ping = ws.clone();
 
     // Create RPC client
@@ -479,6 +493,9 @@ async fn run_one_connection(
         .load_module::<SocialServiceClient<_>>("SocialService")
         .await
         .map_err(dbgerr)?;
+    let service_module = std::sync::Arc::new(service_module);
+    #[cfg(target_arch = "wasm32")]
+    let service_module_keepalive = service_module.clone();
 
     // Gather initial data: friends list (paginated)
     info!("[social] Fetching friends list...");
@@ -844,16 +861,40 @@ async fn run_one_connection(
     }
     .fuse();
 
-    // Keepalive: send a websocket ping every 30s. Both proxies / load balancers and
-    // the server itself may close idle connections; this also surfaces broken sockets
-    // promptly (the send will fail rather than appearing healthy).
+    // Keepalive every 30s. Both proxies / load balancers and the server itself may
+    // close idle connections; this also surfaces broken sockets promptly (the send
+    // will fail rather than appearing healthy).
+    //
+    // On native we send a WS-level Ping. On wasm browsers don't expose ping frames,
+    // so we issue a cheap unary RPC against our own address (semantically a no-op).
+    // The wallet may be disconnected mid-session, so re-fetch the address each tick
+    // and just skip if it's not currently available.
+    #[cfg(target_arch = "wasm32")]
+    let wallet_keepalive = wallet.clone();
     let f_keepalive = async move {
         loop {
             async_std::task::sleep(Duration::from_secs(30)).await;
-            ws_for_ping
-                .send(Message::Ping)
-                .await
-                .map_err(|e| anyhow!("[social] keepalive ping failed: {e:?}"))?;
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                ws_for_ping
+                    .send(Message::Ping)
+                    .await
+                    .map_err(|e| anyhow!("[social] keepalive ping failed: {e:?}"))?;
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                let Some(addr) = wallet_keepalive.address() else {
+                    continue;
+                };
+                service_module_keepalive
+                    .get_friendship_status(GetFriendshipStatusPayload {
+                        user: Some(User {
+                            address: format!("{addr:#x}"),
+                        }),
+                    })
+                    .await
+                    .map_err(|e| anyhow!("[social] keepalive rpc failed: {e:?}"))?;
+            }
         }
         #[allow(unreachable_code)]
         Result::<(), anyhow::Error>::Ok(())
