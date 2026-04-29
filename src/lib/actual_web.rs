@@ -36,7 +36,10 @@ use image_processing::ImageProcessingPlugin;
 use imposters::DclImposterPlugin;
 use restricted_actions::{process_startup_scenes, RestrictedActionsPlugin};
 use scene_material::SceneBoundPlugin;
-use scene_runner::{initialize_scene::TestingData, vec3_to_parcel, OutOfWorld, SceneRunnerPlugin};
+use scene_runner::{
+    initialize_scene::{parcels_in_range, ScenePointers, TestingData},
+    vec3_to_parcel, OutOfWorld, SceneRunnerPlugin,
+};
 
 use av::AVPlayerPlugin;
 use avatar::AvatarPlugin;
@@ -88,11 +91,13 @@ fn main_inner(
     });
     let base_graphics = base_config.graphics.clone();
 
+    let location = IVec2Arg::from_str(location)
+        .map(|l| l.0)
+        .unwrap_or(base_config.location);
+
     let final_config = AppConfig {
         server: server.to_owned(),
-        location: IVec2Arg::from_str(location)
-            .map(|l| l.0)
-            .unwrap_or(base_config.location),
+        location,
         graphics: common::structs::GraphicsSettings {
             gpu_bytes_per_frame: rabpf,
             ..base_graphics
@@ -252,6 +257,7 @@ fn main_inner(
     app.insert_resource(PreviewMode {
         server: is_preview.then_some(map_realm_name(&final_config.server)),
         is_preview,
+        preview_parcel: None,
     });
     app.insert_resource(SceneParams::from_query_string(params, true));
 
@@ -332,6 +338,8 @@ fn main_inner(
     app.add_console_command::<SceneDistanceCommand, _>(scene_distance);
     app.add_console_command::<SceneThreadsCommand, _>(scene_threads);
     app.add_console_command::<FpsCommand, _>(set_fps);
+    app.add_console_command::<LockPreviewCommand, _>(lock_preview);
+    app.add_console_command::<UnlockPreviewCommand, _>(unlock_preview);
 
     app.add_systems(
         Update,
@@ -455,6 +463,52 @@ fn scene_distance(
             "set scene load distance to +{distance} -{}",
             scene_load_distance.load + scene_load_distance.unload
         ));
+    }
+}
+
+/// Locks the preview mode to the current parcel
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/lock_preview")]
+struct LockPreviewCommand;
+
+fn lock_preview(
+    mut input: ConsoleCommand<LockPreviewCommand>,
+    mut preview_mode: ResMut<PreviewMode>,
+    focus: Single<&GlobalTransform, With<PrimaryUser>>,
+    pointers: Res<ScenePointers>,
+) {
+    if let Some(Ok(_command)) = input.take() {
+        let Some((parcel, _)) = parcels_in_range(&focus, 0.0, pointers.min(), pointers.max()).pop()
+        else {
+            unreachable!("Player should never be in a invalid parcel.");
+        };
+        let Some(_current_scene) = pointers.get(parcel) else {
+            input.reply_failed(format!("failed to locked preview to parcel {}", parcel));
+            return;
+        };
+        preview_mode.preview_parcel = Some(parcel);
+
+        input.reply_ok(format!("locked preview to parcel {}", parcel));
+    }
+}
+
+/// Unlocks the preview mode to the current parcel
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/unlock_preview")]
+struct UnlockPreviewCommand;
+
+fn unlock_preview(
+    mut input: ConsoleCommand<UnlockPreviewCommand>,
+    mut preview_mode: ResMut<PreviewMode>,
+) {
+    if let Some(Ok(_command)) = input.take() {
+        let parcel = preview_mode.preview_parcel.take();
+
+        if let Some(parcel) = parcel {
+            input.reply_ok(format!("unlocked preview to parcel {}", parcel));
+        } else {
+            input.reply("Preview was not locked to a parcel.");
+        }
     }
 }
 

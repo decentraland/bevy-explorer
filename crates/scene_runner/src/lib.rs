@@ -501,6 +501,14 @@ pub fn vec3_to_parcel(position: Vec3) -> IVec2 {
         .as_ivec2()
 }
 
+pub fn parcel_to_vec3(parcel: IVec2) -> Vec3 {
+    Vec3::new(
+        (parcel.x as f32 + 0.5) * PARCEL_SIZE,
+        0.,
+        -(parcel.y as f32 + 0.5) * PARCEL_SIZE,
+    )
+}
+
 impl ContainingScene<'_, '_> {
     // just the parcel at the position
     pub fn get_parcel_position(&self, position: Vec3) -> Option<Entity> {

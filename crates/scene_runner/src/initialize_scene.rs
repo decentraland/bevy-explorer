@@ -43,6 +43,7 @@ use system_bridge::{LiveSceneInfo, SystemApi, SystemBridge};
 use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets, SceneUpdates};
 use crate::{
     bounds_calc::scene_regions,
+    parcel_to_vec3,
     renderer_context::RendererSceneContext,
     update_world::{visibility::VisibilityComponent, ComponentTracker},
     vec3_to_parcel, ContainerEntity, DeletedSceneEntities, OutOfWorld, SceneEntity,
@@ -1366,7 +1367,7 @@ fn load_active_entities(
 #[derive(Resource, Default)]
 pub struct CurrentImposterScene(pub Option<(PointerResult, bool)>);
 
-#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+#[expect(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn process_scene_lifecycle(
     mut commands: Commands,
     current_realm: Res<CurrentRealm>,
@@ -1381,6 +1382,7 @@ pub fn process_scene_lifecycle(
     mut spawn: EventWriter<LoadSceneEvent>,
     pointers: Res<ScenePointers>,
     imposter_scene: Res<CurrentImposterScene>,
+    preview_mode: Res<PreviewMode>,
 ) {
     let mut required_scene_ids: HashMap<(String, Option<String>), bool> = HashMap::new();
 
@@ -1388,14 +1390,19 @@ pub fn process_scene_lifecycle(
     let Ok(focus) = focus.single() else {
         return;
     };
+    let focus = preview_mode
+        .preview_parcel
+        .as_ref()
+        .map(|p| GlobalTransform::from(Transform::from_translation(parcel_to_vec3(*p))))
+        .unwrap_or(*focus);
 
-    let current_scene = parcels_in_range(focus, 0.0, pointers.min(), pointers.max())
+    let current_scene = parcels_in_range(&focus, 0.0, pointers.min(), pointers.max())
         .first()
         .and_then(|(p, _)| pointers.get(p))
         .and_then(PointerResult::hash_and_urn);
 
     let pir = parcels_in_range(
-        focus,
+        &focus,
         range.load + range.unload,
         pointers.min(),
         pointers.max(),

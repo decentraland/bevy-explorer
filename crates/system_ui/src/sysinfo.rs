@@ -25,12 +25,13 @@ use console::DoAddConsoleCommand;
 use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE};
 use scene_runner::{
     initialize_scene::{SceneLoading, TestingData, PARCEL_SIZE},
+    parcel_to_vec3,
     renderer_context::RendererSceneContext,
     update_world::{
         gltf_container::{GltfLoadingCount, SceneResourceLookup},
         ComponentTracker, TrackComponents,
     },
-    ContainerEntity, ContainingScene, Toaster,
+    vec3_to_parcel, ContainerEntity, ContainingScene, Toaster,
 };
 use ui_core::{
     bound_node::BoundedImageMaterial,
@@ -441,23 +442,25 @@ fn setup_minimap(
 fn update_minimap(
     q: Query<&DuiEntities, With<Minimap>>,
     mut maps: Query<&mut MapTexture>,
-    player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
+    player: Query<&GlobalTransform, With<PrimaryUser>>,
     containing_scene: ContainingScene,
     scenes: Query<(&RendererSceneContext, Option<&GltfLoadingCount>)>,
     mut text: Query<&mut Text>,
     preview: Res<PreviewMode>,
 ) {
-    let Ok((player, gt)) = player.single() else {
+    let Ok(gt) = player.single() else {
         return;
     };
 
     let player_translation = (gt.translation().xz() * Vec2::new(1.0, -1.0)) / PARCEL_SIZE;
     let map_center = player_translation - Vec2::Y;
+    let parcel = preview
+        .preview_parcel
+        .unwrap_or_else(|| player_translation.floor().as_ivec2());
 
     let scene = containing_scene
-        .get_parcel_oow(player)
+        .get_parcel_position(parcel_to_vec3(parcel))
         .and_then(|scene| scenes.get(scene).ok());
-    let parcel = player_translation.floor().as_ivec2();
     let title = scene
         .map(|(context, _)| context.title.clone())
         .unwrap_or("???".to_owned());
@@ -500,7 +503,7 @@ fn update_tracker(
     mut q: Query<(Ref<Tracker>, &DuiEntities)>,
     stats: Query<&SceneResourceLookup>,
     f: Res<FrameCount>,
-    player: Query<Entity, With<PrimaryUser>>,
+    player: Query<&GlobalTransform, With<PrimaryUser>>,
     containing_scene: ContainingScene,
     dui: Res<DuiRegistry>,
     mesh_handles: Query<(&Mesh3d, &ContainerEntity, &Visibility)>,
@@ -514,6 +517,7 @@ fn update_tracker(
     materials: Res<Assets<SceneMaterial>>,
     diagnostics: Res<DiagnosticsStore>,
     images: Res<Assets<Image>>,
+    preview: Res<PreviewMode>,
 ) {
     let Ok((tracker, entities)) = q.single_mut() else {
         return;
@@ -535,7 +539,10 @@ fn update_tracker(
         return;
     };
 
-    let scenes = containing_scene.get_parcel(player);
+    let parcel = preview
+        .preview_parcel
+        .unwrap_or_else(|| vec3_to_parcel(player.translation()));
+    let scenes = containing_scene.get_parcel_position(parcel_to_vec3(parcel));
     let Some(scene) = scenes.iter().next() else {
         return;
     };
