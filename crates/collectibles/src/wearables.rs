@@ -430,7 +430,11 @@ impl AssetLoader for WearableLoader {
                 if category == WearableCategory::SKIN {
                     hides.extend([
                         WearableCategory::HEAD,
+                        WearableCategory::HAIR,
                         WearableCategory::FACIAL_HAIR,
+                        WearableCategory::MOUTH,
+                        WearableCategory::EYEBROWS,
+                        WearableCategory::EYES,
                         WearableCategory::UPPER_BODY,
                         WearableCategory::LOWER_BODY,
                         WearableCategory::FEET,
@@ -454,18 +458,6 @@ impl AssetLoader for WearableLoader {
                     {
                         hides.insert(WearableCategory::HANDS);
                     }
-                }
-
-                // hide "head" pseudo-category -> hide a bunch of other stuff
-                if hides.contains(&WearableCategory::HEAD) {
-                    hides.extend([
-                        WearableCategory::EYES,
-                        WearableCategory::EYEBROWS,
-                        WearableCategory::MOUTH,
-                        WearableCategory::FACIAL_HAIR,
-                        WearableCategory::MASK,
-                        WearableCategory::HAIR,
-                    ]);
                 }
 
                 // remove self

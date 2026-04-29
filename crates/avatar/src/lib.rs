@@ -1084,7 +1084,7 @@ fn process_avatar(
                     commands.entity(scene_ent).try_insert(Visibility::Hidden);
                 }
 
-                if name == "head" && def.hides.contains(&WearableCategory::HEAD) {
+                if name.contains("head") && def.hides.contains(&WearableCategory::HEAD) {
                     commands.entity(scene_ent).try_insert(Visibility::Hidden);
                 }
 
