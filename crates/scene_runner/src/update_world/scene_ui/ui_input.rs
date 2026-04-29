@@ -56,6 +56,7 @@ pub fn set_ui_input(
             components::common::Font::FMonospace => FontName::Mono,
         };
         let font_size = input.0.font_size.unwrap_or(10).max(1) as f32;
+        let multiline = input.0.multi_line.unwrap_or(false);
 
         let ui_entity = link.ui_entity;
         let root = scene_ent.root;
@@ -118,6 +119,7 @@ pub fn set_ui_input(
                 enabled: !input.0.disabled,
                 content: input.0.value.clone().unwrap_or_default(),
                 accept_line: true,
+                multiline: if multiline { 2 } else { 1 },
                 text_style: Some((
                     TextFont {
                         font: user_font(font_name, ui_core::WeightName::Regular),
