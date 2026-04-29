@@ -10,12 +10,15 @@ social = ["dep:dcl-rpc", "dcl_component/social"]
 
 [dependencies]
 common = { workspace = true }
+console = { workspace = true }
 dcl_component = { workspace = true }
 platform = { workspace = true }
 system_bridge = { workspace = true }
 wallet = { workspace = true }
 
 bevy = { workspace = true }
+bevy_console = { workspace = true }
+clap = { workspace = true }
 ethers-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -40,6 +40,9 @@ use crate::{
 
 pub struct DclImposterRenderPlugin;
 
+#[derive(Resource, Default)]
+pub struct DebugImpostersEnabled(pub bool);
+
 impl Plugin for DclImposterRenderPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
@@ -49,6 +52,7 @@ impl Plugin for DclImposterRenderPlugin {
         .init_resource::<BakingIngredients>()
         .init_resource::<ImposterFocus>()
         .init_resource::<ImposterManagerData>()
+        .init_resource::<DebugImpostersEnabled>()
         .init_asset_loader::<FloorImposterLoader>()
         .add_systems(Startup, setup)
         .add_systems(
@@ -61,7 +65,7 @@ impl Plugin for DclImposterRenderPlugin {
                 focus_imposters,
                 spawn_imposters,
                 load_imposters,
-                debug_write_imposters,
+                debug_write_imposters.run_if(|e: Res<DebugImpostersEnabled>| e.0),
             )
                 .chain()
                 .in_set(SceneSets::PostLoop),

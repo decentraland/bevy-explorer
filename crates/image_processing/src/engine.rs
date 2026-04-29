@@ -6,7 +6,9 @@ use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
+use bevy_console::ConsoleCommand;
 use common::{structs::DebugInfo, util::TaskExt};
+use console::DoAddConsoleCommand;
 use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer};
 
 #[cfg(target_arch = "wasm32")]
@@ -42,6 +44,31 @@ impl Plugin for ImageProcessingPlugin {
         }
 
         app.init_resource::<ImgReprocessStats>();
+        app.init_resource::<DebugProcessingEnabled>();
+        app.add_console_command::<DebugProcessingCommand, _>(toggle_debug_processing);
+    }
+}
+
+#[derive(Resource, Default)]
+struct DebugProcessingEnabled(bool);
+
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/debug_processing")]
+struct DebugProcessingCommand {
+    on: Option<bool>,
+}
+
+fn toggle_debug_processing(
+    mut input: ConsoleCommand<DebugProcessingCommand>,
+    mut enabled: ResMut<DebugProcessingEnabled>,
+    mut debug: ResMut<DebugInfo>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        enabled.0 = command.on.unwrap_or(!enabled.0);
+        if !enabled.0 {
+            debug.info.remove("processing");
+        }
+        input.reply_ok(format!("image processing debug info: {}", enabled.0));
     }
 }
 
@@ -225,6 +252,7 @@ fn pipe_events(
     asset_server: Res<AssetServer>,
     mut stats: ResMut<ImgReprocessStats>,
     mut debug_info: ResMut<DebugInfo>,
+    debug_enabled: Res<DebugProcessingEnabled>,
     gltfs: Res<Assets<Gltf>>,
     std_mats: Res<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
@@ -270,7 +298,9 @@ fn pipe_events(
         debug!("max bad: {}", *max_bad);
     }
 
-    debug_info.info.insert("processing", format!("{stats:?}"));
+    if debug_enabled.0 {
+        debug_info.info.insert("processing", format!("{stats:?}"));
+    }
 
     let mut imgs_replaced = 0;
     // gltf reload doesn't work (bevy#18267), so manually overwrite all the images
