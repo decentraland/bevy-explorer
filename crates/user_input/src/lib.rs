@@ -1,6 +1,5 @@
 pub mod avatar_movement;
 pub mod camera;
-pub mod player_input;
 
 use bevy::{app::Propagate, ecs::query::Has, prelude::*, render::view::RenderLayers};
 
