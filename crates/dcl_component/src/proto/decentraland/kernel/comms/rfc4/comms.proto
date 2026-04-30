@@ -108,6 +108,11 @@ message SceneDrivenAnimation {
   // sender's address. Absent on packets from old senders — in that case we accept,
   // since those clients predate the mirror-class bug we're defending against.
   optional string origin_address = 8;
+  // Mirrors `MovementAnimation.idle` from the local proto. Receivers need this to gate
+  // foot-IK on remote avatars (foot-IK is only applied while idle). Sent every broadcast
+  // that carries an active anim, the same as `speed` / `loop`; defaults to false when
+  // absent (older senders predating the field).
+  optional bool idle = 9;
 }
 
 message MovementCompressed {

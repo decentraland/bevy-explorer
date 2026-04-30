@@ -778,9 +778,10 @@ fn resolve_remote_anim(
         content_hash,
         r#loop,
         speed,
-        // `idle` is only consulted for primary-player overridability; for remote
-        // players there's no triggerSceneEmote interaction so we don't need it.
-        idle: false,
+        // Foot-IK on remote avatars gates on this — without it, remotes never apply
+        // foot-IK to a scene-driven animation. Defaults to false if the sender
+        // predates the field, which matches the conservative pre-field behaviour.
+        idle: anim.idle.unwrap_or(false),
         transition_seconds,
         seek: anim.playback_time,
         sounds: anim.sound_content_hashes,
