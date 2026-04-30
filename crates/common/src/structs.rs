@@ -358,6 +358,19 @@ pub struct PrimaryPlayerRes(pub Entity);
 #[derive(Resource)]
 pub struct PrimaryCameraRes(pub Entity);
 
+/// World-space head gaze angles, in degrees. On the local player, written each frame
+/// from the real camera (and zeroed/disabled when a scene-driven camera is active). On
+/// remote players, written from the incoming rfc4::Movement head-sync fields. The
+/// `*_enabled` flags drive the receive-side IK weight crossfade and gate the broadcast
+/// of valid angles for the local player.
+#[derive(Component, Default, Clone, Copy)]
+pub struct HeadSync {
+    pub yaw_deg: f32,
+    pub pitch_deg: f32,
+    pub yaw_enabled: bool,
+    pub pitch_enabled: bool,
+}
+
 // marker for the root ui component (full screen, used for checking pointer/mouse button events are not intercepted by any other ui component)
 #[derive(Component)]
 pub struct UiRoot;

@@ -10,7 +10,7 @@ use bimap::BiMap;
 use common::{
     rpc::{RpcCall, RpcEventSender, RpcStreamSender},
     structs::{
-        AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate, MoveKind,
+        AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate, HeadSync, MoveKind,
         SceneDrivenAnimationRequest,
     },
 };
@@ -437,6 +437,7 @@ pub fn process_transport_updates(
                                 available_transports: Default::default(),
                                 current_transport: None,
                             },
+                            HeadSync::default(),
                             Propagate(RenderLayers::default()),
                         ))
                         .id();

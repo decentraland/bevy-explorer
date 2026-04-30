@@ -33,9 +33,9 @@ use common::{
     inputs::InputMap,
     sets::SetupSets,
     structs::{
-        AppConfig, AvatarDynamicState, GraphicsSettings, IVec2Arg, PreviewMode, PrimaryCamera,
-        PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneImposterBake, SceneLoadDistance,
-        StartupScene, StartupScenes, Version, GROUND_RENDERLAYER,
+        AppConfig, AvatarDynamicState, GraphicsSettings, HeadSync, IVec2Arg, PreviewMode,
+        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneImposterBake,
+        SceneLoadDistance, StartupScene, StartupScenes, Version, GROUND_RENDERLAYER,
     },
     util::UtilsPlugin,
 };
@@ -587,6 +587,7 @@ fn setup(
             config.player_settings.clone(),
             OutOfWorld,
             AvatarDynamicState::default(),
+            HeadSync::default(),
             GroundCollider::default(),
             Propagate(RenderLayers::default()),
         ))
