@@ -206,6 +206,7 @@ fn broadcast_position(
     let speed = active_anim.map(|a| a.speed);
     let transition_seconds = active_anim.map(|a| a.transition_seconds);
     let r#loop = active_anim.map(|a| a.r#loop);
+    let idle = active_anim.map(|a| a.idle);
     // The latch above already mirrors the freshest `seek` seen since the last
     // broadcast. Only send if there's an active anim to apply it to.
     let playback_time = active_anim.and(last_anim.pending_seek.take());
@@ -233,6 +234,7 @@ fn broadcast_position(
                 r#loop,
                 sound_content_hashes,
                 origin_address: wallet.address().map(|a| format!("{a:#x}")),
+                idle,
             },
         )
     } else {
