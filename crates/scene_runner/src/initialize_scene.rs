@@ -293,7 +293,7 @@ pub(crate) fn load_scene_javascript(
             continue;
         };
 
-        let portable = portable_scenes.0.get(&definition.id);
+        let portable = portable_scenes.get(&definition.id);
 
         let (base_x, base_y) = meta.scene.base.split_once(',').unwrap();
         let base_x = base_x.parse::<i32>().unwrap();
@@ -717,7 +717,71 @@ pub struct PortableSource {
 }
 
 #[derive(Resource, Default)]
-pub struct PortableScenes(pub HashMap<String, PortableSource>);
+pub struct PortableScenes {
+    by_hash: HashMap<String, PortableSource>,
+    by_parent: HashMap<String, HashSet<String>>,
+}
+
+impl PortableScenes {
+    pub fn get(&self, hash: &str) -> Option<&PortableSource> {
+        self.by_hash.get(hash)
+    }
+
+    pub fn contains_key(&self, hash: &str) -> bool {
+        self.by_hash.contains_key(hash)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &PortableSource)> {
+        self.by_hash.iter()
+    }
+
+    /// portables spawned by the given scene hash
+    pub fn by_parent<'a>(
+        &'a self,
+        parent: &str,
+    ) -> impl Iterator<Item = (&'a String, &'a PortableSource)> {
+        self.by_parent
+            .get(parent)
+            .into_iter()
+            .flat_map(|hashes| hashes.iter())
+            .filter_map(|h| self.by_hash.get_key_value(h))
+    }
+
+    pub fn insert(&mut self, hash: String, source: PortableSource) -> Option<PortableSource> {
+        let prev = self.by_hash.insert(hash.clone(), source);
+        if let Some(prev_parent) = prev.as_ref().and_then(|p| p.parent_scene.as_ref()) {
+            if let Some(set) = self.by_parent.get_mut(prev_parent) {
+                set.remove(&hash);
+                if set.is_empty() {
+                    self.by_parent.remove(prev_parent);
+                }
+            }
+        }
+        if let Some(parent) = self.by_hash.get(&hash).and_then(|s| s.parent_scene.clone()) {
+            self.by_parent.entry(parent).or_default().insert(hash);
+        }
+        prev
+    }
+
+    pub fn remove(&mut self, hash: &str) -> Option<PortableSource> {
+        let source = self.by_hash.remove(hash)?;
+        if let Some(parent) = &source.parent_scene {
+            if let Some(set) = self.by_parent.get_mut(parent) {
+                set.remove(hash);
+                if set.is_empty() {
+                    self.by_parent.remove(parent);
+                }
+            }
+        }
+        Some(source)
+    }
+
+    pub fn extend<I: IntoIterator<Item = (String, PortableSource)>>(&mut self, iter: I) {
+        for (hash, source) in iter {
+            self.insert(hash, source);
+        }
+    }
+}
 
 pub const PARCEL_SIZE: f32 = 16.0;
 
@@ -1423,7 +1487,6 @@ pub fn process_scene_lifecycle(
     // add any portables to requirements
     required_scene_ids.extend(
         portables
-            .0
             .iter()
             .map(|(hash, source)| ((hash.clone(), Some(source.pid.clone())), source.super_user)),
     );
