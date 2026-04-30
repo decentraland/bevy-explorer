@@ -22,6 +22,7 @@ use bevy::{
     },
     scene::{InstanceId, SceneSpawner},
     tasks::{IoTaskPool, Task},
+    transform::components::Transform,
 };
 use ethers_core::types::H160;
 use smallvec::SmallVec;
@@ -614,5 +615,55 @@ impl<T, E: std::fmt::Debug> ReportErr for Result<T, E> {
             let caller = Location::caller();
             error!("Unexpected application error : {e:?} @ {caller}")
         }
+    }
+}
+
+pub trait InvertedScaleExt {
+    /// Test wether the scale has 1 or 3 negative axis
+    fn is_inverted(&self) -> bool;
+}
+
+impl InvertedScaleExt for Transform {
+    fn is_inverted(&self) -> bool {
+        self.scale.is_inverted()
+    }
+}
+
+impl InvertedScaleExt for Vec3 {
+    fn is_inverted(&self) -> bool {
+        (self.x < 0.) ^ (self.y < 0.) ^ (self.z < 0.)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inverted_scale() {
+        macro_rules! make_test {
+            ($vec:expr, true) => {
+                assert!($vec.is_inverted());
+            };
+            ($vec:expr, false) => {
+                assert!(!$vec.is_inverted());
+            };
+        }
+
+        make_test!(Vec3::ZERO, false);
+        make_test!(Vec3::new(1., 0., 0.), false);
+        make_test!(Vec3::new(0., 1., 0.), false);
+        make_test!(Vec3::new(0., 0., 1.), false);
+        make_test!(Vec3::new(1., 1., 0.), false);
+        make_test!(Vec3::new(1., 0., 1.), false);
+        make_test!(Vec3::new(0., 1., 1.), false);
+        make_test!(Vec3::new(1., 1., 1.), false);
+        make_test!(Vec3::new(-1., 1., 1.), true);
+        make_test!(Vec3::new(1., -1., 1.), true);
+        make_test!(Vec3::new(1., 1., -1.), true);
+        make_test!(Vec3::new(-1., -1., 1.), false);
+        make_test!(Vec3::new(-1., 1., -1.), false);
+        make_test!(Vec3::new(1., -1., -1.), false);
+        make_test!(Vec3::new(-1., -1., -1.), true);
     }
 }
