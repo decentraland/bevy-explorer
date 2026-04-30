@@ -463,29 +463,16 @@ impl<C: Component + Clone + FromConfig> ActivePlayerComponent<C> {
 
 #[allow(clippy::too_many_arguments)]
 pub fn apply_impulses(
-    impulses: Query<(&PhysicsCombinedImpulse, &SceneEntity)>,
-    forces: Query<(&PhysicsCombinedForce, &SceneEntity)>,
+    impulses: Query<(&PhysicsCombinedImpulse, &SceneEntity), Changed<PhysicsCombinedImpulse>>,
+    forces: Query<(Ref<PhysicsCombinedForce>, &SceneEntity)>,
     player: Res<PrimaryPlayerRes>,
     containing_scenes: ContainingScene,
-    mut last_impulses: Local<HashMap<Entity, u32>>,
     mut info: ResMut<AvatarMovementInfo>,
     time: Res<Time>,
-    live_scenes: Query<Entity, With<RendererSceneContext>>,
 ) {
     let containing_scenes = containing_scenes.get(player.0);
 
-    let live: HashSet<Entity> = live_scenes.iter().collect();
-    last_impulses.retain(|k, _| live.contains(k));
-
     for (impulse, entity) in impulses {
-        if last_impulses
-            .get(&entity.root)
-            .is_some_and(|prev_id| *prev_id == impulse.0.event_id)
-        {
-            continue;
-        }
-
-        last_impulses.insert(entity.root, impulse.0.event_id);
         if !containing_scenes.contains(&entity.root) {
             continue;
         }
