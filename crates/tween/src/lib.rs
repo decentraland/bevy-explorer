@@ -1,3 +1,8 @@
+#[cfg(feature = "tween_debug")]
+mod tween_debug;
+
+use std::ops::Deref;
+
 use bevy::prelude::*;
 use common::sets::SceneSets;
 use dcl::interface::{ComponentPosition, CrdtType};
@@ -12,14 +17,13 @@ use dcl_component::{
     transform_and_parent::DclTransformAndParent,
     SceneComponentId,
 };
-
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::{material::PbMaterialComponent, AddCrdtInterfaceExt},
     ContainerEntity, SceneEntity,
 };
 
-#[derive(Component, Debug)]
+#[derive(Debug, Component, Deref, DerefMut)]
 pub struct Tween(PbTween);
 
 impl From<PbTween> for Tween {
@@ -30,18 +34,27 @@ impl From<PbTween> for Tween {
 
 impl Tween {
     fn is_texture_move(&self) -> bool {
-        matches!(&self.0.mode, Some(Mode::TextureMove(_)))
+        matches!(
+            &self.mode,
+            Some(Mode::TextureMove(_) | Mode::TextureMoveContinuous(_))
+        )
     }
 
-    fn apply(
-        &self,
-        time: f32,
-        transform: &mut Transform,
-        maybe_mat: Option<&mut PbMaterialComponent>,
-    ) {
+    pub fn is_continuous(&self) -> bool {
+        matches!(
+            &self.0.mode,
+            Some(
+                Mode::RotateContinuous(_)
+                    | Mode::MoveContinuous(_)
+                    | Mode::TextureMoveContinuous(_)
+            )
+        )
+    }
+
+    fn easing_function(&self) -> fn(f32) -> f32 {
         use simple_easing::*;
         use EasingFunction::*;
-        let f = match self.0.easing_function() {
+        match self.deref().easing_function() {
             EfLinear => linear,
             EfEaseinquad => quad_in,
             EfEaseoutquad => quad_out,
@@ -73,11 +86,24 @@ impl Tween {
             EfEaseinback => back_in,
             EfEaseoutback => back_out,
             EfEaseback => back_in_out,
+        }
+    }
+
+    fn apply(
+        &self,
+        time: f32,
+        transform: &mut Transform,
+        maybe_mat: Option<&mut PbMaterialComponent>,
+    ) {
+        let f = self.easing_function();
+
+        let ease_value = if self.is_continuous() && self.duration <= 0. {
+            time
+        } else {
+            f(time)
         };
 
-        let ease_value = f(time);
-
-        match &self.0.mode {
+        match &self.mode {
             Some(Mode::Move(data)) => {
                 let start = data.start.unwrap_or_default().world_vec_to_vec3();
                 let end = data.end.unwrap_or_default().world_vec_to_vec3();
@@ -128,6 +154,7 @@ impl Tween {
                             &mut material.0,
                             None,
                             Some(start + ((end - start) * ease_value)),
+                            false,
                         );
                     }
                     TextureMovementType::TmtTiling => {
@@ -135,6 +162,47 @@ impl Tween {
                             &mut material.0,
                             Some(start + ((end - start) * ease_value)),
                             None,
+                            false,
+                        );
+                    }
+                }
+            }
+            Some(Mode::RotateContinuous(data)) => {
+                let axis = {
+                    let dcl_quat = data.direction.unwrap();
+                    let (axis, _) = dcl_quat.to_bevy_normalized().to_axis_angle();
+                    axis
+                };
+                transform.rotation *=
+                    Quat::from_axis_angle(axis, ease_value * -data.speed.to_radians());
+            }
+            Some(Mode::MoveContinuous(data)) => {
+                transform.translation +=
+                    data.direction.unwrap().world_vec_to_vec3() * data.speed * ease_value;
+            }
+            Some(Mode::TextureMoveContinuous(data)) => {
+                let Some(material) = maybe_mat else {
+                    return;
+                };
+
+                let dcl_vec2 = data.direction.unwrap();
+                let direction = Vec2::new(dcl_vec2.x, dcl_vec2.y);
+
+                match data.movement_type() {
+                    TextureMovementType::TmtOffset => {
+                        update_pb_material(
+                            &mut material.0,
+                            None,
+                            Some(direction * data.speed * ease_value * Vec2::new(1.0, -1.0)),
+                            true,
+                        );
+                    }
+                    TextureMovementType::TmtTiling => {
+                        update_pb_material(
+                            &mut material.0,
+                            Some(direction * data.speed * ease_value),
+                            None,
+                            true,
                         );
                     }
                 }
@@ -144,7 +212,7 @@ impl Tween {
     }
 }
 
-#[derive(Component, Debug, PartialEq)]
+#[derive(Debug, PartialEq, Component, Deref, DerefMut)]
 pub struct TweenState(PbTweenState);
 
 #[derive(Event)]
@@ -171,62 +239,91 @@ impl Plugin for TweenPlugin {
             update_system_tween.before(TransformSystem::TransformPropagate),
         );
         app.add_observer(clean_scene_tween_state);
+
+        #[cfg(feature = "tween_debug")]
+        app.add_plugins(tween_debug::TweenDebugPlugin);
     }
 }
 
-#[allow(clippy::type_complexity)]
+type TweenUpdateComponents<'a> = (
+    Entity,
+    Ref<'a, ContainerEntity>,
+    Ref<'a, ChildOf>,
+    Ref<'a, Tween>,
+    Mut<'a, Transform>,
+    Option<Mut<'a, TweenState>>,
+    Option<Mut<'a, PbMaterialComponent>>,
+);
+
 fn update_tween(
     mut commands: Commands,
     time: Res<Time>,
-    mut tweens: Query<(
-        Entity,
-        &ContainerEntity,
-        &ChildOf,
-        Ref<Tween>,
-        &mut Transform,
-        Option<&mut TweenState>,
-        Option<&mut PbMaterialComponent>,
-    )>,
+    mut tweens: Query<TweenUpdateComponents>,
     mut scenes: Query<&mut RendererSceneContext>,
     parents: Query<&SceneEntity>,
     mut tween_updated_texture_writer: EventWriter<TweenUpdatedTexture>,
 ) {
     for (ent, scene_ent, parent, tween, mut transform, state, maybe_material) in tweens.iter_mut() {
-        let playing = tween.0.playing.unwrap_or(true);
+        let Ok(mut scene) = scenes.get_mut(scene_ent.root) else {
+            continue;
+        };
+
+        let playing = tween.playing.unwrap_or(true);
         let delta = if playing {
-            time.delta_secs() * 1000.0 / tween.0.duration
+            if tween.is_continuous() && tween.duration <= 0. {
+                time.delta_secs()
+            } else {
+                time.delta_secs() * 1000.0 / tween.duration
+            }
         } else {
             0.0
         };
+        trace!(
+            "Updating {} tween with delta of {}.",
+            if tween.is_continuous() {
+                "continuous"
+            } else {
+                "simple"
+            },
+            delta
+        );
 
         let updated_time = if tween.is_changed() {
-            tween.0.current_time.unwrap_or(0.0)
+            tween.current_time()
         } else {
-            state
+            let updated_time = state
                 .as_ref()
-                .map(|state| state.0.current_time + delta)
-                .unwrap_or(0.0)
-                .min(1.0)
+                .map(|state| state.current_time + delta)
+                .unwrap_or(0.0);
+            if tween.is_continuous() {
+                updated_time
+            } else {
+                updated_time.min(1.0)
+            }
         };
+        trace!(
+            "{} tween now has time {}.",
+            if tween.is_continuous() {
+                "Continuous"
+            } else {
+                "Simple"
+            },
+            updated_time
+        );
 
-        let updated_status = if playing && updated_time == 1.0 {
+        let updated_status = if playing && updated_time == 1.0 && !tween.is_continuous() {
             TweenStateStatus::TsCompleted
         } else if playing {
             TweenStateStatus::TsActive
         } else {
             TweenStateStatus::TsPaused
         };
-
         let updated_state = TweenState(PbTweenState {
             state: updated_status as i32,
             current_time: updated_time,
         });
 
         if state.as_deref() != Some(&updated_state) {
-            let Ok(mut scene) = scenes.get_mut(scene_ent.root) else {
-                continue;
-            };
-
             scene.update_crdt(
                 SceneComponentId::TWEEN_STATE,
                 CrdtType::LWW_ENT,
@@ -241,7 +338,11 @@ fn update_tween(
             }
 
             tween.apply(
-                updated_time,
+                if tween.is_continuous() {
+                    delta
+                } else {
+                    updated_time
+                },
                 &mut transform,
                 if tween.is_texture_move() {
                     maybe_material.map(Mut::into_inner)
@@ -252,7 +353,7 @@ fn update_tween(
 
             let Ok(parent) = parents.get(parent.parent()) else {
                 warn!("no parent for tweened ent");
-                continue;
+                return;
             };
 
             scene.update_crdt(
@@ -268,56 +369,44 @@ fn update_tween(
     }
 }
 
-fn update_pb_material(pb_material: &mut PbMaterial, tiling: Option<Vec2>, offset: Option<Vec2>) {
+/// Updates the tiling and offset of [`PbMaterial`] textures.
+///
+/// If `delta` is `true`, the values in `tiling` and `offset`
+/// are deltas and should be incremented to the existing
+/// value.
+fn update_pb_material(
+    pb_material: &mut PbMaterial,
+    tiling: Option<Vec2>,
+    offset: Option<Vec2>,
+    delta: bool,
+) {
+    let update_tex =
+        |texture_union: Option<&mut dcl_component::proto_components::common::TextureUnion>| {
+            let Some(Tex::Texture(texture)) =
+                texture_union.and_then(|texture_union| texture_union.tex.as_mut())
+            else {
+                return;
+            };
+            if delta {
+                increment_texture(texture, tiling, offset);
+            } else {
+                update_texture(texture, tiling, offset);
+            }
+        };
+
     if let Some(material) = pb_material.material.as_mut() {
         match material {
             pb_material::Material::Pbr(pbr_material) => {
-                if let Some(Tex::Texture(texture)) = pbr_material
-                    .texture
-                    .as_mut()
-                    .and_then(|texture_union| texture_union.tex.as_mut())
-                {
-                    update_texture(texture, tiling, offset);
-                }
-                if let Some(Tex::Texture(texture)) = pbr_material
-                    .alpha_texture
-                    .as_mut()
-                    .and_then(|texture_union| texture_union.tex.as_mut())
-                {
-                    update_texture(texture, tiling, offset);
-                }
-                if let Some(Tex::Texture(texture)) = pbr_material
-                    .emissive_texture
-                    .as_mut()
-                    .and_then(|texture_union| texture_union.tex.as_mut())
-                {
-                    update_texture(texture, tiling, offset);
-                }
-                if let Some(Tex::Texture(texture)) = pbr_material
-                    .bump_texture
-                    .as_mut()
-                    .and_then(|texture_union| texture_union.tex.as_mut())
-                {
-                    update_texture(texture, tiling, offset);
-                }
+                update_tex(pbr_material.texture.as_mut());
+                update_tex(pbr_material.alpha_texture.as_mut());
+                update_tex(pbr_material.emissive_texture.as_mut());
+                update_tex(pbr_material.bump_texture.as_mut());
             }
             pb_material::Material::Unlit(unlit_material) => {
-                if let Some(Tex::Texture(texture)) = unlit_material
-                    .texture
-                    .as_mut()
-                    .and_then(|texture_union| texture_union.tex.as_mut())
-                {
-                    update_texture(texture, tiling, offset);
-                }
-                if let Some(Tex::Texture(texture)) = unlit_material
-                    .alpha_texture
-                    .as_mut()
-                    .and_then(|texture_union| texture_union.tex.as_mut())
-                {
-                    update_texture(texture, tiling, offset);
-                }
+                update_tex(unlit_material.texture.as_mut());
+                update_tex(unlit_material.alpha_texture.as_mut());
             }
-        }
+        };
     }
 }
 
@@ -346,6 +435,24 @@ fn transfer_material_to_scene(
             container_entity.container_id,
             &pb_material_component.0,
         );
+    }
+}
+
+fn increment_texture(
+    texture: &mut Texture,
+    tiling_delta: Option<Vec2>,
+    offset_delta: Option<Vec2>,
+) {
+    if let Some(tiling_delta) = tiling_delta {
+        let tiling = texture.tiling.get_or_insert_default();
+        tiling.x += tiling_delta.x;
+        tiling.y += tiling_delta.y;
+    }
+
+    if let Some(offset_delta) = offset_delta {
+        let offset = texture.offset.get_or_insert_default();
+        offset.x += offset_delta.x;
+        offset.y += offset_delta.y;
     }
 }
 

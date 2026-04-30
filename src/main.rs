@@ -422,6 +422,8 @@ fn main() {
         );
     #[cfg(feature = "remote")]
     app.add_plugins((RemotePlugin::default(), RemoteHttpPlugin::default()));
+    #[cfg(feature = "bevy_mesh_picking_backend")]
+    app.add_plugins(MeshPickingPlugin);
 
     app.add_plugins(EmbedAssetsPlugin);
 

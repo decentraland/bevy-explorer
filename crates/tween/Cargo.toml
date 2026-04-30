@@ -3,7 +3,8 @@ name = "tween"
 version = "0.1.0"
 edition = "2021"
 
-[lib]
+[features]
+tween_debug = ["bevy/bevy_mesh_picking_backend"]
 
 [dependencies]
 common = { workspace = true }
