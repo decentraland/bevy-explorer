@@ -213,42 +213,6 @@ impl BoundRegion {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use bevy::math::{IVec2, Vec3};
-
-    use crate::BoundRegion;
-
-    #[test]
-    fn test_bounds() {
-        for x in [-10, 0, 10] {
-            for y in [-10, 0, 10] {
-                let region = BoundRegion::new(IVec2::new(x, y), IVec2::new(x, y), 1);
-
-                println!(
-                    "[{},{}] -> {:x},{:x} -> {}, {}",
-                    x,
-                    y,
-                    region.min,
-                    region.max,
-                    region.world_min(),
-                    region.world_max()
-                );
-                assert_eq!(
-                    region.world_min(),
-                    Vec3::new(x as f32 * 16.0, 0.0, (-y - 1) as f32 * 16.0)
-                );
-                assert_eq!(
-                    region.world_max(),
-                    Vec3::new((x + 1) as f32 * 16.0, 20.0, -y as f32 * 16.0)
-                );
-                assert_eq!(region.parcel_min(), IVec2::new(x, y));
-                assert_eq!(region.parcel_max(), IVec2::new(x, y));
-            }
-        }
-    }
-}
-
 impl MaterialExtension for SceneBound {
     type Base = StandardMaterial;
 
@@ -352,5 +316,41 @@ fn update_show_outside(
         }
     } else {
         evs.read();
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use bevy::math::{IVec2, Vec3};
+
+    use crate::BoundRegion;
+
+    #[test]
+    fn test_bounds() {
+        for x in [-10, 0, 10] {
+            for y in [-10, 0, 10] {
+                let region = BoundRegion::new(IVec2::new(x, y), IVec2::new(x, y), 1);
+
+                println!(
+                    "[{},{}] -> {:x},{:x} -> {}, {}",
+                    x,
+                    y,
+                    region.min,
+                    region.max,
+                    region.world_min(),
+                    region.world_max()
+                );
+                assert_eq!(
+                    region.world_min(),
+                    Vec3::new(x as f32 * 16.0, 0.0, (-y - 1) as f32 * 16.0)
+                );
+                assert_eq!(
+                    region.world_max(),
+                    Vec3::new((x + 1) as f32 * 16.0, 20.0, -y as f32 * 16.0)
+                );
+                assert_eq!(region.parcel_min(), IVec2::new(x, y));
+                assert_eq!(region.parcel_max(), IVec2::new(x, y));
+            }
+        }
     }
 }
