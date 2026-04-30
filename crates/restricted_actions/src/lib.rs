@@ -781,15 +781,18 @@ fn spawn_portable(
                     continue;
                 };
 
-                new_portables.insert(
-                    hash.clone(),
-                    PortableSource {
-                        pid: hacked_urn,
-                        parent_scene: Some(parent_hash),
-                        ens: None,
-                        super_user: false,
-                    },
-                );
+                // don't re-claim an existing portable; just resolve to its current state
+                if current_portables.get(&hash).is_none() {
+                    new_portables.insert(
+                        hash.clone(),
+                        PortableSource {
+                            pid: hacked_urn,
+                            parent_scene: Some(parent_hash),
+                            ens: None,
+                            super_user: false,
+                        },
+                    );
+                }
                 pending_responses.insert(hash, Some(response.clone()));
             }
             PortableLocation::Ens(ens) => {
@@ -816,7 +819,10 @@ fn spawn_portable(
         if let Some(result) = task.complete() {
             match result {
                 Ok((hash, source)) => {
-                    new_portables.insert(hash.clone(), source);
+                    // don't re-claim an existing portable; just resolve to its current state
+                    if current_portables.get(&hash).is_none() {
+                        new_portables.insert(hash.clone(), source);
+                    }
                     pending_responses.insert(hash, response.take());
                 }
                 Err(e) => {
@@ -854,7 +860,7 @@ fn spawn_portable(
         }
 
         if let Some(context) = maybe_context {
-            if let Some(source) = current_portables.0.get(hash) {
+            if let Some(source) = current_portables.get(hash) {
                 sender.take().unwrap().send(Ok(SpawnResponse {
                     pid: source.pid.clone(),
                     parent_cid: source.parent_scene.clone().unwrap_or_default(),
@@ -878,16 +884,34 @@ fn spawn_portable(
     if !new_portables.is_empty() {
         commands.queue(move |world: &mut World| {
             let mut portables = world.resource_mut::<PortableScenes>();
-            portables.0.extend(new_portables);
+            portables.extend(new_portables);
         });
     }
     if !failed_portables.is_empty() {
         commands.queue(move |world: &mut World| {
             let mut portables = world.resource_mut::<PortableScenes>();
             for portable in failed_portables {
-                portables.0.remove(&portable);
+                portables.remove(&portable);
             }
         });
+    }
+}
+
+fn portable_matches_location(
+    hash: &str,
+    source: &PortableSource,
+    location: &PortableLocation,
+) -> bool {
+    match location {
+        PortableLocation::Urn(urn) => {
+            let hacked_urn = urn.replace('?', "?=&");
+            IpfsPath::new_from_urn::<EntityDefinition>(&hacked_urn)
+                .ok()
+                .and_then(|p| p.context_free_hash().ok().flatten())
+                .as_deref()
+                == Some(hash)
+        }
+        PortableLocation::Ens(ens) => source.ens.as_deref() == Some(ens.as_str()),
     }
 }
 
@@ -895,6 +919,9 @@ fn kill_portable(
     mut commands: Commands,
     portables: Res<PortableScenes>,
     mut events: EventReader<RpcCall>,
+    scenes: Query<&RendererSceneContext>,
+    player: Query<Entity, With<PrimaryUser>>,
+    containing_scene: ContainingScene,
     mut perms: Permission<(PortableLocation, RpcResultSender<bool>)>,
 ) {
     let mut kill_portables = HashSet::new();
@@ -907,6 +934,30 @@ fn kill_portable(
         } => Some((scene, location, response)),
         _ => None,
     }) {
+        // requesting scene may kill a portable only if it spawned the portable,
+        // or if some other scene spawned it and the player is currently within
+        // the requesting scene's bounds. startup / system portables (no parent
+        // scene) are never killable by scenes.
+        let is_parent = scenes.get(*scene).is_ok_and(|ctx| {
+            portables
+                .by_parent(&ctx.hash)
+                .any(|(hash, src)| portable_matches_location(hash, src, location))
+        });
+        let containing_other_owned = !is_parent && {
+            let player_in_scene = player
+                .single()
+                .ok()
+                .is_some_and(|p| containing_scene.get(p).contains(scene));
+            player_in_scene
+                && portables.iter().any(|(hash, src)| {
+                    src.parent_scene.is_some() && portable_matches_location(hash, src, location)
+                })
+        };
+        if !is_parent && !containing_other_owned {
+            response.send(false);
+            continue;
+        }
+
         perms.check(
             PermissionType::KillPortables,
             *scene,
@@ -931,7 +982,7 @@ fn kill_portable(
                     continue;
                 };
 
-                if portables.0.contains_key(&hash) {
+                if portables.contains_key(&hash) {
                     response.send(true);
                     kill_portables.insert(hash.clone());
                 } else {
@@ -954,7 +1005,7 @@ fn kill_portable(
         commands.queue(|world: &mut World| {
             let mut portables = world.resource_mut::<PortableScenes>();
             for killed in kill_portables {
-                portables.0.remove(&killed);
+                portables.remove(&killed);
             }
         })
     }
@@ -971,9 +1022,10 @@ fn list_portables(
         _ => None,
     }) {
         debug!("listing portables");
+        // hide startup / system portables (parent_scene = None) from scenes
         let portables = portables
-            .0
             .iter()
+            .filter(|(_, source)| source.parent_scene.is_some())
             .map(|(hash, source)| {
                 let context = live_scenes
                     .scenes
@@ -1754,11 +1806,11 @@ fn handle_spawned_command(
             match result {
                 Ok((hash, source)) => match action {
                     PortableAction::Spawn => {
-                        portables.0.insert(hash.clone(), source);
+                        portables.insert(hash.clone(), source);
                         reply.write(PrintConsoleLine::new("[ok]".into()));
                     }
                     PortableAction::Kill => {
-                        if portables.0.remove(&hash).is_some() {
+                        if portables.remove(&hash).is_some() {
                             reply.write(PrintConsoleLine::new("[ok]".into()));
                         } else {
                             reply.write(PrintConsoleLine::new("portable not running".into()));
@@ -1960,7 +2012,7 @@ pub fn process_startup_scenes(
 
             info!("added startup scene from {}", source.pid);
             scene.hash = Some(hash.clone());
-            portables.0.extend([(hash, source)]);
+            portables.extend([(hash, source)]);
 
             if scene.preview {
                 let sx = channel

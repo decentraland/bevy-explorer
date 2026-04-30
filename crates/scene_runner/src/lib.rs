@@ -560,7 +560,6 @@ impl ContainingScene<'_, '_> {
 
     pub fn get_portables(&self, only_super: bool) -> HashSet<Entity> {
         self.portable_scenes
-            .0
             .iter()
             .flat_map(|(hash, source)| {
                 if !source.super_user && only_super {
@@ -628,7 +627,6 @@ impl ContainingScene<'_, '_> {
         // global scenes first
         let mut results: Vec<(Entity, f32)> = self
             .portable_scenes
-            .0
             .iter()
             .flat_map(|(hash, _)| self.live_scenes.scenes.get(hash))
             .map(|ent| (*ent, 0.0))
