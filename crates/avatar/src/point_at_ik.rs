@@ -99,6 +99,22 @@ const CONE_TOLERANCE_DEG: f32 = 2.0;
 /// before crossing it. Acts like hysteresis without an explicit flag.
 const ENGAGED_WEIGHT_TARGET: f32 = 3.0;
 
+/// Half-space limits on the upper-arm direction (shoulder→elbow) in the
+/// avatar's body-local frame. Applied after the 2-bone IK solves: if the
+/// solver wants to swing the upper arm such that its direction crosses
+/// these limits, we project the direction onto the boundary plane and
+/// rebuild the shoulder swing rotation. Keeps the right arm out of the
+/// torso when the IK target sits in the rear half-space (smoothing-
+/// through-body during a body rotation) or right under the body center
+/// (click at feet, where target is at the avatar entity origin).
+///
+/// `MIN_X` keeps the upper arm from crossing the body's centerline to the
+/// left; `MAX_Z` keeps it from rotating behind the body. Both are direction
+/// components on a unit vector, in body-local frame (mesh forward = -Z,
+/// mesh right = +X).
+const UPPER_ARM_MIN_X_LOCAL: f32 = 0.1;
+const UPPER_ARM_MAX_Z_LOCAL: f32 = 0.2;
+
 /// Once rotating, we keep going until we're within this many degrees of
 /// the target — gives a deliberate "turn-and-point" feel rather than a
 /// stuttery catch-up.
@@ -374,6 +390,17 @@ pub(crate) fn apply_point_at_ik(
             continue;
         };
 
+        // Clamp the resulting upper-arm direction to a body-local half-space
+        // so the arm doesn't bend through the torso. The clamp runs in the
+        // post-yaw-write body frame (we wrote `avatar.transform.rotation`
+        // above), so as the body rotates the half-space rotates with it.
+        let r_upper = if let Ok(body_g) = tx.p1().compute_global_transform(avatar_entity) {
+            let cur_dir_world = (b - a).normalize_or_zero();
+            constrain_upper_arm(r_upper, cur_dir_world, body_g.rotation())
+        } else {
+            r_upper
+        };
+
         let r_upper_w = Quat::IDENTITY.slerp(r_upper, display_weight);
         let r_lower_w = Quat::IDENTITY.slerp(r_lower, display_weight);
 
@@ -408,6 +435,36 @@ pub(crate) fn apply_point_at_ik(
             t.rotation *= Quat::from_axis_angle(axis, angle);
         }
     }
+}
+
+/// Project the upper-arm swing rotation `r_upper` so the resulting bone
+/// direction stays in the body-local half-space `x >= UPPER_ARM_MIN_X_LOCAL,
+/// z <= UPPER_ARM_MAX_Z_LOCAL`. `cur_dir_world` is the rest-pose
+/// shoulder→elbow direction; the swing rotates that into the new direction
+/// `r_upper * cur_dir_world`. If the new direction violates the constraints
+/// we clamp the offending components in body-local frame, renormalize, and
+/// rebuild `r_upper` as the rotation_arc from rest to the clamped direction.
+fn constrain_upper_arm(r_upper: Quat, cur_dir_world: Vec3, body_rot: Quat) -> Quat {
+    let new_dir_world = r_upper * cur_dir_world;
+    let mut local = body_rot.inverse() * new_dir_world;
+    let mut clamped = false;
+    if local.x < UPPER_ARM_MIN_X_LOCAL {
+        local.x = UPPER_ARM_MIN_X_LOCAL;
+        clamped = true;
+    }
+    if local.z > UPPER_ARM_MAX_Z_LOCAL {
+        local.z = UPPER_ARM_MAX_Z_LOCAL;
+        clamped = true;
+    }
+    if !clamped {
+        return r_upper;
+    }
+    let local = local.normalize_or_zero();
+    if local.length_squared() < 0.5 {
+        return r_upper;
+    }
+    let new_dir_world = body_rot * local;
+    Quat::from_rotation_arc(cur_dir_world, new_dir_world)
 }
 
 fn wrap_180_deg(deg: f32) -> f32 {
