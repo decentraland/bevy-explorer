@@ -31,6 +31,7 @@ pub mod colliders;
 mod dynamic_nametag;
 pub mod foot_ik;
 pub mod foreign_dynamics;
+pub mod head_ik;
 pub mod mask_material;
 pub mod npc_dynamics;
 
@@ -70,6 +71,7 @@ use world_ui::{spawn_world_ui_view, WorldUi};
 
 use crate::{
     animate::AvatarAnimPlayer, dynamic_nametag::DynamicNametagPlugin, foot_ik::FootIkPlugin,
+    head_ik::HeadIkPlugin,
 };
 
 use self::{
@@ -91,6 +93,7 @@ impl Plugin for AvatarPlugin {
         app.add_plugins(AvatarTexturePlugin);
         app.add_plugins(DynamicNametagPlugin);
         app.add_plugins(FootIkPlugin);
+        app.add_plugins(HeadIkPlugin);
         app.add_systems(
             Update,
             (

@@ -31,7 +31,7 @@ impl Plugin for FootIkPlugin {
                     .chain(),
             )
                 .chain()
-                .in_set(PostUpdateSets::FootIk),
+                .in_set(PostUpdateSets::InverseKinematics),
         );
         app.add_console_command::<FootIkConsoleCommand, _>(foot_ik_console_command);
     }

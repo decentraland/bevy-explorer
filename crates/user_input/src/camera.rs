@@ -206,6 +206,13 @@ pub fn update_camera_position(
     head_sync.yaw_enabled = head_active && !first_person;
     head_sync.pitch_enabled = head_active;
     if head_active {
+        // DCL world is left-handed (Z+ forward) while bevy is right-handed
+        // (-Z forward). The Y-up rotation handedness flips going across, so
+        // a yaw of θ in bevy maps to -θ on the wire. With this, looking N is
+        // 0°, E is 90°, S is 180°, W is 270° — matching unity senders.
+        // Pitch is also handedness-flipped on the wire (looking up positive
+        // in DCL = negative bevy pitch). HeadSync holds the wire value, and
+        // the IK reader applies the same negation to render back in bevy.
         head_sync.yaw_deg = -options.yaw.to_degrees();
         head_sync.pitch_deg = -options.pitch.to_degrees();
     }

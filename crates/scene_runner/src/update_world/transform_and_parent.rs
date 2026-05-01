@@ -37,7 +37,7 @@ impl Plugin for TransformAndParentPlugin {
                 PostUpdateSets::ColliderUpdate,
                 PostUpdateSets::PlayerUpdate,
                 PostUpdateSets::CameraUpdate,
-                PostUpdateSets::FootIk,
+                PostUpdateSets::InverseKinematics,
                 PostUpdateSets::Nametag,
                 PostUpdateSets::AttachSync,
                 PostUpdateSets::Billboard,
