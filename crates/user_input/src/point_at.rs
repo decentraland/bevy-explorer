@@ -24,6 +24,11 @@ const NO_HIT_DISTANCE: f32 = 200.0;
 /// duration.
 const DRAG_CANCEL_DEG: f32 = 2.0;
 
+/// Pointing at another player's avatar from within this radius is rejected
+/// — the arm would have to bend around them and reads weirdly. Matches
+/// unity's `HandPointAtSystem.cs:150-154`.
+const MIN_AVATAR_TARGET_DISTANCE: f32 = 2.0;
+
 pub struct PointAtPlugin;
 
 impl Plugin for PointAtPlugin {
@@ -37,11 +42,11 @@ fn capture_point_at(
     world_target: Res<WorldPointerTarget>,
     pointer_ray: Res<PointerRay>,
     time: Res<Time>,
-    mut player: Query<(&mut PointAtSync, &AvatarDynamicState), With<PrimaryUser>>,
+    mut player: Query<(&mut PointAtSync, &AvatarDynamicState, &GlobalTransform), With<PrimaryUser>>,
     mut latch_until: Local<f32>,
     mut press_origin_dir: Local<Option<Vec3>>,
 ) {
-    let Ok((mut sync, dynamics)) = player.single_mut() else {
+    let Ok((mut sync, dynamics, player_global)) = player.single_mut() else {
         return;
     };
     let now = time.elapsed_secs();
@@ -89,6 +94,17 @@ fn capture_point_at(
         if let Some(target) = world_target.0.as_ref() {
             if target.ty == PointerTargetType::Ui {
                 return;
+            }
+            // Pointing at a player avatar from up close looks bad — the arm
+            // has to bend around them. Bail rather than produce that.
+            if target.ty == PointerTargetType::Avatar {
+                if let Some(target_pos) = target.position {
+                    if (target_pos - player_global.translation()).length()
+                        < MIN_AVATAR_TARGET_DISTANCE
+                    {
+                        return;
+                    }
+                }
             }
         }
 
