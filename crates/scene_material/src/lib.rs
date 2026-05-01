@@ -377,13 +377,16 @@ fn new_materials(
                             |scene_material_asset| !scene_material_asset.extension.inverted_scale,
                         )
                     else {
+                        debug!("{entity}'s material was invalid");
                         continue;
                     };
 
                     let mut inverted_material = scene_material_asset.clone();
                     inverted_material.extension.inverted_scale = true;
+                    let new_handle = scene_material_assets.add(inverted_material);
 
-                    vacant.insert(scene_material_assets.add(inverted_material));
+                    vacant.insert(new_handle.clone());
+                    commands.entity(entity).insert(MeshMaterial3d(new_handle));
                 }
                 Entry::Occupied(occupied) => {
                     commands
