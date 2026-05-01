@@ -57,6 +57,12 @@ fn fragment(
 {
 #endif
 
+#ifdef INVERTED_SCALE
+    let is_front_m = !is_front;
+#else
+    let is_front_m = is_front;
+#endif
+
     if (bounds.flags & (DISABLE_DITHER + OUTLINE_RED)) == 0 {
         discard_dither(in.position.xy, in.world_position.xyz, view.user_value, (bounds.flags & CONE_ONLY_DITHER) == 0);
     }

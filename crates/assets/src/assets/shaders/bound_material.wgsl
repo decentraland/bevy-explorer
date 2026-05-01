@@ -55,13 +55,20 @@ fn fragment(
 #endif
 #endif
 ) -> FragmentOutput {
+
+#ifdef INVERTED_SCALE
+    let is_front_m = !is_front;
+#else
+    let is_front_m = is_front;
+#endif
+
     var cap_brightness: f32 = 0.0;
     if (bounds.flags & (DISABLE_DITHER + OUTLINE_RED)) == 0 {
         cap_brightness = discard_dither(in.position.xy, in.world_position.xyz, view.user_value, (bounds.flags & CONE_ONLY_DITHER) == 0);
     }
 
     // generate a PbrInput struct from the StandardMaterial bindings
-    var pbr_input = pbr_input_from_standard_material(in, is_front);
+    var pbr_input = pbr_input_from_standard_material(in, is_front_m);
     var out: FragmentOutput;
 
 #ifdef OUTLINE
