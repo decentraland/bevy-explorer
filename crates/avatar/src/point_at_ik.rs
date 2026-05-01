@@ -1,5 +1,8 @@
 use bevy::prelude::*;
-use common::{sets::PostUpdateSets, structs::PointAtSync};
+use common::{
+    sets::PostUpdateSets,
+    structs::{PointAtSync, PrimaryUser},
+};
 use dcl_component::transform_and_parent::DclTranslation;
 
 use crate::{two_bone_ik::solve_two_bone, AvatarShape};
@@ -35,6 +38,10 @@ pub struct PointAtIkRig {
     /// Smoothed IK weight, ramped 0→1 when pointing engages and 1→0 when it
     /// disengages. Lets the animation pose retake the arm without a snap.
     weight: f32,
+    /// Hysteresis flag: once the gaze deviates past the trigger threshold the
+    /// body commits to a full rotation toward the target rather than partial
+    /// catching-up. Cleared once we land within the finish threshold.
+    is_rotating: bool,
 }
 
 /// Time constant for the weight ramp (seconds for ~63% of the gap). Tuned to
@@ -45,6 +52,19 @@ const WEIGHT_TAU: f32 = 0.15;
 /// bends to. Pointing "down" sends the elbow under the shoulder for natural
 /// forward-arm gestures.
 const POLE_DIR_WORLD: Vec3 = Vec3::NEG_Y;
+
+/// Yaw deviation (degrees, body forward → target) past which the body
+/// commits to rotating to face the target. Below this we leave the body
+/// alone — the arm reach is enough.
+const BODY_ROTATE_TRIGGER_DEG: f32 = 45.0;
+
+/// Once rotating, we keep going until we're within this many degrees of
+/// the target — gives a deliberate "turn-and-point" feel rather than a
+/// stuttery catch-up.
+const BODY_ROTATE_FINISH_DEG: f32 = 1.0;
+
+/// Slew rate for body rotation. Matches Unity's PointAt rotation speed.
+const BODY_ROTATE_DEG_PER_SEC: f32 = 250.0;
 
 /// Per-bone curl applied at full IK weight: angle (degrees, positive curls
 /// into a fist, negative straightens) around a per-bone local-space axis.
@@ -113,6 +133,7 @@ fn cache_point_at_rig(
                 hand,
                 curled_fingers,
                 weight: 0.0,
+                is_rotating: false,
             });
         }
     }
@@ -121,7 +142,10 @@ fn cache_point_at_rig(
 #[allow(clippy::type_complexity)]
 fn apply_point_at_ik(
     time: Res<Time>,
-    mut avatars: Query<(&mut PointAtIkRig, &PointAtSync), With<AvatarShape>>,
+    mut avatars: Query<
+        (Entity, &mut PointAtIkRig, &PointAtSync, Has<PrimaryUser>),
+        With<AvatarShape>,
+    >,
     parents: Query<&ChildOf>,
     mut tx: ParamSet<(Query<&mut Transform>, TransformHelper)>,
 ) {
@@ -136,13 +160,65 @@ fn apply_point_at_ik(
     // applied as a post-multiplied curl onto whatever the animation set, so
     // weight=0 leaves the bone alone.
     let mut finger_curls: Vec<(Entity, Vec3, f32)> = Vec::new();
+    // Avatar-entity body-yaw overrides (bevy world yaw, radians). Avatar is
+    // top-level so we just write a pure Y-rotation onto its local Transform.
+    let mut body_yaw_writes: Vec<(Entity, f32)> = Vec::new();
 
-    for (mut rig, point_at) in &mut avatars {
+    for (avatar_entity, mut rig, point_at, is_local) in &mut avatars {
         // Smooth the IK weight toward 1 while pointing, 0 otherwise. This
         // alone provides the blend in/out — the swing math runs every frame,
         // and zero-weight slerp is a no-op.
         let target_weight = if point_at.is_pointing { 1.0 } else { 0.0 };
         rig.weight += (target_weight - rig.weight) * alpha;
+
+        // PointAtSync.target_world is in DCL convention (z mirrored from bevy).
+        let target_world = DclTranslation([
+            point_at.target_world.x,
+            point_at.target_world.y,
+            point_at.target_world.z,
+        ])
+        .to_bevy_translation();
+
+        // Body rotation only for the local player. Foreign players have their
+        // body yaw driven by incoming Movement packets — overriding it here
+        // would fight the network-driven orientation each frame.
+        //
+        // Gated on the raw is_pointing flag (not the smoothed weight): when
+        // the gesture ends we stop steering the body even though the arm
+        // continues to ramp out.
+        if is_local && point_at.is_pointing {
+            if let Ok(avatar_g) = tx.p1().compute_global_transform(avatar_entity) {
+                let avatar_pos = avatar_g.translation();
+                let dx = target_world.x - avatar_pos.x;
+                let dz = target_world.z - avatar_pos.z;
+                if dx * dx + dz * dz > 1e-2 {
+                    // Avatar mesh forward is bevy -Z. Under Y rotation by θ,
+                    // -Z maps to (-sin θ, 0, -cos θ), so the yaw that aims
+                    // the avatar at (dx, _, dz) is atan2(-dx, -dz).
+                    let desired_yaw = (-dx).atan2(-dz);
+                    let cur_yaw = avatar_g.rotation().to_euler(EulerRot::YXZ).0;
+                    let delta_deg = wrap_180_deg((desired_yaw - cur_yaw).to_degrees());
+
+                    if !rig.is_rotating && delta_deg.abs() > BODY_ROTATE_TRIGGER_DEG {
+                        rig.is_rotating = true;
+                    }
+                    if rig.is_rotating {
+                        let max_step = BODY_ROTATE_DEG_PER_SEC * dt;
+                        let step = delta_deg.clamp(-max_step, max_step);
+                        let new_yaw = cur_yaw + step.to_radians();
+                        body_yaw_writes.push((avatar_entity, new_yaw));
+                        if delta_deg.abs() <= BODY_ROTATE_FINISH_DEG {
+                            rig.is_rotating = false;
+                        }
+                    }
+                } else {
+                    rig.is_rotating = false;
+                }
+            }
+        } else {
+            rig.is_rotating = false;
+        }
+
         if rig.weight < 1e-3 {
             continue;
         }
@@ -173,14 +249,6 @@ fn apply_point_at_ik(
         let l_ab = (b - a).length();
         let l_bc = (c - b).length();
 
-        // PointAtSync.target_world is in DCL convention (z mirrored from bevy).
-        let target_world = DclTranslation([
-            point_at.target_world.x,
-            point_at.target_world.y,
-            point_at.target_world.z,
-        ])
-        .to_bevy_translation();
-
         let Some((r_upper, r_lower)) =
             solve_two_bone(a, b, c, target_world, l_ab, l_bc, POLE_DIR_WORLD)
         else {
@@ -208,6 +276,13 @@ fn apply_point_at_ik(
     }
 
     let mut transforms = tx.p0();
+    // Body rotation overrides go first so subsequent reads of avatar Transform
+    // (none here, but a safe ordering) see the new yaw.
+    for (avatar, yaw) in body_yaw_writes {
+        if let Ok(mut t) = transforms.get_mut(avatar) {
+            t.rotation = Quat::from_rotation_y(yaw);
+        }
+    }
     for (bone, rot) in writes {
         if let Ok(mut t) = transforms.get_mut(bone) {
             t.rotation = rot;
@@ -221,6 +296,16 @@ fn apply_point_at_ik(
             t.rotation *= Quat::from_axis_angle(axis, angle);
         }
     }
+}
+
+fn wrap_180_deg(deg: f32) -> f32 {
+    let mut d = deg % 360.0;
+    if d > 180.0 {
+        d -= 360.0;
+    } else if d < -180.0 {
+        d += 360.0;
+    }
+    d
 }
 
 fn find_bone(
