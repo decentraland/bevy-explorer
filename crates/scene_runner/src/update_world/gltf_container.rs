@@ -765,8 +765,6 @@ fn update_ready_gltfs(
                             // see https://github.com/decentraland/bevy-explorer/issues/424
                             let mut base_clone = base.clone();
                             base_clone.anisotropy_strength = 0.;
-                            // Disable face culling on gltf meshes
-                            base_clone.cull_mode = None;
 
                             let h_scene_material = bound_mats.add(ExtendedMaterial {
                                 base: base_clone,
