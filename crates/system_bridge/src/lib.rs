@@ -16,6 +16,7 @@ use common::{
     rpc::{RpcResultSender, RpcStreamSender},
     structs::{
         AppConfig, MicState, PermissionLevel, PermissionType, PermissionUsed, PermissionValue,
+        PointerTargetType,
     },
 };
 use dcl_component::proto_components::{
@@ -23,7 +24,6 @@ use dcl_component::proto_components::{
     sdk::components::{pb_pointer_events, PbAvatarBase, PbAvatarEquippedData},
 };
 use serde::{Deserialize, Serialize};
-use serde_repr::{Deserialize_repr, Serialize_repr};
 use settings::SettingBridgePlugin;
 
 use crate::settings::SettingInfo;
@@ -96,14 +96,6 @@ pub struct VoiceMessage {
     pub sender_address: String,
     pub channel: String,
     pub active: bool,
-}
-
-#[derive(Hash, Clone, Copy, Serialize_repr, Deserialize_repr, Debug, PartialEq, Eq)]
-#[repr(u32)]
-pub enum PointerTargetType {
-    World = 0,
-    Ui = 1,
-    Avatar = 2,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]

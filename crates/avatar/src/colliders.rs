@@ -9,7 +9,8 @@ use common::{
     rpc::{RpcCall, RpcEventSender},
     sets::SceneSets,
     structs::{
-        PlayerModifiers, PrimaryCamera, PrimaryUser, ShowProfileEvent, ToolTips, TooltipSource,
+        PlayerModifiers, PointerTargetType, PrimaryCamera, PrimaryUser, ShowProfileEvent, ToolTips,
+        TooltipSource,
     },
     util::AsH160,
 };
@@ -26,7 +27,7 @@ use scene_runner::{
     update_world::mesh_collider::ColliderId,
 };
 use serde_json::json;
-use system_bridge::{AvatarModifierState, NativeUi, PointerTargetType, SystemApi};
+use system_bridge::{AvatarModifierState, NativeUi, SystemApi};
 
 pub struct AvatarColliderPlugin;
 

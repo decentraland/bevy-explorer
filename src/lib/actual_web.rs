@@ -26,7 +26,7 @@ use common::{
     rpc::RpcResultSender,
     sets::SetupSets,
     structs::{
-        AppConfig, AvatarDynamicState, CurrentRealm, HeadSync, IVec2Arg, PreviewMode,
+        AppConfig, AvatarDynamicState, CurrentRealm, HeadSync, IVec2Arg, PointAtSync, PreviewMode,
         PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, PrimaryUser, SceneLoadDistance,
         StartupScene, StartupScenes, Version, GROUND_RENDERLAYER,
     },
@@ -384,6 +384,7 @@ fn setup(
             OutOfWorld,
             AvatarDynamicState::default(),
             HeadSync::default(),
+            PointAtSync::default(),
             GroundCollider::default(),
             Propagate(RenderLayers::default()),
         ))

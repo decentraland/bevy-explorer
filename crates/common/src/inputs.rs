@@ -42,6 +42,7 @@ pub enum SystemAction {
     QuickEmote8,
     QuickEmote9,
     QuickEmote0,
+    PointAt,
 }
 
 impl From<SystemAction> for Action {
@@ -410,14 +411,18 @@ impl Default for InputMap {
                 ),
                 (
                     Action::System(SystemAction::RollLeft),
-                    vec![
-                        InputIdentifier::Key(KeyCode::KeyT),
-                        InputIdentifier::Mouse(MouseButton::Middle),
-                    ],
+                    vec![InputIdentifier::Key(KeyCode::KeyT)],
                 ),
                 (
                     Action::System(SystemAction::RollRight),
                     vec![InputIdentifier::Key(KeyCode::KeyG)],
+                ),
+                (
+                    Action::System(SystemAction::PointAt),
+                    vec![
+                        InputIdentifier::Mouse(MouseButton::Middle),
+                        InputIdentifier::Key(KeyCode::KeyQ),
+                    ],
                 ),
                 (
                     Action::System(SystemAction::Microphone),

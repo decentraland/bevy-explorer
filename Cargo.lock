@@ -2706,6 +2706,7 @@ dependencies = [
  "rmp-serde",
  "serde",
  "serde_json",
+ "serde_repr",
  "smallvec",
  "strum 0.27.2",
  "strum_macros 0.27.2",

@@ -2,7 +2,9 @@ use std::f32::consts::TAU;
 
 use bevy::prelude::*;
 
-use common::structs::{AvatarDynamicState, HeadSync, MoveKind, PrimaryUser, SceneDrivenAnim};
+use common::structs::{
+    AvatarDynamicState, HeadSync, MoveKind, PointAtSync, PrimaryUser, SceneDrivenAnim,
+};
 use dcl_component::{
     proto_components::kernel::comms::rfc4,
     transform_and_parent::{DclQuat, DclTranslation},
@@ -61,12 +63,14 @@ fn broadcast_position(
             &AvatarDynamicState,
             Option<&SceneDrivenAnim>,
             Option<&HeadSync>,
+            Option<&PointAtSync>,
         ),
         With<PrimaryUser>,
     >,
     transports: Query<&Transport>,
     mut last_position: Local<(Vec3, Quat, Vec3)>,
     mut last_head_sync: Local<HeadSync>,
+    mut last_point_at: Local<PointAtSync>,
     mut last_sent: Local<f64>,
     mut last_index: Local<u32>,
     mut last_anim: Local<LastAnim>,
@@ -74,10 +78,11 @@ fn broadcast_position(
     global_crdt: Res<GlobalCrdtState>,
     wallet: Res<Wallet>,
 ) {
-    let Ok((player, dynamics, scene_anim, head_sync)) = player.single() else {
+    let Ok((player, dynamics, scene_anim, head_sync, point_at)) = player.single() else {
         return;
     };
     let head_sync = head_sync.copied().unwrap_or_default();
+    let point_at = point_at.copied().unwrap_or_default();
     let time = time.elapsed_secs_f64();
 
     // Latch any single-frame seek from the scene so we still send it even if the
@@ -126,6 +131,12 @@ fn broadcast_position(
         || head_sync.pitch_enabled != last_head_sync.pitch_enabled
         || (head_sync.yaw_deg - last_head_sync.yaw_deg).abs() > HEAD_SYNC_EPSILON_DEG
         || (head_sync.pitch_deg - last_head_sync.pitch_deg).abs() > HEAD_SYNC_EPSILON_DEG;
+    // Point-at toggling or any non-trivial coord change breaks the keepalive.
+    // No degree-style threshold: target coords can move continuously when the
+    // user drags, and the receiver visually integrates whatever it gets.
+    let point_at_changed = point_at.is_pointing != last_point_at.is_pointing
+        || (point_at.is_pointing
+            && (point_at.target_world - last_point_at.target_world).length_squared() > 0.01);
     if elapsed < STATIC_FREQ
         && (translation - last_position.0).length_squared() < 0.01
         && rotation == last_position.1
@@ -133,6 +144,7 @@ fn broadcast_position(
         && last_anim.pending_seek.is_none()
         && !anim_changed
         && !head_changed
+        && !point_at_changed
     {
         return;
     }
@@ -300,10 +312,10 @@ fn broadcast_position(
         head_ik_pitch_enabled: head_sync.pitch_enabled,
         head_yaw: head_sync.yaw_deg,
         head_pitch: head_sync.pitch_deg,
-        point_at_x: 0.0,
-        point_at_y: 0.0,
-        point_at_z: 0.0,
-        is_pointing_at: false,
+        point_at_x: point_at.target_world.x,
+        point_at_y: point_at.target_world.y,
+        point_at_z: point_at.target_world.z,
+        is_pointing_at: point_at.is_pointing,
         scene_driven_animation,
     };
 
@@ -341,6 +353,7 @@ fn broadcast_position(
 
     *last_position = (translation, rotation, dynamics.velocity);
     *last_head_sync = head_sync;
+    *last_point_at = point_at;
     *last_index += 1;
     *last_sent = time;
 }
