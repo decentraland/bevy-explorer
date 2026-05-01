@@ -1,7 +1,4 @@
-use bevy::{
-    prelude::*,
-    transform::systems::{mark_dirty_trees, propagate_parent_transforms, sync_simple_transforms},
-};
+use bevy::prelude::*;
 use bevy_console::ConsoleCommand;
 use common::sets::PostUpdateSets;
 use console::DoAddConsoleCommand;
@@ -11,7 +8,7 @@ use scene_runner::{
     ContainingScene,
 };
 
-use crate::{animate::ActiveEmote, AvatarShape};
+use crate::{animate::ActiveEmote, two_bone_ik::solve_two_bone, AvatarShape};
 
 pub struct FootIkPlugin;
 
@@ -20,16 +17,7 @@ impl Plugin for FootIkPlugin {
         app.init_resource::<FootIkConfig>();
         app.add_systems(
             PostUpdate,
-            (
-                cache_foot_ik_rig,
-                apply_foot_ik,
-                (
-                    mark_dirty_trees,
-                    propagate_parent_transforms,
-                    sync_simple_transforms,
-                )
-                    .chain(),
-            )
+            (cache_foot_ik_rig, apply_foot_ik)
                 .chain()
                 .in_set(PostUpdateSets::InverseKinematics),
         );
@@ -709,41 +697,7 @@ fn compute_leg_ik(
     let c = plan.c - drop_vec;
     let target_c = plan.target_c;
 
-    let at = target_c - a;
-    let l_at_raw = at.length();
-    if l_at_raw < 1e-4 {
-        return None;
-    }
-    let l_at = l_at_raw.clamp(1e-4, plan.l_ab + plan.l_bc - 1e-4);
-    let dir_at = at / l_at_raw;
-
-    let pole_perp = pole_dir - dir_at * dir_at.dot(pole_dir);
-    let pole_perp = pole_perp.normalize_or_zero();
-    let pole_perp = if pole_perp.length_squared() < 0.5 {
-        let alt = Vec3::Y.cross(dir_at).normalize_or_zero();
-        if alt.length_squared() < 0.5 {
-            Vec3::X
-        } else {
-            alt
-        }
-    } else {
-        pole_perp
-    };
-
-    let cos_a = ((plan.l_ab * plan.l_ab + l_at * l_at - plan.l_bc * plan.l_bc)
-        / (2.0 * plan.l_ab * l_at))
-        .clamp(-1.0, 1.0);
-    let sin_a = (1.0 - cos_a * cos_a).max(0.0).sqrt();
-    let new_b = a + dir_at * (plan.l_ab * cos_a) + pole_perp * (plan.l_ab * sin_a);
-
-    let cur_dir_ab = (b - a).normalize_or_zero();
-    let new_dir_ab = (new_b - a).normalize_or_zero();
-    let r_hip = Quat::from_rotation_arc(cur_dir_ab, new_dir_ab);
-
-    let cur_dir_bc = (c - b).normalize_or_zero();
-    let dir_bc_after_hip = r_hip * cur_dir_bc;
-    let new_dir_bc = (target_c - new_b).normalize_or_zero();
-    let r_knee = Quat::from_rotation_arc(dir_bc_after_hip, new_dir_bc);
+    let (r_hip, r_knee) = solve_two_bone(a, b, c, target_c, plan.l_ab, plan.l_bc, pole_dir)?;
 
     let r_hip_b = Quat::IDENTITY.slerp(r_hip, w);
     let r_knee_b = Quat::IDENTITY.slerp(r_knee, w);
