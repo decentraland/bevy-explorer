@@ -623,6 +623,12 @@ pub trait InvertedScaleExt {
     fn is_inverted(&self) -> bool;
 }
 
+impl InvertedScaleExt for GlobalTransform {
+    fn is_inverted(&self) -> bool {
+        self.scale().is_inverted()
+    }
+}
+
 impl InvertedScaleExt for Transform {
     fn is_inverted(&self) -> bool {
         self.scale.is_inverted()
