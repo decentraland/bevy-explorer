@@ -35,28 +35,69 @@ pub struct PointAtIkRig {
     /// out differently in the rig and needs its own axis. Bones missing
     /// from the rig drop out silently.
     curled_fingers: Vec<(Entity, f32, Vec3)>,
-    /// Smoothed IK weight, ramped 0→1 when pointing engages and 1→0 when it
-    /// disengages. Lets the animation pose retake the arm without a snap.
+    /// Smoothed IK weight. Ramps toward `ENGAGED_WEIGHT_TARGET` (>1.0) while
+    /// engaged and 0 otherwise; we clamp to `[0, 1]` for display, so the
+    /// "above 1" reserve acts as a time-based hysteresis dampener — brief
+    /// excursions out of the cone bleed off the reserve before the displayed
+    /// weight starts dropping.
     weight: f32,
+    /// Smoothed gaze target in bevy world space. Lerps toward the latest
+    /// target each frame so that re-aiming during a held drag (or a fresh
+    /// click while the previous gesture is still ramping out) glides the
+    /// hand to the new spot instead of snapping. `None` while idle; init
+    /// to the current target on the first pointing frame, cleared once the
+    /// weight finishes ramping back to zero.
+    smoothed_target: Option<Vec3>,
     /// Hysteresis flag: once the gaze deviates past the trigger threshold the
     /// body commits to a full rotation toward the target rather than partial
     /// catching-up. Cleared once we land within the finish threshold.
     is_rotating: bool,
+    /// Our own copy of the avatar's bevy world yaw (radians). The avatar
+    /// movement system rewrites `Transform.rotation` from a stored
+    /// orientation each frame, and movement-scene round-trips can lag, so
+    /// reading the transform isn't a reliable source for our slew. We hold
+    /// our own state from the first frame of a local pointing gesture and
+    /// override the transform every frame while it's `Some`. Cleared when
+    /// the gesture ends.
+    body_yaw: Option<f32>,
 }
 
-/// Time constant for the weight ramp (seconds for ~63% of the gap). Tuned to
-/// feel responsive without snapping — Unity uses a similar ~0.5s ramp.
-const WEIGHT_TAU: f32 = 0.15;
+/// Time constant for the weight ramp. Combined with `ENGAGED_WEIGHT_TARGET`
+/// = 3.0 this gives ~165ms ramp-in to display=1.0 and ~440ms of "above 1.0"
+/// reserve that has to bleed off after disengagement before the displayed
+/// weight starts dropping.
+const WEIGHT_TAU: f32 = 0.4;
+
+/// Time constant for the gaze-target lerp. Same feel as the weight ramp:
+/// re-aiming visibly slews the hand rather than snapping.
+const TARGET_TAU: f32 = 0.15;
 
 /// Hint direction in world space for which side of the swing plane the elbow
 /// bends to. Pointing "down" sends the elbow under the shoulder for natural
 /// forward-arm gestures.
 const POLE_DIR_WORLD: Vec3 = Vec3::NEG_Y;
 
-/// Yaw deviation (degrees, body forward → target) past which the body
-/// commits to rotating to face the target. Below this we leave the body
-/// alone — the arm reach is enough.
-const BODY_ROTATE_TRIGGER_DEG: f32 = 45.0;
+/// Yaw deviation (degrees, body forward → target, signed) past which the
+/// body commits to rotating to face the target. Asymmetric — values
+/// derived empirically from observing Unity's behavior (~+17° / -53°);
+/// settings asset has presumably moved since the source we read.
+/// Once triggered the body still slews fully to face the target; only the
+/// trigger angle differs per side.
+const BODY_ROTATE_TRIGGER_LEFT_DEG: f32 = 17.5;
+const BODY_ROTATE_TRIGGER_RIGHT_DEG: f32 = 53.0;
+
+/// Slack around the cone edges to absorb rounding-error mismatches between
+/// clients. Display the arm in a slightly wider cone (so we don't go silent
+/// while another client is showing it), and trigger rotation in a slightly
+/// narrower cone (so we don't sit still while another client thinks we
+/// should be turning).
+const CONE_TOLERANCE_DEG: f32 = 2.0;
+
+/// Weight target while engaged. Driving above 1.0 (clamped on display) gives
+/// a time-based dampener: brief excursions out of the display cone don't
+/// pull the displayed weight below 1.0 because we have headroom to burn
+/// before crossing it. Acts like hysteresis without an explicit flag.
+const ENGAGED_WEIGHT_TARGET: f32 = 3.0;
 
 /// Once rotating, we keep going until we're within this many degrees of
 /// the target — gives a deliberate "turn-and-point" feel rather than a
@@ -133,7 +174,9 @@ fn cache_point_at_rig(
                 hand,
                 curled_fingers,
                 weight: 0.0,
+                smoothed_target: None,
                 is_rotating: false,
+                body_yaw: None,
             });
         }
     }
@@ -155,22 +198,18 @@ fn apply_point_at_ik(
     } else {
         0.0
     };
+    let target_alpha = if dt > 0.0 {
+        1.0 - (-dt / TARGET_TAU).exp()
+    } else {
+        0.0
+    };
     let mut writes: Vec<(Entity, Quat)> = Vec::new();
     // (finger_bone, axis, scaled_angle_rad) collected alongside arm writes;
     // applied as a post-multiplied curl onto whatever the animation set, so
     // weight=0 leaves the bone alone.
     let mut finger_curls: Vec<(Entity, Vec3, f32)> = Vec::new();
-    // Avatar-entity body-yaw overrides (bevy world yaw, radians). Avatar is
-    // top-level so we just write a pure Y-rotation onto its local Transform.
-    let mut body_yaw_writes: Vec<(Entity, f32)> = Vec::new();
 
     for (avatar_entity, mut rig, point_at, is_local) in &mut avatars {
-        // Smooth the IK weight toward 1 while pointing, 0 otherwise. This
-        // alone provides the blend in/out — the swing math runs every frame,
-        // and zero-weight slerp is a no-op.
-        let target_weight = if point_at.is_pointing { 1.0 } else { 0.0 };
-        rig.weight += (target_weight - rig.weight) * alpha;
-
         // PointAtSync.target_world is in DCL convention (z mirrored from bevy).
         let target_world = DclTranslation([
             point_at.target_world.x,
@@ -179,14 +218,13 @@ fn apply_point_at_ik(
         ])
         .to_bevy_translation();
 
-        // Body rotation only for the local player. Foreign players have their
-        // body yaw driven by incoming Movement packets — overriding it here
-        // would fight the network-driven orientation each frame.
-        //
-        // Gated on the raw is_pointing flag (not the smoothed weight): when
-        // the gesture ends we stop steering the body even though the arm
-        // continues to ramp out.
-        if is_local && point_at.is_pointing {
+        // Compute the body-forward → target yaw delta (used by both local
+        // body rotation and the arm-IK gate below). For foreign players we
+        // don't drive rotation, but we still measure the delta so the arm
+        // only engages when their network-driven body actually faces the
+        // target.
+        let mut body_facing_ok = false;
+        if point_at.is_pointing {
             if let Ok(avatar_g) = tx.p1().compute_global_transform(avatar_entity) {
                 let avatar_pos = avatar_g.translation();
                 let dx = target_world.x - avatar_pos.x;
@@ -196,30 +234,111 @@ fn apply_point_at_ik(
                     // -Z maps to (-sin θ, 0, -cos θ), so the yaw that aims
                     // the avatar at (dx, _, dz) is atan2(-dx, -dz).
                     let desired_yaw = (-dx).atan2(-dz);
-                    let cur_yaw = avatar_g.rotation().to_euler(EulerRot::YXZ).0;
+                    // For the local player, prefer our own tracked yaw —
+                    // movement-scene round-trips can lag and the transform
+                    // here may be a frame behind. Foreign players fall back
+                    // to the transform since we don't drive their rotation.
+                    let cur_yaw = if is_local {
+                        rig.body_yaw
+                            .unwrap_or_else(|| avatar_g.rotation().to_euler(EulerRot::YXZ).0)
+                    } else {
+                        avatar_g.rotation().to_euler(EulerRot::YXZ).0
+                    };
                     let delta_deg = wrap_180_deg((desired_yaw - cur_yaw).to_degrees());
 
-                    if !rig.is_rotating && delta_deg.abs() > BODY_ROTATE_TRIGGER_DEG {
-                        rig.is_rotating = true;
-                    }
-                    if rig.is_rotating {
-                        let max_step = BODY_ROTATE_DEG_PER_SEC * dt;
-                        let step = delta_deg.clamp(-max_step, max_step);
-                        let new_yaw = cur_yaw + step.to_radians();
-                        body_yaw_writes.push((avatar_entity, new_yaw));
-                        if delta_deg.abs() <= BODY_ROTATE_FINISH_DEG {
-                            rig.is_rotating = false;
+                    // Cone matches Unity's asymmetric extents: 17.5° on the
+                    // anti-clockwise side, 53° on the clockwise side. Net
+                    // effect is the cone center sits ~18° toward the right
+                    // shoulder — pointing slightly right of forward is the
+                    // "comfortable" direction for a right-handed gesture.
+                    // Display in a slightly wider cone, trigger rotation in
+                    // a slightly narrower one, so per-client rounding can't
+                    // cause one of us to display while the other doesn't or
+                    // one of us to be turning while the other isn't.
+                    let in_display_cone = delta_deg
+                        <= BODY_ROTATE_TRIGGER_LEFT_DEG + CONE_TOLERANCE_DEG
+                        && delta_deg >= -BODY_ROTATE_TRIGGER_RIGHT_DEG - CONE_TOLERANCE_DEG;
+                    let needs_to_rotate = delta_deg
+                        > BODY_ROTATE_TRIGGER_LEFT_DEG - CONE_TOLERANCE_DEG
+                        || delta_deg < -BODY_ROTATE_TRIGGER_RIGHT_DEG + CONE_TOLERANCE_DEG;
+                    body_facing_ok = in_display_cone;
+
+                    if is_local {
+                        if !rig.is_rotating && needs_to_rotate {
+                            rig.is_rotating = true;
                         }
+                        let new_yaw = if rig.is_rotating {
+                            let max_step = BODY_ROTATE_DEG_PER_SEC * dt;
+                            let step = delta_deg.clamp(-max_step, max_step);
+                            let stepped = cur_yaw + step.to_radians();
+                            if delta_deg.abs() <= BODY_ROTATE_FINISH_DEG {
+                                rig.is_rotating = false;
+                            }
+                            stepped
+                        } else {
+                            cur_yaw
+                        };
+                        rig.body_yaw = Some(new_yaw);
                     }
                 } else {
+                    // Target overhead/below — body orientation doesn't matter.
+                    body_facing_ok = true;
                     rig.is_rotating = false;
                 }
             }
         } else {
             rig.is_rotating = false;
+            rig.body_yaw = None;
         }
 
-        if rig.weight < 1e-3 {
+        // Arm IK weight target: pointing only counts when the body is also
+        // facing the target. Driven above 1.0 (clamped on display) so
+        // brief excursions out of the cone don't immediately drop the
+        // displayed weight below 1.0 — gives a time-based dampener.
+        let target_weight = if body_facing_ok {
+            ENGAGED_WEIGHT_TARGET
+        } else {
+            0.0
+        };
+        rig.weight += (target_weight - rig.weight) * alpha;
+        let display_weight = rig.weight.clamp(0.0, 1.0);
+
+        // Smooth the IK target so re-aiming or starting a fresh gesture
+        // mid-ramp-out glides the hand instead of snapping. Initialize on
+        // first activation, hold while ramping out, clear once disengaged.
+        let solve_target = if point_at.is_pointing {
+            let new_target = match rig.smoothed_target {
+                Some(prev) => prev + (target_world - prev) * target_alpha,
+                None => target_world,
+            };
+            rig.smoothed_target = Some(new_target);
+            new_target
+        } else {
+            let held = rig.smoothed_target.unwrap_or(target_world);
+            if display_weight < 1e-3 {
+                rig.smoothed_target = None;
+            }
+            held
+        };
+
+        // Write the body-yaw override now (before reading bone globals) so
+        // the IK math sees bones rooted at our intended avatar orientation.
+        // Otherwise the IK would solve for shoulder positions based on the
+        // movement-system yaw, then we'd rotate the avatar at end-of-loop
+        // and the shoulder would shift out from under the hand — visible
+        // arm jitter while the body is mid-turn.
+        if let Some(yaw) = rig.body_yaw {
+            if let Ok(mut t) = tx.p0().get_mut(avatar_entity) {
+                t.rotation = Quat::from_rotation_y(yaw);
+            }
+        }
+
+        if display_weight < 1e-3 {
+            // Once the arm has fully ramped out, drop the body override so
+            // movement reclaims control.
+            if !point_at.is_pointing {
+                rig.body_yaw = None;
+            }
             continue;
         }
 
@@ -250,13 +369,13 @@ fn apply_point_at_ik(
         let l_bc = (c - b).length();
 
         let Some((r_upper, r_lower)) =
-            solve_two_bone(a, b, c, target_world, l_ab, l_bc, POLE_DIR_WORLD)
+            solve_two_bone(a, b, c, solve_target, l_ab, l_bc, POLE_DIR_WORLD)
         else {
             continue;
         };
 
-        let r_upper_w = Quat::IDENTITY.slerp(r_upper, rig.weight);
-        let r_lower_w = Quat::IDENTITY.slerp(r_lower, rig.weight);
+        let r_upper_w = Quat::IDENTITY.slerp(r_upper, display_weight);
+        let r_lower_w = Quat::IDENTITY.slerp(r_lower, display_weight);
 
         let cur_upper_g_rot = upper_g.compute_transform().rotation;
         let cur_lower_g_rot = lower_g.compute_transform().rotation;
@@ -271,18 +390,11 @@ fn apply_point_at_ik(
         writes.push((rig.upper, upper_local));
         writes.push((rig.lower, lower_local));
         for &(finger, deg, axis) in &rig.curled_fingers {
-            finger_curls.push((finger, axis, deg.to_radians() * rig.weight));
+            finger_curls.push((finger, axis, deg.to_radians() * display_weight));
         }
     }
 
     let mut transforms = tx.p0();
-    // Body rotation overrides go first so subsequent reads of avatar Transform
-    // (none here, but a safe ordering) see the new yaw.
-    for (avatar, yaw) in body_yaw_writes {
-        if let Ok(mut t) = transforms.get_mut(avatar) {
-            t.rotation = Quat::from_rotation_y(yaw);
-        }
-    }
     for (bone, rot) in writes {
         if let Ok(mut t) = transforms.get_mut(bone) {
             t.rotation = rot;
