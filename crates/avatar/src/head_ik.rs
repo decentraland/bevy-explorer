@@ -25,6 +25,13 @@ pub struct HeadIkRig {
     /// parent. The attach point is reparented onto the bone during avatar
     /// build (see `lib.rs::reparent_attach_point`).
     pub head: Entity,
+    /// Bones that share the gaze swing, ordered root→tip (e.g.
+    /// `[upper_chest, neck, head]`). Each entry is `(bone, yaw_weight,
+    /// pitch_weight)`; weights per axis sum to ~1 across the chain so the
+    /// total swing is preserved. Spine takes more yaw, head takes more
+    /// pitch — matches Unity's TwistChain split without needing a generic
+    /// chain solver.
+    chain: Vec<(Entity, f32, f32)>,
     /// Smoothed yaw stored as an offset from the avatar's body forward
     /// (DCL convention). Storing relative — not absolute world yaw — means
     /// body rotation propagates to the head instantly without the smoother
@@ -93,12 +100,34 @@ fn cache_head_ik_rig(
         if head_bone == avatar {
             continue;
         }
+        // Walk up to find neck (parent of head) and an upper-chest/spine bone
+        // (grandparent). Bail out of the chain at any step that lands on the
+        // avatar entity itself — that means we've run out of skeleton.
+        let neck = parents
+            .get(head_bone)
+            .map(|c| c.parent())
+            .ok()
+            .filter(|e| *e != avatar);
+        let chest = neck
+            .and_then(|n| parents.get(n).map(|c| c.parent()).ok())
+            .filter(|e| *e != avatar);
+
+        let chain = match (chest, neck) {
+            (Some(chest), Some(neck)) => {
+                vec![(chest, 0.3, 0.2), (neck, 0.3, 0.3), (head_bone, 0.4, 0.5)]
+            }
+            (None, Some(neck)) => vec![(neck, 0.5, 0.4), (head_bone, 0.5, 0.6)],
+            _ => vec![(head_bone, 1.0, 1.0)],
+        };
+
         info!(
-            "head_ik: cached rig for {:?} (head bone: {:?})",
-            avatar, head_bone
+            "head_ik: cached rig for {:?} (chain: {:?})",
+            avatar,
+            chain.iter().map(|(e, _, _)| e).collect::<Vec<_>>()
         );
         commands.entity(avatar).try_insert(HeadIkRig {
             head: head_bone,
+            chain,
             yaw_offset_deg: 0.0,
             pitch_deg: 0.0,
         });
@@ -149,34 +178,48 @@ fn apply_head_ik(
         rig.yaw_offset_deg = smooth_angle(rig.yaw_offset_deg, target_yaw_offset, alpha);
         rig.pitch_deg = smooth_angle(rig.pitch_deg, target_pitch, alpha);
 
-        // Wire format: DCL yaw (N=0, E=90, S=180, W=270) in a left-handed,
-        // +Z-forward frame. To render in bevy's right-handed -Z-forward frame
-        // we mirror the Z-axis (negates the Y-rotation sign) and add 180° so
-        // the head bone's rest-pose forward aligns with the gaze target.
-        let world_yaw_dcl = dcl_avatar_yaw + rig.yaw_offset_deg;
-        let yaw = -world_yaw_dcl.to_radians() + std::f32::consts::PI;
-        let pitch = rig
+        // World-space swing applied as a delta to each bone's rest pose.
+        // Yaw axis is world up; pitch axis is the avatar's right vector
+        // (perpendicular to body forward in the horizontal plane). Sign on
+        // yaw flips DCL → bevy handedness.
+        let bevy_yaw_swing = -rig.yaw_offset_deg.to_radians();
+        let pitch_swing = -rig
             .pitch_deg
             .clamp(-PITCH_CLAMP_DEG, PITCH_CLAMP_DEG)
             .to_radians();
-        let target_world = Quat::from_euler(EulerRot::YXZ, yaw, pitch, 0.0);
+        let avatar_world_rot = avatar_global.rotation();
+        let avatar_right_world = avatar_world_rot * Vec3::X;
 
-        // Convert world target into local space: parent's current world rotation
-        // is the basis the bone's local rotation is composed against.
-        let Ok(head_parent) = parents.get(rig.head).map(|c| c.parent()) else {
-            continue;
-        };
-        let Ok(parent_global) = tx.p1().compute_global_transform(head_parent) else {
-            continue;
-        };
-        let parent_world_rot = parent_global.compute_transform().rotation;
-        let target_local = parent_world_rot.inverse() * target_world;
-        writes.push((rig.head, target_local));
+        for &(bone, w_yaw, w_pitch) in &rig.chain {
+            // Each bone gets a fraction of the total swing applied in WORLD
+            // space, then conjugated into its parent's local frame so writing
+            // a local rotation gives the intended world delta. Computing all
+            // contributions against the pre-IK parent globals (TransformHelper
+            // sees no writes until after this loop) keeps the chain math
+            // consistent: the cumulative world rotation at the head equals
+            // the sum of weighted yaw/pitch around the same axes.
+            let Ok(parent) = parents.get(bone).map(|c| c.parent()) else {
+                continue;
+            };
+            let Ok(parent_global) = tx.p1().compute_global_transform(parent) else {
+                continue;
+            };
+            let Ok(bone_global) = tx.p1().compute_global_transform(bone) else {
+                continue;
+            };
+            let parent_world_rot = parent_global.rotation();
+            let bone_local_rot = parent_world_rot.inverse() * bone_global.rotation();
+
+            let delta_world = Quat::from_axis_angle(Vec3::Y, bevy_yaw_swing * w_yaw)
+                * Quat::from_axis_angle(avatar_right_world, pitch_swing * w_pitch);
+            let delta_local = parent_world_rot.inverse() * delta_world * parent_world_rot;
+            writes.push((bone, delta_local * bone_local_rot));
+        }
     }
 
     let mut transforms = tx.p0();
-    for (head, rot) in writes {
-        if let Ok(mut t) = transforms.get_mut(head) {
+    for (bone, rot) in writes {
+        if let Ok(mut t) = transforms.get_mut(bone) {
             t.rotation = rot;
         }
     }
