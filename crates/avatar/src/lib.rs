@@ -34,6 +34,8 @@ pub mod foreign_dynamics;
 pub mod head_ik;
 pub mod mask_material;
 pub mod npc_dynamics;
+pub mod point_at_ik;
+mod two_bone_ik;
 
 use common::{
     sets::SetupSets,
@@ -71,7 +73,7 @@ use world_ui::{spawn_world_ui_view, WorldUi};
 
 use crate::{
     animate::AvatarAnimPlayer, dynamic_nametag::DynamicNametagPlugin, foot_ik::FootIkPlugin,
-    head_ik::HeadIkPlugin,
+    head_ik::HeadIkPlugin, point_at_ik::PointAtIkPlugin,
 };
 
 use self::{
@@ -94,6 +96,7 @@ impl Plugin for AvatarPlugin {
         app.add_plugins(DynamicNametagPlugin);
         app.add_plugins(FootIkPlugin);
         app.add_plugins(HeadIkPlugin);
+        app.add_plugins(PointAtIkPlugin);
         app.add_systems(
             Update,
             (
