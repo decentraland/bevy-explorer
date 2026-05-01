@@ -183,7 +183,7 @@ fn cache_point_at_rig(
 }
 
 #[allow(clippy::type_complexity)]
-fn apply_point_at_ik(
+pub(crate) fn apply_point_at_ik(
     time: Res<Time>,
     mut avatars: Query<
         (Entity, &mut PointAtIkRig, &PointAtSync, Has<PrimaryUser>),
