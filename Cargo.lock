@@ -722,6 +722,7 @@ dependencies = [
  "console",
  "dcl",
  "dcl_component",
+ "ethers-core",
  "input_manager",
  "ipfs",
  "platform",
