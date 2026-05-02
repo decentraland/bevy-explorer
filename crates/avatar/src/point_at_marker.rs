@@ -97,7 +97,10 @@ fn sync_markers(
             Option<&ForeignPlayer>,
             Option<&UserProfile>,
         ),
-        (With<AvatarShape>, Or<(With<PrimaryUser>, With<ForeignPlayer>)>),
+        (
+            With<AvatarShape>,
+            Or<(With<PrimaryUser>, With<ForeignPlayer>)>,
+        ),
     >,
     markers: Query<(Entity, &PointAtMarker)>,
 ) {
