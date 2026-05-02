@@ -132,7 +132,7 @@ fn cache_head_ik_rig(
             _ => vec![(head_bone, 1.0, 1.0)],
         };
 
-        info!(
+        debug!(
             "head_ik: cached rig for {:?} (chain: {:?})",
             avatar,
             chain.iter().map(|(e, _, _)| e).collect::<Vec<_>>()

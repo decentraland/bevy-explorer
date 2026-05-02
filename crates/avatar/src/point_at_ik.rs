@@ -179,7 +179,7 @@ fn cache_point_at_rig(
                     find_bone(avatar, name, &children_q, &name_q).map(|e| (e, *deg, *axis))
                 })
                 .collect();
-            info!(
+            debug!(
                 "point_at_ik: cached rig for {:?} (arm: {:?}, forearm: {:?}, hand: {:?}, fingers: {})",
                 avatar, upper, lower, hand,
                 curled_fingers.len()

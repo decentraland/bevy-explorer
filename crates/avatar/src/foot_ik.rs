@@ -136,7 +136,7 @@ fn cache_foot_ik_rig(
         .iter()
         .all(|e| globals.get(*e).is_ok());
         if !alive {
-            info!("foot_ik: invalidating stale rig on {:?}", avatar);
+            debug!("foot_ik: invalidating stale rig on {:?}", avatar);
             commands.entity(avatar).remove::<FootIkRig>();
         }
     }
@@ -153,7 +153,7 @@ fn cache_foot_ik_rig(
         if let (Some(hips), Some(lu), Some(ll), Some(lf), Some(ru), Some(rl), Some(rf)) =
             (hips, lu, ll, lf, ru, rl, rf)
         {
-            info!(
+            debug!(
                 "foot_ik: cached rig for {:?} (hips: {:?}, l: {:?}/{:?}/{:?}, r: {:?}/{:?}/{:?})",
                 avatar, hips, lu, ll, lf, ru, rl, rf
             );

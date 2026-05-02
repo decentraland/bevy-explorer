@@ -50,6 +50,14 @@ const BASE_DIAMETER_PCT: f32 = 6.0;
 const MIN_DIAMETER_PCT: f32 = 1.5;
 const MAX_DIAMETER_PCT: f32 = 9.0;
 
+/// Exponential-smoothing time constant (seconds) for the marker's fade.
+/// Matches Unity's ~0.3s fade duration when applied as a τ for an
+/// exponential ramp toward 1.0/0.0.
+const FADE_TAU: f32 = 0.12;
+
+/// Below this fade level a fading-out marker is despawned entirely.
+const FADE_DESPAWN_THRESHOLD: f32 = 0.01;
+
 #[derive(Resource, Default)]
 struct MarkerOverlay {
     root: Option<Entity>,
@@ -61,6 +69,11 @@ struct PointAtMarkerOverlay;
 #[derive(Component)]
 struct PointAtMarker {
     avatar: Entity,
+    bg: Color,
+    /// Smoothed [0, 1] visibility. Ramps toward 1 while the source avatar is
+    /// pointing and toward 0 once it stops; the marker is despawned once it
+    /// reaches `FADE_DESPAWN_THRESHOLD` so the ramp-out plays through.
+    fade: f32,
 }
 
 #[derive(Component)]
@@ -108,11 +121,10 @@ fn sync_markers(
         return;
     };
 
-    let mut existing: HashMap<Entity, Entity> =
-        markers.iter().map(|(m, p)| (p.avatar, m)).collect();
+    let existing: HashMap<Entity, Entity> = markers.iter().map(|(m, p)| (p.avatar, m)).collect();
 
     for (avatar_ent, sync, foreign, profile) in &avatars {
-        if !sync.is_pointing {
+        if !sync.is_pointing || existing.contains_key(&avatar_ent) {
             continue;
         }
         let Some(address) = foreign
@@ -122,15 +134,15 @@ fn sync_markers(
             continue;
         };
 
-        if existing.remove(&avatar_ent).is_some() {
-            continue;
-        }
-
         let bg = name_color(address);
         commands.entity(root).with_children(|parent| {
             parent
                 .spawn((
-                    PointAtMarker { avatar: avatar_ent },
+                    PointAtMarker {
+                        avatar: avatar_ent,
+                        bg,
+                        fade: 0.0,
+                    },
                     Node {
                         position_type: PositionType::Absolute,
                         width: Val::Percent(BASE_DIAMETER_PCT),
@@ -140,7 +152,7 @@ fn sync_markers(
                         justify_content: JustifyContent::Center,
                         ..Default::default()
                     },
-                    BackgroundColor(bg),
+                    BackgroundColor(bg.with_alpha(0.0)),
                     BorderRadius::MAX,
                     PendingMarkerImage(address),
                     Pickable::IGNORE,
@@ -158,10 +170,6 @@ fn sync_markers(
                     ));
                 });
         });
-    }
-
-    for marker_ent in existing.values().copied() {
-        commands.entity(marker_ent).despawn();
     }
 }
 
@@ -195,10 +203,18 @@ fn update_marker_images(
 
 fn position_markers(
     mut commands: Commands,
+    time: Res<Time>,
     primary_camera: Single<(Entity, &Camera), With<PrimaryCamera>>,
     gt_helper: bevy::transform::helper::TransformHelper,
     avatars: Query<&PointAtSync>,
-    mut markers: Query<(Entity, &PointAtMarker, &mut Node)>,
+    mut markers: Query<(
+        Entity,
+        &mut PointAtMarker,
+        &mut Node,
+        &mut BackgroundColor,
+        &Children,
+    )>,
+    mut images: Query<&mut ImageNode, With<MarkerImageNode>>,
 ) {
     let (camera_entity, camera) = primary_camera.into_inner();
     // The camera moves in `Update` but its `GlobalTransform` is only refreshed
@@ -213,20 +229,55 @@ fn position_markers(
         return;
     };
 
-    for (marker_ent, marker, mut node) in markers.iter_mut() {
-        let Ok(sync) = avatars.get(marker.avatar) else {
+    let dt = time.delta_secs();
+    let alpha_step = if dt > 0.0 {
+        1.0 - (-dt / FADE_TAU).exp()
+    } else {
+        0.0
+    };
+
+    for (marker_ent, mut marker, mut node, mut bg, children) in markers.iter_mut() {
+        // Resolve target fade from the source avatar's pointing state. A
+        // missing avatar (despawned/wearable swap) ramps out the same way as
+        // a normal release.
+        let target_fade = match avatars.get(marker.avatar) {
+            Ok(sync) if sync.is_pointing => 1.0,
+            _ => 0.0,
+        };
+        marker.fade += (target_fade - marker.fade) * alpha_step;
+
+        // Despawn once we've ramped down past the despawn threshold. Mid-fade
+        // we keep the marker alive and visible, modulating only its alpha.
+        if target_fade <= 0.0 && marker.fade < FADE_DESPAWN_THRESHOLD {
             commands.entity(marker_ent).despawn();
             continue;
-        };
-        if !sync.is_pointing {
-            continue;
         }
-        let target_bevy = DclTranslation([
-            sync.target_world.x,
-            sync.target_world.y,
-            sync.target_world.z,
-        ])
-        .to_bevy_translation();
+
+        let alpha = marker.fade.clamp(0.0, 1.0);
+        bg.0 = marker.bg.with_alpha(alpha);
+        for child in children.iter() {
+            if let Ok(mut image) = images.get_mut(child) {
+                image.color = Color::WHITE.with_alpha(alpha);
+            }
+        }
+
+        // Pull the latest target from the avatar (if still pointing) for
+        // positioning; otherwise hold position while we ramp out.
+        let Some(target_bevy) = avatars
+            .get(marker.avatar)
+            .ok()
+            .filter(|s| s.is_pointing)
+            .map(|sync| {
+                DclTranslation([
+                    sync.target_world.x,
+                    sync.target_world.y,
+                    sync.target_world.z,
+                ])
+                .to_bevy_translation()
+            })
+        else {
+            continue;
+        };
 
         let distance = (target_bevy - camera_transform.translation()).length();
         if distance > MAX_VISIBLE_DISTANCE {
