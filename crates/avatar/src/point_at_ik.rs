@@ -271,12 +271,12 @@ pub(crate) fn apply_point_at_ik(
                     // a slightly narrower one, so per-client rounding can't
                     // cause one of us to display while the other doesn't or
                     // one of us to be turning while the other isn't.
-                    let in_display_cone = delta_deg
-                        <= BODY_ROTATE_TRIGGER_LEFT_DEG + CONE_TOLERANCE_DEG
-                        && delta_deg >= -BODY_ROTATE_TRIGGER_RIGHT_DEG - CONE_TOLERANCE_DEG;
-                    let needs_to_rotate = delta_deg
-                        > BODY_ROTATE_TRIGGER_LEFT_DEG - CONE_TOLERANCE_DEG
-                        || delta_deg < -BODY_ROTATE_TRIGGER_RIGHT_DEG + CONE_TOLERANCE_DEG;
+                    let display_cone = (-BODY_ROTATE_TRIGGER_RIGHT_DEG - CONE_TOLERANCE_DEG)
+                        ..=(BODY_ROTATE_TRIGGER_LEFT_DEG + CONE_TOLERANCE_DEG);
+                    let trigger_cone = (-BODY_ROTATE_TRIGGER_RIGHT_DEG + CONE_TOLERANCE_DEG)
+                        ..=(BODY_ROTATE_TRIGGER_LEFT_DEG - CONE_TOLERANCE_DEG);
+                    let in_display_cone = display_cone.contains(&delta_deg);
+                    let needs_to_rotate = !trigger_cone.contains(&delta_deg);
                     body_facing_ok = in_display_cone;
 
                     if is_local {
