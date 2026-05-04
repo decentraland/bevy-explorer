@@ -530,7 +530,7 @@ impl Emote {
             .ok_or(CollectibleError::Loading)?
             .named_animations
             .iter()
-            .find(|(name, _)| name.ends_with("_Prop"))
+            .find(|(name, _)| name.to_ascii_lowercase().contains("_prop"))
             .map(|(_, handle)| handle)
             .cloned())
     }
