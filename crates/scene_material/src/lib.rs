@@ -268,11 +268,13 @@ impl MaterialExtension for SceneBound {
     ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
         let data = key.bind_group_data;
 
-        descriptor.primitive.cull_mode = if data.inverted_scale {
-            Some(Face::Front)
-        } else {
-            Some(Face::Back)
-        };
+        if descriptor.primitive.cull_mode.is_some() {
+            descriptor.primitive.cull_mode = if data.inverted_scale {
+                Some(Face::Front)
+            } else {
+                Some(Face::Back)
+            };
+        }
 
         if let Some(fragment) = descriptor.fragment.as_mut() {
             if data.outline {
