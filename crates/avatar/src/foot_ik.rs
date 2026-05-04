@@ -7,8 +7,18 @@ use scene_runner::{
     update_world::mesh_collider::{SceneColliderData, GROUND_COLLISION_MASK},
     ContainingScene,
 };
+use texture_camera::CameraLayers;
 
 use crate::{animate::ActiveEmote, two_bone_ik::solve_two_bone, AvatarShape};
+
+/// World/default render layer. Avatars whose `CameraLayers` doesn't include
+/// this are display-only (booth/portrait/secondary cameras) and shouldn't
+/// interact with world geometry — skip foot IK for them.
+const WORLD_CAMERA_LAYER: u32 = 0;
+
+fn is_display_only(layers: Option<&CameraLayers>) -> bool {
+    layers.is_some_and(|l| !l.0.contains(&WORLD_CAMERA_LAYER))
+}
 
 pub struct FootIkPlugin;
 
@@ -109,21 +119,22 @@ fn foot_ik_console_command(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn cache_foot_ik_rig(
     mut commands: Commands,
     config: Res<FootIkConfig>,
-    needs_rig: Query<Entity, (With<AvatarShape>, Without<FootIkRig>)>,
-    has_rig: Query<(Entity, &FootIkRig), With<AvatarShape>>,
+    needs_rig: Query<(Entity, Option<&CameraLayers>), (With<AvatarShape>, Without<FootIkRig>)>,
+    has_rig: Query<(Entity, &FootIkRig, Option<&CameraLayers>), With<AvatarShape>>,
     children_q: Query<&Children>,
     name_q: Query<&Name>,
     globals: Query<&GlobalTransform>,
     mut log_counter: Local<u32>,
 ) {
     // Invalidate any cached rig whose bones no longer exist (e.g. a wearable
-    // reload despawned the old armature). On the next frame the rebuild
-    // pass below installs a fresh rig.
-    for (avatar, rig) in &has_rig {
+    // reload despawned the old armature), or whose avatar has flipped to a
+    // display-only camera layer. On the next frame the rebuild pass below
+    // installs a fresh rig (only for world-layer avatars).
+    for (avatar, rig, layers) in &has_rig {
         let alive = [
             rig.hips,
             rig.left.upper,
@@ -135,13 +146,17 @@ fn cache_foot_ik_rig(
         ]
         .iter()
         .all(|e| globals.get(*e).is_ok());
-        if !alive {
+        if !alive || is_display_only(layers) {
             debug!("foot_ik: invalidating stale rig on {:?}", avatar);
             commands.entity(avatar).remove::<FootIkRig>();
+            commands.entity(avatar).remove::<FootIkRuntime>();
         }
     }
 
-    for avatar in &needs_rig {
+    for (avatar, layers) in &needs_rig {
+        if is_display_only(layers) {
+            continue;
+        }
         let hips = find_bone(avatar, "avatar_hips", &children_q, &name_q);
         let lu = find_bone(avatar, "avatar_leftupleg", &children_q, &name_q);
         let ll = find_bone(avatar, "avatar_leftleg", &children_q, &name_q);
@@ -326,7 +341,13 @@ fn apply_foot_ik(
     config: Res<FootIkConfig>,
     time: Res<Time>,
     mut avatars: Query<
-        (Entity, &FootIkRig, Option<&ActiveEmote>, &mut FootIkRuntime),
+        (
+            Entity,
+            &FootIkRig,
+            Option<&ActiveEmote>,
+            &mut FootIkRuntime,
+            Option<&CameraLayers>,
+        ),
         With<AvatarShape>,
     >,
     containing: ContainingScene,
@@ -339,7 +360,7 @@ fn apply_foot_ik(
 ) {
     if !config.enabled {
         // Reset all per-avatar runtime state so re-enabling doesn't pop in.
-        for (_, _, _, mut runtime) in &mut avatars {
+        for (_, _, _, mut runtime, _) in &mut avatars {
             *runtime = FootIkRuntime::default();
         }
         return;
@@ -348,12 +369,27 @@ fn apply_foot_ik(
     let log_now = *log_tick % 60 == 1;
     let dt = time.delta_secs();
 
-    for (avatar_ent, rig, active_emote, mut runtime) in &mut avatars {
+    for (avatar_ent, rig, active_emote, mut runtime, layers) in &mut avatars {
+        // Display-only avatars (booth/portrait/secondary cameras) shouldn't
+        // raycast against world geometry. cache_foot_ik_rig already strips
+        // their FootIkRig, but gate here too in case the layers flipped this
+        // frame.
+        if is_display_only(layers) {
+            *runtime = FootIkRuntime::default();
+            continue;
+        }
         // Phase 1: fresh globals (see `read_avatar_globals`).
         let Some(g) = read_avatar_globals(avatar_ent, rig, &tx.p1(), &parents) else {
             continue;
         };
         let avatar_global = g.avatar;
+        // Scale world-unit thresholds by the avatar's Y scale so a non-unit
+        // avatar (e.g. shrunk/grown via wearable or emote) still plants its
+        // feet correctly. The IK math itself already operates in world space
+        // via GlobalTransform-derived positions, so limb lengths and the
+        // pelvis-drop math don't need any scale fixup — only these tuned
+        // thresholds do. Y-scale only: shear isn't expected on avatars.
+        let s = avatar_global.compute_transform().scale.y.abs().max(1e-3);
 
         // Animation-driven IK strength: ramp toward 1.0 while the active emote
         // is an idle pose, otherwise toward 0.0, at a rate set by the emote's
@@ -387,6 +423,7 @@ fn apply_foot_ik(
                 plan_leg(
                     "L",
                     &config,
+                    s,
                     avatar_y,
                     &scene_ents,
                     &mut scenes,
@@ -400,6 +437,7 @@ fn apply_foot_ik(
                 plan_leg(
                     "R",
                     &config,
+                    s,
                     avatar_y,
                     &scene_ents,
                     &mut scenes,
@@ -452,7 +490,7 @@ fn apply_foot_ik(
             let desired_final_y = animated_y + (raw_target_y - animated_y) * w;
             let desired_rel = desired_final_y - avatar_y;
             let final_rel = if was_engaged {
-                let max_step = config.target_velocity_limit * dt;
+                let max_step = config.target_velocity_limit * s * dt;
                 let delta = (desired_rel - state.last_final_rel).clamp(-max_step, max_step);
                 state.last_final_rel + delta
             } else {
@@ -579,6 +617,7 @@ fn apply_foot_ik(
 fn plan_leg(
     label: &str,
     config: &FootIkConfig,
+    s: f32,
     player_y: f32,
     scene_ents: &[Entity],
     scenes: &mut Query<&mut SceneColliderData>,
@@ -591,9 +630,9 @@ fn plan_leg(
     let b = knee_g.translation();
     let c = foot_g.translation();
 
-    let origin = Vec3::new(c.x, c.y + config.raycast_up, c.z);
+    let origin = Vec3::new(c.x, c.y + config.raycast_up * s, c.z);
     let dir = Vec3::NEG_Y;
-    let max_dist = config.raycast_up + config.raycast_down;
+    let max_dist = (config.raycast_up + config.raycast_down) * s;
 
     let mut best: Option<(f32, Vec3)> = None;
     for scene_ent in scene_ents {
@@ -626,7 +665,7 @@ fn plan_leg(
         return None;
     };
 
-    let target_c = Vec3::new(c.x, ground_y + config.plant_y, c.z);
+    let target_c = Vec3::new(c.x, ground_y + config.plant_y * s, c.z);
 
     // Required pelvis drop for this leg to physically reach the target
     // (leg fully extended, hip lowered just enough). 0 if reachable as-is.
@@ -648,9 +687,9 @@ fn plan_leg(
     // gated by whether the leg can plant within max_pelvis_drop of hip drop.
     let dy_player = target_c.y - player_y;
     let reach_ok = if dy_player >= 0.0 {
-        dy_player <= config.max_step_up
+        dy_player <= config.max_step_up * s
     } else {
-        required_drop <= config.max_pelvis_drop
+        required_drop <= config.max_pelvis_drop * s
     };
     if log_now {
         let dy_anim = target_c.y - c.y;

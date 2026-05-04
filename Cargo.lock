@@ -731,6 +731,7 @@ dependencies = [
  "scene_runner",
  "serde_json",
  "system_bridge",
+ "texture_camera",
  "tokio",
  "ui_core",
  "urn",
