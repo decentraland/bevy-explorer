@@ -256,6 +256,7 @@ pub(crate) fn load_scene_javascript(
     portable_scenes: Res<PortableScenes>,
     realm: Res<CurrentRealm>,
     frame: Res<FrameCount>,
+    preview_mode: Res<PreviewMode>,
 ) {
     for (root, state, h_scene) in loading_scenes
         .iter()
@@ -447,9 +448,14 @@ pub(crate) fn load_scene_javascript(
             comms_adapter: realm
                 .comms
                 .as_ref()
-                .and_then(|comms| comms.adapter.clone())
+                .and_then(|comms| {
+                    comms
+                        .adapter
+                        .clone()
+                        .or_else(|| comms.fixed_adapter.clone())
+                })
                 .unwrap_or("offline".to_owned()),
-            is_preview: false,
+            is_preview: preview_mode.is_preview,
             room: None,
             is_connected_scene_room: None,
         };

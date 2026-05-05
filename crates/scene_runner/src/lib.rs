@@ -20,7 +20,8 @@ use common::{
     rpc::RpcCall,
     sets::{SceneLoopSets, SceneSets},
     structs::{
-        AppConfig, AppError, CurrentRealm, DebugInfo, PrimaryCamera, PrimaryUser, TimeOfDay,
+        AppConfig, AppError, CurrentRealm, DebugInfo, PreviewMode, PrimaryCamera, PrimaryUser,
+        TimeOfDay,
     },
     util::{dcl_assert, TryPushChildrenEx},
 };
@@ -697,6 +698,7 @@ fn send_scene_updates(
     realm: Res<CurrentRealm>,
     data_channel: Res<SceneRoomConnection>,
     interactable_area: Res<InteractableArea>,
+    preview_mode: Res<PreviewMode>,
 ) {
     let updates = &mut *updates;
 
@@ -790,9 +792,14 @@ fn send_scene_updates(
         comms_adapter: realm
             .comms
             .as_ref()
-            .and_then(|comms| comms.adapter.clone())
+            .and_then(|comms| {
+                comms
+                    .adapter
+                    .clone()
+                    .or_else(|| comms.fixed_adapter.clone())
+            })
             .unwrap_or("offline".to_owned()),
-        is_preview: false,
+        is_preview: preview_mode.is_preview,
         room: room.cloned(),
         is_connected_scene_room: Some(room.is_some()),
     };
