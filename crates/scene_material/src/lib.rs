@@ -1,10 +1,11 @@
 use bevy::{
     pbr::{ExtendedMaterial, MaterialExtension},
+    platform::collections::{hash_map::Entry, HashMap},
     prelude::*,
-    render::render_resource::{AsBindGroup, ShaderRef},
+    render::render_resource::{AsBindGroup, Face, ShaderRef},
 };
 use boimp::bake::{ImposterBakeMaterialExtension, ImposterBakeMaterialPlugin};
-use common::structs::PreviewMode;
+use common::{structs::PreviewMode, util::InvertedScaleExt};
 
 pub type SceneMaterial = ExtendedMaterial<SceneBound>;
 
@@ -36,12 +37,14 @@ impl SceneMaterialExt for SceneMaterial {
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct SceneBoundKey {
     outline: bool,
+    inverted_scale: bool,
 }
 
 impl From<&SceneBound> for SceneBoundKey {
     fn from(value: &SceneBound) -> Self {
         Self {
             outline: (value.data.flags & SCENE_MATERIAL_OUTLINE) != 0,
+            inverted_scale: value.inverted_scale,
         }
     }
 }
@@ -51,6 +54,9 @@ impl From<&SceneBound> for SceneBoundKey {
 pub struct SceneBound {
     #[uniform(100)]
     pub data: SceneBoundData,
+    /// Meshes that have 1 or 3 negative scale axis require special handling
+    /// of the face culling
+    pub inverted_scale: bool,
 }
 
 impl SceneBound {
@@ -85,6 +91,7 @@ impl SceneBound {
                 flags: 0,
                 _pad: 0,
             },
+            inverted_scale: false,
         }
     }
 
@@ -94,23 +101,20 @@ impl SceneBound {
         force_outline: bool,
         disable_dither: bool,
     ) -> Self {
-        Self {
-            data: SceneBoundData {
-                flags: SCENE_MATERIAL_OUTLINE
-                    + if force_outline {
-                        SCENE_MATERIAL_OUTLINE_FORCE
-                    } else {
-                        0
-                    }
-                    + if disable_dither {
-                        SCENE_MATERIAL_NO_DITHERING
-                    } else {
-                        0
-                    }
-                    + SCENE_MATERIAL_CONE_ONLY_DITHER,
-                ..Self::new(bounds, distance).data
-            },
-        }
+        let mut scene_bound = Self::new(bounds, distance);
+        scene_bound.data.flags = SCENE_MATERIAL_OUTLINE
+            + if force_outline {
+                SCENE_MATERIAL_OUTLINE_FORCE
+            } else {
+                0
+            }
+            + if disable_dither {
+                SCENE_MATERIAL_NO_DITHERING
+            } else {
+                0
+            }
+            + SCENE_MATERIAL_CONE_ONLY_DITHER;
+        scene_bound
     }
 
     pub fn unbounded_outlined(force_outline: bool) -> Self {
@@ -127,6 +131,7 @@ impl SceneBound {
                     },
                 _pad: 0,
             },
+            inverted_scale: false,
         }
     }
 }
@@ -262,9 +267,21 @@ impl MaterialExtension for SceneBound {
         key: bevy::pbr::MaterialExtensionKey<Self>,
     ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
         let data = key.bind_group_data;
-        if data.outline {
-            if let Some(fragment) = descriptor.fragment.as_mut() {
+
+        if descriptor.primitive.cull_mode.is_some() {
+            descriptor.primitive.cull_mode = if data.inverted_scale {
+                Some(Face::Front)
+            } else {
+                Some(Face::Back)
+            };
+        }
+
+        if let Some(fragment) = descriptor.fragment.as_mut() {
+            if data.outline {
                 fragment.shader_defs.push("OUTLINE".into());
+            }
+            if data.inverted_scale {
+                fragment.shader_defs.push("INVERTED_SCALE".into());
             }
         }
         Ok(())
@@ -294,6 +311,16 @@ impl Plugin for SceneBoundPlugin {
         }
 
         app.add_systems(Update, update_show_outside);
+
+        app.init_resource::<InvertedMaterials>();
+
+        app.add_observer(new_material);
+        app.add_systems(
+            PostUpdate,
+            (new_materials, clear_old_materials)
+                .chain()
+                .after(TransformSystem::TransformPropagate),
+        );
     }
 }
 
@@ -316,6 +343,74 @@ fn update_show_outside(
         }
     } else {
         evs.read();
+    }
+}
+
+#[derive(Debug, Default, Resource, Deref, DerefMut)]
+pub struct InvertedMaterials {
+    pub mapping: HashMap<Handle<SceneMaterial>, Handle<SceneMaterial>>,
+}
+
+#[derive(Debug, Default, Component)]
+#[component(storage = "SparseSet")]
+pub struct AddedSceneMaterial;
+
+fn new_material(trigger: Trigger<OnInsert, MeshMaterial3d<SceneMaterial>>, mut commands: Commands) {
+    commands.entity(trigger.target()).insert(AddedSceneMaterial);
+}
+
+fn new_materials(
+    mut commands: Commands,
+    materials: Populated<
+        (Entity, &GlobalTransform, &MeshMaterial3d<SceneMaterial>),
+        With<AddedSceneMaterial>,
+    >,
+    mut inverted_materials: ResMut<InvertedMaterials>,
+    mut scene_material_assets: ResMut<Assets<SceneMaterial>>,
+) {
+    for (entity, gt, mesh_material) in materials.into_inner() {
+        commands.entity(entity).remove::<AddedSceneMaterial>();
+
+        if gt.is_inverted() {
+            match inverted_materials.entry(mesh_material.clone_weak()) {
+                Entry::Vacant(vacant) => {
+                    let Some(scene_material_asset) =
+                        scene_material_assets.get(mesh_material.id()).filter(
+                            |scene_material_asset| !scene_material_asset.extension.inverted_scale,
+                        )
+                    else {
+                        debug!("{entity}'s material was invalid");
+                        continue;
+                    };
+
+                    let mut inverted_material = scene_material_asset.clone();
+                    inverted_material.extension.inverted_scale = true;
+                    let new_handle = scene_material_assets.add(inverted_material);
+
+                    vacant.insert(new_handle.clone());
+                    commands.entity(entity).insert(MeshMaterial3d(new_handle));
+                }
+                Entry::Occupied(occupied) => {
+                    commands
+                        .entity(entity)
+                        .insert(MeshMaterial3d(occupied.get().clone()));
+                }
+            }
+        }
+    }
+}
+
+fn clear_old_materials(
+    mut inverted_materials: ResMut<InvertedMaterials>,
+    scene_material_assets: Res<Assets<SceneMaterial>>,
+) {
+    let len = inverted_materials.len();
+    inverted_materials.retain(|k, _| scene_material_assets.contains(k.id()));
+    if inverted_materials.len() != len {
+        debug!(
+            "Cleared {} inverted materials.",
+            len - inverted_materials.len()
+        );
     }
 }
 
