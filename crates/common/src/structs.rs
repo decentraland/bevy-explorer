@@ -358,6 +358,54 @@ pub struct PrimaryPlayerRes(pub Entity);
 #[derive(Resource)]
 pub struct PrimaryCameraRes(pub Entity);
 
+/// World-space head gaze angles, in degrees. On the local player, written each frame
+/// from the real camera (and zeroed/disabled when a scene-driven camera is active). On
+/// remote players, written from the incoming rfc4::Movement head-sync fields. The
+/// `*_enabled` flags drive the receive-side IK weight crossfade and gate the broadcast
+/// of valid angles for the local player.
+#[derive(Component, Default, Clone, Copy)]
+pub struct HeadSync {
+    pub yaw_deg: f32,
+    pub pitch_deg: f32,
+    pub yaw_enabled: bool,
+    pub pitch_enabled: bool,
+}
+
+/// Classifier for pointer-target hits — distinguishes scene world geometry,
+/// scene UI overlays, and avatars. Lives here (not in system_bridge) because
+/// the engine's pointer pipeline produces it before any scene API surface is
+/// involved; system_bridge re-exports the same value into its HoverEvent.
+#[derive(
+    Hash,
+    Clone,
+    Copy,
+    serde_repr::Serialize_repr,
+    serde_repr::Deserialize_repr,
+    Debug,
+    PartialEq,
+    Eq,
+    Default,
+)]
+#[repr(u32)]
+pub enum PointerTargetType {
+    #[default]
+    World = 0,
+    Ui = 1,
+    Avatar = 2,
+}
+
+/// World-space point-at state. On the local player, populated when the PointAt
+/// action fires and `WorldPointerTarget` has a hit; cleared when the latch
+/// expires. On remote players, populated from the incoming rfc4::Movement
+/// `point_at_*` / `is_pointing_at` fields. Coordinates are stored in DCL
+/// convention (Z mirrored from bevy world) so the same value flows over the
+/// wire and into the IK apply step without a per-site flip.
+#[derive(Component, Default, Clone, Copy)]
+pub struct PointAtSync {
+    pub target_world: Vec3,
+    pub is_pointing: bool,
+}
+
 // marker for the root ui component (full screen, used for checking pointer/mouse button events are not intercepted by any other ui component)
 #[derive(Component)]
 pub struct UiRoot;
@@ -1162,7 +1210,8 @@ pub enum ZOrder {
     Crosshair = -65536,
     // PortableScene -> -65535 <= value <= -1
     // default 0 => appear in world, under scene ui
-    OutOfWorldBackdrop = 1,
+    PointAtMarker = 1,
+    OutOfWorldBackdrop,
     SceneUi,
     SceneUiOverlay,
     SystemSceneUi,

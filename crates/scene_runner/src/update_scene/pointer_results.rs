@@ -11,7 +11,7 @@ use bevy::{
 use bevy_console::ConsoleCommand;
 use comms::global_crdt::ForeignPlayer;
 use console::DoAddConsoleCommand;
-use system_bridge::{HoverAction, HoverEvent, PointerTargetType, SystemApi};
+use system_bridge::{HoverAction, HoverEvent, SystemApi};
 
 use crate::{
     gltf_resolver::GltfMeshResolver,
@@ -29,7 +29,7 @@ use common::{
     dynamics::PLAYER_COLLIDER_RADIUS,
     inputs::{Action, CommonInputAction, POINTER_SET},
     rpc::RpcStreamSender,
-    structs::{CursorLocks, DebugInfo, MonotonicTimestamp, PrimaryCamera},
+    structs::{CursorLocks, DebugInfo, MonotonicTimestamp, PointerTargetType, PrimaryCamera},
     util::DespawnWith,
 };
 use dcl::interface::CrdtType;
@@ -191,7 +191,7 @@ pub struct AvatarColliders {
 }
 
 #[derive(Default, Debug, Resource, Clone, PartialEq)]
-pub struct WorldPointerTarget(Option<PointerTargetInfo>);
+pub struct WorldPointerTarget(pub Option<PointerTargetInfo>);
 
 #[derive(Resource, Default)]
 pub struct PointerRay(pub Option<Ray3d>);

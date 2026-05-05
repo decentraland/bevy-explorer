@@ -77,6 +77,19 @@ message Movement {
     CLOSING_PROP = 3;
   }
 
+  // point-at (world-space target the avatar is pointing its arm at)
+  float point_at_x = 25;
+  float point_at_y = 26;
+  float point_at_z = 27;
+  bool is_pointing_at = 28;
+
+  // head-sync (enabled flags + world-space yaw and pitch angles, in degrees,
+  // derived from the camera forward direction on the sender)
+  bool head_ik_yaw_enabled = 19;
+  bool head_ik_pitch_enabled = 20;
+  float head_yaw = 21;
+  float head_pitch = 22;
+
   // Scene-driven movement animation (bevy-explorer local extension). Wrapped in a nested
   // message at a high private tag so that other clients (Unity, web) can't accidentally
   // populate these fields by reusing the same tag numbers at the Movement level — an
@@ -118,6 +131,8 @@ message SceneDrivenAnimation {
 message MovementCompressed {
   int32 temporal_data = 1; // bit-compressed: timestamp + animations
   int64 movement_data = 2; // bit-compressed: position + velocity
+  int32 head_sync_data = 3; // bit-compressed: enabled flags + yaw + pitch
+  int32 point_at_data = 4; // bit-compressed: flag + point coordinates
 
   // Mirror of Movement.scene_driven_animation — see that field for semantics and the
   // collision-avoidance rationale behind the high nested tag.

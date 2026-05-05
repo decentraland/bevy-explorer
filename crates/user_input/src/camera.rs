@@ -8,7 +8,10 @@ use bevy::{
 
 use common::{
     inputs::{Action, SystemAction, CAMERA_SET, CAMERA_ZOOM, POINTER_SET},
-    structs::{AvatarDynamicState, CameraOverride, CursorLocks, PrimaryCamera, PrimaryUser},
+    structs::{
+        AvatarDynamicState, CameraOverride, CursorLocks, HeadSync, MoveKind, PrimaryCamera,
+        PrimaryUser,
+    },
     util::ModifyComponentExt,
 };
 use dcl_component::proto_components::sdk::components::common::camera_transition::TransitionMode;
@@ -169,8 +172,13 @@ pub fn update_camera_position(
         &mut Projection,
         Option<&mut SystemTween>,
     )>,
-    player: Query<
-        (&Transform, &AvatarDynamicState, Has<OutOfWorld>),
+    mut player: Query<
+        (
+            &Transform,
+            &AvatarDynamicState,
+            Has<OutOfWorld>,
+            &mut HeadSync,
+        ),
         (With<PrimaryUser>, Without<PrimaryCamera>),
     >,
     mut prev_override: Local<Option<CameraOverride>>,
@@ -178,12 +186,36 @@ pub fn update_camera_position(
     gt_helper: TransformHelper,
 ) {
     let (
-        Ok((player_transform, dynamic_state, is_oow)),
+        Ok((player_transform, dynamic_state, is_oow, mut head_sync)),
         Ok((camera_ent, camera_transform, options, mut projection, maybe_tween)),
-    ) = (player.single(), camera.single_mut())
+    ) = (player.single_mut(), camera.single_mut())
     else {
         return;
     };
+
+    // Capture head-sync angles only when the real camera drives rotation (not OOW, not
+    // a scene-driven cinematic). We additionally gate on the avatar being idle so head
+    // gaze doesn't broadcast through movement/jump/emote — matches unity's HeadIK gate.
+    // In first-person the head is rigidly attached to the camera, so additional yaw IK
+    // would over-rotate the neck — pitch is still meaningful (head tilts up/down).
+    let real_camera =
+        !is_oow && !matches!(options.scene_override, Some(CameraOverride::Cinematic(_)));
+    let idle = dynamic_state.move_kind == MoveKind::Idle;
+    let head_active = real_camera && idle;
+    let first_person = options.distance < 0.05;
+    head_sync.yaw_enabled = head_active && !first_person;
+    head_sync.pitch_enabled = head_active;
+    if head_active {
+        // DCL world is left-handed (Z+ forward) while bevy is right-handed
+        // (-Z forward). The Y-up rotation handedness flips going across, so
+        // a yaw of θ in bevy maps to -θ on the wire. With this, looking N is
+        // 0°, E is 90°, S is 180°, W is 270° — matching unity senders.
+        // Pitch is also handedness-flipped on the wire (looking up positive
+        // in DCL = negative bevy pitch). HeadSync holds the wire value, and
+        // the IK reader applies the same negation to render back in bevy.
+        head_sync.yaw_deg = -options.yaw.to_degrees();
+        head_sync.pitch_deg = -options.pitch.to_degrees();
+    }
 
     let mut target_transform = *camera_transform;
     let mut target_transition = TransitionMode::Time(TRANSITION_TIME);

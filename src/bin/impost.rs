@@ -27,8 +27,9 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, AppError, AvatarDynamicState, CurrentRealm, CursorLocks, GraphicsSettings,
-        IVec2Arg, PermissionUsed, PreviewMode, PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes,
-        SceneGlobalLight, SceneImposterBake, SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips,
+        HeadSync, IVec2Arg, PermissionUsed, PointAtSync, PreviewMode, PrimaryCamera,
+        PrimaryCameraRes, PrimaryPlayerRes, SceneGlobalLight, SceneImposterBake, SceneLoadDistance,
+        SystemAudio, TimeOfDay, ToolTips,
     },
     util::UtilsPlugin,
 };
@@ -362,6 +363,8 @@ fn setup(
             config.player_settings.clone(),
             OutOfWorld,
             AvatarDynamicState::default(),
+            HeadSync::default(),
+            PointAtSync::default(),
             GroundCollider::default(),
         ))
         .id();

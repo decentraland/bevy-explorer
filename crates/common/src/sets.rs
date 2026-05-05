@@ -41,12 +41,13 @@ pub enum PostUpdateSets {
     ColliderUpdate,
     PlayerUpdate,
     CameraUpdate,
-    /// Foot-IK chain: pelvis-drop / leg rotations + a transform-propagate
-    /// for the avatar subtree. Producers run `.in_set(FootIk)`; consumers
-    /// that need post-IK bone globals (e.g. nametag) run `.after(FootIk)`.
-    FootIk,
+    /// IK chain: foot-IK (pelvis drop / leg rotations) and head-IK (head
+    /// bone gaze) plus a transform-propagate for the avatar subtree. Producers
+    /// run `.in_set(InverseKinematics)`; consumers that need post-IK bone
+    /// globals (e.g. nametag) run `.after(InverseKinematics)`.
+    InverseKinematics,
     /// Per-frame nametag positioning. Reads post-IK head/position globals,
-    /// so it sits after `FootIk` in the chain.
+    /// so it sits after `InverseKinematics` in the chain.
     Nametag,
     AttachSync,
     Billboard,

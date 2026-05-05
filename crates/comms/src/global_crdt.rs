@@ -10,7 +10,7 @@ use bimap::BiMap;
 use common::{
     rpc::{RpcCall, RpcEventSender, RpcStreamSender},
     structs::{
-        AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate, MoveKind,
+        AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate, HeadSync, MoveKind, PointAtSync,
         SceneDrivenAnimationRequest,
     },
 };
@@ -437,6 +437,8 @@ pub fn process_transport_updates(
                                 available_transports: Default::default(),
                                 current_transport: None,
                             },
+                            HeadSync::default(),
+                            PointAtSync::default(),
                             Propagate(RenderLayers::default()),
                         ))
                         .id();
@@ -571,6 +573,18 @@ pub fn process_transport_updates(
                     PlayerMessage::PlayerData(Message::Voice(_)) => (),
                     PlayerMessage::PlayerData(Message::Movement(m)) => {
                         debug!("movement data: {m:?}");
+                        commands.entity(entity).try_insert((
+                            HeadSync {
+                                yaw_deg: m.head_yaw,
+                                pitch_deg: m.head_pitch,
+                                yaw_enabled: m.head_ik_yaw_enabled,
+                                pitch_enabled: m.head_ik_pitch_enabled,
+                            },
+                            PointAtSync {
+                                target_world: Vec3::new(m.point_at_x, m.point_at_y, m.point_at_z),
+                                is_pointing: m.is_pointing_at,
+                            },
+                        ));
                         let pos = Vec3::new(m.position_x, m.position_y, -m.position_z);
                         let vel = Vec3::new(m.velocity_x, m.velocity_y, -m.velocity_z);
                         let rot = Quat::from_rotation_y(-m.rotation_y / 360.0 * TAU);

@@ -2,7 +2,9 @@ use std::f32::consts::TAU;
 
 use bevy::prelude::*;
 
-use common::structs::{AvatarDynamicState, MoveKind, PrimaryUser, SceneDrivenAnim};
+use common::structs::{
+    AvatarDynamicState, HeadSync, MoveKind, PointAtSync, PrimaryUser, SceneDrivenAnim,
+};
 use dcl_component::{
     proto_components::kernel::comms::rfc4,
     transform_and_parent::{DclQuat, DclTranslation},
@@ -29,6 +31,10 @@ const STATIC_FREQ: f64 = 1.0;
 const DYNAMIC_FREQ: f64 = 0.1;
 // Re-send the anim hash pair at least this often so late joiners pick up the active clip.
 const ANIM_URN_KEEPALIVE: f64 = 1.0;
+// A head-yaw or head-pitch change beyond this threshold (in degrees) breaks the
+// STATIC_FREQ idle keepalive and gets the next packet sent at the DYNAMIC_FREQ tick.
+// Smaller deltas are coarsely sampled at 1Hz, which is fine for sub-threshold drift.
+const HEAD_SYNC_EPSILON_DEG: f32 = 10.0;
 
 #[derive(Default)]
 struct LastAnim {
@@ -49,18 +55,22 @@ struct LastAnim {
     last_seen_sounds: Vec<String>,
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn broadcast_position(
     player: Query<
         (
             &GlobalTransform,
             &AvatarDynamicState,
             Option<&SceneDrivenAnim>,
+            Option<&HeadSync>,
+            Option<&PointAtSync>,
         ),
         With<PrimaryUser>,
     >,
     transports: Query<&Transport>,
     mut last_position: Local<(Vec3, Quat, Vec3)>,
+    mut last_head_sync: Local<HeadSync>,
+    mut last_point_at: Local<PointAtSync>,
     mut last_sent: Local<f64>,
     mut last_index: Local<u32>,
     mut last_anim: Local<LastAnim>,
@@ -68,9 +78,11 @@ fn broadcast_position(
     global_crdt: Res<GlobalCrdtState>,
     wallet: Res<Wallet>,
 ) {
-    let Ok((player, dynamics, scene_anim)) = player.single() else {
+    let Ok((player, dynamics, scene_anim, head_sync, point_at)) = player.single() else {
         return;
     };
+    let head_sync = head_sync.copied().unwrap_or_default();
+    let point_at = point_at.copied().unwrap_or_default();
     let time = time.elapsed_secs_f64();
 
     // Latch any single-frame seek from the scene so we still send it even if the
@@ -112,12 +124,27 @@ fn broadcast_position(
         .and_then(|s| s.active.as_ref())
         .map(|a| (a.scene_hash.clone(), a.content_hash.clone()));
     let anim_changed = current_hashes != last_anim.hashes;
+    // Toggling either enabled flag, or a yaw/pitch delta past the threshold, also
+    // breaks the keepalive — same shape as anim_changed. Sub-threshold drift just
+    // rides the 1Hz keepalive.
+    let head_changed = head_sync.yaw_enabled != last_head_sync.yaw_enabled
+        || head_sync.pitch_enabled != last_head_sync.pitch_enabled
+        || (head_sync.yaw_deg - last_head_sync.yaw_deg).abs() > HEAD_SYNC_EPSILON_DEG
+        || (head_sync.pitch_deg - last_head_sync.pitch_deg).abs() > HEAD_SYNC_EPSILON_DEG;
+    // Point-at toggling or any non-trivial coord change breaks the keepalive.
+    // No degree-style threshold: target coords can move continuously when the
+    // user drags, and the receiver visually integrates whatever it gets.
+    let point_at_changed = point_at.is_pointing != last_point_at.is_pointing
+        || (point_at.is_pointing
+            && (point_at.target_world - last_point_at.target_world).length_squared() > 0.01);
     if elapsed < STATIC_FREQ
         && (translation - last_position.0).length_squared() < 0.01
         && rotation == last_position.1
         && (dynamics.velocity - last_position.2).length_squared() < 0.01
         && last_anim.pending_seek.is_none()
         && !anim_changed
+        && !head_changed
+        && !point_at_changed
     {
         return;
     }
@@ -281,6 +308,14 @@ fn broadcast_position(
         is_emoting: dynamics.move_kind == MoveKind::Emote,
         jump_count,
         glide_state,
+        head_ik_yaw_enabled: head_sync.yaw_enabled,
+        head_ik_pitch_enabled: head_sync.pitch_enabled,
+        head_yaw: head_sync.yaw_deg,
+        head_pitch: head_sync.pitch_deg,
+        point_at_x: point_at.target_world.x,
+        point_at_y: point_at.target_world.y,
+        point_at_z: point_at.target_world.z,
+        is_pointing_at: point_at.is_pointing,
         scene_driven_animation,
     };
 
@@ -317,6 +352,8 @@ fn broadcast_position(
     }
 
     *last_position = (translation, rotation, dynamics.velocity);
+    *last_head_sync = head_sync;
+    *last_point_at = point_at;
     *last_index += 1;
     *last_sent = time;
 }

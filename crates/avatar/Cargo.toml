@@ -31,3 +31,4 @@ bevy_console = { workspace = true }
 tokio = { workspace = true }
 rapier3d-f64 = { workspace = true }
 bevy_dui = { workspace = true }
+ethers-core = { workspace = true }
