@@ -1,4 +1,4 @@
-﻿syntax = "proto3";
+syntax = "proto3";
 
 package decentraland.sdk.components;
 
@@ -9,7 +9,7 @@ option (common.ecs_component_id) = 1062;
 
 // PointerEvents adds configurable pointer-based interactions to the attached Entity.
 //
-// Events that match the criteria defined in the PointerEvents structure are reported back to the 
+// Events that match the criteria defined in the PointerEvents structure are reported back to the
 // Entity via the PointerEventsResult component.
 //
 // Some examples of events that can be detected:
@@ -20,17 +20,44 @@ option (common.ecs_component_id) = 1062;
 //
 // It also supports simple visual feedback when interactions occur, by showing floating text.
 // More sophisticated feedback requires the use of other components.
+//
+// Distance rules
+// --------------
+// PointerEvents can enforce interaction range using two independent distance checks:
+//
+// - Camera distance (`max_distance`): distance from the active camera to the target entity.
+// - Player distance (`max_player_distance`): distance from the avatar/player position to the target entity.
+//
+// How the interaction checks are combined:
+//
+// 1) Only `max_distance` is present
+//    - The interaction is allowed only if the camera distance is <= `max_distance`.
+//
+// 2) Only `max_player_distance` is present
+//    - The interaction is allowed only if the player distance is <= `max_player_distance`.
+//
+// 3) Both `max_distance` and `max_player_distance` are present
+//    - The interaction is allowed if ANY of the checks passes (OR logic):
+//      (camera distance <= `max_distance`) OR (player distance <= `max_player_distance`).
+//
+// 4) Neither `max_distance` nor `max_player_distance` is present
+//    - The system behaves as if `max_distance` were set to its default value (10),
+//      i.e., it uses the camera distance check with a threshold of 10.
 message PBPointerEvents {
   message Info {
     optional common.InputAction button = 1; // key/button in use (default IA_ANY)
     optional string hover_text = 2;         // feedback on hover (default 'Interact')
     optional float max_distance = 3;        // range of interaction (default 10)
-    optional bool show_feedback = 4;        // enable or disable hover text (default true)
+    optional bool show_feedback = 4;        // enable or disable hover text and highlight (default true)
+    optional bool show_highlight = 5;       // enable or disable hover highlight (default true)
+    optional float max_player_distance = 6; // range of interaction from the avatar's position (default 0)
+    optional uint32 priority = 7;           // resolution order when multiple events overlap, higher wins (default 0)
   }
 
   message Entry {
     common.PointerEventType event_type = 1; // the kind of interaction to detect
     Info event_info = 2;             // additional configuration for this detection
+    optional common.InteractionType interaction_type = 3; // the type of interaction source (default 0 == CURSOR)
   }
 
   repeated Entry pointer_events = 1; // the list of relevant events to detect

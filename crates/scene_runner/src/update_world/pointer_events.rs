@@ -10,7 +10,9 @@ use comms::global_crdt::ForeignPlayer;
 
 use crate::{
     renderer_context::RendererSceneContext,
-    update_scene::pointer_results::{IaToCommon, PointerTarget, PointerTargetInfo},
+    update_scene::pointer_results::{
+        passes_distance_check, IaToCommon, PointerTarget, PointerTargetInfo,
+    },
     SceneEntity,
 };
 use dcl::interface::ComponentPosition;
@@ -132,6 +134,7 @@ fn hover_text(
     if let Some(PointerTargetInfo {
         container,
         distance,
+        camera_distance,
         ..
     }) = hover_target.0
     {
@@ -163,7 +166,11 @@ fn hover_text(
                                     });
                                 return Some((
                                     format!("{button} : {text}"),
-                                    info.max_distance.unwrap_or(10.0) > distance.0,
+                                    passes_distance_check(
+                                        Some(info),
+                                        camera_distance.0,
+                                        distance.0,
+                                    ),
                                 ));
                             }
                         }
