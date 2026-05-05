@@ -20,9 +20,10 @@ use common::{
     rpc::RpcCall,
     sets::{SceneLoopSets, SceneSets},
     structs::{
-        AppConfig, AppError, CurrentRealm, DebugInfo, PreviewMode, PrimaryCamera, PrimaryUser, TimeOfDay
+        AppConfig, AppError, CurrentRealm, DebugInfo, PreviewMode, PrimaryCamera, PrimaryUser,
+        TimeOfDay,
     },
-    util::{TryPushChildrenEx, dcl_assert},
+    util::{dcl_assert, TryPushChildrenEx},
 };
 use comms::{global_crdt::GlobalCrdtState, SceneRoomConnection, SetCurrentScene};
 use dcl::{
@@ -791,7 +792,12 @@ fn send_scene_updates(
         comms_adapter: realm
             .comms
             .as_ref()
-            .and_then(|comms| comms.adapter.clone().or_else(|| comms.fixed_adapter.clone()))
+            .and_then(|comms| {
+                comms
+                    .adapter
+                    .clone()
+                    .or_else(|| comms.fixed_adapter.clone())
+            })
             .unwrap_or("offline".to_owned()),
         is_preview: preview_mode.is_preview,
         room: room.cloned(),
