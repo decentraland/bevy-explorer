@@ -13,6 +13,7 @@ dcl = { workspace = true }
 dcl_component = { workspace = true }
 ipfs = { workspace = true }
 scene_runner = { workspace = true }
+texture_camera = { workspace = true }
 ui_core = { workspace = true }
 input_manager = { workspace = true }
 world_ui = { workspace = true }
