@@ -258,7 +258,10 @@ pub struct PointerRay(pub Option<Ray3d>);
 /// Entities currently within `max_player_distance` of the avatar that carry at
 /// least one PROXIMITY pointer-event entry. Distance is the closest-point distance
 /// from the avatar's center (transform + half player collider height) to the
-/// entity's collider geometry. Recomputed each frame in `PreUpdate`.
+/// entity's collider geometry. `nearest_point` is that closest point in world
+/// space; downstream emitters use it for `RaycastHit.position` since the entity
+/// transform is something a scene already knows. Recomputed each frame in
+/// `PreUpdate`.
 #[derive(Resource, Default, Debug, Clone)]
 pub struct ProximityCandidates(pub Vec<ProximityCandidate>);
 
@@ -266,6 +269,7 @@ pub struct ProximityCandidates(pub Vec<ProximityCandidate>);
 pub struct ProximityCandidate {
     pub entity: Entity,
     pub distance: f32,
+    pub nearest_point: Vec3,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -611,14 +615,18 @@ fn collect_proximity_candidates(
             continue;
         };
         let entity_id = scene_entity.id;
-        let Some(closest) =
+        let Some(nearest_point) =
             collider_data.closest_point(player_center, |cid| cid.entity == entity_id)
         else {
             continue;
         };
-        let distance = (closest - player_center).length();
+        let distance = (nearest_point - player_center).length();
         if distance <= max_threshold {
-            candidates.0.push(ProximityCandidate { entity, distance });
+            candidates.0.push(ProximityCandidate {
+                entity,
+                distance,
+                nearest_point,
+            });
         }
     }
 }
@@ -1212,7 +1220,9 @@ pub fn resolve_action_winner(
             distance: FloatOrd(cand.distance),
             camera_distance: FloatOrd(0.0),
             in_scene: true,
-            position: None,
+            // Proximity-emitted CRDTs report the closest point on the entity's
+            // collider to the avatar in `RaycastHit.position`.
+            position: Some(cand.nearest_point),
             normal: None,
             face: None,
             ty: PointerTargetType::World,
@@ -1251,16 +1261,14 @@ fn send_proximity_events(
     timestamp: Res<MonotonicTimestamp<PbPointerEventsResult>>,
     mut prev_in_range: Local<HashSet<Entity>>,
 ) {
-    let dist_by_entity: HashMap<Entity, f32> = candidates
-        .0
-        .iter()
-        .map(|c| (c.entity, c.distance))
-        .collect();
-    let new_in_range: HashSet<Entity> = dist_by_entity.keys().copied().collect();
+    let candidate_by_entity: HashMap<Entity, &ProximityCandidate> =
+        candidates.0.iter().map(|c| (c.entity, c)).collect();
+    let new_in_range: HashSet<Entity> = candidate_by_entity.keys().copied().collect();
 
     let emit = |entity: Entity,
                 pet: PointerEventType,
                 dist: f32,
+                position: Option<Vec3>,
                 scenes: &mut Query<(&mut RendererSceneContext, &GlobalTransform)>|
      -> Option<()> {
         let (scene_entity, pe) = pointer_events.get(entity).ok()?;
@@ -1291,7 +1299,7 @@ fn send_proximity_events(
                 distance: FloatOrd(dist),
                 camera_distance: FloatOrd(0.0),
                 in_scene: true,
-                position: None,
+                position,
                 normal: None,
                 face: None,
                 ty: PointerTargetType::World,
@@ -1311,19 +1319,25 @@ fn send_proximity_events(
     };
 
     for &entity in new_in_range.difference(&prev_in_range) {
-        let dist = dist_by_entity.get(&entity).copied().unwrap_or(0.0);
+        let cand = candidate_by_entity.get(&entity);
+        let dist = cand.map(|c| c.distance).unwrap_or(0.0);
+        let position = cand.map(|c| c.nearest_point);
         emit(
             entity,
             PointerEventType::PetProximityEnter,
             dist,
+            position,
             &mut scenes,
         );
     }
+    // LEAVE events fire after the entity has dropped out of every per-entry
+    // gate, so we have no current `nearest_point`; emit `position: None`.
     for &entity in prev_in_range.difference(&new_in_range) {
         emit(
             entity,
             PointerEventType::PetProximityLeave,
             0.0,
+            None,
             &mut scenes,
         );
     }
