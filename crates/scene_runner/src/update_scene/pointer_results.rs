@@ -270,10 +270,12 @@ pub struct PointerRay(pub Option<Ray3d>);
 /// least one PROXIMITY pointer-event entry. Distance is the closest-point distance
 /// from the avatar's center (transform + half player collider height) to the
 /// entity's collider geometry. `nearest_point` is that closest point in world
-/// space (used for `RaycastHit.position` on emitted CRDTs). `entity_position` is
-/// the entity's transform origin in world space, used as a stable anchor for
-/// tooltip UI (which jitters if it follows `nearest_point` as the player moves).
-/// Recomputed each frame in `PreUpdate`.
+/// space (used for `RaycastHit.position` on emitted CRDTs). `entity_position`
+/// is the AABB centre of the *specific* collider that produced the closest
+/// point — for multi-collider entities (e.g. GltfContainers with several
+/// hitboxes) this anchors a tooltip on the part of the entity the player is
+/// actually nearest, rather than the entity's transform origin which can sit
+/// far from any visible geometry. Recomputed each frame in `PreUpdate`.
 #[derive(Resource, Default, Debug, Clone)]
 pub struct ProximityCandidates(pub Vec<ProximityCandidate>);
 
@@ -594,7 +596,7 @@ fn collect_proximity_candidates(
     player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
     camera: Query<&GlobalTransform, With<PrimaryCamera>>,
     mut scenes: Query<&mut SceneColliderData>,
-    pointer_events: Query<(Entity, &SceneEntity, &PointerEvents, &GlobalTransform)>,
+    pointer_events: Query<(Entity, &SceneEntity, &PointerEvents)>,
     containing_scenes: ContainingScene,
     mut candidates: ResMut<ProximityCandidates>,
 ) {
@@ -615,7 +617,7 @@ fn collect_proximity_candidates(
     });
     let nearby_scenes = containing_scenes.get_area(player, PARCEL_SIZE);
 
-    for (entity, scene_entity, pe, entity_transform) in pointer_events.iter() {
+    for (entity, scene_entity, pe) in pointer_events.iter() {
         if !nearby_scenes.contains(&scene_entity.root) {
             continue;
         }
@@ -639,8 +641,8 @@ fn collect_proximity_candidates(
             continue;
         };
         let entity_id = scene_entity.id;
-        let Some(nearest_point) =
-            collider_data.closest_point(player_center, |cid| cid.entity == entity_id)
+        let Some((nearest_point, hit_collider_id)) =
+            collider_data.closest_point_with_id(player_center, |cid| cid.entity == entity_id)
         else {
             continue;
         };
@@ -648,6 +650,12 @@ fn collect_proximity_candidates(
         if distance > max_threshold {
             continue;
         }
+        // Anchor on the AABB centre of the specific collider that produced the
+        // hit, rather than the entity transform — for a multi-collider entity
+        // each part has its own anchor.
+        let Some(entity_position) = collider_data.collider_aabb_center(&hit_collider_id) else {
+            continue;
+        };
 
         // Horizontal FOV gate: matches unity's closest-point cone test.
         // Accept if the entity's nearest collider point falls within the body
@@ -686,7 +694,7 @@ fn collect_proximity_candidates(
             entity,
             distance,
             nearest_point,
-            entity_position: entity_transform.translation(),
+            entity_position,
         });
     }
 }
