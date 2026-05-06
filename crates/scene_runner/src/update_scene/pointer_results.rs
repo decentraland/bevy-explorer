@@ -1165,8 +1165,9 @@ fn bucket_max_priority(
 }
 
 /// Picks the winning `(info, mode)` for an action bucket across the cursor target
-/// and the proximity candidate set. Highest priority wins; ties broken by entity
-/// id (lower wins). Returns `None` if no candidate has an eligible entry.
+/// and the proximity candidate set. Highest priority wins; on tie, cursor wins
+/// over proximity, then nearest player distance wins. Returns `None` if no
+/// candidate has an eligible entry.
 pub fn resolve_action_winner(
     target: Option<&PointerTargetInfo>,
     proximity: &ProximityCandidates,
@@ -1174,30 +1175,32 @@ pub fn resolve_action_winner(
     ev_type: PointerEventType,
     action: InputAction,
 ) -> Option<(PointerTargetInfo, ActionCandidateMode)> {
-    let mut best: Option<(u32, Entity, PointerTargetInfo, ActionCandidateMode)> = None;
+    let mut best: Option<(u32, PointerTargetInfo, ActionCandidateMode)> = None;
 
-    let mut consider =
-        |entity: Entity, info: PointerTargetInfo, mode: ActionCandidateMode, prio: u32| {
-            let beats = match best {
-                None => true,
-                Some((bp, be, _, _)) => prio > bp || (prio == bp && entity < be),
-            };
-            if beats {
-                best = Some((prio, entity, info, mode));
-            }
+    let mut consider = |info: PointerTargetInfo, mode: ActionCandidateMode, prio: u32| {
+        let beats = match &best {
+            None => true,
+            Some((bp, b_info, b_mode)) => match prio.cmp(bp) {
+                std::cmp::Ordering::Greater => true,
+                std::cmp::Ordering::Less => false,
+                std::cmp::Ordering::Equal => match (mode, *b_mode) {
+                    (ActionCandidateMode::Cursor, ActionCandidateMode::Proximity) => true,
+                    (ActionCandidateMode::Proximity, ActionCandidateMode::Cursor) => false,
+                    _ => info.distance.0 < b_info.distance.0,
+                },
+            },
         };
+        if beats {
+            best = Some((prio, info, mode));
+        }
+    };
 
     if let Some(info) = target {
         if let Ok((_, _, pe)) = pointer_requests.get(info.container) {
             if let Some(prio) =
                 bucket_max_priority(pe, info, ActionCandidateMode::Cursor, ev_type, action)
             {
-                consider(
-                    info.container,
-                    info.clone(),
-                    ActionCandidateMode::Cursor,
-                    prio,
-                );
+                consider(info.clone(), ActionCandidateMode::Cursor, prio);
             }
         }
     }
@@ -1222,12 +1225,12 @@ pub fn resolve_action_winner(
                 ev_type,
                 action,
             ) {
-                consider(cand.entity, synthetic, ActionCandidateMode::Proximity, prio);
+                consider(synthetic, ActionCandidateMode::Proximity, prio);
             }
         }
     }
 
-    best.map(|(_, _, info, mode)| (info, mode))
+    best.map(|(_, info, mode)| (info, mode))
 }
 
 /// Tracks per-entity proximity range state across frames and emits
