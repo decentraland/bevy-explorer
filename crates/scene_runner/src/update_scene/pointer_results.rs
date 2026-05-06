@@ -260,9 +260,10 @@ pub struct PointerRay(pub Option<Ray3d>);
 /// least one PROXIMITY pointer-event entry. Distance is the closest-point distance
 /// from the avatar's center (transform + half player collider height) to the
 /// entity's collider geometry. `nearest_point` is that closest point in world
-/// space; downstream emitters use it for `RaycastHit.position` since the entity
-/// transform is something a scene already knows. Recomputed each frame in
-/// `PreUpdate`.
+/// space (used for `RaycastHit.position` on emitted CRDTs). `entity_position` is
+/// the entity's transform origin in world space, used as a stable anchor for
+/// tooltip UI (which jitters if it follows `nearest_point` as the player moves).
+/// Recomputed each frame in `PreUpdate`.
 #[derive(Resource, Default, Debug, Clone)]
 pub struct ProximityCandidates(pub Vec<ProximityCandidate>);
 
@@ -271,6 +272,7 @@ pub struct ProximityCandidate {
     pub entity: Entity,
     pub distance: f32,
     pub nearest_point: Vec3,
+    pub entity_position: Vec3,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -581,7 +583,7 @@ fn update_manual_cursor(
 fn collect_proximity_candidates(
     player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
     mut scenes: Query<&mut SceneColliderData>,
-    pointer_events: Query<(Entity, &SceneEntity, &PointerEvents)>,
+    pointer_events: Query<(Entity, &SceneEntity, &PointerEvents, &GlobalTransform)>,
     containing_scenes: ContainingScene,
     mut candidates: ResMut<ProximityCandidates>,
 ) {
@@ -592,7 +594,7 @@ fn collect_proximity_candidates(
     let player_center = player_transform.translation() + Vec3::Y * (PLAYER_COLLIDER_HEIGHT * 0.5);
     let nearby_scenes = containing_scenes.get_area(player, PARCEL_SIZE);
 
-    for (entity, scene_entity, pe) in pointer_events.iter() {
+    for (entity, scene_entity, pe, entity_transform) in pointer_events.iter() {
         if !nearby_scenes.contains(&scene_entity.root) {
             continue;
         }
@@ -627,6 +629,7 @@ fn collect_proximity_candidates(
                 entity,
                 distance,
                 nearest_point,
+                entity_position: entity_transform.translation(),
             });
         }
     }
@@ -1654,7 +1657,7 @@ fn handle_proximity_stream(
             ProximityEvent {
                 entered: true,
                 entity: cand.entity.to_bits(),
-                nearest_point: Vector3::world_vec_from_vec3(&cand.nearest_point),
+                entity_position: Vector3::world_vec_from_vec3(&cand.entity_position),
                 actions,
             },
         );

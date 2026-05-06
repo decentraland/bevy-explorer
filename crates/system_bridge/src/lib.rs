@@ -118,15 +118,15 @@ pub struct HoverEvent {
 /// entries enters or leaves the avatar's interaction range, or when one of its
 /// per-entry distance gates flips (so the `enabled` flag on an action changes).
 /// `entity` is an opaque session-stable identifier so the scene can match
-/// enter/leave pairs. `nearest_point` is the closest point on the entity's
-/// collider to the avatar at the moment of send (in world space) — refreshed on
-/// state-change, not every frame.
+/// enter/leave pairs. `entity_position` is the entity's transform origin in
+/// world space — used as a stable anchor for tooltip UI (matches unity, which
+/// projects the collider AABB centre to the screen for proximity tooltips).
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ProximityEvent {
     pub entered: bool,
     pub entity: u64,
-    pub nearest_point: Vector3,
+    pub entity_position: Vector3,
     pub actions: Vec<HoverAction>,
 }
 
