@@ -14,7 +14,7 @@ use system_bridge::{
     settings::SettingInfo, AvatarModifierState, BlockedUserData, ChatMessage,
     FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
     FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo, PermanentPermissionItem,
-    PermissionRequest, SceneLoadingUi, VoiceMessage,
+    PermissionRequest, ProximityEvent, SceneLoadingUi, VoiceMessage,
 };
 
 // list of op declarations
@@ -64,6 +64,8 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_read_voice_stream(),
             op_get_hover_stream(),
             op_read_hover_stream(),
+            op_get_proximity_stream(),
+            op_read_proximity_stream(),
             op_get_scene_loading_ui_stream(),
             op_read_scene_loading_ui_stream(),
             op_get_avatar_modifiers(),
@@ -402,6 +404,20 @@ pub async fn op_read_hover_stream(
     rid: u32,
 ) -> Result<Option<HoverEvent>, deno_core::anyhow::Error> {
     dcl::js::system_api::op_read_hover_stream(state, rid).await
+}
+
+#[op2(async)]
+pub async fn op_get_proximity_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_proximity_stream(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_proximity_stream(
+    state: Rc<RefCell<OpState>>,
+    rid: u32,
+) -> Result<Option<ProximityEvent>, deno_core::anyhow::Error> {
+    dcl::js::system_api::op_read_proximity_stream(state, rid).await
 }
 
 #[op2(async)]
