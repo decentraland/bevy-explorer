@@ -26,7 +26,7 @@ use crate::{
     PARCEL_SIZE,
 };
 use common::{
-    dynamics::PLAYER_COLLIDER_RADIUS,
+    dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_RADIUS},
     inputs::{Action, CommonInputAction, POINTER_SET},
     rpc::RpcStreamSender,
     structs::{CursorLocks, DebugInfo, MonotonicTimestamp, PointerTargetType, PrimaryCamera},
@@ -37,7 +37,7 @@ use dcl_component::{
     proto_components::{
         common::Vector3,
         sdk::components::{
-            common::{InputAction, PointerEventType, RaycastHit},
+            common::{InputAction, InteractionType, PointerEventType, RaycastHit},
             pb_pointer_events::Entry,
             ColliderLayer, PbPointerEventsResult,
         },
@@ -109,11 +109,16 @@ impl Plugin for PointerResultPlugin {
             .init_resource::<WorldPointerTarget>()
             .init_resource::<DebugPointers>()
             .init_resource::<AvatarColliders>()
+            .init_resource::<ProximityCandidates>()
             .init_resource::<MonotonicTimestamp<PbPointerEventsResult>>();
 
         app.add_systems(
             PreUpdate,
-            (update_pointer_target, update_manual_cursor)
+            (
+                update_pointer_target,
+                update_manual_cursor,
+                collect_proximity_candidates,
+            )
                 .chain()
                 .after(InputSystem)
                 .before(UiSystem::Focus),
@@ -123,6 +128,7 @@ impl Plugin for PointerResultPlugin {
             (
                 resolve_pointer_target,
                 send_hover_events,
+                send_proximity_events,
                 send_action_events,
                 debug_pointer,
                 handle_hover_stream,
@@ -173,12 +179,38 @@ pub fn passes_distance_check(
     }
 }
 
+/// Default `max_player_distance` applied to PROXIMITY entries that leave the field
+/// unset. Roughly mirrors unity-explorer's broad-phase cap, but applied here as a
+/// per-entry fallback rather than a hard global cap.
+pub const PROXIMITY_DEFAULT_MAX_DISTANCE: f32 = 3.0;
+
+/// Resolve the effective player-distance threshold for a PROXIMITY entry.
+///
+/// `None` → fallback to `PROXIMITY_DEFAULT_MAX_DISTANCE`.
+/// `Some(0)` → never qualifies (an explicit disable, since real distances are > 0).
+/// `Some(x)` → use x.
+pub fn proximity_threshold(
+    info: Option<&dcl_component::proto_components::sdk::components::pb_pointer_events::Info>,
+) -> f32 {
+    info.and_then(|i| i.max_player_distance)
+        .unwrap_or(PROXIMITY_DEFAULT_MAX_DISTANCE)
+}
+
+/// Returns true if a PROXIMITY entry's player-distance check passes.
+pub fn passes_proximity_distance_check(
+    info: Option<&dcl_component::proto_components::sdk::components::pb_pointer_events::Info>,
+    player_distance: f32,
+) -> bool {
+    let threshold = proximity_threshold(info);
+    threshold > 0.0 && player_distance <= threshold
+}
+
 #[derive(Default, Debug, Resource, Clone, PartialEq)]
 pub struct PointerTarget(pub Option<PointerTargetInfo>);
 
 #[derive(Default, Debug, Resource, Clone, PartialEq)]
 pub struct PointerDragTarget {
-    entities: HashMap<InputAction, (PointerTargetInfo, bool)>,
+    entities: HashMap<InputAction, (PointerTargetInfo, ActionCandidateMode, bool)>,
 }
 
 #[derive(Default, Debug, Resource, Clone, PartialEq, Eq)]
@@ -222,6 +254,19 @@ pub struct WorldPointerTarget(pub Option<PointerTargetInfo>);
 
 #[derive(Resource, Default)]
 pub struct PointerRay(pub Option<Ray3d>);
+
+/// Entities currently within `max_player_distance` of the avatar that carry at
+/// least one PROXIMITY pointer-event entry. Distance is the closest-point distance
+/// from the avatar's center (transform + half player collider height) to the
+/// entity's collider geometry. Recomputed each frame in `PreUpdate`.
+#[derive(Resource, Default, Debug, Clone)]
+pub struct ProximityCandidates(pub Vec<ProximityCandidate>);
+
+#[derive(Debug, Clone, Copy)]
+pub struct ProximityCandidate {
+    pub entity: Entity,
+    pub distance: f32,
+}
 
 #[allow(clippy::too_many_arguments)]
 fn update_pointer_target(
@@ -523,6 +568,61 @@ fn update_manual_cursor(
     cursor.0 = Some(uv * resolve.texture_size);
 }
 
+/// Walks all entities carrying `PointerEvents` with at least one PROXIMITY entry
+/// and computes the closest-point distance from each entity's collider geometry
+/// to the avatar's center. Entities whose loosest entry threshold is satisfied
+/// are pushed into `ProximityCandidates` for downstream priority resolution and
+/// enter/leave dispatch.
+fn collect_proximity_candidates(
+    player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
+    mut scenes: Query<&mut SceneColliderData>,
+    pointer_events: Query<(Entity, &SceneEntity, &PointerEvents)>,
+    containing_scenes: ContainingScene,
+    mut candidates: ResMut<ProximityCandidates>,
+) {
+    candidates.0.clear();
+    let Ok((player, player_transform)) = player.single() else {
+        return;
+    };
+    let player_center = player_transform.translation() + Vec3::Y * (PLAYER_COLLIDER_HEIGHT * 0.5);
+    let nearby_scenes = containing_scenes.get_area(player, PARCEL_SIZE);
+
+    for (entity, scene_entity, pe) in pointer_events.iter() {
+        if !nearby_scenes.contains(&scene_entity.root) {
+            continue;
+        }
+        // Loosest player-distance threshold across this entity's PROXIMITY entries.
+        // Used as a per-entity broad-phase gate; per-entry checks happen downstream.
+        let mut max_threshold: f32 = 0.0;
+        for entry in pe.iter() {
+            if entry.interaction_type != Some(InteractionType::Proximity as i32) {
+                continue;
+            }
+            let t = proximity_threshold(entry.event_info.as_ref());
+            if t > max_threshold {
+                max_threshold = t;
+            }
+        }
+        if max_threshold <= 0.0 {
+            continue;
+        }
+
+        let Ok(mut collider_data) = scenes.get_mut(scene_entity.root) else {
+            continue;
+        };
+        let entity_id = scene_entity.id;
+        let Some(closest) =
+            collider_data.closest_point(player_center, |cid| cid.entity == entity_id)
+        else {
+            continue;
+        };
+        let distance = (closest - player_center).length();
+        if distance <= max_threshold {
+            candidates.0.push(ProximityCandidate { entity, distance });
+        }
+    }
+}
+
 fn barycentric_coords(posns: &[Vec3; 3], target: Vec3) -> Option<Vec3> {
     let v0 = posns[1] - posns[0];
     let v1 = posns[2] - posns[0];
@@ -775,9 +875,44 @@ fn send_hover_events(
     *previously_entered = new_entities;
 }
 
+/// Source of an action-event candidate, controlling which distance gate applies
+/// and which `interaction_type` entries are eligible.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ActionCandidateMode {
+    Cursor,
+    Proximity,
+}
+
+impl ActionCandidateMode {
+    pub fn matches_entry(self, entry: &Entry) -> bool {
+        let entry_proximity = entry.interaction_type == Some(InteractionType::Proximity as i32);
+        match self {
+            ActionCandidateMode::Cursor => !entry_proximity,
+            ActionCandidateMode::Proximity => entry_proximity,
+        }
+    }
+
+    pub fn passes_distance(
+        self,
+        info: Option<&dcl_component::proto_components::sdk::components::pb_pointer_events::Info>,
+        camera_distance: f32,
+        player_distance: f32,
+    ) -> bool {
+        match self {
+            ActionCandidateMode::Cursor => {
+                passes_distance_check(info, camera_distance, player_distance)
+            }
+            ActionCandidateMode::Proximity => {
+                passes_proximity_distance_check(info, player_distance)
+            }
+        }
+    }
+}
+
 fn filtered_events<'a>(
     pointer_requests: &'a Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
     info: &PointerTargetInfo,
+    mode: ActionCandidateMode,
     ev_type: PointerEventType,
     action: InputAction,
 ) -> impl Iterator<Item = (Entity, &'a Entry)> {
@@ -791,13 +926,18 @@ fn filtered_events<'a>(
         .flatten();
 
     pe.filter(move |(_, f)| {
+        if f.event_type != ev_type as i32 {
+            return false;
+        }
+        if !mode.matches_entry(f) {
+            return false;
+        }
         let event_button = f
             .event_info
             .as_ref()
             .and_then(|info| info.button)
             .unwrap_or(InputAction::IaAny as i32);
-        f.event_type == ev_type as i32
-            && (event_button == InputAction::IaAny as i32 || event_button == action as i32)
+        event_button == InputAction::IaAny as i32 || event_button == action as i32
     })
 }
 
@@ -869,6 +1009,10 @@ fn send_hover_event(
         if !info.in_scene {
             continue;
         }
+        // Hover is cursor-domain — skip entries flagged as proximity.
+        if !ActionCandidateMode::Cursor.matches_entry(ev) {
+            continue;
+        }
         if !passes_distance_check(
             ev.event_info.as_ref(),
             info.camera_distance.0,
@@ -906,9 +1050,10 @@ fn send_hover_event(
     action
 }
 
-/// Iterates entries pre-filtered by `(event_type, action)` and emits a CRDT for
-/// each whose distance check passes. Returns the last-written scene as the
-/// "consuming" scene, which the caller uses to skip duplicate root-entity events.
+/// Iterates entries pre-filtered by `(event_type, action)` and `mode`-appropriate
+/// `interaction_type`, emitting a CRDT for each whose distance check passes.
+/// Returns the last-written scene as the "consuming" scene, which the caller uses
+/// to skip duplicate root-entity events.
 #[allow(clippy::too_many_arguments)]
 fn send_action_event(
     pointer_requests: &Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
@@ -916,6 +1061,7 @@ fn send_action_event(
     timestamp: &MonotonicTimestamp<PbPointerEventsResult>,
     time: &Time,
     info: &PointerTargetInfo,
+    mode: ActionCandidateMode,
     ev_type: PointerEventType,
     action: InputAction,
     direction: Option<Vec2>,
@@ -925,7 +1071,8 @@ fn send_action_event(
         return None;
     };
 
-    let mut potential_entries = filtered_events(pointer_requests, info, ev_type, action).peekable();
+    let mut potential_entries =
+        filtered_events(pointer_requests, info, mode, ev_type, action).peekable();
     potential_entries.peek()?;
 
     let mut consumer = None;
@@ -934,7 +1081,7 @@ fn send_action_event(
         if !info.in_scene {
             continue;
         }
-        if !passes_distance_check(
+        if !mode.passes_distance(
             ev.event_info.as_ref(),
             info.camera_distance.0,
             info.distance.0,
@@ -962,8 +1109,212 @@ fn send_action_event(
     consumer
 }
 
+/// Maximum `priority` across this candidate's entries that match `(ev_type,
+/// action)` after distance and interaction-type filtering. `None` means no entry
+/// is eligible — the candidate doesn't compete in this bucket.
+fn bucket_max_priority(
+    pe: &PointerEvents,
+    info: &PointerTargetInfo,
+    mode: ActionCandidateMode,
+    ev_type: PointerEventType,
+    action: InputAction,
+) -> Option<u32> {
+    if !info.in_scene {
+        return None;
+    }
+    pe.iter()
+        .filter(|e| {
+            if e.event_type != ev_type as i32 {
+                return false;
+            }
+            if !mode.matches_entry(e) {
+                return false;
+            }
+            let event_button = e
+                .event_info
+                .as_ref()
+                .and_then(|i| i.button)
+                .unwrap_or(InputAction::IaAny as i32);
+            if event_button != InputAction::IaAny as i32 && event_button != action as i32 {
+                return false;
+            }
+            mode.passes_distance(
+                e.event_info.as_ref(),
+                info.camera_distance.0,
+                info.distance.0,
+            )
+        })
+        .map(|e| e.event_info.as_ref().and_then(|i| i.priority).unwrap_or(0))
+        .max()
+}
+
+/// Picks the winning `(info, mode)` for an action bucket across the cursor target
+/// and the proximity candidate set. Highest priority wins; ties broken by entity
+/// id (lower wins). Returns `None` if no candidate has an eligible entry.
+pub fn resolve_action_winner(
+    target: Option<&PointerTargetInfo>,
+    proximity: &ProximityCandidates,
+    pointer_requests: &Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
+    ev_type: PointerEventType,
+    action: InputAction,
+) -> Option<(PointerTargetInfo, ActionCandidateMode)> {
+    let mut best: Option<(u32, Entity, PointerTargetInfo, ActionCandidateMode)> = None;
+
+    let mut consider =
+        |entity: Entity, info: PointerTargetInfo, mode: ActionCandidateMode, prio: u32| {
+            let beats = match best {
+                None => true,
+                Some((bp, be, _, _)) => prio > bp || (prio == bp && entity < be),
+            };
+            if beats {
+                best = Some((prio, entity, info, mode));
+            }
+        };
+
+    if let Some(info) = target {
+        if let Ok((_, _, pe)) = pointer_requests.get(info.container) {
+            if let Some(prio) =
+                bucket_max_priority(pe, info, ActionCandidateMode::Cursor, ev_type, action)
+            {
+                consider(
+                    info.container,
+                    info.clone(),
+                    ActionCandidateMode::Cursor,
+                    prio,
+                );
+            }
+        }
+    }
+
+    for cand in &proximity.0 {
+        let synthetic = PointerTargetInfo {
+            container: cand.entity,
+            mesh_name: None,
+            distance: FloatOrd(cand.distance),
+            camera_distance: FloatOrd(0.0),
+            in_scene: true,
+            position: None,
+            normal: None,
+            face: None,
+            ty: PointerTargetType::World,
+        };
+        if let Ok((_, _, pe)) = pointer_requests.get(cand.entity) {
+            if let Some(prio) = bucket_max_priority(
+                pe,
+                &synthetic,
+                ActionCandidateMode::Proximity,
+                ev_type,
+                action,
+            ) {
+                consider(cand.entity, synthetic, ActionCandidateMode::Proximity, prio);
+            }
+        }
+    }
+
+    best.map(|(_, _, info, mode)| (info, mode))
+}
+
+/// Tracks per-entity proximity range state across frames and emits
+/// `PetProximityEnter` / `PetProximityLeave` CRDTs on transitions. Tier-1 (state)
+/// events: not gated by priority or button. An entity is "in range" iff it
+/// appears in `ProximityCandidates` (the collection system gates entry by the
+/// entity's loosest configured threshold). On enter, every PROXIMITY entry of
+/// type `PetProximityEnter` whose own per-entry gate currently passes fires its
+/// CRDT. On leave, every `PetProximityLeave` entry fires unconditionally (we are,
+/// by definition, outside all per-entry gates).
+///
+/// Per-entity granularity (rather than per-entry-index) matches `send_hover_events`
+/// and is robust to scenes mutating their entry list.
+fn send_proximity_events(
+    candidates: Res<ProximityCandidates>,
+    pointer_events: Query<(&SceneEntity, &PointerEvents)>,
+    mut scenes: Query<(&mut RendererSceneContext, &GlobalTransform)>,
+    timestamp: Res<MonotonicTimestamp<PbPointerEventsResult>>,
+    mut prev_in_range: Local<HashSet<Entity>>,
+) {
+    let dist_by_entity: HashMap<Entity, f32> = candidates
+        .0
+        .iter()
+        .map(|c| (c.entity, c.distance))
+        .collect();
+    let new_in_range: HashSet<Entity> = dist_by_entity.keys().copied().collect();
+
+    let emit = |entity: Entity,
+                pet: PointerEventType,
+                dist: f32,
+                scenes: &mut Query<(&mut RendererSceneContext, &GlobalTransform)>|
+     -> Option<()> {
+        let (scene_entity, pe) = pointer_events.get(entity).ok()?;
+        let pb_pe = pe.msg.get(&None)?;
+        for entry in pb_pe.pointer_events.iter() {
+            if entry.event_type != pet as i32 {
+                continue;
+            }
+            if entry.interaction_type != Some(InteractionType::Proximity as i32) {
+                continue;
+            }
+            if pet == PointerEventType::PetProximityEnter
+                && !passes_proximity_distance_check(entry.event_info.as_ref(), dist)
+            {
+                continue;
+            }
+            let Ok((mut context, scene_transform)) = scenes.get_mut(scene_entity.root) else {
+                continue;
+            };
+            let button = entry
+                .event_info
+                .as_ref()
+                .and_then(|i| i.button.map(|_| i.button()))
+                .unwrap_or(InputAction::IaAny);
+            let info = PointerTargetInfo {
+                container: entity,
+                mesh_name: None,
+                distance: FloatOrd(dist),
+                camera_distance: FloatOrd(0.0),
+                in_scene: true,
+                position: None,
+                normal: None,
+                face: None,
+                ty: PointerTargetType::World,
+            };
+            write_pointer_result(
+                &mut context,
+                scene_transform,
+                &info,
+                scene_entity.id,
+                button,
+                pet,
+                None,
+                &timestamp,
+            );
+        }
+        Some(())
+    };
+
+    for &entity in new_in_range.difference(&prev_in_range) {
+        let dist = dist_by_entity.get(&entity).copied().unwrap_or(0.0);
+        emit(
+            entity,
+            PointerEventType::PetProximityEnter,
+            dist,
+            &mut scenes,
+        );
+    }
+    for &entity in prev_in_range.difference(&new_in_range) {
+        emit(
+            entity,
+            PointerEventType::PetProximityLeave,
+            0.0,
+            &mut scenes,
+        );
+    }
+
+    *prev_in_range = new_in_range;
+}
+
 fn send_action_events(
     target: Res<PointerTarget>,
+    proximity: Res<ProximityCandidates>,
     pointer_requests: Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
     mut scenes: Query<(Entity, &mut RendererSceneContext, &GlobalTransform)>,
     input_mgr: InputManager,
@@ -974,33 +1325,50 @@ fn send_action_events(
     player: Query<Entity, With<PrimaryUser>>,
     containing_scenes: ContainingScene,
 ) {
-    // send event to action target
     let mut events_and_consumers = Vec::default(); // (event type, button, option<consuming scene>)
-    if let Some(info) = target.0.as_ref() {
-        let down_events = input_mgr
-            .iter_scene_just_down()
-            .map(IaToDcl::to_dcl)
-            .map(|down| {
-                let consumed_by = send_action_event(
+
+    for down in input_mgr.iter_scene_just_down().map(IaToDcl::to_dcl) {
+        let consumed_by = match resolve_action_winner(
+            target.0.as_ref(),
+            &proximity,
+            &pointer_requests,
+            PointerEventType::PetDown,
+            down,
+        ) {
+            Some((info, mode)) => {
+                let consumed = send_action_event(
                     &pointer_requests,
                     &mut scenes,
                     &timestamp,
                     &time,
-                    info,
+                    &info,
+                    mode,
                     PointerEventType::PetDown,
                     down,
                     None,
                 );
-                if filtered_events(&pointer_requests, info, PointerEventType::PetDrag, down)
-                    .next()
-                    .is_some()
+                // Capture the winning candidate's info+mode for the lifetime of
+                // the drag (so subsequent PetDrag/Locked CRDTs fire on the same
+                // entity even if cursor / proximity state changes).
+                if filtered_events(
+                    &pointer_requests,
+                    &info,
+                    mode,
+                    PointerEventType::PetDrag,
+                    down,
+                )
+                .next()
+                .is_some()
                 {
                     debug!("added drag");
-                    drag_target.entities.insert(down, (info.clone(), false));
+                    drag_target
+                        .entities
+                        .insert(down, (info.clone(), mode, false));
                 }
                 if filtered_events(
                     &pointer_requests,
-                    info,
+                    &info,
+                    mode,
                     PointerEventType::PetDragLocked,
                     down,
                 )
@@ -1008,53 +1376,46 @@ fn send_action_events(
                 .is_some()
                 {
                     debug!("added drag lock");
-                    drag_target.entities.insert(down, (info.clone(), true));
+                    drag_target
+                        .entities
+                        .insert(down, (info.clone(), mode, true));
                 }
+                consumed
+            }
+            None => None,
+        };
+        events_and_consumers.push((PointerEventType::PetDown, down, consumed_by));
+    }
 
-                (PointerEventType::PetDown, down, consumed_by)
-            });
-        events_and_consumers.extend(down_events);
-
-        let up_events = input_mgr
-            .iter_scene_just_up()
-            .map(IaToDcl::to_dcl)
-            .map(|up| {
-                (
-                    PointerEventType::PetUp,
-                    up,
-                    send_action_event(
-                        &pointer_requests,
-                        &mut scenes,
-                        &timestamp,
-                        &time,
-                        info,
-                        PointerEventType::PetUp,
-                        up,
-                        None,
-                    ),
-                )
-            });
-        events_and_consumers.extend(up_events);
-    } else {
-        events_and_consumers.extend(
-            input_mgr
-                .iter_scene_just_down()
-                .map(IaToDcl::to_dcl)
-                .map(|b| (PointerEventType::PetDown, b, None)),
-        );
-        events_and_consumers.extend(
-            input_mgr
-                .iter_scene_just_up()
-                .map(IaToDcl::to_dcl)
-                .map(|b| (PointerEventType::PetUp, b, None)),
-        );
+    for up in input_mgr.iter_scene_just_up().map(IaToDcl::to_dcl) {
+        let consumed_by = match resolve_action_winner(
+            target.0.as_ref(),
+            &proximity,
+            &pointer_requests,
+            PointerEventType::PetUp,
+            up,
+        ) {
+            Some((info, mode)) => send_action_event(
+                &pointer_requests,
+                &mut scenes,
+                &timestamp,
+                &time,
+                &info,
+                mode,
+                PointerEventType::PetUp,
+                up,
+                None,
+            ),
+            None => None,
+        };
+        events_and_consumers.push((PointerEventType::PetUp, up, consumed_by));
     }
 
     // send any drags
     let frame_delta = input_mgr.get_analog(POINTER_SET, InputPriority::Scene);
 
     let mut any_drag_lock = false;
-    for (input, (info, lock)) in drag_target.entities.iter() {
+    for (input, (info, mode, lock)) in drag_target.entities.iter() {
         if frame_delta != Vec2::ZERO {
             send_action_event(
                 &pointer_requests,
@@ -1062,6 +1423,7 @@ fn send_action_events(
                 &timestamp,
                 &time,
                 info,
+                *mode,
                 if *lock {
                     PointerEventType::PetDragLocked
                 } else {
@@ -1077,13 +1439,14 @@ fn send_action_events(
     // send drag ends
     for up in input_mgr.iter_scene_just_up() {
         let up = up.to_dcl();
-        if let Some((info, _)) = drag_target.entities.remove(&up) {
+        if let Some((info, mode, _)) = drag_target.entities.remove(&up) {
             send_action_event(
                 &pointer_requests,
                 &mut scenes,
                 &timestamp,
                 &time,
                 &info,
+                mode,
                 PointerEventType::PetDragEnd,
                 up,
                 None,
