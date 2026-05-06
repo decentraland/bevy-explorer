@@ -679,8 +679,7 @@ fn collect_proximity_candidates(
             // Behind player body.
             continue;
         }
-        let in_body_cone =
-            body_dot * body_dot >= flat_sqr_mag * PROXIMITY_FOV_HALF_ANGLE_COS_SQR;
+        let in_body_cone = body_dot * body_dot >= flat_sqr_mag * PROXIMITY_FOV_HALF_ANGLE_COS_SQR;
         if !in_body_cone {
             // Outside body cone — accept only if camera is present and target
             // is also within the camera cone (still in front of the body, since
@@ -705,7 +704,12 @@ fn collect_proximity_candidates(
         // wall is still interactable via its AABB centre, which the player
         // can see through the doorway).
         if !ray_reaches_target(&mut collider_data, player_center, nearest_point, entity_id)
-            && !ray_reaches_target(&mut collider_data, player_center, entity_position, entity_id)
+            && !ray_reaches_target(
+                &mut collider_data,
+                player_center,
+                entity_position,
+                entity_id,
+            )
         {
             continue;
         }
