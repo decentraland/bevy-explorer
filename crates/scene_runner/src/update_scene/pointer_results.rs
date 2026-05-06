@@ -11,7 +11,7 @@ use bevy::{
 use bevy_console::ConsoleCommand;
 use comms::global_crdt::ForeignPlayer;
 use console::DoAddConsoleCommand;
-use system_bridge::{HoverAction, HoverEvent, SystemApi};
+use system_bridge::{HoverAction, HoverEvent, ProximityEvent, SystemApi};
 
 use crate::{
     gltf_resolver::GltfMeshResolver,
@@ -132,6 +132,7 @@ impl Plugin for PointerResultPlugin {
                 send_action_events,
                 debug_pointer,
                 handle_hover_stream,
+                handle_proximity_stream,
             )
                 .chain()
                 .in_set(SceneSets::Input),
@@ -1597,4 +1598,98 @@ fn handle_hover_stream(
 
         prev_state.0 = event;
     }
+}
+
+/// Mirrors `handle_hover_stream` but for proximity. Sends a `ProximityEvent` to
+/// subscribers when an entity enters/leaves the candidate set, or when the
+/// `enabled` flag on any of its actions flips (per-entry distance gate crossing).
+/// Distance and `nearest_point` are sampled at send-time, not streamed
+/// per-frame — the system scene is expected to anchor UI rather than smoothly
+/// follow it.
+fn handle_proximity_stream(
+    mut events: EventReader<SystemApi>,
+    mut senders: Local<Vec<RpcStreamSender<ProximityEvent>>>,
+    candidates: Res<ProximityCandidates>,
+    pointer_events: Query<&PointerEvents>,
+    mut prev_state: Local<HashMap<Entity, ProximityEvent>>,
+) {
+    let new_senders = events
+        .read()
+        .filter_map(|ev| {
+            if let SystemApi::GetProximityStream(s) = ev {
+                Some(s.clone())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    senders.extend(new_senders);
+    senders.retain(|s| !s.is_closed());
+
+    if senders.is_empty() {
+        prev_state.clear();
+        return;
+    }
+
+    // Build current state: one entered=true ProximityEvent per in-range entity
+    // that has at least one PROXIMITY entry.
+    let mut current: HashMap<Entity, ProximityEvent> = HashMap::new();
+    for cand in &candidates.0 {
+        let Ok(pe) = pointer_events.get(cand.entity) else {
+            continue;
+        };
+        let actions = pe
+            .iter()
+            .filter(|e| e.interaction_type == Some(InteractionType::Proximity as i32))
+            .map(|e| HoverAction {
+                event: e.clone(),
+                enabled: passes_proximity_distance_check(e.event_info.as_ref(), cand.distance),
+            })
+            .collect::<Vec<_>>();
+        if actions.is_empty() {
+            continue;
+        }
+        current.insert(
+            cand.entity,
+            ProximityEvent {
+                entered: true,
+                entity: cand.entity.to_bits(),
+                nearest_point: Vector3::world_vec_from_vec3(&cand.nearest_point),
+                actions,
+            },
+        );
+    }
+
+    let actions_match = |a: &[HoverAction], b: &[HoverAction]| -> bool {
+        a.len() == b.len()
+            && a.iter()
+                .zip(b)
+                .all(|(x, y)| x.event == y.event && x.enabled == y.enabled)
+    };
+
+    // Emit leaves for entities that dropped out of the candidate set.
+    for (entity, prev_ev) in prev_state.iter() {
+        if !current.contains_key(entity) {
+            let mut leave = prev_ev.clone();
+            leave.entered = false;
+            for s in &senders {
+                let _ = s.send(leave.clone());
+            }
+        }
+    }
+
+    // Emit enters / refreshes for new candidates and any whose actions flipped.
+    for (entity, curr_ev) in &current {
+        let send = match prev_state.get(entity) {
+            None => true,
+            Some(prev_ev) => !actions_match(&prev_ev.actions, &curr_ev.actions),
+        };
+        if send {
+            for s in &senders {
+                let _ = s.send(curr_ev.clone());
+            }
+        }
+    }
+
+    *prev_state = current;
 }
