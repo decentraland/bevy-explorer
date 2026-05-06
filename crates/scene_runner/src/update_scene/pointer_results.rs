@@ -185,6 +185,16 @@ pub fn passes_distance_check(
 /// per-entry fallback rather than a hard global cap.
 pub const PROXIMITY_DEFAULT_MAX_DISTANCE: f32 = 3.0;
 
+/// Full FOV angle of the horizontal proximity cone, in degrees. Matches
+/// unity-explorer (`PROXIMITY_FOV_ANGLE_DEGREES`). Entities whose collider
+/// nearest-point is outside this cone (in the horizontal plane, relative to the
+/// player's body forward direction) are excluded from proximity candidates.
+pub const PROXIMITY_FOV_ANGLE_DEGREES: f32 = 120.0;
+
+/// Squared cosine of the proximity cone's half-angle. cos(60°) = 0.5; squared = 0.25.
+/// Used in the per-entity FOV gate so we can compare without a sqrt.
+const PROXIMITY_FOV_HALF_ANGLE_COS_SQR: f32 = 0.25;
+
 /// Resolve the effective player-distance threshold for a PROXIMITY entry.
 ///
 /// `None` → fallback to `PROXIMITY_DEFAULT_MAX_DISTANCE`.
@@ -582,6 +592,7 @@ fn update_manual_cursor(
 /// enter/leave dispatch.
 fn collect_proximity_candidates(
     player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
+    camera: Query<&GlobalTransform, With<PrimaryCamera>>,
     mut scenes: Query<&mut SceneColliderData>,
     pointer_events: Query<(Entity, &SceneEntity, &PointerEvents, &GlobalTransform)>,
     containing_scenes: ContainingScene,
@@ -592,6 +603,16 @@ fn collect_proximity_candidates(
         return;
     };
     let player_center = player_transform.translation() + Vec3::Y * (PLAYER_COLLIDER_HEIGHT * 0.5);
+    let player_forward = *player_transform.forward();
+    let player_flat_forward =
+        Vec3::new(player_forward.x, 0.0, player_forward.z).normalize_or_zero();
+    // Camera forward is optional — if no PrimaryCamera, fall back to a body-only
+    // cone test. When present, a target also qualifies if it's in front of the
+    // body (within 180°) AND within the camera's 120° cone.
+    let camera_flat_forward = camera.single().ok().map(|gt| {
+        let f = *gt.forward();
+        Vec3::new(f.x, 0.0, f.z).normalize_or_zero()
+    });
     let nearby_scenes = containing_scenes.get_area(player, PARCEL_SIZE);
 
     for (entity, scene_entity, pe, entity_transform) in pointer_events.iter() {
@@ -624,14 +645,49 @@ fn collect_proximity_candidates(
             continue;
         };
         let distance = (nearest_point - player_center).length();
-        if distance <= max_threshold {
-            candidates.0.push(ProximityCandidate {
-                entity,
-                distance,
-                nearest_point,
-                entity_position: entity_transform.translation(),
-            });
+        if distance > max_threshold {
+            continue;
         }
+
+        // Horizontal FOV gate: matches unity's closest-point cone test.
+        // Accept if the entity's nearest collider point falls within the body
+        // forward 120° cone, OR (in front of the body within 180° AND within
+        // the camera forward 120° cone). Vertical is unconstrained.
+        let to_target = nearest_point - player_center;
+        let flat_to_target = Vec3::new(to_target.x, 0.0, to_target.z);
+        let flat_sqr_mag = flat_to_target.length_squared();
+        if flat_sqr_mag < 1e-6 {
+            // Player on top of entity — skip (matches unity).
+            continue;
+        }
+        let body_dot = player_flat_forward.dot(flat_to_target);
+        if body_dot <= 0.0 {
+            // Behind player body.
+            continue;
+        }
+        let in_body_cone =
+            body_dot * body_dot >= flat_sqr_mag * PROXIMITY_FOV_HALF_ANGLE_COS_SQR;
+        if !in_body_cone {
+            // Outside body cone — accept only if camera is present and target
+            // is also within the camera cone (still in front of the body, since
+            // body_dot > 0).
+            let in_camera_cone = camera_flat_forward
+                .map(|c| {
+                    let dot = c.dot(flat_to_target);
+                    dot > 0.0 && dot * dot >= flat_sqr_mag * PROXIMITY_FOV_HALF_ANGLE_COS_SQR
+                })
+                .unwrap_or(false);
+            if !in_camera_cone {
+                continue;
+            }
+        }
+
+        candidates.0.push(ProximityCandidate {
+            entity,
+            distance,
+            nearest_point,
+            entity_position: entity_transform.translation(),
+        });
     }
 }
 
