@@ -801,23 +801,33 @@ impl SceneColliderData {
         origin: Vec3,
         filter: F,
     ) -> Option<Vec3> {
-        self.closest_point_with_id(origin, filter)
+        self.closest_point_with_id(origin, u32::MAX, filter)
             .map(|(point, _)| point)
     }
 
     /// Like `closest_point` but also returns the id of the collider that
-    /// produced the projected point. Useful when the caller needs to identify
-    /// which of several colliders attached to the same scene entity (e.g.
-    /// multi-collider GltfContainers) was the closest.
+    /// produced the projected point, and restricts the query to colliders
+    /// whose interaction groups intersect `collision_mask`. Useful when the
+    /// caller wants to identify which of several colliders attached to the
+    /// same scene entity (e.g. multi-collider GltfContainers) was the
+    /// closest, or limit the search to a specific layer (e.g. only
+    /// `CL_POINTER` colliders for proximity events).
     pub fn closest_point_with_id<F: Fn(&ColliderId) -> bool>(
         &mut self,
         origin: Vec3,
+        collision_mask: u32,
         filter: F,
     ) -> Option<(Vec3, ColliderId)> {
         self.update_bvh();
 
         let predicate = |h, _: &Collider| self.get_id(h).is_some_and(&filter);
-        let q = QueryFilter::new().predicate(&predicate);
+        let q = QueryFilter::new()
+            .groups(InteractionGroups::new(
+                Group::from_bits_truncate(collision_mask),
+                Group::from_bits_truncate(collision_mask),
+                InteractionTestMode::And,
+            ))
+            .predicate(&predicate);
 
         self.query_pipeline(q)
             .project_point(&origin.as_dvec3().into(), f64::MAX, true)

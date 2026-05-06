@@ -641,9 +641,15 @@ fn collect_proximity_candidates(
             continue;
         };
         let entity_id = scene_entity.id;
-        let Some((nearest_point, hit_collider_id)) =
-            collider_data.closest_point_with_id(player_center, |cid| cid.entity == entity_id)
-        else {
+        // Restrict to CL_POINTER colliders. A multi-collider entity (e.g. a
+        // GltfContainer with one pointer-aware mesh and several physics-only
+        // hitboxes) should only fire proximity events relative to its
+        // pointer-aware geometry.
+        let Some((nearest_point, hit_collider_id)) = collider_data.closest_point_with_id(
+            player_center,
+            ColliderLayer::ClPointer as u32,
+            |cid| cid.entity == entity_id,
+        ) else {
             continue;
         };
         let distance = (nearest_point - player_center).length();
@@ -690,12 +696,52 @@ fn collect_proximity_candidates(
             }
         }
 
+        // Occlusion gate: accept if a ray from the player's centre to the
+        // nearest collider point OR to the AABB centre of the hit collider
+        // reaches the entity unobstructed by another scene entity. Either
+        // succeeding is enough; this trades a tighter "you can definitely
+        // touch it" guarantee for the more useful "you can probably reach
+        // it" one (e.g. a recessed door whose nearest point hides behind the
+        // wall is still interactable via its AABB centre, which the player
+        // can see through the doorway).
+        if !ray_reaches_target(&mut collider_data, player_center, nearest_point, entity_id)
+            && !ray_reaches_target(&mut collider_data, player_center, entity_position, entity_id)
+        {
+            continue;
+        }
+
         candidates.0.push(ProximityCandidate {
             entity,
             distance,
             nearest_point,
             entity_position,
         });
+    }
+}
+
+/// Returns true if a ray from `origin` toward `target` reaches an entity with
+/// id `target_entity` without first hitting a collider that belongs to a
+/// different scene entity. Multi-collider entities (e.g. GltfContainers) are
+/// treated as a single target — hitting any of their colliders counts.
+fn ray_reaches_target(
+    collider_data: &mut SceneColliderData,
+    origin: Vec3,
+    target: Vec3,
+    target_entity: SceneEntityId,
+) -> bool {
+    let to_target = target - origin;
+    let distance = to_target.length();
+    if distance < 1e-4 {
+        return true;
+    }
+    let direction = to_target / distance;
+    // Physics + pointer mask, mirroring unity's PLAYER_PROXIMITY_MASK. Physics
+    // catches walls / floors; pointer catches another interactable entity
+    // sitting in front of the target — both intuitively occlude.
+    let mask = ColliderLayer::ClPointer as u32 | ColliderLayer::ClPhysics as u32;
+    match collider_data.cast_ray_nearest(origin, direction, distance, mask, true, false, None) {
+        None => true,
+        Some(hit) => hit.id.entity == target_entity,
     }
 }
 
