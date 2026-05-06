@@ -907,6 +907,17 @@ impl ActionCandidateMode {
             }
         }
     }
+
+    /// Default `priority` for entries that leave the field unset. Cursor
+    /// defaults to `u32::MAX` so cursor interactions win by default — a scene
+    /// must explicitly set a cursor entry's priority to demote it below a
+    /// competing proximity entry. Proximity defaults to 0 per the proto.
+    pub fn default_priority(self) -> u32 {
+        match self {
+            ActionCandidateMode::Cursor => u32::MAX,
+            ActionCandidateMode::Proximity => 0,
+        }
+    }
 }
 
 fn filtered_events<'a>(
@@ -1144,7 +1155,12 @@ fn bucket_max_priority(
                 info.distance.0,
             )
         })
-        .map(|e| e.event_info.as_ref().and_then(|i| i.priority).unwrap_or(0))
+        .map(|e| {
+            e.event_info
+                .as_ref()
+                .and_then(|i| i.priority)
+                .unwrap_or_else(|| mode.default_priority())
+        })
         .max()
 }
 
