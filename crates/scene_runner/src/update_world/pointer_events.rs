@@ -12,8 +12,8 @@ use comms::global_crdt::ForeignPlayer;
 use crate::{
     renderer_context::RendererSceneContext,
     update_scene::pointer_results::{
-        resolve_action_winner, ActionCandidateMode, IaToCommon, PointerTarget, PointerTargetInfo,
-        ProximityCandidates,
+        action_event_type, resolve_action_winner, ActionCandidateMode, IaToCommon, PointerTarget,
+        PointerTargetInfo, ProximityCandidates,
     },
     SceneEntity,
 };
@@ -125,19 +125,6 @@ pub fn propagate_avatar_events(
 
 #[derive(Component)]
 pub struct HoverText;
-
-/// Tier-2 (button-driven action) event types whose tooltips are restricted to
-/// the priority winner of the corresponding `(event_type, button)` bucket.
-fn action_event_type(event_type: i32) -> Option<PointerEventType> {
-    match event_type {
-        x if x == PointerEventType::PetDown as i32 => Some(PointerEventType::PetDown),
-        x if x == PointerEventType::PetUp as i32 => Some(PointerEventType::PetUp),
-        x if x == PointerEventType::PetDrag as i32 => Some(PointerEventType::PetDrag),
-        x if x == PointerEventType::PetDragLocked as i32 => Some(PointerEventType::PetDragLocked),
-        x if x == PointerEventType::PetDragEnd as i32 => Some(PointerEventType::PetDragEnd),
-        _ => None,
-    }
-}
 
 fn format_button_label(input_map: &InputMap, info: &Info) -> String {
     input_map

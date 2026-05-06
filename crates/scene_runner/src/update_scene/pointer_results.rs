@@ -988,6 +988,20 @@ impl ActionCandidateMode {
     }
 }
 
+/// Tier-2 (button-driven action) event types that participate in per-bucket
+/// priority resolution. Returns the typed enum form when the i32 is one of
+/// those, else `None` (e.g. for hover/proximity enter/leave or unknown values).
+pub fn action_event_type(event_type: i32) -> Option<PointerEventType> {
+    match event_type {
+        x if x == PointerEventType::PetDown as i32 => Some(PointerEventType::PetDown),
+        x if x == PointerEventType::PetUp as i32 => Some(PointerEventType::PetUp),
+        x if x == PointerEventType::PetDrag as i32 => Some(PointerEventType::PetDrag),
+        x if x == PointerEventType::PetDragLocked as i32 => Some(PointerEventType::PetDragLocked),
+        x if x == PointerEventType::PetDragEnd as i32 => Some(PointerEventType::PetDragEnd),
+        _ => None,
+    }
+}
+
 fn filtered_events<'a>(
     pointer_requests: &'a Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
     info: &PointerTargetInfo,
@@ -1626,7 +1640,12 @@ fn handle_hover_stream(
         actions: actions
             .get(t.container)
             .map(|pe| {
+                // The hover stream is the cursor pipeline; proximity entries
+                // surface separately on GetProximityStream. Filter so the same
+                // entity's proximity tooltips don't double-fire on the cursor
+                // stream when the player happens to be aiming at it.
                 pe.iter()
+                    .filter(|event| ActionCandidateMode::Cursor.matches_entry(event))
                     .map(|event| HoverAction {
                         event: event.clone(),
                         enabled: t.in_scene
@@ -1668,8 +1687,9 @@ fn handle_hover_stream(
 fn handle_proximity_stream(
     mut events: EventReader<SystemApi>,
     mut senders: Local<Vec<RpcStreamSender<ProximityEvent>>>,
+    target: Res<PointerTarget>,
     candidates: Res<ProximityCandidates>,
-    pointer_events: Query<&PointerEvents>,
+    pointer_requests: Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
     mut prev_state: Local<HashMap<Entity, ProximityEvent>>,
 ) {
     let new_senders = events
@@ -1690,21 +1710,52 @@ fn handle_proximity_stream(
         return;
     }
 
-    // Build current state: one entered=true ProximityEvent per in-range entity
-    // that has at least one PROXIMITY entry.
+    // Per-frame cache of `(event_type, button) → winning entity` so we resolve
+    // each bucket once even when several candidates share an event type.
+    let mut winner_cache: HashMap<(i32, i32), Option<Entity>> = HashMap::new();
+
+    // Build current state: one ProximityEvent per in-range entity that wins at
+    // least one action bucket. Tier-2 (PetUp/Down/Drag*) entries are filtered
+    // to the priority winner; non-action proximity entries (PetProximityEnter
+    // /Leave) are dropped from the tooltip stream — they're informational and
+    // would otherwise fight for screen space with the actionable tooltip.
     let mut current: HashMap<Entity, ProximityEvent> = HashMap::new();
     for cand in &candidates.0 {
-        let Ok(pe) = pointer_events.get(cand.entity) else {
+        let Ok((_, _, pe)) = pointer_requests.get(cand.entity) else {
             continue;
         };
-        let actions = pe
-            .iter()
-            .filter(|e| e.interaction_type == Some(InteractionType::Proximity as i32))
-            .map(|e| HoverAction {
-                event: e.clone(),
-                enabled: passes_proximity_distance_check(e.event_info.as_ref(), cand.distance),
-            })
-            .collect::<Vec<_>>();
+        let mut actions: Vec<HoverAction> = Vec::new();
+        for entry in pe.iter() {
+            if entry.interaction_type != Some(InteractionType::Proximity as i32) {
+                continue;
+            }
+            let Some(action_event) = action_event_type(entry.event_type) else {
+                continue;
+            };
+            let button = entry
+                .event_info
+                .as_ref()
+                .and_then(|i| i.button.map(|_| i.button()))
+                .unwrap_or(InputAction::IaAny);
+            let key = (action_event as i32, button as i32);
+            let winner = *winner_cache.entry(key).or_insert_with(|| {
+                resolve_action_winner(
+                    target.0.as_ref(),
+                    &candidates,
+                    &pointer_requests,
+                    action_event,
+                    button,
+                )
+                .map(|(info, _)| info.container)
+            });
+            if winner != Some(cand.entity) {
+                continue;
+            }
+            actions.push(HoverAction {
+                event: entry.clone(),
+                enabled: passes_proximity_distance_check(entry.event_info.as_ref(), cand.distance),
+            });
+        }
         if actions.is_empty() {
             continue;
         }
