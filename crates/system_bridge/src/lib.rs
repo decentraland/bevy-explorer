@@ -118,10 +118,12 @@ pub struct HoverEvent {
 /// entries enters or leaves the avatar's interaction range, or when one of its
 /// per-entry distance gates flips (so the `enabled` flag on an action changes).
 /// `entity` is an opaque session-stable identifier so the scene can match
-/// enter/leave pairs. `entity_position` is the entity's transform origin in
-/// world space; the scene is responsible for projecting it to screen space
-/// per frame using its own helper (the bevy camera's FOV is exposed via
-/// `GetCameraStream`).
+/// enter/leave pairs. `entity_position` is the world-space AABB centre of the
+/// specific collider on the entity that produced the closest-point hit — for
+/// multi-collider entities (e.g. GltfContainers) this anchors UI on the part
+/// of the entity the player is actually nearest. The scene is responsible for
+/// projecting it to screen space per frame; the active camera's vertical FOV
+/// is available via `Runtime.getCameraFov`.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ProximityEvent {
@@ -129,17 +131,6 @@ pub struct ProximityEvent {
     pub entity: u64,
     pub entity_position: Vector3,
     pub actions: Vec<HoverAction>,
-}
-
-/// Streamed to the system scene whenever the active camera's vertical FOV
-/// changes. Combined with `Transform.get(engine.CameraEntity)` (which the SDK
-/// already exposes per-frame) and `UiCanvasInformation` (for aspect), this is
-/// everything a scene needs to do its own world→screen projection. `fov_y` is
-/// in radians.
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct CameraInfoEvent {
-    pub fov_y: f32,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
