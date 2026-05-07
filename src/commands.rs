@@ -6,7 +6,6 @@ use scene_runner::{
     OutOfWorld,
 };
 
-// TODO move these somewhere better
 /// set location
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/teleport")]
@@ -108,7 +107,7 @@ pub fn unlock_preview(
     }
 }
 
-// set thread count
+/// set thread count
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/scene_threads")]
 pub struct SceneThreadsCommand {
@@ -126,7 +125,7 @@ pub fn scene_threads(
     }
 }
 
-// set fps
+/// set fps
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/fps")]
 pub struct FpsCommand {
