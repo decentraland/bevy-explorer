@@ -801,14 +801,48 @@ impl SceneColliderData {
         origin: Vec3,
         filter: F,
     ) -> Option<Vec3> {
+        self.closest_point_with_id(origin, u32::MAX, filter)
+            .map(|(point, _)| point)
+    }
+
+    /// Like `closest_point` but also returns the id of the collider that
+    /// produced the projected point, and restricts the query to colliders
+    /// whose interaction groups intersect `collision_mask`. Useful when the
+    /// caller wants to identify which of several colliders attached to the
+    /// same scene entity (e.g. multi-collider GltfContainers) was the
+    /// closest, or limit the search to a specific layer (e.g. only
+    /// `CL_POINTER` colliders for proximity events).
+    pub fn closest_point_with_id<F: Fn(&ColliderId) -> bool>(
+        &mut self,
+        origin: Vec3,
+        collision_mask: u32,
+        filter: F,
+    ) -> Option<(Vec3, ColliderId)> {
         self.update_bvh();
 
         let predicate = |h, _: &Collider| self.get_id(h).is_some_and(&filter);
-        let q = QueryFilter::new().predicate(&predicate);
+        let q = QueryFilter::new()
+            .groups(InteractionGroups::new(
+                Group::from_bits_truncate(collision_mask),
+                Group::from_bits_truncate(collision_mask),
+                InteractionTestMode::And,
+            ))
+            .predicate(&predicate);
 
         self.query_pipeline(q)
             .project_point(&origin.as_dvec3().into(), f64::MAX, true)
-            .map(|(_, point)| DVec3::from(point.point).as_vec3())
+            .and_then(|(handle, projection)| {
+                let id = self.get_id(handle).cloned()?;
+                Some((DVec3::from(projection.point).as_vec3(), id))
+            })
+    }
+
+    /// Centre of a collider's axis-aligned bounding box in world space.
+    pub fn collider_aabb_center(&self, id: &ColliderId) -> Option<Vec3> {
+        let collider = self.get_collider(id)?;
+        let aabb = collider.compute_aabb();
+        let c = aabb.center();
+        Some(Vec3::new(c.x as f32, c.y as f32, c.z as f32))
     }
 
     pub fn remove_collider(&mut self, id: &ColliderId) {

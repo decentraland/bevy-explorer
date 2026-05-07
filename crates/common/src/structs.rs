@@ -1165,6 +1165,12 @@ impl TimeOfDay {
     }
 }
 
+/// Vertical FOV of the active player camera, in radians. Pushed to scene
+/// workers via the GlobalCrdtState channel — defaulted on the worker side and
+/// updated when the renderer's camera projection changes.
+#[derive(Resource, Default, Clone, Copy, Debug)]
+pub struct CameraFov(pub f32);
+
 /// Fixed time defined on `scene.json` `skyboxConfig`
 #[derive(Component)]
 #[component(immutable)]
@@ -1268,6 +1274,9 @@ pub struct DebugInfo {
 pub enum GlobalCrdtStateUpdate {
     Crdt(Vec<u8>, dcl_component::Localizer),
     Time(f32),
+    /// Vertical FOV of the active camera, in radians. Pushed when the value
+    /// changes (camera zoom etc.).
+    CameraFov(f32),
 }
 
 // used for responses to scenes which require strict monotonic timestamps

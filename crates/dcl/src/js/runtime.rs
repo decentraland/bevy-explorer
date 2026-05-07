@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use bevy::{log::debug, math::f32};
 use common::{
     rpc::{ReadFileResponse, RpcCall, RpcResultSender},
-    structs::TimeOfDay,
+    structs::{CameraFov, TimeOfDay},
 };
 use dcl_component::{
     proto_components::sdk::components::PbRealmInfo, DclReader, FromDclReader, SceneComponentId,
@@ -131,6 +131,12 @@ pub async fn op_world_time(op_state: Rc<RefCell<impl State>>) -> Result<WorldTim
     let state = op_state.borrow();
     let TimeOfDay { time } = state.borrow::<TimeOfDay>();
     Ok(WorldTime { seconds: *time })
+}
+
+pub async fn op_camera_fov(op_state: Rc<RefCell<impl State>>) -> Result<f32, anyhow::Error> {
+    debug!("op_camera_fov");
+    let state = op_state.borrow();
+    Ok(state.borrow::<CameraFov>().0)
 }
 
 pub fn get_platform() -> &'static str {

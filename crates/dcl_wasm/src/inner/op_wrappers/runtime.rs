@@ -25,6 +25,13 @@ pub async fn op_world_time(op_state: &WorkerContext) -> Result<JsValue, WasmErro
 }
 
 #[wasm_bindgen]
+pub async fn op_camera_fov(op_state: &WorkerContext) -> Result<f32, WasmError> {
+    dcl::js::runtime::op_camera_fov(op_state.rc())
+        .await
+        .map_err(WasmError::from)
+}
+
+#[wasm_bindgen]
 pub fn op_get_platform(_op_state: &WorkerContext) -> String {
     dcl::js::runtime::get_platform().to_string()
 }

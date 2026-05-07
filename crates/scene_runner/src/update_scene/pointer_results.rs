@@ -11,7 +11,7 @@ use bevy::{
 use bevy_console::ConsoleCommand;
 use comms::global_crdt::ForeignPlayer;
 use console::DoAddConsoleCommand;
-use system_bridge::{HoverAction, HoverEvent, SystemApi};
+use system_bridge::{HoverAction, HoverEvent, ProximityEvent, SystemApi};
 
 use crate::{
     gltf_resolver::GltfMeshResolver,
@@ -26,7 +26,7 @@ use crate::{
     PARCEL_SIZE,
 };
 use common::{
-    dynamics::PLAYER_COLLIDER_RADIUS,
+    dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_RADIUS},
     inputs::{Action, CommonInputAction, POINTER_SET},
     rpc::RpcStreamSender,
     structs::{CursorLocks, DebugInfo, MonotonicTimestamp, PointerTargetType, PrimaryCamera},
@@ -37,7 +37,7 @@ use dcl_component::{
     proto_components::{
         common::Vector3,
         sdk::components::{
-            common::{InputAction, PointerEventType, RaycastHit},
+            common::{InputAction, InteractionType, PointerEventType, RaycastHit},
             pb_pointer_events::Entry,
             ColliderLayer, PbPointerEventsResult,
         },
@@ -109,11 +109,16 @@ impl Plugin for PointerResultPlugin {
             .init_resource::<WorldPointerTarget>()
             .init_resource::<DebugPointers>()
             .init_resource::<AvatarColliders>()
+            .init_resource::<ProximityCandidates>()
             .init_resource::<MonotonicTimestamp<PbPointerEventsResult>>();
 
         app.add_systems(
             PreUpdate,
-            (update_pointer_target, update_manual_cursor)
+            (
+                update_pointer_target,
+                update_manual_cursor,
+                collect_proximity_candidates,
+            )
                 .chain()
                 .after(InputSystem)
                 .before(UiSystem::Focus),
@@ -123,9 +128,11 @@ impl Plugin for PointerResultPlugin {
             (
                 resolve_pointer_target,
                 send_hover_events,
+                send_proximity_events,
                 send_action_events,
                 debug_pointer,
                 handle_hover_stream,
+                handle_proximity_stream,
             )
                 .chain()
                 .in_set(SceneSets::Input),
@@ -173,12 +180,48 @@ pub fn passes_distance_check(
     }
 }
 
+/// Default `max_player_distance` applied to PROXIMITY entries that leave the field
+/// unset. Roughly mirrors unity-explorer's broad-phase cap, but applied here as a
+/// per-entry fallback rather than a hard global cap.
+pub const PROXIMITY_DEFAULT_MAX_DISTANCE: f32 = 3.0;
+
+/// Full FOV angle of the horizontal proximity cone, in degrees. Matches
+/// unity-explorer (`PROXIMITY_FOV_ANGLE_DEGREES`). Entities whose collider
+/// nearest-point is outside this cone (in the horizontal plane, relative to the
+/// player's body forward direction) are excluded from proximity candidates.
+pub const PROXIMITY_FOV_ANGLE_DEGREES: f32 = 120.0;
+
+/// Squared cosine of the proximity cone's half-angle. cos(60°) = 0.5; squared = 0.25.
+/// Used in the per-entity FOV gate so we can compare without a sqrt.
+const PROXIMITY_FOV_HALF_ANGLE_COS_SQR: f32 = 0.25;
+
+/// Resolve the effective player-distance threshold for a PROXIMITY entry.
+///
+/// `None` → fallback to `PROXIMITY_DEFAULT_MAX_DISTANCE`.
+/// `Some(0)` → never qualifies (an explicit disable, since real distances are > 0).
+/// `Some(x)` → use x.
+pub fn proximity_threshold(
+    info: Option<&dcl_component::proto_components::sdk::components::pb_pointer_events::Info>,
+) -> f32 {
+    info.and_then(|i| i.max_player_distance)
+        .unwrap_or(PROXIMITY_DEFAULT_MAX_DISTANCE)
+}
+
+/// Returns true if a PROXIMITY entry's player-distance check passes.
+pub fn passes_proximity_distance_check(
+    info: Option<&dcl_component::proto_components::sdk::components::pb_pointer_events::Info>,
+    player_distance: f32,
+) -> bool {
+    let threshold = proximity_threshold(info);
+    threshold > 0.0 && player_distance <= threshold
+}
+
 #[derive(Default, Debug, Resource, Clone, PartialEq)]
 pub struct PointerTarget(pub Option<PointerTargetInfo>);
 
 #[derive(Default, Debug, Resource, Clone, PartialEq)]
 pub struct PointerDragTarget {
-    entities: HashMap<InputAction, (PointerTargetInfo, bool)>,
+    entities: HashMap<InputAction, (PointerTargetInfo, ActionCandidateMode, bool)>,
 }
 
 #[derive(Default, Debug, Resource, Clone, PartialEq, Eq)]
@@ -222,6 +265,27 @@ pub struct WorldPointerTarget(pub Option<PointerTargetInfo>);
 
 #[derive(Resource, Default)]
 pub struct PointerRay(pub Option<Ray3d>);
+
+/// Entities currently within `max_player_distance` of the avatar that carry at
+/// least one PROXIMITY pointer-event entry. Distance is the closest-point distance
+/// from the avatar's center (transform + half player collider height) to the
+/// entity's collider geometry. `nearest_point` is that closest point in world
+/// space (used for `RaycastHit.position` on emitted CRDTs). `entity_position`
+/// is the AABB centre of the *specific* collider that produced the closest
+/// point — for multi-collider entities (e.g. GltfContainers with several
+/// hitboxes) this anchors a tooltip on the part of the entity the player is
+/// actually nearest, rather than the entity's transform origin which can sit
+/// far from any visible geometry. Recomputed each frame in `PreUpdate`.
+#[derive(Resource, Default, Debug, Clone)]
+pub struct ProximityCandidates(pub Vec<ProximityCandidate>);
+
+#[derive(Debug, Clone, Copy)]
+pub struct ProximityCandidate {
+    pub entity: Entity,
+    pub distance: f32,
+    pub nearest_point: Vec3,
+    pub entity_position: Vec3,
+}
 
 #[allow(clippy::too_many_arguments)]
 fn update_pointer_target(
@@ -523,6 +587,168 @@ fn update_manual_cursor(
     cursor.0 = Some(uv * resolve.texture_size);
 }
 
+/// Walks all entities carrying `PointerEvents` with at least one PROXIMITY entry
+/// and computes the closest-point distance from each entity's collider geometry
+/// to the avatar's center. Entities whose loosest entry threshold is satisfied
+/// are pushed into `ProximityCandidates` for downstream priority resolution and
+/// enter/leave dispatch.
+fn collect_proximity_candidates(
+    player: Query<(Entity, &GlobalTransform), With<PrimaryUser>>,
+    camera: Query<&GlobalTransform, With<PrimaryCamera>>,
+    mut scenes: Query<&mut SceneColliderData>,
+    pointer_events: Query<(Entity, &SceneEntity, &PointerEvents)>,
+    containing_scenes: ContainingScene,
+    mut candidates: ResMut<ProximityCandidates>,
+) {
+    candidates.0.clear();
+    let Ok((player, player_transform)) = player.single() else {
+        return;
+    };
+    let player_center = player_transform.translation() + Vec3::Y * (PLAYER_COLLIDER_HEIGHT * 0.5);
+    let player_forward = *player_transform.forward();
+    let player_flat_forward =
+        Vec3::new(player_forward.x, 0.0, player_forward.z).normalize_or_zero();
+    // Camera forward is optional — if no PrimaryCamera, fall back to a body-only
+    // cone test. When present, a target also qualifies if it's in front of the
+    // body (within 180°) AND within the camera's 120° cone.
+    let camera_flat_forward = camera.single().ok().map(|gt| {
+        let f = *gt.forward();
+        Vec3::new(f.x, 0.0, f.z).normalize_or_zero()
+    });
+    let nearby_scenes = containing_scenes.get_area(player, PARCEL_SIZE);
+
+    for (entity, scene_entity, pe) in pointer_events.iter() {
+        if !nearby_scenes.contains(&scene_entity.root) {
+            continue;
+        }
+        // Loosest player-distance threshold across this entity's PROXIMITY entries.
+        // Used as a per-entity broad-phase gate; per-entry checks happen downstream.
+        let mut max_threshold: f32 = 0.0;
+        for entry in pe.iter() {
+            if entry.interaction_type != Some(InteractionType::Proximity as i32) {
+                continue;
+            }
+            let t = proximity_threshold(entry.event_info.as_ref());
+            if t > max_threshold {
+                max_threshold = t;
+            }
+        }
+        if max_threshold <= 0.0 {
+            continue;
+        }
+
+        let Ok(mut collider_data) = scenes.get_mut(scene_entity.root) else {
+            continue;
+        };
+        let entity_id = scene_entity.id;
+        // Restrict to CL_POINTER colliders. A multi-collider entity (e.g. a
+        // GltfContainer with one pointer-aware mesh and several physics-only
+        // hitboxes) should only fire proximity events relative to its
+        // pointer-aware geometry.
+        let Some((nearest_point, hit_collider_id)) = collider_data.closest_point_with_id(
+            player_center,
+            ColliderLayer::ClPointer as u32,
+            |cid| cid.entity == entity_id,
+        ) else {
+            continue;
+        };
+        let distance = (nearest_point - player_center).length();
+        if distance > max_threshold {
+            continue;
+        }
+        // Anchor on the AABB centre of the specific collider that produced the
+        // hit, rather than the entity transform — for a multi-collider entity
+        // each part has its own anchor.
+        let Some(entity_position) = collider_data.collider_aabb_center(&hit_collider_id) else {
+            continue;
+        };
+
+        // Horizontal FOV gate: matches unity's closest-point cone test.
+        // Accept if the entity's nearest collider point falls within the body
+        // forward 120° cone, OR (in front of the body within 180° AND within
+        // the camera forward 120° cone). Vertical is unconstrained.
+        let to_target = nearest_point - player_center;
+        let flat_to_target = Vec3::new(to_target.x, 0.0, to_target.z);
+        let flat_sqr_mag = flat_to_target.length_squared();
+        if flat_sqr_mag < 1e-6 {
+            // Player on top of entity — skip (matches unity).
+            continue;
+        }
+        let body_dot = player_flat_forward.dot(flat_to_target);
+        if body_dot <= 0.0 {
+            // Behind player body.
+            continue;
+        }
+        let in_body_cone = body_dot * body_dot >= flat_sqr_mag * PROXIMITY_FOV_HALF_ANGLE_COS_SQR;
+        if !in_body_cone {
+            // Outside body cone — accept only if camera is present and target
+            // is also within the camera cone (still in front of the body, since
+            // body_dot > 0).
+            let in_camera_cone = camera_flat_forward
+                .map(|c| {
+                    let dot = c.dot(flat_to_target);
+                    dot > 0.0 && dot * dot >= flat_sqr_mag * PROXIMITY_FOV_HALF_ANGLE_COS_SQR
+                })
+                .unwrap_or(false);
+            if !in_camera_cone {
+                continue;
+            }
+        }
+
+        // Occlusion gate: accept if a ray from the player's centre to the
+        // nearest collider point OR to the AABB centre of the hit collider
+        // reaches the entity unobstructed by another scene entity. Either
+        // succeeding is enough; this trades a tighter "you can definitely
+        // touch it" guarantee for the more useful "you can probably reach
+        // it" one (e.g. a recessed door whose nearest point hides behind the
+        // wall is still interactable via its AABB centre, which the player
+        // can see through the doorway).
+        if !ray_reaches_target(&mut collider_data, player_center, nearest_point, entity_id)
+            && !ray_reaches_target(
+                &mut collider_data,
+                player_center,
+                entity_position,
+                entity_id,
+            )
+        {
+            continue;
+        }
+
+        candidates.0.push(ProximityCandidate {
+            entity,
+            distance,
+            nearest_point,
+            entity_position,
+        });
+    }
+}
+
+/// Returns true if a ray from `origin` toward `target` reaches an entity with
+/// id `target_entity` without first hitting a collider that belongs to a
+/// different scene entity. Multi-collider entities (e.g. GltfContainers) are
+/// treated as a single target — hitting any of their colliders counts.
+fn ray_reaches_target(
+    collider_data: &mut SceneColliderData,
+    origin: Vec3,
+    target: Vec3,
+    target_entity: SceneEntityId,
+) -> bool {
+    let to_target = target - origin;
+    let distance = to_target.length();
+    if distance < 1e-4 {
+        return true;
+    }
+    let direction = to_target / distance;
+    // Physics + pointer mask, mirroring unity's PLAYER_PROXIMITY_MASK. Physics
+    // catches walls / floors; pointer catches another interactable entity
+    // sitting in front of the target — both intuitively occlude.
+    let mask = ColliderLayer::ClPointer as u32 | ColliderLayer::ClPhysics as u32;
+    match collider_data.cast_ray_nearest(origin, direction, distance, mask, true, false, None) {
+        None => true,
+        Some(hit) => hit.id.entity == target_entity,
+    }
+}
+
 fn barycentric_coords(posns: &[Vec3; 3], target: Vec3) -> Option<Vec3> {
     let v0 = posns[1] - posns[0];
     let v1 = posns[2] - posns[0];
@@ -775,9 +1001,69 @@ fn send_hover_events(
     *previously_entered = new_entities;
 }
 
+/// Source of an action-event candidate, controlling which distance gate applies
+/// and which `interaction_type` entries are eligible.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ActionCandidateMode {
+    Cursor,
+    Proximity,
+}
+
+impl ActionCandidateMode {
+    pub fn matches_entry(self, entry: &Entry) -> bool {
+        let entry_proximity = entry.interaction_type == Some(InteractionType::Proximity as i32);
+        match self {
+            ActionCandidateMode::Cursor => !entry_proximity,
+            ActionCandidateMode::Proximity => entry_proximity,
+        }
+    }
+
+    pub fn passes_distance(
+        self,
+        info: Option<&dcl_component::proto_components::sdk::components::pb_pointer_events::Info>,
+        camera_distance: f32,
+        player_distance: f32,
+    ) -> bool {
+        match self {
+            ActionCandidateMode::Cursor => {
+                passes_distance_check(info, camera_distance, player_distance)
+            }
+            ActionCandidateMode::Proximity => {
+                passes_proximity_distance_check(info, player_distance)
+            }
+        }
+    }
+
+    /// Default `priority` for entries that leave the field unset. Cursor
+    /// defaults to `u32::MAX` so cursor interactions win by default — a scene
+    /// must explicitly set a cursor entry's priority to demote it below a
+    /// competing proximity entry. Proximity defaults to 0 per the proto.
+    pub fn default_priority(self) -> u32 {
+        match self {
+            ActionCandidateMode::Cursor => u32::MAX,
+            ActionCandidateMode::Proximity => 0,
+        }
+    }
+}
+
+/// Tier-2 (button-driven action) event types that participate in per-bucket
+/// priority resolution. Returns the typed enum form when the i32 is one of
+/// those, else `None` (e.g. for hover/proximity enter/leave or unknown values).
+pub fn action_event_type(event_type: i32) -> Option<PointerEventType> {
+    match event_type {
+        x if x == PointerEventType::PetDown as i32 => Some(PointerEventType::PetDown),
+        x if x == PointerEventType::PetUp as i32 => Some(PointerEventType::PetUp),
+        x if x == PointerEventType::PetDrag as i32 => Some(PointerEventType::PetDrag),
+        x if x == PointerEventType::PetDragLocked as i32 => Some(PointerEventType::PetDragLocked),
+        x if x == PointerEventType::PetDragEnd as i32 => Some(PointerEventType::PetDragEnd),
+        _ => None,
+    }
+}
+
 fn filtered_events<'a>(
     pointer_requests: &'a Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
     info: &PointerTargetInfo,
+    mode: ActionCandidateMode,
     ev_type: PointerEventType,
     action: InputAction,
 ) -> impl Iterator<Item = (Entity, &'a Entry)> {
@@ -791,13 +1077,18 @@ fn filtered_events<'a>(
         .flatten();
 
     pe.filter(move |(_, f)| {
+        if f.event_type != ev_type as i32 {
+            return false;
+        }
+        if !mode.matches_entry(f) {
+            return false;
+        }
         let event_button = f
             .event_info
             .as_ref()
             .and_then(|info| info.button)
             .unwrap_or(InputAction::IaAny as i32);
-        f.event_type == ev_type as i32
-            && (event_button == InputAction::IaAny as i32 || event_button == action as i32)
+        event_button == InputAction::IaAny as i32 || event_button == action as i32
     })
 }
 
@@ -869,6 +1160,10 @@ fn send_hover_event(
         if !info.in_scene {
             continue;
         }
+        // Hover is cursor-domain — skip entries flagged as proximity.
+        if !ActionCandidateMode::Cursor.matches_entry(ev) {
+            continue;
+        }
         if !passes_distance_check(
             ev.event_info.as_ref(),
             info.camera_distance.0,
@@ -906,9 +1201,10 @@ fn send_hover_event(
     action
 }
 
-/// Iterates entries pre-filtered by `(event_type, action)` and emits a CRDT for
-/// each whose distance check passes. Returns the last-written scene as the
-/// "consuming" scene, which the caller uses to skip duplicate root-entity events.
+/// Iterates entries pre-filtered by `(event_type, action)` and `mode`-appropriate
+/// `interaction_type`, emitting a CRDT for each whose distance check passes.
+/// Returns the last-written scene as the "consuming" scene, which the caller uses
+/// to skip duplicate root-entity events.
 #[allow(clippy::too_many_arguments)]
 fn send_action_event(
     pointer_requests: &Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
@@ -916,6 +1212,7 @@ fn send_action_event(
     timestamp: &MonotonicTimestamp<PbPointerEventsResult>,
     time: &Time,
     info: &PointerTargetInfo,
+    mode: ActionCandidateMode,
     ev_type: PointerEventType,
     action: InputAction,
     direction: Option<Vec2>,
@@ -925,7 +1222,8 @@ fn send_action_event(
         return None;
     };
 
-    let mut potential_entries = filtered_events(pointer_requests, info, ev_type, action).peekable();
+    let mut potential_entries =
+        filtered_events(pointer_requests, info, mode, ev_type, action).peekable();
     potential_entries.peek()?;
 
     let mut consumer = None;
@@ -934,7 +1232,7 @@ fn send_action_event(
         if !info.in_scene {
             continue;
         }
-        if !passes_distance_check(
+        if !mode.passes_distance(
             ev.event_info.as_ref(),
             info.camera_distance.0,
             info.distance.0,
@@ -962,8 +1260,226 @@ fn send_action_event(
     consumer
 }
 
+/// Maximum `priority` across this candidate's entries that match `(ev_type,
+/// action)` after distance and interaction-type filtering. `None` means no entry
+/// is eligible — the candidate doesn't compete in this bucket.
+fn bucket_max_priority(
+    pe: &PointerEvents,
+    info: &PointerTargetInfo,
+    mode: ActionCandidateMode,
+    ev_type: PointerEventType,
+    action: InputAction,
+) -> Option<u32> {
+    if !info.in_scene {
+        return None;
+    }
+    pe.iter()
+        .filter(|e| {
+            if e.event_type != ev_type as i32 {
+                return false;
+            }
+            if !mode.matches_entry(e) {
+                return false;
+            }
+            let event_button = e
+                .event_info
+                .as_ref()
+                .and_then(|i| i.button)
+                .unwrap_or(InputAction::IaAny as i32);
+            if event_button != InputAction::IaAny as i32 && event_button != action as i32 {
+                return false;
+            }
+            mode.passes_distance(
+                e.event_info.as_ref(),
+                info.camera_distance.0,
+                info.distance.0,
+            )
+        })
+        .map(|e| {
+            e.event_info
+                .as_ref()
+                .and_then(|i| i.priority)
+                .unwrap_or_else(|| mode.default_priority())
+        })
+        .max()
+}
+
+/// Picks the winning `(info, mode)` for an action bucket across the cursor target
+/// and the proximity candidate set. Highest priority wins; on tie, cursor wins
+/// over proximity, then nearest player distance wins. Returns `None` if no
+/// candidate has an eligible entry.
+pub fn resolve_action_winner(
+    target: Option<&PointerTargetInfo>,
+    proximity: &ProximityCandidates,
+    pointer_requests: &Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
+    ev_type: PointerEventType,
+    action: InputAction,
+) -> Option<(PointerTargetInfo, ActionCandidateMode)> {
+    let mut best: Option<(u32, PointerTargetInfo, ActionCandidateMode)> = None;
+
+    let mut consider = |info: PointerTargetInfo, mode: ActionCandidateMode, prio: u32| {
+        let beats = match &best {
+            None => true,
+            Some((bp, b_info, b_mode)) => match prio.cmp(bp) {
+                std::cmp::Ordering::Greater => true,
+                std::cmp::Ordering::Less => false,
+                std::cmp::Ordering::Equal => match (mode, *b_mode) {
+                    (ActionCandidateMode::Cursor, ActionCandidateMode::Proximity) => true,
+                    (ActionCandidateMode::Proximity, ActionCandidateMode::Cursor) => false,
+                    _ => info.distance.0 < b_info.distance.0,
+                },
+            },
+        };
+        if beats {
+            best = Some((prio, info, mode));
+        }
+    };
+
+    if let Some(info) = target {
+        if let Ok((_, _, pe)) = pointer_requests.get(info.container) {
+            if let Some(prio) =
+                bucket_max_priority(pe, info, ActionCandidateMode::Cursor, ev_type, action)
+            {
+                consider(info.clone(), ActionCandidateMode::Cursor, prio);
+            }
+        }
+    }
+
+    for cand in &proximity.0 {
+        let synthetic = PointerTargetInfo {
+            container: cand.entity,
+            mesh_name: None,
+            distance: FloatOrd(cand.distance),
+            camera_distance: FloatOrd(0.0),
+            in_scene: true,
+            // Proximity-emitted CRDTs report the closest point on the entity's
+            // collider to the avatar in `RaycastHit.position`.
+            position: Some(cand.nearest_point),
+            normal: None,
+            face: None,
+            ty: PointerTargetType::World,
+        };
+        if let Ok((_, _, pe)) = pointer_requests.get(cand.entity) {
+            if let Some(prio) = bucket_max_priority(
+                pe,
+                &synthetic,
+                ActionCandidateMode::Proximity,
+                ev_type,
+                action,
+            ) {
+                consider(synthetic, ActionCandidateMode::Proximity, prio);
+            }
+        }
+    }
+
+    best.map(|(_, info, mode)| (info, mode))
+}
+
+/// Tracks per-entity proximity range state across frames and emits
+/// `PetProximityEnter` / `PetProximityLeave` CRDTs on transitions. Tier-1 (state)
+/// events: not gated by priority or button. An entity is "in range" iff it
+/// appears in `ProximityCandidates` (the collection system gates entry by the
+/// entity's loosest configured threshold). On enter, every PROXIMITY entry of
+/// type `PetProximityEnter` whose own per-entry gate currently passes fires its
+/// CRDT. On leave, every `PetProximityLeave` entry fires unconditionally (we are,
+/// by definition, outside all per-entry gates).
+///
+/// Per-entity granularity (rather than per-entry-index) matches `send_hover_events`
+/// and is robust to scenes mutating their entry list.
+fn send_proximity_events(
+    candidates: Res<ProximityCandidates>,
+    pointer_events: Query<(&SceneEntity, &PointerEvents)>,
+    mut scenes: Query<(&mut RendererSceneContext, &GlobalTransform)>,
+    timestamp: Res<MonotonicTimestamp<PbPointerEventsResult>>,
+    mut prev_in_range: Local<HashSet<Entity>>,
+) {
+    let candidate_by_entity: HashMap<Entity, &ProximityCandidate> =
+        candidates.0.iter().map(|c| (c.entity, c)).collect();
+    let new_in_range: HashSet<Entity> = candidate_by_entity.keys().copied().collect();
+
+    let emit = |entity: Entity,
+                pet: PointerEventType,
+                dist: f32,
+                position: Option<Vec3>,
+                scenes: &mut Query<(&mut RendererSceneContext, &GlobalTransform)>|
+     -> Option<()> {
+        let (scene_entity, pe) = pointer_events.get(entity).ok()?;
+        let pb_pe = pe.msg.get(&None)?;
+        for entry in pb_pe.pointer_events.iter() {
+            if entry.event_type != pet as i32 {
+                continue;
+            }
+            if entry.interaction_type != Some(InteractionType::Proximity as i32) {
+                continue;
+            }
+            if pet == PointerEventType::PetProximityEnter
+                && !passes_proximity_distance_check(entry.event_info.as_ref(), dist)
+            {
+                continue;
+            }
+            let Ok((mut context, scene_transform)) = scenes.get_mut(scene_entity.root) else {
+                continue;
+            };
+            let button = entry
+                .event_info
+                .as_ref()
+                .and_then(|i| i.button.map(|_| i.button()))
+                .unwrap_or(InputAction::IaAny);
+            let info = PointerTargetInfo {
+                container: entity,
+                mesh_name: None,
+                distance: FloatOrd(dist),
+                camera_distance: FloatOrd(0.0),
+                in_scene: true,
+                position,
+                normal: None,
+                face: None,
+                ty: PointerTargetType::World,
+            };
+            write_pointer_result(
+                &mut context,
+                scene_transform,
+                &info,
+                scene_entity.id,
+                button,
+                pet,
+                None,
+                &timestamp,
+            );
+        }
+        Some(())
+    };
+
+    for &entity in new_in_range.difference(&prev_in_range) {
+        let cand = candidate_by_entity.get(&entity);
+        let dist = cand.map(|c| c.distance).unwrap_or(0.0);
+        let position = cand.map(|c| c.nearest_point);
+        emit(
+            entity,
+            PointerEventType::PetProximityEnter,
+            dist,
+            position,
+            &mut scenes,
+        );
+    }
+    // LEAVE events fire after the entity has dropped out of every per-entry
+    // gate, so we have no current `nearest_point`; emit `position: None`.
+    for &entity in prev_in_range.difference(&new_in_range) {
+        emit(
+            entity,
+            PointerEventType::PetProximityLeave,
+            0.0,
+            None,
+            &mut scenes,
+        );
+    }
+
+    *prev_in_range = new_in_range;
+}
+
 fn send_action_events(
     target: Res<PointerTarget>,
+    proximity: Res<ProximityCandidates>,
     pointer_requests: Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
     mut scenes: Query<(Entity, &mut RendererSceneContext, &GlobalTransform)>,
     input_mgr: InputManager,
@@ -974,33 +1490,50 @@ fn send_action_events(
     player: Query<Entity, With<PrimaryUser>>,
     containing_scenes: ContainingScene,
 ) {
-    // send event to action target
     let mut events_and_consumers = Vec::default(); // (event type, button, option<consuming scene>)
-    if let Some(info) = target.0.as_ref() {
-        let down_events = input_mgr
-            .iter_scene_just_down()
-            .map(IaToDcl::to_dcl)
-            .map(|down| {
-                let consumed_by = send_action_event(
+
+    for down in input_mgr.iter_scene_just_down().map(IaToDcl::to_dcl) {
+        let consumed_by = match resolve_action_winner(
+            target.0.as_ref(),
+            &proximity,
+            &pointer_requests,
+            PointerEventType::PetDown,
+            down,
+        ) {
+            Some((info, mode)) => {
+                let consumed = send_action_event(
                     &pointer_requests,
                     &mut scenes,
                     &timestamp,
                     &time,
-                    info,
+                    &info,
+                    mode,
                     PointerEventType::PetDown,
                     down,
                     None,
                 );
-                if filtered_events(&pointer_requests, info, PointerEventType::PetDrag, down)
-                    .next()
-                    .is_some()
+                // Capture the winning candidate's info+mode for the lifetime of
+                // the drag (so subsequent PetDrag/Locked CRDTs fire on the same
+                // entity even if cursor / proximity state changes).
+                if filtered_events(
+                    &pointer_requests,
+                    &info,
+                    mode,
+                    PointerEventType::PetDrag,
+                    down,
+                )
+                .next()
+                .is_some()
                 {
                     debug!("added drag");
-                    drag_target.entities.insert(down, (info.clone(), false));
+                    drag_target
+                        .entities
+                        .insert(down, (info.clone(), mode, false));
                 }
                 if filtered_events(
                     &pointer_requests,
-                    info,
+                    &info,
+                    mode,
                     PointerEventType::PetDragLocked,
                     down,
                 )
@@ -1008,53 +1541,46 @@ fn send_action_events(
                 .is_some()
                 {
                     debug!("added drag lock");
-                    drag_target.entities.insert(down, (info.clone(), true));
+                    drag_target
+                        .entities
+                        .insert(down, (info.clone(), mode, true));
                 }
+                consumed
+            }
+            None => None,
+        };
+        events_and_consumers.push((PointerEventType::PetDown, down, consumed_by));
+    }
 
-                (PointerEventType::PetDown, down, consumed_by)
-            });
-        events_and_consumers.extend(down_events);
-
-        let up_events = input_mgr
-            .iter_scene_just_up()
-            .map(IaToDcl::to_dcl)
-            .map(|up| {
-                (
-                    PointerEventType::PetUp,
-                    up,
-                    send_action_event(
-                        &pointer_requests,
-                        &mut scenes,
-                        &timestamp,
-                        &time,
-                        info,
-                        PointerEventType::PetUp,
-                        up,
-                        None,
-                    ),
-                )
-            });
-        events_and_consumers.extend(up_events);
-    } else {
-        events_and_consumers.extend(
-            input_mgr
-                .iter_scene_just_down()
-                .map(IaToDcl::to_dcl)
-                .map(|b| (PointerEventType::PetDown, b, None)),
-        );
-        events_and_consumers.extend(
-            input_mgr
-                .iter_scene_just_up()
-                .map(IaToDcl::to_dcl)
-                .map(|b| (PointerEventType::PetUp, b, None)),
-        );
+    for up in input_mgr.iter_scene_just_up().map(IaToDcl::to_dcl) {
+        let consumed_by = match resolve_action_winner(
+            target.0.as_ref(),
+            &proximity,
+            &pointer_requests,
+            PointerEventType::PetUp,
+            up,
+        ) {
+            Some((info, mode)) => send_action_event(
+                &pointer_requests,
+                &mut scenes,
+                &timestamp,
+                &time,
+                &info,
+                mode,
+                PointerEventType::PetUp,
+                up,
+                None,
+            ),
+            None => None,
+        };
+        events_and_consumers.push((PointerEventType::PetUp, up, consumed_by));
     }
 
     // send any drags
     let frame_delta = input_mgr.get_analog(POINTER_SET, InputPriority::Scene);
 
     let mut any_drag_lock = false;
-    for (input, (info, lock)) in drag_target.entities.iter() {
+    for (input, (info, mode, lock)) in drag_target.entities.iter() {
         if frame_delta != Vec2::ZERO {
             send_action_event(
                 &pointer_requests,
@@ -1062,6 +1588,7 @@ fn send_action_events(
                 &timestamp,
                 &time,
                 info,
+                *mode,
                 if *lock {
                     PointerEventType::PetDragLocked
                 } else {
@@ -1077,13 +1604,14 @@ fn send_action_events(
     // send drag ends
     for up in input_mgr.iter_scene_just_up() {
         let up = up.to_dcl();
-        if let Some((info, _)) = drag_target.entities.remove(&up) {
+        if let Some((info, mode, _)) = drag_target.entities.remove(&up) {
             send_action_event(
                 &pointer_requests,
                 &mut scenes,
                 &timestamp,
                 &time,
                 &info,
+                mode,
                 PointerEventType::PetDragEnd,
                 up,
                 None,
@@ -1170,7 +1698,12 @@ fn handle_hover_stream(
         actions: actions
             .get(t.container)
             .map(|pe| {
+                // The hover stream is the cursor pipeline; proximity entries
+                // surface separately on GetProximityStream. Filter so the same
+                // entity's proximity tooltips don't double-fire on the cursor
+                // stream when the player happens to be aiming at it.
                 pe.iter()
+                    .filter(|event| ActionCandidateMode::Cursor.matches_entry(event))
                     .map(|event| HoverAction {
                         event: event.clone(),
                         enabled: t.in_scene
@@ -1201,4 +1734,130 @@ fn handle_hover_stream(
 
         prev_state.0 = event;
     }
+}
+
+/// Mirrors `handle_hover_stream` but for proximity. Sends a `ProximityEvent` to
+/// subscribers when an entity enters/leaves the candidate set, or when the
+/// `enabled` flag on any of its actions flips (per-entry distance gate crossing).
+/// Distance and `nearest_point` are sampled at send-time, not streamed
+/// per-frame — the system scene is expected to anchor UI rather than smoothly
+/// follow it.
+fn handle_proximity_stream(
+    mut events: EventReader<SystemApi>,
+    mut senders: Local<Vec<RpcStreamSender<ProximityEvent>>>,
+    target: Res<PointerTarget>,
+    candidates: Res<ProximityCandidates>,
+    pointer_requests: Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
+    mut prev_state: Local<HashMap<Entity, ProximityEvent>>,
+) {
+    let new_senders = events
+        .read()
+        .filter_map(|ev| {
+            if let SystemApi::GetProximityStream(s) = ev {
+                Some(s.clone())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    senders.extend(new_senders);
+    senders.retain(|s| !s.is_closed());
+
+    if senders.is_empty() {
+        prev_state.clear();
+        return;
+    }
+
+    // Per-frame cache of `(event_type, button) → winning entity` so we resolve
+    // each bucket once even when several candidates share an event type.
+    let mut winner_cache: HashMap<(i32, i32), Option<Entity>> = HashMap::new();
+
+    // Build current state: one ProximityEvent per in-range entity that wins at
+    // least one action bucket. Tier-2 (PetUp/Down/Drag*) entries are filtered
+    // to the priority winner; non-action proximity entries (PetProximityEnter
+    // /Leave) are dropped from the tooltip stream — they're informational and
+    // would otherwise fight for screen space with the actionable tooltip.
+    let mut current: HashMap<Entity, ProximityEvent> = HashMap::new();
+    for cand in &candidates.0 {
+        let Ok((_, _, pe)) = pointer_requests.get(cand.entity) else {
+            continue;
+        };
+        let mut actions: Vec<HoverAction> = Vec::new();
+        for entry in pe.iter() {
+            if entry.interaction_type != Some(InteractionType::Proximity as i32) {
+                continue;
+            }
+            let Some(action_event) = action_event_type(entry.event_type) else {
+                continue;
+            };
+            let button = entry
+                .event_info
+                .as_ref()
+                .and_then(|i| i.button.map(|_| i.button()))
+                .unwrap_or(InputAction::IaAny);
+            let key = (action_event as i32, button as i32);
+            let winner = *winner_cache.entry(key).or_insert_with(|| {
+                resolve_action_winner(
+                    target.0.as_ref(),
+                    &candidates,
+                    &pointer_requests,
+                    action_event,
+                    button,
+                )
+                .map(|(info, _)| info.container)
+            });
+            if winner != Some(cand.entity) {
+                continue;
+            }
+            actions.push(HoverAction {
+                event: entry.clone(),
+                enabled: passes_proximity_distance_check(entry.event_info.as_ref(), cand.distance),
+            });
+        }
+        if actions.is_empty() {
+            continue;
+        }
+        current.insert(
+            cand.entity,
+            ProximityEvent {
+                entered: true,
+                entity: cand.entity.to_bits(),
+                entity_position: Vector3::world_vec_from_vec3(&cand.entity_position),
+                actions,
+            },
+        );
+    }
+
+    let actions_match = |a: &[HoverAction], b: &[HoverAction]| -> bool {
+        a.len() == b.len()
+            && a.iter()
+                .zip(b)
+                .all(|(x, y)| x.event == y.event && x.enabled == y.enabled)
+    };
+
+    // Emit leaves for entities that dropped out of the candidate set.
+    for (entity, prev_ev) in prev_state.iter() {
+        if !current.contains_key(entity) {
+            let mut leave = prev_ev.clone();
+            leave.entered = false;
+            for s in &senders {
+                let _ = s.send(leave.clone());
+            }
+        }
+    }
+
+    // Emit enters / refreshes for new candidates and any whose actions flipped.
+    for (entity, curr_ev) in &current {
+        let send = match prev_state.get(entity) {
+            None => true,
+            Some(prev_ev) => !actions_match(&prev_ev.actions, &curr_ev.actions),
+        };
+        if send {
+            for s in &senders {
+                let _ = s.send(curr_ev.clone());
+            }
+        }
+    }
+
+    *prev_state = current;
 }
