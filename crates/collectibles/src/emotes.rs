@@ -96,33 +96,12 @@ fn load_animations(
     match &mut *state {
         AnimLoadState::Init => {
             *state = AnimLoadState::WaitingForGltfs(vec![
-                asset_server.load("embedded://animations/clap.glb"),
-                asset_server.load("embedded://animations/Dance_Female.glb"),
-                asset_server.load("embedded://animations/Dance_Male.glb"),
-                asset_server.load("embedded://animations/disco_dance.glb"),
-                asset_server.load("embedded://animations/dont_wanna_see.glb"),
-                asset_server.load("embedded://animations/F_FistPump.glb"),
-                asset_server.load("embedded://animations/f_head_explode.glb"),
-                asset_server.load("embedded://animations/F_RobotDance.glb"),
-                asset_server.load("embedded://animations/Hands_Air.glb"),
                 asset_server.load("embedded://animations/idle.glb"),
                 asset_server.load("embedded://animations/jump2.glb"),
                 asset_server.load("embedded://animations/double_jump.glb"),
                 asset_server.load("embedded://animations/glide.glb"),
-                asset_server.load("embedded://animations/kiss.glb"),
-                asset_server.load("embedded://animations/mchammer-dance.glb"),
-                asset_server.load("embedded://animations/M_FistPump.glb"),
-                asset_server.load("embedded://animations/m_head_explode.glb"),
-                asset_server.load("embedded://animations/M_RobotDance.glb"),
-                asset_server.load("embedded://animations/Raise_Hand.glb"),
                 asset_server.load("embedded://animations/run.glb"),
-                asset_server.load("embedded://animations/shrug.glb"),
-                asset_server.load("embedded://animations/tektonik-dance.glb"),
-                asset_server.load("embedded://animations/Throw Money-Emote.glb"),
-                asset_server.load("embedded://animations/tik-tok-dance.glb"),
                 asset_server.load("embedded://animations/walk.glb"),
-                asset_server.load("embedded://animations/Wave_Female.glb"),
-                asset_server.load("embedded://animations/Wave_Male.glb"),
             ]);
         }
         AnimLoadState::WaitingForGltfs(ref mut h_gltfs) => {
@@ -319,100 +298,6 @@ impl DefaultAnim {
 
 static DEFAULT_ANIMATION_LOOKUP: Lazy<HashMap<&str, DefaultAnim>> = Lazy::new(|| {
     HashMap::from_iter([
-        (
-            "wave",
-            DefaultAnim::new("Wave", "Wave_Male", "Wave_Female", false, true),
-        ),
-        (
-            "fistpump",
-            DefaultAnim::new("Fist Pump", "M_FistPump", "F_FistPump", false, true),
-        ),
-        (
-            "robot",
-            DefaultAnim::new("Robot", "M_RobotDance", "F_RobotDance", true, true),
-        ),
-        (
-            "raiseHand",
-            DefaultAnim::new("Raise Hand", "Raise_Hand", "Raise_Hand", false, true),
-        ),
-        (
-            "clap",
-            DefaultAnim::new("Clap", "clap", "clap", false, true),
-        ),
-        (
-            "money",
-            DefaultAnim::new(
-                "Money",
-                "Armature|Throw Money-Emote_v02|BaseLayer",
-                "Armature|Throw Money-Emote_v02|BaseLayer",
-                false,
-                true,
-            ),
-        ),
-        (
-            "kiss",
-            DefaultAnim::new("Kiss", "kiss", "kiss", false, true),
-        ),
-        (
-            "hammer",
-            DefaultAnim::new(
-                "Hammer",
-                "Armature|mchammer-dance_v02|BaseLayer",
-                "Armature|mchammer-dance_v02|BaseLayer",
-                true,
-                true,
-            ),
-        ),
-        (
-            "tik",
-            DefaultAnim::new(
-                "Tik",
-                "Armature|tik-tok-dance_v02|BaseLayer",
-                "Armature|tik-tok-dance_v02|BaseLayer",
-                true,
-                true,
-            ),
-        ),
-        (
-            "tektonik",
-            DefaultAnim::new(
-                "Tektonic",
-                "Armature|tektonik-dance_v01|BaseLayer",
-                "Armature|tektonik-dance_v01|BaseLayer",
-                true,
-                true,
-            ),
-        ),
-        (
-            "dontsee",
-            DefaultAnim::new("Don't See", "dont_wanna_see", "dont_wanna_see", false, true),
-        ),
-        (
-            "handsair",
-            DefaultAnim::new(
-                "Hands Air",
-                "Hands_In_The_Air",
-                "Hands_In_The_Air",
-                true,
-                true,
-            ),
-        ),
-        (
-            "shrug",
-            DefaultAnim::new("Shrug", "shrug", "shrug", false, true),
-        ),
-        (
-            "disco",
-            DefaultAnim::new("Disco", "disco_dance", "disco_dance", true, true),
-        ),
-        (
-            "headexplode",
-            DefaultAnim::new("Head Explode", "explode", "f_head_explode", false, true),
-        ),
-        (
-            "dance",
-            DefaultAnim::new("Dance", "Dance_Male", "Dance_Female", true, true),
-        ),
         // base animations, not emotes
         (
             "idle_male",

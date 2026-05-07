@@ -368,6 +368,27 @@ module.exports.getHoverStream = async function() {
   return streamGenerator();
 }
 
+// get proximity events as a stream
+// type ProximityEvent = {
+//   entered: bool,
+//   entity: number,            // session-stable opaque id; matches enter/leave
+//   entityPosition: Vector3,   // entity transform origin in world space (stable anchor)
+//   actions: HoverAction[],
+// }
+module.exports.getProximityStream = async function() {
+  const rid = await Deno.core.ops.op_get_proximity_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_proximity_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}
+
 // Social / Friends
 
 module.exports.social = {

@@ -244,6 +244,15 @@ impl GlobalCrdtState {
             error!("failed to send time update to scenes: {e}");
         }
     }
+
+    pub fn update_camera_fov(&mut self, fov_y: f32) {
+        if let Err(e) = self
+            .int_sender
+            .send(GlobalCrdtStateUpdate::CameraFov(fov_y))
+        {
+            error!("failed to send camera fov update to scenes: {e}");
+        }
+    }
 }
 
 #[derive(Component, Debug)]

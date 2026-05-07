@@ -20,7 +20,7 @@ use common::{
     },
 };
 use dcl_component::proto_components::{
-    common::Vector2,
+    common::{Vector2, Vector3},
     sdk::components::{pb_pointer_events, PbAvatarBase, PbAvatarEquippedData},
 };
 use serde::{Deserialize, Serialize};
@@ -114,6 +114,25 @@ pub struct HoverEvent {
     pub actions: Vec<HoverAction>,
 }
 
+/// Streamed to the system scene whenever an entity carrying PROXIMITY pointer
+/// entries enters or leaves the avatar's interaction range, or when one of its
+/// per-entry distance gates flips (so the `enabled` flag on an action changes).
+/// `entity` is an opaque session-stable identifier so the scene can match
+/// enter/leave pairs. `entity_position` is the world-space AABB centre of the
+/// specific collider on the entity that produced the closest-point hit — for
+/// multi-collider entities (e.g. GltfContainers) this anchors UI on the part
+/// of the entity the player is actually nearest. The scene is responsible for
+/// projecting it to screen space per frame; the active camera's vertical FOV
+/// is available via `Runtime.getCameraFov`.
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProximityEvent {
+    pub entered: bool,
+    pub entity: u64,
+    pub entity_position: Vector3,
+    pub actions: Vec<HoverAction>,
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SceneLoadingUi {
@@ -149,6 +168,7 @@ pub enum SystemApi {
     GetChatStream(RpcStreamSender<ChatMessage>),
     GetVoiceStream(RpcStreamSender<VoiceMessage>),
     GetHoverStream(RpcStreamSender<HoverEvent>),
+    GetProximityStream(RpcStreamSender<ProximityEvent>),
     GetSceneLoadingUiStream(RpcStreamSender<SceneLoadingUi>),
     SendChat(String, String),
     Quit,
