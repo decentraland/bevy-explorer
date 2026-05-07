@@ -6,7 +6,6 @@ default-run = "decentra-bevy"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
-path = "src/lib/web.rs"
 name = "webgpu_build"
 
 # to build wasm lib:
