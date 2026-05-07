@@ -30,6 +30,8 @@ use bevy::{
     render::{render_resource::PipelineCompilationMode, renderer::RenderDevice, RenderPlugin},
 };
 use bevy_console::AddConsoleCommand;
+#[cfg(not(debug_assertions))]
+use build_time::build_time_utc;
 use collectibles::CollectiblesPlugin;
 use common::{
     inputs::InputMap,

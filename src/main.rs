@@ -3,8 +3,6 @@
 use std::{error::Error, fmt::Display, fs::File, io::Write, path::PathBuf, sync::OnceLock};
 
 use bevy::{log::LogPlugin, prelude::*};
-#[cfg(not(debug_assertions))]
-use build_time::build_time_utc;
 use common::structs::{AppConfig, IVec2Arg, SceneImposterBake, StartupScene};
 use dcl_deno_ipc::init_runtime;
 use mimalloc::MiMalloc;
