@@ -380,7 +380,7 @@ fn update_pointer_target(
     if let Some(avatar_hit) = maybe_nearest_avatar {
         let nearest_point = avatar_colliders
             .collider_data
-            .closest_point(player_translation, |cid| cid == &avatar_hit.id)
+            .closest_point_to(player_translation, &avatar_hit.id)
             .unwrap_or(player_translation);
         let distance = (nearest_point - player_translation).length();
 
@@ -398,11 +398,11 @@ fn update_pointer_target(
             ty: PointerTargetType::Avatar,
         });
     } else if let Some((scene_entity, hit)) = maybe_nearest_hit {
-        let (_, context, mut collider_data) = scenes.get_mut(scene_entity).unwrap();
+        let (_, context, collider_data) = scenes.get_mut(scene_entity).unwrap();
 
         // get player distance
         let nearest_point = collider_data
-            .closest_point(player_translation, |cid| cid == &hit.id)
+            .closest_point_to(player_translation, &hit.id)
             .unwrap_or(player_translation);
         let distance = (nearest_point - player_translation).length();
 
@@ -645,10 +645,10 @@ fn collect_proximity_candidates(
         // GltfContainer with one pointer-aware mesh and several physics-only
         // hitboxes) should only fire proximity events relative to its
         // pointer-aware geometry.
-        let Some((nearest_point, hit_collider_id)) = collider_data.closest_point_with_id(
+        let Some((nearest_point, hit_collider_id)) = collider_data.closest_point_to_entity(
             player_center,
+            entity_id,
             ColliderLayer::ClPointer as u32,
-            |cid| cid.entity == entity_id,
         ) else {
             continue;
         };
@@ -1420,11 +1420,17 @@ fn send_proximity_events(
             let Ok((mut context, scene_transform)) = scenes.get_mut(scene_entity.root) else {
                 continue;
             };
+            // The SDK's per-entity dispatch expands `IA_ANY` to a list of real
+            // input actions and matches `command.button` strictly — `IA_ANY`
+            // itself is not in that list, so a result with `button=IA_ANY` never
+            // dispatches. Default to `IaPointer` when the entry didn't specify
+            // a button; honour an explicit one if it did.
             let button = entry
                 .event_info
                 .as_ref()
                 .and_then(|i| i.button.map(|_| i.button()))
-                .unwrap_or(InputAction::IaAny);
+                .filter(|&b| b != InputAction::IaAny)
+                .unwrap_or(InputAction::IaPointer);
             let info = PointerTargetInfo {
                 container: entity,
                 mesh_name: None,
