@@ -1378,6 +1378,26 @@ pub struct CurrentRealm {
     pub public_url: String,
 }
 
+impl CurrentRealm {
+    /// Identity used to tag scene pointers and detect staleness on realm
+    /// change. Realms with an explicit scene list (Worlds) are uniquely
+    /// identified by `about_url`; realms backed by parcel-based
+    /// ActiveEntities queries share a catalog scoped by `address` (the
+    /// content/services URL).
+    pub fn pointer_realm(&self) -> &str {
+        if self
+            .config
+            .scenes_urn
+            .as_ref()
+            .is_some_and(|s| !s.is_empty())
+        {
+            &self.about_url
+        } else {
+            &self.address
+        }
+    }
+}
+
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct CommsConfig {
