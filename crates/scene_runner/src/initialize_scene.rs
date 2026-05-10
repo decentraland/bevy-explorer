@@ -122,9 +122,7 @@ impl Plugin for SceneLifecyclePlugin {
 #[derive(Component, Debug)]
 pub enum SceneLoading {
     SceneSpawned,
-    SceneEntity {
-        realm: String,
-    },
+    SceneEntity,
     MainCrdt {
         crdt: Option<Handle<SerializedCrdtStore>>,
     },
@@ -176,9 +174,7 @@ pub(crate) fn load_scene_entity(
         };
 
         commands.try_insert((
-            SceneLoading::SceneEntity {
-                realm: event.realm.clone(),
-            },
+            SceneLoading::SceneEntity,
             SceneEntityDefinitionHandle(h_scene),
         ));
 
@@ -196,7 +192,7 @@ pub(crate) fn load_scene_json(
 ) {
     for (entity, mut state, h_scene) in loading_scenes
         .iter_mut()
-        .filter(|(_, state, _)| matches!(**state, SceneLoading::SceneEntity { .. }))
+        .filter(|(_, state, _)| matches!(**state, SceneLoading::SceneEntity))
     {
         let mut fail = |msg: &str| {
             warn!("{entity:?} failed to initialize scene: {msg}");
@@ -1595,7 +1591,6 @@ pub fn process_scene_lifecycle(
             .scenes
             .insert(required_scene_hash.clone(), entity);
         spawn.write(LoadSceneEvent {
-            realm: current_realm.address.clone(),
             entity: Some(entity),
             location: match maybe_urn {
                 Some(urn) => SceneIpfsLocation::Urn(urn.to_owned()),

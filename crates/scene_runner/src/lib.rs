@@ -120,7 +120,6 @@ pub struct CrdtSnapshotEvent {
 // event which can be sent from anywhere to trigger replacing the current scene with the one specified
 #[derive(Event)]
 pub struct LoadSceneEvent {
-    pub realm: String,
     pub entity: Option<Entity>,
     pub location: SceneIpfsLocation,
     pub super_user: bool,
