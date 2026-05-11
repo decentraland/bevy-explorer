@@ -29,7 +29,6 @@ use bevy::{
     asset::WasmLoaderHandle,
     render::{render_resource::PipelineCompilationMode, renderer::RenderDevice, RenderPlugin},
 };
-use bevy_console::AddConsoleCommand;
 #[cfg(not(debug_assertions))]
 use build_time::build_time_utc;
 use collectibles::CollectiblesPlugin;
@@ -44,7 +43,7 @@ use common::{
     util::UtilsPlugin,
 };
 use comms::CommsPlugin;
-use console::ConsolePlugin;
+use console::{ConsolePlugin, DoAddConsoleCommand};
 use image_processing::ImageProcessingPlugin;
 use imposters::DclImposterPlugin;
 use input_manager::InputManagerPlugin;
