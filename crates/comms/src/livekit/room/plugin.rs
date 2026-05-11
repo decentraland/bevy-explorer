@@ -199,7 +199,13 @@ fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mu
                         reason,
                         DisconnectReason::DuplicateIdentity | DisconnectReason::ParticipantRemoved
                     ) {
+                        error!(
+                            "Connection to {} terminated due to {:?}",
+                            livekit_room.name(),
+                            reason
+                        );
                         commands.set_state(ConnectionAvailability::Unavailable);
+                        commands.entity(entity).try_despawn();
                     }
                 }
                 RoomEvent::ConnectionStateChanged(state) => match state {
