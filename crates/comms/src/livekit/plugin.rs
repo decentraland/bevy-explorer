@@ -1,10 +1,11 @@
 use bevy::prelude::*;
-use common::{debug_panic, structs::AudioSettings};
+use common::{debug_panic, structs::AudioSettings, util::ReportErr};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use kira::{
     manager::{AudioManager, AudioManagerSettings, DefaultBackend},
     tween::Tween,
 };
+use system_bridge::SystemApi;
 use tokio::{sync::mpsc, task::JoinHandle};
 
 #[cfg(feature = "room_debug")]
@@ -15,8 +16,8 @@ use crate::{
         mic::MicPlugin, participant::plugin::LivekitParticipantPlugin,
         room::plugin::LivekitRoomPlugin, runtime::LivekitRuntimePlugin,
         track::plugin::LivekitTrackPlugin, ConnectionAvailability, LivekitAudioManager,
-        LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime, LivekitTransport,
-        StartLivekit,
+        LivekitChannelControl, LivekitNetworkMessage, LivekitRuntime, LivekitSystemApiSenders,
+        LivekitTransport, StartLivekit,
     },
     profile::CurrentUserProfile,
     NetworkMessage, Transport, TransportType,
@@ -40,6 +41,14 @@ impl Plugin for LivekitPlugin {
         app.add_systems(
             Update,
             respond_to_audio_settings_change.run_if(resource_exists_and_changed::<AudioSettings>),
+        );
+        app.add_systems(
+            PostUpdate,
+            (
+                new_system_ai_senders,
+                connection_availability_changed.run_if(state_changed::<ConnectionAvailability>),
+            )
+                .chain(),
         );
 
         app.add_event::<StartLivekit>();
@@ -151,4 +160,25 @@ fn respond_to_audio_settings_change(
     livekit_audio_manager
         .main_track()
         .set_volume(audio_settings.scene() as f64, Tween::default());
+}
+
+fn new_system_ai_senders(
+    mut event_reader: EventReader<SystemApi>,
+    mut livekit_system_api_senders: ResMut<LivekitSystemApiSenders>,
+) {
+    for e in event_reader.read() {
+        if let SystemApi::LivekitStatusStream(sx) = e {
+            livekit_system_api_senders.push(sx.clone());
+        }
+    }
+}
+
+fn connection_availability_changed(
+    connection_availability: Res<State<ConnectionAvailability>>,
+    mut livekit_system_api_senders: ResMut<LivekitSystemApiSenders>,
+) {
+    let new_state = connection_availability.get();
+    for sender in livekit_system_api_senders.iter_mut() {
+        sender.send(*new_state).report();
+    }
 }

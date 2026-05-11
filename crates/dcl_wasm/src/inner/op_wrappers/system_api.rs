@@ -526,3 +526,16 @@ pub async fn op_get_params(state: &WorkerContext) -> Result<JsValue, WasmError> 
     }
     Ok(obj.into())
 }
+
+#[wasm_bindgen]
+pub async fn op_get_livekit_status_stream(state: &WorkerContext) -> u32 {
+    dcl::js::system_api::op_get_livekit_status_stream(state.rc()).await
+}
+
+#[wasm_bindgen]
+pub async fn op_read_livekit_status_stream(
+    state: &WorkerContext,
+    rid: u32,
+) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_read_livekit_status_stream(state.rc(), rid).await)
+}

@@ -1433,3 +1433,12 @@ pub struct Region {
     pub top: i32,
     pub bottom: i32,
 }
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, States, Serialize, Deserialize)]
+pub enum ConnectionAvailability {
+    #[default]
+    Available,
+    /// If client is disconnected from room due to duplicate identity
+    /// or from being kicked, client won't try connecting again
+    Unavailable,
+}
