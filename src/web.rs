@@ -268,7 +268,6 @@ fn update_url_params(
         let scenes = s
             .scenes
             .iter()
-            .skip(1)
             .map(|scene| scene.source.clone())
             .collect::<Vec<_>>();
 
