@@ -796,45 +796,49 @@ impl SceneColliderData {
         (constraint_min, constraint_max)
     }
 
-    pub fn closest_point<F: Fn(&ColliderId) -> bool>(
-        &mut self,
-        origin: Vec3,
-        filter: F,
-    ) -> Option<Vec3> {
-        self.closest_point_with_id(origin, u32::MAX, filter)
-            .map(|(point, _)| point)
+    /// Project `origin` onto a specific collider's shape and return the
+    /// world-space nearest point, or `None` if the collider isn't registered.
+    pub fn closest_point_to(&self, origin: Vec3, id: &ColliderId) -> Option<Vec3> {
+        let collider = self.get_collider(id)?;
+        let proj =
+            collider
+                .shape()
+                .project_point(collider.position(), &origin.as_dvec3().into(), true);
+        Some(DVec3::from(proj.point).as_vec3())
     }
 
-    /// Like `closest_point` but also returns the id of the collider that
-    /// produced the projected point, and restricts the query to colliders
-    /// whose interaction groups intersect `collision_mask`. Useful when the
-    /// caller wants to identify which of several colliders attached to the
-    /// same scene entity (e.g. multi-collider GltfContainers) was the
-    /// closest, or limit the search to a specific layer (e.g. only
-    /// `CL_POINTER` colliders for proximity events).
-    pub fn closest_point_with_id<F: Fn(&ColliderId) -> bool>(
-        &mut self,
+    /// Like [`closest_point_to`] but operates across all colliders attached to
+    /// `entity` whose collision groups intersect `collision_mask`, and returns
+    /// the specific [`ColliderId`] that produced the nearest point.
+    pub fn closest_point_to_entity(
+        &self,
         origin: Vec3,
+        entity: SceneEntityId,
         collision_mask: u32,
-        filter: F,
     ) -> Option<(Vec3, ColliderId)> {
-        self.update_bvh();
-
-        let predicate = |h, _: &Collider| self.get_id(h).is_some_and(&filter);
-        let q = QueryFilter::new()
-            .groups(InteractionGroups::new(
-                Group::from_bits_truncate(collision_mask),
-                Group::from_bits_truncate(collision_mask),
-                InteractionTestMode::And,
-            ))
-            .predicate(&predicate);
-
-        self.query_pipeline(q)
-            .project_point(&origin.as_dvec3().into(), f64::MAX, true)
-            .and_then(|(handle, projection)| {
-                let id = self.get_id(handle).cloned()?;
-                Some((DVec3::from(projection.point).as_vec3(), id))
-            })
+        let mask = Group::from_bits_truncate(collision_mask);
+        let groups = InteractionGroups::new(mask, mask, InteractionTestMode::And);
+        let origin_pt = origin.as_dvec3().into();
+        let mut best: Option<(f64, Vec3, ColliderId)> = None;
+        for (cid, handle) in self.scaled_collider.iter() {
+            if cid.entity != entity {
+                continue;
+            }
+            let Some(collider) = self.collider_set.get(*handle) else {
+                continue;
+            };
+            if !collider.collision_groups().test(groups) {
+                continue;
+            }
+            let proj = collider
+                .shape()
+                .project_point(collider.position(), &origin_pt, true);
+            let d2 = (proj.point - origin_pt).norm_squared();
+            if best.as_ref().is_none_or(|(prev_d2, _, _)| d2 < *prev_d2) {
+                best = Some((d2, DVec3::from(proj.point).as_vec3(), cid.clone()));
+            }
+        }
+        best.map(|(_, p, id)| (p, id))
     }
 
     /// Centre of a collider's axis-aligned bounding box in world space.
