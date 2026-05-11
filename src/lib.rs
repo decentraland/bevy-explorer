@@ -56,7 +56,7 @@ use scene_inspector::SceneInspectorPlugin;
 use scene_material::SceneBoundPlugin;
 use scene_runner::{
     automatic_testing::AutomaticTestingPlugin,
-    initialize_scene::{TestScenes, TestingData},
+    initialize_scene::{TestScenes, TestingData, PARCEL_SIZE},
     update_world::NoGltf,
     OutOfWorld, SceneRunnerPlugin,
 };
@@ -511,25 +511,27 @@ fn update_app_config_from_arguments(
     base_app_config
         .scene_imposter_bake
         .replace_if_some(arguments.scene_imposter_bake);
+
     base_app_config
         .scene_imposter_distances
         .replace_if_some(arguments.scene_imposter_distances.clone());
+    base_app_config.scene_imposter_distances = base_app_config
+        .scene_imposter_distances
+        .iter()
+        .enumerate()
+        .map(|(ix, d)| {
+            let edge_distance = (1 << ix) as f32 * PARCEL_SIZE;
+            let diagonal_distance = (edge_distance * edge_distance * 2.0).sqrt();
+            // println!("[{ix}] -> {}", d.max(diagonal_distance));
+            d.max(diagonal_distance)
+        })
+        .collect();
+
     base_app_config
         .scene_imposter_multisample
         .replace_if_some(arguments.scene_imposter_multisample);
     base_app_config.sysinfo_visible |= arguments.sysinfo_visible;
     base_app_config.scene_log_to_console |= arguments.scene_log_to_console;
-
-    //     scene_imposter_distances:
-    //         .into_iter()
-    //         .enumerate()
-    //         .map(|(ix, d)| {
-    //             let edge_distance = (1 << ix) as f32 * PARCEL_SIZE;
-    //             let diagonal_distance = (edge_distance * edge_distance * 2.0).sqrt();
-    //             // println!("[{ix}] -> {}", d.max(diagonal_distance));
-    //             d.max(diagonal_distance)
-    //         })
-    //         .collect(),
 }
 
 #[cfg(not(target_arch = "wasm32"))]
