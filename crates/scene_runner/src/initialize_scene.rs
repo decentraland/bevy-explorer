@@ -122,9 +122,7 @@ impl Plugin for SceneLifecyclePlugin {
 #[derive(Component, Debug)]
 pub enum SceneLoading {
     SceneSpawned,
-    SceneEntity {
-        realm: String,
-    },
+    SceneEntity,
     MainCrdt {
         crdt: Option<Handle<SerializedCrdtStore>>,
     },
@@ -176,9 +174,7 @@ pub(crate) fn load_scene_entity(
         };
 
         commands.try_insert((
-            SceneLoading::SceneEntity {
-                realm: event.realm.clone(),
-            },
+            SceneLoading::SceneEntity,
             SceneEntityDefinitionHandle(h_scene),
         ));
 
@@ -196,7 +192,7 @@ pub(crate) fn load_scene_json(
 ) {
     for (entity, mut state, h_scene) in loading_scenes
         .iter_mut()
-        .filter(|(_, state, _)| matches!(**state, SceneLoading::SceneEntity { .. }))
+        .filter(|(_, state, _)| matches!(**state, SceneLoading::SceneEntity))
     {
         let mut fail = |msg: &str| {
             warn!("{entity:?} failed to initialize scene: {msg}");
@@ -1212,7 +1208,7 @@ fn load_active_entities(
             .into_iter()
             .filter_map(|(parcel, distance)| match pointers.get(parcel) {
                 Some(PointerResult::Exists { realm, .. }) => {
-                    (realm != &current_realm.address).then_some((distance, parcel))
+                    (realm != current_realm.pointer_realm()).then_some((distance, parcel))
                 }
                 Some(PointerResult::Nothing) => None,
                 _ => Some((distance, parcel)),
@@ -1258,7 +1254,7 @@ fn load_active_entities(
                 .flat_map(|(parcel, ptr)| match ptr {
                     PointerResult::Nothing => None,
                     PointerResult::Exists { realm, hash, .. } => {
-                        if realm == &current_realm.address {
+                        if realm == current_realm.pointer_realm() {
                             Some((hash, *parcel))
                         } else {
                             None
@@ -1415,7 +1411,7 @@ fn load_active_entities(
                 if let Some(new_bounds) = pointers.insert(
                     parcel,
                     PointerResult::Exists {
-                        realm: current_realm.address.clone(),
+                        realm: current_realm.pointer_realm().to_owned(),
                         hash: active_entity.id.clone(),
                         urn: urn.clone(),
                     },
@@ -1514,7 +1510,7 @@ pub fn process_scene_lifecycle(
                 .get(parcel)
                 // immediately unload scenes from other realms, even if they might match
                 // we don't check them until they are in range, so better to just nuke them
-                .filter(|pr| pr.realm() == Some(&current_realm.address))
+                .filter(|pr| pr.realm() == Some(current_realm.pointer_realm()))
                 .and_then(PointerResult::hash_and_urn)
         } else {
             None
@@ -1595,7 +1591,6 @@ pub fn process_scene_lifecycle(
             .scenes
             .insert(required_scene_hash.clone(), entity);
         spawn.write(LoadSceneEvent {
-            realm: current_realm.address.clone(),
             entity: Some(entity),
             location: match maybe_urn {
                 Some(urn) => SceneIpfsLocation::Urn(urn.to_owned()),
