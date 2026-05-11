@@ -97,6 +97,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 
 #ifndef PREPASS_PIPELINE
     var pbr_input = pbr_input_from_vertex_output(in, is_front, true);
+    pbr_input.material.reflectance = vec3(0.125);
     pbr_input.material.base_color = mix(root_color, tip_color, color_factor);
 
     out.color = apply_pbr_lighting(pbr_input);
