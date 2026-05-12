@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use common::{
     debug_panic,
-    structs::{AudioSettings, LivekitUpdate},
+    structs::{AudioSettings, DisconnectReason, LivekitUpdate},
     util::ReportErr,
 };
 use dcl_component::proto_components::kernel::comms::rfc4;
@@ -51,6 +51,7 @@ impl Plugin for LivekitPlugin {
             PostUpdate,
             (
                 new_system_ai_senders,
+                disconnect_reason.run_if(on_event::<DisconnectReason>),
                 connection_availability_changed.run_if(state_changed::<ConnectionAvailability>),
             )
                 .chain(),
@@ -174,6 +175,19 @@ fn new_system_ai_senders(
     for e in event_reader.read() {
         if let SystemApi::LivekitStatusStream(sx) = e {
             livekit_system_api_senders.push(sx.clone());
+        }
+    }
+}
+
+fn disconnect_reason(
+    mut disconnect_reason: EventReader<DisconnectReason>,
+    mut livekit_system_api_senders: ResMut<LivekitSystemApiSenders>,
+) {
+    for event in disconnect_reason.read() {
+        for sender in livekit_system_api_senders.iter_mut() {
+            sender
+                .send(LivekitUpdate::DisconnectReason(*event))
+                .report();
         }
     }
 }

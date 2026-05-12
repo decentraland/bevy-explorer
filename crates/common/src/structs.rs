@@ -1437,6 +1437,7 @@ pub struct Region {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LivekitUpdate {
     Availability(ConnectionAvailability),
+    DisconnectReason(DisconnectReason),
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, States, Serialize, Deserialize)]
@@ -1446,4 +1447,10 @@ pub enum ConnectionAvailability {
     /// If client is disconnected from room due to duplicate identity
     /// or from being kicked, client won't try connecting again
     Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Event, Serialize, Deserialize)]
+pub enum DisconnectReason {
+    DuplicateIdentity,
+    ParticipantRemoved,
 }

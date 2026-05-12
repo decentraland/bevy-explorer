@@ -206,6 +206,16 @@ fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mu
                         );
                         commands.set_state(ConnectionAvailability::Unavailable);
                         commands.entity(entity).try_despawn();
+                        let event = match reason {
+                            DisconnectReason::DuplicateIdentity => {
+                                common::structs::DisconnectReason::DuplicateIdentity
+                            }
+                            DisconnectReason::ParticipantRemoved => {
+                                common::structs::DisconnectReason::ParticipantRemoved
+                            }
+                            _ => unreachable!(),
+                        };
+                        commands.send_event(event);
                     }
                 }
                 RoomEvent::ConnectionStateChanged(state) => match state {
