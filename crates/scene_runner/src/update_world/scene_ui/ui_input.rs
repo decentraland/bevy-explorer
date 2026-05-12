@@ -57,6 +57,7 @@ pub fn set_ui_input(
         };
         let font_size = input.0.font_size.unwrap_or(10).max(1) as f32;
         let multiline = input.0.multi_line.unwrap_or(false);
+        let clear_on_submit = input.0.clear_on_submit.unwrap_or(true);
 
         let ui_entity = link.ui_entity;
         let root = scene_ent.root;
@@ -118,7 +119,7 @@ pub fn set_ui_input(
                     .map(Color4DclToBevy::convert_srgba),
                 enabled: !input.0.disabled,
                 content: input.0.value.clone().unwrap_or_default(),
-                accept_line: true,
+                accept_line: clear_on_submit,
                 multiline: if multiline { 2 } else { 1 },
                 text_style: Some((
                     TextFont {
