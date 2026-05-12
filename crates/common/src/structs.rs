@@ -1449,7 +1449,13 @@ pub enum ConnectionAvailability {
     Unavailable,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Event, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Event, Serialize, Deserialize)]
+pub struct LivekitDisconnect {
+    pub room: String,
+    pub disconnect_reason: DisconnectReason,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DisconnectReason {
     DuplicateIdentity,
     ParticipantRemoved,

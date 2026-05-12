@@ -2,7 +2,11 @@ use bevy::{
     platform::{collections::HashMap, sync::Arc},
     prelude::*,
 };
-use common::{debug_panic, structs::AudioDecoderError, util::AsH160};
+use common::{
+    debug_panic,
+    structs::{AudioDecoderError, LivekitDisconnect},
+    util::AsH160,
+};
 use ethers_core::types::H160;
 use http::Uri;
 use tokio::{
@@ -206,7 +210,7 @@ fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mu
                         );
                         commands.set_state(ConnectionAvailability::Unavailable);
                         commands.entity(entity).try_despawn();
-                        let event = match reason {
+                        let internal_reason = match reason {
                             DisconnectReason::DuplicateIdentity => {
                                 common::structs::DisconnectReason::DuplicateIdentity
                             }
@@ -215,7 +219,10 @@ fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mu
                             }
                             _ => unreachable!(),
                         };
-                        commands.send_event(event);
+                        commands.send_event(LivekitDisconnect {
+                            room: livekit_room.name(),
+                            disconnect_reason: internal_reason,
+                        });
                     }
                 }
                 RoomEvent::ConnectionStateChanged(state) => match state {
