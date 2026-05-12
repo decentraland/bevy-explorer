@@ -1440,6 +1440,21 @@ pub enum LivekitUpdate {
     DisconnectReason(LivekitDisconnect),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Event, Serialize, Deserialize)]
+pub struct LivekitParticipantConnectionQuality {
+    pub participant: String,
+    pub room: String,
+    pub connection_quality: ConnectionQuality,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Component, Serialize, Deserialize)]
+pub enum ConnectionQuality {
+    Excellent,
+    Good,
+    Poor,
+    Lost,
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, States, Serialize, Deserialize)]
 pub enum ConnectionAvailability {
     #[default]

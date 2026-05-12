@@ -1,5 +1,9 @@
 use bevy::{ecs::relationship::Relationship, prelude::*};
-use common::{debug_panic, util::AsH160};
+use common::{
+    debug_panic,
+    structs::{ConnectionQuality, LivekitParticipantConnectionQuality},
+    util::AsH160,
+};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use prost::Message;
 #[cfg(not(target_arch = "wasm32"))]
@@ -9,13 +13,13 @@ use {
         color::palettes,
         render::render_resource::{TextureDimension, TextureFormat, TextureUsages},
     },
-    livekit::prelude::Participant,
+    livekit::prelude::{ConnectionQuality as LivekitConnectionQuality, Participant},
 };
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::livekit::participant::{StreamImage, StreamViewer};
 #[cfg(target_arch = "wasm32")]
-use crate::livekit::web::Participant;
+use crate::livekit::web::{ConnectionQuality as LivekitConnectionQuality, Participant};
 use crate::{
     global_crdt::{GlobalCrdtState, NonPlayerUpdate, PlayerMessage, PlayerUpdate},
     livekit::{
@@ -187,7 +191,21 @@ fn participant_connection_quality_changed(
         return;
     };
 
-    commands.entity(entity).try_insert(*connection_quality);
+    let internal_connection_quality = match connection_quality {
+        LivekitConnectionQuality::Excellent => ConnectionQuality::Excellent,
+        LivekitConnectionQuality::Good => ConnectionQuality::Good,
+        LivekitConnectionQuality::Poor => ConnectionQuality::Poor,
+        LivekitConnectionQuality::Lost => ConnectionQuality::Lost,
+    };
+
+    commands
+        .entity(entity)
+        .try_insert(internal_connection_quality);
+    commands.send_event(LivekitParticipantConnectionQuality {
+        participant: participant.sid().to_string(),
+        room: livekit_room.name(),
+        connection_quality: internal_connection_quality,
+    });
 }
 
 fn participant_payload(
