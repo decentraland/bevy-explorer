@@ -328,8 +328,13 @@ impl SceneColliderData {
 
                     let mut new_scale = *init_scale;
                     if (req_scale - *init_scale).length_squared() > SCALE_EPSILON {
-                        if req_scale.abs().min_element() < 0.001 {
-                            // disable 0-sized colliders
+                        // check the final world-space size rather than the raw scale factor,
+                        // so large meshes with small scales aren't disabled.
+                        let extents = base_collider.shape().compute_local_aabb().extents();
+                        let scaled_max = (extents.x as f32 * req_scale.x.abs())
+                            .max(extents.y as f32 * req_scale.y.abs())
+                            .max(extents.z as f32 * req_scale.z.abs());
+                        if scaled_max < 0.001 {
                             collider.set_enabled(false);
                         } else {
                             collider.set_enabled(true);
