@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use common::{
     debug_panic,
-    structs::{AudioSettings, DisconnectReason, LivekitDisconnect, LivekitUpdate},
+    structs::{AudioSettings, LivekitDisconnect, LivekitUpdate},
     util::ReportErr,
 };
 use dcl_component::proto_components::kernel::comms::rfc4;
