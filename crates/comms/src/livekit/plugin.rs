@@ -28,6 +28,7 @@ pub struct LivekitPlugin;
 impl Plugin for LivekitPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PlayerUpdateTasks>();
+        app.init_resource::<LivekitSystemApiSenders>();
         app.init_state::<ConnectionAvailability>();
 
         app.add_plugins(MicPlugin);

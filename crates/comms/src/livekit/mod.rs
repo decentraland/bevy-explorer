@@ -50,7 +50,7 @@ pub struct LivekitAudioManager {
     manager: AudioManager,
 }
 
-#[derive(Resource, Deref, DerefMut)]
+#[derive(Default, Resource, Deref, DerefMut)]
 pub struct LivekitSystemApiSenders {
     senders: Vec<RpcStreamSender<ConnectionAvailability>>,
 }
