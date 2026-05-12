@@ -15,8 +15,8 @@ use common::{
     inputs::{BindingsData, InputIdentifier, SystemActionEvent},
     rpc::{RpcResultSender, RpcStreamSender},
     structs::{
-        AppConfig, ConnectionAvailability, MicState, PermissionLevel, PermissionType,
-        PermissionUsed, PermissionValue, PointerTargetType,
+        AppConfig, LivekitUpdate, MicState, PermissionLevel, PermissionType, PermissionUsed,
+        PermissionValue, PointerTargetType,
     },
 };
 use dcl_component::proto_components::{
@@ -204,7 +204,7 @@ pub enum SystemApi {
     GetBlockedUsers(RpcResultSender<Vec<BlockedUserData>>),
     GetParams(RpcResultSender<HashMap<String, String>>),
     // Connection
-    LivekitStatusStream(RpcStreamSender<ConnectionAvailability>),
+    LivekitStatusStream(RpcStreamSender<LivekitUpdate>),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

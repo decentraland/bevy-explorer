@@ -1,5 +1,9 @@
 use bevy::prelude::*;
-use common::{debug_panic, structs::AudioSettings, util::ReportErr};
+use common::{
+    debug_panic,
+    structs::{AudioSettings, LivekitUpdate},
+    util::ReportErr,
+};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use kira::{
     manager::{AudioManager, AudioManagerSettings, DefaultBackend},
@@ -180,6 +184,8 @@ fn connection_availability_changed(
 ) {
     let new_state = connection_availability.get();
     for sender in livekit_system_api_senders.iter_mut() {
-        sender.send(*new_state).report();
+        sender
+            .send(LivekitUpdate::Availability(*new_state))
+            .report();
     }
 }

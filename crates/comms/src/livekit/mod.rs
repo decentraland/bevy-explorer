@@ -16,7 +16,10 @@ pub mod track;
 pub mod web;
 
 use bevy::prelude::*;
-use common::{rpc::RpcStreamSender, structs::ConnectionAvailability};
+use common::{
+    rpc::RpcStreamSender,
+    structs::{ConnectionAvailability, LivekitUpdate},
+};
 use kira::manager::AudioManager;
 use tokio::sync::mpsc;
 
@@ -52,7 +55,7 @@ pub struct LivekitAudioManager {
 
 #[derive(Default, Resource, Deref, DerefMut)]
 pub struct LivekitSystemApiSenders {
-    senders: Vec<RpcStreamSender<ConnectionAvailability>>,
+    senders: Vec<RpcStreamSender<LivekitUpdate>>,
 }
 
 #[macro_export]

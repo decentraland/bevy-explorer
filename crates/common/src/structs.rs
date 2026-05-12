@@ -1434,6 +1434,11 @@ pub struct Region {
     pub bottom: i32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LivekitUpdate {
+    Availability(ConnectionAvailability),
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, States, Serialize, Deserialize)]
 pub enum ConnectionAvailability {
     #[default]
