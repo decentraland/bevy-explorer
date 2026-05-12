@@ -1438,6 +1438,7 @@ pub struct Region {
 pub enum LivekitUpdate {
     Availability(ConnectionAvailability),
     DisconnectReason(LivekitDisconnect),
+    ConnectionQuality(LivekitParticipantConnectionQuality),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Event, Serialize, Deserialize)]

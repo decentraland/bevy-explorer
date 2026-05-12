@@ -1,7 +1,9 @@
 use bevy::prelude::*;
 use common::{
     debug_panic,
-    structs::{AudioSettings, LivekitDisconnect, LivekitUpdate},
+    structs::{
+        AudioSettings, LivekitDisconnect, LivekitParticipantConnectionQuality, LivekitUpdate,
+    },
     util::ReportErr,
 };
 use dcl_component::proto_components::kernel::comms::rfc4;
@@ -34,6 +36,8 @@ impl Plugin for LivekitPlugin {
         app.init_resource::<PlayerUpdateTasks>();
         app.init_resource::<LivekitSystemApiSenders>();
         app.init_state::<ConnectionAvailability>();
+        app.add_event::<LivekitDisconnect>();
+        app.add_event::<LivekitParticipantConnectionQuality>();
 
         app.add_plugins(MicPlugin);
         app.add_plugins(LivekitRuntimePlugin);
@@ -53,6 +57,7 @@ impl Plugin for LivekitPlugin {
                 new_system_ai_senders,
                 disconnect_reason.run_if(on_event::<LivekitDisconnect>),
                 connection_availability_changed.run_if(state_changed::<ConnectionAvailability>),
+                connection_quality_changed.run_if(on_event::<LivekitParticipantConnectionQuality>),
             )
                 .chain(),
         );
@@ -201,5 +206,18 @@ fn connection_availability_changed(
         sender
             .send(LivekitUpdate::Availability(*new_state))
             .report();
+    }
+}
+
+fn connection_quality_changed(
+    mut connection_quality: EventReader<LivekitParticipantConnectionQuality>,
+    mut livekit_system_api_senders: ResMut<LivekitSystemApiSenders>,
+) {
+    for event in connection_quality.read() {
+        for sender in livekit_system_api_senders.iter_mut() {
+            sender
+                .send(LivekitUpdate::ConnectionQuality(event.clone()))
+                .report();
+        }
     }
 }
