@@ -226,7 +226,10 @@ pub struct SceneColliderData {
     disabled: HashSet<ColliderHandle>,
 }
 
-const SCALE_EPSILON: f32 = 0.001;
+// max world-space size change (metres) before we rebuild the scaled shape
+const COLLIDER_RESCALE_SIZE: f32 = 0.01;
+// disable colliders whose largest scaled extent falls below this (metres)
+const COLLIDER_DISABLE_SIZE: f32 = 0.001;
 const RAYCAST_EPSILON: f64 = 0.0001;
 
 pub trait ScaleShapeExt {
@@ -327,16 +330,21 @@ impl SceneColliderData {
                     };
 
                     let mut new_scale = *init_scale;
-                    if (req_scale - *init_scale).length_squared() > SCALE_EPSILON {
-                        if req_scale.abs().min_element() < 0.001 {
-                            // disable 0-sized colliders
-                            collider.set_enabled(false);
-                        } else {
-                            collider.set_enabled(true);
+                    if req_scale != *init_scale {
+                        // gate both rescale-tolerance and disable on the final world-space
+                        // size, not the raw scale factor — so large meshes with small
+                        // scales (and vice versa) are handled correctly.
+                        let extents = base_collider.shape().compute_local_aabb().extents();
+                        let extents =
+                            Vec3::new(extents.x as f32, extents.y as f32, extents.z as f32);
+                        let size_change = (extents * (req_scale - *init_scale).abs()).max_element();
+                        if size_change > COLLIDER_RESCALE_SIZE {
+                            let scaled_max = (extents * req_scale.abs()).max_element();
+                            collider.set_enabled(scaled_max >= COLLIDER_DISABLE_SIZE);
+                            new_scale = req_scale;
+                            // colliders don't have a scale, we have to modify the shape directly when scale changes (significantly)
+                            collider.set_shape(base_collider.shape().scale_ext(req_scale));
                         }
-                        new_scale = req_scale;
-                        // colliders don't have a scale, we have to modify the shape directly when scale changes (significantly)
-                        collider.set_shape(base_collider.shape().scale_ext(req_scale));
                     }
 
                     let state_mut = self.collider_state.get_mut(id).unwrap();
