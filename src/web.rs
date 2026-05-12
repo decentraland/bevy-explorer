@@ -365,7 +365,7 @@ fn decentraland_app_arguments(
                 .collect::<Vec<_>>(),
         )
         .filter(|startup_scenes| !startup_scenes.is_empty()),
-        ui_scene: Some(ui_scene.to_owned()),
+        ui_scene: (!ui_scene.is_empty()).then(|| ui_scene.to_owned()),
         scene_params: Some(params.to_owned()),
         scene_threads: None,
         scene_load_distance: None,
