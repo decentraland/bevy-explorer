@@ -247,6 +247,7 @@ export function start() {
   const realmValue = realmInput.value;
   const positionValue = positionInput.value;
   const systemScene = systemSceneInput.value;
+  const portables = portablesInput.value;
   const preview = previewInput.checked;
 
   // Build params from URL, overriding with form field values
@@ -256,6 +257,7 @@ export function start() {
     urlParams.set("position", positionValue);
   }
   urlParams.set("systemScene", systemScene);
+  urlParams.set("portables", portables);
   urlParams.delete("initialRealm");
   if (preview) {
     urlParams.set("preview", "true");
@@ -264,7 +266,7 @@ export function start() {
   }
   const params = urlParams.toString();
   console.log(
-    `[Main JS] "Launch" button clicked. Initial Realm: "${realmValue}", Position (coords): "${positionValue}", System Scene: "${systemScene}"`
+    `[Main JS] "Launch" button clicked. Initial Realm: "${realmValue}", Position (coords): "${positionValue}", System Scene: "${systemScene}, Portables: "${portables}"`
   );
   hideHeader();
 
@@ -323,7 +325,7 @@ export function start() {
     delete window._buildEngineApi;
   };
 
-  engine_run(platform, realmValue, positionValue, systemScene, true, preview, 1e7, params);
+  engine_run(platform, realmValue, positionValue, systemScene, portables, true, preview, 1e7, params);
   window.engine_console_command = engine_console_command;
   window.loadSceneUtils = () => {
     return new Promise((resolve, reject) => {

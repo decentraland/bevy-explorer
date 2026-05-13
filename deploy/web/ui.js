@@ -3,12 +3,14 @@
 
 // Constants
 const DEFAULT_SERVER = "https://realm-provider-ea.decentraland.org/main";
-const DEFAULT_SYSTEMSCENE = "https://dcl-regenesislabs.github.io/bevy-ui-scene/BevyUiScene;basiccontroller.dcl.eth";
+const DEFAULT_SYSTEMSCENE = "https://dcl-regenesislabs.github.io/bevy-ui-scene/BevyUiScene";
+const DEFAULT_PORTABLES = "basiccontroller.dcl.eth";
 
 // DOM references
 const realmInput = document.getElementById("realm");
 const positionInput = document.getElementById("position");
 const systemSceneInput = document.getElementById("systemScene");
+const portablesInput = document.getElementById("portables");
 const previewInput = document.getElementById("preview");
 const initButton = document.getElementById("initButton");
 const canvas = document.getElementById("canvas-parent");
@@ -50,6 +52,13 @@ function populateInputsFromQueryParams() {
     systemSceneInput.value = DEFAULT_SYSTEMSCENE;
   }
 
+  const portablesParam = queryParams.get("portables");
+  if (portablesInput && portablesParam) {
+    portablesInput.value = decodeURIComponent(portablesParam);
+  } else if (portablesInput) {
+    portablesInput.value = DEFAULT_PORTABLES;
+  }
+
   const previewParam = queryParams.get("preview");
   if (previewInput && previewParam) {
     previewInput.checked = true;
@@ -82,7 +91,7 @@ function hideHeader() {
   }
 }
 
-function showCanvas(){
+function showCanvas() {
   console.log("show canvas")
   if (canvas) canvas.style.display = "block";
   const logo = document.getElementById("loading-logo");
@@ -95,7 +104,7 @@ function showCanvas(){
  * Updates the browser URL with the current game state.
  * Called from the WASM engine to keep URL in sync.
  */
-window.set_url_params = (x, y, server, system_scene, preview) => {
+window.set_url_params = (x, y, server, system_scene, portables, preview) => {
   try {
     const urlParams = new URLSearchParams(window.location.search);
 
@@ -111,6 +120,12 @@ window.set_url_params = (x, y, server, system_scene, preview) => {
       urlParams.set("systemScene", system_scene);
     } else {
       urlParams.delete("systemScene");
+    }
+
+    if (portables != DEFAULT_PORTABLES) {
+      urlParams.set("portables", portables);
+    } else {
+      urlParams.delete("portables");
     }
 
     if (preview) {
