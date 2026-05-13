@@ -89,6 +89,22 @@ fn av_player_on_insert(
     #[cfg(feature = "livekit")]
     let (av_player, maybe_stream_viewer, maybe_audio_sink, maybe_video_sink) = query;
 
+    // `PbVideoPlayer` and `PbAudioStream` both map to `AVPlayer` and share
+    // the same ECS slot, so a defaulted/empty `PbAudioStream` update can
+    // overwrite an active video player and trigger an unwanted tear-down
+    // below. The HTML path avoids this via `has_video` in
+    // `rebuild_html_media_entities`; mirror it here: drop empty-src inserts
+    // coming from the audio-stream side (`!has_video`) when there's already
+    // a real video sink wired up.
+    if !av_player.has_video
+        && av_player.source.src.is_empty()
+        && maybe_video_sink
+            .as_ref()
+            .is_some_and(|v| !v.source.is_empty())
+    {
+        return;
+    }
+
     let equal_sink = maybe_video_sink
         .as_ref()
         .filter(|video_sink| av_player.source.src == video_sink.source)
@@ -309,6 +325,7 @@ fn rebuild_sinks(
             &ContainerEntity,
             &AVPlayer,
             Option<&VideoTextureOutput>,
+            Has<ShouldBePlaying>,
         ),
         RebuildSinkFilter,
     >,
@@ -316,7 +333,7 @@ fn rebuild_sinks(
     ipfs: Res<IpfsResource>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    for (ent, container, player, maybe_texture) in video_players.iter() {
+    for (ent, container, player, maybe_texture, has_should_be_playing) in video_players.iter() {
         trace!("Rebuilding sinks for {}.", ent);
         let mut create_image_handle = || match maybe_texture {
             None => {
@@ -375,6 +392,19 @@ fn rebuild_sinks(
             );
             (video_sink, audio_sink)
         };
+        // `OnAdd<ShouldBePlaying>` is the usual path that sends `Play` to
+        // the sinks, but it can fire BEFORE `rebuild_sinks` creates them:
+        // `av_player_should_be_playing` inserts `ShouldBePlaying` in the
+        // same schedule pass, the observer runs immediately on command
+        // flush, and at that point this system hasn't run yet — so the
+        // observer sees no sinks and silently drops the `Play`, leaving
+        // the av thread blocked on `commands.blocking_recv()` forever.
+        // Catch that here: if the entity is already supposed to be
+        // playing by the time we wire the sinks, kick them off directly.
+        if has_should_be_playing {
+            video_sink.command_sender.send(AVCommand::Play).report();
+            audio_sink.command_sender.send(AVCommand::Play).report();
+        }
         let video_output = VideoTextureOutput(video_sink.image.clone());
         commands
             .entity(ent)

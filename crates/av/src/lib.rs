@@ -71,7 +71,11 @@ use {
 pub struct AVPlayer {
     // note we reuse PbVideoPlayer for audio as well
     pub source: PbVideoPlayer,
-    #[cfg(feature = "html")]
+    /// `true` when this AVPlayer was constructed from `PbVideoPlayer`,
+    /// `false` when from `PbAudioStream`. Both proto components map to
+    /// `AVPlayer` and clobber each other in CRDT updates — observers use
+    /// this flag to distinguish so a defaulted/empty audio-stream insert
+    /// can't tear down an active video sink.
     pub has_video: bool,
 }
 
@@ -79,7 +83,6 @@ impl From<PbVideoPlayer> for AVPlayer {
     fn from(value: PbVideoPlayer) -> Self {
         Self {
             source: value,
-            #[cfg(feature = "html")]
             has_video: true,
         }
     }
@@ -94,7 +97,6 @@ impl From<PbAudioStream> for AVPlayer {
                 volume: value.volume,
                 ..Default::default()
             },
-            #[cfg(feature = "html")]
             has_video: false,
         }
     }
