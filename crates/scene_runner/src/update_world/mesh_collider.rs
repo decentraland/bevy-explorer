@@ -229,7 +229,7 @@ pub struct SceneColliderData {
 // max world-space size change (metres) before we rebuild the scaled shape
 const COLLIDER_RESCALE_SIZE: f32 = 0.01;
 // disable colliders whose largest scaled extent falls below this (metres)
-const COLLIDER_DISABLE_SIZE: f32 = 0.001;
+const COLLIDER_DISABLE_SIZE: f32 = 0.01;
 const RAYCAST_EPSILON: f64 = 0.0001;
 
 pub trait ScaleShapeExt {
