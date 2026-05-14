@@ -104,7 +104,7 @@ impl Plugin for PointerResultPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PointerTarget>()
             .init_resource::<PointerRay>()
-            .init_resource::<PointerDragTarget>()
+            .init_resource::<PointerActionTarget>()
             .init_resource::<UiPointerTarget>()
             .init_resource::<WorldPointerTarget>()
             .init_resource::<DebugPointers>()
@@ -219,9 +219,20 @@ pub fn passes_proximity_distance_check(
 #[derive(Default, Debug, Resource, Clone, PartialEq)]
 pub struct PointerTarget(pub Option<PointerTargetInfo>);
 
+/// Press-lifetime capture. Inserted on `just_down` when the winning press entity
+/// listens for `PetDrag` or `PetDragLocked`, removed on `just_up` after emitting
+/// `PetDragEnd`. `lock = true` when `PetDragLocked` is present (it overrides
+/// `PetDrag` on the same entity).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PressCapture {
+    pub info: PointerTargetInfo,
+    pub mode: ActionCandidateMode,
+    pub lock: bool,
+}
+
 #[derive(Default, Debug, Resource, Clone, PartialEq)]
-pub struct PointerDragTarget {
-    entities: HashMap<InputAction, (PointerTargetInfo, ActionCandidateMode, bool)>,
+pub struct PointerActionTarget {
+    entities: HashMap<InputAction, PressCapture>,
 }
 
 #[derive(Default, Debug, Resource, Clone, PartialEq, Eq)]
@@ -1046,6 +1057,35 @@ impl ActionCandidateMode {
     }
 }
 
+/// Action-event groupings used for per-(category, button) winner resolution.
+///
+/// Each press-driven event type belongs to one of these categories. Resolution
+/// happens per category so that a single entity wins the entire press half of
+/// the lifecycle (and a single — possibly different — entity wins the release
+/// half). This prevents one entity with `PetDown` and another with `PetDragLocked`
+/// from both being treated as winners on the same press.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ActionCategory {
+    /// `PetDown`, `PetDrag`, `PetDragLocked` — resolved on `just_down`.
+    Press,
+    /// `PetUp`, `PetDragEnd` — resolved on `just_up`. Kept separate from `Press`
+    /// so a `PetUp`-only entity doesn't outbid a `PetDown`-only candidate.
+    Release,
+}
+
+/// Maps an `event_type` to its [`ActionCategory`], or `None` for non-action
+/// event types (hover, proximity enter/leave, unknown values).
+pub fn event_category(event_type: i32) -> Option<ActionCategory> {
+    let et = action_event_type(event_type)?;
+    Some(match et {
+        PointerEventType::PetDown | PointerEventType::PetDrag | PointerEventType::PetDragLocked => {
+            ActionCategory::Press
+        }
+        PointerEventType::PetUp | PointerEventType::PetDragEnd => ActionCategory::Release,
+        _ => return None,
+    })
+}
+
 /// Tier-2 (button-driven action) event types that participate in per-bucket
 /// priority resolution. Returns the typed enum form when the i32 is one of
 /// those, else `None` (e.g. for hover/proximity enter/leave or unknown values).
@@ -1260,14 +1300,14 @@ fn send_action_event(
     consumer
 }
 
-/// Maximum `priority` across this candidate's entries that match `(ev_type,
+/// Maximum `priority` across this candidate's entries that match `(category,
 /// action)` after distance and interaction-type filtering. `None` means no entry
 /// is eligible — the candidate doesn't compete in this bucket.
 fn bucket_max_priority(
     pe: &PointerEvents,
     info: &PointerTargetInfo,
     mode: ActionCandidateMode,
-    ev_type: PointerEventType,
+    category: ActionCategory,
     action: InputAction,
 ) -> Option<u32> {
     if !info.in_scene {
@@ -1275,7 +1315,7 @@ fn bucket_max_priority(
     }
     pe.iter()
         .filter(|e| {
-            if e.event_type != ev_type as i32 {
+            if event_category(e.event_type) != Some(category) {
                 return false;
             }
             if !mode.matches_entry(e) {
@@ -1312,7 +1352,7 @@ pub fn resolve_action_winner(
     target: Option<&PointerTargetInfo>,
     proximity: &ProximityCandidates,
     pointer_requests: &Query<(Option<&SceneEntity>, Option<&ForeignPlayer>, &PointerEvents)>,
-    ev_type: PointerEventType,
+    category: ActionCategory,
     action: InputAction,
 ) -> Option<(PointerTargetInfo, ActionCandidateMode)> {
     let mut best: Option<(u32, PointerTargetInfo, ActionCandidateMode)> = None;
@@ -1338,7 +1378,7 @@ pub fn resolve_action_winner(
     if let Some(info) = target {
         if let Ok((_, _, pe)) = pointer_requests.get(info.container) {
             if let Some(prio) =
-                bucket_max_priority(pe, info, ActionCandidateMode::Cursor, ev_type, action)
+                bucket_max_priority(pe, info, ActionCandidateMode::Cursor, category, action)
             {
                 consider(info.clone(), ActionCandidateMode::Cursor, prio);
             }
@@ -1364,7 +1404,7 @@ pub fn resolve_action_winner(
                 pe,
                 &synthetic,
                 ActionCandidateMode::Proximity,
-                ev_type,
+                category,
                 action,
             ) {
                 consider(synthetic, ActionCandidateMode::Proximity, prio);
@@ -1491,7 +1531,7 @@ fn send_action_events(
     input_mgr: InputManager,
     timestamp: Res<MonotonicTimestamp<PbPointerEventsResult>>,
     time: Res<Time>,
-    mut drag_target: ResMut<PointerDragTarget>,
+    mut action_target: ResMut<PointerActionTarget>,
     mut locks: ResMut<CursorLocks>,
     player: Query<Entity, With<PrimaryUser>>,
     containing_scenes: ContainingScene,
@@ -1503,10 +1543,14 @@ fn send_action_events(
             target.0.as_ref(),
             &proximity,
             &pointer_requests,
-            PointerEventType::PetDown,
+            ActionCategory::Press,
             down,
         ) {
             Some((info, mode)) => {
+                // `send_action_event` is a no-op if the winner has no PetDown
+                // entry, so calling it unconditionally is safe — and necessary,
+                // since the press winner is now resolved per-category and may
+                // be capturing the press only for drag.
                 let consumed = send_action_event(
                     &pointer_requests,
                     &mut scenes,
@@ -1518,9 +1562,10 @@ fn send_action_events(
                     down,
                     None,
                 );
-                // Capture the winning candidate's info+mode for the lifetime of
-                // the drag (so subsequent PetDrag/Locked CRDTs fire on the same
-                // entity even if cursor / proximity state changes).
+                // Capture the press winner so subsequent PetDrag/Locked CRDTs
+                // fire on the same entity even if cursor / proximity state
+                // changes mid-drag. PetDragLocked overrides PetDrag when both
+                // are present (HashMap.insert overwrites).
                 if filtered_events(
                     &pointer_requests,
                     &info,
@@ -1532,9 +1577,14 @@ fn send_action_events(
                 .is_some()
                 {
                     debug!("added drag");
-                    drag_target
-                        .entities
-                        .insert(down, (info.clone(), mode, false));
+                    action_target.entities.insert(
+                        down,
+                        PressCapture {
+                            info: info.clone(),
+                            mode,
+                            lock: false,
+                        },
+                    );
                 }
                 if filtered_events(
                     &pointer_requests,
@@ -1547,9 +1597,14 @@ fn send_action_events(
                 .is_some()
                 {
                     debug!("added drag lock");
-                    drag_target
-                        .entities
-                        .insert(down, (info.clone(), mode, true));
+                    action_target.entities.insert(
+                        down,
+                        PressCapture {
+                            info: info.clone(),
+                            mode,
+                            lock: true,
+                        },
+                    );
                 }
                 consumed
             }
@@ -1558,12 +1613,15 @@ fn send_action_events(
         events_and_consumers.push((PointerEventType::PetDown, down, consumed_by));
     }
 
+    // Release lifecycle. The Release category covers PetUp and PetDragEnd —
+    // resolved independently from the press so a PetUp-only entity doesn't
+    // outbid a PetDown-only proximity candidate for the press itself.
     for up in input_mgr.iter_scene_just_up().map(IaToDcl::to_dcl) {
         let consumed_by = match resolve_action_winner(
             target.0.as_ref(),
             &proximity,
             &pointer_requests,
-            PointerEventType::PetUp,
+            ActionCategory::Release,
             up,
         ) {
             Some((info, mode)) => send_action_event(
@@ -1586,16 +1644,16 @@ fn send_action_events(
     let frame_delta = input_mgr.get_analog(POINTER_SET, InputPriority::Scene);
 
     let mut any_drag_lock = false;
-    for (input, (info, mode, lock)) in drag_target.entities.iter() {
+    for (input, cap) in action_target.entities.iter() {
         if frame_delta != Vec2::ZERO {
             send_action_event(
                 &pointer_requests,
                 &mut scenes,
                 &timestamp,
                 &time,
-                info,
-                *mode,
-                if *lock {
+                &cap.info,
+                cap.mode,
+                if cap.lock {
                     PointerEventType::PetDragLocked
                 } else {
                     PointerEventType::PetDrag
@@ -1604,20 +1662,20 @@ fn send_action_events(
                 Some(frame_delta),
             );
         }
-        any_drag_lock |= lock;
+        any_drag_lock |= cap.lock;
     }
 
     // send drag ends
     for up in input_mgr.iter_scene_just_up() {
         let up = up.to_dcl();
-        if let Some((info, mode, _)) = drag_target.entities.remove(&up) {
+        if let Some(cap) = action_target.entities.remove(&up) {
             send_action_event(
                 &pointer_requests,
                 &mut scenes,
                 &timestamp,
                 &time,
-                &info,
-                mode,
+                &cap.info,
+                cap.mode,
                 PointerEventType::PetDragEnd,
                 up,
                 None,
@@ -1774,9 +1832,9 @@ fn handle_proximity_stream(
         return;
     }
 
-    // Per-frame cache of `(event_type, button) → winning entity` so we resolve
-    // each bucket once even when several candidates share an event type.
-    let mut winner_cache: HashMap<(i32, i32), Option<Entity>> = HashMap::new();
+    // Per-frame cache of `(category, button) → winning entity` so we resolve
+    // each bucket once even when several candidates share a category.
+    let mut winner_cache: HashMap<(ActionCategory, InputAction), Option<Entity>> = HashMap::new();
 
     // Build current state: one ProximityEvent per in-range entity that wins at
     // least one action bucket. Tier-2 (PetUp/Down/Drag*) entries are filtered
@@ -1793,7 +1851,7 @@ fn handle_proximity_stream(
             if entry.interaction_type != Some(InteractionType::Proximity as i32) {
                 continue;
             }
-            let Some(action_event) = action_event_type(entry.event_type) else {
+            let Some(category) = event_category(entry.event_type) else {
                 continue;
             };
             let button = entry
@@ -1801,13 +1859,13 @@ fn handle_proximity_stream(
                 .as_ref()
                 .and_then(|i| i.button.map(|_| i.button()))
                 .unwrap_or(InputAction::IaAny);
-            let key = (action_event as i32, button as i32);
+            let key = (category, button);
             let winner = *winner_cache.entry(key).or_insert_with(|| {
                 resolve_action_winner(
                     target.0.as_ref(),
                     &candidates,
                     &pointer_requests,
-                    action_event,
+                    category,
                     button,
                 )
                 .map(|(info, _)| info.container)

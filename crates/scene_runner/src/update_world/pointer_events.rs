@@ -12,15 +12,15 @@ use comms::global_crdt::ForeignPlayer;
 use crate::{
     renderer_context::RendererSceneContext,
     update_scene::pointer_results::{
-        action_event_type, resolve_action_winner, ActionCandidateMode, IaToCommon, PointerTarget,
-        PointerTargetInfo, ProximityCandidates,
+        event_category, resolve_action_winner, ActionCandidateMode, ActionCategory, IaToCommon,
+        PointerTarget, PointerTargetInfo, ProximityCandidates,
     },
     SceneEntity,
 };
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::sdk::components::{
-        common::{InputAction, PointerEventType},
+        common::InputAction,
         pb_pointer_events::{Entry, Info},
         PbPointerEvents,
     },
@@ -157,14 +157,14 @@ fn hover_text(
 ) {
     let mut texts = Vec::<(String, bool)>::default();
 
-    // Collect every `(action-event-type, button)` bucket present across the
+    // Collect every `(action-category, button)` bucket present across the
     // candidate set and pre-resolve the priority winner for each. Tier-2
     // tooltips only surface on the winning entity.
-    let mut buckets: HashSet<(PointerEventType, InputAction)> = HashSet::new();
+    let mut buckets: HashSet<(ActionCategory, InputAction)> = HashSet::new();
     let mut collect_buckets = |entity: Entity| {
         if let Ok((_, _, pe)) = pointer_events.get(entity) {
             for entry in pe.iter() {
-                let Some(et) = action_event_type(entry.event_type) else {
+                let Some(category) = event_category(entry.event_type) else {
                     continue;
                 };
                 let button = entry
@@ -172,7 +172,7 @@ fn hover_text(
                     .as_ref()
                     .and_then(|i| i.button.map(|_| i.button()))
                     .unwrap_or(InputAction::IaAny);
-                buckets.insert((et, button));
+                buckets.insert((category, button));
             }
         }
     };
@@ -183,17 +183,17 @@ fn hover_text(
         collect_buckets(cand.entity);
     }
 
-    let mut winners: HashMap<(i32, i32), Option<Entity>> = HashMap::new();
-    for &(et, button) in &buckets {
+    let mut winners: HashMap<(ActionCategory, InputAction), Option<Entity>> = HashMap::new();
+    for &(category, button) in &buckets {
         let winner = resolve_action_winner(
             hover_target.0.as_ref(),
             &proximity,
             &pointer_events,
-            et,
+            category,
             button,
         )
         .map(|(info, _)| info.container);
-        winners.insert((et as i32, button as i32), winner);
+        winners.insert((category, button), winner);
     }
 
     let mut process = |entity: Entity, mode: ActionCandidateMode, info: &PointerTargetInfo| {
@@ -212,15 +212,12 @@ fn hover_text(
             };
 
             // Tier-2 entries only show on the winning entity for their bucket.
-            if let Some(action_et) = action_event_type(entry.event_type) {
+            if let Some(category) = event_category(entry.event_type) {
                 let button = event_info
                     .button
                     .map(|_| event_info.button())
                     .unwrap_or(InputAction::IaAny);
-                let winner = winners
-                    .get(&(action_et as i32, button as i32))
-                    .copied()
-                    .flatten();
+                let winner = winners.get(&(category, button)).copied().flatten();
                 if winner != Some(entity) {
                     continue;
                 }
