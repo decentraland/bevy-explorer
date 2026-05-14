@@ -180,6 +180,7 @@ impl kira::sound::streaming::Decoder for FfmpegKiraBridge {
                         );
                         std::thread::sleep(Duration::from_secs_f64(self.frame_time.max(0.1)));
                     } else {
+                        trace!("Collected {} frames.", frames.len());
                         return Ok(frames);
                     }
                 }

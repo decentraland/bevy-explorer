@@ -36,6 +36,7 @@ pub fn process_streams(
     streams: &mut [&mut dyn FfmpegContext],
     mut commands: tokio::sync::mpsc::UnboundedReceiver<AVCommand>,
 ) -> Result<(), anyhow::Error> {
+    trace!("Processing stream with {} contexts.", streams.len());
     let mut start_instant: Option<Instant> = None;
     let mut repeat = false;
     let mut init = false;
