@@ -176,9 +176,16 @@ pub fn av_thread_inner(
 
     match (video_context, audio_context) {
         (None, None) => Ok(()),
-        (None, Some(mut ac)) => process_streams(input_context, &mut [&mut ac], commands),
-        (Some(mut vc), None) => process_streams(input_context, &mut [&mut vc], commands),
+        (None, Some(mut ac)) => {
+            trace!("Processing stream with audio only");
+            process_streams(input_context, &mut [&mut ac], commands)
+        }
+        (Some(mut vc), None) => {
+            trace!("Processing stream with video only");
+            process_streams(input_context, &mut [&mut vc], commands)
+        }
         (Some(mut vc), Some(mut ac)) => {
+            trace!("Processing stream");
             process_streams(input_context, &mut [&mut vc, &mut ac], commands)
         }
     }
