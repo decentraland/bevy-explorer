@@ -169,7 +169,7 @@ pub fn av_thread_inner(
     };
 
     if video_context.is_none() && audio_context.is_none() {
-        // no data
+        debug!("No data for video from path {path}.");
     }
 
     let input_context = InputWrapper::new(input_context, path);
