@@ -343,6 +343,7 @@ fn rebuild_sinks(
             continue;
         };
 
+        let source_playing = player.source.playing.unwrap_or(true);
         let (video_sink, audio_sink) = if player.source.src.starts_with("livekit-video://") {
             // Done in observers
             continue;
@@ -354,8 +355,7 @@ fn rebuild_sinks(
             );
             debug!(
                 "spawned noop sink for scene @ {} (playing={})",
-                context.base,
-                player.source.playing.unwrap_or(true)
+                context.base, source_playing
             );
             (video_sink, audio_sink)
         } else {
@@ -370,8 +370,7 @@ fn rebuild_sinks(
             );
             debug!(
                 "spawned av thread for scene @ {} (playing={})",
-                context.base,
-                player.source.playing.unwrap_or(true)
+                context.base, source_playing
             );
             (video_sink, audio_sink)
         };
