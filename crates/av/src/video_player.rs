@@ -301,6 +301,7 @@ type RebuildSinkFilter = (
     Without<StreamViewer>,
 );
 
+#[expect(clippy::type_complexity)]
 fn rebuild_sinks(
     mut commands: Commands,
     video_players: Populated<
@@ -309,6 +310,7 @@ fn rebuild_sinks(
             &ContainerEntity,
             &AVPlayer,
             Option<&VideoTextureOutput>,
+            Has<ShouldBePlaying>,
         ),
         RebuildSinkFilter,
     >,
@@ -316,7 +318,7 @@ fn rebuild_sinks(
     ipfs: Res<IpfsResource>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    for (ent, container, player, maybe_texture) in video_players.iter() {
+    for (ent, container, player, maybe_texture, should_be_playing) in video_players.iter() {
         trace!("Rebuilding sinks for {}.", ent);
         let mut create_image_handle = || match maybe_texture {
             None => {
@@ -365,7 +367,7 @@ fn rebuild_sinks(
                 context.hash.clone(),
                 create_image_handle(),
                 player.source.volume.unwrap_or(1.0),
-                false,
+                should_be_playing && source_playing,
                 player.source.r#loop.unwrap_or(false),
             );
             debug!(
