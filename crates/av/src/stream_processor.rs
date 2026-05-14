@@ -1,8 +1,5 @@
 use anyhow::bail;
-use bevy::{
-    log::{info, trace},
-    prelude::debug,
-};
+use bevy::log::{debug, info, trace};
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::Packet;
 use std::time::{Duration, Instant};
