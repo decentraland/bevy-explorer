@@ -61,15 +61,16 @@ pub fn process_streams(
         }
 
         // ensure frame available
-        while !input_context.is_eof() && streams.iter().any(|ctx| ctx.buffered_time() == 0.0) {
+        if !input_context.is_eof() && streams.iter().any(|ctx| ctx.buffered_time() == 0.0) {
             trace!("Buffering stream");
             update_state(VideoState::VsBuffering, streams);
-
-            if let Some((stream_index, packet)) = input_context.blocking_next() {
-                for stream in streams.iter_mut() {
-                    if Some(stream_index) == stream.stream_index() {
-                        stream.receive_packet(packet)?;
-                        break; // for
+            while !input_context.is_eof() && streams.iter().any(|ctx| ctx.buffered_time() == 0.0) {
+                if let Some((stream_index, packet)) = input_context.blocking_next() {
+                    for stream in streams.iter_mut() {
+                        if Some(stream_index) == stream.stream_index() {
+                            stream.receive_packet(packet)?;
+                            break; // for
+                        }
                     }
                 }
             }
