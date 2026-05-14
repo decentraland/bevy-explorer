@@ -221,6 +221,7 @@ fn push_time_of_day_from_time_skip(
     ) % TWENTY_FOUR_HOURS;
 
     if time_skip.progress >= 1. {
+        debug!("TimeSkip has ended.");
         commands.remove_resource::<TimeSkip>();
     }
 }
@@ -237,6 +238,7 @@ fn push_time_of_day_from_running_clock(
         } else {
             time_keeper.time + TWENTY_FOUR_HOURS
         };
+        debug!("Starting a TimeSkip from {} to {}.", time_of_day.time, end);
         commands.insert_resource(TimeSkip {
             start: time_of_day.time,
             end,
@@ -251,20 +253,31 @@ fn push_time_of_day_from_running_clock(
 }
 
 fn check_new_scene_time(
-    _trigger: Trigger<OnInsert, SceneTime>,
+    trigger: Trigger<OnInsert, SceneTime>,
     mut commands: Commands,
     time_keeper: Single<&SceneTime, (With<TimeKeeper>, Without<SkyboxTime>)>,
     mut time_of_day: ResMut<TimeOfDay>,
+    time_skip: Option<Res<TimeSkip>>,
 ) {
     let scene_time = time_keeper.into_inner();
+    debug!(
+        "Received SceneTime on {} of {}.",
+        trigger.target(),
+        scene_time.time
+    );
     if (scene_time.time - time_of_day.time).abs() < ONE_HOUR {
         time_of_day.time = scene_time.time;
+        if time_skip.is_some() {
+            debug!("Stop TimeSkip since new SceneTime is already close.");
+            commands.remove_resource::<TimeSkip>();
+        }
     } else {
         let end = if scene_time.time > time_of_day.time {
             scene_time.time
         } else {
             scene_time.time + TWENTY_FOUR_HOURS
         };
+        debug!("Starting a TimeSkip from {} to {}.", time_of_day.time, end);
         commands.insert_resource(TimeSkip {
             start: time_of_day.time,
             end,
@@ -279,20 +292,24 @@ fn check_new_skybox_time(
     mut commands: Commands,
     time_keeper: Single<&SkyboxTime, With<TimeKeeper>>,
     mut time_of_day: ResMut<TimeOfDay>,
+    time_skip: Option<Res<TimeSkip>>,
 ) {
     let skybox_time = time_keeper.into_inner();
-    if (skybox_time.fixed_time as f32 - time_of_day.time).abs() < ONE_HOUR {
-        time_of_day.time = skybox_time.fixed_time as f32;
+    let new_time = skybox_time.fixed_time as f32;
+    if (new_time - time_of_day.time).abs() < ONE_HOUR {
+        time_of_day.time = new_time;
+        if time_skip.is_some() {
+            debug!("Stop TimeSkip since new SceneTime is already close.");
+            commands.remove_resource::<TimeSkip>();
+        }
     } else {
-        let end = match (
-            skybox_time.fixed_time as f32 > time_of_day.time,
-            skybox_time.transition_mode(),
-        ) {
-            (true, TransitionMode::TmForward) => skybox_time.fixed_time as f32,
-            (false, TransitionMode::TmForward) => skybox_time.fixed_time as f32 + TWENTY_FOUR_HOURS,
-            (true, TransitionMode::TmBackward) => skybox_time.fixed_time as f32 - TWENTY_FOUR_HOURS,
-            (false, TransitionMode::TmBackward) => skybox_time.fixed_time as f32,
+        let end = match (new_time > time_of_day.time, skybox_time.transition_mode()) {
+            (true, TransitionMode::TmForward) => new_time,
+            (false, TransitionMode::TmForward) => new_time + TWENTY_FOUR_HOURS,
+            (true, TransitionMode::TmBackward) => new_time - TWENTY_FOUR_HOURS,
+            (false, TransitionMode::TmBackward) => new_time,
         };
+        debug!("Starting a TimeSkip from {} to {}.", time_of_day.time, end);
         commands.insert_resource(TimeSkip {
             start: time_of_day.time,
             end,
