@@ -471,7 +471,7 @@ async fn run_one_connection(
     let headers_map: std::collections::HashMap<String, String> =
         signed_headers.into_iter().collect();
     let auth_json = serde_json::to_string(&headers_map)?;
-    info!("[social] Sending auth headers: {auth_json}");
+    debug!("[social] Sending auth headers: {auth_json}");
     ws.send(Message::Text(auth_json)).await.map_err(dbgerr)?;
 
     // Keep an Arc handle to the websocket so the keepalive task can send pings while the
@@ -498,7 +498,7 @@ async fn run_one_connection(
     let service_module_keepalive = service_module.clone();
 
     // Gather initial data: friends list (paginated)
-    info!("[social] Fetching friends list...");
+    debug!("[social] Fetching friends list...");
     let mut friends = HashMap::default();
     let mut offset = 0;
     loop {
@@ -512,7 +512,7 @@ async fn run_one_connection(
             .await
             .map_err(dbgerr)?;
 
-        info!(
+        debug!(
             "[social] get_friends(offset={offset}): got {} friends, raw response: {:?}",
             resp.friends.len(),
             resp.pagination_data
@@ -530,10 +530,10 @@ async fn run_one_connection(
             break;
         }
     }
-    info!("[social] Total friends loaded: {}", friends.len());
+    debug!("[social] Total friends loaded: {}", friends.len());
 
     // Gather initial data: received (pending) requests
-    info!("[social] Fetching pending friendship requests...");
+    debug!("[social] Fetching pending friendship requests...");
     let mut received_requests = HashMap::new();
     let pending_resp = service_module
         .get_pending_friendship_requests(GetFriendshipRequestsPayload {
@@ -544,7 +544,7 @@ async fn run_one_connection(
         })
         .await
         .map_err(dbgerr)?;
-    info!(
+    debug!(
         "[social] get_pending_friendship_requests response: {:?}",
         pending_resp.response
     );
@@ -560,13 +560,13 @@ async fn run_one_connection(
             }
         }
     }
-    info!(
+    debug!(
         "[social] Pending requests loaded: {}",
         received_requests.len()
     );
 
     // Gather initial data: sent requests
-    info!("[social] Fetching sent friendship requests...");
+    debug!("[social] Fetching sent friendship requests...");
     let mut sent_requests = HashMap::new();
     let sent_resp = service_module
         .get_sent_friendship_requests(GetFriendshipRequestsPayload {
@@ -577,7 +577,7 @@ async fn run_one_connection(
         })
         .await
         .map_err(dbgerr)?;
-    info!(
+    debug!(
         "[social] get_sent_friendship_requests response: {:?}",
         sent_resp.response
     );
@@ -593,9 +593,9 @@ async fn run_one_connection(
             }
         }
     }
-    info!("[social] Sent requests loaded: {}", sent_requests.len());
+    debug!("[social] Sent requests loaded: {}", sent_requests.len());
 
-    info!(
+    debug!(
         "[social] Init complete — friends: {}, received_requests: {}, sent_requests: {}",
         friends.len(),
         received_requests.len(),
@@ -608,20 +608,20 @@ async fn run_one_connection(
     })?;
 
     // Subscribe to friendship updates
-    info!("[social] Subscribing to friendship updates...");
+    debug!("[social] Subscribing to friendship updates...");
     let mut inbound_updates = service_module
         .subscribe_to_friendship_updates()
         .await
         .map_err(dbgerr)?;
-    info!("[social] Subscribed to friendship updates");
+    debug!("[social] Subscribed to friendship updates");
 
     // Subscribe to friend connectivity updates
-    info!("[social] Subscribing to friend connectivity updates...");
+    debug!("[social] Subscribing to friend connectivity updates...");
     let mut connectivity_updates = service_module
         .subscribe_to_friend_connectivity_updates()
         .await
         .map_err(dbgerr)?;
-    info!("[social] Subscribed to friend connectivity updates");
+    debug!("[social] Subscribed to friend connectivity updates");
 
     // Outbound: send friendship actions + handle queries
     let response_sx_write = response_sx.clone();
@@ -631,13 +631,13 @@ async fn run_one_connection(
             tokio::select! {
                 req = rx.recv() => {
                     let Some(req) = req else { return Result::<(), anyhow::Error>::Ok(()); };
-                    info!("[social] upsert_friendship request: {req:?}");
+                    debug!("[social] upsert_friendship request: {req:?}");
                     let action = req.action.clone();
                     let resp = service_module
                         .upsert_friendship(req)
                         .await
                         .map_err(|e| anyhow!("[social] upsert_friendship transport error: {e:?}"))?;
-                    info!("[social] upsert_friendship response: {resp:?}");
+                    debug!("[social] upsert_friendship response: {resp:?}");
 
                     // The server doesn't echo our own actions back via the subscription,
                     // so update local state from the RPC response.
@@ -669,7 +669,7 @@ async fn run_one_connection(
                     let Some(query) = query else { return Result::<(), anyhow::Error>::Ok(()); };
                     match query {
                         SocialQuery::GetMutualFriends { address, response } => {
-                            info!("[social] getMutualFriends request for {address}");
+                            debug!("[social] getMutualFriends request for {address}");
                             let mut all_friends = Vec::new();
                             let mut offset = 0;
                             let mut result: Result<Vec<FriendProfile>, String> = Ok(Vec::new());
@@ -693,14 +693,14 @@ async fn run_one_connection(
                                 }
                             }
                             if result.is_ok() {
-                                info!("[social] getMutualFriends: {} mutual friends", all_friends.len());
+                                debug!("[social] getMutualFriends: {} mutual friends", all_friends.len());
                                 let _ = response.send(Ok(all_friends));
                             } else {
                                 let _ = response.send(result);
                             }
                         }
                         SocialQuery::BlockUser { address, response } => {
-                            info!("[social] blockUser request for {address}");
+                            debug!("[social] blockUser request for {address}");
                             match service_module.block_user(BlockUserPayload {
                                 user: Some(User { address: address.clone() }),
                             }).await {
@@ -708,7 +708,7 @@ async fn run_one_connection(
                                     use dcl_component::proto_components::social_service::v2::block_user_response::Response;
                                     match resp.response {
                                         Some(Response::Ok(_)) => {
-                                            info!("[social] blockUser success for {address}");
+                                            debug!("[social] blockUser success for {address}");
                                             if let Some(addr) = address.as_h160() {
                                                 let _ = response_sx.send(FriendData::OwnBlock { address: addr });
                                             }
@@ -741,7 +741,7 @@ async fn run_one_connection(
                             }
                         }
                         SocialQuery::UnblockUser { address, response } => {
-                            info!("[social] unblockUser request for {address}");
+                            debug!("[social] unblockUser request for {address}");
                             match service_module.unblock_user(UnblockUserPayload {
                                 user: Some(User { address: address.clone() }),
                             }).await {
@@ -749,7 +749,7 @@ async fn run_one_connection(
                                     use dcl_component::proto_components::social_service::v2::unblock_user_response::Response;
                                     match resp.response {
                                         Some(Response::Ok(_)) => {
-                                            info!("[social] unblockUser success for {address}");
+                                            debug!("[social] unblockUser success for {address}");
                                             let _ = response.send(Ok(()));
                                         }
                                         Some(Response::InternalServerError(e)) => {
@@ -779,7 +779,7 @@ async fn run_one_connection(
                             }
                         }
                         SocialQuery::GetBlockedUsers { response } => {
-                            info!("[social] getBlockedUsers request");
+                            debug!("[social] getBlockedUsers request");
                             let mut all_profiles = Vec::new();
                             let mut offset = 0;
                             let mut result: Result<Vec<FriendProfile>, String> = Ok(Vec::new());
@@ -811,7 +811,7 @@ async fn run_one_connection(
                                 }
                             }
                             if result.is_ok() {
-                                info!("[social] getBlockedUsers: {} blocked users", all_profiles.len());
+                                debug!("[social] getBlockedUsers: {} blocked users", all_profiles.len());
                                 let _ = response.send(Ok(all_profiles));
                             } else {
                                 let _ = response.send(result);
@@ -828,7 +828,7 @@ async fn run_one_connection(
     let sx_friendship = response_sx.clone();
     let f_service_read = async move {
         while let Some(update) = inbound_updates.next().await {
-            info!("[social] Received friendship update: {update:?}");
+            debug!("[social] Received friendship update: {update:?}");
             if let Some(ev) = update.update {
                 sx_friendship
                     .send(FriendData::FriendshipEvent(ev))
@@ -843,7 +843,7 @@ async fn run_one_connection(
     let sx_connectivity = response_sx.clone();
     let f_connectivity_read = async move {
         while let Some(update) = connectivity_updates.next().await {
-            info!("[social] Received connectivity update: {update:?}");
+            debug!("[social] Received connectivity update: {update:?}");
             if let Some(friend) = &update.friend {
                 if let Some(address) = friend.address.as_h160() {
                     let status = match update.status {

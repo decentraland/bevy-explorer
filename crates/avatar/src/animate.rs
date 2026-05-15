@@ -871,7 +871,7 @@ fn play_current_emote(
                                     || name.starts_with("m_mask_")
                                 {
                                     commands.entity(spawned_ent).try_insert(Visibility::Hidden);
-                                    warn!("hiding emote prop `{name}` due to name");
+                                    debug!("hiding emote prop `{name}` due to name");
                                 }
                             }
 
