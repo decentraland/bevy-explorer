@@ -607,7 +607,7 @@ fn rebuild_html_media_entities<T: AVPlayer>(
 
             commands.entity(ent).try_insert((video, video_output));
         } else {
-            let mut audio = HtmlMediaEntity::new_audio(&source, player.source().to_owned());
+            let mut audio = HtmlMediaEntity::new_audio(&source, source_url.to_owned());
             let audio_volume = player.volume();
             audio.set_loop(player.r#loop());
             audio.set_volume(audio_volume * scene_volume);
