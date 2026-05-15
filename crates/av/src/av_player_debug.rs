@@ -14,7 +14,7 @@ use comms::livekit::participant::StreamViewer;
 
 #[cfg(feature = "ffmpeg")]
 use crate::{audio_sink::AudioSink, video_stream::VideoSink};
-use crate::{AVPlayer, InScene, ShouldBePlaying};
+use crate::{AVPlayer, InScene, ShouldBePlaying, VideoPlayer};
 
 const DEFAULT_FONT: TextFont = TextFont {
     font: Handle::Weak(AssetId::Uuid {
@@ -31,9 +31,9 @@ impl Plugin for AvPlayerDebugPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_av_player_debug_ui);
         app.add_systems(Update, check_button_press);
-        app.add_observer(av_player_on_add);
-        app.add_observer(av_player_on_remove);
-        app.add_observer(av_player_on_insert);
+        app.add_observer(av_player_on_add::<VideoPlayer>);
+        app.add_observer(av_player_on_remove::<VideoPlayer>);
+        app.add_observer(av_player_on_insert::<VideoPlayer>);
         #[cfg(feature = "ffmpeg")]
         {
             app.add_observer(on_add_column::<AudioSink, AudioSinkColumn>);
@@ -214,12 +214,12 @@ fn check_button_press(
     }
 }
 
-fn av_player_on_add(
-    trigger: Trigger<OnAdd, AVPlayer>,
+fn av_player_on_add<T: AVPlayer>(
+    trigger: Trigger<OnAdd, T>,
     mut commands: Commands,
     av_player_debug_ui: Single<(Entity, &Children), With<AvPlayerDebugUi>>,
     av_player_columns: Query<&Node, With<AvPlayerColumn>>,
-    av_players: Query<&AVPlayer>,
+    av_players: Query<&T>,
 ) {
     let entity = trigger.target();
     let (av_player_debug_ui_entity, children) = av_player_debug_ui.into_inner();
@@ -240,7 +240,7 @@ fn av_player_on_add(
                 next_row,
                 entity,
                 (
-                    &av_player.source.src,
+                    av_player.source(),
                     #[cfg(feature = "ffmpeg")]
                     "No",
                     #[cfg(feature = "ffmpeg")]
@@ -256,8 +256,8 @@ fn av_player_on_add(
         });
 }
 
-fn av_player_on_remove(
-    trigger: Trigger<OnRemove, AVPlayer>,
+fn av_player_on_remove<T: AVPlayer>(
+    trigger: Trigger<OnRemove, T>,
     mut commands: Commands,
     av_player_debug_ui: Single<&Children, With<AvPlayerDebugUi>>,
     nodes: Query<&mut Node, AnyColumn>,
@@ -298,10 +298,10 @@ fn av_player_on_remove(
     }
 }
 
-fn av_player_on_insert(
-    trigger: Trigger<OnInsert, AVPlayer>,
+fn av_player_on_insert<T: AVPlayer>(
+    trigger: Trigger<OnInsert, T>,
     mut commands: Commands,
-    av_players: Query<&AVPlayer>,
+    av_players: Query<&T>,
     av_player_references: Query<(Entity, &AvPlayerRef), With<AvPlayerColumn>>,
 ) {
     let entity = trigger.target();
@@ -322,10 +322,11 @@ fn av_player_on_insert(
     };
 
     commands.entity(node).despawn_related::<Children>();
-    let av_player_name = if av_player.source.src.len() >= 32 {
-        &av_player.source.src[..32]
+    let source = av_player.source();
+    let av_player_name = if source.len() >= 32 {
+        &source[..32]
     } else {
-        &av_player.source.src
+        source
     };
     commands.spawn((
         Text::new(av_player_name),

@@ -34,7 +34,7 @@ use crate::{
     stream_processor::AVCommand,
     video_context::{VideoData, VideoInfo},
     video_stream::{av_sinks, noop_sinks, VideoSink},
-    AVPlayer, InScene, ShouldBePlaying,
+    AVPlayer, AudioStream, InScene, ShouldBePlaying, VideoPlayer,
 };
 
 pub struct VideoPlayerPlugin;
@@ -45,14 +45,16 @@ impl Plugin for VideoPlayerPlugin {
         app.add_systems(Update, play_videos.before(update_materials));
         app.add_systems(
             Update,
-            rebuild_sinks
+            (rebuild_sinks::<AudioStream>, rebuild_sinks::<VideoPlayer>)
                 .after(play_videos)
-                .after(av_player_should_be_playing)
+                .after(av_player_should_be_playing::<VideoPlayer>)
                 .in_set(SceneSets::PostLoop),
         );
 
-        app.add_observer(av_player_on_insert);
-        app.add_observer(av_player_on_remove);
+        app.add_observer(av_player_on_insert::<AudioStream>);
+        app.add_observer(av_player_on_insert::<VideoPlayer>);
+        app.add_observer(av_player_on_remove::<AudioStream>);
+        app.add_observer(av_player_on_remove::<VideoPlayer>);
         app.add_observer(av_player_should_be_playing_on_add);
         app.add_observer(av_player_should_be_playing_on_remove);
         #[cfg(feature = "livekit")]
@@ -66,19 +68,19 @@ fn init_ffmpeg() {
 }
 
 #[cfg(not(feature = "livekit"))]
-type AVPlayerOnInsertQuery<'a> = (&'a AVPlayer, Option<&'a AudioSink>, Option<&'a VideoSink>);
+type AVPlayerOnInsertQuery<'a, T> = (&'a T, Option<&'a AudioSink>, Option<&'a VideoSink>);
 #[cfg(feature = "livekit")]
-type AVPlayerOnInsertQuery<'a> = (
-    &'a AVPlayer,
+type AVPlayerOnInsertQuery<'a, T> = (
+    &'a T,
     Option<&'a StreamViewer>,
     Option<&'a AudioSink>,
     Option<&'a VideoSink>,
 );
 
-fn av_player_on_insert(
-    trigger: Trigger<OnInsert, AVPlayer>,
+fn av_player_on_insert<T: AVPlayer>(
+    trigger: Trigger<OnInsert, T>,
     mut commands: Commands,
-    av_players: Query<AVPlayerOnInsertQuery>,
+    av_players: Query<AVPlayerOnInsertQuery<T>>,
 ) {
     let entity = trigger.target();
     let Ok(query) = av_players.get(entity) else {
@@ -89,18 +91,18 @@ fn av_player_on_insert(
     #[cfg(feature = "livekit")]
     let (av_player, maybe_stream_viewer, maybe_audio_sink, maybe_video_sink) = query;
 
+    let source = av_player.source();
     let equal_sink = maybe_video_sink
         .as_ref()
-        .filter(|video_sink| av_player.source.src == video_sink.source)
+        .filter(|video_sink| source == video_sink.source)
         .is_some();
-    let livekit_stream = av_player.source.src.starts_with("livekit-video://");
-    if !av_player.source.src.is_empty() && (equal_sink || livekit_stream) {
+    let livekit_stream = source.starts_with("livekit-video://");
+    if !source.is_empty() && (equal_sink || livekit_stream) {
         if livekit_stream {
             #[cfg(feature = "livekit")]
             if let Some(stream_viewer) = maybe_stream_viewer {
                 debug!("Updating volume of stream.");
-                commands
-                    .trigger_targets(ChangeVolume(av_player.source.volume()), stream_viewer.get());
+                commands.trigger_targets(ChangeVolume(av_player.volume()), stream_viewer.get());
             }
         } else {
             debug!("Updating sinks of {entity}.");
@@ -109,14 +111,14 @@ fn av_player_on_insert(
             if let Some(video_sink) = maybe_video_sink {
                 video_sink
                     .command_sender
-                    .send(AVCommand::Repeat(av_player.source.r#loop.unwrap_or(false)))
+                    .send(AVCommand::Repeat(av_player.r#loop()))
                     .report();
                 video_sink.command_sender.send(AVCommand::Pause).report();
             }
             if let Some(audio_sink) = maybe_audio_sink {
                 commands.trigger_targets(
                     ChangeAudioSinkVolume {
-                        volume: av_player.source.volume.unwrap_or(1.),
+                        volume: av_player.volume(),
                     },
                     entity,
                 );
@@ -133,7 +135,7 @@ fn av_player_on_insert(
         if let Some(audio_sink) = maybe_audio_sink {
             audio_sink.command_sender.send(AVCommand::Dispose).report();
         }
-        debug!("{entity:?} has {}.", av_player.source.src);
+        debug!("{entity:?} has {}.", av_player.source());
         commands
             .entity(entity)
             .try_remove::<(AudioSink, VideoSink, ShouldBePlaying)>();
@@ -142,7 +144,7 @@ fn av_player_on_insert(
     }
 }
 
-fn av_player_on_remove(trigger: Trigger<OnRemove, AVPlayer>, mut commands: Commands) {
+fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands: Commands) {
     let entity = trigger.target();
     commands.entity(entity).try_remove::<(
         InScene,
@@ -302,13 +304,13 @@ type RebuildSinkFilter = (
 );
 
 #[expect(clippy::type_complexity)]
-fn rebuild_sinks(
+fn rebuild_sinks<T: AVPlayer>(
     mut commands: Commands,
     video_players: Populated<
         (
             Entity,
             &ContainerEntity,
-            &AVPlayer,
+            &T,
             Option<&VideoTextureOutput>,
             Has<ShouldBePlaying>,
         ),
@@ -345,16 +347,14 @@ fn rebuild_sinks(
             continue;
         };
 
-        let source_playing = player.source.playing.unwrap_or(true);
-        let (video_sink, audio_sink) = if player.source.src.starts_with("livekit-video://") {
+        let source = player.source();
+        let source_playing = player.playing();
+        let (video_sink, audio_sink) = if source.starts_with("livekit-video://") {
             // Done in observers
             continue;
-        } else if player.source.src.is_empty() {
-            let (video_sink, audio_sink) = noop_sinks(
-                player.source.src.clone(),
-                create_image_handle(),
-                player.source.volume.unwrap_or(1.0),
-            );
+        } else if source.is_empty() {
+            let (video_sink, audio_sink) =
+                noop_sinks(source.to_owned(), create_image_handle(), player.volume());
             debug!(
                 "spawned noop sink for scene @ {} (playing={})",
                 context.base, source_playing
@@ -363,12 +363,12 @@ fn rebuild_sinks(
         } else {
             let (video_sink, audio_sink) = av_sinks(
                 ipfs.clone(),
-                player.source.src.clone(),
+                source.to_owned(),
                 context.hash.clone(),
                 create_image_handle(),
-                player.source.volume.unwrap_or(1.0),
+                player.volume(),
                 should_be_playing && source_playing,
-                player.source.r#loop.unwrap_or(false),
+                player.r#loop(),
             );
             debug!(
                 "spawned av thread for scene @ {} (playing={})",

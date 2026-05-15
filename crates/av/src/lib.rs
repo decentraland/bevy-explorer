@@ -66,37 +66,79 @@ use {
     scene_runner::renderer_context::RendererSceneContext,
 };
 
-#[derive(Component, Debug)]
-#[component(immutable)]
-pub struct AVPlayer {
-    // note we reuse PbVideoPlayer for audio as well
-    pub source: PbVideoPlayer,
+pub trait AVPlayer: Component {
+    fn source(&self) -> &str;
+    fn playing(&self) -> bool;
+    fn volume(&self) -> f32;
+    fn r#loop(&self) -> bool;
+
     #[cfg(feature = "html")]
-    pub has_video: bool,
+    fn has_video() -> bool;
 }
 
-impl From<PbVideoPlayer> for AVPlayer {
-    fn from(value: PbVideoPlayer) -> Self {
-        Self {
-            source: value,
-            #[cfg(feature = "html")]
-            has_video: true,
-        }
+#[derive(Component, Deref)]
+#[component(immutable)]
+pub struct AudioStream(PbAudioStream);
+
+impl From<PbAudioStream> for AudioStream {
+    fn from(value: PbAudioStream) -> Self {
+        Self(value)
     }
 }
 
-impl From<PbAudioStream> for AVPlayer {
-    fn from(value: PbAudioStream) -> Self {
-        Self {
-            source: PbVideoPlayer {
-                src: value.url,
-                playing: value.playing,
-                volume: value.volume,
-                ..Default::default()
-            },
-            #[cfg(feature = "html")]
-            has_video: false,
-        }
+impl AVPlayer for AudioStream {
+    fn source(&self) -> &str {
+        &self.url
+    }
+
+    fn playing(&self) -> bool {
+        self.playing.unwrap_or(true)
+    }
+
+    fn volume(&self) -> f32 {
+        self.volume.unwrap_or(1.)
+    }
+
+    fn r#loop(&self) -> bool {
+        false
+    }
+
+    #[cfg(feature = "html")]
+    fn has_video() -> bool {
+        false
+    }
+}
+
+#[derive(Component, Deref)]
+#[component(immutable)]
+pub struct VideoPlayer(PbVideoPlayer);
+
+impl From<PbVideoPlayer> for VideoPlayer {
+    fn from(value: PbVideoPlayer) -> Self {
+        Self(value)
+    }
+}
+
+impl AVPlayer for VideoPlayer {
+    fn source(&self) -> &str {
+        &self.src
+    }
+
+    fn playing(&self) -> bool {
+        self.playing.unwrap_or(true)
+    }
+
+    fn volume(&self) -> f32 {
+        self.volume.unwrap_or(1.)
+    }
+
+    fn r#loop(&self) -> bool {
+        self.r#loop.unwrap_or(false)
+    }
+
+    #[cfg(feature = "html")]
+    fn has_video() -> bool {
+        true
     }
 }
 
@@ -118,12 +160,12 @@ impl Plugin for AVPlayerPlugin {
         app.add_plugins(AudioSourcePlugin);
         app.add_plugins(AudioSourcePluginImpl);
 
-        app.add_crdt_lww_component::<PbVideoPlayer, AVPlayer>(
-            SceneComponentId::VIDEO_PLAYER,
+        app.add_crdt_lww_component::<PbAudioStream, AudioStream>(
+            SceneComponentId::AUDIO_STREAM,
             ComponentPosition::EntityOnly,
         );
-        app.add_crdt_lww_component::<PbAudioStream, AVPlayer>(
-            SceneComponentId::AUDIO_STREAM,
+        app.add_crdt_lww_component::<PbVideoPlayer, VideoPlayer>(
+            SceneComponentId::VIDEO_PLAYER,
             ComponentPosition::EntityOnly,
         );
 
@@ -134,7 +176,13 @@ impl Plugin for AVPlayerPlugin {
         );
         app.add_systems(
             Update,
-            (av_player_is_in_scene, av_player_should_be_playing)
+            (
+                (
+                    av_player_is_in_scene::<AudioStream>,
+                    av_player_is_in_scene::<VideoPlayer>,
+                ),
+                av_player_should_be_playing::<VideoPlayer>,
+            )
                 .chain()
                 .in_set(SceneSets::PostLoop),
         );
@@ -143,9 +191,9 @@ impl Plugin for AVPlayerPlugin {
         app.add_observer(audio_sink::change_audio_sink_volume);
         #[cfg(feature = "livekit")]
         {
-            app.add_observer(stream_should_be_played);
-            app.add_observer(stream_shouldnt_be_played);
-            app.add_observer(streamer_joined);
+            app.add_observer(stream_should_be_played::<VideoPlayer>);
+            app.add_observer(stream_shouldnt_be_played::<VideoPlayer>);
+            app.add_observer(streamer_joined::<VideoPlayer>);
         }
 
         #[cfg(feature = "av_player_debug")]
@@ -153,9 +201,9 @@ impl Plugin for AVPlayerPlugin {
     }
 }
 
-fn av_player_is_in_scene(
+fn av_player_is_in_scene<T: AVPlayer>(
     mut commands: Commands,
-    av_players: Query<(Entity, &ContainerEntity, &AVPlayer, Has<InScene>)>,
+    av_players: Query<(Entity, &ContainerEntity, &T, Has<InScene>)>,
     user: Query<&GlobalTransform, With<PrimaryUser>>,
     containing_scene: ContainingScene,
 ) {
@@ -167,7 +215,7 @@ fn av_player_is_in_scene(
 
     for (ent, container, _, has_in_scene) in av_players
         .iter()
-        .filter(|(_, _, player, _)| player.source.playing.unwrap_or(true))
+        .filter(|(_, _, av_player, _)| av_player.playing())
     {
         let contained = containing_scenes.contains(&container.root);
         if contained && !has_in_scene {
@@ -181,11 +229,11 @@ fn av_player_is_in_scene(
 }
 
 #[expect(clippy::type_complexity, reason = "Queries are complex")]
-fn av_player_should_be_playing(
+fn av_player_should_be_playing<T: AVPlayer>(
     mut commands: Commands,
     av_players: Query<(
         Entity,
-        &AVPlayer,
+        &T,
         Has<InScene>,
         Has<ShouldBePlaying>,
         &GlobalTransform,
@@ -197,9 +245,9 @@ fn av_player_should_be_playing(
         .iter()
         .filter_map(
             |(ent, player, has_in_scene, has_should_be_playing, transform)| {
-                if player.source.playing.unwrap_or(true) {
+                if player.playing() {
                     let distance =
-                        if !has_in_scene && player.source.src.starts_with("livekit-video://") {
+                        if !has_in_scene && player.source().starts_with("livekit-video://") {
                             f32::MAX
                         } else {
                             transform.translation().distance(user.translation())
@@ -240,10 +288,10 @@ fn av_player_should_be_playing(
 }
 
 #[cfg(feature = "livekit")]
-fn stream_should_be_played(
+fn stream_should_be_played<T: AVPlayer>(
     trigger: Trigger<OnAdd, ShouldBePlaying>,
     mut commands: Commands,
-    av_players: Query<(&AVPlayer, &ContainerEntity)>,
+    av_players: Query<(&T, &ContainerEntity)>,
     streamer: Single<Entity, With<Streamer>>,
     mut scenes: Query<&mut RendererSceneContext>,
     frame: Res<FrameCount>,
@@ -254,7 +302,7 @@ fn stream_should_be_played(
         return;
     };
 
-    if av_player.source.src.starts_with("livekit-video://") {
+    if av_player.source().starts_with("livekit-video://") {
         debug!("AVPlayer {entity} should be playing. Linking to the stream.");
         commands
             .entity(entity)
@@ -278,11 +326,11 @@ fn stream_should_be_played(
 }
 
 #[cfg(feature = "livekit")]
-fn stream_shouldnt_be_played(
+fn stream_shouldnt_be_played<T: AVPlayer>(
     trigger: Trigger<OnRemove, ShouldBePlaying>,
     mut commands: Commands,
-    av_players: Query<(&AVPlayer, &ContainerEntity, Has<StreamViewer>)>,
-    mut removed_av_players: RemovedComponents<AVPlayer>,
+    av_players: Query<(&T, &ContainerEntity, Has<StreamViewer>)>,
+    mut removed_av_players: RemovedComponents<T>,
     mut scenes: Query<&mut RendererSceneContext>,
     frame: Res<FrameCount>,
 ) {
@@ -299,7 +347,7 @@ fn stream_shouldnt_be_played(
         return;
     }
 
-    if av_player.source.src.starts_with("livekit-video://") {
+    if av_player.source().starts_with("livekit-video://") {
         debug!("AVPlayer {entity} no longer playing. Unlinking to the stream.");
         commands.entity(entity).try_remove::<StreamViewer>();
     }
@@ -321,10 +369,10 @@ fn stream_shouldnt_be_played(
 }
 
 #[cfg(feature = "livekit")]
-fn streamer_joined(
+fn streamer_joined<T: AVPlayer>(
     trigger: Trigger<OnAdd, Streamer>,
     mut commands: Commands,
-    av_players: Query<(Entity, &AVPlayer, &ContainerEntity), With<ShouldBePlaying>>,
+    av_players: Query<(Entity, &T, &ContainerEntity), With<ShouldBePlaying>>,
     mut scenes: Query<&mut RendererSceneContext>,
     frame: Res<FrameCount>,
 ) {
@@ -332,7 +380,7 @@ fn streamer_joined(
     debug!("Streamer {entity} has connected. Linking to AVPlayers in range.");
 
     for (av_player_entity, av_player, container_entity) in av_players {
-        if av_player.source.src.starts_with("livekit-video://") {
+        if av_player.source().starts_with("livekit-video://") {
             commands
                 .entity(av_player_entity)
                 .try_insert(<StreamViewer as Relationship>::from(entity));
