@@ -109,9 +109,14 @@ pub fn engine_run(
 ) {
     init_runtime();
 
+    let default_filter = "symphonia=warn";
+    let filter = match std::option_env!("RUST_LOG") {
+        Some(env) if !env.is_empty() => format!("{default_filter},{env}"),
+        _ => default_filter.to_string(),
+    };
     let decentraland_app = DecentralandApp::new(LogPlugin {
         level: Level::INFO,
-        filter: std::option_env!("RUST_LOG").unwrap_or("").to_string(),
+        filter,
         custom_layer: |_| None,
     });
 
@@ -383,7 +388,7 @@ fn decentraland_app_arguments(
         no_avatar: false,
         no_gltf: false,
         no_fog: false,
-        log_fps: Some(true),
+        log_fps: Some(false),
         inspect: None,
         test_mode: false,
         test_scenes: None,

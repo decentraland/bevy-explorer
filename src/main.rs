@@ -18,7 +18,8 @@ fn main() {
     create_log_files();
 
     let decentraland_app = DecentralandApp::new(LogPlugin {
-        filter: "wgpu=error,naga=error,bevy_animation=error,matrix=error".to_string(),
+        filter: "wgpu=error,naga=error,bevy_animation=error,matrix=error,symphonia=warn"
+            .to_string(),
         custom_layer: move |_| {
             let (non_blocking, guard) = tracing_appender::non_blocking(
                 File::options()

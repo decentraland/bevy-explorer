@@ -157,6 +157,10 @@ pub async fn load_imposter(
     required_crc: Option<u32>,
     download: bool,
 ) -> Option<BakedScene> {
+    if required_crc.is_some_and(|crc| crc == 0) {
+        return None;
+    }
+
     // try locally
     if let Some(imposter) = load_imposter_local(&ipfs, &id, parcel, level, required_crc).await {
         return Some(imposter);

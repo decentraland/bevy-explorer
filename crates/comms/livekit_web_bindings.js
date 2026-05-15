@@ -512,7 +512,7 @@ function track_rig_drop(remote_track) {
  * @param {float} volume 
  */
 export function remote_track_pan_and_volume(remote_track, pan, volume) {
-    log(`Setting pan and volume for track ${remote_track.sid}.`);
+    // log(`Setting pan and volume for track ${remote_track.sid}.`);
     const track_rig = remote_track.trackRig;
     // Pan value should be between -1 (left) and 1 (right)
     track_rig.pannerNode.pan.value = Math.max(-1, Math.min(1, pan));
