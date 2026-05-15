@@ -45,6 +45,7 @@ impl Plugin for SocialPlugin {
         app.add_event::<ConnectivityEvent>();
         app.add_event::<DirectChatEvent>();
         app.init_resource::<SocialClient>();
+        app.init_resource::<SocialConsumerRequested>();
         app.add_systems(PostUpdate, |mut client: ResMut<SocialClient>| {
             if let Some(client) = client.0.as_mut() {
                 client.update();
@@ -71,6 +72,34 @@ impl Plugin for SocialPlugin {
             );
         }
     }
+}
+
+/// Sticky flag: flipped to true the first time a scene asks for anything social
+/// via [`SystemApi`]. Gates [`init_social_client`] so the social client is not
+/// connected for scenes that never use the friends API.
+#[derive(Resource, Default)]
+struct SocialConsumerRequested(bool);
+
+fn is_social_consumer_request(event: &SystemApi) -> bool {
+    matches!(
+        event,
+        SystemApi::GetFriends(_)
+            | SystemApi::GetSentFriendRequests(_)
+            | SystemApi::GetReceivedFriendRequests(_)
+            | SystemApi::GetSocialInitialized(_)
+            | SystemApi::SendFriendRequest(_, _, _)
+            | SystemApi::AcceptFriendRequest(_, _)
+            | SystemApi::RejectFriendRequest(_, _)
+            | SystemApi::CancelFriendRequest(_, _)
+            | SystemApi::DeleteFriend(_, _)
+            | SystemApi::GetFriendshipEventStream(_)
+            | SystemApi::GetMutualFriends(_, _)
+            | SystemApi::GetOnlineFriends(_)
+            | SystemApi::GetFriendConnectivityStream(_)
+            | SystemApi::BlockUser(_, _)
+            | SystemApi::UnblockUser(_, _)
+            | SystemApi::GetBlockedUsers(_)
+    )
 }
 
 #[cfg(feature = "social")]
@@ -179,9 +208,18 @@ fn init_social_client(
     mut chats: Local<Option<UnboundedReceiver<DirectChatEvent>>>,
     social_runtime: Res<runtime::SocialRuntime>,
     mut restart: ResMut<RestartSocialRequested>,
+    mut consumer_requested: ResMut<SocialConsumerRequested>,
+    mut system_api_events: EventReader<SystemApi>,
 ) {
+    for event in system_api_events.read() {
+        if is_social_consumer_request(event) {
+            consumer_requested.0 = true;
+        }
+    }
+
     let restart_requested = std::mem::take(&mut restart.0);
-    if (wallet.is_changed() || restart_requested) && wallet.address().is_some() {
+    let reconnect_signal = wallet.is_changed() || restart_requested || social.0.is_none();
+    if reconnect_signal && consumer_requested.0 && wallet.address().is_some() {
         // Drop the old handler (and its event channels) before opening a new
         // connection so the old async task observes its channels closed and tears
         // down its WS, rather than overlapping with the new one.
@@ -219,6 +257,7 @@ fn init_social_client(
 }
 
 #[cfg(not(feature = "social"))]
+#[allow(clippy::too_many_arguments)]
 fn init_social_client(
     mut commands: Commands,
     wallet: Res<Wallet>,
@@ -226,8 +265,17 @@ fn init_social_client(
     mut friends: Local<Option<UnboundedReceiver<FriendshipEvent>>>,
     mut connectivity: Local<Option<UnboundedReceiver<ConnectivityEvent>>>,
     mut chats: Local<Option<UnboundedReceiver<DirectChatEvent>>>,
+    mut consumer_requested: ResMut<SocialConsumerRequested>,
+    mut system_api_events: EventReader<SystemApi>,
 ) {
-    if wallet.is_changed() && wallet.address().is_some() {
+    for event in system_api_events.read() {
+        if is_social_consumer_request(event) {
+            consumer_requested.0 = true;
+        }
+    }
+
+    let reconnect_signal = wallet.is_changed() || social.0.is_none();
+    if reconnect_signal && consumer_requested.0 && wallet.address().is_some() {
         let (f_sx, f_rx) = unbounded_channel();
         let (conn_sx, conn_rx) = unbounded_channel();
         let (c_sx, c_rx) = unbounded_channel();
