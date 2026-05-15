@@ -84,9 +84,9 @@ impl Plugin for VideoPlayerPlugin {
             (
                 (
                     rebuild_html_media_entities::<AudioStream>
-                    .before(av_player_is_in_scene::<AudioStream>),
+                        .before(av_player_is_in_scene::<AudioStream>),
                     rebuild_html_media_entities::<VideoPlayer>
-                    .before(av_player_is_in_scene::<VideoPlayer>),
+                        .before(av_player_is_in_scene::<VideoPlayer>),
                 ),
                 (
                     update_av_players::<AudioStream>,
