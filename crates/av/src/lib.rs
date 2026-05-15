@@ -181,7 +181,10 @@ impl Plugin for AVPlayerPlugin {
                     av_player_is_in_scene::<AudioStream>,
                     av_player_is_in_scene::<VideoPlayer>,
                 ),
-                av_player_should_be_playing::<VideoPlayer>,
+                (
+                    audio_stream_should_be_playing,
+                    video_player_should_be_playing,
+                ),
             )
                 .chain()
                 .in_set(SceneSets::PostLoop),
@@ -229,11 +232,29 @@ fn av_player_is_in_scene<T: AVPlayer>(
 }
 
 #[expect(clippy::type_complexity, reason = "Queries are complex")]
-fn av_player_should_be_playing<T: AVPlayer>(
+fn audio_stream_should_be_playing(
+    mut commands: Commands,
+    av_players: Query<(Entity, &AudioStream, Has<InScene>, Has<ShouldBePlaying>)>,
+) {
+    for (entity, audio_stream, in_scene, should_be_playing) in av_players {
+        match (in_scene, should_be_playing, audio_stream.playing()) {
+            (false, true, _) | (_, true, false) => {
+                commands.entity(entity).try_remove::<ShouldBePlaying>();
+            }
+            (true, false, true) => {
+                commands.entity(entity).try_insert(ShouldBePlaying);
+            }
+            _ => (),
+        }
+    }
+}
+
+#[expect(clippy::type_complexity, reason = "Queries are complex")]
+fn video_player_should_be_playing(
     mut commands: Commands,
     av_players: Query<(
         Entity,
-        &T,
+        &VideoPlayer,
         Has<InScene>,
         Has<ShouldBePlaying>,
         &GlobalTransform,

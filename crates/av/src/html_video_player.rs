@@ -45,8 +45,8 @@ use {
 };
 
 use crate::{
-    av_player_is_in_scene, av_player_should_be_playing, AVPlayer, AudioStream, InScene,
-    ShouldBePlaying, VideoPlayer,
+    audio_stream_should_be_playing, av_player_is_in_scene, video_player_should_be_playing,
+    AVPlayer, AudioStream, InScene, ShouldBePlaying, VideoPlayer,
 };
 
 type RcClosure = Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>>;
@@ -89,11 +89,10 @@ impl Plugin for VideoPlayerPlugin {
                         .before(av_player_is_in_scene::<VideoPlayer>),
                 ),
                 (
-                    update_av_players::<AudioStream>,
-                    update_av_players::<VideoPlayer>,
+                    update_av_players::<AudioStream>.after(audio_stream_should_be_playing),
+                    update_av_players::<VideoPlayer>.after(video_player_should_be_playing),
                 )
-                    .before(update_materials)
-                    .after(av_player_should_be_playing::<VideoPlayer>),
+                    .before(update_materials),
             )
                 .chain()
                 .in_set(SceneSets::PostLoop),

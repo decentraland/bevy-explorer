@@ -30,9 +30,10 @@ use {
 
 use crate::{
     audio_sink::{AudioSink, ChangeAudioSinkVolume},
-    av_player_should_be_playing,
+    audio_stream_should_be_playing,
     stream_processor::AVCommand,
     video_context::{VideoData, VideoInfo},
+    video_player_should_be_playing,
     video_stream::{av_sinks, noop_sinks, VideoSink},
     AVPlayer, AudioStream, InScene, ShouldBePlaying, VideoPlayer,
 };
@@ -45,9 +46,11 @@ impl Plugin for VideoPlayerPlugin {
         app.add_systems(Update, play_videos.before(update_materials));
         app.add_systems(
             Update,
-            (rebuild_sinks::<AudioStream>, rebuild_sinks::<VideoPlayer>)
+            (
+                rebuild_sinks::<AudioStream>.after(audio_stream_should_be_playing),
+                rebuild_sinks::<VideoPlayer>.after(video_player_should_be_playing),
+            )
                 .after(play_videos)
-                .after(av_player_should_be_playing::<VideoPlayer>)
                 .in_set(SceneSets::PostLoop),
         );
 
