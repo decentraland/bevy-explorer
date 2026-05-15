@@ -213,7 +213,7 @@ pub struct SceneRunnerPlugin;
 pub struct SceneLoopSchedule {
     schedule: Schedule,
     run_time: f64,
-    prev_time: Instant,
+    prev_loop_end: Instant,
     #[cfg(not(target_arch = "wasm32"))]
     sleeper: SpinSleeper,
 }
@@ -302,7 +302,7 @@ impl Plugin for SceneRunnerPlugin {
 
         app.insert_resource(SceneLoopSchedule {
             schedule: scene_schedule,
-            prev_time: Instant::now(),
+            prev_loop_end: Instant::now(),
             run_time: 0.01,
             #[cfg(not(target_arch = "wasm32"))]
             sleeper: SpinSleeper::default(),
@@ -355,21 +355,17 @@ fn run_scene_loop(world: &mut World) {
         Duration::from_nanos((1e9 / fps) as u64)
     };
     let start_loop_time = Instant::now();
-    let frame_actual_duration = start_loop_time
-        .checked_duration_since(loop_schedule.prev_time)
+    let non_loop_duration = start_loop_time
+        .checked_duration_since(loop_schedule.prev_loop_end)
         .unwrap_or_default();
-    let non_loop_duration = frame_actual_duration
-        .checked_sub(Duration::from_secs_f64(loop_schedule.run_time))
-        .unwrap_or_default();
-    let ideal_loop_time_prev_frame = frame_target_duration
+    let ideal_loop_time = frame_target_duration
         .checked_sub(non_loop_duration)
         .unwrap_or_default()
-        .max(Duration::from_millis(1));
-    let ideal_loop_time_prev_frame = ideal_loop_time_prev_frame.as_secs_f64();
-    loop_schedule.run_time = loop_schedule.run_time * 0.5 + 0.5 * ideal_loop_time_prev_frame;
+        .max(Duration::from_millis(1))
+        .as_secs_f64();
+    loop_schedule.run_time = loop_schedule.run_time * 0.5 + 0.5 * ideal_loop_time;
 
     let target_end_time = start_loop_time + Duration::from_secs_f64(loop_schedule.run_time);
-    loop_schedule.prev_time = start_loop_time;
 
     world.resource_mut::<SceneUpdates>().loop_end_time = target_end_time;
 
@@ -390,11 +386,13 @@ fn run_scene_loop(world: &mut World) {
     loop_schedule.schedule = schedule;
 
     #[cfg(not(target_arch = "wasm32"))]
-    if let Some(sleep_time) = target_end_time.checked_duration_since(start_loop_time) {
-        if fps != 0.0 {
-            loop_schedule.sleeper.sleep(sleep_time)
+    if fps != 0.0 {
+        if let Some(sleep_time) = target_end_time.checked_duration_since(Instant::now()) {
+            loop_schedule.sleeper.sleep(sleep_time);
         }
     }
+
+    loop_schedule.prev_loop_end = Instant::now();
 }
 
 fn update_scene_priority(
