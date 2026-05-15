@@ -180,6 +180,7 @@ impl kira::sound::streaming::Decoder for FfmpegKiraBridge {
                         );
                         std::thread::sleep(Duration::from_secs_f64(self.frame_time.max(0.1)));
                     } else {
+                        trace!("Collected {} frames.", frames.len());
                         return Ok(frames);
                     }
                 }
@@ -312,7 +313,11 @@ impl FfmpegContext for AudioContext {
     fn receive_packet(&mut self, packet: Packet) -> Result<(), anyhow::Error> {
         self.decoder.send_packet(&packet).unwrap();
         let mut decoded = frame::Audio::empty();
-        if let Ok(()) = self.decoder.receive_frame(&mut decoded) {
+        if let Ok(()) = self
+            .decoder
+            .receive_frame(&mut decoded)
+            .inspect_err(|err| error!("{err}"))
+        {
             self.buffer.push_back(decoded);
         }
         Ok(())

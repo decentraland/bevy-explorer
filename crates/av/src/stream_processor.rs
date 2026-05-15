@@ -1,8 +1,5 @@
 use anyhow::bail;
-use bevy::{
-    log::{info, trace},
-    prelude::debug,
-};
+use bevy::log::{debug, info, trace};
 use dcl_component::proto_components::sdk::components::VideoState;
 use ffmpeg_next::Packet;
 use std::time::{Duration, Instant};
@@ -45,6 +42,7 @@ pub fn process_streams(
     let mut last_state = VideoState::VsNone;
 
     let mut update_state = |state: VideoState, streams: &mut [&mut dyn FfmpegContext]| {
+        trace!("Setting state to {state:?}.");
         if state != last_state {
             for stream in streams {
                 stream.update_state(state)
@@ -56,20 +54,23 @@ pub fn process_streams(
     let mut tick = 0;
 
     loop {
+        trace!("Process stream");
         // check if all receivers were dropped
         if streams.iter().all(|ctx| !ctx.is_live()) {
             bail!("all streams disconnected without dispose command");
         }
 
         // ensure frame available
-        while !input_context.is_eof() && streams.iter().any(|ctx| ctx.buffered_time() == 0.0) {
+        if !input_context.is_eof() && streams.iter().any(|ctx| ctx.buffered_time() == 0.0) {
+            trace!("Buffering stream");
             update_state(VideoState::VsBuffering, streams);
-
-            if let Some((stream_index, packet)) = input_context.blocking_next() {
-                for stream in streams.iter_mut() {
-                    if Some(stream_index) == stream.stream_index() {
-                        stream.receive_packet(packet)?;
-                        break; // for
+            while !input_context.is_eof() && streams.iter().any(|ctx| ctx.buffered_time() == 0.0) {
+                if let Some((stream_index, packet)) = input_context.blocking_next() {
+                    for stream in streams.iter_mut() {
+                        if Some(stream_index) == stream.stream_index() {
+                            stream.receive_packet(packet)?;
+                            break; // for
+                        }
                     }
                 }
             }
@@ -77,11 +78,13 @@ pub fn process_streams(
 
         // state ready if required
         if !init {
+            trace!("Init stream");
             update_state(VideoState::VsReady, streams);
             init = true;
         }
 
         if input_context.is_eof() {
+            trace!("End of stream");
             // eof
             if repeat {
                 input_context.reset();
@@ -101,11 +104,13 @@ pub fn process_streams(
         let cmd = if start_instant.is_some() {
             commands.try_recv()
         } else {
+            trace!("Blocking on command channel.");
             commands.blocking_recv().ok_or(TryRecvError::Disconnected)
         };
 
         match cmd {
             Ok(AVCommand::Play) => {
+                trace!("Play command.");
                 if start_instant.is_none() && !input_context.is_eof() {
                     start_instant = Some(Instant::now());
                     for stream in streams.iter_mut() {
@@ -114,10 +119,15 @@ pub fn process_streams(
                 }
             }
             Ok(AVCommand::Pause) => {
+                trace!("Pause command.");
                 start_instant = None;
             }
-            Ok(AVCommand::Repeat(r)) => repeat = r,
+            Ok(AVCommand::Repeat(r)) => {
+                trace!("Repeat command.");
+                repeat = r;
+            }
             Ok(AVCommand::Seek(time)) => {
+                trace!("Seek command.");
                 for stream in streams.iter_mut() {
                     stream.clear();
                 }
@@ -125,8 +135,17 @@ pub fn process_streams(
                 update_state(VideoState::VsSeeking, streams);
                 continue;
             }
-            Err(TryRecvError::Empty) => (),
-            Err(TryRecvError::Disconnected) | Ok(AVCommand::Dispose) => return Ok(()),
+            Ok(AVCommand::Dispose) => {
+                trace!("Dispose stream.");
+                return Ok(());
+            }
+            Err(TryRecvError::Empty) => {
+                trace!("Empty command channel.");
+            }
+            Err(TryRecvError::Disconnected) => {
+                trace!("Command channel disconnected.");
+                return Ok(());
+            }
         }
 
         if start_instant.is_some() {
