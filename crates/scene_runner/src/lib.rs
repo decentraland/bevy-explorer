@@ -641,11 +641,6 @@ impl ContainingScene<'_, '_> {
             ray = ray.normalize() * 1000.0;
         }
 
-        // Parcels are a 2D x/z grid with no height bound, so only x/z
-        // matter for grid traversal. The previous version walked y=16k
-        // planes instead of z=16k planes and could hang when adding the
-        // fixed `0.01` nudge to large y positions where it gets lost to
-        // f32 precision.
         let offset: Vec3 = Vec3::new(ray.x.signum() * 0.01, 0.0, ray.z.signum() * 0.01);
 
         loop {
