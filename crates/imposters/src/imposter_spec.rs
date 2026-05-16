@@ -169,8 +169,7 @@ pub async fn load_imposter(
     }
 
     if download {
-        if let Err(e) =
-            load_imposter_remote(&ipfs, &id, parcel, level, required_crc, cancel).await
+        if let Err(e) = load_imposter_remote(&ipfs, &id, parcel, level, required_crc, cancel).await
         {
             warn!("{e}");
             return None;
