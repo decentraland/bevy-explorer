@@ -10,7 +10,7 @@ use bevy::{
         render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
     },
 };
-use common::{debug_panic, sets::SceneSets, util::ReportErr};
+use common::{sets::SceneSets, util::ReportErr};
 use dcl::interface::CrdtType;
 use dcl_component::{
     proto_components::sdk::components::{PbVideoEvent, VideoState},
@@ -29,13 +29,13 @@ use {
 };
 
 use crate::{
-    audio_sink::{AudioSink, ChangeAudioSinkVolume},
+    audio_sink::ChangeAudioSinkVolume,
     audio_stream_should_be_playing,
     stream_processor::AVCommand,
     video_context::{VideoData, VideoInfo},
     video_player_should_be_playing,
-    video_stream::{av_sinks, noop_sinks, VideoSink},
-    AVPlayer, AudioStream, InScene, ShouldBePlaying, VideoPlayer,
+    video_stream::{av_sinks, noop_sinks},
+    AVPlayer, AVPlayerSinks, AudioStream, InScene, ShouldBePlaying, VideoPlayer, VideoPlayerSinks,
 };
 
 pub struct VideoPlayerPlugin;
@@ -50,6 +50,7 @@ impl Plugin for VideoPlayerPlugin {
                 rebuild_sinks::<AudioStream>.after(audio_stream_should_be_playing),
                 rebuild_sinks::<VideoPlayer>.after(video_player_should_be_playing),
             )
+                .chain()
                 .after(play_videos)
                 .in_set(SceneSets::PostLoop),
         );
@@ -58,8 +59,10 @@ impl Plugin for VideoPlayerPlugin {
         app.add_observer(av_player_on_insert::<VideoPlayer>);
         app.add_observer(av_player_on_remove::<AudioStream>);
         app.add_observer(av_player_on_remove::<VideoPlayer>);
-        app.add_observer(av_player_should_be_playing_on_add);
-        app.add_observer(av_player_should_be_playing_on_remove);
+        app.add_observer(av_player_should_be_playing_on_add::<AudioStream>);
+        app.add_observer(av_player_should_be_playing_on_add::<VideoPlayer>);
+        app.add_observer(av_player_should_be_playing_on_remove::<AudioStream>);
+        app.add_observer(av_player_should_be_playing_on_remove::<VideoPlayer>);
         #[cfg(feature = "livekit")]
         app.add_observer(copy_stream_image);
     }
@@ -71,13 +74,12 @@ fn init_ffmpeg() {
 }
 
 #[cfg(not(feature = "livekit"))]
-type AVPlayerOnInsertQuery<'a, T> = (&'a T, Option<&'a AudioSink>, Option<&'a VideoSink>);
+type AVPlayerOnInsertQuery<'a, T> = (&'a T, Option<&'a <T as AVPlayer>::Sinks>);
 #[cfg(feature = "livekit")]
 type AVPlayerOnInsertQuery<'a, T> = (
     &'a T,
     Option<&'a StreamViewer>,
-    Option<&'a AudioSink>,
-    Option<&'a VideoSink>,
+    Option<&'a <T as AVPlayer>::Sinks>,
 );
 
 fn av_player_on_insert<T: AVPlayer>(
@@ -90,9 +92,12 @@ fn av_player_on_insert<T: AVPlayer>(
         unreachable!("Infallible query.");
     };
     #[cfg(not(feature = "livekit"))]
-    let (av_player, maybe_audio_sink, maybe_video_sink) = query;
+    let (av_player, maybe_sinks) = query;
     #[cfg(feature = "livekit")]
-    let (av_player, maybe_stream_viewer, maybe_audio_sink, maybe_video_sink) = query;
+    let (av_player, maybe_stream_viewer, maybe_sinks) = query;
+
+    let mayve_audio_sink = maybe_sinks.and_then(|sinks| sinks.audio_sink());
+    let maybe_video_sink = maybe_sinks.and_then(|sinks| sinks.video_sink());
 
     let source = av_player.source();
     let equal_sink = maybe_video_sink
@@ -118,7 +123,7 @@ fn av_player_on_insert<T: AVPlayer>(
                     .report();
                 video_sink.command_sender.send(AVCommand::Pause).report();
             }
-            if let Some(audio_sink) = maybe_audio_sink {
+            if let Some(audio_sink) = mayve_audio_sink {
                 commands.trigger_targets(
                     ChangeAudioSinkVolume {
                         volume: av_player.volume(),
@@ -129,19 +134,19 @@ fn av_player_on_insert<T: AVPlayer>(
             }
         }
     } else {
-        if maybe_audio_sink.is_some() || maybe_video_sink.is_some() {
+        if mayve_audio_sink.is_some() || maybe_video_sink.is_some() {
             debug!("Removing sinks of {entity} due to diverging source.");
         }
         if let Some(video_sink) = maybe_video_sink {
             video_sink.command_sender.send(AVCommand::Dispose).report();
         }
-        if let Some(audio_sink) = maybe_audio_sink {
+        if let Some(audio_sink) = mayve_audio_sink {
             audio_sink.command_sender.send(AVCommand::Dispose).report();
         }
         debug!("{entity:?} has {}.", av_player.source());
         commands
             .entity(entity)
-            .try_remove::<(AudioSink, VideoSink, ShouldBePlaying)>();
+            .try_remove::<(T::Sinks, ShouldBePlaying)>();
         #[cfg(feature = "livekit")]
         commands.entity(entity).try_remove::<StreamViewer>();
     }
@@ -149,56 +154,56 @@ fn av_player_on_insert<T: AVPlayer>(
 
 fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands: Commands) {
     let entity = trigger.target();
-    commands.entity(entity).try_remove::<(
-        InScene,
-        ShouldBePlaying,
-        AudioSink,
-        VideoSink,
-        VideoTextureOutput,
-    )>();
+    commands
+        .entity(entity)
+        .try_remove::<(InScene, ShouldBePlaying, T::Sinks, VideoTextureOutput)>();
     #[cfg(feature = "livekit")]
     commands
         .entity(entity)
         .try_remove::<(StreamViewer, StreamImage)>();
 }
 
-fn av_player_should_be_playing_on_add(
+fn av_player_should_be_playing_on_add<T: AVPlayer>(
     trigger: Trigger<OnAdd, ShouldBePlaying>,
-    av_players: Query<(Option<&AudioSink>, Option<&VideoSink>)>,
+    av_players: Query<&T::Sinks, With<T>>,
 ) {
     let entity = trigger.target();
-    let Ok((maybe_audio_sink, maybe_video_sink)) = av_players.get(entity) else {
-        debug_panic!("ShouldBePlaying added to something that is not an AVPlayer.");
+    let Ok(sinks) = av_players.get(entity) else {
+        return;
     };
 
-    if let Some(audio_sink) = maybe_audio_sink {
+    if let Some(audio_sink) = sinks.audio_sink() {
         audio_sink.command_sender.send(AVCommand::Play).report();
     }
-    if let Some(video_sink) = maybe_video_sink {
+    if let Some(video_sink) = sinks.video_sink() {
         video_sink.command_sender.send(AVCommand::Play).report();
     }
 }
 
-fn av_player_should_be_playing_on_remove(
+fn av_player_should_be_playing_on_remove<T: AVPlayer>(
     trigger: Trigger<OnRemove, ShouldBePlaying>,
-    av_players: Query<(Option<&AudioSink>, Option<&VideoSink>)>,
+    av_players: Query<&T::Sinks, With<T>>,
 ) {
     let entity = trigger.target();
-    let Ok((maybe_audio_sink, maybe_video_sink)) = av_players.get(entity) else {
-        debug_panic!("ShouldBePlaying added to something that is not an AVPlayer.");
+    let Ok(sinks) = av_players.get(entity) else {
+        return;
     };
 
-    if let Some(audio_sink) = maybe_audio_sink {
+    if let Some(audio_sink) = sinks.audio_sink() {
         audio_sink.command_sender.send(AVCommand::Pause).report();
     }
-    if let Some(video_sink) = maybe_video_sink {
+    if let Some(video_sink) = sinks.video_sink() {
         video_sink.command_sender.send(AVCommand::Pause).report();
     }
 }
 
 fn play_videos(
     mut images: ResMut<Assets<Image>>,
-    mut q: Query<(&mut VideoSink, &ContainerEntity, &mut VideoTextureOutput)>,
+    mut q: Query<(
+        &mut VideoPlayerSinks,
+        &ContainerEntity,
+        &mut VideoTextureOutput,
+    )>,
     mut scenes: Query<&mut RendererSceneContext>,
     frame: Res<FrameCount>,
 ) {
@@ -214,7 +219,11 @@ fn play_videos(
         }
     }
 
-    for (mut sink, container, mut output) in q.iter_mut() {
+    for (mut video_player_sinks, container, mut output) in q.iter_mut() {
+        let Some(sink) = video_player_sinks.video_sink_mut() else {
+            continue;
+        };
+
         let mut last_frame_received = None;
         let mut new_state = None;
         loop {
@@ -298,13 +307,9 @@ fn play_videos(
 }
 
 #[cfg(not(feature = "livekit"))]
-type RebuildSinkFilter = (Without<AudioSink>, Without<VideoSink>);
+type RebuildSinkFilter<T> = (Without<T>,);
 #[cfg(feature = "livekit")]
-type RebuildSinkFilter = (
-    Without<AudioSink>,
-    Without<VideoSink>,
-    Without<StreamViewer>,
-);
+type RebuildSinkFilter<T> = (Without<T>, Without<StreamViewer>);
 
 #[expect(clippy::type_complexity)]
 fn rebuild_sinks<T: AVPlayer>(
@@ -317,7 +322,7 @@ fn rebuild_sinks<T: AVPlayer>(
             Option<&VideoTextureOutput>,
             Has<ShouldBePlaying>,
         ),
-        RebuildSinkFilter,
+        RebuildSinkFilter<T::Sinks>,
     >,
     scenes: Query<&RendererSceneContext>,
     ipfs: Res<IpfsResource>,
@@ -380,9 +385,10 @@ fn rebuild_sinks<T: AVPlayer>(
             (video_sink, audio_sink)
         };
         let video_output = VideoTextureOutput(video_sink.image.clone());
-        commands
-            .entity(ent)
-            .try_insert((video_sink, video_output, audio_sink));
+        commands.entity(ent).try_insert((
+            video_output,
+            T::build_sink_component(audio_sink, video_sink),
+        ));
     }
 }
 

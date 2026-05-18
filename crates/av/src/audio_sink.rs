@@ -13,9 +13,8 @@ use kira::{
 use scene_runner::{ContainingScene, SceneEntity};
 use tokio::sync::mpsc::error::TryRecvError;
 
-use crate::{stream_processor::AVCommand, InScene};
+use crate::{stream_processor::AVCommand, AVPlayer, AVPlayerSinks, InScene};
 
-#[derive(Component)]
 pub struct AudioSink {
     pub volume: f32,
     pub command_sender: tokio::sync::mpsc::UnboundedSender<AVCommand>,
@@ -57,12 +56,12 @@ pub struct ChangeAudioSinkVolume {
 }
 
 // TODO integrate better with bevy_kira_audio to avoid logic on a main-thread system (NonSendMut forces this system to the main thread)
-pub fn spawn_audio_streams(
+pub fn spawn_audio_streams<T: AVPlayer>(
     mut commands: Commands,
     mut streams: Query<(
         Entity,
         &SceneEntity,
-        &mut AudioSink,
+        &mut T::Sinks,
         Option<&mut AudioSpawned>,
     )>,
     mut audio_manager: NonSendMut<bevy_kira_audio::audio_output::AudioOutput<DefaultBackend>>,
@@ -80,8 +79,10 @@ pub fn spawn_audio_streams(
         .map(|player| containing_scene.get(player))
         .unwrap_or_default();
 
-    for (ent, scene, mut stream, mut maybe_spawned) in streams.iter_mut() {
-        if maybe_spawned.is_none() || stream.is_changed() {
+    for (ent, scene, mut av_player_sinks, mut maybe_spawned) in streams.iter_mut() {
+        let changed = av_player_sinks.is_changed();
+        let stream = av_player_sinks.audio_sink_mut().unwrap();
+        if maybe_spawned.is_none() || changed {
             match stream.sound_data.try_recv() {
                 Ok(sound_data) => {
                     info!("{ent:?} received sound data!");
@@ -171,9 +172,10 @@ pub fn spawn_and_locate_foreign_streams(
     }
 }
 
-pub fn change_audio_sink_volume(
+#[expect(clippy::type_complexity)]
+pub fn change_audio_sink_volume<T: AVPlayer>(
     trigger: Trigger<ChangeAudioSinkVolume>,
-    mut audio_sinks: Query<(Mut<AudioSink>, Option<&mut AudioSpawned>, Has<InScene>)>,
+    mut audio_sinks: Query<(Mut<T::Sinks>, Option<&mut AudioSpawned>, Has<InScene>)>,
     audio_settings: Res<AudioSettings>,
 ) {
     let entity = trigger.target();
@@ -182,13 +184,15 @@ pub fn change_audio_sink_volume(
     }
     let ChangeAudioSinkVolume { volume } = trigger.event();
 
-    let Ok((mut audio_sink, maybe_audio_spawned, in_scene)) = audio_sinks.get_mut(entity) else {
+    let Ok((mut av_player_sinks, maybe_audio_spawned, in_scene)) = audio_sinks.get_mut(entity)
+    else {
         debug_panic!("{entity} is not an AudioSink.");
     };
 
     // AudioSink is causing problems with change detection
     // so we bypass it here
-    let audio_sink = audio_sink.bypass_change_detection();
+    let av_player_sinks = av_player_sinks.bypass_change_detection();
+    let audio_sink = av_player_sinks.audio_sink_mut().unwrap();
     audio_sink.volume = *volume;
 
     if let Some(mut audio_spawned) = maybe_audio_spawned {

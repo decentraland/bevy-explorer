@@ -556,7 +556,7 @@ fn rebuild_html_media_entities<T: AVPlayer>(
 
         let source_url = player.source();
         let source = ipfs
-            .content_url(&source_url, &context.hash)
+            .content_url(source_url, &context.hash)
             .unwrap_or_else(|| source_url.to_owned());
 
         if T::has_video() {

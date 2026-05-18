@@ -27,7 +27,7 @@ reqwest = { workspace = true }
 urlencoding = { workspace = true }
 bevy_kira_audio = { workspace = true }
 kira = { workspace = true }
-wgpu = { workspace = true }
+wgpu = { workspace = true, features = ["webgpu"] }
 ethers-core = { workspace = true }
 
 ffmpeg-next = { version = "6.0.0", optional = true }

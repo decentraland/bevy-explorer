@@ -32,9 +32,13 @@ pub mod video_player;
 #[cfg(feature = "av_player_debug")]
 pub mod av_player_debug;
 
+#[cfg(feature = "ffmpeg")]
+use crate::{audio_sink::AudioSink, video_stream::VideoSink};
 use audio_source::AudioSourcePlugin;
 #[cfg(not(feature = "html"))]
 use audio_source_native::AudioSourcePluginImpl;
+#[cfg(feature = "ffmpeg")]
+use bevy::ecs::component::Mutable;
 use bevy::{math::FloatOrd, prelude::*};
 use common::{
     sets::SceneSets,
@@ -46,6 +50,7 @@ use dcl_component::{
     SceneComponentId,
 };
 use scene_runner::{update_world::AddCrdtInterfaceExt, ContainerEntity, ContainingScene};
+
 #[cfg(feature = "ffmpeg")]
 use {
     audio_sink::{spawn_and_locate_foreign_streams, spawn_audio_streams},
@@ -67,13 +72,27 @@ use {
 };
 
 pub trait AVPlayer: Component {
+    #[cfg(feature = "ffmpeg")]
+    type Sinks: AVPlayerSinks;
+
     fn source(&self) -> &str;
     fn playing(&self) -> bool;
     fn volume(&self) -> f32;
     fn r#loop(&self) -> bool;
 
+    #[cfg(feature = "ffmpeg")]
+    fn build_sink_component(audio_sink: AudioSink, video_sink: VideoSink) -> Self::Sinks;
+
     #[cfg(feature = "html")]
     fn has_video() -> bool;
+}
+
+#[cfg(feature = "ffmpeg")]
+pub trait AVPlayerSinks: Component<Mutability = Mutable> {
+    fn audio_sink(&self) -> Option<&AudioSink>;
+    fn audio_sink_mut(&mut self) -> Option<&mut AudioSink>;
+    fn video_sink(&self) -> Option<&VideoSink>;
+    fn video_sink_mut(&mut self) -> Option<&mut VideoSink>;
 }
 
 #[derive(Component, Deref)]
@@ -87,6 +106,9 @@ impl From<PbAudioStream> for AudioStream {
 }
 
 impl AVPlayer for AudioStream {
+    #[cfg(feature = "ffmpeg")]
+    type Sinks = AudioStreamSinks;
+
     fn source(&self) -> &str {
         &self.url
     }
@@ -103,9 +125,39 @@ impl AVPlayer for AudioStream {
         false
     }
 
+    #[cfg(feature = "ffmpeg")]
+    fn build_sink_component(audio_sink: AudioSink, _video_sink: VideoSink) -> Self::Sinks {
+        AudioStreamSinks { audio: audio_sink }
+    }
+
     #[cfg(feature = "html")]
     fn has_video() -> bool {
         false
+    }
+}
+
+#[cfg(feature = "ffmpeg")]
+#[derive(Component)]
+pub struct AudioStreamSinks {
+    pub audio: AudioSink,
+}
+
+#[cfg(feature = "ffmpeg")]
+impl AVPlayerSinks for AudioStreamSinks {
+    fn audio_sink(&self) -> Option<&AudioSink> {
+        Some(&self.audio)
+    }
+
+    fn audio_sink_mut(&mut self) -> Option<&mut AudioSink> {
+        Some(&mut self.audio)
+    }
+
+    fn video_sink(&self) -> Option<&VideoSink> {
+        None
+    }
+
+    fn video_sink_mut(&mut self) -> Option<&mut VideoSink> {
+        None
     }
 }
 
@@ -120,6 +172,9 @@ impl From<PbVideoPlayer> for VideoPlayer {
 }
 
 impl AVPlayer for VideoPlayer {
+    #[cfg(feature = "ffmpeg")]
+    type Sinks = VideoPlayerSinks;
+
     fn source(&self) -> &str {
         &self.src
     }
@@ -136,9 +191,43 @@ impl AVPlayer for VideoPlayer {
         self.r#loop.unwrap_or(false)
     }
 
+    #[cfg(feature = "ffmpeg")]
+    fn build_sink_component(audio_sink: AudioSink, video_sink: VideoSink) -> Self::Sinks {
+        VideoPlayerSinks {
+            audio: audio_sink,
+            video: video_sink,
+        }
+    }
+
     #[cfg(feature = "html")]
     fn has_video() -> bool {
         true
+    }
+}
+
+#[cfg(feature = "ffmpeg")]
+#[derive(Component)]
+pub struct VideoPlayerSinks {
+    pub audio: AudioSink,
+    pub video: VideoSink,
+}
+
+#[cfg(feature = "ffmpeg")]
+impl AVPlayerSinks for VideoPlayerSinks {
+    fn audio_sink(&self) -> Option<&AudioSink> {
+        Some(&self.audio)
+    }
+
+    fn audio_sink_mut(&mut self) -> Option<&mut AudioSink> {
+        Some(&mut self.audio)
+    }
+
+    fn video_sink(&self) -> Option<&VideoSink> {
+        Some(&self.video)
+    }
+
+    fn video_sink_mut(&mut self) -> Option<&mut VideoSink> {
+        Some(&mut self.video)
     }
 }
 
@@ -172,7 +261,14 @@ impl Plugin for AVPlayerPlugin {
         #[cfg(feature = "ffmpeg")]
         app.add_systems(
             PostUpdate,
-            (spawn_audio_streams, spawn_and_locate_foreign_streams).chain(),
+            (
+                (
+                    spawn_audio_streams::<AudioStream>,
+                    spawn_audio_streams::<VideoPlayer>,
+                ),
+                spawn_and_locate_foreign_streams,
+            )
+                .chain(),
         );
         app.add_systems(
             Update,
@@ -191,7 +287,9 @@ impl Plugin for AVPlayerPlugin {
         );
 
         #[cfg(feature = "ffmpeg")]
-        app.add_observer(audio_sink::change_audio_sink_volume);
+        app.add_observer(audio_sink::change_audio_sink_volume::<AudioStream>);
+        #[cfg(feature = "ffmpeg")]
+        app.add_observer(audio_sink::change_audio_sink_volume::<VideoPlayer>);
         #[cfg(feature = "livekit")]
         {
             app.add_observer(stream_should_be_played::<VideoPlayer>);
@@ -231,7 +329,6 @@ fn av_player_is_in_scene<T: AVPlayer>(
     }
 }
 
-#[expect(clippy::type_complexity, reason = "Queries are complex")]
 fn audio_stream_should_be_playing(
     mut commands: Commands,
     av_players: Query<(Entity, &AudioStream, Has<InScene>, Has<ShouldBePlaying>)>,
