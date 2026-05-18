@@ -46,7 +46,7 @@ use {
 
 use crate::{
     audio_stream_should_be_playing, av_player_is_in_scene, video_player_should_be_playing,
-    AVPlayer, AudioStream, InScene, ShouldBePlaying, VideoPlayer,
+    AVPlayer, AudioStream, InScene, VideoPlayer,
 };
 
 type RcClosure = Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>>;
@@ -510,7 +510,7 @@ fn av_player_on_insert<T: AVPlayer>(
             }
         } else {
             // This forces an update on the entity
-            commands.entity(entity).try_remove::<ShouldBePlaying>();
+            commands.entity(entity).try_remove::<T::ShouldBePlaying>();
             html_media_entity.stop();
             html_media_entity.set_loop(av_player.r#loop());
             html_media_entity.set_volume(av_player_volume * audio_settings.scene());
@@ -519,7 +519,7 @@ fn av_player_on_insert<T: AVPlayer>(
         debug!("Removing html media entity {entity} due to diverging source.");
         commands
             .entity(trigger.target())
-            .try_remove::<(HtmlMediaEntity, ShouldBePlaying)>();
+            .try_remove::<(HtmlMediaEntity, T::ShouldBePlaying)>();
         #[cfg(feature = "livekit")]
         commands.entity(entity).try_remove::<StreamViewer>();
     }
@@ -529,7 +529,7 @@ fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands:
     let entity = trigger.target();
     commands.entity(entity).try_remove::<(
         InScene,
-        ShouldBePlaying,
+        T::ShouldBePlaying,
         HtmlMediaEntity,
         VideoTextureOutput,
     )>();
@@ -624,7 +624,7 @@ fn update_av_players<T: AVPlayer>(
             Entity,
             &ContainerEntity,
             Option<&mut HtmlMediaEntity>,
-            Has<ShouldBePlaying>,
+            Has<T::ShouldBePlaying>,
         ),
         With<T>,
     >,
