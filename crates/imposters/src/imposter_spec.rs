@@ -13,6 +13,7 @@ use bevy::{
 use common::structs::IVec2Arg;
 use ipfs::{ipfs_path::IpfsPath, IpfsIo};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use tokio_util::sync::CancellationToken;
 use zip::ZipArchive;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -156,6 +157,7 @@ pub async fn load_imposter(
     level: usize,
     required_crc: Option<u32>,
     download: bool,
+    cancel: CancellationToken,
 ) -> Option<BakedScene> {
     if required_crc.is_some_and(|crc| crc == 0) {
         return None;
@@ -167,7 +169,8 @@ pub async fn load_imposter(
     }
 
     if download {
-        if let Err(e) = load_imposter_remote(&ipfs, &id, parcel, level, required_crc).await {
+        if let Err(e) = load_imposter_remote(&ipfs, &id, parcel, level, required_crc, cancel).await
+        {
             warn!("{e}");
             return None;
         }
@@ -183,6 +186,7 @@ pub async fn load_imposter_remote(
     parcel: IVec2,
     level: usize,
     crc: Option<u32>,
+    cancel: CancellationToken,
 ) -> Result<(), anyhow::Error> {
     let client = ipfs.client();
     let zip_file = zip_path(None, id, parcel, level, crc)
@@ -195,11 +199,27 @@ pub async fn load_imposter_remote(
     debug!("zip_url {zip_url}");
 
     let request = client.get(&zip_url).build()?;
-    let response = ipfs.async_request(request, client).await?;
-    if response.status() != reqwest::StatusCode::OK {
-        return Ok(());
-    }
-    let bytes = response.bytes().await?;
+    // Race the network fetch + body read against the cancel token. If the
+    // owning `ImposterLoadTask` Component is dropped (entity despawn / out of
+    // range), this future is dropped together with the `select!`, releasing
+    // the IPFS semaphore permit and (on wasm) firing reqwest's `AbortGuard`
+    // to abort the in-flight browser fetch.
+    let bytes = tokio::select! {
+        fetched = async {
+            let response = ipfs.async_request(request, client).await?;
+            if response.status() != reqwest::StatusCode::OK {
+                return Ok(None);
+            }
+            Ok::<_, anyhow::Error>(Some(response.bytes().await?))
+        } => match fetched? {
+            Some(bytes) => bytes,
+            None => return Ok(()),
+        },
+        _ = cancel.cancelled() => {
+            debug!("imposter load cancelled: id={id} parcel={parcel} level={level} url={zip_url}");
+            return Ok(());
+        }
+    };
     let mut zip = ZipArchive::new(Cursor::new(bytes))?;
     let root = file_root(ipfs.cache_path(), false, id, level);
     platform_fs::create_dir_all(&root).await?;

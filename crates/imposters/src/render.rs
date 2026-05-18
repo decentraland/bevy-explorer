@@ -30,6 +30,8 @@ use scene_runner::{
     renderer_context::RendererSceneContext,
 };
 
+use tokio_util::sync::CancellationToken;
+
 use crate::{
     bake_scene::IMPOSTERCEPTION_LAYER,
     floor_imposter::{FloorImposter, FloorImposterLoader},
@@ -122,18 +124,32 @@ pub struct SceneImposter {
 }
 
 #[derive(Component)]
-pub struct ImposterLoadTask(Task<Option<BakedScene>>);
+pub struct ImposterLoadTask(Task<Option<BakedScene>>, CancellationToken);
+
+impl Drop for ImposterLoadTask {
+    fn drop(&mut self) {
+        // On native, `Task::drop` already cancels the future. On wasm,
+        // `bevy_tasks::Task` is uncancellable (it wraps a `wasm_bindgen_futures::spawn_local`
+        // task with no abort handle), so we use this explicit signal — the task body
+        // races against `cancel.cancelled()` and drops its work future (and thereby
+        // the IPFS permit and the in-flight reqwest fetch) when this fires.
+        self.1.cancel();
+    }
+}
 
 impl ImposterLoadTask {
     pub fn new_scene(ipfas: &IpfsAssetServer, scene_hash: &str, download: bool) -> Self {
-        Self(IoTaskPool::get().spawn_compat(load_imposter(
+        let cancel = CancellationToken::new();
+        let task = IoTaskPool::get().spawn_compat(load_imposter(
             ipfas.ipfs().clone(),
             scene_hash.to_string(),
             IVec2::MAX,
             0,
             None, // don't need to check since we load by id,
             download,
-        )))
+            cancel.clone(),
+        ));
+        Self(task, cancel)
     }
 
     pub fn new_mip(
@@ -144,14 +160,17 @@ impl ImposterLoadTask {
         crc: u32,
         download: bool,
     ) -> Self {
-        Self(IoTaskPool::get().spawn_compat(load_imposter(
+        let cancel = CancellationToken::new();
+        let task = IoTaskPool::get().spawn_compat(load_imposter(
             ipfas.ipfs().clone(),
             address.to_string(),
             parcel,
             level,
             Some(crc),
             download,
-        )))
+            cancel.clone(),
+        ));
+        Self(task, cancel)
     }
 }
 

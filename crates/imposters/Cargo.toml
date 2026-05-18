@@ -26,6 +26,8 @@ crc = { workspace = true }
 reqwest = { workspace = true }
 
 zip = { version = "2", default-features = false }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-fs = { workspace = true }

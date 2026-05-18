@@ -129,6 +129,7 @@ serde_json = { version = "1.0.92", features = ["raw_value"] }
 
 itertools = "0.12"
 tokio = { version = "1.44", features = ["sync", "macros", "rt"] }
+tokio-util = "*"
 anyhow = "1.0.70"
 http = "1.1"
 urn = "0.7.0"
@@ -305,22 +306,22 @@ bevy_time = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl
 bevy_winit = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
 bevy_window = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
 bevy_platform = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
-# bevy = { path="../bevy" }
-# bevy_a11y = { path="../bevy/crates/bevy_a11y" }
-# bevy_asset = { path="../bevy/crates/bevy_asset" }
-# bevy_app = { path="../bevy/crates/bevy_app" }
-# bevy_derive = { path="../bevy/crates/bevy_derive" }
-# bevy_ecs = { path="../bevy/crates/bevy_ecs" }
-# bevy_image = { path="../bevy/crates/bevy_image" }
-# bevy_input = { path="../bevy/crates/bevy_input" }
-# bevy_log = { path="../bevy/crates/bevy_log" }
-# bevy_math = { path="../bevy/crates/bevy_math" }
-# bevy_reflect = { path="../bevy/crates/bevy_reflect" }
-# bevy_render = { path="../bevy/crates/bevy_render" }
-# bevy_time = { path="../bevy/crates/bevy_time" }
-# bevy_winit = { path="../bevy/crates/bevy_winit" }
-# bevy_window = { path="../bevy/crates/bevy_window" }
-# bevy_platform = { path="../bevy/crates/bevy_platform" }
+# bevy = { path = "../bevy-fork" }
+# bevy_a11y = { path = "../bevy-fork/crates/bevy_a11y" }
+# bevy_asset = { path = "../bevy-fork/crates/bevy_asset" }
+# bevy_app = { path = "../bevy-fork/crates/bevy_app" }
+# bevy_derive = { path = "../bevy-fork/crates/bevy_derive" }
+# bevy_ecs = { path = "../bevy-fork/crates/bevy_ecs" }
+# bevy_image = { path = "../bevy-fork/crates/bevy_image" }
+# bevy_input = { path = "../bevy-fork/crates/bevy_input" }
+# bevy_log = { path = "../bevy-fork/crates/bevy_log" }
+# bevy_math = { path = "../bevy-fork/crates/bevy_math" }
+# bevy_reflect = { path = "../bevy-fork/crates/bevy_reflect" }
+# bevy_render = { path = "../bevy-fork/crates/bevy_render" }
+# bevy_time = { path = "../bevy-fork/crates/bevy_time" }
+# bevy_winit = { path = "../bevy-fork/crates/bevy_winit" }
+# bevy_window = { path = "../bevy-fork/crates/bevy_window" }
+# bevy_platform = { path = "../bevy-fork/crates/bevy_platform" }
 
 ffmpeg-next = { git = "https://github.com/robtfm/rust-ffmpeg", branch = "audio-linesize-0-6.1" }
 parry3d-f64 = { git = "https://github.com/robtfm/parry", branch = "fix-bvh-negative-scale-0.25" }
@@ -352,7 +353,7 @@ wgpu-types = { git = "https://github.com/robtfm/wgpu", branch = "24.0.5-dcl" }
 naga = { git = "https://github.com/robtfm/wgpu", branch = "24.0.5-dcl" }
 
 # [patch."https://github.com/robtfm/bevy"]
-# bevy = { path = "../bevy" }
+# bevy = { path = "../bevy-fork" }
 
 # [patch."https://github.com/robtfm/bevy_dui"]
 # bevy_dui = { path = "../bevy_dui" }
