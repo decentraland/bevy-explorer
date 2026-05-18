@@ -208,6 +208,7 @@ web-sys = { version = "0.3", features = [
 web-time = "1.1"
 copypwasmta = { git = "https://github.com/robtfm/copypwasmta" }
 web-fs = "0.2.6"
+getrandom = { version = "0.3" }
 
 [dependencies]
 assets = { workspace = true }
@@ -278,7 +279,6 @@ uuid = { workspace = true, features = ["js"] }
 dcl_wasm = { workspace = true }
 console_error_panic_hook = "0.1.7"
 log = "0.4"
-getrandom = { version = "0.3", features = ["wasm_js"] }
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 once_cell = { workspace = true }
