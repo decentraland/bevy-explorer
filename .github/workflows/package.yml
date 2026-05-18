@@ -73,7 +73,7 @@ jobs:
 
           - name: Install protoc
             if: matrix.os != 'self-hosted-windows'
-            uses: arduino/setup-protoc@master
+            uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
             with:
                 repo-token: ${{ secrets.GITHUB_TOKEN }}
     
