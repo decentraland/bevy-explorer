@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use bevy::{prelude::*, render::view::RenderLayers};
 use common::{
     debug_panic,
@@ -38,13 +40,25 @@ impl AudioSink {
 }
 
 #[derive(Component)]
-pub struct AudioSpawned(
-    Option<<StreamingSoundData<AudioDecoderError> as kira::sound::SoundData>::Handle>,
-);
+pub struct AudioSpawned<T> {
+    handle: Option<<StreamingSoundData<AudioDecoderError> as kira::sound::SoundData>::Handle>,
+    _phantom: PhantomData<T>,
+}
 
-impl Drop for AudioSpawned {
+impl<T> AudioSpawned<T> {
+    pub fn new(
+        handle: Option<<StreamingSoundData<AudioDecoderError> as kira::sound::SoundData>::Handle>,
+    ) -> Self {
+        Self {
+            handle,
+            _phantom: Default::default(),
+        }
+    }
+}
+
+impl<T> Drop for AudioSpawned<T> {
     fn drop(&mut self) {
-        if let Some(mut handle) = self.0.take() {
+        if let Some(mut handle) = self.handle.take() {
             handle.stop(Tween::default());
         }
     }
@@ -56,13 +70,14 @@ pub struct ChangeAudioSinkVolume {
 }
 
 // TODO integrate better with bevy_kira_audio to avoid logic on a main-thread system (NonSendMut forces this system to the main thread)
+#[expect(clippy::type_complexity)]
 pub fn spawn_audio_streams<T: AVPlayer>(
     mut commands: Commands,
     mut streams: Query<(
         Entity,
         &SceneEntity,
         &mut T::Sinks,
-        Option<&mut AudioSpawned>,
+        Option<&mut AudioSpawned<T>>,
     )>,
     mut audio_manager: NonSendMut<bevy_kira_audio::audio_output::AudioOutput<DefaultBackend>>,
     containing_scene: ContainingScene,
@@ -92,20 +107,24 @@ pub fn spawn_audio_streams<T: AVPlayer>(
                         .unwrap()
                         .play(sound_data)
                         .unwrap();
-                    commands.entity(ent).try_insert(AudioSpawned(Some(handle)));
+                    commands
+                        .entity(ent)
+                        .try_insert(AudioSpawned::<T>::new(Some(handle)));
                 }
                 Err(TryRecvError::Disconnected) => {
-                    commands.entity(ent).try_insert(AudioSpawned(None));
+                    commands
+                        .entity(ent)
+                        .try_insert(AudioSpawned::<T>::new(None));
                 }
                 Err(TryRecvError::Empty) => {
                     trace!("{ent:?} waiting for sound data");
-                    commands.entity(ent).remove::<AudioSpawned>();
+                    commands.entity(ent).remove::<AudioSpawned<T>>();
                 }
             }
         }
 
         let volume = stream.volume * settings.scene();
-        if let Some(handle) = maybe_spawned.as_mut().and_then(|a| a.0.as_mut()) {
+        if let Some(handle) = maybe_spawned.as_mut().and_then(|a| a.handle.as_mut()) {
             if containing_scenes.contains(&scene.root) {
                 handle.set_volume(volume as f64, Tween::default());
             } else {
@@ -116,14 +135,14 @@ pub fn spawn_audio_streams<T: AVPlayer>(
 }
 
 #[allow(clippy::type_complexity)]
-pub fn spawn_and_locate_foreign_streams(
+pub fn spawn_and_locate_foreign_streams<T: AVPlayer>(
     mut commands: Commands,
     mut streams: Query<(
         Entity,
         &GlobalTransform,
         Option<&RenderLayers>,
         &mut ForeignAudioSource,
-        Option<&mut AudioSpawned>,
+        Option<&mut AudioSpawned<T>>,
     )>,
     mut audio_manager: NonSendMut<bevy_kira_audio::audio_output::AudioOutput<DefaultBackend>>,
     pan: VolumePanning,
@@ -137,11 +156,11 @@ pub fn spawn_and_locate_foreign_streams(
     {
         if let Some(spawned) = maybe_spawned.as_mut() {
             if spawned
-                .0
+                .handle
                 .as_ref()
                 .is_some_and(|h| !matches!(h.state(), PlaybackState::Playing))
             {
-                spawned.0 = None;
+                spawned.handle = None;
             }
         }
 
@@ -158,10 +177,12 @@ pub fn spawn_and_locate_foreign_streams(
                 .play(sound_data)
                 .unwrap();
 
-            commands.entity(ent).try_insert(AudioSpawned(Some(handle)));
+            commands
+                .entity(ent)
+                .try_insert(AudioSpawned::<T>::new(Some(handle)));
         }
 
-        if let Some(handle) = maybe_spawned.as_mut().and_then(|a| a.0.as_mut()) {
+        if let Some(handle) = maybe_spawned.as_mut().and_then(|a| a.handle.as_mut()) {
             let (volume, panning) =
                 pan.volume_and_panning(emitter_transform.translation(), render_layers);
             let volume = volume * settings.voice();
@@ -175,7 +196,7 @@ pub fn spawn_and_locate_foreign_streams(
 #[expect(clippy::type_complexity)]
 pub fn change_audio_sink_volume<T: AVPlayer>(
     trigger: Trigger<ChangeAudioSinkVolume>,
-    mut audio_sinks: Query<(Mut<T::Sinks>, Option<&mut AudioSpawned>, Has<InScene>)>,
+    mut audio_sinks: Query<(Mut<T::Sinks>, Option<&mut AudioSpawned<T>>, Has<InScene>)>,
     audio_settings: Res<AudioSettings>,
 ) {
     let entity = trigger.target();
@@ -196,7 +217,7 @@ pub fn change_audio_sink_volume<T: AVPlayer>(
     audio_sink.volume = *volume;
 
     if let Some(mut audio_spawned) = maybe_audio_spawned {
-        if let Some(handle) = audio_spawned.0.as_mut() {
+        if let Some(handle) = audio_spawned.handle.as_mut() {
             if in_scene {
                 handle.set_volume((volume * audio_settings.scene()) as f64, Tween::default());
             } else {

@@ -277,7 +277,10 @@ impl Plugin for AVPlayerPlugin {
                     spawn_audio_streams::<AudioStream>,
                     spawn_audio_streams::<VideoPlayer>,
                 ),
-                spawn_and_locate_foreign_streams,
+                (
+                    spawn_and_locate_foreign_streams::<AudioStream>,
+                    spawn_and_locate_foreign_streams::<VideoPlayer>,
+                ),
             )
                 .chain(),
         );

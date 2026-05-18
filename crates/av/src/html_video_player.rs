@@ -5,6 +5,7 @@ use std::{
         atomic::{AtomicU32, Ordering},
         Arc, Mutex,
     },
+    marker::PhantomData
 };
 
 use bevy::{
@@ -134,7 +135,7 @@ pub struct FrameCopyRequest {
 }
 
 #[derive(Component)]
-pub struct HtmlMediaEntity {
+pub struct HtmlMediaEntity<T: AVPlayer> {
     source: String,
     media: HtmlMediaElement,
     video: Option<HtmlVideoElement>,
@@ -148,11 +149,12 @@ pub struct HtmlMediaEntity {
     _closures: Vec<Closure<dyn FnMut()>>,
     frame_closure: RcClosure,
     frame_callback_handle: Rc<RefCell<Option<u32>>>,
+    _phantom: PhantomData<T>
 }
 
 /// safety: engine is single threaded
-unsafe impl Sync for HtmlMediaEntity {}
-unsafe impl Send for HtmlMediaEntity {}
+unsafe impl<T: AVPlayer> Sync for HtmlMediaEntity<T> {}
+unsafe impl<T: AVPlayer> Send for HtmlMediaEntity<T> {}
 
 // This block imports the global JS function we defined in main.js
 #[wasm_bindgen(js_namespace = window)]
@@ -161,7 +163,7 @@ extern "C" {
     fn set_video_source(elt: &HtmlVideoElement, src: &str);
 }
 
-impl HtmlMediaEntity {
+impl<T: AVPlayer> HtmlMediaEntity<T> {
     fn common_init(source: String, media: HtmlMediaElement) -> Self {
         let mut closures = Vec::default();
         let state = Arc::new(Mutex::new(VideoState::VsLoading));
@@ -233,6 +235,7 @@ impl HtmlMediaEntity {
             _closures: closures,
             frame_closure: Default::default(),
             frame_callback_handle: Default::default(),
+            _phantom: Default::default()
         }
     }
 
@@ -450,7 +453,7 @@ impl HtmlMediaEntity {
     }
 }
 
-impl Drop for HtmlMediaEntity {
+impl<T: AVPlayer> Drop for HtmlMediaEntity<T> {
     fn drop(&mut self) {
         debug!("shutdown");
         if let (Some(video), Some(handle)) =
@@ -476,9 +479,9 @@ impl Drop for HtmlMediaEntity {
 }
 
 #[cfg(not(feature = "livekit"))]
-type AVPlayerOnInsertQuery<'a, T> = (&'a T, &'a mut HtmlMediaEntity);
+type AVPlayerOnInsertQuery<'a, T> = (&'a T, &'a mut HtmlMediaEntity<T>);
 #[cfg(feature = "livekit")]
-type AVPlayerOnInsertQuery<'a, T> = (&'a T, Option<&'a StreamViewer>, &'a mut HtmlMediaEntity);
+type AVPlayerOnInsertQuery<'a, T> = (&'a T, Option<&'a StreamViewer>, &'a mut HtmlMediaEntity<T>);
 
 fn av_player_on_insert<T: AVPlayer>(
     trigger: Trigger<OnInsert, T>,
@@ -519,7 +522,7 @@ fn av_player_on_insert<T: AVPlayer>(
         debug!("Removing html media entity {entity} due to diverging source.");
         commands
             .entity(trigger.target())
-            .try_remove::<(HtmlMediaEntity, T::ShouldBePlaying)>();
+            .try_remove::<(HtmlMediaEntity<T>, T::ShouldBePlaying)>();
         #[cfg(feature = "livekit")]
         commands.entity(entity).try_remove::<StreamViewer>();
     }
@@ -530,18 +533,19 @@ fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands:
     commands.entity(entity).try_remove::<(
         InScene,
         T::ShouldBePlaying,
-        HtmlMediaEntity,
+        HtmlMediaEntity<T>,
         VideoTextureOutput,
     )>();
     #[cfg(feature = "livekit")]
     commands.entity(entity).try_remove::<StreamViewer>();
 }
 
+#[expect(clippy::type_complexity)]
 fn rebuild_html_media_entities<T: AVPlayer>(
     mut commands: Commands,
     av_players: Populated<
         (Entity, &ContainerEntity, &T, Option<&VideoTextureOutput>),
-        Without<HtmlMediaEntity>,
+        Without<HtmlMediaEntity<T>>,
     >,
     scenes: Query<&RendererSceneContext>,
     ipfs: Res<IpfsResource>,
@@ -585,7 +589,7 @@ fn rebuild_html_media_entities<T: AVPlayer>(
 
             let mut video = if source_url.starts_with("livekit-video://") {
                 let Some(video) =
-                    HtmlMediaEntity::new_stream(source_url.to_owned(), image_handle.clone())
+                    HtmlMediaEntity::<T>::new_stream(source_url.to_owned(), image_handle.clone())
                 else {
                     continue;
                 };
@@ -593,10 +597,10 @@ fn rebuild_html_media_entities<T: AVPlayer>(
                 video
             } else if source_url.is_empty() {
                 debug!("noop video {}", source_url);
-                HtmlMediaEntity::new_noop(source_url.to_owned(), image_handle.clone())
+                HtmlMediaEntity::<T>::new_noop(source_url.to_owned(), image_handle.clone())
             } else {
                 debug!("https video {}", source_url);
-                HtmlMediaEntity::new_video(&source, source_url.to_owned(), image_handle.clone())
+                HtmlMediaEntity::<T>::new_video(&source, source_url.to_owned(), image_handle.clone())
             };
 
             let video_volume = player.volume();
@@ -606,7 +610,7 @@ fn rebuild_html_media_entities<T: AVPlayer>(
 
             commands.entity(ent).try_insert((video, video_output));
         } else {
-            let mut audio = HtmlMediaEntity::new_audio(&source, source_url.to_owned());
+            let mut audio = HtmlMediaEntity::<T>::new_audio(&source, source_url.to_owned());
             let audio_volume = player.volume();
             audio.set_loop(player.r#loop());
             audio.set_volume(audio_volume * scene_volume);
@@ -623,7 +627,7 @@ fn update_av_players<T: AVPlayer>(
         (
             Entity,
             &ContainerEntity,
-            Option<&mut HtmlMediaEntity>,
+            Option<&mut HtmlMediaEntity<T>>,
             Has<T::ShouldBePlaying>,
         ),
         With<T>,
@@ -640,7 +644,7 @@ fn update_av_players<T: AVPlayer>(
 
         if av.source.starts_with("livekit-video://") && state == VideoState::VsError {
             error!("Stream is erroring, retrying.");
-            commands.entity(ent).try_remove::<HtmlMediaEntity>();
+            commands.entity(ent).try_remove::<HtmlMediaEntity<T>>();
             continue;
         }
 
@@ -831,7 +835,7 @@ fn perform_video_copies(
 
 fn update_html_video_player_volumes<T: AVPlayer>(
     audio_settings: Res<AudioSettings>,
-    html_video_players: Query<(&T, &mut HtmlMediaEntity)>,
+    html_video_players: Query<(&T, &mut HtmlMediaEntity<T>)>,
 ) {
     let scene_volume = audio_settings.scene();
     for (av_player, html_video_player) in html_video_players {
