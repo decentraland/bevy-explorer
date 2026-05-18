@@ -51,8 +51,8 @@ impl Plugin for AvPlayerDebugPlugin {
         }
         app.add_observer(on_add_column::<InScene, InSceneColumn>);
         app.add_observer(on_remove_column::<InScene, InSceneColumn>);
-        app.add_observer(on_add_column::<ShouldBePlaying, ShouldPlayColumn>);
-        app.add_observer(on_remove_column::<ShouldBePlaying, ShouldPlayColumn>);
+        app.add_observer(on_add_column::<ShouldBePlaying<VideoPlayer>, ShouldPlayColumn>);
+        app.add_observer(on_remove_column::<ShouldBePlaying<VideoPlayer>, ShouldPlayColumn>);
     }
 }
 

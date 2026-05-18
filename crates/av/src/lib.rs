@@ -32,6 +32,8 @@ pub mod video_player;
 #[cfg(feature = "av_player_debug")]
 pub mod av_player_debug;
 
+use std::marker::PhantomData;
+
 #[cfg(feature = "ffmpeg")]
 use crate::{audio_sink::AudioSink, video_stream::VideoSink};
 use audio_source::AudioSourcePlugin;
@@ -74,6 +76,7 @@ use {
 pub trait AVPlayer: Component {
     #[cfg(feature = "ffmpeg")]
     type Sinks: AVPlayerSinks;
+    type ShouldBePlaying: Component;
 
     fn source(&self) -> &str;
     fn playing(&self) -> bool;
@@ -108,6 +111,7 @@ impl From<PbAudioStream> for AudioStream {
 impl AVPlayer for AudioStream {
     #[cfg(feature = "ffmpeg")]
     type Sinks = AudioStreamSinks;
+    type ShouldBePlaying = ShouldBePlaying<Self>;
 
     fn source(&self) -> &str {
         &self.url
@@ -174,6 +178,7 @@ impl From<PbVideoPlayer> for VideoPlayer {
 impl AVPlayer for VideoPlayer {
     #[cfg(feature = "ffmpeg")]
     type Sinks = VideoPlayerSinks;
+    type ShouldBePlaying = ShouldBePlaying<Self>;
 
     fn source(&self) -> &str {
         &self.src
@@ -233,7 +238,13 @@ impl AVPlayerSinks for VideoPlayerSinks {
 
 /// Marks whether an [`AVPlayer`] should be playing
 #[derive(Debug, Component)]
-pub struct ShouldBePlaying;
+pub struct ShouldBePlaying<T>(PhantomData<T>);
+
+impl<T> Default for ShouldBePlaying<T> {
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
 
 /// Marks whether an [`AVPlayer`] is in the same scene as the [`PrimaryUser`]
 #[derive(Debug, Component)]
@@ -329,17 +340,27 @@ fn av_player_is_in_scene<T: AVPlayer>(
     }
 }
 
+#[expect(clippy::type_complexity)]
 fn audio_stream_should_be_playing(
     mut commands: Commands,
-    av_players: Query<(Entity, &AudioStream, Has<InScene>, Has<ShouldBePlaying>)>,
+    av_players: Query<(
+        Entity,
+        &AudioStream,
+        Has<InScene>,
+        Has<ShouldBePlaying<AudioStream>>,
+    )>,
 ) {
     for (entity, audio_stream, in_scene, should_be_playing) in av_players {
         match (in_scene, should_be_playing, audio_stream.playing()) {
             (false, true, _) | (_, true, false) => {
-                commands.entity(entity).try_remove::<ShouldBePlaying>();
+                commands
+                    .entity(entity)
+                    .try_remove::<ShouldBePlaying<AudioStream>>();
             }
             (true, false, true) => {
-                commands.entity(entity).try_insert(ShouldBePlaying);
+                commands
+                    .entity(entity)
+                    .try_insert(ShouldBePlaying::<AudioStream>::default());
             }
             _ => (),
         }
@@ -353,7 +374,7 @@ fn video_player_should_be_playing(
         Entity,
         &VideoPlayer,
         Has<InScene>,
-        Has<ShouldBePlaying>,
+        Has<ShouldBePlaying<VideoPlayer>>,
         &GlobalTransform,
     )>,
     user: Single<&GlobalTransform, With<PrimaryUser>>,
@@ -390,7 +411,9 @@ fn video_player_should_be_playing(
         .filter(|(_, has_should_be_playing, _, _)| *has_should_be_playing)
         .map(|(_, _, _, ent)| *ent)
     {
-        commands.entity(ent).try_remove::<ShouldBePlaying>();
+        commands
+            .entity(ent)
+            .try_remove::<ShouldBePlaying<VideoPlayer>>();
     }
 
     for ent in sorted_players
@@ -401,13 +424,15 @@ fn video_player_should_be_playing(
         .filter(|(_, has_should_be_playing, _, _)| !*has_should_be_playing)
         .map(|(_, _, _, ent)| *ent)
     {
-        commands.entity(ent).try_insert(ShouldBePlaying);
+        commands
+            .entity(ent)
+            .try_insert(ShouldBePlaying::<VideoPlayer>::default());
     }
 }
 
 #[cfg(feature = "livekit")]
 fn stream_should_be_played<T: AVPlayer>(
-    trigger: Trigger<OnAdd, ShouldBePlaying>,
+    trigger: Trigger<OnAdd, T::ShouldBePlaying>,
     mut commands: Commands,
     av_players: Query<(&T, &ContainerEntity)>,
     streamer: Single<Entity, With<Streamer>>,
@@ -445,7 +470,7 @@ fn stream_should_be_played<T: AVPlayer>(
 
 #[cfg(feature = "livekit")]
 fn stream_shouldnt_be_played<T: AVPlayer>(
-    trigger: Trigger<OnRemove, ShouldBePlaying>,
+    trigger: Trigger<OnRemove, T::ShouldBePlaying>,
     mut commands: Commands,
     av_players: Query<(&T, &ContainerEntity, Has<StreamViewer>)>,
     mut removed_av_players: RemovedComponents<T>,
@@ -490,7 +515,7 @@ fn stream_shouldnt_be_played<T: AVPlayer>(
 fn streamer_joined<T: AVPlayer>(
     trigger: Trigger<OnAdd, Streamer>,
     mut commands: Commands,
-    av_players: Query<(Entity, &T, &ContainerEntity), With<ShouldBePlaying>>,
+    av_players: Query<(Entity, &T, &ContainerEntity), With<T::ShouldBePlaying>>,
     mut scenes: Query<&mut RendererSceneContext>,
     frame: Res<FrameCount>,
 ) {

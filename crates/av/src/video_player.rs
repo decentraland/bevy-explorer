@@ -35,7 +35,7 @@ use crate::{
     video_context::{VideoData, VideoInfo},
     video_player_should_be_playing,
     video_stream::{av_sinks, noop_sinks},
-    AVPlayer, AVPlayerSinks, AudioStream, InScene, ShouldBePlaying, VideoPlayer, VideoPlayerSinks,
+    AVPlayer, AVPlayerSinks, AudioStream, InScene, VideoPlayer, VideoPlayerSinks,
 };
 
 pub struct VideoPlayerPlugin;
@@ -115,7 +115,7 @@ fn av_player_on_insert<T: AVPlayer>(
         } else {
             debug!("Updating sinks of {entity}.");
             // This forces an update on the entity
-            commands.entity(entity).try_remove::<ShouldBePlaying>();
+            commands.entity(entity).try_remove::<T::ShouldBePlaying>();
             if let Some(video_sink) = maybe_video_sink {
                 video_sink
                     .command_sender
@@ -146,7 +146,7 @@ fn av_player_on_insert<T: AVPlayer>(
         debug!("{entity:?} has {}.", av_player.source());
         commands
             .entity(entity)
-            .try_remove::<(T::Sinks, ShouldBePlaying)>();
+            .try_remove::<(T::Sinks, T::ShouldBePlaying)>();
         #[cfg(feature = "livekit")]
         commands.entity(entity).try_remove::<StreamViewer>();
     }
@@ -156,7 +156,7 @@ fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands:
     let entity = trigger.target();
     commands
         .entity(entity)
-        .try_remove::<(InScene, ShouldBePlaying, T::Sinks, VideoTextureOutput)>();
+        .try_remove::<(InScene, T::ShouldBePlaying, T::Sinks, VideoTextureOutput)>();
     #[cfg(feature = "livekit")]
     commands
         .entity(entity)
@@ -164,7 +164,7 @@ fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands:
 }
 
 fn av_player_should_be_playing_on_add<T: AVPlayer>(
-    trigger: Trigger<OnAdd, ShouldBePlaying>,
+    trigger: Trigger<OnAdd, T::ShouldBePlaying>,
     av_players: Query<&T::Sinks, With<T>>,
 ) {
     let entity = trigger.target();
@@ -181,7 +181,7 @@ fn av_player_should_be_playing_on_add<T: AVPlayer>(
 }
 
 fn av_player_should_be_playing_on_remove<T: AVPlayer>(
-    trigger: Trigger<OnRemove, ShouldBePlaying>,
+    trigger: Trigger<OnRemove, T::ShouldBePlaying>,
     av_players: Query<&T::Sinks, With<T>>,
 ) {
     let entity = trigger.target();
@@ -320,7 +320,7 @@ fn rebuild_sinks<T: AVPlayer>(
             &ContainerEntity,
             &T,
             Option<&VideoTextureOutput>,
-            Has<ShouldBePlaying>,
+            Has<T::ShouldBePlaying>,
         ),
         RebuildSinkFilter<T::Sinks>,
     >,
