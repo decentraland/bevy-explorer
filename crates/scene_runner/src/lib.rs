@@ -641,7 +641,7 @@ impl ContainingScene<'_, '_> {
             ray = ray.normalize() * 1000.0;
         }
 
-        let offset: Vec3 = Vec3::new(ray.x.signum() * 0.01, ray.y.signum() * 0.01, 0.0);
+        let offset: Vec3 = Vec3::new(ray.x.signum() * 0.01, 0.0, ray.z.signum() * 0.01);
 
         loop {
             let adj_position = position + offset;
@@ -658,15 +658,15 @@ impl ContainingScene<'_, '_> {
             } else {
                 999.0
             };
-            let y_dist = if ray.y < 0.0 {
-                (((adj_position.y / 16.0).floor() * 16.0) - position.y) / ray.y
-            } else if ray.y > 0.0 {
-                (((adj_position.y / 16.0).ceil() * 16.0) - position.y) / ray.y
+            let z_dist = if ray.z < 0.0 {
+                (((adj_position.z / 16.0).floor() * 16.0) - position.z) / ray.z
+            } else if ray.z > 0.0 {
+                (((adj_position.z / 16.0).ceil() * 16.0) - position.z) / ray.z
             } else {
                 999.0
             };
 
-            let step_fraction = x_dist.min(y_dist);
+            let step_fraction = x_dist.min(z_dist);
             if step_fraction > 1.0 {
                 return results;
             }
