@@ -83,6 +83,32 @@ impl InputPriorities {
     }
 }
 
+// Holding any of these triggers OS-shortcut suppression for non-modifier
+// gameplay keys, but only when the held modifier is itself unbound — if the
+// user bound e.g. ControlLeft to walk, Ctrl+W still fires walk+forward and
+// the user owns that consequence.
+const SUPPRESSING_MODIFIERS: [KeyCode; 6] = [
+    KeyCode::SuperLeft,
+    KeyCode::SuperRight,
+    KeyCode::ControlLeft,
+    KeyCode::ControlRight,
+    KeyCode::AltLeft,
+    KeyCode::AltRight,
+];
+
+fn key_bound(map: &InputMap, k: KeyCode) -> bool {
+    map.inputs.values().any(|ids| {
+        ids.iter()
+            .any(|id| matches!(id, InputIdentifier::Key(bk) if *bk == k))
+    })
+}
+
+fn any_unbound_modifier_held(key_input: &ButtonInput<KeyCode>, map: &InputMap) -> bool {
+    SUPPRESSING_MODIFIERS
+        .iter()
+        .any(|m| key_input.pressed(*m) && !key_bound(map, *m))
+}
+
 pub struct InputManagerPlugin;
 
 impl Plugin for InputManagerPlugin {
@@ -98,7 +124,7 @@ impl Plugin for InputManagerPlugin {
         app.add_systems(
             PreUpdate,
             (
-                clear_stuck_modifier_keys.after(bevy::input::InputSystem),
+                handle_modifier_keys.after(bevy::input::InputSystem),
                 update_deltas,
                 handle_native_input,
                 handle_get_bindings,
@@ -408,45 +434,46 @@ struct CurrentNativeInputRequest {
     axes: HashMap<AxisIdentifier, Vec2>,
 }
 
-// macOS suppresses keyUp events for non-modifier keys while Cmd is held, leaving
-// those keys stuck as `pressed` in winit's input state (e.g. Cmd+V leaves V
-// stuck). This system tracks non-modifier keys pressed while any modifier is
-// held, then synthesizes releases for them once all modifiers are released.
-fn clear_stuck_modifier_keys(
+// While an unbound OS modifier (Cmd/Ctrl/Alt) is held, suppress non-modifier
+// gameplay keys at the source so they never appear as down/just_down/just_up
+// to anything reading ButtonInput. On the transition into the shortcut
+// window, release any already-held non-modifier keys so their in-flight
+// actions get a clean just_up; while the window is open, reset newly-pressed
+// keys so they never emit a down event (so no balancing up is needed).
+//
+// Text input is unaffected: it reads KeyboardInput events for its action
+// keys and only consults ButtonInput for modifier state, which we leave
+// alone.
+fn handle_modifier_keys(
     mut key_input: ResMut<ButtonInput<KeyCode>>,
-    mut tracked: Local<HashSet<KeyCode>>,
-    mut had_modifier: Local<bool>,
+    map: Res<InputMap>,
+    mut was_unbound_held: Local<bool>,
 ) {
-    const MODIFIERS: [KeyCode; 6] = [
-        KeyCode::SuperLeft,
-        KeyCode::SuperRight,
-        KeyCode::ControlLeft,
-        KeyCode::ControlRight,
-        KeyCode::AltLeft,
-        KeyCode::AltRight,
-    ];
+    let unbound_held = any_unbound_modifier_held(&key_input, &map);
 
-    let modifier_held = MODIFIERS.iter().any(|k| key_input.pressed(*k));
-
-    if modifier_held {
-        let newly_pressed: Vec<KeyCode> = key_input
-            .get_just_pressed()
+    if unbound_held && !*was_unbound_held {
+        let held: Vec<KeyCode> = key_input
+            .get_pressed()
             .copied()
-            .filter(|k| !MODIFIERS.contains(k))
+            .filter(|k| !SUPPRESSING_MODIFIERS.contains(k))
             .collect();
-        for key in newly_pressed {
-            tracked.insert(key);
-        }
-        *had_modifier = true;
-    } else if *had_modifier {
-        *had_modifier = false;
-        let stuck: Vec<KeyCode> = tracked.drain().collect();
-        for key in stuck {
-            if key_input.pressed(key) {
-                key_input.release(key);
-            }
+        for key in held {
+            key_input.release(key);
         }
     }
+
+    if unbound_held {
+        let to_reset: Vec<KeyCode> = key_input
+            .get_just_pressed()
+            .copied()
+            .filter(|k| !SUPPRESSING_MODIFIERS.contains(k))
+            .collect();
+        for key in to_reset {
+            key_input.reset(key);
+        }
+    }
+
+    *was_unbound_held = unbound_held;
 }
 
 fn update_deltas(
@@ -574,7 +601,13 @@ fn handle_native_input(
     }
 
     if let Some(mut current) = active.take() {
-        if let Some(key) = key_input.get_just_pressed().next() {
+        // Super (Cmd on Mac) is not accepted as a gameplay binding — see
+        // handle_modifier_keys for the OS-shortcut suppression logic, which
+        // assumes Super is never bound.
+        if let Some(key) = key_input
+            .get_just_pressed()
+            .find(|&&k| !matches!(k, KeyCode::SuperLeft | KeyCode::SuperRight))
+        {
             current.sender.send(InputIdentifier::Key(*key));
             return;
         } else if let Some(mouse) = mouse_input.get_just_pressed().next() {
