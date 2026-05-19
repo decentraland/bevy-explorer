@@ -121,8 +121,9 @@ fn av_player_on_insert<T: AVPlayer>(
             }
             if let Some(audio_sink) = mayve_audio_sink {
                 commands.trigger_targets(
-                    ChangeAudioSinkVolume {
+                    ChangeAudioSinkVolume::<T> {
                         volume: av_player.volume(),
+                        _phantom: Default::default(),
                     },
                     entity,
                 );

@@ -65,8 +65,9 @@ impl<T> Drop for AudioSpawned<T> {
 }
 
 #[derive(Event)]
-pub struct ChangeAudioSinkVolume {
+pub struct ChangeAudioSinkVolume<T: AVPlayer> {
     pub volume: f32,
+    pub _phantom: PhantomData<T>,
 }
 
 // TODO integrate better with bevy_kira_audio to avoid logic on a main-thread system (NonSendMut forces this system to the main thread)
@@ -195,7 +196,7 @@ pub fn spawn_and_locate_foreign_streams<T: AVPlayer>(
 
 #[expect(clippy::type_complexity)]
 pub fn change_audio_sink_volume<T: AVPlayer>(
-    trigger: Trigger<ChangeAudioSinkVolume>,
+    trigger: Trigger<ChangeAudioSinkVolume<T>>,
     mut audio_sinks: Query<(Mut<AVSinks<T>>, Option<&mut AudioSpawned<T>>, Has<InScene>)>,
     audio_settings: Res<AudioSettings>,
 ) {
@@ -203,7 +204,7 @@ pub fn change_audio_sink_volume<T: AVPlayer>(
     if entity == Entity::PLACEHOLDER {
         debug_panic!("ChangeAudioSinkVolume is an entity event. Trigger it with `Commands::trigger_targets`.");
     }
-    let ChangeAudioSinkVolume { volume } = trigger.event();
+    let ChangeAudioSinkVolume { volume, .. } = trigger.event();
 
     let Ok((mut av_player_sinks, maybe_audio_spawned, in_scene)) = audio_sinks.get_mut(entity)
     else {
