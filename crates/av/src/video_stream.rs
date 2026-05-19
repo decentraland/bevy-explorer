@@ -15,7 +15,6 @@ use crate::{
     video_context::{VideoContext, VideoData, VideoError},
 };
 
-#[derive(Component)]
 pub struct VideoSink {
     pub source: String,
     pub command_sender: tokio::sync::mpsc::UnboundedSender<AVCommand>,
