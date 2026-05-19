@@ -80,6 +80,9 @@ pub struct ImposterOven {
 }
 
 const SCENE_BAKE_TICK: u32 = 200;
+// Additional scene ticks to wait after all textures first complete loading,
+// to let scripts / animations / dynamic state settle before capturing.
+const SCENE_BAKE_SETTLE_TICKS: u32 = 60;
 
 fn make_scene_oven(
     current_imposter: Res<CurrentImposterScene>,
@@ -89,6 +92,8 @@ fn make_scene_oven(
     live_scenes: Res<LiveScenes>,
     tick: Res<FrameCount>,
     mut start_tick: Local<Option<(String, u32)>>,
+    // (scene hash, scene tick_number at which all textures were first observed loaded)
+    mut settle_tick: Local<Option<(String, u32)>>,
     bake_list: Res<ImposterBakeList>,
     children: Query<&Children>,
     mat_handles: Query<&MeshMaterial3d<SceneMaterial>>,
@@ -163,6 +168,22 @@ fn make_scene_oven(
                         }
                     }
                 }
+            }
+        }
+
+        // first frame textures are all loaded; record the scene tick and let the
+        // scene tick a few more times so dynamic state can settle before capture
+        if !spawning_forever
+            && settle_tick
+                .as_ref()
+                .is_none_or(|(settle_hash, _)| hash != settle_hash)
+        {
+            *settle_tick = Some((hash.clone(), context.tick_number));
+        }
+        if !spawning_forever {
+            let ready_at = settle_tick.as_ref().unwrap().1;
+            if context.tick_number < ready_at.saturating_add(SCENE_BAKE_SETTLE_TICKS) {
+                return;
             }
         }
 
