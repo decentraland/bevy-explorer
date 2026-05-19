@@ -811,7 +811,10 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
 
         // not downloaded or not spawned, fallback to best available
         if req.as_ingredient {
-            return ImposterState::Pending(0);
+            // mirror the post-substitute fallback error so retries pass a non-zero
+            // current_error and the load actually fires in end_tick
+            let new_error = (6 - req.level) * (6 - req.level) * parcel_count;
+            return ImposterState::Pending(new_error);
         }
 
         // check for previously despawned lower mip entities first

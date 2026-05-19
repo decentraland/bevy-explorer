@@ -160,7 +160,10 @@ pub async fn load_imposter(
     cancel: CancellationToken,
 ) -> Option<BakedScene> {
     if required_crc.is_some_and(|crc| crc == 0) {
-        return None;
+        // crc==0 means the area has no scenes, so resolve directly to an empty
+        // spec instead of falling through to remote fetch (which would 404) or
+        // PendingRemote (which would re-trigger the bake every frame).
+        return Some(BakedScene::default());
     }
 
     // try locally

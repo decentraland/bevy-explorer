@@ -619,6 +619,7 @@ fn bake_imposter_imposter(
 
         let mut min = Vec3::MAX;
         let mut max = Vec3::MIN;
+        let mut child_states: Vec<(IVec2, &'static str)> = Vec::new();
         for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
             let key = (*parcel + offset * next_size, level - 1, true);
 
@@ -637,15 +638,25 @@ fn bake_imposter_imposter(
                 }) => {
                     min = min.min(imposter_spec.region_min);
                     max = max.max(imposter_spec.region_max);
+                    child_states.push((key.0, "Ready(data)"));
                 }
                 crate::render::ImposterSpecState::Pending => panic!(),
-                _ => continue,
+                crate::render::ImposterSpecState::Ready(_) => {
+                    child_states.push((key.0, "Ready(no-data)"));
+                    continue;
+                }
+                crate::render::ImposterSpecState::Missing => {
+                    child_states.push((key.0, "Missing"));
+                    continue;
+                }
             }
         }
 
         // skip empty
         if min.cmpgt(max).any() {
-            warn!("skipping empty imposterception bake");
+            warn!(
+                "skipping empty imposterception bake at {parcel:?} level {level}, children: {child_states:?}"
+            );
             // oven.baked_scene.imposters.insert(region.parcel_min(), None);
         } else {
             let aabb = Aabb::from_min_max(min, max);

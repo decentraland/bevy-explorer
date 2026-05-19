@@ -1,12 +1,13 @@
 use std::{fs::File, io::Write, sync::OnceLock};
 
+use assets::EmbedAssetsPlugin;
 use comms::{
     profile::{CurrentUserProfile, ProfileCache, UserProfile},
     CommsPlugin,
 };
 use console::ConsolePlugin;
 
-use dcl_deno::init_runtime;
+use dcl_deno_ipc::init_runtime;
 
 use imposters::{
     render::{RetryImposter, SceneImposter},
@@ -26,10 +27,10 @@ use common::{
     rpc::RpcCall,
     sets::SetupSets,
     structs::{
-        AppConfig, AppError, AvatarDynamicState, CurrentRealm, CursorLocks, GraphicsSettings,
-        HeadSync, IVec2Arg, PermissionUsed, PointAtSync, PreviewMode, PrimaryCamera,
-        PrimaryCameraRes, PrimaryPlayerRes, SceneGlobalLight, SceneImposterBake, SceneLoadDistance,
-        SystemAudio, TimeOfDay, ToolTips,
+        AppConfig, AppError, AvatarDynamicState, CurrentRealm, CursorLocks, EngineMovementControl,
+        GraphicsSettings, HeadSync, IVec2Arg, PermissionUsed, PointAtSync, PreviewMode,
+        PrimaryCamera, PrimaryCameraRes, PrimaryPlayerRes, SceneGlobalLight, SceneImposterBake,
+        SceneLoadDistance, SystemAudio, TimeOfDay, ToolTips,
     },
     util::UtilsPlugin,
 };
@@ -44,7 +45,7 @@ use scene_runner::{
 use ipfs::{map_realm_name, IpfsIoPlugin};
 use system_bridge::SystemBridgePlugin;
 use ui_core::{scrollable::ScrollTargetEvent, UiCorePlugin};
-use user_input::avatar_movement::GroundCollider;
+use user_input::avatar_movement::{AvatarMovementInfo, GroundCollider};
 use wallet::Wallet;
 
 static SESSION_LOG: OnceLock<String> = OnceLock::new();
@@ -73,7 +74,7 @@ fn main() {
         .write_all(format!("{}\n\n", SESSION_LOG.get().unwrap()).as_bytes())
         .expect("failed to create log file");
 
-    init_runtime();
+    init_runtime().unwrap();
 
     let mut args = pico_args::Arguments::from_env();
     let config_file = platform::project_directories()
@@ -207,6 +208,8 @@ fn main() {
             }),
     );
 
+    app.add_plugins(EmbedAssetsPlugin);
+
     app.add_plugins(ScheduleRunnerPlugin::run_loop(
         // Run full speed
         std::time::Duration::ZERO,
@@ -272,6 +275,8 @@ fn main() {
         .init_resource::<PreviewMode>()
         .init_asset::<Nft>()
         .init_resource::<CursorLocks>()
+        .init_resource::<EngineMovementControl>()
+        .init_resource::<AvatarMovementInfo>()
         .insert_resource(TimeOfDay {
             time: 10.0 * 3600.0,
         });
