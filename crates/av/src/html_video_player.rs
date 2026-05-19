@@ -1,11 +1,11 @@
 use std::{
     cell::RefCell,
+    marker::PhantomData,
     rc::Rc,
     sync::{
         atomic::{AtomicU32, Ordering},
         Arc, Mutex,
     },
-    marker::PhantomData
 };
 
 use bevy::{
@@ -47,7 +47,7 @@ use {
 
 use crate::{
     audio_stream_should_be_playing, av_player_is_in_scene, video_player_should_be_playing,
-    AVPlayer, AudioStream, InScene, VideoPlayer,
+    AVPlayer, AudioStream, InScene, ShouldBePlaying, VideoPlayer,
 };
 
 type RcClosure = Rc<RefCell<Option<Closure<dyn FnMut(f64, JsValue)>>>>;
@@ -149,7 +149,7 @@ pub struct HtmlMediaEntity<T: AVPlayer> {
     _closures: Vec<Closure<dyn FnMut()>>,
     frame_closure: RcClosure,
     frame_callback_handle: Rc<RefCell<Option<u32>>>,
-    _phantom: PhantomData<T>
+    _phantom: PhantomData<T>,
 }
 
 /// safety: engine is single threaded
@@ -235,7 +235,7 @@ impl<T: AVPlayer> HtmlMediaEntity<T> {
             _closures: closures,
             frame_closure: Default::default(),
             frame_callback_handle: Default::default(),
-            _phantom: Default::default()
+            _phantom: Default::default(),
         }
     }
 
@@ -513,7 +513,7 @@ fn av_player_on_insert<T: AVPlayer>(
             }
         } else {
             // This forces an update on the entity
-            commands.entity(entity).try_remove::<T::ShouldBePlaying>();
+            commands.entity(entity).try_remove::<ShouldBePlaying<T>>();
             html_media_entity.stop();
             html_media_entity.set_loop(av_player.r#loop());
             html_media_entity.set_volume(av_player_volume * audio_settings.scene());
@@ -522,7 +522,7 @@ fn av_player_on_insert<T: AVPlayer>(
         debug!("Removing html media entity {entity} due to diverging source.");
         commands
             .entity(trigger.target())
-            .try_remove::<(HtmlMediaEntity<T>, T::ShouldBePlaying)>();
+            .try_remove::<(HtmlMediaEntity<T>, ShouldBePlaying<T>)>();
         #[cfg(feature = "livekit")]
         commands.entity(entity).try_remove::<StreamViewer>();
     }
@@ -532,7 +532,7 @@ fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands:
     let entity = trigger.target();
     commands.entity(entity).try_remove::<(
         InScene,
-        T::ShouldBePlaying,
+        ShouldBePlaying<T>,
         HtmlMediaEntity<T>,
         VideoTextureOutput,
     )>();
@@ -600,7 +600,11 @@ fn rebuild_html_media_entities<T: AVPlayer>(
                 HtmlMediaEntity::<T>::new_noop(source_url.to_owned(), image_handle.clone())
             } else {
                 debug!("https video {}", source_url);
-                HtmlMediaEntity::<T>::new_video(&source, source_url.to_owned(), image_handle.clone())
+                HtmlMediaEntity::<T>::new_video(
+                    &source,
+                    source_url.to_owned(),
+                    image_handle.clone(),
+                )
             };
 
             let video_volume = player.volume();
@@ -628,7 +632,7 @@ fn update_av_players<T: AVPlayer>(
             Entity,
             &ContainerEntity,
             Option<&mut HtmlMediaEntity<T>>,
-            Has<T::ShouldBePlaying>,
+            Has<ShouldBePlaying<T>>,
         ),
         With<T>,
     >,

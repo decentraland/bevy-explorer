@@ -76,7 +76,6 @@ use {
 pub trait AVPlayer: Component {
     #[cfg(feature = "ffmpeg")]
     type Sinks: AVPlayerSinks;
-    type ShouldBePlaying: Component;
 
     fn source(&self) -> &str;
     fn playing(&self) -> bool;
@@ -111,7 +110,6 @@ impl From<PbAudioStream> for AudioStream {
 impl AVPlayer for AudioStream {
     #[cfg(feature = "ffmpeg")]
     type Sinks = AudioStreamSinks;
-    type ShouldBePlaying = ShouldBePlaying<Self>;
 
     fn source(&self) -> &str {
         &self.url
@@ -178,7 +176,6 @@ impl From<PbVideoPlayer> for VideoPlayer {
 impl AVPlayer for VideoPlayer {
     #[cfg(feature = "ffmpeg")]
     type Sinks = VideoPlayerSinks;
-    type ShouldBePlaying = ShouldBePlaying<Self>;
 
     fn source(&self) -> &str {
         &self.src
@@ -435,7 +432,7 @@ fn video_player_should_be_playing(
 
 #[cfg(feature = "livekit")]
 fn stream_should_be_played<T: AVPlayer>(
-    trigger: Trigger<OnAdd, T::ShouldBePlaying>,
+    trigger: Trigger<OnAdd, ShouldBePlaying<T>>,
     mut commands: Commands,
     av_players: Query<(&T, &ContainerEntity)>,
     streamer: Single<Entity, With<Streamer>>,
@@ -473,7 +470,7 @@ fn stream_should_be_played<T: AVPlayer>(
 
 #[cfg(feature = "livekit")]
 fn stream_shouldnt_be_played<T: AVPlayer>(
-    trigger: Trigger<OnRemove, T::ShouldBePlaying>,
+    trigger: Trigger<OnRemove, ShouldBePlaying<T>>,
     mut commands: Commands,
     av_players: Query<(&T, &ContainerEntity, Has<StreamViewer>)>,
     mut removed_av_players: RemovedComponents<T>,
@@ -518,7 +515,7 @@ fn stream_shouldnt_be_played<T: AVPlayer>(
 fn streamer_joined<T: AVPlayer>(
     trigger: Trigger<OnAdd, Streamer>,
     mut commands: Commands,
-    av_players: Query<(Entity, &T, &ContainerEntity), With<T::ShouldBePlaying>>,
+    av_players: Query<(Entity, &T, &ContainerEntity), With<ShouldBePlaying<T>>>,
     mut scenes: Query<&mut RendererSceneContext>,
     frame: Res<FrameCount>,
 ) {
