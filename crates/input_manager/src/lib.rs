@@ -601,7 +601,13 @@ fn handle_native_input(
     }
 
     if let Some(mut current) = active.take() {
-        if let Some(key) = key_input.get_just_pressed().next() {
+        // Super (Cmd on Mac) is not accepted as a gameplay binding — see
+        // handle_modifier_keys for the OS-shortcut suppression logic, which
+        // assumes Super is never bound.
+        if let Some(key) = key_input
+            .get_just_pressed()
+            .find(|&&k| !matches!(k, KeyCode::SuperLeft | KeyCode::SuperRight))
+        {
             current.sender.send(InputIdentifier::Key(*key));
             return;
         } else if let Some(mouse) = mouse_input.get_just_pressed().next() {
