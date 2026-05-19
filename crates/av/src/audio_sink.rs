@@ -15,7 +15,7 @@ use kira::{
 use scene_runner::{ContainingScene, SceneEntity};
 use tokio::sync::mpsc::error::TryRecvError;
 
-use crate::{stream_processor::AVCommand, AVPlayer, AVPlayerSinks, InScene};
+use crate::{stream_processor::AVCommand, AVPlayer, AVPlayerSinks, AVSinks, InScene};
 
 pub struct AudioSink {
     pub volume: f32,
@@ -76,7 +76,7 @@ pub fn spawn_audio_streams<T: AVPlayer>(
     mut streams: Query<(
         Entity,
         &SceneEntity,
-        &mut T::Sinks,
+        &mut AVSinks<T>,
         Option<&mut AudioSpawned<T>>,
     )>,
     mut audio_manager: NonSendMut<bevy_kira_audio::audio_output::AudioOutput<DefaultBackend>>,
@@ -196,7 +196,7 @@ pub fn spawn_and_locate_foreign_streams<T: AVPlayer>(
 #[expect(clippy::type_complexity)]
 pub fn change_audio_sink_volume<T: AVPlayer>(
     trigger: Trigger<ChangeAudioSinkVolume>,
-    mut audio_sinks: Query<(Mut<T::Sinks>, Option<&mut AudioSpawned<T>>, Has<InScene>)>,
+    mut audio_sinks: Query<(Mut<AVSinks<T>>, Option<&mut AudioSpawned<T>>, Has<InScene>)>,
     audio_settings: Res<AudioSettings>,
 ) {
     let entity = trigger.target();

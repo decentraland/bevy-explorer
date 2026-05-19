@@ -74,13 +74,9 @@ fn init_ffmpeg() {
 }
 
 #[cfg(not(feature = "livekit"))]
-type AVPlayerOnInsertQuery<'a, T> = (&'a T, Option<&'a <T as AVPlayer>::Sinks>);
+type AVPlayerOnInsertQuery<'a, T> = (&'a T, Option<&'a AVSinks<T>>);
 #[cfg(feature = "livekit")]
-type AVPlayerOnInsertQuery<'a, T> = (
-    &'a T,
-    Option<&'a StreamViewer>,
-    Option<&'a <T as AVPlayer>::Sinks>,
-);
+type AVPlayerOnInsertQuery<'a, T> = (&'a T, Option<&'a StreamViewer>, Option<&'a AVSinks<T>>);
 
 fn av_player_on_insert<T: AVPlayer>(
     trigger: Trigger<OnInsert, T>,
@@ -146,7 +142,7 @@ fn av_player_on_insert<T: AVPlayer>(
         debug!("{entity:?} has {}.", av_player.source());
         commands
             .entity(entity)
-            .try_remove::<(T::Sinks, ShouldBePlaying<T>)>();
+            .try_remove::<(AVSinks<T>, ShouldBePlaying<T>)>();
         #[cfg(feature = "livekit")]
         commands.entity(entity).try_remove::<StreamViewer>();
     }
@@ -156,7 +152,7 @@ fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands:
     let entity = trigger.target();
     commands
         .entity(entity)
-        .try_remove::<(InScene, ShouldBePlaying<T>, T::Sinks, VideoTextureOutput)>();
+        .try_remove::<(InScene, ShouldBePlaying<T>, AVSinks<T>, VideoTextureOutput)>();
     #[cfg(feature = "livekit")]
     commands
         .entity(entity)
@@ -165,7 +161,7 @@ fn av_player_on_remove<T: AVPlayer>(trigger: Trigger<OnRemove, T>, mut commands:
 
 fn av_player_should_be_playing_on_add<T: AVPlayer>(
     trigger: Trigger<OnAdd, ShouldBePlaying<T>>,
-    av_players: Query<&T::Sinks, With<T>>,
+    av_players: Query<&AVSinks<T>, With<T>>,
 ) {
     let entity = trigger.target();
     let Ok(sinks) = av_players.get(entity) else {
@@ -182,7 +178,7 @@ fn av_player_should_be_playing_on_add<T: AVPlayer>(
 
 fn av_player_should_be_playing_on_remove<T: AVPlayer>(
     trigger: Trigger<OnRemove, ShouldBePlaying<T>>,
-    av_players: Query<&T::Sinks, With<T>>,
+    av_players: Query<&AVSinks<T>, With<T>>,
 ) {
     let entity = trigger.target();
     let Ok(sinks) = av_players.get(entity) else {
@@ -322,7 +318,7 @@ fn rebuild_sinks<T: AVPlayer>(
             Option<&VideoTextureOutput>,
             Has<ShouldBePlaying<T>>,
         ),
-        RebuildSinkFilter<T::Sinks>,
+        RebuildSinkFilter<AVSinks<T>>,
     >,
     scenes: Query<&RendererSceneContext>,
     ipfs: Res<IpfsResource>,

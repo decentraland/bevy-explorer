@@ -74,16 +74,15 @@ use {
 };
 
 pub trait AVPlayer: Component {
-    #[cfg(feature = "ffmpeg")]
-    type Sinks: AVPlayerSinks;
-
     fn source(&self) -> &str;
     fn playing(&self) -> bool;
     fn volume(&self) -> f32;
     fn r#loop(&self) -> bool;
 
     #[cfg(feature = "ffmpeg")]
-    fn build_sink_component(audio_sink: AudioSink, video_sink: VideoSink) -> Self::Sinks;
+    fn build_sink_component(audio_sink: AudioSink, video_sink: VideoSink) -> AVSinks<Self>
+    where
+        Self: Sized;
 
     #[cfg(feature = "html")]
     fn has_video() -> bool;
@@ -135,9 +134,6 @@ impl From<PbAudioStream> for AudioStream {
 }
 
 impl AVPlayer for AudioStream {
-    #[cfg(feature = "ffmpeg")]
-    type Sinks = AVSinks<Self>;
-
     fn source(&self) -> &str {
         &self.url
     }
@@ -155,7 +151,7 @@ impl AVPlayer for AudioStream {
     }
 
     #[cfg(feature = "ffmpeg")]
-    fn build_sink_component(audio_sink: AudioSink, _video_sink: VideoSink) -> Self::Sinks {
+    fn build_sink_component(audio_sink: AudioSink, _video_sink: VideoSink) -> AVSinks<Self> {
         AVSinks {
             audio: Some(audio_sink),
             video: None,
@@ -180,9 +176,6 @@ impl From<PbVideoPlayer> for VideoPlayer {
 }
 
 impl AVPlayer for VideoPlayer {
-    #[cfg(feature = "ffmpeg")]
-    type Sinks = AVSinks<Self>;
-
     fn source(&self) -> &str {
         &self.src
     }
@@ -200,7 +193,7 @@ impl AVPlayer for VideoPlayer {
     }
 
     #[cfg(feature = "ffmpeg")]
-    fn build_sink_component(audio_sink: AudioSink, video_sink: VideoSink) -> Self::Sinks {
+    fn build_sink_component(audio_sink: AudioSink, video_sink: VideoSink) -> AVSinks<Self> {
         AVSinks {
             audio: Some(audio_sink),
             video: Some(video_sink),
