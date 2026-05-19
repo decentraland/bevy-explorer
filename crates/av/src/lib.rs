@@ -97,6 +97,33 @@ pub trait AVPlayerSinks: Component<Mutability = Mutable> {
     fn video_sink_mut(&mut self) -> Option<&mut VideoSink>;
 }
 
+#[cfg(feature = "ffmpeg")]
+#[derive(Component)]
+pub struct AVSinks<T: AVPlayer> {
+    pub audio: Option<AudioSink>,
+    pub video: Option<VideoSink>,
+    pub _phantom: PhantomData<T>,
+}
+
+#[cfg(feature = "ffmpeg")]
+impl<T: AVPlayer> AVPlayerSinks for AVSinks<T> {
+    fn audio_sink(&self) -> Option<&AudioSink> {
+        self.audio.as_ref()
+    }
+
+    fn audio_sink_mut(&mut self) -> Option<&mut AudioSink> {
+        self.audio.as_mut()
+    }
+
+    fn video_sink(&self) -> Option<&VideoSink> {
+        self.video.as_ref()
+    }
+
+    fn video_sink_mut(&mut self) -> Option<&mut VideoSink> {
+        self.video.as_mut()
+    }
+}
+
 #[derive(Component, Deref)]
 #[component(immutable)]
 pub struct AudioStream(PbAudioStream);
@@ -109,7 +136,7 @@ impl From<PbAudioStream> for AudioStream {
 
 impl AVPlayer for AudioStream {
     #[cfg(feature = "ffmpeg")]
-    type Sinks = AudioStreamSinks;
+    type Sinks = AVSinks<Self>;
 
     fn source(&self) -> &str {
         &self.url
@@ -129,37 +156,16 @@ impl AVPlayer for AudioStream {
 
     #[cfg(feature = "ffmpeg")]
     fn build_sink_component(audio_sink: AudioSink, _video_sink: VideoSink) -> Self::Sinks {
-        AudioStreamSinks { audio: audio_sink }
+        AVSinks {
+            audio: Some(audio_sink),
+            video: None,
+            _phantom: Default::default(),
+        }
     }
 
     #[cfg(feature = "html")]
     fn has_video() -> bool {
         false
-    }
-}
-
-#[cfg(feature = "ffmpeg")]
-#[derive(Component)]
-pub struct AudioStreamSinks {
-    pub audio: AudioSink,
-}
-
-#[cfg(feature = "ffmpeg")]
-impl AVPlayerSinks for AudioStreamSinks {
-    fn audio_sink(&self) -> Option<&AudioSink> {
-        Some(&self.audio)
-    }
-
-    fn audio_sink_mut(&mut self) -> Option<&mut AudioSink> {
-        Some(&mut self.audio)
-    }
-
-    fn video_sink(&self) -> Option<&VideoSink> {
-        None
-    }
-
-    fn video_sink_mut(&mut self) -> Option<&mut VideoSink> {
-        None
     }
 }
 
@@ -175,7 +181,7 @@ impl From<PbVideoPlayer> for VideoPlayer {
 
 impl AVPlayer for VideoPlayer {
     #[cfg(feature = "ffmpeg")]
-    type Sinks = VideoPlayerSinks;
+    type Sinks = AVSinks<Self>;
 
     fn source(&self) -> &str {
         &self.src
@@ -195,41 +201,16 @@ impl AVPlayer for VideoPlayer {
 
     #[cfg(feature = "ffmpeg")]
     fn build_sink_component(audio_sink: AudioSink, video_sink: VideoSink) -> Self::Sinks {
-        VideoPlayerSinks {
-            audio: audio_sink,
-            video: video_sink,
+        AVSinks {
+            audio: Some(audio_sink),
+            video: Some(video_sink),
+            _phantom: Default::default(),
         }
     }
 
     #[cfg(feature = "html")]
     fn has_video() -> bool {
         true
-    }
-}
-
-#[cfg(feature = "ffmpeg")]
-#[derive(Component)]
-pub struct VideoPlayerSinks {
-    pub audio: AudioSink,
-    pub video: VideoSink,
-}
-
-#[cfg(feature = "ffmpeg")]
-impl AVPlayerSinks for VideoPlayerSinks {
-    fn audio_sink(&self) -> Option<&AudioSink> {
-        Some(&self.audio)
-    }
-
-    fn audio_sink_mut(&mut self) -> Option<&mut AudioSink> {
-        Some(&mut self.audio)
-    }
-
-    fn video_sink(&self) -> Option<&VideoSink> {
-        Some(&self.video)
-    }
-
-    fn video_sink_mut(&mut self) -> Option<&mut VideoSink> {
-        Some(&mut self.video)
     }
 }
 

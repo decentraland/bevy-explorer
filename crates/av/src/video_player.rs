@@ -35,7 +35,7 @@ use crate::{
     video_context::{VideoData, VideoInfo},
     video_player_should_be_playing,
     video_stream::{av_sinks, noop_sinks},
-    AVPlayer, AVPlayerSinks, AudioStream, InScene, ShouldBePlaying, VideoPlayer, VideoPlayerSinks,
+    AVPlayer, AVPlayerSinks, AVSinks, AudioStream, InScene, ShouldBePlaying, VideoPlayer,
 };
 
 pub struct VideoPlayerPlugin;
@@ -200,7 +200,7 @@ fn av_player_should_be_playing_on_remove<T: AVPlayer>(
 fn play_videos(
     mut images: ResMut<Assets<Image>>,
     mut q: Query<(
-        &mut VideoPlayerSinks,
+        &mut AVSinks<VideoPlayer>,
         &ContainerEntity,
         &mut VideoTextureOutput,
     )>,

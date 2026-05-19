@@ -13,7 +13,7 @@ use comms::livekit::participant::StreamImage;
 use comms::livekit::participant::StreamViewer;
 
 #[cfg(feature = "ffmpeg")]
-use crate::VideoPlayerSinks;
+use crate::AVSinks;
 use crate::{AVPlayer, InScene, ShouldBePlaying, VideoPlayer};
 
 const DEFAULT_FONT: TextFont = TextFont {
@@ -36,8 +36,8 @@ impl Plugin for AvPlayerDebugPlugin {
         app.add_observer(av_player_on_insert::<VideoPlayer>);
         #[cfg(feature = "ffmpeg")]
         {
-            app.add_observer(on_add_column::<VideoPlayerSinks, VideoPlayerSinksColumn>);
-            app.add_observer(on_remove_column::<VideoPlayerSinks, VideoPlayerSinksColumn>);
+            app.add_observer(on_add_column::<AVSinks<VideoPlayer>, VideoPlayerSinksColumn>);
+            app.add_observer(on_remove_column::<AVSinks<VideoPlayer>, VideoPlayerSinksColumn>);
         }
         #[cfg(feature = "livekit")]
         {
