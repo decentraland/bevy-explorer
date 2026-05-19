@@ -277,6 +277,7 @@ fn bake_scene_imposters(
                         IVec2::MAX,
                         0,
                         None,
+                        false,
                     )(());
                 }
 
@@ -394,6 +395,7 @@ fn bake_scene_imposters(
                         region.parcel_min(),
                         0,
                         None,
+                        false,
                     ));
                 } else {
                     camera.set_callback(save_asset_callback);
@@ -444,6 +446,7 @@ fn bake_scene_imposters(
                     region.parcel_min(),
                     0,
                     None,
+                    true,
                 ));
             } else {
                 top_down.set_callback(save_asset_callback);
@@ -489,6 +492,9 @@ fn save_and_zip_callback<T>(
     parcel: IVec2,
     level: usize,
     crc: Option<u32>,
+    // If true, also write a loose copy of the baked file alongside the zip so
+    // consumers (eg minimap) can fetch the asset without pulling the full zip.
+    also_loose: bool,
 ) -> impl FnOnce(T) + Send + Sync + 'static {
     move |arg: T| {
         save_asset_callback(arg);
@@ -553,6 +559,13 @@ fn save_and_zip_callback<T>(
         archive.finish().unwrap();
         debug!("added {target_file} to {output_path:?}");
 
+        if also_loose {
+            // compression is `Stored`, so this is the same bytes as the zip entry
+            let loose_path = output_path.with_file_name(&target_file);
+            std::fs::write(&loose_path, &data).unwrap();
+            debug!("wrote loose {loose_path:?}");
+        }
+
         // unlock
         std::fs::remove_file(touch).unwrap();
     }
@@ -610,6 +623,7 @@ fn bake_imposter_imposter(
                     parcel,
                     level,
                     Some(baking.crc),
+                    false,
                 )(());
             }
             current_imposter.0.as_mut().unwrap().complete = true;
@@ -722,6 +736,7 @@ fn bake_imposter_imposter(
                     *parcel,
                     *level,
                     Some(*crc),
+                    false,
                 ));
             } else {
                 camera.set_callback(save_asset_callback);
@@ -781,6 +796,7 @@ fn bake_imposter_imposter(
                     *parcel,
                     *level,
                     Some(*crc),
+                    false,
                 ));
             } else {
                 top_down.set_callback(save_asset_callback);
