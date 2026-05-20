@@ -891,6 +891,13 @@ fn pick_imposter_to_bake(
                 }
             }
         } else {
+            // skip empty regions: nothing to bake and get_spec resolves these
+            // to Ready(empty) without a baked file, so picking them would
+            // loop forever (the entity never gains children).
+            if scene_pointers.crc(imposter.parcel, imposter.level) == Some(0) {
+                continue 'imposter;
+            }
+
             // check all scenes in the parcel
             let size = 1 << imposter.level;
             for x in imposter.parcel.x..imposter.parcel.x + size {

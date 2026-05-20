@@ -665,6 +665,17 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
                 return ImposterSpecState::Pending;
             };
 
+            // Empty region: no scenes contribute, so the mip is trivially
+            // empty. Short-circuit to Ready(no data) so callers (notably
+            // `bake_imposter_imposter`'s child-compose loop) don't race the
+            // async load machinery and observe Pending on first request.
+            if crc == 0 {
+                return ImposterSpecState::Ready(SpecStateReady {
+                    imposter_data: None,
+                    floor_data: None,
+                });
+            }
+
             let key = (req.parcel, req.level, crc);
 
             let resolve_state = mips.get(&key);
