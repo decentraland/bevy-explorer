@@ -30,6 +30,7 @@ use scene_runner::{
         CurrentImposterScene, LiveScenes, PointerResult, ScenePointers, PARCEL_SIZE,
     },
     renderer_context::RendererSceneContext,
+    update_world::gltf_container::{GltfDefinition, GltfProcessed},
 };
 use zip::{write::SimpleFileOptions, ZipWriter};
 
@@ -99,6 +100,7 @@ fn make_scene_oven(
     mat_handles: Query<&MeshMaterial3d<SceneMaterial>>,
     materials: Res<Assets<SceneMaterial>>,
     asset_server: Res<AssetServer>,
+    gltf_state: Query<(Has<GltfDefinition>, Has<GltfProcessed>)>,
 ) {
     if !baking.is_empty() {
         return;
@@ -117,7 +119,7 @@ fn make_scene_oven(
 
     if let Some(entity) = live_scenes.scenes.get(hash) {
         let Ok((mut context, mut transform)) = scenes.get_mut(*entity) else {
-            if tick.0 > start_tick.as_ref().unwrap().1 + 1000 {
+            if tick.0 > start_tick.as_ref().unwrap().1 + 10000 {
                 warn!("scene load failed, spawning dummy oven");
                 let Some(ImposterToBake::Scene(parcel, _)) = bake_list.0.last() else {
                     error!("bake list doesn't have a scene, scene entity is missing, but CurrentImposterScene is set?!");
@@ -138,10 +140,62 @@ fn make_scene_oven(
 
         transform.translation.y = -2000.0;
 
+        // While the network is still genuinely resolving an asset for this
+        // scene, never arm the `spawning_forever` escape hatch — otherwise a
+        // slow CDN response (or a large mesh) over ~30s of frames would
+        // cause us to bake without it. "Pending" here means the texture is
+        // still in `Loading`/`NotLoaded` or a `GltfDefinition` hasn't been
+        // matched by a `GltfProcessed` yet. `Failed` assets *do* let the
+        // timeout arm — we don't want a permanently-broken asset to block
+        // the bake forever.
+        let any_pending_asset = children.iter_descendants(*entity).any(|child| {
+            if let Ok((true, false)) = gltf_state.get(child) {
+                return true;
+            }
+            let Ok(h_mat) = mat_handles.get(child) else {
+                return false;
+            };
+            let Some(mat) = materials.get(h_mat.id()) else {
+                return false;
+            };
+            [
+                &mat.base.base_color_texture,
+                &mat.base.normal_map_texture,
+                &mat.base.metallic_roughness_texture,
+                &mat.base.emissive_texture,
+            ]
+            .into_iter()
+            .flatten()
+            .any(|h| {
+                matches!(
+                    asset_server.load_state(h.id()),
+                    bevy::asset::LoadState::Loading | bevy::asset::LoadState::NotLoaded
+                )
+            })
+        });
+
+        // Reset the timeout baseline on every frame anything is loading, so
+        // the 10000-frame countdown only begins once *no* asset is still
+        // resolving. Equivalent to "10k frames since the last completion".
+        if any_pending_asset {
+            *start_tick = Some((hash.clone(), tick.0));
+        }
         let spawning_forever = tick.0 > start_tick.as_ref().unwrap().1 + 10000;
 
         if context.tick_number < SCENE_BAKE_TICK && !context.broken && !spawning_forever {
             return;
+        }
+
+        // wait for gltf containers to finish loading (a `GltfDefinition`
+        // without a matching `GltfProcessed` is still being instantiated;
+        // its meshes/materials aren't in the world yet, so the texture
+        // check below would pass vacuously while the scene is incomplete)
+        if !spawning_forever {
+            for child in children.iter_descendants(*entity) {
+                if let Ok((true, false)) = gltf_state.get(child) {
+                    return;
+                }
+            }
         }
 
         // check for texture loads
