@@ -2,6 +2,7 @@ use std::{fs::File, io::Write, sync::OnceLock};
 
 use assets::EmbedAssetsPlugin;
 use comms::{
+    global_crdt::DiscardPlayerUpdates,
     profile::{CurrentUserProfile, ProfileCache, UserProfile},
     CommsPlugin,
 };
@@ -299,7 +300,11 @@ fn main() {
         .init_resource::<AvatarMovementInfo>()
         .insert_resource(TimeOfDay {
             time: 10.0 * 3600.0,
-        });
+        })
+        // Drop incoming remote-player traffic: in a long bake run this would
+        // otherwise grow the profile cache, churn ForeignPlayer entities, and
+        // drive per-frame iteration cost upward.
+        .insert_resource(DiscardPlayerUpdates(true));
 
     // requires local version of `bevy_mod_debugdump` due to once_cell version conflict.
     // probably resolved by updating deno. TODO: add feature flag for this after bumping deno
