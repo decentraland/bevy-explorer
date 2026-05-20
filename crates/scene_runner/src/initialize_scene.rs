@@ -791,6 +791,11 @@ pub const PARCEL_SIZE: f32 = 16.0;
 pub struct ScenePointers {
     pointers: HashMap<IVec2, PointerResult>,
     realm_bounds: (IVec2, IVec2),
+    // Pre-clip applied to `set_realm`'s argument. Set by the impost binary's
+    // `--range` for fast iteration: parcels outside this box are treated as
+    // empty for reads/crc, while still letting the bake generate mips from
+    // the in-range parcels. None = no clipping (normal client behaviour).
+    bake_clip: Option<(IVec2, IVec2)>,
     crcs: Vec<Vec<Option<u32>>>,
 }
 
@@ -799,6 +804,7 @@ impl Default for ScenePointers {
         Self {
             pointers: Default::default(),
             realm_bounds: (IVec2::MAX, IVec2::MIN),
+            bake_clip: None,
             crcs: Default::default(),
         }
     }
@@ -827,13 +833,40 @@ impl ScenePointers {
     }
 
     pub fn set_realm(&mut self, min_bound: IVec2, max_bound: IVec2) {
+        let (min_bound, max_bound) = match self.bake_clip {
+            Some((clip_min, clip_max)) => (min_bound.max(clip_min), max_bound.min(clip_max)),
+            None => (min_bound, max_bound),
+        };
         self.realm_bounds = (min_bound, max_bound);
         // clear nothings
         self.pointers.retain(|_, r| r != &PointerResult::Nothing);
         // exists will be rechecked / replaced when active entities returns
         self.crcs.clear();
     }
+
+    /// Restrict the effective realm bounds to the intersection with this box.
+    /// Used by the impost binary's `--range` for fast iteration; safe to call
+    /// either before or after `set_realm` (a current realm is re-clipped).
+    pub fn set_bake_clip(&mut self, min: IVec2, max: IVec2) {
+        self.bake_clip = Some((min, max));
+        if self.realm_bounds.0.cmple(self.realm_bounds.1).all() {
+            // re-apply current realm so the intersection takes effect
+            let (rmin, rmax) = self.realm_bounds;
+            self.set_realm(rmin, rmax);
+        }
+    }
     pub fn insert(&mut self, parcel: IVec2, result: PointerResult) -> Option<(IVec2, IVec2)> {
+        // Respect bake_clip: parcels outside the clip aren't stored at all.
+        // Storing them (as Nothing) would inflate `pointers.len()` past
+        // `expected_count` (which is computed over the clipped realm_bounds)
+        // and break `is_full`. `get()` already returns Nothing for parcels
+        // outside realm_bounds, so nobody needs the entry.
+        if let Some((clip_min, clip_max)) = self.bake_clip {
+            if parcel.cmplt(clip_min).any() || parcel.cmpgt(clip_max).any() {
+                return None;
+            }
+        }
+
         let mut res = None;
         if !matches!(result, PointerResult::Nothing) {
             let new_min = self.realm_bounds.0.min(parcel);

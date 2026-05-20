@@ -83,26 +83,33 @@ fn main() {
         .join("config.json");
 
     let levels = args.value_from_str("--levels").unwrap_or(5);
-    let range = args
-        .value_from_str("--range")
-        .map(|f: f32| f * 16.0)
-        .unwrap_or(f32::MAX);
+    // `--range` is in parcels (around `--location`). If set, the impost
+    // binary will:
+    //   - clip the realm bounds to `[location - range, location + range]`
+    //     so out-of-range parcels are treated as empty during the bake
+    //   - cap the top-level imposter render distance to `range * 16`
+    //     world units so only the level-N tile(s) covering the in-range
+    //     area get baked
+    // If unset, no clipping and the full realm bakes at maximum distance.
+    let range_parcels: Option<i32> = args.value_from_str("--range").ok();
 
     let base_config: AppConfig = std::fs::read(&config_file)
         .ok()
         .and_then(|f| serde_json::from_slice(&f).ok())
         .unwrap_or_default();
 
+    let location = args
+        .value_from_str::<_, IVec2Arg>("--location")
+        .ok()
+        .map(|va| va.0)
+        .unwrap_or(IVec2::ZERO);
+
     let final_config = AppConfig {
         server: args
             .value_from_str("--server")
             .ok()
             .unwrap_or(base_config.server),
-        location: args
-            .value_from_str::<_, IVec2Arg>("--location")
-            .ok()
-            .map(|va| va.0)
-            .unwrap_or(IVec2::ZERO),
+        location,
         graphics: GraphicsSettings {
             vsync: false,
             log_fps: false,
@@ -117,7 +124,9 @@ fn main() {
         scene_unload_extra_distance: 0.0,
         scene_imposter_bake: SceneImposterBake::FullSpeed,
         scene_imposter_distances: std::iter::repeat_n(0.0, levels)
-            .chain(std::iter::once(range))
+            .chain(std::iter::once(
+                range_parcels.map_or(f32::MAX, |r| r as f32 * 16.0),
+            ))
             .collect(),
         scene_log_to_console: args.contains("--scene_log_to_console"),
         ..base_config
@@ -257,6 +266,17 @@ fn main() {
         .insert_resource(PrimaryCameraRes(Entity::PLACEHOLDER))
         .add_systems(Startup, setup.in_set(SetupSets::Init));
 
+    // If `--range` was specified, clip the realm bounds to a box around
+    // `--location`. set_bake_clip is idempotent over realm reloads.
+    if let Some(range) = range_parcels {
+        let half = IVec2::splat(range);
+        let min = location - half;
+        let max = location + half;
+        app.add_systems(Startup, move |mut pointers: ResMut<ScenePointers>| {
+            pointers.set_bake_clip(min, max);
+        });
+    }
+
     // add required things that don't get initialized by their plugins
     let mut wallet = Wallet::default();
     wallet.finalize_as_guest();
@@ -374,8 +394,20 @@ fn setup(
         ))
         .id();
 
+    // place the camera near the player so `focus_imposters` selects the
+    // player as the focus point (distance < 100). Without this the camera
+    // sits at origin and, for a non-zero `--location`, the focus falls back
+    // to the ground intersect at (0,0), leaving zero imposters required.
     let camera_id = commands
-        .spawn((Camera3d::default(), PrimaryCamera::default()))
+        .spawn((
+            Camera3d::default(),
+            PrimaryCamera::default(),
+            Transform::from_translation(Vec3::new(
+                8.0 + 16.0 * config.location.x as f32,
+                8.0,
+                -8.0 + -16.0 * config.location.y as f32,
+            )),
+        ))
         .id();
 
     player_resource.0 = player_id;
