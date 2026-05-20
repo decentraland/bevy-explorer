@@ -16,6 +16,10 @@ pub mod track;
 pub mod web;
 
 use bevy::prelude::*;
+use common::{
+    rpc::RpcStreamSender,
+    structs::{ConnectionAvailability, LivekitUpdate},
+};
 use kira::manager::AudioManager;
 use tokio::sync::mpsc;
 
@@ -49,13 +53,9 @@ pub struct LivekitAudioManager {
     manager: AudioManager,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, States)]
-pub enum ConnectionAvailability {
-    #[default]
-    Available,
-    /// If client is disconnected from room due to duplicate identity
-    /// or from being kicked, client won't try connecting again
-    Unavailable,
+#[derive(Default, Resource, Deref, DerefMut)]
+pub struct LivekitSystemApiSenders {
+    senders: Vec<RpcStreamSender<LivekitUpdate>>,
 }
 
 #[macro_export]

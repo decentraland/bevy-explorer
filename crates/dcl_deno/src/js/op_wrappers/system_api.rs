@@ -1,6 +1,6 @@
 use common::{
     inputs::SystemActionEvent,
-    structs::{MicState, PermissionType, PermissionUsed, PermissionValue},
+    structs::{ConnectionAvailability, MicState, PermissionType, PermissionUsed, PermissionValue},
 };
 use dcl::js::system_api::{JsBindingsData, PermissionTypeDetail};
 use dcl_component::proto_components::{
@@ -90,6 +90,9 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_unblock_user(),
             op_get_blocked_users(),
             op_get_params(),
+            // Connectivity
+            op_get_livekit_status_stream(),
+            op_read_livekit_status_stream(),
         ]
     } else {
         Vec::default()
@@ -596,4 +599,18 @@ pub async fn op_get_params(
     state: Rc<RefCell<OpState>>,
 ) -> Result<HashMap<String, String>, anyhow::Error> {
     dcl::js::system_api::op_get_params(state).await
+}
+
+#[op2(async)]
+pub async fn op_get_livekit_status_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_livekit_status_stream(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_livekit_status_stream(
+    state: Rc<RefCell<OpState>>,
+    #[smi] rid: u32,
+) -> Result<Option<ConnectionAvailability>, anyhow::Error> {
+    dcl::js::system_api::op_read_livekit_status_stream(state, rid).await
 }
