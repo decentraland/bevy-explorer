@@ -179,7 +179,7 @@ fn broadcast_position(
             .sender
             .try_send(NetworkMessage::unreliable(&packet))
         {
-            warn!("failed to update to transport: {e}");
+            warn!("failed to update position to transport {:?}: {e}", transport.transport_type);
         }
     }
 
@@ -347,7 +347,7 @@ fn broadcast_position(
             .sender
             .try_send(NetworkMessage::unreliable(&uncompressed_packet))
         {
-            warn!("failed to update to transport: {e}");
+            warn!("failed to update movement to transport {:?}: {e}", transport.transport_type);
         }
     }
 
