@@ -320,15 +320,11 @@ fn main() {
 #[allow(clippy::type_complexity)]
 fn check_done(
     q: Query<
-        (),
-        (
-            With<SceneImposter>,
-            Without<RetryImposter>,
-            Without<Children>,
-        ),
+        &SceneImposter,
+        (Without<RetryImposter>, Without<Children>),
     >,
     realm: Res<CurrentRealm>,
-    pointers: Res<ScenePointers>,
+    mut pointers: ResMut<ScenePointers>,
     mut counter: Local<usize>,
     config: Res<AppConfig>,
     mut exit: EventWriter<AppExit>,
@@ -350,8 +346,15 @@ fn check_done(
         return;
     }
 
-    // wait till nothing missing
-    if q.is_empty() {
+    // wait till nothing missing. mirror `pick_imposter_to_bake`'s filter:
+    // level>0 imposters with `crc == Some(0)` are empty regions that the
+    // picker skips, get_spec short-circuits to Ready(None, None) so they
+    // never gain Children, and they'd otherwise pin `q` non-empty forever.
+    let pending = q.iter().any(|imposter| {
+        imposter.level == 0 || pointers.crc(imposter.parcel, imposter.level) != Some(0)
+    });
+
+    if !pending {
         *counter += 1;
         if *counter == 10 {
             info!("all done!");
