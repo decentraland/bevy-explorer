@@ -1433,3 +1433,46 @@ pub struct Region {
     pub top: i32,
     pub bottom: i32,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LivekitUpdate {
+    Availability(ConnectionAvailability),
+    DisconnectReason(LivekitDisconnect),
+    ConnectionQuality(LivekitParticipantConnectionQuality),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Event, Serialize, Deserialize)]
+pub struct LivekitParticipantConnectionQuality {
+    pub participant: String,
+    pub room: String,
+    pub connection_quality: ConnectionQuality,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Component, Serialize, Deserialize)]
+pub enum ConnectionQuality {
+    Excellent,
+    Good,
+    Poor,
+    Lost,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, States, Serialize, Deserialize)]
+pub enum ConnectionAvailability {
+    #[default]
+    Available,
+    /// If client is disconnected from room due to duplicate identity
+    /// or from being kicked, client won't try connecting again
+    Unavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Event, Serialize, Deserialize)]
+pub struct LivekitDisconnect {
+    pub room: String,
+    pub disconnect_reason: DisconnectReason,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DisconnectReason {
+    DuplicateIdentity,
+    ParticipantRemoved,
+}

@@ -532,3 +532,18 @@ module.exports.getSceneLoadingUIStream = async function() {
 
   return streamGenerator();
 }
+
+module.exports.getLivekitStatusStream = async function () {
+  const rid = await Deno.core.ops.op_get_livekit_status_stream();
+
+  async function* streamGenerator() {
+    while (true) {
+      const next = await Deno.core.ops.op_read_livekit_status_stream(rid);
+      if (next === null) break;
+      yield next;
+    }
+  }
+
+  return streamGenerator();
+}
+

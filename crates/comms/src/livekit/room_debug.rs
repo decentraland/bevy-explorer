@@ -4,10 +4,11 @@ use bevy::{
     prelude::*,
     text::{FontSmoothing, LineHeight},
 };
+use common::structs::ConnectionQuality;
 
 use crate::{
     livekit::{
-        participant::{ConnectionQuality, HostedBy, LivekitParticipant},
+        participant::{HostedBy, LivekitParticipant},
         room::LivekitRoom,
     },
     SceneRoom,
