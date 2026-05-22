@@ -61,17 +61,10 @@ impl BakedScene {}
 
 fn file_root(cache_path: Option<&Path>, as_ipfs_path: bool, id: &str, level: usize) -> PathBuf {
     let mut path = cache_path.map(ToOwned::to_owned).unwrap_or_default();
-
-    if level == 0 {
-        path.push("imposters");
-        path.push("scenes");
-        path.push(id);
-    } else {
-        path.push("imposters");
-        path.push("realms");
-        path.push(urlencoding::encode(id).into_owned());
-        path.push(format!("{level}"));
-    }
+    path.push("imposters");
+    path.push("realms");
+    path.push(urlencoding::encode(id).into_owned());
+    path.push(format!("{level}"));
 
     if cache_path.is_none() && as_ipfs_path {
         PathBuf::from(&IpfsPath::new_indexdb(path))
@@ -87,11 +80,7 @@ pub(crate) fn spec_path(
     level: usize,
 ) -> PathBuf {
     let mut path = file_root(cache_path, false, id, level);
-    if level == 0 {
-        path.push("spec.json");
-    } else {
-        path.push(format!("{},{}-spec.json", parcel.x, parcel.y));
-    }
+    path.push(format!("{},{}-spec.json", parcel.x, parcel.y));
     path
 }
 
@@ -125,11 +114,7 @@ pub(crate) fn zip_path(
     crc: Option<u32>,
 ) -> PathBuf {
     let mut path = file_root(cache_path, false, id, level);
-    if level == 0 {
-        path.push("scene.zip");
-    } else {
-        path.push(format!("{},{}.{}.zip", parcel.x, parcel.y, crc.unwrap()));
-    }
+    path.push(format!("{},{}.{}.zip", parcel.x, parcel.y, crc.unwrap()));
     path
 }
 

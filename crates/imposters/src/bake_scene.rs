@@ -10,6 +10,7 @@ use std::{
 use bevy::{
     diagnostic::FrameCount,
     math::FloatOrd,
+    platform::collections::HashMap,
     prelude::*,
     render::{primitives::Aabb, view::RenderLayers},
 };
@@ -291,6 +292,7 @@ fn bake_scene_imposters(
     mut all_baking_cams: Query<(Entity, &mut ImposterBakeCamera)>,
     mut live_scenes: ResMut<LiveScenes>,
     ipfas: IpfsAssetServer,
+    current_realm: Res<CurrentRealm>,
     tick: Res<FrameCount>,
     children: Query<&Children>,
     meshes: Query<(&GlobalTransform, &Aabb, &Visibility), With<Mesh3d>>,
@@ -299,6 +301,7 @@ fn bake_scene_imposters(
     config: Res<AppConfig>,
     plugin: Res<DclImposterPlugin>,
 ) {
+    let realm = &current_realm.about_url;
     if let Ok((baking_ent, mut oven)) = baking.single_mut() {
         let current_scene_ent = {
             let Some(entity) = live_scenes.scenes.get(&oven.hash) else {
@@ -315,24 +318,28 @@ fn bake_scene_imposters(
         if !any_baking_cams {
             let Some(region) = oven.unbaked_parcels.pop() else {
                 debug!("no regions left");
-                write_imposter(
-                    ipfas.ipfs_cache_path(),
-                    &oven.hash,
-                    IVec2::MAX,
-                    0,
-                    &oven.baked_scene,
-                );
-                if let Some(output_path) = plugin.zip_output.clone() {
-                    save_and_zip_callback::<()>(
-                        |_| {},
-                        spec_path(ipfas.ipfs_cache_path(), &oven.hash, IVec2::MAX, 0),
-                        output_path,
-                        oven.hash.clone(),
-                        IVec2::MAX,
-                        0,
-                        None,
-                        false,
-                    )(());
+                // Mip-0 layout: one parcel-keyed spec per parcel under
+                // `realms/<realm>/0/`, sharing the scene's CRC. Matches
+                // what `convert_scenes` emits for legacy scene caches.
+                let scene_crc = oven.baked_scene.crc;
+                for (parcel, imposter_spec) in oven.baked_scene.imposters.iter() {
+                    let single = BakedScene {
+                        imposters: HashMap::from_iter([(*parcel, *imposter_spec)]),
+                        crc: scene_crc,
+                    };
+                    write_imposter(ipfas.ipfs_cache_path(), realm, *parcel, 0, &single);
+                    if let Some(output_path) = plugin.zip_output.clone() {
+                        save_and_zip_callback::<()>(
+                            |_| {},
+                            spec_path(ipfas.ipfs_cache_path(), realm, *parcel, 0),
+                            output_path,
+                            realm.clone(),
+                            *parcel,
+                            0,
+                            Some(scene_crc),
+                            false,
+                        )(());
+                    }
                 }
 
                 // delete the scene since we messed with it a lot to get it stable
@@ -436,7 +443,7 @@ fn bake_scene_imposters(
                 };
 
                 let path =
-                    texture_path(ipfas.ipfs_cache_path(), &oven.hash, region.parcel_min(), 0);
+                    texture_path(ipfas.ipfs_cache_path(), realm, region.parcel_min(), 0);
                 let _ = std::fs::create_dir_all(path.parent().unwrap());
                 let save_asset_callback = camera.save_asset_callback(&path, true, true);
 
@@ -445,10 +452,10 @@ fn bake_scene_imposters(
                         save_asset_callback,
                         path,
                         output_path,
-                        oven.hash.clone(),
+                        realm.clone(),
                         region.parcel_min(),
                         0,
-                        None,
+                        Some(oven.baked_scene.crc),
                         false,
                     ));
                 } else {
@@ -488,7 +495,7 @@ fn bake_scene_imposters(
                 ..Default::default()
             };
 
-            let path = floor_path(ipfas.ipfs_cache_path(), &oven.hash, region.parcel_min(), 0);
+            let path = floor_path(ipfas.ipfs_cache_path(), realm, region.parcel_min(), 0);
             let save_asset_callback = top_down.save_asset_callback(&path, true, true);
 
             if let Some(output_path) = plugin.zip_output.clone() {
@@ -496,10 +503,10 @@ fn bake_scene_imposters(
                     save_asset_callback,
                     path,
                     output_path,
-                    oven.hash.clone(),
+                    realm.clone(),
                     region.parcel_min(),
                     0,
-                    None,
+                    Some(oven.baked_scene.crc),
                     true,
                 ));
             } else {
@@ -1039,10 +1046,16 @@ fn check_bake_state(
                     // done
                     info!("scene done!");
                     current_imposter_scene.0 = None;
-                    let PointerResult::Exists { hash, .. } = pointer_result else {
+                    let PointerResult::Exists { .. } = pointer_result else {
                         panic!()
                     };
-                    manager.clear_scene(hash);
+                    // The scene-level bake just wrote per-parcel mip-0 specs
+                    // under `realms/<realm>/0/`. Drop any cached resolution
+                    // for this parcel's level-0 entry so the next get_spec
+                    // re-reads from disk.
+                    if let Some(crc) = manager.pointers.crc(*parcel, 0) {
+                        manager.clear_mip(*parcel, 0, crc);
+                    }
                     baking.0.pop();
                 } else {
                     // don't need to check for constituents, just go
