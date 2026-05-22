@@ -78,6 +78,12 @@ pub struct ImposterOven {
     start_tick: u32,
     hash: String,
     unbaked_parcels: Vec<BoundRegion>,
+    /// Parcels we've consumed from `unbaked_parcels` so far. Includes empties
+    /// — the post-bake write loop iterates this so every parcel gets a
+    /// per-parcel spec on disk (empty ones with `imposters: {}`), preventing
+    /// the runtime from spinning forever on "spec not found → re-bake →
+    /// still empty → re-bake".
+    processed_parcels: Vec<IVec2>,
     baked_scene: BakedScene,
 }
 
@@ -130,6 +136,7 @@ fn make_scene_oven(
                     start_tick: tick.0,
                     hash: hash.clone(),
                     unbaked_parcels: vec![BoundRegion::new(*parcel, *parcel, 1)],
+                    processed_parcels: Vec::new(),
                     baked_scene: BakedScene {
                         crc: crc::Crc::<u32>::new(&CRC_32_CKSUM).checksum(hash.as_bytes()),
                         ..Default::default()
@@ -277,6 +284,7 @@ fn make_scene_oven(
             start_tick: tick.0,
             hash: hash.clone(),
             unbaked_parcels,
+            processed_parcels: Vec::new(),
             baked_scene: BakedScene {
                 crc: crc::Crc::<u32>::new(&CRC_32_CKSUM).checksum(hash.as_bytes()),
                 ..Default::default()
@@ -319,12 +327,20 @@ fn bake_scene_imposters(
             let Some(region) = oven.unbaked_parcels.pop() else {
                 debug!("no regions left");
                 // Mip-0 layout: one parcel-keyed spec per parcel under
-                // `realms/<realm>/0/`, sharing the scene's CRC. Matches
-                // what `convert_scenes` emits for legacy scene caches.
+                // `realms/<realm>/0/`, sharing the scene's CRC. We iterate
+                // every parcel we *processed* (not just those that ended up
+                // in `baked_scene.imposters`) so empty parcels also get a
+                // spec on disk. Without those, an empty parcel's runtime
+                // load fails (PendingRemote → 404 → Missing) and
+                // `pick_imposter_to_bake` re-queues the same scene every
+                // frame — infinite re-bake.
                 let scene_crc = oven.baked_scene.crc;
-                for (parcel, imposter_spec) in oven.baked_scene.imposters.iter() {
+                for parcel in &oven.processed_parcels {
+                    let imposter_spec = oven.baked_scene.imposters.get(parcel).copied();
                     let single = BakedScene {
-                        imposters: HashMap::from_iter([(*parcel, *imposter_spec)]),
+                        imposters: imposter_spec
+                            .map(|s| HashMap::from_iter([(*parcel, s)]))
+                            .unwrap_or_default(),
                         crc: scene_crc,
                     };
                     write_imposter(ipfas.ipfs_cache_path(), realm, *parcel, 0, &single);
@@ -352,6 +368,7 @@ fn bake_scene_imposters(
             };
 
             debug!("baking region: {:?}", region);
+            oven.processed_parcels.push(region.parcel_min());
 
             // update materials
             for h_mat in children
