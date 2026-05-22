@@ -2234,10 +2234,10 @@ dependencies = [
 [[package]]
 name = "boimp"
 version = "0.1.1"
-source = "git+https://github.com/robtfm/boimp?branch=feat%2Fcomposite-bake-via-storage-texture#e643e5f4dab6eb143179a6d2fd8ea4d067122968"
+source = "git+https://github.com/robtfm/boimp?branch=feat%2Fcomposite-bake-via-storage-texture#b2a9b0495f3a475bd677b39261881daea60de5cc"
 dependencies = [
  "anyhow",
- "async-channel 2.5.0",
+ "async-channel 1.9.0",
  "bevy",
  "bytemuck",
  "crossbeam-channel",
@@ -3499,6 +3499,7 @@ name = "decentra-bevy"
 version = "0.1.0"
 dependencies = [
  "analytics",
+ "anyhow",
  "assets",
  "av",
  "avatar",
@@ -3513,6 +3514,7 @@ dependencies = [
  "comms",
  "console",
  "console_error_panic_hook",
+ "crc",
  "dcl_deno",
  "dcl_deno_ipc",
  "dcl_wasm",
@@ -3544,6 +3546,7 @@ dependencies = [
  "tracing-appender",
  "tween",
  "ui_core",
+ "urlencoding",
  "user_input",
  "uuid 1.22.0",
  "visuals",
@@ -3554,6 +3557,7 @@ dependencies = [
  "web-time",
  "wgpu",
  "world_ui",
+ "zip 2.4.2",
 ]
 
 [[package]]
