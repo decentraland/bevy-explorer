@@ -270,6 +270,15 @@ function set_room_event_handler(room, handler) {
             })
         }
     );
+    room.on(
+        LivekitClient.RoomEvent.ActiveSpeakersChanged,
+        (speakers) => {
+            handler({
+                type: 'activeSpeakersChanged',
+                speakers,
+            })
+        }
+    );
 }
 
 /**
