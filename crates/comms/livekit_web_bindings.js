@@ -286,8 +286,8 @@ function set_room_event_handler(room, handler) {
  * @param {livekit.Participant} participant
  * @returns bool
  */
-export async function particinpant_is_local(participant) {
-    return particinpant.isLocal;
+export async function participant_is_local(participant) {
+    return participant.isLocal;
 }
 
 /**
