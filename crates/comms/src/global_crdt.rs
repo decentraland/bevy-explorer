@@ -75,6 +75,7 @@ impl Plugin for GlobalCrdtPlugin {
 
         app.add_systems(Update, process_transport_updates);
         app.add_systems(Update, despawn_players);
+        app.add_observer(remove_transport_from_foreign_audio_source);
         app.add_systems(Update, handle_foreign_audio);
         app.add_systems(Update, pipe_voice_to_scene);
         app.add_event::<PlayerPositionEvent>();
@@ -891,6 +892,17 @@ fn despawn_players(
     }
 }
 
+fn remove_transport_from_foreign_audio_source(
+    trigger: Trigger<OnReplace, Transport>,
+    foreign_audio_sources: Query<&mut ForeignAudioSource>,
+) {
+    let entity = trigger.target();
+
+    for mut foreign_audio_source in foreign_audio_sources {
+        foreign_audio_source.available_transports.remove(&entity);
+    }
+}
+
 fn handle_foreign_audio(
     transports: Query<(Entity, &Transport)>,
     mut q: Query<(&mut ForeignAudioSource, &ForeignPlayer)>,
@@ -922,11 +934,6 @@ fn handle_foreign_audio(
                 }
             }
         }
-
-        // validate available transports
-        source
-            .available_transports
-            .retain(|t, _| transports.contains_key(t));
 
         // validate current source
         if source
