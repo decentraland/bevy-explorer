@@ -40,10 +40,7 @@ fn main() -> anyhow::Result<()> {
     // Mirror `IpfsIoPlugin::build`'s cache-root choice:
     // `data_local_dir().join("cache")` (not `cache_dir()`).
     let cache_path = cache_path
-        .or_else(|| {
-            platform::project_directories()
-                .map(|d| d.data_local_dir().join("cache"))
-        })
+        .or_else(|| platform::project_directories().map(|d| d.data_local_dir().join("cache")))
         .ok_or_else(|| anyhow::anyhow!("--cache-path not given and no platform cache dir"))?;
 
     let scenes_dir = cache_path.join("imposters").join("scenes");
@@ -145,8 +142,8 @@ fn convert_parcel(
     let src_floor = scene_dir.join(&floor_name);
 
     // Body must exist; floor is optional (older scenes may not have one).
-    let body_bytes = fs::read(&src_body)
-        .map_err(|e| anyhow::anyhow!("missing body {body_name}: {e}"))?;
+    let body_bytes =
+        fs::read(&src_body).map_err(|e| anyhow::anyhow!("missing body {body_name}: {e}"))?;
     let floor_bytes = fs::read(&src_floor).ok();
 
     // Build a single-parcel BakedScene with the parcel's own spec and the
@@ -168,7 +165,8 @@ fn convert_parcel(
         let zip_path = zip_dir.join(format!("{},{}.{}.zip", parcel.x, parcel.y, crc));
         let file = fs::File::create(&zip_path)?;
         let mut zip = ZipWriter::new(file);
-        let opts: SimpleFileOptions = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        let opts: SimpleFileOptions =
+            SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
 
         zip.start_file(&spec_name, opts)?;
         zip.write_all(&single_bytes)?;

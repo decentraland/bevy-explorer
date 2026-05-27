@@ -319,10 +319,7 @@ fn main() {
 
 #[allow(clippy::type_complexity)]
 fn check_done(
-    q: Query<
-        &SceneImposter,
-        (Without<RetryImposter>, Without<Children>),
-    >,
+    q: Query<&SceneImposter, (Without<RetryImposter>, Without<Children>)>,
     realm: Res<CurrentRealm>,
     mut pointers: ResMut<ScenePointers>,
     mut counter: Local<usize>,
