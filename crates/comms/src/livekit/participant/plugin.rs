@@ -497,14 +497,11 @@ fn active_speakers_changed(
 
 fn is_now_speaking(
     trigger: Trigger<OnInsert, ActiveSpeaker>,
-    participants: Query<(&LivekitParticipant, Option<&HostedBy>), With<ActiveSpeaker>>,
-    player_state: Res<GlobalCrdtState>,
-    mut player_update_tasks: ResMut<PlayerUpdateTasks>,
-    livekit_runtime: Res<LivekitRuntime>,
+    participants: Query<&LivekitParticipant, With<ActiveSpeaker>>,
 ) {
     let entity = trigger.target();
 
-    let Ok((participant, maybe_hosted_by)) = participants.get(entity) else {
+    let Ok(participant) = participants.get(entity) else {
         unreachable!("Infallible Query");
     };
     debug!(
@@ -512,50 +509,15 @@ fn is_now_speaking(
         participant.sid(),
         participant.identity()
     );
-
-    let Some(hosted_by) = maybe_hosted_by else {
-        debug_panic!(
-            "{} ({}) is not hosted by a room.",
-            participant.sid(),
-            participant.identity()
-        );
-    };
-    let room_entity = hosted_by.get();
-
-    if let Some(address) = participant.identity().as_str().as_h160() {
-        let sender = player_state.get_sender();
-        let task = livekit_runtime.spawn(async move {
-            sender
-                .send(
-                    PlayerUpdate {
-                        transport_id: room_entity,
-                        message: PlayerMessage::ActiveSpeaker {
-                            transport: room_entity,
-                            active: true,
-                        },
-                        address,
-                    }
-                    .into(),
-                )
-                .await
-        });
-        player_update_tasks.push(PlayerUpdateTask {
-            runtime: livekit_runtime.clone(),
-            task,
-        });
-    }
 }
 
 fn is_no_longer_speaking(
     trigger: Trigger<OnReplace, ActiveSpeaker>,
-    participants: Query<(&LivekitParticipant, Option<&HostedBy>), With<ActiveSpeaker>>,
-    player_state: Res<GlobalCrdtState>,
-    mut player_update_tasks: ResMut<PlayerUpdateTasks>,
-    livekit_runtime: Res<LivekitRuntime>,
+    participants: Query<&LivekitParticipant, With<ActiveSpeaker>>,
 ) {
     let entity = trigger.target();
 
-    let Ok((participant, maybe_hosted_by)) = participants.get(entity) else {
+    let Ok(participant) = participants.get(entity) else {
         unreachable!("Infallible Query");
     };
     debug!(
@@ -563,37 +525,4 @@ fn is_no_longer_speaking(
         participant.sid(),
         participant.identity()
     );
-
-    let Some(hosted_by) = maybe_hosted_by else {
-        debug_panic!(
-            "{} ({}) is not hosted by a room.",
-            participant.sid(),
-            participant.identity()
-        );
-    };
-    let room_entity = hosted_by.get();
-
-    if let Some(address) = participant.identity().as_str().as_h160() {
-        let sender = player_state.get_sender();
-        let task = livekit_runtime.spawn(async move {
-            sender
-                .send(
-                    PlayerUpdate {
-                        transport_id: room_entity,
-                        message: PlayerMessage::ActiveSpeaker {
-                            transport: room_entity,
-                            active: false,
-                        },
-                        address,
-                    }
-                    .into(),
-                )
-                .await
-        });
-
-        player_update_tasks.push(PlayerUpdateTask {
-            runtime: livekit_runtime.clone(),
-            task,
-        });
-    }
 }

@@ -89,7 +89,6 @@ pub enum PlayerMessage {
     PlayerData(rfc4::packet::Message),
     AudioStreamAvailable { transport: Entity },
     AudioStreamUnavailable { transport: Entity },
-    ActiveSpeaker { transport: Entity, active: bool },
 }
 
 impl std::fmt::Debug for PlayerMessage {
@@ -104,11 +103,6 @@ impl std::fmt::Debug for PlayerMessage {
             Self::AudioStreamUnavailable { transport } => f
                 .debug_tuple("AudioStreamUnavailable")
                 .field(transport)
-                .finish(),
-            Self::ActiveSpeaker { transport, active } => f
-                .debug_tuple("ActiveSpeaker")
-                .field(transport)
-                .field(active)
                 .finish(),
         };
         var_name
@@ -283,13 +277,12 @@ pub enum ChannelControl {
 pub enum ForeignAudioData {
     TransportAvailable(Entity),
     TransportUnavailable(Entity),
-    ActiveSpeaker { transport: Entity, active: bool },
 }
 
 #[derive(Component)]
 pub struct ForeignAudioSource {
     audio_available_receiver: mpsc::Receiver<ForeignAudioData>,
-    available_transports: HashMap<Entity, bool>,
+    available_transports: HashSet<Entity>,
     pub current_transport: Option<Entity>,
     pub audio_receiver: Option<oneshot::Receiver<StreamingSoundData<AudioDecoderError>>>,
 }
@@ -714,12 +707,6 @@ pub fn process_transport_updates(
                     PlayerMessage::PlayerData(Message::SceneEmote(scene_emote)) => {
                         debug!("scene emote: {scene_emote:?}");
                     }
-                    PlayerMessage::ActiveSpeaker { transport, active } => {
-                        // pass through
-                        debug!("{transport} not available for {entity}!");
-                        let _ = audio_channel
-                            .try_send(ForeignAudioData::ActiveSpeaker { transport, active });
-                    }
                 }
             }
             NetworkUpdate::NonPlayer(update) => {
@@ -920,25 +907,23 @@ fn handle_foreign_audio(
         while let Ok(event) = source.audio_available_receiver.try_recv() {
             match event {
                 ForeignAudioData::TransportAvailable(entity) => {
-                    source.available_transports.insert(entity, false);
+                    source.available_transports.insert(entity);
                 }
                 ForeignAudioData::TransportUnavailable(entity) => {
                     source.available_transports.remove(&entity);
                 }
-                ForeignAudioData::ActiveSpeaker { transport, active } => {
-                    source
-                        .available_transports
-                        .entry(transport)
-                        .and_modify(|transport_active| *transport_active = active)
-                        .or_insert(active);
-                }
             }
         }
+
+        // validate available transports
+        source
+            .available_transports
+            .retain(|t| transports.contains_key(t));
 
         // validate current source
         if source
             .current_transport
-            .is_some_and(|current| !source.available_transports.contains_key(&current))
+            .is_some_and(|current| !source.available_transports.contains(&current))
         {
             source.current_transport = None;
             source.audio_receiver = None;
@@ -946,7 +931,7 @@ fn handle_foreign_audio(
 
         // request a new source
         if source.current_transport.is_none() {
-            if let Some((entity, _)) = source.available_transports.iter().next() {
+            if let Some(entity) = source.available_transports.iter().next() {
                 let control = transports.get(entity).unwrap();
                 let (sx, rx) = oneshot::channel();
                 if let Ok(()) = control.try_send(ChannelControl::VoiceSubscribe(player.address, sx))
