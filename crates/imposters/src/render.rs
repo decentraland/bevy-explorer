@@ -1078,8 +1078,7 @@ fn load_imposters(
                         (meshes.add(mesh), aabb)
                     };
 
-                    let mut scale = spec.region_max - spec.region_min;
-                    scale.y = spec.scale * 2.0;
+                    let scale = spec.region_max - spec.region_min;
                     c.spawn((
                         Mesh3d(mesh),
                         MeshMaterial3d(imposter),
