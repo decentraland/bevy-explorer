@@ -30,7 +30,7 @@ fn fragment(in: VertexOut) {
         in.inverse_rotation_2c,
     );
 
-    var props = sample_tile_material(vec4<f32>(clamp(in.uv, vec2(0.0001), vec2(17.0/18.0 - 0.0001)), vec2<f32>(0.0)), vec2(0u,0u), vec2(offset, offset));
+    var props = sample_tile_material(vec4<f32>(clamp(in.uv, vec2(0.0001), vec2(71.0/72.0 - 0.0001)), vec2<f32>(0.0)), vec2(0u,0u), vec2(offset, offset));
     if props.rgba.a <= 0.0 {
         discard;
     }

@@ -513,7 +513,7 @@ fn bake_scene_imposters(
             let mut top_down = ImposterBakeCamera {
                 grid_size: 1,
                 radius: (rmax - rmin).xz().max_element() * 0.5 + 1.0,
-                tile_size: (rmax - rmin).xz().max_element() as u32 + 2,
+                tile_size: ((rmax - rmin).xz().max_element() as u32 + 2) * 4,
                 order: -98,
                 manual_camera_transforms: Some(vec![Transform::from_translation(Vec3::new(
                     tile_mid.x,
@@ -859,7 +859,7 @@ fn bake_imposter_imposter(
             let mut top_down = ImposterBakeCamera {
                 grid_size: 1,
                 radius: (size as f32) * PARCEL_SIZE * 0.5 + size as f32,
-                tile_size: 16 + 2,
+                tile_size: (16 + 2) * 4,
                 order: -98,
                 multisample: 1,
                 manual_camera_transforms: Some(vec![Transform::from_translation(Vec3::new(
