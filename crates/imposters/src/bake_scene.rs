@@ -472,10 +472,9 @@ fn bake_scene_imposters(
                     ..Default::default()
                 };
 
-                let path =
-                    texture_path(ipfas.ipfs_cache_path(), realm, region.parcel_min(), 0);
+                let path = texture_path(ipfas.ipfs_cache_path(), realm, region.parcel_min(), 0);
                 let _ = std::fs::create_dir_all(path.parent().unwrap());
-                let save_asset_callback = camera.save_asset_callback(&path, true, true);
+                let save_asset_callback = make_save_callback(&camera, &path);
 
                 if let Some(output_path) = plugin.zip_output.clone() {
                     camera.set_callback(save_and_zip_callback(
@@ -526,7 +525,7 @@ fn bake_scene_imposters(
             };
 
             let path = floor_path(ipfas.ipfs_cache_path(), realm, region.parcel_min(), 0);
-            let save_asset_callback = top_down.save_asset_callback(&path, true, true);
+            let save_asset_callback = make_save_callback(&top_down, &path);
 
             if let Some(output_path) = plugin.zip_output.clone() {
                 top_down.set_callback(save_and_zip_callback(
@@ -572,6 +571,30 @@ fn bake_scene_imposters(
                 }
             }
         }
+    }
+}
+
+/// V2-format gating. Returns `Some(threshold)` if the new on-disk imposter
+/// format should be emitted; default off (legacy callback) so the cache stays
+/// readable by the current runtime. Toggle with `BOIMP_V2=1` (default
+/// threshold 10) or override the gate by setting `BOIMP_V2_THRESHOLD` to a
+/// floating-point value on the 0-255 RGB RMSE scale.
+fn v2_threshold() -> Option<f32> {
+    if let Ok(s) = std::env::var("BOIMP_V2_THRESHOLD") {
+        return s.parse::<f32>().ok();
+    }
+    if std::env::var("BOIMP_V2").is_ok() {
+        return Some(10.0);
+    }
+    None
+}
+
+type SaveCallback = Box<dyn FnOnce(bevy::prelude::Image) + Send + Sync + 'static>;
+
+fn make_save_callback(cam: &ImposterBakeCamera, path: &std::path::Path) -> SaveCallback {
+    match v2_threshold() {
+        Some(t) => Box::new(cam.save_asset_callback_v2(path, true, t)),
+        None => Box::new(cam.save_asset_callback(path, false, false)),
     }
 }
 
@@ -816,7 +839,7 @@ fn bake_imposter_imposter(
                 *level,
             );
             let _ = std::fs::create_dir_all(path.parent().unwrap());
-            let save_asset_callback = camera.save_asset_callback(&path, true, true);
+            let save_asset_callback = make_save_callback(&camera, &path);
 
             if let Some(output_path) = plugin.zip_output.clone() {
                 camera.set_callback(save_and_zip_callback(
@@ -876,7 +899,7 @@ fn bake_imposter_imposter(
                 *parcel,
                 *level,
             );
-            let save_asset_callback = top_down.save_asset_callback(&path, true, true);
+            let save_asset_callback = make_save_callback(&top_down, &path);
 
             if let Some(output_path) = plugin.zip_output.clone() {
                 top_down.set_callback(save_and_zip_callback(
