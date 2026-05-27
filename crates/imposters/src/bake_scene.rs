@@ -47,8 +47,8 @@ use crate::{
 };
 pub struct DclImposterBakeScenePlugin;
 
-const GRID_SIZE: u32 = 9;
-const TILE_SIZE: u32 = 96;
+const GRID_SIZE: u32 = 13;
+const TILE_SIZE: u32 = 128;
 
 pub const IMPOSTERCEPTION_LAYER: RenderLayers = RenderLayers::layer(5);
 
@@ -370,17 +370,6 @@ fn bake_scene_imposters(
             debug!("baking region: {:?}", region);
             oven.processed_parcels.push(region.parcel_min());
 
-            // update materials
-            for h_mat in children
-                .iter_descendants(current_scene_ent)
-                .filter_map(|c| bound_materials.get(c).ok())
-            {
-                let Some(mat) = materials.get_mut(h_mat) else {
-                    continue;
-                };
-                mat.extension.data = SceneBound::new(vec![region], 1.0).data;
-            }
-
             // region bounds
             let rmin = region.world_min();
             let rmax = region.world_max();
@@ -438,6 +427,30 @@ fn bake_scene_imposters(
                 );
                 let center = Vec3::from(aabb.center);
                 let radius = aabb.half_extents.length();
+
+                // Update materials' SceneBound to allow content past the
+                // parcel boundary by the maximum parallax shift this
+                // imposter will need at render time. The shift is bounded
+                // by `2 × radius × tan(half_inter_tile_angle)` — a function
+                // of both the imposter's radius (= bake-camera half-frustum)
+                // and the grid resolution. Scaling per-imposter saves bake
+                // size on short / flat content (e.g. ground patches at
+                // radius ~8m want < 1m of tolerance) while still giving the
+                // worst case (radius ~34m for tall cubes) the ~3m it needs.
+                // Floored at 1m to match the live-render tolerance baseline
+                // and avoid sub-pixel rounding artefacts.
+                let half_inter_tile = std::f32::consts::FRAC_PI_2 / GRID_SIZE as f32;
+                let bound_tolerance = (2.0 * radius * half_inter_tile.tan()).max(1.0);
+                for h_mat in children
+                    .iter_descendants(current_scene_ent)
+                    .filter_map(|c| bound_materials.get(c).ok())
+                {
+                    let Some(mat) = materials.get_mut(h_mat) else {
+                        continue;
+                    };
+                    mat.extension.data =
+                        SceneBound::new(vec![region], bound_tolerance).data;
+                }
 
                 debug!("region: {rmin}-{rmax}, snap: {}-{}", aabb.min(), aabb.max());
                 let tile_size = (TILE_SIZE as f32
