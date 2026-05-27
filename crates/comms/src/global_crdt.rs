@@ -35,9 +35,7 @@ use dcl_component::{
     DclReader, DclWriter, GlobalCrdtData, Localizer, SceneComponentId, SceneEntityId, SceneOrigin,
 };
 
-use crate::{
-    movement_compressed::MovementCompressed, profile::ProfileMetaCache, SceneRoom, Transport,
-};
+use crate::{movement_compressed::MovementCompressed, profile::ProfileMetaCache, Transport};
 
 #[cfg(not(target_arch = "wasm32"))]
 use kira::sound::streaming::StreamingSoundData;
@@ -84,7 +82,6 @@ impl Plugin for GlobalCrdtPlugin {
             (
                 drop_closed_voice_message_senders,
                 receive_new_voice_message_senders.run_if(on_event::<SystemApi>),
-                pipe_voice_to_scene,
             )
                 .chain(),
         );
@@ -369,7 +366,7 @@ pub struct ChatEvent {
 }
 
 #[derive(Default, Resource, Deref, DerefMut)]
-struct VoiceMessageStreams {
+pub struct VoiceMessageStreams {
     streams: Vec<RpcStreamSender<VoiceMessage>>,
 }
 
@@ -968,45 +965,6 @@ fn handle_foreign_audio(
                 "current: {:?} -> {:?}",
                 prev_transport, source.current_transport
             );
-        }
-    }
-}
-
-fn pipe_voice_to_scene(
-    sources: Query<(&ForeignPlayer, &ForeignAudioSource)>,
-    senders: Res<VoiceMessageStreams>,
-    mut current_active: Local<HashMap<ethers_core::types::Address, String>>,
-    scene_rooms: Query<&SceneRoom>,
-) {
-    let mut prev_active = std::mem::take(&mut *current_active);
-
-    for (source, audio) in sources.iter() {
-        if let Some(transport) = audio.current_transport {
-            let channel = match scene_rooms.get(transport).ok() {
-                Some(room) => room.0.clone(),
-                None => "Nearby".to_string(),
-            };
-            if prev_active.remove(&source.address).as_ref() != Some(&channel) {
-                for sender in senders.iter() {
-                    let _ = sender.send(VoiceMessage {
-                        sender_address: format!("{:#x}", source.address),
-                        channel: channel.clone(),
-                        active: true,
-                    });
-                }
-            }
-
-            current_active.insert(source.address, channel);
-        }
-    }
-
-    for (address, channel) in prev_active.drain() {
-        for sender in senders.iter() {
-            let _ = sender.send(VoiceMessage {
-                sender_address: format!("{address:#x}"),
-                channel: channel.clone(),
-                active: false,
-            });
         }
     }
 }

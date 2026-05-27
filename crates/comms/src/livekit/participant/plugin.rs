@@ -6,6 +6,7 @@ use bevy::{
 use common::{debug_panic, util::AsH160};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use prost::Message;
+use system_bridge::VoiceMessage;
 #[cfg(not(target_arch = "wasm32"))]
 use {
     bevy::{
@@ -21,7 +22,9 @@ use crate::livekit::participant::{StreamImage, StreamViewer};
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::Participant;
 use crate::{
-    global_crdt::{GlobalCrdtState, NonPlayerUpdate, PlayerMessage, PlayerUpdate},
+    global_crdt::{
+        GlobalCrdtState, NonPlayerUpdate, PlayerMessage, PlayerUpdate, VoiceMessageStreams,
+    },
     livekit::{
         participant::{
             ActiveSpeaker, ActiveSpeakersChanged, ChangeVolume, HostedBy, HostingParticipants,
@@ -34,6 +37,7 @@ use crate::{
         track::{Audio, LivekitTrack, Publishing, SubscribeToTrack, TrackVolume, Video},
         LivekitRuntime,
     },
+    SceneRoom,
 };
 
 pub struct LivekitParticipantPlugin;
@@ -497,11 +501,13 @@ fn active_speakers_changed(
 
 fn is_now_speaking(
     trigger: Trigger<OnInsert, ActiveSpeaker>,
-    participants: Query<&LivekitParticipant, With<ActiveSpeaker>>,
+    participants: Query<(&LivekitParticipant, Option<&HostedBy>), With<ActiveSpeaker>>,
+    scene_rooms: Query<&SceneRoom>,
+    senders: Res<VoiceMessageStreams>,
 ) {
     let entity = trigger.target();
 
-    let Ok(participant) = participants.get(entity) else {
+    let Ok((participant, maybe_hosted_by)) = participants.get(entity) else {
         unreachable!("Infallible Query");
     };
     debug!(
@@ -509,15 +515,37 @@ fn is_now_speaking(
         participant.sid(),
         participant.identity()
     );
+
+    let Some(room) = maybe_hosted_by else {
+        debug_panic!(
+            "{} ({}) is not hosted by a room.",
+            participant.sid(),
+            participant.identity()
+        );
+    };
+
+    let channel = match scene_rooms.get(room.get()).ok() {
+        Some(room) => room.0.clone(),
+        None => "Nearby".to_string(),
+    };
+    for sender in senders.iter() {
+        let _ = sender.send(VoiceMessage {
+            sender_address: format!("{:#x}", participant.identity().as_str().as_h160().unwrap()),
+            channel: channel.clone(),
+            active: true,
+        });
+    }
 }
 
 fn is_no_longer_speaking(
     trigger: Trigger<OnReplace, ActiveSpeaker>,
-    participants: Query<&LivekitParticipant, With<ActiveSpeaker>>,
+    participants: Query<(&LivekitParticipant, Option<&HostedBy>), With<ActiveSpeaker>>,
+    scene_rooms: Query<&SceneRoom>,
+    senders: Res<VoiceMessageStreams>,
 ) {
     let entity = trigger.target();
 
-    let Ok(participant) = participants.get(entity) else {
+    let Ok((participant, maybe_hosted_by)) = participants.get(entity) else {
         unreachable!("Infallible Query");
     };
     debug!(
@@ -525,4 +553,24 @@ fn is_no_longer_speaking(
         participant.sid(),
         participant.identity()
     );
+
+    let Some(room) = maybe_hosted_by else {
+        debug_panic!(
+            "{} ({}) is not hosted by a room.",
+            participant.sid(),
+            participant.identity()
+        );
+    };
+
+    let channel = match scene_rooms.get(room.get()).ok() {
+        Some(room) => room.0.clone(),
+        None => "Nearby".to_string(),
+    };
+    for sender in senders.iter() {
+        let _ = sender.send(VoiceMessage {
+            sender_address: format!("{:#x}", participant.identity().as_str().as_h160().unwrap()),
+            channel: channel.clone(),
+            active: false,
+        });
+    }
 }
