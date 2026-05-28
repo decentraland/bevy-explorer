@@ -100,8 +100,8 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
         panic!()
     };
     for uv in uvs.iter_mut() {
-        uv[0] = 0.0 / 18.0 + 17.0 / 18.0 * uv[0];
-        uv[1] = 0.0 / 18.0 + 17.0 / 18.0 * uv[1];
+        uv[0] = 0.0 / 72.0 + 71.0 / 72.0 * uv[0];
+        uv[1] = 0.0 / 72.0 + 71.0 / 72.0 * uv[1];
     }
 
     let cube: Mesh = ImposterMesh::default().build();
@@ -1124,9 +1124,9 @@ fn load_imposters(
                             / scene_size as f32;
 
                         for uv in uvs.iter_mut() {
-                            uv[0] = 0.0 / 18.0 + 17.0 / 18.0 * (bottomleft.x + uv[0] * parcel_size);
-                            uv[1] = 0.0 / 18.0
-                                + 17.0 / 18.0 * (1.0 - bottomleft.y - (1.0 - uv[1]) * parcel_size);
+                            uv[0] = 0.0 / 72.0 + 71.0 / 72.0 * (bottomleft.x + uv[0] * parcel_size);
+                            uv[1] = 0.0 / 72.0
+                                + 71.0 / 72.0 * (1.0 - bottomleft.y - (1.0 - uv[1]) * parcel_size);
                         }
                         floor.transfer_priority = RenderAssetTransferPriority::Immediate;
 
