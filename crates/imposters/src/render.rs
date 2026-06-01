@@ -501,7 +501,7 @@ pub struct ImposterSpecManager<'w, 's> {
 
 const MAX_ASSET_LOADS: usize = 20;
 #[cfg(target_arch = "wasm32")]
-const MAX_ASSET_DOWNLOADS: usize = 3;
+const MAX_ASSET_DOWNLOADS: usize = 6;
 #[cfg(not(target_arch = "wasm32"))]
 const MAX_ASSET_DOWNLOADS: usize = 10;
 
