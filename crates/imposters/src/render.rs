@@ -1067,11 +1067,11 @@ fn load_imposters(
             tick.0, base_imposter, error, scene_imposter
         );
 
-        let color = if error == 0 {
-            Some(Color::linear_rgba(0.0, 0.0, 1.0, 0.4))
-        } else {
-            Some(Color::linear_rgba(1.0, 0.0, 0.0, 0.4))
-        };
+        // let color = if error == 0 {
+        //     Some(Color::linear_rgba(0.0, 0.0, 1.0, 0.4))
+        // } else {
+        //     Some(Color::linear_rgba(1.0, 0.0, 0.0, 0.4))
+        // };
 
         commands
             .entity(entity)
@@ -1111,7 +1111,7 @@ fn load_imposters(
                             scale.max(Vec3::splat(0.001))
                                 * (1.0 + scene_imposter.level as f32 / 1000.0),
                         ),
-                        ShowAabbGizmo { color },
+                        // ShowAabbGizmo { color },
                         aabb,
                         NotShadowCaster,
                         NotShadowReceiver,
@@ -1162,7 +1162,7 @@ fn load_imposters(
                             .with_scale(Vec3::new(base_size, 1.0, base_size)),
                         Mesh3d(mesh),
                         Aabb::from_min_max(Vec3::NEG_ONE * 0.49, Vec3::ONE * 0.49),
-                        ShowAabbGizmo { color },
+                        // ShowAabbGizmo { color },
                         MeshMaterial3d(floor),
                         NotShadowCaster,
                         NotShadowReceiver,
