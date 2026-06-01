@@ -441,17 +441,40 @@ struct CurrentNativeInputRequest {
 // actions get a clean just_up; while the window is open, reset newly-pressed
 // keys so they never emit a down event (so no balancing up is needed).
 //
-// Text input is unaffected: it reads KeyboardInput events for its action
-// keys and only consults ButtonInput for modifier state, which we leave
-// alone.
+// Suppression is skipped while a higher-priority consumer owns the keyboard
+// (e.g. a focused text field, which reserves at TextEntry). In that state
+// gameplay keys are already blocked by priority, so there is nothing to
+// suppress — and that consumer reads raw ButtonInput modifier state (Shift
+// for selection/redo etc.) which suppression would otherwise clobber. On
+// leaving that state we reset any leftover non-modifier presses (e.g. a
+// macOS Cmd+V whose keyUp was suppressed) so gameplay resumes clean.
 fn handle_modifier_keys(
     mut key_input: ResMut<ButtonInput<KeyCode>>,
     map: Res<InputMap>,
-    mut was_unbound_held: Local<bool>,
+    priorities: Res<InputPriorities>,
+    mut was_active: Local<bool>,
+    mut was_keyboard_claimed: Local<bool>,
 ) {
-    let unbound_held = any_unbound_modifier_held(&key_input, &map);
+    let keyboard_claimed = priorities
+        .get(InputType::All)
+        .max(priorities.get(InputType::Keyboard))
+        >= InputPriority::TextEntry;
 
-    if unbound_held && !*was_unbound_held {
+    if *was_keyboard_claimed && !keyboard_claimed {
+        let held: Vec<KeyCode> = key_input
+            .get_pressed()
+            .copied()
+            .filter(|k| !SUPPRESSING_MODIFIERS.contains(k))
+            .collect();
+        for key in held {
+            key_input.reset(key);
+        }
+    }
+    *was_keyboard_claimed = keyboard_claimed;
+
+    let active = !keyboard_claimed && any_unbound_modifier_held(&key_input, &map);
+
+    if active && !*was_active {
         let held: Vec<KeyCode> = key_input
             .get_pressed()
             .copied()
@@ -462,7 +485,7 @@ fn handle_modifier_keys(
         }
     }
 
-    if unbound_held {
+    if active {
         let to_reset: Vec<KeyCode> = key_input
             .get_just_pressed()
             .copied()
@@ -473,7 +496,7 @@ fn handle_modifier_keys(
         }
     }
 
-    *was_unbound_held = unbound_held;
+    *was_active = active;
 }
 
 fn update_deltas(
