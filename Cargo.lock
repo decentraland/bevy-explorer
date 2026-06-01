@@ -2234,7 +2234,7 @@ dependencies = [
 [[package]]
 name = "boimp"
 version = "0.1.1"
-source = "git+https://github.com/robtfm/boimp?branch=feat%2Fcomposite-bake-via-storage-texture#b2a9b0495f3a475bd677b39261881daea60de5cc"
+source = "git+https://github.com/robtfm/boimp?branch=feat%2Fcomposite-bake-via-storage-texture#f96eefea9e7e1218742e92e7497f5c48359314a5"
 dependencies = [
  "anyhow",
  "async-channel 1.9.0",

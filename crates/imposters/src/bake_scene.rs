@@ -47,8 +47,8 @@ use crate::{
 };
 pub struct DclImposterBakeScenePlugin;
 
-const GRID_SIZE: u32 = 13;
-const TILE_SIZE: u32 = 128;
+const GRID_SIZE: u32 = 9;
+const TILE_SIZE: u32 = 104;
 
 pub const IMPOSTERCEPTION_LAYER: RenderLayers = RenderLayers::layer(5);
 
@@ -448,8 +448,7 @@ fn bake_scene_imposters(
                     let Some(mat) = materials.get_mut(h_mat) else {
                         continue;
                     };
-                    mat.extension.data =
-                        SceneBound::new(vec![region], bound_tolerance).data;
+                    mat.extension.data = SceneBound::new(vec![region], bound_tolerance).data;
                 }
 
                 debug!("region: {rmin}-{rmax}, snap: {}-{}", aabb.min(), aabb.max());
@@ -503,6 +502,7 @@ fn bake_scene_imposters(
                         scale: radius,
                         region_min: aabb.min().into(),
                         region_max: aabb.max().into(),
+                        overhang: bound_tolerance,
                     },
                 );
             }
@@ -594,7 +594,7 @@ type SaveCallback = Box<dyn FnOnce(bevy::prelude::Image) + Send + Sync + 'static
 fn make_save_callback(cam: &ImposterBakeCamera, path: &std::path::Path) -> SaveCallback {
     match v2_threshold() {
         Some(t) => Box::new(cam.save_asset_callback_v2(path, true, t)),
-        None => Box::new(cam.save_asset_callback(path, false, false)),
+        None => Box::new(cam.save_asset_callback(path, true, true)),
     }
 }
 
@@ -768,6 +768,14 @@ fn bake_imposter_imposter(
 
         let mut min = Vec3::MAX;
         let mut max = Vec3::MIN;
+        // Same bounds, but with each child's region pushed out by its own
+        // `overhang` — used to size the bake camera so it captures the overhang
+        // the ingredient cubes expose. The overhang is a world-space amount
+        // (the level-0 content lean-over) that does not grow with mip level, so
+        // tight / high-level children are not over-inflated.
+        let mut emin = Vec3::MAX;
+        let mut emax = Vec3::MIN;
+        let mut max_child_overhang = 0.0f32;
         let mut child_states: Vec<(IVec2, &'static str)> = Vec::new();
         for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
             let key = (*parcel + offset * next_size, level - 1, true);
@@ -787,6 +795,10 @@ fn bake_imposter_imposter(
                 }) => {
                     min = min.min(imposter_spec.region_min);
                     max = max.max(imposter_spec.region_max);
+                    max_child_overhang = max_child_overhang.max(imposter_spec.overhang);
+                    let push = Vec3::splat(imposter_spec.overhang);
+                    emin = emin.min(imposter_spec.region_min - push);
+                    emax = emax.max(imposter_spec.region_max + push);
                     child_states.push((key.0, "Ready(data)"));
                 }
                 crate::render::ImposterSpecState::Pending => panic!(),
@@ -810,12 +822,20 @@ fn bake_imposter_imposter(
         } else {
             let aabb = Aabb::from_min_max(min, max);
             let center = Vec3::from(aabb.center);
-            let radius = aabb.half_extents.length();
+            // Radius reaches the furthest pushed-out corner from the (tight)
+            // content centre, so the camera frustum captures the overhang.
+            let radius_tight = aabb.half_extents.length();
+            let radius = (emax - center).max(center - emin).length();
 
+            // Scale tile resolution by the radius inflation so the block content
+            // keeps the pixel density it would have without the overhang
+            // headroom — the extra pixels cover the (mostly empty) overhang
+            // margin. Otherwise the headroom silently lowers mip resolution.
             let tile_size = ((TILE_SIZE / size) as f32
                 * aabb.half_extents.xz().length().max(aabb.half_extents.y)
-                / 16.0)
-                .clamp(2.0, 256.0) as u32;
+                / 16.0
+                * (radius / radius_tight.max(1e-4)))
+            .clamp(2.0, 512.0) as u32;
             debug!("tile size: {tile_size}");
 
             let max_tiles_per_frame = ((GRID_SIZE * GRID_SIZE) as f32
@@ -871,6 +891,7 @@ fn bake_imposter_imposter(
                     scale: radius,
                     region_min: aabb.min().into(),
                     region_max: aabb.max().into(),
+                    overhang: max_child_overhang,
                 },
             );
         }
