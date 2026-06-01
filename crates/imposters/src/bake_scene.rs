@@ -574,19 +574,19 @@ fn bake_scene_imposters(
     }
 }
 
-/// V2-format gating. Returns `Some(threshold)` if the new on-disk imposter
-/// format should be emitted; default off (legacy callback) so the cache stays
-/// readable by the current runtime. Toggle with `BOIMP_V2=1` (default
-/// threshold 10) or override the gate by setting `BOIMP_V2_THRESHOLD` to a
-/// floating-point value on the 0-255 RGB RMSE scale.
+/// V3-format gating. Returns `Some(threshold)` if the V3 on-disk imposter
+/// format should be emitted (the default — V3 is ON). Set `BOIMP_V1=1` to
+/// fall back to the legacy callback (the cache won't be readable by current
+/// runtimes that expect V3). `BOIMP_V2_THRESHOLD` overrides the default
+/// threshold of 10 on the 0-255 RGB-RMSE scale.
 fn v2_threshold() -> Option<f32> {
+    if std::env::var("BOIMP_V1").is_ok() {
+        return None;
+    }
     if let Ok(s) = std::env::var("BOIMP_V2_THRESHOLD") {
         return s.parse::<f32>().ok();
     }
-    if std::env::var("BOIMP_V2").is_ok() {
-        return Some(10.0);
-    }
-    None
+    Some(10.0)
 }
 
 type SaveCallback = Box<dyn FnOnce(bevy::prelude::Image) + Send + Sync + 'static>;
