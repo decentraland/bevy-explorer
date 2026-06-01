@@ -736,8 +736,10 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
             return ImposterState::PendingWithPrevious(entities, 1);
         }
 
-        // check for larger mips
-        for level in req.level + 1..=5 {
+        // check for larger mips — capped at +2 levels above the request so a
+        // small-parcel request can't be substituted with a dramatically larger
+        // mip that's much more likely to overlap nearby live parcels.
+        for level in req.level + 1..=(req.level + 2).min(5) {
             let parcel_err = level - req.level;
             let new_error = parcel_err * parcel_count;
             if let Some(ce) = current_error {
