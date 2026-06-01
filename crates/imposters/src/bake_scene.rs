@@ -420,10 +420,21 @@ fn bake_scene_imposters(
             } else {
                 let mut content_aabb = Aabb::enclosing(points).unwrap();
                 content_aabb.center.y += 2000.0;
-                let aabb = Aabb::from_min_max(
-                    rmin.max(content_aabb.min().into()),
-                    rmax.min(content_aabb.max().into()),
+                let clamped_min: Vec3 = rmin.max(content_aabb.min().into());
+                let clamped_max: Vec3 = rmax.min(content_aabb.max().into());
+                // Pull the bottom down to the world floor (y=0) so the
+                // display cube rests on the ground. The "skip low things"
+                // filter raises `content_aabb.min.y` above 0 for any scene
+                // whose lowest meaningful content sits above it; without
+                // this the imposter floats. Stay clamped to `rmin.y` for
+                // safety. The extra V-range bakes mostly empty and is
+                // covered at display by the floor imposter quad.
+                let extended_min = Vec3::new(
+                    clamped_min.x,
+                    clamped_min.y.min(0.0).max(rmin.y),
+                    clamped_min.z,
                 );
+                let aabb = Aabb::from_min_max(extended_min, clamped_max);
                 let center = Vec3::from(aabb.center);
                 let radius = aabb.half_extents.length();
 

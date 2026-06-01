@@ -1067,11 +1067,11 @@ fn load_imposters(
             tick.0, base_imposter, error, scene_imposter
         );
 
-        // let color = if error == 0 {
-        //     Some(Color::linear_rgba(0.0, 0.0, 1.0, 0.4))
-        // } else {
-        //     Some(Color::linear_rgba(1.0, 0.0, 0.0, 0.4))
-        // };
+        let color = if error == 0 {
+            Some(Color::linear_rgba(0.0, 0.0, 1.0, 0.4))
+        } else {
+            Some(Color::linear_rgba(1.0, 0.0, 0.0, 0.4))
+        };
 
         commands
             .entity(entity)
@@ -1088,16 +1088,30 @@ fn load_imposters(
                         (meshes.add(mesh), aabb)
                     };
 
-                    let scale = spec.region_max - spec.region_min;
+                    // Stretch the cube's y down to the world floor without
+                    // touching the material's imposter_data (which still
+                    // holds the original bake spec_mid/scale, so UV math
+                    // stays aligned with the baked texture). Fragments at
+                    // world y in [0, original region_min.y] sample at V<0
+                    // and discard — the floor imposter quad covers the gap.
+                    let floor_y = 0.0_f32.min(spec.region_min.y);
+                    let mid_y = (floor_y + spec.region_max.y) * 0.5;
+                    let scale_y = spec.region_max.y - floor_y;
+                    let scale_xz = spec.region_max - spec.region_min;
+                    let scale = Vec3::new(scale_xz.x, scale_y, scale_xz.z);
+                    let translation = Vec3::new(
+                        (spec.region_min.x + spec.region_max.x) * 0.5,
+                        mid_y,
+                        (spec.region_min.z + spec.region_max.z) * 0.5,
+                    );
                     c.spawn((
                         Mesh3d(mesh),
                         MeshMaterial3d(imposter),
-                        Transform::from_translation((spec.region_min + spec.region_max) * 0.5)
-                            .with_scale(
-                                scale.max(Vec3::splat(0.001))
-                                    * (1.0 + scene_imposter.level as f32 / 1000.0),
-                            ),
-                        // ShowAabbGizmo { color },
+                        Transform::from_translation(translation).with_scale(
+                            scale.max(Vec3::splat(0.001))
+                                * (1.0 + scene_imposter.level as f32 / 1000.0),
+                        ),
+                        ShowAabbGizmo { color },
                         aabb,
                         NotShadowCaster,
                         NotShadowReceiver,
@@ -1148,7 +1162,7 @@ fn load_imposters(
                             .with_scale(Vec3::new(base_size, 1.0, base_size)),
                         Mesh3d(mesh),
                         Aabb::from_min_max(Vec3::NEG_ONE * 0.49, Vec3::ONE * 0.49),
-                        // ShowAabbGizmo { color },
+                        ShowAabbGizmo { color },
                         MeshMaterial3d(floor),
                         NotShadowCaster,
                         NotShadowReceiver,
