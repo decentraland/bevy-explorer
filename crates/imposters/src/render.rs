@@ -99,9 +99,14 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
     else {
         panic!()
     };
+    // The 72px floor tile is the 16m parcel as the central 64px with a 1m
+    // (4px) bleed on every side (bake radius = 8m + 1m, tile = (16+2)*4). Map
+    // the parcel quad to that central region [4/72, 68/72] — sampling the full
+    // tile would draw the 1m overhang, which seams at scene edges (the
+    // neighbour scene isn't in this bake).
     for uv in uvs.iter_mut() {
-        uv[0] = 0.0 / 72.0 + 71.0 / 72.0 * uv[0];
-        uv[1] = 0.0 / 72.0 + 71.0 / 72.0 * uv[1];
+        uv[0] = 4.0 / 72.0 + 64.0 / 72.0 * uv[0];
+        uv[1] = 4.0 / 72.0 + 64.0 / 72.0 * uv[1];
     }
 
     let cube: Mesh = ImposterMesh::default().build();
@@ -1124,9 +1129,9 @@ fn load_imposters(
                             / scene_size as f32;
 
                         for uv in uvs.iter_mut() {
-                            uv[0] = 0.0 / 72.0 + 71.0 / 72.0 * (bottomleft.x + uv[0] * parcel_size);
-                            uv[1] = 0.0 / 72.0
-                                + 71.0 / 72.0 * (1.0 - bottomleft.y - (1.0 - uv[1]) * parcel_size);
+                            uv[0] = 4.0 / 72.0 + 64.0 / 72.0 * (bottomleft.x + uv[0] * parcel_size);
+                            uv[1] = 4.0 / 72.0
+                                + 64.0 / 72.0 * (1.0 - bottomleft.y - (1.0 - uv[1]) * parcel_size);
                         }
                         floor.transfer_priority = RenderAssetTransferPriority::Immediate;
 
