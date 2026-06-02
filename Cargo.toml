@@ -163,7 +163,7 @@ bevy_simple_text_input = { git = "https://github.com/robtfm/bevy_simple_text_inp
   "clipboard",
 ], branch = "0.16" }
 directories = "6"
-uuid = { version = "1.7", features = ["v4"] }
+uuid = { version = "1.23", features = ["v4"] }
 build-time = "0.1.3"
 async-tungstenite = { version = "0.25", features = ["async-native-tls"] }
 tungstenite = { version = "0.21.0" }
