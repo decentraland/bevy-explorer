@@ -49,9 +49,12 @@ fn connect_preview_server(
     }
 
     let mut restart = task.as_ref().is_none();
-    if let Some(Err(err)) = task.as_mut().and_then(|t| t.0.complete()) {
-        warn!("preview socket error: {err}, restarting");
+    if let Some(res) = task.as_mut().and_then(|t| t.0.complete()) {
+        if let Err(err) = res {
+            warn!("preview socket error: {err}, restarting");
+        }
         restart = true;
+        *task = None;
     }
     if restart {
         let (sx, rx) = tokio::sync::mpsc::unbounded_channel();

@@ -114,6 +114,14 @@ pub struct ParticipantMetadataChanged {
     pub participant: LivekitParticipant,
 }
 
+#[derive(Component)]
+pub struct ActiveSpeaker;
+
+#[derive(Event)]
+pub struct ActiveSpeakersChanged {
+    pub speakers: Vec<Participant>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Component)]
 pub enum ConnectionQuality {
     Excellent,

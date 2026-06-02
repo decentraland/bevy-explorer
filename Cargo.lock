@@ -293,7 +293,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -304,7 +304,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -909,7 +909,7 @@ dependencies = [
  "thiserror 2.0.18",
  "thread_local",
  "tracing",
- "uuid 1.22.0",
+ "uuid 1.23.1",
 ]
 
 [[package]]
@@ -972,7 +972,7 @@ dependencies = [
  "stackfuture",
  "thiserror 2.0.18",
  "tracing",
- "uuid 1.22.0",
+ "uuid 1.23.1",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -1413,7 +1413,7 @@ dependencies = [
  "kira",
  "parking_lot",
  "thiserror 2.0.18",
- "uuid 1.22.0",
+ "uuid 1.23.1",
 ]
 
 [[package]]
@@ -1564,7 +1564,7 @@ dependencies = [
  "bevy_window",
  "crossbeam-channel",
  "tracing",
- "uuid 1.22.0",
+ "uuid 1.23.1",
 ]
 
 [[package]]
@@ -1610,7 +1610,7 @@ dependencies = [
  "smallvec",
  "smol_str",
  "thiserror 2.0.18",
- "uuid 1.22.0",
+ "uuid 1.23.1",
  "variadics_please",
  "wgpu-types",
 ]
@@ -1624,7 +1624,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
- "uuid 1.22.0",
+ "uuid 1.23.1",
 ]
 
 [[package]]
@@ -1731,13 +1731,13 @@ dependencies = [
  "derive_more",
  "serde",
  "thiserror 2.0.18",
- "uuid 1.22.0",
+ "uuid 1.23.1",
 ]
 
 [[package]]
 name = "bevy_simple_text_input"
 version = "0.11.1"
-source = "git+https://github.com/robtfm/bevy_simple_text_input?branch=0.16#1f4e184cc4e6535dee7a953457a62d2945e21332"
+source = "git+https://github.com/robtfm/bevy_simple_text_input?branch=0.16#393f123de9c55581a76248f9fa98e66b0b1b48be"
 dependencies = [
  "bevy",
  "copypwasmta",
@@ -2531,9 +2531,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.6.0"
+version = "4.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b193af5b67834b676abd72466a96c1024e6a6ad978a1f484bd90b85c94041351"
+checksum = "1ddb117e43bbf7dacf0a4190fef4d345b9bad68dfc649cb349e7d17d28428e51"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -2553,9 +2553,9 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "4.6.0"
+version = "4.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1110bd8a634a1ab8cb04345d8d878267d57c3cf1b38d91b71af6686408bbca6a"
+checksum = "f2ce8604710f6733aa641a2b3731eaa1e8b3d9973d5e3565da11800813f997a9"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -2662,7 +2662,7 @@ dependencies = [
  "console",
  "fastrand",
  "ipfs",
- "itertools 0.12.1",
+ "itertools 0.14.0",
  "once_cell",
  "serde",
  "serde_json",
@@ -2715,7 +2715,7 @@ dependencies = [
  "strum_macros 0.27.2",
  "tokio",
  "tokio-util",
- "uuid 1.22.0",
+ "uuid 1.23.1",
 ]
 
 [[package]]
@@ -3322,7 +3322,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 2.0.117",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -3418,7 +3418,7 @@ dependencies = [
  "serde_json",
  "system_bridge",
  "tokio",
- "uuid 1.22.0",
+ "uuid 1.23.1",
 ]
 
 [[package]]
@@ -3491,7 +3491,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef552e6f588e446098f6ba40d89ac146c8c7b64aade83c051ee00bb5d2bc18d"
 dependencies = [
  "serde",
- "uuid 1.22.0",
+ "uuid 1.23.1",
 ]
 
 [[package]]
@@ -3519,7 +3519,6 @@ dependencies = [
  "dcl_deno_ipc",
  "dcl_wasm",
  "futures-lite",
- "getrandom 0.3.4",
  "image",
  "image_processing",
  "imposters",
@@ -3550,7 +3549,7 @@ dependencies = [
  "ui_core",
  "urlencoding",
  "user_input",
- "uuid 1.22.0",
+ "uuid 1.23.1",
  "visuals",
  "wallet",
  "wasm-bindgen",
@@ -3760,7 +3759,7 @@ dependencies = [
  "futures",
  "serde",
  "tokio",
- "uuid 1.22.0",
+ "uuid 1.23.1",
 ]
 
 [[package]]
@@ -3895,7 +3894,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4268,7 +4267,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4415,7 +4414,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
- "ws_stream_wasm 0.7.5",
+ "ws_stream_wasm",
 ]
 
 [[package]]
@@ -4508,9 +4507,9 @@ checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
 
 [[package]]
 name = "fastrand"
-version = "2.3.0"
+version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
+checksum = "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6"
 
 [[package]]
 name = "fastwebsockets"
@@ -4963,7 +4962,7 @@ dependencies = [
  "libc",
  "log",
  "rustversion",
- "windows-link 0.2.1",
+ "windows-link 0.1.3",
  "windows-result 0.4.1",
 ]
 
@@ -5058,7 +5057,7 @@ dependencies = [
  "fnv",
  "gilrs-core",
  "log",
- "uuid 1.22.0",
+ "uuid 1.23.1",
  "vec_map",
 ]
 
@@ -5076,7 +5075,7 @@ dependencies = [
  "nix 0.30.1",
  "objc2-core-foundation",
  "objc2-io-kit",
- "uuid 1.22.0",
+ "uuid 1.23.1",
  "vec_map",
  "wasm-bindgen",
  "web-sys",
@@ -7375,7 +7374,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -8329,7 +8328,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-fs",
  "web-sys",
- "ws_stream_wasm 0.7.4",
+ "ws_stream_wasm",
 ]
 
 [[package]]
@@ -8609,7 +8608,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22505a5c94da8e3b7c2996394d1c933236c4d743e81a410bcca4e6989fc066a4"
 dependencies = [
  "bytes",
- "heck 0.5.0",
+ "heck 0.4.1",
  "itertools 0.12.1",
  "log",
  "multimap 0.10.1",
@@ -9416,7 +9415,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -9699,10 +9698,11 @@ dependencies = [
  "dcl_wasm",
  "emojis",
  "futures-lite",
+ "getrandom 0.3.4",
  "image",
  "input_manager",
  "ipfs",
- "itertools 0.12.1",
+ "itertools 0.14.0",
  "multihash-codetable",
  "nalgebra",
  "once_cell",
@@ -10292,7 +10292,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -10814,7 +10814,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -11858,9 +11858,9 @@ dependencies = [
 
 [[package]]
 name = "uuid"
-version = "1.22.0"
+version = "1.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a68d3c8f01c0cfa54a75291d83601161799e4a89a39e0929f4b0354d88757a37"
+checksum = "ddd74a9687298c6858e9b88ec8935ec45d22e8fd5e6394fa1bd4e99a87789c76"
 dependencies = [
  "getrandom 0.4.2",
  "js-sys",
@@ -12522,7 +12522,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -13265,24 +13265,6 @@ name = "writeable"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9edde0db4769d2dc68579893f2306b26c6ecfbe0ef499b013d731b7b9247e0b9"
-
-[[package]]
-name = "ws_stream_wasm"
-version = "0.7.4"
-source = "git+https://github.com/robtfm/ws_stream_wasm?branch=bevy-explorer#645ec95a9d7052a8ab5537a7b5da498c92b3cedd"
-dependencies = [
- "async_io_stream",
- "futures",
- "js-sys",
- "log",
- "pharos",
- "rustc_version 0.4.1",
- "send_wrapper 0.6.0",
- "thiserror 2.0.18",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
 
 [[package]]
 name = "ws_stream_wasm"

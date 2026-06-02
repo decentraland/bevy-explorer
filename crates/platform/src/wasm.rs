@@ -93,8 +93,17 @@ pub async fn websocket<R>(request: R) -> Result<WebSocket, anyhow::Error>
 where
     R: IntoClientRequest + Unpin,
 {
-    let url = request.into_client_request()?.uri().to_string();
-    let (_meta, stream) = ws_stream_wasm::WsMeta::connect(&url, None).await?;
+    let request = request.into_client_request()?;
+    let url = request.uri().to_string();
+    let headers = request.headers();
+    let protocol = headers.get("Sec-Websocket-Protocol");
+    let (_meta, stream) = ws_stream_wasm::WsMeta::connect(
+        &url,
+        protocol
+            .as_ref()
+            .map(|protocol| vec![protocol.to_str().unwrap()]),
+    )
+    .await?;
     Ok(WebSocket { _meta, stream })
 }
 

@@ -1,7 +1,15 @@
-use bevy::{ecs::relationship::Relationship, prelude::*};
-use common::{debug_panic, util::AsH160};
+use bevy::{
+    ecs::{entity::EntityHashSet, relationship::Relationship},
+    platform::collections::HashSet,
+    prelude::*,
+};
+use common::{
+    debug_panic,
+    util::{AsH160, ReportErr},
+};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use prost::Message;
+use system_bridge::VoiceMessage;
 #[cfg(not(target_arch = "wasm32"))]
 use {
     bevy::{
@@ -17,18 +25,22 @@ use crate::livekit::participant::{StreamImage, StreamViewer};
 #[cfg(target_arch = "wasm32")]
 use crate::livekit::web::Participant;
 use crate::{
-    global_crdt::{GlobalCrdtState, NonPlayerUpdate, PlayerMessage, PlayerUpdate},
+    global_crdt::{
+        GlobalCrdtState, NonPlayerUpdate, PlayerMessage, PlayerUpdate, VoiceMessageStreams,
+    },
     livekit::{
         participant::{
-            ChangeVolume, HostedBy, HostingParticipants, LivekitParticipant, Local,
-            ParticipantConnected, ParticipantConnectionQuality, ParticipantDisconnected,
-            ParticipantMetadataChanged, ParticipantPayload, StreamBroadcast, Streamer,
+            ActiveSpeaker, ActiveSpeakersChanged, ChangeVolume, HostedBy, HostingParticipants,
+            LivekitParticipant, Local, ParticipantConnected, ParticipantConnectionQuality,
+            ParticipantDisconnected, ParticipantMetadataChanged, ParticipantPayload,
+            StreamBroadcast, Streamer,
         },
         plugin::{PlayerUpdateTask, PlayerUpdateTasks},
         room::LivekitRoom,
         track::{Audio, LivekitTrack, Publishing, SubscribeToTrack, TrackVolume, Video},
         LivekitRuntime,
     },
+    SceneRoom,
 };
 
 pub struct LivekitParticipantPlugin;
@@ -40,6 +52,9 @@ impl Plugin for LivekitParticipantPlugin {
         app.add_observer(participant_connection_quality_changed);
         app.add_observer(participant_payload);
         app.add_observer(participant_metadata_changed);
+        app.add_observer(active_speakers_changed);
+        app.add_observer(is_now_speaking);
+        app.add_observer(is_no_longer_speaking);
 
         #[cfg(not(target_arch = "wasm32"))]
         app.add_systems(
@@ -450,5 +465,135 @@ fn change_volume_of_tracks(
         }
 
         commands.entity(*track).try_insert(TrackVolume(event.0));
+    }
+}
+
+fn active_speakers_changed(
+    trigger: Trigger<ActiveSpeakersChanged>,
+    mut commands: Commands,
+    participants: Query<(Entity, &LivekitParticipant)>,
+    old_speakers: Query<Entity, With<ActiveSpeaker>>,
+) {
+    let ActiveSpeakersChanged { speakers } = trigger.event();
+
+    let active_speakers_sid = speakers
+        .iter()
+        .map(|participant| participant.sid())
+        .collect::<HashSet<_>>();
+
+    let active_speakers = participants
+        .iter()
+        .filter(|(_, livekit_participant)| active_speakers_sid.contains(&livekit_participant.sid()))
+        .map(|(entity, _)| entity)
+        .collect::<EntityHashSet>();
+
+    let old_speakers = old_speakers.iter().collect::<EntityHashSet>();
+
+    let new_speakers = active_speakers.difference(&old_speakers);
+    let no_longer_speakers = old_speakers.difference(&active_speakers);
+
+    for new_speaker in new_speakers {
+        commands.entity(*new_speaker).try_insert(ActiveSpeaker);
+    }
+    for no_longer_speaker in no_longer_speakers {
+        commands
+            .entity(*no_longer_speaker)
+            .try_remove::<ActiveSpeaker>();
+    }
+}
+
+fn is_now_speaking(
+    trigger: Trigger<OnInsert, ActiveSpeaker>,
+    participants: Query<(&LivekitParticipant, Option<&HostedBy>), With<ActiveSpeaker>>,
+    scene_rooms: Query<&SceneRoom>,
+    senders: Res<VoiceMessageStreams>,
+) {
+    let entity = trigger.target();
+
+    let Ok((participant, maybe_hosted_by)) = participants.get(entity) else {
+        unreachable!("Infallible Query");
+    };
+    debug!(
+        "{} ({}) is now speaking.",
+        participant.sid(),
+        participant.identity()
+    );
+
+    let Some(room) = maybe_hosted_by else {
+        debug_panic!(
+            "{} ({}) is not hosted by a room.",
+            participant.sid(),
+            participant.identity()
+        );
+    };
+
+    let channel = match scene_rooms.get(room.get()).ok() {
+        Some(room) => room.0.clone(),
+        None => "Nearby".to_string(),
+    };
+    for sender in senders.iter() {
+        if let Some(sender_address) = participant.identity().as_str().as_h160() {
+            sender
+                .send(VoiceMessage {
+                    sender_address: format!("{:#x}", sender_address),
+                    channel: channel.clone(),
+                    active: true,
+                })
+                .report();
+        } else {
+            error!(
+                "Non-h160 participant {} ({}) tried to send voice data.",
+                participant.sid(),
+                participant.identity()
+            );
+        }
+    }
+}
+
+fn is_no_longer_speaking(
+    trigger: Trigger<OnReplace, ActiveSpeaker>,
+    participants: Query<(&LivekitParticipant, Option<&HostedBy>), With<ActiveSpeaker>>,
+    scene_rooms: Query<&SceneRoom>,
+    senders: Res<VoiceMessageStreams>,
+) {
+    let entity = trigger.target();
+
+    let Ok((participant, maybe_hosted_by)) = participants.get(entity) else {
+        unreachable!("Infallible Query");
+    };
+    debug!(
+        "{} ({}) is no longer speaking.",
+        participant.sid(),
+        participant.identity()
+    );
+
+    let Some(room) = maybe_hosted_by else {
+        debug_panic!(
+            "{} ({}) is not hosted by a room.",
+            participant.sid(),
+            participant.identity()
+        );
+    };
+
+    let channel = match scene_rooms.get(room.get()).ok() {
+        Some(room) => room.0.clone(),
+        None => "Nearby".to_string(),
+    };
+    for sender in senders.iter() {
+        if let Some(sender_address) = participant.identity().as_str().as_h160() {
+            sender
+                .send(VoiceMessage {
+                    sender_address: format!("{:#x}", sender_address),
+                    channel: channel.clone(),
+                    active: false,
+                })
+                .report();
+        } else {
+            error!(
+                "Non-h160 participant {} ({}) tried to send voice data.",
+                participant.sid(),
+                participant.identity()
+            );
+        }
     }
 }

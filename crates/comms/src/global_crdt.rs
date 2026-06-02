@@ -35,9 +35,7 @@ use dcl_component::{
     DclReader, DclWriter, GlobalCrdtData, Localizer, SceneComponentId, SceneEntityId, SceneOrigin,
 };
 
-use crate::{
-    movement_compressed::MovementCompressed, profile::ProfileMetaCache, SceneRoom, Transport,
-};
+use crate::{movement_compressed::MovementCompressed, profile::ProfileMetaCache, Transport};
 
 #[cfg(not(target_arch = "wasm32"))]
 use kira::sound::streaming::StreamingSoundData;
@@ -82,10 +80,20 @@ impl Plugin for GlobalCrdtPlugin {
         let (sender, _) = tokio::sync::broadcast::channel(1_000);
         app.insert_resource(LocalAudioSource { sender });
 
+        app.init_resource::<VoiceMessageStreams>();
+
         app.add_systems(Update, process_transport_updates);
         app.add_systems(Update, despawn_players);
+        app.add_observer(remove_transport_from_foreign_audio_source);
         app.add_systems(Update, handle_foreign_audio);
-        app.add_systems(Update, pipe_voice_to_scene);
+        app.add_systems(
+            Update,
+            (
+                drop_closed_voice_message_senders,
+                receive_new_voice_message_senders.run_if(on_event::<SystemApi>),
+            )
+                .chain(),
+        );
         app.add_event::<PlayerPositionEvent>();
         app.add_event::<ProfileEvent>();
         app.add_event::<ChatEvent>();
@@ -364,6 +372,11 @@ pub struct ChatEvent {
     pub sender: Entity,
     pub channel: String,
     pub message: String,
+}
+
+#[derive(Default, Resource, Deref, DerefMut)]
+pub struct VoiceMessageStreams {
+    streams: Vec<RpcStreamSender<VoiceMessage>>,
 }
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -891,6 +904,17 @@ fn despawn_players(
     }
 }
 
+fn remove_transport_from_foreign_audio_source(
+    trigger: Trigger<OnReplace, Transport>,
+    foreign_audio_sources: Query<&mut ForeignAudioSource>,
+) {
+    let entity = trigger.target();
+
+    for mut foreign_audio_source in foreign_audio_sources {
+        foreign_audio_source.available_transports.remove(&entity);
+    }
+}
+
 fn handle_foreign_audio(
     transports: Query<(Entity, &Transport)>,
     mut q: Query<(&mut ForeignAudioSource, &ForeignPlayer)>,
@@ -958,52 +982,17 @@ fn handle_foreign_audio(
     }
 }
 
-pub fn pipe_voice_to_scene(
-    mut requests: EventReader<SystemApi>,
-    sources: Query<(&ForeignPlayer, &ForeignAudioSource)>,
-    mut senders: Local<Vec<RpcStreamSender<VoiceMessage>>>,
-    mut current_active: Local<HashMap<ethers_core::types::Address, String>>,
-    scene_rooms: Query<&SceneRoom>,
+fn drop_closed_voice_message_senders(mut voice_message_streams: ResMut<VoiceMessageStreams>) {
+    voice_message_streams.retain(|vms| !vms.is_closed());
+}
+
+fn receive_new_voice_message_senders(
+    mut event_reader: EventReader<SystemApi>,
+    mut voice_message_streams: ResMut<VoiceMessageStreams>,
 ) {
-    senders.extend(requests.read().filter_map(|ev| {
-        if let SystemApi::GetVoiceStream(sender) = ev {
-            Some(sender.clone())
-        } else {
-            None
-        }
-    }));
-
-    senders.retain(|s| !s.is_closed());
-
-    let mut prev_active = std::mem::take(&mut *current_active);
-
-    for (source, audio) in sources.iter() {
-        if let Some(transport) = audio.current_transport {
-            let channel = match scene_rooms.get(transport).ok() {
-                Some(room) => room.0.clone(),
-                None => "Nearby".to_string(),
-            };
-            if prev_active.remove(&source.address).as_ref() != Some(&channel) {
-                for sender in senders.iter() {
-                    let _ = sender.send(VoiceMessage {
-                        sender_address: format!("{:#x}", source.address),
-                        channel: channel.clone(),
-                        active: true,
-                    });
-                }
-            }
-
-            current_active.insert(source.address, channel);
-        }
-    }
-
-    for (address, channel) in prev_active.drain() {
-        for sender in senders.iter() {
-            let _ = sender.send(VoiceMessage {
-                sender_address: format!("{address:#x}"),
-                channel: channel.clone(),
-                active: false,
-            });
+    for event in event_reader.read() {
+        if let SystemApi::GetVoiceStream(stream) = event {
+            voice_message_streams.push(stream.clone());
         }
     }
 }
