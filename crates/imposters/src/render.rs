@@ -516,6 +516,21 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         self.data.mips.remove(&(parcel, level, crc));
     }
 
+    /// Drop the cached level-0 resolution for every parcel belonging to
+    /// `hash`. A scene bake writes a per-parcel mip-0 spec for its whole
+    /// footprint, so the next `get_spec` for each of those parcels must
+    /// re-read from disk rather than serving a pre-bake `Missing`.
+    pub(crate) fn clear_scene_mips(&mut self, hash: &str) {
+        let ImposterSpecManager { data, pointers, .. } = self;
+        data.mips.retain(|(parcel, level, _crc), _| {
+            *level != 0
+                || !matches!(
+                    pointers.get(parcel),
+                    Some(PointerResult::Exists { hash: h, .. }) if h == hash
+                )
+        });
+    }
+
     fn start_tick(&mut self) {
         self.data.prev_loading_mips = std::mem::take(&mut self.data.loading_mips);
     }

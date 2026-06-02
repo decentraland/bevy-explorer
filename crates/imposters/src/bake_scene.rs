@@ -1115,16 +1115,18 @@ fn check_bake_state(
                     // done
                     info!("scene done!");
                     current_imposter_scene.0 = None;
-                    let PointerResult::Exists { .. } = pointer_result else {
+                    let PointerResult::Exists { hash, .. } = pointer_result else {
                         panic!()
                     };
-                    // The scene-level bake just wrote per-parcel mip-0 specs
-                    // under `realms/<realm>/0/`. Drop any cached resolution
-                    // for this parcel's level-0 entry so the next get_spec
-                    // re-reads from disk.
-                    if let Some(crc) = manager.pointers.crc(*parcel, 0) {
-                        manager.clear_mip(*parcel, 0, crc);
-                    }
+                    // The scene-level bake wrote per-parcel mip-0 specs under
+                    // `realms/<realm>/0/` for the scene's *whole* footprint
+                    // (including empties), not just the representative
+                    // `parcel` we picked. Drop the cached level-0 resolution
+                    // for all of them so the next get_spec re-reads each
+                    // freshly-written spec from disk — clearing only `parcel`
+                    // would leave the siblings stuck on their pre-bake
+                    // `Missing` and render as holes.
+                    manager.clear_scene_mips(hash);
                     baking.0.pop();
                 } else {
                     // don't need to check for constituents, just go
