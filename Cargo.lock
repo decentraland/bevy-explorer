@@ -4408,7 +4408,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
- "ws_stream_wasm 0.7.5",
+ "ws_stream_wasm",
 ]
 
 [[package]]
@@ -8322,7 +8322,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-fs",
  "web-sys",
- "ws_stream_wasm 0.7.4",
+ "ws_stream_wasm",
 ]
 
 [[package]]
@@ -13259,24 +13259,6 @@ name = "writeable"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9edde0db4769d2dc68579893f2306b26c6ecfbe0ef499b013d731b7b9247e0b9"
-
-[[package]]
-name = "ws_stream_wasm"
-version = "0.7.4"
-source = "git+https://github.com/robtfm/ws_stream_wasm?branch=bevy-explorer#645ec95a9d7052a8ab5537a7b5da498c92b3cedd"
-dependencies = [
- "async_io_stream",
- "futures",
- "js-sys",
- "log",
- "pharos",
- "rustc_version 0.4.1",
- "send_wrapper 0.6.0",
- "thiserror 2.0.18",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
 
 [[package]]
 name = "ws_stream_wasm"
