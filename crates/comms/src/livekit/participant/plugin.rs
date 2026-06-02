@@ -3,7 +3,10 @@ use bevy::{
     platform::collections::HashSet,
     prelude::*,
 };
-use common::{debug_panic, util::AsH160};
+use common::{
+    debug_panic,
+    util::{AsH160, ReportErr},
+};
 use dcl_component::proto_components::kernel::comms::rfc4;
 use prost::Message;
 use system_bridge::VoiceMessage;
@@ -529,11 +532,21 @@ fn is_now_speaking(
         None => "Nearby".to_string(),
     };
     for sender in senders.iter() {
-        let _ = sender.send(VoiceMessage {
-            sender_address: format!("{:#x}", participant.identity().as_str().as_h160().unwrap()),
-            channel: channel.clone(),
-            active: true,
-        });
+        if let Some(sender_address) = participant.identity().as_str().as_h160() {
+            sender
+                .send(VoiceMessage {
+                    sender_address: format!("{:#x}", sender_address),
+                    channel: channel.clone(),
+                    active: true,
+                })
+                .report();
+        } else {
+            error!(
+                "Non-h160 participant {} ({}) tried to send voice data.",
+                participant.sid(),
+                participant.identity()
+            );
+        }
     }
 }
 
@@ -567,10 +580,20 @@ fn is_no_longer_speaking(
         None => "Nearby".to_string(),
     };
     for sender in senders.iter() {
-        let _ = sender.send(VoiceMessage {
-            sender_address: format!("{:#x}", participant.identity().as_str().as_h160().unwrap()),
-            channel: channel.clone(),
-            active: false,
-        });
+        if let Some(sender_address) = participant.identity().as_str().as_h160() {
+            sender
+                .send(VoiceMessage {
+                    sender_address: format!("{:#x}", sender_address),
+                    channel: channel.clone(),
+                    active: false,
+                })
+                .report();
+        } else {
+            error!(
+                "Non-h160 participant {} ({}) tried to send voice data.",
+                participant.sid(),
+                participant.identity()
+            );
+        }
     }
 }
