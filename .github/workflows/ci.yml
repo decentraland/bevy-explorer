@@ -22,7 +22,7 @@ jobs:
           override: true
       - uses: Swatinem/rust-cache@v2
       - name: Install protoc
-        uses: arduino/setup-protoc@master
+        uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev
@@ -47,7 +47,7 @@ jobs:
           override: true
       - uses: Swatinem/rust-cache@v2
       - name: Install protoc
-        uses: arduino/setup-protoc@master
+        uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa, udev and xkb
@@ -85,7 +85,7 @@ jobs:
 #      - uses: Swatinem/rust-cache@v2
       - name: Install protoc
         if: matrix.os != 'self-hosted-windows'
-        uses: arduino/setup-protoc@master
+        uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev
@@ -147,7 +147,7 @@ jobs:
       - run: rustup component add rustfmt
       - uses: Swatinem/rust-cache@v2
       - name: Install protoc
-        uses: arduino/setup-protoc@master
+        uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev
@@ -172,7 +172,7 @@ jobs:
       - run: rustup component add clippy
       - uses: Swatinem/rust-cache@v2
       - name: Install protoc
-        uses: arduino/setup-protoc@master
+        uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install alsa and udev
@@ -234,7 +234,7 @@ jobs:
           components: rust-src
           override: true
       - name: Install protoc
-        uses: arduino/setup-protoc@master
+        uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install wasm-pack

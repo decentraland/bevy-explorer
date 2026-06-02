@@ -22,7 +22,7 @@ use crate::{
     global_crdt::ChannelControl,
     livekit::{
         participant::{
-            HostingParticipants, LivekitParticipant, ParticipantConnected,
+            ActiveSpeakersChanged, HostingParticipants, LivekitParticipant, ParticipantConnected,
             ParticipantConnectionQuality, ParticipantDisconnected, ParticipantMetadataChanged,
             ParticipantPayload,
         },
@@ -279,6 +279,9 @@ fn process_room_events(mut commands: Commands, livekit_rooms: Query<(Entity, &mu
                         entity,
                         quality,
                     ));
+                }
+                RoomEvent::ActiveSpeakersChanged { speakers } => {
+                    commands.trigger(ActiveSpeakersChanged { speakers });
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 _ => {
