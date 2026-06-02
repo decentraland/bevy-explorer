@@ -56,12 +56,7 @@ impl FromWasmAbi for Participant {
 
     unsafe fn from_abi(abi: JsValueAbi) -> Self {
         let js_value = JsValue::from_abi(abi);
-        let participant = RemoteParticipant::from(js_value.clone());
-        if participant.is_local() {
-            Participant::Local(LocalParticipant::from(js_value))
-        } else {
-            Participant::Remote(participant)
-        }
+        Self::from(js_value)
     }
 }
 
@@ -72,6 +67,17 @@ impl IntoWasmAbi for &Participant {
         match self {
             Participant::Local(local) => local.into_abi(),
             Participant::Remote(remote) => remote.into_abi(),
+        }
+    }
+}
+
+impl From<JsValue> for Participant {
+    fn from(value: JsValue) -> Self {
+        let participant = RemoteParticipant::from(value.clone());
+        if participant.is_local() {
+            Participant::Local(LocalParticipant::from(value))
+        } else {
+            Participant::Remote(participant)
         }
     }
 }
