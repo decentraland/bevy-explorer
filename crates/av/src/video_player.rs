@@ -92,7 +92,7 @@ fn av_player_on_insert<T: AVPlayer>(
     #[cfg(feature = "livekit")]
     let (av_player, maybe_stream_viewer, maybe_sinks) = query;
 
-    let mayve_audio_sink = maybe_sinks.and_then(|sinks| sinks.audio_sink());
+    let maybe_audio_sink = maybe_sinks.and_then(|sinks| sinks.audio_sink());
     let maybe_video_sink = maybe_sinks.and_then(|sinks| sinks.video_sink());
 
     let source = av_player.source();
@@ -119,7 +119,7 @@ fn av_player_on_insert<T: AVPlayer>(
                     .report();
                 video_sink.command_sender.send(AVCommand::Pause).report();
             }
-            if let Some(audio_sink) = mayve_audio_sink {
+            if let Some(audio_sink) = maybe_audio_sink {
                 commands.trigger_targets(
                     ChangeAudioSinkVolume::<T> {
                         volume: av_player.volume(),
@@ -131,13 +131,13 @@ fn av_player_on_insert<T: AVPlayer>(
             }
         }
     } else {
-        if mayve_audio_sink.is_some() || maybe_video_sink.is_some() {
+        if maybe_audio_sink.is_some() || maybe_video_sink.is_some() {
             debug!("Removing sinks of {entity} due to diverging source.");
         }
         if let Some(video_sink) = maybe_video_sink {
             video_sink.command_sender.send(AVCommand::Dispose).report();
         }
-        if let Some(audio_sink) = mayve_audio_sink {
+        if let Some(audio_sink) = maybe_audio_sink {
             audio_sink.command_sender.send(AVCommand::Dispose).report();
         }
         debug!("{entity:?} has {}.", av_player.source());
