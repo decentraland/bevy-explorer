@@ -1,3 +1,4 @@
+use alloy_core::primitives::Address;
 use avatar::{avatar_texture::PhotoBooth, AvatarShape};
 use bevy::{prelude::*, render::render_resource::Extent3d};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
@@ -6,7 +7,6 @@ use common::{
     structs::{ActiveDialog, ShowProfileEvent, ZOrder, PROFILE_UI_RENDERLAYER},
 };
 use comms::profile::{ProfileManager, UserProfile};
-use ethers_core::types::Address;
 use social::{FriendshipEvent, FriendshipState, SocialClient};
 use ui_core::button::DuiButton;
 

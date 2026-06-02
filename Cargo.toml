@@ -127,14 +127,17 @@ bevy_egui = { version = "0.34", default-features = false, features = [
 serde = "1.0.152"
 serde_json = { version = "1.0.92", features = ["raw_value"] }
 
+alloy-core = { version = "1.6", default-features = false }
+alloy-network = { version = "2.0", default-features = false }
+alloy-signer = { version = "2.0", default-features = false }
+alloy-signer-local = { version = "2.0", default-features = false }
+
 itertools = "0.12"
 tokio = { version = "1.44", features = ["sync", "macros", "rt"] }
 tokio-util = "*"
 anyhow = "1.0.70"
 http = "1.1"
 urn = "0.7.0"
-ethers-signers = "2.0.3"
-ethers-core = "2.0.3"
 futures-lite = "2.6"
 bimap = "0.6.3"
 prost = "0.11.8"

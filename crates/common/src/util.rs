@@ -1,6 +1,7 @@
 use core::f32;
 use std::{collections::VecDeque, marker::PhantomData, panic::Location};
 
+use alloy_core::primitives::Address;
 use bevy::{
     app::Update,
     asset::{AsAssetId, AssetServer, UntypedAssetId},
@@ -24,7 +25,6 @@ use bevy::{
     tasks::{IoTaskPool, Task},
     transform::components::Transform,
 };
-use ethers_core::types::H160;
 use smallvec::SmallVec;
 
 pub struct UtilsPlugin;
@@ -71,11 +71,11 @@ impl<T> TaskExt for Task<T> {
 
 // convert string -> Address
 pub trait AsH160 {
-    fn as_h160(&self) -> Option<H160>;
+    fn as_h160(&self) -> Option<Address>;
 }
 
 impl AsH160 for &str {
-    fn as_h160(&self) -> Option<H160> {
+    fn as_h160(&self) -> Option<Address> {
         if self.starts_with("0x") {
             return (&self[2..]).as_h160();
         }
@@ -83,21 +83,21 @@ impl AsH160 for &str {
         let Ok(hex_bytes) = hex::decode(self.as_bytes()) else {
             return None;
         };
-        if hex_bytes.len() != H160::len_bytes() {
+        if hex_bytes.len() != Address::len_bytes() {
             return None;
         }
 
-        Some(H160::from_slice(hex_bytes.as_slice()))
+        Some(Address::from_slice(hex_bytes.as_slice()))
     }
 }
 
 impl AsH160 for String {
-    fn as_h160(&self) -> Option<H160> {
+    fn as_h160(&self) -> Option<Address> {
         self.as_str().as_h160()
     }
 }
 
-pub fn format_address(address: H160, name: Option<&str>) -> String {
+pub fn format_address(address: Address, name: Option<&str>) -> String {
     let str_address = format!("{address:x}");
     let str_address = str_address
         .chars()

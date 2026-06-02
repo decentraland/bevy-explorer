@@ -1,5 +1,7 @@
 use std::str::FromStr;
 
+use alloy_core::primitives::{Address, B256};
+use alloy_signer_local::PrivateKeySigner;
 use analytics::segment_system::SegmentConfig;
 use bevy::{
     app::AppExit,
@@ -19,8 +21,6 @@ use common::{
     util::{TaskCompat, TaskExt},
 };
 use comms::profile::{get_remote_profile, CurrentUserProfile, UserProfile};
-use ethers_core::types::Address;
-use ethers_signers::LocalWallet;
 use ipfs::IpfsAssetServer;
 use scene_runner::Toaster;
 use system_bridge::{NativeUi, SystemApi};
@@ -388,7 +388,7 @@ fn process_login_bridge(
                 Result<
                     (
                         Address,
-                        LocalWallet,
+                        PrivateKeySigner,
                         Vec<ChainLink>,
                         Option<UserProfile>,
                         RpcResultSender<Result<(), String>>,
@@ -435,7 +435,8 @@ fn process_login_bridge(
 
                     let profile = get_remote_profile(root_address, ipfs, None).await.ok();
 
-                    let local_wallet = LocalWallet::from_bytes(&ephemeral_key).unwrap();
+                    let local_wallet =
+                        PrivateKeySigner::from_bytes(&B256::from_slice(&ephemeral_key)).unwrap();
 
                     Ok((
                         previous_login.root_address,
@@ -510,7 +511,7 @@ fn process_login_bridge(
                     window.focused = true;
                 }
 
-                let ephemeral_key = local_wallet.signer().to_bytes().to_vec();
+                let ephemeral_key = local_wallet.to_bytes().to_vec();
 
                 // store to app config
                 config.previous_login = Some(PreviousLogin {

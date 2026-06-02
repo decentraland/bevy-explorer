@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
+use alloy_core::primitives::Address;
+use alloy_signer::{Error as WalletError, Signature, Signer};
+use alloy_signer_local::PrivateKeySigner;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use bevy::prelude::*;
 use common::structs::ChainLink;
-// use ethers_core::types::transaction::eip2718::TypedTransaction;
-use ethers_core::types::{Address, Signature};
-use ethers_signers::{LocalWallet, Signer, WalletError};
 use http::Uri;
 use platform::AsyncRwLock;
 use rand::SeedableRng;
@@ -55,7 +55,7 @@ impl Wallet {
 
     pub fn finalize_as_guest(&mut self) {
         let inner: Box<dyn ObjSafeWalletSigner + Send + Sync> =
-            Box::new(LocalWallet::new(&mut rand::thread_rng()));
+            Box::new(PrivateKeySigner::random_with(&mut rand::thread_rng()));
         let mut write = self.0.try_write().unwrap();
         write.root_address = Some(inner.address());
         write.delegates.clear();
@@ -63,8 +63,9 @@ impl Wallet {
     }
 
     pub fn finalize_as_guest_with_seed(&mut self, seed: [u8; 32]) {
-        let inner: Box<dyn ObjSafeWalletSigner + Send + Sync> =
-            Box::new(LocalWallet::new(&mut rand::rngs::StdRng::from_seed(seed)));
+        let inner: Box<dyn ObjSafeWalletSigner + Send + Sync> = Box::new(
+            PrivateKeySigner::random_with(&mut rand::rngs::StdRng::from_seed(seed)),
+        );
         let mut write = self.0.try_write().unwrap();
         write.root_address = Some(inner.address());
         write.delegates.clear();
@@ -74,7 +75,7 @@ impl Wallet {
     pub fn finalize(
         &mut self,
         root_address: Address,
-        local_wallet: LocalWallet,
+        local_wallet: PrivateKeySigner,
         auth: Vec<ChainLink>,
     ) {
         let mut write = self.0.try_write().unwrap();
@@ -88,10 +89,10 @@ impl Wallet {
         read.inner
             .as_ref()
             .ok_or_else(|| {
-                WalletError::IoError(std::io::Error::new(
+                WalletError::Other(Box::new(std::io::Error::new(
                     std::io::ErrorKind::NotConnected,
                     "wallet not connected",
-                ))
+                )))
             })?
             .sign_message(message, read.root_address.unwrap(), &read.delegates)
             .await
@@ -128,14 +129,14 @@ pub(crate) trait ObjSafeWalletSigner {
 
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-impl ObjSafeWalletSigner for LocalWallet {
+impl ObjSafeWalletSigner for PrivateKeySigner {
     async fn sign_message(
         &self,
         message: String,
         root_address: Address,
         delegates: &[ChainLink],
     ) -> Result<SimpleAuthChain, WalletError> {
-        let signature = Signer::sign_message(self, &message).await?;
+        let signature = Signer::sign_message(self, message.as_bytes()).await?;
         Ok(SimpleAuthChain::new(
             root_address,
             delegates,

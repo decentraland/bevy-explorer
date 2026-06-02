@@ -22,7 +22,8 @@ system_bridge = { workspace = true }
 
 bevy = { workspace = true }
 bimap = { workspace = true }
-ethers-core = { workspace = true }
+alloy-core = { workspace = true }
+alloy-signer-local = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

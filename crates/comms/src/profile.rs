@@ -1,5 +1,6 @@
 use std::{io::Read, path::PathBuf, sync::Arc};
 
+use alloy_core::primitives::Address;
 use anyhow::anyhow;
 use bevy::{
     ecs::system::SystemParam,
@@ -8,7 +9,6 @@ use bevy::{
     tasks::{IoTaskPool, Task},
 };
 use dcl::interface::CrdtType;
-use ethers_core::types::Address;
 use ipfs::{ipfs_path::IpfsPath, IpfsAssetServer, IpfsIo};
 use multihash_codetable::MultihashDigest;
 use reqwest::StatusCode;

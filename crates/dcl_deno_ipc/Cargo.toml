@@ -23,7 +23,7 @@ serde_json = { workspace = true }
 http = { workspace = true }
 base64 = { workspace = true }
 multihash-codetable = { workspace = true }
-ethers-core = { workspace = true }
+alloy-core = { workspace = true }
 anyhow = { workspace = true }
 fastrand = { workspace = true }
 

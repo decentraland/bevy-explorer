@@ -1,5 +1,6 @@
 use std::{f32::consts::TAU, ops::RangeInclusive, sync::Arc};
 
+use alloy_core::primitives::Address;
 use bevy::{
     app::Propagate,
     platform::collections::{HashMap, HashSet},
@@ -14,7 +15,6 @@ use common::{
         SceneDrivenAnimationRequest,
     },
 };
-use ethers_core::types::Address;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use system_bridge::{SystemApi, VoiceMessage};
@@ -949,7 +949,7 @@ pub fn pipe_voice_to_scene(
     mut requests: EventReader<SystemApi>,
     sources: Query<(&ForeignPlayer, &ForeignAudioSource)>,
     mut senders: Local<Vec<RpcStreamSender<VoiceMessage>>>,
-    mut current_active: Local<HashMap<ethers_core::types::Address, String>>,
+    mut current_active: Local<HashMap<alloy_core::primitives::Address, String>>,
     scene_rooms: Query<&SceneRoom>,
 ) {
     senders.extend(requests.read().filter_map(|ev| {
