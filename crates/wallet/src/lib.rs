@@ -178,7 +178,7 @@ impl SimpleAuthChain {
         links.push(ChainLink {
             ty: "ECDSA_SIGNED_ENTITY".to_owned(),
             payload,
-            signature: format!("0x{signature}"),
+            signature: signature.to_string(),
         });
         Self(links)
     }
