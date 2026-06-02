@@ -133,14 +133,6 @@ type AnyColumn = Or<(
     With<InSceneColumn>,
     With<ShouldPlayColumn>,
 )>;
-#[cfg(all(feature = "ffmpeg", feature = "livekit", target_arch = "wasm32"))]
-type AnyColumn = Or<(
-    With<AvPlayerColumn>,
-    With<VideoPlayerSinks>,
-    With<StreamViewerColumn>,
-    With<InSceneColumn>,
-    With<ShouldPlayColumn>,
-)>;
 
 fn setup_av_player_debug_ui(mut commands: Commands) {
     commands
@@ -402,8 +394,6 @@ type RowTexts<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str);
 type RowTexts<'a> = (&'a str, &'a str, &'a str, &'a str);
 #[cfg(all(feature = "ffmpeg", feature = "livekit", not(target_arch = "wasm32")))]
 type RowTexts<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str, &'a str);
-#[cfg(all(feature = "ffmpeg", feature = "livekit", target_arch = "wasm32"))]
-type RowTexts<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str);
 
 fn build_row(parent: &mut TryChildBuilder, row: i16, av_player: Entity, row_texts: RowTexts) {
     #[cfg(all(not(feature = "ffmpeg"), not(feature = "livekit")))]
@@ -421,8 +411,6 @@ fn build_row(parent: &mut TryChildBuilder, row: i16, av_player: Entity, row_text
     #[cfg(all(feature = "ffmpeg", feature = "livekit", not(target_arch = "wasm32")))]
     let (av_player_name, video_player_sinks, stream_viewer, stream_image, in_scene, should_play) =
         row_texts;
-    #[cfg(all(feature = "ffmpeg", feature = "livekit", target_arch = "wasm32"))]
-    let (av_player_name, video_player_sinks, stream_viewer, in_scene, should_play) = row_texts;
 
     let av_player_name = if av_player_name.len() >= 32 {
         &av_player_name[..32]
