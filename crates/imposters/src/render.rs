@@ -25,7 +25,8 @@ use ipfs::IpfsAssetServer;
 
 use scene_runner::{
     initialize_scene::{
-        CurrentImposterScene, LiveScenes, PointerResult, SceneLoading, ScenePointers, PARCEL_SIZE,
+        CurrentImposterScene, CurrentSceneLoading, LiveScenes, PointerResult, SceneLoading,
+        ScenePointers, PARCEL_SIZE,
     },
     renderer_context::RendererSceneContext,
 };
@@ -222,6 +223,7 @@ pub fn spawn_imposters(
     live_scenes: Res<LiveScenes>,
     scenes: Query<&RendererSceneContext, Without<SceneLoading>>,
     current_imposter_scene: Res<CurrentImposterScene>,
+    current_scene_loading: Res<CurrentSceneLoading>,
     mut manager: ImposterSpecManager,
 ) {
     if current_realm.is_changed() || config.scene_imposter_distances.is_empty() {
@@ -239,6 +241,14 @@ pub fn spawn_imposters(
 
     // skip if no realm
     if manager.pointers.min() == IVec2::MAX {
+        return;
+    }
+
+    // defer imposter loading while the scene the player is in is still loading,
+    // so we don't contend with the active scene's asset loads (the scene
+    // lifecycle defers all other scenes under the same condition). Realm-change
+    // teardown above still runs; we only hold off requiring/loading new tiles.
+    if current_scene_loading.0 {
         return;
     }
 
@@ -497,6 +507,7 @@ pub struct ImposterSpecManager<'w, 's> {
     ipfas: IpfsAssetServer<'w, 's>,
     focus: Res<'w, ImposterFocus>,
     plugin: Res<'w, DclImposterPlugin>,
+    current_scene_loading: Res<'w, CurrentSceneLoading>,
 }
 
 const MAX_ASSET_LOADS: usize = 20;
@@ -842,6 +853,12 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
     }
 
     fn end_tick(&mut self) {
+        // while the scene the player is in is still loading, hold off starting
+        // new imposter downloads/loads so they don't contend with the active
+        // scene's asset fetches. In-flight tasks finish and the pending queue
+        // stays intact, resuming once the current scene is ready.
+        let defer = self.current_scene_loading.0;
+
         let ImposterManagerData {
             loading_mips,
             just_removed,
@@ -887,7 +904,11 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         new_loading_handles.extend(
             requests
                 .into_iter()
-                .take(MAX_ASSET_LOADS - new_loading_handles.len())
+                .take(if defer {
+                    0
+                } else {
+                    MAX_ASSET_LOADS - new_loading_handles.len()
+                })
                 .take_while(|(_, req)| req.benefit > 0.0)
                 .map(|(imposter, req)| {
                     let imposter_handle = req.spec.imposter_data.map(|(_, path)| {
@@ -922,6 +943,13 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         let count2 = new_loading_handles.len();
         *loading_handles = std::mem::take(&mut new_loading_handles);
         debug!("loading {} / {}", count, count2);
+
+        if defer {
+            // current scene still loading: leave loading_mips untouched so the
+            // pending-remote queue (and any in-flight fetches) survives intact,
+            // and start no new downloads this tick.
+            return;
+        }
 
         if self.plugin.download {
             // count current downloads
