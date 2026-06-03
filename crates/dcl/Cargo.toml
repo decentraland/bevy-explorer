@@ -25,7 +25,9 @@ strum = { workspace = true }
 
 num-derive = "0.4.2"
 num = "0.4"
-alloy-provider = { version = "2", features = ["ws"] }
+alloy-provider = { version = "2.0", default-features = false, features = [
+    "ws",
+] }
 anyhow = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
