@@ -85,6 +85,7 @@ pub struct SceneLifecyclePlugin;
 impl Plugin for SceneLifecyclePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CurrentImposterScene>();
+        app.init_resource::<CurrentSceneLoading>();
         app.init_resource::<LiveScenes>();
         app.init_resource::<ScenePointers>();
         app.init_resource::<PortableScenes>();
@@ -1466,6 +1467,14 @@ fn load_active_entities(
 #[derive(Resource, Default)]
 pub struct CurrentImposterScene(pub Option<(PointerResult, bool)>);
 
+// true while a high-priority scene is still loading (not yet spawned, or within
+// its first few ticks): either the scene the player is standing in, or a system
+// (super-user) scene such as the UI. Imposter loading defers while this is set
+// so it doesn't contend with those scenes' asset loads. The current-scene part
+// mirrors the lifecycle's own deferral of all other scenes.
+#[derive(Resource, Default)]
+pub struct CurrentSceneLoading(pub bool);
+
 #[expect(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn process_scene_lifecycle(
     mut commands: Commands,
@@ -1473,7 +1482,12 @@ pub fn process_scene_lifecycle(
     portables: Res<PortableScenes>,
     focus: Query<&GlobalTransform, With<PrimaryUser>>,
     scene_entities: Query<
-        (Entity, &SceneHash, Option<&RendererSceneContext>),
+        (
+            Entity,
+            &SceneHash,
+            Option<&RendererSceneContext>,
+            Has<SuperUserScene>,
+        ),
         Or<(With<SceneLoading>, With<RendererSceneContext>)>,
     >,
     range: Res<SceneLoadDistance>,
@@ -1482,6 +1496,7 @@ pub fn process_scene_lifecycle(
     pointers: Res<ScenePointers>,
     imposter_scene: Res<CurrentImposterScene>,
     preview_mode: Res<PreviewMode>,
+    mut current_scene_loading_res: ResMut<CurrentSceneLoading>,
 ) {
     let mut required_scene_ids: HashMap<(String, Option<String>), bool> = HashMap::new();
 
@@ -1566,7 +1581,8 @@ pub fn process_scene_lifecycle(
 
     // despawn any no-longer required entities
     let mut current_scene_loading = false;
-    for (entity, scene_hash, maybe_ctx) in &scene_entities {
+    let mut system_scene_loading = false;
+    for (entity, scene_hash, maybe_ctx, is_super) in &scene_entities {
         match keep_entities.get(&entity) {
             Some((hash, _)) => {
                 existing_ids.insert(<&String>::clone(hash));
@@ -1580,13 +1596,20 @@ pub fn process_scene_lifecycle(
             }
         }
 
+        let still_loading = maybe_ctx.is_none_or(|ctx| ctx.tick_number <= 6 && !ctx.broken);
+
         // check if the current scene is still loading
         if let Some((current_hash, _)) = current_scene.as_ref() {
-            if &scene_hash.0 == current_hash
-                && maybe_ctx.is_none_or(|ctx| ctx.tick_number <= 6 && !ctx.broken)
-            {
+            if &scene_hash.0 == current_hash && still_loading {
                 current_scene_loading = true;
             }
+        }
+
+        // system/super-user scenes (e.g. the UI scene) are highest priority and
+        // exempt from the deferral below; track their load so imposters wait on
+        // them too, otherwise nothing blocks while the system scene loads.
+        if is_super && still_loading {
+            system_scene_loading = true;
         }
     }
     drop(keep_entities);
@@ -1595,14 +1618,20 @@ pub fn process_scene_lifecycle(
         live_scenes.scenes.remove(removed_hash);
     }
 
+    let mut defer_to_current_scene = false;
     if let Some(current_scene) = current_scene {
         if required_scene_ids.contains_key(&current_scene)
             && (!existing_ids.contains(&current_scene.0) || current_scene_loading)
         {
+            defer_to_current_scene = true;
             // if the current scene is not even spawned, spawn only that scene
             required_scene_ids.retain(|scene, super_user| *super_user || (scene == &current_scene));
         }
     }
+    // publish for imposter loading: defer while the current scene is loading
+    // (same condition the lifecycle uses above) or while a system scene is
+    // still loading (it's exempt from the deferral but still highest priority)
+    current_scene_loading_res.0 = defer_to_current_scene || system_scene_loading;
 
     if live_scenes.block_new_scenes {
         return;
