@@ -369,7 +369,7 @@ fn new_materials(
     mut scene_material_assets: ResMut<Assets<SceneMaterial>>,
 ) {
     for (entity, gt, mesh_material) in materials.into_inner() {
-        commands.entity(entity).remove::<AddedSceneMaterial>();
+        commands.entity(entity).try_remove::<AddedSceneMaterial>();
 
         if gt.is_inverted() {
             match inverted_materials.entry(mesh_material.clone_weak()) {

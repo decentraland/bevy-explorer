@@ -26,6 +26,13 @@ pub struct ImposterSpec {
     pub scale: f32,
     pub region_min: Vec3,
     pub region_max: Vec3,
+    /// World-space distance the baked texture holds content past the
+    /// parcel-clamped region (the level-0 `bound_tolerance`, carried up the mip
+    /// chain as `max(children)`). Used to expose that overhang when this
+    /// imposter is baked as an ingredient — see `ImposterMesh::from_spec`.
+    /// Defaults to 0 for specs written before this field existed.
+    #[serde(default)]
+    pub overhang: f32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
@@ -61,17 +68,10 @@ impl BakedScene {}
 
 fn file_root(cache_path: Option<&Path>, as_ipfs_path: bool, id: &str, level: usize) -> PathBuf {
     let mut path = cache_path.map(ToOwned::to_owned).unwrap_or_default();
-
-    if level == 0 {
-        path.push("imposters");
-        path.push("scenes");
-        path.push(id);
-    } else {
-        path.push("imposters");
-        path.push("realms");
-        path.push(urlencoding::encode(id).into_owned());
-        path.push(format!("{level}"));
-    }
+    path.push("imposters");
+    path.push("realms");
+    path.push(urlencoding::encode(id).into_owned());
+    path.push(format!("{level}"));
 
     if cache_path.is_none() && as_ipfs_path {
         PathBuf::from(&IpfsPath::new_indexdb(path))
@@ -87,11 +87,7 @@ pub(crate) fn spec_path(
     level: usize,
 ) -> PathBuf {
     let mut path = file_root(cache_path, false, id, level);
-    if level == 0 {
-        path.push("spec.json");
-    } else {
-        path.push(format!("{},{}-spec.json", parcel.x, parcel.y));
-    }
+    path.push(format!("{},{}-spec.json", parcel.x, parcel.y));
     path
 }
 
@@ -125,11 +121,7 @@ pub(crate) fn zip_path(
     crc: Option<u32>,
 ) -> PathBuf {
     let mut path = file_root(cache_path, false, id, level);
-    if level == 0 {
-        path.push("scene.zip");
-    } else {
-        path.push(format!("{},{}.{}.zip", parcel.x, parcel.y, crc.unwrap()));
-    }
+    path.push(format!("{},{}.{}.zip", parcel.x, parcel.y, crc.unwrap()));
     path
 }
 
@@ -160,7 +152,10 @@ pub async fn load_imposter(
     cancel: CancellationToken,
 ) -> Option<BakedScene> {
     if required_crc.is_some_and(|crc| crc == 0) {
-        return None;
+        // crc==0 means the area has no scenes, so resolve directly to an empty
+        // spec instead of falling through to remote fetch (which would 404) or
+        // PendingRemote (which would re-trigger the bake every frame).
+        return Some(BakedScene::default());
     }
 
     // try locally
@@ -193,7 +188,7 @@ pub async fn load_imposter_remote(
         .to_string_lossy()
         .into_owned()
         .replace("\\", "/");
-    let zip_url = format!("https://imposter.kuruk.net/{zip_file}")
+    let zip_url = format!("https://bevy-imposters.dclregenesislabs.xyz/{zip_file}")
         // double url encode
         .replace("%", "%25");
     debug!("zip_url {zip_url}");

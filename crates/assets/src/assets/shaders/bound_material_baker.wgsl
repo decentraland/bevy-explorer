@@ -7,7 +7,14 @@
     mesh_view_bindings::{globals, view},
     pbr_types,
 }
-#import boimp::shared::pack_pbrinput;
+#import boimp::shared::{compose_over, pack_pbrinput, pack_props, passes_depth_check, unpack_props};
+
+struct BakeDims {
+    width: u32,
+}
+
+@group(3) @binding(0) var<storage, read_write> bake_buffer: array<vec2<u32>>;
+@group(3) @binding(1) var<uniform> bake_dims: BakeDims;
 
 struct Bounds {
     min: u32,
@@ -49,9 +56,15 @@ fn fragment(
     @builtin(sample_index) sample_index: u32,
 #endif
 #endif
-) -> @location(0) vec2<u32> {
+) {
+#ifdef INVERTED_SCALE
+    let is_front_m = !is_front;
+#else
+    let is_front_m = is_front;
+#endif
+
     // generate a PbrInput struct from the StandardMaterial bindings
-    var pbr_input = pbr_input_from_standard_material(in, is_front);
+    var pbr_input = pbr_input_from_standard_material(in, is_front_m);
     var out: FragmentOutput;
 
 #ifdef OUTLINE
@@ -131,15 +144,27 @@ fn fragment(
         discard;
     }
 
-    // alpha discard
+    // alpha discard (material-specific: mask cutoff / opaque snap / blend preserve)
     pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);
 
-    if pbr_input.material.base_color.a < 0.5 {
+    // skip fully-transparent fragments (no contribution to the composite)
+    if pbr_input.material.base_color.a <= 0.0 {
         discard;
-    }    
+    }
 
     // use max of emissive and color (imposters only take albedo)
     // pbr_input.material.base_color = max(pbr_input.material.base_color, pbr_input.material.emissive);
 
-    return pack_pbrinput(pbr_input);
+    // composite the new fragment over whatever's already at this pixel in the bake buffer.
+    let new_packed = pack_pbrinput(pbr_input);
+    let new_props = unpack_props(new_packed);
+
+    let pixel = vec2<u32>(in.position.xy);
+    let idx = pixel.y * bake_dims.width + pixel.x;
+    let existing = unpack_props(bake_buffer[idx]);
+    if !passes_depth_check(new_props.depth, existing) {
+        discard;
+    }
+    let composed = compose_over(existing, new_props);
+    bake_buffer[idx] = pack_props(composed);
 }

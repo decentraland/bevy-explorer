@@ -1288,7 +1288,7 @@ impl AssetReader for IpfsIo {
                 let request = self
                     .client
                     .get(&remote)
-                    .timeout(Duration::from_secs(5 + 30 * attempt));
+                    .timeout(Duration::from_secs(5 + 300 * attempt));
 
                 // in wasm we add a custom header to allow the service worker to cache ipfs requests across content servers
                 #[cfg(target_arch = "wasm32")]

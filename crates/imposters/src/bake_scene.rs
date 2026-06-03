@@ -10,6 +10,7 @@ use std::{
 use bevy::{
     diagnostic::FrameCount,
     math::FloatOrd,
+    platform::collections::HashMap,
     prelude::*,
     render::{primitives::Aabb, view::RenderLayers},
 };
@@ -30,6 +31,7 @@ use scene_runner::{
         CurrentImposterScene, LiveScenes, PointerResult, ScenePointers, PARCEL_SIZE,
     },
     renderer_context::RendererSceneContext,
+    update_world::gltf_container::{GltfDefinition, GltfProcessed},
 };
 use zip::{write::SimpleFileOptions, ZipWriter};
 
@@ -46,7 +48,7 @@ use crate::{
 pub struct DclImposterBakeScenePlugin;
 
 const GRID_SIZE: u32 = 9;
-const TILE_SIZE: u32 = 96;
+const TILE_SIZE: u32 = 104;
 
 pub const IMPOSTERCEPTION_LAYER: RenderLayers = RenderLayers::layer(5);
 
@@ -76,10 +78,19 @@ pub struct ImposterOven {
     start_tick: u32,
     hash: String,
     unbaked_parcels: Vec<BoundRegion>,
+    /// Parcels we've consumed from `unbaked_parcels` so far. Includes empties
+    /// — the post-bake write loop iterates this so every parcel gets a
+    /// per-parcel spec on disk (empty ones with `imposters: {}`), preventing
+    /// the runtime from spinning forever on "spec not found → re-bake →
+    /// still empty → re-bake".
+    processed_parcels: Vec<IVec2>,
     baked_scene: BakedScene,
 }
 
 const SCENE_BAKE_TICK: u32 = 200;
+// Additional scene ticks to wait after all textures first complete loading,
+// to let scripts / animations / dynamic state settle before capturing.
+const SCENE_BAKE_SETTLE_TICKS: u32 = 60;
 
 fn make_scene_oven(
     current_imposter: Res<CurrentImposterScene>,
@@ -89,11 +100,14 @@ fn make_scene_oven(
     live_scenes: Res<LiveScenes>,
     tick: Res<FrameCount>,
     mut start_tick: Local<Option<(String, u32)>>,
+    // (scene hash, scene tick_number at which all textures were first observed loaded)
+    mut settle_tick: Local<Option<(String, u32)>>,
     bake_list: Res<ImposterBakeList>,
     children: Query<&Children>,
     mat_handles: Query<&MeshMaterial3d<SceneMaterial>>,
     materials: Res<Assets<SceneMaterial>>,
     asset_server: Res<AssetServer>,
+    gltf_state: Query<(Has<GltfDefinition>, Has<GltfProcessed>)>,
 ) {
     if !baking.is_empty() {
         return;
@@ -112,7 +126,7 @@ fn make_scene_oven(
 
     if let Some(entity) = live_scenes.scenes.get(hash) {
         let Ok((mut context, mut transform)) = scenes.get_mut(*entity) else {
-            if tick.0 > start_tick.as_ref().unwrap().1 + 1000 {
+            if tick.0 > start_tick.as_ref().unwrap().1 + 10000 {
                 warn!("scene load failed, spawning dummy oven");
                 let Some(ImposterToBake::Scene(parcel, _)) = bake_list.0.last() else {
                     error!("bake list doesn't have a scene, scene entity is missing, but CurrentImposterScene is set?!");
@@ -122,6 +136,7 @@ fn make_scene_oven(
                     start_tick: tick.0,
                     hash: hash.clone(),
                     unbaked_parcels: vec![BoundRegion::new(*parcel, *parcel, 1)],
+                    processed_parcels: Vec::new(),
                     baked_scene: BakedScene {
                         crc: crc::Crc::<u32>::new(&CRC_32_CKSUM).checksum(hash.as_bytes()),
                         ..Default::default()
@@ -133,10 +148,62 @@ fn make_scene_oven(
 
         transform.translation.y = -2000.0;
 
+        // While the network is still genuinely resolving an asset for this
+        // scene, never arm the `spawning_forever` escape hatch — otherwise a
+        // slow CDN response (or a large mesh) over ~30s of frames would
+        // cause us to bake without it. "Pending" here means the texture is
+        // still in `Loading`/`NotLoaded` or a `GltfDefinition` hasn't been
+        // matched by a `GltfProcessed` yet. `Failed` assets *do* let the
+        // timeout arm — we don't want a permanently-broken asset to block
+        // the bake forever.
+        let any_pending_asset = children.iter_descendants(*entity).any(|child| {
+            if let Ok((true, false)) = gltf_state.get(child) {
+                return true;
+            }
+            let Ok(h_mat) = mat_handles.get(child) else {
+                return false;
+            };
+            let Some(mat) = materials.get(h_mat.id()) else {
+                return false;
+            };
+            [
+                &mat.base.base_color_texture,
+                &mat.base.normal_map_texture,
+                &mat.base.metallic_roughness_texture,
+                &mat.base.emissive_texture,
+            ]
+            .into_iter()
+            .flatten()
+            .any(|h| {
+                matches!(
+                    asset_server.load_state(h.id()),
+                    bevy::asset::LoadState::Loading | bevy::asset::LoadState::NotLoaded
+                )
+            })
+        });
+
+        // Reset the timeout baseline on every frame anything is loading, so
+        // the 10000-frame countdown only begins once *no* asset is still
+        // resolving. Equivalent to "10k frames since the last completion".
+        if any_pending_asset {
+            *start_tick = Some((hash.clone(), tick.0));
+        }
         let spawning_forever = tick.0 > start_tick.as_ref().unwrap().1 + 10000;
 
         if context.tick_number < SCENE_BAKE_TICK && !context.broken && !spawning_forever {
             return;
+        }
+
+        // wait for gltf containers to finish loading (a `GltfDefinition`
+        // without a matching `GltfProcessed` is still being instantiated;
+        // its meshes/materials aren't in the world yet, so the texture
+        // check below would pass vacuously while the scene is incomplete)
+        if !spawning_forever {
+            for child in children.iter_descendants(*entity) {
+                if let Ok((true, false)) = gltf_state.get(child) {
+                    return;
+                }
+            }
         }
 
         // check for texture loads
@@ -163,6 +230,22 @@ fn make_scene_oven(
                         }
                     }
                 }
+            }
+        }
+
+        // first frame textures are all loaded; record the scene tick and let the
+        // scene tick a few more times so dynamic state can settle before capture
+        if !spawning_forever
+            && settle_tick
+                .as_ref()
+                .is_none_or(|(settle_hash, _)| hash != settle_hash)
+        {
+            *settle_tick = Some((hash.clone(), context.tick_number));
+        }
+        if !spawning_forever {
+            let ready_at = settle_tick.as_ref().unwrap().1;
+            if context.tick_number < ready_at.saturating_add(SCENE_BAKE_SETTLE_TICKS) {
+                return;
             }
         }
 
@@ -201,6 +284,7 @@ fn make_scene_oven(
             start_tick: tick.0,
             hash: hash.clone(),
             unbaked_parcels,
+            processed_parcels: Vec::new(),
             baked_scene: BakedScene {
                 crc: crc::Crc::<u32>::new(&CRC_32_CKSUM).checksum(hash.as_bytes()),
                 ..Default::default()
@@ -216,6 +300,7 @@ fn bake_scene_imposters(
     mut all_baking_cams: Query<(Entity, &mut ImposterBakeCamera)>,
     mut live_scenes: ResMut<LiveScenes>,
     ipfas: IpfsAssetServer,
+    current_realm: Res<CurrentRealm>,
     tick: Res<FrameCount>,
     children: Query<&Children>,
     meshes: Query<(&GlobalTransform, &Aabb, &Visibility), With<Mesh3d>>,
@@ -224,6 +309,7 @@ fn bake_scene_imposters(
     config: Res<AppConfig>,
     plugin: Res<DclImposterPlugin>,
 ) {
+    let realm = &current_realm.about_url;
     if let Ok((baking_ent, mut oven)) = baking.single_mut() {
         let current_scene_ent = {
             let Some(entity) = live_scenes.scenes.get(&oven.hash) else {
@@ -240,23 +326,35 @@ fn bake_scene_imposters(
         if !any_baking_cams {
             let Some(region) = oven.unbaked_parcels.pop() else {
                 debug!("no regions left");
-                write_imposter(
-                    ipfas.ipfs_cache_path(),
-                    &oven.hash,
-                    IVec2::MAX,
-                    0,
-                    &oven.baked_scene,
-                );
-                if let Some(output_path) = plugin.zip_output.clone() {
-                    save_and_zip_callback::<()>(
-                        |_| {},
-                        spec_path(ipfas.ipfs_cache_path(), &oven.hash, IVec2::MAX, 0),
-                        output_path,
-                        oven.hash.clone(),
-                        IVec2::MAX,
-                        0,
-                        None,
-                    )(());
+                // Mip-0 layout: one parcel-keyed spec per parcel under
+                // `realms/<realm>/0/`, sharing the scene's CRC. We iterate
+                // every parcel we *processed* (not just those that ended up
+                // in `baked_scene.imposters`) so empty parcels also get a
+                // spec on disk. Without those, an empty parcel's runtime
+                // load fails (PendingRemote → 404 → Missing) and
+                // `pick_imposter_to_bake` re-queues the same scene every
+                // frame — infinite re-bake.
+                let scene_crc = oven.baked_scene.crc;
+                for parcel in &oven.processed_parcels {
+                    let imposter_spec = oven.baked_scene.imposters.get(parcel).copied();
+                    let single = BakedScene {
+                        imposters: imposter_spec
+                            .map(|s| HashMap::from_iter([(*parcel, s)]))
+                            .unwrap_or_default(),
+                        crc: scene_crc,
+                    };
+                    write_imposter(ipfas.ipfs_cache_path(), realm, *parcel, 0, &single);
+                    if let Some(output_path) = plugin.zip_output.clone() {
+                        save_and_zip_callback::<()>(
+                            |_| {},
+                            spec_path(ipfas.ipfs_cache_path(), realm, *parcel, 0),
+                            output_path,
+                            realm.clone(),
+                            *parcel,
+                            0,
+                            Some(scene_crc),
+                        )(());
+                    }
                 }
 
                 // delete the scene since we messed with it a lot to get it stable
@@ -269,17 +367,7 @@ fn bake_scene_imposters(
             };
 
             debug!("baking region: {:?}", region);
-
-            // update materials
-            for h_mat in children
-                .iter_descendants(current_scene_ent)
-                .filter_map(|c| bound_materials.get(c).ok())
-            {
-                let Some(mat) = materials.get_mut(h_mat) else {
-                    continue;
-                };
-                mat.extension.data = SceneBound::new(vec![region], 1.0).data;
-            }
+            oven.processed_parcels.push(region.parcel_min());
 
             // region bounds
             let rmin = region.world_min();
@@ -332,12 +420,46 @@ fn bake_scene_imposters(
             } else {
                 let mut content_aabb = Aabb::enclosing(points).unwrap();
                 content_aabb.center.y += 2000.0;
-                let aabb = Aabb::from_min_max(
-                    rmin.max(content_aabb.min().into()),
-                    rmax.min(content_aabb.max().into()),
+                let clamped_min: Vec3 = rmin.max(content_aabb.min().into());
+                let clamped_max: Vec3 = rmax.min(content_aabb.max().into());
+                // Pull the bottom down to the world floor (y=0) so the
+                // display cube rests on the ground. The "skip low things"
+                // filter raises `content_aabb.min.y` above 0 for any scene
+                // whose lowest meaningful content sits above it; without
+                // this the imposter floats. Stay clamped to `rmin.y` for
+                // safety. The extra V-range bakes mostly empty and is
+                // covered at display by the floor imposter quad.
+                let extended_min = Vec3::new(
+                    clamped_min.x,
+                    clamped_min.y.min(0.0).max(rmin.y),
+                    clamped_min.z,
                 );
+                let aabb = Aabb::from_min_max(extended_min, clamped_max);
                 let center = Vec3::from(aabb.center);
                 let radius = aabb.half_extents.length();
+
+                // Update materials' SceneBound to allow content past the
+                // parcel boundary by the maximum parallax shift this
+                // imposter will need at render time. The shift is bounded
+                // by `2 × radius × tan(half_inter_tile_angle)` — a function
+                // of both the imposter's radius (= bake-camera half-frustum)
+                // and the grid resolution. Scaling per-imposter saves bake
+                // size on short / flat content (e.g. ground patches at
+                // radius ~8m want < 1m of tolerance) while still giving the
+                // worst case (radius ~34m for tall cubes) the ~3m it needs.
+                // Floored at 1m to match the live-render tolerance baseline
+                // and avoid sub-pixel rounding artefacts.
+                let half_inter_tile = std::f32::consts::FRAC_PI_2 / GRID_SIZE as f32;
+                let bound_tolerance = (2.0 * radius * half_inter_tile.tan()).max(1.0);
+                for h_mat in children
+                    .iter_descendants(current_scene_ent)
+                    .filter_map(|c| bound_materials.get(c).ok())
+                {
+                    let Some(mat) = materials.get_mut(h_mat) else {
+                        continue;
+                    };
+                    mat.extension.data = SceneBound::new(vec![region], bound_tolerance).data;
+                }
 
                 debug!("region: {rmin}-{rmax}, snap: {}-{}", aabb.min(), aabb.max());
                 let tile_size = (TILE_SIZE as f32
@@ -359,20 +481,19 @@ fn bake_scene_imposters(
                     ..Default::default()
                 };
 
-                let path =
-                    texture_path(ipfas.ipfs_cache_path(), &oven.hash, region.parcel_min(), 0);
+                let path = texture_path(ipfas.ipfs_cache_path(), realm, region.parcel_min(), 0);
                 let _ = std::fs::create_dir_all(path.parent().unwrap());
-                let save_asset_callback = camera.save_asset_callback(&path, true, true);
+                let save_asset_callback = make_save_callback(&camera, &path);
 
                 if let Some(output_path) = plugin.zip_output.clone() {
                     camera.set_callback(save_and_zip_callback(
                         save_asset_callback,
                         path,
                         output_path,
-                        oven.hash.clone(),
+                        realm.clone(),
                         region.parcel_min(),
                         0,
-                        None,
+                        Some(oven.baked_scene.crc),
                     ));
                 } else {
                     camera.set_callback(save_asset_callback);
@@ -390,6 +511,7 @@ fn bake_scene_imposters(
                         scale: radius,
                         region_min: aabb.min().into(),
                         region_max: aabb.max().into(),
+                        overhang: bound_tolerance,
                     },
                 );
             }
@@ -399,7 +521,7 @@ fn bake_scene_imposters(
             let mut top_down = ImposterBakeCamera {
                 grid_size: 1,
                 radius: (rmax - rmin).xz().max_element() * 0.5 + 1.0,
-                tile_size: (rmax - rmin).xz().max_element() as u32 + 2,
+                tile_size: ((rmax - rmin).xz().max_element() as u32 + 2) * 4,
                 order: -98,
                 manual_camera_transforms: Some(vec![Transform::from_translation(Vec3::new(
                     tile_mid.x,
@@ -411,18 +533,18 @@ fn bake_scene_imposters(
                 ..Default::default()
             };
 
-            let path = floor_path(ipfas.ipfs_cache_path(), &oven.hash, region.parcel_min(), 0);
-            let save_asset_callback = top_down.save_asset_callback(&path, true, true);
+            let path = floor_path(ipfas.ipfs_cache_path(), realm, region.parcel_min(), 0);
+            let save_asset_callback = make_save_callback(&top_down, &path);
 
             if let Some(output_path) = plugin.zip_output.clone() {
                 top_down.set_callback(save_and_zip_callback(
                     save_asset_callback,
                     path,
                     output_path,
-                    oven.hash.clone(),
+                    realm.clone(),
                     region.parcel_min(),
                     0,
-                    None,
+                    Some(oven.baked_scene.crc),
                 ));
             } else {
                 top_down.set_callback(save_asset_callback);
@@ -457,6 +579,30 @@ fn bake_scene_imposters(
                 }
             }
         }
+    }
+}
+
+/// V3-format gating. Returns `Some(threshold)` if the V3 on-disk imposter
+/// format should be emitted (the default — V3 is ON). Set `BOIMP_V1=1` to
+/// fall back to the legacy callback (the cache won't be readable by current
+/// runtimes that expect V3). `BOIMP_V2_THRESHOLD` overrides the default
+/// threshold of 10 on the 0-255 RGB-RMSE scale.
+fn v2_threshold() -> Option<f32> {
+    if std::env::var("BOIMP_V1").is_ok() {
+        return None;
+    }
+    if let Ok(s) = std::env::var("BOIMP_V2_THRESHOLD") {
+        return s.parse::<f32>().ok();
+    }
+    Some(10.0)
+}
+
+type SaveCallback = Box<dyn FnOnce(bevy::prelude::Image) + Send + Sync + 'static>;
+
+fn make_save_callback(cam: &ImposterBakeCamera, path: &std::path::Path) -> SaveCallback {
+    match v2_threshold() {
+        Some(t) => Box::new(cam.save_asset_callback_v2(path, true, t)),
+        None => Box::new(cam.save_asset_callback(path, true, true)),
     }
 }
 
@@ -619,6 +765,15 @@ fn bake_imposter_imposter(
 
         let mut min = Vec3::MAX;
         let mut max = Vec3::MIN;
+        // Same bounds, but with each child's region pushed out by its own
+        // `overhang` — used to size the bake camera so it captures the overhang
+        // the ingredient cubes expose. The overhang is a world-space amount
+        // (the level-0 content lean-over) that does not grow with mip level, so
+        // tight / high-level children are not over-inflated.
+        let mut emin = Vec3::MAX;
+        let mut emax = Vec3::MIN;
+        let mut max_child_overhang = 0.0f32;
+        let mut child_states: Vec<(IVec2, &'static str)> = Vec::new();
         for offset in [IVec2::ZERO, IVec2::X, IVec2::Y, IVec2::ONE] {
             let key = (*parcel + offset * next_size, level - 1, true);
 
@@ -637,25 +792,47 @@ fn bake_imposter_imposter(
                 }) => {
                     min = min.min(imposter_spec.region_min);
                     max = max.max(imposter_spec.region_max);
+                    max_child_overhang = max_child_overhang.max(imposter_spec.overhang);
+                    let push = Vec3::splat(imposter_spec.overhang);
+                    emin = emin.min(imposter_spec.region_min - push);
+                    emax = emax.max(imposter_spec.region_max + push);
+                    child_states.push((key.0, "Ready(data)"));
                 }
                 crate::render::ImposterSpecState::Pending => panic!(),
-                _ => continue,
+                crate::render::ImposterSpecState::Ready(_) => {
+                    child_states.push((key.0, "Ready(no-data)"));
+                    continue;
+                }
+                crate::render::ImposterSpecState::Missing => {
+                    child_states.push((key.0, "Missing"));
+                    continue;
+                }
             }
         }
 
         // skip empty
         if min.cmpgt(max).any() {
-            warn!("skipping empty imposterception bake");
+            warn!(
+                "skipping empty imposterception bake at {parcel:?} level {level}, children: {child_states:?}"
+            );
             // oven.baked_scene.imposters.insert(region.parcel_min(), None);
         } else {
             let aabb = Aabb::from_min_max(min, max);
             let center = Vec3::from(aabb.center);
-            let radius = aabb.half_extents.length();
+            // Radius reaches the furthest pushed-out corner from the (tight)
+            // content centre, so the camera frustum captures the overhang.
+            let radius_tight = aabb.half_extents.length();
+            let radius = (emax - center).max(center - emin).length();
 
+            // Scale tile resolution by the radius inflation so the block content
+            // keeps the pixel density it would have without the overhang
+            // headroom — the extra pixels cover the (mostly empty) overhang
+            // margin. Otherwise the headroom silently lowers mip resolution.
             let tile_size = ((TILE_SIZE / size) as f32
                 * aabb.half_extents.xz().length().max(aabb.half_extents.y)
-                / 16.0)
-                .clamp(2.0, 256.0) as u32;
+                / 16.0
+                * (radius / radius_tight.max(1e-4)))
+            .clamp(2.0, 512.0) as u32;
             debug!("tile size: {tile_size}");
 
             let max_tiles_per_frame = ((GRID_SIZE * GRID_SIZE) as f32
@@ -679,7 +856,7 @@ fn bake_imposter_imposter(
                 *level,
             );
             let _ = std::fs::create_dir_all(path.parent().unwrap());
-            let save_asset_callback = camera.save_asset_callback(&path, true, true);
+            let save_asset_callback = make_save_callback(&camera, &path);
 
             if let Some(output_path) = plugin.zip_output.clone() {
                 camera.set_callback(save_and_zip_callback(
@@ -710,6 +887,7 @@ fn bake_imposter_imposter(
                     scale: radius,
                     region_min: aabb.min().into(),
                     region_max: aabb.max().into(),
+                    overhang: max_child_overhang,
                 },
             );
         }
@@ -721,7 +899,7 @@ fn bake_imposter_imposter(
             let mut top_down = ImposterBakeCamera {
                 grid_size: 1,
                 radius: (size as f32) * PARCEL_SIZE * 0.5 + size as f32,
-                tile_size: 16 + 2,
+                tile_size: (16 + 2) * 4,
                 order: -98,
                 multisample: 1,
                 manual_camera_transforms: Some(vec![Transform::from_translation(Vec3::new(
@@ -738,7 +916,7 @@ fn bake_imposter_imposter(
                 *parcel,
                 *level,
             );
-            let save_asset_callback = top_down.save_asset_callback(&path, true, true);
+            let save_asset_callback = make_save_callback(&top_down, &path);
 
             if let Some(output_path) = plugin.zip_output.clone() {
                 top_down.set_callback(save_and_zip_callback(
@@ -843,6 +1021,13 @@ fn pick_imposter_to_bake(
                 }
             }
         } else {
+            // skip empty regions: nothing to bake and get_spec resolves these
+            // to Ready(empty) without a baked file, so picking them would
+            // loop forever (the entity never gains children).
+            if scene_pointers.crc(imposter.parcel, imposter.level) == Some(0) {
+                continue 'imposter;
+            }
+
             // check all scenes in the parcel
             let size = 1 << imposter.level;
             for x in imposter.parcel.x..imposter.parcel.x + size {
@@ -933,7 +1118,15 @@ fn check_bake_state(
                     let PointerResult::Exists { hash, .. } = pointer_result else {
                         panic!()
                     };
-                    manager.clear_scene(hash);
+                    // The scene-level bake wrote per-parcel mip-0 specs under
+                    // `realms/<realm>/0/` for the scene's *whole* footprint
+                    // (including empties), not just the representative
+                    // `parcel` we picked. Drop the cached level-0 resolution
+                    // for all of them so the next get_spec re-reads each
+                    // freshly-written spec from disk — clearing only `parcel`
+                    // would leave the siblings stuck on their pre-bake
+                    // `Missing` and render as holes.
+                    manager.clear_scene_mips(hash);
                     baking.0.pop();
                 } else {
                     // don't need to check for constituents, just go

@@ -1182,7 +1182,10 @@ pub fn mesh_to_parry_shape(mesh_data: &Mesh) -> SharedShape {
             | TriMeshFlags::DELETE_DUPLICATE_TRIANGLES
             | TriMeshFlags::MERGE_DUPLICATE_VERTICES,
     )
-    .unwrap()
+    .unwrap_or_else(|_| {
+        warn!("empty indices, can't generate collider");
+        SharedShape::ball(0.01)
+    })
 }
 
 #[derive(Component, Debug)]

@@ -99,9 +99,14 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
     else {
         panic!()
     };
+    // The 72px floor tile is the 16m parcel as the central 64px with a 1m
+    // (4px) bleed on every side (bake radius = 8m + 1m, tile = (16+2)*4). Map
+    // the parcel quad to that central region [4/72, 68/72] — sampling the full
+    // tile would draw the 1m overhang, which seams at scene edges (the
+    // neighbour scene isn't in this bake).
     for uv in uvs.iter_mut() {
-        uv[0] = 0.0 / 18.0 + 17.0 / 18.0 * uv[0];
-        uv[1] = 0.0 / 18.0 + 17.0 / 18.0 * uv[1];
+        uv[0] = 4.0 / 72.0 + 64.0 / 72.0 * uv[0];
+        uv[1] = 4.0 / 72.0 + 64.0 / 72.0 * uv[1];
     }
 
     let cube: Mesh = ImposterMesh::default().build();
@@ -138,20 +143,6 @@ impl Drop for ImposterLoadTask {
 }
 
 impl ImposterLoadTask {
-    pub fn new_scene(ipfas: &IpfsAssetServer, scene_hash: &str, download: bool) -> Self {
-        let cancel = CancellationToken::new();
-        let task = IoTaskPool::get().spawn_compat(load_imposter(
-            ipfas.ipfs().clone(),
-            scene_hash.to_string(),
-            IVec2::MAX,
-            0,
-            None, // don't need to check since we load by id,
-            download,
-            cancel.clone(),
-        ));
-        Self(task, cancel)
-    }
-
     pub fn new_mip(
         ipfas: &IpfsAssetServer,
         address: &str,
@@ -455,13 +446,9 @@ impl AssetLoadRequest {
 #[derive(Resource, Default)]
 pub struct ImposterManagerData {
     pub mips: HashMap<(IVec2, usize, u32), ImposterSpecResolveState>,
-    pub scenes: HashMap<String, ImposterSpecResolveState>,
 
     pub loading_mips: HashMap<(IVec2, usize, u32), ImposterSpecLoadState>,
-    pub loading_scenes: HashMap<String, ImposterSpecLoadState>,
-
     pub prev_loading_mips: HashMap<(IVec2, usize, u32), ImposterSpecLoadState>,
-    pub prev_loading_scenes: HashMap<String, ImposterSpecLoadState>,
 
     pub requested_loading_handles: HashMap<SceneImposter, AssetLoadRequest>,
     pub loading_handles: HashMap<SceneImposter, (Option<UntypedHandle>, Option<UntypedHandle>)>,
@@ -513,6 +500,9 @@ pub struct ImposterSpecManager<'w, 's> {
 }
 
 const MAX_ASSET_LOADS: usize = 20;
+#[cfg(target_arch = "wasm32")]
+const MAX_ASSET_DOWNLOADS: usize = 6;
+#[cfg(not(target_arch = "wasm32"))]
 const MAX_ASSET_DOWNLOADS: usize = 10;
 
 impl<'w, 's> ImposterSpecManager<'w, 's> {
@@ -522,17 +512,27 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
         self.data.prev_loading_mips.clear();
     }
 
-    pub(crate) fn clear_scene(&mut self, hash: &str) {
-        self.data.scenes.remove(hash);
-    }
-
     pub(crate) fn clear_mip(&mut self, parcel: IVec2, level: usize, crc: u32) {
         self.data.mips.remove(&(parcel, level, crc));
     }
 
+    /// Drop the cached level-0 resolution for every parcel belonging to
+    /// `hash`. A scene bake writes a per-parcel mip-0 spec for its whole
+    /// footprint, so the next `get_spec` for each of those parcels must
+    /// re-read from disk rather than serving a pre-bake `Missing`.
+    pub(crate) fn clear_scene_mips(&mut self, hash: &str) {
+        let ImposterSpecManager { data, pointers, .. } = self;
+        data.mips.retain(|(parcel, level, _crc), _| {
+            *level != 0
+                || !matches!(
+                    pointers.get(parcel),
+                    Some(PointerResult::Exists { hash: h, .. }) if h == hash
+                )
+        });
+    }
+
     fn start_tick(&mut self) {
         self.data.prev_loading_mips = std::mem::take(&mut self.data.loading_mips);
-        self.data.prev_loading_scenes = std::mem::take(&mut self.data.loading_scenes);
     }
 
     fn store_removed(&mut self, child_of: Option<SceneImposter>, entity: Entity) {
@@ -546,11 +546,8 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
     pub fn get_spec(&mut self, req: &SceneImposter, benefit: f32) -> ImposterSpecState {
         let ImposterManagerData {
             mips,
-            scenes,
             loading_mips,
-            loading_scenes,
             prev_loading_mips,
-            prev_loading_scenes,
             ..
         } = &mut *self.data;
 
@@ -581,89 +578,21 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
             }
         };
 
-        if req.level == 0 {
-            let hash = match self.pointers.get(req.parcel) {
-                None => return ImposterSpecState::Pending,
-                Some(PointerResult::Nothing) => return ImposterSpecState::Missing,
-                Some(PointerResult::Exists { hash, .. }) => hash,
-            };
-
-            let resolve_state = scenes.get(hash);
-            let state = resolve(resolve_state, hash, true);
-            if state != ImposterSpecState::Pending {
-                return state;
-            }
-
-            // manage existing state from previous frame
-            if let Some((hash, mut load_state)) = prev_loading_scenes.remove_entry(hash) {
-                match load_state {
-                    ImposterSpecLoadState::Local(ref mut imposter_load_task) => {
-                        // check if local load completed successfully
-                        if let Some(maybe_baked_scene) = imposter_load_task.0.complete() {
-                            let new_state = match maybe_baked_scene {
-                                Some(baked_scene) => ImposterSpecResolveState::Ready(baked_scene),
-                                None => ImposterSpecResolveState::PendingRemote,
-                            };
-                            debug!("end local fetch {hash}: {new_state:?}");
-                            scenes.insert(hash, new_state);
-                        } else {
-                            // reinsert for this frame if not
-                            loading_scenes.insert(hash, load_state);
-                        }
-                    }
-                    ImposterSpecLoadState::Remote(ref mut imposter_load_task) => {
-                        // check if remote load completed successfully
-                        if let Some(maybe_baked_scene) = imposter_load_task.0.complete() {
-                            let new_state = match maybe_baked_scene {
-                                Some(baked_scene) => ImposterSpecResolveState::Ready(baked_scene),
-                                None => ImposterSpecResolveState::Missing,
-                            };
-                            scenes.insert(hash, new_state);
-                        } else {
-                            // reinsert for this frame if not
-                            loading_scenes.insert(hash, load_state);
-                        }
-                    }
-                    // reset the benefit for this frame
-                    ImposterSpecLoadState::PendingRemote(_) => {
-                        loading_scenes.insert(hash, ImposterSpecLoadState::PendingRemote(benefit));
-                    }
-                }
-            } else {
-                match loading_scenes.entry(hash.clone()) {
-                    Entry::Vacant(v) => {
-                        // no existing entry, create a new local task or remote request
-                        match resolve_state {
-                            None => {
-                                debug!("start local fetch {hash}");
-                                v.insert(ImposterSpecLoadState::Local(
-                                    ImposterLoadTask::new_scene(&self.ipfas, hash, false),
-                                ));
-                            }
-                            Some(ImposterSpecResolveState::PendingRemote) => {
-                                debug!("requesting remote fetch {hash} (via {req:?})");
-                                v.insert(ImposterSpecLoadState::PendingRemote(benefit));
-                            }
-                            // we should never reach here if the imposter is missing or ready
-                            _ => panic!(),
-                        }
-                    }
-                    Entry::Occupied(mut o) => {
-                        if let ImposterSpecLoadState::PendingRemote(ref mut prev_benefit) =
-                            o.get_mut()
-                        {
-                            // add our benefit to the total for this remote request
-                            *prev_benefit += benefit
-                        }
-                    }
-                }
-            }
-
-            resolve(scenes.get(hash), hash, true)
-        } else {
+        {
             let Some(crc) = self.pointers.crc(req.parcel, req.level) else {
                 return ImposterSpecState::Pending;
             };
+
+            // Empty region: no scenes contribute, so the mip is trivially
+            // empty. Short-circuit to Ready(no data) so callers (notably
+            // `bake_imposter_imposter`'s child-compose loop) don't race the
+            // async load machinery and observe Pending on first request.
+            if crc == 0 {
+                return ImposterSpecState::Ready(SpecStateReady {
+                    imposter_data: None,
+                    floor_data: None,
+                });
+            }
 
             let key = (req.parcel, req.level, crc);
 
@@ -811,7 +740,10 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
 
         // not downloaded or not spawned, fallback to best available
         if req.as_ingredient {
-            return ImposterState::Pending(0);
+            // mirror the post-substitute fallback error so retries pass a non-zero
+            // current_error and the load actually fires in end_tick
+            let new_error = (6 - req.level) * (6 - req.level) * parcel_count;
+            return ImposterState::Pending(new_error);
         }
 
         // check for previously despawned lower mip entities first
@@ -819,8 +751,10 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
             return ImposterState::PendingWithPrevious(entities, 1);
         }
 
-        // check for larger mips
-        for level in req.level + 1..=5 {
+        // check for larger mips — capped at +2 levels above the request so a
+        // small-parcel request can't be substituted with a dramatically larger
+        // mip that's much more likely to overlap nearby live parcels.
+        for level in req.level + 1..=(req.level + 2).min(5) {
             let parcel_err = level - req.level;
             let new_error = parcel_err * parcel_count;
             if let Some(ce) = current_error {
@@ -910,9 +844,7 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
     fn end_tick(&mut self) {
         let ImposterManagerData {
             loading_mips,
-            loading_scenes,
             just_removed,
-            scenes,
             mips,
             loading_handles,
             requested_loading_handles,
@@ -995,113 +927,62 @@ impl<'w, 's> ImposterSpecManager<'w, 's> {
             // count current downloads
             let active = loading_mips
                 .values()
-                .chain(loading_scenes.values())
                 .filter(|v| matches!(v, ImposterSpecLoadState::Remote(_)))
                 .count();
             let mut free = MAX_ASSET_DOWNLOADS - active;
-
-            #[derive(Debug)]
-            enum MipOrScene {
-                Mip((IVec2, usize, u32), f32),
-                Scene(String, f32),
-            }
-
-            impl MipOrScene {
-                fn benefit(&self) -> f32 {
-                    match self {
-                        MipOrScene::Mip(_, d) => *d,
-                        MipOrScene::Scene(_, d) => *d,
-                    }
-                }
-            }
-
-            let mut pending_remotes = Vec::new();
 
             // take all pending remotes, gather and sort those with positive benefit
             let (pending, mut loading): (HashMap<_, _>, HashMap<_, _>) = loading_mips
                 .drain()
                 .partition(|kv| matches!(kv.1, ImposterSpecLoadState::PendingRemote(_)));
             *loading_mips = std::mem::take(&mut loading);
-            pending_remotes.extend(pending.into_iter().filter_map(|(k, v)| {
-                let ImposterSpecLoadState::PendingRemote(benefit) = v else {
-                    panic!()
-                };
-                (benefit > 0.0).then_some(MipOrScene::Mip(k, benefit))
-            }));
+            let mut pending_remotes: Vec<((IVec2, usize, u32), f32)> = pending
+                .into_iter()
+                .filter_map(|(k, v)| {
+                    let ImposterSpecLoadState::PendingRemote(benefit) = v else {
+                        panic!()
+                    };
+                    (benefit > 0.0).then_some((k, benefit))
+                })
+                .collect();
 
-            let (pending, mut loading): (HashMap<_, _>, HashMap<_, _>) = loading_scenes
-                .drain()
-                .partition(|kv| matches!(kv.1, ImposterSpecLoadState::PendingRemote(_)));
-            *loading_scenes = std::mem::take(&mut loading);
-            pending_remotes.extend(pending.into_iter().filter_map(|(k, v)| {
-                let ImposterSpecLoadState::PendingRemote(benefit) = v else {
-                    panic!()
-                };
-                (benefit > 0.0).then_some(MipOrScene::Scene(k, benefit))
-            }));
-
-            pending_remotes.sort_by_key(|mos| -FloatOrd(mos.benefit()));
-
-            // debug!("pending remotes: {:?}", pending_remotes);
+            pending_remotes.sort_by_key(|(_, b)| -FloatOrd(*b));
 
             // start new remote fetches
             let mut active_regions: Vec<(IVec2, IVec2)> = Vec::default();
-            for mos in pending_remotes.into_iter() {
+            for ((parcel, level, crc), _benefit) in pending_remotes.into_iter() {
                 if free == 0 {
                     break;
                 }
 
-                match mos {
-                    MipOrScene::Mip((parcel, level, crc), _benefit) => {
-                        let parcel_upper = parcel + (1 << level);
-                        if active_regions.iter().any(|(prev, prev_upper)| {
-                            (parcel.cmpge(*prev).all() && parcel_upper.cmple(*prev_upper).all())
-                                || (prev.cmpge(parcel).all()
-                                    && prev_upper.cmple(parcel_upper).all())
-                        }) {
-                            debug!("skipping {parcel}, {level} due to existing");
-                            continue;
-                        }
-
-                        loading_mips.insert(
-                            (parcel, level, crc),
-                            ImposterSpecLoadState::Remote(ImposterLoadTask::new_mip(
-                                &self.ipfas,
-                                &self.current_realm.about_url,
-                                parcel,
-                                level,
-                                crc,
-                                true,
-                            )),
-                        );
-
-                        active_regions.push((parcel, parcel_upper));
-                        debug!("took mip {:?}, benefit {}", (parcel, level, crc), _benefit);
-                    }
-                    MipOrScene::Scene(hash, _benefit) => {
-                        debug!("took scene {:?}, benefit {}", hash, _benefit);
-                        let task = ImposterSpecLoadState::Remote(ImposterLoadTask::new_scene(
-                            &self.ipfas,
-                            &hash,
-                            true,
-                        ));
-                        loading_scenes.insert(hash, task);
-                    }
+                let parcel_upper = parcel + (1 << level);
+                if active_regions.iter().any(|(prev, prev_upper)| {
+                    (parcel.cmpge(*prev).all() && parcel_upper.cmple(*prev_upper).all())
+                        || (prev.cmpge(parcel).all() && prev_upper.cmple(parcel_upper).all())
+                }) {
+                    debug!("skipping {parcel}, {level} due to existing");
+                    continue;
                 }
+
+                loading_mips.insert(
+                    (parcel, level, crc),
+                    ImposterSpecLoadState::Remote(ImposterLoadTask::new_mip(
+                        &self.ipfas,
+                        &self.current_realm.about_url,
+                        parcel,
+                        level,
+                        crc,
+                        true,
+                    )),
+                );
+
+                active_regions.push((parcel, parcel_upper));
+                debug!("took mip {:?}, benefit {}", (parcel, level, crc), _benefit);
 
                 free -= 1;
             }
         } else {
             // quickly fail everything remote
-            loading_scenes.retain(|hash, v| {
-                if matches!(v, ImposterSpecLoadState::PendingRemote(_)) {
-                    debug!("auto-failing remote for scene {hash}");
-                    scenes.insert(hash.clone(), ImposterSpecResolveState::Missing);
-                    false
-                } else {
-                    true
-                }
-            });
             loading_mips.retain(|key, v| {
                 if matches!(v, ImposterSpecLoadState::PendingRemote(_)) {
                     debug!("auto-failing remote for mip {key:?}");
@@ -1222,16 +1103,29 @@ fn load_imposters(
                         (meshes.add(mesh), aabb)
                     };
 
-                    let mut scale = spec.region_max - spec.region_min;
-                    scale.y = spec.scale * 2.0;
+                    // Stretch the cube's y down to the world floor without
+                    // touching the material's imposter_data (which still
+                    // holds the original bake spec_mid/scale, so UV math
+                    // stays aligned with the baked texture). Fragments at
+                    // world y in [0, original region_min.y] sample at V<0
+                    // and discard — the floor imposter quad covers the gap.
+                    let floor_y = 0.0_f32.min(spec.region_min.y);
+                    let mid_y = (floor_y + spec.region_max.y) * 0.5;
+                    let scale_y = spec.region_max.y - floor_y;
+                    let scale_xz = spec.region_max - spec.region_min;
+                    let scale = Vec3::new(scale_xz.x, scale_y, scale_xz.z);
+                    let translation = Vec3::new(
+                        (spec.region_min.x + spec.region_max.x) * 0.5,
+                        mid_y,
+                        (spec.region_min.z + spec.region_max.z) * 0.5,
+                    );
                     c.spawn((
                         Mesh3d(mesh),
                         MeshMaterial3d(imposter),
-                        Transform::from_translation((spec.region_min + spec.region_max) * 0.5)
-                            .with_scale(
-                                scale.max(Vec3::splat(0.001))
-                                    * (1.0 + scene_imposter.level as f32 / 1000.0),
-                            ),
+                        Transform::from_translation(translation).with_scale(
+                            scale.max(Vec3::splat(0.001))
+                                * (1.0 + scene_imposter.level as f32 / 1000.0),
+                        ),
                         // ShowAabbGizmo { color },
                         aabb,
                         NotShadowCaster,
@@ -1269,9 +1163,9 @@ fn load_imposters(
                             / scene_size as f32;
 
                         for uv in uvs.iter_mut() {
-                            uv[0] = 0.0 / 18.0 + 17.0 / 18.0 * (bottomleft.x + uv[0] * parcel_size);
-                            uv[1] = 0.0 / 18.0
-                                + 17.0 / 18.0 * (1.0 - bottomleft.y - (1.0 - uv[1]) * parcel_size);
+                            uv[0] = 4.0 / 72.0 + 64.0 / 72.0 * (bottomleft.x + uv[0] * parcel_size);
+                            uv[1] = 4.0 / 72.0
+                                + 64.0 / 72.0 * (1.0 - bottomleft.y - (1.0 - uv[1]) * parcel_size);
                         }
                         floor.transfer_priority = RenderAssetTransferPriority::Immediate;
 

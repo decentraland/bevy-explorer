@@ -53,7 +53,7 @@ web-time = { workspace = true }
 
 petgraph = "0.6.3"
 spin_sleep = "1.1.1"
-image = "0.25"
+image = { workspace = true }
 unicode-segmentation = "1"
 emojis = "0.8"
 

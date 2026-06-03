@@ -47,10 +47,19 @@ const FOREIGN_PLAYER_RANGE: RangeInclusive<u16> = 6..=406;
 
 pub struct GlobalCrdtPlugin;
 
+/// Drop incoming `NetworkUpdate::Player` messages without spawning
+/// ForeignPlayer entities or updating the profile cache. Set by headless
+/// consumers (e.g. the `impost` baker) that don't need remote-player state
+/// and would otherwise pay for unbounded ProfileCache growth, foreign
+/// entity churn, and the associated despawn-timeout work over long runs.
+#[derive(Resource, Default)]
+pub struct DiscardPlayerUpdates(pub bool);
+
 impl Plugin for GlobalCrdtPlugin {
     fn build(&self, app: &mut App) {
         let (ext_sender, ext_receiver) = mpsc::channel(1000);
         let (int_sender, _) = broadcast::channel(1000);
+        app.init_resource::<DiscardPlayerUpdates>();
         app.insert_resource(GlobalCrdtState {
             ext_receiver,
             ext_sender,
@@ -385,6 +394,7 @@ pub fn process_transport_updates(
     mut profile_meta_cache: ResMut<ProfileMetaCache>,
     mut duplicate_chat_filter: Local<HashMap<Entity, f64>>,
     mut last_remote_anim_urn: Local<HashMap<Entity, (String, String)>>,
+    discard_player_updates: Res<DiscardPlayerUpdates>,
 ) {
     // gather any event receivers
     for ev in subscribers.read() {
@@ -409,6 +419,9 @@ pub fn process_transport_updates(
     while let Ok(network_update) = state.ext_receiver.try_recv() {
         match network_update {
             NetworkUpdate::Player(update) => {
+                if discard_player_updates.0 {
+                    continue;
+                }
                 // create/update timestamp/transport_id on the foreign player
                 let (entity, scene_id, audio_channel) = if let Some((entity, scene_id, channel)) =
                     created_this_frame.get(&update.address)

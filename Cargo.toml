@@ -116,6 +116,7 @@ bevy = { version = "0.16.1", default-features = false, features = [
   "std",
   "bevy_state",
   "pbr_light_textures",
+  "reduce_image_sizes",
 ] }
 wgpu = "24"
 bevy_console = { git = "https://github.com/robtfm/bevy-console", branch = "0.16" }
@@ -149,6 +150,8 @@ reqwest = { version = "0.12", default-features = false, features = [
   "blocking",
 ] }
 kira = "0.9.6"
+zip = { version = "2", default-features = false }
+image = "0.25"
 opener = { version = "0.8", git = "https://github.com/robtfm/opener" }
 chrono = { version = "0.4.31", features = ["serde"] }
 bevy_dui = { git = "https://github.com/robtfm/bevy_dui", branch = "0.16" }
@@ -177,7 +180,7 @@ fastrand = "2"
 rand = "0.8.5"
 futures-util = "0.3.28"
 async-native-tls = { version = "0.5", features = ["runtime-async-std"] }
-boimp = { git = "https://github.com/robtfm/boimp", branch = "0.3" }
+boimp = { git = "https://github.com/robtfm/boimp", branch = "feat/composite-bake-via-storage-texture" }
 crc = "3"
 num-traits = "0.2"
 async-compat = "0.2"
@@ -252,6 +255,12 @@ build-time = { workspace = true }
 web-time = { workspace = true }
 
 pico-args = "0.5.0"
+zip = { workspace = true }
+anyhow = { workspace = true }
+crc = { workspace = true }
+urlencoding = { workspace = true }
+image = { workspace = true }
+rand = { workspace = true }
 chrono = { workspace = true }
 # tracing = { version = "0.1", features = ["release_max_level_info"] }
 tracing = { version = "0.1" }
