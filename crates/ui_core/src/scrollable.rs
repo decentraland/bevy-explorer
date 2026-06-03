@@ -24,7 +24,8 @@ impl Plugin for ScrollablePlugin {
         app.add_systems(Startup, setup)
             .add_systems(
                 PostUpdate,
-                update_scrollables.after(TransformSystem::TransformPropagate),
+                (update_scrollables, resync_scrollbar_transforms)
+                    .after(TransformSystem::TransformPropagate),
             )
             .add_event::<ScrollTargetEvent>();
     }
@@ -35,6 +36,33 @@ fn setup(mut dui: ResMut<DuiRegistry>) {
     dui.register_template("vscroll", VerticalScrollTemplate);
     dui.register_template("hscroll", HorizontalScrollTemplate);
     dui.register_template("scroll", TwoWayScrollTemplate);
+}
+
+// Scrollbars/sliders are spawned and positioned in `update_scrollables`, which runs after
+// `TransformSystem::TransformPropagate`. Under the multithreaded executor, bevy 0.16's dirty-tree
+// transform propagation intermittently fails to refresh such a freshly-added child, leaving its
+// `GlobalTransform` stale (parent * identity) even once the local `Transform` is correct.
+//
+// Detect the mismatch (`GlobalTransform` != parent * local) and re-dirty the local `Transform` so
+// propagation retries next frame. Unlike an unconditional re-dirty, this stops once the transform
+// is correct, so it converges to a stable fixed point instead of perpetually re-exposing the bar
+// to the propagation race.
+#[allow(clippy::type_complexity)]
+fn resync_scrollbar_transforms(
+    mut bars: Query<
+        (&ChildOf, &GlobalTransform, &mut Transform),
+        Or<(With<ScrollBar>, With<Slider>)>,
+    >,
+    globals: Query<&GlobalTransform>,
+) {
+    for (child_of, global, mut transform) in bars.iter_mut() {
+        let Ok(parent_global) = globals.get(child_of.parent()) else {
+            continue;
+        };
+        if *global != parent_global.mul_transform(*transform) {
+            transform.set_changed();
+        }
+    }
 }
 
 pub trait SpawnScrollable {
