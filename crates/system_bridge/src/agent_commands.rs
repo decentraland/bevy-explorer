@@ -48,10 +48,15 @@ fn login_previous_cmd(
     if let Some(Ok(_)) = input.take() {
         let (sx, rx) = common::rpc::RpcResultSender::<Result<(), String>>::channel();
         events.write(SystemApi::LoginPrevious(sx));
-        pending.push_receiver(rx, |result| match result {
-            Ok(()) => Ok("logged in with previous credentials".to_string()),
-            Err(e) => Err(e),
-        });
+        let responder = input.take_responder();
+        pending.push_receiver(
+            rx,
+            |result| match result {
+                Ok(()) => Ok("logged in with previous credentials".to_string()),
+                Err(e) => Err(e),
+            },
+            responder,
+        );
     }
 }
 
@@ -82,25 +87,30 @@ fn live_scenes_cmd(
     if let Some(Ok(_)) = input.take() {
         let (response, rx) = common::rpc::RpcResultSender::<Vec<LiveSceneInfo>>::channel();
         events.write(SystemApi::LiveSceneInfo(response));
-        pending.push_receiver(rx, |scenes| {
-            if scenes.is_empty() {
-                Ok("no scenes loaded".to_string())
-            } else {
-                Ok(scenes
-                    .iter()
-                    .map(|s| {
-                        format!(
-                            "{} [{}{}{}]",
-                            s.title,
-                            s.hash,
-                            if s.is_portable { ", portable" } else { "" },
-                            if s.is_broken { ", broken" } else { "" },
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n"))
-            }
-        });
+        let responder = input.take_responder();
+        pending.push_receiver(
+            rx,
+            |scenes| {
+                if scenes.is_empty() {
+                    Ok("no scenes loaded".to_string())
+                } else {
+                    Ok(scenes
+                        .iter()
+                        .map(|s| {
+                            format!(
+                                "{} [{}{}{}]",
+                                s.title,
+                                s.hash,
+                                if s.is_portable { ", portable" } else { "" },
+                                if s.is_broken { ", broken" } else { "" },
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n"))
+                }
+            },
+            responder,
+        );
     }
 }
 

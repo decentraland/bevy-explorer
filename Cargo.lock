@@ -1029,7 +1029,7 @@ dependencies = [
 [[package]]
 name = "bevy_console"
 version = "0.14.0"
-source = "git+https://github.com/robtfm/bevy-console?branch=0.16#8e8681ce2fbc62fee81e25a6222b64d79452450f"
+source = "git+https://github.com/robtfm/bevy-console?branch=0.16#636e66e2c032ad32a7f21ec7ea5389b00ae42b90"
 dependencies = [
  "ansi-parser",
  "bevy",
@@ -1044,7 +1044,7 @@ dependencies = [
 [[package]]
 name = "bevy_console_derive"
 version = "0.5.0"
-source = "git+https://github.com/robtfm/bevy-console?branch=0.16#8e8681ce2fbc62fee81e25a6222b64d79452450f"
+source = "git+https://github.com/robtfm/bevy-console?branch=0.16#636e66e2c032ad32a7f21ec7ea5389b00ae42b90"
 dependencies = [
  "better-bae",
  "proc-macro2",

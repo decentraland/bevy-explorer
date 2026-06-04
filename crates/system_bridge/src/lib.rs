@@ -1,16 +1,17 @@
 pub mod agent_commands;
 pub mod settings;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use bevy::{
     app::{AppExit, Plugin, Update},
-    ecs::{event::EventReader, system::Local},
+    ecs::event::EventReader,
     log::debug,
     math::Vec4,
     prelude::{Event, EventWriter, Res, ResMut, Resource},
 };
-use bevy_console::{ConsoleCommandEntered, ConsoleConfiguration, PrintConsoleLine};
+use bevy_console::{ConsoleCommandEntered, ConsoleConfiguration, ConsoleResponder};
 use common::{
     inputs::{BindingsData, InputIdentifier, SystemActionEvent},
     rpc::{RpcResultSender, RpcStreamSender},
@@ -380,53 +381,28 @@ pub fn post_events(
     mut bridge: ResMut<SystemBridge>,
     mut writer: EventWriter<SystemApi>,
     mut console: EventWriter<ConsoleCommandEntered>,
-    mut console_response: Local<Option<RpcResultSender<Result<String, String>>>>,
-    mut replies: EventReader<PrintConsoleLine>,
-    mut pending: Local<VecDeque<(String, Vec<String>, RpcResultSender<Result<String, String>>)>>,
     console_config: Res<ConsoleConfiguration>,
 ) {
     while let Ok(ev) = bridge.receiver.try_recv() {
-        if let SystemApi::ConsoleCommand(cmd, args, sender) = ev {
-            debug!("system bridge (cc): {cmd} {args:?}");
-            pending.push_back((cmd, args, sender));
-        } else {
+        let SystemApi::ConsoleCommand(cmd, args, sender) = ev else {
             debug!("system bridge: {ev:?}");
             writer.write(ev);
-        }
-    }
+            continue;
+        };
 
-    if let Some(response) = console_response.take() {
-        let mut reply = replies.read().collect::<Vec<_>>();
-        match reply.pop() {
-            Some(PrintConsoleLine { line }) if line.as_str() == "[ok]" => {
-                response.send(Ok(reply
-                    .into_iter()
-                    .map(|l| l.line.clone())
-                    .collect::<Vec<_>>()
-                    .join("\n")));
-            }
-            Some(PrintConsoleLine { line }) if line.as_str() == "[failed]" => {
-                response.send(Err(reply
-                    .into_iter()
-                    .map(|l| l.line.clone())
-                    .collect::<Vec<_>>()
-                    .join("\n")));
-            }
-            Some(PrintConsoleLine { line }) => {
-                debug!("got {line}");
-                *console_response = Some(response);
-            }
-            _ => {
-                *console_response = Some(response);
-            }
-        }
-    } else if let Some((cmd, args, sender)) = pending.pop_front() {
+        debug!("system bridge (cc): {cmd} {args:?}");
+
+        // Dispatch as a `ConsoleCommandEntered` carrying its own responder, so the result
+        // flows back through the channel rather than being scraped from shared console
+        // output. `bevy_console` queues concurrent invocations and refires any it can't
+        // process this frame, so there is no need to serialize dispatch here.
         if console_config.commands.contains_key(cmd.as_str()) {
+            let responder: ConsoleResponder = Arc::new(move |result| sender.send(result));
             console.write(ConsoleCommandEntered {
                 command_name: cmd,
                 args,
+                responder: Some(responder),
             });
-            *console_response = Some(sender);
         } else {
             sender.send(Err(format!(
                 "Command not recognized: `{cmd}`. Recognized commands: {:?}",
@@ -434,8 +410,6 @@ pub fn post_events(
             )));
         }
     }
-
-    replies.clear();
 }
 
 fn handle_home_scene(mut ev: EventReader<SystemApi>, mut config: ResMut<AppConfig>) {

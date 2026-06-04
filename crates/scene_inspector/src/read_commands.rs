@@ -197,7 +197,7 @@ fn scene_entities_cmd(
             };
             let _ = tx.send(result);
         }) {
-            Ok(()) => console_responses.push_oneshot(rx, |r| r),
+            Ok(()) => console_responses.push_oneshot(rx, |r| r, input.take_responder()),
             Err(e) => input.reply_failed(e),
         }
     }
@@ -259,7 +259,7 @@ fn entity_components_cmd(
             };
             let _ = tx.send(result);
         }) {
-            Ok(()) => console_responses.push_oneshot(rx, |r| r),
+            Ok(()) => console_responses.push_oneshot(rx, |r| r, input.take_responder()),
             Err(e) => input.reply_failed(e),
         }
     }
@@ -333,7 +333,7 @@ fn inspect_component_cmd(
                 "entity {entity_str} has no component '{component_str}'"
             )));
         }) {
-            Ok(()) => console_responses.push_oneshot(rx, |r| r),
+            Ok(()) => console_responses.push_oneshot(rx, |r| r, input.take_responder()),
             Err(e) => input.reply_failed(e),
         }
     }
@@ -469,7 +469,7 @@ fn scene_tree_cmd(
             };
             let _ = tx.send(result);
         }) {
-            Ok(()) => console_responses.push_oneshot(rx, |r| r),
+            Ok(()) => console_responses.push_oneshot(rx, |r| r, input.take_responder()),
             Err(e) => input.reply_failed(e),
         }
     }
@@ -563,7 +563,7 @@ fn crdt_snapshot_cmd(
             let result = serde_json::to_string(&entity_map).unwrap_or_default();
             let _ = tx.send(Ok(result));
         }) {
-            Ok(()) => console_responses.push_oneshot(rx, |r| r),
+            Ok(()) => console_responses.push_oneshot(rx, |r| r, input.take_responder()),
             Err(e) => input.reply_failed(e),
         }
     }

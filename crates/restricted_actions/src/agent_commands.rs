@@ -56,17 +56,22 @@ fn move_player_to_cmd(
         });
         let (x, y, z) = (command.x, command.y, command.z);
         let has_duration = command.duration.is_some();
-        pending.push_receiver(rx, move |success| {
-            if success {
-                Ok(if has_duration {
-                    format!("arrived at ({x}, {y}, {z})")
+        let responder = input.take_responder();
+        pending.push_receiver(
+            rx,
+            move |success| {
+                if success {
+                    Ok(if has_duration {
+                        format!("arrived at ({x}, {y}, {z})")
+                    } else {
+                        format!("moved to ({x}, {y}, {z})")
+                    })
                 } else {
-                    format!("moved to ({x}, {y}, {z})")
-                })
-            } else {
-                Err("move cancelled".to_string())
-            }
-        });
+                    Err("move cancelled".to_string())
+                }
+            },
+            responder,
+        );
     }
 }
 
@@ -104,13 +109,18 @@ fn walk_player_to_cmd(
             response,
         });
         let (x, y, z) = (command.x, command.y, command.z);
-        pending.push_receiver(rx, move |success| {
-            if success {
-                Ok(format!("arrived at ({x}, {y}, {z})"))
-            } else {
-                Err("walk failed or timed out".to_string())
-            }
-        });
+        let responder = input.take_responder();
+        pending.push_receiver(
+            rx,
+            move |success| {
+                if success {
+                    Ok(format!("arrived at ({x}, {y}, {z})"))
+                } else {
+                    Err("walk failed or timed out".to_string())
+                }
+            },
+            responder,
+        );
     }
 }
 
@@ -149,17 +159,22 @@ fn list_portables_cmd(
     if let Some(Ok(_)) = input.take() {
         let (response, rx) = RpcResultSender::<Vec<SpawnResponse>>::channel();
         events.write(RpcCall::ListPortables { response });
-        pending.push_receiver(rx, |portables| {
-            if portables.is_empty() {
-                Ok("no portables running".to_string())
-            } else {
-                Ok(portables
-                    .iter()
-                    .map(|p| format!("{} ({})", p.ens.as_deref().unwrap_or(&p.name), p.pid))
-                    .collect::<Vec<_>>()
-                    .join(", "))
-            }
-        });
+        let responder = input.take_responder();
+        pending.push_receiver(
+            rx,
+            |portables| {
+                if portables.is_empty() {
+                    Ok("no portables running".to_string())
+                } else {
+                    Ok(portables
+                        .iter()
+                        .map(|p| format!("{} ({})", p.ens.as_deref().unwrap_or(&p.name), p.pid))
+                        .collect::<Vec<_>>()
+                        .join(", "))
+                }
+            },
+            responder,
+        );
     }
 }
 
@@ -177,13 +192,18 @@ fn connected_players_cmd(
     if let Some(Ok(_)) = input.take() {
         let (response, rx) = RpcResultSender::<Vec<String>>::channel();
         events.write(RpcCall::GetConnectedPlayers { response });
-        pending.push_receiver(rx, |players| {
-            if players.is_empty() {
-                Ok("no other players connected".to_string())
-            } else {
-                Ok(players.join(", "))
-            }
-        });
+        let responder = input.take_responder();
+        pending.push_receiver(
+            rx,
+            |players| {
+                if players.is_empty() {
+                    Ok("no other players connected".to_string())
+                } else {
+                    Ok(players.join(", "))
+                }
+            },
+            responder,
+        );
     }
 }
 
@@ -242,15 +262,20 @@ fn get_user_data_cmd(
             response,
         });
         let label = command.address.unwrap_or_else(|| "self".to_string());
-        pending.push_receiver(rx, move |result| match result {
-            Ok(profile) => Ok(format!(
-                "{} ({}): v{}, web3={}",
-                profile.name,
-                profile.eth_address,
-                profile.version,
-                profile.has_connected_web3.unwrap_or(false),
-            )),
-            Err(()) => Err(format!("profile not found for {label}")),
-        });
+        let responder = input.take_responder();
+        pending.push_receiver(
+            rx,
+            move |result| match result {
+                Ok(profile) => Ok(format!(
+                    "{} ({}): v{}, web3={}",
+                    profile.name,
+                    profile.eth_address,
+                    profile.version,
+                    profile.has_connected_web3.unwrap_or(false),
+                )),
+                Err(()) => Err(format!("profile not found for {label}")),
+            },
+            responder,
+        );
     }
 }
