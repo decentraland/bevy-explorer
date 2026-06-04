@@ -549,7 +549,11 @@ fn emit_user_chat(
                 let command = console_config.commands.get(command_name.as_str());
 
                 if command.is_some() {
-                    command_entered.write(ConsoleCommandEntered { command_name, args });
+                    command_entered.write(ConsoleCommandEntered {
+                        command_name,
+                        args,
+                        responder: None,
+                    });
                 } else {
                     debug!(
                         "Command not recognized, recognized commands: `{:?}`",
@@ -738,7 +742,11 @@ fn pipe_chats_from_scene(
             let command = console_config.commands.get(command_name.as_str());
 
             if command.is_some() {
-                command_entered.write(ConsoleCommandEntered { command_name, args });
+                command_entered.write(ConsoleCommandEntered {
+                    command_name,
+                    args,
+                    responder: None,
+                });
             } else {
                 sender.write(ChatEvent {
                     timestamp: time.elapsed_secs_f64(),

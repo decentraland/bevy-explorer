@@ -41,12 +41,20 @@ fn set_component_cmd(
     crdt_interfaces: Res<CrdtExtractors>,
     mut commands: Commands,
 ) {
-    if let Some(Ok(cmd)) = input.take() {
+    // Stage the immediate Bevy-side updates so a batch of invocations in one frame is
+    // delivered as a single `CrdtStateComponent` per component, rather than each
+    // overwriting the previous on the scene root (`process_crdt_lww_updates` only sees the
+    // last insert).
+    let mut bevy_updates = CrdtStore::default();
+    let mut touched: Vec<SceneComponentId> = Vec::new();
+    let mut scene_root = None;
+
+    while let Some(Ok(cmd)) = input.take() {
         let eid = match parse_entity_id(&cmd.entity) {
             Ok(e) => e,
             Err(e) => {
                 input.reply_failed(e);
-                return;
+                continue;
             }
         };
 
@@ -54,7 +62,7 @@ fn set_component_cmd(
             Some(e) => e,
             None => {
                 input.reply_failed(format!("unknown component '{}'", cmd.component));
-                return;
+                continue;
             }
         };
 
@@ -62,7 +70,7 @@ fn set_component_cmd(
             Some(f) => f.clone(),
             None => {
                 input.reply_failed(format!("'{}' is read-only", cmd.component));
-                return;
+                continue;
             }
         };
 
@@ -74,7 +82,7 @@ fn set_component_cmd(
             Ok(b) => b,
             Err(e) => {
                 input.reply_failed(format!("invalid JSON: {e}"));
-                return;
+                continue;
             }
         };
 
@@ -88,25 +96,36 @@ fn set_component_cmd(
                     Some(&mut DclReader::new(&bytes)),
                 );
 
-                // Also apply immediately to the Bevy entity so the renderer reflects the change
-                // without waiting for the scene to echo it back. Pure scene-side components have
-                // no entry in CrdtExtractors and will be applied when the scene echoes the write.
-                if let Some(interface) = crdt_interfaces.0.get(&component_id) {
-                    let mut mini_crdt = CrdtStore::default();
-                    mini_crdt.force_update(
+                // Stage the write for immediate application to the Bevy entity so the
+                // renderer reflects the change without waiting for the scene to echo it
+                // back. Pure scene-side components have no entry in CrdtExtractors and are
+                // applied when the scene echoes the write. Staged updates are flushed once,
+                // after the loop, so concurrent invocations don't clobber one another.
+                if crdt_interfaces.0.contains_key(&component_id) {
+                    bevy_updates.force_update(
                         component_id,
                         crdt_type,
                         eid,
                         Some(&mut DclReader::new(&bytes)),
                     );
-                    interface.updates_to_entity(
-                        component_id,
-                        &mut mini_crdt,
-                        &mut commands.entity(scene_entity),
-                    );
+                    if !touched.contains(&component_id) {
+                        touched.push(component_id);
+                    }
+                    scene_root = Some(scene_entity);
                 }
 
                 input.reply_ok(format!("set {}.{} = {json}", cmd.entity, cmd.component));
+            }
+        }
+    }
+
+    // Flush staged updates: one `CrdtStateComponent` per component, carrying every entity
+    // touched this run, so a batch applies in full rather than only the last invocation.
+    if let Some(scene_entity) = scene_root {
+        let mut entity_commands = commands.entity(scene_entity);
+        for component_id in touched {
+            if let Some(interface) = crdt_interfaces.0.get(&component_id) {
+                interface.updates_to_entity(component_id, &mut bevy_updates, &mut entity_commands);
             }
         }
     }
@@ -156,12 +175,12 @@ fn collect_descendants(crdt_store: &CrdtStore, root_eid: SceneEntityId) -> HashS
 }
 
 fn delete_entity_cmd(mut input: ConsoleCommand<DeleteEntityCommand>, mut resolver: SceneResolver) {
-    if let Some(Ok(cmd)) = input.take() {
+    while let Some(Ok(cmd)) = input.take() {
         let eid = match parse_entity_id(&cmd.entity) {
             Ok(e) => e,
             Err(e) => {
                 input.reply_failed(e);
-                return;
+                continue;
             }
         };
 
@@ -170,7 +189,7 @@ fn delete_entity_cmd(mut input: ConsoleCommand<DeleteEntityCommand>, mut resolve
             Ok((_scene_entity, mut ctx)) => {
                 if ctx.bevy_entity(eid).is_none() {
                     input.reply_failed(format!("entity {} does not exist", cmd.entity));
-                    return;
+                    continue;
                 }
 
                 let to_delete = if cmd.recursive {

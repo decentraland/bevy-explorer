@@ -14,7 +14,7 @@ use bevy::{
     prelude::*,
     tasks::{IoTaskPool, Task},
 };
-use bevy_console::{ConsoleCommand, PrintConsoleLine};
+use bevy_console::{ConsoleCommand, ConsoleResponder, PrintConsoleLine};
 use bevy_dui::{DuiEntityCommandsExt, DuiProps, DuiRegistry};
 use common::{
     profile::SerializedProfile,
@@ -1742,6 +1742,7 @@ struct PendingPortableCommands(
     Vec<(
         Task<Result<(String, PortableSource), String>>,
         PortableAction,
+        Option<ConsoleResponder>,
     )>,
 );
 
@@ -1759,6 +1760,7 @@ fn spawn_portable_command(
     ipfas: IpfsAssetServer,
 ) {
     if let Some(Ok(command)) = input.take() {
+        let responder = input.take_responder();
         pending.0.push((
             IoTaskPool::get().spawn_compat(lookup_ens(
                 None,
@@ -1767,6 +1769,7 @@ fn spawn_portable_command(
                 ipfas.ipfs().clone(),
             )),
             PortableAction::Spawn,
+            responder,
         ));
     }
 }
@@ -1784,6 +1787,7 @@ fn kill_portable_command(
     ipfas: IpfsAssetServer,
 ) {
     if let Some(Ok(command)) = input.take() {
+        let responder = input.take_responder();
         pending.0.push((
             IoTaskPool::get().spawn_compat(lookup_ens(
                 None,
@@ -1792,6 +1796,7 @@ fn kill_portable_command(
                 ipfas.ipfs().clone(),
             )),
             PortableAction::Kill,
+            responder,
         ));
     }
 }
@@ -1801,26 +1806,36 @@ fn handle_spawned_command(
     mut portables: ResMut<PortableScenes>,
     mut reply: EventWriter<PrintConsoleLine>,
 ) {
-    pending.0.retain_mut(|(task, action)| {
+    pending.0.retain_mut(|(task, action, responder)| {
         if let Some(result) = task.complete() {
-            match result {
+            let outcome: Result<String, String> = match result {
                 Ok((hash, source)) => match action {
                     PortableAction::Spawn => {
                         portables.insert(hash.clone(), source);
-                        reply.write(PrintConsoleLine::new("[ok]".into()));
+                        Ok(String::new())
                     }
                     PortableAction::Kill => {
                         if portables.remove(&hash).is_some() {
-                            reply.write(PrintConsoleLine::new("[ok]".into()));
+                            Ok(String::new())
                         } else {
-                            reply.write(PrintConsoleLine::new("portable not running".into()));
-                            reply.write(PrintConsoleLine::new("[failed]".into()));
+                            Err("portable not running".to_string())
                         }
                     }
                 },
-                Err(e) => {
-                    reply.write(PrintConsoleLine::new(format!("failed to lookup ens: {e}")));
-                    reply.write(PrintConsoleLine::new("[failed]".into()));
+                Err(e) => Err(format!("failed to lookup ens: {e}")),
+            };
+
+            match responder.take() {
+                Some(responder) => responder(outcome),
+                None => {
+                    let (msg, sentinel) = match outcome {
+                        Ok(msg) => (msg, "[ok]"),
+                        Err(msg) => (msg, "[failed]"),
+                    };
+                    if !msg.is_empty() {
+                        reply.write(PrintConsoleLine::new(msg));
+                    }
+                    reply.write(PrintConsoleLine::new(sentinel.into()));
                 }
             }
             false
