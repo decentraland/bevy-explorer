@@ -185,6 +185,7 @@ fn fragment(
         out.color = apply_outline(
             in.position,
             out.color, 
+            vec3(1., 0., 0.),
             (bounds.flags & OUTLINE_RED) != 0u,
             sample_index,
         );

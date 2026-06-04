@@ -11,7 +11,7 @@ fn get_depth(pos: vec4<f32>, si: u32) -> f32 {
 }
 #endif
 
-fn apply_outline(position: vec4<f32>, color_in: vec4<f32>, hilight: bool, sample_index: u32) -> vec4<f32> {
+fn apply_outline(position: vec4<f32>, color_in: vec4<f32>, outline_color: vec3<f32>, hilight: bool, sample_index: u32) -> vec4<f32> {
     var out = color_in;
 #ifdef DEPTH_PREPASS
 
@@ -59,9 +59,9 @@ fn apply_outline(position: vec4<f32>, color_in: vec4<f32>, hilight: bool, sample
         hi = 1.0;
     }
     if edge1 {
-        out = vec4<f32>(10.0 * hi, 0.0, 0.0, out.a);
+        out = vec4<f32>(outline_color * 10. * hi, out.a);
     } else if edge2 {
-        out = vec4<f32>(out.rgb * vec3<f32>(4.5 * hi + 0.5, 0.5, 0.5), out.a);
+        out = vec4<f32>(out.rgb * (outline_color * 4.5 * hi + 0.5), out.a);
     }
 #endif
 
