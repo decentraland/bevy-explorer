@@ -104,13 +104,10 @@ pub(crate) fn process_transform_and_parent_updates(
         }
 
         for (scene_entity, entry) in std::mem::take(&mut updates.last_write) {
-            // since transforms are 2-way we have to force update the return crdt with the current scene timestamps
-            scene_context
-                .crdt_store
-                .lww
-                .entry(SceneComponentId::TRANSFORM)
-                .or_default()
-                .update_lww_timestamp(scene_entity, entry.timestamp);
+            // (formerly synced the return-crdt timestamp from the staged entry here;
+            // redundant now that receive's sync_lww_timestamps_from + force_update's
+            // current-timestamp bump keep it correct, and harmful for engine-initiated
+            // writes whose staged timestamp is a fresh low value)
 
             let (transform, new_target_parent) = if entry.is_some {
                 match DclTransformAndParent::from_reader(&mut DclReader::new(&entry.data)) {
