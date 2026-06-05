@@ -3,7 +3,8 @@
     pbr_fragment::pbr_input_from_standard_material,
     pbr_functions::{SampleBias, alpha_discard, apply_pbr_lighting, main_pass_post_lighting_processing},
     pbr_bindings::{material, emissive_texture, emissive_sampler},
-    pbr_types::{STANDARD_MATERIAL_FLAGS_EMISSIVE_TEXTURE_BIT, STANDARD_MATERIAL_FLAGS_BASE_COLOR_TEXTURE_BIT, STANDARD_MATERIAL_FLAGS_DOUBLE_SIDED_BIT}
+    pbr_types::{STANDARD_MATERIAL_FLAGS_EMISSIVE_TEXTURE_BIT, STANDARD_MATERIAL_FLAGS_BASE_COLOR_TEXTURE_BIT, STANDARD_MATERIAL_FLAGS_DOUBLE_SIDED_BIT},
+    mesh_functions,
     mesh_view_bindings::{globals, view},
     pbr_types,
 }
@@ -56,6 +57,9 @@ fn fragment(
 #endif
 ) -> FragmentOutput {
 
+    // Lookup the tag for the given mesh
+    let mesh_tag = mesh_functions::get_tag(in.instance_index);
+
 #ifdef INVERTED_SCALE
     let is_front_m = !is_front;
 #else
@@ -71,10 +75,8 @@ fn fragment(
     var pbr_input = pbr_input_from_standard_material(in, is_front_m);
     var out: FragmentOutput;
 
-#ifdef OUTLINE
 #ifndef MULTISAMPLED
     let sample_index = 0u;
-#endif
 #endif
 
     // apply emmissive multiplier
@@ -191,6 +193,15 @@ fn fragment(
         );
     }
 #endif
+    if (mesh_tag & #{OUTLINE_GREEN_MESH_TAG}) != 0 {
+        out.color = apply_outline(
+            in.position,
+            out.color, 
+            vec3(0., 1., 0.),
+            true,
+            sample_index,
+        );
+    }
 
     // apply in-shader post processing (fog, alpha-premultiply, and also tonemapping, debanding if the camera is non-hdr)
     // note this does not include fullscreen postprocessing effects like bloom.
