@@ -1,5 +1,6 @@
 use std::{f32::consts::TAU, ops::RangeInclusive, sync::Arc};
 
+use alloy_core::primitives::Address;
 use bevy::{
     app::Propagate,
     platform::collections::{HashMap, HashSet},
@@ -14,7 +15,6 @@ use common::{
         SceneDrivenAnimationRequest,
     },
 };
-use ethers_core::types::Address;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use system_bridge::{SystemApi, VoiceMessage};

@@ -1,3 +1,4 @@
+use alloy_core::primitives::Address;
 use bevy::{platform::collections::HashMap, prelude::*, ui::UiSystem};
 use common::{
     sets::PostUpdateSets,
@@ -9,7 +10,6 @@ use comms::{
     profile::{ProfileManager, UserProfile},
 };
 use dcl_component::transform_and_parent::DclTranslation;
-use ethers_core::types::Address;
 
 use crate::{name_color::name_color, AvatarShape};
 

@@ -4,8 +4,8 @@ use common::{
     structs::{AvatarDynamicState, PermissionType, PrimaryUser},
 };
 use comms::global_crdt::ForeignPlayer;
-use ethers_core::rand::{seq::SliceRandom, thread_rng, Rng};
 use ipfs::RealmInitialLocation;
+use rand::{seq::SliceRandom, Rng};
 use scene_runner::{
     initialize_scene::{
         LiveScenes, PointerResult, SceneHash, SceneLoading, ScenePointers, PARCEL_SIZE,
@@ -145,7 +145,7 @@ pub fn handle_out_of_world(
             let base_position =
                 Vec3::new(context.base.x as f32, 0.0, -context.base.y as f32) * PARCEL_SIZE;
 
-            let rng = &mut thread_rng();
+            let rng = &mut rand::thread_rng();
             let mut best_distance = 0.0;
             let mut best_position = Vec3::new(
                 rng.gen_range(0.0..PARCEL_SIZE),

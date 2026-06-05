@@ -1,5 +1,5 @@
+use alloy_core::primitives::Address;
 use bevy::platform::collections::HashMap;
-use ethers_core::types::Address;
 
 use crate::DirectChatMessage;
 

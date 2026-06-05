@@ -1,3 +1,4 @@
+use alloy_core::primitives::Address;
 use anyhow::anyhow;
 use bevy::{
     log::{debug, error, info, warn},
@@ -20,7 +21,6 @@ use dcl_rpc::{
     client::RpcClient,
     transports::web_sockets::{Message, WebSocket, WebSocketTransport},
 };
-use ethers_core::types::Address;
 use futures_util::{pin_mut, select, FutureExt};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use web_time::Duration;

@@ -1,5 +1,6 @@
 #[cfg(not(feature = "social"))]
 mod fake_client;
+use alloy_core::primitives::Address;
 #[cfg(not(feature = "social"))]
 pub use fake_client::{FriendshipEventBody, SocialClientHandler};
 
@@ -23,7 +24,6 @@ use common::structs::DebugInfo;
 use common::util::AsH160;
 #[cfg(feature = "social")]
 use console::DoAddConsoleCommand;
-use ethers_core::types::Address;
 #[cfg(feature = "social")]
 use system_bridge::BlockedUserData;
 #[cfg(feature = "social")]

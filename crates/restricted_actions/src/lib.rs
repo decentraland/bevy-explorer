@@ -6,6 +6,7 @@ use std::{
     sync::Arc,
 };
 
+use alloy_core::primitives::Address;
 use anyhow::anyhow;
 use bevy::{
     asset::{io::AssetReader, AsyncReadExt, LoadState},
@@ -38,7 +39,6 @@ use comms::{
 use console::DoAddConsoleCommand;
 use copypwasmta::{ClipboardContext, ClipboardProvider};
 use dcl_component::proto_components::kernel::comms::rfc4;
-use ethers_core::types::Address;
 use http::Uri;
 use ipfs::{
     ipfs_path::{IpfsPath, IpfsType},

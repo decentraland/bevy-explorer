@@ -1,9 +1,9 @@
+use alloy_core::primitives::Address;
 use bevy::{
     platform::{collections::HashMap, sync::Arc},
     prelude::*,
 };
 use common::{debug_panic, structs::AudioDecoderError, util::AsH160};
-use ethers_core::types::H160;
 use http::Uri;
 use tokio::{
     sync::{mpsc, oneshot},
@@ -417,7 +417,7 @@ fn disconnect_from_room_on_replace(
 
 type SubscribeToAudio = (
     Entity,
-    H160,
+    Address,
     oneshot::Sender<StreamingSoundData<AudioDecoderError>>,
 );
 
@@ -483,7 +483,7 @@ fn subscribe_to_voice(
 }
 
 fn unsubscribe_to_voice(
-    In((room_entity, address)): In<(Entity, H160)>,
+    In((room_entity, address)): In<(Entity, Address)>,
     mut commands: Commands,
     rooms: Query<(&LivekitRoom, Option<&HostingParticipants>)>,
     participants: Query<(&LivekitParticipant, &track::Publishing)>,

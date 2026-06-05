@@ -1,5 +1,5 @@
+use alloy_core::primitives::Address;
 use bevy::prelude::*;
-use ethers_core::types::Address;
 
 /// Hand-curated palette mirrored from `bevy-ui-scene`'s
 /// `UserNameColors.json`. Keep this in lockstep with the scene so the marker

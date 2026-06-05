@@ -7,6 +7,7 @@ use std::{
     sync::{atomic::AtomicU32, Arc},
 };
 
+use alloy_core::primitives::Address;
 use bevy::{
     color::palettes,
     platform::collections::{HashMap, HashSet},
@@ -14,7 +15,6 @@ use bevy::{
     render::{primitives::Aabb, view::RenderLayers},
 };
 use dcl_component::proto_components::sdk::components::common::CameraTransition;
-use ethers_core::abi::Address;
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};

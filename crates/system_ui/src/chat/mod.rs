@@ -2,6 +2,7 @@ pub mod conversation_manager;
 pub mod friends;
 pub mod history;
 
+use alloy_core::primitives::Address;
 use bevy::{color::palettes::css, prelude::*};
 
 use bevy_console::{ConsoleCommand, ConsoleCommandEntered, ConsoleConfiguration, PrintConsoleLine};
@@ -24,7 +25,6 @@ use console::DoAddConsoleCommand;
 use conversation_manager::ConversationManager;
 use dcl::{SceneLogLevel, SceneLogMessage};
 use dcl_component::proto_components::kernel::comms::rfc4;
-use ethers_core::types::Address;
 use history::ChatHistoryPlugin;
 use input_manager::{InputManager, InputPriority};
 use scene_runner::{renderer_context::RendererSceneContext, ContainingScene};
@@ -420,7 +420,7 @@ fn display_chat(
         while let Ok(chat) = rec.try_recv() {
             conversation.add_message(
                 entity,
-                chat.sender.or(Some(Address::zero())),
+                chat.sender.or(Some(Address::ZERO)),
                 if chat.sender.is_none() {
                     Color::srgb(0.7, 0.7, 0.7)
                 } else {
@@ -637,7 +637,7 @@ pub(crate) fn select_chat_tab(
             for message in backlog.into_iter() {
                 conversation.add_message(
                     entity,
-                    message.sender.or(Some(Address::zero())),
+                    message.sender.or(Some(Address::ZERO)),
                     if message.sender.is_none() {
                         Color::srgb(0.7, 0.7, 0.7)
                     } else {

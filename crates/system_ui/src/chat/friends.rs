@@ -1,3 +1,4 @@
+use alloy_core::primitives::Address;
 use bevy::{platform::collections::HashMap, prelude::*};
 use bevy_dui::{DuiCommandsExt, DuiEntities, DuiProps, DuiRegistry};
 use common::{
@@ -5,7 +6,6 @@ use common::{
     util::{format_address, TryPushChildrenEx},
 };
 use comms::profile::ProfileManager;
-use ethers_core::types::Address;
 use social::{DirectChatEvent, DirectChatMessage, FriendshipEvent, SocialClient};
 use tokio::sync::mpsc::Receiver;
 use ui_core::{

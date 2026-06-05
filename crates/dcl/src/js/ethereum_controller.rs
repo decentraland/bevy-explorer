@@ -1,8 +1,9 @@
+use std::{borrow::Cow, cell::RefCell, rc::Rc, sync::Arc};
+
+use alloy_provider::{DynProvider, Provider, ProviderBuilder, WsConnect};
 use anyhow::anyhow;
 use bevy::log::debug;
 use common::rpc::{RPCSendableMessage, RpcCall, RpcResultSender};
-use ethers_providers::{Provider, Ws};
-use std::{cell::RefCell, rc::Rc, sync::Arc};
 use tokio::sync::Mutex;
 
 use crate::interface::crdt_context::CrdtContext;
@@ -70,7 +71,7 @@ pub async fn op_send_async(
 
 #[derive(Default)]
 pub struct EthereumProvider {
-    provider: Mutex<Option<Provider<Ws>>>,
+    provider: Mutex<Option<DynProvider>>,
 }
 
 impl EthereumProvider {
@@ -89,10 +90,18 @@ impl EthereumProvider {
 
         let provider = match &*this_provider {
             Some(p) => p,
-            None => this_provider.insert(Provider::<Ws>::connect(PROVIDER_URL).await?),
+            None => {
+                let ws = WsConnect::new(PROVIDER_URL);
+                let builder = ProviderBuilder::new().connect_ws(ws).await?;
+                let provider = builder.erased();
+
+                this_provider.insert(provider)
+            }
         };
 
-        let result = provider.request(method, params).await;
+        let result = provider
+            .raw_request(Cow::Owned(method.to_owned()), params)
+            .await;
 
         match result {
             Err(e) => {
