@@ -29,7 +29,7 @@ use comms::{global_crdt::GlobalCrdtState, SceneRoomConnection, SetCurrentScene};
 use dcl::{
     interface::CrdtType,
     js::{scene_response_channel, SceneResponseReceiver, SceneResponseSender},
-    RendererResponse, SceneId, SceneLogLevel, SceneLogMessage, SceneResponse,
+    RendererResponse, SceneCensus, SceneId, SceneLogLevel, SceneLogMessage, SceneResponse,
 };
 use dcl_component::{
     proto_components::{
@@ -860,10 +860,20 @@ fn send_scene_updates(
         Some(&mut DclReader::new(&buf)),
     );
 
-    if let Err(e) = handle
-        .sender
-        .blocking_send(RendererResponse::Ok(context.crdt_store.take_updates()))
-    {
+    // Engine-initiated census to push to the scene. Drained here (only when this
+    // scene is actually sent) rather than read from `nascent`/`death_row`, which
+    // the lifecycle pass drains for every scene before we'd get a chance to send.
+    // Holds only engine-originated changes, so it never echoes the scene's census.
+    let census = SceneCensus {
+        scene_id: SceneId(ent),
+        born: std::mem::take(&mut context.outbound_born),
+        died: std::mem::take(&mut context.outbound_died),
+    };
+
+    if let Err(e) = handle.sender.blocking_send(RendererResponse::Ok(
+        context.crdt_store.take_updates(),
+        census,
+    )) {
         error!(
             "failed to send updates to scene {ent:?} [{:?}]: {e:?}",
             context.base

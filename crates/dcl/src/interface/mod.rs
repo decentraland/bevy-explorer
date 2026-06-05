@@ -315,9 +315,11 @@ impl CrdtStore {
         }
     }
 
-    // update with entries from another store
-    // can be used with `CrdtStore::take_updates` to maintain a copy by patching
-    pub fn update_from(&mut self, other: CrdtStore) {
+    // update with entries from another store, then apply the census's deletions.
+    // Used with `CrdtStore::take_updates` + the engine->scene census to keep a
+    // mirror (e.g. the RendererStore) in sync — without the clean_up, a deleted
+    // entity would linger in the mirror and be resurrected by `merge_newer`.
+    pub fn update_from(&mut self, other: CrdtStore, census: &crate::SceneCensus) {
         other.lww.into_iter().for_each(|(id, update_lww)| {
             let self_lww = self.lww.entry(id).or_default();
             self_lww.last_write.extend(update_lww.last_write);
@@ -326,6 +328,7 @@ impl CrdtStore {
             let self_go = self.go.entry(id).or_default();
             self_go.0.extend(update_go.0);
         });
+        self.clean_up(&census.died);
     }
 
     // track the timestamps from another store without copying data.

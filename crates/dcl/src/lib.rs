@@ -31,7 +31,12 @@ pub struct SceneElapsedTime(pub f32);
 // data from renderer to scene
 #[derive(Debug, Serialize, Deserialize)]
 pub enum RendererResponse {
-    Ok(CrdtStore),
+    /// Component updates plus an engine-initiated census: `died` entities are
+    /// deleted scene-side, `born` are reserved for engine-created entities. The
+    /// census is sourced from the engine context's `death_row`/`nascent` at the
+    /// send point (before the scene's own census is merged in), so it never
+    /// echoes the scene's own born/died back to it.
+    Ok(CrdtStore, SceneCensus),
     /// Request the scene thread to send back a full clone of its current CRDT state.
     GetCrdtSnapshot,
 }

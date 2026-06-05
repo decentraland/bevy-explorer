@@ -51,6 +51,13 @@ pub struct RendererSceneContext {
     pub nascent: HashSet<SceneEntityId>,
     // entities waiting to be destroyed in bevy
     pub death_row: HashSet<SceneEntityId>,
+    // engine-initiated entity births/deaths to push to the scene in the next
+    // engine->scene census. Unlike `nascent`/`death_row` (drained for every scene
+    // by the lifecycle pass), these are drained only when this scene is actually
+    // sent (send_scene_updates), so the census isn't lost before delivery. Holds
+    // only engine-originated changes, so it never echoes the scene's own census.
+    pub outbound_born: HashSet<SceneEntityId>,
+    pub outbound_died: HashSet<SceneEntityId>,
     // entities that are live
     live_entities: LiveEntityTable,
 
@@ -137,6 +144,8 @@ impl RendererSceneContext {
             spawn_points,
             nascent: Default::default(),
             death_row: Default::default(),
+            outbound_born: Default::default(),
+            outbound_died: Default::default(),
             live_entities: vec![(0, None); u16::MAX as usize],
             unparented_entities: HashSet::new(),
             hierarchy_changed: false,

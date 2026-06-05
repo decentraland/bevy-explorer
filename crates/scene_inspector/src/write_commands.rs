@@ -199,7 +199,10 @@ fn delete_entity_cmd(mut input: ConsoleCommand<DeleteEntityCommand>, mut resolve
                 };
 
                 let count = to_delete.len();
-                ctx.crdt_store.clean_up(&to_delete);
+                // outbound_died -> engine->scene DeleteEntity census (deletes it
+                // scene-side); death_row -> engine-side despawn. No local clean_up
+                // needed — the scene delete + despawn handle it.
+                ctx.outbound_died.extend(to_delete.iter().copied());
                 ctx.death_row.extend(to_delete);
 
                 if cmd.recursive && count > 1 {
