@@ -275,7 +275,7 @@ fn entity_highlighting(
     mut commands: Commands,
     pointer_events: Query<&PointerEvents, Without<ForeignPlayer>>,
     children: Query<&Children>,
-    mut meshes: Query<Option<&mut MeshTag>, (With<Mesh3d>, With<MeshMaterial3d<SceneMaterial>>)>,
+    mut meshes: Query<(&mut Mesh3d, Option<&mut MeshTag>), With<MeshMaterial3d<SceneMaterial>>>,
     hover_target: Res<PointerTarget>,
     proximity: Res<ProximityCandidates>,
     mut highlit: ResMut<Highlit>,
@@ -304,13 +304,14 @@ fn entity_highlighting(
 
     let new_highlights = highlight_pass.difference(&highlit);
     for entity in new_highlights {
-        error!("Highlighting {}", entity);
+        debug!("Highlighting {}", entity);
         for child in children.iter_descendants(*entity).chain([*entity]) {
-            let Ok(maybe_mesh_tag) = meshes.get_mut(child) else {
+            let Ok((mut mesh_3d, maybe_mesh_tag)) = meshes.get_mut(child) else {
                 continue;
             };
+            mesh_3d.set_changed();
 
-            error!("Mesh {} highlighted", child);
+            trace!("Mesh {} highlighted", child);
             if let Some(mut mesh_tag) = maybe_mesh_tag {
                 mesh_tag.0 |= SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG;
             } else {
@@ -323,14 +324,15 @@ fn entity_highlighting(
 
     let expired_highlights = highlit.difference(&highlight_pass);
     for entity in expired_highlights {
-        error!("Highlight of {} expired.", entity);
+        debug!("Highlight of {} expired.", entity);
         for child in children.iter_descendants(*entity).chain([*entity]) {
-            let Ok(maybe_mesh_tag) = meshes.get_mut(child) else {
+            let Ok((mut mesh_3d, maybe_mesh_tag)) = meshes.get_mut(child) else {
                 continue;
             };
+            mesh_3d.set_changed();
 
             if let Some(mut mesh_tag) = maybe_mesh_tag {
-                error!("Mesh {} no longer highlighted", child);
+                trace!("Mesh {} no longer highlighted", child);
                 mesh_tag.0 &= !SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG;
             }
         }
