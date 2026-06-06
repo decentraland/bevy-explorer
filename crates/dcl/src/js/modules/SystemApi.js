@@ -173,7 +173,16 @@ module.exports.showUi = async function(args) {
 
   const reply = await Deno.core.ops.op_console_command("show_ui", argsArray)
   const value = reply.split(":").pop()?.trim().toLowerCase();
-  return value === "true";  
+  return value === "true";
+}
+
+// run an arbitrary console command and await its reply via the per-invocation
+// response channel.
+// cmd: string (command name, without the leading slash)
+// args: string[] (positional arguments)
+// returns: the command's reply string on success; rejects with the failure message
+module.exports.consoleCommand = async function(cmd, args) {
+    return await Deno.core.ops.op_console_command(cmd, args ?? [])
 }
 
 // [{

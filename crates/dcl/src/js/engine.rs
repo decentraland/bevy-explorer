@@ -9,7 +9,7 @@ use dcl_component::{DclReader, Localizer, SceneOrigin};
 use tokio::sync::{broadcast::error::TryRecvError, Mutex};
 
 use crate::{
-    crdt::{append_component, put_component},
+    crdt::{append_component, delete_entity, put_component},
     interface::crdt_context::CrdtContext,
     js::{CommunicatedWithRenderer, RendererStore, SceneResponseSender, ShuttingDown},
     CrdtComponentInterfaces, CrdtStore, RendererResponse, RpcCalls, SceneElapsedTime,
@@ -144,7 +144,7 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
     let writers = op_state.take::<CrdtComponentInterfaces>();
 
     let mut results = match response {
-        Some(RendererResponse::Ok(updates)) => {
+        Some(RendererResponse::Ok(updates, census)) => {
             let mut results = Vec::new();
             // TODO: consider writing directly into a v8 buffer
             for (component_id, lww) in updates.lww.iter() {
@@ -165,8 +165,17 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
                 }
             }
 
-            // store the updates
-            renderer_state.0.update_from(updates);
+            // store the updates + apply the census's deletions to the mirror
+            renderer_state.0.update_from(updates, &census);
+
+            // Engine-initiated deletes: mark them dead in the entity map and
+            // forward a DeleteEntity to the SDK so the scene deletes them too.
+            // (update_from already dropped them from the RendererStore.)
+            for entity_id in census.died.iter() {
+                entity_map.kill(*entity_id);
+                results.push(delete_entity(entity_id));
+            }
+            // census.born is reserved for engine-created entities (none yet).
 
             results
         }
