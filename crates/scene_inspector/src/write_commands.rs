@@ -4,15 +4,81 @@ use bevy_console::ConsoleCommand;
 use console::DoAddConsoleCommand;
 use dcl::interface::CrdtStore;
 use dcl_component::{
-    transform_and_parent::DclTransformAndParent, ComponentNameRegistry, DclReader, FromDclReader,
-    SceneComponentId, SceneEntityId,
+    transform_and_parent::DclTransformAndParent, ComponentNameRegistry, CrdtType, DclReader,
+    FromDclReader, SceneComponentId, SceneEntityId,
 };
 use scene_runner::{renderer_context::FROZEN_BLOCK, update_world::CrdtExtractors};
 
 use crate::{active_scene::SceneResolver, read_commands::parse_entity_id};
 
+/// Accumulates immediate Bevy-side updates so a batch of component writes/removals in one
+/// frame is delivered as a single `CrdtStateComponent` per component, rather than each
+/// overwriting the previous on the scene root (`process_crdt_lww_updates` only sees the
+/// last insert). Staged updates are flushed once, after the batch loop.
+#[derive(Default)]
+struct StagedBevyUpdates {
+    updates: CrdtStore,
+    touched: Vec<SceneComponentId>,
+    scene_root: Option<Entity>,
+}
+
+impl StagedBevyUpdates {
+    /// Apply one component write (`Some(data)`) or removal (`None`) to the active scene's
+    /// CRDT store, and stage the matching Bevy-side update. Returns the resolve error, if
+    /// any (so the caller can reply per-invocation).
+    fn apply(
+        &mut self,
+        resolver: &mut SceneResolver,
+        crdt_interfaces: &CrdtExtractors,
+        component_id: SceneComponentId,
+        crdt_type: CrdtType,
+        eid: SceneEntityId,
+        data: Option<&[u8]>,
+    ) -> Result<(), String> {
+        let (scene_entity, mut ctx) = resolver.resolve_mut()?;
+        ctx.crdt_store.force_update(
+            component_id,
+            crdt_type,
+            eid,
+            data.map(DclReader::new).as_mut(),
+        );
+
+        // Stage for immediate application to the Bevy entity so the renderer reflects the
+        // change without waiting for the scene to echo it back. Pure scene-side components
+        // have no entry in CrdtExtractors and are applied when the scene echoes the write.
+        if crdt_interfaces.0.contains_key(&component_id) {
+            self.updates.force_update(
+                component_id,
+                crdt_type,
+                eid,
+                data.map(DclReader::new).as_mut(),
+            );
+            if !self.touched.contains(&component_id) {
+                self.touched.push(component_id);
+            }
+            self.scene_root = Some(scene_entity);
+        }
+        Ok(())
+    }
+
+    /// Flush staged updates: one `CrdtStateComponent` per component, carrying every entity
+    /// touched this run, so a batch applies in full rather than only the last invocation.
+    fn flush(mut self, commands: &mut Commands, crdt_interfaces: &CrdtExtractors) {
+        let Some(scene_entity) = self.scene_root else {
+            return;
+        };
+        let mut entity_commands = commands.entity(scene_entity);
+        for component_id in &self.touched {
+            if let Some(interface) = crdt_interfaces.0.get(component_id) {
+                interface.updates_to_entity(*component_id, &mut self.updates, &mut entity_commands);
+            }
+        }
+    }
+}
+
 pub fn add_write_commands(app: &mut App) {
     app.add_console_command::<SetComponentCommand, _>(set_component_cmd);
+    app.add_console_command::<DeleteComponentCommand, _>(delete_component_cmd);
     app.add_console_command::<DeleteEntityCommand, _>(delete_entity_cmd);
     app.add_console_command::<FreezeSceneCommand, _>(freeze_scene_cmd);
     app.add_console_command::<UnfreezeSceneCommand, _>(unfreeze_scene_cmd);
@@ -41,13 +107,7 @@ fn set_component_cmd(
     crdt_interfaces: Res<CrdtExtractors>,
     mut commands: Commands,
 ) {
-    // Stage the immediate Bevy-side updates so a batch of invocations in one frame is
-    // delivered as a single `CrdtStateComponent` per component, rather than each
-    // overwriting the previous on the scene root (`process_crdt_lww_updates` only sees the
-    // last insert).
-    let mut bevy_updates = CrdtStore::default();
-    let mut touched: Vec<SceneComponentId> = Vec::new();
-    let mut scene_root = None;
+    let mut staged = StagedBevyUpdates::default();
 
     while let Some(Ok(cmd)) = input.take() {
         let eid = match parse_entity_id(&cmd.entity) {
@@ -74,10 +134,7 @@ fn set_component_cmd(
             }
         };
 
-        let component_id = entry.id;
-        let crdt_type = entry.crdt_type;
         let json = cmd.json.join(" ");
-
         let bytes = match write_fn(&json) {
             Ok(b) => b,
             Err(e) => {
@@ -86,49 +143,85 @@ fn set_component_cmd(
             }
         };
 
-        match resolver.resolve_mut() {
+        match staged.apply(
+            &mut resolver,
+            &crdt_interfaces,
+            entry.id,
+            entry.crdt_type,
+            eid,
+            Some(bytes.as_slice()),
+        ) {
+            Ok(()) => input.reply_ok(format!("set {}.{} = {json}", cmd.entity, cmd.component)),
             Err(e) => input.reply_failed(e),
-            Ok((scene_entity, mut ctx)) => {
-                ctx.crdt_store.force_update(
-                    component_id,
-                    crdt_type,
-                    eid,
-                    Some(&mut DclReader::new(&bytes)),
-                );
-
-                // Stage the write for immediate application to the Bevy entity so the
-                // renderer reflects the change without waiting for the scene to echo it
-                // back. Pure scene-side components have no entry in CrdtExtractors and are
-                // applied when the scene echoes the write. Staged updates are flushed once,
-                // after the loop, so concurrent invocations don't clobber one another.
-                if crdt_interfaces.0.contains_key(&component_id) {
-                    bevy_updates.force_update(
-                        component_id,
-                        crdt_type,
-                        eid,
-                        Some(&mut DclReader::new(&bytes)),
-                    );
-                    if !touched.contains(&component_id) {
-                        touched.push(component_id);
-                    }
-                    scene_root = Some(scene_entity);
-                }
-
-                input.reply_ok(format!("set {}.{} = {json}", cmd.entity, cmd.component));
-            }
         }
     }
 
-    // Flush staged updates: one `CrdtStateComponent` per component, carrying every entity
-    // touched this run, so a batch applies in full rather than only the last invocation.
-    if let Some(scene_entity) = scene_root {
-        let mut entity_commands = commands.entity(scene_entity);
-        for component_id in touched {
-            if let Some(interface) = crdt_interfaces.0.get(&component_id) {
-                interface.updates_to_entity(component_id, &mut bevy_updates, &mut entity_commands);
+    staged.flush(&mut commands, &crdt_interfaces);
+}
+
+// --- /delete_component ---
+
+/// Remove a component from a scene entity
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/delete_component")]
+struct DeleteComponentCommand {
+    /// Entity id or alias: root, player, camera
+    entity: String,
+    /// Component name (PascalCase)
+    component: String,
+}
+
+fn delete_component_cmd(
+    mut input: ConsoleCommand<DeleteComponentCommand>,
+    registry: Res<ComponentNameRegistry>,
+    mut resolver: SceneResolver,
+    crdt_interfaces: Res<CrdtExtractors>,
+    mut commands: Commands,
+) {
+    let mut staged = StagedBevyUpdates::default();
+
+    while let Some(Ok(cmd)) = input.take() {
+        let eid = match parse_entity_id(&cmd.entity) {
+            Ok(e) => e,
+            Err(e) => {
+                input.reply_failed(e);
+                continue;
             }
+        };
+
+        let entry = match registry.get_by_name(&cmd.component) {
+            Some(e) => e,
+            None => {
+                input.reply_failed(format!("unknown component '{}'", cmd.component));
+                continue;
+            }
+        };
+
+        // A removal is a `None` write — only the LWW store tracks per-entity presence
+        // (GO is append-only), and inspect-only components can't be edited at all.
+        if entry.write.is_none() {
+            input.reply_failed(format!("'{}' is read-only", cmd.component));
+            continue;
+        }
+        if !matches!(entry.crdt_type, CrdtType::LWW(_)) {
+            input.reply_failed(format!("'{}' is not deletable", cmd.component));
+            continue;
+        }
+
+        match staged.apply(
+            &mut resolver,
+            &crdt_interfaces,
+            entry.id,
+            entry.crdt_type,
+            eid,
+            None,
+        ) {
+            Ok(()) => input.reply_ok(format!("removed {}.{}", cmd.entity, cmd.component)),
+            Err(e) => input.reply_failed(e),
         }
     }
+
+    staged.flush(&mut commands, &crdt_interfaces);
 }
 
 // --- /delete_entity ---

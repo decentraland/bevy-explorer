@@ -18,6 +18,8 @@ pub fn add_read_commands(app: &mut App) {
     app.add_console_command::<InspectComponentCommand, _>(inspect_component_cmd);
     app.add_console_command::<SceneTreeCommand, _>(scene_tree_cmd);
     app.add_console_command::<CrdtSnapshotCommand, _>(crdt_snapshot_cmd);
+    app.add_console_command::<ComponentNamesCommand, _>(component_names_cmd);
+    app.add_console_command::<ComponentDefaultCommand, _>(component_default_cmd);
 }
 
 // --- /set_scene ---
@@ -565,6 +567,68 @@ fn crdt_snapshot_cmd(
         }) {
             Ok(()) => console_responses.push_oneshot(rx, |r| r, input.take_responder()),
             Err(e) => input.reply_failed(e),
+        }
+    }
+}
+
+// --- /component_names ---
+
+/// List the names of all editable (writable) components, as a JSON array. Used by the
+/// inspector's "add component" picker; registry-only, so it needs no scene.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/component_names")]
+struct ComponentNamesCommand;
+
+fn component_names_cmd(
+    mut input: ConsoleCommand<ComponentNamesCommand>,
+    registry: Res<ComponentNameRegistry>,
+) {
+    if let Some(Ok(_)) = input.take() {
+        let mut names: Vec<&str> = registry
+            .all_names()
+            .filter(|name| {
+                registry
+                    .get_by_name(name)
+                    .is_some_and(|e| e.write.is_some())
+            })
+            .collect();
+        names.sort_unstable();
+        input.reply_ok(serde_json::to_string(&names).unwrap_or_else(|_| "[]".to_string()));
+    }
+}
+
+// --- /component_default ---
+
+/// Return a component's default value as JSON: every field present at its zero/default
+/// (the serde shape is full — unset scalars are 0/""/false, optional/message/oneof fields
+/// are null, repeated are []), so the editor can render all fields when adding a new one.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/component_default")]
+struct ComponentDefaultCommand {
+    /// Component name (PascalCase)
+    component: String,
+}
+
+fn component_default_cmd(
+    mut input: ConsoleCommand<ComponentDefaultCommand>,
+    registry: Res<ComponentNameRegistry>,
+) {
+    if let Some(Ok(cmd)) = input.take() {
+        let entry = match registry.get_by_name(&cmd.component) {
+            Some(e) => e,
+            None => {
+                input.reply_failed(format!("unknown component '{}'", cmd.component));
+                return;
+            }
+        };
+        let Some(default) = &entry.default else {
+            input.reply_failed(format!("'{}' has no default (read-only)", cmd.component));
+            return;
+        };
+
+        match default() {
+            Ok(json) => input.reply_ok(json),
+            Err(e) => input.reply_failed(format!("default failed: {e}")),
         }
     }
 }
