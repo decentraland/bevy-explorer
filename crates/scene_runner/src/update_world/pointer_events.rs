@@ -1,22 +1,15 @@
 use bevy::{
+    ecs::entity::EntityHashSet,
     math::FloatOrd,
     platform::collections::{HashMap, HashSet},
     prelude::*,
+    render::mesh::MeshTag,
 };
 use common::{
     inputs::InputMap,
     structs::{PointerTargetType, ToolTips, TooltipSource},
 };
 use comms::global_crdt::ForeignPlayer;
-
-use crate::{
-    renderer_context::RendererSceneContext,
-    update_scene::pointer_results::{
-        event_category, resolve_action_winner, ActionCandidateMode, ActionCategory, IaToCommon,
-        PointerTarget, PointerTargetInfo, ProximityCandidates,
-    },
-    SceneEntity,
-};
 use dcl::interface::ComponentPosition;
 use dcl_component::{
     proto_components::sdk::components::{
@@ -26,6 +19,16 @@ use dcl_component::{
     },
     SceneComponentId,
 };
+use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG};
+
+use crate::{
+    renderer_context::RendererSceneContext,
+    update_scene::pointer_results::{
+        event_category, resolve_action_winner, ActionCandidateMode, ActionCategory, IaToCommon,
+        PointerTarget, PointerTargetInfo, ProximityCandidates,
+    },
+    SceneEntity,
+};
 
 use super::AddCrdtInterfaceExt;
 
@@ -33,12 +36,17 @@ pub struct PointerEventsPlugin;
 
 impl Plugin for PointerEventsPlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<Highlit>();
+
         app.add_crdt_lww_component::<PbPointerEvents, PointerEvents>(
             SceneComponentId::POINTER_EVENTS,
             ComponentPosition::EntityOnly,
         );
 
-        app.add_systems(Update, (hover_text, propagate_avatar_events));
+        app.add_systems(
+            Update,
+            (hover_text, propagate_avatar_events, entity_highlighting),
+        );
     }
 }
 
@@ -258,4 +266,77 @@ fn hover_text(
     tooltip
         .0
         .insert(TooltipSource::Label("pointer_events"), texts);
+}
+
+#[derive(Default, Resource, Deref, DerefMut)]
+struct Highlit(EntityHashSet);
+
+fn entity_highlighting(
+    mut commands: Commands,
+    pointer_events: Query<&PointerEvents, Without<ForeignPlayer>>,
+    children: Query<&Children>,
+    mut meshes: Query<(&mut Mesh3d, Option<&mut MeshTag>), With<MeshMaterial3d<SceneMaterial>>>,
+    hover_target: Res<PointerTarget>,
+    proximity: Res<ProximityCandidates>,
+    mut highlit: ResMut<Highlit>,
+) {
+    let mut highlight_pass = EntityHashSet::new();
+
+    let mut test_and_insert = |entity: Entity| {
+        let Ok(pointer_events) = pointer_events.get(entity) else {
+            return;
+        };
+        if pointer_events.iter().any(|entry| {
+            entry.event_info.as_ref().is_some_and(|info| {
+                info.show_feedback != Some(false) && info.show_highlight != Some(false)
+            })
+        }) {
+            highlight_pass.insert(entity);
+        }
+    };
+
+    if let Some(ref hover_target) = hover_target.0 {
+        test_and_insert(hover_target.container);
+    }
+    for candidate in &proximity.0 {
+        test_and_insert(candidate.entity);
+    }
+
+    let new_highlights = highlight_pass.difference(&highlit);
+    for entity in new_highlights {
+        debug!("Highlighting {}", entity);
+        for child in children.iter_descendants(*entity).chain([*entity]) {
+            let Ok((mut mesh_3d, maybe_mesh_tag)) = meshes.get_mut(child) else {
+                continue;
+            };
+            mesh_3d.set_changed();
+
+            trace!("Mesh {} highlighted", child);
+            if let Some(mut mesh_tag) = maybe_mesh_tag {
+                mesh_tag.0 |= SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG;
+            } else {
+                commands
+                    .entity(child)
+                    .insert(MeshTag(SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG));
+            }
+        }
+    }
+
+    let expired_highlights = highlit.difference(&highlight_pass);
+    for entity in expired_highlights {
+        debug!("Highlight of {} expired.", entity);
+        for child in children.iter_descendants(*entity).chain([*entity]) {
+            let Ok((mut mesh_3d, maybe_mesh_tag)) = meshes.get_mut(child) else {
+                continue;
+            };
+            mesh_3d.set_changed();
+
+            if let Some(mut mesh_tag) = maybe_mesh_tag {
+                trace!("Mesh {} no longer highlighted", child);
+                mesh_tag.0 &= !SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG;
+            }
+        }
+    }
+
+    **highlit = highlight_pass;
 }

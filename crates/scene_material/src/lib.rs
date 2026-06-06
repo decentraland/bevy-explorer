@@ -2,7 +2,7 @@ use bevy::{
     pbr::{ExtendedMaterial, MaterialExtension},
     platform::collections::{hash_map::Entry, HashMap},
     prelude::*,
-    render::render_resource::{AsBindGroup, Face, ShaderRef},
+    render::render_resource::{AsBindGroup, Face, ShaderDefVal, ShaderRef},
 };
 use boimp::bake::{ImposterBakeMaterialExtension, ImposterBakeMaterialPlugin};
 use common::{structs::PreviewMode, util::InvertedScaleExt};
@@ -15,6 +15,7 @@ pub const SCENE_MATERIAL_OUTLINE_RED: u32 = 4;
 pub const SCENE_MATERIAL_OUTLINE_FORCE: u32 = 8;
 pub const SCENE_MATERIAL_NO_DITHERING: u32 = 16;
 pub const SCENE_MATERIAL_CONE_ONLY_DITHER: u32 = 32;
+pub const SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG: u32 = 0x70000000;
 
 pub trait SceneMaterialExt {
     fn unbounded_outlined(mat: StandardMaterial, force: bool) -> Self
@@ -277,6 +278,10 @@ impl MaterialExtension for SceneBound {
         }
 
         if let Some(fragment) = descriptor.fragment.as_mut() {
+            fragment.shader_defs.push(ShaderDefVal::UInt(
+                "OUTLINE_GREEN_MESH_TAG".to_owned(),
+                SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG,
+            ));
             if data.outline {
                 fragment.shader_defs.push("OUTLINE".into());
             }
