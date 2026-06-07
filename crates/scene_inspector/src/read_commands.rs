@@ -20,6 +20,7 @@ pub fn add_read_commands(app: &mut App) {
     app.add_console_command::<CrdtSnapshotCommand, _>(crdt_snapshot_cmd);
     app.add_console_command::<ComponentNamesCommand, _>(component_names_cmd);
     app.add_console_command::<ComponentDefaultCommand, _>(component_default_cmd);
+    app.add_console_command::<ComponentSchemaCommand, _>(component_schema_cmd);
 }
 
 // --- /set_scene ---
@@ -629,6 +630,30 @@ fn component_default_cmd(
         match default() {
             Ok(json) => input.reply_ok(json),
             Err(e) => input.reply_failed(format!("default failed: {e}")),
+        }
+    }
+}
+
+// --- /component_schema ---
+
+/// Return the editor schema (typed fields, ranges, refs, enum value-lists, curated
+/// defaults, placement/requires) for a component as JSON, or all components if omitted.
+/// The schema is generated at build time and embedded; registry-free, needs no scene.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/component_schema")]
+struct ComponentSchemaCommand {
+    /// Component name (PascalCase); omit for the full set
+    component: Option<String>,
+}
+
+fn component_schema_cmd(mut input: ConsoleCommand<ComponentSchemaCommand>) {
+    if let Some(Ok(cmd)) = input.take() {
+        match cmd.component {
+            Some(name) => match dcl_component::component_schema::schema_for(&name) {
+                Some(json) => input.reply_ok(json),
+                None => input.reply_failed(format!("no schema for component '{name}'")),
+            },
+            None => input.reply_ok(dcl_component::component_schema::all_schemas_json().to_string()),
         }
     }
 }
