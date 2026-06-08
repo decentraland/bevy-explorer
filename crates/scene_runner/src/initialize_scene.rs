@@ -25,7 +25,7 @@ use common::{
 };
 use comms::global_crdt::GlobalCrdtState;
 use dcl::{
-    interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
+    interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore, CrdtType},
     SceneElapsedTime, SceneId, SceneResponse,
 };
 use dcl_component::{
@@ -466,7 +466,9 @@ pub(crate) fn load_scene_javascript(
         );
 
         if let Some(serialized_crdt) = maybe_serialized_crdt {
-            // add main.crdt
+            // Read main.crdt once into its own store (custom components included). `initial_crdt`
+            // is seeded with global state (player AvatarMovementInfo, other avatars, etc.) from
+            // `global_scene.subscribe`, so we keep main.crdt separate to get a clean baseline.
             let mut context = CrdtContext::new(
                 scene_id,
                 renderer_context.hash.clone(),
@@ -474,17 +476,23 @@ pub(crate) fn load_scene_javascript(
                 false,
                 false,
             );
-            let mut stream = DclReader::new(&serialized_crdt);
-            initial_crdt.process_message_stream(
+            let mut main_crdt = CrdtStore::default();
+            main_crdt.process_message_stream(
                 &mut context,
                 &crdt_component_interfaces,
-                &mut stream,
+                &mut DclReader::new(&serialized_crdt),
                 false,
                 None,
             );
 
-            // send initial updates into renderer
+            // The clean authored baseline = only main.crdt; the inspector diffs against this on
+            // save, so it must not contain any of the global state above.
+            renderer_context.initial_crdt = Some(main_crdt.clone());
+
+            // Layer main.crdt onto the global-seeded store (merge_newer marks the updates), then
+            // send the initial state into the renderer.
             let census = context.take_census();
+            initial_crdt.merge_newer(main_crdt);
             initial_crdt.clean_up(&census.died);
             let updates = initial_crdt.clone().take_updates();
 
