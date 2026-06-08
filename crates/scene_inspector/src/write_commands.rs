@@ -238,22 +238,20 @@ fn set_component_raw_cmd(
 
 // --- /save_composite ---
 
-/// Persist a composite the inspector built. The bytes arrive base64-encoded; an optional file
-/// path lets the editor write directly (skipping the dialog on repeat saves). With no path — and
-/// always on web — a save dialog is shown. The chosen location is returned so the editor can
-/// cache it. Cross-platform via rfd: a native dialog on desktop, the File System Access API /
-/// download in the browser.
+/// Persist a composite the inspector built (the bytes arrive base64-encoded). The destination is
+/// derived from the active scene: for a local scene it writes straight to its
+/// assets/scene/main.composite; otherwise a save dialog (native) / directory picker (web) is
+/// shown — see `platform::save_scene_composite`. Replies with the path written.
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/save_composite")]
 struct SaveCompositeCommand {
     /// Composite bytes as standard base64
     data: String,
-    /// Optional destination path (absolute). Omit to prompt with a save dialog.
-    path: Option<String>,
 }
 
 fn save_composite_cmd(
     mut input: ConsoleCommand<SaveCompositeCommand>,
+    resolver: SceneResolver,
     mut console_responses: ResMut<PendingConsoleResponses>,
 ) {
     if let Some(Ok(cmd)) = input.take() {
@@ -264,56 +262,23 @@ fn save_composite_cmd(
                 return;
             }
         };
-        let path = cmd.path;
-        // The dialog/write is async (and on the browser must be) — run it off the main schedule
-        // and reply when it resolves.
+        let hash = match resolver.resolve() {
+            Ok((_, ctx)) => ctx.hash.clone(),
+            Err(e) => {
+                input.reply_failed(e);
+                return;
+            }
+        };
+        // The write (and the picker on web) is async — run it off the main schedule and reply
+        // when it resolves.
         let (tx, rx) = tokio::sync::oneshot::channel();
         IoTaskPool::get()
             .spawn(async move {
-                let _ = tx.send(save_composite_bytes(path, bytes).await);
+                let _ = tx.send(platform::save_scene_composite(hash, bytes).await);
             })
             .detach();
         console_responses.push_oneshot(rx, |r| r, input.take_responder());
     }
-}
-
-async fn save_composite_bytes(path: Option<String>, bytes: Vec<u8>) -> Result<String, String> {
-    // An explicit path on desktop writes directly, so a cached path skips the dialog next time.
-    #[cfg(not(target_arch = "wasm32"))]
-    if let Some(p) = path.as_ref() {
-        return std::fs::write(p, &bytes)
-            .map(|_| p.clone())
-            .map_err(|e| format!("write failed: {e}"));
-    }
-
-    let mut dialog = rfd::AsyncFileDialog::new().set_file_name("main.composite");
-    // a previously-saved path seeds the suggested filename
-    if let Some(name) = path
-        .as_ref()
-        .and_then(|p| std::path::Path::new(p).file_name())
-        .and_then(|n| n.to_str())
-    {
-        dialog = dialog.set_file_name(name);
-    }
-    let handle = dialog
-        .save_file()
-        .await
-        .ok_or_else(|| "save cancelled".to_string())?;
-    handle
-        .write(&bytes)
-        .await
-        .map_err(|e| format!("write failed: {e}"))?;
-    Ok(saved_location(&handle))
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn saved_location(handle: &rfd::FileHandle) -> String {
-    handle.path().display().to_string()
-}
-
-#[cfg(target_arch = "wasm32")]
-fn saved_location(handle: &rfd::FileHandle) -> String {
-    handle.file_name()
 }
 
 // --- /delete_component ---

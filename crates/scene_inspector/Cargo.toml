@@ -14,6 +14,7 @@ dcl = { workspace = true }
 dcl_component = { workspace = true }
 scene_runner = { workspace = true }
 console = { workspace = true }
+platform = { workspace = true }
 
 bevy = { workspace = true }
 bevy_console = { workspace = true }
@@ -23,4 +24,3 @@ serde_json = { workspace = true }
 prost = { workspace = true }
 tokio = { workspace = true }
 base64 = { workspace = true }
-rfd = { workspace = true }

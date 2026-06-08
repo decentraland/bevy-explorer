@@ -235,3 +235,37 @@ pub fn default_camera_components() -> impl Bundle {
         NormalPrepass,
     )
 }
+
+// Persist a scene's composite to the user's real filesystem via the File System Access API. The
+// directory handle is acquired once with a picker and remembered in IndexedDB (keyed by scene id)
+// so later saves skip the prompt. All of that lives in web_save.js; this just binds it. Returns
+// the written path.
+mod web_save {
+    use wasm_bindgen::prelude::*;
+    #[wasm_bindgen(module = "/src/web_save.js")]
+    extern "C" {
+        #[wasm_bindgen(catch, js_name = saveComposite)]
+        pub async fn save_composite(
+            key: &str,
+            rel_path: &str,
+            bytes: &[u8],
+        ) -> Result<JsValue, JsValue>;
+    }
+}
+
+pub async fn save_scene_composite(scene_hash: String, bytes: Vec<u8>) -> Result<String, String> {
+    match web_save::save_composite(&scene_hash, "assets/scene/main.composite", &bytes).await {
+        Ok(v) => Ok(v.as_string().unwrap_or_default()),
+        Err(e) => Err(js_error_message(&e)),
+    }
+}
+
+fn js_error_message(e: &wasm_bindgen::JsValue) -> String {
+    e.as_string()
+        .or_else(|| {
+            js_sys::Reflect::get(e, &wasm_bindgen::JsValue::from_str("message"))
+                .ok()
+                .and_then(|m| m.as_string())
+        })
+        .unwrap_or_else(|| "save failed".to_string())
+}

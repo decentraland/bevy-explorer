@@ -167,3 +167,40 @@ pub fn default_camera_components() -> impl Bundle {
         NormalPrepass,
     )
 }
+
+// Persist a scene's composite. For a local scene the hash is `b64-<base64(project path)>`, so we
+// can write straight to `<project>/assets/scene/main.composite`. For anything else (a deployed
+// scene with a content hash) there's no local path, so prompt with a native save dialog. Returns
+// the path written, for display.
+pub async fn save_scene_composite(scene_hash: String, bytes: Vec<u8>) -> Result<String, String> {
+    if let Some(path) = local_composite_path(&scene_hash) {
+        return std::fs::write(&path, &bytes)
+            .map(|_| path.display().to_string())
+            .map_err(|e| format!("write failed ({}): {e}", path.display()));
+    }
+
+    let handle = rfd::AsyncFileDialog::new()
+        .set_file_name("main.composite")
+        .save_file()
+        .await
+        .ok_or_else(|| "save cancelled".to_string())?;
+    handle
+        .write(&bytes)
+        .await
+        .map_err(|e| format!("write failed: {e}"))?;
+    Ok(handle.path().display().to_string())
+}
+
+// The local target path for a `b64-<base64(path)>` scene hash, else None.
+fn local_composite_path(scene_hash: &str) -> Option<std::path::PathBuf> {
+    use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
+    let encoded = scene_hash.strip_prefix("b64-")?;
+    let decoded = BASE64_URL_SAFE_NO_PAD.decode(encoded).ok()?;
+    let project = String::from_utf8(decoded).ok()?;
+    Some(
+        std::path::PathBuf::from(project)
+            .join("assets")
+            .join("scene")
+            .join("main.composite"),
+    )
+}
