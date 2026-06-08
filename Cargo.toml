@@ -187,6 +187,11 @@ num-traits = "0.2"
 async-compat = "0.2"
 async-fs = "2.0"
 base64 = "0.22"
+# cross-platform file save dialog (native dialog on desktop, File System Access / download on
+# web). xdg-portal avoids a GTK system dependency on Linux; rfd's build.rs requires a backend
+# feature on every target, and the ashpd/pollster deps it pulls are Linux-gated inside rfd, so
+# enabling it globally is safe for wasm/macOS/Windows (which use their own backends).
+rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
 multihash-codetable = { version = "0.1.1", features = ["digest", "sha2"] }
 strum = "0.27"
 strum_macros = "0.27"
