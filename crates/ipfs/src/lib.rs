@@ -6,7 +6,7 @@ use std::{
     marker::PhantomData,
     path::{Path, PathBuf},
     sync::{
-        atomic::{self, AtomicU16, AtomicU32},
+        atomic::{AtomicU16, AtomicU32, Ordering},
         Arc,
     },
 };
@@ -1224,7 +1224,7 @@ impl AssetReader for IpfsIo {
                 // non-ipfs files are loaded as normal
                 None => {
                     let data = self.default_io.read(path).await.test_failure()?;
-                    IPFS_NON_IPFS.fetch_add(1, atomic::Ordering::Relaxed);
+                    IPFS_NON_IPFS.fetch_add(1, Ordering::Relaxed);
                     return Ok(data);
                 }
             };
@@ -1248,7 +1248,7 @@ impl AssetReader for IpfsIo {
                         if let Ok(mut res) = self.default_io.read(&cache_path.join(hash)).await {
                             let mut daft_buffer = Vec::default();
                             res.read_to_end(&mut daft_buffer).await.test_failure()?;
-                            IPFS_CACHED.fetch_add(1, atomic::Ordering::Relaxed);
+                            IPFS_CACHED.fetch_add(1, Ordering::Relaxed);
                             return Ok(Box::new(VecReader::new(daft_buffer)));
                         }
                     }
@@ -1262,7 +1262,7 @@ impl AssetReader for IpfsIo {
                     .unwrap_or_else(|| "uncached".to_owned())
             );
 
-            let token = self.reqno.fetch_add(1, atomic::Ordering::SeqCst);
+            let token = self.reqno.fetch_add(1, Ordering::SeqCst);
 
             // wait till connected
             self.connected().await.map_err(wrap_err).test_failure()?;
@@ -1281,7 +1281,7 @@ impl AssetReader for IpfsIo {
                         .read(Path::new(static_path))
                         .await
                         .test_failure()?;
-                    IPFS_CACHED.fetch_add(1, atomic::Ordering::Relaxed);
+                    IPFS_CACHED.fetch_add(1, Ordering::Relaxed);
                     return Ok(data);
                 }
             }
@@ -1561,7 +1561,7 @@ fn ipfs_diagnostics(mut diagnostics: ResMut<DiagnosticsStore>) {
             if let Some(diagnostic) = diagnostics.get_mut(path) {
                 diagnostic.add_measurement(DiagnosticMeasurement {
                     time,
-                    value: atomic.load(atomic::Ordering::Relaxed) as f64,
+                    value: atomic.load(Ordering::Relaxed) as f64,
                 });
             };
         };
@@ -1587,7 +1587,7 @@ trait FailIncrementer {
 impl<T, E> FailIncrementer for Result<T, E> {
     fn test_failure(self) -> Self {
         if self.is_err() {
-            IPFS_FAILED.fetch_add(1, atomic::Ordering::Relaxed);
+            IPFS_FAILED.fetch_add(1, Ordering::Relaxed);
         }
         self
     }
@@ -1597,13 +1597,13 @@ struct DeferredDropper(&'static AtomicU32);
 
 impl DeferredDropper {
     fn new(atomic: &'static AtomicU32) -> Self {
-        atomic.fetch_add(1, atomic::Ordering::SeqCst);
+        atomic.fetch_add(1, Ordering::SeqCst);
         Self(atomic)
     }
 }
 
 impl Drop for DeferredDropper {
     fn drop(&mut self) {
-        self.0.fetch_sub(1, atomic::Ordering::SeqCst);
+        self.0.fetch_sub(1, Ordering::SeqCst);
     }
 }
