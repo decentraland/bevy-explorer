@@ -1,3 +1,4 @@
+use base64::{prelude::BASE64_STANDARD, Engine};
 use bevy::prelude::*;
 use bevy_console::ConsoleCommand;
 use console::{DoAddConsoleCommand, PendingConsoleResponses};
@@ -560,6 +561,57 @@ fn crdt_snapshot_cmd(
                             }
                         }
                     }
+                }
+            }
+
+            // Custom (filtered-out) components captured in the sidecar and merged into the
+            // snapshot: the registry can't name or deserialize them, so emit raw bytes keyed by
+            // numeric component id. Component names are never all-digits, so the editor can tell
+            // these apart from named components and decode them scene-side via the SDK schemas.
+            // Each value is `"<lww-timestamp>:<base64>"` — the editor needs the current timestamp
+            // so a write-back via /set_component_raw can carry a newer one and win LWW. LWW → a
+            // string; grow-only → an array of strings (no per-entry timestamp, emitted as 0).
+            let known: std::collections::HashSet<SceneComponentId> =
+                entries.iter().map(|(cid, _, _)| *cid).collect();
+            for (cid, lww) in &crdt.lww {
+                if known.contains(cid) {
+                    continue;
+                }
+                for (eid, entry) in &lww.last_write {
+                    if !entry.is_some {
+                        continue;
+                    }
+                    let entity_id = eid.as_proto_u32().unwrap_or(eid.id as u32);
+                    let encoded = format!(
+                        "{}:{}",
+                        entry.timestamp.0,
+                        BASE64_STANDARD.encode(&entry.data)
+                    );
+                    entity_map
+                        .entry(entity_id)
+                        .or_default()
+                        .insert(cid.0.to_string(), serde_json::Value::String(encoded));
+                }
+            }
+            for (cid, go) in &crdt.go {
+                if known.contains(cid) {
+                    continue;
+                }
+                for (eid, values) in &go.0 {
+                    let entity_id = eid.as_proto_u32().unwrap_or(eid.id as u32);
+                    let arr: Vec<serde_json::Value> = values
+                        .iter()
+                        .map(|e| {
+                            serde_json::Value::String(format!(
+                                "0:{}",
+                                BASE64_STANDARD.encode(&e.data)
+                            ))
+                        })
+                        .collect();
+                    entity_map
+                        .entry(entity_id)
+                        .or_default()
+                        .insert(cid.0.to_string(), serde_json::Value::Array(arr));
                 }
             }
 

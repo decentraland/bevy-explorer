@@ -480,6 +480,7 @@ pub(crate) fn load_scene_javascript(
                 &crdt_component_interfaces,
                 &mut stream,
                 false,
+                None,
             );
 
             // send initial updates into renderer

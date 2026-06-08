@@ -11,7 +11,10 @@ use tokio::sync::{broadcast::error::TryRecvError, Mutex};
 use crate::{
     crdt::{append_component, delete_entity, put_component},
     interface::crdt_context::CrdtContext,
-    js::{CommunicatedWithRenderer, RendererStore, SceneResponseSender, ShuttingDown},
+    js::{
+        CommunicatedWithRenderer, FilteredCrdtStore, RendererStore, SceneResponseSender,
+        ShuttingDown,
+    },
     CrdtComponentInterfaces, CrdtStore, RendererResponse, RpcCalls, SceneElapsedTime,
     SceneLogMessage, SceneResponse,
 };
@@ -64,12 +67,19 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
     op_state.put(Vec::<SceneLogMessage>::default());
     let mut entity_map = op_state.take::<CrdtContext>();
     let mut crdt_store = op_state.take::<CrdtStore>();
+    let mut filtered_store = op_state.take::<FilteredCrdtStore>();
     let writers = op_state.take::<CrdtComponentInterfaces>();
     let mut stream = DclReader::new(messages);
     debug!("op_crdt_send_to_renderer BATCH len: {}", stream.len());
 
-    // collect commands
-    crdt_store.process_message_stream(&mut entity_map, &writers, &mut stream, true);
+    // collect commands; unrecognized components are captured in the sidecar for the inspector
+    crdt_store.process_message_stream(
+        &mut entity_map,
+        &writers,
+        &mut stream,
+        true,
+        Some(&mut filtered_store.0),
+    );
 
     let census = entity_map.take_census();
     crdt_store.clean_up(&census.died);
@@ -92,6 +102,7 @@ pub fn crdt_send_to_renderer(op_state: Rc<RefCell<impl State>>, messages: &[u8])
     op_state.put(writers);
     op_state.put(entity_map);
     op_state.put(crdt_store);
+    op_state.put(filtered_store);
 }
 
 pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Vec<Vec<u8>> {
@@ -121,6 +132,11 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
             let renderer_store = op_state.borrow_mut().take::<RendererStore>();
             snapshot.merge_newer(renderer_store.0.clone());
             op_state.borrow_mut().put(renderer_store);
+            // Merge the sidecar so the snapshot also carries custom (filtered-out) components
+            // as raw bytes; these never reach the renderer, only the inspector.
+            let filtered_store = op_state.borrow_mut().take::<FilteredCrdtStore>();
+            snapshot.merge_newer(filtered_store.0.clone());
+            op_state.borrow_mut().put(filtered_store);
             let scene_id = op_state.borrow_mut().borrow::<CrdtContext>().scene_id;
             op_state
                 .borrow_mut()
@@ -215,6 +231,7 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
                         &writers,
                         &mut stream,
                         false,
+                        None,
                     );
                     results.push(data);
                 }

@@ -64,6 +64,12 @@ pub struct ShuttingDown;
 
 pub struct RendererStore(pub CrdtStore);
 
+// Sidecar holding only the components the scene→renderer filter drops (unrecognized / custom).
+// Merged into the inspector snapshot so custom components are visible as raw bytes; never
+// pushed to the renderer.
+#[derive(Default)]
+pub struct FilteredCrdtStore(pub CrdtStore);
+
 pub struct SuperUserScene(pub tokio::sync::mpsc::UnboundedSender<SystemApi>);
 impl std::ops::Deref for SuperUserScene {
     type Target = tokio::sync::mpsc::UnboundedSender<SystemApi>;
@@ -148,6 +154,7 @@ pub fn init_state(
     state.put(CrdtStore::default());
     state.put(RpcCalls::default());
     state.put(RendererStore(initial_crdt_store));
+    state.put(FilteredCrdtStore::default());
     state.put(Vec::<SceneLogMessage>::default());
     state.put(SceneElapsedTime(0.0));
     state.put(TimeOfDay { time: 0. });
