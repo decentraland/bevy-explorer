@@ -1,3 +1,5 @@
+#[cfg(feature = "ipfs_debug")]
+mod ipfs_debug;
 pub mod ipfs_path;
 
 use std::{
@@ -527,6 +529,9 @@ impl Plugin for IpfsIoPlugin {
         app.register_diagnostic(Diagnostic::new(IPFS_NON_IPFS_DIAGNOSTIC_PATH));
 
         app.add_systems(PostUpdate, ipfs_diagnostics);
+
+        #[cfg(feature = "ipfs_debug")]
+        app.add_plugins(ipfs_debug::IpfsDebugPlugin);
     }
 
     fn finish(&self, app: &mut App) {
