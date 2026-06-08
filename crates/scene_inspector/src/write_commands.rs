@@ -1,3 +1,4 @@
+use base64::{prelude::BASE64_STANDARD, Engine};
 use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 use bevy_console::ConsoleCommand;
@@ -5,7 +6,7 @@ use console::DoAddConsoleCommand;
 use dcl::interface::CrdtStore;
 use dcl_component::{
     transform_and_parent::DclTransformAndParent, ComponentNameRegistry, CrdtType, DclReader,
-    FromDclReader, SceneComponentId, SceneEntityId,
+    FromDclReader, SceneComponentId, SceneCrdtTimestamp, SceneEntityId,
 };
 use scene_runner::{renderer_context::FROZEN_BLOCK, update_world::CrdtExtractors};
 
@@ -78,6 +79,7 @@ impl StagedBevyUpdates {
 
 pub fn add_write_commands(app: &mut App) {
     app.add_console_command::<SetComponentCommand, _>(set_component_cmd);
+    app.add_console_command::<SetComponentRawCommand, _>(set_component_raw_cmd);
     app.add_console_command::<DeleteComponentCommand, _>(delete_component_cmd);
     app.add_console_command::<DeleteEntityCommand, _>(delete_entity_cmd);
     app.add_console_command::<FreezeSceneCommand, _>(freeze_scene_cmd);
@@ -157,6 +159,79 @@ fn set_component_cmd(
     }
 
     staged.flush(&mut commands, &crdt_interfaces);
+}
+
+// --- /set_component_raw ---
+
+/// Set a custom (non-engine-managed) component on a scene entity from raw bytes — for the
+/// components the engine doesn't recognize (core-schema::, asset-packs::, inspector::), which
+/// `/set_component` can't address. The editor encodes the value with the SDK schema and sends it
+/// base64, keyed by numeric component id. The value is written to the scene's CRDT store and
+/// pushed over the normal engine→scene channel; the timestamp must exceed the component's current
+/// LWW timestamp (reported by `/crdt_snapshot`) so the write wins.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/set_component_raw")]
+struct SetComponentRawCommand {
+    /// Entity id or alias: root, player, camera
+    entity: String,
+    /// Numeric component id
+    component: u32,
+    /// LWW timestamp (must be greater than the component's current timestamp)
+    timestamp: u32,
+    /// Component value as standard base64-encoded bytes
+    data: String,
+}
+
+fn set_component_raw_cmd(
+    mut input: ConsoleCommand<SetComponentRawCommand>,
+    mut resolver: SceneResolver,
+) {
+    while let Some(Ok(cmd)) = input.take() {
+        let eid = match parse_entity_id(&cmd.entity) {
+            Ok(e) => e,
+            Err(e) => {
+                input.reply_failed(e);
+                continue;
+            }
+        };
+
+        let bytes = match BASE64_STANDARD.decode(cmd.data.trim()) {
+            Ok(b) => b,
+            Err(e) => {
+                input.reply_failed(format!("invalid base64: {e}"));
+                continue;
+            }
+        };
+
+        match resolver.resolve_mut() {
+            Err(e) => input.reply_failed(e),
+            Ok((_scene_entity, mut ctx)) => {
+                // Normal-mode write (timestamp-checked): applies only if newer, then is delivered
+                // to the scene by the per-frame `take_updates`. Custom components aren't
+                // renderer-managed, so no Bevy-side staging is needed.
+                let applied = ctx.crdt_store.try_update(
+                    SceneComponentId(cmd.component),
+                    CrdtType::LWW_ANY,
+                    eid,
+                    SceneCrdtTimestamp(cmd.timestamp),
+                    Some(&mut DclReader::new(&bytes)),
+                );
+                if applied {
+                    input.reply_ok(format!(
+                        "set {}.{} ({} bytes)",
+                        cmd.entity,
+                        cmd.component,
+                        bytes.len()
+                    ));
+                } else {
+                    input.reply_failed(format!(
+                        "rejected: timestamp {} is not newer than the current value",
+                        cmd.timestamp
+                    ));
+                }
+            }
+        }
+    }
 }
 
 // --- /delete_component ---
