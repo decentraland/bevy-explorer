@@ -164,8 +164,10 @@ fn leaf_message_semantic(full_name: &str) -> Option<&'static str> {
         "decentraland.common.Vector2" => Some("vector2"),
         "decentraland.common.Vector3" => Some("vector3"),
         "decentraland.common.Quaternion" => Some("quaternion"),
-        // reusable composites with built-in editor renderers (don't recurse their internals)
-        "decentraland.common.TextureUnion" => Some("textureUnion"),
+        // reusable composites with built-in editor renderers (don't recurse their internals).
+        // NB: only flatten plain structs here — types containing a `oneof` (e.g. TextureUnion's
+        // `tex`) must be emitted structurally so the schema exposes the oneof (its `$case` is
+        // needed to round-trip through the composite).
         "decentraland.common.BorderRect" => Some("borderRect"),
         _ => None,
     }
