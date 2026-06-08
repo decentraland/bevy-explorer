@@ -6,7 +6,7 @@ use std::{
     marker::PhantomData,
     path::{Path, PathBuf},
     sync::{
-        atomic::{self, AtomicU16},
+        atomic::{self, AtomicU16, AtomicU32},
         Arc,
     },
 };
@@ -24,6 +24,9 @@ use bevy::{
         },
         meta::Settings,
         Asset, AssetLoader, LoadState, UntypedAssetId,
+    },
+    diagnostic::{
+        Diagnostic, DiagnosticMeasurement, DiagnosticPath, DiagnosticsStore, RegisterDiagnostic,
     },
     ecs::system::SystemParam,
     platform::collections::HashMap,
@@ -57,6 +60,15 @@ use console::DoAddConsoleCommand;
 use platform::ReqwestBuilderExt;
 
 use self::ipfs_path::{normalize_path, IpfsKey, IpfsPath, IpfsType};
+
+const IPFS_IN_FLIGHT_DIAGNOSTIC_PATH: DiagnosticPath = DiagnosticPath::const_new("IPFS_IN_FLIGHT");
+static IPFS_IN_FLIGHT: AtomicU32 = AtomicU32::new(0);
+const IPFS_FAILED_DIAGNOSTIC_PATH: DiagnosticPath = DiagnosticPath::const_new("IPFS_FAILED");
+static IPFS_FAILED: AtomicU32 = AtomicU32::new(0);
+const IPFS_CACHED_DIAGNOSTIC_PATH: DiagnosticPath = DiagnosticPath::const_new("IPFS_CACHED");
+static IPFS_CACHED: AtomicU32 = AtomicU32::new(0);
+const IPFS_NON_IPFS_DIAGNOSTIC_PATH: DiagnosticPath = DiagnosticPath::const_new("IPFS_NON_IPFS");
+static IPFS_NON_IPFS: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TypedIpfsRef {
@@ -508,6 +520,13 @@ impl Plugin for IpfsIoPlugin {
         );
 
         app.add_console_command::<ChangeRealmCommand, _>(change_realm_command);
+
+        app.register_diagnostic(Diagnostic::new(IPFS_IN_FLIGHT_DIAGNOSTIC_PATH));
+        app.register_diagnostic(Diagnostic::new(IPFS_FAILED_DIAGNOSTIC_PATH));
+        app.register_diagnostic(Diagnostic::new(IPFS_CACHED_DIAGNOSTIC_PATH));
+        app.register_diagnostic(Diagnostic::new(IPFS_NON_IPFS_DIAGNOSTIC_PATH));
+
+        app.add_systems(PostUpdate, ipfs_diagnostics);
     }
 
     fn finish(&self, app: &mut App) {
@@ -1196,20 +1215,27 @@ impl AssetReader for IpfsIo {
 
             debug!("request: {:?}", path);
 
-            let maybe_ipfs_path = IpfsPath::new_from_path(path).map_err(wrap_err)?;
+            let maybe_ipfs_path = IpfsPath::new_from_path(path)
+                .map_err(wrap_err)
+                .test_failure()?;
             debug!("ipfs: {maybe_ipfs_path:?}");
             let ipfs_path = match maybe_ipfs_path {
                 Some(ipfs_path) => ipfs_path,
                 // non-ipfs files are loaded as normal
-                None => return self.default_io.read(path).await,
+                None => {
+                    let data = self.default_io.read(path).await.test_failure()?;
+                    IPFS_NON_IPFS.fetch_add(1, atomic::Ordering::Relaxed);
+                    return Ok(data);
+                }
             };
 
             #[cfg(target_arch = "wasm32")]
             if let Some(indexdb_path) = ipfs_path.to_indexdb() {
                 use futures_lite::io::AsyncReadExt;
-                let mut file = web_fs::File::open(indexdb_path).await?;
+                let mut file = web_fs::File::open(indexdb_path).await.test_failure()?;
                 let mut daft_buffer = Vec::default();
-                file.read_to_end(&mut daft_buffer).await?;
+                file.read_to_end(&mut daft_buffer).await.test_failure()?;
+                IPFS_CACHED.fetch_add(1, atomic::Ordering::Relaxed);
                 return Ok(Box::new(VecReader::new(daft_buffer)));
             }
 
@@ -1221,7 +1247,8 @@ impl AssetReader for IpfsIo {
                     if !hash.starts_with("b64") {
                         if let Ok(mut res) = self.default_io.read(&cache_path.join(hash)).await {
                             let mut daft_buffer = Vec::default();
-                            res.read_to_end(&mut daft_buffer).await?;
+                            res.read_to_end(&mut daft_buffer).await.test_failure()?;
+                            IPFS_CACHED.fetch_add(1, atomic::Ordering::Relaxed);
                             return Ok(Box::new(VecReader::new(daft_buffer)));
                         }
                     }
@@ -1238,7 +1265,7 @@ impl AssetReader for IpfsIo {
             let token = self.reqno.fetch_add(1, atomic::Ordering::SeqCst);
 
             // wait till connected
-            self.connected().await.map_err(wrap_err)?;
+            self.connected().await.map_err(wrap_err).test_failure()?;
 
             let context = self.context.read().await;
             let remote = ipfs_path.to_url(&context).map_err(wrap_err);
@@ -1249,10 +1276,16 @@ impl AssetReader for IpfsIo {
                     .filename()
                     .and_then(|file_path| self.static_files.get(file_path.as_ref()))
                 {
-                    return self.default_io.read(Path::new(static_path)).await;
+                    let data = self
+                        .default_io
+                        .read(Path::new(static_path))
+                        .await
+                        .test_failure()?;
+                    IPFS_CACHED.fetch_add(1, atomic::Ordering::Relaxed);
+                    return Ok(data);
                 }
             }
-            let remote = remote?;
+            let remote = remote.test_failure()?;
 
             let fail_time = context.failed_remotes.get(&remote).cloned();
             drop(context);
@@ -1269,15 +1302,22 @@ impl AssetReader for IpfsIo {
                 } else {
                     return Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
                         format!("(repeat request for failed `{remote}`)"),
-                    ))));
+                    ))))
+                    .test_failure();
                 }
             }
 
             debug!("[{token:?}]: remote url: `{remote}` awaiting semaphore");
             // get semaphore to limit concurrent requests
-            let _permit = self.request_slots.acquire().await.map_err(|e| {
-                AssetReaderError::Io(Arc::new(std::io::Error::new(ErrorKind::Interrupted, e)))
-            })?;
+            let _deferred_in_flight = DeferredDropper::new(&IPFS_IN_FLIGHT);
+            let _permit = self
+                .request_slots
+                .acquire()
+                .await
+                .map_err(|e| {
+                    AssetReaderError::Io(Arc::new(std::io::Error::new(ErrorKind::Interrupted, e)))
+                })
+                .test_failure()?;
             debug!("[{token:?}]: remote url: `{remote}` proceeding");
 
             let mut attempt = 0;
@@ -1302,11 +1342,14 @@ impl AssetReader for IpfsIo {
                     request
                 };
 
-                let request = request.build().map_err(|e| {
-                    AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
-                        "[{token:?}]: {e}"
-                    ))))
-                })?;
+                let request = request
+                    .build()
+                    .map_err(|e| {
+                        AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
+                            "[{token:?}]: {e}"
+                        ))))
+                    })
+                    .test_failure()?;
 
                 let response = self.client.execute(request).await;
 
@@ -1325,7 +1368,8 @@ impl AssetReader for IpfsIo {
                             .insert(remote.clone(), Instant::now());
                         return Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
                             format!("[{token:?}]: server responded `{e}` requesting `{remote}`"),
-                        ))));
+                        ))))
+                        .test_failure();
                     }
                     Ok(response) if !matches!(response.status(), StatusCode::OK) => {
                         self.context
@@ -1339,7 +1383,8 @@ impl AssetReader for IpfsIo {
                                 response.status(),
                                 remote,
                             ),
-                        ))));
+                        ))))
+                        .test_failure();
                     }
                     Ok(response) => response,
                 };
@@ -1370,7 +1415,8 @@ impl AssetReader for IpfsIo {
                             .insert(remote.clone(), Instant::now());
                         return Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
                             format!("[{token:?}] failed to convert to bytes: `{remote}`: {e}"),
-                        ))));
+                        ))))
+                        .test_failure();
                     }
                 }
             };
@@ -1501,5 +1547,63 @@ impl AssetReader for PassThroughReader {
         path: &'a Path,
     ) -> impl ConditionalSendFuture<Output = Result<bool, AssetReaderError>> {
         AssetReader::is_directory(&*self.inner, path)
+    }
+}
+
+fn ipfs_diagnostics(mut diagnostics: ResMut<DiagnosticsStore>) {
+    #[cfg(not(target_arch = "wasm32"))]
+    let time = std::time::Instant::now();
+    #[cfg(target_arch = "wasm32")]
+    let time = web_time::Instant::now();
+
+    let diagnostics_insert =
+        |diagnostics: &mut DiagnosticsStore, path: &DiagnosticPath, atomic: &AtomicU32| {
+            if let Some(diagnostic) = diagnostics.get_mut(path) {
+                diagnostic.add_measurement(DiagnosticMeasurement {
+                    time,
+                    value: atomic.load(atomic::Ordering::Relaxed) as f64,
+                });
+            };
+        };
+
+    diagnostics_insert(
+        &mut diagnostics,
+        &IPFS_IN_FLIGHT_DIAGNOSTIC_PATH,
+        &IPFS_IN_FLIGHT,
+    );
+    diagnostics_insert(&mut diagnostics, &IPFS_FAILED_DIAGNOSTIC_PATH, &IPFS_FAILED);
+    diagnostics_insert(&mut diagnostics, &IPFS_CACHED_DIAGNOSTIC_PATH, &IPFS_CACHED);
+    diagnostics_insert(
+        &mut diagnostics,
+        &IPFS_NON_IPFS_DIAGNOSTIC_PATH,
+        &IPFS_NON_IPFS,
+    );
+}
+
+trait FailIncrementer {
+    fn test_failure(self) -> Self;
+}
+
+impl<T, E> FailIncrementer for Result<T, E> {
+    fn test_failure(self) -> Self {
+        if self.is_err() {
+            IPFS_FAILED.fetch_add(1, atomic::Ordering::Relaxed);
+        }
+        self
+    }
+}
+
+struct DeferredDropper(&'static AtomicU32);
+
+impl DeferredDropper {
+    fn new(atomic: &'static AtomicU32) -> Self {
+        atomic.fetch_add(1, atomic::Ordering::SeqCst);
+        Self(atomic)
+    }
+}
+
+impl Drop for DeferredDropper {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, atomic::Ordering::SeqCst);
     }
 }

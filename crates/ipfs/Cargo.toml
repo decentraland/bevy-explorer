@@ -6,7 +6,9 @@ edition = "2021"
 [lib]
 
 [features]
+default = ["ipfs_debug"]
 hot_reload = []
+ipfs_debug = []
 
 [dependencies]
 common = { workspace = true }
