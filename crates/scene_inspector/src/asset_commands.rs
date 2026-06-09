@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-// `ContentMap`'s inner map is bevy_platform's HashMap — use the same type for the maps we pass into
-// `ContentMap(..)` (the scene-collection merge and the preview collection).
+// `ContentMap`'s inner map is bevy_platform's HashMap — use the same type for the map we pass into
+// `ContentMap(..)` (the scene-collection merge in /init_asset).
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 use bevy::tasks::IoTaskPool;
@@ -14,7 +14,6 @@ use crate::active_scene::SceneResolver;
 
 const CATALOG_URL: &str = "https://builder-items.decentraland.org/asset-packs/latest/catalog.json";
 const CONTENTS_BASE: &str = "https://builder-items.decentraland.org/contents/";
-const ASSET_COLLECTION_KEY: &str = "$asset-packs";
 
 /// One catalog asset: its slim metadata plus the raw composite and the path→hash content map.
 #[derive(Clone)]
@@ -41,9 +40,10 @@ pub fn add_asset_commands(app: &mut App) {
 
 // --- /asset_catalog ---
 
-/// Fetch the asset-packs catalog, register a CDN-backed preview collection, and return a slim asset
-/// index (`[{id,name,category,tags,pack}]`). Run once before `/init_asset`. The full catalog (with
-/// composites + content maps) is cached in [`AssetCatalog`] for `/init_asset` to look up by id.
+/// Fetch the asset-packs catalog and return a slim asset index
+/// (`[{id,name,category,tags,pack,thumbnail}]`, thumbnail = a CDN url). Run once before
+/// `/init_asset`. The full catalog (with composites + content maps) is cached in [`AssetCatalog`]
+/// for `/init_asset` to look up by id.
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/asset_catalog")]
 struct AssetCatalogCommand;
@@ -56,7 +56,6 @@ fn asset_catalog_cmd(
 ) {
     if let Some(Ok(_)) = input.take() {
         let client = ipfs.client();
-        let io = ipfs.inner.clone();
         let store = catalog.0.clone();
         let (tx, rx) = tokio::sync::oneshot::channel();
         IoTaskPool::get()
@@ -73,9 +72,6 @@ fn asset_catalog_cmd(
                         .and_then(|v| v.as_array())
                         .ok_or_else(|| "catalog has no assetPacks".to_string())?;
                     let mut assets: Vec<CatalogAsset> = Vec::new();
-                    // The preview collection keys every asset file as "{assetId}/{path}". asset ids
-                    // are unique, so distinct assets never share a key — no collisions here.
-                    let mut collection: HashMap<String, String> = HashMap::new();
                     for pack in packs {
                         let pack_name = pack
                             .get("name")
@@ -104,10 +100,6 @@ fn asset_catalog_cmd(
                                         .collect()
                                 })
                                 .unwrap_or_default();
-                            for (path, hash) in &contents {
-                                collection
-                                    .insert(format!("{id}/{path}").to_lowercase(), hash.clone());
-                            }
                             assets.push(CatalogAsset {
                                 id,
                                 name: a
@@ -138,18 +130,16 @@ fn asset_catalog_cmd(
                             });
                         }
                     }
-                    io.register_modified_collection(
-                        ASSET_COLLECTION_KEY,
-                        ContentMap(collection),
-                        CONTENTS_BASE.to_string(),
-                    )
-                    .await;
                     let index: Vec<serde_json::Value> = assets
                         .iter()
                         .map(|a| {
+                            let thumbnail = a
+                                .contents
+                                .get("thumbnail.png")
+                                .map(|h| format!("{CONTENTS_BASE}{h}"));
                             serde_json::json!({
                                 "id": a.id, "name": a.name, "category": a.category,
-                                "tags": a.tags, "pack": a.pack,
+                                "tags": a.tags, "pack": a.pack, "thumbnail": thumbnail,
                             })
                         })
                         .collect();

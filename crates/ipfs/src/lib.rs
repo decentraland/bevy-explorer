@@ -932,30 +932,6 @@ impl IpfsIo {
         }
     }
 
-    /// Register (replacing) a standalone collection with a per-collection base-url modifier, so its
-    /// files resolve+fetch from an arbitrary content server (e.g. the asset-packs CDN) on demand.
-    pub async fn register_modified_collection(
-        &self,
-        key: &str,
-        collection: ContentMap,
-        base_url: String,
-    ) {
-        let mut write = self.context.write().await;
-        write.modifiers.insert(
-            key.to_owned(),
-            IpfsModifier {
-                base_url: Some(base_url),
-            },
-        );
-        write.entities.insert(
-            key.to_owned(),
-            IpfsEntity {
-                collection,
-                metadata: None,
-            },
-        );
-    }
-
     /// True if bytes for `hash` are already in the on-disk content cache.
     pub fn is_cached(&self, hash: &str) -> bool {
         self.cache_path()
