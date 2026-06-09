@@ -300,7 +300,7 @@ fn scroll_file_grid(
     let scroll = trigger.event();
 
     commands.set_state(IpfsFileGridState::Free);
-    file_grid.offset_y += scroll.y * SCROLL_FACTOR;
+    file_grid.offset_y -= scroll.y * SCROLL_FACTOR;
 }
 
 fn clear_file_grid(
