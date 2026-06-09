@@ -7,6 +7,7 @@ use bevy::{input::common_conditions::input_just_pressed, prelude::*};
 
 use crate::{IPFS_CACHED, IPFS_FAILED, IPFS_IN_FLIGHT, IPFS_NON_IPFS, IPFS_SUCCESS};
 
+const FILE_GRID_ROWS: usize = 1024;
 const CELL_PER_ROW: usize = 4;
 const CELL_FONT_SIZE: f32 = 8.;
 
@@ -87,6 +88,8 @@ fn setup(mut commands: Commands) {
             top: Val::Px(32.),
             min_width: Val::Px(32.),
             min_height: Val::Px(32.),
+            row_gap: Val::Px(4.),
+            margin: UiRect::all(Val::Px(4.)),
             flex_direction: FlexDirection::Column,
             ..Default::default()
         },
@@ -128,6 +131,26 @@ fn setup(mut commands: Commands) {
                     overflow: Overflow::scroll_y(),
                     ..Default::default()
                 }
+            ),
+            (
+                Node {
+                    margin: UiRect::all(Val::Px(4.)),
+                    column_gap: Val::Px(4.),
+                    flex_direction: FlexDirection::Row,
+                    ..Default::default()
+                },
+                children![
+                    (
+                        Text::new("Clear"),
+                        BackgroundColor(Color::BLACK.lighter(0.25)),
+                        Observer::new(clear_file_grid)
+                    ),
+                    (
+                        Text::new("Bottom"),
+                        BackgroundColor(Color::BLACK.lighter(0.25)),
+                        Observer::new(go_to_bottom)
+                    )
+                ]
             )
         ],
     ));
@@ -154,7 +177,7 @@ fn trim_files_list(
     mut nodes: Query<&mut Node, With<FileCell>>,
 ) {
     let children = file_grid.into_inner();
-    let excess = (children.len() / CELL_PER_ROW).saturating_sub(1024);
+    let excess = (children.len() / CELL_PER_ROW).saturating_sub(FILE_GRID_ROWS);
 
     if excess > 0 {
         debug!("Trimming {} excess rows", excess);
@@ -258,6 +281,28 @@ fn receive_debug(
 fn scroll_bottom(file_grid: Single<&mut ScrollPosition, With<FileGrid>>) {
     let mut scroll_position = file_grid.into_inner();
     scroll_position.offset_y += 512.;
+}
+
+fn clear_file_grid(
+    mut trigger: Trigger<Pointer<Pressed>>,
+    mut commands: Commands,
+    file_grid: Single<Entity, With<FileGrid>>,
+) {
+    if trigger.target() != trigger.observer() {
+        return;
+    }
+    trigger.propagate(false);
+
+    commands.entity(*file_grid).despawn_related::<Children>();
+}
+
+fn go_to_bottom(mut trigger: Trigger<Pointer<Pressed>>, mut commands: Commands) {
+    if trigger.target() != trigger.observer() {
+        return;
+    }
+    trigger.propagate(false);
+
+    commands.set_state(IpfsFileGridState::Tail);
 }
 
 fn column_divider() -> impl Bundle {
