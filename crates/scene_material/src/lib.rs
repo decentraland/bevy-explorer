@@ -15,7 +15,7 @@ pub const SCENE_MATERIAL_OUTLINE_RED: u32 = 4;
 pub const SCENE_MATERIAL_OUTLINE_FORCE: u32 = 8;
 pub const SCENE_MATERIAL_NO_DITHERING: u32 = 16;
 pub const SCENE_MATERIAL_CONE_ONLY_DITHER: u32 = 32;
-pub const SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG: u32 = 0x70000000;
+pub const SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG: u32 = 0x80000000;
 
 pub trait SceneMaterialExt {
     fn unbounded_outlined(mat: StandardMaterial, force: bool) -> Self
