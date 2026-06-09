@@ -169,26 +169,20 @@ pub fn default_camera_components() -> impl Bundle {
 }
 
 // Persist a scene's composite. For a local scene the hash is `b64-<base64(project path)>`, so we
-// can write straight to `<project>/assets/scene/main.composite`. For anything else (a deployed
-// scene with a content hash) there's no local path, so prompt with a native save dialog. Returns
-// the path written, for display.
+// write straight to `<project>/assets/scene/main.composite` and return the path. A remote/deployed
+// scene (content hash) has no local target, so saving is refused — clone it locally to edit.
 pub async fn save_scene_composite(scene_hash: String, bytes: Vec<u8>) -> Result<String, String> {
-    if let Some(path) = local_composite_path(&scene_hash) {
-        return std::fs::write(&path, &bytes)
-            .map(|_| path.display().to_string())
-            .map_err(|e| format!("write failed ({}): {e}", path.display()));
-    }
-
-    let handle = rfd::AsyncFileDialog::new()
-        .set_file_name("main.composite")
-        .save_file()
-        .await
-        .ok_or_else(|| "save cancelled".to_string())?;
-    handle
-        .write(&bytes)
-        .await
-        .map_err(|e| format!("write failed: {e}"))?;
-    Ok(handle.path().display().to_string())
+    // Save is only offered for a local scene (it writes straight to the scene folder). For a
+    // remote/deployed scene there's nowhere to write back to — clone it locally first.
+    let Some(path) = local_composite_path(&scene_hash) else {
+        return Err(
+            "save is only supported for a local scene — clone it locally before editing"
+                .to_string(),
+        );
+    };
+    std::fs::write(&path, &bytes)
+        .map(|_| path.display().to_string())
+        .map_err(|e| format!("write failed ({}): {e}", path.display()))
 }
 
 // The local project root for a `b64-<base64(path)>` scene hash, else None (a remote scene).
