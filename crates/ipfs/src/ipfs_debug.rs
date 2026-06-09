@@ -1,6 +1,7 @@
 use std::{
     path::PathBuf,
     sync::atomic::{AtomicU32, Ordering},
+    time::Duration,
 };
 
 use bevy::{input::common_conditions::input_just_pressed, prelude::*};
@@ -56,6 +57,7 @@ pub struct IpfsDebugReceiver(pub tokio::sync::mpsc::Receiver<IpfsDebug>);
 pub struct IpfsDebug {
     pub path: PathBuf,
     pub status: IpfsDebugStatus,
+    pub duration: Duration,
     pub length: usize,
 }
 
@@ -255,7 +257,7 @@ fn receive_debug(
                 grid_column: GridPlacement::start(3),
                 ..Default::default()
             },
-            Text::new("0.0s"),
+            Text::new(format!("{:?}", debug.duration)),
             TextFont {
                 font_size: CELL_FONT_SIZE,
                 ..Default::default()

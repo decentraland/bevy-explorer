@@ -1236,6 +1236,11 @@ impl AssetReader for IpfsIo {
                 }
             };
 
+            #[cfg(all(feature = "ipfs_debug", not(target_arch = "wasm32")))]
+            let start = std::time::Instant::now();
+            #[cfg(all(feature = "ipfs_debug", target_arch = "wasm32"))]
+            let start = web_time::Instant::now();
+
             debug!("request: {:?}", path);
 
             let maybe_ipfs_path = IpfsPath::new_from_path(path)
@@ -1245,6 +1250,8 @@ impl AssetReader for IpfsIo {
                     &self.debug_overlay_sender,
                     #[cfg(feature = "ipfs_debug")]
                     path,
+                    #[cfg(feature = "ipfs_debug")]
+                    start,
                 )?;
             debug!("ipfs: {maybe_ipfs_path:?}");
             let ipfs_path = match maybe_ipfs_path {
@@ -1256,16 +1263,25 @@ impl AssetReader for IpfsIo {
                         &self.debug_overlay_sender,
                         #[cfg(feature = "ipfs_debug")]
                         path,
+                        #[cfg(feature = "ipfs_debug")]
+                        start,
                     )?;
                     IPFS_NON_IPFS.fetch_add(1, Ordering::Relaxed);
                     #[cfg(feature = "ipfs_debug")]
-                    self.debug_overlay_sender
-                        .try_send(IpfsDebug {
-                            path: path.to_path_buf(),
-                            status: IpfsDebugStatus::NonIpfs,
-                            length: 0,
-                        })
-                        .report();
+                    {
+                        #[cfg(not(target_arch = "wasm32"))]
+                        let duration = std::time::Instant::now() - start;
+                        #[cfg(target_arch = "wasm32")]
+                        let duration = web_time::Instant::now() - start;
+                        self.debug_overlay_sender
+                            .try_send(IpfsDebug {
+                                path: path.to_path_buf(),
+                                status: IpfsDebugStatus::NonIpfs,
+                                duration,
+                                length: 0,
+                            })
+                            .report();
+                    }
                     return Ok(data);
                 }
             };
@@ -1273,18 +1289,36 @@ impl AssetReader for IpfsIo {
             #[cfg(target_arch = "wasm32")]
             if let Some(indexdb_path) = ipfs_path.to_indexdb() {
                 use futures_lite::io::AsyncReadExt;
-                let mut file = web_fs::File::open(indexdb_path).await.test_failure()?;
+                let mut file = web_fs::File::open(indexdb_path).await.test_failure(
+                    #[cfg(feature = "ipfs_debug")]
+                    &self.debug_overlay_sender,
+                    #[cfg(feature = "ipfs_debug")]
+                    path,
+                    #[cfg(feature = "ipfs_debug")]
+                    start,
+                )?;
                 let mut daft_buffer = Vec::default();
-                file.read_to_end(&mut daft_buffer).await.test_failure()?;
-                IPFS_CACHED.fetch_add(1, atomic::Ordering::Relaxed);
+                file.read_to_end(&mut daft_buffer).await.test_failure(
+                    #[cfg(feature = "ipfs_debug")]
+                    &self.debug_overlay_sender,
+                    #[cfg(feature = "ipfs_debug")]
+                    path,
+                    #[cfg(feature = "ipfs_debug")]
+                    start,
+                )?;
+                IPFS_CACHED.fetch_add(1, Ordering::Relaxed);
                 #[cfg(feature = "ipfs_debug")]
-                self.debug_overlay_sender
-                    .try_send(IpfsDebug {
-                        path: path.to_path_buf(),
-                        status: IpfsDebugStatus::Cached,
-                        length: daft_buffer.len(),
-                    })
-                    .report();
+                {
+                    let duration = web_time::Instant::now() - start;
+                    self.debug_overlay_sender
+                        .try_send(IpfsDebug {
+                            path: path.to_path_buf(),
+                            status: IpfsDebugStatus::Cached,
+                            duration,
+                            length: daft_buffer.len(),
+                        })
+                        .report();
+                }
                 return Ok(Box::new(VecReader::new(daft_buffer)));
             }
 
@@ -1301,16 +1335,25 @@ impl AssetReader for IpfsIo {
                                 &self.debug_overlay_sender,
                                 #[cfg(feature = "ipfs_debug")]
                                 path,
+                                #[cfg(feature = "ipfs_debug")]
+                                start,
                             )?;
                             IPFS_CACHED.fetch_add(1, Ordering::Relaxed);
                             #[cfg(feature = "ipfs_debug")]
-                            self.debug_overlay_sender
-                                .try_send(IpfsDebug {
-                                    path: path.to_path_buf(),
-                                    status: IpfsDebugStatus::Cached,
-                                    length: daft_buffer.len(),
-                                })
-                                .report();
+                            {
+                                #[cfg(not(target_arch = "wasm32"))]
+                                let duration = std::time::Instant::now() - start;
+                                #[cfg(target_arch = "wasm32")]
+                                let duration = web_time::Instant::now() - start;
+                                self.debug_overlay_sender
+                                    .try_send(IpfsDebug {
+                                        path: path.to_path_buf(),
+                                        status: IpfsDebugStatus::Cached,
+                                        duration,
+                                        length: daft_buffer.len(),
+                                    })
+                                    .report();
+                            }
                             return Ok(Box::new(VecReader::new(daft_buffer)));
                         }
                     }
@@ -1332,6 +1375,8 @@ impl AssetReader for IpfsIo {
                 &self.debug_overlay_sender,
                 #[cfg(feature = "ipfs_debug")]
                 path,
+                #[cfg(feature = "ipfs_debug")]
+                start,
             )?;
 
             let context = self.context.read().await;
@@ -1352,16 +1397,25 @@ impl AssetReader for IpfsIo {
                             &self.debug_overlay_sender,
                             #[cfg(feature = "ipfs_debug")]
                             path,
+                            #[cfg(feature = "ipfs_debug")]
+                            start,
                         )?;
                     IPFS_CACHED.fetch_add(1, Ordering::Relaxed);
                     #[cfg(feature = "ipfs_debug")]
-                    self.debug_overlay_sender
-                        .try_send(IpfsDebug {
-                            path: path.to_path_buf(),
-                            status: IpfsDebugStatus::Cached,
-                            length: 0,
-                        })
-                        .report();
+                    {
+                        #[cfg(not(target_arch = "wasm32"))]
+                        let duration = std::time::Instant::now() - start;
+                        #[cfg(target_arch = "wasm32")]
+                        let duration = web_time::Instant::now() - start;
+                        self.debug_overlay_sender
+                            .try_send(IpfsDebug {
+                                path: path.to_path_buf(),
+                                status: IpfsDebugStatus::Cached,
+                                duration,
+                                length: 0,
+                            })
+                            .report();
+                    }
                     return Ok(data);
                 }
             }
@@ -1370,6 +1424,8 @@ impl AssetReader for IpfsIo {
                 &self.debug_overlay_sender,
                 #[cfg(feature = "ipfs_debug")]
                 path,
+                #[cfg(feature = "ipfs_debug")]
+                start,
             )?;
 
             let fail_time = context.failed_remotes.get(&remote).cloned();
@@ -1393,6 +1449,8 @@ impl AssetReader for IpfsIo {
                         &self.debug_overlay_sender,
                         #[cfg(feature = "ipfs_debug")]
                         path,
+                        #[cfg(feature = "ipfs_debug")]
+                        start,
                     );
                 }
             }
@@ -1412,6 +1470,8 @@ impl AssetReader for IpfsIo {
                     &self.debug_overlay_sender,
                     #[cfg(feature = "ipfs_debug")]
                     path,
+                    #[cfg(feature = "ipfs_debug")]
+                    start,
                 )?;
             debug!("[{token:?}]: remote url: `{remote}` proceeding");
 
@@ -1449,6 +1509,8 @@ impl AssetReader for IpfsIo {
                         &self.debug_overlay_sender,
                         #[cfg(feature = "ipfs_debug")]
                         path,
+                        #[cfg(feature = "ipfs_debug")]
+                        start,
                     )?;
 
                 let response = self.client.execute(request).await;
@@ -1474,6 +1536,8 @@ impl AssetReader for IpfsIo {
                             &self.debug_overlay_sender,
                             #[cfg(feature = "ipfs_debug")]
                             path,
+                            #[cfg(feature = "ipfs_debug")]
+                            start,
                         );
                     }
                     Ok(response) if !matches!(response.status(), StatusCode::OK) => {
@@ -1494,6 +1558,8 @@ impl AssetReader for IpfsIo {
                             &self.debug_overlay_sender,
                             #[cfg(feature = "ipfs_debug")]
                             path,
+                            #[cfg(feature = "ipfs_debug")]
+                            start,
                         );
                     }
                     Ok(response) => response,
@@ -1531,6 +1597,8 @@ impl AssetReader for IpfsIo {
                             &self.debug_overlay_sender,
                             #[cfg(feature = "ipfs_debug")]
                             path,
+                            #[cfg(feature = "ipfs_debug")]
+                            start,
                         );
                     }
                 }
@@ -1569,13 +1637,20 @@ impl AssetReader for IpfsIo {
             debug!("[{token:?}]: completed remote url: `{remote}`");
             IPFS_SUCCESS.fetch_add(1, Ordering::Relaxed);
             #[cfg(feature = "ipfs_debug")]
-            self.debug_overlay_sender
-                .try_send(IpfsDebug {
-                    path: path.to_path_buf(),
-                    status: IpfsDebugStatus::Success,
-                    length: data.len(),
-                })
-                .report();
+            {
+                #[cfg(not(target_arch = "wasm32"))]
+                let duration = std::time::Instant::now() - start;
+                #[cfg(target_arch = "wasm32")]
+                let duration = web_time::Instant::now() - start;
+                self.debug_overlay_sender
+                    .try_send(IpfsDebug {
+                        path: path.to_path_buf(),
+                        status: IpfsDebugStatus::Success,
+                        duration,
+                        length: data.len(),
+                    })
+                    .report();
+            }
             Ok(Box::new(AsyncCursor::new(data)))
         })
         .await
@@ -1714,6 +1789,8 @@ trait FailIncrementer {
         self,
         #[cfg(feature = "ipfs_debug")] sender: &tokio::sync::mpsc::Sender<IpfsDebug>,
         #[cfg(feature = "ipfs_debug")] path: &std::path::Path,
+        #[cfg(all(feature = "ipfs_debug", not(target_arch = "wasm32")))] start: std::time::Instant,
+        #[cfg(all(feature = "ipfs_debug", target_arch = "wasm32"))] start: web_time::Instant,
     ) -> Self;
 }
 
@@ -1722,17 +1799,26 @@ impl<T, E> FailIncrementer for Result<T, E> {
         self,
         #[cfg(feature = "ipfs_debug")] sender: &tokio::sync::mpsc::Sender<IpfsDebug>,
         #[cfg(feature = "ipfs_debug")] path: &std::path::Path,
+        #[cfg(all(feature = "ipfs_debug", not(target_arch = "wasm32")))] start: std::time::Instant,
+        #[cfg(all(feature = "ipfs_debug", target_arch = "wasm32"))] start: web_time::Instant,
     ) -> Self {
         if self.is_err() {
             IPFS_FAILED.fetch_add(1, Ordering::Relaxed);
             #[cfg(feature = "ipfs_debug")]
-            sender
-                .try_send(IpfsDebug {
-                    path: path.to_path_buf(),
-                    status: IpfsDebugStatus::Failure,
-                    length: 0,
-                })
-                .report();
+            {
+                #[cfg(not(target_arch = "wasm32"))]
+                let duration = std::time::Instant::now() - start;
+                #[cfg(target_arch = "wasm32")]
+                let duration = web_time::Instant::now() - start;
+                sender
+                    .try_send(IpfsDebug {
+                        path: path.to_path_buf(),
+                        status: IpfsDebugStatus::Failure,
+                        duration,
+                        length: 0,
+                    })
+                    .report();
+            }
         }
         self
     }
