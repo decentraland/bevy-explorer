@@ -193,7 +193,15 @@ fn fragment(
         );
     }
 #endif
-    if (mesh_tag & #{OUTLINE_GREEN_MESH_TAG}) != 0 {
+    if (mesh_tag & #{OUTLINE_RED_MESH_TAG}) != 0 {
+        out.color = apply_outline(
+            in.position,
+            out.color, 
+            vec3(1., 0., 0.),
+            true,
+            sample_index,
+        );
+    } else if (mesh_tag & #{OUTLINE_GREEN_MESH_TAG}) != 0 {
         out.color = apply_outline(
             in.position,
             out.color, 

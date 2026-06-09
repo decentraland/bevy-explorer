@@ -11,10 +11,10 @@ pub type SceneMaterial = ExtendedMaterial<SceneBound>;
 
 pub const SCENE_MATERIAL_SHOW_OUTSIDE: u32 = 1;
 pub const SCENE_MATERIAL_OUTLINE: u32 = 2;
-pub const SCENE_MATERIAL_OUTLINE_RED: u32 = 4;
 pub const SCENE_MATERIAL_OUTLINE_FORCE: u32 = 8;
 pub const SCENE_MATERIAL_NO_DITHERING: u32 = 16;
 pub const SCENE_MATERIAL_CONE_ONLY_DITHER: u32 = 32;
+pub const SCENE_MATERIAL_OUTLINE_RED_MESH_TAG: u32 = 0x40000000;
 pub const SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG: u32 = 0x80000000;
 
 pub trait SceneMaterialExt {
@@ -278,6 +278,10 @@ impl MaterialExtension for SceneBound {
         }
 
         if let Some(fragment) = descriptor.fragment.as_mut() {
+            fragment.shader_defs.push(ShaderDefVal::UInt(
+                "OUTLINE_RED_MESH_TAG".to_owned(),
+                SCENE_MATERIAL_OUTLINE_RED_MESH_TAG,
+            ));
             fragment.shader_defs.push(ShaderDefVal::UInt(
                 "OUTLINE_GREEN_MESH_TAG".to_owned(),
                 SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG,
