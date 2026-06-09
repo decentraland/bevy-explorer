@@ -23,8 +23,8 @@ impl Plugin for IpfsDebugPlugin {
                 toggle_display.run_if(input_just_pressed(KeyCode::F1)),
                 update_text_from_atomics,
                 (
-                    trim_files_list,
                     receive_debug,
+                    trim_files_list,
                     scroll_bottom.run_if(in_state(IpfsFileGridState::Tail)),
                 )
                     .chain()
