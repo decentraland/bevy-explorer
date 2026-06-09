@@ -167,6 +167,7 @@ impl CrdtStore {
     }
 
     // handles a single message from the buffer
+    #[allow(clippy::too_many_arguments)]
     pub fn process_message(
         &mut self,
         writers: &CrdtComponentInterfaces,
@@ -325,7 +326,7 @@ impl CrdtStore {
                     }
                 }
                 entity_map.kill(entity);
-                if let Some(alloc) = alloc.as_deref_mut() {
+                if let Some(alloc) = alloc {
                     alloc.kill(entity);
                 }
             }
