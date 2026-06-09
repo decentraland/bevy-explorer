@@ -177,6 +177,9 @@ impl CrdtStore {
         // when filtering, unrecognized components are routed here (instead of dropped) so the
         // inspector can surface custom components; `None` keeps the legacy drop behaviour.
         mut filtered: Option<&mut CrdtStore>,
+        // parallel context tracking every entity (recognized *and* filtered) for collision-free
+        // entity allocation (see `CrdtContext::new_in_range`); `None` when not maintained.
+        mut alloc: Option<&mut CrdtContext>,
     ) -> Result<(), DclReaderError> {
         match crdt_type {
             CrdtMessageType::PutComponent | CrdtMessageType::AppendValue => {
@@ -193,6 +196,12 @@ impl CrdtStore {
 
                 debug!("PUT e:{entity:?}, c: {component:?}, timestamp: {timestamp:?}, content len: {content_len}");
                 common::util::dcl_assert!(content_len == stream.len());
+
+                // track the entity in the allocation context regardless of whether the component is
+                // recognized or filtered (the main entity_map only sees recognized ones).
+                if let Some(alloc) = alloc.as_deref_mut() {
+                    alloc.init(entity);
+                }
 
                 // check for a writer
                 let writer = match writers.0.get(&component) {
@@ -316,6 +325,9 @@ impl CrdtStore {
                     }
                 }
                 entity_map.kill(entity);
+                if let Some(alloc) = alloc.as_deref_mut() {
+                    alloc.kill(entity);
+                }
             }
         }
 
@@ -330,6 +342,8 @@ impl CrdtStore {
         filter_components: bool,
         // optional sidecar for filtered-out (custom) components; see `process_message`.
         mut filtered: Option<&mut CrdtStore>,
+        // optional allocation context tracking all entities; see `process_message`.
+        mut alloc: Option<&mut CrdtContext>,
     ) {
         // collect commands
         while stream.len() > CRDT_HEADER_SIZE {
@@ -349,6 +363,7 @@ impl CrdtStore {
                         &mut message_stream,
                         filter_components,
                         filtered.as_deref_mut(),
+                        alloc.as_deref_mut(),
                     ) {
                         error!("CRDT Buffer error: {:?}", e);
                     };

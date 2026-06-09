@@ -17,6 +17,7 @@ impl Plugin for SceneInspectorPlugin {
         app.init_resource::<ComponentNameRegistry>();
         app.init_resource::<ActiveInspectionScene>();
         app.init_resource::<PendingSnapshotRequests>();
+        app.init_resource::<snapshot::PendingEntityAllocations>();
 
         manual_registry::register_engine_components(app);
 
@@ -24,5 +25,6 @@ impl Plugin for SceneInspectorPlugin {
         write_commands::add_write_commands(app);
 
         app.add_systems(Update, snapshot::handle_snapshot_events);
+        app.add_systems(Update, snapshot::handle_entity_allocated_events);
     }
 }

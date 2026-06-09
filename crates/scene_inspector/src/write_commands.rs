@@ -11,7 +11,9 @@ use dcl_component::{
 };
 use scene_runner::{renderer_context::FROZEN_BLOCK, update_world::CrdtExtractors};
 
-use crate::{active_scene::SceneResolver, read_commands::parse_entity_id};
+use crate::{
+    active_scene::SceneResolver, read_commands::parse_entity_id, snapshot::PendingEntityAllocations,
+};
 
 /// Accumulates immediate Bevy-side updates so a batch of component writes/removals in one
 /// frame is delivered as a single `CrdtStateComponent` per component, rather than each
@@ -81,6 +83,7 @@ impl StagedBevyUpdates {
 pub fn add_write_commands(app: &mut App) {
     app.add_console_command::<SetComponentCommand, _>(set_component_cmd);
     app.add_console_command::<SetComponentRawCommand, _>(set_component_raw_cmd);
+    app.add_console_command::<NewEntityCommand, _>(new_entity_cmd);
     app.add_console_command::<SaveCompositeCommand, _>(save_composite_cmd);
     app.add_console_command::<DeleteComponentCommand, _>(delete_component_cmd);
     app.add_console_command::<DeleteEntityCommand, _>(delete_entity_cmd);
@@ -161,6 +164,77 @@ fn set_component_cmd(
     }
 
     staged.flush(&mut commands, &crdt_interfaces);
+}
+
+// --- /new_entity ---
+
+/// Allocate one or more fresh scene entity ids from the scene's own allocator (collision-free and
+/// correctly generationed) and instantiate each scene-side with the given component, so `@dcl/ecs`
+/// adopts it. Replies with a JSON array of the allocated entity ids (proto-u32 form, matching the
+/// snapshot's keys). The editor uses these as the ids to write the rest of an entity's components.
+///
+/// `component` MUST be a custom (non-engine-recognized) component — e.g. core-schema::Name. Engine
+/// components flow renderer→scene one-way (never echoed back), so an instantiation written with one
+/// would be lost; only a custom component round-trips.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/new_entity")]
+struct NewEntityCommand {
+    /// Numeric component id to instantiate each entity with (e.g. core-schema::Name)
+    component: u32,
+    /// base64-encoded component value bytes
+    data: String,
+    /// number of entities to allocate
+    count: usize,
+}
+
+fn new_entity_cmd(
+    mut input: ConsoleCommand<NewEntityCommand>,
+    resolver: SceneResolver,
+    crdt_interfaces: Res<CrdtExtractors>,
+    mut pending: ResMut<PendingEntityAllocations>,
+    mut console_responses: ResMut<PendingConsoleResponses>,
+) {
+    if let Some(Ok(cmd)) = input.take() {
+        // The instantiation must use a custom component — an engine-recognized one flows
+        // renderer→scene one-way (never echoed back) and would be lost.
+        if crdt_interfaces
+            .0
+            .contains_key(&SceneComponentId(cmd.component))
+        {
+            input.reply_failed(format!(
+                "component {} is engine-recognized; instantiate with a custom component",
+                cmd.component
+            ));
+            return;
+        }
+        let data = match BASE64_STANDARD.decode(cmd.data.as_bytes()) {
+            Ok(d) => d,
+            Err(e) => {
+                input.reply_failed(format!("invalid base64: {e}"));
+                return;
+            }
+        };
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        match resolver.request_allocate_entity(
+            &mut pending,
+            SceneComponentId(cmd.component),
+            data,
+            cmd.count,
+            move |ids| {
+                let json = format!(
+                    "[{}]",
+                    ids.iter()
+                        .map(|id| id.as_proto_u32().unwrap_or(id.id as u32).to_string())
+                        .collect::<Vec<_>>()
+                        .join(",")
+                );
+                let _ = tx.send(Ok(json));
+            },
+        ) {
+            Ok(()) => console_responses.push_oneshot(rx, |r| r, input.take_responder()),
+            Err(e) => input.reply_failed(e),
+        }
+    }
 }
 
 // --- /set_component_raw ---

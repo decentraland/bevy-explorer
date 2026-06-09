@@ -483,6 +483,7 @@ pub(crate) fn load_scene_javascript(
                 &mut DclReader::new(&serialized_crdt),
                 false,
                 None,
+                None,
             );
 
             // The clean authored baseline = only main.crdt; the inspector diffs against this on

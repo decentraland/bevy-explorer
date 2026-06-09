@@ -70,6 +70,11 @@ pub struct RendererStore(pub CrdtStore);
 #[derive(Default)]
 pub struct FilteredCrdtStore(pub CrdtStore);
 
+// Parallel CrdtContext tracking every scene entity — recognized *and* filtered (custom-only) — so
+// the inspector can allocate fresh entity ids via `new_in_range` without colliding with entities
+// the main entity_map never sees. Allocation only; its census is discarded.
+pub struct AllocatorContext(pub CrdtContext);
+
 pub struct SuperUserScene(pub tokio::sync::mpsc::UnboundedSender<SystemApi>);
 impl std::ops::Deref for SuperUserScene {
     type Target = tokio::sync::mpsc::UnboundedSender<SystemApi>;
@@ -144,7 +149,36 @@ pub fn init_state(
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
     scene_origin: bevy::prelude::Vec3,
 ) {
+    // Allocator context: a parallel CrdtContext used solely for entity allocation. It's populated
+    // with every entity (recognized + filtered) on the send path, but the scene's authored entities
+    // load from main.crdt — the scene receives them as initial state and never re-sends them — so
+    // seed those here, otherwise new_in_range would hand back ids that already exist.
+    let mut allocator = AllocatorContext(CrdtContext::new(
+        scene_context.scene_id,
+        scene_context.hash.clone(),
+        scene_context.title.clone(),
+        scene_context.testing,
+        scene_context.preview,
+    ));
+    for lww in initial_crdt_store.lww.values() {
+        for entity in lww.last_write.keys() {
+            allocator.0.init(*entity);
+        }
+    }
+    for go in initial_crdt_store.go.values() {
+        for entity in go.0.keys() {
+            allocator.0.init(*entity);
+        }
+    }
+    // flush the seeded entities into the live table so new_in_range avoids them; the census's
+    // `born` is exactly the unique set we just seeded.
+    let census = allocator.0.take_census();
+    debug!(
+        "allocator seeded with {} authored entities from main.crdt",
+        census.born.len()
+    );
     state.put(scene_context);
+    state.put(allocator);
     state.put(scene_js);
     state.put(storage_root);
     state.put(crdt_component_interfaces);
