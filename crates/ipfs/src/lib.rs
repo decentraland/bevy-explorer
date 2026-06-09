@@ -13,6 +13,8 @@ use std::{
     },
 };
 
+#[cfg(feature = "ipfs_debug")]
+use common::util::ReportErr;
 use futures_io::{AsyncRead, AsyncSeek};
 use web_time::{Duration, Instant};
 
@@ -60,6 +62,9 @@ use console::DoAddConsoleCommand;
 
 #[allow(unused_imports)]
 use platform::ReqwestBuilderExt;
+
+#[cfg(feature = "ipfs_debug")]
+use crate::ipfs_debug::{IpfsDebug, IpfsDebugReceiver, IpfsDebugStatus};
 
 use self::ipfs_path::{normalize_path, IpfsKey, IpfsPath, IpfsType};
 
@@ -485,12 +490,16 @@ impl Plugin for IpfsIoPlugin {
                 .unwrap_or_else(|_| panic!("failed to write to assets folder {root:?}"));
         }
 
+        #[cfg(feature = "ipfs_debug")]
+        let (debug_overlay_sender, debug_overlay_receiver) = tokio::sync::mpsc::channel(32);
         let ipfs_io = IpfsIo::new(
             self.preview,
             Box::new(default_reader),
             cache_root,
             HashMap::default(),
             self.num_slots,
+            #[cfg(feature = "ipfs_debug")]
+            debug_overlay_sender,
         );
         let ipfs_io = Arc::new(ipfs_io);
         let passthrough = PassThroughReader {
@@ -534,7 +543,8 @@ impl Plugin for IpfsIoPlugin {
         app.add_systems(PostUpdate, ipfs_diagnostics);
 
         #[cfg(feature = "ipfs_debug")]
-        app.add_plugins(ipfs_debug::IpfsDebugPlugin);
+        app.add_plugins(ipfs_debug::IpfsDebugPlugin)
+            .insert_resource(IpfsDebugReceiver(debug_overlay_receiver));
     }
 
     fn finish(&self, app: &mut App) {
@@ -700,6 +710,8 @@ pub struct IpfsIo {
     reqno: AtomicU16,
     static_files: HashMap<&'static str, &'static str>,
     client: reqwest::Client,
+    #[cfg(feature = "ipfs_debug")]
+    debug_overlay_sender: tokio::sync::mpsc::Sender<IpfsDebug>,
 }
 
 impl IpfsIo {
@@ -709,6 +721,7 @@ impl IpfsIo {
         default_fs_path: Option<PathBuf>,
         static_paths: HashMap<&'static str, &'static str>,
         num_slots: usize,
+        #[cfg(feature = "ipfs_debug")] debug_overlay_sender: tokio::sync::mpsc::Sender<IpfsDebug>,
     ) -> Self {
         let (sender, receiver) = tokio::sync::watch::channel(None);
 
@@ -731,6 +744,8 @@ impl IpfsIo {
                 .user_agent("DCLExplorer/0.1")
                 .build()
                 .unwrap(),
+            #[cfg(feature = "ipfs_debug")]
+            debug_overlay_sender,
         }
     }
 
@@ -1225,14 +1240,32 @@ impl AssetReader for IpfsIo {
 
             let maybe_ipfs_path = IpfsPath::new_from_path(path)
                 .map_err(wrap_err)
-                .test_failure()?;
+                .test_failure(
+                    #[cfg(feature = "ipfs_debug")]
+                    &self.debug_overlay_sender,
+                    #[cfg(feature = "ipfs_debug")]
+                    path,
+                )?;
             debug!("ipfs: {maybe_ipfs_path:?}");
             let ipfs_path = match maybe_ipfs_path {
                 Some(ipfs_path) => ipfs_path,
                 // non-ipfs files are loaded as normal
                 None => {
-                    let data = self.default_io.read(path).await.test_failure()?;
+                    let data = self.default_io.read(path).await.test_failure(
+                        #[cfg(feature = "ipfs_debug")]
+                        &self.debug_overlay_sender,
+                        #[cfg(feature = "ipfs_debug")]
+                        path,
+                    )?;
                     IPFS_NON_IPFS.fetch_add(1, Ordering::Relaxed);
+                    #[cfg(feature = "ipfs_debug")]
+                    self.debug_overlay_sender
+                        .try_send(IpfsDebug {
+                            path: path.to_path_buf(),
+                            status: IpfsDebugStatus::NonIpfs,
+                            length: 0,
+                        })
+                        .report();
                     return Ok(data);
                 }
             };
@@ -1244,6 +1277,14 @@ impl AssetReader for IpfsIo {
                 let mut daft_buffer = Vec::default();
                 file.read_to_end(&mut daft_buffer).await.test_failure()?;
                 IPFS_CACHED.fetch_add(1, atomic::Ordering::Relaxed);
+                #[cfg(feature = "ipfs_debug")]
+                self.debug_overlay_sender
+                    .try_send(IpfsDebug {
+                        path: path.to_path_buf(),
+                        status: IpfsDebugStatus::Cached,
+                        length: daft_buffer.len(),
+                    })
+                    .report();
                 return Ok(Box::new(VecReader::new(daft_buffer)));
             }
 
@@ -1255,8 +1296,21 @@ impl AssetReader for IpfsIo {
                     if !hash.starts_with("b64") {
                         if let Ok(mut res) = self.default_io.read(&cache_path.join(hash)).await {
                             let mut daft_buffer = Vec::default();
-                            res.read_to_end(&mut daft_buffer).await.test_failure()?;
+                            res.read_to_end(&mut daft_buffer).await.test_failure(
+                                #[cfg(feature = "ipfs_debug")]
+                                &self.debug_overlay_sender,
+                                #[cfg(feature = "ipfs_debug")]
+                                path,
+                            )?;
                             IPFS_CACHED.fetch_add(1, Ordering::Relaxed);
+                            #[cfg(feature = "ipfs_debug")]
+                            self.debug_overlay_sender
+                                .try_send(IpfsDebug {
+                                    path: path.to_path_buf(),
+                                    status: IpfsDebugStatus::Cached,
+                                    length: daft_buffer.len(),
+                                })
+                                .report();
                             return Ok(Box::new(VecReader::new(daft_buffer)));
                         }
                     }
@@ -1273,7 +1327,12 @@ impl AssetReader for IpfsIo {
             let token = self.reqno.fetch_add(1, Ordering::SeqCst);
 
             // wait till connected
-            self.connected().await.map_err(wrap_err).test_failure()?;
+            self.connected().await.map_err(wrap_err).test_failure(
+                #[cfg(feature = "ipfs_debug")]
+                &self.debug_overlay_sender,
+                #[cfg(feature = "ipfs_debug")]
+                path,
+            )?;
 
             let context = self.context.read().await;
             let remote = ipfs_path.to_url(&context).map_err(wrap_err);
@@ -1288,12 +1347,30 @@ impl AssetReader for IpfsIo {
                         .default_io
                         .read(Path::new(static_path))
                         .await
-                        .test_failure()?;
+                        .test_failure(
+                            #[cfg(feature = "ipfs_debug")]
+                            &self.debug_overlay_sender,
+                            #[cfg(feature = "ipfs_debug")]
+                            path,
+                        )?;
                     IPFS_CACHED.fetch_add(1, Ordering::Relaxed);
+                    #[cfg(feature = "ipfs_debug")]
+                    self.debug_overlay_sender
+                        .try_send(IpfsDebug {
+                            path: path.to_path_buf(),
+                            status: IpfsDebugStatus::Cached,
+                            length: 0,
+                        })
+                        .report();
                     return Ok(data);
                 }
             }
-            let remote = remote.test_failure()?;
+            let remote = remote.test_failure(
+                #[cfg(feature = "ipfs_debug")]
+                &self.debug_overlay_sender,
+                #[cfg(feature = "ipfs_debug")]
+                path,
+            )?;
 
             let fail_time = context.failed_remotes.get(&remote).cloned();
             drop(context);
@@ -1311,7 +1388,12 @@ impl AssetReader for IpfsIo {
                     return Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
                         format!("(repeat request for failed `{remote}`)"),
                     ))))
-                    .test_failure();
+                    .test_failure(
+                        #[cfg(feature = "ipfs_debug")]
+                        &self.debug_overlay_sender,
+                        #[cfg(feature = "ipfs_debug")]
+                        path,
+                    );
                 }
             }
 
@@ -1325,7 +1407,12 @@ impl AssetReader for IpfsIo {
                 .map_err(|e| {
                     AssetReaderError::Io(Arc::new(std::io::Error::new(ErrorKind::Interrupted, e)))
                 })
-                .test_failure()?;
+                .test_failure(
+                    #[cfg(feature = "ipfs_debug")]
+                    &self.debug_overlay_sender,
+                    #[cfg(feature = "ipfs_debug")]
+                    path,
+                )?;
             debug!("[{token:?}]: remote url: `{remote}` proceeding");
 
             let mut attempt = 0;
@@ -1357,7 +1444,12 @@ impl AssetReader for IpfsIo {
                             "[{token:?}]: {e}"
                         ))))
                     })
-                    .test_failure()?;
+                    .test_failure(
+                        #[cfg(feature = "ipfs_debug")]
+                        &self.debug_overlay_sender,
+                        #[cfg(feature = "ipfs_debug")]
+                        path,
+                    )?;
 
                 let response = self.client.execute(request).await;
 
@@ -1377,7 +1469,12 @@ impl AssetReader for IpfsIo {
                         return Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
                             format!("[{token:?}]: server responded `{e}` requesting `{remote}`"),
                         ))))
-                        .test_failure();
+                        .test_failure(
+                            #[cfg(feature = "ipfs_debug")]
+                            &self.debug_overlay_sender,
+                            #[cfg(feature = "ipfs_debug")]
+                            path,
+                        );
                     }
                     Ok(response) if !matches!(response.status(), StatusCode::OK) => {
                         self.context
@@ -1392,7 +1489,12 @@ impl AssetReader for IpfsIo {
                                 remote,
                             ),
                         ))))
-                        .test_failure();
+                        .test_failure(
+                            #[cfg(feature = "ipfs_debug")]
+                            &self.debug_overlay_sender,
+                            #[cfg(feature = "ipfs_debug")]
+                            path,
+                        );
                     }
                     Ok(response) => response,
                 };
@@ -1424,7 +1526,12 @@ impl AssetReader for IpfsIo {
                         return Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
                             format!("[{token:?}] failed to convert to bytes: `{remote}`: {e}"),
                         ))))
-                        .test_failure();
+                        .test_failure(
+                            #[cfg(feature = "ipfs_debug")]
+                            &self.debug_overlay_sender,
+                            #[cfg(feature = "ipfs_debug")]
+                            path,
+                        );
                     }
                 }
             };
@@ -1461,6 +1568,14 @@ impl AssetReader for IpfsIo {
 
             debug!("[{token:?}]: completed remote url: `{remote}`");
             IPFS_SUCCESS.fetch_add(1, Ordering::Relaxed);
+            #[cfg(feature = "ipfs_debug")]
+            self.debug_overlay_sender
+                .try_send(IpfsDebug {
+                    path: path.to_path_buf(),
+                    status: IpfsDebugStatus::Success,
+                    length: data.len(),
+                })
+                .report();
             Ok(Box::new(AsyncCursor::new(data)))
         })
         .await
@@ -1595,13 +1710,29 @@ fn ipfs_diagnostics(mut diagnostics: ResMut<DiagnosticsStore>) {
 }
 
 trait FailIncrementer {
-    fn test_failure(self) -> Self;
+    fn test_failure(
+        self,
+        #[cfg(feature = "ipfs_debug")] sender: &tokio::sync::mpsc::Sender<IpfsDebug>,
+        #[cfg(feature = "ipfs_debug")] path: &std::path::Path,
+    ) -> Self;
 }
 
 impl<T, E> FailIncrementer for Result<T, E> {
-    fn test_failure(self) -> Self {
+    fn test_failure(
+        self,
+        #[cfg(feature = "ipfs_debug")] sender: &tokio::sync::mpsc::Sender<IpfsDebug>,
+        #[cfg(feature = "ipfs_debug")] path: &std::path::Path,
+    ) -> Self {
         if self.is_err() {
             IPFS_FAILED.fetch_add(1, Ordering::Relaxed);
+            #[cfg(feature = "ipfs_debug")]
+            sender
+                .try_send(IpfsDebug {
+                    path: path.to_path_buf(),
+                    status: IpfsDebugStatus::Failure,
+                    length: 0,
+                })
+                .report();
         }
         self
     }
