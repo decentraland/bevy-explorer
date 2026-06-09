@@ -260,6 +260,20 @@ pub async fn save_scene_composite(scene_hash: String, bytes: Vec<u8>) -> Result<
     }
 }
 
+// Persist a file into the scene's picked directory (File System Access API) at `rel_path` relative
+// to it — the same directory handle / mechanism as the composite save (cached in IndexedDB by scene
+// id), so imported assets land alongside main.composite with no extra prompt after the first save.
+pub async fn write_scene_file(
+    scene_hash: &str,
+    rel_path: &str,
+    bytes: &[u8],
+) -> Result<(), String> {
+    web_save::save_composite(scene_hash, rel_path, bytes)
+        .await
+        .map(|_| ())
+        .map_err(|e| js_error_message(&e))
+}
+
 fn js_error_message(e: &wasm_bindgen::JsValue) -> String {
     e.as_string()
         .or_else(|| {

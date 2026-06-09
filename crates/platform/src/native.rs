@@ -191,16 +191,39 @@ pub async fn save_scene_composite(scene_hash: String, bytes: Vec<u8>) -> Result<
     Ok(handle.path().display().to_string())
 }
 
-// The local target path for a `b64-<base64(path)>` scene hash, else None.
-fn local_composite_path(scene_hash: &str) -> Option<std::path::PathBuf> {
+// The local project root for a `b64-<base64(path)>` scene hash, else None (a remote scene).
+pub fn local_scene_root(scene_hash: &str) -> Option<std::path::PathBuf> {
     use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
     let encoded = scene_hash.strip_prefix("b64-")?;
     let decoded = BASE64_URL_SAFE_NO_PAD.decode(encoded).ok()?;
     let project = String::from_utf8(decoded).ok()?;
+    Some(std::path::PathBuf::from(project))
+}
+
+// The local target path for a `b64-<base64(path)>` scene hash, else None.
+fn local_composite_path(scene_hash: &str) -> Option<std::path::PathBuf> {
     Some(
-        std::path::PathBuf::from(project)
+        local_scene_root(scene_hash)?
             .join("assets")
             .join("scene")
             .join("main.composite"),
     )
+}
+
+// Write bytes into a local scene project at `rel_path` (relative to the project root), creating
+// parent dirs. Used to persist imported assets into the edited scene so it renders on a normal
+// (non-live) load. Err for a remote (non-local) scene.
+pub async fn write_scene_file(
+    scene_hash: &str,
+    rel_path: &str,
+    bytes: &[u8],
+) -> Result<(), String> {
+    let Some(root) = local_scene_root(scene_hash) else {
+        return Err("not a local scene".to_string());
+    };
+    let dest = root.join(rel_path);
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
+    }
+    std::fs::write(&dest, bytes).map_err(|e| format!("write {}: {e}", dest.display()))
 }

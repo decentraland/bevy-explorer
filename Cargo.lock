@@ -9780,6 +9780,7 @@ dependencies = [
  "console",
  "dcl",
  "dcl_component",
+ "ipfs",
  "platform",
  "prost 0.11.9",
  "scene_runner",

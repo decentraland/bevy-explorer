@@ -343,8 +343,9 @@ fn save_composite_cmd(
                 return;
             }
         };
-        // The write (and the picker on web) is async — run it off the main schedule and reply
-        // when it resolves.
+        // The write (and the picker on web) is async — run it off the main schedule and reply when
+        // it resolves. Imported-asset files are pushed to disk at import time (/init_asset), not
+        // here, so this only writes the composite.
         let (tx, rx) = tokio::sync::oneshot::channel();
         IoTaskPool::get()
             .spawn(async move {
