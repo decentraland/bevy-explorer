@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use bevy::{input::common_conditions::input_just_pressed, prelude::*};
 
-use crate::{IPFS_CACHED, IPFS_FAILED, IPFS_IN_FLIGHT, IPFS_NON_IPFS};
+use crate::{IPFS_CACHED, IPFS_FAILED, IPFS_IN_FLIGHT, IPFS_NON_IPFS, IPFS_SUCCESS};
 
 pub struct IpfsDebugPlugin;
 
@@ -48,6 +48,9 @@ fn setup(mut commands: Commands) {
             children![
                 (Text::new("In Flight"),),
                 (Text::new("0"), AtomicSource(&IPFS_IN_FLIGHT)),
+                column_divider(),
+                (Text::new("Success"),),
+                (Text::new("0"), AtomicSource(&IPFS_SUCCESS)),
                 column_divider(),
                 (Text::new("Cached"),),
                 (Text::new("0"), AtomicSource(&IPFS_CACHED)),

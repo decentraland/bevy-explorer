@@ -65,6 +65,8 @@ use self::ipfs_path::{normalize_path, IpfsKey, IpfsPath, IpfsType};
 
 const IPFS_IN_FLIGHT_DIAGNOSTIC_PATH: DiagnosticPath = DiagnosticPath::const_new("IPFS_IN_FLIGHT");
 static IPFS_IN_FLIGHT: AtomicU32 = AtomicU32::new(0);
+const IPFS_SUCCESS_DIAGNOSTIC_PATH: DiagnosticPath = DiagnosticPath::const_new("IPFS_SUCCESS");
+static IPFS_SUCCESS: AtomicU32 = AtomicU32::new(0);
 const IPFS_FAILED_DIAGNOSTIC_PATH: DiagnosticPath = DiagnosticPath::const_new("IPFS_FAILED");
 static IPFS_FAILED: AtomicU32 = AtomicU32::new(0);
 const IPFS_CACHED_DIAGNOSTIC_PATH: DiagnosticPath = DiagnosticPath::const_new("IPFS_CACHED");
@@ -524,6 +526,7 @@ impl Plugin for IpfsIoPlugin {
         app.add_console_command::<ChangeRealmCommand, _>(change_realm_command);
 
         app.register_diagnostic(Diagnostic::new(IPFS_IN_FLIGHT_DIAGNOSTIC_PATH));
+        app.register_diagnostic(Diagnostic::new(IPFS_SUCCESS_DIAGNOSTIC_PATH));
         app.register_diagnostic(Diagnostic::new(IPFS_FAILED_DIAGNOSTIC_PATH));
         app.register_diagnostic(Diagnostic::new(IPFS_CACHED_DIAGNOSTIC_PATH));
         app.register_diagnostic(Diagnostic::new(IPFS_NON_IPFS_DIAGNOSTIC_PATH));
@@ -1457,6 +1460,7 @@ impl AssetReader for IpfsIo {
             }
 
             debug!("[{token:?}]: completed remote url: `{remote}`");
+            IPFS_SUCCESS.fetch_add(1, Ordering::Relaxed);
             Ok(Box::new(AsyncCursor::new(data)))
         })
         .await
@@ -1575,6 +1579,11 @@ fn ipfs_diagnostics(mut diagnostics: ResMut<DiagnosticsStore>) {
         &mut diagnostics,
         &IPFS_IN_FLIGHT_DIAGNOSTIC_PATH,
         &IPFS_IN_FLIGHT,
+    );
+    diagnostics_insert(
+        &mut diagnostics,
+        &IPFS_SUCCESS_DIAGNOSTIC_PATH,
+        &IPFS_SUCCESS,
     );
     diagnostics_insert(&mut diagnostics, &IPFS_FAILED_DIAGNOSTIC_PATH, &IPFS_FAILED);
     diagnostics_insert(&mut diagnostics, &IPFS_CACHED_DIAGNOSTIC_PATH, &IPFS_CACHED);
