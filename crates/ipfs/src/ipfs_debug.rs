@@ -10,6 +10,7 @@ use crate::{IPFS_CACHED, IPFS_FAILED, IPFS_IN_FLIGHT, IPFS_NON_IPFS, IPFS_SUCCES
 const FILE_GRID_ROWS: usize = 1024;
 const CELL_PER_ROW: usize = 4;
 const CELL_FONT_SIZE: f32 = 8.;
+const SCROLL_FACTOR: f32 = 128.;
 
 pub struct IpfsDebugPlugin;
 
@@ -130,7 +131,8 @@ fn setup(mut commands: Commands) {
                     flex_direction: FlexDirection::Column,
                     overflow: Overflow::scroll_y(),
                     ..Default::default()
-                }
+                },
+                Observer::new(scroll_file_grid)
             ),
             (
                 Node {
@@ -180,7 +182,7 @@ fn trim_files_list(
     let excess = (children.len() / CELL_PER_ROW).saturating_sub(FILE_GRID_ROWS);
 
     if excess > 0 {
-        debug!("Trimming {} excess rows", excess);
+        trace!("Trimming {} excess rows", excess);
 
         for child in &children[0..(excess * CELL_PER_ROW)] {
             commands.entity(*child).despawn();
@@ -216,7 +218,7 @@ fn receive_debug(
             }
         };
 
-        debug!("Spawning row {}", next_row);
+        trace!("Spawning row {}", next_row);
         commands.spawn((
             FileCell,
             ChildOf(file_grid),
@@ -281,6 +283,22 @@ fn receive_debug(
 fn scroll_bottom(file_grid: Single<&mut ScrollPosition, With<FileGrid>>) {
     let mut scroll_position = file_grid.into_inner();
     scroll_position.offset_y += 512.;
+}
+
+fn scroll_file_grid(
+    mut trigger: Trigger<Pointer<Scroll>>,
+    mut commands: Commands,
+    mut file_grid: Single<&mut ScrollPosition, With<FileGrid>>,
+) {
+    if trigger.target() != trigger.observer() {
+        return;
+    }
+    trigger.propagate(false);
+
+    let scroll = trigger.event();
+
+    commands.set_state(IpfsFileGridState::Free);
+    file_grid.offset_y += scroll.y * SCROLL_FACTOR;
 }
 
 fn clear_file_grid(
