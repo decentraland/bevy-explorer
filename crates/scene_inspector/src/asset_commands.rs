@@ -7,7 +7,7 @@ use bevy::prelude::*;
 use bevy::tasks::IoTaskPool;
 use bevy_console::ConsoleCommand;
 use console::{DoAddConsoleCommand, PendingConsoleResponses};
-use ipfs::{ContentMap, IpfsResource};
+use ipfs::{ContentMap, IpfsIo, IpfsResource};
 use platform::AsyncRwLock;
 
 use crate::active_scene::SceneResolver;
@@ -213,6 +213,8 @@ fn init_asset_cmd(
                     let mut merge: HashMap<String, String> = HashMap::new();
                     let mut written_rels: Vec<String> = Vec::new();
                     let mut errors: Vec<String> = Vec::new();
+                    // Scene identity for the web save's project-folder matching (ignored on native).
+                    let target = scene_target_json(&io, &scene_hash).await;
                     for (path, hash) in &asset.contents {
                         let rel = format!("{base_dir}/{path}");
                         // Fetch the bytes (the service worker serves them from cache on web) so we
@@ -224,8 +226,13 @@ fn init_asset_cmd(
                             Ok(resp) => match resp.bytes().await {
                                 Ok(bytes) => {
                                     let _ = io.cache_bytes(hash, &bytes).await; // no-op on web
-                                    if let Err(e) =
-                                        platform::write_scene_file(&scene_hash, &rel, &bytes).await
+                                    if let Err(e) = platform::write_scene_file(
+                                        &scene_hash,
+                                        &rel,
+                                        &bytes,
+                                        &target,
+                                    )
+                                    .await
                                     {
                                         if errors.len() < 5 {
                                             errors.push(format!("{rel}: {e}"));
@@ -287,4 +294,41 @@ fn init_asset_cmd(
             .detach();
         console_responses.push_oneshot(rx, |r| r, input.take_responder());
     }
+}
+
+// --- scene target (web save folder matching) ---
+
+/// Build the scene-identity JSON the web save uses to locate + verify the scene's project folder
+/// under a granted directory handle: the clean project root (for navigation) plus a fingerprint —
+/// `source.projectId` (authoritative), else `scene.parcels` + `display.title` — read from the
+/// scene's scene.json metadata. Fields are null/empty on native or when the scene lacks them.
+pub async fn scene_target_json(io: &IpfsIo, scene_hash: &str) -> String {
+    let root = io.local_project_root(scene_hash).await;
+    let meta: Option<serde_json::Value> = io
+        .scene_metadata(scene_hash)
+        .await
+        .and_then(|m| serde_json::from_str(&m).ok());
+    let str_at = |ptr: &str| {
+        meta.as_ref()
+            .and_then(|m| m.pointer(ptr))
+            .and_then(|v| v.as_str())
+            .map(String::from)
+    };
+    let parcels: Vec<String> = meta
+        .as_ref()
+        .and_then(|m| m.pointer("/scene/parcels"))
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    serde_json::json!({
+        "root": root,
+        "projectId": str_at("/source/projectId"),
+        "parcels": parcels,
+        "title": str_at("/display/title"),
+    })
+    .to_string()
 }

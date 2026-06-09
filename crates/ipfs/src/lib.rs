@@ -1185,6 +1185,44 @@ impl IpfsIo {
         None
     }
 
+    /// The clean absolute project root of a `dcl start` scene, recovered from any existing `b64-`
+    /// collection entry — a file's encoded path has clean directory segments (only the filename
+    /// carries the `-machineId` suffix), so slicing before `/{key}-` yields the real root. None for
+    /// native/deployed scenes (entries aren't in the `b64-<path>-machineId` form). Lets the web save
+    /// locate the project folder under a granted directory handle.
+    pub async fn local_project_root(&self, scene_hash: &str) -> Option<String> {
+        use base64::{prelude::BASE64_STANDARD, Engine};
+        let read = self.context.read().await;
+        let collection = &read.entities.get(scene_hash)?.collection;
+        for (key, h) in collection.0.iter() {
+            let Some(b64) = h.strip_prefix("b64-") else {
+                continue;
+            };
+            let Ok(decoded) = BASE64_STANDARD.decode(b64) else {
+                continue;
+            };
+            let Ok(decoded) = String::from_utf8(decoded) else {
+                continue;
+            };
+            let marker = format!("/{key}-");
+            if let Some(idx) = decoded.to_lowercase().rfind(&marker) {
+                return Some(decoded[..idx].to_string());
+            }
+        }
+        None
+    }
+
+    /// The stored entity metadata (the scene's scene.json) for a scene, if any.
+    pub async fn scene_metadata(&self, scene_hash: &str) -> Option<String> {
+        self.context
+            .read()
+            .await
+            .entities
+            .get(scene_hash)?
+            .metadata
+            .clone()
+    }
+
     pub fn about_url(&self) -> Option<String> {
         self.realm_config_receiver
             .borrow()

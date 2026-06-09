@@ -171,9 +171,14 @@ pub fn default_camera_components() -> impl Bundle {
 // Persist a scene's composite. For a local scene the hash is `b64-<base64(project path)>`, so we
 // write straight to `<project>/assets/scene/main.composite` and return the path. A remote/deployed
 // scene (content hash) has no local target, so saving is refused — clone it locally to edit.
-pub async fn save_scene_composite(scene_hash: String, bytes: Vec<u8>) -> Result<String, String> {
+pub async fn save_scene_composite(
+    scene_hash: String,
+    bytes: Vec<u8>,
+    _scene_target: String,
+) -> Result<String, String> {
     // Save is only offered for a local scene (it writes straight to the scene folder). For a
-    // remote/deployed scene there's nowhere to write back to — clone it locally first.
+    // remote/deployed scene there's nowhere to write back to — clone it locally first. (`scene_target`
+    // is for the web save's folder-matching; native resolves the path straight from the hash.)
     let Some(path) = local_composite_path(&scene_hash) else {
         return Err(
             "save is only supported for a local scene — clone it locally before editing"
@@ -211,6 +216,7 @@ pub async fn write_scene_file(
     scene_hash: &str,
     rel_path: &str,
     bytes: &[u8],
+    _scene_target: &str,
 ) -> Result<(), String> {
     let Some(root) = local_scene_root(scene_hash) else {
         return Err("not a local scene".to_string());

@@ -326,6 +326,7 @@ struct SaveCompositeCommand {
 fn save_composite_cmd(
     mut input: ConsoleCommand<SaveCompositeCommand>,
     resolver: SceneResolver,
+    ipfs: Res<ipfs::IpfsResource>,
     mut console_responses: ResMut<PendingConsoleResponses>,
 ) {
     if let Some(Ok(cmd)) = input.take() {
@@ -343,13 +344,16 @@ fn save_composite_cmd(
                 return;
             }
         };
-        // The write (and the picker on web) is async — run it off the main schedule and reply when
-        // it resolves. Imported-asset files are pushed to disk at import time (/init_asset), not
-        // here, so this only writes the composite.
+        let io = ipfs.inner.clone();
+        // The write (and the folder pick on web) is async — run it off the main schedule and reply
+        // when it resolves. Imported-asset files are pushed to disk at import time (/init_asset), not
+        // here, so this only writes the composite. `scene_target` lets the web save locate + verify
+        // the project folder under the granted directory handle.
         let (tx, rx) = tokio::sync::oneshot::channel();
         IoTaskPool::get()
             .spawn(async move {
-                let _ = tx.send(platform::save_scene_composite(hash, bytes).await);
+                let target = crate::asset_commands::scene_target_json(&io, &hash).await;
+                let _ = tx.send(platform::save_scene_composite(hash, bytes, target).await);
             })
             .detach();
         console_responses.push_oneshot(rx, |r| r, input.take_responder());
