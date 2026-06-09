@@ -205,7 +205,12 @@ pub fn handle_player_move_requests(
     mut perms: Permission<PendingPlayerMove>,
     mut movement_control: ResMut<EngineMovementControl>,
     mut movement_info: ResMut<AvatarMovementInfo>,
+    time: Res<Time>,
 ) {
+    // Engine dispatch clock, matching RendererSceneContext::last_sent. Constant
+    // within a frame, so a same-frame scene dispatch compares equal (and is treated
+    // as stale by the strict `>` acceptance test in apply_movement).
+    let now = time.elapsed_secs();
     let Ok((player_entity, _, _, _)) = player.single() else {
         return;
     };
@@ -257,6 +262,7 @@ pub fn handle_player_move_requests(
                     &mut player,
                     &mut movement_control,
                     &mut movement_info,
+                    now,
                 );
             }
             Some(scene_ent) => {
@@ -311,6 +317,7 @@ pub fn handle_player_move_requests(
             &mut player,
             &mut movement_control,
             &mut movement_info,
+            now,
         );
     }
 
@@ -320,6 +327,7 @@ pub fn handle_player_move_requests(
 }
 
 #[allow(clippy::type_complexity)]
+#[allow(clippy::too_many_arguments)]
 fn apply_player_move(
     commands: &mut Commands,
     player_entity: Entity,
@@ -336,6 +344,7 @@ fn apply_player_move(
     >,
     movement_control: &mut EngineMovementControl,
     movement_info: &mut AvatarMovementInfo,
+    now: f32,
 ) {
     let (_, mut player_transform, mut dynamics, maybe_active) = player.single_mut().unwrap();
     if let Some(active) = maybe_active {
@@ -384,6 +393,12 @@ fn apply_player_move(
                 dynamics.velocity =
                     rotation * player_transform.rotation.inverse() * dynamics.velocity;
                 player_transform.rotation = rotation;
+                // Hold this imposed facing against the scene-driven orientation pipeline:
+                // ignore any AvatarMovement initiated up to now, giving the controller
+                // scene time to read the new transform and echo the facing back. Without
+                // this, the next apply_movement re-applies the scene's stale orientation
+                // and the avatar snaps back (e.g. a keeper placed facing the kicker).
+                movement_control.accept_movement_after = now;
             }
         }
 

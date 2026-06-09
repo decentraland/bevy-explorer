@@ -278,6 +278,10 @@ pub struct ActivePlayerComponent<C: Component> {
     scene_last_update: u32,
     scene_start_tick: u32,
     scene_is_portable: bool,
+    /// Engine dispatch time (`RendererSceneContext::last_sent`) of the scene tick
+    /// that produced `component`. Used to reject AvatarMovement that was initiated
+    /// before a `movePlayerTo`-imposed facing (and so read a stale transform).
+    initiated_at: f32,
     pub component: C,
 }
 
@@ -295,6 +299,7 @@ impl<C: Component + FromConfig> FromConfig for ActivePlayerComponent<C> {
             scene_last_update: 0,
             scene_start_tick: 0,
             scene_is_portable: true,
+            initiated_at: 0.0,
             component: C::from_config(config),
         }
     }
@@ -392,6 +397,7 @@ impl<C: Component + Clone + FromConfig> ActivePlayerComponent<C> {
                 scene_last_update: ctx.last_update_frame,
                 scene_start_tick: ctx.start_tick,
                 scene_is_portable: ctx.is_portable,
+                initiated_at: ctx.last_sent,
                 component: update.clone(),
             };
 
@@ -453,6 +459,7 @@ impl<C: Component + Clone + FromConfig> ActivePlayerComponent<C> {
                 scene_last_update: ctx.last_update_frame,
                 scene_start_tick: ctx.start_tick,
                 scene_is_portable: ctx.is_portable,
+                initiated_at: ctx.last_sent,
                 component: update.clone(),
             };
 
@@ -515,7 +522,14 @@ pub fn apply_movement(
 
     info.0.step_time = time_res.delta_secs();
 
-    let suppress = !movement_control.suppress_avatar_physics.is_empty();
+    // Suppress while an explicit suppression is held (e.g. movePlayerTo interpolation),
+    // OR while the active AvatarMovement was initiated before the most recent
+    // movePlayerTo-imposed facing — such a tick read a pre-teleport transform, so
+    // applying its orientation would clobber the imposed facing. Strict `>` (here as
+    // `<=` to suppress) treats a same-frame dispatch as stale, since `last_sent` is
+    // captured before this restricted-action runs and shares the frame's timestamp.
+    let suppress = !movement_control.suppress_avatar_physics.is_empty()
+        || movement.initiated_at <= movement_control.accept_movement_after;
     if !suppress {
         transform.rotation = Quat::from_rotation_y(movement.component.orientation / 360.0 * TAU);
     }
