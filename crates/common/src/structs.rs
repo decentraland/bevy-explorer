@@ -1093,6 +1093,12 @@ pub struct EngineMovementControl {
     pub suppress_clipping: HashSet<&'static str>,
     /// Non-empty means avatar physics movement systems are suppressed (e.g. "move_player_to" during interpolation)
     pub suppress_avatar_physics: HashSet<&'static str>,
+    /// Scene-driven `AvatarMovement` is ignored (physics suppressed) until a tick
+    /// initiated strictly after this time (engine dispatch clock, `last_sent` secs)
+    /// is received. Set by `movePlayerTo` when it imposes a facing, so the imposed
+    /// orientation survives until the controller scene reads the new transform and
+    /// echoes it back, rather than being clobbered by an in-flight stale tick.
+    pub accept_movement_after: f32,
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
