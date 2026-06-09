@@ -168,18 +168,16 @@ pub fn default_camera_components() -> impl Bundle {
     )
 }
 
-// Persist a scene's composite. For a local scene the hash is `b64-<base64(project path)>`, so we
-// write straight to `<project>/assets/scene/main.composite` and return the path. A remote/deployed
-// scene (content hash) has no local target, so saving is refused — clone it locally to edit.
+// Persist a scene's composite. The destination is the active scene's project root, which the
+// caller resolves (via `IpfsIo::local_project_root`) and passes in `scene_target` as `{root, …}`;
+// we write straight to `<root>/assets/scene/main.composite` and return the path. A remote/deployed
+// scene has no local root (`root` is null), so saving is refused — clone it locally to edit.
 pub async fn save_scene_composite(
-    scene_hash: String,
+    _scene_hash: String,
     bytes: Vec<u8>,
-    _scene_target: String,
+    scene_target: String,
 ) -> Result<String, String> {
-    // Save is only offered for a local scene (it writes straight to the scene folder). For a
-    // remote/deployed scene there's nowhere to write back to — clone it locally first. (`scene_target`
-    // is for the web save's folder-matching; native resolves the path straight from the hash.)
-    let Some(path) = local_composite_path(&scene_hash) else {
+    let Some(path) = local_composite_path(&scene_target) else {
         return Err(
             "save is only supported for a local scene — clone it locally before editing"
                 .to_string(),
@@ -190,19 +188,19 @@ pub async fn save_scene_composite(
         .map_err(|e| format!("write failed ({}): {e}", path.display()))
 }
 
-// The local project root for a `b64-<base64(path)>` scene hash, else None (a remote scene).
-pub fn local_scene_root(scene_hash: &str) -> Option<std::path::PathBuf> {
-    use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
-    let encoded = scene_hash.strip_prefix("b64-")?;
-    let decoded = BASE64_URL_SAFE_NO_PAD.decode(encoded).ok()?;
-    let project = String::from_utf8(decoded).ok()?;
-    Some(std::path::PathBuf::from(project))
+// The local project root carried in the `scene_target` JSON (`{root, …}`, resolved by the caller
+// via `IpfsIo::local_project_root` — which correctly decodes the dev server's standard-base64
+// `b64-<path>-<machineId>` hashes). None for a remote/deployed scene, where `root` is null.
+pub fn local_scene_root(scene_target: &str) -> Option<std::path::PathBuf> {
+    let target: serde_json::Value = serde_json::from_str(scene_target).ok()?;
+    let root = target.get("root")?.as_str()?;
+    Some(std::path::PathBuf::from(root))
 }
 
-// The local target path for a `b64-<base64(path)>` scene hash, else None.
-fn local_composite_path(scene_hash: &str) -> Option<std::path::PathBuf> {
+// The local target path under the scene's project root, else None.
+fn local_composite_path(scene_target: &str) -> Option<std::path::PathBuf> {
     Some(
-        local_scene_root(scene_hash)?
+        local_scene_root(scene_target)?
             .join("assets")
             .join("scene")
             .join("main.composite"),
@@ -213,12 +211,12 @@ fn local_composite_path(scene_hash: &str) -> Option<std::path::PathBuf> {
 // parent dirs. Used to persist imported assets into the edited scene so it renders on a normal
 // (non-live) load. Err for a remote (non-local) scene.
 pub async fn write_scene_file(
-    scene_hash: &str,
+    _scene_hash: &str,
     rel_path: &str,
     bytes: &[u8],
-    _scene_target: &str,
+    scene_target: &str,
 ) -> Result<(), String> {
-    let Some(root) = local_scene_root(scene_hash) else {
+    let Some(root) = local_scene_root(scene_target) else {
         return Err("not a local scene".to_string());
     };
     let dest = root.join(rel_path);

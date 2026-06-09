@@ -8316,7 +8316,6 @@ dependencies = [
  "anyhow",
  "async-compat",
  "async-tungstenite",
- "base64 0.22.1",
  "bevy",
  "directories",
  "futures-lite",
