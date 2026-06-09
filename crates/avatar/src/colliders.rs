@@ -134,7 +134,7 @@ fn update_avatar_collider_actions(
     );
 
     if previous_target.as_ref() != pointer_target.0.as_ref().map(|target| &target.container) {
-        error!(
+        debug!(
             "Pointer target changed from {:?} to {:?}",
             previous_target.as_ref(),
             pointer_target.0.as_ref().map(|target| &target.container)
@@ -143,7 +143,7 @@ fn update_avatar_collider_actions(
         *previous_target = pointer_target.0.as_ref().map(|target| target.container);
 
         if let Some(old_target) = maybe_old_target {
-            error!("Reseting outline of {}", old_target);
+            debug!("Reseting outline of {}", old_target);
             for child in children.iter_descendants(old_target).chain([old_target]) {
                 if let Ok((mut mesh, maybe_mesh_tag)) = meshes.get_mut(child) {
                     mesh.set_changed();
@@ -174,13 +174,13 @@ fn update_avatar_collider_actions(
                 }
 
                 // hilight meshes of target container
-                error!("Highlighting avatar {}", target.container);
+                debug!("Highlighting avatar {}", target.container);
                 for child in children
                     .iter_descendants(target.container)
                     .chain([target.container])
                 {
                     if let Ok((mut mesh, maybe_mesh_tag)) = meshes.get_mut(child) {
-                        error!("Highlighting mesh {} of avatar {}", child, target.container);
+                        trace!("Highlighting mesh {} of avatar {}", child, target.container);
                         mesh.set_changed();
 
                         if let Some(mut mesh_tag) = maybe_mesh_tag {
