@@ -20,7 +20,11 @@ impl Plugin for IpfsDebugPlugin {
             (
                 toggle_display.run_if(input_just_pressed(KeyCode::F1)),
                 update_text_from_atomics,
-                (trim_files_list, receive_debug)
+                (
+                    trim_files_list,
+                    receive_debug,
+                    scroll_bottom.run_if(in_state(IpfsFileGridState::Tail)),
+                )
                     .chain()
                     .run_if(resource_exists::<IpfsDebugReceiver>),
             ),
@@ -28,10 +32,19 @@ impl Plugin for IpfsDebugPlugin {
     }
 
     fn finish(&self, app: &mut App) {
+        app.init_state::<IpfsFileGridState>();
+
         if !app.world().contains_resource::<IpfsDebugReceiver>() {
             warn!("IpfsDebugReceiver was not initialized. Debug overlay will not display per file info.");
         }
     }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, States)]
+enum IpfsFileGridState {
+    Free,
+    #[default]
+    Tail,
 }
 
 #[derive(Resource, Deref, DerefMut)]
@@ -240,6 +253,11 @@ fn receive_debug(
 
         next_row += 1;
     }
+}
+
+fn scroll_bottom(file_grid: Single<&mut ScrollPosition, With<FileGrid>>) {
+    let mut scroll_position = file_grid.into_inner();
+    scroll_position.offset_y += 512.;
 }
 
 fn column_divider() -> impl Bundle {
