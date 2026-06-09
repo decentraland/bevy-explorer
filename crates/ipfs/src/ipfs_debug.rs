@@ -51,7 +51,7 @@ enum IpfsFileGridState {
 }
 
 #[derive(Resource, Deref, DerefMut)]
-pub struct IpfsDebugReceiver(pub tokio::sync::mpsc::Receiver<IpfsDebug>);
+pub struct IpfsDebugReceiver(pub tokio::sync::mpsc::UnboundedReceiver<IpfsDebug>);
 
 #[derive(Debug)]
 pub struct IpfsDebug {

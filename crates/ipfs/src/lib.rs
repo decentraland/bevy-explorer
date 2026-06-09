@@ -491,7 +491,7 @@ impl Plugin for IpfsIoPlugin {
         }
 
         #[cfg(feature = "ipfs_debug")]
-        let (debug_overlay_sender, debug_overlay_receiver) = tokio::sync::mpsc::channel(32);
+        let (debug_overlay_sender, debug_overlay_receiver) = tokio::sync::mpsc::unbounded_channel();
         let ipfs_io = IpfsIo::new(
             self.preview,
             Box::new(default_reader),
@@ -711,7 +711,7 @@ pub struct IpfsIo {
     static_files: HashMap<&'static str, &'static str>,
     client: reqwest::Client,
     #[cfg(feature = "ipfs_debug")]
-    debug_overlay_sender: tokio::sync::mpsc::Sender<IpfsDebug>,
+    debug_overlay_sender: tokio::sync::mpsc::UnboundedSender<IpfsDebug>,
 }
 
 impl IpfsIo {
@@ -721,7 +721,9 @@ impl IpfsIo {
         default_fs_path: Option<PathBuf>,
         static_paths: HashMap<&'static str, &'static str>,
         num_slots: usize,
-        #[cfg(feature = "ipfs_debug")] debug_overlay_sender: tokio::sync::mpsc::Sender<IpfsDebug>,
+        #[cfg(feature = "ipfs_debug")] debug_overlay_sender: tokio::sync::mpsc::UnboundedSender<
+            IpfsDebug,
+        >,
     ) -> Self {
         let (sender, receiver) = tokio::sync::watch::channel(None);
 
@@ -1274,7 +1276,7 @@ impl AssetReader for IpfsIo {
                         #[cfg(target_arch = "wasm32")]
                         let duration = web_time::Instant::now() - start;
                         self.debug_overlay_sender
-                            .try_send(IpfsDebug {
+                            .send(IpfsDebug {
                                 path: path.to_path_buf(),
                                 status: IpfsDebugStatus::NonIpfs,
                                 duration,
@@ -1311,7 +1313,7 @@ impl AssetReader for IpfsIo {
                 {
                     let duration = web_time::Instant::now() - start;
                     self.debug_overlay_sender
-                        .try_send(IpfsDebug {
+                        .send(IpfsDebug {
                             path: path.to_path_buf(),
                             status: IpfsDebugStatus::Cached,
                             duration,
@@ -1346,7 +1348,7 @@ impl AssetReader for IpfsIo {
                                 #[cfg(target_arch = "wasm32")]
                                 let duration = web_time::Instant::now() - start;
                                 self.debug_overlay_sender
-                                    .try_send(IpfsDebug {
+                                    .send(IpfsDebug {
                                         path: path.to_path_buf(),
                                         status: IpfsDebugStatus::Cached,
                                         duration,
@@ -1408,7 +1410,7 @@ impl AssetReader for IpfsIo {
                         #[cfg(target_arch = "wasm32")]
                         let duration = web_time::Instant::now() - start;
                         self.debug_overlay_sender
-                            .try_send(IpfsDebug {
+                            .send(IpfsDebug {
                                 path: path.to_path_buf(),
                                 status: IpfsDebugStatus::Cached,
                                 duration,
@@ -1643,7 +1645,7 @@ impl AssetReader for IpfsIo {
                 #[cfg(target_arch = "wasm32")]
                 let duration = web_time::Instant::now() - start;
                 self.debug_overlay_sender
-                    .try_send(IpfsDebug {
+                    .send(IpfsDebug {
                         path: path.to_path_buf(),
                         status: IpfsDebugStatus::Success,
                         duration,
@@ -1787,7 +1789,7 @@ fn ipfs_diagnostics(mut diagnostics: ResMut<DiagnosticsStore>) {
 trait FailIncrementer {
     fn test_failure(
         self,
-        #[cfg(feature = "ipfs_debug")] sender: &tokio::sync::mpsc::Sender<IpfsDebug>,
+        #[cfg(feature = "ipfs_debug")] sender: &tokio::sync::mpsc::UnboundedSender<IpfsDebug>,
         #[cfg(feature = "ipfs_debug")] path: &std::path::Path,
         #[cfg(all(feature = "ipfs_debug", not(target_arch = "wasm32")))] start: std::time::Instant,
         #[cfg(all(feature = "ipfs_debug", target_arch = "wasm32"))] start: web_time::Instant,
@@ -1797,7 +1799,7 @@ trait FailIncrementer {
 impl<T, E> FailIncrementer for Result<T, E> {
     fn test_failure(
         self,
-        #[cfg(feature = "ipfs_debug")] sender: &tokio::sync::mpsc::Sender<IpfsDebug>,
+        #[cfg(feature = "ipfs_debug")] sender: &tokio::sync::mpsc::UnboundedSender<IpfsDebug>,
         #[cfg(feature = "ipfs_debug")] path: &std::path::Path,
         #[cfg(all(feature = "ipfs_debug", not(target_arch = "wasm32")))] start: std::time::Instant,
         #[cfg(all(feature = "ipfs_debug", target_arch = "wasm32"))] start: web_time::Instant,
@@ -1811,7 +1813,7 @@ impl<T, E> FailIncrementer for Result<T, E> {
                 #[cfg(target_arch = "wasm32")]
                 let duration = web_time::Instant::now() - start;
                 sender
-                    .try_send(IpfsDebug {
+                    .send(IpfsDebug {
                         path: path.to_path_buf(),
                         status: IpfsDebugStatus::Failure,
                         duration,
