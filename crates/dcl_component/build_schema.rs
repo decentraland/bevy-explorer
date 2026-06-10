@@ -19,6 +19,7 @@ pub fn generate(descriptor_bytes: &[u8], out_path: &std::path::Path) {
     let ov = overlay::overlay();
 
     let mut schemas: BTreeMap<String, Value> = BTreeMap::new();
+    let mut raw_schemas: BTreeMap<String, Value> = BTreeMap::new();
 
     for msg in pool.all_messages() {
         // top-level PB* messages in the sdk.components package
@@ -41,14 +42,29 @@ pub fn generate(descriptor_bytes: &[u8], out_path: &std::path::Path) {
 
         let mut enums: BTreeMap<String, Value> = BTreeMap::new();
         let root = walk_message(&msg, &mut enums);
+        let enums_val: Map<String, Value> = enums.into_iter().collect();
 
+        // RAW: the structural tree only — no semantic overlay, placement "any", no requires. The
+        // editor applies the curated overlay scene-side; emitting raw alongside the combined schema
+        // lets it diff merged-from-raw against the combined during the migration.
+        raw_schemas.insert(
+            name.clone(),
+            json!({
+                "name": name,
+                "placement": "any",
+                "readOnly": false,
+                "requires": [],
+                "root": root.clone(),
+                "enums": Value::Object(enums_val.clone()),
+            }),
+        );
+
+        // COMBINED: apply overlay annotations (by dotted path) + placement/requires.
         let comp_ov = ov.get(name.as_str());
         let mut fields = root;
-        // apply overlay annotations onto the structural tree, by dotted path
         if let Some(co) = comp_ov {
             apply_overlay(&mut fields, "", &co.fields);
         }
-
         let placement = comp_ov.map(|c| c.placement).unwrap_or("any");
         let requires: Vec<Value> = comp_ov
             .map(|c| {
@@ -58,8 +74,6 @@ pub fn generate(descriptor_bytes: &[u8], out_path: &std::path::Path) {
                     .collect()
             })
             .unwrap_or_default();
-
-        let enums_val: Map<String, Value> = enums.into_iter().collect();
 
         schemas.insert(
             name.clone(),
@@ -74,14 +88,23 @@ pub fn generate(descriptor_bytes: &[u8], out_path: &std::path::Path) {
         );
     }
 
-    // Transform is not a proto — author it directly from the overlay's special entry.
+    // Transform is not a proto — author it directly from the overlay's special entry. Combined only:
+    // it's hand-authored (not raw-derivable), so the scene owns the full Transform schema.
     if let Some(t) = overlay::transform_schema() {
         schemas.insert("Transform".to_string(), t);
     }
 
-    let obj: Map<String, Value> = schemas.into_iter().collect();
+    write_json(out_path, schemas);
+    write_json(
+        &out_path.with_file_name("component_schemas_raw.json"),
+        raw_schemas,
+    );
+}
+
+fn write_json(path: &std::path::Path, map: BTreeMap<String, Value>) {
+    let obj: Map<String, Value> = map.into_iter().collect();
     let out = serde_json::to_string(&Value::Object(obj)).expect("serialize schemas");
-    std::fs::write(out_path, out).expect("write component_schemas.json");
+    std::fs::write(path, out).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
 }
 
 /// Walk a message into `{ "kind":"message", "fields":[ ... ] }`, accumulating referenced

@@ -25,3 +25,15 @@ pub fn schema_names() -> Vec<String> {
         .and_then(|v| v.as_object().map(|o| o.keys().cloned().collect()))
         .unwrap_or_default()
 }
+
+/// The full raw (structural, no curated overlay) `{ componentName: schema, … }` JSON. The editor
+/// applies the curated overlay itself; this is for the migration's merged-from-raw vs combined diff.
+pub fn all_raw_schemas_json() -> &'static str {
+    include_str!(concat!(env!("OUT_DIR"), "/component_schemas_raw.json"))
+}
+
+/// The raw schema JSON for one component, if present.
+pub fn raw_schema_for(name: &str) -> Option<String> {
+    let v: Value = serde_json::from_str(all_raw_schemas_json()).ok()?;
+    v.get(name).map(|s| s.to_string())
+}

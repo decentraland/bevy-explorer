@@ -26,6 +26,7 @@ pub fn add_read_commands(app: &mut App) {
     app.add_console_command::<ComponentNamesCommand, _>(component_names_cmd);
     app.add_console_command::<ComponentDefaultCommand, _>(component_default_cmd);
     app.add_console_command::<ComponentSchemaCommand, _>(component_schema_cmd);
+    app.add_console_command::<ComponentSchemaRawCommand, _>(component_schema_raw_cmd);
 }
 
 // --- /set_scene ---
@@ -756,6 +757,33 @@ fn component_schema_cmd(mut input: ConsoleCommand<ComponentSchemaCommand>) {
                 None => input.reply_failed(format!("no schema for component '{name}'")),
             },
             None => input.reply_ok(dcl_component::component_schema::all_schemas_json().to_string()),
+        }
+    }
+}
+
+// --- /component_schema_raw ---
+
+/// Return the RAW component schema (structural fields, types, enum value-lists, optionality) with no
+/// curated overlay — the editor applies the curated annotations (semantics/ranges/defaults/placement/
+/// requires) itself. Same shape as `/component_schema`; used to validate the scene-side overlay
+/// during the migration. Transform is omitted (hand-authored, owned scene-side).
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/component_schema_raw")]
+struct ComponentSchemaRawCommand {
+    /// Component name (PascalCase); omit for the full set
+    component: Option<String>,
+}
+
+fn component_schema_raw_cmd(mut input: ConsoleCommand<ComponentSchemaRawCommand>) {
+    if let Some(Ok(cmd)) = input.take() {
+        match cmd.component {
+            Some(name) => match dcl_component::component_schema::raw_schema_for(&name) {
+                Some(json) => input.reply_ok(json),
+                None => input.reply_failed(format!("no raw schema for component '{name}'")),
+            },
+            None => {
+                input.reply_ok(dcl_component::component_schema::all_raw_schemas_json().to_string())
+            }
         }
     }
 }
