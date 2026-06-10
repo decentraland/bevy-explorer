@@ -47,10 +47,8 @@ var<uniform> bounds: SceneBounds;
 fn fragment(
     in: VertexOutput,
     @builtin(front_facing) is_front: bool,
-#ifdef OUTLINE
 #ifdef MULTISAMPLED
     @builtin(sample_index) sample_index: u32,
-#endif
 #endif
 ) -> FragmentOutput {
 
@@ -64,7 +62,7 @@ fn fragment(
 #endif
 
     var cap_brightness: f32 = 0.0;
-    if (bounds.flags & (DISABLE_DITHER + #{OUTLINE_ACTIVE_MESH_TAG})) == 0 {
+    if ((bounds.flags & DISABLE_DITHER) | (mesh_tag & #{OUTLINE_ACTIVE_MESH_TAG})) == 0 {
         cap_brightness = discard_dither(in.position.xy, in.world_position.xyz, view.user_value, (bounds.flags & CONE_ONLY_DITHER) == 0);
     }
 
