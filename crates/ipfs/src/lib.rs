@@ -1223,6 +1223,73 @@ impl IpfsIo {
             .clone()
     }
 
+    /// The sorted file paths in a scene's content map (the collection keys), or empty if the scene
+    /// isn't loaded. For the editor's content-file pickers; includes imported assets merged into the
+    /// collection. Paths are lowercased (as stored).
+    pub async fn scene_content_files(&self, scene_hash: &str) -> Vec<String> {
+        let read = self.context.read().await;
+        let mut files: Vec<String> = read
+            .entities
+            .get(scene_hash)
+            .map(|e| e.collection.0.keys().cloned().collect())
+            .unwrap_or_default();
+        files.sort();
+        files
+    }
+
+    /// Re-fetch the current scene's entity from its content server and replace the collection. A
+    /// `dcl start` dev server's content map is the *entire* project glob (minus .dclignore), not
+    /// just the referenced files, so this picks up files added to the project *outside* the editor
+    /// without a scene reload. Imported assets (written to disk by `/init_asset`) are naturally
+    /// included. Acts only on local (`dcl start`, b64-addressed) scenes — deployed scenes have an
+    /// immutable content map. Returns true if the collection was refreshed.
+    pub async fn refresh_scene_collection(self: &Arc<Self>, scene_hash: &str) -> bool {
+        // local scenes only; deployed content maps don't change
+        if self.local_project_root(scene_hash).await.is_none() {
+            return false;
+        }
+        // the scene's base parcel pointer, from its stored scene.json
+        let pointer = {
+            let read = self.context.read().await;
+            read.entities
+                .get(scene_hash)
+                .and_then(|e| e.metadata.as_deref())
+                .and_then(|m| serde_json::from_str::<serde_json::Value>(m).ok())
+                .and_then(|j| {
+                    j.get("scene")
+                        .and_then(|s| s.get("base"))
+                        .and_then(|b| b.as_str())
+                        .map(str::to_owned)
+                })
+        };
+        let Some(pointer) = pointer else {
+            return false;
+        };
+        let Ok(defs) = self
+            .active_entities(ActiveEntitiesRequest::Pointers(vec![pointer]), None)
+            .await
+        else {
+            return false;
+        };
+        // exactly one scene at the base parcel; match by id when present, else take the first
+        let Some(def) = defs
+            .iter()
+            .find(|d| d.id == scene_hash)
+            .or_else(|| defs.first())
+        else {
+            return false;
+        };
+        let collection = def.content.clone();
+        let mut write = self.context.write().await;
+        match write.entities.get_mut(scene_hash) {
+            Some(entity) => {
+                entity.collection = collection;
+                true
+            }
+            None => false,
+        }
+    }
+
     pub fn about_url(&self) -> Option<String> {
         self.realm_config_receiver
             .borrow()

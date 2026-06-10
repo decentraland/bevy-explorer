@@ -132,7 +132,8 @@ fn gen_sdk_components() -> Result<()> {
 
     config.compile_protos(&sources, &["src/proto/"])?;
 
-    // Generate the component-schema JSON from the descriptor + hand-authored overlay.
+    // Generate the structural component-schema JSON from the descriptor (the curated overlay lives
+    // in the editor scene now).
     let descriptor_bytes = std::fs::read(&descriptor_path).expect("read descriptor");
     let schemas_path = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR not set"))
         .join("component_schemas.json");
@@ -142,7 +143,6 @@ fn gen_sdk_components() -> Result<()> {
         println!("cargo:rerun-if-changed={source}");
     }
     println!("cargo:rerun-if-changed=build_schema.rs");
-    println!("cargo:rerun-if-changed=build_schema_overlay.rs");
 
     Ok(())
 }

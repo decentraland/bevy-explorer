@@ -1,9 +1,9 @@
 //! Runtime access to the component schema.
 //!
-//! The schema is generated at BUILD time (`build_schema.rs` reflects over the proto
-//! descriptor + applies the hand-authored overlay) and embedded here as a static JSON
-//! string. Nothing reflective ships in the binary — on wasm this is just a `&'static str`.
-//! See `CATALOG.md` / `DESIGN.md` in this directory for the format.
+//! The structural schema is generated at BUILD time (`build_schema.rs` reflects over the proto
+//! descriptor) and embedded here as a static JSON string. Nothing reflective ships in the binary —
+//! on wasm this is just a `&'static str`. The curated semantic overlay (semantics/ranges/defaults/
+//! placement/requires) is applied by the editor scene. See `CATALOG.md` / `DESIGN.md` for the format.
 
 use serde_json::Value;
 

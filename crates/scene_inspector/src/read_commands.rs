@@ -738,9 +738,10 @@ fn component_default_cmd(
 
 // --- /component_schema ---
 
-/// Return the editor schema (typed fields, ranges, refs, enum value-lists, curated
-/// defaults, placement/requires) for a component as JSON, or all components if omitted.
-/// The schema is generated at build time and embedded; registry-free, needs no scene.
+/// Return the structural component schema (typed fields, enum value-lists, optionality) as JSON, or
+/// all components if omitted. The editor applies the curated overlay (semantics/ranges/defaults/
+/// placement/requires) itself. Generated at build time and embedded; registry-free, needs no scene.
+/// Transform is not included (it's not a proto message — owned by the editor scene).
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/component_schema")]
 struct ComponentSchemaCommand {
