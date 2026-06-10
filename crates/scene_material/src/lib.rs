@@ -13,41 +13,39 @@ use common::{structs::PreviewMode, util::InvertedScaleExt};
 pub type SceneMaterial = ExtendedMaterial<SceneBound>;
 
 pub const SCENE_MATERIAL_SHOW_OUTSIDE: u32 = 1;
-pub const SCENE_MATERIAL_OUTLINE: u32 = 2;
-pub const SCENE_MATERIAL_OUTLINE_FORCE: u32 = 8;
 pub const SCENE_MATERIAL_NO_DITHERING: u32 = 16;
 pub const SCENE_MATERIAL_CONE_ONLY_DITHER: u32 = 32;
-pub const SCENE_MATERIAL_OUTLINE_RED_MESH_TAG: u32 = 0x40000000;
-pub const SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG: u32 = 0x80000000;
+pub const SCENE_MATERIAL_OUTLINE_ACTIVE_MESH_TAG: u32 = 0x10000000;
+pub const SCENE_MATERIAL_OUTLINE_RED_MESH_TAG: u32 = 0x20000000;
+pub const SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG: u32 = 0x40000000;
+pub const SCENE_MATERIAL_OUTLINE_BLUE_MESH_TAG: u32 = 0x80000000;
 
 pub trait SceneMaterialExt {
-    fn unbounded_outlined(mat: StandardMaterial, force: bool) -> Self
+    fn unbounded_outlined(mat: StandardMaterial) -> Self
     where
         Self: Sized;
 }
 
 impl SceneMaterialExt for SceneMaterial {
-    fn unbounded_outlined(mat: StandardMaterial, force: bool) -> Self
+    fn unbounded_outlined(mat: StandardMaterial) -> Self
     where
         Self: Sized,
     {
         Self {
             base: mat,
-            extension: SceneBound::unbounded_outlined(force),
+            extension: SceneBound::unbounded_outlined(),
         }
     }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct SceneBoundKey {
-    outline: bool,
     inverted_scale: bool,
 }
 
 impl From<&SceneBound> for SceneBoundKey {
     fn from(value: &SceneBound) -> Self {
         Self {
-            outline: (value.data.flags & SCENE_MATERIAL_OUTLINE) != 0,
             inverted_scale: value.inverted_scale,
         }
     }
@@ -99,40 +97,23 @@ impl SceneBound {
         }
     }
 
-    pub fn new_outlined(
-        bounds: Vec<BoundRegion>,
-        distance: f32,
-        force_outline: bool,
-        disable_dither: bool,
-    ) -> Self {
+    pub fn new_outlined(bounds: Vec<BoundRegion>, distance: f32, disable_dither: bool) -> Self {
         let mut scene_bound = Self::new(bounds, distance);
-        scene_bound.data.flags = SCENE_MATERIAL_OUTLINE
-            + if force_outline {
-                SCENE_MATERIAL_OUTLINE_FORCE
-            } else {
-                0
-            }
-            + if disable_dither {
-                SCENE_MATERIAL_NO_DITHERING
-            } else {
-                0
-            }
-            + SCENE_MATERIAL_CONE_ONLY_DITHER;
+        scene_bound.data.flags = if disable_dither {
+            SCENE_MATERIAL_NO_DITHERING
+        } else {
+            0
+        } + SCENE_MATERIAL_CONE_ONLY_DITHER;
         scene_bound
     }
 
-    pub fn unbounded_outlined(force_outline: bool) -> Self {
+    pub fn unbounded_outlined() -> Self {
         Self {
             data: SceneBoundData {
                 num_bounds: 0,
                 bounds: Default::default(),
                 distance: 0.0,
-                flags: SCENE_MATERIAL_OUTLINE
-                    + if force_outline {
-                        SCENE_MATERIAL_OUTLINE_FORCE
-                    } else {
-                        0
-                    },
+                flags: 0,
                 _pad: 0,
             },
             inverted_scale: false,
@@ -241,14 +222,8 @@ impl MaterialExtension for SceneBound {
     }
 
     fn fallback_asset(&self, base: &Self::Base) -> Option<ExtendedMaterial<Self>> {
-        let (base_color, emissive) = if self.data.flags & SCENE_MATERIAL_OUTLINE != 0 {
-            (
-                Color::srgba(1.0, 1.0, 4.0, 1.0),
-                Color::srgba(1.0, 1.0, 4.0, 1.0),
-            )
-        } else {
-            (Color::srgba(1.25, 0.25, 1.25, 0.75), Color::BLACK)
-        };
+        let base_color = Color::srgba(1.0, 1.0, 4.0, 1.0);
+        let emissive = Color::srgba(1.0, 1.0, 4.0, 1.0);
 
         Some(ExtendedMaterial::<Self> {
             base: StandardMaterial {
@@ -282,6 +257,10 @@ impl MaterialExtension for SceneBound {
 
         if let Some(fragment) = descriptor.fragment.as_mut() {
             fragment.shader_defs.push(ShaderDefVal::UInt(
+                "OUTLINE_ACTIVE_MESH_TAG".to_owned(),
+                SCENE_MATERIAL_OUTLINE_ACTIVE_MESH_TAG,
+            ));
+            fragment.shader_defs.push(ShaderDefVal::UInt(
                 "OUTLINE_RED_MESH_TAG".to_owned(),
                 SCENE_MATERIAL_OUTLINE_RED_MESH_TAG,
             ));
@@ -289,9 +268,10 @@ impl MaterialExtension for SceneBound {
                 "OUTLINE_GREEN_MESH_TAG".to_owned(),
                 SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG,
             ));
-            if data.outline {
-                fragment.shader_defs.push("OUTLINE".into());
-            }
+            fragment.shader_defs.push(ShaderDefVal::UInt(
+                "OUTLINE_BLUE_MESH_TAG".to_owned(),
+                SCENE_MATERIAL_OUTLINE_BLUE_MESH_TAG,
+            ));
             if data.inverted_scale {
                 fragment.shader_defs.push("INVERTED_SCALE".into());
             }

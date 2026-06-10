@@ -8,7 +8,11 @@ use bevy::{
     gltf::Gltf,
     platform::collections::{HashMap, HashSet},
     prelude::*,
-    render::{mesh::skinning::SkinnedMesh, primitives::Aabb, view::RenderLayers},
+    render::{
+        mesh::{skinning::SkinnedMesh, MeshTag},
+        primitives::Aabb,
+        view::RenderLayers,
+    },
     scene::InstanceId,
     tasks::{IoTaskPool, Task},
 };
@@ -22,7 +26,9 @@ use collectibles::{
 use colliders::AvatarColliderPlugin;
 use console::DoAddConsoleCommand;
 use npc_dynamics::NpcMovementPlugin;
-use scene_material::{BoundRegion, SceneBound, SceneMaterial};
+use scene_material::{
+    BoundRegion, SceneBound, SceneMaterial, SCENE_MATERIAL_OUTLINE_ACTIVE_MESH_TAG,
+};
 
 pub mod animate;
 pub mod attach;
@@ -1155,16 +1161,16 @@ fn process_avatar(
                         extension: SceneBound::new_outlined(
                             def.bounds.clone(),
                             config.graphics.oob,
-                            false,
                             def.disable_dither,
                         ),
                     };
                     let instance_mat = instance_scene_materials
                         .entry(h_mat.clone_weak())
                         .or_insert_with(|| scene_materials.add(new_mat));
-                    commands
-                        .entity(scene_ent)
-                        .try_insert(MeshMaterial3d(instance_mat.clone()));
+                    commands.entity(scene_ent).try_insert((
+                        MeshMaterial3d(instance_mat.clone()),
+                        MeshTag(SCENE_MATERIAL_OUTLINE_ACTIVE_MESH_TAG),
+                    ));
                 }
             }
 
@@ -1221,14 +1227,14 @@ fn process_avatar(
                                 extension: SceneBound::new_outlined(
                                     def.bounds.clone(),
                                     config.graphics.oob,
-                                    true,
                                     def.disable_dither,
                                 ),
                             };
                             let material = scene_materials.add(new_mat);
-                            commands
-                                .entity(scene_ent)
-                                .try_insert(MeshMaterial3d(material));
+                            commands.entity(scene_ent).try_insert((
+                                MeshMaterial3d(material),
+                                MeshTag(SCENE_MATERIAL_OUTLINE_ACTIVE_MESH_TAG),
+                            ));
                         };
                         *vis = Visibility::Inherited;
                     }
@@ -1437,16 +1443,16 @@ fn process_avatar(
                             extension: SceneBound::new_outlined(
                                 def.bounds.clone(),
                                 config.graphics.oob,
-                                false,
                                 def.disable_dither,
                             ),
                         };
                         let instance_mat = instance_scene_materials
                             .entry(h_mat.clone_weak())
                             .or_insert_with(|| scene_materials.add(new_mat));
-                        commands
-                            .entity(scene_ent)
-                            .try_insert(MeshMaterial3d(instance_mat.clone()));
+                        commands.entity(scene_ent).try_insert((
+                            MeshMaterial3d(instance_mat.clone()),
+                            MeshTag(SCENE_MATERIAL_OUTLINE_ACTIVE_MESH_TAG),
+                        ));
                     }
                 }
             }
