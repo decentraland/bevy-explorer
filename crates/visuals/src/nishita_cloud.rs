@@ -341,37 +341,35 @@ pub fn init_noise(size: usize) -> Image {
     image
 }
 
-/// Build the measured-sky lookup texture from the full analysis report.
-/// Layout: width = 24 hours x 4 cardinals (x = hour * 4 + cardinal N,E,S,W),
-/// height = 6 rows: row 0 = zenith (the up-view reading), rows 1..=5 = the
-/// cardinal views' sky stops from high to horizon. Rgba32Float, raw report
-/// values.
+/// Build the sky color-cycle lookup texture from the godot-explorer
+/// gradients. x = time of day (0 = midnight .. 1), rows: 0 zenith,
+/// 1 horizon, 2 nadir, 3 sun (HDR), 4 rim (HDR), 5 cloud color (HDR),
+/// 6 cloud highlight factor. Rgba32Float, linear values.
 pub fn build_sky_lut() -> Image {
-    use common::day_color_luts::{HORIZON_STOP, MEASURED_SKY};
+    use common::godot_sky as g;
 
-    let width = 24 * 4;
-    let height = 1 + HORIZON_STOP + 1; // zenith + sky stops 0..=4
-    let mut data: Vec<f32> = Vec::with_capacity(width * height * 4);
-
-    for row in 0..height {
-        for hour in 0..24 {
-            for cardinal in 0..4 {
-                let c = if row == 0 {
-                    // zenith: average the up view (all of it is zenith sky)
-                    let up = &MEASURED_SKY.up[hour];
-                    up.iter().copied().sum::<Vec3>() / up.len() as f32
-                } else {
-                    MEASURED_SKY.cardinal[hour][cardinal][row - 1]
-                };
-                data.extend_from_slice(&[c.x, c.y, c.z, 1.0]);
-            }
+    const W: usize = 256;
+    let rows: [&g::Gradient; 7] = [
+        &g::ZENITH,
+        &g::HORIZON,
+        &g::NADIR,
+        &g::SUN,
+        &g::RIM,
+        &g::CLOUDS,
+        &g::CLOUD_HIGHLIGHTS,
+    ];
+    let mut data: Vec<f32> = Vec::with_capacity(W * rows.len() * 4);
+    for grad in rows {
+        for x in 0..W {
+            let c = grad.sample(x as f32 / W as f32);
+            data.extend_from_slice(&[c.x, c.y, c.z, 1.0]);
         }
     }
 
     let mut image = Image::new(
         Extent3d {
-            width: width as u32,
-            height: height as u32,
+            width: W as u32,
+            height: rows.len() as u32,
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
@@ -381,7 +379,7 @@ pub fn build_sky_lut() -> Image {
     );
 
     image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
-        label: Some("measured_sky_lut".to_owned()),
+        label: Some("sky_color_cycles".to_owned()),
         address_mode_u: ImageAddressMode::Repeat,
         address_mode_v: ImageAddressMode::ClampToEdge,
         ..ImageSamplerDescriptor::linear()

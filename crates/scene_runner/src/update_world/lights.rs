@@ -113,45 +113,9 @@ impl From<PbGlobalLight> for GlobalLight {
     }
 }
 
-// time-of-day color gradients, ported from godot-explorer
-// (godot/assets/environment/gradients/*.tres). offset 0.0 = midnight,
-// 0.5 = noon. colors are sRGB.
-const DIR_LIGHT_GRADIENT: &[(f32, Vec3)] = &[
-    (0.05, Vec3::new(0.514, 0.388, 1.0)),
-    (0.185, Vec3::new(1.0, 0.602, 0.632)),
-    (0.333, Vec3::new(0.985, 0.864, 0.645)),
-    (0.519, Vec3::new(1.0, 0.931, 0.692)),
-    (0.683, Vec3::new(0.984, 0.863, 0.643)),
-    (0.801, Vec3::new(1.0, 0.6, 0.631)),
-    (1.0, Vec3::new(0.515, 0.387, 1.0)),
-];
-
-fn sample_gradient(stops: &[(f32, Vec3)], t: f32) -> Color {
-    let t = t.rem_euclid(1.0);
-    let first = stops.first().unwrap();
-    let last = stops.last().unwrap();
-    let rgb = if t <= first.0 {
-        // wrap from the last stop
-        let span = first.0 + (1.0 - last.0);
-        let frac = if span > 0.0 { (t + (1.0 - last.0)) / span } else { 0.0 };
-        last.1.lerp(first.1, frac)
-    } else if t >= last.0 {
-        let span = first.0 + (1.0 - last.0);
-        let frac = if span > 0.0 { (t - last.0) / span } else { 0.0 };
-        last.1.lerp(first.1, frac)
-    } else {
-        let mut rgb = last.1;
-        for pair in stops.windows(2) {
-            let (t0, c0) = pair[0];
-            let (t1, c1) = pair[1];
-            if t >= t0 && t <= t1 {
-                rgb = c0.lerp(c1, (t - t0) / (t1 - t0));
-                break;
-            }
-        }
-        rgb
-    };
-    Color::srgb(rgb.x, rgb.y, rgb.z)
+fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
+    let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 pub fn update_directional_light(
@@ -169,29 +133,26 @@ pub fn update_directional_light(
     let day = (time.elapsed_secs() / (60.0 * 60.0 * 24.0)).rem_euclid(1.0);
     let t = (day + 0.75).fract() * TAU;
 
+    // godot-explorer lighting model: gradient colors over the day, sun energy
+    // from elevation (sky_base.gd), violet moon floor at night
+    let dir_direction = Quat::from_euler(EulerRot::YXZ, FRAC_PI_2 * 0.8, -t, 0.0) * Vec3::NEG_Z;
+    let elevation = -dir_direction.y;
+    let energy = smoothstep(-0.05, 0.3, elevation);
+    let dir = common::godot_sky::DIR_LIGHT.sample(day);
+    let amb = common::godot_sky::AMBIENT.sample(day);
+    let fog = common::godot_sky::FOG.sample(day);
+
     *global_light = SceneGlobalLight {
         source: None,
-        dir_color: sample_gradient(DIR_LIGHT_GRADIENT, day),
-        // sun by day, violet "moon" floor by night — the unity client keeps
-        // the world gently lit and directional at night (see Cubes01 reference)
-        dir_illuminance: ((t - 0.2).sin().max((t + 0.2).sin()).max(0.0).powf(2.0) * 10_000.0)
-            .max(1200.0),
-        dir_direction: Quat::from_euler(EulerRot::YXZ, FRAC_PI_2 * 0.8, -t, 0.0) * Vec3::NEG_Z,
-        ambient_color: {
-            let c = common::day_color_luts::sample_ambient(day);
-            Color::srgb(c.x, c.y, c.z)
-        },
-        // the unity client is ambient-dominant, especially at night: the
-        // violet night ambient is dark in luminance, so raise brightness as
-        // the sun goes down to keep the world clearly lit (Cubes references)
-        ambient_brightness: {
-            let sun_up = ((t - 0.2).sin().max((t + 0.2).sin()).max(0.0).powf(2.0)).min(1.0);
-            1.0 + (1.0 - sun_up) * 2.5
-        },
-        fog_color: {
-            let c = common::day_color_luts::sample_fog(day);
-            Color::srgb(c.x, c.y, c.z)
-        },
+        dir_color: Color::srgb(dir.x, dir.y, dir.z),
+        // godot: initial_sun_energy 0.7 * elevation factor; floor keeps a
+        // violet "moon" so the night stays directional (Cubes references)
+        dir_illuminance: (energy * 0.7 * 10_000.0).max(1500.0),
+        dir_direction,
+        ambient_color: Color::srgb(amb.x, amb.y, amb.z),
+        // ambient-dominant look: stronger fill when the sun is low
+        ambient_brightness: 1.0 + (1.0 - energy) * 2.0,
+        fog_color: Color::srgb(fog.x, fog.y, fog.z),
         layers: RenderLayers::default(),
     };
 

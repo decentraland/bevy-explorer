@@ -206,28 +206,22 @@ pub fn platform_pointer_is_locked(_expected: bool) -> bool {
 
 pub fn default_camera_components() -> impl Bundle {
     (
-        Tonemapping::TonyMcMapface,
+        Tonemapping::AcesFitted,
         DebandDither::Enabled,
         ColorGrading {
+            // godot/unity parity: ACES with neutral grading; tweak live with
+            // /tonemap /exposure /gamma /saturation
             global: ColorGradingGlobal {
-                exposure: -0.5,
+                exposure: 0.0,
                 ..Default::default()
             },
-            shadows: ColorGradingSection {
-                gamma: 0.75,
-                ..Default::default()
-            },
-            midtones: ColorGradingSection {
-                gamma: 0.75,
-                ..Default::default()
-            },
-            highlights: ColorGradingSection {
-                gamma: 0.75,
-                ..Default::default()
-            },
+            shadows: ColorGradingSection::default(),
+            midtones: ColorGradingSection::default(),
+            highlights: ColorGradingSection::default(),
         },
         Bloom {
-            intensity: 0.15,
+            // godot glow reference ~1.25 strength
+            intensity: 0.25,
             ..Bloom::OLD_SCHOOL
         },
         ShadowFilteringMethod::Gaussian,

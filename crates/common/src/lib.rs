@@ -1,4 +1,5 @@
 pub mod day_color_luts;
+pub mod godot_sky;
 pub mod dynamics;
 pub mod inputs;
 pub mod profile;
