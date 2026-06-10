@@ -1238,9 +1238,6 @@ impl AssetReader for IpfsIo {
                 }
             };
 
-            #[cfg(all(feature = "ipfs_debug", not(target_arch = "wasm32")))]
-            let start = std::time::Instant::now();
-            #[cfg(all(feature = "ipfs_debug", target_arch = "wasm32"))]
             let start = web_time::Instant::now();
 
             debug!("request: {:?}", path);
@@ -1271,9 +1268,6 @@ impl AssetReader for IpfsIo {
                     IPFS_NON_IPFS.fetch_add(1, Ordering::Relaxed);
                     #[cfg(feature = "ipfs_debug")]
                     {
-                        #[cfg(not(target_arch = "wasm32"))]
-                        let duration = std::time::Instant::now() - start;
-                        #[cfg(target_arch = "wasm32")]
                         let duration = web_time::Instant::now() - start;
                         self.debug_overlay_sender
                             .send(IpfsDebug {
@@ -1343,9 +1337,6 @@ impl AssetReader for IpfsIo {
                             IPFS_CACHED.fetch_add(1, Ordering::Relaxed);
                             #[cfg(feature = "ipfs_debug")]
                             {
-                                #[cfg(not(target_arch = "wasm32"))]
-                                let duration = std::time::Instant::now() - start;
-                                #[cfg(target_arch = "wasm32")]
                                 let duration = web_time::Instant::now() - start;
                                 self.debug_overlay_sender
                                     .send(IpfsDebug {
@@ -1405,9 +1396,6 @@ impl AssetReader for IpfsIo {
                     IPFS_CACHED.fetch_add(1, Ordering::Relaxed);
                     #[cfg(feature = "ipfs_debug")]
                     {
-                        #[cfg(not(target_arch = "wasm32"))]
-                        let duration = std::time::Instant::now() - start;
-                        #[cfg(target_arch = "wasm32")]
                         let duration = web_time::Instant::now() - start;
                         self.debug_overlay_sender
                             .send(IpfsDebug {
@@ -1640,9 +1628,6 @@ impl AssetReader for IpfsIo {
             IPFS_SUCCESS.fetch_add(1, Ordering::Relaxed);
             #[cfg(feature = "ipfs_debug")]
             {
-                #[cfg(not(target_arch = "wasm32"))]
-                let duration = std::time::Instant::now() - start;
-                #[cfg(target_arch = "wasm32")]
                 let duration = web_time::Instant::now() - start;
                 self.debug_overlay_sender
                     .send(IpfsDebug {
@@ -1752,9 +1737,6 @@ impl AssetReader for PassThroughReader {
 }
 
 fn ipfs_diagnostics(mut diagnostics: ResMut<DiagnosticsStore>) {
-    #[cfg(not(target_arch = "wasm32"))]
-    let time = std::time::Instant::now();
-    #[cfg(target_arch = "wasm32")]
     let time = web_time::Instant::now();
 
     let diagnostics_insert =
@@ -1791,8 +1773,7 @@ trait FailIncrementer {
         self,
         #[cfg(feature = "ipfs_debug")] sender: &tokio::sync::mpsc::UnboundedSender<IpfsDebug>,
         #[cfg(feature = "ipfs_debug")] path: &std::path::Path,
-        #[cfg(all(feature = "ipfs_debug", not(target_arch = "wasm32")))] start: std::time::Instant,
-        #[cfg(all(feature = "ipfs_debug", target_arch = "wasm32"))] start: web_time::Instant,
+        #[cfg(feature = "ipfs_debug")] start: web_time::Instant,
     ) -> Self;
 }
 
@@ -1801,16 +1782,12 @@ impl<T, E> FailIncrementer for Result<T, E> {
         self,
         #[cfg(feature = "ipfs_debug")] sender: &tokio::sync::mpsc::UnboundedSender<IpfsDebug>,
         #[cfg(feature = "ipfs_debug")] path: &std::path::Path,
-        #[cfg(all(feature = "ipfs_debug", not(target_arch = "wasm32")))] start: std::time::Instant,
-        #[cfg(all(feature = "ipfs_debug", target_arch = "wasm32"))] start: web_time::Instant,
+        #[cfg(feature = "ipfs_debug")] start: web_time::Instant,
     ) -> Self {
         if self.is_err() {
             IPFS_FAILED.fetch_add(1, Ordering::Relaxed);
             #[cfg(feature = "ipfs_debug")]
             {
-                #[cfg(not(target_arch = "wasm32"))]
-                let duration = std::time::Instant::now() - start;
-                #[cfg(target_arch = "wasm32")]
                 let duration = web_time::Instant::now() - start;
                 sender
                     .send(IpfsDebug {
