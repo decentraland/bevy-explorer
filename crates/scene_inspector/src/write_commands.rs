@@ -1,4 +1,5 @@
 use base64::{prelude::BASE64_STANDARD, Engine};
+use bevy::ecs::entity::EntityHashSet;
 use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 use bevy::tasks::IoTaskPool;
@@ -9,7 +10,10 @@ use dcl_component::{
     transform_and_parent::DclTransformAndParent, ComponentNameRegistry, CrdtType, DclReader,
     FromDclReader, SceneComponentId, SceneCrdtTimestamp, SceneEntityId,
 };
-use scene_runner::{renderer_context::FROZEN_BLOCK, update_world::CrdtExtractors};
+use scene_runner::{
+    renderer_context::FROZEN_BLOCK,
+    update_world::{pointer_events::EditorHighlight, CrdtExtractors},
+};
 
 use crate::{
     active_scene::SceneResolver, read_commands::parse_entity_id, snapshot::PendingEntityAllocations,
@@ -90,6 +94,7 @@ pub fn add_write_commands(app: &mut App) {
     app.add_console_command::<FreezeSceneCommand, _>(freeze_scene_cmd);
     app.add_console_command::<UnfreezeSceneCommand, _>(unfreeze_scene_cmd);
     app.add_console_command::<TickSceneCommand, _>(tick_scene_cmd);
+    app.add_console_command::<HighlightCommand, _>(highlight_cmd);
 }
 
 // --- /set_component ---
@@ -598,6 +603,62 @@ fn tick_scene_cmd(mut input: ConsoleCommand<TickSceneCommand>, mut resolver: Sce
                     ctx.tick_number
                 ));
             }
+        }
+    }
+}
+
+// --- /highlight ---
+
+/// Outline the given scene entities as the editor's active selection. The highlight is persistent
+/// (independent of pointer hover) and is render-only — it never writes to the scene's components,
+/// so it never enters the scene snapshot or the save, and never clobbers a scene-authored
+/// `PointerEvents`. Replaces the previous set each call; `/highlight` with no ids clears it.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/highlight")]
+struct HighlightCommand {
+    /// scene entity ids to outline (numeric, or root/player/camera); empty clears the highlight
+    ids: Vec<String>,
+}
+
+fn highlight_cmd(
+    mut input: ConsoleCommand<HighlightCommand>,
+    resolver: SceneResolver,
+    mut highlight: ResMut<EditorHighlight>,
+) {
+    if let Some(Ok(HighlightCommand { ids })) = input.take() {
+        let ctx = match resolver.resolve() {
+            Ok((_, ctx)) => ctx,
+            Err(e) => {
+                input.reply_failed(e);
+                return;
+            }
+        };
+        let mut set = EntityHashSet::default();
+        let mut missing = Vec::new();
+        for id in &ids {
+            let eid = match parse_entity_id(id) {
+                Ok(eid) => eid,
+                Err(e) => {
+                    input.reply_failed(format!("bad id '{id}': {e}"));
+                    return;
+                }
+            };
+            match ctx.bevy_entity(eid) {
+                Some(e) => {
+                    set.insert(e);
+                }
+                None => missing.push(id.clone()),
+            }
+        }
+        let n = set.len();
+        highlight.0 = set;
+        if missing.is_empty() {
+            input.reply_ok(format!("highlighting {n}"));
+        } else {
+            input.reply_ok(format!(
+                "highlighting {n} (not in scene: {})",
+                missing.join(", ")
+            ));
         }
     }
 }

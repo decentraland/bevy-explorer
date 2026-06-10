@@ -34,9 +34,17 @@ use super::AddCrdtInterfaceExt;
 
 pub struct PointerEventsPlugin;
 
+/// Bevy entities the editor wants outlined as its active selection, driven by the `/highlight`
+/// console command. Unioned into the highlight pass below independent of pointer hover/proximity,
+/// so the selection outline persists without writing to the scene's `PointerEvents` (and so never
+/// enters the scene snapshot or the save).
+#[derive(Resource, Default)]
+pub struct EditorHighlight(pub EntityHashSet);
+
 impl Plugin for PointerEventsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Highlit>();
+        app.init_resource::<EditorHighlight>();
 
         app.add_crdt_lww_component::<PbPointerEvents, PointerEvents>(
             SceneComponentId::POINTER_EVENTS,
@@ -279,6 +287,7 @@ fn entity_highlighting(
     hover_target: Res<PointerTarget>,
     proximity: Res<ProximityCandidates>,
     mut highlit: ResMut<Highlit>,
+    editor: Res<EditorHighlight>,
 ) {
     let mut highlight_pass = EntityHashSet::new();
 
@@ -301,6 +310,8 @@ fn entity_highlighting(
     for candidate in &proximity.0 {
         test_and_insert(candidate.entity);
     }
+    // editor selection — always outlined, no PointerEvents / hover required.
+    highlight_pass.extend(editor.0.iter().copied());
 
     let new_highlights = highlight_pass.difference(&highlit);
     for entity in new_highlights {
