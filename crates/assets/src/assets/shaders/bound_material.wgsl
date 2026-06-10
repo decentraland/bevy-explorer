@@ -12,6 +12,7 @@
 
 #import "embedded://shaders/simplex.wgsl"::simplex_noise_3d
 #import "embedded://shaders/bound_material_effect.wgsl"::{apply_outline, discard_dither}
+#import "embedded://shaders/toon.wgsl"::{ToonParams, toon_lighting}
 
 struct Bounds {
     min: u32,
@@ -26,6 +27,7 @@ struct SceneBounds {
     flags: u32,
     num_bounds: u32,
     _pad: u32,
+    toon: ToonParams,
 }
 
 fn unpack_bounds(packed: u32) -> vec2<f32> {
@@ -42,6 +44,7 @@ const OUTLINE_RED: u32 = 4u;
 const OUTLINE_FORCE: u32 = 8u;
 const DISABLE_DITHER: u32 = 16u;
 const CONE_ONLY_DITHER: u32 = 32u;
+const TOON: u32 = 64u;
 
 @group(2) @binding(100)
 var<uniform> bounds: SceneBounds;
@@ -166,7 +169,11 @@ fn fragment(
 
     // apply lighting
     if (pbr_input.material.flags & bevy_pbr::pbr_types::STANDARD_MATERIAL_FLAGS_UNLIT_BIT) == 0u {
-        out.color = apply_pbr_lighting(pbr_input);
+        if (bounds.flags & TOON) != 0u {
+            out.color = toon_lighting(pbr_input, bounds.toon);
+        } else {
+            out.color = apply_pbr_lighting(pbr_input);
+        }
     } else {
         // invert tonemapping for unlit materials
         out.color = approximate_inverse_tone_mapping(pbr_input.material.base_color, view.color_grading); 

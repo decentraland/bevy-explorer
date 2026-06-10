@@ -15,6 +15,7 @@ pub const SCENE_MATERIAL_OUTLINE_RED: u32 = 4;
 pub const SCENE_MATERIAL_OUTLINE_FORCE: u32 = 8;
 pub const SCENE_MATERIAL_NO_DITHERING: u32 = 16;
 pub const SCENE_MATERIAL_CONE_ONLY_DITHER: u32 = 32;
+pub const SCENE_MATERIAL_TOON: u32 = 64;
 pub const SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG: u32 = 0x70000000;
 
 pub trait SceneMaterialExt {
@@ -91,9 +92,16 @@ impl SceneBound {
                 distance,
                 flags: 0,
                 _pad: 0,
+                toon: ToonData::default(),
             },
             inverted_scale: false,
         }
+    }
+
+    /// enable the toon (cel) shading path with default parameters
+    pub fn with_toon(mut self) -> Self {
+        self.data.flags |= SCENE_MATERIAL_TOON;
+        self
     }
 
     pub fn new_outlined(
@@ -131,6 +139,7 @@ impl SceneBound {
                         0
                     },
                 _pad: 0,
+                toon: ToonData::default(),
             },
             inverted_scale: false,
         }
@@ -141,7 +150,35 @@ mod decl {
     // temporary for ShaderType macro, remove in future
     #![allow(dead_code)]
 
+    use bevy::math::Vec4;
     use bevy::render::render_resource::ShaderType;
+
+    /// Parameters for the toon (cel) shading path, active when
+    /// SCENE_MATERIAL_TOON is set in flags. Modelled on the Unity client's
+    /// DCL_Toon "double shade with feather" shader.
+    #[derive(ShaderType, Clone, Copy, Debug)]
+    pub struct ToonData {
+        /// rgb: multiplier over base color for the 1st (lit->shade) band, w: ramp step position (0-1 on half-lambert)
+        pub shade1: Vec4,
+        /// rgb: multiplier over base color for the 2nd (darkest) band, w: ramp step position
+        pub shade2: Vec4,
+        /// x: 1st band feather (edge softness), y: 2nd band feather, z: rim power, w: rim strength
+        pub misc: Vec4,
+        /// x: highlight strength, y: highlight power (0-1, higher = tighter), z/w: unused
+        pub high: Vec4,
+    }
+
+    impl Default for ToonData {
+        fn default() -> Self {
+            Self {
+                shade1: Vec4::new(0.75, 0.70, 0.85, 0.50),
+                shade2: Vec4::new(0.55, 0.50, 0.70, 0.20),
+                misc: Vec4::new(0.08, 0.08, 4.0, 0.3),
+                high: Vec4::new(0.25, 0.85, 0.0, 0.0),
+            }
+        }
+    }
+
     #[derive(ShaderType, Clone, Copy, Debug, Default)]
     pub struct BoundRegion {
         pub min: u32, // 2x i16
@@ -157,6 +194,7 @@ mod decl {
         pub flags: u32,
         pub num_bounds: u32,
         pub(super) _pad: u32,
+        pub toon: ToonData,
     }
 }
 pub use decl::*;

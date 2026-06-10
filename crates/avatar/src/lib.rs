@@ -125,6 +125,7 @@ impl Plugin for AvatarPlugin {
         );
 
         app.add_console_command::<DebugDumpAvatar, _>(debug_dump_avatar);
+        app.add_console_command::<ToonConsoleCommand, _>(toon_console_command);
 
         app.add_observer(add_attach_points_to_avatar_shape);
         app.add_observer(remove_attach_points_from_avatar_shape);
@@ -1157,7 +1158,7 @@ fn process_avatar(
                             config.graphics.oob,
                             false,
                             def.disable_dither,
-                        ),
+                        ).with_toon(),
                     };
                     let instance_mat = instance_scene_materials
                         .entry(h_mat.clone_weak())
@@ -1223,7 +1224,7 @@ fn process_avatar(
                                     config.graphics.oob,
                                     true,
                                     def.disable_dither,
-                                ),
+                                ).with_toon(),
                             };
                             let material = scene_materials.add(new_mat);
                             commands
@@ -1439,7 +1440,7 @@ fn process_avatar(
                                 config.graphics.oob,
                                 false,
                                 def.disable_dither,
-                            ),
+                            ).with_toon(),
                         };
                         let instance_mat = instance_scene_materials
                             .entry(h_mat.clone_weak())
@@ -1838,5 +1839,81 @@ fn remove_attach_points_from_avatar_shape(
             commands.entity(attach_point).try_despawn();
         }
         commands.entity(entity).remove::<AttachPoints>();
+    }
+}
+
+/// live-tune the avatar toon shading. all arguments optional; with no
+/// arguments, prints current values from the first toon material found.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/toon")]
+struct ToonConsoleCommand {
+    /// half-lambert position of the lit->shade1 edge (0-1)
+    shade1_step: Option<f32>,
+    /// softness of that edge
+    shade1_feather: Option<f32>,
+    /// position of the shade1->shade2 edge
+    shade2_step: Option<f32>,
+    /// softness of that edge
+    shade2_feather: Option<f32>,
+    /// rim light power (higher = thinner rim)
+    rim_power: Option<f32>,
+    /// rim light strength
+    rim_strength: Option<f32>,
+    /// highlight strength
+    high_strength: Option<f32>,
+    /// highlight power 0-1 (higher = tighter)
+    high_power: Option<f32>,
+}
+
+fn toon_console_command(
+    mut input: ConsoleCommand<ToonConsoleCommand>,
+    mut materials: ResMut<Assets<SceneMaterial>>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let mut count = 0;
+        let mut current = None;
+        let ids = materials.ids().collect::<Vec<_>>();
+        for id in ids {
+            let Some(mat) = materials.get_mut(id) else {
+                continue;
+            };
+            if mat.extension.data.flags & scene_material::SCENE_MATERIAL_TOON == 0 {
+                continue;
+            }
+            let toon = &mut mat.extension.data.toon;
+            if let Some(v) = command.shade1_step {
+                toon.shade1.w = v;
+            }
+            if let Some(v) = command.shade1_feather {
+                toon.misc.x = v;
+            }
+            if let Some(v) = command.shade2_step {
+                toon.shade2.w = v;
+            }
+            if let Some(v) = command.shade2_feather {
+                toon.misc.y = v;
+            }
+            if let Some(v) = command.rim_power {
+                toon.misc.z = v;
+            }
+            if let Some(v) = command.rim_strength {
+                toon.misc.w = v;
+            }
+            if let Some(v) = command.high_strength {
+                toon.high.x = v;
+            }
+            if let Some(v) = command.high_power {
+                toon.high.y = v;
+            }
+            current.get_or_insert(*toon);
+            count += 1;
+        }
+        match current {
+            Some(toon) => input.reply_ok(format!(
+                "updated {count} materials\nshade1 step {} feather {}\nshade2 step {} feather {}\nrim power {} strength {}\nhigh strength {} power {}",
+                toon.shade1.w, toon.misc.x, toon.shade2.w, toon.misc.y, toon.misc.z, toon.misc.w, toon.high.x, toon.high.y
+            )),
+            None => input.reply_failed("no toon materials found"),
+        }
     }
 }
