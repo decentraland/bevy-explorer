@@ -36,7 +36,6 @@ fn unpack_bounds(packed: u32) -> vec2<f32> {
     return vec2<f32>(f32((x_signed) * 16), f32((y_signed) * 16));
 }
 
-const SHOW_OUTSIDE: u32 = 1u;
 const DISABLE_DITHER: u32 = 16u;
 const CONE_ONLY_DITHER: u32 = 32u;
 
@@ -152,7 +151,7 @@ fn fragment(
         }
     }
 
-    if should_discard && ((bounds.flags & SHOW_OUTSIDE) == 0) {
+    if should_discard && ((mesh_tag & #{SHOW_OUTSIDE_BOUNDS_MESH_TAG}) == 0) {
         discard;
     }
 

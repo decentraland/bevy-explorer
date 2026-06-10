@@ -12,9 +12,9 @@ use common::{structs::PreviewMode, util::InvertedScaleExt};
 
 pub type SceneMaterial = ExtendedMaterial<SceneBound>;
 
-pub const SCENE_MATERIAL_SHOW_OUTSIDE: u32 = 1;
 pub const SCENE_MATERIAL_NO_DITHERING: u32 = 16;
 pub const SCENE_MATERIAL_CONE_ONLY_DITHER: u32 = 32;
+pub const SCENE_MATERIAL_SHOW_OUTSIDE_BOUNDS_MESH_TAG: u32 = 0x01000000;
 pub const SCENE_MATERIAL_OUTLINE_ACTIVE_MESH_TAG: u32 = 0x10000000;
 pub const SCENE_MATERIAL_OUTLINE_RED_MESH_TAG: u32 = 0x20000000;
 pub const SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG: u32 = 0x40000000;
@@ -257,6 +257,10 @@ impl MaterialExtension for SceneBound {
 
         if let Some(fragment) = descriptor.fragment.as_mut() {
             fragment.shader_defs.push(ShaderDefVal::UInt(
+                "SHOW_OUTSIDE_BOUNDS_MESH_TAG".to_owned(),
+                SCENE_MATERIAL_SHOW_OUTSIDE_BOUNDS_MESH_TAG,
+            ));
+            fragment.shader_defs.push(ShaderDefVal::UInt(
                 "OUTLINE_ACTIVE_MESH_TAG".to_owned(),
                 SCENE_MATERIAL_OUTLINE_ACTIVE_MESH_TAG,
             ));
@@ -304,8 +308,6 @@ impl Plugin for SceneBoundPlugin {
             app.add_plugins(ImposterBakeMaterialPlugin::<SceneMaterial>::default());
         }
 
-        app.add_systems(Update, update_show_outside);
-
         app.init_resource::<InvertedMaterials>();
 
         app.add_observer(new_material);
@@ -316,30 +318,25 @@ impl Plugin for SceneBoundPlugin {
                 .after(TransformSystem::TransformPropagate),
         );
 
+        app.add_observer(update_show_outside_bounds);
         app.add_observer(scene_material_removed);
     }
 }
 
-fn update_show_outside(
+fn update_show_outside_bounds(
+    trigger: Trigger<OnInsert, MeshMaterial3d<SceneMaterial>>,
+    mut meshes: Query<&mut MeshTag, With<MeshMaterial3d<SceneMaterial>>>,
     preview: Res<PreviewMode>,
-    mut mats: ResMut<Assets<SceneMaterial>>,
-    mut evs: EventReader<AssetEvent<SceneMaterial>>,
 ) {
-    if preview.is_preview {
-        for ev in evs.read() {
-            if let AssetEvent::Added { id } | AssetEvent::Modified { id } = ev {
-                let Some(asset) = mats.get(*id) else {
-                    continue;
-                };
-                if (asset.extension.data.flags & SCENE_MATERIAL_SHOW_OUTSIDE) == 0 {
-                    let asset = mats.get_mut(*id).unwrap();
-                    asset.extension.data.flags |= SCENE_MATERIAL_SHOW_OUTSIDE;
-                }
-            }
-        }
-    } else {
-        evs.read();
+    if !preview.is_preview {
+        return;
     }
+
+    let entity = trigger.target();
+    let Ok(mut mesh_tag) = meshes.get_mut(entity) else {
+        return;
+    };
+    mesh_tag.0 |= SCENE_MATERIAL_SHOW_OUTSIDE_BOUNDS_MESH_TAG;
 }
 
 #[derive(Debug, Default, Resource, Deref, DerefMut)]
