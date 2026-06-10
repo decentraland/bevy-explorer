@@ -272,10 +272,9 @@ fn hover_text(
 struct Highlit(EntityHashSet);
 
 fn entity_highlighting(
-    mut commands: Commands,
     pointer_events: Query<&PointerEvents, Without<ForeignPlayer>>,
     children: Query<&Children>,
-    mut meshes: Query<(&mut Mesh3d, Option<&mut MeshTag>), With<MeshMaterial3d<SceneMaterial>>>,
+    mut meshes: Query<(&mut Mesh3d, &mut MeshTag), With<MeshMaterial3d<SceneMaterial>>>,
     hover_target: Res<PointerTarget>,
     proximity: Res<ProximityCandidates>,
     mut highlit: ResMut<Highlit>,
@@ -306,19 +305,13 @@ fn entity_highlighting(
     for entity in new_highlights {
         debug!("Highlighting {}", entity);
         for child in children.iter_descendants(*entity).chain([*entity]) {
-            let Ok((mut mesh_3d, maybe_mesh_tag)) = meshes.get_mut(child) else {
+            let Ok((mut mesh_3d, mut mesh_tag)) = meshes.get_mut(child) else {
                 continue;
             };
             mesh_3d.set_changed();
 
             trace!("Mesh {} highlighted", child);
-            if let Some(mut mesh_tag) = maybe_mesh_tag {
-                mesh_tag.0 |= SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG;
-            } else {
-                commands
-                    .entity(child)
-                    .insert(MeshTag(SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG));
-            }
+            mesh_tag.0 |= SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG;
         }
     }
 
@@ -326,15 +319,12 @@ fn entity_highlighting(
     for entity in expired_highlights {
         debug!("Highlight of {} expired.", entity);
         for child in children.iter_descendants(*entity).chain([*entity]) {
-            let Ok((mut mesh_3d, maybe_mesh_tag)) = meshes.get_mut(child) else {
+            let Ok((mut mesh_3d, mut mesh_tag)) = meshes.get_mut(child) else {
                 continue;
             };
             mesh_3d.set_changed();
-
-            if let Some(mut mesh_tag) = maybe_mesh_tag {
-                trace!("Mesh {} no longer highlighted", child);
-                mesh_tag.0 &= !SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG;
-            }
+            trace!("Mesh {} no longer highlighted", child);
+            mesh_tag.0 &= !SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG;
         }
     }
 

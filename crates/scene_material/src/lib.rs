@@ -2,7 +2,10 @@ use bevy::{
     pbr::{ExtendedMaterial, MaterialExtension},
     platform::collections::{hash_map::Entry, HashMap},
     prelude::*,
-    render::render_resource::{AsBindGroup, Face, ShaderDefVal, ShaderRef},
+    render::{
+        mesh::MeshTag,
+        render_resource::{AsBindGroup, Face, ShaderDefVal, ShaderRef},
+    },
 };
 use boimp::bake::{ImposterBakeMaterialExtension, ImposterBakeMaterialPlugin};
 use common::{structs::PreviewMode, util::InvertedScaleExt};
@@ -310,6 +313,8 @@ pub struct SceneBoundPlugin;
 
 impl Plugin for SceneBoundPlugin {
     fn build(&self, app: &mut App) {
+        app.register_required_components::<MeshMaterial3d<SceneMaterial>, MeshTag>();
+
         app.add_plugins(MaterialPlugin::<SceneMaterial>::default());
         let preview_mode = app
             .world()
@@ -330,6 +335,8 @@ impl Plugin for SceneBoundPlugin {
                 .chain()
                 .after(TransformSystem::TransformPropagate),
         );
+
+        app.add_observer(scene_material_removed);
     }
 }
 
@@ -421,6 +428,13 @@ fn clear_old_materials(
             len - inverted_materials.len()
         );
     }
+}
+
+fn scene_material_removed(
+    trigger: Trigger<OnRemove, MeshMaterial3d<SceneMaterial>>,
+    mut commands: Commands,
+) {
+    commands.entity(trigger.target()).try_remove::<MeshTag>();
 }
 
 #[cfg(test)]

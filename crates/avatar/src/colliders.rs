@@ -111,7 +111,7 @@ fn update_avatar_collider_actions(
     mut tooltips: ResMut<ToolTips>,
     profiles: Query<(&ForeignPlayer, &UserProfile, &PlayerModifiers)>,
     children: Query<&Children>,
-    mut meshes: Query<(&mut Mesh3d, Option<&mut MeshTag>), With<MeshMaterial3d<SceneMaterial>>>,
+    mut meshes: Query<(&mut Mesh3d, &mut MeshTag), With<MeshMaterial3d<SceneMaterial>>>,
     mut senders: Local<Vec<RpcEventSender>>,
     mut subscribe_events: EventReader<RpcCall>,
     mut previous_target: Local<Option<Entity>>,
@@ -145,12 +145,9 @@ fn update_avatar_collider_actions(
         if let Some(old_target) = maybe_old_target {
             debug!("Reseting outline of {}", old_target);
             for child in children.iter_descendants(old_target).chain([old_target]) {
-                if let Ok((mut mesh, maybe_mesh_tag)) = meshes.get_mut(child) {
+                if let Ok((mut mesh, mut mesh_tag)) = meshes.get_mut(child) {
                     mesh.set_changed();
-
-                    if let Some(mut mesh_tag) = maybe_mesh_tag {
-                        mesh_tag.0 &= !SCENE_MATERIAL_OUTLINE_RED_MESH_TAG;
-                    }
+                    mesh_tag.0 &= !SCENE_MATERIAL_OUTLINE_RED_MESH_TAG;
                 }
             }
         }
@@ -179,17 +176,10 @@ fn update_avatar_collider_actions(
                     .iter_descendants(target.container)
                     .chain([target.container])
                 {
-                    if let Ok((mut mesh, maybe_mesh_tag)) = meshes.get_mut(child) {
+                    if let Ok((mut mesh, mut mesh_tag)) = meshes.get_mut(child) {
                         trace!("Highlighting mesh {} of avatar {}", child, target.container);
                         mesh.set_changed();
-
-                        if let Some(mut mesh_tag) = maybe_mesh_tag {
-                            mesh_tag.0 |= SCENE_MATERIAL_OUTLINE_RED_MESH_TAG;
-                        } else {
-                            commands
-                                .entity(child)
-                                .insert(MeshTag(SCENE_MATERIAL_OUTLINE_RED_MESH_TAG));
-                        }
+                        mesh_tag.0 |= SCENE_MATERIAL_OUTLINE_RED_MESH_TAG;
                     }
                 }
 
