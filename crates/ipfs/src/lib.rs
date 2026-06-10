@@ -1242,7 +1242,7 @@ impl AssetReader for IpfsIo {
             let ipfs_io_read_state = IpfsIoReadState {
                 #[cfg(feature = "ipfs_debug")]
                 sender: &self.debug_overlay_sender,
-                path: &path,
+                path,
                 #[cfg(feature = "ipfs_debug")]
                 start,
             };
