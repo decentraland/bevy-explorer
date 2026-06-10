@@ -11,8 +11,6 @@
 // Shade colors are derived from the base color (Unity's Use_BaseAs1st /
 // Use_1stAs2nd path) multiplied by per-band tints.
 
-#define_import_path dcl::toon
-
 #import bevy_pbr::{
     pbr_types::PbrInput,
     mesh_view_bindings::{lights, view},
