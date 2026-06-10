@@ -126,24 +126,6 @@ const DIR_LIGHT_GRADIENT: &[(f32, Vec3)] = &[
     (1.0, Vec3::new(0.515, 0.387, 1.0)),
 ];
 
-const AMBIENT_GRADIENT: &[(f32, Vec3)] = &[
-    (0.0, Vec3::new(0.354, 0.0, 1.0)),
-    (0.25, Vec3::new(1.0, 0.597, 0.526)),
-    (0.5, Vec3::new(0.519, 0.679, 0.738)),
-    (0.7, Vec3::new(1.0, 0.5, 0.458)),
-    (1.0, Vec3::new(0.353, 0.0, 1.0)),
-];
-
-const FOG_GRADIENT: &[(f32, Vec3)] = &[
-    (0.05, Vec3::new(0.239, 0.086, 0.471)),
-    (0.133, Vec3::new(0.287, 0.278, 0.514)),
-    (0.25, Vec3::new(0.764, 0.551, 0.575)),
-    (0.503, Vec3::new(0.310, 0.556, 0.708)),
-    (0.7, Vec3::new(0.660, 0.539, 0.514)),
-    (0.873, Vec3::new(0.509, 0.156, 0.478)),
-    (1.0, Vec3::new(0.240, 0.086, 0.472)),
-];
-
 fn sample_gradient(stops: &[(f32, Vec3)], t: f32) -> Color {
     let t = t.rem_euclid(1.0);
     let first = stops.first().unwrap();
@@ -192,9 +174,15 @@ pub fn update_directional_light(
         dir_color: sample_gradient(DIR_LIGHT_GRADIENT, day),
         dir_illuminance: (t - 0.2).sin().max((t + 0.2).sin()).max(0.0).powf(2.0) * 10_000.0,
         dir_direction: Quat::from_euler(EulerRot::YXZ, FRAC_PI_2 * 0.8, -t, 0.0) * Vec3::NEG_Z,
-        ambient_color: sample_gradient(AMBIENT_GRADIENT, day),
+        ambient_color: {
+            let c = common::day_color_luts::sample_day_lut(&common::day_color_luts::SKY_AMBIENT, day);
+            Color::srgb(c.x, c.y, c.z)
+        },
         ambient_brightness: 1.0,
-        fog_color: sample_gradient(FOG_GRADIENT, day),
+        fog_color: {
+            let c = common::day_color_luts::sample_day_lut(&common::day_color_luts::FOG_COLOR, day);
+            Color::srgb(c.x, c.y, c.z)
+        },
         layers: RenderLayers::default(),
     };
 

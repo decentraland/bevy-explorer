@@ -23,6 +23,8 @@ struct Nishita {
     tick: u32,
     sun_color: vec3<f32>,
     dir_light_intensity: f32,
+    zenith_color: vec3<f32>,
+    horizon_color: vec3<f32>,
 }
 
 const PI: f32 = 3.141592653589793;
@@ -306,34 +308,28 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
 
     let multiplier = 1.0 + saturate(nishita.dir_light_intensity / 11000.0);
 
+    // gradient sky from measured unity-client colors (zenith/horizon per hour),
+    // rendered unconditionally so the night sky keeps its color instead of
+    // going black when the sun is down
+    let elevation = max(ray.y, 0.0);
+    render_base = mix(nishita.horizon_color, nishita.zenith_color, pow(elevation, 0.7));
+
+    // warm glow around the sun near the horizon (cheap mie-style lobe)
+    let sun_dir = normalize(nishita.sun_position);
+    let sun_amount_glow = max(dot(ray, sun_dir), 0.0);
+    let glow = pow(sun_amount_glow, 8.0) * 0.35 * saturate(nishita.dir_light_intensity / 10000.0);
+    render_base += nishita.sun_color * glow * (1.0 - elevation);
+
     if nishita.dir_light_intensity > 0.0 {
-        render_base = render_nishita(
-            ray,
-            nishita.ray_origin,
-            nishita.sun_position,
-            nishita.sun_intensity * multiplier,
-            nishita.planet_radius,
-            nishita.atmosphere_radius,
-            nishita.rayleigh_coefficient,
-            nishita.mie_coefficient,
-            nishita.rayleigh_scale_height,
-            nishita.mie_scale_height,
-            nishita.mie_direction,
-        );
-
-
-        // // add sun
-        let sun_weight = dot(ray, normalize(nishita.sun_position));
+        // sun disk
+        let sun_weight = dot(ray, sun_dir);
         if sun_weight >= 0.997 {
-            render_base = max(render_base, mix(render_base, nishita.sun_color, smoothstep(0.997, 0.999, sun_weight)));
+            render_base = max(render_base, mix(render_base, nishita.sun_color * multiplier, smoothstep(0.997, 0.999, sun_weight)));
         }
         // sun 2 ..
-        let angle = 0.3;
-        let cosa = cos(angle);
-        let sina = sin(angle);
         let sun_weight_2 = dot(ray, normalize(nishita.sun_position - vec3(0.3, 0.3, 0.3)));
         if sun_weight_2 >= 0.998 {
-            render_base = max(render_base, mix(render_base, nishita.sun_color, smoothstep(0.999, 1.0, sun_weight_2)));
+            render_base = max(render_base, mix(render_base, nishita.sun_color * multiplier, smoothstep(0.999, 1.0, sun_weight_2)));
         }
     }
 
@@ -367,7 +363,8 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
 
     let render = render_cloud(render_base, nishita.ray_origin * 0.0, normalize(ray));
 
-    let store_value = mix(render, vec3(0.0), smoothstep(0.0, -0.5, initial_y));
+    // below the horizon fade to a darkened horizon color, not black
+    let store_value = mix(render, nishita.horizon_color * 0.35, smoothstep(0.0, -0.5, initial_y));
 
     textureStore(
         image,

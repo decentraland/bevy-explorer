@@ -1,3 +1,4 @@
+pub mod day_color_luts;
 pub mod dynamics;
 pub mod inputs;
 pub mod profile;

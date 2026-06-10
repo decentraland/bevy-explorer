@@ -81,6 +81,10 @@ pub struct NishitaCloud {
     pub tick: u32,
     pub sun_color: Vec3,
     pub dir_light_intensity: f32,
+    /// measured unity sky color straight up (sRGB)
+    pub zenith_color: Vec3,
+    /// measured unity sky color at the horizon (sRGB)
+    pub horizon_color: Vec3,
 }
 
 #[derive(ShaderType)]
@@ -100,6 +104,8 @@ pub struct NishitaCloudUniform {
     pub tick: u32,
     pub sun_color: Vec3,
     pub dir_light_intensity: f32,
+    pub zenith_color: Vec3,
+    pub horizon_color: Vec3,
 }
 
 impl From<&NishitaCloud> for NishitaCloudUniform {
@@ -120,6 +126,8 @@ impl From<&NishitaCloud> for NishitaCloudUniform {
             tick: value.tick,
             sun_color: value.sun_color,
             dir_light_intensity: value.dir_light_intensity,
+            zenith_color: value.zenith_color,
+            horizon_color: value.horizon_color,
         }
     }
 }
@@ -143,6 +151,8 @@ impl Default for NishitaCloud {
             tick: 0,
             sun_color: Vec3::new(1.0, 1.0, 0.7),
             dir_light_intensity: 10000.0,
+            zenith_color: Vec3::new(0.57, 0.73, 0.78),
+            horizon_color: Vec3::new(0.76, 0.8, 0.82),
         }
     }
 }
