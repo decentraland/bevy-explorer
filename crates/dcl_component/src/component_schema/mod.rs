@@ -1,9 +1,9 @@
 //! Runtime access to the component schema.
 //!
-//! The schema is generated at BUILD time (`build_schema.rs` reflects over the proto
-//! descriptor + applies the hand-authored overlay) and embedded here as a static JSON
-//! string. Nothing reflective ships in the binary — on wasm this is just a `&'static str`.
-//! See `CATALOG.md` / `DESIGN.md` in this directory for the format.
+//! The structural schema is generated at BUILD time (`build_schema.rs` reflects over the proto
+//! descriptor) and embedded here as a static JSON string. Nothing reflective ships in the binary —
+//! on wasm this is just a `&'static str`. The curated semantic overlay (semantics/ranges/defaults/
+//! placement/requires) is applied by the editor scene. See `CATALOG.md` / `DESIGN.md` for the format.
 
 use serde_json::Value;
 
@@ -24,16 +24,4 @@ pub fn schema_names() -> Vec<String> {
         .ok()
         .and_then(|v| v.as_object().map(|o| o.keys().cloned().collect()))
         .unwrap_or_default()
-}
-
-/// The full raw (structural, no curated overlay) `{ componentName: schema, … }` JSON. The editor
-/// applies the curated overlay itself; this is for the migration's merged-from-raw vs combined diff.
-pub fn all_raw_schemas_json() -> &'static str {
-    include_str!(concat!(env!("OUT_DIR"), "/component_schemas_raw.json"))
-}
-
-/// The raw schema JSON for one component, if present.
-pub fn raw_schema_for(name: &str) -> Option<String> {
-    let v: Value = serde_json::from_str(all_raw_schemas_json()).ok()?;
-    v.get(name).map(|s| s.to_string())
 }
