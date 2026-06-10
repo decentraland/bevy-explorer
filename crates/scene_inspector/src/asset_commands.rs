@@ -36,6 +36,43 @@ pub fn add_asset_commands(app: &mut App) {
     app.init_resource::<AssetCatalog>();
     app.add_console_command::<AssetCatalogCommand, _>(asset_catalog_cmd);
     app.add_console_command::<InitAssetCommand, _>(init_asset_cmd);
+    app.add_console_command::<SceneContentCommand, _>(scene_content_cmd);
+}
+
+// --- /scene_content ---
+
+/// List the current scene's content files (content-map paths, sorted) as a JSON array of strings,
+/// for the editor's content-file pickers (gltf/audio/video/texture). Includes imported assets
+/// (merged into the scene collection). Paths are lowercased, as stored; the editor filters by
+/// extension per the field's semantic.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/scene_content")]
+struct SceneContentCommand;
+
+fn scene_content_cmd(
+    mut input: ConsoleCommand<SceneContentCommand>,
+    ipfs: Res<IpfsResource>,
+    resolver: SceneResolver,
+    mut console_responses: ResMut<PendingConsoleResponses>,
+) {
+    if let Some(Ok(_)) = input.take() {
+        let scene_hash = match resolver.resolve() {
+            Ok((_, ctx)) => ctx.hash.clone(),
+            Err(e) => {
+                input.reply_failed(e);
+                return;
+            }
+        };
+        let io = ipfs.inner.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        IoTaskPool::get()
+            .spawn(async move {
+                let files = io.scene_content_files(&scene_hash).await;
+                let _ = tx.send(serde_json::to_string(&files).map_err(|e| e.to_string()));
+            })
+            .detach();
+        console_responses.push_oneshot(rx, |r| r, input.take_responder());
+    }
 }
 
 // --- /asset_catalog ---

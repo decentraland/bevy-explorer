@@ -1223,6 +1223,20 @@ impl IpfsIo {
             .clone()
     }
 
+    /// The sorted file paths in a scene's content map (the collection keys), or empty if the scene
+    /// isn't loaded. For the editor's content-file pickers; includes imported assets merged into the
+    /// collection. Paths are lowercased (as stored).
+    pub async fn scene_content_files(&self, scene_hash: &str) -> Vec<String> {
+        let read = self.context.read().await;
+        let mut files: Vec<String> = read
+            .entities
+            .get(scene_hash)
+            .map(|e| e.collection.0.keys().cloned().collect())
+            .unwrap_or_default();
+        files.sort();
+        files
+    }
+
     pub fn about_url(&self) -> Option<String> {
         self.realm_config_receiver
             .borrow()
