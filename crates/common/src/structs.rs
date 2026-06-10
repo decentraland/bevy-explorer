@@ -1156,6 +1156,8 @@ pub struct SceneGlobalLight {
     pub dir_direction: Vec3,
     pub ambient_color: Color,
     pub ambient_brightness: f32,
+    /// time-of-day driven fog tint (godot-style fog color gradient)
+    pub fog_color: Color,
     pub layers: RenderLayers,
 }
 

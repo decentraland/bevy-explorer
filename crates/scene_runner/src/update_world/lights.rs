@@ -113,6 +113,65 @@ impl From<PbGlobalLight> for GlobalLight {
     }
 }
 
+// time-of-day color gradients, ported from godot-explorer
+// (godot/assets/environment/gradients/*.tres). offset 0.0 = midnight,
+// 0.5 = noon. colors are sRGB.
+const DIR_LIGHT_GRADIENT: &[(f32, Vec3)] = &[
+    (0.05, Vec3::new(0.514, 0.388, 1.0)),
+    (0.185, Vec3::new(1.0, 0.602, 0.632)),
+    (0.333, Vec3::new(0.985, 0.864, 0.645)),
+    (0.519, Vec3::new(1.0, 0.931, 0.692)),
+    (0.683, Vec3::new(0.984, 0.863, 0.643)),
+    (0.801, Vec3::new(1.0, 0.6, 0.631)),
+    (1.0, Vec3::new(0.515, 0.387, 1.0)),
+];
+
+const AMBIENT_GRADIENT: &[(f32, Vec3)] = &[
+    (0.0, Vec3::new(0.354, 0.0, 1.0)),
+    (0.25, Vec3::new(1.0, 0.597, 0.526)),
+    (0.5, Vec3::new(0.519, 0.679, 0.738)),
+    (0.7, Vec3::new(1.0, 0.5, 0.458)),
+    (1.0, Vec3::new(0.353, 0.0, 1.0)),
+];
+
+const FOG_GRADIENT: &[(f32, Vec3)] = &[
+    (0.05, Vec3::new(0.239, 0.086, 0.471)),
+    (0.133, Vec3::new(0.287, 0.278, 0.514)),
+    (0.25, Vec3::new(0.764, 0.551, 0.575)),
+    (0.503, Vec3::new(0.310, 0.556, 0.708)),
+    (0.7, Vec3::new(0.660, 0.539, 0.514)),
+    (0.873, Vec3::new(0.509, 0.156, 0.478)),
+    (1.0, Vec3::new(0.240, 0.086, 0.472)),
+];
+
+fn sample_gradient(stops: &[(f32, Vec3)], t: f32) -> Color {
+    let t = t.rem_euclid(1.0);
+    let first = stops.first().unwrap();
+    let last = stops.last().unwrap();
+    let rgb = if t <= first.0 {
+        // wrap from the last stop
+        let span = first.0 + (1.0 - last.0);
+        let frac = if span > 0.0 { (t + (1.0 - last.0)) / span } else { 0.0 };
+        last.1.lerp(first.1, frac)
+    } else if t >= last.0 {
+        let span = first.0 + (1.0 - last.0);
+        let frac = if span > 0.0 { (t - last.0) / span } else { 0.0 };
+        last.1.lerp(first.1, frac)
+    } else {
+        let mut rgb = last.1;
+        for pair in stops.windows(2) {
+            let (t0, c0) = pair[0];
+            let (t1, c1) = pair[1];
+            if t >= t0 && t <= t1 {
+                rgb = c0.lerp(c1, (t - t0) / (t1 - t0));
+                break;
+            }
+        }
+        rgb
+    };
+    Color::srgb(rgb.x, rgb.y, rgb.z)
+}
+
 pub fn update_directional_light(
     lights: Query<(
         &RendererSceneContext,
@@ -124,16 +183,18 @@ pub fn update_directional_light(
     player: Query<Entity, With<PrimaryUser>>,
     time: Res<TimeOfDay>,
 ) {
-    // default 2-hourly cycle
-    let t = (time.elapsed_secs() / (60.0 * 60.0 * 24.0) + 0.75).fract() * TAU;
+    // normalized day: 0.0 = midnight, 0.5 = noon (matches the godot gradients)
+    let day = (time.elapsed_secs() / (60.0 * 60.0 * 24.0)).rem_euclid(1.0);
+    let t = (day + 0.75).fract() * TAU;
 
     *global_light = SceneGlobalLight {
         source: None,
-        dir_color: Color::srgb(1.0, 1.0, 0.7),
+        dir_color: sample_gradient(DIR_LIGHT_GRADIENT, day),
         dir_illuminance: (t - 0.2).sin().max((t + 0.2).sin()).max(0.0).powf(2.0) * 10_000.0,
         dir_direction: Quat::from_euler(EulerRot::YXZ, FRAC_PI_2 * 0.8, -t, 0.0) * Vec3::NEG_Z,
-        ambient_color: Color::srgb(0.85, 0.85, 1.0),
+        ambient_color: sample_gradient(AMBIENT_GRADIENT, day),
         ambient_brightness: 1.0,
+        fog_color: sample_gradient(FOG_GRADIENT, day),
         layers: RenderLayers::default(),
     };
 
