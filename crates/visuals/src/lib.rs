@@ -20,7 +20,7 @@ use bevy_atmosphere::{
     prelude::{AtmosphereCamera, AtmosphereModel, AtmospherePlugin, AtmosphereSettings},
     system_param::AtmosphereMut,
 };
-use nishita_cloud::{init_noise, NishitaCloud};
+use nishita_cloud::{build_sky_lut, init_noise, NishitaCloud};
 
 use bevy_console::ConsoleCommand;
 use common::{
@@ -122,6 +122,7 @@ fn setup(
         let h_noise = images.add(noise);
 
         atmosphere.noise_texture = h_noise;
+        atmosphere.sky_lut = images.add(build_sky_lut());
     }
 
     // commands.entity(camera.0).try_insert(
@@ -196,12 +197,8 @@ fn apply_global_light(
         Vec3::new(5.5e-6, 13.0e-6, 22.4e-6) * next_light.dir_color.to_srgba().to_vec3();
     atmosphere.dir_light_intensity = next_light.dir_illuminance;
     atmosphere.sun_color = next_light.dir_color.to_srgba().to_vec3();
-    // measured unity sky colors for the gradient sky dome
-    let day = (time_of_day.elapsed_secs() / (60.0 * 60.0 * 24.0)).rem_euclid(1.0);
-    atmosphere.zenith_color =
-        common::day_color_luts::sample_day_lut(&common::day_color_luts::SKY_ZENITH, day);
-    atmosphere.horizon_color =
-        common::day_color_luts::sample_day_lut(&common::day_color_luts::SKY_HORIZON, day);
+    // drive the measured-sky lut with the time of day
+    atmosphere.day = (time_of_day.elapsed_secs() / (60.0 * 60.0 * 24.0)).rem_euclid(1.0);
     atmosphere.tick += 1;
 
     if atmosphere.cloudy != cloud.cover {
@@ -284,8 +281,9 @@ fn apply_global_light(
 
     for (maybe_primary, maybe_fog) in cameras.iter_mut() {
         let dir_light_lightness = Lcha::from(next_light.dir_color).lightness;
+        // floor keeps night fog violet instead of black
         let skybox_brightness =
-            (next_light.dir_illuminance.sqrt() * 40.0 * dir_light_lightness).min(2000.0);
+            (next_light.dir_illuminance.sqrt() * 40.0 * dir_light_lightness).clamp(400.0, 2000.0);
 
         if let Some(mut fog) = maybe_fog {
             let distance = (scene_distance.load + scene_distance.unload)

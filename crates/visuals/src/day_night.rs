@@ -85,12 +85,23 @@ impl Plugin for DayNightPlugin {
 }
 
 fn start_clock(mut commands: Commands) {
-    let time = 10.0 * 3600.0;
+    // DCL_START_TIME=<hours> [DCL_TIME_SPEED=<x>] for visual testing at a fixed hour
+    let time = std::env::var("DCL_START_TIME")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+        .unwrap_or(10.0)
+        * 3600.0;
     commands.insert_resource(TimeOfDay { time });
     commands
         .spawn((
             TimeKeeper,
-            RunningClock { time, speed: 12.0 },
+            RunningClock {
+                time,
+                speed: std::env::var("DCL_TIME_SPEED")
+                    .ok()
+                    .and_then(|v| v.parse::<f32>().ok())
+                    .unwrap_or(12.0),
+            },
             SceneTime { time: 0. },
         ))
         .observe(check_new_scene_time)

@@ -172,15 +172,24 @@ pub fn update_directional_light(
     *global_light = SceneGlobalLight {
         source: None,
         dir_color: sample_gradient(DIR_LIGHT_GRADIENT, day),
-        dir_illuminance: (t - 0.2).sin().max((t + 0.2).sin()).max(0.0).powf(2.0) * 10_000.0,
+        // sun by day, violet "moon" floor by night — the unity client keeps
+        // the world gently lit and directional at night (see Cubes01 reference)
+        dir_illuminance: ((t - 0.2).sin().max((t + 0.2).sin()).max(0.0).powf(2.0) * 10_000.0)
+            .max(1200.0),
         dir_direction: Quat::from_euler(EulerRot::YXZ, FRAC_PI_2 * 0.8, -t, 0.0) * Vec3::NEG_Z,
         ambient_color: {
-            let c = common::day_color_luts::sample_day_lut(&common::day_color_luts::SKY_AMBIENT, day);
+            let c = common::day_color_luts::sample_ambient(day);
             Color::srgb(c.x, c.y, c.z)
         },
-        ambient_brightness: 1.0,
+        // the unity client is ambient-dominant, especially at night: the
+        // violet night ambient is dark in luminance, so raise brightness as
+        // the sun goes down to keep the world clearly lit (Cubes references)
+        ambient_brightness: {
+            let sun_up = ((t - 0.2).sin().max((t + 0.2).sin()).max(0.0).powf(2.0)).min(1.0);
+            1.0 + (1.0 - sun_up) * 2.5
+        },
         fog_color: {
-            let c = common::day_color_luts::sample_day_lut(&common::day_color_luts::FOG_COLOR, day);
+            let c = common::day_color_luts::sample_fog(day);
             Color::srgb(c.x, c.y, c.z)
         },
         layers: RenderLayers::default(),

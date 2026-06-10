@@ -23,8 +23,7 @@ struct Nishita {
     tick: u32,
     sun_color: vec3<f32>,
     dir_light_intensity: f32,
-    zenith_color: vec3<f32>,
-    horizon_color: vec3<f32>,
+    day: f32,
 }
 
 const PI: f32 = 3.141592653589793;
@@ -140,6 +139,51 @@ fn render_nishita(r_full: vec3<f32>, r0: vec3<f32>, p_sun_full: vec3<f32>, i_sun
 @group(0) @binding(0) var<uniform> nishita: Nishita;
 @group(0) @binding(1) var noise_texture: texture_2d<f32>;
 @group(0) @binding(2) var noise_sampler: sampler;
+// the measured unity skybox: x = hour * 4 + cardinal (N,E,S,W), y = elevation
+// (row 0 zenith .. row 5 horizon). see research/skybox_analysis_report.json
+@group(0) @binding(3) var sky_lut: texture_2d<f32>;
+@group(0) @binding(4) var sky_lut_sampler: sampler;
+
+const PI_CONST: f32 = 3.141592653589793;
+
+// sample the measured sky for a view direction at the current time of day.
+// manual trilinear: hour wrap, azimuth wrap across N/E/S/W, elevation clamp.
+fn sample_measured_sky(ray: vec3<f32>) -> vec3<f32> {
+    // azimuth: 0 = north (-z), 0.25 = east (+x), wrapping
+    let azimuth = fract((atan2(ray.x, -ray.z) / (2.0 * PI_CONST)) + 1.0);
+    // elevation: 1 at zenith, 0 at horizon (and below)
+    let elevation = clamp(asin(clamp(ray.y, -1.0, 1.0)) / (PI_CONST * 0.5), 0.0, 1.0);
+
+    let hour = fract(nishita.day) * 24.0;
+    let h0 = floor(hour);
+    let hf = hour - h0;
+
+    let az = azimuth * 4.0;
+    let a0 = floor(az);
+    let af = az - a0;
+
+    // row coordinate: zenith row 0 .. horizon row 5
+    let row = (1.0 - elevation) * 5.0;
+    let r0 = floor(row);
+    let rf = row - r0;
+
+    var acc = vec3<f32>(0.0);
+    for (var dh = 0u; dh < 2u; dh += 1u) {
+        let wh = select(hf, 1.0 - hf, dh == 0u);
+        let hi = (u32(h0) + dh) % 24u;
+        for (var da = 0u; da < 2u; da += 1u) {
+            let wa = select(af, 1.0 - af, da == 0u);
+            let ai = (u32(a0) + da) % 4u;
+            let x = i32(hi * 4u + ai);
+            for (var dr = 0u; dr < 2u; dr += 1u) {
+                let wr = select(rf, 1.0 - rf, dr == 0u);
+                let y = i32(min(u32(r0) + dr, 5u));
+                acc += textureLoad(sky_lut, vec2<i32>(x, y), 0).rgb * (wh * wa * wr);
+            }
+        }
+    }
+    return acc;
+}
 
 const CLOUD_LOWER: f32 = 3300.0;
 const CLOUD_UPPER: f32 = 4800.0;
@@ -308,17 +352,10 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
 
     let multiplier = 1.0 + saturate(nishita.dir_light_intensity / 11000.0);
 
-    // gradient sky from measured unity-client colors (zenith/horizon per hour),
-    // rendered unconditionally so the night sky keeps its color instead of
-    // going black when the sun is down
-    let elevation = max(ray.y, 0.0);
-    render_base = mix(nishita.horizon_color, nishita.zenith_color, pow(elevation, 0.7));
-
-    // warm glow around the sun near the horizon (cheap mie-style lobe)
+    // the measured unity skybox, sampled by direction and hour — rendered
+    // unconditionally so the night sky keeps its color
+    render_base = sample_measured_sky(ray);
     let sun_dir = normalize(nishita.sun_position);
-    let sun_amount_glow = max(dot(ray, sun_dir), 0.0);
-    let glow = pow(sun_amount_glow, 8.0) * 0.35 * saturate(nishita.dir_light_intensity / 10000.0);
-    render_base += nishita.sun_color * glow * (1.0 - elevation);
 
     if nishita.dir_light_intensity > 0.0 {
         // sun disk
@@ -364,7 +401,8 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
     let render = render_cloud(render_base, nishita.ray_origin * 0.0, normalize(ray));
 
     // below the horizon fade to a darkened horizon color, not black
-    let store_value = mix(render, nishita.horizon_color * 0.35, smoothstep(0.0, -0.5, initial_y));
+    let below = sample_measured_sky(vec3<f32>(ray.x, 0.0, ray.z)) * 0.35;
+    let store_value = mix(render, below, smoothstep(0.0, -0.5, initial_y));
 
     textureStore(
         image,

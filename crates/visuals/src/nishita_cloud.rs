@@ -81,10 +81,12 @@ pub struct NishitaCloud {
     pub tick: u32,
     pub sun_color: Vec3,
     pub dir_light_intensity: f32,
-    /// measured unity sky color straight up (sRGB)
-    pub zenith_color: Vec3,
-    /// measured unity sky color at the horizon (sRGB)
-    pub horizon_color: Vec3,
+    /// normalized time of day (0.0 = midnight, 0.5 = noon), drives the
+    /// measured-sky lut
+    pub day: f32,
+    /// the full measured unity skybox: 24 hours x 4 cardinals wide,
+    /// zenith + 5 elevation stops tall
+    pub sky_lut: Handle<Image>,
 }
 
 #[derive(ShaderType)]
@@ -104,8 +106,7 @@ pub struct NishitaCloudUniform {
     pub tick: u32,
     pub sun_color: Vec3,
     pub dir_light_intensity: f32,
-    pub zenith_color: Vec3,
-    pub horizon_color: Vec3,
+    pub day: f32,
 }
 
 impl From<&NishitaCloud> for NishitaCloudUniform {
@@ -126,8 +127,7 @@ impl From<&NishitaCloud> for NishitaCloudUniform {
             tick: value.tick,
             sun_color: value.sun_color,
             dir_light_intensity: value.dir_light_intensity,
-            zenith_color: value.zenith_color,
-            horizon_color: value.horizon_color,
+            day: value.day,
         }
     }
 }
@@ -151,8 +151,8 @@ impl Default for NishitaCloud {
             tick: 0,
             sun_color: Vec3::new(1.0, 1.0, 0.7),
             dir_light_intensity: 10000.0,
-            zenith_color: Vec3::new(0.57, 0.73, 0.78),
-            horizon_color: Vec3::new(0.76, 0.8, 0.82),
+            day: 0.5,
+            sky_lut: Default::default(),
         }
     }
 }
@@ -190,10 +190,17 @@ impl bevy_atmosphere::model::Atmospheric for NishitaCloud {
         let image = &images
             .get(&self.noise_texture)
             .unwrap_or(&fallback_image.d2);
+        let sky_lut = &images.get(&self.sky_lut).unwrap_or(&fallback_image.d2);
         let bind_group = render_device.create_bind_group(
             None,
             layout,
-            &BindGroupEntries::sequential((binding, &image.texture_view, &image.sampler)),
+            &BindGroupEntries::sequential((
+                binding,
+                &image.texture_view,
+                &image.sampler,
+                &sky_lut.texture_view,
+                &sky_lut.sampler,
+            )),
         );
         bind_group
     }
@@ -282,6 +289,8 @@ impl bevy_atmosphere::model::RegisterAtmosphereModel for NishitaCloud {
                     },
                     texture_2d(TextureSampleType::Float { filterable: true }),
                     sampler(bevy::render::render_resource::SamplerBindingType::Filtering),
+                    texture_2d(TextureSampleType::Float { filterable: true }),
+                    sampler(bevy::render::render_resource::SamplerBindingType::Filtering),
                 ),
             ),
         )
@@ -326,6 +335,55 @@ pub fn init_noise(size: usize) -> Image {
         address_mode_u: ImageAddressMode::Repeat,
         address_mode_v: ImageAddressMode::Repeat,
         address_mode_w: ImageAddressMode::Repeat,
+        ..ImageSamplerDescriptor::linear()
+    });
+
+    image
+}
+
+/// Build the measured-sky lookup texture from the full analysis report.
+/// Layout: width = 24 hours x 4 cardinals (x = hour * 4 + cardinal N,E,S,W),
+/// height = 6 rows: row 0 = zenith (the up-view reading), rows 1..=5 = the
+/// cardinal views' sky stops from high to horizon. Rgba32Float, raw report
+/// values.
+pub fn build_sky_lut() -> Image {
+    use common::day_color_luts::{HORIZON_STOP, MEASURED_SKY};
+
+    let width = 24 * 4;
+    let height = 1 + HORIZON_STOP + 1; // zenith + sky stops 0..=4
+    let mut data: Vec<f32> = Vec::with_capacity(width * height * 4);
+
+    for row in 0..height {
+        for hour in 0..24 {
+            for cardinal in 0..4 {
+                let c = if row == 0 {
+                    // zenith: average the up view (all of it is zenith sky)
+                    let up = &MEASURED_SKY.up[hour];
+                    up.iter().copied().sum::<Vec3>() / up.len() as f32
+                } else {
+                    MEASURED_SKY.cardinal[hour][cardinal][row - 1]
+                };
+                data.extend_from_slice(&[c.x, c.y, c.z, 1.0]);
+            }
+        }
+    }
+
+    let mut image = Image::new(
+        Extent3d {
+            width: width as u32,
+            height: height as u32,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        data.into_iter().flat_map(f32::to_le_bytes).collect(),
+        bevy::render::render_resource::TextureFormat::Rgba32Float,
+        RenderAssetUsages::all(),
+    );
+
+    image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+        label: Some("measured_sky_lut".to_owned()),
+        address_mode_u: ImageAddressMode::Repeat,
+        address_mode_v: ImageAddressMode::ClampToEdge,
         ..ImageSamplerDescriptor::linear()
     });
 
