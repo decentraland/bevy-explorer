@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use dcl_component::ComponentNameRegistry;
+use scene_runner::update_scene::raycast_result::SuperUserRaycastScene;
 
 mod active_scene;
 mod asset_commands;
@@ -28,5 +29,18 @@ impl Plugin for SceneInspectorPlugin {
 
         app.add_systems(Update, snapshot::handle_snapshot_events);
         app.add_systems(Update, snapshot::handle_entity_allocated_events);
+        app.add_systems(Update, sync_super_user_raycast_target);
+    }
+}
+
+// Mirror the *explicitly pinned* inspection scene (/set_scene <hash>) into the raycast target
+// resource. Only set when the super-user scene has deliberately chosen a target — None (follow
+// player / unpinned) leaves super-user raycasts at their normal behaviour.
+fn sync_super_user_raycast_target(
+    active: Res<ActiveInspectionScene>,
+    mut target: ResMut<SuperUserRaycastScene>,
+) {
+    if target.0 != active.0 {
+        target.0 = active.0;
     }
 }
