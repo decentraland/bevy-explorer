@@ -6,7 +6,9 @@ edition = "2021"
 [lib]
 
 [features]
+default = ["ipfs_debug"]
 hot_reload = []
+ipfs_debug = ["bevy/bevy_ui_picking_backend"]
 
 [dependencies]
 common = { workspace = true }
