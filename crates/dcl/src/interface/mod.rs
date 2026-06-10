@@ -167,6 +167,7 @@ impl CrdtStore {
     }
 
     // handles a single message from the buffer
+    #[allow(clippy::too_many_arguments)]
     pub fn process_message(
         &mut self,
         writers: &CrdtComponentInterfaces,
@@ -174,6 +175,12 @@ impl CrdtStore {
         crdt_type: CrdtMessageType,
         stream: &mut DclReader,
         filter_components: bool,
+        // when filtering, unrecognized components are routed here (instead of dropped) so the
+        // inspector can surface custom components; `None` keeps the legacy drop behaviour.
+        mut filtered: Option<&mut CrdtStore>,
+        // parallel context tracking every entity (recognized *and* filtered) for collision-free
+        // entity allocation (see `CrdtContext::new_in_range`); `None` when not maintained.
+        mut alloc: Option<&mut CrdtContext>,
     ) -> Result<(), DclReaderError> {
         match crdt_type {
             CrdtMessageType::PutComponent | CrdtMessageType::AppendValue => {
@@ -191,11 +198,31 @@ impl CrdtStore {
                 debug!("PUT e:{entity:?}, c: {component:?}, timestamp: {timestamp:?}, content len: {content_len}");
                 common::util::dcl_assert!(content_len == stream.len());
 
+                // track the entity in the allocation context regardless of whether the component is
+                // recognized or filtered (the main entity_map only sees recognized ones).
+                if let Some(alloc) = alloc.as_deref_mut() {
+                    alloc.init(entity);
+                }
+
                 // check for a writer
                 let writer = match writers.0.get(&component) {
                     Some(writer) => writer,
                     None => {
                         if filter_components {
+                            // unrecognized component: route to the sidecar (if any) instead of
+                            // dropping, keyed by numeric id, using the default writer for the
+                            // message kind (LWW for Put, GO for Append).
+                            if let Some(filtered) = filtered.as_deref_mut() {
+                                if !entity_map.is_dead(entity) {
+                                    filtered.try_update(
+                                        component,
+                                        *default_writer,
+                                        entity,
+                                        timestamp,
+                                        Some(stream),
+                                    );
+                                }
+                            }
                             return Ok(());
                         }
 
@@ -236,6 +263,19 @@ impl CrdtStore {
                     Some(writer) => writer,
                     None => {
                         if filter_components {
+                            // sidecar delete: custom components are stored LWW, so delete is LWW
+                            // (None payload), mirroring the Put routing above.
+                            if let Some(filtered) = filtered.as_deref_mut() {
+                                if !entity_map.is_dead(entity) {
+                                    filtered.try_update(
+                                        component,
+                                        CrdtType::LWW_ANY,
+                                        entity,
+                                        timestamp,
+                                        None,
+                                    );
+                                }
+                            }
                             return Ok(());
                         }
 
@@ -275,7 +315,20 @@ impl CrdtStore {
                 for go in self.go.values_mut() {
                     go.0.remove(&entity);
                 }
+                // reap the sidecar too, so deleted entities don't strand custom components
+                if let Some(filtered) = filtered {
+                    for lww in filtered.lww.values_mut() {
+                        lww.last_write.remove(&entity);
+                        lww.updates.remove(&entity);
+                    }
+                    for go in filtered.go.values_mut() {
+                        go.0.remove(&entity);
+                    }
+                }
                 entity_map.kill(entity);
+                if let Some(alloc) = alloc {
+                    alloc.kill(entity);
+                }
             }
         }
 
@@ -288,6 +341,10 @@ impl CrdtStore {
         writers: &CrdtComponentInterfaces,
         stream: &mut DclReader,
         filter_components: bool,
+        // optional sidecar for filtered-out (custom) components; see `process_message`.
+        mut filtered: Option<&mut CrdtStore>,
+        // optional allocation context tracking all entities; see `process_message`.
+        mut alloc: Option<&mut CrdtContext>,
     ) {
         // collect commands
         while stream.len() > CRDT_HEADER_SIZE {
@@ -306,6 +363,8 @@ impl CrdtStore {
                         crdt_type,
                         &mut message_stream,
                         filter_components,
+                        filtered.as_deref_mut(),
+                        alloc.as_deref_mut(),
                     ) {
                         error!("CRDT Buffer error: {:?}", e);
                     };

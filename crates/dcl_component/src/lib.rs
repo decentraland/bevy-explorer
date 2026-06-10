@@ -4,6 +4,7 @@ use std::ops::RangeInclusive;
 use bevy::prelude::Vec3;
 
 pub mod component_name_registry;
+pub mod component_schema;
 pub mod crdt_type;
 pub mod proto_components;
 pub mod reader;

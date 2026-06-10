@@ -167,3 +167,61 @@ pub fn default_camera_components() -> impl Bundle {
         NormalPrepass,
     )
 }
+
+// Persist a scene's composite. The destination is the active scene's project root, which the
+// caller resolves (via `IpfsIo::local_project_root`) and passes in `scene_target` as `{root, …}`;
+// we write straight to `<root>/assets/scene/main.composite` and return the path. A remote/deployed
+// scene has no local root (`root` is null), so saving is refused — clone it locally to edit.
+pub async fn save_scene_composite(
+    _scene_hash: String,
+    bytes: Vec<u8>,
+    scene_target: String,
+) -> Result<String, String> {
+    let Some(path) = local_composite_path(&scene_target) else {
+        return Err(
+            "save is only supported for a local scene — clone it locally before editing"
+                .to_string(),
+        );
+    };
+    std::fs::write(&path, &bytes)
+        .map(|_| path.display().to_string())
+        .map_err(|e| format!("write failed ({}): {e}", path.display()))
+}
+
+// The local project root carried in the `scene_target` JSON (`{root, …}`, resolved by the caller
+// via `IpfsIo::local_project_root` — which correctly decodes the dev server's standard-base64
+// `b64-<path>-<machineId>` hashes). None for a remote/deployed scene, where `root` is null.
+pub fn local_scene_root(scene_target: &str) -> Option<std::path::PathBuf> {
+    let target: serde_json::Value = serde_json::from_str(scene_target).ok()?;
+    let root = target.get("root")?.as_str()?;
+    Some(std::path::PathBuf::from(root))
+}
+
+// The local target path under the scene's project root, else None.
+fn local_composite_path(scene_target: &str) -> Option<std::path::PathBuf> {
+    Some(
+        local_scene_root(scene_target)?
+            .join("assets")
+            .join("scene")
+            .join("main.composite"),
+    )
+}
+
+// Write bytes into a local scene project at `rel_path` (relative to the project root), creating
+// parent dirs. Used to persist imported assets into the edited scene so it renders on a normal
+// (non-live) load. Err for a remote (non-local) scene.
+pub async fn write_scene_file(
+    _scene_hash: &str,
+    rel_path: &str,
+    bytes: &[u8],
+    scene_target: &str,
+) -> Result<(), String> {
+    let Some(root) = local_scene_root(scene_target) else {
+        return Err("not a local scene".to_string());
+    };
+    let dest = root.join(rel_path);
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
+    }
+    std::fs::write(&dest, bytes).map_err(|e| format!("write {}: {e}", dest.display()))
+}

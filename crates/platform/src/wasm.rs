@@ -235,3 +235,58 @@ pub fn default_camera_components() -> impl Bundle {
         NormalPrepass,
     )
 }
+
+// Persist a scene's composite to the user's real filesystem via the File System Access API. The
+// directory handle is acquired once with a picker and remembered in IndexedDB (keyed by scene id)
+// so later saves skip the prompt. All of that lives in web_save.js; this just binds it. Returns
+// the written path.
+mod web_save {
+    use wasm_bindgen::prelude::*;
+    #[wasm_bindgen(module = "/src/web_save.js")]
+    extern "C" {
+        // `scene_target` is JSON `{root, projectId, parcels, title}` — web_save uses it to locate
+        // and verify the scene's project folder under the granted directory handle.
+        #[wasm_bindgen(catch, js_name = saveSceneFile)]
+        pub async fn save_scene_file(
+            scene_target: &str,
+            rel_path: &str,
+            bytes: &[u8],
+        ) -> Result<JsValue, JsValue>;
+    }
+}
+
+pub async fn save_scene_composite(
+    _scene_hash: String,
+    bytes: Vec<u8>,
+    scene_target: String,
+) -> Result<String, String> {
+    match web_save::save_scene_file(&scene_target, "assets/scene/main.composite", &bytes).await {
+        Ok(v) => Ok(v.as_string().unwrap_or_default()),
+        Err(e) => Err(js_error_message(&e)),
+    }
+}
+
+// Persist a file into the scene's project folder (File System Access API) at `rel_path` relative to
+// the project root — the same handle/folder-match as the composite save, so imported assets land
+// alongside main.composite with no extra prompt after the first save.
+pub async fn write_scene_file(
+    _scene_hash: &str,
+    rel_path: &str,
+    bytes: &[u8],
+    scene_target: &str,
+) -> Result<(), String> {
+    web_save::save_scene_file(scene_target, rel_path, bytes)
+        .await
+        .map(|_| ())
+        .map_err(|e| js_error_message(&e))
+}
+
+fn js_error_message(e: &wasm_bindgen::JsValue) -> String {
+    e.as_string()
+        .or_else(|| {
+            js_sys::Reflect::get(e, &wasm_bindgen::JsValue::from_str("message"))
+                .ok()
+                .and_then(|m| m.as_string())
+        })
+        .unwrap_or_else(|| "save failed".to_string())
+}

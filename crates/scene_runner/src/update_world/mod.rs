@@ -268,7 +268,7 @@ impl AddCrdtInterfaceExt for App {
     {
         self.add_crdt_lww_interface::<D>(id, position);
         // register in ComponentNameRegistry for inspection
-        let (inspect, write) = make_proto_closures::<D>();
+        let (inspect, write, default) = make_proto_closures::<D>();
         self.world_mut()
             .resource_mut::<ComponentNameRegistry>()
             .register(
@@ -277,6 +277,7 @@ impl AddCrdtInterfaceExt for App {
                 CrdtType::LWW(position),
                 inspect,
                 Some(write),
+                Some(default),
             );
         // add a system to process the update
         self.world_mut()
@@ -315,7 +316,7 @@ impl AddCrdtInterfaceExt for App {
         assert!(existing.is_none(), "duplicate registration for {id:?}");
 
         // register in ComponentNameRegistry for inspection
-        let (inspect, write) = make_proto_closures::<D>();
+        let (inspect, write, default) = make_proto_closures::<D>();
         self.world_mut()
             .resource_mut::<ComponentNameRegistry>()
             .register(
@@ -324,6 +325,7 @@ impl AddCrdtInterfaceExt for App {
                 CrdtType::GO(position),
                 inspect,
                 Some(write),
+                Some(default),
             );
 
         self.world_mut()

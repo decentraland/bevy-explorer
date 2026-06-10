@@ -913,6 +913,50 @@ impl IpfsIo {
         write.entities.insert(hash, entity);
     }
 
+    /// Merge additional path→hash entries into an existing collection (creating it if absent),
+    /// WITHOUT clobbering the collection's other entries — unlike `add_collection`, which replaces.
+    /// Injects imported-asset files into the *current scene's* content map at runtime.
+    pub async fn merge_collection(&self, hash: &str, extra: ContentMap) {
+        let mut write = self.context.write().await;
+        match write.entities.get_mut(hash) {
+            Some(entity) => entity.collection.0.extend(extra.0),
+            None => {
+                write.entities.insert(
+                    hash.to_owned(),
+                    IpfsEntity {
+                        collection: extra,
+                        metadata: None,
+                    },
+                );
+            }
+        }
+    }
+
+    /// True if bytes for `hash` are already in the on-disk content cache.
+    pub fn is_cached(&self, hash: &str) -> bool {
+        self.cache_path()
+            .map(|p| p.join(hash).exists())
+            .unwrap_or(false)
+    }
+
+    /// Write bytes into the on-disk content cache under `hash` (atomic via .part rename), so a later
+    /// content-file resolution to `hash` is served from cache without a network fetch. No-op if
+    /// there is no cache dir (e.g. wasm).
+    pub async fn cache_bytes(&self, hash: &str, data: &[u8]) -> Result<(), anyhow::Error> {
+        let Some(cache_path) = self.cache_path() else {
+            return Ok(());
+        };
+        let mut part = PathBuf::from(cache_path);
+        part.push(format!("{hash}.part"));
+        let mut f = async_fs::File::create(&part).await?;
+        f.write_all(data).await?;
+        f.sync_all().await?;
+        let mut final_path = PathBuf::from(cache_path);
+        final_path.push(hash);
+        async_fs::rename(&part, &final_path).await?;
+        Ok(())
+    }
+
     pub fn cache_path(&self) -> Option<&Path> {
         self.default_fs_path.as_deref()
     }
@@ -1069,6 +1113,114 @@ impl IpfsIo {
         ));
         let res = ipfs_path.to_url(&self.context.blocking_read()).ok();
         res
+    }
+
+    /// Poll the scene's content server until each of `file_paths` (resolved via the scene
+    /// collection) is fetchable, sharing one `timeout` budget; returns whether all became available.
+    /// Used after writing imported files to wait for the dev server to index them before the
+    /// renderer first tries to load them — otherwise that first load 404s and is never retried. On
+    /// web the successful GETs also warm the service-worker cache for the exact URLs the loader uses.
+    pub async fn await_contents_available(
+        &self,
+        file_paths: &[String],
+        content_hash: &str,
+        timeout: Duration,
+    ) -> bool {
+        let deadline = Instant::now() + timeout;
+        let mut all = true;
+        for file_path in file_paths {
+            let Some(url) = self.content_url(file_path, content_hash) else {
+                all = false;
+                continue;
+            };
+            loop {
+                if let Ok(resp) = self.client.get(&url).send().await {
+                    if resp.status().is_success() {
+                        break;
+                    }
+                }
+                if Instant::now() >= deadline {
+                    all = false;
+                    break;
+                }
+                async_std::task::sleep(Duration::from_millis(150)).await;
+            }
+        }
+        all
+    }
+
+    /// For a `dcl start` scene — whose files the dev server addresses by
+    /// `b64-<base64(`{absolutePath}-{machineId}`)>` (see @dcl/sdk-commands `b64HashingFunction`) and
+    /// serves by decoding that back to a path — compute the hash a newly-written file at
+    /// project-relative `rel` (original case) will be served under, so the live content-map merge
+    /// uses the dev server's hash rather than the source CID (which it doesn't know, hence the 404s
+    /// that only a reload fixed). Recovers the project root + machine id from any existing `b64-`
+    /// entry in the scene's collection. Returns None when the scene isn't b64-addressed (native /
+    /// deployed scenes — there the source hash + local cache is used instead).
+    pub async fn local_b64_hash_for(&self, scene_hash: &str, rel: &str) -> Option<String> {
+        use base64::{prelude::BASE64_STANDARD, Engine};
+        let read = self.context.read().await;
+        let collection = &read.entities.get(scene_hash)?.collection;
+        for (key, h) in collection.0.iter() {
+            let Some(b64) = h.strip_prefix("b64-") else {
+                continue;
+            };
+            let Ok(decoded) = BASE64_STANDARD.decode(b64) else {
+                continue;
+            };
+            let Ok(decoded) = String::from_utf8(decoded) else {
+                continue;
+            };
+            // decoded == "{projectRoot}/{key-original-case}-{machineId}"; the key is lowercased, so
+            // locate "/{key}-" case-insensitively, then slice the original to keep the real casing.
+            let marker = format!("/{key}-");
+            let Some(idx) = decoded.to_lowercase().rfind(&marker) else {
+                continue;
+            };
+            let project_root = &decoded[..idx];
+            let machine_id = &decoded[idx + marker.len()..];
+            let abs = format!("{project_root}/{rel}-{machine_id}");
+            return Some(format!("b64-{}", BASE64_STANDARD.encode(abs.as_bytes())));
+        }
+        None
+    }
+
+    /// The clean absolute project root of a `dcl start` scene, recovered from any existing `b64-`
+    /// collection entry — a file's encoded path has clean directory segments (only the filename
+    /// carries the `-machineId` suffix), so slicing before `/{key}-` yields the real root. None for
+    /// native/deployed scenes (entries aren't in the `b64-<path>-machineId` form). Lets the web save
+    /// locate the project folder under a granted directory handle.
+    pub async fn local_project_root(&self, scene_hash: &str) -> Option<String> {
+        use base64::{prelude::BASE64_STANDARD, Engine};
+        let read = self.context.read().await;
+        let collection = &read.entities.get(scene_hash)?.collection;
+        for (key, h) in collection.0.iter() {
+            let Some(b64) = h.strip_prefix("b64-") else {
+                continue;
+            };
+            let Ok(decoded) = BASE64_STANDARD.decode(b64) else {
+                continue;
+            };
+            let Ok(decoded) = String::from_utf8(decoded) else {
+                continue;
+            };
+            let marker = format!("/{key}-");
+            if let Some(idx) = decoded.to_lowercase().rfind(&marker) {
+                return Some(decoded[..idx].to_string());
+            }
+        }
+        None
+    }
+
+    /// The stored entity metadata (the scene's scene.json) for a scene, if any.
+    pub async fn scene_metadata(&self, scene_hash: &str) -> Option<String> {
+        self.context
+            .read()
+            .await
+            .entities
+            .get(scene_hash)?
+            .metadata
+            .clone()
     }
 
     pub fn about_url(&self) -> Option<String> {

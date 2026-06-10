@@ -3383,6 +3383,7 @@ dependencies = [
  "dcl-rpc",
  "prost 0.11.9",
  "prost-build 0.11.9",
+ "prost-reflect",
  "serde",
  "serde_json",
 ]
@@ -8319,12 +8320,14 @@ dependencies = [
  "directories",
  "futures-lite",
  "futures-util",
+ "js-sys",
  "reqwest 0.12.15",
  "serde",
  "serde_json",
  "spin 0.9.8",
  "tokio",
  "tungstenite 0.21.0",
+ "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-fs",
  "web-sys",
@@ -8646,6 +8649,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "prost-reflect"
+version = "0.11.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b823de344848e011658ac981009100818b322421676740546f8b52ed5249428"
+dependencies = [
+ "once_cell",
+ "prost 0.11.9",
+ "prost-types 0.11.9",
 ]
 
 [[package]]
@@ -9653,6 +9667,7 @@ name = "scene_inspector"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "bevy",
  "bevy_console",
  "clap",
@@ -9660,6 +9675,8 @@ dependencies = [
  "console",
  "dcl",
  "dcl_component",
+ "ipfs",
+ "platform",
  "prost 0.11.9",
  "scene_runner",
  "serde_json",

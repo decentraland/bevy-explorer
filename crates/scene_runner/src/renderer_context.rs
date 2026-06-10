@@ -77,6 +77,10 @@ pub struct RendererSceneContext {
 
     pub crdt_store: CrdtStore,
 
+    // the authored baseline: the scene's main.crdt as loaded, before any tick (custom components
+    // included). The inspector diffs the live state against this when saving. None if no main.crdt.
+    pub initial_crdt: Option<CrdtStore>,
+
     // readiness to update, if anything blocks the scene should not run
     pub blocked: HashSet<&'static str>,
 
@@ -155,6 +159,7 @@ impl RendererSceneContext {
             broken: false,
             priority,
             crdt_store: Default::default(),
+            initial_crdt: None,
             blocked: Default::default(),
             total_runtime: 0.0,
             tick_number: 0,

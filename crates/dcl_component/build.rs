@@ -1,4 +1,7 @@
 use std::io::Result;
+
+mod build_schema;
+
 fn gen_sdk_components() -> Result<()> {
     let components = [
         "asset_load",
@@ -120,11 +123,26 @@ fn gen_sdk_components() -> Result<()> {
         config.type_attribute(component, "#[derive(Hash)]");
     }
 
+    // Emit a FileDescriptorSet alongside the generated code, so the component-schema
+    // module can reflect over field/enum/oneof structure at runtime (prost-reflect).
+    let descriptor_path =
+        std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR not set"))
+            .join("sdk_components_descriptor.bin");
+    config.file_descriptor_set_path(&descriptor_path);
+
     config.compile_protos(&sources, &["src/proto/"])?;
+
+    // Generate the component-schema JSON from the descriptor + hand-authored overlay.
+    let descriptor_bytes = std::fs::read(&descriptor_path).expect("read descriptor");
+    let schemas_path = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR not set"))
+        .join("component_schemas.json");
+    build_schema::generate(&descriptor_bytes, &schemas_path);
 
     for source in sources {
         println!("cargo:rerun-if-changed={source}");
     }
+    println!("cargo:rerun-if-changed=build_schema.rs");
+    println!("cargo:rerun-if-changed=build_schema_overlay.rs");
 
     Ok(())
 }

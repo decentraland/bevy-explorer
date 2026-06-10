@@ -1,9 +1,13 @@
 use bevy::prelude::*;
 use dcl::interface::CrdtStore;
-use scene_runner::CrdtSnapshotEvent;
+use dcl_component::SceneEntityId;
+use scene_runner::{
+    renderer_context::RendererSceneContext, CrdtSnapshotEvent, EntityAllocatedEvent,
+};
 use std::collections::HashMap;
 
 pub type SnapshotCallback = Box<dyn FnOnce(&CrdtStore) + Send + Sync>;
+pub type AllocCallback = Box<dyn FnOnce(&[SceneEntityId]) + Send + Sync>;
 
 /// Callbacks waiting for a CRDT snapshot from their scene thread.
 /// Requests are dispatched immediately via [`SceneResolver::request_snapshot`];
@@ -26,6 +30,38 @@ pub fn handle_snapshot_events(
         if let Some(callbacks) = pending.0.remove(&event.scene_entity) {
             for cb in callbacks {
                 cb(&event.crdt);
+            }
+        }
+    }
+}
+
+/// Callbacks waiting for an entity-allocation response (mirrors [`PendingSnapshotRequests`]).
+#[derive(Resource, Default)]
+pub struct PendingEntityAllocations(pub HashMap<Entity, Vec<AllocCallback>>);
+
+impl PendingEntityAllocations {
+    pub fn push(&mut self, entity: Entity, callback: AllocCallback) {
+        self.0.entry(entity).or_default().push(callback);
+    }
+}
+
+/// Call any pending allocation callbacks when their ids arrive, and add the new ids to the scene's
+/// `nascent` set so the renderer spawns their bevy entities immediately — directly, not via a
+/// `census.born` tick (which a paused scene never produces) — so the editor's subsequent component
+/// writes land on an entity that already exists. `nascent` is extended (not assigned) in
+/// receive_scene_updates, so a later scene-reported birth can't clobber these.
+pub fn handle_entity_allocated_events(
+    mut events: EventReader<EntityAllocatedEvent>,
+    mut pending: ResMut<PendingEntityAllocations>,
+    mut scenes: Query<&mut RendererSceneContext>,
+) {
+    for event in events.read() {
+        if let Ok(mut ctx) = scenes.get_mut(event.scene_entity) {
+            ctx.nascent.extend(event.ids.iter().copied());
+        }
+        if let Some(callbacks) = pending.0.remove(&event.scene_entity) {
+            for cb in callbacks {
+                cb(&event.ids);
             }
         }
     }

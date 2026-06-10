@@ -1,7 +1,7 @@
 use bevy::{platform::collections::HashSet, prelude::Entity};
 use common::rpc::{CompareSnapshot, RpcCall};
 
-use dcl_component::SceneEntityId;
+use dcl_component::{SceneComponentId, SceneEntityId};
 use serde::{Deserialize, Serialize};
 
 use self::interface::{CrdtComponentInterfaces, CrdtStore};
@@ -39,6 +39,15 @@ pub enum RendererResponse {
     Ok(CrdtStore, SceneCensus),
     /// Request the scene thread to send back a full clone of its current CRDT state.
     GetCrdtSnapshot,
+    /// Allocate `count` fresh entity ids from the scene's allocator (collision-free, correctly
+    /// generationed) and instantiate each scene-side by injecting `put_component(id, component_id,
+    /// data)` into the receive results — the only way to make the scene's `@dcl/ecs` adopt the
+    /// entity. Replies with [`SceneResponse::EntityAllocated`].
+    AllocateEntity {
+        component_id: SceneComponentId,
+        data: Vec<u8>,
+        count: usize,
+    },
 }
 
 pub type RpcCalls = Vec<RpcCall>;
@@ -61,6 +70,8 @@ pub enum SceneResponse {
     CompareSnapshot(CompareSnapshot),
     /// Response to [`RendererResponse::GetCrdtSnapshot`]: the full scene-side CRDT state.
     CrdtSnapshot(SceneId, CrdtStore),
+    /// Response to [`RendererResponse::AllocateEntity`]: the freshly-allocated entity ids.
+    EntityAllocated(SceneId, Vec<SceneEntityId>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
