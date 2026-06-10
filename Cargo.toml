@@ -22,7 +22,7 @@ dcl-assert = ["common/dcl-assert"]
 gen-tests = []
 tracy = ["bevy/trace_tracy"]
 inspect = ["dcl_deno/inspect", "system_ui/inspect"]
-hot_reload = ["bevy/file_watcher", "ipfs/hot_reload"]
+hot_reload = ["bevy/file_watcher", "bevy/embedded_watcher", "ipfs/hot_reload"]
 livekit = ["av/livekit", "comms/livekit", "system_ui/livekit"]
 ffmpeg = ["av/ffmpeg"]
 social = ["social/social"]
@@ -374,5 +374,7 @@ naga = { git = "https://github.com/robtfm/wgpu", branch = "24.0.5-dcl" }
 # [patch."https://github.com/robtfm/boimp"]
 # boimp = { path = "../boimp" }
 
-# [patch."https://github.com/robtfm/bevy_atmosphere"]
-# bevy_atmosphere = { path = "../bevy_atmosphere" }
+# local copy with a fix: don't panic when the atmosphere pipeline is
+# recompiling after a shader hot-reload
+[patch."https://github.com/robtfm/bevy_atmosphere"]
+bevy_atmosphere = { path = "../bevy_atmosphere" }

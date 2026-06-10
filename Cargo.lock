@@ -992,7 +992,6 @@ dependencies = [
 [[package]]
 name = "bevy_atmosphere"
 version = "0.13.0"
-source = "git+https://github.com/robtfm/bevy_atmosphere?branch=0.16-2#87168130b4b4ac0c14a106c1bb3680e918dbd189"
 dependencies = [
  "bevy",
  "bevy_atmosphere_macros",
@@ -1002,7 +1001,6 @@ dependencies = [
 [[package]]
 name = "bevy_atmosphere_macros"
 version = "0.8.0"
-source = "git+https://github.com/robtfm/bevy_atmosphere?branch=0.16-2#87168130b4b4ac0c14a106c1bb3680e918dbd189"
 dependencies = [
  "bevy_macro_utils 0.16.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "proc-macro-crate",
