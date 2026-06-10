@@ -67,6 +67,9 @@ fn scene_content_cmd(
         let (tx, rx) = tokio::sync::oneshot::channel();
         IoTaskPool::get()
             .spawn(async move {
+                // refresh from the dev server first so files added to the project outside the
+                // editor (the dev server's content map is the whole project glob) are picked up.
+                io.refresh_scene_collection(&scene_hash).await;
                 let files = io.scene_content_files(&scene_hash).await;
                 let _ = tx.send(serde_json::to_string(&files).map_err(|e| e.to_string()));
             })
