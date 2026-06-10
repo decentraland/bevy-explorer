@@ -170,11 +170,13 @@ mod decl {
 
     impl Default for ToonData {
         fn default() -> Self {
+            // deployed DCL values, taken from godot-explorer's distilled port
+            // of the Unity DCL_Toon shader (dcl_toon.gdshaderinc)
             Self {
-                shade1: Vec4::new(0.75, 0.70, 0.85, 0.50),
-                shade2: Vec4::new(0.55, 0.50, 0.70, 0.20),
-                misc: Vec4::new(0.08, 0.08, 4.0, 0.3),
-                high: Vec4::new(0.25, 0.85, 0.0, 0.0),
+                shade1: Vec4::new(0.949, 0.949, 0.949, 0.2),
+                shade2: Vec4::new(0.8, 0.8, 0.8, 0.2),
+                misc: Vec4::new(0.02, 0.05, 5.0, 0.2),
+                high: Vec4::new(0.15, 0.0, 0.0, 0.0),
             }
         }
     }

@@ -1,15 +1,16 @@
-// Toon (cel) shading for avatars, modelled on the Unity client's DCL_Toon
-// shader ("double shade with feather", a trimmed-down UTS2).
+// Toon (cel) shading for avatars.
 //
-// Model:
-// - half-lambert (0.5*NdotL+0.5) drives a 3-band ramp: base / shade1 / shade2
-// - band edges are "feathered" (soft) by a controllable width
-// - system (cascade) shadows push fragments into the shade bands
-// - a stylized specular "high color" highlight
-// - a fresnel rim light on the lit side
+// Port of the DCL avatar toon look, cross-referenced from both clients:
+// - unity-shared-dependencies/Runtime/Shaders/Avatar/DCL_Toon (full UTS2)
+// - godot-explorer/godot/assets/avatar/dcl_toon.gdshaderinc (distilled, with
+//   the actual deployed parameter values — used as the primary reference)
 //
-// Shade colors are derived from the base color (Unity's Use_BaseAs1st /
-// Use_1stAs2nd path) multiplied by per-band tints.
+// Model (matching the Godot port):
+// - half-lambert * cast-shadow drives a 3-zone ramp: lit / 1st shade / 2nd shade
+// - the ramp is a scalar brightness multiplier on albedo; light COLOR is
+//   ignored so avatars look consistent day & night (Unity behaviour)
+// - brightness floor: the avatar is never darker than the 2nd shade zone
+// - hard-edged blinn-phong specular dot, soft fresnel rim on the lit side
 
 #import bevy_pbr::{
     pbr_types::PbrInput,
@@ -20,19 +21,14 @@
 }
 
 struct ToonParams {
-    // rgb: tint for 1st shade band, w: ramp step position
+    // rgb: brightness multiplier in the 1st shade zone, w: ramp step position
     shade1: vec4<f32>,
-    // rgb: tint for 2nd (darkest) shade band, w: ramp step position
+    // rgb: brightness multiplier in the 2nd (darkest) zone, w: ramp step position
     shade2: vec4<f32>,
-    // x: 1st feather, y: 2nd feather, z: rim power, w: rim strength
+    // x: 1st zone feather, y: 2nd zone feather, z: rim power, w: rim strength
     misc: vec4<f32>,
-    // x: highlight strength, y: highlight power (0-1), z/w: unused
+    // x: specular strength, y/z/w: unused
     high: vec4<f32>,
-}
-
-// feathered step: 1.0 below (edge - feather), 0.0 above edge
-fn feathered_band(value: f32, edge: f32, feather: f32) -> f32 {
-    return 1.0 - smoothstep(edge - max(feather, 0.0001), edge, value);
 }
 
 fn toon_lighting(pbr_input: PbrInput, toon: ToonParams) -> vec4<f32> {
@@ -41,8 +37,6 @@ fn toon_lighting(pbr_input: PbrInput, toon: ToonParams) -> vec4<f32> {
     let v = pbr_input.V;
     let world_position = pbr_input.world_position;
 
-    var direct: vec3<f32> = vec3(0.0);
-
     let view_z = dot(vec4<f32>(
         view.view_from_world[0].z,
         view.view_from_world[1].z,
@@ -50,13 +44,15 @@ fn toon_lighting(pbr_input: PbrInput, toon: ToonParams) -> vec4<f32> {
         view.view_from_world[3].z
     ), world_position);
 
+    // brightness floor: never darker than the 2nd shade zone (godot bakes
+    // this into EMISSION with ambient disabled)
+    var shade_rgb = toon.shade2.rgb;
+    var highlight: f32 = 0.0;
+
     let n_lights = min(lights.n_directional_lights, 4u);
     for (var i = 0u; i < n_lights; i += 1u) {
         let light = lights.directional_lights[i];
         let l = light.direction_to_light;
-        // color is premultiplied with illuminance (physical units); the ramp
-        // itself works on the half-lambert term, brightness scales linearly
-        let light_color = light.color.rgb / 3.14159265;
 
         var shadow: f32 = 1.0;
         if (light.flags & DIRECTIONAL_LIGHT_FLAGS_SHADOWS_ENABLED_BIT) != 0u
@@ -64,33 +60,44 @@ fn toon_lighting(pbr_input: PbrInput, toon: ToonParams) -> vec4<f32> {
             shadow = fetch_directional_shadow(i, world_position, n, view_z);
         }
 
-        let half_lambert = 0.5 * dot(n, l) + 0.5;
-        // system shadows pull the surface towards the shade bands
-        let ramp_in = half_lambert * mix(0.5, 1.0, shadow);
+        let n_dot_l = dot(n, l);
+        let half_lambert = 0.5 * n_dot_l + 0.5;
+        let ramp_in = half_lambert * shadow;
 
-        let t1 = feathered_band(ramp_in, toon.shade1.w, toon.misc.x);
-        let t2 = feathered_band(ramp_in, toon.shade2.w, toon.misc.y);
+        // 3-zone ramp, edges rise from shade to lit as ramp_in increases
+        let shadow_mask = smoothstep(toon.shade1.w - toon.misc.x, toon.shade1.w, ramp_in);
+        let zone2 = smoothstep(toon.shade2.w - toon.misc.y, toon.shade2.w, ramp_in);
 
-        var band_color = mix(base_color.rgb, base_color.rgb * toon.shade1.rgb, t1);
-        band_color = mix(band_color, base_color.rgb * toon.shade2.rgb, t2);
+        let shade_zone = mix(toon.shade2.rgb, toon.shade1.rgb, zone2);
+        let final_shade = mix(shade_zone, vec3(1.0), shadow_mask);
+        shade_rgb = max(shade_rgb, final_shade);
 
-        // stylized specular highlight ("high color")
+        // hard-edged toon specular
         let h = normalize(v + l);
-        let spec_in = 0.5 * dot(n, h) + 0.5;
-        let spec = pow(saturate(spec_in), exp2(mix(11.0, 1.0, saturate(toon.high.y)))) * toon.high.x
-            * (1.0 - t1); // keep highlight out of the shade bands
+        let n_dot_h = max(dot(n, h), 0.0);
+        let spec = pow(n_dot_h, 128.0) * toon.high.x;
+        let spec_mask = smoothstep(0.45, 0.55, spec) * shadow_mask;
 
-        // rim light on the lit side
-        let fresnel = pow(1.0 - saturate(dot(n, v)), max(toon.misc.z, 0.0001));
-        let rim = fresnel * toon.misc.w * saturate(dot(n, l)) * mix(0.3, 1.0, shadow);
+        // soft fresnel rim, only on the lit side
+        let rim_dot = 1.0 - max(dot(n, v), 0.0);
+        let rim = pow(rim_dot, max(toon.misc.z, 0.0001)) * toon.misc.w;
+        let rim_dir_mask = smoothstep(0.0, 0.3, n_dot_l * shadow);
 
-        direct += (band_color + (spec + rim) * base_color.rgb) * light_color;
+        highlight = max(highlight, spec_mask + rim * rim_dir_mask);
     }
 
-    // ambient fill, flat (no normal term) to preserve the toon look
-    let ambient = lights.ambient_color.rgb * base_color.rgb;
+    // light color is deliberately ignored (Unity avatars are light-color
+    // independent); track only overall scene brightness so avatars don't
+    // glow at night. luminance of the brightest directional + ambient.
+    var scene_lum: f32 = 0.0;
+    for (var i = 0u; i < n_lights; i += 1u) {
+        let c = lights.directional_lights[i].color.rgb;
+        scene_lum = max(scene_lum, dot(c, vec3(0.2126, 0.7152, 0.0722)));
+    }
+    let ambient_lum = dot(lights.ambient_color.rgb, vec3(0.2126, 0.7152, 0.0722));
+    let brightness = (scene_lum / 3.14159265 + ambient_lum) * view.exposure;
 
-    var color = (direct + ambient) * view.exposure;
+    var color = (base_color.rgb * shade_rgb + vec3(highlight)) * brightness;
     color += pbr_input.material.emissive.rgb * view.exposure;
 
     return vec4<f32>(color, base_color.a);
