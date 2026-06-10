@@ -20,18 +20,19 @@
     mesh_types::MESH_FLAGS_SHADOW_RECEIVER_BIT,
 }
 
-struct ToonParams {
-    // rgb: brightness multiplier in the 1st shade zone, w: ramp step position
+// params are passed as plain vec4s (structs don't cross naga_oil module
+// boundaries cleanly):
+// shade1: rgb = brightness multiplier in the 1st shade zone, w = ramp step
+// shade2: rgb = brightness multiplier in the 2nd (darkest) zone, w = ramp step
+// misc:   x = 1st zone feather, y = 2nd zone feather, z = rim power, w = rim strength
+// high:   x = specular strength, y/z/w = unused
+fn toon_lighting(
+    pbr_input: PbrInput,
     shade1: vec4<f32>,
-    // rgb: brightness multiplier in the 2nd (darkest) zone, w: ramp step position
     shade2: vec4<f32>,
-    // x: 1st zone feather, y: 2nd zone feather, z: rim power, w: rim strength
     misc: vec4<f32>,
-    // x: specular strength, y/z/w: unused
     high: vec4<f32>,
-}
-
-fn toon_lighting(pbr_input: PbrInput, toon: ToonParams) -> vec4<f32> {
+) -> vec4<f32> {
     let base_color = pbr_input.material.base_color;
     let n = pbr_input.N;
     let v = pbr_input.V;
@@ -46,16 +47,21 @@ fn toon_lighting(pbr_input: PbrInput, toon: ToonParams) -> vec4<f32> {
 
     // brightness floor: never darker than the 2nd shade zone (godot bakes
     // this into EMISSION with ambient disabled)
-    var shade_rgb = toon.shade2.rgb;
+    var shade_rgb = shade2.rgb;
     var highlight: f32 = 0.0;
+
+    var scene_lum: f32 = 0.0;
 
     let n_lights = min(lights.n_directional_lights, 4u);
     for (var i = 0u; i < n_lights; i += 1u) {
-        let light = lights.directional_lights[i];
-        let l = light.direction_to_light;
+        // note: pointer access, copying the struct out of the uniform does not validate
+        let light = &lights.directional_lights[i];
+        let l = (*light).direction_to_light;
+        let light_color = (*light).color.rgb;
+        scene_lum = max(scene_lum, dot(light_color, vec3(0.2126, 0.7152, 0.0722)));
 
         var shadow: f32 = 1.0;
-        if (light.flags & DIRECTIONAL_LIGHT_FLAGS_SHADOWS_ENABLED_BIT) != 0u
+        if ((*light).flags & DIRECTIONAL_LIGHT_FLAGS_SHADOWS_ENABLED_BIT) != 0u
             && (pbr_input.flags & MESH_FLAGS_SHADOW_RECEIVER_BIT) != 0u {
             shadow = fetch_directional_shadow(i, world_position, n, view_z);
         }
@@ -65,22 +71,22 @@ fn toon_lighting(pbr_input: PbrInput, toon: ToonParams) -> vec4<f32> {
         let ramp_in = half_lambert * shadow;
 
         // 3-zone ramp, edges rise from shade to lit as ramp_in increases
-        let shadow_mask = smoothstep(toon.shade1.w - toon.misc.x, toon.shade1.w, ramp_in);
-        let zone2 = smoothstep(toon.shade2.w - toon.misc.y, toon.shade2.w, ramp_in);
+        let shadow_mask = smoothstep(shade1.w - misc.x, shade1.w, ramp_in);
+        let zone2 = smoothstep(shade2.w - misc.y, shade2.w, ramp_in);
 
-        let shade_zone = mix(toon.shade2.rgb, toon.shade1.rgb, zone2);
+        let shade_zone = mix(shade2.rgb, shade1.rgb, zone2);
         let final_shade = mix(shade_zone, vec3(1.0), shadow_mask);
         shade_rgb = max(shade_rgb, final_shade);
 
         // hard-edged toon specular
         let h = normalize(v + l);
         let n_dot_h = max(dot(n, h), 0.0);
-        let spec = pow(n_dot_h, 128.0) * toon.high.x;
+        let spec = pow(n_dot_h, 128.0) * high.x;
         let spec_mask = smoothstep(0.45, 0.55, spec) * shadow_mask;
 
         // soft fresnel rim, only on the lit side
         let rim_dot = 1.0 - max(dot(n, v), 0.0);
-        let rim = pow(rim_dot, max(toon.misc.z, 0.0001)) * toon.misc.w;
+        let rim = pow(rim_dot, max(misc.z, 0.0001)) * misc.w;
         let rim_dir_mask = smoothstep(0.0, 0.3, n_dot_l * shadow);
 
         highlight = max(highlight, spec_mask + rim * rim_dir_mask);
@@ -89,11 +95,6 @@ fn toon_lighting(pbr_input: PbrInput, toon: ToonParams) -> vec4<f32> {
     // light color is deliberately ignored (Unity avatars are light-color
     // independent); track only overall scene brightness so avatars don't
     // glow at night. luminance of the brightest directional + ambient.
-    var scene_lum: f32 = 0.0;
-    for (var i = 0u; i < n_lights; i += 1u) {
-        let c = lights.directional_lights[i].color.rgb;
-        scene_lum = max(scene_lum, dot(c, vec3(0.2126, 0.7152, 0.0722)));
-    }
     let ambient_lum = dot(lights.ambient_color.rgb, vec3(0.2126, 0.7152, 0.0722));
     let brightness = (scene_lum / 3.14159265 + ambient_lum) * view.exposure;
 

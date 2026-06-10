@@ -12,7 +12,7 @@
 
 #import "embedded://shaders/simplex.wgsl"::simplex_noise_3d
 #import "embedded://shaders/bound_material_effect.wgsl"::{apply_outline, discard_dither}
-#import "embedded://shaders/toon.wgsl"::{ToonParams, toon_lighting}
+#import "embedded://shaders/toon.wgsl"::toon_lighting
 
 struct Bounds {
     min: u32,
@@ -27,7 +27,12 @@ struct SceneBounds {
     flags: u32,
     num_bounds: u32,
     _pad: u32,
-    toon: ToonParams,
+    // toon params (see toon.wgsl): shade1/shade2 = band tint + step,
+    // misc = feathers + rim, high = specular
+    toon_shade1: vec4<f32>,
+    toon_shade2: vec4<f32>,
+    toon_misc: vec4<f32>,
+    toon_high: vec4<f32>,
 }
 
 fn unpack_bounds(packed: u32) -> vec2<f32> {
@@ -170,7 +175,7 @@ fn fragment(
     // apply lighting
     if (pbr_input.material.flags & bevy_pbr::pbr_types::STANDARD_MATERIAL_FLAGS_UNLIT_BIT) == 0u {
         if (bounds.flags & TOON) != 0u {
-            out.color = toon_lighting(pbr_input, bounds.toon);
+            out.color = toon_lighting(pbr_input, bounds.toon_shade1, bounds.toon_shade2, bounds.toon_misc, bounds.toon_high);
         } else {
             out.color = apply_pbr_lighting(pbr_input);
         }
