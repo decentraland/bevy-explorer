@@ -117,12 +117,12 @@ pub struct CrdtSnapshotEvent {
     pub crdt: dcl::interface::CrdtStore,
 }
 
-/// Carries the response to a [`RendererResponse::AllocateEntity`] request: the freshly-allocated
-/// scene entity ids.
+/// Carries the response to a [`RendererResponse::AllocateEntity`] request: one result per requested
+/// slot (`Ok(id)` instantiated, `Err` couldn't be allocated).
 #[derive(Event)]
 pub struct EntityAllocatedEvent {
     pub scene_entity: Entity,
-    pub ids: Vec<dcl_component::SceneEntityId>,
+    pub results: Vec<Result<dcl_component::SceneEntityId, dcl::AllocError>>,
 }
 
 // event which can be sent from anywhere to trigger replacing the current scene with the one specified
@@ -920,9 +920,12 @@ fn receive_scene_updates(
                     }
                     None
                 }
-                SceneResponse::EntityAllocated(scene_id, ids) => {
+                SceneResponse::EntityAllocated(scene_id, results) => {
                     if let Some(&scene_entity) = updates.scene_ids.get(&scene_id) {
-                        entity_allocated_events.write(EntityAllocatedEvent { scene_entity, ids });
+                        entity_allocated_events.write(EntityAllocatedEvent {
+                            scene_entity,
+                            results,
+                        });
                     }
                     None
                 }

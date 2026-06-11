@@ -188,8 +188,13 @@ struct NewEntityCommand {
     component: u32,
     /// base64-encoded component value bytes
     data: String,
-    /// number of entities to allocate
+    /// number of entities to allocate (ignored when --ids is given)
     count: usize,
+    /// instantiate these exact ids (proto-u32, comma-separated) instead of allocating fresh — to
+    /// recreate entities at their original ids on a freshly-reloaded scene. A colliding id is
+    /// skipped and absent from the reply.
+    #[arg(long, value_delimiter = ',')]
+    ids: Vec<u32>,
 }
 
 fn new_entity_cmd(
@@ -219,16 +224,32 @@ fn new_entity_cmd(
                 return;
             }
         };
+        let explicit_ids = if cmd.ids.is_empty() {
+            None
+        } else {
+            Some(cmd.ids)
+        };
         let (tx, rx) = tokio::sync::oneshot::channel();
         match resolver.request_allocate_entity(
             &mut pending,
             SceneComponentId(cmd.component),
             data,
             cmd.count,
-            move |ids| {
+            explicit_ids,
+            move |results| {
+                // The worker reports a result per requested slot. Fail the command if any slot
+                // couldn't be allocated (e.g. an explicit id already live), rather than returning a
+                // partial set — the caller can then handle the miss.
+                let failed: Vec<_> = results.iter().filter_map(|r| r.as_ref().err()).collect();
+                if !failed.is_empty() {
+                    let _ = tx.send(Err(format!("could not allocate: {failed:?}")));
+                    return;
+                }
                 let json = format!(
                     "[{}]",
-                    ids.iter()
+                    results
+                        .iter()
+                        .filter_map(|r| r.as_ref().ok())
                         .map(|id| id.as_proto_u32().unwrap_or(id.id as u32).to_string())
                         .collect::<Vec<_>>()
                         .join(",")
