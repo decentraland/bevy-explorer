@@ -1,17 +1,18 @@
 use bevy::{
     asset::RenderAssetTransferPriority,
     diagnostic::FrameCount,
+    math::Vec3A,
     pbr::{ExtendedMaterial, MaterialExtension, NotShadowCaster},
     platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{
         camera::RenderTarget,
+        primitives::Aabb,
         render_asset::RenderAssetUsages,
         render_resource::{
             AsBindGroup, Extent3d, ShaderRef, TextureDimension, TextureFormat, TextureUsages,
         },
         renderer::RenderDevice,
-        view::NoFrustumCulling,
     },
     transform::TransformSystem,
     ui::UiSystem,
@@ -39,6 +40,7 @@ impl Plugin for WorldUiPlugin {
             app.add_plugins(ImposterBakeMaterialPlugin::<TextShapeMaterial>::default());
         }
 
+        app.init_resource::<WorldUiQuadMesh>();
         app.add_systems(Update, add_worldui_materials.in_set(SceneSets::PostLoop));
         app.add_systems(
             PostUpdate,
@@ -51,6 +53,40 @@ impl Plugin for WorldUiPlugin {
 
 #[derive(Component)]
 pub struct WorldUiRenderTarget(Handle<Image>);
+
+/// shared unit-quad mesh: the shader positions/scales it, so one asset serves every text shape
+#[derive(Resource)]
+pub struct WorldUiQuadMesh(pub Handle<Mesh>);
+
+impl FromWorld for WorldUiQuadMesh {
+    fn from_world(world: &mut World) -> Self {
+        let mut meshes = world.resource_mut::<Assets<Mesh>>();
+        Self(meshes.add(bevy::math::primitives::Rectangle::default().mesh()))
+    }
+}
+
+/// conservative culling bounds from the same TextQuadData the vertex shader uses:
+/// |x| <= (0.5+|halign|)*region_w/ppm, |y| <= ((0.5+|valign|)*region_h+|add_y_pix|)/ppm.
+/// billboarded quads rotate freely around the origin, so use a half-diagonal cube,
+/// padded 2x because culling applies the entity scale that the billboard shader ignores.
+fn world_ui_quad_aabb(data: &TextQuadData) -> Aabb {
+    let region = (data.uvs.zw() - data.uvs.xy()).abs();
+    let pix_per_m = data.pix_per_m.abs().max(1e-3);
+    let half_x = (0.5 + data.halign.abs()) * region.x / pix_per_m;
+    let half_y = ((0.5 + data.valign.abs()) * region.y + data.add_y_pix.abs()) / pix_per_m;
+    if data.vertex_billboard != 0 {
+        let radius = (half_x * half_x + half_y * half_y).sqrt() * 2.0;
+        Aabb {
+            center: Vec3A::ZERO,
+            half_extents: Vec3A::splat(radius.max(0.01)),
+        }
+    } else {
+        Aabb {
+            center: Vec3A::ZERO,
+            half_extents: Vec3A::new(half_x.max(0.01), half_y.max(0.01), 0.01),
+        }
+    }
+}
 
 #[derive(Component)]
 pub struct WorldUi {
@@ -114,7 +150,7 @@ pub struct WorldUiMaterialRef(AssetId<TextShapeMaterial>, AssetId<Image>);
 pub fn add_worldui_materials(
     mut commands: Commands,
     q: Query<(Entity, &WorldUi, Option<&Children>), Changed<WorldUi>>,
-    mut meshes: ResMut<Assets<Mesh>>,
+    quad_mesh: Res<WorldUiQuadMesh>,
     mut materials: ResMut<Assets<TextShapeMaterial>>,
     config: Res<AppConfig>,
     targets: Query<&WorldUiRenderTarget>,
@@ -139,6 +175,8 @@ pub fn add_worldui_materials(
             _pad2: 0,
         };
 
+        let quad_aabb = world_ui_quad_aabb(&material_data);
+
         let material = materials.add(TextShapeMaterial {
             base: SceneMaterial {
                 base: StandardMaterial {
@@ -161,10 +199,10 @@ pub fn add_worldui_materials(
 
         let quad = commands
             .spawn((
-                Mesh3d(meshes.add(bevy::math::primitives::Rectangle::default().mesh())),
+                Mesh3d(quad_mesh.0.clone()),
                 MeshMaterial3d(material),
                 NotShadowCaster,
-                NoFrustumCulling, // TODO calculate aabb based on font size (and update when it changes)
+                quad_aabb,
             ))
             .id();
 
@@ -194,6 +232,7 @@ pub fn update_worldui_materials(
         )>,
     >,
     all: Query<(Entity, &WorldUiMaterialRef, &ComputedNode, &GlobalTransform)>,
+    mut quads: Query<(&MeshMaterial3d<TextShapeMaterial>, &mut Aabb)>,
     mut mats: ResMut<Assets<TextShapeMaterial>>,
     mut images: ResMut<Assets<Image>>,
     frame: Res<FrameCount>,
@@ -208,6 +247,7 @@ pub fn update_worldui_materials(
     }
 
     let mut target_sizes: HashMap<AssetId<Image>, UVec2> = HashMap::new();
+    let mut updated_aabbs: HashMap<AssetId<TextShapeMaterial>, Aabb> = HashMap::new();
 
     for (ent, ref_mat, node, gt) in all.iter() {
         if !changed_targets.contains(&ref_mat.1) {
@@ -225,7 +265,9 @@ pub fn update_worldui_materials(
         let bottomright = translation.xy() + node.size() / 2.0;
         let required_uvs = Vec4::new(topleft.x, topleft.y, bottomright.x, bottomright.y);
         if mat.extension.data.uvs != required_uvs {
-            mats.get_mut(ref_mat.0).unwrap().extension.data.uvs = required_uvs;
+            let mat = mats.get_mut(ref_mat.0).unwrap();
+            mat.extension.data.uvs = required_uvs;
+            updated_aabbs.insert(ref_mat.0, world_ui_quad_aabb(&mat.extension.data));
         }
         debug!(
             "[{}] img {:?}, {ent:?} uvs set to {} (size: {}, translation: {})",
@@ -238,6 +280,14 @@ pub fn update_worldui_materials(
 
         let max_extent = target_sizes.entry(ref_mat.1).or_default();
         *max_extent = max_extent.max(bottomright.ceil().as_uvec2());
+    }
+
+    if !updated_aabbs.is_empty() {
+        for (mat, mut aabb) in quads.iter_mut() {
+            if let Some(new_aabb) = updated_aabbs.get(&mat.id()) {
+                *aabb = *new_aabb;
+            }
+        }
     }
 
     *prev_changed_targets = target_sizes
