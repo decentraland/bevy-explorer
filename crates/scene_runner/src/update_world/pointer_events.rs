@@ -1,4 +1,5 @@
 use bevy::{
+    app::{HierarchyPropagatePlugin, Propagate},
     ecs::entity::EntityHashSet,
     math::FloatOrd,
     platform::collections::{HashMap, HashSet},
@@ -19,7 +20,7 @@ use dcl_component::{
     },
     SceneComponentId,
 };
-use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG};
+use scene_material::SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG;
 
 use crate::{
     renderer_context::RendererSceneContext,
@@ -43,6 +44,10 @@ pub struct EditorHighlight(pub EntityHashSet);
 
 impl Plugin for PointerEventsPlugin {
     fn build(&self, app: &mut App) {
+        if !app.is_plugin_added::<HierarchyPropagatePlugin<MeshTag>>() {
+            app.add_plugins(HierarchyPropagatePlugin::<MeshTag>::default());
+        }
+
         app.init_resource::<Highlit>();
         app.init_resource::<EditorHighlight>();
 
@@ -55,6 +60,7 @@ impl Plugin for PointerEventsPlugin {
             Update,
             (hover_text, propagate_avatar_events, entity_highlighting),
         );
+        app.add_observer(refresh_mesh_3d);
     }
 }
 
@@ -281,9 +287,7 @@ struct Highlit(EntityHashSet);
 
 fn entity_highlighting(
     mut commands: Commands,
-    pointer_events: Query<&PointerEvents, Without<ForeignPlayer>>,
-    children: Query<&Children>,
-    mut meshes: Query<(&mut Mesh3d, Option<&mut MeshTag>), With<MeshMaterial3d<SceneMaterial>>>,
+    pointer_events: Query<(&PointerEvents, Option<&Propagate<MeshTag>>), Without<ForeignPlayer>>,
     hover_target: Res<PointerTarget>,
     proximity: Res<ProximityCandidates>,
     mut highlit: ResMut<Highlit>,
@@ -292,7 +296,7 @@ fn entity_highlighting(
     let mut highlight_pass = EntityHashSet::new();
 
     let mut test_and_insert = |entity: Entity| {
-        let Ok(pointer_events) = pointer_events.get(entity) else {
+        let Ok((pointer_events, _)) = pointer_events.get(entity) else {
             return;
         };
         if pointer_events.iter().any(|entry| {
@@ -316,38 +320,41 @@ fn entity_highlighting(
     let new_highlights = highlight_pass.difference(&highlit);
     for entity in new_highlights {
         debug!("Highlighting {}", entity);
-        for child in children.iter_descendants(*entity).chain([*entity]) {
-            let Ok((mut mesh_3d, maybe_mesh_tag)) = meshes.get_mut(child) else {
-                continue;
-            };
-            mesh_3d.set_changed();
-
-            trace!("Mesh {} highlighted", child);
-            if let Some(mut mesh_tag) = maybe_mesh_tag {
-                mesh_tag.0 |= SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG;
-            } else {
-                commands
-                    .entity(child)
-                    .insert(MeshTag(SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG));
-            }
-        }
+        let previous_mesh_tag = pointer_events
+            .get(*entity)
+            .ok()
+            .and_then(|(_, maybe_propagate_mesh_tag)| maybe_propagate_mesh_tag)
+            .map(|propagate_mesh_tag| propagate_mesh_tag.0 .0)
+            .unwrap_or_default();
+        commands.entity(*entity).try_insert(Propagate(MeshTag(
+            previous_mesh_tag | SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG,
+        )));
     }
 
     let expired_highlights = highlit.difference(&highlight_pass);
     for entity in expired_highlights {
         debug!("Highlight of {} expired.", entity);
-        for child in children.iter_descendants(*entity).chain([*entity]) {
-            let Ok((mut mesh_3d, maybe_mesh_tag)) = meshes.get_mut(child) else {
-                continue;
-            };
-            mesh_3d.set_changed();
-
-            if let Some(mut mesh_tag) = maybe_mesh_tag {
-                trace!("Mesh {} no longer highlighted", child);
-                mesh_tag.0 &= !SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG;
-            }
-        }
+        let previous_mesh_tag = pointer_events
+            .get(*entity)
+            .ok()
+            .and_then(|(_, maybe_propagate_mesh_tag)| maybe_propagate_mesh_tag)
+            .map(|propagate_mesh_tag| propagate_mesh_tag.0 .0)
+            .unwrap_or_default();
+        commands.entity(*entity).try_insert(Propagate(MeshTag(
+            previous_mesh_tag ^ SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG,
+        )));
     }
 
     **highlit = highlight_pass;
+}
+
+fn refresh_mesh_3d(
+    trigger: Trigger<OnInsert, MeshTag>,
+    mut meshes: Query<&mut Mesh3d, With<MeshTag>>,
+) {
+    let entity = trigger.target();
+    let Ok(mut mesh_3d) = meshes.get_mut(entity) else {
+        return;
+    };
+    mesh_3d.set_changed();
 }
