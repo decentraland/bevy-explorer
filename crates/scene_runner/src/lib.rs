@@ -37,7 +37,7 @@ use dcl_component::{
         sdk::components::{PbRealmInfo, PbUiCanvasInformation},
     },
     transform_and_parent::DclTransformAndParent,
-    DclReader, DclWriter, FromDclReader, SceneComponentId, SceneEntityId,
+    DclReader, DclWriter, SceneComponentId, SceneEntityId,
 };
 use initialize_scene::{PortableScenes, TestingData};
 use ipfs::SceneIpfsLocation;
@@ -706,8 +706,10 @@ fn send_scene_updates(
     data_channel: Res<SceneRoomConnection>,
     interactable_area: Res<InteractableArea>,
     preview_mode: Res<PreviewMode>,
+    mut buf: Local<Vec<u8>>,
 ) {
     let updates = &mut *updates;
+    let buf = &mut *buf;
 
     // Peek at the next scene before popping. Priority scenes bypass the thread
     // limit (but still occupy slots, preventing non-priority scenes from
@@ -729,14 +731,14 @@ fn send_scene_updates(
     // collect components
 
     // generate updates for camera and player
-    let mut buf = Vec::default();
-    for (mut affine, id) in [
+    for (mut affine, id, is_player) in [
         (
             player
                 .single()
                 .map(Transform::compute_affine)
                 .unwrap_or_default(),
             SceneEntityId::PLAYER,
+            true,
         ),
         (
             camera
@@ -744,25 +746,19 @@ fn send_scene_updates(
                 .map(Transform::compute_affine)
                 .unwrap_or_default(),
             SceneEntityId::CAMERA,
+            false,
         ),
     ] {
-        buf.clear();
         affine.translation -= scene_transform.affine().translation * Vec3A::new(1.0, 0.0, 1.0);
         let relative_transform = Transform::from(GlobalTransform::from(affine));
 
-        DclWriter::new(&mut buf).write(&DclTransformAndParent::from_bevy_transform_and_parent(
-            &relative_transform,
-            SceneEntityId::ROOT,
-        ));
-
-        let update = context
-            .crdt_store
-            .get(SceneComponentId::TRANSFORM, CrdtType::LWW_ENT, id)
-            .map(|prev| {
-                DclTransformAndParent::from_reader(&mut DclReader::new(prev))
-                    .unwrap()
-                    .to_bevy_transform()
-            })
+        // delta-check against the last transform we sent
+        let last_sent = if is_player {
+            &mut context.last_sent_player_transform
+        } else {
+            &mut context.last_sent_camera_transform
+        };
+        let update = last_sent
             .map(|t| {
                 (t.translation - relative_transform.translation).length_squared() > 0.0001
                     || t.rotation.angle_between(relative_transform.rotation) > 0.0001
@@ -770,11 +766,17 @@ fn send_scene_updates(
             .unwrap_or(true);
 
         if update {
+            *last_sent = Some(relative_transform);
+            buf.clear();
+            DclWriter::new(buf).write(&DclTransformAndParent::from_bevy_transform_and_parent(
+                &relative_transform,
+                SceneEntityId::ROOT,
+            ));
             context.crdt_store.update_if_different(
                 SceneComponentId::TRANSFORM,
                 CrdtType::LWW_ENT,
                 id,
-                Some(&mut DclReader::new(&buf)),
+                Some(&mut DclReader::new(buf)),
             );
         }
     }
@@ -811,12 +813,12 @@ fn send_scene_updates(
         is_connected_scene_room: Some(room.is_some()),
     };
     buf.clear();
-    DclWriter::new(&mut buf).write(&realm_info);
+    DclWriter::new(buf).write(&realm_info);
     context.crdt_store.update_if_different(
         SceneComponentId::REALM_INFO,
         CrdtType::LWW_ANY,
         SceneEntityId::ROOT,
-        Some(&mut DclReader::new(&buf)),
+        Some(&mut DclReader::new(buf)),
     );
 
     // add canvas info
@@ -861,12 +863,12 @@ fn send_scene_updates(
     };
 
     buf.clear();
-    DclWriter::new(&mut buf).write(&canvas_info);
+    DclWriter::new(buf).write(&canvas_info);
     context.crdt_store.force_update(
         SceneComponentId::CANVAS_INFO,
         CrdtType::LWW_ROOT,
         SceneEntityId::ROOT,
-        Some(&mut DclReader::new(&buf)),
+        Some(&mut DclReader::new(buf)),
     );
 
     // Engine-initiated census to push to the scene. Drained here (only when this

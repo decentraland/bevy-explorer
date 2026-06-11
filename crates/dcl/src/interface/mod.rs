@@ -134,6 +134,9 @@ impl CrdtStore {
     }
 
     pub fn clean_up(&mut self, dead: &HashSet<SceneEntityId>) {
+        if dead.is_empty() {
+            return;
+        }
         for state in self.lww.values_mut() {
             for id in dead {
                 state.last_write.remove(id);
@@ -148,19 +151,27 @@ impl CrdtStore {
     }
 
     pub fn take_updates(&mut self) -> CrdtStore {
-        let lww =
-            self.lww.iter_mut().map(|(component_id, state)| {
-                (
-                    *component_id,
-                    CrdtLWWState {
-                        last_write: HashMap::from_iter(state.updates.iter().map(|update| {
-                            (*update, state.last_write.get(update).unwrap().clone())
-                        })),
-                        updates: std::mem::take(&mut state.updates),
-                    },
-                )
-            });
-        let lww = HashMap::from_iter(lww);
+        let mut lww = HashMap::new();
+        for (component_id, state) in self.lww.iter_mut() {
+            if state.updates.is_empty() {
+                continue;
+            }
+            // last_write must retain authoritative state for future LWW conflict
+            // checks, so dirty entries are cloned rather than moved out.
+            let updates = std::mem::take(&mut state.updates);
+            let last_write = HashMap::from_iter(
+                updates
+                    .iter()
+                    .map(|update| (*update, state.last_write.get(update).unwrap().clone())),
+            );
+            lww.insert(
+                *component_id,
+                CrdtLWWState {
+                    last_write,
+                    updates,
+                },
+            );
+        }
 
         let go = std::mem::take(&mut self.go);
         CrdtStore { lww, go }
