@@ -44,7 +44,7 @@ use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets
 use crate::{
     bounds_calc::scene_regions,
     parcel_to_vec3,
-    renderer_context::RendererSceneContext,
+    renderer_context::{RendererSceneContext, FROZEN_BLOCK},
     update_world::{visibility::VisibilityComponent, ComponentTracker},
     vec3_to_parcel, ContainerEntity, DeletedSceneEntities, OutOfWorld, SceneEntity,
     SceneThreadHandle,
@@ -1723,7 +1723,11 @@ fn animate_ready_scene(
             continue;
         }
 
-        if transform.translation.y < 0.0 && (ctx.tick_number >= 5 || ctx.broken) {
+        // A scene parked below the world (y = -1000) is raised once it's ready: past tick 5, broken,
+        // or paused by the inspector. Without the frozen case, a scene frozen before tick 5 has its
+        // (already-spawned) main.crdt content stuck underground and looks empty until unfrozen.
+        let frozen = ctx.blocked.contains(FROZEN_BLOCK);
+        if transform.translation.y < 0.0 && (ctx.tick_number >= 5 || ctx.broken || frozen) {
             if transform.translation.y == -1000.0 {
                 for child in children.map(|c| c.iter()).unwrap_or_default() {
                     if loading_quads.get(child).is_ok() {
