@@ -518,6 +518,13 @@ pub fn parcel_to_vec3(parcel: IVec2) -> Vec3 {
 }
 
 impl ContainingScene<'_, '_> {
+    // true if any resource determining scene membership changed this frame
+    pub fn is_changed(&self) -> bool {
+        self.pointers.is_changed()
+            || self.live_scenes.is_changed()
+            || self.portable_scenes.is_changed()
+    }
+
     // just the parcel at the position
     pub fn get_parcel_position(&self, position: Vec3) -> Option<Entity> {
         let parcel = vec3_to_parcel(position);

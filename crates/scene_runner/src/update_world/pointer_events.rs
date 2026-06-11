@@ -272,16 +272,20 @@ fn hover_text(
         process(cand.entity, ActionCandidateMode::Proximity, &synthetic);
     }
 
-    // make unique
-    texts = texts
-        .into_iter()
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
+    // make unique (sorted, avoiding the Vec -> HashSet -> Vec round trip)
+    texts.sort_unstable();
+    texts.dedup();
 
-    tooltip
+    // avoid marking the resource changed when the value is identical
+    if tooltip
         .0
-        .insert(TooltipSource::Label("pointer_events"), texts);
+        .get(&TooltipSource::Label("pointer_events"))
+        .is_none_or(|prev| prev != &texts)
+    {
+        tooltip
+            .0
+            .insert(TooltipSource::Label("pointer_events"), texts);
+    }
 }
 
 #[derive(Default, Resource, Deref, DerefMut)]

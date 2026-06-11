@@ -268,6 +268,23 @@ impl InputManager<'_, '_> {
         })
     }
 
+    // true if any binding for the action was just pressed, ignoring priority reservations.
+    // `just_down` can only return true (for any priority) if this returns true.
+    pub fn just_down_any_priority<T: Into<Action>>(&self, action: T) -> bool {
+        self.inputs(action.into()).any(|item| match item {
+            InputIdentifier::Key(k) => self.key_input.just_pressed(*k),
+            InputIdentifier::Mouse(mb) => self.mouse_input.just_pressed(*mb),
+            InputIdentifier::Gamepad(b) => self
+                .gamepads
+                .iter()
+                .flat_map(|gp| gp.get_just_pressed())
+                .any(|p| p == b),
+            InputIdentifier::Analog(axis, input_direction) => {
+                self.axis_data.just_down(*axis, *input_direction)
+            }
+        })
+    }
+
     pub fn just_up<T: Into<Action>>(&self, action: T) -> bool {
         self.inputs(action.into()).any(|item| match item {
             InputIdentifier::Key(k) => self.key_input.just_released(*k),

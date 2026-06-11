@@ -148,9 +148,17 @@ fn apply_global_light(
     scene_distance: Res<SceneLoadDistance>,
     scene_global_light: Res<SceneGlobalLight>,
     mut prev: Local<(f32, SceneGlobalLight)>,
-    config: Res<AppConfig>,
     mut cloud_dt: Local<f32>,
+    // note: Added<DistanceFog> would conflict with the `&mut DistanceFog` access in `cameras`,
+    // so new fog components are detected by counting instead
+    new_cameras: Query<(), Added<Camera3d>>,
+    fog_cameras: Query<(), (With<Camera3d>, With<DistanceFog>)>,
+    mut last_fog_count: Local<usize>,
+    mut last_primary_distance: Local<f32>,
 ) {
+    // the transition has settled once the previous output exactly matches the target
+    let settled = prev.0 >= TRANSITION_TIME && prev.1 == *scene_global_light;
+
     let next_light = if prev.0 >= TRANSITION_TIME && prev.1.source == scene_global_light.source {
         scene_global_light.clone()
     } else {
@@ -204,6 +212,28 @@ fn apply_global_light(
 
     atmosphere.time += time.delta_secs() * *cloud_dt;
 
+    // skip the light/fog/ambient writes (which trigger change detection and re-extraction)
+    // when the light has settled and nothing else affecting them has changed
+    let primary_distance = cameras
+        .iter()
+        .find_map(|(maybe_primary, _)| maybe_primary.map(|camera| camera.distance))
+        .unwrap_or(0.0);
+    let fog_count = fog_cameras.iter().count();
+    let skip_writes = settled
+        && !setting.is_changed()
+        && !scene_distance.is_changed()
+        && new_cameras.is_empty()
+        && fog_count == *last_fog_count
+        && *last_primary_distance == primary_distance;
+    *last_primary_distance = primary_distance;
+    *last_fog_count = fog_count;
+
+    if skip_writes {
+        prev.0 += time.delta_secs();
+        prev.1 = next_light;
+        return;
+    }
+
     let mut directional_layers = RenderLayers::none();
     for (entity, layer, mut light_trans, mut directional) in sun.iter_mut() {
         if !next_light.layers.intersects(&RenderLayers::layer(layer.0)) {
@@ -227,15 +257,15 @@ fn apply_global_light(
             layer = layer.union(&PRIMARY_AVATAR_LIGHT_LAYER);
         }
 
-        let (shadows_enabled, cascade_shadow_config) = match config.graphics.shadow_settings {
+        let (shadows_enabled, cascade_shadow_config) = match setting.graphics.shadow_settings {
             ShadowSetting::Off => (false, Default::default()),
             ShadowSetting::Low => (
                 true,
                 CascadeShadowConfigBuilder {
                     num_cascades: 1,
                     minimum_distance: 0.1,
-                    maximum_distance: config.graphics.shadow_distance,
-                    first_cascade_far_bound: config.graphics.shadow_distance,
+                    maximum_distance: setting.graphics.shadow_distance,
+                    first_cascade_far_bound: setting.graphics.shadow_distance,
                     overlap_proportion: 0.2,
                 }
                 .build(),
@@ -245,8 +275,8 @@ fn apply_global_light(
                 CascadeShadowConfigBuilder {
                     num_cascades: 4,
                     minimum_distance: 0.1,
-                    maximum_distance: config.graphics.shadow_distance,
-                    first_cascade_far_bound: config.graphics.shadow_distance / 15.0,
+                    maximum_distance: setting.graphics.shadow_distance,
+                    first_cascade_far_bound: setting.graphics.shadow_distance / 15.0,
                     overlap_proportion: 0.2,
                 }
                 .build(),
@@ -303,7 +333,7 @@ fn apply_global_light(
     }
 
     ambient.brightness =
-        next_light.ambient_brightness * config.graphics.ambient_brightness as f32 * 20.0;
+        next_light.ambient_brightness * setting.graphics.ambient_brightness as f32 * 20.0;
     ambient.color = next_light.ambient_color;
 
     if prev.1.source == scene_global_light.source {

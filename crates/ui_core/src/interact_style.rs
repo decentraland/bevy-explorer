@@ -36,7 +36,36 @@ pub struct InteractStylePlugin;
 
 impl Plugin for InteractStylePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, set_interaction_style);
+        // only run when a style input (or styled target) changed, or while any node is
+        // hovered/pressed (the pressed state depends on global input state)
+        app.add_systems(
+            Update,
+            set_interaction_style.run_if(
+                |changed: Query<
+                    (),
+                    (
+                        With<InteractStyles>,
+                        Or<(
+                            Changed<InteractStyles>,
+                            Changed<Interaction>,
+                            Changed<Active>,
+                            Changed<Enabled>,
+                            Changed<UiActionPriority>,
+                            Changed<BackgroundColor>,
+                            Changed<BorderColor>,
+                            Changed<Ui9Slice>,
+                            Changed<ImageNode>,
+                            Changed<BoundedNode>,
+                            Changed<NodeBounds>,
+                        )>,
+                    ),
+                >,
+                 interactions: Query<&Interaction, With<InteractStyles>>| {
+                    !changed.is_empty()
+                        || interactions.iter().any(|i| i != &Interaction::None)
+                },
+            ),
+        );
     }
 }
 
@@ -144,7 +173,10 @@ pub fn set_interaction_style(
 
         if let Some(mut border) = maybe_border {
             if let Some(border_color) = style.border {
-                *border = BorderColor::all(border_color);
+                let new_border = BorderColor::all(border_color);
+                if *border != new_border {
+                    *border = new_border;
+                }
             }
         }
     }

@@ -98,13 +98,34 @@ fn start_clock(mut commands: Commands) {
 }
 
 #[expect(clippy::type_complexity, reason = "Queries are complex")]
+#[allow(clippy::too_many_arguments)]
 fn fetch_time_from_scene(
     mut commands: Commands,
     primary_player: Res<PrimaryPlayerRes>,
     containing_scene: ContainingScene,
     scenes: Query<(Entity, &RendererSceneContext, &SceneTime)>,
     time_keeper: Single<(Entity, Option<&SceneTime>, Option<&SceneTimeSource>), With<TimeKeeper>>,
+    added_times: Query<(), Added<SceneTime>>,
+    mut removed_times: RemovedComponents<SceneTime>,
+    mut last_player_state: Local<Option<Option<(IVec2, bool)>>>,
 ) {
+    // only recompute the time source when the scenes at the player position may have changed
+    let player_state = containing_scene
+        .transforms
+        .get(primary_player.0)
+        .ok()
+        .map(|(gt, oow)| (scene_runner::vec3_to_parcel(gt.translation()), oow));
+    let any_removed = removed_times.read().next().is_some();
+    removed_times.clear();
+    let dirty = containing_scene.is_changed()
+        || !added_times.is_empty()
+        || any_removed
+        || last_player_state.as_ref() != Some(&player_state);
+    *last_player_state = Some(player_state);
+    if !dirty {
+        return;
+    }
+
     let containing_primary_player = containing_scene.get(primary_player.0);
     let maybe_scene_time = scenes
         .iter_many_unique(EntityHashSet::from_iter(containing_primary_player))
@@ -139,6 +160,7 @@ fn fetch_time_from_scene(
 }
 
 #[expect(clippy::type_complexity, reason = "Queries are complex")]
+#[allow(clippy::too_many_arguments)]
 fn fetch_time_from_skybox(
     mut commands: Commands,
     primary_player: Res<PrimaryPlayerRes>,
@@ -146,7 +168,28 @@ fn fetch_time_from_skybox(
     scenes: Query<(Entity, &RendererSceneContext, Ref<SkyboxTime>)>,
     time_keeper: Single<(Entity, Option<&SkyboxTime>, Option<&SkyboxTimeSource>), With<TimeKeeper>>,
     scene_time_component_id: ComponentIdFor<SceneTime>,
+    added_times: Query<(), Added<SkyboxTime>>,
+    mut removed_times: RemovedComponents<SkyboxTime>,
+    mut last_player_state: Local<Option<Option<(IVec2, bool)>>>,
 ) {
+    // only recompute the time source when the scenes at the player position may have changed.
+    // SkyboxTime is an immutable component so value updates re-insert it (-> Added fires).
+    let player_state = containing_scene
+        .transforms
+        .get(primary_player.0)
+        .ok()
+        .map(|(gt, oow)| (scene_runner::vec3_to_parcel(gt.translation()), oow));
+    let any_removed = removed_times.read().next().is_some();
+    removed_times.clear();
+    let dirty = containing_scene.is_changed()
+        || !added_times.is_empty()
+        || any_removed
+        || last_player_state.as_ref() != Some(&player_state);
+    *last_player_state = Some(player_state);
+    if !dirty {
+        return;
+    }
+
     let containing_primary_player = containing_scene.get(primary_player.0);
     let maybe_skybox_time = scenes
         .iter_many_unique(EntityHashSet::from_iter(containing_primary_player))

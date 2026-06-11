@@ -151,8 +151,12 @@ pub fn add_collider_systems<T: ColliderType>(app: &mut App) {
     // clean up colliders from SceneColliderData whenever HasCollider is removed (including entity despawn)
     app.add_observer(on_collider_removed::<T>);
 
-    // show debugs whenever
-    app.add_systems(Update, render_debug_colliders::<T>);
+    // show debugs whenever (skip entirely unless debug is enabled or was just disabled)
+    app.add_systems(
+        Update,
+        render_debug_colliders::<T>
+            .run_if(|debug: Res<DebugColliders>| debug.0 != 0 || debug.is_changed()),
+    );
 }
 
 impl Plugin for MeshColliderPlugin {

@@ -384,6 +384,10 @@ fn manage_shadow_casters(
     };
     let player_t = player_gt.translation();
 
+    if read_lights.is_empty() {
+        return;
+    }
+
     let active_scenes = containing_scene.get_area(player, PLAYER_COLLIDER_RADIUS);
 
     // collect lights
@@ -421,32 +425,30 @@ fn manage_shadow_casters(
         max_enabled,
         max_casters
     );
+    // only write (and trigger change detection) when the target value differs
     for (light, _, importance, shadows_enabled) in lights.drain(..).rev() {
         let (maybe_p, maybe_s, mut vis) = write_lights.get_mut(light).unwrap();
 
         if importance.0 != 0.0 && max_enabled > 0 {
-            *vis = Visibility::Visible;
+            vis.set_if_neq(Visibility::Visible);
             max_enabled -= 1;
 
-            if shadows_enabled && max_casters > 0 {
-                if let Some(mut p) = maybe_p {
-                    p.shadows_enabled = true;
-                }
-                if let Some(mut s) = maybe_s {
-                    s.shadows_enabled = true;
-                }
-
+            let cast = shadows_enabled && max_casters > 0;
+            if cast {
                 max_casters -= 1;
-            } else {
-                if let Some(mut p) = maybe_p {
-                    p.shadows_enabled = false;
+            }
+            if let Some(mut p) = maybe_p {
+                if p.shadows_enabled != cast {
+                    p.shadows_enabled = cast;
                 }
-                if let Some(mut s) = maybe_s {
-                    s.shadows_enabled = false;
+            }
+            if let Some(mut s) = maybe_s {
+                if s.shadows_enabled != cast {
+                    s.shadows_enabled = cast;
                 }
             }
         } else {
-            *vis = Visibility::Hidden;
+            vis.set_if_neq(Visibility::Hidden);
         }
     }
 }
