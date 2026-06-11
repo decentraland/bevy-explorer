@@ -432,3 +432,56 @@ pub fn load_clouds_strip() -> Image {
     image.texture_descriptor.label = Some("horizon_clouds");
     image
 }
+
+/// load an embedded png as a texture (data channels, no sRGB)
+fn load_embedded_png(bytes: &[u8], label: &'static str, repeat_u: bool) -> Image {
+    let mut image = Image::from_buffer(
+        bytes,
+        bevy::image::ImageType::Extension("png"),
+        bevy::image::CompressedImageFormats::NONE,
+        false,
+        ImageSampler::Descriptor(ImageSamplerDescriptor {
+            label: Some(label.to_owned()),
+            address_mode_u: if repeat_u {
+                ImageAddressMode::Repeat
+            } else {
+                ImageAddressMode::ClampToEdge
+            },
+            address_mode_v: ImageAddressMode::ClampToEdge,
+            ..ImageSamplerDescriptor::linear()
+        }),
+        RenderAssetUsages::all(),
+    )
+    .expect("invalid embedded png");
+    image.texture_descriptor.label = Some(label);
+    image
+}
+
+/// unity explorer's sky textures (StylizedSkybox/Textures)
+pub fn load_unity_clouds() -> Image {
+    load_embedded_png(
+        include_bytes!("assets/unity_clouds.png"),
+        "unity_clouds",
+        true,
+    )
+}
+pub fn load_unity_sun() -> Image {
+    load_embedded_png(include_bytes!("assets/unity_sun.png"), "unity_sun", false)
+}
+pub fn load_unity_moon() -> Image {
+    load_embedded_png(include_bytes!("assets/unity_moon.png"), "unity_moon", false)
+}
+pub fn load_unity_stars() -> Image {
+    let mut img = load_embedded_png(
+        include_bytes!("assets/unity_stars.png"),
+        "unity_stars",
+        true,
+    );
+    img.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+        label: Some("unity_stars".to_owned()),
+        address_mode_u: ImageAddressMode::Repeat,
+        address_mode_v: ImageAddressMode::Repeat,
+        ..ImageSamplerDescriptor::linear()
+    });
+    img
+}

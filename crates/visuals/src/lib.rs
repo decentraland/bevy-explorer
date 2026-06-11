@@ -20,7 +20,10 @@ use bevy_atmosphere::{
     prelude::{AtmosphereCamera, AtmosphereModel, AtmospherePlugin, AtmosphereSettings},
     system_param::AtmosphereMut,
 };
-use nishita_cloud::{build_sky_lut, init_noise, load_clouds_strip, NishitaCloud};
+use nishita_cloud::{
+    build_sky_lut, init_noise, load_clouds_strip, load_unity_clouds, load_unity_moon,
+    load_unity_stars, load_unity_sun, NishitaCloud,
+};
 
 use bevy_console::ConsoleCommand;
 use common::{
@@ -133,7 +136,11 @@ fn setup(
         // it the same color-cycle lut and painted clouds
         if let Some(material) = sky_materials.get_mut(&sky_material.0) {
             material.sky_lut = atmosphere.sky_lut.clone();
-            material.clouds_strip = atmosphere.clouds_strip.clone();
+            // the per-pixel sky uses unity's high-res panorama + sprites
+            material.clouds_strip = images.add(load_unity_clouds());
+            material.sun_sprite = images.add(load_unity_sun());
+            material.moon_sprite = images.add(load_unity_moon());
+            material.stars_tex = images.add(load_unity_stars());
         }
     }
 
