@@ -34,7 +34,7 @@ use wallet::{
     Wallet,
 };
 
-use crate::version_check::{check_update, check_update_sync};
+use crate::version_check::check_update;
 
 pub struct LoginPlugin;
 
@@ -70,6 +70,7 @@ fn login(
     dui: Res<DuiRegistry>,
     active_dialog: Res<ActiveDialog>,
     mut motd_shown: Local<bool>,
+    mut update_check: Local<Option<bevy::tasks::Task<Option<(String, String)>>>>,
     mut bridge: EventWriter<SystemApi>,
     native_active: Res<NativeUi>,
     config: Res<AppConfig>,
@@ -79,7 +80,15 @@ fn login(
     }
 
     if !*motd_shown {
-        let update = check_update_sync();
+        // don't block the main thread on the github release check
+        let task = update_check.get_or_insert_with(|| {
+            bevy::tasks::IoTaskPool::get().spawn(check_update())
+        });
+        let Some(update) = futures_lite::future::block_on(futures_lite::future::poll_once(task))
+        else {
+            return;
+        };
+        *update_check = None;
         let permit = active_dialog.try_acquire().unwrap();
 
         if let Some((desc, url)) = update {
