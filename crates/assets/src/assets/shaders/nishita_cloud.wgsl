@@ -412,8 +412,17 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
     let celestial_col = mix(vec3(2.0), moon_tint * 7.0, moon_influence);
     render_base += celestial_col * celestial * (1.0 - clouds_mask * 0.9);
 
+    // real moon: tinted disc opposite the sun, visible at night
+    let moon_dir = -sun_dir;
+    let moon_night = 1.0 - day_factor;
+    let moon_dot = dot(ray, moon_dir);
+    let moon_disc = step(cos(0.035), moon_dot) * moon_night;
+    render_base += moon_tint * 7.0 * moon_disc * (1.0 - clouds_mask * 0.9);
+    // soft halo around the moon
+    render_base += moon_tint * pow(max(moon_dot, 0.0), 64.0) * moon_night * 0.6;
+
     // atmospheric glow + radiance halo around the sun
-    render_base += vec3(2.0) * smoothstep(0.7, 1.7, sun_dot) * sun_opacity * day_factor * 0.5;
+    render_base += vec3(2.0) * smoothstep(0.9, 1.8, sun_dot) * sun_opacity * day_factor * 0.35;
     let radiance = pow(max(sun_dot, 0.0), 12.0) * (1.0 - abs(eye_y) * 0.5);
     render_base += cycle(4) * radiance * 0.05 * sun_opacity * day_factor;
 
@@ -427,8 +436,10 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
     // overall energy/gamma from sky.tres (energy 1.0, gamma 0.9, x0.6)
     render_base = pow(max(render_base, vec3(0.0)), vec3(0.9)) * 0.6;
 
-    // stars
-    if nishita.dir_light_intensity < 1000.0 {
+    // stars — gated by time of day, not light intensity (the night moon
+    // light floor would otherwise keep them permanently off)
+    let night_factor = 1.0 - max(0.0, sin(nishita.day * 3.14159265));
+    if night_factor > 0.05 {
         for (var i=0u; i<1000u; i++) {
             let star_world_dir = normalize(
                 vec3<f32>(
@@ -447,7 +458,7 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
                 let brightness = smoothstep(0.99995 + 0.000025, 0.99995, size);
                 render_base += vec3<f32>(
                     color 
-                    * clamp(1.0 - nishita.dir_light_intensity / 1000.0, 0.0, 1.0)) // sun brightness
+                    * night_factor) // night visibility
                     * brightness // star brightness
                     * pow(smoothstep(size, 1.0, stardirdot), 3.0)  // distance from middle of the star
                     * clamp(ray.y * 10.0, 0.0, 1.0); // distance above horizon
