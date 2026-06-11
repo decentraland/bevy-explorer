@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use dcl::interface::CrdtStore;
+use dcl::{interface::CrdtStore, AllocError};
 use dcl_component::SceneEntityId;
 use scene_runner::{
     renderer_context::RendererSceneContext, CrdtSnapshotEvent, EntityAllocatedEvent,
@@ -7,7 +7,7 @@ use scene_runner::{
 use std::collections::HashMap;
 
 pub type SnapshotCallback = Box<dyn FnOnce(&CrdtStore) + Send + Sync>;
-pub type AllocCallback = Box<dyn FnOnce(&[SceneEntityId]) + Send + Sync>;
+pub type AllocCallback = Box<dyn FnOnce(&[Result<SceneEntityId, AllocError>]) + Send + Sync>;
 
 /// Callbacks waiting for a CRDT snapshot from their scene thread.
 /// Requests are dispatched immediately via [`SceneResolver::request_snapshot`];
@@ -57,11 +57,17 @@ pub fn handle_entity_allocated_events(
 ) {
     for event in events.read() {
         if let Ok(mut ctx) = scenes.get_mut(event.scene_entity) {
-            ctx.nascent.extend(event.ids.iter().copied());
+            ctx.nascent.extend(
+                event
+                    .results
+                    .iter()
+                    .filter_map(|r| r.as_ref().ok())
+                    .copied(),
+            );
         }
         if let Some(callbacks) = pending.0.remove(&event.scene_entity) {
             for cb in callbacks {
-                cb(&event.ids);
+                cb(&event.results);
             }
         }
     }

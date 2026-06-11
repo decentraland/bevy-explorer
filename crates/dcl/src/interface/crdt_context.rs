@@ -120,6 +120,22 @@ impl CrdtContext {
         self.entity_entry(entity.id).0 > entity.generation
     }
 
+    // Queue an entity for creation at a caller-specified id (instead of a fresh allocation) — used to
+    // recreate entities at their original ids on a freshly-reloaded scene. Returns false if the id is
+    // already alive at that generation (a collision) or has aged past it (dead). Advances the
+    // fresh-allocation cursor past the id so a later `new_in_range` won't hand the same number out
+    // before the next census marks it alive.
+    pub fn alloc_explicit(&mut self, entity: SceneEntityId) -> bool {
+        if self.is_born(entity) {
+            return false; // already alive at this generation — collision
+        }
+        if !self.init(entity) {
+            return false; // dead/aged at this generation
+        }
+        self.last_new = entity.id;
+        true
+    }
+
     pub fn new_in_range(&mut self, range: &RangeInclusive<u16>) -> Option<SceneEntityId> {
         let mut next_new = self.last_new.wrapping_add(1);
         if !range.contains(&self.last_new) {

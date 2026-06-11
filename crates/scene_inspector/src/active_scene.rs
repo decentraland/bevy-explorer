@@ -88,10 +88,11 @@ impl SceneResolver<'_, '_> {
         component_id: SceneComponentId,
         data: Vec<u8>,
         count: usize,
+        explicit_ids: Option<Vec<u32>>,
         callback: F,
     ) -> Result<(), String>
     where
-        F: FnOnce(&[SceneEntityId]) + Send + Sync + 'static,
+        F: FnOnce(&[Result<SceneEntityId, dcl::AllocError>]) + Send + Sync + 'static,
     {
         let entity = self.resolve_entity()?;
         let handle = self
@@ -104,6 +105,7 @@ impl SceneResolver<'_, '_> {
                 component_id,
                 data,
                 count,
+                explicit_ids,
             })
             .map_err(|_| "failed to send allocate request to scene".to_string())?;
         pending.push(entity, Box::new(callback) as AllocCallback);

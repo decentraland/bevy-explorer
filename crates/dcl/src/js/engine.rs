@@ -15,7 +15,7 @@ use crate::{
         AllocatorContext, CommunicatedWithRenderer, FilteredCrdtStore, RendererStore,
         SceneResponseSender, ShuttingDown,
     },
-    CrdtComponentInterfaces, CrdtStore, RendererResponse, RpcCalls, SceneElapsedTime,
+    AllocError, CrdtComponentInterfaces, CrdtStore, RendererResponse, RpcCalls, SceneElapsedTime,
     SceneLogMessage, SceneResponse,
 };
 
@@ -160,11 +160,17 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
                 component_id,
                 data,
                 count,
+                explicit_ids,
             }) => {
-                // Allocate fresh ids from the authoritative allocator (collision-free, correctly
+                // Allocate ids from the authoritative allocator (collision-free, correctly
                 // generationed) and reply immediately. Buffer the instantiating put_components so
                 // they're delivered with the next Ok tick rather than ticking the scene here — the
                 // scene's @dcl/ecs then adopts the entities on receive, before its update() runs.
+                //
+                // With `explicit_ids`, instantiate those exact ids instead of allocating fresh —
+                // used to recreate entities at their original ids on a freshly-reloaded scene. A
+                // requested id that's already alive (a collision) yields an `Err` in its slot, so
+                // the caller can surface it. Without it, `count` fresh ids.
                 //
                 // IMPORTANT: `component_id` MUST be a non-engine-recognized (custom) component.
                 // Engine-recognized components flow renderer→scene one-way (the scene never echoes
@@ -176,14 +182,37 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
                 let mut allocator = op_state.borrow_mut().take::<AllocatorContext>();
                 let mut filtered_store = op_state.borrow_mut().take::<FilteredCrdtStore>();
                 let scene_id = allocator.0.scene_id;
-                let mut ids = Vec::with_capacity(count);
-                for _ in 0..count {
-                    // authored entities live above the reserved-static range (512); avoid the
-                    // u16::MAX wrap sentinel used by new_in_range's `last_new`.
-                    let Some(id) = allocator.0.new_in_range(&(512..=u16::MAX - 1)) else {
-                        warn!("AllocateEntity: no free entity id");
-                        break;
+                // One result per requested slot, in order: a caller-specified id (validated below)
+                // or a freshly-allocated one, else the reason it couldn't be allocated. authored
+                // entities live above the reserved-static range (512); avoid the u16::MAX wrap
+                // sentinel used by new_in_range's `last_new`.
+                let results: Vec<Result<dcl_component::SceneEntityId, AllocError>> =
+                    match &explicit_ids {
+                        Some(protos) => protos
+                            .iter()
+                            .map(|p| {
+                                let entity = dcl_component::SceneEntityId::from_proto_u32(*p);
+                                if allocator.0.alloc_explicit(entity) {
+                                    Ok(entity)
+                                } else {
+                                    warn!("AllocateEntity: id {entity:?} already live (collision)");
+                                    Err(AllocError::Collision(entity))
+                                }
+                            })
+                            .collect(),
+                        None => (0..count)
+                            .map(|_| {
+                                allocator
+                                    .0
+                                    .new_in_range(&(512..=u16::MAX - 1))
+                                    .ok_or_else(|| {
+                                        warn!("AllocateEntity: no free entity id");
+                                        AllocError::NoFreeId
+                                    })
+                            })
+                            .collect(),
                     };
+                for id in results.iter().filter_map(|r| r.as_ref().ok()).copied() {
                     // Also record the instantiation in the sidecar so /crdt_snapshot reflects it —
                     // the scene never echoes the injected (renderer→scene) component back, so without
                     // this the editor's view of the component would vanish on the next reload.
@@ -200,15 +229,14 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
                         &SceneCrdtTimestamp(1),
                         Some(&data),
                     ));
-                    ids.push(id);
                 }
                 op_state.borrow_mut().put(allocator);
                 op_state.borrow_mut().put(filtered_store);
-                debug!("AllocateEntity: allocated {ids:?}");
+                debug!("AllocateEntity: {results:?}");
                 let _ = op_state
                     .borrow_mut()
                     .borrow_mut::<SceneResponseSender>()
-                    .try_send(SceneResponse::EntityAllocated(scene_id, ids));
+                    .try_send(SceneResponse::EntityAllocated(scene_id, results));
                 continue;
             }
             other => break other,
