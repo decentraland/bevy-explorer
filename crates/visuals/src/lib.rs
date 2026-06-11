@@ -104,6 +104,8 @@ fn setup(
     camera: Res<PrimaryCameraRes>,
     mut atmosphere: AtmosphereMut<NishitaCloud>,
     mut images: ResMut<Assets<Image>>,
+    mut sky_materials: ResMut<Assets<bevy_atmosphere::skybox::SkyBoxMaterial>>,
+    sky_material: Res<bevy_atmosphere::skybox::AtmosphereSkyBoxMaterial>,
     // envmap: Res<Envmap>,
 ) {
     info!("visuals::setup");
@@ -126,6 +128,13 @@ fn setup(
         atmosphere.noise_texture = h_noise;
         atmosphere.sky_lut = images.add(build_sky_lut());
         atmosphere.clouds_strip = images.add(load_clouds_strip());
+
+        // the visible sky is rendered per-pixel by the skybox material; give
+        // it the same color-cycle lut and painted clouds
+        if let Some(material) = sky_materials.get_mut(&sky_material.0) {
+            material.sky_lut = atmosphere.sky_lut.clone();
+            material.clouds_strip = atmosphere.clouds_strip.clone();
+        }
     }
 
     // commands.entity(camera.0).try_insert(
@@ -157,6 +166,8 @@ fn apply_global_light(
     scene_distance: Res<SceneLoadDistance>,
     scene_global_light: Res<SceneGlobalLight>,
     time_of_day: Res<common::structs::TimeOfDay>,
+    mut sky_materials: ResMut<Assets<bevy_atmosphere::skybox::SkyBoxMaterial>>,
+    sky_material: Res<bevy_atmosphere::skybox::AtmosphereSkyBoxMaterial>,
     mut prev: Local<(f32, SceneGlobalLight)>,
     config: Res<AppConfig>,
     mut cloud_dt: Local<f32>,
@@ -200,9 +211,14 @@ fn apply_global_light(
         Vec3::new(5.5e-6, 13.0e-6, 22.4e-6) * next_light.dir_color.to_srgba().to_vec3();
     atmosphere.dir_light_intensity = next_light.dir_illuminance;
     atmosphere.sun_color = next_light.dir_color.to_srgba().to_vec3();
-    // drive the measured-sky lut with the time of day
+    // drive the color-cycle lut with the time of day
     atmosphere.day = (time_of_day.elapsed_secs() / (60.0 * 60.0 * 24.0)).rem_euclid(1.0);
     atmosphere.tick += 1;
+
+    // push sun direction + time into the per-pixel skybox material
+    if let Some(material) = sky_materials.get_mut(&sky_material.0) {
+        material.data = atmosphere.sun_position.extend(atmosphere.day);
+    }
 
     if atmosphere.cloudy != cloud.cover {
         *cloud_dt = (*cloud_dt + time.delta_secs() * 20.0)
