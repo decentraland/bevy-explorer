@@ -11,7 +11,7 @@ use scene_runner::{
         LiveScenes, PointerResult, SceneHash, SceneLoading, ScenePointers, PARCEL_SIZE,
     },
     permissions::Permission,
-    renderer_context::RendererSceneContext,
+    renderer_context::{RendererSceneContext, FROZEN_BLOCK},
     update_world::mesh_collider::SceneColliderData,
     OutOfWorld,
 };
@@ -130,7 +130,12 @@ pub fn handle_out_of_world(
     let (maybe_context, maybe_loadstate, maybe_collider_data) = scenes.get_mut(*scene).unwrap();
 
     if let Some(context) = maybe_context {
-        if !context.broken && (context.tick_number <= 5 || !context.blocked.is_empty()) {
+        // A scene the inspector has paused is as loaded as it's going to get — keeping the player
+        // out-of-world (behind the loading screen) is wrong, and a frozen scene never advances its
+        // tick or clears `blocked` to become "ready" on its own. FROZEN_BLOCK is only ever set by the
+        // inspector's /freeze_scene + /tick_scene, so this only affects inspector-paused scenes.
+        let frozen = context.blocked.contains(FROZEN_BLOCK);
+        if !context.broken && !frozen && (context.tick_number <= 5 || !context.blocked.is_empty()) {
             debug!("scene not ready");
         } else {
             debug!(
