@@ -12,9 +12,9 @@ use common::{structs::PreviewMode, util::InvertedScaleExt};
 
 pub type SceneMaterial = ExtendedMaterial<SceneBound>;
 
-pub const SCENE_MATERIAL_NO_DITHERING: u32 = 16;
-pub const SCENE_MATERIAL_CONE_ONLY_DITHER: u32 = 32;
 pub const SCENE_MATERIAL_SHOW_OUTSIDE_BOUNDS_MESH_TAG: u32 = 0x01000000;
+pub const SCENE_MATERIAL_NO_DITHERING_MESH_TAG: u32 = 0x02000000;
+pub const SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG: u32 = 0x04000000;
 pub const SCENE_MATERIAL_OUTLINE_MESH_TAGS: u32 = 0xF0000000;
 pub const SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG: u32 = 0x10000000;
 pub const SCENE_MATERIAL_OUTLINE_RED_MESH_TAG: u32 = 0x20000000;
@@ -22,19 +22,19 @@ pub const SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG: u32 = 0x40000000;
 pub const SCENE_MATERIAL_OUTLINE_BLUE_MESH_TAG: u32 = 0x80000000;
 
 pub trait SceneMaterialExt {
-    fn unbounded_outlined(mat: StandardMaterial) -> Self
+    fn new_unbounded(mat: StandardMaterial) -> Self
     where
         Self: Sized;
 }
 
 impl SceneMaterialExt for SceneMaterial {
-    fn unbounded_outlined(mat: StandardMaterial) -> Self
+    fn new_unbounded(mat: StandardMaterial) -> Self
     where
         Self: Sized,
     {
         Self {
             base: mat,
-            extension: SceneBound::unbounded_outlined(),
+            extension: SceneBound::new_unbounded(),
         }
     }
 }
@@ -91,31 +91,17 @@ impl SceneBound {
                 num_bounds,
                 bounds,
                 distance,
-                flags: 0,
-                _pad: 0,
             },
             inverted_scale: false,
         }
     }
 
-    pub fn new_outlined(bounds: Vec<BoundRegion>, distance: f32, disable_dither: bool) -> Self {
-        let mut scene_bound = Self::new(bounds, distance);
-        scene_bound.data.flags = if disable_dither {
-            SCENE_MATERIAL_NO_DITHERING
-        } else {
-            0
-        } + SCENE_MATERIAL_CONE_ONLY_DITHER;
-        scene_bound
-    }
-
-    pub fn unbounded_outlined() -> Self {
+    pub fn new_unbounded() -> Self {
         Self {
             data: SceneBoundData {
                 num_bounds: 0,
                 bounds: Default::default(),
                 distance: 0.0,
-                flags: 0,
-                _pad: 0,
             },
             inverted_scale: false,
         }
@@ -139,9 +125,7 @@ mod decl {
     pub struct SceneBoundData {
         pub(super) bounds: [BoundRegion; 8],
         pub distance: f32,
-        pub flags: u32,
         pub num_bounds: u32,
-        pub(super) _pad: u32,
     }
 }
 pub use decl::*;
@@ -262,6 +246,14 @@ impl MaterialExtension for SceneBound {
                 SCENE_MATERIAL_SHOW_OUTSIDE_BOUNDS_MESH_TAG,
             ));
             fragment.shader_defs.push(ShaderDefVal::UInt(
+                "NO_DITHERING_MESH_TAG".to_owned(),
+                SCENE_MATERIAL_NO_DITHERING_MESH_TAG,
+            ));
+            fragment.shader_defs.push(ShaderDefVal::UInt(
+                "CONE_ONLY_DITHER_MESH_TAG".to_owned(),
+                SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG,
+            ));
+            fragment.shader_defs.push(ShaderDefVal::UInt(
                 "OUTLINE_MESH_TAGS".to_owned(),
                 SCENE_MATERIAL_OUTLINE_MESH_TAGS,
             ));
@@ -281,6 +273,7 @@ impl MaterialExtension for SceneBound {
                 "OUTLINE_BLUE_MESH_TAG".to_owned(),
                 SCENE_MATERIAL_OUTLINE_BLUE_MESH_TAG,
             ));
+
             if data.inverted_scale {
                 fragment.shader_defs.push("INVERTED_SCALE".into());
             }

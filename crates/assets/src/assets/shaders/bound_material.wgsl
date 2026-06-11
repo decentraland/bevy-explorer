@@ -23,9 +23,7 @@ struct Bounds {
 struct SceneBounds {
     bounds: array<Bounds,8>,
     distance: f32,
-    flags: u32,
     num_bounds: u32,
-    _pad: u32,
 }
 
 fn unpack_bounds(packed: u32) -> vec2<f32> {
@@ -35,9 +33,6 @@ fn unpack_bounds(packed: u32) -> vec2<f32> {
     let y_signed = select(y, y - 0x10000, (y & 0x8000) != 0);
     return vec2<f32>(f32((x_signed) * 16), f32((y_signed) * 16));
 }
-
-const DISABLE_DITHER: u32 = 16u;
-const CONE_ONLY_DITHER: u32 = 32u;
 
 @group(2) @binding(100)
 var<uniform> bounds: SceneBounds;
@@ -61,8 +56,8 @@ fn fragment(
 #endif
 
     var cap_brightness: f32 = 0.0;
-    if ((bounds.flags & DISABLE_DITHER) | (mesh_tag & #{OUTLINE_BLACK_MESH_TAG})) == 0 {
-        cap_brightness = discard_dither(in.position.xy, in.world_position.xyz, view.user_value, (bounds.flags & CONE_ONLY_DITHER) == 0);
+    if (mesh_tag & (#{NO_DITHERING_MESH_TAG} | #{OUTLINE_RED_MESH_TAG})) == 0 {
+        cap_brightness = discard_dither(in.position.xy, in.world_position.xyz, view.user_value, (mesh_tag & #{CONE_ONLY_DITHER_MESH_TAG}) == 0);
     }
 
     // generate a PbrInput struct from the StandardMaterial bindings

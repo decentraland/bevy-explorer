@@ -26,9 +26,7 @@ struct Bounds {
 struct SceneBounds {
     bounds: array<Bounds,8>,
     distance: f32,
-    flags: u32,
     num_bounds: u32,
-    _pad: u32,
 }
 
 fn unpack_bounds(packed: u32) -> vec2<f32> {
@@ -39,11 +37,6 @@ fn unpack_bounds(packed: u32) -> vec2<f32> {
     return vec2<f32>(f32((x_signed) * 16), f32((y_signed) * 16));
 }
 
-const SHOW_OUTSIDE: u32 = 1u;
-//const OUTLINE: u32 = 2u; // replaced by OUTLINE shader def
-const OUTLINE_RED: u32 = 4u;
-const OUTLINE_FORCE: u32 = 8u;
-
 @group(2) @binding(100)
 var<uniform> bounds: SceneBounds;
 
@@ -51,12 +44,13 @@ var<uniform> bounds: SceneBounds;
 fn fragment(
     in: VertexOutput,
     @builtin(front_facing) is_front: bool,
-#ifdef OUTLINE
 #ifdef MULTISAMPLED
     @builtin(sample_index) sample_index: u32,
 #endif
-#endif
 ) {
+    // Lookup the tag for the given mesh
+    let mesh_tag = mesh_functions::get_tag(in.instance_index);
+
 #ifdef INVERTED_SCALE
     let is_front_m = !is_front;
 #else
@@ -67,10 +61,8 @@ fn fragment(
     var pbr_input = pbr_input_from_standard_material(in, is_front_m);
     var out: FragmentOutput;
 
-#ifdef OUTLINE
 #ifndef MULTISAMPLED
     let sample_index = 0u;
-#endif
 #endif
 
     // apply emmissive multiplier
