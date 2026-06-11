@@ -44,13 +44,7 @@ var<uniform> bounds: SceneBounds;
 fn fragment(
     in: VertexOutput,
     @builtin(front_facing) is_front: bool,
-#ifdef MULTISAMPLED
-    @builtin(sample_index) sample_index: u32,
-#endif
 ) {
-    // Lookup the tag for the given mesh
-    let mesh_tag = mesh_functions::get_tag(in.instance_index);
-
 #ifdef INVERTED_SCALE
     let is_front_m = !is_front;
 #else
@@ -60,10 +54,6 @@ fn fragment(
     // generate a PbrInput struct from the StandardMaterial bindings
     var pbr_input = pbr_input_from_standard_material(in, is_front_m);
     var out: FragmentOutput;
-
-#ifndef MULTISAMPLED
-    let sample_index = 0u;
-#endif
 
     // apply emmissive multiplier
     // dcl uses default 2.0 intensity. we also override bevy_pbr base emissive rules so that 
