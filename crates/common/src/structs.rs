@@ -235,7 +235,7 @@ pub struct EmoteCommand {
 // the scene-relative path against the active scene's content map). For foreign
 // players, written by the comms crate when a Movement packet with anim fields
 // arrives. Read by `animate` in the avatar crate uniformly for both.
-#[derive(Component, Default, Clone, Debug)]
+#[derive(Component, Default, Clone, Debug, PartialEq)]
 pub struct SceneDrivenAnim {
     pub active: Option<SceneDrivenAnimationRequest>,
 }
@@ -253,7 +253,7 @@ pub fn avatar_tilt_quat(pitch_deg: f32, roll_deg: f32) -> bevy::math::Quat {
     )
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct SceneDrivenAnimationRequest {
     // scene-relative path (e.g. "assets/walk.glb") — used for feedback to the controlling
     // scene. Empty for remote requests received over the network.

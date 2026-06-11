@@ -50,6 +50,28 @@ use crate::{process_avatar, AvatarDefinition};
 #[derive(Component)]
 pub struct AvatarAnimPlayer(pub Entity);
 
+// engine-emote urns used every frame by the velocity selector; parsed once
+// (EmoteUrn::new re-validates and re-allocates several times per call)
+static URN_IDLE: std::sync::LazyLock<EmoteUrn> =
+    std::sync::LazyLock::new(|| EmoteUrn::new("idle_male").unwrap());
+static URN_JUMP: std::sync::LazyLock<EmoteUrn> =
+    std::sync::LazyLock::new(|| EmoteUrn::new("jump").unwrap());
+static URN_WALK: std::sync::LazyLock<EmoteUrn> =
+    std::sync::LazyLock::new(|| EmoteUrn::new("walk").unwrap());
+static URN_RUN: std::sync::LazyLock<EmoteUrn> =
+    std::sync::LazyLock::new(|| EmoteUrn::new("run").unwrap());
+static URN_DOUBLE_JUMP: std::sync::LazyLock<EmoteUrn> =
+    std::sync::LazyLock::new(|| EmoteUrn::new("double_jump").unwrap());
+static URN_GLIDE: std::sync::LazyLock<EmoteUrn> =
+    std::sync::LazyLock::new(|| EmoteUrn::new("glide").unwrap());
+
+// per-avatar animate state previously held in per-frame-rebuilt Local HashMaps
+#[derive(Component, Default)]
+pub struct AvatarAnimState {
+    damped_velocity: Vec3,
+    current_emote_min_velocity: f32,
+}
+
 pub struct AvatarAnimationPlugin;
 
 impl Plugin for AvatarAnimationPlugin {
@@ -240,7 +262,7 @@ pub struct ActiveEmote {
 impl Default for ActiveEmote {
     fn default() -> Self {
         Self {
-            urn: EmoteUrn::new("idle_male").unwrap(),
+            urn: URN_IDLE.clone(),
             speed: 1.0,
             restart: false,
             repeat: false,
@@ -284,15 +306,13 @@ fn animate(
         &mut AvatarDynamicState,
         Option<&EmoteCommand>,
         &GlobalTransform,
-        Option<&mut ActiveEmote>,
+        Option<(&mut ActiveEmote, &mut AvatarAnimState)>,
         Option<&ForeignPlayer>,
         Option<&ContainerEntity>,
         Option<&PrimaryUser>,
         Option<&mut LastEmoteCommand>,
         Option<&SceneDrivenAnim>,
     )>,
-    mut velocities: Local<HashMap<Entity, Vec3>>,
-    mut current_emote_min_velocities: Local<HashMap<Entity, f32>>,
     time: Res<Time>,
     player: Query<(&PrimaryUser, Option<&PlayerModifiers>)>,
     containing_scene: ContainingScene,
@@ -305,9 +325,6 @@ fn animate(
         .unwrap_or((-20.0, 1.25));
     let gravity = gravity.min(-0.1);
     let jump_height = jump_height.max(0.1);
-
-    let prior_velocities = std::mem::take(&mut *velocities);
-    let prior_min_velocities = std::mem::take(&mut *current_emote_min_velocities);
 
     for (
         avatar_ent,
@@ -322,9 +339,10 @@ fn animate(
         maybe_scene_anim,
     ) in avatars.iter_mut()
     {
-        let Some(mut active_emote) = active_emote else {
+        let Some((mut active_emote, mut anim_state)) = active_emote else {
             commands.entity(avatar_ent).try_insert((
                 ActiveEmote::default(),
+                AvatarAnimState::default(),
                 EmoteCommand::default(),
                 LastEmoteCommand::default(),
             ));
@@ -332,14 +350,11 @@ fn animate(
         };
 
         // calculate/store damped velocity
-        let prior_velocity = prior_velocities
-            .get(&avatar_ent)
-            .copied()
-            .unwrap_or(Vec3::ZERO);
+        let prior_velocity = anim_state.damped_velocity;
         let ratio = time.delta_secs().clamp(0.0, 0.1) / 0.1;
         let damped_velocity = dynamic_state.velocity * ratio + prior_velocity * (1.0 - ratio);
         let damped_velocity_len = damped_velocity.xz().length();
-        velocities.insert(avatar_ent, damped_velocity);
+        anim_state.damped_velocity = damped_velocity;
 
         let scene_anim = maybe_scene_anim.and_then(|a| a.active.as_ref());
 
@@ -367,10 +382,7 @@ fn animate(
 
         // check / cancel requested emote
         if Some(&active_emote.urn) == requested_emote.as_ref() {
-            let playing_min_vel = prior_min_velocities
-                .get(&avatar_ent)
-                .copied()
-                .unwrap_or_default();
+            let playing_min_vel = anim_state.current_emote_min_velocity;
             // A non-idle scene-driven animation takes precedence over a triggered emote.
             let scene_cancels = scene_anim.is_some_and(|req| !req.idle);
             // Scene-driven animations handle their own motion semantics; don't cancel on move.
@@ -379,6 +391,7 @@ fn animate(
             if scene_cancels {
                 debug!("clear on scene anim {:?}", active_emote.urn);
                 requested_emote = None;
+                anim_state.current_emote_min_velocity = 0.0;
             } else if velocity_cancels && damped_velocity_len * 0.9 > playing_min_vel {
                 // stop emotes on move
                 debug!(
@@ -386,9 +399,9 @@ fn animate(
                     damped_velocity_len, playing_min_vel
                 );
                 requested_emote = None;
+                anim_state.current_emote_min_velocity = 0.0;
             } else {
-                current_emote_min_velocities
-                    .insert(avatar_ent, damped_velocity_len.min(playing_min_vel));
+                anim_state.current_emote_min_velocity = damped_velocity_len.min(playing_min_vel);
             }
 
             if active_emote.finished {
@@ -396,7 +409,7 @@ fn animate(
                 requested_emote = None;
             }
         } else {
-            current_emote_min_velocities.insert(avatar_ent, damped_velocity_len);
+            anim_state.current_emote_min_velocity = damped_velocity_len;
         }
 
         // Precompute the velocity-based selection up-front so we can use it both as the
@@ -410,7 +423,7 @@ fn animate(
                 // Set on foreign avatars from rfc4::Movement.jump_count >= 2 (see foreign_dynamics).
                 (
                     ActiveEmote {
-                        urn: EmoteUrn::new("double_jump").unwrap(),
+                        urn: URN_DOUBLE_JUMP.clone(),
                         speed: 1.0,
                         repeat: false,
                         restart: false,
@@ -424,7 +437,7 @@ fn animate(
                 // Frozen at the neutral (straight) pose since we have no tilt input available.
                 (
                     ActiveEmote {
-                        urn: EmoteUrn::new("glide").unwrap(),
+                        urn: URN_GLIDE.clone(),
                         speed: 0.0,
                         repeat: true,
                         restart: false,
@@ -444,7 +457,7 @@ fn animate(
                 };
                 (
                     ActiveEmote {
-                        urn: EmoteUrn::new("jump").unwrap(),
+                        urn: URN_JUMP.clone(),
                         speed: time_to_peak.recip() * 0.5,
                         repeat: true,
                         restart: dynamic_state.jump_time > time.elapsed_secs() - time.delta_secs(),
@@ -454,10 +467,10 @@ fn animate(
                     },
                     move_kind,
                 )
-            } else if active_emote.urn == EmoteUrn::new("jump").unwrap() && !active_emote.finished {
+            } else if active_emote.urn == *URN_JUMP && !active_emote.finished {
                 (
                     ActiveEmote {
-                        urn: EmoteUrn::new("jump").unwrap(),
+                        urn: URN_JUMP.clone(),
                         speed: 1.5,
                         repeat: false,
                         restart: false,
@@ -474,7 +487,7 @@ fn animate(
                     if damped_velocity_len.abs() <= 2.6 {
                         (
                             ActiveEmote {
-                                urn: EmoteUrn::new("walk").unwrap(),
+                                urn: URN_WALK.clone(),
                                 speed: directional_velocity_len / 1.5,
                                 restart: false,
                                 repeat: true,
@@ -486,7 +499,7 @@ fn animate(
                     } else {
                         (
                             ActiveEmote {
-                                urn: EmoteUrn::new("run").unwrap(),
+                                urn: URN_RUN.clone(),
                                 speed: directional_velocity_len / 4.5,
                                 restart: false,
                                 repeat: true,
@@ -499,7 +512,7 @@ fn animate(
                 } else {
                     (
                         ActiveEmote {
-                            urn: EmoteUrn::new("idle_male").unwrap(),
+                            urn: URN_IDLE.clone(),
                             speed: 1.0,
                             restart: false,
                             repeat: true,
@@ -675,7 +688,7 @@ fn play_current_emote(
         Local<Option<SceneDrivenAnimationFeedbackState>>,
     ),
 ) {
-    let prior_playing = std::mem::take(&mut *playing);
+    let mut prior_playing = std::mem::take(&mut *playing);
     let mut prev_spawned_extras = std::mem::take(&mut *spawned_extras);
 
     for (entity, mut active_emote, target_entity, children, maybe_primary) in q.iter_mut() {
@@ -1034,6 +1047,7 @@ fn play_current_emote(
             sound
         };
 
+        let urn_was_playing = prior_playing.get(&ent) == Some(&active_emote.urn);
         let play = |transitions: Option<Mut<AnimationTransitions>>,
                     player: &mut AnimationPlayer,
                     clip_ix: AnimationNodeIndex,
@@ -1041,7 +1055,7 @@ fn play_current_emote(
                     pending_seek: Option<f32>|
          -> f32 {
             let active_animation =
-                if Some(&active_emote.urn) != prior_playing.get(&ent) || active_emote.restart {
+                if !urn_was_playing || active_emote.restart {
                     let active_animation = match transitions {
                         Some(mut t) => t.play(
                             player,
@@ -1108,16 +1122,21 @@ fn play_current_emote(
         };
 
         let mut clips = clips.unwrap();
-        let (clip_ix, _) = clips
-            .named
-            .entry(active_emote.urn.to_string())
-            .or_insert_with(|| {
+        // look up by &str first — the entry api would allocate a String per call
+        let clip_ix = match clips.named.get(active_emote.urn.as_str()) {
+            Some((ix, _)) => *ix,
+            None => {
                 debug!("adding clip");
-                let Some(graph) = graph.and_then(|graph| graphs.get_mut(graph)) else {
-                    return (AnimationNodeIndex::new(u32::MAX as usize), 0.0);
+                let ix = match graph.and_then(|graph| graphs.get_mut(graph)) {
+                    Some(graph) => graph.add_clip(clip, 1.0, graph.root),
+                    None => AnimationNodeIndex::new(u32::MAX as usize),
                 };
-                (graph.add_clip(clip, 1.0, graph.root), 0.0)
-            });
+                clips
+                    .named
+                    .insert(active_emote.urn.to_string(), (ix, 0.0));
+                ix
+            }
+        };
 
         // Prefer a seek requested this frame; otherwise apply one stashed when the prop
         // was spawned (deferred a frame), advanced by the load duration via the stashed
@@ -1131,7 +1150,7 @@ fn play_current_emote(
         let elapsed = play(
             transitions,
             &mut player,
-            *clip_ix,
+            clip_ix,
             &active_emote,
             pending_seek,
         );
@@ -1244,7 +1263,14 @@ fn play_current_emote(
             }
         }
 
-        playing.insert(ent, active_emote.urn.clone());
+        // move the prior entry back when unchanged to avoid a per-frame clone
+        playing.insert(
+            ent,
+            match prior_playing.remove(&ent) {
+                Some(prev) if prev == active_emote.urn => prev,
+                _ => active_emote.urn.clone(),
+            },
+        );
     }
 }
 

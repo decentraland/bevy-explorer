@@ -393,7 +393,10 @@ pub fn process_transport_updates(
     mut subscribers: EventReader<RpcCall>,
     mut profile_meta_cache: ResMut<ProfileMetaCache>,
     mut duplicate_chat_filter: Local<HashMap<Entity, f64>>,
-    mut last_remote_anim_urn: Local<HashMap<Entity, (String, String)>>,
+    mut last_remote_anim: Local<HashMap<Entity, CachedRemoteAnim>>,
+    // formatted-address cache; avoids a format!/alloc per packet that needs the
+    // sender's string form (bounded by unique addresses seen this session)
+    mut addr_cache: Local<HashMap<Address, String>>,
     discard_player_updates: Res<DiscardPlayerUpdates>,
 ) {
     // gather any event receivers
@@ -598,12 +601,11 @@ pub fn process_transport_updates(
                         }
                     }
                     PlayerMessage::PlayerData(Message::Scene(scene)) => {
-                        process_messagebus(
-                            scene,
-                            format!("{:#x}", update.address),
-                            &mut string_senders,
-                            &mut binary_senders,
-                        );
+                        let address = addr_cache
+                            .entry(update.address)
+                            .or_insert_with(|| format!("{:#x}", update.address))
+                            .clone();
+                        process_messagebus(scene, address, &mut string_senders, &mut binary_senders);
                     }
                     PlayerMessage::PlayerData(Message::Voice(_)) => (),
                     PlayerMessage::PlayerData(Message::Movement(m)) => {
@@ -663,7 +665,8 @@ pub fn process_transport_updates(
                         let scene_anim = resolve_remote_anim(
                             entity,
                             update.address,
-                            &mut last_remote_anim_urn,
+                            &mut addr_cache,
+                            &mut last_remote_anim,
                             m.scene_driven_animation,
                         );
                         position_events.write(PlayerPositionEvent {
@@ -679,13 +682,14 @@ pub fn process_transport_updates(
                             scene_anim,
                         });
                     }
-                    PlayerMessage::PlayerData(Message::MovementCompressed(m)) => {
+                    PlayerMessage::PlayerData(Message::MovementCompressed(mut m)) => {
                         debug!("movement compressed data: {m:?}");
                         let scene_anim = resolve_remote_anim(
                             entity,
                             update.address,
-                            &mut last_remote_anim_urn,
-                            m.scene_driven_animation.clone(),
+                            &mut addr_cache,
+                            &mut last_remote_anim,
+                            m.scene_driven_animation.take(),
                         );
                         // Compose the render-only lean on top of yaw; absent/old senders → upright.
                         let tilt = m
@@ -736,8 +740,8 @@ pub fn process_transport_updates(
                     PlayerMessage::PlayerData(Message::PlayerEmote(emote)) => {
                         debug!("emote: {emote:?}");
                         commands.entity(entity).try_insert(EmoteCommand {
-                            urn: emote.urn.to_owned(),
                             timestamp: emote.incremental_id as i64,
+                            urn: emote.urn,
                             r#loop: false,
                         });
                     }
@@ -782,10 +786,17 @@ pub fn process_transport_updates(
 // common case for senders that don't speak our extension). The resolved state rides
 // on `PlayerPositionEvent` so `foreign_dynamics` can apply it with the same
 // interpolation delay as the visible position.
+pub struct CachedRemoteAnim {
+    scene_hash: String,
+    content_hash: String,
+    urn: String,
+}
+
 fn resolve_remote_anim(
     entity: Entity,
     sender: Address,
-    last_hashes: &mut HashMap<Entity, (String, String)>,
+    addr_cache: &mut HashMap<Address, String>,
+    last_anims: &mut HashMap<Entity, CachedRemoteAnim>,
     anim: Option<dcl_component::proto_components::kernel::comms::rfc4::SceneDrivenAnimation>,
 ) -> Option<SceneDrivenAnimationRequest> {
     // Sender didn't attach the nested carrier; nothing to do (and nothing to clear,
@@ -798,39 +809,56 @@ fn resolve_remote_anim(
     // present and match the packet sender; anything else is either a mirror or a
     // sender that predates this field and is therefore also potentially a mirror
     // victim. Be strict and drop it.
-    let sender_str = format!("{sender:#x}");
+    let sender_str = addr_cache
+        .entry(sender)
+        .or_insert_with(|| format!("{sender:#x}"));
     match anim.origin_address.as_deref() {
-        Some(origin) if origin.eq_ignore_ascii_case(&sender_str) => {}
+        Some(origin) if origin.eq_ignore_ascii_case(sender_str) => {}
         _ => {
             debug!(
                 "dropping scene_driven_animation without matching origin_address: origin={:?} sender={}",
                 anim.origin_address, sender_str
             );
-            last_hashes.remove(&entity);
+            last_anims.remove(&entity);
             return None;
         }
     }
 
     // Wire convention: on transition the sender ships both hashes (or an empty
     // scene_hash to clear); between transitions both are omitted and we re-apply the
-    // cached pair so ride-along fields (speed, loop, seek) keep updating.
-    let (scene_hash, content_hash) = match anim.scene_hash {
+    // cached entry (hashes + pre-built URN) so ride-along fields (speed, loop, seek)
+    // keep updating without rebuilding the URN per packet.
+    let (scene_hash, content_hash, urn) = match anim.scene_hash {
         Some(s) if s.is_empty() => {
-            last_hashes.remove(&entity);
+            last_anims.remove(&entity);
             return None;
         }
         Some(s) => {
             let c = anim.content_hash?;
-            last_hashes.insert(entity, (s.clone(), c.clone()));
-            (s, c)
+            let urn = format!("urn:decentraland:off-chain:scene-emote:{s}-{c}-false");
+            last_anims.insert(
+                entity,
+                CachedRemoteAnim {
+                    scene_hash: s.clone(),
+                    content_hash: c.clone(),
+                    urn: urn.clone(),
+                },
+            );
+            (s, c, urn)
         }
-        None => last_hashes.get(&entity)?.clone(),
+        None => {
+            let cached = last_anims.get(&entity)?;
+            (
+                cached.scene_hash.clone(),
+                cached.content_hash.clone(),
+                cached.urn.clone(),
+            )
+        }
     };
 
     let speed = anim.speed?;
     let r#loop = anim.r#loop.unwrap_or(false);
     let transition_seconds = anim.transition_seconds.unwrap_or(0.2);
-    let urn = format!("urn:decentraland:off-chain:scene-emote:{scene_hash}-{content_hash}-false");
 
     Some(SceneDrivenAnimationRequest {
         src: String::new(),
