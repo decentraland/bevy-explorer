@@ -145,3 +145,71 @@ pub const FOG: Gradient = Gradient(&[
     (0.873, Vec3::new(0.509, 0.156, 0.478)),
     (1.0, Vec3::new(0.24, 0.086, 0.472)),
 ]);
+
+/// scalar curve (piecewise linear; godot Curve resources have flat tangents here)
+pub struct Curve(pub &'static [(f32, f32)]);
+
+impl Curve {
+    pub fn sample(&self, t: f32) -> f32 {
+        let pts = self.0;
+        let t = t.rem_euclid(1.0);
+        if t <= pts[0].0 {
+            return pts[0].1;
+        }
+        for pair in pts.windows(2) {
+            let (t0, v0) = pair[0];
+            let (t1, v1) = pair[1];
+            if t >= t0 && t <= t1 {
+                return v0 + (v1 - v0) * ((t - t0) / (t1 - t0));
+            }
+        }
+        pts[pts.len() - 1].1
+    }
+}
+
+/// moon tint cycle ("Gradient_fb67a")
+pub const MOON: Gradient = Gradient(&[
+    (0.0, Vec3::new(1.0, 1.0, 1.0)),
+    (0.159, Vec3::new(1.0, 0.458, 0.206)),
+    (0.484, Vec3::new(0.883, 0.0, 0.073)),
+    (0.87, Vec3::new(1.0, 0.459, 0.204)),
+    (1.0, Vec3::new(1.0, 1.0, 1.0)),
+]);
+
+/// sun disc size over the day (sun_size_curve.tres)
+pub const SUN_SIZE: Curve = Curve(&[
+    (0.0, 0.12),
+    (0.1458, 0.12),
+    (0.1667, 0.09),
+    (0.1875, 0.0),
+    (0.25, 0.3),
+    (0.5, 0.1),
+    (0.8125, 0.3),
+    (0.8542, 0.0),
+    (0.875, 0.09),
+    (1.0, 0.12),
+]);
+
+/// sun disc opacity over the day (sun_opacity_curve.tres)
+pub const SUN_OPACITY: Curve = Curve(&[
+    (0.0, 1.0),
+    (0.1458, 1.0),
+    (0.1667, 0.0),
+    (0.1875, 0.0),
+    (0.25, 1.0),
+    (0.8125, 1.0),
+    (0.8542, 0.0),
+    (0.875, 0.0),
+    (0.9167, 1.0),
+    (1.0, 1.0),
+]);
+
+/// crescent-bite mask size over the day (moon_mask_size_curve.tres)
+pub const MOON_MASK_SIZE: Curve = Curve(&[
+    (0.0, 0.16),
+    (0.25, 0.17),
+    (0.26, 0.0),
+    (0.83, 0.0),
+    (0.84, 0.16),
+    (1.0, 0.16),
+]);

@@ -20,7 +20,7 @@ use bevy_atmosphere::{
     prelude::{AtmosphereCamera, AtmosphereModel, AtmospherePlugin, AtmosphereSettings},
     system_param::AtmosphereMut,
 };
-use nishita_cloud::{build_sky_lut, init_noise, NishitaCloud};
+use nishita_cloud::{build_sky_lut, init_noise, load_clouds_strip, NishitaCloud};
 
 use bevy_console::ConsoleCommand;
 use common::{
@@ -44,7 +44,9 @@ impl Plugin for VisualsPlugin {
         app.insert_resource(DirectionalLightShadowMap { size: 4096 })
             .init_resource::<SceneGlobalLight>()
             .insert_resource(CloudCover {
-                cover: 0.45,
+                // procedural clouds default off — the painted godot cloud
+                // cubemap is the primary cloud layer now; /cloud re-enables
+                cover: 0.0,
                 speed: 10.0,
             })
             .add_plugins(WireframePlugin::default())
@@ -123,6 +125,7 @@ fn setup(
 
         atmosphere.noise_texture = h_noise;
         atmosphere.sky_lut = images.add(build_sky_lut());
+        atmosphere.clouds_strip = images.add(load_clouds_strip());
     }
 
     // commands.entity(camera.0).try_insert(

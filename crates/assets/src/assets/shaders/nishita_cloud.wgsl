@@ -143,6 +143,42 @@ fn render_nishita(r_full: vec3<f32>, r0: vec3<f32>, p_sun_full: vec3<f32>, i_sun
 // rows: 0 zenith, 1 horizon, 2 nadir, 3 sun, 4 rim, 5 cloud, 6 cloud highlights
 @group(0) @binding(3) var sky_lut: texture_2d<f32>;
 @group(0) @binding(4) var sky_lut_sampler: sampler;
+// godot painted cloud cubemap as a 6x1 face strip (+X,-X,+Y,-Y,+Z,-Z).
+// R = cloud body, G = silhouette mask, B = sun-side highlight
+@group(0) @binding(5) var clouds_strip: texture_2d<f32>;
+@group(0) @binding(6) var clouds_sampler: sampler;
+
+// sample the 6x1 cubemap strip with a direction vector
+fn sample_cloud_cubemap(dir_in: vec3<f32>) -> vec3<f32> {
+    let d = normalize(dir_in);
+    let ax = abs(d.x);
+    let ay = abs(d.y);
+    let az = abs(d.z);
+    var face: f32;
+    var uv: vec2<f32>;
+    if ax >= ay && ax >= az {
+        if d.x > 0.0 { face = 0.0; uv = vec2(-d.z, -d.y) / ax; }
+        else        { face = 1.0; uv = vec2(d.z, -d.y) / ax; }
+    } else if ay >= az {
+        if d.y > 0.0 { face = 2.0; uv = vec2(d.x, d.z) / ay; }
+        else        { face = 3.0; uv = vec2(d.x, -d.z) / ay; }
+    } else {
+        if d.z > 0.0 { face = 4.0; uv = vec2(d.x, -d.y) / az; }
+        else        { face = 5.0; uv = vec2(-d.x, -d.y) / az; }
+    }
+    let fuv = (uv * 0.5 + 0.5);
+    // inset half a texel to avoid bleeding across faces in the strip
+    let inset = clamp(fuv, vec2(0.002), vec2(0.998));
+    let strip_uv = vec2((face + inset.x) / 6.0, inset.y);
+    return textureSampleLevel(clouds_strip, clouds_sampler, strip_uv, 0.0).rgb;
+}
+
+fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
+    let safe = max(c, vec3(0.0));
+    let lo = safe / 12.92;
+    let hi = pow(max((safe + 0.055) / 1.055, vec3(1.192092896e-07)), vec3(2.4));
+    return select(hi, lo, safe <= vec3(0.04045));
+}
 
 fn cycle(row: i32) -> vec3<f32> {
     let w = f32(textureDimensions(sky_lut).x);
@@ -340,12 +376,46 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
     let nadir_tint = cycle(2);
     render_base = zenith_tint * zenith_w + horizon_tint * horizon_w + nadir_tint * nadir_w;
 
-    // sun disc (bright white) + atmospheric glow + radiance halo
-    let sun_disc = step(cos(0.03), sun_dot);
-    render_base += vec3(2.0) * sun_disc * day_factor;
-    render_base += vec3(2.0) * smoothstep(0.7, 1.7, sun_dot) * day_factor * 0.5;
+    // painted clouds (godot compositing: screen blends + per-TOD tint)
+    let clouds_sample = sample_cloud_cubemap(ray);
+    let clouds_mask = smoothstep(0.5, 0.85, clouds_sample.g);
+    let cloud_tint = cycle(5);
+    let sun_tint = cycle(3);
+    let sun_chroma = normalize(max(sun_tint, vec3(1e-4)));
+    let cloud_body = clouds_sample.r * cloud_tint;
+    let cloud_highlight = clouds_sample.b * sun_chroma;
+    let cloud_highlights = cycle(6).r;
+    let inner_screen = vec3(1.0) - (vec3(1.0) - cloud_highlight) * (vec3(1.0) - cloud_body);
+    let cloud_color = mix(cloud_body, inner_screen, cloud_highlights);
+    let cloud_linear = srgb_to_linear(cloud_color);
+    let outer_screen = vec3(1.0) - (vec3(1.0) - cloud_linear) * (vec3(1.0) - render_base);
+    render_base = mix(render_base, outer_screen, clouds_mask);
+
+    // celestial params: r = sun opacity, g = sun size, b = moon bite size
+    let celestial_params = cycle(7);
+    let sun_opacity = celestial_params.r;
+    let remapped_sun_size = celestial_params.g * 0.35;
+    let moon_mask_size = celestial_params.b;
+
+    // sun disc with the moon's crescent bite carved out
+    let sun_disc = step(cos(remapped_sun_size), sun_dot);
+    let moon_mask_dir = normalize(sun_dir + vec3(0.01, -0.01, 0.0) * remapped_sun_size * 40.0);
+    let moon_mask_dot = dot(ray, moon_mask_dir);
+    let moon_mask_threshold = moon_mask_size * remapped_sun_size * 4.5;
+    let moon_active = step(0.15, moon_mask_size);
+    let moon_mask_step = mix(1.0, step(moon_mask_dot, cos(moon_mask_threshold)), moon_active);
+    let celestial = sun_disc * moon_mask_step * sun_opacity * sun_opacity * day_factor;
+
+    // disc is white-hot sun by day, tinted moon when the bite is active
+    let moon_tint = cycle(8);
+    let moon_influence = smoothstep(0.0, 0.01, moon_mask_size);
+    let celestial_col = mix(vec3(2.0), moon_tint * 7.0, moon_influence);
+    render_base += celestial_col * celestial * (1.0 - clouds_mask * 0.9);
+
+    // atmospheric glow + radiance halo around the sun
+    render_base += vec3(2.0) * smoothstep(0.7, 1.7, sun_dot) * sun_opacity * day_factor * 0.5;
     let radiance = pow(max(sun_dot, 0.0), 12.0) * (1.0 - abs(eye_y) * 0.5);
-    render_base += cycle(4) * radiance * 0.05;
+    render_base += cycle(4) * radiance * 0.05 * sun_opacity * day_factor;
 
     // asymmetric glowing horizon bands (hard limit at eye_y = 0)
     let above_gate = step(0.0, eye_y);

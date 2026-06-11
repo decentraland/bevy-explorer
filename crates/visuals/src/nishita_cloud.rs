@@ -84,9 +84,11 @@ pub struct NishitaCloud {
     /// normalized time of day (0.0 = midnight, 0.5 = noon), drives the
     /// measured-sky lut
     pub day: f32,
-    /// the full measured unity skybox: 24 hours x 4 cardinals wide,
-    /// zenith + 5 elevation stops tall
+    /// sky color cycle lut (see build_sky_lut)
     pub sky_lut: Handle<Image>,
+    /// godot-explorer painted cloud cubemap, 6x1 face strip.
+    /// R = cloud body, G = silhouette mask, B = sun highlight
+    pub clouds_strip: Handle<Image>,
 }
 
 #[derive(ShaderType)]
@@ -153,6 +155,7 @@ impl Default for NishitaCloud {
             dir_light_intensity: 10000.0,
             day: 0.5,
             sky_lut: Default::default(),
+            clouds_strip: Default::default(),
         }
     }
 }
@@ -191,6 +194,7 @@ impl bevy_atmosphere::model::Atmospheric for NishitaCloud {
             .get(&self.noise_texture)
             .unwrap_or(&fallback_image.d2);
         let sky_lut = &images.get(&self.sky_lut).unwrap_or(&fallback_image.d2);
+        let clouds = &images.get(&self.clouds_strip).unwrap_or(&fallback_image.d2);
         let bind_group = render_device.create_bind_group(
             None,
             layout,
@@ -200,6 +204,8 @@ impl bevy_atmosphere::model::Atmospheric for NishitaCloud {
                 &image.sampler,
                 &sky_lut.texture_view,
                 &sky_lut.sampler,
+                &clouds.texture_view,
+                &clouds.sampler,
             )),
         );
         bind_group
@@ -291,6 +297,8 @@ impl bevy_atmosphere::model::RegisterAtmosphereModel for NishitaCloud {
                     sampler(bevy::render::render_resource::SamplerBindingType::Filtering),
                     texture_2d(TextureSampleType::Float { filterable: true }),
                     sampler(bevy::render::render_resource::SamplerBindingType::Filtering),
+                    texture_2d(TextureSampleType::Float { filterable: true }),
+                    sampler(bevy::render::render_resource::SamplerBindingType::Filtering),
                 ),
             ),
         )
@@ -358,18 +366,33 @@ pub fn build_sky_lut() -> Image {
         &g::CLOUDS,
         &g::CLOUD_HIGHLIGHTS,
     ];
-    let mut data: Vec<f32> = Vec::with_capacity(W * rows.len() * 4);
+    let mut data: Vec<f32> = Vec::with_capacity(W * (rows.len() + 2) * 4);
     for grad in rows {
         for x in 0..W {
             let c = grad.sample(x as f32 / W as f32);
             data.extend_from_slice(&[c.x, c.y, c.z, 1.0]);
         }
     }
+    // row 7: celestial params — r = sun opacity, g = sun size, b = moon bite size
+    for x in 0..W {
+        let t = x as f32 / W as f32;
+        data.extend_from_slice(&[
+            g::SUN_OPACITY.sample(t),
+            g::SUN_SIZE.sample(t),
+            g::MOON_MASK_SIZE.sample(t),
+            1.0,
+        ]);
+    }
+    // row 8: moon tint cycle
+    for x in 0..W {
+        let c = g::MOON.sample(x as f32 / W as f32);
+        data.extend_from_slice(&[c.x, c.y, c.z, 1.0]);
+    }
 
     let mut image = Image::new(
         Extent3d {
             width: W as u32,
-            height: rows.len() as u32,
+            height: rows.len() as u32 + 2,
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
@@ -385,5 +408,27 @@ pub fn build_sky_lut() -> Image {
         ..ImageSamplerDescriptor::linear()
     });
 
+    image
+}
+
+/// Load the godot-explorer painted cloud cubemap (6x1 face strip png).
+/// Channels are data (R body, G mask, B highlight), not color — no sRGB.
+pub fn load_clouds_strip() -> Image {
+    let bytes = include_bytes!("assets/horizon_clouds.png");
+    let mut image = Image::from_buffer(
+        bytes,
+        bevy::image::ImageType::Extension("png"),
+        bevy::image::CompressedImageFormats::NONE,
+        false,
+        ImageSampler::Descriptor(ImageSamplerDescriptor {
+            label: Some("horizon_clouds".to_owned()),
+            address_mode_u: ImageAddressMode::ClampToEdge,
+            address_mode_v: ImageAddressMode::ClampToEdge,
+            ..ImageSamplerDescriptor::linear()
+        }),
+        RenderAssetUsages::all(),
+    )
+    .expect("invalid horizon_clouds.png");
+    image.texture_descriptor.label = Some("horizon_clouds");
     image
 }
