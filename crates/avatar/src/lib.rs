@@ -27,7 +27,7 @@ use colliders::AvatarColliderPlugin;
 use console::DoAddConsoleCommand;
 use npc_dynamics::NpcMovementPlugin;
 use scene_material::{
-    BoundRegion, SceneBound, SceneMaterial, SCENE_MATERIAL_OUTLINE_ACTIVE_MESH_TAG,
+    BoundRegion, SceneBound, SceneMaterial, SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG,
 };
 
 pub mod animate;
@@ -1169,7 +1169,7 @@ fn process_avatar(
                         .or_insert_with(|| scene_materials.add(new_mat));
                     commands.entity(scene_ent).try_insert((
                         MeshMaterial3d(instance_mat.clone()),
-                        MeshTag(SCENE_MATERIAL_OUTLINE_ACTIVE_MESH_TAG),
+                        MeshTag(SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG),
                     ));
                 }
             }
@@ -1233,7 +1233,7 @@ fn process_avatar(
                             let material = scene_materials.add(new_mat);
                             commands.entity(scene_ent).try_insert((
                                 MeshMaterial3d(material),
-                                MeshTag(SCENE_MATERIAL_OUTLINE_ACTIVE_MESH_TAG),
+                                MeshTag(SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG),
                             ));
                         };
                         *vis = Visibility::Inherited;
@@ -1451,7 +1451,7 @@ fn process_avatar(
                             .or_insert_with(|| scene_materials.add(new_mat));
                         commands.entity(scene_ent).try_insert((
                             MeshMaterial3d(instance_mat.clone()),
-                            MeshTag(SCENE_MATERIAL_OUTLINE_ACTIVE_MESH_TAG),
+                            MeshTag(SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG),
                         ));
                     }
                 }

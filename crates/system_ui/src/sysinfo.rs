@@ -21,7 +21,7 @@ use common::{
 };
 use comms::{global_crdt::ForeignPlayer, Transport};
 use console::DoAddConsoleCommand;
-use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE_ACTIVE_MESH_TAG};
+use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE_MESH_TAGS};
 use scene_runner::{
     initialize_scene::{SceneLoading, TestingData, PARCEL_SIZE},
     parcel_to_vec3,
@@ -714,7 +714,7 @@ fn entity_count(
 
         let outlined = scene_mats
             .iter()
-            .filter(|m| m.0 & SCENE_MATERIAL_OUTLINE_ACTIVE_MESH_TAG != 0)
+            .filter(|m| m.0 & SCENE_MATERIAL_OUTLINE_MESH_TAGS != 0)
             .count();
         let scene_mats = scene_mats.iter().count();
         let std_mats = std_mats.iter().count();

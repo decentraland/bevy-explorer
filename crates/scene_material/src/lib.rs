@@ -15,7 +15,8 @@ pub type SceneMaterial = ExtendedMaterial<SceneBound>;
 pub const SCENE_MATERIAL_NO_DITHERING: u32 = 16;
 pub const SCENE_MATERIAL_CONE_ONLY_DITHER: u32 = 32;
 pub const SCENE_MATERIAL_SHOW_OUTSIDE_BOUNDS_MESH_TAG: u32 = 0x01000000;
-pub const SCENE_MATERIAL_OUTLINE_ACTIVE_MESH_TAG: u32 = 0x10000000;
+pub const SCENE_MATERIAL_OUTLINE_MESH_TAGS: u32 = 0xF0000000;
+pub const SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG: u32 = 0x10000000;
 pub const SCENE_MATERIAL_OUTLINE_RED_MESH_TAG: u32 = 0x20000000;
 pub const SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG: u32 = 0x40000000;
 pub const SCENE_MATERIAL_OUTLINE_BLUE_MESH_TAG: u32 = 0x80000000;
@@ -261,8 +262,12 @@ impl MaterialExtension for SceneBound {
                 SCENE_MATERIAL_SHOW_OUTSIDE_BOUNDS_MESH_TAG,
             ));
             fragment.shader_defs.push(ShaderDefVal::UInt(
-                "OUTLINE_ACTIVE_MESH_TAG".to_owned(),
-                SCENE_MATERIAL_OUTLINE_ACTIVE_MESH_TAG,
+                "OUTLINE_MESH_TAGS".to_owned(),
+                SCENE_MATERIAL_OUTLINE_MESH_TAGS,
+            ));
+            fragment.shader_defs.push(ShaderDefVal::UInt(
+                "OUTLINE_BLACK_MESH_TAG".to_owned(),
+                SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG,
             ));
             fragment.shader_defs.push(ShaderDefVal::UInt(
                 "OUTLINE_RED_MESH_TAG".to_owned(),

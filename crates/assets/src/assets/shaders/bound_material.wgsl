@@ -61,7 +61,7 @@ fn fragment(
 #endif
 
     var cap_brightness: f32 = 0.0;
-    if ((bounds.flags & DISABLE_DITHER) | (mesh_tag & #{OUTLINE_ACTIVE_MESH_TAG})) == 0 {
+    if ((bounds.flags & DISABLE_DITHER) | (mesh_tag & #{OUTLINE_BLACK_MESH_TAG})) == 0 {
         cap_brightness = discard_dither(in.position.xy, in.world_position.xyz, view.user_value, (bounds.flags & CONE_ONLY_DITHER) == 0);
     }
 
@@ -175,15 +175,13 @@ fn fragment(
         }
     }
 
-    if (mesh_tag & #{OUTLINE_ACTIVE_MESH_TAG}) != 0 {
+    if (mesh_tag & #{OUTLINE_MESH_TAGS}) != 0 {
         let outline_color = vec3(
             f32((mesh_tag & #{OUTLINE_RED_MESH_TAG}) != 0),
             f32((mesh_tag & #{OUTLINE_GREEN_MESH_TAG}) != 0),
             f32((mesh_tag & #{OUTLINE_BLUE_MESH_TAG}) != 0),
         );
-        let black = ((mesh_tag & #{OUTLINE_RED_MESH_TAG}) == 0)
-            && ((mesh_tag & #{OUTLINE_GREEN_MESH_TAG}) == 0)
-            && ((mesh_tag & #{OUTLINE_BLUE_MESH_TAG}) == 0);
+        let black = (mesh_tag & (#{OUTLINE_MESH_TAGS} & ~#{OUTLINE_BLACK_MESH_TAG})) == 0;
         out.color = apply_outline(
             in.position,
             out.color, 

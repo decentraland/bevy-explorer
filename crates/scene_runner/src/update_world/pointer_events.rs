@@ -19,9 +19,7 @@ use dcl_component::{
     },
     SceneComponentId,
 };
-use scene_material::{
-    SceneMaterial, SCENE_MATERIAL_OUTLINE_ACTIVE_MESH_TAG, SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG,
-};
+use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG};
 
 use crate::{
     renderer_context::RendererSceneContext,
@@ -313,8 +311,7 @@ fn entity_highlighting(
             mesh_3d.set_changed();
 
             trace!("Mesh {} highlighted", child);
-            mesh_tag.0 |=
-                SCENE_MATERIAL_OUTLINE_ACTIVE_MESH_TAG | SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG;
+            mesh_tag.0 |= SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG;
         }
     }
 
@@ -327,8 +324,7 @@ fn entity_highlighting(
             };
             mesh_3d.set_changed();
             trace!("Mesh {} no longer highlighted", child);
-            mesh_tag.0 &=
-                !(SCENE_MATERIAL_OUTLINE_ACTIVE_MESH_TAG | SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG);
+            mesh_tag.0 &= !SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG;
         }
     }
 
