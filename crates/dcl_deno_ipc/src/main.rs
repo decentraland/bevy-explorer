@@ -146,7 +146,7 @@ async fn scene_ipc_in(
                     continue;
                 };
 
-                let _ = sender.send(renderer_response).await;
+                let _ = sender.send(renderer_response);
             }
             EngineToScene::GlobalUpdate(data) => {
                 let _ = global_sx.send(data);

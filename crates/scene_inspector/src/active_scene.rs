@@ -74,7 +74,7 @@ impl SceneResolver<'_, '_> {
             .map_err(|_| "scene has no thread handle".to_string())?;
         handle
             .sender
-            .try_send(dcl::RendererResponse::GetCrdtSnapshot)
+            .send(dcl::RendererResponse::GetCrdtSnapshot)
             .map_err(|_| "failed to send snapshot request to scene".to_string())?;
         pending.push(entity, Box::new(callback) as SnapshotCallback);
         Ok(())
@@ -101,7 +101,7 @@ impl SceneResolver<'_, '_> {
             .map_err(|_| "scene has no thread handle".to_string())?;
         handle
             .sender
-            .try_send(dcl::RendererResponse::AllocateEntity {
+            .send(dcl::RendererResponse::AllocateEntity {
                 component_id,
                 data,
                 count,

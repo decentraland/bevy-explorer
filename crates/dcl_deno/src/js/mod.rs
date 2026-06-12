@@ -21,7 +21,7 @@ use deno_core::{
 use multihash_codetable::MultihashDigest;
 use platform::project_directories;
 use system_bridge::SystemApi;
-use tokio::{sync::mpsc::Receiver, time::timeout};
+use tokio::{sync::mpsc::UnboundedReceiver, time::timeout};
 
 use ipfs::SceneJsFile;
 
@@ -190,7 +190,7 @@ pub(crate) fn scene_thread(
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     thread_sx: SceneResponseSender,
-    thread_rx: Receiver<RendererResponse>,
+    thread_rx: UnboundedReceiver<RendererResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
     inspect: bool,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,

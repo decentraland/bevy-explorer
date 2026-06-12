@@ -9,7 +9,7 @@ use dcl_component::{
 };
 use ipfs::SceneJsFile;
 use system_bridge::SystemApi;
-use tokio::sync::{mpsc::Receiver, Mutex};
+use tokio::sync::{mpsc::UnboundedReceiver, Mutex};
 
 use crate::{
     interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
@@ -144,7 +144,7 @@ pub fn init_state(
     scene_js: SceneJsFile,
     crdt_component_interfaces: CrdtComponentInterfaces,
     thread_sx: SceneResponseSender,
-    thread_rx: Receiver<RendererResponse>,
+    thread_rx: UnboundedReceiver<RendererResponse>,
     global_update_receiver: tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
     scene_origin: bevy::prelude::Vec3,
