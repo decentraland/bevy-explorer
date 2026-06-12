@@ -13,11 +13,10 @@ pub mod runtime;
 pub use client::{FriendshipEventBody, SocialClientHandler};
 
 use bevy::prelude::*;
-#[cfg(feature = "social")]
 use bevy::tasks::IoTaskPool;
 #[cfg(feature = "social")]
 use bevy_console::ConsoleCommand;
-use common::rpc::RpcStreamSender;
+use common::rpc::{RpcResultSender, RpcStreamSender};
 #[cfg(feature = "social")]
 use common::structs::DebugInfo;
 use common::util::AsH160;
@@ -27,9 +26,11 @@ use ethers_core::types::Address;
 #[cfg(feature = "social")]
 use system_bridge::BlockedUserData;
 #[cfg(feature = "social")]
+use system_bridge::BlockingStatusData;
+#[cfg(feature = "social")]
 use system_bridge::NameColor;
 use system_bridge::{
-    FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
+    BlockUpdateData, FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
     FriendshipEventUpdate, SystemApi,
 };
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
@@ -43,6 +44,7 @@ impl Plugin for SocialPlugin {
         app.add_plugins(runtime::SocialRuntimePlugin);
         app.add_event::<FriendshipEvent>();
         app.add_event::<ConnectivityEvent>();
+        app.add_event::<BlockUpdateEvent>();
         app.add_event::<DirectChatEvent>();
         app.init_resource::<SocialClient>();
         app.init_resource::<SocialConsumerRequested>();
@@ -58,6 +60,7 @@ impl Plugin for SocialPlugin {
                 handle_social_requests,
                 pipe_friendship_events_to_scene,
                 pipe_connectivity_events_to_scene,
+                pipe_block_updates_to_scene,
             ),
         );
         #[cfg(feature = "social")]
@@ -99,6 +102,8 @@ fn is_social_consumer_request(event: &SystemApi) -> bool {
             | SystemApi::BlockUser(_, _)
             | SystemApi::UnblockUser(_, _)
             | SystemApi::GetBlockedUsers(_)
+            | SystemApi::GetBlockingStatus(_)
+            | SystemApi::GetBlockUpdateStream(_)
     )
 }
 
@@ -205,6 +210,7 @@ fn init_social_client(
     mut social: ResMut<SocialClient>,
     mut friends: Local<Option<UnboundedReceiver<FriendshipEvent>>>,
     mut connectivity: Local<Option<UnboundedReceiver<ConnectivityEvent>>>,
+    mut block_updates: Local<Option<UnboundedReceiver<BlockUpdateEvent>>>,
     mut chats: Local<Option<UnboundedReceiver<DirectChatEvent>>>,
     social_runtime: Res<runtime::SocialRuntime>,
     mut restart: ResMut<RestartSocialRequested>,
@@ -226,10 +232,12 @@ fn init_social_client(
         social.0 = None;
         *friends = None;
         *connectivity = None;
+        *block_updates = None;
         *chats = None;
 
         let (f_sx, f_rx) = unbounded_channel();
         let (conn_sx, conn_rx) = unbounded_channel();
+        let (block_sx, block_rx) = unbounded_channel();
         let (c_sx, c_rx) = unbounded_channel();
         let client = SocialClientHandler::connect(
             wallet.clone(),
@@ -243,6 +251,12 @@ fn init_social_client(
                     status: status as i32,
                 });
             },
+            move |address, is_blocked| {
+                let _ = block_sx.send(BlockUpdateEvent {
+                    address: address.to_owned(),
+                    is_blocked,
+                });
+            },
             move |c| {
                 let _ = c_sx.send(DirectChatEvent(c));
             },
@@ -250,10 +264,17 @@ fn init_social_client(
         social.0 = client;
         *friends = Some(f_rx);
         *connectivity = Some(conn_rx);
+        *block_updates = Some(block_rx);
         *chats = Some(c_rx);
     }
 
-    drain_events(&mut commands, &mut friends, &mut connectivity, &mut chats);
+    drain_events(
+        &mut commands,
+        &mut friends,
+        &mut connectivity,
+        &mut block_updates,
+        &mut chats,
+    );
 }
 
 #[cfg(not(feature = "social"))]
@@ -264,6 +285,7 @@ fn init_social_client(
     mut social: ResMut<SocialClient>,
     mut friends: Local<Option<UnboundedReceiver<FriendshipEvent>>>,
     mut connectivity: Local<Option<UnboundedReceiver<ConnectivityEvent>>>,
+    mut block_updates: Local<Option<UnboundedReceiver<BlockUpdateEvent>>>,
     mut chats: Local<Option<UnboundedReceiver<DirectChatEvent>>>,
     mut consumer_requested: ResMut<SocialConsumerRequested>,
     mut system_api_events: EventReader<SystemApi>,
@@ -278,6 +300,7 @@ fn init_social_client(
     if reconnect_signal && consumer_requested.0 && wallet.address().is_some() {
         let (f_sx, f_rx) = unbounded_channel();
         let (conn_sx, conn_rx) = unbounded_channel();
+        let (block_sx, block_rx) = unbounded_channel();
         let (c_sx, c_rx) = unbounded_channel();
         let client = SocialClientHandler::connect(
             wallet.clone(),
@@ -290,6 +313,12 @@ fn init_social_client(
                     status: status as i32,
                 });
             },
+            move |address, is_blocked| {
+                let _ = block_sx.send(BlockUpdateEvent {
+                    address: address.to_owned(),
+                    is_blocked,
+                });
+            },
             move |c| {
                 let _ = c_sx.send(DirectChatEvent(c));
             },
@@ -297,16 +326,24 @@ fn init_social_client(
         social.0 = client;
         *friends = Some(f_rx);
         *connectivity = Some(conn_rx);
+        *block_updates = Some(block_rx);
         *chats = Some(c_rx);
     }
 
-    drain_events(&mut commands, &mut friends, &mut connectivity, &mut chats);
+    drain_events(
+        &mut commands,
+        &mut friends,
+        &mut connectivity,
+        &mut block_updates,
+        &mut chats,
+    );
 }
 
 fn drain_events(
     commands: &mut Commands,
     friends: &mut Option<UnboundedReceiver<FriendshipEvent>>,
     connectivity: &mut Option<UnboundedReceiver<ConnectivityEvent>>,
+    block_updates: &mut Option<UnboundedReceiver<BlockUpdateEvent>>,
     chats: &mut Option<UnboundedReceiver<DirectChatEvent>>,
 ) {
     while let Some(f) = friends.as_mut().and_then(|rx| rx.try_recv().ok()) {
@@ -314,6 +351,9 @@ fn drain_events(
     }
     while let Some(ev) = connectivity.as_mut().and_then(|rx| rx.try_recv().ok()) {
         commands.send_event(ev);
+    }
+    while let Some(b) = block_updates.as_mut().and_then(|rx| rx.try_recv().ok()) {
+        commands.send_event(b);
     }
     while let Some(c) = chats.as_mut().and_then(|rx| rx.try_recv().ok()) {
         commands.send_event(c);
@@ -359,6 +399,40 @@ fn convert_name_color(
         g: c.g,
         b: c.b,
     })
+}
+
+/// Submit a friendship action (request / accept / reject / cancel / delete)
+/// and forward the backend's response back through `sx`. Synchronous failures
+/// from the client wrapper (invalid address, "no request" preconditions,
+/// client not initialized) reply immediately; otherwise we spawn a task to
+/// await the dispatcher's reply so the caller sees the actual RPC outcome
+/// (e.g. `BlockedUserError`) instead of a silent success.
+fn spawn_friendship_action(
+    sx: RpcResultSender<Result<(), String>>,
+    client: Option<&mut SocialClientHandler>,
+    submit: impl FnOnce(
+        &mut SocialClientHandler,
+    )
+        -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, String>,
+) {
+    let outcome = match client {
+        Some(c) => submit(c),
+        None => Err("social not initialized".to_string()),
+    };
+    match outcome {
+        Ok(reply_rx) => {
+            IoTaskPool::get()
+                .spawn(async move {
+                    let result = match reply_rx.await {
+                        Ok(r) => r,
+                        Err(_) => Err("channel closed before reply".to_string()),
+                    };
+                    sx.send(result);
+                })
+                .detach();
+        }
+        Err(e) => sx.send(Err(e)),
+    }
 }
 
 /// Handles request/response SystemApi messages for friends
@@ -571,46 +645,36 @@ fn handle_social_requests(mut events: EventReader<SystemApi>, mut social: ResMut
                 sx.send(initialized);
             }
             SystemApi::SendFriendRequest(address, message, sx) => {
-                let result = (|| {
-                    let addr = address.as_h160().ok_or("invalid address")?;
-                    let client = social.0.as_mut().ok_or("social not initialized")?;
+                spawn_friendship_action(sx.clone(), social.0.as_mut(), |client| {
+                    let addr = address.as_h160().ok_or("invalid address".to_string())?;
                     client
                         .friend_request(addr, message.clone())
-                        .map_err(|e| format!("{e}"))
-                })();
-                sx.send(result.map_err(|e| e.to_string()));
+                        .map_err(|e| e.to_string())
+                });
             }
             SystemApi::AcceptFriendRequest(address, sx) => {
-                let result = (|| {
-                    let addr = address.as_h160().ok_or("invalid address")?;
-                    let client = social.0.as_mut().ok_or("social not initialized")?;
-                    client.accept_request(addr).map_err(|e| format!("{e}"))
-                })();
-                sx.send(result.map_err(|e| e.to_string()));
+                spawn_friendship_action(sx.clone(), social.0.as_mut(), |client| {
+                    let addr = address.as_h160().ok_or("invalid address".to_string())?;
+                    client.accept_request(addr).map_err(|e| e.to_string())
+                });
             }
             SystemApi::RejectFriendRequest(address, sx) => {
-                let result = (|| {
-                    let addr = address.as_h160().ok_or("invalid address")?;
-                    let client = social.0.as_mut().ok_or("social not initialized")?;
-                    client.reject_request(addr).map_err(|e| format!("{e}"))
-                })();
-                sx.send(result.map_err(|e| e.to_string()));
+                spawn_friendship_action(sx.clone(), social.0.as_mut(), |client| {
+                    let addr = address.as_h160().ok_or("invalid address".to_string())?;
+                    client.reject_request(addr).map_err(|e| e.to_string())
+                });
             }
             SystemApi::CancelFriendRequest(address, sx) => {
-                let result = (|| {
-                    let addr = address.as_h160().ok_or("invalid address")?;
-                    let client = social.0.as_mut().ok_or("social not initialized")?;
-                    client.cancel_request(addr).map_err(|e| format!("{e}"))
-                })();
-                sx.send(result.map_err(|e| e.to_string()));
+                spawn_friendship_action(sx.clone(), social.0.as_mut(), |client| {
+                    let addr = address.as_h160().ok_or("invalid address".to_string())?;
+                    client.cancel_request(addr).map_err(|e| e.to_string())
+                });
             }
             SystemApi::DeleteFriend(address, sx) => {
-                let result = (|| {
-                    let addr = address.as_h160().ok_or("invalid address")?;
-                    let client = social.0.as_mut().ok_or("social not initialized")?;
-                    client.delete_friend(addr).map_err(|e| format!("{e}"))
-                })();
-                sx.send(result.map_err(|e| e.to_string()));
+                spawn_friendship_action(sx.clone(), social.0.as_mut(), |client| {
+                    let addr = address.as_h160().ok_or("invalid address".to_string())?;
+                    client.delete_friend(addr).map_err(|e| e.to_string())
+                });
             }
             #[cfg(feature = "social")]
             SystemApi::GetOnlineFriends(sx) => {
@@ -757,7 +821,63 @@ fn handle_social_requests(mut events: EventReader<SystemApi>, mut social: ResMut
             SystemApi::GetBlockedUsers(sx) => {
                 sx.send(Vec::new());
             }
+            #[cfg(feature = "social")]
+            SystemApi::GetBlockingStatus(sx) => {
+                let sx = sx.clone();
+                match social.0.as_ref().and_then(|c| c.get_blocking_status().ok()) {
+                    Some(rx) => {
+                        IoTaskPool::get()
+                            .spawn(async move {
+                                let result = match rx.await {
+                                    Ok(Ok((blocked_users, blocked_by_users))) => {
+                                        Ok(BlockingStatusData {
+                                            blocked_users,
+                                            blocked_by_users,
+                                        })
+                                    }
+                                    Ok(Err(e)) => Err(e),
+                                    Err(_) => Err("channel closed".to_string()),
+                                };
+                                sx.send(result);
+                            })
+                            .detach();
+                    }
+                    None => {
+                        sx.send(Err("social not initialized".to_string()));
+                    }
+                }
+            }
+            #[cfg(not(feature = "social"))]
+            SystemApi::GetBlockingStatus(sx) => {
+                sx.send(Err("social not available".to_string()));
+            }
             _ => {}
+        }
+    }
+}
+
+/// Pipes BlockUpdateEvent bevy events to scene stream subscribers
+fn pipe_block_updates_to_scene(
+    mut requests: EventReader<SystemApi>,
+    mut block_events: EventReader<BlockUpdateEvent>,
+    mut senders: Local<Vec<RpcStreamSender<BlockUpdateData>>>,
+) {
+    senders.extend(requests.read().filter_map(|ev| {
+        if let SystemApi::GetBlockUpdateStream(sender) = ev {
+            Some(sender.clone())
+        } else {
+            None
+        }
+    }));
+    senders.retain(|s| !s.is_closed());
+
+    for ev in block_events.read() {
+        let update = BlockUpdateData {
+            address: ev.address.clone(),
+            is_blocked: ev.is_blocked,
+        };
+        for sender in senders.iter() {
+            let _ = sender.send(update.clone());
         }
     }
 }
@@ -958,6 +1078,13 @@ pub struct ConnectivityEvent {
     pub address: Address,
     /// 0 = Online, 1 = Offline, 2 = Away
     pub status: i32,
+}
+
+/// Someone blocked / unblocked the local user.
+#[derive(Event, Clone)]
+pub struct BlockUpdateEvent {
+    pub address: String,
+    pub is_blocked: bool,
 }
 
 #[derive(Event)]

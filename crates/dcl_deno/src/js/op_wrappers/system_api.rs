@@ -11,10 +11,10 @@ use deno_core::{anyhow, error::AnyError, op2, OpDecl, OpState};
 use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
 use system_bridge::{
-    settings::SettingInfo, AvatarModifierState, BlockedUserData, ChatMessage,
-    FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
-    FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo, PermanentPermissionItem,
-    PermissionRequest, ProximityEvent, SceneLoadingUi, VoiceMessage,
+    settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
+    BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
+    FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo,
+    PermanentPermissionItem, PermissionRequest, ProximityEvent, SceneLoadingUi, VoiceMessage,
 };
 
 // list of op declarations
@@ -89,6 +89,9 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_block_user(),
             op_unblock_user(),
             op_get_blocked_users(),
+            op_get_blocking_status(),
+            op_get_block_update_stream(),
+            op_read_block_update_stream(),
             op_get_params(),
         ]
     } else {
@@ -588,6 +591,28 @@ pub async fn op_get_blocked_users(
     state: Rc<RefCell<OpState>>,
 ) -> Result<Vec<BlockedUserData>, anyhow::Error> {
     dcl::js::system_api::op_get_blocked_users(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_get_blocking_status(
+    state: Rc<RefCell<OpState>>,
+) -> Result<BlockingStatusData, anyhow::Error> {
+    dcl::js::system_api::op_get_blocking_status(state).await
+}
+
+#[op2(async)]
+pub async fn op_get_block_update_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_block_update_stream(state).await
+}
+
+#[op2(async)]
+#[serde]
+pub async fn op_read_block_update_stream(
+    state: Rc<RefCell<OpState>>,
+    #[smi] rid: u32,
+) -> Result<Option<BlockUpdateData>, anyhow::Error> {
+    dcl::js::system_api::op_read_block_update_stream(state, rid).await
 }
 
 #[op2(async)]
