@@ -163,19 +163,6 @@ fn apply_head_ik(
     let mut writes: Vec<(Entity, Quat)> = Vec::new();
 
     for (avatar_entity, mut rig, head_sync, point_at) in &mut avatars {
-        // Early-exit: no gaze input and the smoother has settled back to the
-        // neutral pose — the IK would write identity deltas over the animated
-        // pose, so skip the global-transform computations entirely. Drop the
-        // body-yaw memory so resumption doesn't apply a stale body delta.
-        let gaze_engaged =
-            point_at.is_pointing || head_sync.yaw_enabled || head_sync.pitch_enabled;
-        if !gaze_engaged && rig.yaw_offset_deg == 0.0 && rig.pitch_deg == 0.0 {
-            if rig.prev_dcl_avatar_yaw.is_some() {
-                rig.prev_dcl_avatar_yaw = None;
-            }
-            continue;
-        }
-
         // Avatar body forward (DCL convention: sign-flipped Y from bevy
         // world). Used as the constraint reference and as the neutral pose
         // we blend back to when the gaze input is off or out of range.
@@ -249,17 +236,6 @@ fn apply_head_ik(
 
         rig.yaw_offset_deg = smooth_angle(rig.yaw_offset_deg, target_yaw_offset, alpha);
         rig.pitch_deg = smooth_angle(rig.pitch_deg, target_pitch, alpha);
-
-        // snap the asymptotic blend-out to exactly neutral so the early-exit
-        // above can take over (sub-0.05° is far below visible)
-        if !active {
-            if rig.yaw_offset_deg.abs() < 0.05 {
-                rig.yaw_offset_deg = 0.0;
-            }
-            if rig.pitch_deg.abs() < 0.05 {
-                rig.pitch_deg = 0.0;
-            }
-        }
 
         // World-space swing applied as a delta to each bone's rest pose.
         // Yaw axis is world up; pitch axis is the avatar's right vector
