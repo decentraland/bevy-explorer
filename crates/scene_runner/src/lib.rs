@@ -326,6 +326,13 @@ impl Plugin for SceneRunnerPlugin {
         app.add_systems(Update, update_scene_room.in_set(SceneSets::PostLoop));
         app.add_systems(Update, log_app_errors.in_set(SceneSets::PostLoop));
         app.add_systems(Update, set_ui_constraints.in_set(SceneSets::PostLoop));
+        // Editor-only render systems (gizmo/marker on-top overlay + DoF disable).
+        // Compiled in only under the `editor` feature — production is unchanged.
+        #[cfg(feature = "editor")]
+        {
+            app.add_systems(Update, mark_super_scene_overlay.in_set(SceneSets::PostLoop));
+            app.add_systems(Update, editor_disable_dof.in_set(SceneSets::PostLoop));
+        }
 
         app.add_systems(
             Update,
@@ -1182,5 +1189,82 @@ fn push_camera_fov_to_crdt(
     if should_push {
         global_crdt_state.update_camera_fov(p.fov);
         *last_pushed = Some((p.fov, now));
+    }
+}
+
+// --- editor-only render systems (compiled in only under `editor`) ---------
+// Meshes of the editor (super-user) scene are gizmos/markers — they must render
+// on top of everything. We can't flip a key-affecting flag in place (bevy won't
+// re-specialize the pipeline), so — like the inverted-scale path does — we CLONE
+// the material with depth-test-off AND transparent blend (so it draws in the
+// transparent phase, after all opaque geometry) and assign the fresh handle.
+// Cached per source material so meshes sharing one material share one overlay.
+#[cfg(feature = "editor")]
+fn mark_super_scene_overlay(
+    mut commands: Commands,
+    super_scenes: Query<(), With<SuperUserScene>>,
+    meshes: Query<(
+        Entity,
+        &SceneEntity,
+        &bevy::pbr::MeshMaterial3d<scene_material::SceneMaterial>,
+    )>,
+    mut mats: ResMut<bevy::asset::Assets<scene_material::SceneMaterial>>,
+    mut overlay: Local<
+        HashMap<
+            bevy::asset::AssetId<scene_material::SceneMaterial>,
+            bevy::asset::Handle<scene_material::SceneMaterial>,
+        >,
+    >,
+) {
+    for (entity, scene_ent, mat_handle) in meshes.iter() {
+        if !super_scenes.contains(scene_ent.root) {
+            continue;
+        }
+        if mats
+            .get(&mat_handle.0)
+            .is_some_and(|m| m.extension.data.flags & scene_material::SCENE_MATERIAL_DEPTH_TEST_OFF != 0)
+        {
+            continue;
+        }
+        let src = mat_handle.0.id();
+        let new_handle = match overlay.get(&src) {
+            Some(h) => h.clone(),
+            None => {
+                let Some(base) = mats.get(&mat_handle.0) else {
+                    continue;
+                };
+                let mut cloned = base.clone();
+                cloned.extension.data.flags |= scene_material::SCENE_MATERIAL_DEPTH_TEST_OFF;
+                if matches!(cloned.base.alpha_mode, bevy::prelude::AlphaMode::Opaque) {
+                    cloned.base.alpha_mode = bevy::prelude::AlphaMode::Blend;
+                }
+                let h = mats.add(cloned);
+                overlay.insert(src, h.clone());
+                h
+            }
+        };
+        commands
+            .entity(entity)
+            .insert(bevy::pbr::MeshMaterial3d(new_handle));
+    }
+}
+
+// The editor wants a crisp, fully-in-focus viewport. The default depth-of-field
+// focuses ~50m past the avatar, blurring whatever you're editing (and the
+// depth-off gizmo overlay, which isn't in the prepass DoF samples). While an
+// editor scene is loaded, strip DoF from the primary camera.
+#[cfg(feature = "editor")]
+fn editor_disable_dof(
+    mut commands: Commands,
+    super_scenes: Query<(), With<SuperUserScene>>,
+    cam: Query<Entity, (With<PrimaryCamera>, With<bevy::core_pipeline::dof::DepthOfField>)>,
+) {
+    if super_scenes.is_empty() {
+        return;
+    }
+    for e in cam.iter() {
+        commands
+            .entity(e)
+            .remove::<bevy::core_pipeline::dof::DepthOfField>();
     }
 }

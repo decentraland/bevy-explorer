@@ -11,6 +11,9 @@ workspace = true
 [features]
 default = []
 gen-tests = []
+# editor-only systems (gizmo/marker on-top overlay, DoF disable). OFF in prod —
+# when disabled this code is not compiled, so production behaviour is unchanged.
+editor = []
 
 [dependencies]
 common = { workspace = true }

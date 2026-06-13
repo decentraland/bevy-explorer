@@ -15,6 +15,10 @@ pub const SCENE_MATERIAL_OUTLINE_RED: u32 = 4;
 pub const SCENE_MATERIAL_OUTLINE_FORCE: u32 = 8;
 pub const SCENE_MATERIAL_NO_DITHERING: u32 = 16;
 pub const SCENE_MATERIAL_CONE_ONLY_DITHER: u32 = 32;
+// editor only (set by scene_runner's editor gizmo overlay): render on top of
+// everything — depth test always passes, no depth write — so gizmos/markers are
+// never occluded by the model. Inert unless the flag is set.
+pub const SCENE_MATERIAL_DEPTH_TEST_OFF: u32 = 64;
 pub const SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG: u32 = 0x70000000;
 
 pub trait SceneMaterialExt {
@@ -39,6 +43,7 @@ impl SceneMaterialExt for SceneMaterial {
 pub struct SceneBoundKey {
     outline: bool,
     inverted_scale: bool,
+    depth_off: bool,
 }
 
 impl From<&SceneBound> for SceneBoundKey {
@@ -46,6 +51,7 @@ impl From<&SceneBound> for SceneBoundKey {
         Self {
             outline: (value.data.flags & SCENE_MATERIAL_OUTLINE) != 0,
             inverted_scale: value.inverted_scale,
+            depth_off: (value.data.flags & SCENE_MATERIAL_DEPTH_TEST_OFF) != 0,
         }
     }
 }
@@ -275,6 +281,15 @@ impl MaterialExtension for SceneBound {
             } else {
                 Some(Face::Back)
             };
+        }
+
+        // editor overlay: always draw on top of the scene, never write depth, so
+        // gizmos/markers are visible through the model from any angle
+        if data.depth_off {
+            if let Some(ds) = descriptor.depth_stencil.as_mut() {
+                ds.depth_compare = bevy::render::render_resource::CompareFunction::Always;
+                ds.depth_write_enabled = false;
+            }
         }
 
         if let Some(fragment) = descriptor.fragment.as_mut() {
