@@ -26,6 +26,7 @@ pub fn add_read_commands(app: &mut App) {
     app.add_console_command::<ComponentNamesCommand, _>(component_names_cmd);
     app.add_console_command::<ComponentDefaultCommand, _>(component_default_cmd);
     app.add_console_command::<ComponentSchemaCommand, _>(component_schema_cmd);
+    app.add_console_command::<PointerTargetCommand, _>(pointer_target_cmd);
 }
 
 // --- /set_scene ---
@@ -771,6 +772,54 @@ pub fn parse_entity_id(s: &str) -> Result<SceneEntityId, String> {
                 .parse()
                 .map_err(|_| format!("expected entity id (u32 or alias), got '{other}'"))?;
             Ok(SceneEntityId::from_proto_u32(id))
+        }
+    }
+}
+
+// --- /pointer_target ---
+// Editor pick built on the engine's PointerTarget. Upstream's SuperUserRaycastScene
+// (kept in sync with the inspected scene by sync_super_user_raycast_target) makes
+// that target report hits in the scene being edited with correct ids — so we reuse
+// rob's raycast instead of carrying our own mesh-picking backend.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/pointer_target")]
+struct PointerTargetCommand {
+    /// also include the player position (used by movement checks)
+    debug: Option<bool>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn pointer_target_cmd(
+    mut input: ConsoleCommand<PointerTargetCommand>,
+    target: Res<scene_runner::update_scene::pointer_results::PointerTarget>,
+    containers: Query<&scene_runner::ContainerEntity>,
+    contexts: Query<&RendererSceneContext>,
+    players: Query<&GlobalTransform, With<common::structs::PrimaryUser>>,
+) {
+    if let Some(Ok(cmd)) = input.take() {
+        let mut obj = serde_json::Map::new();
+        if let Some(info) = target.0.as_ref() {
+            if let Ok(container) = containers.get(info.container) {
+                if let (Ok(ctx), Some(entity)) = (
+                    contexts.get(container.root),
+                    container.container_id.as_proto_u32(),
+                ) {
+                    obj.insert("scene".to_owned(), serde_json::json!(ctx.hash));
+                    obj.insert("entity".to_owned(), serde_json::json!(entity));
+                    obj.insert("mesh".to_owned(), serde_json::json!(info.mesh_name));
+                }
+            }
+        }
+        if cmd.debug.unwrap_or(false) {
+            if let Some(t) = players.iter().next() {
+                let p = t.translation();
+                obj.insert("playerPos".to_owned(), serde_json::json!([p.x, p.y, p.z]));
+            }
+        }
+        if obj.is_empty() {
+            input.reply_ok("null");
+        } else {
+            input.reply_ok(serde_json::Value::Object(obj).to_string());
         }
     }
 }
