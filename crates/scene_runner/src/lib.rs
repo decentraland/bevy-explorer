@@ -106,7 +106,7 @@ impl SceneUpdates {
 
 #[derive(Component)]
 pub struct SceneThreadHandle {
-    pub sender: tokio::sync::mpsc::Sender<RendererResponse>,
+    pub sender: tokio::sync::mpsc::UnboundedSender<RendererResponse>,
 }
 
 /// Emitted by [`receive_scene_updates`] when the scene thread responds to a
@@ -879,7 +879,7 @@ fn send_scene_updates(
         died: std::mem::take(&mut context.outbound_died),
     };
 
-    if let Err(e) = handle.sender.blocking_send(RendererResponse::Ok(
+    if let Err(e) = handle.sender.send(RendererResponse::Ok(
         context.crdt_store.take_updates(),
         census,
     )) {

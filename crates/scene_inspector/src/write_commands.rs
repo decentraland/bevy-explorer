@@ -204,7 +204,9 @@ fn new_entity_cmd(
     mut pending: ResMut<PendingEntityAllocations>,
     mut console_responses: ResMut<PendingConsoleResponses>,
 ) {
-    if let Some(Ok(cmd)) = input.take() {
+    // Drain every queued invocation this frame (concurrent allocations all dispatch now); the
+    // per-request callbacks are matched to their EntityAllocated events FIFO downstream.
+    while let Some(Ok(cmd)) = input.take() {
         // The instantiation must use a custom component — an engine-recognized one flows
         // renderer→scene one-way (never echoed back) and would be lost.
         if crdt_interfaces
@@ -215,13 +217,13 @@ fn new_entity_cmd(
                 "component {} is engine-recognized; instantiate with a custom component",
                 cmd.component
             ));
-            return;
+            continue;
         }
         let data = match BASE64_STANDARD.decode(cmd.data.as_bytes()) {
             Ok(d) => d,
             Err(e) => {
                 input.reply_failed(format!("invalid base64: {e}"));
-                return;
+                continue;
             }
         };
         let explicit_ids = if cmd.ids.is_empty() {

@@ -129,7 +129,7 @@ pub async fn op_crdt_recv_from_renderer(op_state: Rc<RefCell<impl State>>) -> Ve
     let response = loop {
         let receiver = op_state
             .borrow_mut()
-            .borrow_mut::<Arc<Mutex<tokio::sync::mpsc::Receiver<RendererResponse>>>>()
+            .borrow_mut::<Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<RendererResponse>>>>()
             .clone();
         let response = receiver.lock().await.recv().await;
 

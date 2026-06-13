@@ -65,10 +65,23 @@ pub fn handle_entity_allocated_events(
                     .copied(),
             );
         }
-        if let Some(callbacks) = pending.0.remove(&event.scene_entity) {
-            for cb in callbacks {
+        // One EntityAllocated event corresponds to one AllocateEntity request, so fire exactly one
+        // callback (FIFO) — not all queued callbacks. The worker processes requests in order and the
+        // response channel is ordered, so request order == event order. Firing every callback would
+        // deliver this event's ids to all pending requests, cross-wiring concurrent allocations: a
+        // later request gets an earlier one's id (a duplicate), and its own event then finds no
+        // callback and is dropped.
+        let drained = if let Some(callbacks) = pending.0.get_mut(&event.scene_entity) {
+            if !callbacks.is_empty() {
+                let cb = callbacks.remove(0);
                 cb(&event.results);
             }
+            callbacks.is_empty()
+        } else {
+            false
+        };
+        if drained {
+            pending.0.remove(&event.scene_entity);
         }
     }
 }
