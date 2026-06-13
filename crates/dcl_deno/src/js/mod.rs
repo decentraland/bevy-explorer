@@ -297,13 +297,19 @@ pub(crate) fn scene_thread(
         return;
     }
 
+    // Scenes aren't driven on a fixed timestep, so a slow frame (asset load, GC, a stalled
+    // renderer round-trip) yields a huge dt. Cap it so dt-scaled scene logic (timers, animations)
+    // is never handed a multi-second step. Mirrored by MAX_SCENE_DT_SECONDS in
+    // deploy/web/sandbox_worker.js for the wasm runtime.
+    const MAX_SCENE_DT: std::time::Duration = std::time::Duration::from_secs(1);
+
     let start_time = std::time::Instant::now();
     let mut prev_time = start_time;
     let mut elapsed;
     let mut reported_errors = 0;
     loop {
         let now = std::time::Instant::now();
-        let dt = now.saturating_duration_since(prev_time);
+        let dt = now.saturating_duration_since(prev_time).min(MAX_SCENE_DT);
         elapsed = now.saturating_duration_since(start_time);
         prev_time = now;
 

@@ -335,8 +335,12 @@ self.onmessage = async (event) => {
       var count = 0;
       var reportedErrors = 0;
       var consecutiveErrorsWithoutInteraction = 0;
+      // Cap the per-frame dt handed to the scene: a slow frame must not feed dt-scaled scene
+      // logic (timers, animations) a multi-second step. Mirrors MAX_SCENE_DT in
+      // crates/dcl_deno/src/js/mod.rs.
+      const MAX_SCENE_DT_SECONDS = 1;
       while (ops.op_continue_running()) {
-        const dt = (elapsed - prevElapsed) / 1000;
+        const dt = Math.min((elapsed - prevElapsed) / 1000, MAX_SCENE_DT_SECONDS);
         ops.op_set_elapsed(elapsed / 1000);
         try {
           await module.onUpdate(dt);
