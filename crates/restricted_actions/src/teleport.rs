@@ -11,7 +11,7 @@ use scene_runner::{
         LiveScenes, PointerResult, SceneHash, SceneLoading, ScenePointers, PARCEL_SIZE,
     },
     permissions::Permission,
-    renderer_context::{RendererSceneContext, FROZEN_BLOCK},
+    renderer_context::{RendererSceneContext, FROZEN_BLOCK, SCENE_NOT_RESPONDING_TIMEOUT},
     update_world::mesh_collider::SceneColliderData,
     OutOfWorld,
 };
@@ -75,9 +75,10 @@ pub fn teleport_player(
     }
 }
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn handle_out_of_world(
     mut commands: Commands,
+    time: Res<Time>,
     mut scenes: Query<
         (
             Option<&RendererSceneContext>,
@@ -135,9 +136,20 @@ pub fn handle_out_of_world(
         // tick or clears `blocked` to become "ready" on its own. FROZEN_BLOCK is only ever set by the
         // inspector's /freeze_scene + /tick_scene, so this only affects inspector-paused scenes.
         let frozen = context.blocked.contains(FROZEN_BLOCK);
-        if !context.broken && !frozen && (context.tick_number <= 5 || !context.blocked.is_empty()) {
+        // A scene whose tick has been in-flight past the not-responding timeout is hung; stop
+        // holding the player behind the loading screen and let them into the world.
+        let not_responding = context.in_flight
+            && time.elapsed_secs() - context.last_sent > SCENE_NOT_RESPONDING_TIMEOUT.as_secs_f32();
+        if !not_responding
+            && !context.broken
+            && !frozen
+            && (context.tick_number <= 5 || !context.blocked.is_empty())
+        {
             debug!("scene not ready");
         } else {
+            if not_responding {
+                debug!("scene not responding, returning to world");
+            }
             debug!(
                 "ready, returning to world (set spawn here) tick: {}",
                 context.tick_number
