@@ -2,12 +2,20 @@
 <html lang="en">
 <head>
     <script>
-        // Set base href so relative paths work when deployed under a subpath (e.g. /bevy-web)
+        // Issue #807: when loaded without a trailing slash (e.g. /bevy-web?position=88,88)
+        // the page is outside the service worker scope (/bevy-web/), so the worker's
+        // COEP `credentialless` rewrite never runs and cross-origin scene assets are
+        // blocked by `require-corp`. Redirect to the trailing-slash URL (preserving the
+        // query and hash) so the service worker controls the page. Runs first, before
+        // anything else parses, to minimise wasted work.
         (function() {
-            var base = document.createElement('base');
             var path = window.location.pathname;
-            base.href = path.endsWith('/') ? path : path + '/';
-            document.head.appendChild(base);
+            var lastSegment = path.substring(path.lastIndexOf('/') + 1);
+            // Only redirect "directory" paths missing a trailing slash; skip anything
+            // that looks like a file (has an extension) to avoid redirect loops.
+            if (!path.endsWith('/') && lastSegment.indexOf('.') === -1) {
+                window.location.replace(path + '/' + window.location.search + window.location.hash);
+            }
         })();
     </script>
     <script>
