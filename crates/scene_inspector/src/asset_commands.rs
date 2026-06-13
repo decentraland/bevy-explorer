@@ -37,6 +37,7 @@ pub fn add_asset_commands(app: &mut App) {
     app.add_console_command::<AssetCatalogCommand, _>(asset_catalog_cmd);
     app.add_console_command::<InitAssetCommand, _>(init_asset_cmd);
     app.add_console_command::<SceneContentCommand, _>(scene_content_cmd);
+    app.add_console_command::<RegisterContentCommand, _>(register_content_cmd);
 }
 
 // --- /scene_content ---
@@ -371,4 +372,57 @@ pub async fn scene_target_json(io: &IpfsIo, scene_hash: &str) -> String {
         "title": str_at("/display/title"),
     })
     .to_string()
+}
+
+// --- /register_content ---
+
+/// Register a file that already exists in the scene's project folder (e.g. just written through
+/// the dev server's data-layer) into the live scene's content map, so `GltfContainer.src` and
+/// friends resolve without a scene reload. Dev-server (`dcl start`) scenes only — files there are
+/// addressed by a `b64-<path>` hash derived from the on-disk location.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/register_content")]
+struct RegisterContentCommand {
+    /// Project-root-relative file path (e.g. models/chair.glb)
+    rel_path: String,
+}
+
+fn register_content_cmd(
+    mut input: ConsoleCommand<RegisterContentCommand>,
+    ipfs: Res<IpfsResource>,
+    resolver: SceneResolver,
+    mut console_responses: ResMut<PendingConsoleResponses>,
+) {
+    if let Some(Ok(cmd)) = input.take() {
+        let scene_hash = match resolver.resolve() {
+            Ok((_, ctx)) => ctx.hash.clone(),
+            Err(e) => {
+                input.reply_failed(e);
+                return;
+            }
+        };
+        let rel = cmd.rel_path.clone();
+        let io = ipfs.inner.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        IoTaskPool::get()
+            .spawn(async move {
+                let result: Result<String, String> = async {
+                    let hash = io.local_b64_hash_for(&scene_hash, &rel).await.ok_or_else(|| {
+                        format!("'{rel}': no local path hash (not a dev-server scene?)")
+                    })?;
+                    let mut merge: HashMap<String, String> = HashMap::new();
+                    merge.insert(rel.to_lowercase(), hash.clone());
+                    io.merge_collection(&scene_hash, ContentMap(merge)).await;
+                    // NOTE: no await_contents_available here — its content_url() takes a blocking
+                    // read on the ipfs context, which wedges wasm's single thread. The caller is
+                    // expected to confirm the dev server serves the file (it knows the hash from
+                    // this reply) before instantiating anything that loads it.
+                    Ok(serde_json::json!({ "path": rel, "hash": hash }).to_string())
+                }
+                .await;
+                let _ = tx.send(result);
+            })
+            .detach();
+        console_responses.push_oneshot(rx, |r| r, input.take_responder());
+    }
 }
