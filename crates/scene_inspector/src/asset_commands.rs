@@ -365,6 +365,7 @@ pub async fn scene_target_json(io: &IpfsIo, scene_hash: &str) -> String {
         })
         .unwrap_or_default();
     serde_json::json!({
+        "hash": scene_hash,
         "root": root,
         "projectId": str_at("/source/projectId"),
         "parcels": parcels,

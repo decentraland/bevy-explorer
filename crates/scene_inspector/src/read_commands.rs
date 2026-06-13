@@ -1,11 +1,13 @@
 use base64::{prelude::BASE64_STANDARD, Engine};
 use bevy::prelude::*;
+use bevy::tasks::IoTaskPool;
 use bevy_console::ConsoleCommand;
 use console::{DoAddConsoleCommand, PendingConsoleResponses};
 use dcl::interface::CrdtStore;
 use dcl_component::{
     component_name_registry::InspectFn, ComponentNameRegistry, SceneComponentId, SceneEntityId,
 };
+use ipfs::IpfsResource;
 use scene_runner::renderer_context::RendererSceneContext;
 
 use crate::{
@@ -16,6 +18,7 @@ use crate::{
 pub fn add_read_commands(app: &mut App) {
     app.add_console_command::<SetSceneCommand, _>(set_scene_cmd);
     app.add_console_command::<SceneStatsCommand, _>(scene_stats_cmd);
+    app.add_console_command::<SceneTargetCommand, _>(scene_target_cmd);
     app.add_console_command::<SceneLogsCommand, _>(scene_logs_cmd);
     app.add_console_command::<SceneEntitiesCommand, _>(scene_entities_cmd);
     app.add_console_command::<EntityComponentsCommand, _>(entity_components_cmd);
@@ -98,6 +101,46 @@ fn scene_stats_cmd(mut input: ConsoleCommand<SceneStatsCommand>, resolver: Scene
                 ));
             }
         }
+    }
+}
+
+// --- /scene_target ---
+
+/// Return the active scene's identity/location JSON: `{ hash, root, projectId, parcels, title }`.
+/// `root` is the absolute local project folder for a `dcl start` scene (else null), recovered from
+/// the scene's content hashes via `IpfsIo::local_project_root` — the robust key-anchored decode the
+/// editor can't do scene-side (it can't see the content hashes, only their keys). Static identity, so
+/// unlike `/scene_stats` (live runtime status) it's async and read once per scene rather than polled.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/scene_target")]
+struct SceneTargetCommand;
+
+fn scene_target_cmd(
+    mut input: ConsoleCommand<SceneTargetCommand>,
+    ipfs: Res<IpfsResource>,
+    resolver: SceneResolver,
+    mut console_responses: ResMut<PendingConsoleResponses>,
+) {
+    if let Some(Ok(_)) = input.take() {
+        let scene_hash = match resolver.resolve() {
+            Ok((_, ctx)) => ctx.hash.clone(),
+            Err(e) => {
+                input.reply_failed(e);
+                return;
+            }
+        };
+        let io = ipfs.inner.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        IoTaskPool::get()
+            .spawn(async move {
+                let _ = tx.send(Ok(crate::asset_commands::scene_target_json(
+                    &io,
+                    &scene_hash,
+                )
+                .await));
+            })
+            .detach();
+        console_responses.push_oneshot(rx, |r| r, input.take_responder());
     }
 }
 
