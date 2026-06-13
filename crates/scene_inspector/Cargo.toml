@@ -16,8 +16,12 @@ scene_runner = { workspace = true }
 console = { workspace = true }
 platform = { workspace = true }
 ipfs = { workspace = true }
+input_manager = { workspace = true }
 
-bevy = { workspace = true }
+# bevy_mesh_picking_backend: /pointer_target raycasts the actual render meshes so
+# any visible model is clickable in the editor (collider-based picking misses
+# colliderless models and is suppressed in the editor's free-cam virtual camera).
+bevy = { workspace = true, features = ["bevy_mesh_picking_backend"] }
 bevy_console = { workspace = true }
 clap = { workspace = true }
 anyhow = { workspace = true }

@@ -777,15 +777,15 @@ pub fn parse_entity_id(s: &str) -> Result<SceneEntityId, String> {
 }
 
 // --- /pointer_target ---
-// Editor pick built on the engine's PointerTarget. Upstream's SuperUserRaycastScene
-// (kept in sync with the inspected scene by sync_super_user_raycast_target) makes
-// that target report hits in the scene being edited with correct ids — so we reuse
-// rob's raycast instead of carrying our own mesh-picking backend.
+
+/// The scene entity under the cursor right now: `{"scene","entity","mesh"}`, or `null`
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/pointer_target")]
 struct PointerTargetCommand {
-    /// also include the player position (used by movement checks)
+    /// include raycast pipeline diagnostics in the reply
     debug: Option<bool>,
+    /// with debug: also census this scene entity id's bevy meshes
+    census: Option<String>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -794,32 +794,177 @@ fn pointer_target_cmd(
     target: Res<scene_runner::update_scene::pointer_results::PointerTarget>,
     containers: Query<&scene_runner::ContainerEntity>,
     contexts: Query<&RendererSceneContext>,
-    players: Query<&GlobalTransform, With<common::structs::PrimaryUser>>,
+    windows: Query<&Window>,
+    interactions: Query<&Interaction, With<input_manager::MouseInteractionComponent>>,
+    world_target: Res<scene_runner::update_scene::pointer_results::WorldPointerTarget>,
+    players: Query<(Entity, &GlobalTransform), With<common::structs::PrimaryUser>>,
+    containing_scene: scene_runner::ContainingScene,
+    colliders: Query<(
+        &RendererSceneContext,
+        &scene_runner::update_world::mesh_collider::SceneColliderData,
+    )>,
+    mut mesh_raycast: bevy::picking::mesh_picking::ray_cast::MeshRayCast,
+    cameras: Query<(&Camera, &GlobalTransform), With<common::structs::PrimaryCamera>>,
+    parents: Query<&ChildOf>,
+    active: Res<crate::active_scene::ActiveInspectionScene>,
+    mesh_census: Query<(&GlobalTransform, Option<&ViewVisibility>, Has<Mesh3d>)>,
+    child_query: Query<&Children>,
 ) {
     if let Some(Ok(cmd)) = input.take() {
-        let mut obj = serde_json::Map::new();
-        if let Some(info) = target.0.as_ref() {
-            if let Ok(container) = containers.get(info.container) {
-                if let (Ok(ctx), Some(entity)) = (
-                    contexts.get(container.root),
-                    container.container_id.as_proto_u32(),
-                ) {
-                    obj.insert("scene".to_owned(), serde_json::json!(ctx.hash));
-                    obj.insert("entity".to_owned(), serde_json::json!(entity));
-                    obj.insert("mesh".to_owned(), serde_json::json!(info.mesh_name));
+        if cmd.debug == Some(true) {
+            let window = windows.iter().next();
+            let player = players.iter().next();
+            let nearby = player
+                .map(|(p, _)| {
+                    containing_scene.get_area(p, scene_runner::initialize_scene::PARCEL_SIZE)
+                })
+                .unwrap_or_default();
+            let scenes: Vec<serde_json::Value> = nearby
+                .iter()
+                .map(|e| match colliders.get(*e) {
+                    Ok((ctx, data)) => serde_json::json!({
+                        "hash": ctx.hash.chars().take(16).collect::<String>(),
+                        "colliders": data.iter().count(),
+                    }),
+                    Err(_) => serde_json::json!({"hash": "<no collider data>"}),
+                })
+                .collect();
+            // raw mesh-raycast view for the same cursor ray
+            let ray_diag = (|| {
+                let cursor = windows.iter().next()?.cursor_position()?;
+                let (camera, cam_transform) = cameras.iter().next()?;
+                let ray = camera.viewport_to_world(cam_transform, cursor).ok()?;
+                let settings =
+                    bevy::picking::mesh_picking::ray_cast::MeshRayCastSettings::default()
+                        .never_early_exit();
+                let hits: Vec<serde_json::Value> = mesh_raycast
+                    .cast_ray(ray, &settings)
+                    .iter()
+                    .take(12)
+                    .map(|(e, hit)| {
+                        let owner = std::iter::once(*e)
+                            .chain(parents.iter_ancestors(*e))
+                            .find_map(|a| containers.get(a).ok())
+                            .map(|c| format!("{:?}/{}", c.root, c.container_id));
+                        serde_json::json!({
+                            "entity": format!("{e:?}"),
+                            "distance": hit.distance,
+                            "pos": [hit.point.x, hit.point.y, hit.point.z],
+                            "container": owner,
+                        })
+                    })
+                    .collect();
+                Some(serde_json::json!({
+                    "origin": [ray.origin.x, ray.origin.y, ray.origin.z],
+                    "dir": [ray.direction.x, ray.direction.y, ray.direction.z],
+                    "hits": hits,
+                }))
+            })();
+            // census: where are a scene entity's bevy meshes and are they visible?
+            let census = cmd.census.as_ref().and_then(|id| {
+                let scene_root = active.0?;
+                let ctx = contexts.get(scene_root).ok()?;
+                let eid = parse_entity_id(id).ok()?;
+                let bevy_ent = ctx.bevy_entity(eid)?;
+                let mut meshes_found: Vec<serde_json::Value> = Vec::new();
+                let mut stack = vec![bevy_ent];
+                let mut visited = 0;
+                while let Some(e) = stack.pop() {
+                    visited += 1;
+                    if visited > 500 { break; }
+                    if let Ok((tx, vis, has_mesh)) = mesh_census.get(e) {
+                        if has_mesh {
+                            let p = tx.translation();
+                            meshes_found.push(serde_json::json!({
+                                "entity": format!("{e:?}"),
+                                "pos": [p.x, p.y, p.z],
+                                "viewVisible": vis.map(|v| v.get()),
+                            }));
+                        }
+                    }
+                    if let Ok(children) = child_query.get(e) {
+                        stack.extend(children.iter());
+                    }
+                }
+                Some(serde_json::json!({
+                    "bevyEntity": format!("{bevy_ent:?}"),
+                    "meshes": meshes_found,
+                }))
+            });
+            let diag = serde_json::json!({
+                "census": census,
+                "meshRay": ray_diag,
+                "activeScene": active.0.map(|e| format!("{e:?}")),
+                "windowFocused": window.map(|w| w.focused),
+                "cursor": window.and_then(|w| w.cursor_position()).map(|p| [p.x, p.y]),
+                "interactions": interactions.iter().map(|i| format!("{i:?}")).collect::<Vec<_>>(),
+                "playerPos": player.map(|(_, t)| { let v = t.translation(); [v.x, v.y, v.z] }),
+                "nearbyScenes": scenes,
+                "worldTarget": world_target.0.as_ref().map(|t| format!("{:?} {:?}", t.container, t.ty)),
+                "resolvedTarget": target.0.as_ref().map(|t| format!("{:?} {:?}", t.container, t.ty)),
+            });
+            input.reply_ok(diag.to_string());
+            return;
+        }
+        // Editor pick: raycast the actual render meshes so every visible model is
+        // clickable — runtime colliders only exist where scenes opted into physics
+        // or pointer interaction, which is unrelated to what a creator can see.
+        let mesh_pick = (|| {
+            // pinned scene, else the scene under the player (mirrors SceneResolver,
+            // which can't be used here: its &mut RendererSceneContext would conflict
+            // with this system's shared context queries)
+            let scene_root = active.0.or_else(|| {
+                let (player, _) = players.iter().next()?;
+                containing_scene.get_parcel(player)
+            })?;
+            let ctx = contexts.get(scene_root).ok()?;
+            let cursor = windows.iter().next()?.cursor_position()?;
+            let (camera, cam_transform) = cameras.iter().next()?;
+            let ray = camera.viewport_to_world(cam_transform, cursor).ok()?;
+            let settings =
+                bevy::picking::mesh_picking::ray_cast::MeshRayCastSettings::default()
+                    .never_early_exit();
+            for (hit, _) in mesh_raycast.cast_ray(ray, &settings) {
+                // ascend to the scene container that owns this mesh
+                for owner in std::iter::once(*hit).chain(parents.iter_ancestors(*hit)) {
+                    let Ok(container) = containers.get(owner) else {
+                        continue;
+                    };
+                    if container.root != scene_root {
+                        break; // another scene's mesh occludes — but keep trying farther hits
+                    }
+                    let entity = container.container_id.as_proto_u32()?;
+                    return Some(
+                        serde_json::json!({
+                            "scene": ctx.hash,
+                            "entity": entity,
+                            "mesh": serde_json::Value::Null,
+                        })
+                        .to_string(),
+                    );
                 }
             }
-        }
-        if cmd.debug.unwrap_or(false) {
-            if let Some(t) = players.iter().next() {
-                let p = t.translation();
-                obj.insert("playerPos".to_owned(), serde_json::json!([p.x, p.y, p.z]));
+            None
+        })();
+        let reply = mesh_pick.or_else(|| {
+            let info = target.0.as_ref()?;
+            // only world meshes count as pickable models — UI/avatar targets
+            // (e.g. an editor overlay surface) would shadow everything
+            if info.ty != common::structs::PointerTargetType::World {
+                return None;
             }
-        }
-        if obj.is_empty() {
-            input.reply_ok("null");
-        } else {
-            input.reply_ok(serde_json::Value::Object(obj).to_string());
-        }
+            let container = containers.get(info.container).ok()?;
+            let ctx = contexts.get(container.root).ok()?;
+            let entity = container.container_id.as_proto_u32()?;
+            Some(
+                serde_json::json!({
+                    "scene": ctx.hash,
+                    "entity": entity,
+                    "mesh": info.mesh_name,
+                })
+                .to_string(),
+            )
+        });
+        input.reply_ok(reply.unwrap_or_else(|| "null".to_owned()));
     }
 }
