@@ -1298,7 +1298,7 @@ impl<T> Default for MonotonicTimestamp<T> {
 
 impl<T> MonotonicTimestamp<T> {
     pub fn next_timestamp(&self) -> u32 {
-        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
     }
 }
 
