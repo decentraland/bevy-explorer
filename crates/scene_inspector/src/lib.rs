@@ -5,6 +5,7 @@ use scene_runner::update_scene::raycast_result::SuperUserRaycastScene;
 mod active_scene;
 mod asset_commands;
 mod manual_registry;
+mod message_bus;
 mod read_commands;
 pub mod snapshot;
 mod write_commands;
@@ -26,6 +27,9 @@ impl Plugin for SceneInspectorPlugin {
         read_commands::add_read_commands(app);
         write_commands::add_write_commands(app);
         asset_commands::add_asset_commands(app);
+        // editor page<->scene message bus (/editor_send, /editor_poll) — the
+        // transport the host UI uses; not provided upstream.
+        message_bus::add_message_bus_commands(app);
 
         app.add_systems(Update, snapshot::handle_snapshot_events);
         app.add_systems(Update, snapshot::handle_entity_allocated_events);
