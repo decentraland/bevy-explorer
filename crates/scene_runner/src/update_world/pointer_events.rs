@@ -1,4 +1,5 @@
 use bevy::{
+    app::{HierarchyPropagatePlugin, Propagate},
     ecs::entity::EntityHashSet,
     math::FloatOrd,
     platform::collections::{HashMap, HashSet},
@@ -43,6 +44,8 @@ pub struct EditorHighlight(pub EntityHashSet);
 
 impl Plugin for PointerEventsPlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(HierarchyPropagatePlugin::<SelectionOutline>::default());
+
         app.init_resource::<Highlit>();
         app.init_resource::<EditorHighlight>();
 
@@ -55,6 +58,8 @@ impl Plugin for PointerEventsPlugin {
             Update,
             (hover_text, propagate_avatar_events, entity_highlighting),
         );
+        app.add_observer(selection_outline_on_add);
+        app.add_observer(selection_outline_on_remove);
     }
 }
 
@@ -94,6 +99,9 @@ impl PointerEvents {
             .flat_map(|(_, events)| events.pointer_events.iter())
     }
 }
+
+#[derive(Default, Clone, Copy, PartialEq, Eq, Component)]
+struct SelectionOutline;
 
 pub fn propagate_avatar_events(
     mut commands: Commands,
@@ -282,8 +290,6 @@ struct Highlit(EntityHashSet);
 fn entity_highlighting(
     mut commands: Commands,
     pointer_events: Query<&PointerEvents, Without<ForeignPlayer>>,
-    children: Query<&Children>,
-    mut meshes: Query<(&mut Mesh3d, Option<&mut MeshTag>), With<MeshMaterial3d<SceneMaterial>>>,
     hover_target: Res<PointerTarget>,
     proximity: Res<ProximityCandidates>,
     mut highlit: ResMut<Highlit>,
@@ -316,38 +322,44 @@ fn entity_highlighting(
     let new_highlights = highlight_pass.difference(&highlit);
     for entity in new_highlights {
         debug!("Highlighting {}", entity);
-        for child in children.iter_descendants(*entity).chain([*entity]) {
-            let Ok((mut mesh_3d, maybe_mesh_tag)) = meshes.get_mut(child) else {
-                continue;
-            };
-            mesh_3d.set_changed();
-
-            trace!("Mesh {} highlighted", child);
-            if let Some(mut mesh_tag) = maybe_mesh_tag {
-                mesh_tag.0 |= SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG;
-            } else {
-                commands
-                    .entity(child)
-                    .insert(MeshTag(SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG));
-            }
-        }
+        commands
+            .entity(*entity)
+            .try_insert(Propagate(SelectionOutline));
     }
 
     let expired_highlights = highlit.difference(&highlight_pass);
     for entity in expired_highlights {
         debug!("Highlight of {} expired.", entity);
-        for child in children.iter_descendants(*entity).chain([*entity]) {
-            let Ok((mut mesh_3d, maybe_mesh_tag)) = meshes.get_mut(child) else {
-                continue;
-            };
-            mesh_3d.set_changed();
-
-            if let Some(mut mesh_tag) = maybe_mesh_tag {
-                trace!("Mesh {} no longer highlighted", child);
-                mesh_tag.0 &= !SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG;
-            }
-        }
+        commands
+            .entity(*entity)
+            .try_remove::<Propagate<SelectionOutline>>();
     }
 
     **highlit = highlight_pass;
+}
+
+fn selection_outline_on_add(
+    trigger: Trigger<OnAdd, SelectionOutline>,
+    mut meshes: Query<(&mut Mesh3d, &mut MeshTag), With<MeshMaterial3d<SceneMaterial>>>,
+) {
+    let entity = trigger.target();
+    let Ok((mut mesh_3d, mut mesh_tag)) = meshes.get_mut(entity) else {
+        return;
+    };
+    debug!("Selection outline on {entity}.");
+    mesh_3d.set_changed();
+    mesh_tag.0 |= SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG;
+}
+
+fn selection_outline_on_remove(
+    trigger: Trigger<OnRemove, SelectionOutline>,
+    mut meshes: Query<(&mut Mesh3d, &mut MeshTag), With<MeshMaterial3d<SceneMaterial>>>,
+) {
+    let entity = trigger.target();
+    let Ok((mut mesh_3d, mut mesh_tag)) = meshes.get_mut(entity) else {
+        return;
+    };
+    debug!("Selection outline removed from {entity}.");
+    mesh_3d.set_changed();
+    mesh_tag.0 &= !SCENE_MATERIAL_OUTLINE_GREEN_MESH_TAG;
 }
