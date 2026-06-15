@@ -71,6 +71,10 @@ var jsProxy = undefined;
 var jsPreamble = undefined;
 function createJsContext(wasmApi, context) {
   const isSuper = wasmApi.is_super(context);
+  // BroadcastChannel is a same-origin, serverless side channel — exposed ONLY to the trusted
+  // super-user (--ui) scene, so an embedded host page can drive it; ordinary scenes never see it
+  // (it would otherwise let an untrusted scene coordinate with the page / other scenes off-network).
+  const allowList = isSuper ? [...allowListES2020, "BroadcastChannel"] : allowListES2020;
   const sceneLabel = context.get_scene_title();
   const sceneStartTime = performance.now();
   function scenePrefix() {
@@ -175,7 +179,7 @@ function createJsContext(wasmApi, context) {
       if (propKey === "global") return jsProxy;
       if (propKey === "undefined") return undefined;
       if (jsContext[propKey] !== undefined) return jsContext[propKey];
-      if (allowListES2020.includes(propKey)) {
+      if (allowList.includes(propKey)) {
         return globalThis[propKey];
       }
       return undefined;
@@ -183,7 +187,7 @@ function createJsContext(wasmApi, context) {
   });
 
   const contextKeys = Object.getOwnPropertyNames(jsContext);
-  const allGlobals = [...new Set([...allowListES2020, ...contextKeys])];
+  const allGlobals = [...new Set([...allowList, ...contextKeys])];
   jsPreamble = allGlobals
     .map((key) => `const ${key} = globalThis.${key};`)
     .join("\n");
