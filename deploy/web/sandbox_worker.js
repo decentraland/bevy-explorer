@@ -71,6 +71,10 @@ var jsProxy = undefined;
 var jsPreamble = undefined;
 function createJsContext(wasmApi, context) {
   const isSuper = wasmApi.is_super(context);
+  // BroadcastChannel is a same-origin, serverless side channel — exposed ONLY to the trusted
+  // super-user (--ui) scene, so an embedded host page can drive it; ordinary scenes never see it
+  // (it would otherwise let an untrusted scene coordinate with the page / other scenes off-network).
+  const allowList = isSuper ? [...allowListES2020, "BroadcastChannel"] : allowListES2020;
   const sceneLabel = context.get_scene_title();
   const sceneStartTime = performance.now();
   function scenePrefix() {
@@ -175,7 +179,7 @@ function createJsContext(wasmApi, context) {
       if (propKey === "global") return jsProxy;
       if (propKey === "undefined") return undefined;
       if (jsContext[propKey] !== undefined) return jsContext[propKey];
-      if (allowListES2020.includes(propKey)) {
+      if (allowList.includes(propKey)) {
         return globalThis[propKey];
       }
       return undefined;
@@ -183,7 +187,7 @@ function createJsContext(wasmApi, context) {
   });
 
   const contextKeys = Object.getOwnPropertyNames(jsContext);
-  const allGlobals = [...new Set([...allowListES2020, ...contextKeys])];
+  const allGlobals = [...new Set([...allowList, ...contextKeys])];
   jsPreamble = allGlobals
     .map((key) => `const ${key} = globalThis.${key};`)
     .join("\n");
@@ -335,8 +339,12 @@ self.onmessage = async (event) => {
       var count = 0;
       var reportedErrors = 0;
       var consecutiveErrorsWithoutInteraction = 0;
+      // Cap the per-frame dt handed to the scene: a slow frame must not feed dt-scaled scene
+      // logic (timers, animations) a multi-second step. Mirrors MAX_SCENE_DT in
+      // crates/dcl_deno/src/js/mod.rs.
+      const MAX_SCENE_DT_SECONDS = 1;
       while (ops.op_continue_running()) {
-        const dt = (elapsed - prevElapsed) / 1000;
+        const dt = Math.min((elapsed - prevElapsed) / 1000, MAX_SCENE_DT_SECONDS);
         ops.op_set_elapsed(elapsed / 1000);
         try {
           await module.onUpdate(dt);

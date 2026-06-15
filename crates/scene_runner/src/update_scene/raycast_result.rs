@@ -11,6 +11,7 @@ use bevy_console::ConsoleCommand;
 use common::dynamics::PLAYER_COLLIDER_OVERLAP;
 
 use crate::{
+    initialize_scene::SuperUserScene,
     update_world::{
         gltf_container::GLTF_LOADING,
         mesh_collider::{RaycastResult, SceneColliderData},
@@ -38,12 +39,20 @@ impl Plugin for RaycastResultPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, run_raycasts.in_set(SceneSets::Input));
         app.init_resource::<DebugRaycast>();
+        app.init_resource::<SuperUserRaycastScene>();
         app.add_console_command::<DebugRaycastCommand, _>(debug_raycast);
     }
 }
 
 #[derive(Resource, Default)]
 struct DebugRaycast(bool);
+
+/// The scene a super-user scene has pinned (via the inspector's `/set_scene`). When set, that
+/// super-user scene's raycasts hit only its own scene and this target, and receive entity ids for
+/// both — letting the editor identify what it hit in the scene it's inspecting (cross-scene ids are
+/// otherwise stripped). None = unpinned; super-user raycasts then behave normally.
+#[derive(Resource, Default)]
+pub struct SuperUserRaycastScene(pub Option<Entity>);
 
 /// Toggle debug lines for raycasts
 #[derive(clap::Parser, ConsoleCommand)]
@@ -69,12 +78,14 @@ fn run_raycasts(
         &mut RendererSceneContext,
         &mut SceneColliderData,
         &GlobalTransform,
+        Has<SuperUserScene>,
     )>,
     debug: Res<DebugRaycast>,
     mut gizmos: Gizmos,
     time: Res<Time>,
     mut gizmo_cache: Local<Vec<(f32, Vec3, Vec3)>>,
     containing_scene: ContainingScene,
+    su_target_res: Res<SuperUserRaycastScene>,
 ) {
     // redraw non-continuous gizmos for 1 sec
     gizmo_cache.retain(|(until, origin, end)| {
@@ -84,7 +95,7 @@ fn run_raycasts(
 
     for (e, scene_ent, mut raycast, transform) in raycast_requests.iter_mut() {
         debug!("{e:?} has raycast request: {raycast:?}");
-        let Ok((_, context, mut scene_data, scene_transform)) =
+        let Ok((_, context, mut scene_data, scene_transform, super_user)) =
             scene_context.get_mut(scene_ent.root)
         else {
             continue;
@@ -184,59 +195,114 @@ fn run_raycasts(
                 ),
         };
 
-        let results = match (
-            context.is_portable || raycast.include_world(),
-            raycast.query_type(),
-        ) {
-            (false, RaycastQueryType::RqtHitFirst) => nearest_function(&mut scene_data)
-                .map(|hit| vec![(scene_ent.root, hit)])
-                .unwrap_or_default(),
-            (false, RaycastQueryType::RqtQueryAll) => all_function(&mut scene_data)
-                .into_iter()
-                .map(|hit| (scene_ent.root, hit))
-                .collect(),
-            (true, RaycastQueryType::RqtHitFirst) => {
-                let full_ray = direction * raycast.max_distance;
-                let mut scenes = containing_scene
-                    .get_ray(origin, full_ray)
+        let is_portable = context.is_portable;
+        // A super-user scene that has pinned a target (/set_scene) raycasts only its own scene and
+        // that target scene, returning entity ids for both — a known, unambiguous pair, so it can
+        // identify what it hit in the scene it's operating on. Everything else (normal scenes, and
+        // super-user scenes with no pinned target) is unchanged: own scene, or the world via
+        // `include_world`, with cross-scene ids stripped.
+        let su_target = if super_user { su_target_res.0 } else { None };
+        let scoped = su_target.is_some();
+
+        let results: Vec<(Entity, RaycastResult)> = if let Some(target) = su_target {
+            let query = raycast.query_type();
+            let mut hits: Vec<(Entity, RaycastResult)> = Vec::new();
+            // the caster's own scene
+            match query {
+                RaycastQueryType::RqtHitFirst => {
+                    if let Some(hit) = nearest_function(&mut scene_data) {
+                        hits.push((scene_ent.root, hit));
+                    }
+                }
+                RaycastQueryType::RqtQueryAll => hits.extend(
+                    all_function(&mut scene_data)
+                        .into_iter()
+                        .map(|hit| (scene_ent.root, hit)),
+                ),
+                RaycastQueryType::RqtNone => {}
+            }
+            // the pinned target scene
+            if target != scene_ent.root {
+                if let Ok((scene, _, mut colliders, _, _)) = scene_context.get_mut(target) {
+                    match query {
+                        RaycastQueryType::RqtHitFirst => {
+                            if let Some(hit) = nearest_function(&mut colliders) {
+                                hits.push((scene, hit));
+                            }
+                        }
+                        RaycastQueryType::RqtQueryAll => hits.extend(
+                            all_function(&mut colliders)
+                                .into_iter()
+                                .map(|hit| (scene, hit)),
+                        ),
+                        RaycastQueryType::RqtNone => {}
+                    }
+                }
+            }
+            // hit-first: across the two scenes, keep the nearest
+            if query == RaycastQueryType::RqtHitFirst && hits.len() > 1 {
+                hits.sort_by(|a, b| {
+                    a.1.toi
+                        .partial_cmp(&b.1.toi)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+                hits.truncate(1);
+            }
+            hits
+        } else {
+            match (is_portable || raycast.include_world(), raycast.query_type()) {
+                (false, RaycastQueryType::RqtHitFirst) => nearest_function(&mut scene_data)
+                    .map(|hit| vec![(scene_ent.root, hit)])
+                    .unwrap_or_default(),
+                (false, RaycastQueryType::RqtQueryAll) => all_function(&mut scene_data)
                     .into_iter()
-                    .peekable();
-                let mut best_result: Option<(Entity, RaycastResult)> = None;
-                while scenes.peek().is_some_and(|(_, closest)| {
-                    best_result.as_ref().is_none_or(|(_, br)| br.toi > *closest)
-                }) {
-                    let scene = scenes.next().unwrap().0;
-                    let Ok((scene, _, mut colliders, _)) = scene_context.get_mut(scene) else {
-                        continue;
-                    };
-                    if let Some(result) = nearest_function(&mut colliders) {
-                        if best_result.as_ref().is_none_or(|(_, b)| b.toi > result.toi) {
-                            best_result = Some((scene, result));
+                    .map(|hit| (scene_ent.root, hit))
+                    .collect(),
+                (true, RaycastQueryType::RqtHitFirst) => {
+                    let full_ray = direction * raycast.max_distance;
+                    let mut scenes = containing_scene
+                        .get_ray(origin, full_ray)
+                        .into_iter()
+                        .peekable();
+                    let mut best_result: Option<(Entity, RaycastResult)> = None;
+                    while scenes.peek().is_some_and(|(_, closest)| {
+                        best_result.as_ref().is_none_or(|(_, br)| br.toi > *closest)
+                    }) {
+                        let scene = scenes.next().unwrap().0;
+                        let Ok((scene, _, mut colliders, _, _)) = scene_context.get_mut(scene)
+                        else {
+                            continue;
+                        };
+                        if let Some(result) = nearest_function(&mut colliders) {
+                            if best_result.as_ref().is_none_or(|(_, b)| b.toi > result.toi) {
+                                best_result = Some((scene, result));
+                            }
                         }
                     }
-                }
 
-                if let Some(result) = best_result {
-                    vec![result]
-                } else {
-                    Vec::default()
-                }
-            }
-            (true, RaycastQueryType::RqtQueryAll) => {
-                let full_ray = direction * raycast.max_distance;
-                let mut results = Vec::new();
-                for (scene, _) in containing_scene.get_ray(origin, full_ray) {
-                    let Ok((scene, _, mut colliders, _)) = scene_context.get_mut(scene) else {
-                        continue;
-                    };
-                    for result in all_function(&mut colliders).into_iter() {
-                        results.push((scene, result));
+                    if let Some(result) = best_result {
+                        vec![result]
+                    } else {
+                        Vec::default()
                     }
                 }
+                (true, RaycastQueryType::RqtQueryAll) => {
+                    let full_ray = direction * raycast.max_distance;
+                    let mut results = Vec::new();
+                    for (scene, _) in containing_scene.get_ray(origin, full_ray) {
+                        let Ok((scene, _, mut colliders, _, _)) = scene_context.get_mut(scene)
+                        else {
+                            continue;
+                        };
+                        for result in all_function(&mut colliders).into_iter() {
+                            results.push((scene, result));
+                        }
+                    }
 
-                results
+                    results
+                }
+                (_, RaycastQueryType::RqtNone) => Vec::default(),
             }
-            (_, RaycastQueryType::RqtNone) => Vec::default(),
         };
 
         // debug line showing raycast
@@ -264,13 +330,15 @@ fn run_raycasts(
                     &result.normal.round_at_pow2(-14),
                 )),
                 length: result.toi,
-                // only pass details for hits on current scene entities
-                mesh_name: if scene == scene_ent.root {
+                // Only pass entity details for hits on the casting scene's own entities — except a
+                // super-user scene's *scoped* raycast (routed to one target scene above), where the
+                // ids are meaningful and unambiguous. World raycasts keep cross-scene ids stripped.
+                mesh_name: if scene == scene_ent.root || scoped {
                     result.id.name
                 } else {
                     None
                 },
-                entity_id: if scene == scene_ent.root {
+                entity_id: if scene == scene_ent.root || scoped {
                     result.id.entity.as_proto_u32()
                 } else {
                     None

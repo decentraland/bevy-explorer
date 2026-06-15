@@ -1,22 +1,100 @@
+use base64::{prelude::BASE64_STANDARD, Engine};
+use bevy::ecs::entity::EntityHashSet;
 use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
+use bevy::tasks::IoTaskPool;
 use bevy_console::ConsoleCommand;
-use console::DoAddConsoleCommand;
+use console::{DoAddConsoleCommand, PendingConsoleResponses};
 use dcl::interface::CrdtStore;
 use dcl_component::{
-    transform_and_parent::DclTransformAndParent, ComponentNameRegistry, DclReader, FromDclReader,
-    SceneComponentId, SceneEntityId,
+    transform_and_parent::DclTransformAndParent, ComponentNameRegistry, CrdtType, DclReader,
+    FromDclReader, SceneComponentId, SceneCrdtTimestamp, SceneEntityId,
 };
-use scene_runner::{renderer_context::FROZEN_BLOCK, update_world::CrdtExtractors};
+use scene_runner::{
+    renderer_context::FROZEN_BLOCK,
+    update_world::{pointer_events::EditorHighlight, CrdtExtractors},
+};
 
-use crate::{active_scene::SceneResolver, read_commands::parse_entity_id};
+use crate::{
+    active_scene::SceneResolver, read_commands::parse_entity_id, snapshot::PendingEntityAllocations,
+};
+
+/// Accumulates immediate Bevy-side updates so a batch of component writes/removals in one
+/// frame is delivered as a single `CrdtStateComponent` per component, rather than each
+/// overwriting the previous on the scene root (`process_crdt_lww_updates` only sees the
+/// last insert). Staged updates are flushed once, after the batch loop.
+#[derive(Default)]
+struct StagedBevyUpdates {
+    updates: CrdtStore,
+    touched: Vec<SceneComponentId>,
+    scene_root: Option<Entity>,
+}
+
+impl StagedBevyUpdates {
+    /// Apply one component write (`Some(data)`) or removal (`None`) to the active scene's
+    /// CRDT store, and stage the matching Bevy-side update. Returns the resolve error, if
+    /// any (so the caller can reply per-invocation).
+    fn apply(
+        &mut self,
+        resolver: &mut SceneResolver,
+        crdt_interfaces: &CrdtExtractors,
+        component_id: SceneComponentId,
+        crdt_type: CrdtType,
+        eid: SceneEntityId,
+        data: Option<&[u8]>,
+    ) -> Result<(), String> {
+        let (scene_entity, mut ctx) = resolver.resolve_mut()?;
+        ctx.crdt_store.force_update(
+            component_id,
+            crdt_type,
+            eid,
+            data.map(DclReader::new).as_mut(),
+        );
+
+        // Stage for immediate application to the Bevy entity so the renderer reflects the
+        // change without waiting for the scene to echo it back. Pure scene-side components
+        // have no entry in CrdtExtractors and are applied when the scene echoes the write.
+        if crdt_interfaces.0.contains_key(&component_id) {
+            self.updates.force_update(
+                component_id,
+                crdt_type,
+                eid,
+                data.map(DclReader::new).as_mut(),
+            );
+            if !self.touched.contains(&component_id) {
+                self.touched.push(component_id);
+            }
+            self.scene_root = Some(scene_entity);
+        }
+        Ok(())
+    }
+
+    /// Flush staged updates: one `CrdtStateComponent` per component, carrying every entity
+    /// touched this run, so a batch applies in full rather than only the last invocation.
+    fn flush(mut self, commands: &mut Commands, crdt_interfaces: &CrdtExtractors) {
+        let Some(scene_entity) = self.scene_root else {
+            return;
+        };
+        let mut entity_commands = commands.entity(scene_entity);
+        for component_id in &self.touched {
+            if let Some(interface) = crdt_interfaces.0.get(component_id) {
+                interface.updates_to_entity(*component_id, &mut self.updates, &mut entity_commands);
+            }
+        }
+    }
+}
 
 pub fn add_write_commands(app: &mut App) {
     app.add_console_command::<SetComponentCommand, _>(set_component_cmd);
+    app.add_console_command::<SetComponentRawCommand, _>(set_component_raw_cmd);
+    app.add_console_command::<NewEntityCommand, _>(new_entity_cmd);
+    app.add_console_command::<SaveCompositeCommand, _>(save_composite_cmd);
+    app.add_console_command::<DeleteComponentCommand, _>(delete_component_cmd);
     app.add_console_command::<DeleteEntityCommand, _>(delete_entity_cmd);
     app.add_console_command::<FreezeSceneCommand, _>(freeze_scene_cmd);
     app.add_console_command::<UnfreezeSceneCommand, _>(unfreeze_scene_cmd);
     app.add_console_command::<TickSceneCommand, _>(tick_scene_cmd);
+    app.add_console_command::<HighlightCommand, _>(highlight_cmd);
 }
 
 // --- /set_component ---
@@ -41,13 +119,7 @@ fn set_component_cmd(
     crdt_interfaces: Res<CrdtExtractors>,
     mut commands: Commands,
 ) {
-    // Stage the immediate Bevy-side updates so a batch of invocations in one frame is
-    // delivered as a single `CrdtStateComponent` per component, rather than each
-    // overwriting the previous on the scene root (`process_crdt_lww_updates` only sees the
-    // last insert).
-    let mut bevy_updates = CrdtStore::default();
-    let mut touched: Vec<SceneComponentId> = Vec::new();
-    let mut scene_root = None;
+    let mut staged = StagedBevyUpdates::default();
 
     while let Some(Ok(cmd)) = input.take() {
         let eid = match parse_entity_id(&cmd.entity) {
@@ -74,10 +146,7 @@ fn set_component_cmd(
             }
         };
 
-        let component_id = entry.id;
-        let crdt_type = entry.crdt_type;
         let json = cmd.json.join(" ");
-
         let bytes = match write_fn(&json) {
             Ok(b) => b,
             Err(e) => {
@@ -86,49 +155,302 @@ fn set_component_cmd(
             }
         };
 
+        match staged.apply(
+            &mut resolver,
+            &crdt_interfaces,
+            entry.id,
+            entry.crdt_type,
+            eid,
+            Some(bytes.as_slice()),
+        ) {
+            Ok(()) => input.reply_ok(format!("set {}.{} = {json}", cmd.entity, cmd.component)),
+            Err(e) => input.reply_failed(e),
+        }
+    }
+
+    staged.flush(&mut commands, &crdt_interfaces);
+}
+
+// --- /new_entity ---
+
+/// Allocate one or more fresh scene entity ids from the scene's own allocator (collision-free and
+/// correctly generationed) and instantiate each scene-side with the given component, so `@dcl/ecs`
+/// adopts it. Replies with a JSON array of the allocated entity ids (proto-u32 form, matching the
+/// snapshot's keys). The editor uses these as the ids to write the rest of an entity's components.
+///
+/// `component` MUST be a custom (non-engine-recognized) component — e.g. core-schema::Name. Engine
+/// components flow renderer→scene one-way (never echoed back), so an instantiation written with one
+/// would be lost; only a custom component round-trips.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/new_entity")]
+struct NewEntityCommand {
+    /// Numeric component id to instantiate each entity with (e.g. core-schema::Name)
+    component: u32,
+    /// base64-encoded component value bytes
+    data: String,
+    /// number of entities to allocate (ignored when --ids is given)
+    count: usize,
+    /// instantiate these exact ids (proto-u32, comma-separated) instead of allocating fresh — to
+    /// recreate entities at their original ids on a freshly-reloaded scene. A colliding id is
+    /// skipped and absent from the reply.
+    #[arg(long, value_delimiter = ',')]
+    ids: Vec<u32>,
+}
+
+fn new_entity_cmd(
+    mut input: ConsoleCommand<NewEntityCommand>,
+    resolver: SceneResolver,
+    crdt_interfaces: Res<CrdtExtractors>,
+    mut pending: ResMut<PendingEntityAllocations>,
+    mut console_responses: ResMut<PendingConsoleResponses>,
+) {
+    // Drain every queued invocation this frame (concurrent allocations all dispatch now); the
+    // per-request callbacks are matched to their EntityAllocated events FIFO downstream.
+    while let Some(Ok(cmd)) = input.take() {
+        // The instantiation must use a custom component — an engine-recognized one flows
+        // renderer→scene one-way (never echoed back) and would be lost.
+        if crdt_interfaces
+            .0
+            .contains_key(&SceneComponentId(cmd.component))
+        {
+            input.reply_failed(format!(
+                "component {} is engine-recognized; instantiate with a custom component",
+                cmd.component
+            ));
+            continue;
+        }
+        let data = match BASE64_STANDARD.decode(cmd.data.as_bytes()) {
+            Ok(d) => d,
+            Err(e) => {
+                input.reply_failed(format!("invalid base64: {e}"));
+                continue;
+            }
+        };
+        let explicit_ids = if cmd.ids.is_empty() {
+            None
+        } else {
+            Some(cmd.ids)
+        };
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        match resolver.request_allocate_entity(
+            &mut pending,
+            SceneComponentId(cmd.component),
+            data,
+            cmd.count,
+            explicit_ids,
+            move |results| {
+                // The worker reports a result per requested slot. Fail the command if any slot
+                // couldn't be allocated (e.g. an explicit id already live), rather than returning a
+                // partial set — the caller can then handle the miss.
+                let failed: Vec<_> = results.iter().filter_map(|r| r.as_ref().err()).collect();
+                if !failed.is_empty() {
+                    let _ = tx.send(Err(format!("could not allocate: {failed:?}")));
+                    return;
+                }
+                let json = format!(
+                    "[{}]",
+                    results
+                        .iter()
+                        .filter_map(|r| r.as_ref().ok())
+                        .map(|id| id.as_proto_u32().unwrap_or(id.id as u32).to_string())
+                        .collect::<Vec<_>>()
+                        .join(",")
+                );
+                let _ = tx.send(Ok(json));
+            },
+        ) {
+            Ok(()) => console_responses.push_oneshot(rx, |r| r, input.take_responder()),
+            Err(e) => input.reply_failed(e),
+        }
+    }
+}
+
+// --- /set_component_raw ---
+
+/// Set a custom (non-engine-managed) component on a scene entity from raw bytes — for the
+/// components the engine doesn't recognize (core-schema::, asset-packs::, inspector::), which
+/// `/set_component` can't address. The editor encodes the value with the SDK schema and sends it
+/// base64, keyed by numeric component id. The value is written to the scene's CRDT store and
+/// pushed over the normal engine→scene channel; the timestamp must exceed the component's current
+/// LWW timestamp (reported by `/crdt_snapshot`) so the write wins.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/set_component_raw")]
+struct SetComponentRawCommand {
+    /// Entity id or alias: root, player, camera
+    entity: String,
+    /// Numeric component id
+    component: u32,
+    /// LWW timestamp (must be greater than the component's current timestamp)
+    timestamp: u32,
+    /// Component value as standard base64-encoded bytes
+    data: String,
+}
+
+fn set_component_raw_cmd(
+    mut input: ConsoleCommand<SetComponentRawCommand>,
+    mut resolver: SceneResolver,
+) {
+    while let Some(Ok(cmd)) = input.take() {
+        let eid = match parse_entity_id(&cmd.entity) {
+            Ok(e) => e,
+            Err(e) => {
+                input.reply_failed(e);
+                continue;
+            }
+        };
+
+        let bytes = match BASE64_STANDARD.decode(cmd.data.trim()) {
+            Ok(b) => b,
+            Err(e) => {
+                input.reply_failed(format!("invalid base64: {e}"));
+                continue;
+            }
+        };
+
         match resolver.resolve_mut() {
             Err(e) => input.reply_failed(e),
-            Ok((scene_entity, mut ctx)) => {
-                ctx.crdt_store.force_update(
-                    component_id,
-                    crdt_type,
+            Ok((_scene_entity, mut ctx)) => {
+                // Normal-mode write (timestamp-checked): applies only if newer, then is delivered
+                // to the scene by the per-frame `take_updates`. Custom components aren't
+                // renderer-managed, so no Bevy-side staging is needed.
+                let applied = ctx.crdt_store.try_update(
+                    SceneComponentId(cmd.component),
+                    CrdtType::LWW_ANY,
                     eid,
+                    SceneCrdtTimestamp(cmd.timestamp),
                     Some(&mut DclReader::new(&bytes)),
                 );
-
-                // Stage the write for immediate application to the Bevy entity so the
-                // renderer reflects the change without waiting for the scene to echo it
-                // back. Pure scene-side components have no entry in CrdtExtractors and are
-                // applied when the scene echoes the write. Staged updates are flushed once,
-                // after the loop, so concurrent invocations don't clobber one another.
-                if crdt_interfaces.0.contains_key(&component_id) {
-                    bevy_updates.force_update(
-                        component_id,
-                        crdt_type,
-                        eid,
-                        Some(&mut DclReader::new(&bytes)),
-                    );
-                    if !touched.contains(&component_id) {
-                        touched.push(component_id);
-                    }
-                    scene_root = Some(scene_entity);
+                if applied {
+                    input.reply_ok(format!(
+                        "set {}.{} ({} bytes)",
+                        cmd.entity,
+                        cmd.component,
+                        bytes.len()
+                    ));
+                } else {
+                    input.reply_failed(format!(
+                        "rejected: timestamp {} is not newer than the current value",
+                        cmd.timestamp
+                    ));
                 }
-
-                input.reply_ok(format!("set {}.{} = {json}", cmd.entity, cmd.component));
             }
         }
     }
+}
 
-    // Flush staged updates: one `CrdtStateComponent` per component, carrying every entity
-    // touched this run, so a batch applies in full rather than only the last invocation.
-    if let Some(scene_entity) = scene_root {
-        let mut entity_commands = commands.entity(scene_entity);
-        for component_id in touched {
-            if let Some(interface) = crdt_interfaces.0.get(&component_id) {
-                interface.updates_to_entity(component_id, &mut bevy_updates, &mut entity_commands);
+// --- /save_composite ---
+
+/// Persist a composite the inspector built (the bytes arrive base64-encoded). The destination is
+/// derived from the active scene: for a local scene it writes straight to its
+/// assets/scene/main.composite; otherwise a save dialog (native) / directory picker (web) is
+/// shown — see `platform::save_scene_composite`. Replies with the path written.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/save_composite")]
+struct SaveCompositeCommand {
+    /// Composite bytes as standard base64
+    data: String,
+}
+
+fn save_composite_cmd(
+    mut input: ConsoleCommand<SaveCompositeCommand>,
+    resolver: SceneResolver,
+    ipfs: Res<ipfs::IpfsResource>,
+    mut console_responses: ResMut<PendingConsoleResponses>,
+) {
+    if let Some(Ok(cmd)) = input.take() {
+        let bytes = match BASE64_STANDARD.decode(cmd.data.trim()) {
+            Ok(b) => b,
+            Err(e) => {
+                input.reply_failed(format!("invalid base64: {e}"));
+                return;
             }
+        };
+        let hash = match resolver.resolve() {
+            Ok((_, ctx)) => ctx.hash.clone(),
+            Err(e) => {
+                input.reply_failed(e);
+                return;
+            }
+        };
+        let io = ipfs.inner.clone();
+        // The write (and the folder pick on web) is async — run it off the main schedule and reply
+        // when it resolves. Imported-asset files are pushed to disk at import time (/init_asset), not
+        // here, so this only writes the composite. `scene_target` lets the web save locate + verify
+        // the project folder under the granted directory handle.
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        IoTaskPool::get()
+            .spawn(async move {
+                let target = crate::asset_commands::scene_target_json(&io, &hash).await;
+                let _ = tx.send(platform::save_scene_composite(hash, bytes, target).await);
+            })
+            .detach();
+        console_responses.push_oneshot(rx, |r| r, input.take_responder());
+    }
+}
+
+// --- /delete_component ---
+
+/// Remove a component from a scene entity
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/delete_component")]
+struct DeleteComponentCommand {
+    /// Entity id or alias: root, player, camera
+    entity: String,
+    /// Component name (PascalCase)
+    component: String,
+}
+
+fn delete_component_cmd(
+    mut input: ConsoleCommand<DeleteComponentCommand>,
+    registry: Res<ComponentNameRegistry>,
+    mut resolver: SceneResolver,
+    crdt_interfaces: Res<CrdtExtractors>,
+    mut commands: Commands,
+) {
+    let mut staged = StagedBevyUpdates::default();
+
+    while let Some(Ok(cmd)) = input.take() {
+        let eid = match parse_entity_id(&cmd.entity) {
+            Ok(e) => e,
+            Err(e) => {
+                input.reply_failed(e);
+                continue;
+            }
+        };
+
+        let entry = match registry.get_by_name(&cmd.component) {
+            Some(e) => e,
+            None => {
+                input.reply_failed(format!("unknown component '{}'", cmd.component));
+                continue;
+            }
+        };
+
+        // A removal is a `None` write — only the LWW store tracks per-entity presence
+        // (GO is append-only), and inspect-only components can't be edited at all.
+        if entry.write.is_none() {
+            input.reply_failed(format!("'{}' is read-only", cmd.component));
+            continue;
+        }
+        if !matches!(entry.crdt_type, CrdtType::LWW(_)) {
+            input.reply_failed(format!("'{}' is not deletable", cmd.component));
+            continue;
+        }
+
+        match staged.apply(
+            &mut resolver,
+            &crdt_interfaces,
+            entry.id,
+            entry.crdt_type,
+            eid,
+            None,
+        ) {
+            Ok(()) => input.reply_ok(format!("removed {}.{}", cmd.entity, cmd.component)),
+            Err(e) => input.reply_failed(e),
         }
     }
+
+    staged.flush(&mut commands, &crdt_interfaces);
 }
 
 // --- /delete_entity ---
@@ -304,6 +626,62 @@ fn tick_scene_cmd(mut input: ConsoleCommand<TickSceneCommand>, mut resolver: Sce
                     ctx.tick_number
                 ));
             }
+        }
+    }
+}
+
+// --- /highlight ---
+
+/// Outline the given scene entities as the editor's active selection. The highlight is persistent
+/// (independent of pointer hover) and is render-only — it never writes to the scene's components,
+/// so it never enters the scene snapshot or the save, and never clobbers a scene-authored
+/// `PointerEvents`. Replaces the previous set each call; `/highlight` with no ids clears it.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/highlight")]
+struct HighlightCommand {
+    /// scene entity ids to outline (numeric, or root/player/camera); empty clears the highlight
+    ids: Vec<String>,
+}
+
+fn highlight_cmd(
+    mut input: ConsoleCommand<HighlightCommand>,
+    resolver: SceneResolver,
+    mut highlight: ResMut<EditorHighlight>,
+) {
+    if let Some(Ok(HighlightCommand { ids })) = input.take() {
+        let ctx = match resolver.resolve() {
+            Ok((_, ctx)) => ctx,
+            Err(e) => {
+                input.reply_failed(e);
+                return;
+            }
+        };
+        let mut set = EntityHashSet::default();
+        let mut missing = Vec::new();
+        for id in &ids {
+            let eid = match parse_entity_id(id) {
+                Ok(eid) => eid,
+                Err(e) => {
+                    input.reply_failed(format!("bad id '{id}': {e}"));
+                    return;
+                }
+            };
+            match ctx.bevy_entity(eid) {
+                Some(e) => {
+                    set.insert(e);
+                }
+                None => missing.push(id.clone()),
+            }
+        }
+        let n = set.len();
+        highlight.0 = set;
+        if missing.is_empty() {
+            input.reply_ok(format!("highlighting {n}"));
+        } else {
+            input.reply_ok(format!(
+                "highlighting {n} (not in scene: {})",
+                missing.join(", ")
+            ));
         }
     }
 }

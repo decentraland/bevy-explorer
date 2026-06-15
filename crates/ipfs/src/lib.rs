@@ -1,3 +1,5 @@
+#[cfg(feature = "ipfs_debug")]
+mod ipfs_debug;
 pub mod ipfs_path;
 
 use std::{
@@ -6,11 +8,13 @@ use std::{
     marker::PhantomData,
     path::{Path, PathBuf},
     sync::{
-        atomic::{self, AtomicU16},
+        atomic::{AtomicU16, AtomicU32, Ordering},
         Arc,
     },
 };
 
+#[cfg(feature = "ipfs_debug")]
+use common::util::ReportErr;
 use futures_io::{AsyncRead, AsyncSeek};
 use web_time::{Duration, Instant};
 
@@ -24,6 +28,9 @@ use bevy::{
         },
         meta::Settings,
         Asset, AssetLoader, LoadState, UntypedAssetId,
+    },
+    diagnostic::{
+        Diagnostic, DiagnosticMeasurement, DiagnosticPath, DiagnosticsStore, RegisterDiagnostic,
     },
     ecs::system::SystemParam,
     platform::collections::HashMap,
@@ -56,7 +63,21 @@ use console::DoAddConsoleCommand;
 #[allow(unused_imports)]
 use platform::ReqwestBuilderExt;
 
+#[cfg(feature = "ipfs_debug")]
+use crate::ipfs_debug::{IpfsDebug, IpfsDebugReceiver, IpfsDebugStatus};
+
 use self::ipfs_path::{normalize_path, IpfsKey, IpfsPath, IpfsType};
+
+const IPFS_IN_FLIGHT_DIAGNOSTIC_PATH: DiagnosticPath = DiagnosticPath::const_new("IPFS_IN_FLIGHT");
+static IPFS_IN_FLIGHT: AtomicU32 = AtomicU32::new(0);
+const IPFS_SUCCESS_DIAGNOSTIC_PATH: DiagnosticPath = DiagnosticPath::const_new("IPFS_SUCCESS");
+static IPFS_SUCCESS: AtomicU32 = AtomicU32::new(0);
+const IPFS_FAILED_DIAGNOSTIC_PATH: DiagnosticPath = DiagnosticPath::const_new("IPFS_FAILED");
+static IPFS_FAILED: AtomicU32 = AtomicU32::new(0);
+const IPFS_CACHED_DIAGNOSTIC_PATH: DiagnosticPath = DiagnosticPath::const_new("IPFS_CACHED");
+static IPFS_CACHED: AtomicU32 = AtomicU32::new(0);
+const IPFS_NON_IPFS_DIAGNOSTIC_PATH: DiagnosticPath = DiagnosticPath::const_new("IPFS_NON_IPFS");
+static IPFS_NON_IPFS: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TypedIpfsRef {
@@ -469,12 +490,16 @@ impl Plugin for IpfsIoPlugin {
                 .unwrap_or_else(|_| panic!("failed to write to assets folder {root:?}"));
         }
 
+        #[cfg(feature = "ipfs_debug")]
+        let (debug_overlay_sender, debug_overlay_receiver) = tokio::sync::mpsc::unbounded_channel();
         let ipfs_io = IpfsIo::new(
             self.preview,
             Box::new(default_reader),
             cache_root,
             HashMap::default(),
             self.num_slots,
+            #[cfg(feature = "ipfs_debug")]
+            debug_overlay_sender,
         );
         let ipfs_io = Arc::new(ipfs_io);
         let passthrough = PassThroughReader {
@@ -508,6 +533,18 @@ impl Plugin for IpfsIoPlugin {
         );
 
         app.add_console_command::<ChangeRealmCommand, _>(change_realm_command);
+
+        app.register_diagnostic(Diagnostic::new(IPFS_IN_FLIGHT_DIAGNOSTIC_PATH));
+        app.register_diagnostic(Diagnostic::new(IPFS_SUCCESS_DIAGNOSTIC_PATH));
+        app.register_diagnostic(Diagnostic::new(IPFS_FAILED_DIAGNOSTIC_PATH));
+        app.register_diagnostic(Diagnostic::new(IPFS_CACHED_DIAGNOSTIC_PATH));
+        app.register_diagnostic(Diagnostic::new(IPFS_NON_IPFS_DIAGNOSTIC_PATH));
+
+        app.add_systems(PostUpdate, ipfs_diagnostics);
+
+        #[cfg(feature = "ipfs_debug")]
+        app.add_plugins(ipfs_debug::IpfsDebugPlugin)
+            .insert_resource(IpfsDebugReceiver(debug_overlay_receiver));
     }
 
     fn finish(&self, app: &mut App) {
@@ -673,6 +710,8 @@ pub struct IpfsIo {
     reqno: AtomicU16,
     static_files: HashMap<&'static str, &'static str>,
     client: reqwest::Client,
+    #[cfg(feature = "ipfs_debug")]
+    debug_overlay_sender: tokio::sync::mpsc::UnboundedSender<IpfsDebug>,
 }
 
 impl IpfsIo {
@@ -682,6 +721,9 @@ impl IpfsIo {
         default_fs_path: Option<PathBuf>,
         static_paths: HashMap<&'static str, &'static str>,
         num_slots: usize,
+        #[cfg(feature = "ipfs_debug")] debug_overlay_sender: tokio::sync::mpsc::UnboundedSender<
+            IpfsDebug,
+        >,
     ) -> Self {
         let (sender, receiver) = tokio::sync::watch::channel(None);
 
@@ -704,6 +746,8 @@ impl IpfsIo {
                 .user_agent("DCLExplorer/0.1")
                 .build()
                 .unwrap(),
+            #[cfg(feature = "ipfs_debug")]
+            debug_overlay_sender,
         }
     }
 
@@ -913,6 +957,50 @@ impl IpfsIo {
         write.entities.insert(hash, entity);
     }
 
+    /// Merge additional path→hash entries into an existing collection (creating it if absent),
+    /// WITHOUT clobbering the collection's other entries — unlike `add_collection`, which replaces.
+    /// Injects imported-asset files into the *current scene's* content map at runtime.
+    pub async fn merge_collection(&self, hash: &str, extra: ContentMap) {
+        let mut write = self.context.write().await;
+        match write.entities.get_mut(hash) {
+            Some(entity) => entity.collection.0.extend(extra.0),
+            None => {
+                write.entities.insert(
+                    hash.to_owned(),
+                    IpfsEntity {
+                        collection: extra,
+                        metadata: None,
+                    },
+                );
+            }
+        }
+    }
+
+    /// True if bytes for `hash` are already in the on-disk content cache.
+    pub fn is_cached(&self, hash: &str) -> bool {
+        self.cache_path()
+            .map(|p| p.join(hash).exists())
+            .unwrap_or(false)
+    }
+
+    /// Write bytes into the on-disk content cache under `hash` (atomic via .part rename), so a later
+    /// content-file resolution to `hash` is served from cache without a network fetch. No-op if
+    /// there is no cache dir (e.g. wasm).
+    pub async fn cache_bytes(&self, hash: &str, data: &[u8]) -> Result<(), anyhow::Error> {
+        let Some(cache_path) = self.cache_path() else {
+            return Ok(());
+        };
+        let mut part = PathBuf::from(cache_path);
+        part.push(format!("{hash}.part"));
+        let mut f = async_fs::File::create(&part).await?;
+        f.write_all(data).await?;
+        f.sync_all().await?;
+        let mut final_path = PathBuf::from(cache_path);
+        final_path.push(hash);
+        async_fs::rename(&part, &final_path).await?;
+        Ok(())
+    }
+
     pub fn cache_path(&self) -> Option<&Path> {
         self.default_fs_path.as_deref()
     }
@@ -1071,6 +1159,181 @@ impl IpfsIo {
         res
     }
 
+    /// Poll the scene's content server until each of `file_paths` (resolved via the scene
+    /// collection) is fetchable, sharing one `timeout` budget; returns whether all became available.
+    /// Used after writing imported files to wait for the dev server to index them before the
+    /// renderer first tries to load them — otherwise that first load 404s and is never retried. On
+    /// web the successful GETs also warm the service-worker cache for the exact URLs the loader uses.
+    pub async fn await_contents_available(
+        &self,
+        file_paths: &[String],
+        content_hash: &str,
+        timeout: Duration,
+    ) -> bool {
+        let deadline = Instant::now() + timeout;
+        let mut all = true;
+        for file_path in file_paths {
+            let Some(url) = self.content_url(file_path, content_hash) else {
+                all = false;
+                continue;
+            };
+            loop {
+                if let Ok(resp) = self.client.get(&url).send().await {
+                    if resp.status().is_success() {
+                        break;
+                    }
+                }
+                if Instant::now() >= deadline {
+                    all = false;
+                    break;
+                }
+                async_std::task::sleep(Duration::from_millis(150)).await;
+            }
+        }
+        all
+    }
+
+    /// For a `dcl start` scene — whose files the dev server addresses by
+    /// `b64-<base64(`{absolutePath}-{machineId}`)>` (see @dcl/sdk-commands `b64HashingFunction`) and
+    /// serves by decoding that back to a path — compute the hash a newly-written file at
+    /// project-relative `rel` (original case) will be served under, so the live content-map merge
+    /// uses the dev server's hash rather than the source CID (which it doesn't know, hence the 404s
+    /// that only a reload fixed). Recovers the project root + machine id from any existing `b64-`
+    /// entry in the scene's collection. Returns None when the scene isn't b64-addressed (native /
+    /// deployed scenes — there the source hash + local cache is used instead).
+    pub async fn local_b64_hash_for(&self, scene_hash: &str, rel: &str) -> Option<String> {
+        use base64::{prelude::BASE64_STANDARD, Engine};
+        let read = self.context.read().await;
+        let collection = &read.entities.get(scene_hash)?.collection;
+        for (key, h) in collection.0.iter() {
+            let Some(b64) = h.strip_prefix("b64-") else {
+                continue;
+            };
+            let Ok(decoded) = BASE64_STANDARD.decode(b64) else {
+                continue;
+            };
+            let Ok(decoded) = String::from_utf8(decoded) else {
+                continue;
+            };
+            // decoded == "{projectRoot}/{key-original-case}-{machineId}"; the key is lowercased, so
+            // locate "/{key}-" case-insensitively, then slice the original to keep the real casing.
+            let marker = format!("/{key}-");
+            let Some(idx) = decoded.to_lowercase().rfind(&marker) else {
+                continue;
+            };
+            let project_root = &decoded[..idx];
+            let machine_id = &decoded[idx + marker.len()..];
+            let abs = format!("{project_root}/{rel}-{machine_id}");
+            return Some(format!("b64-{}", BASE64_STANDARD.encode(abs.as_bytes())));
+        }
+        None
+    }
+
+    /// The clean absolute project root of a `dcl start` scene, recovered from any existing `b64-`
+    /// collection entry — a file's encoded path has clean directory segments (only the filename
+    /// carries the `-machineId` suffix), so slicing before `/{key}-` yields the real root. None for
+    /// native/deployed scenes (entries aren't in the `b64-<path>-machineId` form). Lets the web save
+    /// locate the project folder under a granted directory handle.
+    pub async fn local_project_root(&self, scene_hash: &str) -> Option<String> {
+        use base64::{prelude::BASE64_STANDARD, Engine};
+        let read = self.context.read().await;
+        let collection = &read.entities.get(scene_hash)?.collection;
+        for (key, h) in collection.0.iter() {
+            let Some(b64) = h.strip_prefix("b64-") else {
+                continue;
+            };
+            let Ok(decoded) = BASE64_STANDARD.decode(b64) else {
+                continue;
+            };
+            let Ok(decoded) = String::from_utf8(decoded) else {
+                continue;
+            };
+            let marker = format!("/{key}-");
+            if let Some(idx) = decoded.to_lowercase().rfind(&marker) {
+                return Some(decoded[..idx].to_string());
+            }
+        }
+        None
+    }
+
+    /// The stored entity metadata (the scene's scene.json) for a scene, if any.
+    pub async fn scene_metadata(&self, scene_hash: &str) -> Option<String> {
+        self.context
+            .read()
+            .await
+            .entities
+            .get(scene_hash)?
+            .metadata
+            .clone()
+    }
+
+    /// The sorted file paths in a scene's content map (the collection keys), or empty if the scene
+    /// isn't loaded. For the editor's content-file pickers; includes imported assets merged into the
+    /// collection. Paths are lowercased (as stored).
+    pub async fn scene_content_files(&self, scene_hash: &str) -> Vec<String> {
+        let read = self.context.read().await;
+        let mut files: Vec<String> = read
+            .entities
+            .get(scene_hash)
+            .map(|e| e.collection.0.keys().cloned().collect())
+            .unwrap_or_default();
+        files.sort();
+        files
+    }
+
+    /// Re-fetch the current scene's entity from its content server and replace the collection. A
+    /// `dcl start` dev server's content map is the *entire* project glob (minus .dclignore), not
+    /// just the referenced files, so this picks up files added to the project *outside* the editor
+    /// without a scene reload. Imported assets (written to disk by `/init_asset`) are naturally
+    /// included. Acts only on local (`dcl start`, b64-addressed) scenes — deployed scenes have an
+    /// immutable content map. Returns true if the collection was refreshed.
+    pub async fn refresh_scene_collection(self: &Arc<Self>, scene_hash: &str) -> bool {
+        // local scenes only; deployed content maps don't change
+        if self.local_project_root(scene_hash).await.is_none() {
+            return false;
+        }
+        // the scene's base parcel pointer, from its stored scene.json
+        let pointer = {
+            let read = self.context.read().await;
+            read.entities
+                .get(scene_hash)
+                .and_then(|e| e.metadata.as_deref())
+                .and_then(|m| serde_json::from_str::<serde_json::Value>(m).ok())
+                .and_then(|j| {
+                    j.get("scene")
+                        .and_then(|s| s.get("base"))
+                        .and_then(|b| b.as_str())
+                        .map(str::to_owned)
+                })
+        };
+        let Some(pointer) = pointer else {
+            return false;
+        };
+        let Ok(defs) = self
+            .active_entities(ActiveEntitiesRequest::Pointers(vec![pointer]), None)
+            .await
+        else {
+            return false;
+        };
+        // exactly one scene at the base parcel; match by id when present, else take the first
+        let Some(def) = defs
+            .iter()
+            .find(|d| d.id == scene_hash)
+            .or_else(|| defs.first())
+        else {
+            return false;
+        };
+        let collection = def.content.clone();
+        let mut write = self.context.write().await;
+        match write.entities.get_mut(scene_hash) {
+            Some(entity) => {
+                entity.collection = collection;
+                true
+            }
+            None => false,
+        }
+    }
+
     pub fn about_url(&self) -> Option<String> {
         self.realm_config_receiver
             .borrow()
@@ -1194,22 +1457,38 @@ impl AssetReader for IpfsIo {
                 }
             };
 
+            let start = web_time::Instant::now();
+            let ipfs_io_read_state = IpfsIoReadState {
+                #[cfg(feature = "ipfs_debug")]
+                sender: &self.debug_overlay_sender,
+                path,
+                #[cfg(feature = "ipfs_debug")]
+                start,
+            };
+
             debug!("request: {:?}", path);
 
-            let maybe_ipfs_path = IpfsPath::new_from_path(path).map_err(wrap_err)?;
+            let maybe_ipfs_path =
+                ipfs_io_read_state.send_failure(IpfsPath::new_from_path(path).map_err(wrap_err))?;
             debug!("ipfs: {maybe_ipfs_path:?}");
             let ipfs_path = match maybe_ipfs_path {
                 Some(ipfs_path) => ipfs_path,
                 // non-ipfs files are loaded as normal
-                None => return self.default_io.read(path).await,
+                None => {
+                    let data = ipfs_io_read_state.send_failure(self.default_io.read(path).await)?;
+                    ipfs_io_read_state.send_non_ipfs(0);
+                    return Ok(data);
+                }
             };
 
             #[cfg(target_arch = "wasm32")]
             if let Some(indexdb_path) = ipfs_path.to_indexdb() {
                 use futures_lite::io::AsyncReadExt;
-                let mut file = web_fs::File::open(indexdb_path).await?;
+                let mut file =
+                    ipfs_io_read_state.send_failure(web_fs::File::open(indexdb_path).await)?;
                 let mut daft_buffer = Vec::default();
-                file.read_to_end(&mut daft_buffer).await?;
+                ipfs_io_read_state.send_failure(file.read_to_end(&mut daft_buffer).await)?;
+                ipfs_io_read_state.send_cached(daft_buffer.len());
                 return Ok(Box::new(VecReader::new(daft_buffer)));
             }
 
@@ -1221,7 +1500,9 @@ impl AssetReader for IpfsIo {
                     if !hash.starts_with("b64") {
                         if let Ok(mut res) = self.default_io.read(&cache_path.join(hash)).await {
                             let mut daft_buffer = Vec::default();
-                            res.read_to_end(&mut daft_buffer).await?;
+                            ipfs_io_read_state
+                                .send_failure(res.read_to_end(&mut daft_buffer).await)?;
+                            ipfs_io_read_state.send_cached(daft_buffer.len());
                             return Ok(Box::new(VecReader::new(daft_buffer)));
                         }
                     }
@@ -1235,10 +1516,10 @@ impl AssetReader for IpfsIo {
                     .unwrap_or_else(|| "uncached".to_owned())
             );
 
-            let token = self.reqno.fetch_add(1, atomic::Ordering::SeqCst);
+            let token = self.reqno.fetch_add(1, Ordering::SeqCst);
 
             // wait till connected
-            self.connected().await.map_err(wrap_err)?;
+            ipfs_io_read_state.send_failure(self.connected().await.map_err(wrap_err))?;
 
             let context = self.context.read().await;
             let remote = ipfs_path.to_url(&context).map_err(wrap_err);
@@ -1249,10 +1530,13 @@ impl AssetReader for IpfsIo {
                     .filename()
                     .and_then(|file_path| self.static_files.get(file_path.as_ref()))
                 {
-                    return self.default_io.read(Path::new(static_path)).await;
+                    let data = ipfs_io_read_state
+                        .send_failure(self.default_io.read(Path::new(static_path)).await)?;
+                    ipfs_io_read_state.send_cached(0);
+                    return Ok(data);
                 }
             }
-            let remote = remote?;
+            let remote = ipfs_io_read_state.send_failure(remote)?;
 
             let fail_time = context.failed_remotes.get(&remote).cloned();
             drop(context);
@@ -1267,17 +1551,20 @@ impl AssetReader for IpfsIo {
                 {
                     self.context.write().await.failed_remotes.remove(&remote);
                 } else {
-                    return Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
-                        format!("(repeat request for failed `{remote}`)"),
+                    return ipfs_io_read_state.send_failure(Err(AssetReaderError::Io(Arc::new(
+                        std::io::Error::other(format!("(repeat request for failed `{remote}`)")),
                     ))));
                 }
             }
 
             debug!("[{token:?}]: remote url: `{remote}` awaiting semaphore");
             // get semaphore to limit concurrent requests
-            let _permit = self.request_slots.acquire().await.map_err(|e| {
-                AssetReaderError::Io(Arc::new(std::io::Error::new(ErrorKind::Interrupted, e)))
-            })?;
+            let _deferred_in_flight = DeferredDropper::new(&IPFS_IN_FLIGHT);
+            let _permit = ipfs_io_read_state.send_failure(
+                self.request_slots.acquire().await.map_err(|e| {
+                    AssetReaderError::Io(Arc::new(std::io::Error::new(ErrorKind::Interrupted, e)))
+                }),
+            )?;
             debug!("[{token:?}]: remote url: `{remote}` proceeding");
 
             let mut attempt = 0;
@@ -1302,11 +1589,11 @@ impl AssetReader for IpfsIo {
                     request
                 };
 
-                let request = request.build().map_err(|e| {
+                let request = ipfs_io_read_state.send_failure(request.build().map_err(|e| {
                     AssetReaderError::Io(Arc::new(std::io::Error::other(format!(
                         "[{token:?}]: {e}"
                     ))))
-                })?;
+                }))?;
 
                 let response = self.client.execute(request).await;
 
@@ -1323,9 +1610,11 @@ impl AssetReader for IpfsIo {
                             .await
                             .failed_remotes
                             .insert(remote.clone(), Instant::now());
-                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
-                            format!("[{token:?}]: server responded `{e}` requesting `{remote}`"),
-                        ))));
+                        return ipfs_io_read_state.send_failure(Err(AssetReaderError::Io(
+                            Arc::new(std::io::Error::other(format!(
+                                "[{token:?}]: server responded `{e}` requesting `{remote}`"
+                            ))),
+                        )));
                     }
                     Ok(response) if !matches!(response.status(), StatusCode::OK) => {
                         self.context
@@ -1333,13 +1622,13 @@ impl AssetReader for IpfsIo {
                             .await
                             .failed_remotes
                             .insert(remote.clone(), Instant::now());
-                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
-                            format!(
+                        return ipfs_io_read_state.send_failure(Err(AssetReaderError::Io(
+                            Arc::new(std::io::Error::other(format!(
                                 "[{token:?}]: server responded with status {} requesting `{}`",
                                 response.status(),
                                 remote,
-                            ),
-                        ))));
+                            ))),
+                        )));
                     }
                     Ok(response) => response,
                 };
@@ -1368,9 +1657,11 @@ impl AssetReader for IpfsIo {
                             .await
                             .failed_remotes
                             .insert(remote.clone(), Instant::now());
-                        return Err(AssetReaderError::Io(Arc::new(std::io::Error::other(
-                            format!("[{token:?}] failed to convert to bytes: `{remote}`: {e}"),
-                        ))));
+                        return ipfs_io_read_state.send_failure(Err(AssetReaderError::Io(
+                            Arc::new(std::io::Error::other(format!(
+                                "[{token:?}] failed to convert to bytes: `{remote}`: {e}"
+                            ))),
+                        )));
                     }
                 }
             };
@@ -1406,6 +1697,7 @@ impl AssetReader for IpfsIo {
             }
 
             debug!("[{token:?}]: completed remote url: `{remote}`");
+            ipfs_io_read_state.send_success(data.len());
             Ok(Box::new(AsyncCursor::new(data)))
         })
         .await
@@ -1501,5 +1793,102 @@ impl AssetReader for PassThroughReader {
         path: &'a Path,
     ) -> impl ConditionalSendFuture<Output = Result<bool, AssetReaderError>> {
         AssetReader::is_directory(&*self.inner, path)
+    }
+}
+
+fn ipfs_diagnostics(mut diagnostics: ResMut<DiagnosticsStore>) {
+    let time = web_time::Instant::now();
+
+    let diagnostics_insert =
+        |diagnostics: &mut DiagnosticsStore, path: &DiagnosticPath, atomic: &AtomicU32| {
+            if let Some(diagnostic) = diagnostics.get_mut(path) {
+                diagnostic.add_measurement(DiagnosticMeasurement {
+                    time,
+                    value: atomic.load(Ordering::Relaxed) as f64,
+                });
+            };
+        };
+
+    diagnostics_insert(
+        &mut diagnostics,
+        &IPFS_IN_FLIGHT_DIAGNOSTIC_PATH,
+        &IPFS_IN_FLIGHT,
+    );
+    diagnostics_insert(
+        &mut diagnostics,
+        &IPFS_SUCCESS_DIAGNOSTIC_PATH,
+        &IPFS_SUCCESS,
+    );
+    diagnostics_insert(&mut diagnostics, &IPFS_FAILED_DIAGNOSTIC_PATH, &IPFS_FAILED);
+    diagnostics_insert(&mut diagnostics, &IPFS_CACHED_DIAGNOSTIC_PATH, &IPFS_CACHED);
+    diagnostics_insert(
+        &mut diagnostics,
+        &IPFS_NON_IPFS_DIAGNOSTIC_PATH,
+        &IPFS_NON_IPFS,
+    );
+}
+
+struct IpfsIoReadState<'a> {
+    #[cfg(feature = "ipfs_debug")]
+    sender: &'a tokio::sync::mpsc::UnboundedSender<IpfsDebug>,
+    path: &'a std::path::Path,
+    #[cfg(feature = "ipfs_debug")]
+    start: web_time::Instant,
+}
+
+impl<'a> IpfsIoReadState<'a> {
+    #[cfg(feature = "ipfs_debug")]
+    fn send(&self, length: usize, status: IpfsDebugStatus) {
+        let duration = web_time::Instant::now() - self.start;
+        self.sender
+            .send(IpfsDebug {
+                path: self.path.to_path_buf(),
+                status,
+                duration,
+                length,
+            })
+            .report();
+    }
+
+    fn send_success(&self, length: usize) {
+        IPFS_SUCCESS.fetch_add(1, Ordering::Relaxed);
+        #[cfg(feature = "ipfs_debug")]
+        self.send(length, IpfsDebugStatus::Success);
+    }
+
+    fn send_cached(&self, length: usize) {
+        IPFS_CACHED.fetch_add(1, Ordering::Relaxed);
+        #[cfg(feature = "ipfs_debug")]
+        self.send(length, IpfsDebugStatus::Cached);
+    }
+
+    fn send_non_ipfs(&self, length: usize) {
+        IPFS_NON_IPFS.fetch_add(1, Ordering::Relaxed);
+        #[cfg(feature = "ipfs_debug")]
+        self.send(length, IpfsDebugStatus::NonIpfs);
+    }
+
+    fn send_failure<T, E>(&self, error: Result<T, E>) -> Result<T, E> {
+        if error.is_err() {
+            IPFS_FAILED.fetch_add(1, Ordering::Relaxed);
+            #[cfg(feature = "ipfs_debug")]
+            self.send(0, IpfsDebugStatus::Failure);
+        }
+        error
+    }
+}
+
+struct DeferredDropper(&'static AtomicU32);
+
+impl DeferredDropper {
+    fn new(atomic: &'static AtomicU32) -> Self {
+        atomic.fetch_add(1, Ordering::SeqCst);
+        Self(atomic)
+    }
+}
+
+impl Drop for DeferredDropper {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
     }
 }

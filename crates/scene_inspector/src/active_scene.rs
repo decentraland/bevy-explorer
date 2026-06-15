@@ -2,9 +2,12 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use common::structs::PrimaryUser;
 use dcl::interface::CrdtStore;
+use dcl_component::{SceneComponentId, SceneEntityId};
 use scene_runner::{renderer_context::RendererSceneContext, ContainingScene, SceneThreadHandle};
 
-use crate::snapshot::{PendingSnapshotRequests, SnapshotCallback};
+use crate::snapshot::{
+    AllocCallback, PendingEntityAllocations, PendingSnapshotRequests, SnapshotCallback,
+};
 
 /// The scene currently targeted by inspector commands.
 /// When None, commands fall back to the parcel scene the player is standing in.
@@ -71,9 +74,41 @@ impl SceneResolver<'_, '_> {
             .map_err(|_| "scene has no thread handle".to_string())?;
         handle
             .sender
-            .try_send(dcl::RendererResponse::GetCrdtSnapshot)
+            .send(dcl::RendererResponse::GetCrdtSnapshot)
             .map_err(|_| "failed to send snapshot request to scene".to_string())?;
         pending.push(entity, Box::new(callback) as SnapshotCallback);
+        Ok(())
+    }
+
+    /// Request the scene thread to allocate `count` fresh entity ids, instantiating each with the
+    /// given component (`component_id` + `data`), and register `callback` for when the ids arrive.
+    pub fn request_allocate_entity<F>(
+        &self,
+        pending: &mut PendingEntityAllocations,
+        component_id: SceneComponentId,
+        data: Vec<u8>,
+        count: usize,
+        explicit_ids: Option<Vec<u32>>,
+        callback: F,
+    ) -> Result<(), String>
+    where
+        F: FnOnce(&[Result<SceneEntityId, dcl::AllocError>]) + Send + Sync + 'static,
+    {
+        let entity = self.resolve_entity()?;
+        let handle = self
+            .handles
+            .get(entity)
+            .map_err(|_| "scene has no thread handle".to_string())?;
+        handle
+            .sender
+            .send(dcl::RendererResponse::AllocateEntity {
+                component_id,
+                data,
+                count,
+                explicit_ids,
+            })
+            .map_err(|_| "failed to send allocate request to scene".to_string())?;
+        pending.push(entity, Box::new(callback) as AllocCallback);
         Ok(())
     }
 }

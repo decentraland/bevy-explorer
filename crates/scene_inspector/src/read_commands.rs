@@ -1,7 +1,13 @@
+use base64::{prelude::BASE64_STANDARD, Engine};
 use bevy::prelude::*;
+use bevy::tasks::IoTaskPool;
 use bevy_console::ConsoleCommand;
 use console::{DoAddConsoleCommand, PendingConsoleResponses};
-use dcl_component::{ComponentNameRegistry, SceneComponentId, SceneEntityId};
+use dcl::interface::CrdtStore;
+use dcl_component::{
+    component_name_registry::InspectFn, ComponentNameRegistry, SceneComponentId, SceneEntityId,
+};
+use ipfs::IpfsResource;
 use scene_runner::renderer_context::RendererSceneContext;
 
 use crate::{
@@ -12,12 +18,17 @@ use crate::{
 pub fn add_read_commands(app: &mut App) {
     app.add_console_command::<SetSceneCommand, _>(set_scene_cmd);
     app.add_console_command::<SceneStatsCommand, _>(scene_stats_cmd);
+    app.add_console_command::<SceneTargetCommand, _>(scene_target_cmd);
     app.add_console_command::<SceneLogsCommand, _>(scene_logs_cmd);
     app.add_console_command::<SceneEntitiesCommand, _>(scene_entities_cmd);
     app.add_console_command::<EntityComponentsCommand, _>(entity_components_cmd);
     app.add_console_command::<InspectComponentCommand, _>(inspect_component_cmd);
     app.add_console_command::<SceneTreeCommand, _>(scene_tree_cmd);
     app.add_console_command::<CrdtSnapshotCommand, _>(crdt_snapshot_cmd);
+    app.add_console_command::<CrdtInitialCommand, _>(crdt_initial_cmd);
+    app.add_console_command::<ComponentNamesCommand, _>(component_names_cmd);
+    app.add_console_command::<ComponentDefaultCommand, _>(component_default_cmd);
+    app.add_console_command::<ComponentSchemaCommand, _>(component_schema_cmd);
 }
 
 // --- /set_scene ---
@@ -90,6 +101,46 @@ fn scene_stats_cmd(mut input: ConsoleCommand<SceneStatsCommand>, resolver: Scene
                 ));
             }
         }
+    }
+}
+
+// --- /scene_target ---
+
+/// Return the active scene's identity/location JSON: `{ hash, root, projectId, parcels, title }`.
+/// `root` is the absolute local project folder for a `dcl start` scene (else null), recovered from
+/// the scene's content hashes via `IpfsIo::local_project_root` — the robust key-anchored decode the
+/// editor can't do scene-side (it can't see the content hashes, only their keys). Static identity, so
+/// unlike `/scene_stats` (live runtime status) it's async and read once per scene rather than polled.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/scene_target")]
+struct SceneTargetCommand;
+
+fn scene_target_cmd(
+    mut input: ConsoleCommand<SceneTargetCommand>,
+    ipfs: Res<IpfsResource>,
+    resolver: SceneResolver,
+    mut console_responses: ResMut<PendingConsoleResponses>,
+) {
+    if let Some(Ok(_)) = input.take() {
+        let scene_hash = match resolver.resolve() {
+            Ok((_, ctx)) => ctx.hash.clone(),
+            Err(e) => {
+                input.reply_failed(e);
+                return;
+            }
+        };
+        let io = ipfs.inner.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        IoTaskPool::get()
+            .spawn(async move {
+                let _ = tx.send(Ok(crate::asset_commands::scene_target_json(
+                    &io,
+                    &scene_hash,
+                )
+                .await));
+            })
+            .detach();
+        console_responses.push_oneshot(rx, |r| r, input.take_responder());
     }
 }
 
@@ -510,9 +561,106 @@ fn entity_alias(eid: &SceneEntityId) -> String {
     }
 }
 
+// --- snapshot serialization (shared by /crdt_snapshot and /crdt_initial) ---
+
+/// The (id, name, inspect) tuples for every registry component, used to render recognized
+/// components as JSON in a snapshot.
+fn snapshot_entries(
+    registry: &ComponentNameRegistry,
+) -> Vec<(SceneComponentId, String, InspectFn)> {
+    registry
+        .all_id_name_pairs()
+        .map(|(id, name)| {
+            (
+                id,
+                name.to_owned(),
+                registry.get_by_id(id).unwrap().inspect.clone(),
+            )
+        })
+        .collect()
+}
+
+/// Serialize a CRDT store into the inspector snapshot JSON shape:
+/// `{ "<entityId>": { "<ComponentName>": <json>, "<numeric-id>": "<ts>:<base64>", ... }, ... }`.
+/// Recognized components are emitted as JSON via their `inspect` fn; custom (unrecognized)
+/// components as raw `"<lww-timestamp>:<base64>"` keyed by numeric id (grow-only as an array of
+/// those). The timestamp lets the editor write back via /set_component_raw with a newer one and
+/// win LWW; component names are never all-digits, so the editor can tell the two apart.
+fn build_snapshot_json(
+    crdt: &CrdtStore,
+    entries: &[(SceneComponentId, String, InspectFn)],
+) -> String {
+    let mut entity_map: std::collections::BTreeMap<
+        u32,
+        serde_json::Map<String, serde_json::Value>,
+    > = std::collections::BTreeMap::new();
+
+    for (cid, name, inspect) in entries {
+        if let Some(lww) = crdt.lww.get(cid) {
+            for (eid, entry) in &lww.last_write {
+                if !entry.is_some {
+                    continue;
+                }
+                let entity_id = eid.as_proto_u32().unwrap_or(eid.id as u32);
+                if let Ok(json_str) = inspect(&entry.data) {
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&json_str) {
+                        entity_map
+                            .entry(entity_id)
+                            .or_default()
+                            .insert(name.clone(), val);
+                    }
+                }
+            }
+        }
+    }
+
+    let known: std::collections::HashSet<SceneComponentId> =
+        entries.iter().map(|(cid, _, _)| *cid).collect();
+    for (cid, lww) in &crdt.lww {
+        if known.contains(cid) {
+            continue;
+        }
+        for (eid, entry) in &lww.last_write {
+            if !entry.is_some {
+                continue;
+            }
+            let entity_id = eid.as_proto_u32().unwrap_or(eid.id as u32);
+            let encoded = format!(
+                "{}:{}",
+                entry.timestamp.0,
+                BASE64_STANDARD.encode(&entry.data)
+            );
+            entity_map
+                .entry(entity_id)
+                .or_default()
+                .insert(cid.0.to_string(), serde_json::Value::String(encoded));
+        }
+    }
+    for (cid, go) in &crdt.go {
+        if known.contains(cid) {
+            continue;
+        }
+        for (eid, values) in &go.0 {
+            let entity_id = eid.as_proto_u32().unwrap_or(eid.id as u32);
+            let arr: Vec<serde_json::Value> = values
+                .iter()
+                .map(|e| {
+                    serde_json::Value::String(format!("0:{}", BASE64_STANDARD.encode(&e.data)))
+                })
+                .collect();
+            entity_map
+                .entry(entity_id)
+                .or_default()
+                .insert(cid.0.to_string(), serde_json::Value::Array(arr));
+        }
+    }
+
+    serde_json::to_string(&entity_map).unwrap_or_default()
+}
+
 // --- /crdt_snapshot ---
 
-/// Return the full CRDT state as structured JSON: { entityId: { ComponentName: value, ... }, ... }
+/// Return the full live CRDT state as structured JSON: { entityId: { ComponentName: value, ... } }
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/crdt_snapshot")]
 struct CrdtSnapshotCommand;
@@ -525,46 +673,133 @@ fn crdt_snapshot_cmd(
     mut console_responses: ResMut<PendingConsoleResponses>,
 ) {
     if let Some(Ok(_)) = input.take() {
-        let entries: Vec<_> = registry
-            .all_id_name_pairs()
-            .map(|(id, name)| {
-                let entry = registry.get_by_id(id).unwrap();
-                (id, name.to_owned(), entry.inspect.clone())
-            })
-            .collect();
-
+        let entries = snapshot_entries(&registry);
         let (tx, rx) = tokio::sync::oneshot::channel();
         match resolver.request_snapshot(&mut pending, move |crdt| {
-            // Collect all entity IDs across all LWW components
-            let mut entity_map: std::collections::BTreeMap<
-                u32,
-                serde_json::Map<String, serde_json::Value>,
-            > = std::collections::BTreeMap::new();
-
-            for (cid, name, inspect) in &entries {
-                if let Some(lww) = crdt.lww.get(cid) {
-                    for (eid, entry) in &lww.last_write {
-                        if !entry.is_some {
-                            continue;
-                        }
-                        let entity_id = eid.as_proto_u32().unwrap_or(eid.id as u32);
-                        if let Ok(json_str) = inspect(&entry.data) {
-                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&json_str) {
-                                entity_map
-                                    .entry(entity_id)
-                                    .or_default()
-                                    .insert(name.clone(), val);
-                            }
-                        }
-                    }
-                }
-            }
-
-            let result = serde_json::to_string(&entity_map).unwrap_or_default();
-            let _ = tx.send(Ok(result));
+            let _ = tx.send(Ok(build_snapshot_json(crdt, &entries)));
         }) {
             Ok(()) => console_responses.push_oneshot(rx, |r| r, input.take_responder()),
             Err(e) => input.reply_failed(e),
+        }
+    }
+}
+
+// --- /crdt_initial ---
+
+/// Return the scene's authored baseline CRDT — its main.crdt as loaded, before any tick — in the
+/// same JSON shape as /crdt_snapshot. The inspector diffs the live snapshot against this to tell
+/// what an edit actually changed (vs runtime churn) when saving. Read synchronously from the
+/// engine context; replies `{}` if the scene had no main.crdt.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/crdt_initial")]
+struct CrdtInitialCommand;
+
+fn crdt_initial_cmd(
+    mut input: ConsoleCommand<CrdtInitialCommand>,
+    resolver: SceneResolver,
+    registry: Res<ComponentNameRegistry>,
+) {
+    if let Some(Ok(_)) = input.take() {
+        let ctx = match resolver.resolve() {
+            Ok((_, ctx)) => ctx,
+            Err(e) => {
+                input.reply_failed(e);
+                return;
+            }
+        };
+        match ctx.initial_crdt.as_ref() {
+            Some(initial) => {
+                let entries = snapshot_entries(&registry);
+                input.reply_ok(build_snapshot_json(initial, &entries));
+            }
+            None => input.reply_ok("{}"),
+        }
+    }
+}
+
+// --- /component_names ---
+
+/// List the names of all editable (writable) components, as a JSON array. Used by the
+/// inspector's "add component" picker; registry-only, so it needs no scene.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/component_names")]
+struct ComponentNamesCommand;
+
+fn component_names_cmd(
+    mut input: ConsoleCommand<ComponentNamesCommand>,
+    registry: Res<ComponentNameRegistry>,
+) {
+    if let Some(Ok(_)) = input.take() {
+        let mut names: Vec<&str> = registry
+            .all_names()
+            .filter(|name| {
+                registry
+                    .get_by_name(name)
+                    .is_some_and(|e| e.write.is_some())
+            })
+            .collect();
+        names.sort_unstable();
+        input.reply_ok(serde_json::to_string(&names).unwrap_or_else(|_| "[]".to_string()));
+    }
+}
+
+// --- /component_default ---
+
+/// Return a component's default value as JSON: every field present at its zero/default
+/// (the serde shape is full — unset scalars are 0/""/false, optional/message/oneof fields
+/// are null, repeated are []), so the editor can render all fields when adding a new one.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/component_default")]
+struct ComponentDefaultCommand {
+    /// Component name (PascalCase)
+    component: String,
+}
+
+fn component_default_cmd(
+    mut input: ConsoleCommand<ComponentDefaultCommand>,
+    registry: Res<ComponentNameRegistry>,
+) {
+    if let Some(Ok(cmd)) = input.take() {
+        let entry = match registry.get_by_name(&cmd.component) {
+            Some(e) => e,
+            None => {
+                input.reply_failed(format!("unknown component '{}'", cmd.component));
+                return;
+            }
+        };
+        let Some(default) = &entry.default else {
+            input.reply_failed(format!("'{}' has no default (read-only)", cmd.component));
+            return;
+        };
+
+        match default() {
+            Ok(json) => input.reply_ok(json),
+            Err(e) => input.reply_failed(format!("default failed: {e}")),
+        }
+    }
+}
+
+// --- /component_schema ---
+
+/// Return the structural component schema (typed fields, enum value-lists, optionality) as JSON, or
+/// all components if omitted. The editor applies the curated overlay (semantics/ranges/defaults/
+/// placement/requires) itself. Generated at build time and embedded; registry-free, needs no scene.
+/// Transform is not included (it's not a proto message — owned by the editor scene).
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/component_schema")]
+struct ComponentSchemaCommand {
+    /// Component name (PascalCase); omit for the full set
+    component: Option<String>,
+}
+
+fn component_schema_cmd(mut input: ConsoleCommand<ComponentSchemaCommand>) {
+    if let Some(Ok(cmd)) = input.take() {
+        match cmd.component {
+            Some(name) => match dcl_component::component_schema::schema_for(&name) {
+                Some(json) => input.reply_ok(json),
+                None => input.reply_failed(format!("no schema for component '{name}'")),
+            },
+            None => input.reply_ok(dcl_component::component_schema::all_schemas_json().to_string()),
         }
     }
 }

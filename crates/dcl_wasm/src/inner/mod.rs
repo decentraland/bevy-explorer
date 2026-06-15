@@ -16,14 +16,14 @@ use ipfs::SceneJsFile;
 use once_cell::sync::OnceCell;
 use system_bridge::SystemApi;
 use tokio::sync::{
-    mpsc::{channel, Receiver, Sender},
+    mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
     Mutex,
 };
 
 pub struct SceneInitializationData {
     pub initial_crdt_store: CrdtStore,
     pub scene_context: CrdtContext,
-    pub thread_rx: Receiver<RendererResponse>,
+    pub thread_rx: UnboundedReceiver<RendererResponse>,
     pub scene_js: SceneJsFile,
     pub crdt_component_interfaces: CrdtComponentInterfaces,
     pub renderer_sender: SceneResponseSender,
@@ -53,9 +53,9 @@ pub fn spawn_scene(
     _inspect: bool,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
     scene_origin: bevy::prelude::Vec3,
-) -> Sender<RendererResponse> {
+) -> UnboundedSender<RendererResponse> {
     // create engine channel
-    let (thread_sx, thread_rx) = channel(1);
+    let (thread_sx, thread_rx) = unbounded_channel();
 
     IoTaskPool::get()
         .spawn(async move {

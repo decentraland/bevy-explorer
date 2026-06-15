@@ -1,7 +1,7 @@
 use bevy::{platform::collections::HashSet, prelude::Entity};
 use common::rpc::{CompareSnapshot, RpcCall};
 
-use dcl_component::SceneEntityId;
+use dcl_component::{SceneComponentId, SceneEntityId};
 use serde::{Deserialize, Serialize};
 
 use self::interface::{CrdtComponentInterfaces, CrdtStore};
@@ -39,6 +39,21 @@ pub enum RendererResponse {
     Ok(CrdtStore, SceneCensus),
     /// Request the scene thread to send back a full clone of its current CRDT state.
     GetCrdtSnapshot,
+    /// Allocate `count` fresh entity ids from the scene's allocator (collision-free, correctly
+    /// generationed) and instantiate each scene-side by injecting `put_component(id, component_id,
+    /// data)` into the receive results — the only way to make the scene's `@dcl/ecs` adopt the
+    /// entity. Replies with [`SceneResponse::EntityAllocated`].
+    ///
+    /// When `explicit_ids` is `Some`, those exact ids (proto-u32 form) are instantiated instead of
+    /// freshly allocated — used to recreate entities at their original ids on a freshly-reloaded
+    /// scene (where the id sits at its original generation and is free). `count` is ignored in that
+    /// case. A requested id that is currently alive is a collision and fails the request.
+    AllocateEntity {
+        component_id: SceneComponentId,
+        data: Vec<u8>,
+        count: usize,
+        explicit_ids: Option<Vec<u32>>,
+    },
 }
 
 pub type RpcCalls = Vec<RpcCall>;
@@ -61,6 +76,19 @@ pub enum SceneResponse {
     CompareSnapshot(CompareSnapshot),
     /// Response to [`RendererResponse::GetCrdtSnapshot`]: the full scene-side CRDT state.
     CrdtSnapshot(SceneId, CrdtStore),
+    /// Response to [`RendererResponse::AllocateEntity`]: one result per requested slot, in order —
+    /// `Ok(id)` for an instantiated entity, `Err` for a slot that couldn't be allocated (an explicit
+    /// id that was already live, or no free id for a fresh allocation).
+    EntityAllocated(SceneId, Vec<Result<SceneEntityId, AllocError>>),
+}
+
+/// Why an [`RendererResponse::AllocateEntity`] slot couldn't be allocated.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AllocError {
+    /// The requested explicit id was already live (a collision).
+    Collision(SceneEntityId),
+    /// No free id was available for a fresh allocation.
+    NoFreeId,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]

@@ -9,6 +9,8 @@ use crate::{CrdtType, SceneComponentId};
 pub type InspectFn = Arc<dyn Fn(&[u8]) -> anyhow::Result<String> + Send + Sync>;
 /// Encode a JSON string into CRDT bytes.
 pub type WriteFn = Arc<dyn Fn(&str) -> anyhow::Result<Vec<u8>> + Send + Sync>;
+/// Produce the component's default value as a JSON string (full field shape).
+pub type DefaultFn = Arc<dyn Fn() -> anyhow::Result<String> + Send + Sync>;
 
 pub struct ComponentNameEntry {
     pub id: SceneComponentId,
@@ -16,6 +18,9 @@ pub struct ComponentNameEntry {
     pub inspect: InspectFn,
     /// None for inspect-only (engine→scene only) components.
     pub write: Option<WriteFn>,
+    /// Default value (full field shape), for seeding a newly-added component. None
+    /// for inspect-only components.
+    pub default: Option<DefaultFn>,
 }
 
 #[derive(Resource, Default)]
@@ -32,6 +37,7 @@ impl ComponentNameRegistry {
         crdt_type: CrdtType,
         inspect: InspectFn,
         write: Option<WriteFn>,
+        default: Option<DefaultFn>,
     ) {
         self.by_id.insert(id, name.clone());
         self.by_name.insert(
@@ -41,6 +47,7 @@ impl ComponentNameRegistry {
                 crdt_type,
                 inspect,
                 write,
+                default,
             },
         );
     }
@@ -75,8 +82,8 @@ pub fn derive_component_name<D>() -> String {
     short.strip_prefix("Pb").unwrap_or(short).to_string()
 }
 
-/// Build inspect/write closures for a prost + serde type.
-pub fn make_proto_closures<D>() -> (InspectFn, WriteFn)
+/// Build inspect/write/default closures for a prost + serde type.
+pub fn make_proto_closures<D>() -> (InspectFn, WriteFn, DefaultFn)
 where
     D: prost::Message + serde::Serialize + serde::de::DeserializeOwned + Default,
 {
@@ -90,5 +97,9 @@ where
         prost::Message::encode(&msg, &mut buf).map_err(|e| anyhow!("{e}"))?;
         Ok(buf)
     });
-    (inspect, write)
+    // The serde shape is full (plain derive, no skip), so the default value carries every
+    // field — unlike the proto wire form, which omits defaults. Seeds the field editor.
+    let default =
+        Arc::new(|| serde_json::to_string_pretty(&D::default()).map_err(|e| anyhow!("{e}")));
+    (inspect, write, default)
 }

@@ -25,7 +25,7 @@ use common::{
 };
 use comms::global_crdt::GlobalCrdtState;
 use dcl::{
-    interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtType},
+    interface::{crdt_context::CrdtContext, CrdtComponentInterfaces, CrdtStore, CrdtType},
     SceneElapsedTime, SceneId, SceneResponse,
 };
 use dcl_component::{
@@ -44,7 +44,7 @@ use super::{update_world::CrdtExtractors, LoadSceneEvent, PrimaryUser, SceneSets
 use crate::{
     bounds_calc::scene_regions,
     parcel_to_vec3,
-    renderer_context::RendererSceneContext,
+    renderer_context::{RendererSceneContext, FROZEN_BLOCK},
     update_world::{visibility::VisibilityComponent, ComponentTracker},
     vec3_to_parcel, ContainerEntity, DeletedSceneEntities, OutOfWorld, SceneEntity,
     SceneThreadHandle,
@@ -466,7 +466,9 @@ pub(crate) fn load_scene_javascript(
         );
 
         if let Some(serialized_crdt) = maybe_serialized_crdt {
-            // add main.crdt
+            // Read main.crdt once into its own store (custom components included). `initial_crdt`
+            // is seeded with global state (player AvatarMovementInfo, other avatars, etc.) from
+            // `global_scene.subscribe`, so we keep main.crdt separate to get a clean baseline.
             let mut context = CrdtContext::new(
                 scene_id,
                 renderer_context.hash.clone(),
@@ -474,16 +476,24 @@ pub(crate) fn load_scene_javascript(
                 false,
                 false,
             );
-            let mut stream = DclReader::new(&serialized_crdt);
-            initial_crdt.process_message_stream(
+            let mut main_crdt = CrdtStore::default();
+            main_crdt.process_message_stream(
                 &mut context,
                 &crdt_component_interfaces,
-                &mut stream,
+                &mut DclReader::new(&serialized_crdt),
                 false,
+                None,
+                None,
             );
 
-            // send initial updates into renderer
+            // The clean authored baseline = only main.crdt; the inspector diffs against this on
+            // save, so it must not contain any of the global state above.
+            renderer_context.initial_crdt = Some(main_crdt.clone());
+
+            // Layer main.crdt onto the global-seeded store (merge_newer marks the updates), then
+            // send the initial state into the renderer.
             let census = context.take_census();
+            initial_crdt.merge_newer(main_crdt);
             initial_crdt.clean_up(&census.died);
             let updates = initial_crdt.clone().take_updates();
 
@@ -1713,7 +1723,11 @@ fn animate_ready_scene(
             continue;
         }
 
-        if transform.translation.y < 0.0 && (ctx.tick_number >= 5 || ctx.broken) {
+        // A scene parked below the world (y = -1000) is raised once it's ready: past tick 5, broken,
+        // or paused by the inspector. Without the frozen case, a scene frozen before tick 5 has its
+        // (already-spawned) main.crdt content stuck underground and looks empty until unfrozen.
+        let frozen = ctx.blocked.contains(FROZEN_BLOCK);
+        if transform.translation.y < 0.0 && (ctx.tick_number >= 5 || ctx.broken || frozen) {
             if transform.translation.y == -1000.0 {
                 for child in children.map(|c| c.iter()).unwrap_or_default() {
                     if loading_quads.get(child).is_ok() {

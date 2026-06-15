@@ -379,12 +379,14 @@ fn new_materials(
                     let new_handle = scene_material_assets.add(inverted_material);
 
                     vacant.insert(new_handle.clone());
-                    commands.entity(entity).insert(MeshMaterial3d(new_handle));
+                    commands
+                        .entity(entity)
+                        .try_insert(MeshMaterial3d(new_handle));
                 }
                 Entry::Occupied(occupied) => {
                     commands
                         .entity(entity)
-                        .insert(MeshMaterial3d(occupied.get().clone()));
+                        .try_insert(MeshMaterial3d(occupied.get().clone()));
                 }
             }
         }

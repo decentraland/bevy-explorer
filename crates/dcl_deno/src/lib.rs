@@ -10,7 +10,7 @@ use common::structs::GlobalCrdtStateUpdate;
 use deno_core::v8::IsolateHandle;
 use once_cell::sync::Lazy;
 use system_bridge::SystemApi;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::UnboundedSender;
 
 use ipfs::SceneJsFile;
 
@@ -42,9 +42,9 @@ pub fn spawn_scene(
     inspect: bool,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
     scene_origin: bevy::prelude::Vec3,
-) -> Sender<RendererResponse> {
+) -> UnboundedSender<RendererResponse> {
     let id = scene_context.scene_id;
-    let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
+    let (main_sx, thread_rx) = tokio::sync::mpsc::unbounded_channel::<RendererResponse>();
 
     std::thread::Builder::new()
         .name(format!("scene thread {:?}", id.0))

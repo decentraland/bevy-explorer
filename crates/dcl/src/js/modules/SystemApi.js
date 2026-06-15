@@ -519,6 +519,30 @@ module.exports.social = {
   // returns { address: string, name: string, hasClaimedName: bool, profilePictureUrl: string, nameColor?: { r: number, g: number, b: number } }[]
   getBlockedUsers: async function() {
       return await Deno.core.ops.op_get_blocked_users();
+  },
+
+  // returns { blockedUsers: string[], blockedByUsers: string[] } (addresses only)
+  getBlockingStatus: async function() {
+      return await Deno.core.ops.op_get_blocking_status();
+  },
+
+  // get block updates as a stream (someone blocked / unblocked the local user)
+  // type BlockUpdateData = {
+  //   address: string,
+  //   isBlocked: bool,
+  // }
+  getBlockUpdateStream: async function() {
+    const rid = await Deno.core.ops.op_get_block_update_stream();
+
+    async function* streamGenerator() {
+      while (true) {
+        const next = await Deno.core.ops.op_read_block_update_stream(rid);
+        if (next === null) break;
+        yield next;
+      }
+    }
+
+    return streamGenerator();
   }
 }
 

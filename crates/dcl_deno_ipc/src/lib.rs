@@ -61,7 +61,7 @@ thread_local! {
 pub struct NewSceneCommand {
     id: u64,
     info: NewSceneInfo,
-    renderer_channel: tokio::sync::mpsc::Receiver<RendererResponse>,
+    renderer_channel: tokio::sync::mpsc::UnboundedReceiver<RendererResponse>,
     global_channel: tokio::sync::broadcast::Receiver<GlobalCrdtStateUpdate>,
     response_channel: SceneResponseSender,
     system_api_sender: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
@@ -278,11 +278,11 @@ pub fn spawn_scene(
     inspect: bool,
     super_user: Option<tokio::sync::mpsc::UnboundedSender<SystemApi>>,
     scene_origin: bevy::prelude::Vec3,
-) -> tokio::sync::mpsc::Sender<RendererResponse> {
+) -> tokio::sync::mpsc::UnboundedSender<RendererResponse> {
     let is_super = super_user.is_some();
     let id = scene_context.scene_id;
 
-    let (main_sx, thread_rx) = tokio::sync::mpsc::channel::<RendererResponse>(1);
+    let (main_sx, thread_rx) = tokio::sync::mpsc::unbounded_channel::<RendererResponse>();
 
     let ipc_out = NEW_SCENE_SENDER.read().unwrap();
     let ipc_out = ipc_out.as_ref().unwrap();

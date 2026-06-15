@@ -3,6 +3,13 @@ use ethers_core::types::Address;
 
 use crate::DirectChatMessage;
 
+/// `(addresses I blocked, addresses that blocked me)` — mirrors the real
+/// client's `BlockingStatus` so signatures match across feature flags.
+pub type BlockingStatus = (Vec<String>, Vec<String>);
+
+/// Result carried back over a oneshot reply for `GetBlockingStatus`.
+pub type BlockingStatusResult = Result<BlockingStatus, String>;
+
 /// Stub types mirroring the proto FriendProfile / FriendshipRequestResponse
 /// used when the `social` feature is disabled.
 #[derive(Clone, Debug, Default)]
@@ -45,6 +52,7 @@ impl SocialClientHandler {
         _wallet: wallet::Wallet,
         _friend_callback: impl Fn(&FriendshipEventBody) + Send + Sync + 'static,
         _connectivity_callback: impl Fn(Address, ConnectivityStatus) + Send + Sync + 'static,
+        _block_update_callback: impl Fn(&str, bool) + Send + Sync + 'static,
         _chat_callback: impl Fn(DirectChatMessage) + Send + Sync + 'static,
     ) -> Option<Self> {
         Some(Self::default())
@@ -56,28 +64,46 @@ impl SocialClientHandler {
         false
     }
 
+    fn stub_reply() -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Ok(()));
+        Ok(rx)
+    }
+
     pub fn friend_request(
         &mut self,
         _address: Address,
         _message: Option<String>,
-    ) -> Result<(), anyhow::Error> {
-        Ok(())
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, anyhow::Error> {
+        Self::stub_reply()
     }
 
-    pub fn cancel_request(&mut self, _address: Address) -> Result<(), anyhow::Error> {
-        Ok(())
+    pub fn cancel_request(
+        &mut self,
+        _address: Address,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, anyhow::Error> {
+        Self::stub_reply()
     }
 
-    pub fn accept_request(&mut self, _address: Address) -> Result<(), anyhow::Error> {
-        Ok(())
+    pub fn accept_request(
+        &mut self,
+        _address: Address,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, anyhow::Error> {
+        Self::stub_reply()
     }
 
-    pub fn reject_request(&mut self, _address: Address) -> Result<(), anyhow::Error> {
-        Ok(())
+    pub fn reject_request(
+        &mut self,
+        _address: Address,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, anyhow::Error> {
+        Self::stub_reply()
     }
 
-    pub fn delete_friend(&mut self, _address: Address) -> Result<(), anyhow::Error> {
-        Ok(())
+    pub fn delete_friend(
+        &mut self,
+        _address: Address,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, anyhow::Error> {
+        Self::stub_reply()
     }
 
     pub fn get_mutual_friends(
@@ -114,6 +140,14 @@ impl SocialClientHandler {
     {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let _ = tx.send(Ok(Vec::new()));
+        Ok(rx)
+    }
+
+    pub fn get_blocking_status(
+        &self,
+    ) -> Result<tokio::sync::oneshot::Receiver<BlockingStatusResult>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Ok((Vec::new(), Vec::new())));
         Ok(rx)
     }
 

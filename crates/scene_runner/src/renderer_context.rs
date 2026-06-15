@@ -77,6 +77,10 @@ pub struct RendererSceneContext {
 
     pub crdt_store: CrdtStore,
 
+    // the authored baseline: the scene's main.crdt as loaded, before any tick (custom components
+    // included). The inspector diffs the live state against this when saving. None if no main.crdt.
+    pub initial_crdt: Option<CrdtStore>,
+
     // readiness to update, if anything blocks the scene should not run
     pub blocked: HashSet<&'static str>,
 
@@ -110,6 +114,16 @@ pub struct RendererSceneContext {
 pub const FROZEN_BLOCK: &str = "frozen";
 
 pub const SCENE_LOG_BUFFER_SIZE: usize = 100;
+
+// A scene tick that has been in-flight (sent to the scene, no response yet) for longer than this
+// is treated as "not responding": handle_out_of_world stops holding the player behind the loading
+// screen, and the loading UI surfaces a countdown to this timeout.
+pub const SCENE_NOT_RESPONDING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+// Don't surface the "not responding" message until a tick has been in-flight at least this long,
+// so a normal slow frame doesn't flicker the warning.
+pub const SCENE_NOT_RESPONDING_DISPLAY_AFTER: std::time::Duration =
+    std::time::Duration::from_secs(2);
 
 impl RendererSceneContext {
     #[allow(clippy::too_many_arguments)]
@@ -155,6 +169,7 @@ impl RendererSceneContext {
             broken: false,
             priority,
             crdt_store: Default::default(),
+            initial_crdt: None,
             blocked: Default::default(),
             total_runtime: 0.0,
             tick_number: 0,

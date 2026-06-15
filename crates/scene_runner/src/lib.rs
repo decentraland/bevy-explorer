@@ -106,7 +106,7 @@ impl SceneUpdates {
 
 #[derive(Component)]
 pub struct SceneThreadHandle {
-    pub sender: tokio::sync::mpsc::Sender<RendererResponse>,
+    pub sender: tokio::sync::mpsc::UnboundedSender<RendererResponse>,
 }
 
 /// Emitted by [`receive_scene_updates`] when the scene thread responds to a
@@ -115,6 +115,14 @@ pub struct SceneThreadHandle {
 pub struct CrdtSnapshotEvent {
     pub scene_entity: Entity,
     pub crdt: dcl::interface::CrdtStore,
+}
+
+/// Carries the response to a [`RendererResponse::AllocateEntity`] request: one result per requested
+/// slot (`Ok(id)` instantiated, `Err` couldn't be allocated).
+#[derive(Event)]
+pub struct EntityAllocatedEvent {
+    pub scene_entity: Entity,
+    pub results: Vec<Result<dcl_component::SceneEntityId, dcl::AllocError>>,
 }
 
 // event which can be sent from anywhere to trigger replacing the current scene with the one specified
@@ -260,6 +268,7 @@ impl Plugin for SceneRunnerPlugin {
         app.add_event::<LoadSceneEvent>();
         app.add_event::<AppError>();
         app.add_event::<CrdtSnapshotEvent>();
+        app.add_event::<EntityAllocatedEvent>();
 
         app.configure_sets(
             Update,
@@ -870,7 +879,7 @@ fn send_scene_updates(
         died: std::mem::take(&mut context.outbound_died),
     };
 
-    if let Err(e) = handle.sender.blocking_send(RendererResponse::Ok(
+    if let Err(e) = handle.sender.send(RendererResponse::Ok(
         context.crdt_store.take_updates(),
         census,
     )) {
@@ -900,6 +909,7 @@ fn receive_scene_updates(
     mut rpc_call_events: EventWriter<RpcCall>,
     mut toaster: Toaster,
     mut snapshot_events: EventWriter<CrdtSnapshotEvent>,
+    mut entity_allocated_events: EventWriter<EntityAllocatedEvent>,
 ) {
     loop {
         let maybe_completed_job = match updates.receiver().try_recv() {
@@ -907,6 +917,15 @@ fn receive_scene_updates(
                 SceneResponse::CrdtSnapshot(scene_id, crdt) => {
                     if let Some(&scene_entity) = updates.scene_ids.get(&scene_id) {
                         snapshot_events.write(CrdtSnapshotEvent { scene_entity, crdt });
+                    }
+                    None
+                }
+                SceneResponse::EntityAllocated(scene_id, results) => {
+                    if let Some(&scene_entity) = updates.scene_ids.get(&scene_id) {
+                        entity_allocated_events.write(EntityAllocatedEvent {
+                            scene_entity,
+                            results,
+                        });
                     }
                     None
                 }
@@ -961,7 +980,11 @@ fn receive_scene_updates(
                         context.total_runtime = runtime.0;
                         context.last_update_frame = frame.0;
                         context.in_flight = false;
-                        context.nascent = census.born;
+                        // extend (not assign) so renderer-side births (the inspector's /new_entity
+                        // adds the freshly-allocated ids straight to `nascent`) aren't clobbered by
+                        // the scene's reported births. `nascent` is drained every lifecycle pass, so
+                        // this matches assignment for scene-reported births.
+                        context.nascent.extend(census.born);
                         // Merge externally-queued deaths (e.g. /delete_entity) with
                         // scene-reported deaths, draining the old set so entries are
                         // only processed once.
