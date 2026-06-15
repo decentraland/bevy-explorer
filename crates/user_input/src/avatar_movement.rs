@@ -199,8 +199,6 @@ fn update_scene_driven_animation(
             transition_seconds: anim.transition_seconds.unwrap_or(0.2),
             seek: anim.playback_time,
             sounds,
-            tilt_pitch: active.component.tilt_pitch,
-            tilt_roll: active.component.tilt_roll,
         })
     })();
 

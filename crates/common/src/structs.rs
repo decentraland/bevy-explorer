@@ -271,10 +271,6 @@ pub struct SceneDrivenAnimationRequest {
     pub idle: bool,
     pub transition_seconds: f32,
     pub seek: Option<f32>,
-    // Render-only avatar lean (degrees), mirrored from `PBAvatarMovement.tilt_pitch` /
-    // `tilt_roll` for the local sender and carried to remotes on the wire. 0 = upright.
-    pub tilt_pitch: f32,
-    pub tilt_roll: f32,
     // Scene-requested avatar-bus sound clips to play this update. Each entry is the
     // content_hash of a file hosted in the same scene as the animation. The consumer
     // dedups per-avatar so leaving identical entries across consecutive updates doesn't

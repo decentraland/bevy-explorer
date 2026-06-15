@@ -239,8 +239,15 @@ fn broadcast_position(
     let idle = active_anim.map(|a| a.idle);
     // Render-only lean, carried so remotes can bank a tilted avatar. Rides along with an
     // active anim, like speed/loop; receivers compose it on top of the yaw in rotation_y.
-    let tilt_pitch = active_anim.map(|a| a.tilt_pitch);
-    let tilt_roll = active_anim.map(|a| a.tilt_roll);
+    // Derived from the same composed rotation we extract yaw from above — `apply_rotation`
+    // baked the lean in as `from_euler(YXZ, yaw, pitch, roll)`, so `.1`/`.2` recover it.
+    let (tilt_pitch, tilt_roll) = match active_anim {
+        Some(_) => {
+            let (_, pitch, roll) = rotation.to_euler(bevy::math::EulerRot::YXZ);
+            (Some(pitch.to_degrees()), Some(roll.to_degrees()))
+        }
+        None => (None, None),
+    };
     // The latch above already mirrors the freshest `seek` seen since the last
     // broadcast. Only send if there's an active anim to apply it to.
     let playback_time = active_anim.and(last_anim.pending_seek.take());

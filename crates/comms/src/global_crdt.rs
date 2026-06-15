@@ -845,10 +845,6 @@ fn resolve_remote_anim(
         idle: anim.idle.unwrap_or(false),
         transition_seconds,
         seek: anim.playback_time,
-        // Carried for struct parity; the remote lean is composed directly into the
-        // received rotation at the packet sites, so these aren't read on this path.
-        tilt_pitch: anim.tilt_pitch.unwrap_or_default(),
-        tilt_roll: anim.tilt_roll.unwrap_or_default(),
         sounds: anim.sound_content_hashes,
     })
 }
