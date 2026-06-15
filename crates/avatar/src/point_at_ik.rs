@@ -345,7 +345,11 @@ pub(crate) fn apply_point_at_ik(
         // arm jitter while the body is mid-turn.
         if let Some(yaw) = rig.body_yaw {
             if let Ok(mut t) = tx.p0().get_mut(avatar_entity) {
-                t.rotation = Quat::from_rotation_y(yaw);
+                // Override the body yaw for the point-at frame but keep any render-only
+                // tilt (pitch/roll) the movement system applied this frame, so leaning
+                // survives pointing.
+                let (_, pitch, roll) = t.rotation.to_euler(EulerRot::YXZ);
+                t.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
             }
         }
 

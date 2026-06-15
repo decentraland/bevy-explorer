@@ -126,6 +126,12 @@ message SceneDrivenAnimation {
   // that carries an active anim, the same as `speed` / `loop`; defaults to false when
   // absent (older senders predating the field).
   optional bool idle = 9;
+  // Render-only avatar lean (degrees) carried for remote avatars, mirroring
+  // `PBAvatarMovement.tilt_pitch` / `tilt_roll`. Composed on top of the yaw in
+  // `Movement.rotation_y` (pitch about local X, roll about local Z); does not affect the
+  // remote's physics or the yaw other clients read. Absent/0 from senders without tilt.
+  optional float tilt_pitch = 10;
+  optional float tilt_roll = 11;
 }
 
 message MovementCompressed {

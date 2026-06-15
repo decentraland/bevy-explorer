@@ -11,8 +11,8 @@ use common::{
     dynamics::{PLAYER_COLLIDER_OVERLAP, PLAYER_COLLIDER_RADIUS, PLAYER_GROUND_THRESHOLD},
     sets::{PostUpdateSets, SceneSets},
     structs::{
-        AppConfig, AvatarDynamicState, EngineMovementControl, PrimaryPlayerRes, PrimaryUser,
-        SceneDrivenAnim, SceneDrivenAnimationFeedback, SceneDrivenAnimationRequest,
+        avatar_tilt_quat, AppConfig, AvatarDynamicState, EngineMovementControl, PrimaryPlayerRes,
+        PrimaryUser, SceneDrivenAnim, SceneDrivenAnimationFeedback, SceneDrivenAnimationRequest,
     },
 };
 use comms::global_crdt::GlobalCrdtState;
@@ -199,6 +199,8 @@ fn update_scene_driven_animation(
             transition_seconds: anim.transition_seconds.unwrap_or(0.2),
             seek: anim.playback_time,
             sounds,
+            tilt_pitch: active.component.tilt_pitch,
+            tilt_roll: active.component.tilt_roll,
         })
     })();
 
@@ -216,6 +218,10 @@ pub struct AvatarMovement {
     pub walk_success: Option<bool>,
     /// scene-driven movement animation request; if absent, engine falls back to velocity-based selection
     pub animation: Option<MovementAnimation>,
+    /// render-only lean (degrees) composed on top of `orientation`; does not affect physics
+    /// or the yaw broadcast to other clients. 0 = upright.
+    pub tilt_pitch: f32,
+    pub tilt_roll: f32,
 }
 
 impl Default for AvatarMovement {
@@ -226,6 +232,8 @@ impl Default for AvatarMovement {
             ground_direction: Vec3::NEG_Y,
             walk_success: None,
             animation: None,
+            tilt_pitch: 0.0,
+            tilt_roll: 0.0,
         }
     }
 }
@@ -265,6 +273,8 @@ impl From<PbAvatarMovement> for AvatarMovement {
                 .unwrap_or(Vec3::NEG_Y),
             walk_success: value.walk_success,
             animation: value.animation,
+            tilt_pitch: value.tilt_pitch.unwrap_or_default(),
+            tilt_roll: value.tilt_roll.unwrap_or_default(),
         }
     }
 }
@@ -530,7 +540,10 @@ pub fn apply_rotation(
     };
 
     if !movement_suppressed(&movement_control, movement) {
-        transform.rotation = Quat::from_rotation_y(movement.component.orientation / 360.0 * TAU);
+        // Yaw is authoritative (broadcast to other clients, used by physics); tilt is a
+        // render-only lean composed on top. `to_euler(YXZ).0` still recovers the yaw.
+        transform.rotation = Quat::from_rotation_y(movement.component.orientation / 360.0 * TAU)
+            * avatar_tilt_quat(movement.component.tilt_pitch, movement.component.tilt_roll);
     }
 }
 

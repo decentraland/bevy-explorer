@@ -9,10 +9,12 @@ option (common.ecs_component_id) = 1501;
 
 message PBAvatarMovement {
   decentraland.common.Vector3 velocity = 1;
-  float orientation = 2;                                    // 0-360, we don't allow pitch/roll
+  float orientation = 2;                                    // 0-360, yaw only; this is the authoritative facing (other clients read it, and physics treats the avatar as upright). Lean is expressed separately via tilt_pitch/tilt_roll.
   optional decentraland.common.Vector3 ground_direction = 3;
   optional bool walk_success = 4;                           // set for one frame when a walk_target ends: true = reached target, false = failed; absent = in progress or no walk
   optional MovementAnimation animation = 5;                 // if set, the engine plays this animation instead of selecting one from velocity heuristics
+  optional float tilt_pitch = 6;                            // render-only forward/back lean in degrees, applied on top of `orientation` (rotation about the avatar's local X axis). Does not affect the physics capsule (stays upright) or the facing other clients read. Defaults to 0.
+  optional float tilt_roll = 7;                             // render-only sideways lean in degrees, applied on top of `orientation` (rotation about the avatar's local Z axis). Same constraints as tilt_pitch. Useful e.g. for glider banking. Defaults to 0.
 }
 
 // Describes the animation the movement scene wants the avatar to play.

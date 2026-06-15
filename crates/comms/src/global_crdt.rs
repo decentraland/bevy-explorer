@@ -10,8 +10,8 @@ use bimap::BiMap;
 use common::{
     rpc::{RpcCall, RpcEventSender, RpcStreamSender},
     structs::{
-        AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate, HeadSync, MoveKind, PointAtSync,
-        SceneDrivenAnimationRequest,
+        avatar_tilt_quat, AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate, HeadSync,
+        MoveKind, PointAtSync, SceneDrivenAnimationRequest,
     },
 };
 use ethers_core::types::Address;
@@ -622,7 +622,13 @@ pub fn process_transport_updates(
                         ));
                         let pos = Vec3::new(m.position_x, m.position_y, -m.position_z);
                         let vel = Vec3::new(m.velocity_x, m.velocity_y, -m.velocity_z);
-                        let rot = Quat::from_rotation_y(-m.rotation_y / 360.0 * TAU);
+                        // Compose the render-only lean on top of yaw; absent/old senders → upright.
+                        let tilt = m
+                            .scene_driven_animation
+                            .as_ref()
+                            .map(|s| avatar_tilt_quat(s.tilt_pitch(), s.tilt_roll()))
+                            .unwrap_or(Quat::IDENTITY);
+                        let rot = Quat::from_rotation_y(-m.rotation_y / 360.0 * TAU) * tilt;
                         let dcl_transform = DclTransformAndParent {
                             translation: DclTranslation::from_bevy_translation(pos),
                             rotation: DclQuat::from_bevy_quat(rot),
@@ -681,10 +687,16 @@ pub fn process_transport_updates(
                             &mut last_remote_anim_urn,
                             m.scene_driven_animation.clone(),
                         );
+                        // Compose the render-only lean on top of yaw; absent/old senders → upright.
+                        let tilt = m
+                            .scene_driven_animation
+                            .as_ref()
+                            .map(|s| avatar_tilt_quat(s.tilt_pitch(), s.tilt_roll()))
+                            .unwrap_or(Quat::IDENTITY);
                         let movement = MovementCompressed::from_proto(m);
                         let pos = movement.position(state.realm_bounds.0, state.realm_bounds.1);
                         let vel = movement.velocity();
-                        let rot = Quat::from_rotation_y(movement.temporal.rotation_f32());
+                        let rot = Quat::from_rotation_y(movement.temporal.rotation_f32()) * tilt;
                         let dcl_transform = DclTransformAndParent {
                             translation: DclTranslation::from_bevy_translation(pos),
                             rotation: DclQuat::from_bevy_quat(rot),
@@ -833,6 +845,10 @@ fn resolve_remote_anim(
         idle: anim.idle.unwrap_or(false),
         transition_seconds,
         seek: anim.playback_time,
+        // Carried for struct parity; the remote lean is composed directly into the
+        // received rotation at the packet sites, so these aren't read on this path.
+        tilt_pitch: anim.tilt_pitch.unwrap_or_default(),
+        tilt_roll: anim.tilt_roll.unwrap_or_default(),
         sounds: anim.sound_content_hashes,
     })
 }
