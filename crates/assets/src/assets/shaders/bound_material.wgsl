@@ -23,9 +23,7 @@ struct Bounds {
 struct SceneBounds {
     bounds: array<Bounds,8>,
     distance: f32,
-    flags: u32,
     num_bounds: u32,
-    _pad: u32,
 }
 
 fn unpack_bounds(packed: u32) -> vec2<f32> {
@@ -36,13 +34,6 @@ fn unpack_bounds(packed: u32) -> vec2<f32> {
     return vec2<f32>(f32((x_signed) * 16), f32((y_signed) * 16));
 }
 
-const SHOW_OUTSIDE: u32 = 1u;
-//const OUTLINE: u32 = 2u; // replaced by OUTLINE shader def
-const OUTLINE_RED: u32 = 4u;
-const OUTLINE_FORCE: u32 = 8u;
-const DISABLE_DITHER: u32 = 16u;
-const CONE_ONLY_DITHER: u32 = 32u;
-
 @group(2) @binding(100)
 var<uniform> bounds: SceneBounds;
 
@@ -50,10 +41,8 @@ var<uniform> bounds: SceneBounds;
 fn fragment(
     in: VertexOutput,
     @builtin(front_facing) is_front: bool,
-#ifdef OUTLINE
 #ifdef MULTISAMPLED
     @builtin(sample_index) sample_index: u32,
-#endif
 #endif
 ) -> FragmentOutput {
 
@@ -67,8 +56,8 @@ fn fragment(
 #endif
 
     var cap_brightness: f32 = 0.0;
-    if (bounds.flags & (DISABLE_DITHER + OUTLINE_RED)) == 0 {
-        cap_brightness = discard_dither(in.position.xy, in.world_position.xyz, view.user_value, (bounds.flags & CONE_ONLY_DITHER) == 0);
+    if (mesh_tag & (#{NO_DITHERING_MESH_TAG} | #{OUTLINE_RED_MESH_TAG})) == 0 {
+        cap_brightness = discard_dither(in.position.xy, in.world_position.xyz, view.user_value, (mesh_tag & #{CONE_ONLY_DITHER_MESH_TAG}) == 0);
     }
 
     // generate a PbrInput struct from the StandardMaterial bindings
@@ -157,7 +146,7 @@ fn fragment(
         }
     }
 
-    if should_discard && ((bounds.flags & SHOW_OUTSIDE) == 0) {
+    if should_discard && ((mesh_tag & #{SHOW_OUTSIDE_BOUNDS_MESH_TAG}) == 0) {
         discard;
     }
 
@@ -181,24 +170,18 @@ fn fragment(
         }
     }
 
-#ifdef OUTLINE
-    let alpha_mode = material.flags & pbr_types::STANDARD_MATERIAL_FLAGS_ALPHA_MODE_RESERVED_BITS;
-    if (alpha_mode == pbr_types::STANDARD_MATERIAL_FLAGS_ALPHA_MODE_OPAQUE) || ((bounds.flags & OUTLINE_FORCE) != 0u) {
-        out.color = apply_outline(
-            in.position,
-            out.color, 
-            vec3(1., 0., 0.),
-            (bounds.flags & OUTLINE_RED) != 0u,
-            sample_index,
+    if (mesh_tag & #{OUTLINE_MESH_TAGS}) != 0 {
+        let outline_color = vec3(
+            f32((mesh_tag & #{OUTLINE_RED_MESH_TAG}) != 0),
+            f32((mesh_tag & #{OUTLINE_GREEN_MESH_TAG}) != 0),
+            f32((mesh_tag & #{OUTLINE_BLUE_MESH_TAG}) != 0),
         );
-    }
-#endif
-    if (mesh_tag & #{OUTLINE_GREEN_MESH_TAG}) != 0 {
+        let black = (mesh_tag & (#{OUTLINE_MESH_TAGS} & ~#{OUTLINE_BLACK_MESH_TAG})) == 0;
         out.color = apply_outline(
             in.position,
             out.color, 
-            vec3(0., 1., 0.),
-            true,
+            outline_color,
+            !black,
             sample_index,
         );
     }

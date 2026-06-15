@@ -1,11 +1,10 @@
 use avatar::mask_material::MaskMaterial;
 use bevy::{
-    diagnostic::FrameCount,
-    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
+    diagnostic::{DiagnosticsStore, FrameCount, FrameTimeDiagnosticsPlugin},
     math::Vec3Swizzles,
     platform::{collections::HashSet, hash::FixedHasher},
     prelude::*,
-    render::mesh::Indices,
+    render::mesh::{Indices, MeshTag},
     text::JustifyText,
     ui::FocusPolicy,
 };
@@ -22,7 +21,7 @@ use common::{
 };
 use comms::{global_crdt::ForeignPlayer, Transport};
 use console::DoAddConsoleCommand;
-use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE};
+use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE_MESH_TAGS};
 use scene_runner::{
     initialize_scene::{SceneLoading, TestingData, PARCEL_SIZE},
     parcel_to_vec3,
@@ -699,13 +698,12 @@ fn entity_count(
     meshes: Res<Assets<Mesh>>,
     textures: Res<Assets<Image>>,
     ui_nodes: Query<(), With<ComputedNode>>,
-    scene_mats: Query<&MeshMaterial3d<SceneMaterial>>,
+    scene_mats: Query<&MeshTag, With<MeshMaterial3d<SceneMaterial>>>,
     std_mats: Query<(), With<MeshMaterial3d<StandardMaterial>>>,
     mask_mats: Query<(), With<MeshMaterial3d<MaskMaterial>>>,
     uv_mats: Query<(), With<MaterialNode<StretchUvMaterial>>>,
     bound_mats: Query<(), With<MaterialNode<BoundedImageMaterial>>>,
     textshape_mats: Query<(), With<MeshMaterial3d<TextShapeMaterial>>>,
-    mats: Res<Assets<SceneMaterial>>,
 ) {
     if f.0.is_multiple_of(100) {
         let entities = q.iter().count();
@@ -716,11 +714,7 @@ fn entity_count(
 
         let outlined = scene_mats
             .iter()
-            .filter(|m| {
-                mats.get(m.id())
-                    .map(|m| (m.extension.data.flags & SCENE_MATERIAL_OUTLINE) != 0)
-                    .unwrap_or(false)
-            })
+            .filter(|m| m.0 & SCENE_MATERIAL_OUTLINE_MESH_TAGS != 0)
             .count();
         let scene_mats = scene_mats.iter().count();
         let std_mats = std_mats.iter().count();
