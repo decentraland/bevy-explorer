@@ -29,11 +29,19 @@ pub struct AvatarColliderPlugin;
 
 impl Plugin for AvatarColliderPlugin {
     fn build(&self, app: &mut App) {
+        app.init_state::<AvatarHighlighted>();
+        app.init_resource::<PlayerClickedSenders>();
         app.add_systems(
             Update,
             (
                 update_avatar_colliders.in_set(SceneSets::PostInit),
-                update_avatar_collider_actions.in_set(SceneSets::Input),
+                (
+                    clean_player_clicked_senders,
+                    collect_player_clicked_senders.run_if(on_event::<RpcCall>),
+                    update_avatar_collider_actions.in_set(SceneSets::Input),
+                    send_message_to_scene.run_if(in_state(AvatarHighlighted(true))),
+                )
+                    .chain(),
                 handle_avatar_modifier_requests,
             ),
         );
@@ -103,20 +111,19 @@ fn update_avatar_colliders(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn update_avatar_collider_actions(
-    mut commands: Commands,
-    camera: Query<(&Camera, &GlobalTransform), With<PrimaryCamera>>,
-    pointer_target: Res<PointerTarget>,
-    mut tooltips: ResMut<ToolTips>,
-    profiles: Query<(&ForeignPlayer, &UserProfile, &PlayerModifiers)>,
-    children: Query<&Children>,
-    mut meshes: Query<(&mut Mesh3d, &mut MeshTag), With<MeshMaterial3d<SceneMaterial>>>,
-    mut senders: Local<Vec<RpcEventSender>>,
+#[derive(Default, Resource, Deref, DerefMut)]
+struct PlayerClickedSenders(Vec<RpcEventSender>);
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, States)]
+struct AvatarHighlighted(bool);
+
+fn clean_player_clicked_senders(mut senders: ResMut<PlayerClickedSenders>) {
+    senders.retain(|s| !s.is_closed());
+}
+
+fn collect_player_clicked_senders(
+    mut senders: ResMut<PlayerClickedSenders>,
     mut subscribe_events: EventReader<RpcCall>,
-    mut previous_target: Local<Option<Entity>>,
-    mut input_manager: InputManager,
-    native_ui: Res<NativeUi>,
 ) {
     // gather any event receivers
     for sender in subscribe_events.read().filter_map(|ev| match ev {
@@ -125,14 +132,16 @@ fn update_avatar_collider_actions(
     }) {
         senders.push(sender.clone());
     }
+}
 
-    tooltips.0.remove(&TooltipSource::Label("avatar_pointer"));
-
-    input_manager.priorities().release(
-        InputType::Action(SystemAction::ShowProfile.into()),
-        InputPriority::AvatarCollider,
-    );
-
+fn update_avatar_collider_actions(
+    mut commands: Commands,
+    pointer_target: Res<PointerTarget>,
+    profiles: Query<&PlayerModifiers, With<ForeignPlayer>>,
+    children: Query<&Children>,
+    mut meshes: Query<(&mut Mesh3d, &mut MeshTag), With<MeshMaterial3d<SceneMaterial>>>,
+    mut previous_target: Local<Option<Entity>>,
+) {
     if previous_target.as_ref() != pointer_target.0.as_ref().map(|target| &target.container) {
         debug!(
             "Pointer target changed from {:?} to {:?}",
@@ -154,14 +163,7 @@ fn update_avatar_collider_actions(
 
         if let Some(target) = pointer_target.0.as_ref() {
             if target.ty == PointerTargetType::Avatar {
-                if native_ui.profile {
-                    input_manager.priorities().reserve(
-                        InputType::Action(SystemAction::ShowProfile.into()),
-                        InputPriority::AvatarCollider,
-                    );
-                }
-
-                let Ok((player, profile, modifiers)) = profiles.get(target.container) else {
+                let Ok(modifiers) = profiles.get(target.container) else {
                     return;
                 };
 
@@ -172,6 +174,7 @@ fn update_avatar_collider_actions(
 
                 // hilight meshes of target container
                 debug!("Highlighting avatar {}", target.container);
+                commands.set_state(AvatarHighlighted(true));
                 for child in children
                     .iter_descendants(target.container)
                     .chain([target.container])
@@ -182,51 +185,82 @@ fn update_avatar_collider_actions(
                         mesh_tag.0 |= SCENE_MATERIAL_OUTLINE_RED_MESH_TAG;
                     }
                 }
-
-                if native_ui.profile {
-                    tooltips.0.insert(
-                        TooltipSource::Label("avatar_pointer"),
-                        vec![("Middle Click : Profile".to_owned(), true)],
-                    );
-                }
-
-                if input_manager.just_down(CommonInputAction::IaPointer, InputPriority::Scene) {
-                    let camera_position = camera
-                        .single()
-                        .map(|(_, gt)| gt.translation())
-                        .unwrap_or_default();
-                    let direction = (target.position.unwrap() - camera_position).normalize();
-
-                    // send event
-                    let event = json!({
-                "userId": format!("{:#x}", player.address),
-                "ray": {
-                    "origin": { "x": camera_position.x, "y": camera_position.y, "z": -camera_position.z },
-                    "direction": { "x": direction.x, "y": direction.y, "z": -direction.z },
-                    "distance": target.distance.0
-                }
-            }).to_string();
-                    for sender in senders.iter() {
-                        let _ = sender.send(event.clone());
-                    }
-                }
-
-                if native_ui.profile
-                    && input_manager
-                        .just_down(SystemAction::ShowProfile, InputPriority::AvatarCollider)
-                {
-                    // display profile
-                    if let Some(address) = profile.content.eth_address.as_h160() {
-                        commands.send_event(ShowProfileEvent(address));
-                    } else {
-                        warn!("Profile has a bad address {}", profile.content.eth_address);
-                    }
-                }
+                return;
             }
+        }
+
+        commands.set_state(AvatarHighlighted(false));
+    }
+}
+
+#[expect(clippy::too_many_arguments)]
+fn send_message_to_scene(
+    mut commands: Commands,
+    pointer_target: Res<PointerTarget>,
+    profiles: Query<(&ForeignPlayer, &UserProfile)>,
+    camera: Single<(&Camera, &GlobalTransform), With<PrimaryCamera>>,
+    senders: Res<PlayerClickedSenders>,
+    mut input_manager: InputManager,
+    native_ui: Res<NativeUi>,
+    mut tooltips: ResMut<ToolTips>,
+) {
+    tooltips.0.remove(&TooltipSource::Label("avatar_pointer"));
+
+    if native_ui.profile {
+        input_manager.priorities().reserve(
+            InputType::Action(SystemAction::ShowProfile.into()),
+            InputPriority::AvatarCollider,
+        );
+    }
+
+    input_manager.priorities().release(
+        InputType::Action(SystemAction::ShowProfile.into()),
+        InputPriority::AvatarCollider,
+    );
+
+    let Some(target) = pointer_target.0.as_ref() else {
+        return;
+    };
+
+    let Ok((player, profile)) = profiles.get(target.container) else {
+        return;
+    };
+
+    if input_manager.just_down(CommonInputAction::IaPointer, InputPriority::Scene) {
+        let camera_position = camera.1.translation();
+        let direction = (target.position.unwrap() - camera_position).normalize();
+
+        // send event
+        let event = json!({
+            "userId": format!("{:#x}", player.address),
+            "ray": {
+                "origin": { "x": camera_position.x, "y": camera_position.y, "z": -camera_position.z },
+                "direction": { "x": direction.x, "y": direction.y, "z": -direction.z },
+                "distance": target.distance.0
+            }
+        }).to_string();
+        for sender in senders.iter() {
+            let _ = sender.send(event.clone());
         }
     }
 
-    senders.retain(|s| !s.is_closed());
+    if native_ui.profile {
+        tooltips.0.insert(
+            TooltipSource::Label("avatar_pointer"),
+            vec![("Middle Click : Profile".to_owned(), true)],
+        );
+    }
+
+    if native_ui.profile
+        && input_manager.just_down(SystemAction::ShowProfile, InputPriority::AvatarCollider)
+    {
+        // display profile
+        if let Some(address) = profile.content.eth_address.as_h160() {
+            commands.send_event(ShowProfileEvent(address));
+        } else {
+            warn!("Profile has a bad address {}", profile.content.eth_address);
+        }
+    }
 }
 
 fn handle_avatar_modifier_requests(
