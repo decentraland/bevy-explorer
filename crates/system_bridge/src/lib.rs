@@ -203,6 +203,8 @@ pub enum SystemApi {
     BlockUser(String, RpcResultSender<Result<(), String>>),
     UnblockUser(String, RpcResultSender<Result<(), String>>),
     GetBlockedUsers(RpcResultSender<Vec<BlockedUserData>>),
+    GetBlockingStatus(RpcResultSender<Result<BlockingStatusData, String>>),
+    GetBlockUpdateStream(RpcStreamSender<BlockUpdateData>),
     GetParams(RpcResultSender<HashMap<String, String>>),
 }
 
@@ -292,6 +294,23 @@ pub struct BlockedUserData {
     pub has_claimed_name: bool,
     pub profile_picture_url: String,
     pub name_color: Option<NameColor>,
+}
+
+/// Both directions of the blocking relationship for the local user,
+/// addresses only (no profiles).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockingStatusData {
+    pub blocked_users: Vec<String>,
+    pub blocked_by_users: Vec<String>,
+}
+
+/// Emitted when another user blocks / unblocks the local user.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockUpdateData {
+    pub address: String,
+    pub is_blocked: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

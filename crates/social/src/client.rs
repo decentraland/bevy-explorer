@@ -45,6 +45,9 @@ pub enum SocialQuery {
     GetBlockedUsers {
         response: tokio::sync::oneshot::Sender<Result<Vec<FriendProfile>, String>>,
     },
+    GetBlockingStatus {
+        response: tokio::sync::oneshot::Sender<BlockingStatusResult>,
+    },
 }
 
 enum FriendData {
@@ -69,11 +72,35 @@ enum FriendData {
     OwnBlock {
         address: Address,
     },
+    /// Someone blocked / unblocked the local user (from SubscribeToBlockUpdates).
+    BlockUpdate {
+        address: String,
+        is_blocked: bool,
+    },
     Disconnected,
 }
 
+/// Friendship action sent over the action channel together with a oneshot
+/// reply channel: the dispatcher forwards the RPC response (Ok / explicit
+/// error variant) back so callers can surface backend rejections like
+/// `BlockedUserError`, moderation failures, etc.
+pub type UpsertFriendshipRequest = (
+    UpsertFriendshipPayload,
+    tokio::sync::oneshot::Sender<Result<(), String>>,
+);
+
+/// `(addresses I blocked, addresses that blocked me)` — the payload of
+/// `GetBlockingStatus`.
+pub type BlockingStatus = (Vec<String>, Vec<String>);
+
+/// Result carried back over a oneshot reply for `GetBlockingStatus`.
+pub type BlockingStatusResult = Result<BlockingStatus, String>;
+
+/// Callback invoked when someone blocks / unblocks the local user.
+type BlockUpdateCallback = Box<dyn Fn(&str, bool) + Send + Sync + 'static>;
+
 pub struct SocialClientHandler {
-    sender: UnboundedSender<UpsertFriendshipPayload>,
+    sender: UnboundedSender<UpsertFriendshipRequest>,
     query_sender: UnboundedSender<SocialQuery>,
     friendship_receiver: UnboundedReceiver<FriendData>,
 
@@ -87,6 +114,7 @@ pub struct SocialClientHandler {
 
     friend_event_callback: Box<dyn Fn(&friendship_update::Update) + Send + Sync + 'static>,
     connectivity_callback: Box<dyn Fn(Address, ConnectivityStatus) + Send + Sync + 'static>,
+    block_update_callback: BlockUpdateCallback,
     #[allow(dead_code)]
     chat_event_callback: Box<dyn Fn(DirectChatMessage) + Send + Sync + 'static>,
 }
@@ -97,6 +125,7 @@ impl SocialClientHandler {
         runtime: &SocialRuntime,
         friend_callback: impl Fn(&friendship_update::Update) + Send + Sync + 'static,
         connectivity_callback: impl Fn(Address, ConnectivityStatus) + Send + Sync + 'static,
+        block_update_callback: impl Fn(&str, bool) + Send + Sync + 'static,
         chat_callback: impl Fn(DirectChatMessage) + Send + Sync + 'static,
     ) -> Option<Self> {
         let (event_sx, event_rx) = mpsc::unbounded_channel();
@@ -125,6 +154,7 @@ impl SocialClientHandler {
             unread_messages: Default::default(),
             friend_event_callback: Box::new(friend_callback),
             connectivity_callback: Box::new(connectivity_callback),
+            block_update_callback: Box::new(block_update_callback),
             chat_event_callback: Box::new(chat_callback),
         })
     }
@@ -139,73 +169,87 @@ impl SocialClientHandler {
         })
     }
 
+    fn send_action(
+        &self,
+        action: upsert_friendship_payload::Action,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, anyhow::Error> {
+        let (reply_sx, reply_rx) = tokio::sync::oneshot::channel();
+        self.sender.send((
+            UpsertFriendshipPayload {
+                action: Some(action),
+            },
+            reply_sx,
+        ))?;
+        Ok(reply_rx)
+    }
+
     pub fn friend_request(
         &mut self,
         address: Address,
         message: Option<String>,
-    ) -> Result<(), anyhow::Error> {
-        self.sender.send(UpsertFriendshipPayload {
-            action: Some(upsert_friendship_payload::Action::Request(RequestPayload {
-                user: Self::make_user(address),
-                message,
-            })),
-        })?;
-        Ok(())
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, anyhow::Error> {
+        self.send_action(upsert_friendship_payload::Action::Request(RequestPayload {
+            user: Self::make_user(address),
+            message,
+        }))
     }
 
-    pub fn cancel_request(&mut self, address: Address) -> Result<(), anyhow::Error> {
-        self.sender.send(UpsertFriendshipPayload {
-            action: Some(upsert_friendship_payload::Action::Cancel(CancelPayload {
-                user: Self::make_user(address),
-            })),
-        })?;
+    pub fn cancel_request(
+        &mut self,
+        address: Address,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, anyhow::Error> {
+        let rx = self.send_action(upsert_friendship_payload::Action::Cancel(CancelPayload {
+            user: Self::make_user(address),
+        }))?;
         self.sent_requests.remove(&address);
-        Ok(())
+        Ok(rx)
     }
 
-    pub fn accept_request(&mut self, address: Address) -> Result<(), anyhow::Error> {
+    pub fn accept_request(
+        &mut self,
+        address: Address,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, anyhow::Error> {
         if self.received_requests.remove(&address).is_none() {
             return Err(anyhow!("no request"));
         };
 
-        self.sender.send(UpsertFriendshipPayload {
-            action: Some(upsert_friendship_payload::Action::Accept(AcceptPayload {
-                user: Self::make_user(address),
-            })),
-        })?;
-        Ok(())
+        self.send_action(upsert_friendship_payload::Action::Accept(AcceptPayload {
+            user: Self::make_user(address),
+        }))
     }
 
-    pub fn reject_request(&mut self, address: Address) -> Result<(), anyhow::Error> {
+    pub fn reject_request(
+        &mut self,
+        address: Address,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, anyhow::Error> {
         if self.received_requests.remove(&address).is_none() {
             return Err(anyhow!("no request"));
         };
 
-        self.sender.send(UpsertFriendshipPayload {
-            action: Some(upsert_friendship_payload::Action::Reject(RejectPayload {
-                user: Self::make_user(address),
-            })),
-        })?;
-        Ok(())
+        self.send_action(upsert_friendship_payload::Action::Reject(RejectPayload {
+            user: Self::make_user(address),
+        }))
     }
 
-    pub fn delete_friend(&mut self, address: Address) -> Result<(), anyhow::Error> {
+    pub fn delete_friend(
+        &mut self,
+        address: Address,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, anyhow::Error> {
         if self.friends.remove(&address).is_none() {
             return Err(anyhow!("no request"));
         };
 
-        self.sender.send(UpsertFriendshipPayload {
-            action: Some(upsert_friendship_payload::Action::Delete(DeletePayload {
+        let reply_rx =
+            self.send_action(upsert_friendship_payload::Action::Delete(DeletePayload {
                 user: Self::make_user(address),
-            })),
-        })?;
+            }))?;
         // The server doesn't echo own actions back over the connectivity stream, so
         // emit a synthetic offline transition so subscribers (UI online list) drop
         // them. No-op if we never had a status for them.
         if self.friend_status.remove(&address).is_some() {
             (self.connectivity_callback)(address, ConnectivityStatus::Offline);
         }
-        Ok(())
+        Ok(reply_rx)
     }
 
     pub fn get_mutual_friends(
@@ -252,6 +296,17 @@ impl SocialClientHandler {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.query_sender
             .send(SocialQuery::GetBlockedUsers { response: tx })?;
+        Ok(rx)
+    }
+
+    /// Addresses the local user has blocked + addresses that have blocked
+    /// the local user (`(blocked_users, blocked_by_users)`).
+    pub fn get_blocking_status(
+        &self,
+    ) -> Result<tokio::sync::oneshot::Receiver<BlockingStatusResult>, anyhow::Error> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.query_sender
+            .send(SocialQuery::GetBlockingStatus { response: tx })?;
         Ok(rx)
     }
 
@@ -392,6 +447,12 @@ impl SocialClientHandler {
                     self.sent_requests.remove(&address);
                     self.received_requests.remove(&address);
                 }
+                FriendData::BlockUpdate {
+                    address,
+                    is_blocked,
+                } => {
+                    (self.block_update_callback)(&address, is_blocked);
+                }
                 FriendData::Disconnected => {
                     self.is_initialized = false;
                     self.friend_status.clear();
@@ -411,7 +472,7 @@ const PAGE_SIZE: i32 = 100;
 
 async fn social_socket_handler_inner(
     wallet: wallet::Wallet,
-    mut rx: UnboundedReceiver<UpsertFriendshipPayload>,
+    mut rx: UnboundedReceiver<UpsertFriendshipRequest>,
     mut query_rx: UnboundedReceiver<SocialQuery>,
     response_sx: UnboundedSender<FriendData>,
 ) -> Result<(), anyhow::Error> {
@@ -452,7 +513,7 @@ async fn social_socket_handler_inner(
 
 async fn run_one_connection(
     wallet: &wallet::Wallet,
-    rx: &mut UnboundedReceiver<UpsertFriendshipPayload>,
+    rx: &mut UnboundedReceiver<UpsertFriendshipRequest>,
     query_rx: &mut UnboundedReceiver<SocialQuery>,
     response_sx: &UnboundedSender<FriendData>,
 ) -> Result<(), anyhow::Error> {
@@ -623,6 +684,14 @@ async fn run_one_connection(
         .map_err(dbgerr)?;
     debug!("[social] Subscribed to friend connectivity updates");
 
+    // Subscribe to block updates (someone blocking / unblocking the local user)
+    debug!("[social] Subscribing to block updates...");
+    let mut block_updates = service_module
+        .subscribe_to_block_updates()
+        .await
+        .map_err(dbgerr)?;
+    debug!("[social] Subscribed to block updates");
+
     // Outbound: send friendship actions + handle queries
     let response_sx_write = response_sx.clone();
     let f_service_write = async move {
@@ -630,7 +699,7 @@ async fn run_one_connection(
         loop {
             tokio::select! {
                 req = rx.recv() => {
-                    let Some(req) = req else { return Result::<(), anyhow::Error>::Ok(()); };
+                    let Some((req, reply)) = req else { return Result::<(), anyhow::Error>::Ok(()); };
                     debug!("[social] upsert_friendship request: {req:?}");
                     let action = req.action.clone();
                     let resp = service_module
@@ -640,28 +709,52 @@ async fn run_one_connection(
                     debug!("[social] upsert_friendship response: {resp:?}");
 
                     // The server doesn't echo our own actions back via the subscription,
-                    // so update local state from the RPC response.
-                    if let Some(upsert_friendship_response::Response::Accepted(accepted)) = resp.response {
-                        match action {
-                            Some(upsert_friendship_payload::Action::Request(_)) => {
-                                if let Some(friend) = accepted.friend.as_ref() {
-                                    if let Some(address) = friend.address.as_h160() {
-                                        let req = FriendshipRequestResponse {
-                                            friend: accepted.friend.clone(),
-                                            created_at: accepted.created_at,
-                                            message: accepted.message,
-                                            id: accepted.id,
-                                        };
-                                        let _ = response_sx.send(FriendData::OwnRequestSent { address, req });
+                    // so update local state from the RPC response. The error variants
+                    // are forwarded to the caller so the UI can show a meaningful
+                    // message instead of a silent no-op.
+                    match resp.response {
+                        Some(upsert_friendship_response::Response::Accepted(accepted)) => {
+                            match action {
+                                Some(upsert_friendship_payload::Action::Request(_)) => {
+                                    if let Some(friend) = accepted.friend.as_ref() {
+                                        if let Some(address) = friend.address.as_h160() {
+                                            let req = FriendshipRequestResponse {
+                                                friend: accepted.friend.clone(),
+                                                created_at: accepted.created_at,
+                                                message: accepted.message,
+                                                id: accepted.id,
+                                            };
+                                            let _ = response_sx.send(FriendData::OwnRequestSent { address, req });
+                                        }
                                     }
                                 }
-                            }
-                            Some(upsert_friendship_payload::Action::Accept(AcceptPayload { user: Some(user) })) => {
-                                if let (Some(address), Some(profile)) = (user.address.as_h160(), accepted.friend) {
-                                    let _ = response_sx.send(FriendData::OwnRequestAccepted { address, profile });
+                                Some(upsert_friendship_payload::Action::Accept(AcceptPayload { user: Some(user) })) => {
+                                    if let (Some(address), Some(profile)) = (user.address.as_h160(), accepted.friend) {
+                                        let _ = response_sx.send(FriendData::OwnRequestAccepted { address, profile });
+                                    }
                                 }
+                                _ => {}
                             }
-                            _ => {}
+                            let _ = reply.send(Ok(()));
+                        }
+                        Some(upsert_friendship_response::Response::InvalidFriendshipAction(e)) => {
+                            let msg = e.message.unwrap_or_default();
+                            warn!("[social] upsert_friendship rejected: invalidFriendshipAction: {msg}");
+                            let _ = reply.send(Err(format!("invalidFriendshipAction: {msg}")));
+                        }
+                        Some(upsert_friendship_response::Response::InvalidRequest(e)) => {
+                            let msg = e.message.unwrap_or_default();
+                            warn!("[social] upsert_friendship rejected: invalidRequest: {msg}");
+                            let _ = reply.send(Err(format!("invalidRequest: {msg}")));
+                        }
+                        Some(upsert_friendship_response::Response::InternalServerError(e)) => {
+                            let msg = e.message.unwrap_or_default();
+                            warn!("[social] upsert_friendship internal server error: {msg}");
+                            let _ = reply.send(Err(format!("internalServerError: {msg}")));
+                        }
+                        None => {
+                            warn!("[social] upsert_friendship returned empty response");
+                            let _ = reply.send(Err("empty response from upsert_friendship".to_string()));
                         }
                     }
                 }
@@ -817,6 +910,23 @@ async fn run_one_connection(
                                 let _ = response.send(result);
                             }
                         }
+                        SocialQuery::GetBlockingStatus { response } => {
+                            debug!("[social] getBlockingStatus request");
+                            match service_module.get_blocking_status().await {
+                                Ok(resp) => {
+                                    debug!(
+                                        "[social] getBlockingStatus: {} blocked, {} blocked-by",
+                                        resp.blocked_users.len(),
+                                        resp.blocked_by_users.len()
+                                    );
+                                    let _ = response.send(Ok((resp.blocked_users, resp.blocked_by_users)));
+                                }
+                                Err(e) => {
+                                    warn!("[social] getBlockingStatus error: {e:?}");
+                                    let _ = response.send(Err(format!("{e:?}")));
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -858,6 +968,22 @@ async fn run_one_connection(
             }
         }
         Err(anyhow!("[social] connectivity update stream ended"))
+    }
+    .fuse();
+
+    // Inbound: receive block updates (someone blocked / unblocked the local user)
+    let sx_block = response_sx.clone();
+    let f_block_read = async move {
+        while let Some(update) = block_updates.next().await {
+            debug!("[social] Received block update: {update:?}");
+            sx_block
+                .send(FriendData::BlockUpdate {
+                    address: update.address,
+                    is_blocked: update.is_blocked,
+                })
+                .map_err(dbgerr)?;
+        }
+        Err(anyhow!("[social] block update stream ended"))
     }
     .fuse();
 
@@ -915,6 +1041,7 @@ async fn run_one_connection(
         f_service_read,
         f_service_write,
         f_connectivity_read,
+        f_block_read,
         f_keepalive,
         f_ws_closed
     );
@@ -922,6 +1049,7 @@ async fn run_one_connection(
         r = f_service_read => r,
         r = f_service_write => r,
         r = f_connectivity_read => r,
+        r = f_block_read => r,
         r = f_keepalive => r,
         r = f_ws_closed => r,
     }
