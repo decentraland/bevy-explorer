@@ -412,8 +412,7 @@ fn spawn_friendship_action(
     client: Option<&mut SocialClientHandler>,
     submit: impl FnOnce(
         &mut SocialClientHandler,
-    )
-        -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, String>,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<(), String>>, String>,
 ) {
     let outcome = match client {
         Some(c) => submit(c),

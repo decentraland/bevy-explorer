@@ -46,7 +46,7 @@ pub enum SocialQuery {
         response: tokio::sync::oneshot::Sender<Result<Vec<FriendProfile>, String>>,
     },
     GetBlockingStatus {
-        response: tokio::sync::oneshot::Sender<Result<(Vec<String>, Vec<String>), String>>,
+        response: tokio::sync::oneshot::Sender<BlockingStatusResult>,
     },
 }
 
@@ -89,6 +89,16 @@ pub type UpsertFriendshipRequest = (
     tokio::sync::oneshot::Sender<Result<(), String>>,
 );
 
+/// `(addresses I blocked, addresses that blocked me)` — the payload of
+/// `GetBlockingStatus`.
+pub type BlockingStatus = (Vec<String>, Vec<String>);
+
+/// Result carried back over a oneshot reply for `GetBlockingStatus`.
+pub type BlockingStatusResult = Result<BlockingStatus, String>;
+
+/// Callback invoked when someone blocks / unblocks the local user.
+type BlockUpdateCallback = Box<dyn Fn(&str, bool) + Send + Sync + 'static>;
+
 pub struct SocialClientHandler {
     sender: UnboundedSender<UpsertFriendshipRequest>,
     query_sender: UnboundedSender<SocialQuery>,
@@ -104,7 +114,7 @@ pub struct SocialClientHandler {
 
     friend_event_callback: Box<dyn Fn(&friendship_update::Update) + Send + Sync + 'static>,
     connectivity_callback: Box<dyn Fn(Address, ConnectivityStatus) + Send + Sync + 'static>,
-    block_update_callback: Box<dyn Fn(&str, bool) + Send + Sync + 'static>,
+    block_update_callback: BlockUpdateCallback,
     #[allow(dead_code)]
     chat_event_callback: Box<dyn Fn(DirectChatMessage) + Send + Sync + 'static>,
 }
@@ -229,9 +239,10 @@ impl SocialClientHandler {
             return Err(anyhow!("no request"));
         };
 
-        let reply_rx = self.send_action(upsert_friendship_payload::Action::Delete(DeletePayload {
-            user: Self::make_user(address),
-        }))?;
+        let reply_rx =
+            self.send_action(upsert_friendship_payload::Action::Delete(DeletePayload {
+                user: Self::make_user(address),
+            }))?;
         // The server doesn't echo own actions back over the connectivity stream, so
         // emit a synthetic offline transition so subscribers (UI online list) drop
         // them. No-op if we never had a status for them.
@@ -292,10 +303,7 @@ impl SocialClientHandler {
     /// the local user (`(blocked_users, blocked_by_users)`).
     pub fn get_blocking_status(
         &self,
-    ) -> Result<
-        tokio::sync::oneshot::Receiver<Result<(Vec<String>, Vec<String>), String>>,
-        anyhow::Error,
-    > {
+    ) -> Result<tokio::sync::oneshot::Receiver<BlockingStatusResult>, anyhow::Error> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.query_sender
             .send(SocialQuery::GetBlockingStatus { response: tx })?;

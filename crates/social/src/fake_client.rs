@@ -3,6 +3,13 @@ use ethers_core::types::Address;
 
 use crate::DirectChatMessage;
 
+/// `(addresses I blocked, addresses that blocked me)` — mirrors the real
+/// client's `BlockingStatus` so signatures match across feature flags.
+pub type BlockingStatus = (Vec<String>, Vec<String>);
+
+/// Result carried back over a oneshot reply for `GetBlockingStatus`.
+pub type BlockingStatusResult = Result<BlockingStatus, String>;
+
 /// Stub types mirroring the proto FriendProfile / FriendshipRequestResponse
 /// used when the `social` feature is disabled.
 #[derive(Clone, Debug, Default)]
@@ -138,10 +145,7 @@ impl SocialClientHandler {
 
     pub fn get_blocking_status(
         &self,
-    ) -> Result<
-        tokio::sync::oneshot::Receiver<Result<(Vec<String>, Vec<String>), String>>,
-        anyhow::Error,
-    > {
+    ) -> Result<tokio::sync::oneshot::Receiver<BlockingStatusResult>, anyhow::Error> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let _ = tx.send(Ok((Vec::new(), Vec::new())));
         Ok(rx)
