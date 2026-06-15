@@ -1,4 +1,9 @@
-use bevy::{platform::collections::HashMap, prelude::*, render::mesh::MeshTag};
+use bevy::{
+    app::{HierarchyPropagatePlugin, Propagate},
+    platform::collections::HashMap,
+    prelude::*,
+    render::mesh::MeshTag,
+};
 use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_RADIUS},
     inputs::{CommonInputAction, SystemAction},
@@ -31,6 +36,9 @@ impl Plugin for AvatarColliderPlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<AvatarHighlighted>();
         app.init_resource::<PlayerClickedSenders>();
+
+        app.add_plugins(HierarchyPropagatePlugin::<AvatarOutline>::default());
+
         app.add_systems(
             Update,
             (
@@ -45,6 +53,8 @@ impl Plugin for AvatarColliderPlugin {
                 handle_avatar_modifier_requests,
             ),
         );
+        app.add_observer(avatar_outline_on_add);
+        app.add_observer(avatar_outline_on_remove);
     }
 }
 
@@ -117,6 +127,9 @@ struct PlayerClickedSenders(Vec<RpcEventSender>);
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, States)]
 struct AvatarHighlighted(bool);
 
+#[derive(Default, Clone, Copy, PartialEq, Eq, Component)]
+struct AvatarOutline;
+
 fn clean_player_clicked_senders(mut senders: ResMut<PlayerClickedSenders>) {
     senders.retain(|s| !s.is_closed());
 }
@@ -138,8 +151,6 @@ fn update_avatar_collider_actions(
     mut commands: Commands,
     pointer_target: Res<PointerTarget>,
     profiles: Query<&PlayerModifiers, With<ForeignPlayer>>,
-    children: Query<&Children>,
-    mut meshes: Query<(&mut Mesh3d, &mut MeshTag), With<MeshMaterial3d<SceneMaterial>>>,
     mut previous_target: Local<Option<Entity>>,
 ) {
     if previous_target.as_ref() != pointer_target.0.as_ref().map(|target| &target.container) {
@@ -153,12 +164,9 @@ fn update_avatar_collider_actions(
 
         if let Some(old_target) = maybe_old_target {
             debug!("Reseting outline of {}", old_target);
-            for child in children.iter_descendants(old_target).chain([old_target]) {
-                if let Ok((mut mesh, mut mesh_tag)) = meshes.get_mut(child) {
-                    mesh.set_changed();
-                    mesh_tag.0 &= !SCENE_MATERIAL_OUTLINE_RED_MESH_TAG;
-                }
-            }
+            commands
+                .entity(old_target)
+                .try_remove::<Propagate<AvatarOutline>>();
         }
 
         if let Some(target) = pointer_target.0.as_ref() {
@@ -175,16 +183,9 @@ fn update_avatar_collider_actions(
                 // hilight meshes of target container
                 debug!("Highlighting avatar {}", target.container);
                 commands.set_state(AvatarHighlighted(true));
-                for child in children
-                    .iter_descendants(target.container)
-                    .chain([target.container])
-                {
-                    if let Ok((mut mesh, mut mesh_tag)) = meshes.get_mut(child) {
-                        trace!("Highlighting mesh {} of avatar {}", child, target.container);
-                        mesh.set_changed();
-                        mesh_tag.0 |= SCENE_MATERIAL_OUTLINE_RED_MESH_TAG;
-                    }
-                }
+                commands
+                    .entity(target.container)
+                    .try_insert(Propagate(AvatarOutline));
                 return;
             }
         }
@@ -261,6 +262,30 @@ fn send_message_to_scene(
             warn!("Profile has a bad address {}", profile.content.eth_address);
         }
     }
+}
+
+fn avatar_outline_on_add(
+    trigger: Trigger<OnAdd, AvatarOutline>,
+    mut meshes: Query<(&mut Mesh3d, &mut MeshTag), With<MeshMaterial3d<SceneMaterial>>>,
+) {
+    let entity = trigger.target();
+    let Ok((mut mesh_3d, mut mesh_tag)) = meshes.get_mut(entity) else {
+        return;
+    };
+    mesh_3d.set_changed();
+    mesh_tag.0 |= SCENE_MATERIAL_OUTLINE_RED_MESH_TAG;
+}
+
+fn avatar_outline_on_remove(
+    trigger: Trigger<OnRemove, AvatarOutline>,
+    mut meshes: Query<(&mut Mesh3d, &mut MeshTag), With<MeshMaterial3d<SceneMaterial>>>,
+) {
+    let entity = trigger.target();
+    let Ok((mut mesh_3d, mut mesh_tag)) = meshes.get_mut(entity) else {
+        return;
+    };
+    mesh_3d.set_changed();
+    mesh_tag.0 &= !SCENE_MATERIAL_OUTLINE_RED_MESH_TAG;
 }
 
 fn handle_avatar_modifier_requests(
