@@ -607,6 +607,14 @@ struct SpawnedExtras {
     scene_initialized: bool,
     audio: Option<(Entity, f32)>,
     clip: Option<(AnimationNodeIndex, Handle<AnimationGraph>)>,
+    // Intended clip-start wall-time (`elapsed_secs - playtime`) captured when a seek was
+    // requested on the frame the prop scene was spawned. Spawning a prop defers the
+    // emote's play (we `continue` until the instance is ready), so a one-shot
+    // `playback_time` from the scene would otherwise be gone before it's applied. Storing
+    // the *start* time (rather than the raw seek) lets the deferred play resume at
+    // `elapsed_secs - start` — i.e. advanced by however long the prop took to load — so a
+    // slow load doesn't resume stale. Cleared when the avatar + prop finally play.
+    deferred_start: Option<f32>,
 }
 
 impl SpawnedExtras {
@@ -617,6 +625,7 @@ impl SpawnedExtras {
             scene_initialized: false,
             audio: None,
             clip: None,
+            deferred_start: None,
         }
     }
 }
@@ -644,11 +653,20 @@ fn play_current_emote(
     mut playing: Local<HashMap<Entity, EmoteUrn>>,
     ipfas: IpfsAssetServer,
     mut cached_gltf_handles: Local<HashSet<Handle<Gltf>>>,
-    mut spawned_extras: Local<HashMap<Entity, SpawnedExtras>>,
+    // spawned_extras: prop/audio for the current clip. retiring_extras: prop kept alive
+    // across a clip change until its replacement is visible (or the new clip has no
+    // prop), so a prop carried by both clips (e.g. an embedded glider) doesn't blink out
+    // while the new scene loads — (wrapper entity, scene instance) keyed by avatar.
+    // Grouped as a tuple to stay within Bevy's per-system param limit.
+    (mut spawned_extras, mut retiring_extras): (
+        Local<HashMap<Entity, SpawnedExtras>>,
+        Local<HashMap<Entity, (Entity, InstanceId)>>,
+    ),
     mut scene_spawner: ResMut<SceneSpawner>,
-    (sounds, anim_clips): (
+    (sounds, anim_clips, time): (
         Res<Assets<bevy_kira_audio::AudioSource>>,
         Res<Assets<AnimationClip>>,
+        Res<Time>,
     ),
     mut emitters: Query<&mut AudioEmitter>,
     prop_details: Query<(Option<&Name>, &Transform, &ChildOf)>,
@@ -670,10 +688,18 @@ fn play_current_emote(
         // clean up old extras
         if let Some(extras) = prev_spawned_extras.remove(&entity) {
             if extras.urn != active_emote.urn {
+                // Defer despawning the old prop scene until its replacement is visible
+                // (or we learn the new clip has no prop) to avoid a one-frame gap while
+                // the new scene loads. Despawn any already-retiring prop first, so a
+                // rapid run of switches can't accumulate more than one.
                 if let Some((wrapper, scene)) = extras.scene {
-                    scene_spawner.despawn_instance(scene);
-                    if let Ok(mut commands) = commands.get_entity(wrapper) {
-                        commands.despawn();
+                    if let Some((old_wrapper, old_scene)) =
+                        retiring_extras.insert(entity, (wrapper, scene))
+                    {
+                        scene_spawner.despawn_instance(old_scene);
+                        if let Ok(mut commands) = commands.get_entity(old_wrapper) {
+                            commands.despawn();
+                        }
                     }
                 }
 
@@ -888,6 +914,16 @@ fn play_current_emote(
                     }
                     commands.entity(wrapper).try_insert(Visibility::Inherited);
                     extras.scene_initialized = true;
+                    // Replacement is up — and posed this same frame thanks to the
+                    // thread_animation_graphs ordering fix in the engine — so drop the
+                    // prop we kept alive across the switch. The overlap covers the new
+                    // prop's load time; the engine fix covers the would-be bind-pose frame.
+                    if let Some((old_wrapper, old_scene)) = retiring_extras.remove(&entity) {
+                        scene_spawner.despawn_instance(old_scene);
+                        if let Ok(mut commands) = commands.get_entity(old_wrapper) {
+                            commands.despawn();
+                        }
+                    }
                 }
 
                 if let Ok(Some(prop_clip)) = emote.prop_anim(&gltfs) {
@@ -920,11 +956,30 @@ fn play_current_emote(
                     .spawn((Transform::default(), Visibility::Hidden, ChildOf(entity)))
                     .id();
                 let scene = scene_spawner.spawn_as_child(props, wrapper);
-                spawned_extras
+                let extras = spawned_extras
                     .entry(entity)
-                    .or_insert_with(|| SpawnedExtras::new(active_emote.urn.clone()))
-                    .scene = Some((wrapper, scene));
+                    .or_insert_with(|| SpawnedExtras::new(active_emote.urn.clone()));
+                extras.scene = Some((wrapper, scene));
+                // Carry any seek requested this frame across the deferred play (below), so
+                // a one-shot scene `playback_time` isn't lost while the prop loads. Stash
+                // the intended clip-start time so the deferred play resumes advanced by
+                // the load duration rather than at the (now-stale) requested value.
+                extras.deferred_start = active_emote
+                    .pending_seek
+                    .map(|seek| time.elapsed_secs() - seek);
                 continue;
+            }
+        }
+
+        // New clip definitively has no prop — drop any prop kept alive across the switch
+        // (e.g. glide ended). `Err(Loading)` is left pending so we keep showing the old
+        // prop until we know.
+        if matches!(emote.prop_scene(&gltfs), Ok(None)) {
+            if let Some((old_wrapper, old_scene)) = retiring_extras.remove(&entity) {
+                scene_spawner.despawn_instance(old_scene);
+                if let Ok(mut commands) = commands.get_entity(old_wrapper) {
+                    commands.despawn();
+                }
             }
         }
 
@@ -1064,7 +1119,15 @@ fn play_current_emote(
                 (graph.add_clip(clip, 1.0, graph.root), 0.0)
             });
 
-        let pending_seek = active_emote.pending_seek.take();
+        // Prefer a seek requested this frame; otherwise apply one stashed when the prop
+        // was spawned (deferred a frame), advanced by the load duration via the stashed
+        // start time, so the avatar + prop pick up in phase regardless of load time.
+        let pending_seek = active_emote.pending_seek.take().or_else(|| {
+            spawned_extras
+                .get_mut(&entity)
+                .and_then(|extras| extras.deferred_start.take())
+                .map(|start| time.elapsed_secs() - start)
+        });
         let elapsed = play(
             transitions,
             &mut player,

@@ -240,6 +240,19 @@ pub struct SceneDrivenAnim {
     pub active: Option<SceneDrivenAnimationRequest>,
 }
 
+/// Build the render-only avatar tilt (lean) quaternion from pitch/roll in degrees.
+/// Composed as `Y * X * Z`, so `Quat::from_rotation_y(yaw) * avatar_tilt_quat(p, r)`
+/// equals `Quat::from_euler(EulerRot::YXZ, yaw, p_rad, r_rad)` — letting consumers recover
+/// the authoritative yaw with `to_euler(EulerRot::YXZ).0` even when tilt is present.
+pub fn avatar_tilt_quat(pitch_deg: f32, roll_deg: f32) -> bevy::math::Quat {
+    bevy::math::Quat::from_euler(
+        bevy::math::EulerRot::YXZ,
+        0.0,
+        pitch_deg.to_radians(),
+        roll_deg.to_radians(),
+    )
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct SceneDrivenAnimationRequest {
     // scene-relative path (e.g. "assets/walk.glb") — used for feedback to the controlling
