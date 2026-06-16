@@ -5,6 +5,7 @@ use bevy::log::debug;
 use common::{
     rpc::{RpcCall, RpcResultSender},
     structs::SceneMeta,
+    util::UrlLoopbackExt,
 };
 use deno_core::url::Url;
 use serde::Serialize;
@@ -45,7 +46,7 @@ pub async fn op_signed_fetch_headers(
 
     let is_preview = state.borrow().borrow::<CrdtContext>().preview;
     let url = Url::parse(&uri)?;
-    if !is_preview && !(["https", "wss"].contains(&url.scheme())) {
+    if !is_preview && !(["https", "wss"].contains(&url.scheme())) && !url.is_loopback() {
         anyhow::bail!("URL scheme must be `https` (request `{}`)", uri);
     }
 
