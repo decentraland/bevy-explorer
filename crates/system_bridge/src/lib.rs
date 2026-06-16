@@ -138,6 +138,7 @@ pub struct ProximityEvent {
 #[serde(rename_all = "camelCase")]
 pub struct SceneLoadingUi {
     pub visible: bool,
+    pub realm_connected: bool,
     pub title: String,
     pub pending_assets: Option<u32>,
 }

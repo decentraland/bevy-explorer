@@ -4,7 +4,7 @@ use bevy::{image::ImageLoaderSettings, prelude::*};
 use bevy_dui::{DuiEntities, DuiEntityCommandsExt, DuiProps};
 use common::{
     rpc::RpcStreamSender,
-    structs::{PrimaryUser, ZOrder},
+    structs::{CurrentRealm, PrimaryUser, ZOrder},
     util::TryPushChildrenEx,
 };
 use scene_runner::{
@@ -241,6 +241,7 @@ fn pipe_scene_loading_ui_stream(
     scenes: Query<(&RendererSceneContext, Option<&GltfLoadingCount>)>,
     mut senders: Local<Vec<RpcStreamSender<SceneLoadingUi>>>,
     mut last_state: Local<Option<SceneLoadingUi>>,
+    current_realm: Res<CurrentRealm>,
 ) {
     // Collect new stream subscribers
     senders.extend(requests.read().filter_map(|ev| {
@@ -267,12 +268,14 @@ fn pipe_scene_loading_ui_stream(
             get_scene_loading_info(player, time.elapsed_secs(), &containing_scene, &scenes);
         SceneLoadingUi {
             visible: true,
+            realm_connected: current_realm.connected,
             title,
             pending_assets,
         }
     } else {
         SceneLoadingUi {
             visible: false,
+            realm_connected: current_realm.connected,
             title: String::new(),
             pending_assets: None,
         }
