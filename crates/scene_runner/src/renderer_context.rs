@@ -68,6 +68,10 @@ pub struct RendererSceneContext {
 
     // time of last message sent to scene
     pub last_sent: f32,
+    // last player/camera transforms sent to the scene, used to delta-check
+    // without deserializing the stored crdt entry every frame
+    pub last_sent_player_transform: Option<Transform>,
+    pub last_sent_camera_transform: Option<Transform>,
     // time of last updates to bevy world from scene
     pub last_update_frame: u32,
     // currently running?
@@ -164,6 +168,8 @@ impl RendererSceneContext {
             unparented_entities: HashSet::new(),
             hierarchy_changed: false,
             last_sent: 0.0,
+            last_sent_player_transform: None,
+            last_sent_camera_transform: None,
             last_update_frame: 0,
             in_flight: false,
             broken: false,

@@ -351,6 +351,11 @@ pub(crate) fn process_crdt_lww_updates<
     <C as TryFrom<D>>::Error: std::fmt::Display,
 {
     for (_root, scene_context, mut updates, deleted_entities) in scenes.iter_mut() {
+        // avoid triggering change detection when there is nothing to do
+        if updates.last_write.is_empty() && deleted_entities.0.is_empty() {
+            continue;
+        }
+
         // remove crdt state for dead entities
         for deleted in &deleted_entities.0 {
             updates.last_write.remove(deleted);
@@ -417,6 +422,11 @@ fn process_crdt_go_updates<
     mut existing: Query<&mut C>,
 ) {
     for (_root, scene_context, mut updates, deleted_entities) in scenes.iter_mut() {
+        // avoid triggering change detection when there is nothing to do
+        if updates.0.is_empty() && deleted_entities.0.is_empty() {
+            continue;
+        }
+
         // remove crdt state for dead entities
         for deleted in &deleted_entities.0 {
             updates.0.remove(deleted);
