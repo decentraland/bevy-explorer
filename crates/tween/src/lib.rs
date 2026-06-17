@@ -97,9 +97,8 @@ impl Tween {
     ) {
         let f = self.easing_function();
 
-        let unbounded_continuous = self.is_continuous() && self.duration <= 0.;
-        let ease_value = if unbounded_continuous {
-            // unbounded continuous tween uses the full speed
+        let ease_value = if self.is_continuous() {
+            // continuous tween uses the full speed
             1.0
         } else {
             let factor = f(tween_apply_update.progress);
