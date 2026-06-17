@@ -3354,6 +3354,7 @@ dependencies = [
  "strum 0.27.2",
  "system_bridge",
  "tokio",
+ "url",
 ]
 
 [[package]]
