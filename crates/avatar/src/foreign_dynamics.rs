@@ -53,11 +53,7 @@ struct PlayerTargetPosition {
 fn update_foreign_user_target_position(
     mut commands: Commands,
     mut move_events: EventReader<PlayerPositionEvent>,
-    mut players: Query<(
-        &ForeignPlayer,
-        Option<&mut PlayerTargetPosition>,
-        Option<&SceneDrivenAnim>,
-    )>,
+    mut players: Query<(&ForeignPlayer, Option<&mut PlayerTargetPosition>)>,
 ) {
     for ev in move_events.read() {
         let dcl_transform = DclTransformAndParent {
@@ -69,7 +65,7 @@ fn update_foreign_user_target_position(
 
         let bevy_trans = dcl_transform.to_bevy_transform();
 
-        if let Ok((_player, maybe_pos, current_anim)) = players.get_mut(ev.player) {
+        if let Ok((_player, maybe_pos)) = players.get_mut(ev.player) {
             if let Some(mut pos) = maybe_pos {
                 let mut is_valid = false;
                 if ev.index.is_some_and(|eix| {
@@ -105,30 +101,26 @@ fn update_foreign_user_target_position(
                     // Apply-before-overwrite: if the previous event's scene_anim never
                     // reached its deadline, push it now so bursts of events (stalls,
                     // multi-event frames) don't silently drop one-shot seeks or
-                    // intermediate transitions. Skip when the component already holds
-                    // the same state — re-inserting would only churn change ticks.
-                    if !pos.anim_applied
-                        && current_anim.map(|c| &c.active) != Some(&pos.scene_anim)
-                    {
+                    // intermediate transitions.
+                    if !pos.anim_applied {
                         commands.entity(ev.player).try_insert(SceneDrivenAnim {
                             active: pos.scene_anim.clone(),
                         });
                     }
-                    pos.time = ev.time;
-                    pos.timestamp = ev.timestamp;
-                    pos.velocity = ev.velocity;
-                    pos.translation = bevy_trans.translation;
-                    pos.rotation = bevy_trans.rotation.normalize_or_identity();
-                    pos.index = ev.index;
-                    pos.update_freq = update_freq;
-                    pos.grounded = ev.grounded;
-                    pos.remote_move_kind = ev.remote_move_kind;
-                    // clone the (string-heavy) anim state only when it changed
-                    if pos.scene_anim != ev.scene_anim {
-                        pos.scene_anim = ev.scene_anim.clone();
+                    *pos = PlayerTargetPosition {
+                        time: ev.time,
+                        timestamp: ev.timestamp,
+                        velocity: ev.velocity,
+                        translation: bevy_trans.translation,
+                        rotation: bevy_trans.rotation.normalize_or_identity(),
+                        index: ev.index,
+                        update_freq,
+                        grounded: ev.grounded,
+                        remote_move_kind: ev.remote_move_kind,
+                        scene_anim: ev.scene_anim.clone(),
+                        anim_apply_at: ev.time + update_freq,
+                        anim_applied: false,
                     }
-                    pos.anim_apply_at = ev.time + update_freq;
-                    pos.anim_applied = false;
                 }
             } else {
                 commands.entity(ev.player).try_insert((
@@ -160,15 +152,12 @@ fn update_foreign_user_actual_position(
         &mut PlayerTargetPosition,
         &mut Transform,
         &mut AvatarDynamicState,
-        Option<&SceneDrivenAnim>,
     )>,
     mut scene_datas: Query<(&mut SceneColliderData, &GlobalTransform)>,
     containing_scene: ContainingScene,
     time: Res<Time>,
 ) {
-    for (foreign_ent, mut target, mut actual, mut dynamic_state, current_anim) in
-        avatars.iter_mut()
-    {
+    for (foreign_ent, mut target, mut actual, mut dynamic_state) in avatars.iter_mut() {
         debug!(
             "positioning foreign {foreign_ent:?}, target {}, current {}",
             target.translation, actual.translation
@@ -293,14 +282,9 @@ fn update_foreign_user_actual_position(
         // lands. `anim_apply_at` was set to `ev.time + update_freq` so it
         // tracks the same catch-up window as the position blend.
         if !target.anim_applied && time.elapsed_secs() >= target.anim_apply_at {
-            // only write the component when the state actually changed — at a
-            // steady 10Hz with no scene anim this otherwise re-inserts (and
-            // re-allocates) identical state on every packet
-            if current_anim.map(|c| &c.active) != Some(&target.scene_anim) {
-                commands.entity(foreign_ent).try_insert(SceneDrivenAnim {
-                    active: target.scene_anim.clone(),
-                });
-            }
+            commands.entity(foreign_ent).try_insert(SceneDrivenAnim {
+                active: target.scene_anim.clone(),
+            });
             target.anim_applied = true;
         }
     }

@@ -394,9 +394,6 @@ pub fn process_transport_updates(
     mut profile_meta_cache: ResMut<ProfileMetaCache>,
     mut duplicate_chat_filter: Local<HashMap<Entity, f64>>,
     mut last_remote_anim: Local<HashMap<Entity, CachedRemoteAnim>>,
-    // formatted-address cache; avoids a format!/alloc per packet that needs the
-    // sender's string form (bounded by unique addresses seen this session)
-    mut addr_cache: Local<HashMap<Address, String>>,
     discard_player_updates: Res<DiscardPlayerUpdates>,
 ) {
     // gather any event receivers
@@ -601,11 +598,13 @@ pub fn process_transport_updates(
                         }
                     }
                     PlayerMessage::PlayerData(Message::Scene(scene)) => {
-                        let address = addr_cache
-                            .entry(update.address)
-                            .or_insert_with(|| format!("{:#x}", update.address))
-                            .clone();
-                        process_messagebus(scene, address, &mut string_senders, &mut binary_senders);
+                        let address = format!("{:#x}", update.address);
+                        process_messagebus(
+                            scene,
+                            address,
+                            &mut string_senders,
+                            &mut binary_senders,
+                        );
                     }
                     PlayerMessage::PlayerData(Message::Voice(_)) => (),
                     PlayerMessage::PlayerData(Message::Movement(m)) => {
@@ -665,7 +664,6 @@ pub fn process_transport_updates(
                         let scene_anim = resolve_remote_anim(
                             entity,
                             update.address,
-                            &mut addr_cache,
                             &mut last_remote_anim,
                             m.scene_driven_animation,
                         );
@@ -684,19 +682,19 @@ pub fn process_transport_updates(
                     }
                     PlayerMessage::PlayerData(Message::MovementCompressed(mut m)) => {
                         debug!("movement compressed data: {m:?}");
-                        let scene_anim = resolve_remote_anim(
-                            entity,
-                            update.address,
-                            &mut addr_cache,
-                            &mut last_remote_anim,
-                            m.scene_driven_animation.take(),
-                        );
                         // Compose the render-only lean on top of yaw; absent/old senders → upright.
+                        // Read tilt before `take()` below empties the field.
                         let tilt = m
                             .scene_driven_animation
                             .as_ref()
                             .map(|s| avatar_tilt_quat(s.tilt_pitch(), s.tilt_roll()))
                             .unwrap_or(Quat::IDENTITY);
+                        let scene_anim = resolve_remote_anim(
+                            entity,
+                            update.address,
+                            &mut last_remote_anim,
+                            m.scene_driven_animation.take(),
+                        );
                         let movement = MovementCompressed::from_proto(m);
                         let pos = movement.position(state.realm_bounds.0, state.realm_bounds.1);
                         let vel = movement.velocity();
@@ -795,7 +793,6 @@ pub struct CachedRemoteAnim {
 fn resolve_remote_anim(
     entity: Entity,
     sender: Address,
-    addr_cache: &mut HashMap<Address, String>,
     last_anims: &mut HashMap<Entity, CachedRemoteAnim>,
     anim: Option<dcl_component::proto_components::kernel::comms::rfc4::SceneDrivenAnimation>,
 ) -> Option<SceneDrivenAnimationRequest> {
@@ -809,11 +806,9 @@ fn resolve_remote_anim(
     // present and match the packet sender; anything else is either a mirror or a
     // sender that predates this field and is therefore also potentially a mirror
     // victim. Be strict and drop it.
-    let sender_str = addr_cache
-        .entry(sender)
-        .or_insert_with(|| format!("{sender:#x}"));
+    let sender_str = format!("{sender:#x}");
     match anim.origin_address.as_deref() {
-        Some(origin) if origin.eq_ignore_ascii_case(sender_str) => {}
+        Some(origin) if origin.eq_ignore_ascii_case(&sender_str) => {}
         _ => {
             debug!(
                 "dropping scene_driven_animation without matching origin_address: origin={:?} sender={}",
