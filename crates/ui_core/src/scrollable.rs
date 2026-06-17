@@ -1,6 +1,9 @@
 use bevy::{
-    platform::collections::HashMap, prelude::*, transform::TransformSystem,
-    ui::CameraCursorPosition, window::PrimaryWindow,
+    platform::collections::HashMap,
+    prelude::*,
+    transform::TransformSystem,
+    ui::CameraCursorPosition,
+    window::{PrimaryWindow, WindowResized},
 };
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
 use common::{
@@ -257,6 +260,7 @@ fn update_scrollables(
             Entity,
             &ScrollBar,
             &mut Node,
+            &mut NodeBounds,
             &Interaction,
             &ComputedNode,
             &GlobalTransform,
@@ -264,9 +268,13 @@ fn update_scrollables(
         ),
         (Without<Scrollable>, Without<Slider>),
     >,
-    mut sliders: Query<(Entity, &mut Slider, &mut Node), (Without<Scrollable>, Without<ScrollBar>)>,
+    mut sliders: Query<
+        (Entity, &mut Slider, &mut Node, &mut NodeBounds),
+        (Without<Scrollable>, Without<ScrollBar>),
+    >,
     mut clicked_slider: Local<Option<Entity>>,
     mut clicked_scrollable: Local<Option<(Entity, Vec2)>>,
+    mut resize_events: EventReader<WindowResized>,
     mut events: EventReader<ScrollTargetEvent>,
     cursors: Query<(Entity, &CameraCursorPosition)>,
     mut input_manager: InputManager,
@@ -311,6 +319,12 @@ fn update_scrollables(
     let scale_factor = window.scale_factor();
 
     let bar_width = (window.width().min(window.height()) * 0.02).ceil();
+
+    // the bar thickness and track length are derived from the window size, but bar/slider
+    // geometry is only recomputed when `redraw` fires. A resize on its own doesn't necessarily
+    // change a scrollable's own node/transform, so force a redraw on any window resize, otherwise
+    // the bars keep their pre-resize dimensions (issue #832).
+    let window_resized = resize_events.read().count() > 0;
 
     let window_cursor_position = window.cursor_position().unwrap_or(Vec2::NEG_ONE);
     let manual_cursor_positions: HashMap<_, _> = cursors.iter().collect();
@@ -441,7 +455,8 @@ fn update_scrollables(
         // the reported content-size is rounded, and occasionally repositioning when it changes causes a loop of +/- 1 pixel
         // so we allow 1 pixel tolerance (new content smaller) before redrawing
         let change = scrollable.content_size - child_size;
-        let redraw = ref_transform.is_changed()
+        let redraw = window_resized
+            || ref_transform.is_changed()
             || ref_node.is_changed()
             || change.max_element() > 0.0
             || change.min_element() < -1.0;
@@ -532,7 +547,7 @@ fn update_scrollables(
     }
 
     // bars
-    for (entity, bar, mut style, interaction, node, transform, maybe_target_camera) in
+    for (entity, bar, mut style, mut bounds, interaction, node, transform, maybe_target_camera) in
         bars.iter_mut()
     {
         let source = if bar.vertical {
@@ -563,6 +578,10 @@ fn update_scrollables(
                 style.width = Val::Px(info.length);
                 style.height = Val::Px(bar_width);
             }
+            // corner/border sizes are derived from bar_width, which tracks the window size; refresh
+            // them too (they were otherwise only set at creation, so a resize left them stale).
+            bounds.corner_size = Val::Px(bar_width * 0.5);
+            bounds.border_size = Val::Px(bar_width * 0.125);
         }
 
         let Some(cursor_position) = cursor_position(maybe_target_camera) else {
@@ -595,7 +614,7 @@ fn update_scrollables(
     }
 
     // sliders
-    for (entity, mut slider, mut style) in sliders.iter_mut() {
+    for (entity, mut slider, mut style, mut bounds) in sliders.iter_mut() {
         let source = if slider.vertical {
             &mut vertical_scrollers
         } else {
@@ -645,6 +664,10 @@ fn update_scrollables(
                 style.left = Val::Px(slider_start);
                 style.top = Val::Px(info.bar_position.y);
             }
+            // refresh the bar_width-derived corner/border (otherwise only set at creation, so a
+            // window resize left them stale).
+            bounds.corner_size = Val::Px(bar_width * 0.5);
+            bounds.border_size = Val::Px(bar_width * 0.25);
 
             // re-paginate content
             let mut style = nodes.get_mut(info.content).unwrap().1;

@@ -1544,7 +1544,13 @@ pub fn process_scene_lifecycle(
             .map(|(h, u)| ((h, u), false)),
     );
 
-    // add any portables to requirements
+    // add any portables to requirements. Portables are exempt from the
+    // current-scene deferral below (see `retain`) so they load immediately
+    // instead of queueing behind the spawn-point parcel scene at startup.
+    let portable_ids: HashSet<(String, Option<String>)> = portables
+        .iter()
+        .map(|(hash, source)| (hash.clone(), Some(source.pid.clone())))
+        .collect();
     required_scene_ids.extend(
         portables
             .iter()
@@ -1635,7 +1641,10 @@ pub fn process_scene_lifecycle(
         {
             defer_to_current_scene = true;
             // if the current scene is not even spawned, spawn only that scene
-            required_scene_ids.retain(|scene, super_user| *super_user || (scene == &current_scene));
+            // (plus super-user scenes and portables, which are exempt).
+            required_scene_ids.retain(|scene, super_user| {
+                *super_user || scene == &current_scene || portable_ids.contains(scene)
+            });
         }
     }
     // publish for imposter loading: defer while the current scene is loading

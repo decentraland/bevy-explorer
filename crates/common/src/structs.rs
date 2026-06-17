@@ -1392,6 +1392,7 @@ impl Default for ParcelGrassConfig {
 pub struct CurrentRealm {
     pub about_url: String,
     pub address: String,
+    pub connected: bool,
     pub config: ServerConfiguration,
     pub comms: Option<CommsConfig>,
     pub public_url: String,

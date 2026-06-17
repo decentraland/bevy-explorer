@@ -177,10 +177,11 @@ impl Tween {
                 }
             }
             Some(Mode::RotateContinuous(data)) => {
-                let axis = {
-                    let dcl_quat = data.direction.unwrap();
-                    let (axis, _) = dcl_quat.to_bevy_normalized().to_axis_angle();
-                    axis
+                let Some((axis, _)) = data
+                    .direction
+                    .map(|dcl_quat| dcl_quat.to_bevy_normalized().to_axis_angle())
+                else {
+                    return;
                 };
                 transform.rotation *= Quat::from_axis_angle(
                     axis,
@@ -188,18 +189,24 @@ impl Tween {
                 );
             }
             Some(Mode::MoveContinuous(data)) => {
-                transform.translation += data.direction.unwrap().world_vec_to_vec3()
-                    * data.speed
-                    * ease_value
-                    * tween_apply_update.delta;
+                if let Some(direction) = data.direction {
+                    transform.translation += direction.world_vec_to_vec3()
+                        * data.speed
+                        * ease_value
+                        * tween_apply_update.delta;
+                }
             }
             Some(Mode::TextureMoveContinuous(data)) => {
                 let Some(material) = maybe_mat else {
                     return;
                 };
 
-                let dcl_vec2 = data.direction.unwrap();
-                let direction = Vec2::new(dcl_vec2.x, dcl_vec2.y);
+                let Some(direction) = data
+                    .direction
+                    .map(|dcl_vec2| Vec2::new(dcl_vec2.x, dcl_vec2.y))
+                else {
+                    return;
+                };
 
                 match data.movement_type() {
                     TextureMovementType::TmtOffset => {
