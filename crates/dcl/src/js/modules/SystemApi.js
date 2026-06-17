@@ -549,7 +549,7 @@ module.exports.social = {
 // get scene loading UI state as a stream
 // type SceneLoadingUi = {
 //   visible: boolean,
-//   realm_connected: bool,
+//   realmConnected: boolean,
 //   title: string,
 //   pendingAssets: number | null,
 // }
