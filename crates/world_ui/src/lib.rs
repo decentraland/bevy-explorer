@@ -222,7 +222,7 @@ pub fn add_worldui_materials(
     }
 }
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn update_worldui_materials(
     changed: Query<
         &WorldUiMaterialRef,
