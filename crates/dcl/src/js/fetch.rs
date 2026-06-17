@@ -7,8 +7,8 @@ use common::{
     structs::SceneMeta,
     util::UrlLoopbackExt,
 };
-use deno_core::url::Url;
 use serde::Serialize;
+use url::Url;
 
 use crate::{
     interface::crdt_context::CrdtContext,
