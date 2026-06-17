@@ -120,6 +120,14 @@ fn setup(
     font_system
         .db_mut()
         .load_font_data(include_bytes!("NotoColorEmoji.ttf").to_vec());
+    // Pre-register a broad-coverage fallback so glyphs missing from the primary
+    // font (e.g. geometric shapes like U+25BC ▼) resolve on first paint. Fonts
+    // loaded via the AssetServer only enter the cosmic-text db when a span first
+    // uses them, so without this they are absent from the fallback scan during a
+    // text element's initial layout and render as tofu until the value changes.
+    font_system.db_mut().load_font_data(
+        include_bytes!("../../assets/src/assets/fonts/NotoSansMono-Regular.ttf").to_vec(),
+    );
 
     // tracker.load_asset(asset_server.load_folder("ui"));
     tracker.load_asset(asset_server.load::<DuiNodeList>("embedded://ui/app_settings.dui"));
