@@ -81,11 +81,8 @@ fn login(
 
     if !*motd_shown {
         // don't block the main thread on the github release check
-        let task = update_check.get_or_insert_with(|| {
-            bevy::tasks::IoTaskPool::get().spawn(check_update())
-        });
-        let Some(update) = futures_lite::future::block_on(futures_lite::future::poll_once(task))
-        else {
+        let task = update_check.get_or_insert_with(|| IoTaskPool::get().spawn(check_update()));
+        let Some(update) = task.complete() else {
             return;
         };
         *update_check = None;
