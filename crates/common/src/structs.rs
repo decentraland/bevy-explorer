@@ -1161,7 +1161,7 @@ pub struct StartupScenes {
     pub scenes: Vec<StartupScene>,
 }
 
-#[derive(Resource, Default, Clone, Debug)]
+#[derive(Resource, Default, Clone, Debug, PartialEq)]
 pub struct SceneGlobalLight {
     pub source: Option<Entity>,
     pub dir_color: Color,

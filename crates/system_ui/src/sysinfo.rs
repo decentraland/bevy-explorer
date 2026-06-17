@@ -257,14 +257,21 @@ fn update_scene_load_state(
         let mut ix = 0;
         let children = q_children.get(sysinfo).unwrap();
         let mut set_child = |value: String| {
-            if value.is_empty() {
-                style.get_mut(children[ix]).unwrap().display = Display::None;
+            // avoid touching Node/Text when unchanged - any write triggers relayout
+            let display = if value.is_empty() {
+                Display::None
             } else {
-                style.get_mut(children[ix]).unwrap().display = Display::Flex;
+                Display::Flex
+            };
+            let mut style = style.get_mut(children[ix]).unwrap();
+            if style.display != display {
+                style.display = display;
             }
             let container = q_children.get(children[ix]).unwrap();
             let mut text = text.get_mut(container[1]).unwrap();
-            text.0 = value;
+            if text.0 != value {
+                text.0 = value;
+            }
             ix += 1;
         };
 
@@ -483,15 +490,22 @@ fn update_minimap(
 
     if let Ok(components) = q.single() {
         if let Ok(mut map) = maps.get_mut(components.named("map-node")) {
-            map.center = map_center;
+            if map.center != map_center {
+                map.center = map_center;
+            }
         }
 
         if let Ok(mut text) = text.get_mut(components.named("title")) {
-            text.0 = title;
+            if text.0 != title {
+                text.0 = title;
+            }
         }
 
         if let Ok(mut text) = text.get_mut(components.named("position")) {
-            text.0 = format!("({},{})   {sdk}   {state}", parcel.x, parcel.y);
+            let position = format!("({},{})   {sdk}   {state}", parcel.x, parcel.y);
+            if text.0 != position {
+                text.0 = position;
+            }
         }
     }
 }

@@ -284,7 +284,10 @@ fn update_map_data(
             .and_then(|c| c.first())
             .and_then(|c| text.get_mut(*c).ok())
         {
-            text.0 = format!("({},{})", parcel.x, parcel.y + 1);
+            let value = format!("({},{})", parcel.x, parcel.y + 1);
+            if text.0 != value {
+                text.0 = value;
+            }
         }
     }
 }

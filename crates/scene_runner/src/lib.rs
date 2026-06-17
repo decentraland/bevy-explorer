@@ -518,6 +518,16 @@ pub fn parcel_to_vec3(parcel: IVec2) -> Vec3 {
 }
 
 impl ContainingScene<'_, '_> {
+    // true if the set/placement of scenes changed this frame (pointer grid, live scenes,
+    // portables). NOTE: this does NOT track entity movement — the `get*`/`get_area` lookups that
+    // map an entity position to a scene also depend on that entity's GlobalTransform, so callers
+    // gating on this must additionally detect the relevant position changing themselves.
+    pub fn scene_layout_changed(&self) -> bool {
+        self.pointers.is_changed()
+            || self.live_scenes.is_changed()
+            || self.portable_scenes.is_changed()
+    }
+
     // just the parcel at the position
     pub fn get_parcel_position(&self, position: Vec3) -> Option<Entity> {
         let parcel = vec3_to_parcel(position);
