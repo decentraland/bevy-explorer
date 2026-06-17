@@ -1,6 +1,9 @@
 use std::{cell::RefCell, rc::Rc};
 
-use common::rpc::{RpcCall, RpcResultSender};
+use common::{
+    rpc::{RpcCall, RpcResultSender},
+    util::UrlLoopbackExt,
+};
 use deno_core::{anyhow, error::AnyError, op2, ByteString, OpDecl, OpState, ResourceId};
 use deno_websocket::{CreateResponse, WebSocketPermissions};
 
@@ -24,7 +27,7 @@ impl WebSocketPermissions for WebSocketPerms {
         // scene permissions must be handled asynchronously, so we check them in op_ws_create
         // (which we replace with our own op)
         // must use `wss`
-        if self.preview || url.scheme() == "wss" {
+        if self.preview || url.scheme() == "wss" || url.is_loopback() {
             Ok(())
         } else {
             Err(anyhow::anyhow!("URL scheme must be `wss`"))

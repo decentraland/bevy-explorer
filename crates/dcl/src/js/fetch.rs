@@ -5,9 +5,10 @@ use bevy::log::debug;
 use common::{
     rpc::{RpcCall, RpcResultSender},
     structs::SceneMeta,
+    util::UrlLoopbackExt,
 };
-use http::Uri;
 use serde::Serialize;
+use url::Url;
 
 use crate::{
     interface::crdt_context::CrdtContext,
@@ -44,9 +45,8 @@ pub async fn op_signed_fetch_headers(
     debug!("op_signed_fetch_headers");
 
     let is_preview = state.borrow().borrow::<CrdtContext>().preview;
-    let scheme = Uri::try_from(&uri)?;
-    let scheme = scheme.scheme_str();
-    if !is_preview && !([Some("https"), Some("wss")].contains(&scheme)) {
+    let url = Url::parse(&uri)?;
+    if !is_preview && !(["https", "wss"].contains(&url.scheme())) && !url.is_loopback() {
         anyhow::bail!("URL scheme must be `https` (request `{}`)", uri);
     }
 
