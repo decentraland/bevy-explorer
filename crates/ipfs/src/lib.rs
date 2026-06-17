@@ -901,7 +901,9 @@ impl IpfsIo {
             }
         }
 
-        self.update_scene_urns(&mut about, &new_realm).await?;
+        if let Err(e) = self.update_scene_urns(&mut about, &new_realm).await {
+            error!("failed to update scene urns: {e}");
+        }
 
         let mut write = self.context.write().await;
         if let (Some(cs), Some(content)) = (&content_server_override, about.content.as_mut()) {
