@@ -9667,6 +9667,7 @@ dependencies = [
  "console",
  "dcl",
  "dcl_component",
+ "input_manager",
  "ipfs",
  "platform",
  "prost 0.11.9",

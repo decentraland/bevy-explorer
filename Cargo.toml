@@ -18,13 +18,6 @@ name = "webgpu_build"
 default = ["livekit", "ffmpeg", "inspect", "social"]
 # default = ["wasm"]
 console = []
-# In-world scene editor render support (gizmo on-top overlay + DoF disable). OFF
-# by default so production builds compile WITHOUT this code — the engine is
-# provably unchanged. The editor web/desktop build enables it:
-# `wasm-pack build ... --features "livekit,social,editor"`. NB: the editor's
-# inspector/console-command backend (scene_inspector) is upstream and ships
-# unconditionally — only this render delta is gated.
-editor = ["scene_runner/editor"]
 dcl-assert = ["common/dcl-assert"]
 gen-tests = []
 tracy = ["bevy/trace_tracy"]

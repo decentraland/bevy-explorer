@@ -326,13 +326,17 @@ impl Plugin for SceneRunnerPlugin {
         app.add_systems(Update, update_scene_room.in_set(SceneSets::PostLoop));
         app.add_systems(Update, log_app_errors.in_set(SceneSets::PostLoop));
         app.add_systems(Update, set_ui_constraints.in_set(SceneSets::PostLoop));
-        // Editor-only render systems (gizmo/marker on-top overlay + DoF disable).
-        // Compiled in only under the `editor` feature — production is unchanged.
-        #[cfg(feature = "editor")]
-        {
-            app.add_systems(Update, mark_super_scene_overlay.in_set(SceneSets::PostLoop));
-            app.add_systems(Update, editor_disable_dof.in_set(SceneSets::PostLoop));
-        }
+        // Editor render systems (gizmo/marker on-top overlay + DoF disable). They
+        // ship in the single build but stay dormant: `run_if` keeps them off the
+        // schedule unless a super-user (editor) scene is loaded — so production
+        // scenes pay nothing (no per-frame work, no behaviour change). This mirrors
+        // how the inspector's console commands are inert until invoked.
+        app.add_systems(
+            Update,
+            (mark_super_scene_overlay, editor_disable_dof)
+                .in_set(SceneSets::PostLoop)
+                .run_if(any_with_component::<SuperUserScene>),
+        );
 
         app.add_systems(
             Update,
@@ -1199,7 +1203,6 @@ fn push_camera_fov_to_crdt(
 // the material with depth-test-off AND transparent blend (so it draws in the
 // transparent phase, after all opaque geometry) and assign the fresh handle.
 // Cached per source material so meshes sharing one material share one overlay.
-#[cfg(feature = "editor")]
 fn mark_super_scene_overlay(
     mut commands: Commands,
     super_scenes: Query<(), With<SuperUserScene>>,
@@ -1253,7 +1256,6 @@ fn mark_super_scene_overlay(
 // focuses ~50m past the avatar, blurring whatever you're editing (and the
 // depth-off gizmo overlay, which isn't in the prepass DoF samples). While an
 // editor scene is loaded, strip DoF from the primary camera.
-#[cfg(feature = "editor")]
 fn editor_disable_dof(
     mut commands: Commands,
     super_scenes: Query<(), With<SuperUserScene>>,
