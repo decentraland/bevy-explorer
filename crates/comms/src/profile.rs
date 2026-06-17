@@ -454,8 +454,7 @@ pub fn process_profile_events(
                     }
                     // flag for re-fetch when the announced version is ahead of
                     // what we hold (request_missing_profiles drains this set)
-                    if maybe_profile
-                        .is_some_and(|profile| player.profile_version > profile.version)
+                    if maybe_profile.is_some_and(|profile| player.profile_version > profile.version)
                     {
                         stale.0.insert(ev.sender);
                     }

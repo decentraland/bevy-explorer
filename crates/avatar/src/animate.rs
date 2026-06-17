@@ -1054,25 +1054,24 @@ fn play_current_emote(
                     active_emote: &ActiveEmote,
                     pending_seek: Option<f32>|
          -> f32 {
-            let active_animation =
-                if !urn_was_playing || active_emote.restart {
-                    let active_animation = match transitions {
-                        Some(mut t) => t.play(
-                            player,
-                            clip_ix,
-                            Duration::from_secs_f32(active_emote.transition_seconds),
-                        ),
-                        None => player.start(clip_ix),
-                    };
-                    debug!("starting clip {:?}", clip_ix);
-                    active_animation.seek_to(0.0);
-                    Some(active_animation)
-                } else {
-                    player
-                        .playing_animations_mut()
-                        .find(|(nix, _)| **nix == clip_ix)
-                        .map(|(_, anim)| anim)
+            let active_animation = if !urn_was_playing || active_emote.restart {
+                let active_animation = match transitions {
+                    Some(mut t) => t.play(
+                        player,
+                        clip_ix,
+                        Duration::from_secs_f32(active_emote.transition_seconds),
+                    ),
+                    None => player.start(clip_ix),
                 };
+                debug!("starting clip {:?}", clip_ix);
+                active_animation.seek_to(0.0);
+                Some(active_animation)
+            } else {
+                player
+                    .playing_animations_mut()
+                    .find(|(nix, _)| **nix == clip_ix)
+                    .map(|(_, anim)| anim)
+            };
 
             if let Some(active_animation) = active_animation {
                 if active_emote.repeat {
@@ -1131,9 +1130,7 @@ fn play_current_emote(
                     Some(graph) => graph.add_clip(clip, 1.0, graph.root),
                     None => AnimationNodeIndex::new(u32::MAX as usize),
                 };
-                clips
-                    .named
-                    .insert(active_emote.urn.to_string(), (ix, 0.0));
+                clips.named.insert(active_emote.urn.to_string(), (ix, 0.0));
                 ix
             }
         };
