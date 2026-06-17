@@ -96,6 +96,12 @@ fn update_avatar_colliders(
                 .collider_data
                 .update_collider_transform(&id, &transform);
         } else {
+            let collision_layers = if id.entity == SceneEntityId::PLAYER {
+                ColliderLayer::ClPlayer as u32 | ColliderLayer::ClMainPlayer as u32
+            } else {
+                ColliderLayer::ClPlayer as u32
+            };
+
             // collider didn't exist, make a new one
             let collider = ColliderBuilder::new(SharedShape::capsule_y(
                 (PLAYER_COLLIDER_HEIGHT * 0.5 - PLAYER_COLLIDER_RADIUS) as f64,
@@ -108,8 +114,8 @@ fn update_avatar_colliders(
                 Default::default(),
             ))
             .collision_groups(InteractionGroups {
-                memberships: Group::from_bits_truncate(ColliderLayer::ClPlayer as u32),
-                filter: Group::from_bits_truncate(ColliderLayer::ClPlayer as u32),
+                memberships: Group::from_bits_truncate(collision_layers),
+                filter: Group::from_bits_truncate(collision_layers),
                 test_mode: rapier3d_f64::prelude::InteractionTestMode::And,
             })
             .build();
