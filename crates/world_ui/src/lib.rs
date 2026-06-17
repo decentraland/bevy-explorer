@@ -67,15 +67,16 @@ impl FromWorld for WorldUiQuadMesh {
 
 /// conservative culling bounds from the same TextQuadData the vertex shader uses:
 /// |x| <= (0.5+|halign|)*region_w/ppm, |y| <= ((0.5+|valign|)*region_h+|add_y_pix|)/ppm.
-/// billboarded quads rotate freely around the origin, so use a half-diagonal cube,
-/// padded 2x because culling applies the entity scale that the billboard shader ignores.
+/// billboarded quads rotate freely around the origin, so use a half-diagonal cube;
+/// the shader applies the entity's x/y scale, so culling (which transforms this aabb
+/// by the full model) agrees and no extra padding is needed.
 fn world_ui_quad_aabb(data: &TextQuadData) -> Aabb {
     let region = (data.uvs.zw() - data.uvs.xy()).abs();
     let pix_per_m = data.pix_per_m.abs().max(1e-3);
     let half_x = (0.5 + data.halign.abs()) * region.x / pix_per_m;
     let half_y = ((0.5 + data.valign.abs()) * region.y + data.add_y_pix.abs()) / pix_per_m;
     if data.vertex_billboard != 0 {
-        let radius = (half_x * half_x + half_y * half_y).sqrt() * 2.0;
+        let radius = (half_x * half_x + half_y * half_y).sqrt();
         Aabb {
             center: Vec3A::ZERO,
             half_extents: Vec3A::splat(radius.max(0.01)),
