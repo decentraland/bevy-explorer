@@ -40,33 +40,37 @@ impl Plugin for InteractStylePlugin {
         // hovered/pressed (the pressed state depends on global input state)
         app.add_systems(
             Update,
-            set_interaction_style.run_if(
-                |changed: Query<
-                    (),
-                    (
-                        With<InteractStyles>,
-                        Or<(
-                            Changed<InteractStyles>,
-                            Changed<Interaction>,
-                            Changed<Active>,
-                            Changed<Enabled>,
-                            Changed<UiActionPriority>,
-                            Changed<BackgroundColor>,
-                            Changed<BorderColor>,
-                            Changed<Ui9Slice>,
-                            Changed<ImageNode>,
-                            Changed<BoundedNode>,
-                            Changed<NodeBounds>,
-                        )>,
-                    ),
-                >,
-                 interactions: Query<&Interaction, With<InteractStyles>>| {
-                    !changed.is_empty()
-                        || interactions.iter().any(|i| i != &Interaction::None)
-                },
-            ),
+            set_interaction_style.run_if(interaction_style_dirty),
         );
     }
+}
+
+// run condition for `set_interaction_style`: a style input (or styled target) changed, or some
+// node is still hovered/pressed (the pressed style tracks global input state, not a component).
+#[allow(clippy::type_complexity)]
+fn interaction_style_dirty(
+    changed: Query<
+        (),
+        (
+            With<InteractStyles>,
+            Or<(
+                Changed<InteractStyles>,
+                Changed<Interaction>,
+                Changed<Active>,
+                Changed<Enabled>,
+                Changed<UiActionPriority>,
+                Changed<BackgroundColor>,
+                Changed<BorderColor>,
+                Changed<Ui9Slice>,
+                Changed<ImageNode>,
+                Changed<BoundedNode>,
+                Changed<NodeBounds>,
+            )>,
+        ),
+    >,
+    interactions: Query<&Interaction, With<InteractStyles>>,
+) -> bool {
+    !changed.is_empty() || interactions.iter().any(|i| i != &Interaction::None)
 }
 
 #[allow(clippy::type_complexity)]

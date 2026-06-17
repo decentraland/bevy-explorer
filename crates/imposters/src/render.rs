@@ -259,6 +259,14 @@ pub fn spawn_imposters(
 
     let origin = focus.origin * Vec2::new(1.0, -1.0);
 
+    // snap to the focused parcel's centre so tile selection is a deterministic function of the
+    // parcel cell (matching the recompute gate below). using the raw focus position would let the
+    // tile set drift up to a full parcel diagonal stale as the focus moves within one parcel, and
+    // would make the result depend on which edge the parcel was entered from. (the bake-request
+    // origin further down is intentionally left on the raw focus position.)
+    let origin_parcel = (origin / PARCEL_SIZE).floor().as_ivec2();
+    let origin = (origin_parcel.as_vec2() + 0.5) * PARCEL_SIZE;
+
     // record live parcels
     let current_imposter_scene = match &current_imposter_scene.0 {
         Some((PointerResult::Exists { hash, .. }, _)) => Some(hash),
@@ -289,7 +297,7 @@ pub fn spawn_imposters(
     // tile membership is parcel-granular, so we only need to recompute when the focus
     // crosses a parcel boundary (or scale/extents/live parcels/ingredients change).
     let run_state = (
-        (origin / PARCEL_SIZE).floor().as_ivec2(),
+        origin_parcel,
         focus.min_distance,
         focus.distance_scale,
         manager.pointers.min(),

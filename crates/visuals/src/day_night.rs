@@ -117,7 +117,7 @@ fn fetch_time_from_scene(
         .map(|(gt, oow)| (scene_runner::vec3_to_parcel(gt.translation()), oow));
     let any_removed = removed_times.read().next().is_some();
     removed_times.clear();
-    let dirty = containing_scene.is_changed()
+    let dirty = containing_scene.scene_layout_changed()
         || !added_times.is_empty()
         || any_removed
         || last_player_state.as_ref() != Some(&player_state);
@@ -181,7 +181,7 @@ fn fetch_time_from_skybox(
         .map(|(gt, oow)| (scene_runner::vec3_to_parcel(gt.translation()), oow));
     let any_removed = removed_times.read().next().is_some();
     removed_times.clear();
-    let dirty = containing_scene.is_changed()
+    let dirty = containing_scene.scene_layout_changed()
         || !added_times.is_empty()
         || any_removed
         || last_player_state.as_ref() != Some(&player_state);

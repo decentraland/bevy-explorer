@@ -149,11 +149,6 @@ fn apply_global_light(
     scene_global_light: Res<SceneGlobalLight>,
     mut prev: Local<(f32, SceneGlobalLight)>,
     mut cloud_dt: Local<f32>,
-    // note: Added<DistanceFog> would conflict with the `&mut DistanceFog` access in `cameras`,
-    // so new fog components are detected by counting instead
-    new_cameras: Query<(), Added<Camera3d>>,
-    fog_cameras: Query<(), (With<Camera3d>, With<DistanceFog>)>,
-    mut last_fog_count: Local<usize>,
     mut last_primary_distance: Local<f32>,
 ) {
     // the transition has settled once the previous output exactly matches the target
@@ -218,15 +213,20 @@ fn apply_global_light(
         .iter()
         .find_map(|(maybe_primary, _)| maybe_primary.map(|camera| camera.distance))
         .unwrap_or(0.0);
-    let fog_count = fog_cameras.iter().count();
+    // a (re)inserted DistanceFog fires `is_added` and must be written even when the light has
+    // settled. reading the tick through the existing `&mut` access avoids the query conflict an
+    // `Added<DistanceFog>` filter would have with `cameras`; `is_added` (not `is_changed`) is used
+    // because our own per-frame fog writes set `changed`, which would otherwise never let the gate
+    // re-engage.
+    let fog_added = cameras
+        .iter_mut()
+        .any(|(_, fog)| fog.is_some_and(|fog| fog.is_added()));
     let skip_writes = settled
         && !setting.is_changed()
         && !scene_distance.is_changed()
-        && new_cameras.is_empty()
-        && fog_count == *last_fog_count
+        && !fog_added
         && *last_primary_distance == primary_distance;
     *last_primary_distance = primary_distance;
-    *last_fog_count = fog_count;
 
     if skip_writes {
         prev.0 += time.delta_secs();
