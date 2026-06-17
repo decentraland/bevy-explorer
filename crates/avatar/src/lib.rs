@@ -1671,19 +1671,27 @@ fn set_avatar_visibility(
         })
         .map(|(t, ..)| (t.translation() - player_pos).length_squared())
         .collect::<Vec<_>>();
-    distances.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Less));
-    let cutoff = distances
-        .get(config.max_avatars)
-        .copied()
-        .unwrap_or(f32::MAX);
+    // only the (max_avatars)-th distance matters; partition instead of sorting
+    let cutoff = if distances.len() > config.max_avatars {
+        *distances
+            .select_nth_unstable_by(config.max_avatars, |a, b| {
+                a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Less)
+            })
+            .1
+    } else {
+        f32::MAX
+    };
 
     for (t, mut vis, maybe_layer) in q.iter_mut() {
         let is_root_layer = maybe_layer.is_none_or(|layer| layer.intersects(&default_layer));
-        *vis = if is_root_layer && (t.translation() - player_pos).length_squared() >= cutoff {
+        let new_vis = if is_root_layer && (t.translation() - player_pos).length_squared() >= cutoff
+        {
             Visibility::Hidden
         } else {
             Visibility::Inherited
         };
+        // avoid dirtying Visibility (and the propagation pass) when unchanged
+        vis.set_if_neq(new_vis);
     }
 }
 
