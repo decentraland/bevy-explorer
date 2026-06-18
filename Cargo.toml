@@ -150,6 +150,7 @@ reqwest = { version = "0.12", default-features = false, features = [
   "native-tls",
   "json",
   "blocking",
+  "stream",
 ] }
 kira = "0.9.6"
 zip = { version = "2", default-features = false }
@@ -181,6 +182,7 @@ async-trait = "0.1.68"
 fastrand = "2"
 rand = "0.8.5"
 futures-util = "0.3.28"
+futures-timer = "3"
 async-native-tls = { version = "0.5", features = ["runtime-async-std"] }
 boimp = { git = "https://github.com/robtfm/boimp", branch = "feat/composite-bake-via-storage-texture" }
 crc = "3"

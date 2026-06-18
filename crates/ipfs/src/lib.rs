@@ -1057,25 +1057,32 @@ impl IpfsIo {
                 IoTaskPool::get().spawn_compat(async move {
                     let active_url = active_url.ok_or(anyhow!("not connected"))?;
                     let body = serde_json::to_string(&ActiveEntitiesPointersRequest { pointers })?;
-                    let response = client
-                        .post(active_url)
-                        // pointer resolution is a small JSON call; bound it so a stalled
-                        // connection can't wedge the single-in-flight resolver forever
-                        // (request-level timeout is the only one honoured on wasm).
-                        .timeout(Duration::from_secs(10))
-                        .header("content-type", "application/json")
-                        .body(body)
-                        .send()
-                        .await?;
-
-                    if response.status() != StatusCode::OK {
-                        return Err(anyhow::anyhow!("status: {}", response.status()));
-                    }
-
-                    let active_entities = response
-                        .json::<ActiveEntitiesResponse>()
-                        .await
-                        .map_err(|e| anyhow::anyhow!(e))?;
+                    // Headers-phase timeout + body inactivity timeout (the total is
+                    // left unbounded, so a large-but-progressing response — e.g. bulk
+                    // scene resolution — isn't killed mid-transfer).
+                    let fetched = platform::fetch(
+                        client
+                            .post(active_url)
+                            .header("content-type", "application/json")
+                            .body(body)
+                            .send(),
+                        Duration::from_secs(30),
+                        Duration::from_secs(10),
+                    )
+                    .await
+                    .map_err(|e| match e {
+                        platform::FetchError::Headers => {
+                            anyhow!("timed out awaiting active-entities headers")
+                        }
+                        platform::FetchError::Send(e) => anyhow!(e),
+                        platform::FetchError::Status(s) => anyhow!("status: {s}"),
+                        platform::FetchError::Stalled => {
+                            anyhow!("active-entities response stalled")
+                        }
+                        platform::FetchError::Body(e) => anyhow!(e),
+                    })?;
+                    let active_entities: ActiveEntitiesResponse =
+                        serde_json::from_slice(&fetched.body).map_err(|e| anyhow!(e))?;
                     let mut res = Vec::default();
                     for entity in active_entities.0 {
                         let id = entity.id.as_ref().unwrap();
@@ -1609,10 +1616,7 @@ impl AssetReader for IpfsIo {
             let data = loop {
                 attempt += 1;
 
-                let request = self
-                    .client
-                    .get(&remote)
-                    .timeout(Duration::from_secs(5 + 300 * attempt));
+                let request = self.client.get(&remote);
 
                 // in wasm we add a custom header to allow the service worker to cache ipfs requests across content servers
                 #[cfg(target_arch = "wasm32")]
@@ -1632,16 +1636,44 @@ impl AssetReader for IpfsIo {
                     ))))
                 }))?;
 
-                let response = self.client.execute(request).await;
+                // Headers-phase timeout + body inactivity timeout; the total transfer
+                // time is unbounded, so a slow-but-progressing download is never
+                // killed — only a stall (no chunk for 10s) or a dead connection trips.
+                let fetched = platform::fetch(
+                    self.client.execute(request),
+                    Duration::from_secs(30),
+                    Duration::from_secs(10),
+                )
+                .await;
 
-                debug!("[{token:?}]: attempt {attempt}: request: {remote}, response: {response:?}");
+                debug!("[{token:?}]: attempt {attempt}: request: {remote}");
 
-                let response = match response {
-                    Err(e) if e.is_timeout() && attempt <= 3 => {
+                let fetched = match fetched {
+                    Ok(fetched) => fetched,
+                    Err(platform::FetchError::Headers) if attempt <= 3 => {
+                        warn!("[{token:?}] timeout awaiting headers for `{remote}`, retrying");
+                        continue;
+                    }
+                    Err(platform::FetchError::Stalled) if attempt <= 3 => {
+                        warn!("[{token:?}] stalled retrieving `{remote}`, retrying");
+                        continue;
+                    }
+                    Err(platform::FetchError::Send(e)) if e.is_timeout() && attempt <= 3 => {
                         warn!("[{token:?}] timeout requesting `{remote}`, retrying");
                         continue;
                     }
                     Err(e) => {
+                        let detail = match e {
+                            platform::FetchError::Headers => {
+                                "timed out awaiting headers".to_owned()
+                            }
+                            platform::FetchError::Stalled => "stalled (no data for 10s)".to_owned(),
+                            platform::FetchError::Send(e) => format!("server responded `{e}`"),
+                            platform::FetchError::Status(s) => {
+                                format!("server responded with status {s}")
+                            }
+                            platform::FetchError::Body(e) => format!("body stream error: {e}"),
+                        };
                         self.context
                             .write()
                             .await
@@ -1649,28 +1681,13 @@ impl AssetReader for IpfsIo {
                             .insert(remote.clone(), Instant::now());
                         return ipfs_io_read_state.send_failure(Err(AssetReaderError::Io(
                             Arc::new(std::io::Error::other(format!(
-                                "[{token:?}]: server responded `{e}` requesting `{remote}`"
+                                "[{token:?}] failed to retrieve `{remote}`: {detail}"
                             ))),
                         )));
                     }
-                    Ok(response) if !matches!(response.status(), StatusCode::OK) => {
-                        self.context
-                            .write()
-                            .await
-                            .failed_remotes
-                            .insert(remote.clone(), Instant::now());
-                        return ipfs_io_read_state.send_failure(Err(AssetReaderError::Io(
-                            Arc::new(std::io::Error::other(format!(
-                                "[{token:?}]: server responded with status {} requesting `{}`",
-                                response.status(),
-                                remote,
-                            ))),
-                        )));
-                    }
-                    Ok(response) => response,
                 };
 
-                if let Some(cache_control) = response.headers().get("cache-control") {
+                if let Some(cache_control) = fetched.headers.get("cache-control") {
                     if cache_control
                         .to_str()
                         .unwrap_or_default()
@@ -1680,27 +1697,7 @@ impl AssetReader for IpfsIo {
                     }
                 }
 
-                let data = response.bytes().await;
-
-                match data {
-                    Ok(data) => break data,
-                    Err(e) => {
-                        if e.is_timeout() && attempt <= 3 {
-                            warn!("[{token:?}] timeout retrieving `{remote}`, retrying");
-                            continue;
-                        }
-                        self.context
-                            .write()
-                            .await
-                            .failed_remotes
-                            .insert(remote.clone(), Instant::now());
-                        return ipfs_io_read_state.send_failure(Err(AssetReaderError::Io(
-                            Arc::new(std::io::Error::other(format!(
-                                "[{token:?}] failed to convert to bytes: `{remote}`: {e}"
-                            ))),
-                        )));
-                    }
-                }
+                break fetched.body;
             };
 
             if let (Some(hash), Some(cache_path)) = (hash, self.cache_path()) {

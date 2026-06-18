@@ -193,12 +193,10 @@ pub async fn load_imposter_remote(
         .replace("%", "%25");
     debug!("zip_url {zip_url}");
 
-    // Bulk imposter-zip download; generous total-timeout floor until the
-    // content-inactivity timeout (Tier 2) replaces it.
-    let request = client
-        .get(&zip_url)
-        .timeout(std::time::Duration::from_secs(120))
-        .build()?;
+    // Bulk imposter-zip download. No total request timeout: platform::fetch below
+    // bounds the connect+headers phase and the body by an inactivity timeout, so a
+    // slow-but-progressing download isn't killed.
+    let request = client.get(&zip_url).build()?;
     // Race the network fetch + body read against the cancel token. If the
     // owning `ImposterLoadTask` Component is dropped (entity despawn / out of
     // range), this future is dropped together with the `select!`, releasing
@@ -206,11 +204,26 @@ pub async fn load_imposter_remote(
     // to abort the in-flight browser fetch.
     let bytes = tokio::select! {
         fetched = async {
-            let response = ipfs.async_request(request, client).await?;
-            if response.status() != reqwest::StatusCode::OK {
-                return Ok(None);
-            }
-            Ok::<_, anyhow::Error>(Some(response.bytes().await?))
+            let fetched = match platform::fetch(
+                ipfs.async_request(request, client),
+                std::time::Duration::from_secs(30),
+                std::time::Duration::from_secs(10),
+            )
+            .await
+            {
+                Ok(fetched) => fetched,
+                // a missing imposter for this area is an expected 404
+                Err(platform::FetchError::Status(_)) => return Ok(None),
+                Err(platform::FetchError::Send(e)) => return Err(e),
+                Err(platform::FetchError::Headers) => {
+                    anyhow::bail!("imposter request timed out awaiting headers")
+                }
+                Err(platform::FetchError::Stalled) => {
+                    anyhow::bail!("imposter download stalled (no data for 10s)")
+                }
+                Err(platform::FetchError::Body(e)) => return Err(anyhow::anyhow!(e)),
+            };
+            Ok::<_, anyhow::Error>(Some(fetched.body))
         } => match fetched? {
             Some(bytes) => bytes,
             None => return Ok(()),
