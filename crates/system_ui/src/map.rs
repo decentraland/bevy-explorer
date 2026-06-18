@@ -202,7 +202,11 @@ fn set_map_content(
                         parcel,
                         IoTaskPool::get().spawn_compat(async move {
                             debug!("url: {url}");
-                            let response = client.get(url).send().await?;
+                            let response = client
+                                .get(url)
+                                .timeout(std::time::Duration::from_secs(10))
+                                .send()
+                                .await?;
                             response
                                 .json::<DiscoverPages>()
                                 .await

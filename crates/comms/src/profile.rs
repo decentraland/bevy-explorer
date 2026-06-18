@@ -571,6 +571,8 @@ async fn deploy_profile(
 
         ipfs.client()
             .post(url)
+            // multipart deploy carries profile snapshots, so allow more headroom
+            .timeout(std::time::Duration::from_secs(60))
             .header(
                 "Content-Type",
                 format!("multipart/form-data; boundary={}", prepared.boundary()),
@@ -604,6 +606,7 @@ pub async fn get_remote_profile(
     let response = ipfs
         .client()
         .post("https://asset-bundle-registry.decentraland.org/profiles")
+        .timeout(std::time::Duration::from_secs(10))
         .body(format!("{{ \"ids\": [\"{:#x}\"] }}", address))
         .header("content-type", "application/json")
         .send()

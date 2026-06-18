@@ -193,7 +193,12 @@ pub async fn load_imposter_remote(
         .replace("%", "%25");
     debug!("zip_url {zip_url}");
 
-    let request = client.get(&zip_url).build()?;
+    // Bulk imposter-zip download; generous total-timeout floor until the
+    // content-inactivity timeout (Tier 2) replaces it.
+    let request = client
+        .get(&zip_url)
+        .timeout(std::time::Duration::from_secs(120))
+        .build()?;
     // Race the network fetch + body read against the cancel token. If the
     // owning `ImposterLoadTask` Component is dropped (entity despawn / out of
     // range), this future is dropped together with the `select!`, releasing
