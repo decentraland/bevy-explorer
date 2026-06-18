@@ -1680,15 +1680,27 @@ impl AssetReader for IpfsIo {
                     }
                 }
 
-                let data = response.bytes().await;
+                // Read the body with an inactivity timeout rather than reading it
+                // whole: a stalled transfer trips in 30s of no data instead of
+                // waiting out the (generous) total timeout above, while a
+                // slow-but-progressing download is never killed.
+                let data = platform::read_to_end_idle(response, Duration::from_secs(30)).await;
 
                 match data {
                     Ok(data) => break data,
+                    Err(platform::IdleReadError::Idle) if attempt <= 3 => {
+                        warn!("[{token:?}] stalled retrieving `{remote}`, retrying");
+                        continue;
+                    }
+                    Err(platform::IdleReadError::Http(e)) if e.is_timeout() && attempt <= 3 => {
+                        warn!("[{token:?}] timeout retrieving `{remote}`, retrying");
+                        continue;
+                    }
                     Err(e) => {
-                        if e.is_timeout() && attempt <= 3 {
-                            warn!("[{token:?}] timeout retrieving `{remote}`, retrying");
-                            continue;
-                        }
+                        let detail = match e {
+                            platform::IdleReadError::Idle => "stalled (no data for 30s)".to_owned(),
+                            platform::IdleReadError::Http(e) => e.to_string(),
+                        };
                         self.context
                             .write()
                             .await
@@ -1696,7 +1708,7 @@ impl AssetReader for IpfsIo {
                             .insert(remote.clone(), Instant::now());
                         return ipfs_io_read_state.send_failure(Err(AssetReaderError::Io(
                             Arc::new(std::io::Error::other(format!(
-                                "[{token:?}] failed to convert to bytes: `{remote}`: {e}"
+                                "[{token:?}] failed to retrieve `{remote}`: {detail}"
                             ))),
                         )));
                     }

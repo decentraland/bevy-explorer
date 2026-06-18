@@ -193,8 +193,8 @@ pub async fn load_imposter_remote(
         .replace("%", "%25");
     debug!("zip_url {zip_url}");
 
-    // Bulk imposter-zip download; generous total-timeout floor until the
-    // content-inactivity timeout (Tier 2) replaces it.
+    // Bulk imposter-zip download; the body read below uses an inactivity timeout,
+    // so this total timeout is just a generous absolute backstop.
     let request = client
         .get(&zip_url)
         .timeout(std::time::Duration::from_secs(120))
@@ -210,7 +210,15 @@ pub async fn load_imposter_remote(
             if response.status() != reqwest::StatusCode::OK {
                 return Ok(None);
             }
-            Ok::<_, anyhow::Error>(Some(response.bytes().await?))
+            let bytes = platform::read_to_end_idle(response, std::time::Duration::from_secs(30))
+                .await
+                .map_err(|e| match e {
+                    platform::IdleReadError::Idle => {
+                        anyhow::anyhow!("imposter download stalled (no data for 30s)")
+                    }
+                    platform::IdleReadError::Http(e) => anyhow::anyhow!(e),
+                })?;
+            Ok::<_, anyhow::Error>(Some(bytes))
         } => match fetched? {
             Some(bytes) => bytes,
             None => return Ok(()),
