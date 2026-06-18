@@ -1059,6 +1059,10 @@ impl IpfsIo {
                     let body = serde_json::to_string(&ActiveEntitiesPointersRequest { pointers })?;
                     let response = client
                         .post(active_url)
+                        // pointer resolution is a small JSON call; bound it so a stalled
+                        // connection can't wedge the single-in-flight resolver forever
+                        // (request-level timeout is the only one honoured on wasm).
+                        .timeout(Duration::from_secs(10))
                         .header("content-type", "application/json")
                         .body(body)
                         .send()
@@ -1205,7 +1209,13 @@ impl IpfsIo {
                 continue;
             };
             loop {
-                if let Ok(resp) = self.client.get(&url).send().await {
+                if let Ok(resp) = self
+                    .client
+                    .get(&url)
+                    .timeout(Duration::from_secs(10))
+                    .send()
+                    .await
+                {
                     if resp.status().is_success() {
                         break;
                     }

@@ -237,6 +237,7 @@ fn connect_scene_room(
 
                 let mut request = client
                     .post(uri.to_string())
+                    .timeout(std::time::Duration::from_secs(10))
                     .header("Content-Type", "application/json");
                 for (k, v) in headers {
                     request = request.header(k, v);
