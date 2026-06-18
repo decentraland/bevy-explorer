@@ -111,6 +111,201 @@
         }
     })();
     </script>
+    <script>
+    // Runtime crash overlay, gated on the engine heartbeat.
+    //
+    // Uncaught exceptions (window 'error') and rejected promises
+    // ('unhandledrejection') are only *recorded as context* — many are non-fatal
+    // and the engine keeps running, so showing the overlay on every one would be a
+    // false positive. The real "is it actually dead" signal is the heartbeat: the
+    // Rust loop calls window.__engineHeartbeat() every frame (see web.rs). The
+    // watchdog shows the overlay only once frames have actually stopped — quickly
+    // if a recent error corroborates the stall, after a long timeout otherwise
+    // (which also catches silent deadlocks that throw nothing at all).
+    (function () {
+        var shown = false;
+        var lastError = null;      // { err, source, at } — most recent recorded error
+        var lastBeat = 0;          // timestamp of the last heartbeat
+        var beatsSeen = false;     // engine has produced at least one frame
+        var HANG_MS = 15000;       // silent stall (no corroborating error) before we show
+        var ERROR_CONFIRM_MS = 3000; // stall after a recent error before we show
+
+        function nowMs() {
+            return (window.performance && performance.now) ? performance.now() : Date.now();
+        }
+
+        function fmtBytes(n) {
+            if (!n && n !== 0) return '?';
+            var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            var i = 0;
+            while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+            return n.toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+        }
+
+        function errMessage(err) {
+            if (!err) return 'Unknown error';
+            if (typeof err === 'string') return err;
+            return err.message || err.stack || String(err);
+        }
+
+        // Best-effort guess at why we died: disk (storage quota) vs memory.
+        function describeCause(msg) {
+            var m = (msg || '').toLowerCase();
+            var diskHint = /quota|disk|storage|no space/.test(m);
+            var memHint = /memory|allocat|out of memory|\bgrow\b|oom|rust_oom/.test(m);
+            return Promise.resolve()
+                .then(function () {
+                    if (navigator.storage && navigator.storage.estimate) {
+                        return navigator.storage.estimate();
+                    }
+                    return null;
+                })
+                .then(function (est) {
+                    if (est && est.quota) {
+                        var ratio = est.usage / est.quota;
+                        if (diskHint || ratio > 0.9) {
+                            return 'You appear to be low on storage / disk space (' +
+                                fmtBytes(est.usage) + ' of ' + fmtBytes(est.quota) +
+                                ' used). Free up disk space, then reload.';
+                        }
+                    }
+                    if (memHint) {
+                        return 'This looks like an out-of-memory failure. Close other tabs or apps to free RAM, then reload.';
+                    }
+                    return 'This is often caused by running out of memory or disk space. Closing other tabs / apps and reloading may help.';
+                })
+                .catch(function () {
+                    return 'Closing other tabs / apps and reloading may help.';
+                });
+        }
+
+        function showCrashOverlay(err, source) {
+            if (shown) return;
+            shown = true;
+            var msg = errMessage(err);
+            console.error('[crash overlay]', source || 'error', err);
+
+            function render() {
+                var overlay = document.createElement('div');
+                overlay.id = 'crash-overlay';
+                overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;' +
+                    'align-items:center;justify-content:center;background:rgba(24,20,26,0.92);' +
+                    "font-family:'Inter',sans-serif;color:#fff;padding:1rem;";
+
+                var card = document.createElement('div');
+                card.style.cssText = 'max-width:560px;text-align:center;padding:2rem;' +
+                    'background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.15);border-radius:12px;';
+                card.innerHTML =
+                    '<h1 style="font-size:1.6rem;margin:0 0 0.75rem;">The world crashed</h1>' +
+                    '<p id="crash-cause" style="color:rgba(255,255,255,0.75);margin:0 0 1.25rem;">' +
+                        'The 3D engine stopped unexpectedly.</p>' +
+                    '<pre style="text-align:left;white-space:pre-wrap;word-break:break-word;' +
+                        'background:rgba(0,0,0,0.4);border-radius:6px;padding:0.75rem;' +
+                        'font-size:0.78rem;color:rgba(255,255,255,0.6);max-height:30vh;overflow:auto;margin:0 0 1.25rem;">' +
+                        msg.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre>';
+
+                var buttons = document.createElement('div');
+                buttons.style.cssText = 'display:flex;gap:0.75rem;justify-content:center;';
+
+                var reloadBtn = document.createElement('button');
+                reloadBtn.textContent = 'Reload';
+                reloadBtn.style.cssText = 'background:#FF2D55;color:#fff;border:none;border-radius:6px;' +
+                    'padding:12px 28px;font-size:1rem;font-weight:600;cursor:pointer;' +
+                    'margin:0;width:auto;display:inline-block;';
+                reloadBtn.onclick = function () { window.location.reload(); };
+
+                // Not every uncaught error actually kills the engine, so allow
+                // dismissing. Re-arm detection so a later genuine crash still shows.
+                var dismissBtn = document.createElement('button');
+                dismissBtn.textContent = 'Dismiss';
+                dismissBtn.style.cssText = 'background:rgba(255,255,255,0.1);color:#fff;' +
+                    'border:1px solid rgba(255,255,255,0.3);border-radius:6px;' +
+                    'padding:12px 28px;font-size:1rem;font-weight:600;cursor:pointer;' +
+                    'margin:0;width:auto;display:inline-block;';
+                dismissBtn.onclick = function () {
+                    overlay.remove();
+                    shown = false;
+                    // Re-arm: clear the stale error and pretend a fresh beat so we
+                    // don't immediately re-trigger. If the engine is genuinely dead
+                    // the heartbeat won't advance and the watchdog shows it again.
+                    lastError = null;
+                    lastBeat = nowMs();
+                };
+
+                buttons.appendChild(reloadBtn);
+                buttons.appendChild(dismissBtn);
+                card.appendChild(buttons);
+                overlay.appendChild(card);
+                document.body.appendChild(overlay);
+
+                describeCause(msg).then(function (text) {
+                    var el = document.getElementById('crash-cause');
+                    if (el) el.textContent = text;
+                });
+            }
+
+            if (document.body) {
+                render();
+            } else {
+                document.addEventListener('DOMContentLoaded', render);
+            }
+        }
+
+        // Record an error as context for the watchdog. Does NOT show the overlay —
+        // only a stalled heartbeat does that. Exposed so engine.js worker handlers
+        // can feed in worker crashes too.
+        function recordError(err, source) {
+            console.error('[engine error]', source || 'error', err);
+            lastError = { err: err, source: source || 'error', at: nowMs() };
+        }
+        window.reportEngineError = recordError;
+
+        // Heartbeat sink: the Rust loop calls this once per frame.
+        window.__engineHeartbeat = function () {
+            lastBeat = nowMs();
+            beatsSeen = true;
+        };
+
+        // Don't shadow the browser/mobile gate page.
+        if (!window.__browserGateBlocked) {
+            window.addEventListener('error', function (e) {
+                // Resource-load errors don't bubble to window via addEventListener
+                // (no capture), so anything we get here is a genuine uncaught exception.
+                recordError(e.error || e.message, 'error');
+            });
+            window.addEventListener('unhandledrejection', function (e) {
+                recordError(e.reason, 'unhandledrejection');
+            });
+        }
+
+        // Backgrounded tabs throttle rAF/timers, so the heartbeat legitimately
+        // stalls while hidden — reset on return to visible to avoid a false verdict.
+        document.addEventListener('visibilitychange', function () {
+            if (!document.hidden) lastBeat = nowMs();
+        });
+
+        // The watchdog: the only thing that actually shows the overlay.
+        setInterval(function () {
+            if (shown || !beatsSeen || document.hidden) return;
+            var stalled = nowMs() - lastBeat;
+            // A recent error (recorded around when frames stopped) corroborates a
+            // real crash, so we wait far less before showing it.
+            var corroborated = lastError && lastError.at >= lastBeat - 1000;
+            var threshold = corroborated ? ERROR_CONFIRM_MS : HANG_MS;
+            if (stalled <= threshold) return;
+
+            if (lastError) {
+                showCrashOverlay(lastError.err, lastError.source);
+            } else {
+                showCrashOverlay(
+                    'The engine stopped responding (no frames for ' +
+                    Math.round(stalled / 1000) + 's). It may have run out of memory, ' +
+                    'or a worker thread crashed and deadlocked the main thread.',
+                    'watchdog');
+            }
+        }, 2000);
+    })();
+    </script>
     <link rel="icon" type="image/png" href="favicon/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="favicon/favicon.svg" />
     <link rel="shortcut icon" href="favicon/favicon.ico" />
