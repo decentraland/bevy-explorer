@@ -34,7 +34,9 @@ use common::{
 };
 use common::{rpc::RpcCall, util::AsH160};
 use dcl_component::{
-    proto_components::{kernel::comms::rfc4, sdk::components::PbPlayerIdentityData},
+    proto_components::{
+        kernel::comms::rfc4, sdk::components::PbPlayerIdentityData, Color3DclToBevy,
+    },
     SceneComponentId, SceneEntityId,
 };
 use wallet::Wallet;
@@ -542,6 +544,8 @@ impl UserProfile {
     pub fn name_color(&self) -> Color {
         if !self.content.has_claimed_name {
             UNCLAIMED_NAME_COLOR
+        } else if let Some(custom_name_color) = self.content.name_color {
+            custom_name_color.color.convert_srgb()
         } else {
             name_color_from_address(
                 self.content
