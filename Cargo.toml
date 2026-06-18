@@ -359,11 +359,11 @@ deno_webstorage = { git = "https://github.com/robtfm/deno", branch = "1_46_hotfi
 # deno_webstorage = { path = "../deno/ext/webstorage" }
 
 winit = { git = "https://github.com/robtfm/winit", branch = "v0.30.x" }
-# local copy of the robtfm/wgpu 24.0.5-dcl branch with a fix: naga span
-# error reporting panicked instead of showing shader compile errors
-wgpu = { path = "../wgpu/wgpu" }
-wgpu-types = { path = "../wgpu/wgpu-types" }
-naga = { path = "../wgpu/naga" }
+# robtfm/wgpu 24.0.5-dcl branch + a fix: naga span error reporting panicked
+# instead of showing shader compile errors. (ToxSam fork; team may relocate.)
+wgpu = { git = "https://github.com/ToxSam/wgpu", rev = "0641d091b2affeda6375768d1567c06f5be43567" }
+wgpu-types = { git = "https://github.com/ToxSam/wgpu", rev = "0641d091b2affeda6375768d1567c06f5be43567" }
+naga = { git = "https://github.com/ToxSam/wgpu", rev = "0641d091b2affeda6375768d1567c06f5be43567" }
 
 # [patch."https://github.com/robtfm/bevy"]
 # bevy = { path = "../bevy-fork" }
@@ -377,7 +377,8 @@ naga = { path = "../wgpu/naga" }
 # [patch."https://github.com/robtfm/boimp"]
 # boimp = { path = "../boimp" }
 
-# local copy with a fix: don't panic when the atmosphere pipeline is
-# recompiling after a shader hot-reload
+# robtfm/bevy_atmosphere + fixes: don't panic during atmosphere pipeline
+# hot-reload, per-pixel stylized sky, cubemap clouds, cloud drift.
+# (ToxSam fork; team may relocate.)
 [patch."https://github.com/robtfm/bevy_atmosphere"]
-bevy_atmosphere = { path = "../bevy_atmosphere" }
+bevy_atmosphere = { git = "https://github.com/ToxSam/bevy_atmosphere", rev = "f50caf21c2c1cb6deb704b3a8d31f503075d5678" }
