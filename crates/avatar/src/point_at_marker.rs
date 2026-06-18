@@ -134,7 +134,14 @@ fn sync_markers(
             continue;
         };
 
-        let bg = name_color(address);
+        let bg = if profile
+            .filter(|profile| !profile.content.has_claimed_name)
+            .is_some()
+        {
+            Color::srgb(0.6, 0.6, 0.6)
+        } else {
+            name_color(address)
+        };
         commands.entity(root).with_children(|parent| {
             parent
                 .spawn((
