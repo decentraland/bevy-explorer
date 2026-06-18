@@ -1,3 +1,5 @@
+pub mod name_color;
+
 use std::{io::Read, path::PathBuf, sync::Arc};
 
 use anyhow::anyhow;
@@ -14,7 +16,10 @@ use multihash_codetable::MultihashDigest;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
-use crate::global_crdt::GlobalCrdtState;
+use crate::{
+    global_crdt::GlobalCrdtState,
+    profile::name_color::{name_color, UNCLAIMED_NAME_COLOR},
+};
 
 use super::{
     global_crdt::{process_transport_updates, ForeignPlayer, ProfileEvent, ProfileEventType},
@@ -532,6 +537,19 @@ impl UserProfile {
             .as_ref()
             .and_then(|s| s.rsplit(':').next())
             .is_none_or(|shape| shape.to_lowercase() == "basefemale")
+    }
+
+    pub fn name_color(&self) -> Color {
+        if !self.content.has_claimed_name {
+            UNCLAIMED_NAME_COLOR
+        } else {
+            name_color(
+                self.content
+                    .eth_address
+                    .as_h160()
+                    .unwrap_or(Address::zero()),
+            )
+        }
     }
 }
 

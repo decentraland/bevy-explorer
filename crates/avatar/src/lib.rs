@@ -40,7 +40,6 @@ pub mod foot_ik;
 pub mod foreign_dynamics;
 pub mod head_ik;
 pub mod mask_material;
-pub mod name_color;
 pub mod npc_dynamics;
 pub mod point_at_ik;
 pub mod point_at_marker;

@@ -6,12 +6,12 @@ use common::{
 };
 use comms::{
     global_crdt::ForeignPlayer,
-    profile::{ProfileManager, UserProfile},
+    profile::{name_color::name_color, ProfileManager, UserProfile},
 };
 use dcl_component::transform_and_parent::DclTranslation;
 use ethers_core::types::Address;
 
-use crate::{name_color::name_color, AvatarShape};
+use crate::AvatarShape;
 
 pub struct PointAtMarkerPlugin;
 
