@@ -8,6 +8,24 @@ import { initGpuCache } from "./gpu_cache.js";
 export { gpu_cache_hash, initGpuCache };
 
 /**
+ * Records an uncaught worker error as context for the crash watchdog. A worker
+ * thread that traps (panic / OOM) while holding a lock can deadlock the other
+ * shared-memory threads with no exception on the main thread; the resulting
+ * heartbeat stall is what actually surfaces the overlay, with this as the reason.
+ * @param {string} name - worker name for logging
+ * @returns {(e: ErrorEvent) => void}
+ */
+function workerCrashHandler(name) {
+  return (e) => {
+    if (window.reportEngineError) {
+      window.reportEngineError(e.message || `${name} worker crashed`, `${name} worker`);
+    } else {
+      console.error(`[Main JS] ${name} worker crashed`, e);
+    }
+  };
+}
+
+/**
  * Fetches a URL with download progress tracking.
  * @param {string} url - URL to fetch
  * @param {function} onProgress - Callback with percentage (0-100)
@@ -142,6 +160,7 @@ export async function initEngine() {
       const basePath = window.location.pathname.replace(/\/$/, ''); // removes trailing slash if present
       const sandboxWorkerPath = new URL(`${basePath}/sandbox_worker.js`, window.location.origin);
       var sandboxWorker = new Worker(sandboxWorkerPath, { type: "module" });
+      sandboxWorker.onerror = workerCrashHandler("sandbox");
 
       var timeoutCount = 0;
       let logTimeout = () => {
@@ -170,6 +189,7 @@ export async function initEngine() {
         if (workerEvent.data.type === "INIT_FAILED") {
           console.log("[Main JS] Sandbox init failed; retrying");
           sandboxWorker = new Worker(sandboxWorkerPath, { type: "module" });
+          sandboxWorker.onerror = workerCrashHandler("sandbox");
         }
       };
     }).finally(() => {
@@ -199,6 +219,7 @@ export async function initEngine() {
     const assetLoaderPath = new URL(`${basePath}/asset_loader.js`, window.location.origin);
 
     const assetLoader = new Worker(assetLoaderPath, { type: "module" });
+    assetLoader.onerror = workerCrashHandler("asset loader");
     assetLoader.onmessage = (workerEvent) => {
       if (workerEvent.data.type === "READY") {
         assetLoader.postMessage({
@@ -222,6 +243,7 @@ export async function initEngine() {
     const assetProcessorPath = new URL(`${basePath}/asset_processor.js`, window.location.origin);
 
     const assetProcessor = new Worker(assetProcessorPath, { type: "module" });
+    assetProcessor.onerror = workerCrashHandler("asset processor");
     assetProcessor.onmessage = (workerEvent) => {
       if (workerEvent.data.type === "READY") {
         assetProcessor.postMessage({

@@ -56,6 +56,12 @@ extern "C" {
 
     #[wasm_bindgen(js_name = "waitForPipelines")]
     fn wait_for_async_pipelines() -> js_sys::Promise;
+
+    /// Ping the JS-side watchdog once per frame. If these stop arriving (e.g. the
+    /// main thread is deadlocked waiting on a lock held by a crashed worker), the
+    /// watchdog surfaces the crash overlay. Defined in index.html before the engine runs.
+    #[wasm_bindgen(js_name = "__engineHeartbeat")]
+    fn engine_heartbeat();
 }
 
 /// call from a separate worker to initialize a channel for asset load processing
@@ -142,7 +148,8 @@ pub fn engine_run(
     app.insert_resource(text_bindings);
 
     app.add_systems(Update, update_winit_fps)
-        .add_systems(Update, update_url_params);
+        .add_systems(Update, update_url_params)
+        .add_systems(Last, engine_heartbeat_system);
 
     app.add_systems(
         Update,
@@ -233,6 +240,11 @@ fn extract_js_api(config: Res<ConsoleConfiguration>) {
         .collect();
     let json = serde_json::to_string(&commands).unwrap_or_default();
     build_engine_api(&json);
+}
+
+/// Pings the JS watchdog each frame so it can detect a stalled engine loop.
+fn engine_heartbeat_system() {
+    engine_heartbeat();
 }
 
 pub fn update_winit_fps(config: Res<AppConfig>, mut winit: ResMut<WinitSettings>) {
