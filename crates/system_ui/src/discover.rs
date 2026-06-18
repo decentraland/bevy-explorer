@@ -221,7 +221,11 @@ impl DiscoverSettings {
 
         let client = self.client.clone();
         self.task = Some(IoTaskPool::get().spawn_compat(async move {
-            let response = client.get(url).send().await?;
+            let response = client
+                .get(url)
+                .timeout(std::time::Duration::from_secs(10))
+                .send()
+                .await?;
 
             response
                 .json::<DiscoverPages>()
