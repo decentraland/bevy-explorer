@@ -349,14 +349,67 @@ pub fn init_noise(size: usize) -> Image {
     image
 }
 
-/// Build the sky color-cycle lookup texture from the godot-explorer
-/// gradients. x = time of day (0 = midnight .. 1), rows: 0 zenith,
-/// 1 horizon, 2 nadir, 3 sun (HDR), 4 rim (HDR), 5 cloud color (HDR),
-/// 6 cloud highlight factor. Rgba32Float, linear values.
-pub fn build_sky_lut() -> Image {
+/// Live tuning applied on top of the measured sky color gradients.
+/// `zenith`/`horizon`/`nadir` are per-zone RGB gains; `master` scales every
+/// zone together; `sat` boosts color vibrancy of the SKY ONLY (pushes each
+/// color away from its grey/luminance) to counter the washed-out look without
+/// touching the rest of the scene. Driven by the /skyzenith /skyhorizon
+/// /skynadir /skygain /skysat console commands; mutating any of these rebuilds
+/// the sky LUT (see `rebuild_sky_lut`).
+#[derive(Resource, Clone)]
+pub struct SkyColorTuning {
+    pub zenith: Vec3,
+    pub horizon: Vec3,
+    pub nadir: Vec3,
+    pub master: f32,
+    /// sky-only saturation: 1.0 = measured, >1 more vivid, <1 greyer
+    pub sat: f32,
+    /// cloud HORIZON-BAND mapping (see skybox.wgsl sample_cloud_panorama).
+    /// `cloud_horizon` = texture row that sits on the horizon (~0.47, the
+    /// cloud/ground boundary). `cloud_vscale` here means the band TOP: the
+    /// elevation (ray.y, 0 = horizon .. 1 = straight up) where the cloud band
+    /// ends — clear sky above it. keep it low (≈0.5) so clouds stay near the
+    /// horizon and never reach the stretch-prone zenith.
+    pub cloud_horizon: f32,
+    pub cloud_vscale: f32,
+}
+
+impl Default for SkyColorTuning {
+    fn default() -> Self {
+        Self {
+            zenith: Vec3::ONE,
+            horizon: Vec3::ONE,
+            nadir: Vec3::ONE,
+            master: 1.0,
+            // the measured Unity screenshots are paler than the live client;
+            // this boost restores the vivid blue (user-chosen baseline). the
+            // day/night ease-off in build_sky_lut keeps night from going neon.
+            sat: 4.5,
+            // horizon band: horizon at the texture's cloud/ground line, band
+            // ends at ray.y = 0.5 (~30 deg up) with clear sky above — no spike.
+            cloud_horizon: 0.47,
+            cloud_vscale: 0.5,
+        }
+    }
+}
+
+/// Handle to the live sky color-cycle LUT, kept so console commands can
+/// rebuild its pixels in place when tuning changes.
+#[derive(Resource)]
+pub struct SkyLut(pub Handle<Image>);
+
+/// Build the sky color-cycle lookup texture from the measured Unity sky
+/// gradients. x = time of day (0 = midnight .. 1). Rows:
+///   0 zenith, 1 horizon, 2 nadir, 3 sun (HDR), 4 rim (HDR),
+///   5 cloud color (HDR), 6 cloud highlight, 7 celestial params, 8 moon tint,
+///   9 cloud mapping params (r = cloud_horizon, g = cloud_vscale).
+/// Rgba32Float, linear values; the zenith/horizon/nadir rows are scaled by the
+/// live `tuning` gains.
+pub fn build_sky_lut(tuning: &SkyColorTuning) -> Image {
     use common::godot_sky as g;
 
     const W: usize = 256;
+    // rows fed directly from gradients, in LUT row order
     let rows: [&g::Gradient; 7] = [
         &g::ZENITH,
         &g::HORIZON,
@@ -366,14 +419,36 @@ pub fn build_sky_lut() -> Image {
         &g::CLOUDS,
         &g::CLOUD_HIGHLIGHTS,
     ];
-    let mut data: Vec<f32> = Vec::with_capacity(W * (rows.len() + 2) * 4);
-    for grad in rows {
+    // per-row RGB gains; sun/rim/cloud/highlight (rows 3..) stay unscaled.
+    let gains = [
+        tuning.zenith * tuning.master,
+        tuning.horizon * tuning.master,
+        tuning.nadir * tuning.master,
+    ];
+    let extra_rows = 3; // celestial params + moon tint + cloud params appended below
+    let mut data: Vec<f32> = Vec::with_capacity(W * (rows.len() + extra_rows) * 4);
+    // rec709 luma weights, for the sky-only saturation push
+    let luma = Vec3::new(0.2126, 0.7152, 0.0722);
+    for (row, grad) in rows.iter().enumerate() {
+        let gain = gains.get(row).copied().unwrap_or(Vec3::ONE);
+        // only the sky-color rows (0..3) get the saturation boost
+        let sat = if row < 3 { tuning.sat } else { 1.0 };
         for x in 0..W {
-            let c = grad.sample(x as f32 / W as f32);
+            let mut c = grad.sample(x as f32 / W as f32) * gain;
+            if sat != 1.0 {
+                let l = c.dot(luma);
+                // ease the saturation boost off on dark (night) colors so they
+                // don't blow out to neon — daytime (bright) gets the full boost,
+                // night (dark, already-rich) is left close to its measured value.
+                let t = ((l - 0.12) / (0.5 - 0.12)).clamp(0.0, 1.0);
+                let bright = t * t * (3.0 - 2.0 * t); // smoothstep
+                let amt = 1.0 + (sat - 1.0) * bright;
+                c = (Vec3::splat(l) + (c - Vec3::splat(l)) * amt).max(Vec3::ZERO);
+            }
             data.extend_from_slice(&[c.x, c.y, c.z, 1.0]);
         }
     }
-    // row 7: celestial params — r = sun opacity, g = sun size, b = moon bite size
+    // celestial params — r = sun opacity, g = sun size, b = moon bite size
     for x in 0..W {
         let t = x as f32 / W as f32;
         data.extend_from_slice(&[
@@ -383,16 +458,20 @@ pub fn build_sky_lut() -> Image {
             1.0,
         ]);
     }
-    // row 8: moon tint cycle
+    // moon tint cycle
     for x in 0..W {
         let c = g::MOON.sample(x as f32 / W as f32);
         data.extend_from_slice(&[c.x, c.y, c.z, 1.0]);
+    }
+    // cloud mapping params (constant across time): r = cloud_horizon, g = cloud_vscale
+    for _x in 0..W {
+        data.extend_from_slice(&[tuning.cloud_horizon, tuning.cloud_vscale, 0.0, 1.0]);
     }
 
     let mut image = Image::new(
         Extent3d {
             width: W as u32,
-            height: rows.len() as u32 + 2,
+            height: (rows.len() + extra_rows) as u32,
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,

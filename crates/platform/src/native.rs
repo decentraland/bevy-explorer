@@ -147,13 +147,23 @@ pub fn default_camera_components() -> impl Bundle {
                 exposure: 0.0,
                 ..Default::default()
             },
-            shadows: ColorGradingSection::default(),
-            midtones: ColorGradingSection::default(),
-            highlights: ColorGradingSection::default(),
+            // baseline saturation 1.3 (art-director tuned); /saturation overrides
+            shadows: ColorGradingSection {
+                saturation: 1.3,
+                ..Default::default()
+            },
+            midtones: ColorGradingSection {
+                saturation: 1.3,
+                ..Default::default()
+            },
+            highlights: ColorGradingSection {
+                saturation: 1.3,
+                ..Default::default()
+            },
         },
         Bloom {
-            // godot glow reference ~1.25 strength
-            intensity: 0.25,
+            // art-director tuned; /bloom overrides
+            intensity: 0.15,
             ..Bloom::OLD_SCHOOL
         },
         ShadowFilteringMethod::Gaussian,

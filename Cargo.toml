@@ -116,6 +116,7 @@ bevy = { version = "0.16.1", default-features = false, features = [
   "std",
   "bevy_state",
   "pbr_light_textures",
+  "experimental_pbr_pcss",
   "reduce_image_sizes",
 ] }
 wgpu = "24"

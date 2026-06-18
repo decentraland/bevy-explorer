@@ -6,6 +6,7 @@ use bevy::{
     animation::{AnimationTarget, AnimationTargetId},
     asset::{io::AssetReader, AsyncReadExt, RenderAssetUsages},
     gltf::Gltf,
+    pbr::NotShadowCaster,
     platform::collections::{HashMap, HashSet},
     prelude::*,
     render::{mesh::skinning::SkinnedMesh, primitives::Aabb, view::RenderLayers},
@@ -126,6 +127,7 @@ impl Plugin for AvatarPlugin {
 
         app.add_console_command::<DebugDumpAvatar, _>(debug_dump_avatar);
         app.add_console_command::<ToonConsoleCommand, _>(toon_console_command);
+        app.add_console_command::<EnvLitConsoleCommand, _>(envlit_console_command);
 
         app.add_observer(add_attach_points_to_avatar_shape);
         app.add_observer(remove_attach_points_from_avatar_shape);
@@ -1090,6 +1092,9 @@ fn process_avatar(
             }
 
             if let Some(h_mesh) = maybe_h_mesh {
+                // unity parity: avatars don't cast shadows onto the world
+                commands.entity(scene_ent).try_insert(NotShadowCaster);
+
                 if def.hides.contains(&WearableCategory::BODY_SHAPE) {
                     commands.entity(scene_ent).try_insert(Visibility::Hidden);
                 }
@@ -1386,6 +1391,9 @@ fn process_avatar(
                 }
 
                 if let Some(h_mesh) = maybe_h_mesh {
+                    // unity parity: wearables don't cast shadows onto the world
+                    commands.entity(scene_ent).try_insert(NotShadowCaster);
+
                     if let Some(mesh) = meshes.get(h_mesh) {
                         if mesh.asset_usage == RenderAssetUsages::MAIN_WORLD {
                             if let Some(mesh_data) = meshes.get_mut(h_mesh) {
@@ -1915,5 +1923,31 @@ fn toon_console_command(
             )),
             None => input.reply_failed("no toon materials found"),
         }
+    }
+}
+
+/// set the environment "self-lit" floor on all scene materials — props never
+/// get darker than this fraction of their own albedo (unity-like readability
+/// in shadow / at night). 0 = pure PBR, ~0.3 default, try up to ~0.6.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/envlit")]
+struct EnvLitConsoleCommand {
+    amount: f32,
+}
+
+fn envlit_console_command(
+    mut input: ConsoleCommand<EnvLitConsoleCommand>,
+    mut materials: ResMut<Assets<SceneMaterial>>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let mut count = 0;
+        let ids = materials.ids().collect::<Vec<_>>();
+        for id in ids {
+            if let Some(mat) = materials.get_mut(id) {
+                mat.extension.data.env_self_lit = command.amount;
+                count += 1;
+            }
+        }
+        input.reply_ok(format!("env self-lit floor: {} ({count} materials)", command.amount));
     }
 }

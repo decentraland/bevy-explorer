@@ -20,6 +20,15 @@
     mesh_types::MESH_FLAGS_SHADOW_RECEIVER_BIT,
 }
 
+// --- live-tunable knobs (edit + save = ~2s hot reload, no rebuild) ---
+// how much cast shadows darken the avatar body. 1.0 = full shadows (old
+// behaviour), 0.0 = none (unity-like: avatars are flat-lit, no shadows on
+// their material). try 0.0–0.3.
+const SELF_SHADOW_STRENGTH: f32 = 0.0;
+// extra multiplier on emissive parts so glowing wearables actually glow like
+// unity. 1.0 = current, raise for more punch. try 1.0–4.0.
+const EMISSIVE_BOOST: f32 = 2.0;
+
 // params are passed as plain vec4s (structs don't cross naga_oil module
 // boundaries cleanly):
 // shade1: rgb = brightness multiplier in the 1st shade zone, w = ramp step
@@ -68,7 +77,9 @@ fn toon_lighting(
 
         let n_dot_l = dot(n, l);
         let half_lambert = 0.5 * n_dot_l + 0.5;
-        let ramp_in = half_lambert * shadow;
+        // fade the cast shadow toward 1 (no darkening) by SELF_SHADOW_STRENGTH
+        let self_shadow = mix(1.0, shadow, SELF_SHADOW_STRENGTH);
+        let ramp_in = half_lambert * self_shadow;
 
         // 3-zone ramp, edges rise from shade to lit as ramp_in increases
         let shadow_mask = smoothstep(shade1.w - misc.x, shade1.w, ramp_in);
@@ -87,7 +98,7 @@ fn toon_lighting(
         // soft fresnel rim, only on the lit side
         let rim_dot = 1.0 - max(dot(n, v), 0.0);
         let rim = pow(rim_dot, max(misc.z, 0.0001)) * misc.w;
-        let rim_dir_mask = smoothstep(0.0, 0.3, n_dot_l * shadow);
+        let rim_dir_mask = smoothstep(0.0, 0.3, n_dot_l * self_shadow);
 
         highlight = max(highlight, spec_mask + rim * rim_dir_mask);
     }
@@ -99,7 +110,7 @@ fn toon_lighting(
     let brightness = (scene_lum / 3.14159265 + ambient_lum) * view.exposure;
 
     var color = (base_color.rgb * shade_rgb + vec3(highlight)) * brightness;
-    color += pbr_input.material.emissive.rgb * view.exposure;
+    color += pbr_input.material.emissive.rgb * view.exposure * EMISSIVE_BOOST;
 
     return vec4<f32>(color, base_color.a);
 }

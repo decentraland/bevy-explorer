@@ -559,6 +559,16 @@ pub struct GraphicsSettings {
     pub ssao: SsaoSetting,
     pub oob: f32,
     pub ambient_brightness: i32,
+    // PCSS penumbra size for the sun's shadows (world units). larger = softer
+    // edges (unity-like). 0 = crisp/hard.
+    pub soft_shadow_size: f32,
+    // how much the sky color tints the flat ambient fill. 0 = neutral white
+    // (assets keep their own colors, unity-like); 1 = full sky color (bevy
+    // default — everything gets washed with the skybox hue).
+    pub ambient_tint: f32,
+    // multiplier on the sun's brightness (directional illuminance). raise to
+    // light environment props up more (unity-like). 1.0 = day-cycle default.
+    pub sun_intensity: f32,
     pub gpu_bytes_per_frame: usize,
 }
 
@@ -567,7 +577,10 @@ impl Default for GraphicsSettings {
         Self {
             vsync: false,
             log_fps: true,
-            msaa: AaSetting::FxaaHigh,
+            // FXAA blurs the whole image (incl. distant signage). MSAA breaks
+            // this build's custom SceneMaterial pipeline (renders magenta), so
+            // default to Off: sharp, no blur filter. Aliased but safe.
+            msaa: AaSetting::Off,
             fps_target: 60,
             shadow_distance: 200.0,
             shadow_settings: ShadowSetting::High,
@@ -577,10 +590,13 @@ impl Default for GraphicsSettings {
             // fullscreen_res: FullscreenResSetting(UVec2::new(1280,720)),
             fog: FogSetting::Atmospheric,
             bloom: BloomSetting::Low,
-            dof: DofSetting::High,
+            dof: DofSetting::Off,
             ssao: SsaoSetting::Off,
             oob: 2.0,
             ambient_brightness: 50,
+            soft_shadow_size: 4.0,
+            ambient_tint: 0.85,
+            sun_intensity: 1.0,
             gpu_bytes_per_frame: 0,
         }
     }

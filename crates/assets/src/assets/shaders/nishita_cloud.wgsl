@@ -139,7 +139,7 @@ fn render_nishita(r_full: vec3<f32>, r0: vec3<f32>, p_sun_full: vec3<f32>, i_sun
 @group(0) @binding(0) var<uniform> nishita: Nishita;
 @group(0) @binding(1) var noise_texture: texture_2d<f32>;
 @group(0) @binding(2) var noise_sampler: sampler;
-// sky color cycles from godot-explorer sky.tres: x = time of day,
+// sky color cycles (measured Unity): x = time of day,
 // rows: 0 zenith, 1 horizon, 2 nadir, 3 sun, 4 rim, 5 cloud, 6 cloud highlights
 @group(0) @binding(3) var sky_lut: texture_2d<f32>;
 @group(0) @binding(4) var sky_lut_sampler: sampler;

@@ -91,7 +91,7 @@ impl SceneBound {
                 bounds,
                 distance,
                 flags: 0,
-                _pad: 0,
+                env_self_lit: 0.3,
                 toon: ToonData::default(),
             },
             inverted_scale: false,
@@ -138,7 +138,7 @@ impl SceneBound {
                     } else {
                         0
                     },
-                _pad: 0,
+                env_self_lit: 0.3,
                 toon: ToonData::default(),
             },
             inverted_scale: false,
@@ -195,7 +195,11 @@ mod decl {
         pub distance: f32,
         pub flags: u32,
         pub num_bounds: u32,
-        pub(super) _pad: u32,
+        /// stylized "always readable" floor for the non-toon (environment)
+        /// lighting path: props never get darker than this fraction of their
+        /// own albedo. 0 = pure PBR, ~0.3 = unity-like. live via /envlit.
+        /// (reuses the former _pad slot — same 4 bytes.)
+        pub env_self_lit: f32,
         pub toon: ToonData,
     }
 }

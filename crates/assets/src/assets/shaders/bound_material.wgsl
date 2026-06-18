@@ -5,7 +5,8 @@
     pbr_bindings::{material, emissive_texture, emissive_sampler},
     pbr_types::{STANDARD_MATERIAL_FLAGS_EMISSIVE_TEXTURE_BIT, STANDARD_MATERIAL_FLAGS_BASE_COLOR_TEXTURE_BIT, STANDARD_MATERIAL_FLAGS_DOUBLE_SIDED_BIT},
     mesh_functions,
-    mesh_view_bindings::{globals, view},
+    mesh_view_bindings::{globals, view, lights},
+    mesh_types::MESH_FLAGS_SHADOW_RECEIVER_BIT,
     pbr_types,
 }
 #import bevy_core_pipeline::tonemapping::approximate_inverse_tone_mapping
@@ -26,7 +27,7 @@ struct SceneBounds {
     distance: f32,
     flags: u32,
     num_bounds: u32,
-    _pad: u32,
+    env_self_lit: f32,
     // toon params (see toon.wgsl): shade1/shade2 = band tint + step,
     // misc = feathers + rim, high = specular
     toon_shade1: vec4<f32>,
@@ -177,7 +178,40 @@ fn fragment(
         if (bounds.flags & TOON) != 0u {
             out.color = toon_lighting(pbr_input, bounds.toon_shade1, bounds.toon_shade2, bounds.toon_misc, bounds.toon_high);
         } else {
-            out.color = apply_pbr_lighting(pbr_input);
+            // SHADOW_OPACITY: how dark the sun's cast shadows are on the world.
+            // 1.0 = full black shadows (bevy default), 0.0 = no shadows.
+            // unity/godot look is subtler (~0.5-0.7). edit + save = ~2s reload.
+            // implemented by blending the shadowed lighting toward an
+            // unshadowed evaluation (clear the shadow-receiver bit), so the
+            // shadow can be partial instead of fully occluding the sun.
+            const SHADOW_OPACITY: f32 = 0.6;
+            let lit_shadowed = apply_pbr_lighting(pbr_input);
+            if SHADOW_OPACITY >= 0.999 {
+                out.color = lit_shadowed;
+            } else {
+                var pbr_no_shadow = pbr_input;
+                pbr_no_shadow.flags &= ~MESH_FLAGS_SHADOW_RECEIVER_BIT;
+                let lit_unshadowed = apply_pbr_lighting(pbr_no_shadow);
+                out.color = mix(lit_unshadowed, lit_shadowed, SHADOW_OPACITY);
+            }
+
+            // env_self_lit: stylized "always readable" floor like the unity
+            // client — props never get darker than this fraction of a
+            // fully-lit surface, so shadowed/night faces keep colour instead of
+            // going black/purple. 0.0 = pure PBR. live via /envlit (default 0.3).
+            // the floor must be in the same scene-referred units as out.color
+            // (the sun is thousands of lux), so reference the actual light
+            // radiance: brightest directional (diffuse-normalized) + ambient.
+            // ref_radiance is in raw physical units (illuminance ~thousands of
+            // lux); out.color is already exposure-applied, so the floor must be
+            // multiplied by view.exposure too or it blows the scene to white.
+            var ref_radiance = lights.ambient_color.rgb;
+            let n_dir = min(lights.n_directional_lights, 4u);
+            for (var i = 0u; i < n_dir; i += 1u) {
+                ref_radiance = max(ref_radiance, lights.directional_lights[i].color.rgb / 3.14159265);
+            }
+            let albedo_floor = pbr_input.material.base_color.rgb * bounds.env_self_lit * ref_radiance * view.exposure;
+            out.color = vec4(max(out.color.rgb, albedo_floor), out.color.a);
         }
     } else {
         // invert tonemapping for unlit materials

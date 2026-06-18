@@ -22,7 +22,7 @@ use bevy_atmosphere::{
 };
 use nishita_cloud::{
     build_sky_lut, init_noise, load_clouds_strip, load_unity_clouds, load_unity_moon,
-    load_unity_stars, load_unity_sun, NishitaCloud,
+    load_unity_stars, load_unity_sun, NishitaCloud, SkyColorTuning, SkyLut,
 };
 
 use bevy_console::ConsoleCommand;
@@ -46,12 +46,14 @@ impl Plugin for VisualsPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(DirectionalLightShadowMap { size: 4096 })
             .init_resource::<SceneGlobalLight>()
+            .init_resource::<SkyColorTuning>()
             .insert_resource(CloudCover {
                 // procedural clouds default off — the painted godot cloud
                 // cubemap is the primary cloud layer now; /cloud re-enables
                 cover: 0.0,
                 speed: 10.0,
             })
+            .insert_resource(CloudDrift { speed: 0.008 })
             .add_plugins(WireframePlugin::default())
             .add_plugins(DayNightPlugin)
             .add_plugins(ShellTexturingPlugin)
@@ -89,6 +91,17 @@ impl Plugin for VisualsPlugin {
         app.add_console_command::<GammaConsoleCommand, _>(gamma_console_command);
         app.add_console_command::<SaturationConsoleCommand, _>(saturation_console_command);
         app.add_console_command::<BloomConsoleCommand, _>(bloom_console_command);
+        app.add_console_command::<AmbientConsoleCommand, _>(ambient_console_command);
+        app.add_console_command::<SoftShadowConsoleCommand, _>(softshadow_console_command);
+        app.add_console_command::<AmbientTintConsoleCommand, _>(ambienttint_console_command);
+        app.add_console_command::<SunConsoleCommand, _>(sun_console_command);
+        app.add_console_command::<SkyZenithConsoleCommand, _>(skyzenith_console_command);
+        app.add_console_command::<SkyHorizonConsoleCommand, _>(skyhorizon_console_command);
+        app.add_console_command::<SkyNadirConsoleCommand, _>(skynadir_console_command);
+        app.add_console_command::<SkyGainConsoleCommand, _>(skygain_console_command);
+        app.add_console_command::<SkySatConsoleCommand, _>(skysat_console_command);
+        app.add_console_command::<SkyCloudsConsoleCommand, _>(skyclouds_console_command);
+        app.add_console_command::<CloudSpinConsoleCommand, _>(cloudspin_console_command);
     }
 
     fn finish(&self, app: &mut App) {
@@ -109,6 +122,7 @@ fn setup(
     mut images: ResMut<Assets<Image>>,
     mut sky_materials: ResMut<Assets<bevy_atmosphere::skybox::SkyBoxMaterial>>,
     sky_material: Res<bevy_atmosphere::skybox::AtmosphereSkyBoxMaterial>,
+    sky_tuning: Res<SkyColorTuning>,
     // envmap: Res<Envmap>,
 ) {
     info!("visuals::setup");
@@ -129,15 +143,19 @@ fn setup(
         let h_noise = images.add(noise);
 
         atmosphere.noise_texture = h_noise;
-        atmosphere.sky_lut = images.add(build_sky_lut());
+        atmosphere.sky_lut = images.add(build_sky_lut(&sky_tuning));
+        // keep the handle so /sky* commands can rebuild the LUT pixels live
+        commands.insert_resource(SkyLut(atmosphere.sky_lut.clone()));
         atmosphere.clouds_strip = images.add(load_clouds_strip());
 
         // the visible sky is rendered per-pixel by the skybox material; give
         // it the same color-cycle lut and painted clouds
         if let Some(material) = sky_materials.get_mut(&sky_material.0) {
             material.sky_lut = atmosphere.sky_lut.clone();
-            // the per-pixel sky uses unity's high-res panorama + sprites
-            material.clouds_strip = images.add(load_unity_clouds());
+            // clouds use the godot painted CUBEMAP (6x1 face strip) — it is
+            // pole-free, so horizon clouds rise cleanly with no zenith stretch,
+            // unlike the equirectangular unity panorama.
+            material.clouds_strip = images.add(load_clouds_strip());
             material.sun_sprite = images.add(load_unity_sun());
             material.moon_sprite = images.add(load_unity_moon());
             material.stars_tex = images.add(load_unity_stars());
@@ -177,7 +195,12 @@ fn apply_global_light(
     sky_material: Res<bevy_atmosphere::skybox::AtmosphereSkyBoxMaterial>,
     mut prev: Local<(f32, SceneGlobalLight)>,
     config: Res<AppConfig>,
-    mut cloud_dt: Local<f32>,
+    // grouped into one tuple param to stay under Bevy's 16-param system limit
+    (mut cloud_dt, cloud_drift, mut cloud_angle): (
+        Local<f32>,
+        Res<CloudDrift>,
+        Local<f32>,
+    ),
 ) {
     let next_light = if prev.0 >= TRANSITION_TIME && prev.1.source == scene_global_light.source {
         scene_global_light.clone()
@@ -225,6 +248,12 @@ fn apply_global_light(
     // push sun direction + time into the per-pixel skybox material
     if let Some(material) = sky_materials.get_mut(&sky_material.0) {
         material.data = atmosphere.sun_position.extend(atmosphere.day);
+        // slow Unity-style cloud drift: accumulate the rotation angle on
+        // wall-clock time (keeps moving even while the day cycle is frozen for
+        // tuning), at the live /cloudspin speed.
+        *cloud_angle = (*cloud_angle + time.delta_secs() * cloud_drift.speed)
+            .rem_euclid(std::f32::consts::TAU);
+        material.extra.x = *cloud_angle;
     }
 
     if atmosphere.cloudy != cloud.cover {
@@ -242,6 +271,20 @@ fn apply_global_light(
 
     atmosphere.time += time.delta_secs() * *cloud_dt;
 
+    // neutralize the sun/moon light COLOR toward white so environment props
+    // keep their own albedo instead of being washed by the sky hue (unity
+    // parity — the same idea the avatar toon shader uses by ignoring light
+    // color). controlled by the same /ambienttint knob: 1.0 = full sky color,
+    // 0.0 = pure white light.
+    let tint = config.graphics.ambient_tint.clamp(0.0, 1.0);
+    let ds = next_light.dir_color.to_linear();
+    let tinted_dir_color = Color::from(LinearRgba::new(
+        ds.red * tint + (1.0 - tint),
+        ds.green * tint + (1.0 - tint),
+        ds.blue * tint + (1.0 - tint),
+        1.0,
+    ));
+
     let mut directional_layers = RenderLayers::none();
     for (entity, layer, mut light_trans, mut directional) in sun.iter_mut() {
         if !next_light.layers.intersects(&RenderLayers::layer(layer.0)) {
@@ -251,8 +294,8 @@ fn apply_global_light(
 
         directional_layers = directional_layers.with(layer.0);
         light_trans.rotation = rotation;
-        directional.illuminance = next_light.dir_illuminance;
-        directional.color = next_light.dir_color;
+        directional.illuminance = next_light.dir_illuminance * config.graphics.sun_intensity;
+        directional.color = tinted_dir_color;
     }
 
     for new_layer in next_light
@@ -293,9 +336,12 @@ fn apply_global_light(
 
         commands.spawn((
             DirectionalLight {
-                color: next_light.dir_color,
-                illuminance: next_light.dir_illuminance,
+                color: tinted_dir_color,
+                illuminance: next_light.dir_illuminance * config.graphics.sun_intensity,
                 shadows_enabled,
+                // soft (PCSS) shadow penumbra for unity-like soft edges;
+                // scrub live with /softshadow. larger = softer.
+                soft_shadow_size: Some(config.graphics.soft_shadow_size),
                 ..Default::default()
             },
             Transform::default().with_rotation(rotation),
@@ -345,7 +391,17 @@ fn apply_global_light(
 
     ambient.brightness =
         next_light.ambient_brightness * config.graphics.ambient_brightness as f32 * 20.0;
-    ambient.color = next_light.ambient_color;
+    // blend the sky-tinted ambient toward neutral white so environment assets
+    // keep their own colors (unity-like) instead of being washed with the sky
+    // hue. tint=1 -> full sky color, tint=0 -> white. scrub with /ambienttint
+    let tint = config.graphics.ambient_tint.clamp(0.0, 1.0);
+    let sky = next_light.ambient_color.to_linear();
+    ambient.color = Color::from(LinearRgba::new(
+        sky.red * tint + (1.0 - tint),
+        sky.green * tint + (1.0 - tint),
+        sky.blue * tint + (1.0 - tint),
+        1.0,
+    ));
 
     if prev.1.source == scene_global_light.source {
         prev.0 += time.delta_secs()
@@ -478,6 +534,13 @@ struct CloudConsoleCommand {
 #[derive(Resource)]
 pub struct CloudCover {
     pub cover: f32,
+    pub speed: f32,
+}
+
+/// drift speed (radians/sec) of the painted cloud layer rotating around the
+/// vertical axis. live-tunable via /cloudspin.
+#[derive(Resource)]
+pub struct CloudDrift {
     pub speed: f32,
 }
 
@@ -636,5 +699,281 @@ fn bloom_console_command(
         };
         bloom.intensity = command.intensity;
         input.reply_ok(format!("bloom intensity: {}", command.intensity));
+    }
+}
+
+/// multiplier on the sun's brightness (default 1.0). raise to light
+/// environment props up more (unity-like); e.g. 1.5–3.0.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/sun")]
+struct SunConsoleCommand {
+    intensity: f32,
+}
+
+fn sun_console_command(
+    mut input: ConsoleCommand<SunConsoleCommand>,
+    mut config: ResMut<AppConfig>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        config.graphics.sun_intensity = command.intensity;
+        input.reply_ok(format!("sun intensity: {}", command.intensity));
+    }
+}
+
+// --- live sky color tuning -----------------------------------------------
+// the sky dome is a tri-zone gradient (zenith -> horizon -> nadir) built from
+// the measured Unity colors in common::godot_sky. these commands apply live
+// RGB gains per zone (default 1 1 1 = measured colors verbatim) and rebuild
+// the sky LUT in place so the change shows immediately. tune by eye against a
+// Unity reference, then bake the values you settle on into SkyColorTuning's
+// Default impl in nishita_cloud.rs.
+
+/// rebuild the sky color LUT pixels from the current gradients + tuning.
+fn rebuild_sky_lut(
+    tuning: &SkyColorTuning,
+    lut: &SkyLut,
+    images: &mut Assets<Image>,
+) {
+    if let Some(image) = images.get_mut(&lut.0) {
+        *image = build_sky_lut(tuning);
+    }
+}
+
+/// RGB gain on the zenith (straight-up) sky color. default 1 1 1.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/skyzenith")]
+struct SkyZenithConsoleCommand {
+    r: f32,
+    g: f32,
+    b: f32,
+}
+
+fn skyzenith_console_command(
+    mut input: ConsoleCommand<SkyZenithConsoleCommand>,
+    mut tuning: ResMut<SkyColorTuning>,
+    lut: Option<Res<SkyLut>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        tuning.zenith = Vec3::new(command.r, command.g, command.b);
+        if let Some(lut) = lut.as_deref() {
+            rebuild_sky_lut(&tuning, lut, &mut images);
+        }
+        input.reply_ok(format!(
+            "sky zenith gain: {} {} {}",
+            command.r, command.g, command.b
+        ));
+    }
+}
+
+/// RGB gain on the horizon sky color. default 1 1 1.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/skyhorizon")]
+struct SkyHorizonConsoleCommand {
+    r: f32,
+    g: f32,
+    b: f32,
+}
+
+fn skyhorizon_console_command(
+    mut input: ConsoleCommand<SkyHorizonConsoleCommand>,
+    mut tuning: ResMut<SkyColorTuning>,
+    lut: Option<Res<SkyLut>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        tuning.horizon = Vec3::new(command.r, command.g, command.b);
+        if let Some(lut) = lut.as_deref() {
+            rebuild_sky_lut(&tuning, lut, &mut images);
+        }
+        input.reply_ok(format!(
+            "sky horizon gain: {} {} {}",
+            command.r, command.g, command.b
+        ));
+    }
+}
+
+/// RGB gain on the nadir (below-horizon) sky color. default 1 1 1.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/skynadir")]
+struct SkyNadirConsoleCommand {
+    r: f32,
+    g: f32,
+    b: f32,
+}
+
+fn skynadir_console_command(
+    mut input: ConsoleCommand<SkyNadirConsoleCommand>,
+    mut tuning: ResMut<SkyColorTuning>,
+    lut: Option<Res<SkyLut>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        tuning.nadir = Vec3::new(command.r, command.g, command.b);
+        if let Some(lut) = lut.as_deref() {
+            rebuild_sky_lut(&tuning, lut, &mut images);
+        }
+        input.reply_ok(format!(
+            "sky nadir gain: {} {} {}",
+            command.r, command.g, command.b
+        ));
+    }
+}
+
+/// master brightness multiplier on all three sky zones at once. default 1.0.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/skygain")]
+struct SkyGainConsoleCommand {
+    master: f32,
+}
+
+fn skygain_console_command(
+    mut input: ConsoleCommand<SkyGainConsoleCommand>,
+    mut tuning: ResMut<SkyColorTuning>,
+    lut: Option<Res<SkyLut>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        tuning.master = command.master;
+        if let Some(lut) = lut.as_deref() {
+            rebuild_sky_lut(&tuning, lut, &mut images);
+        }
+        input.reply_ok(format!("sky master gain: {}", command.master));
+    }
+}
+
+/// sky-only color vibrancy. default 1.4. 1.0 = measured colors (washed out),
+/// higher = more saturated/vivid blue, lower = greyer. affects ONLY the sky,
+/// not the rest of the scene (unlike /saturation).
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/skysat")]
+struct SkySatConsoleCommand {
+    amount: f32,
+}
+
+fn skysat_console_command(
+    mut input: ConsoleCommand<SkySatConsoleCommand>,
+    mut tuning: ResMut<SkyColorTuning>,
+    lut: Option<Res<SkyLut>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        tuning.sat = command.amount;
+        if let Some(lut) = lut.as_deref() {
+            rebuild_sky_lut(&tuning, lut, &mut images);
+        }
+        input.reply_ok(format!("sky saturation: {}", command.amount));
+    }
+}
+
+/// cloud drift speed in radians/sec (default 0.008 ≈ 13 min per full turn).
+/// 0 = stop. higher = faster. e.g. /cloudspin 0.02 for a quicker drift.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/cloudspin")]
+struct CloudSpinConsoleCommand {
+    speed: f32,
+}
+
+fn cloudspin_console_command(
+    mut input: ConsoleCommand<CloudSpinConsoleCommand>,
+    mut drift: ResMut<CloudDrift>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        drift.speed = command.speed;
+        input.reply_ok(format!("cloud drift speed: {} rad/s", command.speed));
+    }
+}
+
+/// cloud horizon band. `/skyclouds <horizon> [top]`.
+/// horizon (default 0.47) = texture row on the horizon (shifts the band's
+/// content up/down). top (default 0.5) = how high the cloud band reaches
+/// (ray.y, 0 = horizon .. 1 = straight up); clear sky above it. keep top low
+/// (≈0.4–0.6) so clouds stay near the horizon and never stretch at the zenith.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/skyclouds")]
+struct SkyCloudsConsoleCommand {
+    horizon: f32,
+    vscale: Option<f32>,
+}
+
+fn skyclouds_console_command(
+    mut input: ConsoleCommand<SkyCloudsConsoleCommand>,
+    mut tuning: ResMut<SkyColorTuning>,
+    lut: Option<Res<SkyLut>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        tuning.cloud_horizon = command.horizon;
+        if let Some(vscale) = command.vscale {
+            tuning.cloud_vscale = vscale;
+        }
+        if let Some(lut) = lut.as_deref() {
+            rebuild_sky_lut(&tuning, lut, &mut images);
+        }
+        input.reply_ok(format!(
+            "sky clouds: horizon {}, vscale {}",
+            command.horizon, tuning.cloud_vscale
+        ));
+    }
+}
+
+/// how much the sky color tints the world's lighting — BOTH the ambient fill
+/// and the sun/moon directional color (default 1.0).
+/// 0 = neutral white light (assets keep their own colors, unity-like);
+/// 1 = full sky color (everything washed with the skybox hue).
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/ambienttint")]
+struct AmbientTintConsoleCommand {
+    amount: f32,
+}
+
+fn ambienttint_console_command(
+    mut input: ConsoleCommand<AmbientTintConsoleCommand>,
+    mut config: ResMut<AppConfig>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        config.graphics.ambient_tint = command.amount;
+        input.reply_ok(format!("ambient tint: {}", command.amount));
+    }
+}
+
+/// set the soft-shadow penumbra size in world units (default 4.0).
+/// 0 = crisp/hard edges; larger = softer, unity-like shadow edges.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/softshadow")]
+struct SoftShadowConsoleCommand {
+    size: f32,
+}
+
+fn softshadow_console_command(
+    mut input: ConsoleCommand<SoftShadowConsoleCommand>,
+    mut config: ResMut<AppConfig>,
+    mut lights: Query<&mut DirectionalLight>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        config.graphics.soft_shadow_size = command.size;
+        for mut light in lights.iter_mut() {
+            light.soft_shadow_size = (command.size > 0.0).then_some(command.size);
+        }
+        input.reply_ok(format!("soft shadow size: {}", command.size));
+    }
+}
+
+/// set the flat ambient-fill level (default 50). lower = more contrast/shape
+/// on environment models (the sky/directional light does more of the work);
+/// higher = flatter, more evenly lit. unity-parity target is much lower.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/ambient")]
+struct AmbientConsoleCommand {
+    level: i32,
+}
+
+fn ambient_console_command(
+    mut input: ConsoleCommand<AmbientConsoleCommand>,
+    mut config: ResMut<AppConfig>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        config.graphics.ambient_brightness = command.level;
+        input.reply_ok(format!("ambient fill: {}", command.level));
     }
 }

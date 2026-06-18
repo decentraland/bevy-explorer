@@ -39,35 +39,104 @@ impl Gradient {
     }
 }
 
-/// sky straight up ("Gradient_zenit")
+// --- measured Unity sky colors -------------------------------------------
+// Sampled DIRECTLY from the Unity reference screenshots in
+// color-lighting-test-scene/colortool/Screenshots/ (N/E/S/W/U x 24h), NOT from
+// skybox_colors_godot.json — that pre-cooked JSON had flattened the colors to a
+// dull blue (it mis-sampled / averaged in the dark water), which is what made
+// our sky go monochrome. The screenshots are the ground truth.
+//
+// We also confirmed N/E/S/W are near-identical at every hour (within ~0.03), so
+// the sky is NOT direction-dependent — it's a single dome that only varies by
+// height (zenith->horizon->below) and time of day. So:
+//   ZENITH  <- U (straight-up) shot
+//   HORIZON <- mean(N/E/S/W), the warm band just above the waterline
+//   NADIR   <- mean(N/E/S/W), the water / below-horizon fill
+// One stop per hour at t = hour/24. Values are 0..1 sRGB screen colors fed to
+// the LUT; tune live with /skyzenith /skyhorizon /skynadir /skygain.
+
+/// sky straight up — Unity U shots
 pub const ZENITH: Gradient = Gradient(&[
-    (0.05, Vec3::new(0.259, 0.197, 0.507)),
-    (0.2, Vec3::new(0.369, 0.399, 0.792)),
-    (0.3, Vec3::new(0.52, 0.538, 0.896)),
-    (0.5, Vec3::new(0.187, 0.601, 0.933)),
-    (0.75, Vec3::new(0.49, 0.414, 0.887)),
-    (1.0, Vec3::new(0.261, 0.199, 0.51)),
+    (0.00000, Vec3::new(0.161, 0.118, 0.463)),
+    (0.04167, Vec3::new(0.161, 0.118, 0.463)),
+    (0.08333, Vec3::new(0.189, 0.165, 0.526)),
+    (0.12500, Vec3::new(0.236, 0.228, 0.604)),
+    (0.16667, Vec3::new(0.279, 0.287, 0.663)),
+    (0.20833, Vec3::new(0.322, 0.345, 0.702)),
+    (0.25000, Vec3::new(0.388, 0.404, 0.706)),
+    (0.29167, Vec3::new(0.447, 0.455, 0.737)),
+    (0.33333, Vec3::new(0.443, 0.486, 0.745)),
+    (0.37500, Vec3::new(0.484, 0.542, 0.748)),
+    (0.41667, Vec3::new(0.540, 0.622, 0.763)),
+    (0.45833, Vec3::new(0.589, 0.700, 0.781)),
+    (0.50000, Vec3::new(0.549, 0.722, 0.780)),
+    (0.54167, Vec3::new(0.492, 0.685, 0.773)),
+    (0.58333, Vec3::new(0.454, 0.624, 0.768)),
+    (0.62500, Vec3::new(0.405, 0.532, 0.747)),
+    (0.66667, Vec3::new(0.369, 0.433, 0.742)),
+    (0.70833, Vec3::new(0.385, 0.381, 0.741)),
+    (0.75000, Vec3::new(0.428, 0.353, 0.741)),
+    (0.79167, Vec3::new(0.385, 0.314, 0.722)),
+    (0.83333, Vec3::new(0.349, 0.279, 0.686)),
+    (0.87500, Vec3::new(0.302, 0.240, 0.639)),
+    (0.91667, Vec3::new(0.255, 0.200, 0.596)),
+    (0.95833, Vec3::new(0.212, 0.161, 0.526)),
 ]);
 
-/// sky at the horizon ("Gradient_horizon")
+/// warm band just above the horizon — Unity mean(N/E/S/W)
 pub const HORIZON: Gradient = Gradient(&[
-    (0.05, Vec3::new(0.293, 0.0, 0.44)),
-    (0.194, Vec3::new(0.414, 0.372, 0.589)),
-    (0.3, Vec3::new(1.0, 0.561, 0.524)),
-    (0.38, Vec3::new(0.573, 0.792, 0.772)),
-    (0.503, Vec3::new(0.676, 0.828, 0.962)),
-    (0.75, Vec3::new(0.953, 0.499, 0.563)),
-    (0.844, Vec3::new(0.256, 0.165, 0.457)),
-    (1.0, Vec3::new(0.291, 0.0, 0.44)),
+    (0.00000, Vec3::new(0.241, 0.034, 0.570)),
+    (0.04167, Vec3::new(0.235, 0.032, 0.567)),
+    (0.08333, Vec3::new(0.274, 0.111, 0.594)),
+    (0.12500, Vec3::new(0.317, 0.232, 0.610)),
+    (0.16667, Vec3::new(0.425, 0.341, 0.591)),
+    (0.20833, Vec3::new(0.557, 0.432, 0.552)),
+    (0.25000, Vec3::new(0.679, 0.520, 0.514)),
+    (0.29167, Vec3::new(0.735, 0.600, 0.540)),
+    (0.33333, Vec3::new(0.717, 0.657, 0.625)),
+    (0.37500, Vec3::new(0.683, 0.693, 0.692)),
+    (0.41667, Vec3::new(0.667, 0.700, 0.720)),
+    (0.45833, Vec3::new(0.661, 0.711, 0.742)),
+    (0.50000, Vec3::new(0.655, 0.719, 0.761)),
+    (0.54167, Vec3::new(0.666, 0.705, 0.741)),
+    (0.58333, Vec3::new(0.679, 0.686, 0.715)),
+    (0.62500, Vec3::new(0.696, 0.669, 0.688)),
+    (0.66667, Vec3::new(0.711, 0.651, 0.655)),
+    (0.70833, Vec3::new(0.721, 0.620, 0.611)),
+    (0.75000, Vec3::new(0.716, 0.572, 0.598)),
+    (0.79167, Vec3::new(0.630, 0.445, 0.584)),
+    (0.83333, Vec3::new(0.487, 0.333, 0.602)),
+    (0.87500, Vec3::new(0.403, 0.247, 0.612)),
+    (0.91667, Vec3::new(0.343, 0.174, 0.607)),
+    (0.95833, Vec3::new(0.293, 0.099, 0.594)),
 ]);
 
-/// below the horizon ("Gradient_nadir")
+/// below the horizon / water — Unity mean(N/E/S/W)
 pub const NADIR: Gradient = Gradient(&[
-    (0.047, Vec3::new(0.0, 0.0, 0.0)),
-    (0.253, Vec3::new(0.858, 0.442, 0.433)),
-    (0.503, Vec3::new(0.267, 0.795, 0.851)),
-    (0.7, Vec3::new(0.887, 0.345, 0.953)),
-    (1.0, Vec3::new(0.0, 0.0, 0.0)),
+    (0.00000, Vec3::new(0.244, 0.187, 0.504)),
+    (0.04167, Vec3::new(0.242, 0.186, 0.503)),
+    (0.08333, Vec3::new(0.255, 0.207, 0.516)),
+    (0.12500, Vec3::new(0.270, 0.240, 0.518)),
+    (0.16667, Vec3::new(0.316, 0.272, 0.514)),
+    (0.20833, Vec3::new(0.403, 0.316, 0.501)),
+    (0.25000, Vec3::new(0.488, 0.359, 0.479)),
+    (0.29167, Vec3::new(0.520, 0.417, 0.511)),
+    (0.33333, Vec3::new(0.488, 0.438, 0.528)),
+    (0.37500, Vec3::new(0.457, 0.466, 0.558)),
+    (0.41667, Vec3::new(0.451, 0.484, 0.582)),
+    (0.45833, Vec3::new(0.450, 0.495, 0.601)),
+    (0.50000, Vec3::new(0.457, 0.508, 0.614)),
+    (0.54167, Vec3::new(0.467, 0.502, 0.603)),
+    (0.58333, Vec3::new(0.477, 0.487, 0.586)),
+    (0.62500, Vec3::new(0.484, 0.467, 0.563)),
+    (0.66667, Vec3::new(0.493, 0.446, 0.535)),
+    (0.70833, Vec3::new(0.502, 0.420, 0.513)),
+    (0.75000, Vec3::new(0.502, 0.390, 0.518)),
+    (0.79167, Vec3::new(0.435, 0.311, 0.508)),
+    (0.83333, Vec3::new(0.368, 0.263, 0.522)),
+    (0.87500, Vec3::new(0.331, 0.226, 0.520)),
+    (0.91667, Vec3::new(0.303, 0.221, 0.522)),
+    (0.95833, Vec3::new(0.269, 0.200, 0.514)),
 ]);
 
 /// sun halo color, HDR ("Gradient_sun")
