@@ -6,7 +6,7 @@ use common::{
 };
 use comms::{
     global_crdt::ForeignPlayer,
-    profile::{name_color::name_color, ProfileManager, UserProfile},
+    profile::{name_color::name_color_from_address, ProfileManager, UserProfile},
 };
 use dcl_component::transform_and_parent::DclTranslation;
 use ethers_core::types::Address;
@@ -140,7 +140,7 @@ fn sync_markers(
         {
             Color::srgb(0.6, 0.6, 0.6)
         } else {
-            name_color(address)
+            name_color_from_address(address)
         };
         commands.entity(root).with_children(|parent| {
             parent

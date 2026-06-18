@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     global_crdt::GlobalCrdtState,
-    profile::name_color::{name_color, UNCLAIMED_NAME_COLOR},
+    profile::name_color::{name_color_from_address, UNCLAIMED_NAME_COLOR},
 };
 
 use super::{
@@ -543,7 +543,7 @@ impl UserProfile {
         if !self.content.has_claimed_name {
             UNCLAIMED_NAME_COLOR
         } else {
-            name_color(
+            name_color_from_address(
                 self.content
                     .eth_address
                     .as_h160()
