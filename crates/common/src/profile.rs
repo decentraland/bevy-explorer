@@ -66,6 +66,7 @@ pub struct SerializedProfile {
     pub has_claimed_name: bool,
     pub has_connected_web3: Option<bool>,
     pub avatar: AvatarWireFormat,
+    pub name_color: Option<AvatarColor>,
     #[serde(flatten)]
     pub extra_fields: HashMap<String, serde_json::Value>,
 }
@@ -122,6 +123,7 @@ impl Default for SerializedProfile {
             has_claimed_name: Default::default(),
             has_connected_web3: Default::default(),
             avatar,
+            name_color: None,
             extra_fields: HashMap::from_iter([
                 (
                     "description".to_owned(),
