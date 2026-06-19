@@ -13,7 +13,7 @@ use bevy::{
     },
     platform::collections::{HashMap, HashSet},
     prelude::*,
-    window::PrimaryWindow,
+    window::{PrimaryWindow, WindowFocused},
 };
 
 use common::{
@@ -469,9 +469,19 @@ fn handle_modifier_keys(
     mut key_input: ResMut<ButtonInput<KeyCode>>,
     map: Res<InputMap>,
     priorities: Res<InputPriorities>,
+    mut focus_events: EventReader<WindowFocused>,
     mut was_active: Local<bool>,
     mut was_keyboard_claimed: Local<bool>,
 ) {
+    // An OS chord that steals focus (e.g. Cmd+Shift+5 screen grab) delivers the
+    // modifier keydown but its keyup lands while we're unfocused, so winit never
+    // reports the release and the modifier stays pressed() on return — latching
+    // suppression on forever. Clear all key state on focus loss so nothing
+    // survives the round trip.
+    if focus_events.read().any(|e| !e.focused) {
+        key_input.reset_all();
+    }
+
     let keyboard_claimed = priorities
         .get(InputType::All)
         .max(priorities.get(InputType::Keyboard))
