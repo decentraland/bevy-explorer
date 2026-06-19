@@ -6,7 +6,10 @@ use common::{
 };
 use comms::{
     global_crdt::ForeignPlayer,
-    profile::{name_color::name_color_from_address, ProfileManager, UserProfile},
+    profile::{
+        name_color::{name_color_from_address, UNCLAIMED_NAME_COLOR},
+        ProfileManager, UserProfile,
+    },
 };
 use dcl_component::transform_and_parent::DclTranslation;
 use ethers_core::types::Address;
@@ -134,14 +137,9 @@ fn sync_markers(
             continue;
         };
 
-        let bg = if profile
-            .filter(|profile| !profile.content.has_claimed_name)
-            .is_some()
-        {
-            Color::srgb(0.6, 0.6, 0.6)
-        } else {
-            name_color_from_address(address)
-        };
+        let bg = profile
+            .map(|profile| profile.name_color())
+            .unwrap_or(UNCLAIMED_NAME_COLOR);
         commands.entity(root).with_children(|parent| {
             parent
                 .spawn((
