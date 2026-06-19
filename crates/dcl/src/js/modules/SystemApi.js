@@ -114,10 +114,11 @@ module.exports.kernelFetch = async function (body) {
 //   equip?: PBAvatarEquippedData,
 //   hasClaimedName?: bool,
 //   profileExtras?: {field: value}
+//   nameColor: Color3
 // }
 // => deployed version
 module.exports.setAvatar = async function(avatar) {
-    return await Deno.core.ops.op_set_avatar(avatar.base, avatar.equip, avatar.hasClaimedName, avatar.profileExtras)
+    return await Deno.core.ops.op_set_avatar(avatar.base, avatar.equip, avatar.hasClaimedName, avatar.profileExtras, avatar.nameColor)
 }
 
 module.exports.getProfileExtras = async function() {
