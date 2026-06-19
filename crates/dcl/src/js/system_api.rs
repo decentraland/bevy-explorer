@@ -9,7 +9,7 @@ use common::{
     },
 };
 use dcl_component::proto_components::{
-    common::Vector2,
+    common::{Color3, Vector2},
     sdk::components::{PbAvatarBase, PbAvatarEquippedData},
 };
 use serde::{Deserialize, Serialize};
@@ -233,6 +233,7 @@ pub async fn op_set_avatar(
     equip: Option<PbAvatarEquippedData>,
     has_claimed_name: Option<bool>,
     profile_extras: Option<std::collections::HashMap<String, serde_json::Value>>,
+    name_color: Option<Color3>,
 ) -> Result<u32, anyhow::Error> {
     let (sx, rx) = RpcResultSender::channel();
 
@@ -245,6 +246,7 @@ pub async fn op_set_avatar(
                 equip,
                 has_claimed_name,
                 profile_extras,
+                name_color,
             },
             sx,
         ))?;
