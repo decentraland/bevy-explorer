@@ -524,7 +524,7 @@ pub fn process_profile_events(
     last_sent_request.retain(|_, req_time| *req_time > time.elapsed_secs() - 10.0);
 }
 
-#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 pub struct UserProfile {
     pub version: u32,
     pub content: SerializedProfile,

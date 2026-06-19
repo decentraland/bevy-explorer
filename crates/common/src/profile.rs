@@ -53,7 +53,7 @@ pub struct LambdaProfiles {
     pub avatars: Vec<SerializedProfile>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SerializedProfile {
     pub user_id: Option<String>,
