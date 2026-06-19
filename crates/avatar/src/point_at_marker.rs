@@ -6,10 +6,7 @@ use common::{
 };
 use comms::{
     global_crdt::ForeignPlayer,
-    profile::{
-        name_color::{name_color_from_address, UNCLAIMED_NAME_COLOR},
-        ProfileManager, UserProfile,
-    },
+    profile::{name_color::UNCLAIMED_NAME_COLOR, ProfileManager, UserProfile},
 };
 use dcl_component::transform_and_parent::DclTranslation;
 use ethers_core::types::Address;
