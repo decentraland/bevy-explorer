@@ -545,7 +545,7 @@ impl UserProfile {
         if !self.content.has_claimed_name {
             UNCLAIMED_NAME_COLOR
         } else if let Some(custom_name_color) = self.content.name_color {
-            custom_name_color.color.convert_srgb()
+            custom_name_color.convert_srgb()
         } else {
             name_color_from_address(
                 self.content
