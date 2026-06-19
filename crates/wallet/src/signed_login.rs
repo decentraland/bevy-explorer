@@ -19,7 +19,9 @@ pub async fn signed_login(
 ) -> Result<SignedLoginResponse, anyhow::Error> {
     let auth_chain = sign_request("post", &uri, &wallet, serde_json::to_string(&meta)?).await?;
 
-    let mut request = reqwest_client().post(uri.to_string());
+    let mut request = reqwest_client()
+        .post(uri.to_string())
+        .timeout(std::time::Duration::from_secs(5));
 
     for (key, value) in auth_chain {
         request = request.header(key, value)
