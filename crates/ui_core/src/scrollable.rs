@@ -2,7 +2,7 @@ use bevy::{
     platform::collections::HashMap,
     prelude::*,
     transform::TransformSystem,
-    ui::CameraCursorPosition,
+    ui::{CameraCursorPosition, UiSystem},
     window::{PrimaryWindow, WindowResized},
 };
 use bevy_dui::{DuiContext, DuiProps, DuiRegistry, DuiTemplate};
@@ -28,7 +28,10 @@ impl Plugin for ScrollablePlugin {
             .add_systems(
                 PostUpdate,
                 (update_scrollables, resync_scrollbar_transforms)
-                    .after(TransformSystem::TransformPropagate),
+                    .after(TransformSystem::TransformPropagate)
+                    // overlap arbitration reads `ComputedNode::stack_index`, which `ui_stack_system`
+                    // (UiSystem::Stack) writes; order after it so we read this frame's value.
+                    .after(UiSystem::Stack),
             )
             .add_event::<ScrollTargetEvent>();
     }
@@ -286,7 +289,6 @@ fn update_scrollables(
     }
 
     struct ScrollInfo {
-        ui_position: Vec2,
         content: Entity,
         ratio: f32,
         slide_amount: Vec2,
@@ -296,6 +298,7 @@ fn update_scrollables(
         redraw: bool,
         update_slider: Option<UpdateSliderPosition>,
         visible: bool,
+        stack_index: u32,
     }
 
     let mut events = events
@@ -369,7 +372,6 @@ fn update_scrollables(
         let child_size = child_node.size() / scale_factor;
         let parent_size = node.size() / scale_factor;
         let ratio = parent_size / child_size;
-        let ui_position = transform.translation().truncate() - parent_size * 0.5;
         let slide_amount = child_size - parent_size;
 
         // calculate based on event
@@ -467,12 +469,10 @@ fn update_scrollables(
                 horizontal_scrollers.insert(
                     entity,
                     ScrollInfo {
-                        ui_position,
                         content: scroll_content.0,
                         slide_amount,
                         ratio: ratio.x,
-                        bar_position: ui_position * 0.0
-                            + Vec2::new(bar_width * 1.5, parent_size.y - bar_width - 5.0),
+                        bar_position: Vec2::new(bar_width * 1.5, parent_size.y - bar_width - 5.0),
                         length: parent_size.x - bar_width * 3.0,
                         start,
                         redraw,
@@ -480,6 +480,7 @@ fn update_scrollables(
                             .map(|a| UpdateSliderPosition::Abs(a.x))
                             .or(new_slider_deltas.map(|d| UpdateSliderPosition::Rel(-d.x))),
                         visible: scrollable.horizontal_bar,
+                        stack_index: node.stack_index(),
                     },
                 );
             }
@@ -493,12 +494,10 @@ fn update_scrollables(
                 vertical_scrollers.insert(
                     entity,
                     ScrollInfo {
-                        ui_position,
                         content: scroll_content.0,
                         slide_amount,
                         ratio: ratio.y,
-                        bar_position: ui_position * 0.0
-                            + Vec2::new(parent_size.x - bar_width - 5.0, bar_width * 1.5),
+                        bar_position: Vec2::new(parent_size.x - bar_width - 5.0, bar_width * 1.5),
                         length: parent_size.y - bar_width * 3.0,
                         start,
                         redraw,
@@ -506,6 +505,7 @@ fn update_scrollables(
                             .map(|a| UpdateSliderPosition::Abs(a.y))
                             .or(new_slider_deltas.map(|d| UpdateSliderPosition::Rel(-d.y))),
                         visible: scrollable.vertical_bar,
+                        stack_index: node.stack_index(),
                     },
                 );
             }
@@ -516,32 +516,23 @@ fn update_scrollables(
         scrollable.content_size = child_size;
     }
 
-    // make sure we only update a single scrollable
+    // make sure we only update a single scrollable. when the cursor is over overlapping panels
+    // they each register a scroll above, so keep only the frontmost - the one with the highest
+    // `stack_index` (bevy's resolved back-to-front paint order), which is what the user sees on top
+    // and what a click would land on. nested scrollables get distinct indices (child walked after
+    // parent), so this never ties the way the previous geometric corner comparison could.
     for scrollers in [&mut vertical_scrollers, &mut horizontal_scrollers] {
-        let updated_positions = scrollers
+        let Some(frontmost) = scrollers
             .values()
             .filter(|v| v.update_slider.is_some())
-            .map(|s| s.ui_position)
-            .collect::<Vec<_>>();
-        if updated_positions.len() > 1 {
-            let last = updated_positions
-                .into_iter()
-                .reduce(|a, b| {
-                    match a
-                        .y
-                        .partial_cmp(&b.y)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                        .then(a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal))
-                    {
-                        std::cmp::Ordering::Greater => a,
-                        _ => b,
-                    }
-                })
-                .unwrap_or_default();
-            for scroller in scrollers.values_mut() {
-                if scroller.update_slider.is_some() && scroller.ui_position != last {
-                    scroller.update_slider = None;
-                }
+            .map(|v| v.stack_index)
+            .max()
+        else {
+            continue;
+        };
+        for scroller in scrollers.values_mut() {
+            if scroller.update_slider.is_some() && scroller.stack_index != frontmost {
+                scroller.update_slider = None;
             }
         }
     }
