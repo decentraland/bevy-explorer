@@ -127,8 +127,10 @@
         var lastError = null;      // { err, source, at } — most recent recorded error
         var lastBeat = 0;          // timestamp of the last heartbeat
         var beatsSeen = false;     // engine has produced at least one frame
-        var HANG_MS = 15000;       // silent stall (no corroborating error) before we show
-        var ERROR_CONFIRM_MS = 3000; // stall after a recent error before we show
+        var beatCount = 0;         // monotonic frame counter, bumped each heartbeat
+        var WATCHDOG_MS = 2000;    // how often the watchdog checks
+        var HANG_TICKS = 8;        // ~16s of no frames (no corroborating error) before we show
+        var ERROR_CONFIRM_TICKS = 2; // ~4s of no frames after a recent error before we show
 
         function nowMs() {
             return (window.performance && performance.now) ? performance.now() : Date.now();
@@ -222,15 +224,7 @@
                     'border:1px solid rgba(255,255,255,0.3);border-radius:6px;' +
                     'padding:12px 28px;font-size:1rem;font-weight:600;cursor:pointer;' +
                     'margin:0;width:auto;display:inline-block;';
-                dismissBtn.onclick = function () {
-                    overlay.remove();
-                    shown = false;
-                    // Re-arm: clear the stale error and pretend a fresh beat so we
-                    // don't immediately re-trigger. If the engine is genuinely dead
-                    // the heartbeat won't advance and the watchdog shows it again.
-                    lastError = null;
-                    lastBeat = nowMs();
-                };
+                dismissBtn.onclick = hideCrashOverlay;
 
                 buttons.appendChild(reloadBtn);
                 buttons.appendChild(dismissBtn);
@@ -251,6 +245,20 @@
             }
         }
 
+        // Take the overlay back down — either the engine recovered (frames resumed)
+        // or the user dismissed a false positive. Re-arm detection from a clean slate
+        // so a later genuine crash still shows after a fresh full threshold.
+        function hideCrashOverlay() {
+            var el = document.getElementById('crash-overlay');
+            if (el) el.remove();
+            shown = false;
+            lastError = null;
+            lastBeat = nowMs();
+            missedTicks = 0;
+            recoverTicks = 0;
+            lastBeatCount = beatCount;
+        }
+
         // Record an error as context for the watchdog. Does NOT show the overlay —
         // only a stalled heartbeat does that. Exposed so engine.js worker handlers
         // can feed in worker crashes too.
@@ -264,6 +272,7 @@
         window.__engineHeartbeat = function () {
             lastBeat = nowMs();
             beatsSeen = true;
+            beatCount++;
         };
 
         // Don't shadow the browser/mobile gate page.
@@ -278,32 +287,48 @@
             });
         }
 
-        // Backgrounded tabs throttle rAF/timers, so the heartbeat legitimately
-        // stalls while hidden — reset on return to visible to avoid a false verdict.
-        document.addEventListener('visibilitychange', function () {
-            if (!document.hidden) lastBeat = nowMs();
-        });
-
-        // The watchdog: the only thing that actually shows the overlay.
+        // The watchdog: the only thing that actually shows the overlay. We count
+        // consecutive ticks with no new frame rather than measuring wall-clock time,
+        // because a backgrounded / minimized / asleep tab throttles this very timer
+        // along with the rAF heartbeat — so a stall there produces at most a tick or
+        // two on wake, never enough to trip the threshold. A genuine engine stall
+        // leaves the JS event loop alive, so this timer keeps firing on schedule
+        // while only the heartbeat stops. (document.hidden also zeroes the counter,
+        // covering lightly-throttled background tabs that still fire timers ~1/s.)
+        var lastBeatCount = 0;
+        var missedTicks = 0;
+        var recoverTicks = 0;  // consecutive ticks with frames again, while the overlay is up
         setInterval(function () {
-            if (shown || !beatsSeen || document.hidden) return;
-            var stalled = nowMs() - lastBeat;
+            if (!beatsSeen || document.hidden) { missedTicks = 0; recoverTicks = 0; return; }
+            var advanced = beatCount !== lastBeatCount;  // engine produced frames since last tick
+            lastBeatCount = beatCount;
+
+            if (shown) {
+                // Overlay is up. If frames come back for a couple of ticks the engine
+                // recovered (the stall was transient) — take the overlay down. Two
+                // ticks rather than one so a single stray frame doesn't flicker it.
+                recoverTicks = advanced ? recoverTicks + 1 : 0;
+                if (recoverTicks >= 2) hideCrashOverlay();
+                return;
+            }
+
+            if (advanced) { missedTicks = 0; return; }
+            missedTicks++;
             // A recent error (recorded around when frames stopped) corroborates a
-            // real crash, so we wait far less before showing it.
+            // real crash, so we wait far fewer ticks before showing it.
             var corroborated = lastError && lastError.at >= lastBeat - 1000;
-            var threshold = corroborated ? ERROR_CONFIRM_MS : HANG_MS;
-            if (stalled <= threshold) return;
+            if (missedTicks < (corroborated ? ERROR_CONFIRM_TICKS : HANG_TICKS)) return;
 
             if (lastError) {
                 showCrashOverlay(lastError.err, lastError.source);
             } else {
                 showCrashOverlay(
-                    'The engine stopped responding (no frames for ' +
-                    Math.round(stalled / 1000) + 's). It may have run out of memory, ' +
-                    'or a worker thread crashed and deadlocked the main thread.',
+                    'The engine stopped responding (no frames for ~' +
+                    Math.round(missedTicks * WATCHDOG_MS / 1000) + 's). It may have run out ' +
+                    'of memory, or a worker thread crashed and deadlocked the main thread.',
                     'watchdog');
             }
-        }, 2000);
+        }, WATCHDOG_MS);
     })();
     </script>
     <link rel="icon" type="image/png" href="favicon/favicon-96x96.png" sizes="96x96" />
