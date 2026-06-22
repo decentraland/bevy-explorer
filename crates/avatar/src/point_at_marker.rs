@@ -13,6 +13,7 @@ use comms::{
 };
 use dcl_component::transform_and_parent::DclTranslation;
 use ethers_core::types::Address;
+use social::{FriendshipState, SocialClient};
 
 use crate::AvatarShape;
 
@@ -338,7 +339,10 @@ fn change_point_at_marker_visibility(
     app_config: Res<AppConfig>,
     marker_overlay: Res<MarkerOverlay>,
     children: Query<&Children>,
-    point_at_markers: Query<&mut Visibility, With<PointAtMarker>>,
+    foreign_players: Query<&ForeignPlayer>,
+    primary_user: Single<Entity, With<PrimaryUser>>,
+    point_at_markers: Query<(&PointAtMarker, &mut Visibility)>,
+    social_client: Res<SocialClient>,
 ) {
     let Some(root) = marker_overlay.root else {
         return;
@@ -353,6 +357,8 @@ fn change_point_at_marker_visibility(
         return;
     };
 
+    let primary_user = primary_user.into_inner();
+
     match app_config.point_at_marker_visibility {
         PointAtMarkerVisivbility::All => {
             change_point_at_marker_visibility_of_entities(children, point_at_markers, &|_e| {
@@ -360,13 +366,29 @@ fn change_point_at_marker_visibility(
             });
         }
         PointAtMarkerVisivbility::Friends => {
-            change_point_at_marker_visibility_of_entities(children, point_at_markers, &|_e| {
-                Visibility::Hidden
+            change_point_at_marker_visibility_of_entities(children, point_at_markers, &|e| {
+                if e == primary_user {
+                    Visibility::Inherited
+                } else {
+                    let address = foreign_players
+                        .get(e)
+                        .map(|foreign_player| foreign_player.address)
+                        .ok()
+                        .unwrap_or(Address::zero());
+                    match social_client.get_state(address) {
+                        FriendshipState::Friends => Visibility::Inherited,
+                        _ => Visibility::Hidden,
+                    }
+                }
             });
         }
         PointAtMarkerVisivbility::None => {
-            change_point_at_marker_visibility_of_entities(children, point_at_markers, &|_e| {
-                Visibility::Hidden
+            change_point_at_marker_visibility_of_entities(children, point_at_markers, &|e| {
+                if e == primary_user {
+                    Visibility::Inherited
+                } else {
+                    Visibility::Hidden
+                }
             });
         }
     }
@@ -374,31 +396,46 @@ fn change_point_at_marker_visibility(
 
 fn change_point_at_marker_visibility_of_entities(
     children: &[Entity],
-    mut point_at_markers: Query<&mut Visibility, With<PointAtMarker>>,
+    mut point_at_markers: Query<(&PointAtMarker, &mut Visibility)>,
     point_at_marker_visibility_closure: &dyn Fn(Entity) -> Visibility,
 ) {
     for child in children {
-        let Ok(mut visibility) = point_at_markers.get_mut(*child) else {
+        let Ok((point_at_marker, mut visibility)) = point_at_markers.get_mut(*child) else {
             continue;
         };
 
-        *visibility = point_at_marker_visibility_closure(*child);
+        *visibility = point_at_marker_visibility_closure(point_at_marker.avatar);
     }
 }
 
 fn change_point_at_marker_visibility_for_new_point_at_markers(
     trigger: Trigger<OnInsert, PointAtMarker>,
-    mut point_at_markers: Query<&mut Visibility, With<PointAtMarker>>,
+    mut point_at_markers: Query<(&PointAtMarker, &mut Visibility)>,
+    foreign_players: Query<&ForeignPlayer>,
+    primary_user: Single<Entity, With<PrimaryUser>>,
     app_config: Res<AppConfig>,
+    social_client: Res<SocialClient>,
 ) {
     let entity = trigger.target();
-    let Ok(mut visibility) = point_at_markers.get_mut(entity) else {
+    let Ok((point_at_marker, mut visibility)) = point_at_markers.get_mut(entity) else {
         return;
     };
 
-    *visibility = match app_config.point_at_marker_visibility {
-        PointAtMarkerVisivbility::All => Visibility::Inherited,
-        PointAtMarkerVisivbility::Friends => Visibility::Hidden,
-        PointAtMarkerVisivbility::None => Visibility::Hidden,
-    };
+    if point_at_marker.avatar != *primary_user {
+        *visibility = match app_config.point_at_marker_visibility {
+            PointAtMarkerVisivbility::All => Visibility::Inherited,
+            PointAtMarkerVisivbility::Friends => {
+                let address = foreign_players
+                    .get(point_at_marker.avatar)
+                    .map(|foreign_player| foreign_player.address)
+                    .ok()
+                    .unwrap_or(Address::zero());
+                match social_client.get_state(address) {
+                    FriendshipState::Friends => Visibility::Inherited,
+                    _ => Visibility::Hidden,
+                }
+            }
+            PointAtMarkerVisivbility::None => Visibility::Hidden,
+        };
+    }
 }
