@@ -174,7 +174,7 @@ fn init_test_app(entity_json: &str) -> App {
         IVec2::ZERO,
         PointerResult::Exists {
             realm: "manual value".to_owned(),
-            hash: "whatever".to_owned(),
+            hash: entity_json.to_owned(),
             urn: Some(urn),
         },
     );
