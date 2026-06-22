@@ -180,6 +180,9 @@ fn apply_global_light(
                 .into(),
             ambient_brightness: scene_global_light.ambient_brightness * new_amount
                 + prev.1.ambient_brightness * old_amount,
+            fog_color: (scene_global_light.fog_color.to_srgba() * new_amount
+                + prev.1.fog_color.to_srgba() * old_amount)
+                .into(),
             layers: scene_global_light.layers.clone(),
         }
     };
@@ -299,15 +302,18 @@ fn apply_global_light(
 
     for (maybe_primary, maybe_fog) in cameras.iter_mut() {
         let dir_light_lightness = Lcha::from(next_light.dir_color).lightness;
+        // floor keeps night fog tinted instead of going black
         let skybox_brightness =
-            (next_light.dir_illuminance.sqrt() * 40.0 * dir_light_lightness).min(2000.0);
+            (next_light.dir_illuminance.sqrt() * 40.0 * dir_light_lightness).clamp(400.0, 2000.0);
 
         if let Some(mut fog) = maybe_fog {
             let distance = (scene_distance.load + scene_distance.unload)
                 .max(scene_distance.load_imposter * 0.333)
                 + maybe_primary.map_or(0.0, |camera| camera.distance * 5.0);
 
-            let base_color = next_light.ambient_color.to_srgba()
+            // fog tint follows its own day-cycle gradient, scaled by overall
+            // sky brightness so night fog goes dark
+            let base_color = next_light.fog_color.to_srgba()
                 * next_light.ambient_brightness
                 * 0.5
                 * skybox_brightness
