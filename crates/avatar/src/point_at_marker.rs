@@ -1,7 +1,10 @@
 use bevy::{platform::collections::HashMap, prelude::*, ui::UiSystem};
 use common::{
     sets::PostUpdateSets,
-    structs::{PointAtMarkerVisivbilityChanged, PointAtSync, PrimaryCamera, PrimaryUser, ZOrder},
+    structs::{
+        AppConfig, PointAtMarkerVisivbility, PointAtMarkerVisivbilityChanged, PointAtSync,
+        PrimaryCamera, PrimaryUser, ZOrder,
+    },
     util::AsH160,
 };
 use comms::{
@@ -34,6 +37,16 @@ impl Plugin for PointAtMarkerPlugin {
                 .in_set(PostUpdateSets::InverseKinematics)
                 .before(UiSystem::Layout),
         );
+        // The PointAtMarkerVisivbilityChanged event does not hold any information,
+        // so we just need to have this system run once if there has been an event
+        // on that frame
+        app.add_systems(
+            PostUpdate,
+            change_point_at_marker_visibility
+                .run_if(on_event::<PointAtMarkerVisivbilityChanged>)
+                .before(UiSystem::Layout),
+        );
+        app.add_observer(change_point_at_marker_visibility_for_new_point_at_markers);
     }
 }
 
@@ -319,4 +332,73 @@ fn position_markers(
         node.left = Val::Percent(left_pct);
         node.top = Val::Percent(top_pct);
     }
+}
+
+fn change_point_at_marker_visibility(
+    app_config: Res<AppConfig>,
+    marker_overlay: Res<MarkerOverlay>,
+    children: Query<&Children>,
+    point_at_markers: Query<&mut Visibility, With<PointAtMarker>>,
+) {
+    let Some(root) = marker_overlay.root else {
+        return;
+    };
+
+    debug!(
+        "PointAt marker visibility changed to {:?}.",
+        app_config.point_at_marker_visibility
+    );
+
+    let Ok(children) = children.get(root) else {
+        return;
+    };
+
+    match app_config.point_at_marker_visibility {
+        PointAtMarkerVisivbility::All => {
+            change_point_at_marker_visibility_of_entities(children, point_at_markers, &|_e| {
+                Visibility::Inherited
+            });
+        }
+        PointAtMarkerVisivbility::Friends => {
+            change_point_at_marker_visibility_of_entities(children, point_at_markers, &|_e| {
+                Visibility::Hidden
+            });
+        }
+        PointAtMarkerVisivbility::None => {
+            change_point_at_marker_visibility_of_entities(children, point_at_markers, &|_e| {
+                Visibility::Hidden
+            });
+        }
+    }
+}
+
+fn change_point_at_marker_visibility_of_entities(
+    children: &[Entity],
+    mut point_at_markers: Query<&mut Visibility, With<PointAtMarker>>,
+    point_at_marker_visibility_closure: &dyn Fn(Entity) -> Visibility,
+) {
+    for child in children {
+        let Ok(mut visibility) = point_at_markers.get_mut(*child) else {
+            continue;
+        };
+
+        *visibility = point_at_marker_visibility_closure(*child);
+    }
+}
+
+fn change_point_at_marker_visibility_for_new_point_at_markers(
+    trigger: Trigger<OnInsert, PointAtMarker>,
+    mut point_at_markers: Query<&mut Visibility, With<PointAtMarker>>,
+    app_config: Res<AppConfig>,
+) {
+    let entity = trigger.target();
+    let Ok(mut visibility) = point_at_markers.get_mut(entity) else {
+        return;
+    };
+
+    *visibility = match app_config.point_at_marker_visibility {
+        PointAtMarkerVisivbility::All => Visibility::Inherited,
+        PointAtMarkerVisivbility::Friends => Visibility::Hidden,
+        PointAtMarkerVisivbility::None => Visibility::Hidden,
+    };
 }
