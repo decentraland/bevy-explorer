@@ -21,7 +21,7 @@ use common::{
     },
 };
 use dcl_component::proto_components::{
-    common::{Vector2, Vector3},
+    common::{Color3, Vector2, Vector3},
     sdk::components::{pb_pointer_events, PbAvatarBase, PbAvatarEquippedData},
 };
 use serde::{Deserialize, Serialize};
@@ -63,6 +63,7 @@ pub struct SetAvatarData {
     pub equip: Option<PbAvatarEquippedData>,
     pub has_claimed_name: Option<bool>,
     pub profile_extras: Option<std::collections::HashMap<String, serde_json::Value>>,
+    pub name_color: Option<Option<Color3>>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

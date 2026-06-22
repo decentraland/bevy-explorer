@@ -47,7 +47,7 @@ fn fnv1a_64(bytes: &[u8]) -> u64 {
     hash
 }
 
-pub fn name_color(address: Address) -> Color {
+pub fn name_color_from_address(address: Address) -> Color {
     let s = format!("{address:#x}");
     let idx = (fnv1a_64(s.as_bytes()) % PALETTE.len() as u64) as usize;
     Color::Srgba(PALETTE[idx])

@@ -6,12 +6,12 @@ use common::{
 };
 use comms::{
     global_crdt::ForeignPlayer,
-    profile::{ProfileManager, UserProfile},
+    profile::{name_color::UNCLAIMED_NAME_COLOR, ProfileManager, UserProfile},
 };
 use dcl_component::transform_and_parent::DclTranslation;
 use ethers_core::types::Address;
 
-use crate::{name_color::name_color, AvatarShape};
+use crate::AvatarShape;
 
 pub struct PointAtMarkerPlugin;
 
@@ -134,14 +134,9 @@ fn sync_markers(
             continue;
         };
 
-        let bg = if profile
-            .filter(|profile| !profile.content.has_claimed_name)
-            .is_some()
-        {
-            Color::srgb(0.6, 0.6, 0.6)
-        } else {
-            name_color(address)
-        };
+        let bg = profile
+            .map(|profile| profile.name_color())
+            .unwrap_or(UNCLAIMED_NAME_COLOR);
         commands.entity(root).with_children(|parent| {
             parent
                 .spawn((

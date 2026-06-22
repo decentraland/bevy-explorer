@@ -110,13 +110,22 @@ pub async fn op_set_avatar(
     equip: JsValue,
     has_claimed_name: Option<bool>,
     profile_extras: JsValue,
+    name_color: JsValue,
 ) -> Result<u32, WasmError> {
     serde_parse!(base);
     serde_parse!(equip);
     serde_parse!(profile_extras);
-    dcl::js::system_api::op_set_avatar(state.rc(), base, equip, has_claimed_name, profile_extras)
-        .await
-        .map_err(WasmError::from)
+    serde_parse!(name_color);
+    dcl::js::system_api::op_set_avatar(
+        state.rc(),
+        base,
+        equip,
+        has_claimed_name,
+        profile_extras,
+        name_color,
+    )
+    .await
+    .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]

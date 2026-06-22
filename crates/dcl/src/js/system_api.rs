@@ -24,7 +24,7 @@ use system_bridge::{
     SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
 };
 
-use crate::{interface::crdt_context::CrdtContext, js::player_identity, RpcCalls};
+use crate::{interface::crdt_context::CrdtContext, js::player_identity, ClearableColor3, RpcCalls};
 
 use super::{State, SuperUserScene};
 
@@ -233,6 +233,7 @@ pub async fn op_set_avatar(
     equip: Option<PbAvatarEquippedData>,
     has_claimed_name: Option<bool>,
     profile_extras: Option<std::collections::HashMap<String, serde_json::Value>>,
+    name_color: Option<ClearableColor3>,
 ) -> Result<u32, anyhow::Error> {
     let (sx, rx) = RpcResultSender::channel();
 
@@ -245,6 +246,7 @@ pub async fn op_set_avatar(
                 equip,
                 has_claimed_name,
                 profile_extras,
+                name_color: name_color.map(ClearableColor3::to_color3),
             },
             sx,
         ))?;

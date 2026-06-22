@@ -1,3 +1,5 @@
+pub mod name_color;
+
 use std::{io::Read, path::PathBuf, sync::Arc};
 
 use anyhow::anyhow;
@@ -14,7 +16,10 @@ use multihash_codetable::MultihashDigest;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
-use crate::global_crdt::GlobalCrdtState;
+use crate::{
+    global_crdt::GlobalCrdtState,
+    profile::name_color::{name_color_from_address, UNCLAIMED_NAME_COLOR},
+};
 
 use super::{
     global_crdt::{process_transport_updates, ForeignPlayer, ProfileEvent, ProfileEventType},
@@ -29,7 +34,9 @@ use common::{
 };
 use common::{rpc::RpcCall, util::AsH160};
 use dcl_component::{
-    proto_components::{kernel::comms::rfc4, sdk::components::PbPlayerIdentityData},
+    proto_components::{
+        kernel::comms::rfc4, sdk::components::PbPlayerIdentityData, Color3DclToBevy,
+    },
     SceneComponentId, SceneEntityId,
 };
 use wallet::Wallet;
@@ -517,7 +524,7 @@ pub fn process_profile_events(
     last_sent_request.retain(|_, req_time| *req_time > time.elapsed_secs() - 10.0);
 }
 
-#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 pub struct UserProfile {
     pub version: u32,
     pub content: SerializedProfile,
@@ -532,6 +539,21 @@ impl UserProfile {
             .as_ref()
             .and_then(|s| s.rsplit(':').next())
             .is_none_or(|shape| shape.to_lowercase() == "basefemale")
+    }
+
+    pub fn name_color(&self) -> Color {
+        if !self.content.has_claimed_name {
+            UNCLAIMED_NAME_COLOR
+        } else if let Some(custom_name_color) = self.content.name_color {
+            custom_name_color.convert_srgb()
+        } else {
+            name_color_from_address(
+                self.content
+                    .eth_address
+                    .as_h160()
+                    .unwrap_or(Address::zero()),
+            )
+        }
     }
 }
 

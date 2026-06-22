@@ -2,7 +2,10 @@ use common::{
     inputs::SystemActionEvent,
     structs::{MicState, PermissionType, PermissionUsed, PermissionValue},
 };
-use dcl::js::system_api::{JsBindingsData, PermissionTypeDetail};
+use dcl::{
+    js::system_api::{JsBindingsData, PermissionTypeDetail},
+    ClearableColor3,
+};
 use dcl_component::proto_components::{
     common::Vector2,
     sdk::components::{PbAvatarBase, PbAvatarEquippedData},
@@ -190,8 +193,17 @@ pub async fn op_set_avatar(
     #[serde] equip: Option<PbAvatarEquippedData>,
     has_claimed_name: Option<bool>,
     #[serde] profile_extras: Option<std::collections::HashMap<String, serde_json::Value>>,
+    #[serde] name_color: Option<ClearableColor3>,
 ) -> Result<u32, anyhow::Error> {
-    dcl::js::system_api::op_set_avatar(state, base, equip, has_claimed_name, profile_extras).await
+    dcl::js::system_api::op_set_avatar(
+        state,
+        base,
+        equip,
+        has_claimed_name,
+        profile_extras,
+        name_color,
+    )
+    .await
 }
 
 #[op2(async)]
