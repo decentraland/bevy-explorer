@@ -46,20 +46,22 @@ impl Gradient {
 pub const DIR_LIGHT: Gradient = Gradient(&[
     (0.05, Vec3::new(0.514, 0.388, 1.0)),
     (0.185, Vec3::new(1.0, 0.602, 0.632)),
-    (0.333, Vec3::new(0.985, 0.864, 0.645)),
-    (0.519, Vec3::new(1.0, 0.931, 0.692)),
-    (0.683, Vec3::new(0.984, 0.863, 0.643)),
+    (0.333, Vec3::new(0.985, 0.864, 0.745)),
+    (0.519, Vec3::new(1.0, 0.931, 0.892)),
+    (0.683, Vec3::new(0.984, 0.863, 0.743)),
     (0.801, Vec3::new(1.0, 0.6, 0.631)),
     (1.0, Vec3::new(0.515, 0.387, 1.0)),
 ]);
 
-/// Ambient fill color over the day.
+/// Ambient fill color over the day. The measured colors are pulled 20% toward
+/// white (in linear space) so the sky hue doesn't wash environment albedo —
+/// baked into the stops rather than applied as a runtime tint.
 pub const AMBIENT: Gradient = Gradient(&[
-    (0.0, Vec3::new(0.354, 0.0, 1.0)),
-    (0.25, Vec3::new(1.0, 0.597, 0.526)),
-    (0.5, Vec3::new(0.519, 0.679, 0.738)),
-    (0.7, Vec3::new(1.0, 0.5, 0.458)),
-    (1.0, Vec3::new(0.353, 0.0, 1.0)),
+    (0.0, Vec3::new(0.568, 0.485, 1.0)),
+    (0.25, Vec3::new(1.0, 0.703, 0.658)),
+    (0.5, Vec3::new(0.654, 0.758, 0.8)),
+    (0.7, Vec3::new(1.0, 0.643, 0.619)),
+    (1.0, Vec3::new(0.567, 0.485, 1.0)),
 ]);
 
 /// Fog tint over the day.

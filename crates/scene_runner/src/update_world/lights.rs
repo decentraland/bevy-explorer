@@ -149,8 +149,10 @@ pub fn update_directional_light(
         dir_illuminance: (energy * 0.7 * 10_000.0).max(1500.0),
         dir_direction,
         ambient_color: Color::srgb(amb.x, amb.y, amb.z),
-        // ambient-dominant look: stronger fill when the sun is low
-        ambient_brightness: 1.0 + (1.0 - energy) * 2.0,
+        // stronger ambient fill when the sun is low, but kept modest at night
+        // (midnight ≈ 2.1, ~70% of a full ambient-dominant fill) so the moon
+        // stays directional and the night doesn't wash out
+        ambient_brightness: 1.0 + (1.0 - energy) * 1.1,
         fog_color: Color::srgb(fog.x, fog.y, fog.z),
         layers: RenderLayers::default(),
     };
