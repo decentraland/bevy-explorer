@@ -79,6 +79,11 @@ impl Plugin for VisualsPlugin {
         app.add_console_command::<FogConsoleCommand, _>(fog_console_command);
         app.add_console_command::<DofConsoleCommand, _>(dof_console_command);
         app.add_console_command::<CloudConsoleCommand, _>(cloud_console_command);
+        app.add_console_command::<TonemapConsoleCommand, _>(tonemap_console_command);
+        app.add_console_command::<ExposureConsoleCommand, _>(exposure_console_command);
+        app.add_console_command::<GammaConsoleCommand, _>(gamma_console_command);
+        app.add_console_command::<SaturationConsoleCommand, _>(saturation_console_command);
+        app.add_console_command::<BloomConsoleCommand, _>(bloom_console_command);
     }
 
     fn finish(&self, app: &mut App) {
@@ -491,5 +496,144 @@ fn cloud_console_command(
             "cloud cover {}, speed {}",
             command.cover, cloud.speed
         ));
+    }
+}
+
+// --- environment grading commands ---
+// expose the bevy post stack (tonemap + color grading + bloom) for live
+// tuning so the environment mood can be matched by eye against a reference.
+
+/// set the tonemapping curve.
+/// options: none, reinhard, reinhard_luma, aces (default), agx, sbdt, tmmf, blender
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/tonemap")]
+struct TonemapConsoleCommand {
+    mode: String,
+}
+
+fn tonemap_console_command(
+    mut input: ConsoleCommand<TonemapConsoleCommand>,
+    mut cam: Query<&mut bevy::core_pipeline::tonemapping::Tonemapping, With<PrimaryCamera>>,
+) {
+    use bevy::core_pipeline::tonemapping::Tonemapping;
+    if let Some(Ok(command)) = input.take() {
+        let Ok(mut tonemapping) = cam.single_mut() else {
+            return;
+        };
+        let mode = match command.mode.as_str() {
+            "none" => Tonemapping::None,
+            "reinhard" => Tonemapping::Reinhard,
+            "reinhard_luma" => Tonemapping::ReinhardLuminance,
+            "aces" => Tonemapping::AcesFitted,
+            "agx" => Tonemapping::AgX,
+            "sbdt" => Tonemapping::SomewhatBoringDisplayTransform,
+            "tmmf" => Tonemapping::TonyMcMapface,
+            "blender" => Tonemapping::BlenderFilmic,
+            other => {
+                input.reply_failed(format!("unknown mode `{other}`; options: none, reinhard, reinhard_luma, aces, agx, sbdt, tmmf, blender"));
+                return;
+            }
+        };
+        *tonemapping = mode;
+        input.reply_ok(format!("tonemapping: {}", command.mode));
+    }
+}
+
+/// set global exposure (stops, default 0.0)
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/exposure")]
+struct ExposureConsoleCommand {
+    exposure: f32,
+}
+
+fn exposure_console_command(
+    mut input: ConsoleCommand<ExposureConsoleCommand>,
+    mut cam: Query<&mut bevy::render::view::ColorGrading, With<PrimaryCamera>>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let Ok(mut grading) = cam.single_mut() else {
+            return;
+        };
+        grading.global.exposure = command.exposure;
+        input.reply_ok(format!("exposure: {}", command.exposure));
+    }
+}
+
+/// set gamma per tonal range (default 1.0 = neutral). `/gamma <shadows> [midtones] [highlights]`
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/gamma")]
+struct GammaConsoleCommand {
+    shadows: f32,
+    midtones: Option<f32>,
+    highlights: Option<f32>,
+}
+
+fn gamma_console_command(
+    mut input: ConsoleCommand<GammaConsoleCommand>,
+    mut cam: Query<&mut bevy::render::view::ColorGrading, With<PrimaryCamera>>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let Ok(mut grading) = cam.single_mut() else {
+            return;
+        };
+        let midtones = command.midtones.unwrap_or(command.shadows);
+        let highlights = command.highlights.unwrap_or(midtones);
+        grading.shadows.gamma = command.shadows;
+        grading.midtones.gamma = midtones;
+        grading.highlights.gamma = highlights;
+        input.reply_ok(format!(
+            "gamma: shadows {} midtones {} highlights {}",
+            command.shadows, midtones, highlights
+        ));
+    }
+}
+
+/// set saturation per tonal range (scene default 1.3); 0 = grayscale.
+/// `/saturation <shadows> [midtones] [highlights]`
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/saturation")]
+struct SaturationConsoleCommand {
+    shadows: f32,
+    midtones: Option<f32>,
+    highlights: Option<f32>,
+}
+
+fn saturation_console_command(
+    mut input: ConsoleCommand<SaturationConsoleCommand>,
+    mut cam: Query<&mut bevy::render::view::ColorGrading, With<PrimaryCamera>>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let Ok(mut grading) = cam.single_mut() else {
+            return;
+        };
+        let midtones = command.midtones.unwrap_or(command.shadows);
+        let highlights = command.highlights.unwrap_or(midtones);
+        grading.shadows.saturation = command.shadows;
+        grading.midtones.saturation = midtones;
+        grading.highlights.saturation = highlights;
+        input.reply_ok(format!(
+            "saturation: shadows {} midtones {} highlights {}",
+            command.shadows, midtones, highlights
+        ));
+    }
+}
+
+/// set bloom intensity (default 0.15; 0 = off)
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/bloom")]
+struct BloomConsoleCommand {
+    intensity: f32,
+}
+
+fn bloom_console_command(
+    mut input: ConsoleCommand<BloomConsoleCommand>,
+    mut cam: Query<&mut bevy::core_pipeline::bloom::Bloom, With<PrimaryCamera>>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let Ok(mut bloom) = cam.single_mut() else {
+            return;
+        };
+        bloom.intensity = command.intensity;
+        input.reply_ok(format!("bloom intensity: {}", command.intensity));
     }
 }

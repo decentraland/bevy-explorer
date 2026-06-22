@@ -138,27 +138,30 @@ pub fn platform_pointer_is_locked(expected: bool) -> bool {
 
 pub fn default_camera_components() -> impl Bundle {
     (
-        Tonemapping::TonyMcMapface,
+        Tonemapping::AcesFitted,
         DebandDither::Enabled,
         ColorGrading {
+            // ACES tonemapping with a mild saturation lift; tune live with
+            // /tonemap /exposure /gamma /saturation
             global: ColorGradingGlobal {
-                exposure: -0.5,
+                exposure: 0.0,
                 ..Default::default()
             },
             shadows: ColorGradingSection {
-                gamma: 0.75,
+                saturation: 1.3,
                 ..Default::default()
             },
             midtones: ColorGradingSection {
-                gamma: 0.75,
+                saturation: 1.3,
                 ..Default::default()
             },
             highlights: ColorGradingSection {
-                gamma: 0.75,
+                saturation: 1.3,
                 ..Default::default()
             },
         },
         Bloom {
+            // tune live with /bloom
             intensity: 0.15,
             ..Bloom::OLD_SCHOOL
         },
