@@ -224,18 +224,7 @@
                     'border:1px solid rgba(255,255,255,0.3);border-radius:6px;' +
                     'padding:12px 28px;font-size:1rem;font-weight:600;cursor:pointer;' +
                     'margin:0;width:auto;display:inline-block;';
-                dismissBtn.onclick = function () {
-                    overlay.remove();
-                    shown = false;
-                    // Re-arm: clear the stale error and reset the stall counter so we
-                    // don't immediately re-trigger. If the engine is genuinely dead
-                    // the heartbeat won't advance and the watchdog shows it again
-                    // after a fresh full threshold.
-                    lastError = null;
-                    lastBeat = nowMs();
-                    missedTicks = 0;
-                    lastBeatCount = beatCount;
-                };
+                dismissBtn.onclick = hideCrashOverlay;
 
                 buttons.appendChild(reloadBtn);
                 buttons.appendChild(dismissBtn);
@@ -254,6 +243,20 @@
             } else {
                 document.addEventListener('DOMContentLoaded', render);
             }
+        }
+
+        // Take the overlay back down — either the engine recovered (frames resumed)
+        // or the user dismissed a false positive. Re-arm detection from a clean slate
+        // so a later genuine crash still shows after a fresh full threshold.
+        function hideCrashOverlay() {
+            var el = document.getElementById('crash-overlay');
+            if (el) el.remove();
+            shown = false;
+            lastError = null;
+            lastBeat = nowMs();
+            missedTicks = 0;
+            recoverTicks = 0;
+            lastBeatCount = beatCount;
         }
 
         // Record an error as context for the watchdog. Does NOT show the overlay —
@@ -294,13 +297,22 @@
         // covering lightly-throttled background tabs that still fire timers ~1/s.)
         var lastBeatCount = 0;
         var missedTicks = 0;
+        var recoverTicks = 0;  // consecutive ticks with frames again, while the overlay is up
         setInterval(function () {
-            if (shown || !beatsSeen || document.hidden) { missedTicks = 0; return; }
-            if (beatCount !== lastBeatCount) {  // engine produced frames since last tick
-                lastBeatCount = beatCount;
-                missedTicks = 0;
+            if (!beatsSeen || document.hidden) { missedTicks = 0; recoverTicks = 0; return; }
+            var advanced = beatCount !== lastBeatCount;  // engine produced frames since last tick
+            lastBeatCount = beatCount;
+
+            if (shown) {
+                // Overlay is up. If frames come back for a couple of ticks the engine
+                // recovered (the stall was transient) — take the overlay down. Two
+                // ticks rather than one so a single stray frame doesn't flicker it.
+                recoverTicks = advanced ? recoverTicks + 1 : 0;
+                if (recoverTicks >= 2) hideCrashOverlay();
                 return;
             }
+
+            if (advanced) { missedTicks = 0; return; }
             missedTicks++;
             // A recent error (recorded around when frames stopped) corroborates a
             // real crash, so we wait far fewer ticks before showing it.
