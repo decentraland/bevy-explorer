@@ -326,17 +326,21 @@ impl Plugin for SceneRunnerPlugin {
         app.add_systems(Update, update_scene_room.in_set(SceneSets::PostLoop));
         app.add_systems(Update, log_app_errors.in_set(SceneSets::PostLoop));
         app.add_systems(Update, set_ui_constraints.in_set(SceneSets::PostLoop));
-        // Editor render systems (gizmo/marker on-top overlay + DoF disable). They
-        // ship in the single build but stay dormant: `run_if` keeps them off the
-        // schedule unless a super-user (editor) scene is loaded — so production
-        // scenes pay nothing (no per-frame work, no behaviour change). This mirrors
-        // how the inspector's console commands are inert until invoked.
+        // Editor render systems (gizmo/marker on-top overlay + DoF toggle). They
+        // ship in the single build and are SCOPED TO super-user scenes — which, in
+        // the default build, includes the production UI scene as well as our editor
+        // scene. So they are NOT dormant in normal play: the overlay runs while any
+        // super-user scene is loaded (acting only on that scene's meshes), and the
+        // DoF toggle runs every frame so it can restore DoF once no super-user scene
+        // remains. (Console commands in scene_inspector are the truly-inert part —
+        // they cost nothing until invoked. Launch with `--ui none` for no UI scene.)
         app.add_systems(
             Update,
-            (mark_super_scene_overlay, editor_disable_dof)
+            mark_super_scene_overlay
                 .in_set(SceneSets::PostLoop)
                 .run_if(any_with_component::<SuperUserScene>),
         );
+        app.add_systems(Update, editor_toggle_dof.in_set(SceneSets::PostLoop));
 
         app.add_systems(
             Update,
@@ -1208,7 +1212,8 @@ fn push_camera_fov_to_crdt(
     }
 }
 
-// --- editor-only render systems (compiled in only under `editor`) ---------
+// --- editor render systems (always compiled; gated at runtime via SuperUserScene,
+// not a cargo feature) ---------
 // Meshes of the editor (super-user) scene are gizmos/markers — they must render
 // on top of everything. We can't flip a key-affecting flag in place (bevy won't
 // re-specialize the pipeline), so — like the inverted-scale path does — we CLONE
@@ -1231,6 +1236,12 @@ fn mark_super_scene_overlay(
         >,
     >,
 ) {
+    // evict clones whose source material is gone (e.g. the editor scene reloaded
+    // and its materials got fresh ids) so the cache + Assets don't grow unbounded
+    // across edit sessions. Dropping our strong handle frees the clone once no
+    // entity still references it.
+    overlay.retain(|src, _| mats.get(*src).is_some());
+
     for (entity, scene_ent, mat_handle) in meshes.iter() {
         if !super_scenes.contains(scene_ent.root) {
             continue;
@@ -1264,21 +1275,42 @@ fn mark_super_scene_overlay(
     }
 }
 
+// Stashes the DepthOfField that editor_toggle_dof removed, so it can be restored
+// verbatim when the editor (super-user) scene goes away — instead of leaving DoF
+// off for the rest of the session.
+#[derive(Component)]
+struct EditorDofRemoved(bevy::core_pipeline::dof::DepthOfField);
+
 // The editor wants a crisp, fully-in-focus viewport. The default depth-of-field
 // focuses ~50m past the avatar, blurring whatever you're editing (and the
-// depth-off gizmo overlay, which isn't in the prepass DoF samples). While an
-// editor scene is loaded, strip DoF from the primary camera.
-fn editor_disable_dof(
+// depth-off gizmo overlay, which isn't in the prepass DoF samples). While a
+// super-user (editor) scene is loaded, strip DoF from the primary camera; restore
+// the exact prior DoF once none remain. Runs unconditionally (cheap) so it can
+// observe the no-super-user-scene transition and put DoF back.
+fn editor_toggle_dof(
     mut commands: Commands,
     super_scenes: Query<(), With<SuperUserScene>>,
-    cam: Query<Entity, (With<PrimaryCamera>, With<bevy::core_pipeline::dof::DepthOfField>)>,
+    has_dof: Query<
+        (Entity, &bevy::core_pipeline::dof::DepthOfField),
+        (With<PrimaryCamera>, Without<EditorDofRemoved>),
+    >,
+    removed: Query<(Entity, &EditorDofRemoved), With<PrimaryCamera>>,
 ) {
-    if super_scenes.is_empty() {
-        return;
-    }
-    for e in cam.iter() {
-        commands
-            .entity(e)
-            .remove::<bevy::core_pipeline::dof::DepthOfField>();
+    if !super_scenes.is_empty() {
+        // editing: stash + strip DoF from any primary camera that still has it
+        for (e, dof) in has_dof.iter() {
+            commands
+                .entity(e)
+                .remove::<bevy::core_pipeline::dof::DepthOfField>()
+                .insert(EditorDofRemoved(dof.clone()));
+        }
+    } else {
+        // left the editor: restore exactly what we removed
+        for (e, saved) in removed.iter() {
+            commands
+                .entity(e)
+                .insert(saved.0.clone())
+                .remove::<EditorDofRemoved>();
+        }
     }
 }

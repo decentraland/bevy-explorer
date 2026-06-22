@@ -968,8 +968,14 @@ fn pointer_target_cmd(
                 bevy::picking::mesh_picking::ray_cast::MeshRayCastSettings::default()
                     .never_early_exit();
             for (hit, _) in mesh_raycast.cast_ray(ray, &settings) {
-                // ascend to the scene container that owns this mesh
+                // ascend to the scene container that owns this mesh (bounded, like
+                // the debug census path, to guard against pathological/cyclic graphs)
+                let mut visited = 0;
                 for owner in std::iter::once(*hit).chain(parents.iter_ancestors(*hit)) {
+                    visited += 1;
+                    if visited > 500 {
+                        break;
+                    }
                     let Ok(container) = containers.get(owner) else {
                         continue;
                     };
