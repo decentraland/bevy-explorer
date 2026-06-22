@@ -104,6 +104,7 @@ fn asset_catalog_cmd(
                 let result: Result<String, String> = async {
                     let resp = client
                         .get(CATALOG_URL)
+                        .timeout(std::time::Duration::from_secs(30))
                         .send()
                         .await
                         .map_err(|e| e.to_string())?;
@@ -263,7 +264,12 @@ fn init_asset_cmd(
                         // scene folder right now — the immediate push, so the asset renders without
                         // waiting for a save (and the dev server can serve it on the live merge).
                         let url = format!("{CONTENTS_BASE}{hash}");
-                        match client.get(&url).send().await {
+                        match client
+                            .get(&url)
+                            .timeout(std::time::Duration::from_secs(60))
+                            .send()
+                            .await
+                        {
                             Ok(resp) => match resp.bytes().await {
                                 Ok(bytes) => {
                                     let _ = io.cache_bytes(hash, &bytes).await; // no-op on web
@@ -366,6 +372,7 @@ pub async fn scene_target_json(io: &IpfsIo, scene_hash: &str) -> String {
         })
         .unwrap_or_default();
     serde_json::json!({
+        "hash": scene_hash,
         "root": root,
         "projectId": str_at("/source/projectId"),
         "parcels": parcels,

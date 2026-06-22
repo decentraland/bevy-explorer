@@ -235,12 +235,25 @@ pub struct EmoteCommand {
 // the scene-relative path against the active scene's content map). For foreign
 // players, written by the comms crate when a Movement packet with anim fields
 // arrives. Read by `animate` in the avatar crate uniformly for both.
-#[derive(Component, Default, Clone, Debug)]
+#[derive(Component, Default, Clone, Debug, PartialEq)]
 pub struct SceneDrivenAnim {
     pub active: Option<SceneDrivenAnimationRequest>,
 }
 
-#[derive(Debug, Clone, Default)]
+/// Build the render-only avatar tilt (lean) quaternion from pitch/roll in degrees.
+/// Composed as `Y * X * Z`, so `Quat::from_rotation_y(yaw) * avatar_tilt_quat(p, r)`
+/// equals `Quat::from_euler(EulerRot::YXZ, yaw, p_rad, r_rad)` — letting consumers recover
+/// the authoritative yaw with `to_euler(EulerRot::YXZ).0` even when tilt is present.
+pub fn avatar_tilt_quat(pitch_deg: f32, roll_deg: f32) -> bevy::math::Quat {
+    bevy::math::Quat::from_euler(
+        bevy::math::EulerRot::YXZ,
+        0.0,
+        pitch_deg.to_radians(),
+        roll_deg.to_radians(),
+    )
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct SceneDrivenAnimationRequest {
     // scene-relative path (e.g. "assets/walk.glb") — used for feedback to the controlling
     // scene. Empty for remote requests received over the network.
@@ -1148,7 +1161,7 @@ pub struct StartupScenes {
     pub scenes: Vec<StartupScene>,
 }
 
-#[derive(Resource, Default, Clone, Debug)]
+#[derive(Resource, Default, Clone, Debug, PartialEq)]
 pub struct SceneGlobalLight {
     pub source: Option<Entity>,
     pub dir_color: Color,
@@ -1379,6 +1392,7 @@ impl Default for ParcelGrassConfig {
 pub struct CurrentRealm {
     pub about_url: String,
     pub address: String,
+    pub connected: bool,
     pub config: ServerConfiguration,
     pub comms: Option<CommsConfig>,
     pub public_url: String,

@@ -10,8 +10,8 @@ use bimap::BiMap;
 use common::{
     rpc::{RpcCall, RpcEventSender, RpcStreamSender},
     structs::{
-        AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate, HeadSync, MoveKind, PointAtSync,
-        SceneDrivenAnimationRequest,
+        avatar_tilt_quat, AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate, HeadSync,
+        MoveKind, PointAtSync, SceneDrivenAnimationRequest,
     },
 };
 use ethers_core::types::Address;
@@ -393,7 +393,7 @@ pub fn process_transport_updates(
     mut subscribers: EventReader<RpcCall>,
     mut profile_meta_cache: ResMut<ProfileMetaCache>,
     mut duplicate_chat_filter: Local<HashMap<Entity, f64>>,
-    mut last_remote_anim_urn: Local<HashMap<Entity, (String, String)>>,
+    mut last_remote_anim: Local<HashMap<Entity, CachedRemoteAnim>>,
     discard_player_updates: Res<DiscardPlayerUpdates>,
 ) {
     // gather any event receivers
@@ -598,9 +598,10 @@ pub fn process_transport_updates(
                         }
                     }
                     PlayerMessage::PlayerData(Message::Scene(scene)) => {
+                        let address = format!("{:#x}", update.address);
                         process_messagebus(
                             scene,
-                            format!("{:#x}", update.address),
+                            address,
                             &mut string_senders,
                             &mut binary_senders,
                         );
@@ -622,7 +623,13 @@ pub fn process_transport_updates(
                         ));
                         let pos = Vec3::new(m.position_x, m.position_y, -m.position_z);
                         let vel = Vec3::new(m.velocity_x, m.velocity_y, -m.velocity_z);
-                        let rot = Quat::from_rotation_y(-m.rotation_y / 360.0 * TAU);
+                        // Compose the render-only lean on top of yaw; absent/old senders → upright.
+                        let tilt = m
+                            .scene_driven_animation
+                            .as_ref()
+                            .map(|s| avatar_tilt_quat(s.tilt_pitch(), s.tilt_roll()))
+                            .unwrap_or(Quat::IDENTITY);
+                        let rot = Quat::from_rotation_y(-m.rotation_y / 360.0 * TAU) * tilt;
                         let dcl_transform = DclTransformAndParent {
                             translation: DclTranslation::from_bevy_translation(pos),
                             rotation: DclQuat::from_bevy_quat(rot),
@@ -657,7 +664,7 @@ pub fn process_transport_updates(
                         let scene_anim = resolve_remote_anim(
                             entity,
                             update.address,
-                            &mut last_remote_anim_urn,
+                            &mut last_remote_anim,
                             m.scene_driven_animation,
                         );
                         position_events.write(PlayerPositionEvent {
@@ -673,18 +680,25 @@ pub fn process_transport_updates(
                             scene_anim,
                         });
                     }
-                    PlayerMessage::PlayerData(Message::MovementCompressed(m)) => {
+                    PlayerMessage::PlayerData(Message::MovementCompressed(mut m)) => {
                         debug!("movement compressed data: {m:?}");
+                        // Compose the render-only lean on top of yaw; absent/old senders → upright.
+                        // Read tilt before `take()` below empties the field.
+                        let tilt = m
+                            .scene_driven_animation
+                            .as_ref()
+                            .map(|s| avatar_tilt_quat(s.tilt_pitch(), s.tilt_roll()))
+                            .unwrap_or(Quat::IDENTITY);
                         let scene_anim = resolve_remote_anim(
                             entity,
                             update.address,
-                            &mut last_remote_anim_urn,
-                            m.scene_driven_animation.clone(),
+                            &mut last_remote_anim,
+                            m.scene_driven_animation.take(),
                         );
                         let movement = MovementCompressed::from_proto(m);
                         let pos = movement.position(state.realm_bounds.0, state.realm_bounds.1);
                         let vel = movement.velocity();
-                        let rot = Quat::from_rotation_y(movement.temporal.rotation_f32());
+                        let rot = Quat::from_rotation_y(movement.temporal.rotation_f32()) * tilt;
                         let dcl_transform = DclTransformAndParent {
                             translation: DclTranslation::from_bevy_translation(pos),
                             rotation: DclQuat::from_bevy_quat(rot),
@@ -724,8 +738,8 @@ pub fn process_transport_updates(
                     PlayerMessage::PlayerData(Message::PlayerEmote(emote)) => {
                         debug!("emote: {emote:?}");
                         commands.entity(entity).try_insert(EmoteCommand {
-                            urn: emote.urn.to_owned(),
                             timestamp: emote.incremental_id as i64,
+                            urn: emote.urn,
                             r#loop: false,
                         });
                     }
@@ -770,10 +784,16 @@ pub fn process_transport_updates(
 // common case for senders that don't speak our extension). The resolved state rides
 // on `PlayerPositionEvent` so `foreign_dynamics` can apply it with the same
 // interpolation delay as the visible position.
+pub struct CachedRemoteAnim {
+    scene_hash: String,
+    content_hash: String,
+    urn: String,
+}
+
 fn resolve_remote_anim(
     entity: Entity,
     sender: Address,
-    last_hashes: &mut HashMap<Entity, (String, String)>,
+    last_anims: &mut HashMap<Entity, CachedRemoteAnim>,
     anim: Option<dcl_component::proto_components::kernel::comms::rfc4::SceneDrivenAnimation>,
 ) -> Option<SceneDrivenAnimationRequest> {
     // Sender didn't attach the nested carrier; nothing to do (and nothing to clear,
@@ -794,31 +814,46 @@ fn resolve_remote_anim(
                 "dropping scene_driven_animation without matching origin_address: origin={:?} sender={}",
                 anim.origin_address, sender_str
             );
-            last_hashes.remove(&entity);
+            last_anims.remove(&entity);
             return None;
         }
     }
 
     // Wire convention: on transition the sender ships both hashes (or an empty
     // scene_hash to clear); between transitions both are omitted and we re-apply the
-    // cached pair so ride-along fields (speed, loop, seek) keep updating.
-    let (scene_hash, content_hash) = match anim.scene_hash {
+    // cached entry (hashes + pre-built URN) so ride-along fields (speed, loop, seek)
+    // keep updating without rebuilding the URN per packet.
+    let (scene_hash, content_hash, urn) = match anim.scene_hash {
         Some(s) if s.is_empty() => {
-            last_hashes.remove(&entity);
+            last_anims.remove(&entity);
             return None;
         }
         Some(s) => {
             let c = anim.content_hash?;
-            last_hashes.insert(entity, (s.clone(), c.clone()));
-            (s, c)
+            let urn = format!("urn:decentraland:off-chain:scene-emote:{s}-{c}-false");
+            last_anims.insert(
+                entity,
+                CachedRemoteAnim {
+                    scene_hash: s.clone(),
+                    content_hash: c.clone(),
+                    urn: urn.clone(),
+                },
+            );
+            (s, c, urn)
         }
-        None => last_hashes.get(&entity)?.clone(),
+        None => {
+            let cached = last_anims.get(&entity)?;
+            (
+                cached.scene_hash.clone(),
+                cached.content_hash.clone(),
+                cached.urn.clone(),
+            )
+        }
     };
 
     let speed = anim.speed?;
     let r#loop = anim.r#loop.unwrap_or(false);
     let transition_seconds = anim.transition_seconds.unwrap_or(0.2);
-    let urn = format!("urn:decentraland:off-chain:scene-emote:{scene_hash}-{content_hash}-false");
 
     Some(SceneDrivenAnimationRequest {
         src: String::new(),

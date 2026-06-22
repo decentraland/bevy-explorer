@@ -217,6 +217,7 @@ pub fn spawn_imposters(
     config: Res<AppConfig>,
     focus: Res<ImposterFocus>,
     mut required: Local<HashMap<(IVec2, usize), bool>>,
+    mut last_run_state: Local<Option<(IVec2, f32, f32, IVec2, IVec2, HashSet<IVec2>)>>,
     current_imposters: Query<(Entity, &SceneImposter)>,
     current_realm: Res<CurrentRealm>,
     ingredients: Res<BakingIngredients>,
@@ -234,6 +235,7 @@ pub fn spawn_imposters(
         }
 
         manager.clear();
+        *last_run_state = None;
 
         debug!("purge");
         return;
@@ -256,6 +258,14 @@ pub fn spawn_imposters(
     required.extend(ingredients.0.iter().map(|(p, l)| ((*p, *l), true)));
 
     let origin = focus.origin * Vec2::new(1.0, -1.0);
+
+    // snap to the focused parcel's centre so tile selection is a deterministic function of the
+    // parcel cell (matching the recompute gate below). using the raw focus position would let the
+    // tile set drift up to a full parcel diagonal stale as the focus moves within one parcel, and
+    // would make the result depend on which edge the parcel was entered from. (the bake-request
+    // origin further down is intentionally left on the raw focus position.)
+    let origin_parcel = (origin / PARCEL_SIZE).floor().as_ivec2();
+    let origin = (origin_parcel.as_vec2() + 0.5) * PARCEL_SIZE;
 
     // record live parcels
     let current_imposter_scene = match &current_imposter_scene.0 {
@@ -282,6 +292,23 @@ pub fn spawn_imposters(
         .flatten()
         .copied()
         .collect::<HashSet<_>>();
+
+    // skip the full tile recompute when nothing that affects the result has changed.
+    // tile membership is parcel-granular, so we only need to recompute when the focus
+    // crosses a parcel boundary (or scale/extents/live parcels/ingredients change).
+    let run_state = (
+        origin_parcel,
+        focus.min_distance,
+        focus.distance_scale,
+        manager.pointers.min(),
+        manager.pointers.max(),
+        live_parcels,
+    );
+    if required.is_empty() && !config.is_changed() && last_run_state.as_ref() == Some(&run_state) {
+        return;
+    }
+    let live_parcels = &run_state.5;
+
     let live_min = live_parcels.iter().fold(IVec2::MAX, |x, y| x.min(*y));
     let live_max = live_parcels.iter().fold(IVec2::MIN, |x, y| x.max(*y));
 
@@ -420,6 +447,8 @@ pub fn spawn_imposters(
     for (_, ent) in old.drain() {
         manager.store_removed(None, ent);
     }
+
+    *last_run_state = Some(run_state);
 }
 
 #[derive(Debug)]

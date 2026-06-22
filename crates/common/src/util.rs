@@ -641,6 +641,21 @@ impl InvertedScaleExt for Vec3 {
     }
 }
 
+pub trait UrlLoopbackExt {
+    fn is_loopback(&self) -> bool;
+}
+
+impl UrlLoopbackExt for url::Url {
+    fn is_loopback(&self) -> bool {
+        match self.host() {
+            Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+            Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+            Some(url::Host::Domain(domain)) => domain == "localhost",
+            _ => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

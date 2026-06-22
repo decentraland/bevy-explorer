@@ -17,14 +17,14 @@ use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
 use strum::IntoEnumIterator;
 use system_bridge::{
-    settings::SettingInfo, AvatarModifierState, BlockedUserData, ChatMessage,
-    FriendConnectivityEvent, FriendData, FriendRequestData, FriendStatusData,
-    FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo, PermanentPermissionItem,
-    PermissionRequest, ProximityEvent, SceneLoadingUi, SetAvatarData, SetPermanentPermission,
-    SetSinglePermission, SystemApi, VoiceMessage,
+    settings::SettingInfo, AvatarModifierState, BlockUpdateData, BlockedUserData,
+    BlockingStatusData, ChatMessage, FriendConnectivityEvent, FriendData, FriendRequestData,
+    FriendStatusData, FriendshipEventUpdate, HomeScene, HoverEvent, LiveSceneInfo,
+    PermanentPermissionItem, PermissionRequest, ProximityEvent, SceneLoadingUi, SetAvatarData,
+    SetPermanentPermission, SetSinglePermission, SystemApi, VoiceMessage,
 };
 
-use crate::{interface::crdt_context::CrdtContext, js::player_identity, RpcCalls};
+use crate::{interface::crdt_context::CrdtContext, js::player_identity, ClearableColor3, RpcCalls};
 
 use super::{State, SuperUserScene};
 
@@ -233,6 +233,7 @@ pub async fn op_set_avatar(
     equip: Option<PbAvatarEquippedData>,
     has_claimed_name: Option<bool>,
     profile_extras: Option<std::collections::HashMap<String, serde_json::Value>>,
+    name_color: Option<ClearableColor3>,
 ) -> Result<u32, anyhow::Error> {
     let (sx, rx) = RpcResultSender::channel();
 
@@ -245,6 +246,7 @@ pub async fn op_set_avatar(
                 equip,
                 has_claimed_name,
                 profile_extras,
+                name_color: name_color.map(ClearableColor3::to_color3),
             },
             sx,
         ))?;
@@ -1080,6 +1082,55 @@ pub async fn op_get_blocked_users(
         .send(SystemApi::GetBlockedUsers(sx))?;
 
     rx.await.map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_blocking_status(
+    state: Rc<RefCell<impl State>>,
+) -> Result<BlockingStatusData, anyhow::Error> {
+    let (sx, rx) = RpcResultSender::channel();
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetBlockingStatus(sx))?;
+
+    rx.await
+        .map_err(|e| anyhow::anyhow!(e))?
+        .map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn op_get_block_update_stream(state: Rc<RefCell<impl State>>) -> u32 {
+    let (sx, rx) = RpcStreamSender::channel();
+    state.borrow_mut().put(rx);
+
+    state
+        .borrow_mut()
+        .borrow_mut::<SuperUserScene>()
+        .send(SystemApi::GetBlockUpdateStream(sx))
+        .unwrap();
+
+    7
+}
+
+pub async fn op_read_block_update_stream(
+    state: Rc<RefCell<impl State>>,
+    _rid: u32,
+) -> Result<Option<BlockUpdateData>, anyhow::Error> {
+    let Some(mut receiver) = state
+        .borrow_mut()
+        .try_take::<RpcStreamReceiver<BlockUpdateData>>()
+    else {
+        return Ok(None);
+    };
+
+    let res = match receiver.recv().await {
+        Some(data) => Ok(Some(data)),
+        None => Ok(None),
+    };
+
+    state.borrow_mut().put(receiver);
+
+    res
 }
 
 pub async fn op_get_params(

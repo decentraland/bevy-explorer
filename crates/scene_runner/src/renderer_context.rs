@@ -68,6 +68,10 @@ pub struct RendererSceneContext {
 
     // time of last message sent to scene
     pub last_sent: f32,
+    // last player/camera transforms sent to the scene, used to delta-check
+    // without deserializing the stored crdt entry every frame
+    pub last_sent_player_transform: Option<Transform>,
+    pub last_sent_camera_transform: Option<Transform>,
     // time of last updates to bevy world from scene
     pub last_update_frame: u32,
     // currently running?
@@ -115,6 +119,16 @@ pub const FROZEN_BLOCK: &str = "frozen";
 
 pub const SCENE_LOG_BUFFER_SIZE: usize = 100;
 
+// A scene tick that has been in-flight (sent to the scene, no response yet) for longer than this
+// is treated as "not responding": handle_out_of_world stops holding the player behind the loading
+// screen, and the loading UI surfaces a countdown to this timeout.
+pub const SCENE_NOT_RESPONDING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+// Don't surface the "not responding" message until a tick has been in-flight at least this long,
+// so a normal slow frame doesn't flicker the warning.
+pub const SCENE_NOT_RESPONDING_DISPLAY_AFTER: std::time::Duration =
+    std::time::Duration::from_secs(2);
+
 impl RendererSceneContext {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -154,6 +168,8 @@ impl RendererSceneContext {
             unparented_entities: HashSet::new(),
             hierarchy_changed: false,
             last_sent: 0.0,
+            last_sent_player_transform: None,
+            last_sent_camera_transform: None,
             last_update_frame: 0,
             in_flight: false,
             broken: false,

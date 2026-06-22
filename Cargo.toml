@@ -132,6 +132,7 @@ itertools = "0.14"
 tokio = { version = "1.44", features = ["sync", "macros", "rt"] }
 tokio-util = "*"
 anyhow = "1.0.70"
+url = "2"
 http = "1.4"
 urn = "0.7.0"
 ethers-signers = "2.0.3"
@@ -149,6 +150,7 @@ reqwest = { version = "0.12", default-features = false, features = [
   "native-tls",
   "json",
   "blocking",
+  "stream",
 ] }
 kira = "0.9.6"
 zip = { version = "2", default-features = false }
@@ -180,6 +182,7 @@ async-trait = "0.1.68"
 fastrand = "2"
 rand = "0.8.5"
 futures-util = "0.3.28"
+futures-timer = "3"
 async-native-tls = { version = "0.5", features = ["runtime-async-std"] }
 boimp = { git = "https://github.com/robtfm/boimp", branch = "feat/composite-bake-via-storage-texture" }
 crc = "3"

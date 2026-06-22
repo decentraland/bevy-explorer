@@ -1,3 +1,5 @@
+pub mod name_color;
+
 use std::{io::Read, path::PathBuf, sync::Arc};
 
 use anyhow::anyhow;
@@ -14,7 +16,10 @@ use multihash_codetable::MultihashDigest;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
-use crate::global_crdt::GlobalCrdtState;
+use crate::{
+    global_crdt::GlobalCrdtState,
+    profile::name_color::{name_color_from_address, UNCLAIMED_NAME_COLOR},
+};
 
 use super::{
     global_crdt::{process_transport_updates, ForeignPlayer, ProfileEvent, ProfileEventType},
@@ -29,7 +34,9 @@ use common::{
 };
 use common::{rpc::RpcCall, util::AsH160};
 use dcl_component::{
-    proto_components::{kernel::comms::rfc4, sdk::components::PbPlayerIdentityData},
+    proto_components::{
+        kernel::comms::rfc4, sdk::components::PbPlayerIdentityData, Color3DclToBevy,
+    },
     SceneComponentId, SceneEntityId,
 };
 use wallet::Wallet;
@@ -51,6 +58,7 @@ impl Plugin for UserProfilePlugin {
         app.insert_resource(CurrentUserProfile::default());
         app.init_resource::<ProfileCache>()
             .init_resource::<ProfileMetaCache>()
+            .init_resource::<StaleProfiles>()
             .add_event::<ProfileDeployedEvent>();
     }
 }
@@ -65,6 +73,13 @@ enum ProfileDisplayState {
 pub struct ProfileCache(HashMap<Address, ProfileDisplayState>);
 #[derive(Resource, Default)]
 pub struct ProfileMetaCache(pub HashMap<Address, String>);
+
+/// Players whose announced profile_version is newer than the UserProfile we
+/// hold. Maintained by `process_profile_events` so `request_missing_profiles`
+/// doesn't have to version-check every player every frame; players with no
+/// UserProfile at all are found by an archetype-filtered (Without) query.
+#[derive(Resource, Default)]
+pub struct StaleProfiles(bevy::platform::collections::HashSet<Entity>);
 
 #[derive(SystemParam)]
 pub struct ProfileManager<'w, 's> {
@@ -287,21 +302,38 @@ pub struct CurrentUserProfile {
 #[allow(clippy::too_many_arguments)]
 fn request_missing_profiles(
     mut commands: Commands,
-    profiles: Query<(Entity, &mut ForeignPlayer, Option<&UserProfile>)>,
+    missing: Query<(Entity, &ForeignPlayer), Without<UserProfile>>,
+    versioned: Query<(Entity, &ForeignPlayer, &UserProfile)>,
+    mut stale: ResMut<StaleProfiles>,
     mut manager: ProfileManager,
     mut global_crdt: ResMut<GlobalCrdtState>,
     mut requested: Local<HashMap<Address, f32>>,
     transports: Query<&Transport>,
     time: Res<Time>,
 ) {
-    let mut last_requested = std::mem::take(&mut *requested);
+    // drop stale-set entries that resolved (or despawned) since last frame
+    if !stale.0.is_empty() {
+        stale.0.retain(|e| {
+            versioned
+                .get(*e)
+                .is_ok_and(|(_, player, profile)| player.profile_version > profile.version)
+        });
+    }
+    if missing.is_empty() && stale.0.is_empty() {
+        if !requested.is_empty() {
+            requested.clear();
+        }
+        return;
+    }
 
-    for (ent, player, _) in profiles.iter().filter(|(_, player, maybe_profile)| {
-        maybe_profile.is_none_or(|profile| player.profile_version > profile.version)
-    }) {
-        if let Some((address, req_time)) = last_requested.remove_entry(&player.address) {
+    let stale_players = stale
+        .0
+        .iter()
+        .filter_map(|e| versioned.get(*e).ok().map(|(ent, player, _)| (ent, player)));
+
+    for (ent, player) in missing.iter().chain(stale_players) {
+        if let Some(req_time) = requested.get(&player.address) {
             if time.elapsed_secs() - req_time < 10.0 {
-                requested.insert(address, req_time);
                 continue;
             }
         }
@@ -378,6 +410,7 @@ pub fn process_profile_events(
     current_profile: Res<CurrentUserProfile>,
     mut global_crdt: ResMut<GlobalCrdtState>,
     mut cache: ProfileManager,
+    mut stale: ResMut<StaleProfiles>,
 ) {
     for ev in events.read() {
         match &ev.event {
@@ -422,9 +455,15 @@ pub fn process_profile_events(
                 }
             }
             ProfileEventType::Version(v) => {
-                if let Ok((mut player, _)) = players.get_mut(ev.sender) {
+                if let Ok((mut player, maybe_profile)) = players.get_mut(ev.sender) {
                     if player.profile_version != v.profile_version {
                         player.profile_version = v.profile_version;
+                    }
+                    // flag for re-fetch when the announced version is ahead of
+                    // what we hold (request_missing_profiles drains this set)
+                    if maybe_profile.is_some_and(|profile| player.profile_version > profile.version)
+                    {
+                        stale.0.insert(ev.sender);
                     }
                 } else {
                     warn!("profile version for unknown player {:?}", ev.sender);
@@ -485,7 +524,7 @@ pub fn process_profile_events(
     last_sent_request.retain(|_, req_time| *req_time > time.elapsed_secs() - 10.0);
 }
 
-#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 pub struct UserProfile {
     pub version: u32,
     pub content: SerializedProfile,
@@ -500,6 +539,21 @@ impl UserProfile {
             .as_ref()
             .and_then(|s| s.rsplit(':').next())
             .is_none_or(|shape| shape.to_lowercase() == "basefemale")
+    }
+
+    pub fn name_color(&self) -> Color {
+        if !self.content.has_claimed_name {
+            UNCLAIMED_NAME_COLOR
+        } else if let Some(custom_name_color) = self.content.name_color {
+            custom_name_color.convert_srgb()
+        } else {
+            name_color_from_address(
+                self.content
+                    .eth_address
+                    .as_h160()
+                    .unwrap_or(Address::zero()),
+            )
+        }
     }
 }
 
@@ -571,6 +625,8 @@ async fn deploy_profile(
 
         ipfs.client()
             .post(url)
+            // multipart deploy carries profile snapshots, so allow more headroom
+            .timeout(std::time::Duration::from_secs(60))
             .header(
                 "Content-Type",
                 format!("multipart/form-data; boundary={}", prepared.boundary()),
@@ -604,6 +660,7 @@ pub async fn get_remote_profile(
     let response = ipfs
         .client()
         .post("https://asset-bundle-registry.decentraland.org/profiles")
+        .timeout(std::time::Duration::from_secs(10))
         .body(format!("{{ \"ids\": [\"{:#x}\"] }}", address))
         .header("content-type", "application/json")
         .send()

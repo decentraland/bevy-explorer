@@ -1036,6 +1036,7 @@ pub fn process_realm_change(
     mut commands: Commands,
     current_realm: Res<CurrentRealm>,
     mut live_scenes: ResMut<LiveScenes>,
+    mut pointers: ResMut<ScenePointers>,
     mut segment_config: Option<ResMut<SegmentConfig>>,
     scenes: Query<&RendererSceneContext>,
     player: Query<Entity, With<PrimaryUser>>,
@@ -1084,15 +1085,19 @@ pub fn process_realm_change(
             })
             .collect::<HashMap<_, _>>();
 
-        // pointers.0.retain(|_, pr| match pr {
-        //     PointerResult::Nothing{ .. } => false,
-        //     PointerResult::Exists{ hash, .. } => realm_scene_ids.contains_key(hash),
-        // });
         if !realm_scene_ids.is_empty() {
             // purge pointers and scenes that are not in the realm list (and not portable)
             live_scenes.scenes.retain(|hash, entity| {
                 realm_scene_ids.contains_key(hash)
                     || scenes.get(*entity).is_ok_and(|ctx| ctx.is_portable)
+            });
+            // Explicit-urn realms only request urns that aren't already cached and
+            // do no parcel sweep, so the active-entities reconciliation that clears
+            // stale pointers for active-entities realms never runs. Reconcile here
+            // against the realm's scene list
+            pointers.pointers.retain(|_, pr| match pr {
+                PointerResult::Nothing => false,
+                PointerResult::Exists { hash, .. } => realm_scene_ids.contains_key(hash),
             });
         }
 
@@ -1307,15 +1312,22 @@ fn load_active_entities(
                 })
                 .collect::<HashMap<_, _>>();
 
-            // make sure we still teleport even if we already have the hash
+            // make sure we still teleport even if we already have the hash (e.g.
+            // returning to a World whose pointers are still cached). `available_hashes`
+            // is keyed by hash but `teleport_on_resolve` is a urn, so match via
+            // `contains` as the resolve path below does, rather than a direct lookup.
             if let Some(teleport_on_resolve) = teleport_on_resolve.as_ref() {
-                if let Some(parcel) = available_hashes.get(teleport_on_resolve) {
+                if let Some(parcel) = available_hashes.iter().find_map(|(hash, parcel)| {
+                    teleport_on_resolve
+                        .contains(hash.as_str())
+                        .then_some(*parcel)
+                }) {
                     if let Some(mut commands) = player
                         .single()
                         .ok()
                         .and_then(|(p, _)| commands.get_entity(p).ok())
                     {
-                        commands.try_insert(teleport_components(*parcel));
+                        commands.try_insert(teleport_components(parcel));
                         debug!("already got the hash -> none");
                         *teleport_target = RealmInitialLocation::None;
                     }
@@ -1544,7 +1556,13 @@ pub fn process_scene_lifecycle(
             .map(|(h, u)| ((h, u), false)),
     );
 
-    // add any portables to requirements
+    // add any portables to requirements. Portables are exempt from the
+    // current-scene deferral below (see `retain`) so they load immediately
+    // instead of queueing behind the spawn-point parcel scene at startup.
+    let portable_ids: HashSet<(String, Option<String>)> = portables
+        .iter()
+        .map(|(hash, source)| (hash.clone(), Some(source.pid.clone())))
+        .collect();
     required_scene_ids.extend(
         portables
             .iter()
@@ -1635,7 +1653,10 @@ pub fn process_scene_lifecycle(
         {
             defer_to_current_scene = true;
             // if the current scene is not even spawned, spawn only that scene
-            required_scene_ids.retain(|scene, super_user| *super_user || (scene == &current_scene));
+            // (plus super-user scenes and portables, which are exempt).
+            required_scene_ids.retain(|scene, super_user| {
+                *super_user || scene == &current_scene || portable_ids.contains(scene)
+            });
         }
     }
     // publish for imposter loading: defer while the current scene is loading

@@ -91,16 +91,24 @@ impl Tween {
 
     fn apply(
         &self,
-        time: f32,
+        tween_apply_update: TweenApplyUpdate,
         transform: &mut Transform,
         maybe_mat: Option<&mut PbMaterialComponent>,
     ) {
         let f = self.easing_function();
 
-        let ease_value = if self.is_continuous() && self.duration <= 0. {
-            time
+        let ease_value = if self.is_continuous() {
+            // continuous tween uses the full speed
+            1.0
         } else {
-            f(time)
+            let factor = f(tween_apply_update.progress);
+            trace!(
+                "Time {} with easing function {:?} is {}",
+                tween_apply_update.progress,
+                self.deref().easing_function(),
+                factor
+            );
+            factor
         };
 
         match &self.mode {
@@ -108,7 +116,7 @@ impl Tween {
                 let start = data.start.unwrap_or_default().world_vec_to_vec3();
                 let end = data.end.unwrap_or_default().world_vec_to_vec3();
 
-                if data.face_direction == Some(true) && time == 0.0 {
+                if data.face_direction == Some(true) && tween_apply_update.progress == 0.0 {
                     let direction = end - start;
                     if direction == Vec3::ZERO {
                         // can't look nowhere
@@ -168,39 +176,56 @@ impl Tween {
                 }
             }
             Some(Mode::RotateContinuous(data)) => {
-                let axis = {
-                    let dcl_quat = data.direction.unwrap();
-                    let (axis, _) = dcl_quat.to_bevy_normalized().to_axis_angle();
-                    axis
+                let Some((axis, _)) = data
+                    .direction
+                    .map(|dcl_quat| dcl_quat.to_bevy_normalized().to_axis_angle())
+                else {
+                    return;
                 };
-                transform.rotation *=
-                    Quat::from_axis_angle(axis, ease_value * -data.speed.to_radians());
+                transform.rotation *= Quat::from_axis_angle(
+                    axis,
+                    ease_value * tween_apply_update.delta * -data.speed.to_radians(),
+                );
             }
             Some(Mode::MoveContinuous(data)) => {
-                transform.translation +=
-                    data.direction.unwrap().world_vec_to_vec3() * data.speed * ease_value;
+                if let Some(direction) = data.direction {
+                    transform.translation += direction.world_vec_to_vec3()
+                        * data.speed
+                        * ease_value
+                        * tween_apply_update.delta;
+                }
             }
             Some(Mode::TextureMoveContinuous(data)) => {
                 let Some(material) = maybe_mat else {
                     return;
                 };
 
-                let dcl_vec2 = data.direction.unwrap();
-                let direction = Vec2::new(dcl_vec2.x, dcl_vec2.y);
+                let Some(direction) = data
+                    .direction
+                    .map(|dcl_vec2| Vec2::new(dcl_vec2.x, dcl_vec2.y))
+                else {
+                    return;
+                };
 
                 match data.movement_type() {
                     TextureMovementType::TmtOffset => {
                         update_pb_material(
                             &mut material.0,
                             None,
-                            Some(direction * data.speed * ease_value * Vec2::new(1.0, -1.0)),
+                            Some(
+                                direction
+                                    * data.speed
+                                    * ease_value
+                                    * tween_apply_update.delta
+                                    * Vec2::new(1.0, -1.0),
+                            ),
                             true,
                         );
                     }
                     TextureMovementType::TmtTiling => {
                         update_pb_material(
                             &mut material.0,
-                            Some(direction * data.speed * ease_value),
+                            Some(direction * data.speed * ease_value * tween_apply_update.delta),
                             None,
                             true,
                         );
@@ -210,6 +235,13 @@ impl Tween {
             _ => {}
         }
     }
+}
+
+struct TweenApplyUpdate {
+    // Between 0 and 1 for bounded tweens
+    progress: f32,
+    // Time delta from last frame
+    delta: f32,
 }
 
 #[derive(Debug, PartialEq, Component, Deref, DerefMut)]
@@ -268,12 +300,14 @@ fn update_tween(
             continue;
         };
 
+        let delta_secs = time.delta_secs();
         let playing = tween.playing.unwrap_or(true);
+        let unbounded_continuous = tween.is_continuous() && tween.duration <= 0.;
         let delta = if playing {
-            if tween.is_continuous() && tween.duration <= 0. {
-                time.delta_secs()
+            if unbounded_continuous {
+                delta_secs
             } else {
-                time.delta_secs() * 1000.0 / tween.duration
+                delta_secs * 1000.0 / tween.duration
             }
         } else {
             0.0
@@ -283,7 +317,7 @@ fn update_tween(
             if tween.is_continuous() {
                 "continuous"
             } else {
-                "simple"
+                "bounded"
             },
             delta
         );
@@ -295,7 +329,7 @@ fn update_tween(
                 .as_ref()
                 .map(|state| state.current_time + delta)
                 .unwrap_or(0.0);
-            if tween.is_continuous() {
+            if unbounded_continuous {
                 updated_time
             } else {
                 updated_time.min(1.0)
@@ -306,12 +340,12 @@ fn update_tween(
             if tween.is_continuous() {
                 "Continuous"
             } else {
-                "Simple"
+                "Bounded"
             },
             updated_time
         );
 
-        let updated_status = if playing && updated_time == 1.0 && !tween.is_continuous() {
+        let updated_status = if playing && updated_time == 1.0 && !unbounded_continuous {
             TweenStateStatus::TsCompleted
         } else if playing {
             TweenStateStatus::TsActive
@@ -338,10 +372,9 @@ fn update_tween(
             }
 
             tween.apply(
-                if tween.is_continuous() {
-                    delta
-                } else {
-                    updated_time
+                TweenApplyUpdate {
+                    progress: updated_time,
+                    delta: delta_secs,
                 },
                 &mut transform,
                 if tween.is_texture_move() {

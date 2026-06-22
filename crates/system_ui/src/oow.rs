@@ -4,11 +4,14 @@ use bevy::{image::ImageLoaderSettings, prelude::*};
 use bevy_dui::{DuiEntities, DuiEntityCommandsExt, DuiProps};
 use common::{
     rpc::RpcStreamSender,
-    structs::{PrimaryUser, ZOrder},
+    structs::{CurrentRealm, PrimaryUser, ZOrder},
     util::TryPushChildrenEx,
 };
 use scene_runner::{
-    renderer_context::RendererSceneContext, update_world::gltf_container::GltfLoadingCount,
+    renderer_context::{
+        RendererSceneContext, SCENE_NOT_RESPONDING_DISPLAY_AFTER, SCENE_NOT_RESPONDING_TIMEOUT,
+    },
+    update_world::gltf_container::GltfLoadingCount,
     ContainingScene, OutOfWorld,
 };
 use system_bridge::{NativeUi, SceneLoadingUi, SystemApi};
@@ -20,6 +23,7 @@ use crate::change_realm::ChangeRealmDialog;
 /// Extracts scene loading info: (title, pending_assets_count)
 fn get_scene_loading_info(
     player: Entity,
+    now: f32,
     containing_scene: &ContainingScene,
     scenes: &Query<(&RendererSceneContext, Option<&GltfLoadingCount>)>,
 ) -> (String, Option<u32>) {
@@ -27,11 +31,28 @@ fn get_scene_loading_info(
         .get_parcel_oow(player)
         .and_then(|scene| scenes.get(scene).ok());
 
-    let title = scene
+    let mut title = scene
         .map(|(context, _)| context.title.clone())
         .unwrap_or_else(|| "Scene".to_owned());
 
     let pending_assets = scene.and_then(|(_, gltf_count)| gltf_count.map(|c| c.0 as u32));
+
+    // Assets are loaded (nothing pending) but a tick has been in-flight for a while: the scene
+    // script is stalling. Surface a countdown to the not-responding timeout, after which
+    // handle_out_of_world lets the player into the world.
+    if let Some((context, _)) = scene {
+        let in_flight_for = now - context.last_sent;
+        if pending_assets.unwrap_or(0) == 0
+            && context.in_flight
+            && in_flight_for >= SCENE_NOT_RESPONDING_DISPLAY_AFTER.as_secs_f32()
+        {
+            let remaining = (SCENE_NOT_RESPONDING_TIMEOUT.as_secs_f32() - in_flight_for).max(0.0);
+            title = format!(
+                "{title} (not responding... timeout in {} seconds)",
+                remaining.ceil() as u32
+            );
+        }
+    }
 
     (title, pending_assets)
 }
@@ -52,6 +73,7 @@ impl Plugin for OowUiPlugin {
 #[allow(clippy::too_many_arguments)]
 fn update_loading_scene_dialog(
     mut commands: Commands,
+    time: Res<Time>,
     wallet: Res<Wallet>,
     oow: Query<&OutOfWorld>,
     mut last_count: Local<usize>,
@@ -75,7 +97,8 @@ fn update_loading_scene_dialog(
         return;
     };
 
-    let (title_text, pending_assets) = get_scene_loading_info(player, &containing_scene, &scenes);
+    let (title_text, pending_assets) =
+        get_scene_loading_info(player, time.elapsed_secs(), &containing_scene, &scenes);
     let state_text = pending_assets
         .map(|count| format!("{} assets", count))
         .unwrap_or_else(|| "assets".to_owned());
@@ -210,6 +233,7 @@ fn update_loading_backdrop(
 #[allow(clippy::too_many_arguments)]
 fn pipe_scene_loading_ui_stream(
     mut requests: EventReader<SystemApi>,
+    time: Res<Time>,
     wallet: Res<Wallet>,
     oow: Query<&OutOfWorld>,
     player: Query<Entity, With<PrimaryUser>>,
@@ -217,6 +241,7 @@ fn pipe_scene_loading_ui_stream(
     scenes: Query<(&RendererSceneContext, Option<&GltfLoadingCount>)>,
     mut senders: Local<Vec<RpcStreamSender<SceneLoadingUi>>>,
     mut last_state: Local<Option<SceneLoadingUi>>,
+    current_realm: Res<CurrentRealm>,
 ) {
     // Collect new stream subscribers
     senders.extend(requests.read().filter_map(|ev| {
@@ -239,15 +264,18 @@ fn pipe_scene_loading_ui_stream(
     let visible = wallet.address().is_some() && !oow.is_empty();
 
     let current_state = if let (true, Ok(player)) = (visible, player.single()) {
-        let (title, pending_assets) = get_scene_loading_info(player, &containing_scene, &scenes);
+        let (title, pending_assets) =
+            get_scene_loading_info(player, time.elapsed_secs(), &containing_scene, &scenes);
         SceneLoadingUi {
             visible: true,
+            realm_connected: current_realm.connected,
             title,
             pending_assets,
         }
     } else {
         SceneLoadingUi {
             visible: false,
+            realm_connected: current_realm.connected,
             title: String::new(),
             pending_assets: None,
         }

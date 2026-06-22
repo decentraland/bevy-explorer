@@ -8,7 +8,11 @@ use bevy::{
     gltf::Gltf,
     platform::collections::{HashMap, HashSet},
     prelude::*,
-    render::{mesh::skinning::SkinnedMesh, primitives::Aabb, view::RenderLayers},
+    render::{
+        mesh::{skinning::SkinnedMesh, MeshTag},
+        primitives::Aabb,
+        view::RenderLayers,
+    },
     scene::InstanceId,
     tasks::{IoTaskPool, Task},
 };
@@ -22,7 +26,10 @@ use collectibles::{
 use colliders::AvatarColliderPlugin;
 use console::DoAddConsoleCommand;
 use npc_dynamics::NpcMovementPlugin;
-use scene_material::{BoundRegion, SceneBound, SceneMaterial};
+use scene_material::{
+    BoundRegion, SceneBound, SceneMaterial, SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG,
+    SCENE_MATERIAL_NO_DITHERING_MESH_TAG, SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG,
+};
 
 pub mod animate;
 pub mod attach;
@@ -33,7 +40,6 @@ pub mod foot_ik;
 pub mod foreign_dynamics;
 pub mod head_ik;
 pub mod mask_material;
-pub mod name_color;
 pub mod npc_dynamics;
 pub mod point_at_ik;
 pub mod point_at_marker;
@@ -1152,19 +1158,23 @@ fn process_avatar(
                             depth_bias: -5000.0, // make base model appear under any wearables at the same position, like skinpaint
                             ..mat.clone()
                         },
-                        extension: SceneBound::new_outlined(
-                            def.bounds.clone(),
-                            config.graphics.oob,
-                            false,
-                            def.disable_dither,
-                        ),
+                        extension: SceneBound::new(def.bounds.clone(), config.graphics.oob),
                     };
                     let instance_mat = instance_scene_materials
                         .entry(h_mat.clone_weak())
                         .or_insert_with(|| scene_materials.add(new_mat));
-                    commands
-                        .entity(scene_ent)
-                        .try_insert(MeshMaterial3d(instance_mat.clone()));
+                    commands.entity(scene_ent).try_insert((
+                        MeshMaterial3d(instance_mat.clone()),
+                        MeshTag(
+                            SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG
+                                | (if def.disable_dither {
+                                    SCENE_MATERIAL_NO_DITHERING_MESH_TAG
+                                } else {
+                                    0
+                                })
+                                | SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG,
+                        ),
+                    ));
                 }
             }
 
@@ -1218,17 +1228,21 @@ fn process_avatar(
                                     alpha_mode: AlphaMode::Blend,
                                     ..Default::default()
                                 },
-                                extension: SceneBound::new_outlined(
-                                    def.bounds.clone(),
-                                    config.graphics.oob,
-                                    true,
-                                    def.disable_dither,
-                                ),
+                                extension: SceneBound::new(def.bounds.clone(), config.graphics.oob),
                             };
                             let material = scene_materials.add(new_mat);
-                            commands
-                                .entity(scene_ent)
-                                .try_insert(MeshMaterial3d(material));
+                            commands.entity(scene_ent).try_insert((
+                                MeshMaterial3d(material),
+                                MeshTag(
+                                    SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG
+                                        | (if def.disable_dither {
+                                            SCENE_MATERIAL_NO_DITHERING_MESH_TAG
+                                        } else {
+                                            0
+                                        })
+                                        | SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG,
+                                ),
+                            ));
                         };
                         *vis = Visibility::Inherited;
                     }
@@ -1434,19 +1448,23 @@ fn process_avatar(
                                 emissive: new_emissive,
                                 ..mat.clone()
                             },
-                            extension: SceneBound::new_outlined(
-                                def.bounds.clone(),
-                                config.graphics.oob,
-                                false,
-                                def.disable_dither,
-                            ),
+                            extension: SceneBound::new(def.bounds.clone(), config.graphics.oob),
                         };
                         let instance_mat = instance_scene_materials
                             .entry(h_mat.clone_weak())
                             .or_insert_with(|| scene_materials.add(new_mat));
-                        commands
-                            .entity(scene_ent)
-                            .try_insert(MeshMaterial3d(instance_mat.clone()));
+                        commands.entity(scene_ent).try_insert((
+                            MeshMaterial3d(instance_mat.clone()),
+                            MeshTag(
+                                SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG
+                                    | (if def.disable_dither {
+                                        SCENE_MATERIAL_NO_DITHERING_MESH_TAG
+                                    } else {
+                                        0
+                                    })
+                                    | SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG,
+                            ),
+                        ));
                     }
                 }
             }
@@ -1652,19 +1670,27 @@ fn set_avatar_visibility(
         })
         .map(|(t, ..)| (t.translation() - player_pos).length_squared())
         .collect::<Vec<_>>();
-    distances.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Less));
-    let cutoff = distances
-        .get(config.max_avatars)
-        .copied()
-        .unwrap_or(f32::MAX);
+    // only the (max_avatars)-th distance matters; partition instead of sorting
+    let cutoff = if distances.len() > config.max_avatars {
+        *distances
+            .select_nth_unstable_by(config.max_avatars, |a, b| {
+                a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Less)
+            })
+            .1
+    } else {
+        f32::MAX
+    };
 
     for (t, mut vis, maybe_layer) in q.iter_mut() {
         let is_root_layer = maybe_layer.is_none_or(|layer| layer.intersects(&default_layer));
-        *vis = if is_root_layer && (t.translation() - player_pos).length_squared() >= cutoff {
+        let new_vis = if is_root_layer && (t.translation() - player_pos).length_squared() >= cutoff
+        {
             Visibility::Hidden
         } else {
             Visibility::Inherited
         };
+        // avoid dirtying Visibility (and the propagation pass) when unchanged
+        vis.set_if_neq(new_vis);
     }
 }
 
@@ -1837,6 +1863,6 @@ fn remove_attach_points_from_avatar_shape(
         for attach_point in attach_points.entities() {
             commands.entity(attach_point).try_despawn();
         }
-        commands.entity(entity).remove::<AttachPoints>();
+        commands.entity(entity).try_remove::<AttachPoints>();
     }
 }

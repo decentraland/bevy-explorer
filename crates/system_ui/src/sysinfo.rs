@@ -1,11 +1,10 @@
 use avatar::mask_material::MaskMaterial;
 use bevy::{
-    diagnostic::FrameCount,
-    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
+    diagnostic::{DiagnosticsStore, FrameCount, FrameTimeDiagnosticsPlugin},
     math::Vec3Swizzles,
     platform::{collections::HashSet, hash::FixedHasher},
     prelude::*,
-    render::mesh::Indices,
+    render::mesh::{Indices, MeshTag},
     text::JustifyText,
     ui::FocusPolicy,
 };
@@ -22,7 +21,7 @@ use common::{
 };
 use comms::{global_crdt::ForeignPlayer, Transport};
 use console::DoAddConsoleCommand;
-use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE};
+use scene_material::{SceneMaterial, SCENE_MATERIAL_OUTLINE_MESH_TAGS};
 use scene_runner::{
     initialize_scene::{SceneLoading, TestingData, PARCEL_SIZE},
     parcel_to_vec3,
@@ -258,14 +257,21 @@ fn update_scene_load_state(
         let mut ix = 0;
         let children = q_children.get(sysinfo).unwrap();
         let mut set_child = |value: String| {
-            if value.is_empty() {
-                style.get_mut(children[ix]).unwrap().display = Display::None;
+            // avoid touching Node/Text when unchanged - any write triggers relayout
+            let display = if value.is_empty() {
+                Display::None
             } else {
-                style.get_mut(children[ix]).unwrap().display = Display::Flex;
+                Display::Flex
+            };
+            let mut style = style.get_mut(children[ix]).unwrap();
+            if style.display != display {
+                style.display = display;
             }
             let container = q_children.get(children[ix]).unwrap();
             let mut text = text.get_mut(container[1]).unwrap();
-            text.0 = value;
+            if text.0 != value {
+                text.0 = value;
+            }
             ix += 1;
         };
 
@@ -484,15 +490,22 @@ fn update_minimap(
 
     if let Ok(components) = q.single() {
         if let Ok(mut map) = maps.get_mut(components.named("map-node")) {
-            map.center = map_center;
+            if map.center != map_center {
+                map.center = map_center;
+            }
         }
 
         if let Ok(mut text) = text.get_mut(components.named("title")) {
-            text.0 = title;
+            if text.0 != title {
+                text.0 = title;
+            }
         }
 
         if let Ok(mut text) = text.get_mut(components.named("position")) {
-            text.0 = format!("({},{})   {sdk}   {state}", parcel.x, parcel.y);
+            let position = format!("({},{})   {sdk}   {state}", parcel.x, parcel.y);
+            if text.0 != position {
+                text.0 = position;
+            }
         }
     }
 }
@@ -699,13 +712,12 @@ fn entity_count(
     meshes: Res<Assets<Mesh>>,
     textures: Res<Assets<Image>>,
     ui_nodes: Query<(), With<ComputedNode>>,
-    scene_mats: Query<&MeshMaterial3d<SceneMaterial>>,
+    scene_mats: Query<&MeshTag, With<MeshMaterial3d<SceneMaterial>>>,
     std_mats: Query<(), With<MeshMaterial3d<StandardMaterial>>>,
     mask_mats: Query<(), With<MeshMaterial3d<MaskMaterial>>>,
     uv_mats: Query<(), With<MaterialNode<StretchUvMaterial>>>,
     bound_mats: Query<(), With<MaterialNode<BoundedImageMaterial>>>,
     textshape_mats: Query<(), With<MeshMaterial3d<TextShapeMaterial>>>,
-    mats: Res<Assets<SceneMaterial>>,
 ) {
     if f.0.is_multiple_of(100) {
         let entities = q.iter().count();
@@ -716,11 +728,7 @@ fn entity_count(
 
         let outlined = scene_mats
             .iter()
-            .filter(|m| {
-                mats.get(m.id())
-                    .map(|m| (m.extension.data.flags & SCENE_MATERIAL_OUTLINE) != 0)
-                    .unwrap_or(false)
-            })
+            .filter(|m| m.0 & SCENE_MATERIAL_OUTLINE_MESH_TAGS != 0)
             .count();
         let scene_mats = scene_mats.iter().count();
         let std_mats = std_mats.iter().count();

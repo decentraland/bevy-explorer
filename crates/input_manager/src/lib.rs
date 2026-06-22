@@ -13,7 +13,7 @@ use bevy::{
     },
     platform::collections::{HashMap, HashSet},
     prelude::*,
-    window::PrimaryWindow,
+    window::{PrimaryWindow, WindowFocused},
 };
 
 use common::{
@@ -268,6 +268,23 @@ impl InputManager<'_, '_> {
         })
     }
 
+    // true if any binding for the action was just pressed, ignoring priority reservations.
+    // `just_down` can only return true (for any priority) if this returns true.
+    pub fn just_down_any_priority<T: Into<Action>>(&self, action: T) -> bool {
+        self.inputs(action.into()).any(|item| match item {
+            InputIdentifier::Key(k) => self.key_input.just_pressed(*k),
+            InputIdentifier::Mouse(mb) => self.mouse_input.just_pressed(*mb),
+            InputIdentifier::Gamepad(b) => self
+                .gamepads
+                .iter()
+                .flat_map(|gp| gp.get_just_pressed())
+                .any(|p| p == b),
+            InputIdentifier::Analog(axis, input_direction) => {
+                self.axis_data.just_down(*axis, *input_direction)
+            }
+        })
+    }
+
     pub fn just_up<T: Into<Action>>(&self, action: T) -> bool {
         self.inputs(action.into()).any(|item| match item {
             InputIdentifier::Key(k) => self.key_input.just_released(*k),
@@ -452,9 +469,19 @@ fn handle_modifier_keys(
     mut key_input: ResMut<ButtonInput<KeyCode>>,
     map: Res<InputMap>,
     priorities: Res<InputPriorities>,
+    mut focus_events: EventReader<WindowFocused>,
     mut was_active: Local<bool>,
     mut was_keyboard_claimed: Local<bool>,
 ) {
+    // An OS chord that steals focus (e.g. Cmd+Shift+5 screen grab) delivers the
+    // modifier keydown but its keyup lands while we're unfocused, so winit never
+    // reports the release and the modifier stays pressed() on return — latching
+    // suppression on forever. Clear all key state on focus loss so nothing
+    // survives the round trip.
+    if focus_events.read().any(|e| !e.focused) {
+        key_input.reset_all();
+    }
+
     let keyboard_claimed = priorities
         .get(InputType::All)
         .max(priorities.get(InputType::Keyboard))

@@ -1,6 +1,9 @@
+use std::marker::PhantomData;
+
 use bevy::{
     app::{HierarchyPropagatePlugin, Propagate},
     prelude::*,
+    render::mesh::MeshTag,
 };
 
 use common::{
@@ -12,7 +15,9 @@ use dcl_component::{
     proto_components::sdk::components::{AvatarAnchorPointType, PbAvatarAttach},
     SceneComponentId,
 };
-use scene_material::{SceneMaterial, SCENE_MATERIAL_CONE_ONLY_DITHER, SCENE_MATERIAL_NO_DITHERING};
+use scene_material::{
+    SceneMaterial, SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG, SCENE_MATERIAL_NO_DITHERING_MESH_TAG,
+};
 use scene_runner::update_world::{
     mesh_collider::DisableCollisions,
     transform_and_parent::{AvatarAttachStage, ParentPositionSync},
@@ -150,39 +155,48 @@ pub fn update_attached(
 }
 
 #[derive(Component)]
-pub struct DitheredMaterial<M: Asset>(pub Handle<M>);
+struct DitheredMaterial<M: Asset> {
+    previous_mesh_tag: u32,
+    _phantom_data: PhantomData<M>,
+}
 
 #[allow(clippy::type_complexity)]
 fn undither_materials_on_attached_items(
     mut commands: Commands,
-    mut scene_mats: ResMut<Assets<SceneMaterial>>,
-    new: Query<
-        (Entity, &MeshMaterial3d<SceneMaterial>, &AttachedToPlayer),
-        Without<DitheredMaterial<SceneMaterial>>,
+    mut new: Query<
+        (Entity, &mut MeshTag, &AttachedToPlayer),
+        (
+            With<MeshMaterial3d<SceneMaterial>>,
+            Without<DitheredMaterial<SceneMaterial>>,
+        ),
     >,
-    old: Query<(Entity, &DitheredMaterial<SceneMaterial>), Without<AttachedToPlayer>>,
+    mut old: Query<
+        (Entity, &mut MeshTag, &DitheredMaterial<SceneMaterial>),
+        (
+            With<MeshMaterial3d<SceneMaterial>>,
+            Without<AttachedToPlayer>,
+        ),
+    >,
 ) {
-    for (ent, mat, attached) in new.iter() {
-        let Some(mut undithered_material) = scene_mats.get(mat).cloned() else {
-            continue;
-        };
-
-        if attached.is_primary {
-            undithered_material.extension.data.flags |= SCENE_MATERIAL_NO_DITHERING;
-        } else {
-            undithered_material.extension.data.flags |= SCENE_MATERIAL_CONE_ONLY_DITHER;
-        }
-        let undithered_material = scene_mats.add(undithered_material);
-        commands.entity(ent).try_insert((
-            MeshMaterial3d(undithered_material),
-            DitheredMaterial(mat.0.clone()),
-        ));
-    }
-
-    for (ent, dithered) in old.iter() {
+    for (ent, mut mesh_tag, attached) in new.iter_mut() {
         commands
             .entity(ent)
-            .try_remove::<DitheredMaterial<SceneMaterial>>()
-            .try_insert(MeshMaterial3d(dithered.0.clone()));
+            .try_insert(DitheredMaterial::<SceneMaterial> {
+                previous_mesh_tag: mesh_tag.0,
+                _phantom_data: PhantomData,
+            });
+
+        if attached.is_primary {
+            mesh_tag.0 |= SCENE_MATERIAL_NO_DITHERING_MESH_TAG;
+        } else {
+            mesh_tag.0 |= SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG;
+        }
+    }
+
+    for (ent, mut mesh_tag, dithered) in old.iter_mut() {
+        mesh_tag.0 = dithered.previous_mesh_tag;
+        commands
+            .entity(ent)
+            .try_remove::<DitheredMaterial<SceneMaterial>>();
     }
 }

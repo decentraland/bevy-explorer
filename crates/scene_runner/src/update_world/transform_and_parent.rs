@@ -98,6 +98,11 @@ pub(crate) fn process_transform_and_parent_updates(
     // mut restricted_actions: EventWriter<RpcCall>,
 ) {
     for (root, mut scene_context, mut updates, deleted_entities) in scenes.iter_mut() {
+        // avoid triggering change detection when there is nothing to do
+        if updates.last_write.is_empty() && deleted_entities.0.is_empty() {
+            continue;
+        }
+
         // remove crdt state for dead entities
         for deleted in &deleted_entities.0 {
             updates.last_write.remove(deleted);

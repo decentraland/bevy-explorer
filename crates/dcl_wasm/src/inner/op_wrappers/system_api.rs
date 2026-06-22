@@ -110,13 +110,22 @@ pub async fn op_set_avatar(
     equip: JsValue,
     has_claimed_name: Option<bool>,
     profile_extras: JsValue,
+    name_color: JsValue,
 ) -> Result<u32, WasmError> {
     serde_parse!(base);
     serde_parse!(equip);
     serde_parse!(profile_extras);
-    dcl::js::system_api::op_set_avatar(state.rc(), base, equip, has_claimed_name, profile_extras)
-        .await
-        .map_err(WasmError::from)
+    serde_parse!(name_color);
+    dcl::js::system_api::op_set_avatar(
+        state.rc(),
+        base,
+        equip,
+        has_claimed_name,
+        profile_extras,
+        name_color,
+    )
+    .await
+    .map_err(WasmError::from)
 }
 
 #[wasm_bindgen]
@@ -513,6 +522,24 @@ pub async fn op_unblock_user(state: &WorkerContext, address: String) -> Result<(
 #[wasm_bindgen]
 pub async fn op_get_blocked_users(state: &WorkerContext) -> Result<JsValue, WasmError> {
     serde_result!(dcl::js::system_api::op_get_blocked_users(state.rc()).await)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_blocking_status(state: &WorkerContext) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_get_blocking_status(state.rc()).await)
+}
+
+#[wasm_bindgen]
+pub async fn op_get_block_update_stream(state: &WorkerContext) -> u32 {
+    dcl::js::system_api::op_get_block_update_stream(state.rc()).await
+}
+
+#[wasm_bindgen]
+pub async fn op_read_block_update_stream(
+    state: &WorkerContext,
+    rid: u32,
+) -> Result<JsValue, WasmError> {
+    serde_result!(dcl::js::system_api::op_read_block_update_stream(state.rc(), rid).await)
 }
 
 #[wasm_bindgen]

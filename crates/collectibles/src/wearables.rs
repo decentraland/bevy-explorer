@@ -98,6 +98,7 @@ fn load_collections(
                 IoTaskPool::get().spawn_compat(async move {
                     let response = client
                         .get("https://realm-provider.decentraland.org/lambdas/collections")
+                        .timeout(std::time::Duration::from_secs(10))
                         .send()
                         .await
                         .map_err(|e| anyhow!(e))?;
