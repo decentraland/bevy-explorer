@@ -5,7 +5,7 @@
     pbr_bindings::{material, emissive_texture, emissive_sampler},
     pbr_types::{STANDARD_MATERIAL_FLAGS_EMISSIVE_TEXTURE_BIT, STANDARD_MATERIAL_FLAGS_BASE_COLOR_TEXTURE_BIT, STANDARD_MATERIAL_FLAGS_DOUBLE_SIDED_BIT},
     mesh_functions,
-    mesh_view_bindings::{globals, view},
+    mesh_view_bindings::{globals, view, lights},
     pbr_types,
     shadows,
 }
@@ -21,9 +21,33 @@
 // occluding the sun — no second lighting evaluation needed.
 const SHADOW_OPACITY: f32 = 0.5;
 
+// Beyond the furthest shadow cascade bevy returns "fully lit" (shadow = 1.0),
+// which pops hard at the shadow-distance edge. Instead, fade toward a partial-
+// shadow floor. CASCADE_FAR_SHADOW is how far that floor sits from lit toward
+// the in-cascade shadowed value: 0.5 = halfway between a fully-shadowed face
+// and fully lit (scales with SHADOW_OPACITY so it tracks the near-field
+// shadows). CASCADE_FAR_FADE is the fraction of the shadow distance to blend
+// over.
+const CASCADE_FAR_SHADOW: f32 = 0.5;
+const CASCADE_FAR_FADE: f32 = 0.3;
+
 override fn shadows::fetch_directional_shadow(light_id: u32, frag_position: vec4<f32>, surface_normal: vec3<f32>, view_z: f32) -> f32 {
     let base = shadows::fetch_directional_shadow(light_id, frag_position, surface_normal, view_z);
-    return mix(1.0, base, SHADOW_OPACITY);
+    let softened = mix(1.0, base, SHADOW_OPACITY);
+
+    // far bound of the last cascade = the shadow distance for this light
+    let light = &lights.directional_lights[light_id];
+    let far = (*light).cascades[max((*light).num_cascades, 1u) - 1u].far_bound;
+    if far <= 0.0 {
+        return softened;
+    }
+    // floor halfway between the in-cascade shadowed value (1 - SHADOW_OPACITY)
+    // and fully lit (1.0): 1 - CASCADE_FAR_SHADOW * SHADOW_OPACITY
+    let far_shadow = 1.0 - CASCADE_FAR_SHADOW * SHADOW_OPACITY;
+    // blend the (softened) shadow toward that floor over the last
+    // CASCADE_FAR_FADE of the distance, holding the floor past the edge
+    let fade = smoothstep(far * (1.0 - CASCADE_FAR_FADE), far, -view_z);
+    return mix(softened, far_shadow, fade);
 }
 
 struct Bounds {
