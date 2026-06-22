@@ -1,7 +1,7 @@
 use bevy::{platform::collections::HashMap, prelude::*, ui::UiSystem};
 use common::{
     sets::PostUpdateSets,
-    structs::{PointAtSync, PrimaryCamera, PrimaryUser, ZOrder},
+    structs::{PointAtMarkerVisivbilityChanged, PointAtSync, PrimaryCamera, PrimaryUser, ZOrder},
     util::AsH160,
 };
 use comms::{
@@ -18,6 +18,7 @@ pub struct PointAtMarkerPlugin;
 impl Plugin for PointAtMarkerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MarkerOverlay>();
+        app.add_event::<PointAtMarkerVisivbilityChanged>();
         app.add_systems(Startup, setup_overlay);
         // Run alongside the IK chain so we read the live (post-CameraUpdate)
         // camera transform — running in `Update` would see last frame's
