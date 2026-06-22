@@ -7,11 +7,24 @@
     mesh_functions,
     mesh_view_bindings::{globals, view},
     pbr_types,
+    shadows,
 }
 #import bevy_core_pipeline::tonemapping::approximate_inverse_tone_mapping
 
 #import "embedded://shaders/simplex.wgsl"::simplex_noise_3d
 #import "embedded://shaders/bound_material_effect.wgsl"::{apply_outline, discard_dither}
+
+// SHADOW_OPACITY: how dark the sun's cast shadows are on the world.
+// 1.0 = full black shadows (bevy default), 0.0 = no shadow at all.
+// overriding the shadow fetch lifts the shadow value toward "lit" inside the
+// single pbr lighting pass, so shadows become partial instead of fully
+// occluding the sun — no second lighting evaluation needed.
+const SHADOW_OPACITY: f32 = 0.5;
+
+override fn shadows::fetch_directional_shadow(light_id: u32, frag_position: vec4<f32>, surface_normal: vec3<f32>, view_z: f32) -> f32 {
+    let base = shadows::fetch_directional_shadow(light_id, frag_position, surface_normal, view_z);
+    return mix(1.0, base, SHADOW_OPACITY);
+}
 
 struct Bounds {
     min: u32,
