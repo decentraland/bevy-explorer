@@ -503,7 +503,9 @@ fn process_profile(
             profile.content.extra_fields = extras.clone();
         }
 
-        profile.content.name_color = set_avatar.name_color;
+        if let Some(name_color) = set_avatar.name_color {
+            profile.content.name_color = name_color;
+        }
 
         profile.version += 1;
         profile.content.version = profile.version as i64;

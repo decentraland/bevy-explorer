@@ -63,7 +63,7 @@ pub struct SetAvatarData {
     pub equip: Option<PbAvatarEquippedData>,
     pub has_claimed_name: Option<bool>,
     pub profile_extras: Option<std::collections::HashMap<String, serde_json::Value>>,
-    pub name_color: Option<Color3>,
+    pub name_color: Option<Option<Color3>>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
