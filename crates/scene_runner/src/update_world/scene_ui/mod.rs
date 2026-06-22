@@ -7,6 +7,7 @@ pub mod ui_text;
 use std::collections::{BTreeSet, VecDeque};
 
 use bevy::{
+    diagnostic::FrameCount,
     math::FloatOrd,
     platform::collections::{HashMap, HashSet},
     prelude::*,
@@ -58,6 +59,13 @@ use ui_core::{
 use super::AddCrdtInterfaceExt;
 
 pub struct SceneUiPlugin;
+
+/// Stamps scene UI entities with the frame they were first created.
+/// Used to sort siblings so that late-added entities render on top,
+/// matching Unity's behaviour. Modifications to existing entities
+/// do not reset this value.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct UiCreationOrder(pub u32);
 
 #[derive(Debug, Copy, Clone)]
 struct Size {
@@ -773,7 +781,13 @@ fn layout_scene_ui(
     mut scene_uis: Query<(Entity, &mut SceneUiData)>,
     player: Query<Entity, With<PrimaryUser>>,
     containing_scene: ContainingScene,
-    ui_nodes: Query<(&SceneEntity, Ref<UiTransform>, &ChildOf)>,
+    ui_nodes: Query<(
+        &SceneEntity,
+        Ref<UiTransform>,
+        &ChildOf,
+        Option<&UiCreationOrder>,
+    )>,
+    frame_count: Res<FrameCount>,
     config: Res<AppConfig>,
     mut removed_transforms: RemovedComponents<UiTransform>,
     ui_links: Query<&UiLink>,
@@ -809,20 +823,25 @@ fn layout_scene_ui(
 
         // collect ui data
         let mut deleted_nodes = HashSet::new();
+        let current_frame = frame_count.0;
         let mut unprocessed_uis = ui_data
             .nodes
             .iter()
             .flat_map(|node| {
                 match ui_nodes.get(*node) {
-                    Ok((scene_entity, transform, bevy_parent)) => Some((
-                        scene_entity.id,
-                        (
-                            *node,
-                            transform.clone(),
-                            transform.is_changed(),
-                            bevy_parent.parent(),
-                        ),
-                    )),
+                    Ok((scene_entity, transform, bevy_parent, creation_order)) => {
+                        let creation_frame = creation_order.map(|c| c.0).unwrap_or(current_frame);
+                        Some((
+                            scene_entity.id,
+                            (
+                                *node,
+                                transform.clone(),
+                                transform.is_changed(),
+                                bevy_parent.parent(),
+                                creation_frame,
+                            ),
+                        ))
+                    }
                     Err(_) => {
                         // remove this node
                         deleted_nodes.insert(*node);
@@ -831,7 +850,15 @@ fn layout_scene_ui(
                 }
             })
             .collect::<Vec<_>>();
-        unprocessed_uis.sort_by_key(|(scene_id, _)| *scene_id);
+        // Sort by creation frame first (late-added entities render on top),
+        // then by scene_id to preserve rightOf ordering within the same frame.
+        unprocessed_uis
+            .sort_by_key(|(scene_id, (_, _, _, _, creation_frame))| (*creation_frame, *scene_id));
+        // Map scene entity IDs to their creation frame for rightOf checks.
+        let creation_frames: HashMap<SceneEntityId, u32> = unprocessed_uis
+            .iter()
+            .map(|(scene_id, (_, _, _, _, creation_frame))| (*scene_id, *creation_frame))
+            .collect();
         let mut unprocessed_uis: VecDeque<_> = unprocessed_uis.into();
 
         let mut valid_nodes = HashMap::new();
@@ -841,29 +868,45 @@ fn layout_scene_ui(
 
         let mut blocked_elements: HashMap<
             SceneEntityId,
-            Vec<(SceneEntityId, (Entity, UiTransform, bool, Entity))>,
+            Vec<(SceneEntityId, (Entity, UiTransform, bool, Entity, u32))>,
         > = HashMap::new();
 
-        while let Some((scene_id, (bevy_entity, ui_transform, transform_is_changed, root_node))) =
-            unprocessed_uis.pop_front()
+        while let Some((
+            scene_id,
+            (bevy_entity, ui_transform, transform_is_changed, root_node, creation_frame),
+        )) = unprocessed_uis.pop_front()
         {
             let Ok(bevy_ui_root) = ui_links.get(root_node).cloned() else {
                 warn!("no root for {:?}", root_node);
                 continue;
             };
 
-            // if our rightof is not added, we can't process this node
+            // if our rightof is not added, we can't process this node —
+            // unless the rightof target was created in a later frame, in which
+            // case we skip the dependency so that late-added entities render on
+            // top rather than reordering existing siblings.
             if ui_transform.right_of != SceneEntityId::ROOT
                 && !valid_nodes.contains_key(&ui_transform.right_of)
             {
-                blocked_elements
-                    .entry(ui_transform.right_of)
-                    .or_default()
-                    .push((
-                        scene_id,
-                        (bevy_entity, ui_transform, transform_is_changed, root_node),
-                    ));
-                continue;
+                let skip = creation_frames
+                    .get(&ui_transform.right_of)
+                    .is_some_and(|&right_of_frame| right_of_frame > creation_frame);
+                if !skip {
+                    blocked_elements
+                        .entry(ui_transform.right_of)
+                        .or_default()
+                        .push((
+                            scene_id,
+                            (
+                                bevy_entity,
+                                ui_transform,
+                                transform_is_changed,
+                                root_node,
+                                creation_frame,
+                            ),
+                        ));
+                    continue;
+                }
             }
 
             // if our parent is not added, we can't process this node
@@ -879,7 +922,13 @@ fn layout_scene_ui(
                     .or_default()
                     .push((
                         scene_id,
-                        (bevy_entity, ui_transform, transform_is_changed, root_node),
+                        (
+                            bevy_entity,
+                            ui_transform,
+                            transform_is_changed,
+                            root_node,
+                            creation_frame,
+                        ),
                     ));
                 continue;
             };
@@ -1033,7 +1082,9 @@ fn layout_scene_ui(
                     interactors,
                 };
 
-                commands.entity(bevy_entity).try_insert(new_link.clone());
+                commands
+                    .entity(bevy_entity)
+                    .try_insert((new_link.clone(), UiCreationOrder(creation_frame)));
                 valid_nodes.insert(scene_id, new_link);
                 false
             };
