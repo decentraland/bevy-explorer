@@ -20,6 +20,7 @@ use bevy::{
     prelude::*,
 };
 use cache_size::CacheSizeSetting;
+use cel_shading_setting::CelShadingSetting;
 #[cfg(not(target_arch = "wasm32"))]
 use common::structs::SsaoSetting;
 use common::{
@@ -53,6 +54,7 @@ pub mod aa_settings;
 pub mod ambient_brightness_setting;
 pub mod bloom_settings;
 pub mod cache_size;
+pub mod cel_shading_setting;
 pub mod constrain_ui;
 pub mod dof_setting;
 pub mod fog_settings;
@@ -148,6 +150,7 @@ impl Plugin for SettingBridgePlugin {
         #[cfg(not(target_arch = "wasm32"))]
         add_enum_setting::<SsaoSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<OobSetting>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<CelShadingSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<AaSetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<AmbientSetting>(app, &mut settings, &mut schedule, &config);
         if is_fullscreen_available() {

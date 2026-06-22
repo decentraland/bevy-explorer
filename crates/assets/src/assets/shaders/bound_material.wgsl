@@ -13,6 +13,7 @@
 
 #import "embedded://shaders/simplex.wgsl"::simplex_noise_3d
 #import "embedded://shaders/bound_material_effect.wgsl"::{apply_outline, discard_dither}
+#import "embedded://shaders/toon.wgsl"::toon_lighting
 
 // SHADOW_OPACITY: how dark the sun's cast shadows are on the world.
 // 1.0 = full black shadows (bevy default), 0.0 = no shadow at all.
@@ -192,7 +193,12 @@ fn fragment(
 
     // apply lighting
     if (pbr_input.material.flags & bevy_pbr::pbr_types::STANDARD_MATERIAL_FLAGS_UNLIT_BIT) == 0u {
-        out.color = apply_pbr_lighting(pbr_input);
+        if (mesh_tag & #{TOON_MESH_TAG}) != 0u {
+            // avatars: cel shading (own light model, ignores received shadows)
+            out.color = toon_lighting(pbr_input);
+        } else {
+            out.color = apply_pbr_lighting(pbr_input);
+        }
     } else {
         // invert tonemapping for unlit materials
         out.color = approximate_inverse_tone_mapping(pbr_input.material.base_color, view.color_grading); 
