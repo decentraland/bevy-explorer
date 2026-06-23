@@ -26,7 +26,7 @@ use common::{
     sets::SceneSets,
     structs::{
         AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, ParcelGrassSetting,
-        PreviewMode, ShadowSetting, WindowSetting,
+        PointAtMarkerVisibility, PreviewMode, ShadowSetting, WindowSetting,
     },
 };
 use constrain_ui::ConstrainUiSetting;
@@ -64,6 +64,7 @@ pub mod max_downloads;
 pub mod oob_setting;
 pub mod parcel_grass_settings;
 pub mod player_settings;
+pub mod point_at_marker_visibility;
 pub mod scene_threads;
 pub mod sensitivity;
 pub mod shadow_settings;
@@ -71,6 +72,7 @@ pub mod ssao_setting;
 pub mod video_threads;
 pub mod volume_settings;
 pub mod window_settings;
+
 pub struct SettingBridgePlugin;
 
 #[derive(Event)]
@@ -184,6 +186,7 @@ impl Plugin for SettingBridgePlugin {
         add_int_setting::<VideoThreadsSetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<MaxDownloadsSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<CacheSizeSetting>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<PointAtMarkerVisibility>(app, &mut settings, &mut schedule, &config);
 
         app.insert_resource(settings);
         app.insert_resource(ApplyAppSettingsSchedule(schedule));

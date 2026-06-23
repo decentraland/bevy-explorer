@@ -1,7 +1,10 @@
 use bevy::{platform::collections::HashMap, prelude::*, ui::UiSystem};
 use common::{
     sets::PostUpdateSets,
-    structs::{PointAtSync, PrimaryCamera, PrimaryUser, ZOrder},
+    structs::{
+        AppConfig, PointAtMarkerVisibility, PointAtMarkerVisibilityChanged, PointAtSync,
+        PrimaryCamera, PrimaryUser, ZOrder,
+    },
     util::AsH160,
 };
 use comms::{
@@ -10,6 +13,7 @@ use comms::{
 };
 use dcl_component::transform_and_parent::DclTranslation;
 use ethers_core::types::Address;
+use social::{FriendshipState, SocialClient};
 
 use crate::AvatarShape;
 
@@ -18,6 +22,7 @@ pub struct PointAtMarkerPlugin;
 impl Plugin for PointAtMarkerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MarkerOverlay>();
+        app.add_event::<PointAtMarkerVisibilityChanged>();
         app.add_systems(Startup, setup_overlay);
         // Run alongside the IK chain so we read the live (post-CameraUpdate)
         // camera transform — running in `Update` would see last frame's
@@ -33,6 +38,16 @@ impl Plugin for PointAtMarkerPlugin {
                 .in_set(PostUpdateSets::InverseKinematics)
                 .before(UiSystem::Layout),
         );
+        // The PointAtMarkerVisibilityChanged event does not hold any information,
+        // so we just need to have this system run once if there has been an event
+        // on that frame
+        app.add_systems(
+            PostUpdate,
+            change_point_at_marker_visibility
+                .run_if(on_event::<PointAtMarkerVisibilityChanged>)
+                .before(UiSystem::Layout),
+        );
+        app.add_observer(change_point_at_marker_visibility_for_new_point_at_markers);
     }
 }
 
@@ -317,5 +332,110 @@ fn position_markers(
         node.height = Val::Percent(height_pct);
         node.left = Val::Percent(left_pct);
         node.top = Val::Percent(top_pct);
+    }
+}
+
+fn change_point_at_marker_visibility(
+    app_config: Res<AppConfig>,
+    marker_overlay: Res<MarkerOverlay>,
+    children: Query<&Children>,
+    foreign_players: Query<&ForeignPlayer>,
+    primary_user: Single<Entity, With<PrimaryUser>>,
+    point_at_markers: Query<(&PointAtMarker, &mut Visibility)>,
+    social_client: Res<SocialClient>,
+) {
+    let Some(root) = marker_overlay.root else {
+        return;
+    };
+
+    debug!(
+        "PointAt marker visibility changed to {:?}.",
+        app_config.point_at_marker_visibility
+    );
+
+    let Ok(children) = children.get(root) else {
+        return;
+    };
+
+    let primary_user = primary_user.into_inner();
+
+    match app_config.point_at_marker_visibility {
+        PointAtMarkerVisibility::All => {
+            change_point_at_marker_visibility_of_entities(children, point_at_markers, &|_e| {
+                Visibility::Inherited
+            });
+        }
+        PointAtMarkerVisibility::Friends => {
+            change_point_at_marker_visibility_of_entities(children, point_at_markers, &|e| {
+                if e == primary_user {
+                    Visibility::Inherited
+                } else {
+                    let address = foreign_players
+                        .get(e)
+                        .map(|foreign_player| foreign_player.address)
+                        .ok()
+                        .unwrap_or(Address::zero());
+                    match social_client.get_state(address) {
+                        FriendshipState::Friends => Visibility::Inherited,
+                        _ => Visibility::Hidden,
+                    }
+                }
+            });
+        }
+        PointAtMarkerVisibility::None => {
+            change_point_at_marker_visibility_of_entities(children, point_at_markers, &|e| {
+                if e == primary_user {
+                    Visibility::Inherited
+                } else {
+                    Visibility::Hidden
+                }
+            });
+        }
+    }
+}
+
+fn change_point_at_marker_visibility_of_entities(
+    children: &[Entity],
+    mut point_at_markers: Query<(&PointAtMarker, &mut Visibility)>,
+    point_at_marker_visibility_closure: &dyn Fn(Entity) -> Visibility,
+) {
+    for child in children {
+        let Ok((point_at_marker, mut visibility)) = point_at_markers.get_mut(*child) else {
+            continue;
+        };
+
+        *visibility = point_at_marker_visibility_closure(point_at_marker.avatar);
+    }
+}
+
+fn change_point_at_marker_visibility_for_new_point_at_markers(
+    trigger: Trigger<OnInsert, PointAtMarker>,
+    mut point_at_markers: Query<(&PointAtMarker, &mut Visibility)>,
+    foreign_players: Query<&ForeignPlayer>,
+    primary_user: Single<Entity, With<PrimaryUser>>,
+    app_config: Res<AppConfig>,
+    social_client: Res<SocialClient>,
+) {
+    let entity = trigger.target();
+    let Ok((point_at_marker, mut visibility)) = point_at_markers.get_mut(entity) else {
+        return;
+    };
+
+    if point_at_marker.avatar != *primary_user {
+        *visibility = match app_config.point_at_marker_visibility {
+            PointAtMarkerVisibility::All => Visibility::Inherited,
+            PointAtMarkerVisibility::Friends => {
+                let address = foreign_players
+                    .get(point_at_marker.avatar)
+                    .map(|foreign_player| foreign_player.address)
+                    .ok()
+                    .unwrap_or(Address::zero());
+                match social_client.get_state(address) {
+                    FriendshipState::Friends => Visibility::Inherited,
+                    _ => Visibility::Hidden,
+                }
+            }
+            PointAtMarkerVisibility::None => Visibility::Hidden,
+        };
     }
 }

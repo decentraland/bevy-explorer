@@ -479,6 +479,7 @@ pub struct AppConfig {
     pub realm_permissions: HashMap<String, HashMap<PermissionType, PermissionValue>>,
     pub scene_permissions: HashMap<String, HashMap<PermissionType, PermissionValue>>,
     pub inputs: InputMapSerialized,
+    pub point_at_marker_visibility: PointAtMarkerVisibility,
 }
 
 impl Default for AppConfig {
@@ -510,6 +511,7 @@ impl Default for AppConfig {
             realm_permissions: Default::default(),
             scene_permissions: Default::default(),
             inputs: Default::default(),
+            point_at_marker_visibility: Default::default(),
         }
     }
 }
@@ -1453,3 +1455,14 @@ pub struct Region {
     pub top: i32,
     pub bottom: i32,
 }
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PointAtMarkerVisibility {
+    #[default]
+    All,
+    Friends,
+    None,
+}
+
+#[derive(Event)]
+pub struct PointAtMarkerVisibilityChanged;
