@@ -194,7 +194,8 @@ fn fragment(
     // apply lighting
     if (pbr_input.material.flags & bevy_pbr::pbr_types::STANDARD_MATERIAL_FLAGS_UNLIT_BIT) == 0u {
         if (mesh_tag & #{TOON_MESH_TAG}) != 0u {
-            // avatars: cel shading (own light model, ignores received shadows)
+            // avatars: cel shading (own light model; uses the cast shadow only
+            // to pick the lit-vs-shadowed band pair)
             out.color = toon_lighting(pbr_input);
         } else {
             out.color = apply_pbr_lighting(pbr_input);

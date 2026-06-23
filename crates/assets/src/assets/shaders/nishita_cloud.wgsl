@@ -205,11 +205,8 @@ fn render_cloud(sky: vec3<f32>, pos: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
 	    
     var p = pos + dir * low;
 
-    var d = 0.0;
     let add = dir * ((high - low) / f32(nishita.cloud_steps));
     var shade_sum: vec2<f32> = vec2<f32>(0.0);
-
-    let step_length = length(add);
 
     let density_cap = nishita.cloud_density_cap;
     for (var i = 0u; i < nishita.cloud_steps; i += 1u) {
