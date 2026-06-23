@@ -26,7 +26,7 @@ use common::{
     sets::SceneSets,
     structs::{
         AaSetting, AppConfig, BloomSetting, DofSetting, FogSetting, ParcelGrassSetting,
-        PointAtMarkerVisivbility, PreviewMode, ShadowSetting, WindowSetting,
+        PointAtMarkerVisibility, PreviewMode, ShadowSetting, WindowSetting,
     },
 };
 use constrain_ui::ConstrainUiSetting;
@@ -186,7 +186,7 @@ impl Plugin for SettingBridgePlugin {
         add_int_setting::<VideoThreadsSetting>(app, &mut settings, &mut schedule, &config);
         add_int_setting::<MaxDownloadsSetting>(app, &mut settings, &mut schedule, &config);
         add_enum_setting::<CacheSizeSetting>(app, &mut settings, &mut schedule, &config);
-        add_enum_setting::<PointAtMarkerVisivbility>(app, &mut settings, &mut schedule, &config);
+        add_enum_setting::<PointAtMarkerVisibility>(app, &mut settings, &mut schedule, &config);
 
         app.insert_resource(settings);
         app.insert_resource(ApplyAppSettingsSchedule(schedule));

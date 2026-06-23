@@ -2,7 +2,7 @@ use bevy::{platform::collections::HashMap, prelude::*, ui::UiSystem};
 use common::{
     sets::PostUpdateSets,
     structs::{
-        AppConfig, PointAtMarkerVisivbility, PointAtMarkerVisivbilityChanged, PointAtSync,
+        AppConfig, PointAtMarkerVisibility, PointAtMarkerVisibilityChanged, PointAtSync,
         PrimaryCamera, PrimaryUser, ZOrder,
     },
     util::AsH160,
@@ -22,7 +22,7 @@ pub struct PointAtMarkerPlugin;
 impl Plugin for PointAtMarkerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MarkerOverlay>();
-        app.add_event::<PointAtMarkerVisivbilityChanged>();
+        app.add_event::<PointAtMarkerVisibilityChanged>();
         app.add_systems(Startup, setup_overlay);
         // Run alongside the IK chain so we read the live (post-CameraUpdate)
         // camera transform — running in `Update` would see last frame's
@@ -38,13 +38,13 @@ impl Plugin for PointAtMarkerPlugin {
                 .in_set(PostUpdateSets::InverseKinematics)
                 .before(UiSystem::Layout),
         );
-        // The PointAtMarkerVisivbilityChanged event does not hold any information,
+        // The PointAtMarkerVisibilityChanged event does not hold any information,
         // so we just need to have this system run once if there has been an event
         // on that frame
         app.add_systems(
             PostUpdate,
             change_point_at_marker_visibility
-                .run_if(on_event::<PointAtMarkerVisivbilityChanged>)
+                .run_if(on_event::<PointAtMarkerVisibilityChanged>)
                 .before(UiSystem::Layout),
         );
         app.add_observer(change_point_at_marker_visibility_for_new_point_at_markers);
@@ -360,12 +360,12 @@ fn change_point_at_marker_visibility(
     let primary_user = primary_user.into_inner();
 
     match app_config.point_at_marker_visibility {
-        PointAtMarkerVisivbility::All => {
+        PointAtMarkerVisibility::All => {
             change_point_at_marker_visibility_of_entities(children, point_at_markers, &|_e| {
                 Visibility::Inherited
             });
         }
-        PointAtMarkerVisivbility::Friends => {
+        PointAtMarkerVisibility::Friends => {
             change_point_at_marker_visibility_of_entities(children, point_at_markers, &|e| {
                 if e == primary_user {
                     Visibility::Inherited
@@ -382,7 +382,7 @@ fn change_point_at_marker_visibility(
                 }
             });
         }
-        PointAtMarkerVisivbility::None => {
+        PointAtMarkerVisibility::None => {
             change_point_at_marker_visibility_of_entities(children, point_at_markers, &|e| {
                 if e == primary_user {
                     Visibility::Inherited
@@ -423,8 +423,8 @@ fn change_point_at_marker_visibility_for_new_point_at_markers(
 
     if point_at_marker.avatar != *primary_user {
         *visibility = match app_config.point_at_marker_visibility {
-            PointAtMarkerVisivbility::All => Visibility::Inherited,
-            PointAtMarkerVisivbility::Friends => {
+            PointAtMarkerVisibility::All => Visibility::Inherited,
+            PointAtMarkerVisibility::Friends => {
                 let address = foreign_players
                     .get(point_at_marker.avatar)
                     .map(|foreign_player| foreign_player.address)
@@ -435,7 +435,7 @@ fn change_point_at_marker_visibility_for_new_point_at_markers(
                     _ => Visibility::Hidden,
                 }
             }
-            PointAtMarkerVisivbility::None => Visibility::Hidden,
+            PointAtMarkerVisibility::None => Visibility::Hidden,
         };
     }
 }

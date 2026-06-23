@@ -1,9 +1,9 @@
 use bevy::prelude::*;
-use common::structs::{AppConfig, PointAtMarkerVisivbility, PointAtMarkerVisivbilityChanged};
+use common::structs::{AppConfig, PointAtMarkerVisibility, PointAtMarkerVisibilityChanged};
 
 use super::{AppSetting, EnumAppSetting, SettingCategory};
 
-impl EnumAppSetting for PointAtMarkerVisivbility {
+impl EnumAppSetting for PointAtMarkerVisibility {
     fn variants() -> Vec<Self> {
         vec![Self::All, Self::Friends, Self::None]
     }
@@ -18,7 +18,7 @@ impl EnumAppSetting for PointAtMarkerVisivbility {
     }
 }
 
-impl AppSetting for PointAtMarkerVisivbility {
+impl AppSetting for PointAtMarkerVisibility {
     type Param = ();
 
     fn title() -> String {
@@ -54,6 +54,6 @@ impl AppSetting for PointAtMarkerVisivbility {
         mut commands: Commands,
         _cameras: &bevy::platform::collections::HashSet<Entity>,
     ) {
-        commands.send_event(PointAtMarkerVisivbilityChanged);
+        commands.send_event(PointAtMarkerVisibilityChanged);
     }
 }
