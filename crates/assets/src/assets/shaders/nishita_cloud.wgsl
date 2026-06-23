@@ -389,7 +389,7 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
             let size = 0.99995 + 0.000025 * pow(fract(hash * 100000.0), 0.25);
             if stardirdot > size {
                 let color = vec3<f32>(0.25 + 0.75 * fract(hash * 1000.0), 0.625 + 0.375 * fract(hash * 1000.0), 1.0);
-                let brightness = smoothstep(0.99995 + 0.000025, 0.99995, size);
+                let brightness = 1.0 - smoothstep(0.99995, 0.99995 + 0.000025, size);
                 render_base += vec3<f32>(
                     color
                     * night_amount) // fades in below the horizon
@@ -402,7 +402,7 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
 
     let render = render_cloud(render_base, nishita.ray_origin * 0.0, normalize(ray));
 
-    let store_value = mix(render, vec3(0.0), smoothstep(0.0, -0.5, initial_y));
+    let store_value = mix(render, vec3(0.0), 1.0 - smoothstep(-0.5, 0.0, initial_y));
 
     textureStore(
         image,
