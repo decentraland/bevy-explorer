@@ -25,6 +25,11 @@ struct Nishita {
     dir_light_intensity: f32,
     night_color: vec3<f32>,
     moon_position: vec3<f32>,
+    cloud_density_cap: f32,
+    cloud_shadow: f32,
+    cloud_scale: f32,
+    cloud_steps: u32,
+    cloud_lacunarity: f32,
 }
 
 const PI: f32 = 3.141592653589793;
@@ -148,17 +153,21 @@ fn noise(x: vec2<f32>) -> f32 {
     return textureSampleLevel(noise_texture, noise_sampler, x / 65536.0, 0.0).r;
 }
 
-const m: mat3x3<f32> = mat3x3<f32>( 0.00,  0.80,  0.60,
-                                   -0.80,  0.36, -0.48,
-                                   -0.60, -0.48,  0.64 ) * 2.345;
+// pure rotation between octaves; the per-octave frequency step (lacunarity) is
+// applied separately so it can be tuned (cloud_lacunarity, default 2.345).
+const m_base: mat3x3<f32> = mat3x3<f32>( 0.00,  0.80,  0.60,
+                                        -0.80,  0.36, -0.48,
+                                        -0.60, -0.48,  0.64 );
 
-fn FBM(p0: vec3<f32>) -> f32 {
-	var p = p0;
+// `m` is the per-octave rotation already scaled by the lacunarity; it is passed
+// in (computed once per pixel in render_cloud) rather than rebuilt every call.
+fn FBM(p0: vec3<f32>, m: mat3x3<f32>) -> f32 {
+	var p = p0 * nishita.cloud_scale;
 
     let speed = 2.0;
 
     p.x += nishita.time * 3.0 * speed;
-	
+
 	var f = 0.3750 * noise(p.xz); p = m*p; p.y -= nishita.time * 20.0 * speed;
 	f += 0.3750   * noise(p.xz); p = m*p; p.y += nishita.time * 10.0 * speed;
 	f += 0.1250   * noise(p.xz); p = m*p; p.x -= nishita.time * 10.0 * speed;
@@ -172,23 +181,24 @@ fn cloudy() -> f32 {
     return (nishita.cloudy - 0.5) * 0.666;
 }
 
-fn density(p: vec3<f32>) -> f32 {
-	let density = clamp(FBM(p) * 0.5 + cloudy(), 0.0, 1.0);
+fn density(p: vec3<f32>, m: mat3x3<f32>) -> f32 {
+	let density = clamp(FBM(p, m) * 0.5 + cloudy(), 0.0, 1.0);
     let cloud_range = CLOUD_UPPER - CLOUD_LOWER;
     let outside = clamp(abs(clamp(p.y, CLOUD_LOWER + 0.1 * cloud_range, CLOUD_UPPER - 0.1 * cloud_range) - p.y) / (0.1 * cloud_range), 0.0, 1.0);
     return mix(density, 0.0, outside);
 }
 
-fn lighting(p: vec3<f32>, dir: vec3<f32>, sun: vec3<f32>) -> f32 {
-    let l = density(p + sun * 400.0);
+fn lighting(p: vec3<f32>, dir: vec3<f32>, sun: vec3<f32>, m: mat3x3<f32>) -> f32 {
+    let l = density(p + sun * 400.0, m);
     return clamp(pow(l, 0.25), 0.0, 1.0);
 }
-
-const STEPS: u32 = 20u;
 
 fn render_cloud(sky: vec3<f32>, pos: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
     let p_sun = normalize(nishita.sun_position);
     let sun_amount: f32 = max(dot(dir, p_sun), 0.0);
+
+    // per-octave rotation×lacunarity, computed once for all samples this pixel
+    let m = m_base * nishita.cloud_lacunarity;
 
 	var low = ((CLOUD_LOWER-pos.y) / dir.y);
 	let high = ((CLOUD_UPPER-pos.y) / dir.y);
@@ -196,13 +206,13 @@ fn render_cloud(sky: vec3<f32>, pos: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
     var p = pos + dir * low;
 
     var d = 0.0;
-    let add = dir * ((high - low) / f32(STEPS));
+    let add = dir * ((high - low) / f32(nishita.cloud_steps));
     var shade_sum: vec2<f32> = vec2<f32>(0.0);
 
     let step_length = length(add);
 
-    let density_cap = 0.8;
-    for (var i = 0u; i < STEPS; i += 1u) {
+    let density_cap = nishita.cloud_density_cap;
+    for (var i = 0u; i < nishita.cloud_steps; i += 1u) {
         if shade_sum.y >= density_cap {
             break;
         }
@@ -210,8 +220,8 @@ fn render_cloud(sky: vec3<f32>, pos: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
         let base_density = clamp(cloudy(), 0.0, 1.0);
         let base_light = pow(base_density, 0.25) * base_density;
 
-        let sample_density = density(p);
-        let sample_light = lighting(p, dir, p_sun) * sample_density;
+        let sample_density = density(p, m);
+        let sample_light = lighting(p, dir, p_sun, m) * sample_density;
 
         let density = mix(sample_density, base_density, clamp(length(p.xz) / 100000.0, 0.0, 1.0));
         let light = mix(sample_light, base_light, clamp(length(p.xz) / 100000.0, 0.0, 1.0));
@@ -222,12 +232,12 @@ fn render_cloud(sky: vec3<f32>, pos: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
 
     shade_sum /= max(shade_sum.y, density_cap);
 
-    let light_cloud_color_indirect = max(vec3(0.05), saturate(nishita.sun_color * 1.5) * min(1.0, nishita.dir_light_intensity / 5000.0));
-    let light_cloud_color_direct = max(vec3(0.05), saturate(nishita.sun_color * 1.5) * min(nishita.dir_light_intensity / 1000.0, 4.0));
+    let light_cloud_color_indirect = max(vec3(nishita.cloud_shadow), saturate(nishita.sun_color * 1.5) * min(1.0, nishita.dir_light_intensity / 5000.0));
+    let light_cloud_color_direct = max(vec3(nishita.cloud_shadow), saturate(nishita.sun_color * 1.5) * min(nishita.dir_light_intensity / 1000.0, 4.0));
     let light_cloud_color = mix(light_cloud_color_indirect, light_cloud_color_direct, pow(smoothstep(0.8 + (0.1 * shade_sum.y), 1.0, sun_amount), 5.0));
     shade_sum.y = mix(shade_sum.y, sqrt(shade_sum.y), smoothstep(0.9, 1.0, sun_amount));
 
-    let clouds = mix(light_cloud_color, vec3(0.05), pow(shade_sum.x, 3.0));
+    let clouds = mix(light_cloud_color, vec3(nishita.cloud_shadow), pow(shade_sum.x, 3.0));
     let result = mix(sky, min(clouds, vec3<f32>(1.0)), shade_sum.y);
     return clamp(result, vec3<f32>(0.0), vec3<f32>(1.0));
 }

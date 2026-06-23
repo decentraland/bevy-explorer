@@ -45,8 +45,13 @@ impl Plugin for VisualsPlugin {
         app.insert_resource(DirectionalLightShadowMap { size: 4096 })
             .init_resource::<SceneGlobalLight>()
             .insert_resource(CloudCover {
-                cover: 0.45,
-                speed: 10.0,
+                cover: 0.35,
+                speed: 30.0,
+                density_cap: 0.8,
+                shadow: 0.05,
+                scale: 1.5,
+                steps: 44,
+                lacunarity: 2.0,
             })
             .add_plugins(WireframePlugin::default())
             .add_plugins(DayNightPlugin)
@@ -80,6 +85,13 @@ impl Plugin for VisualsPlugin {
         app.add_console_command::<FogConsoleCommand, _>(fog_console_command);
         app.add_console_command::<DofConsoleCommand, _>(dof_console_command);
         app.add_console_command::<CloudConsoleCommand, _>(cloud_console_command);
+        app.add_console_command::<CloudDensityConsoleCommand, _>(cloud_density_console_command);
+        app.add_console_command::<CloudShadowConsoleCommand, _>(cloud_shadow_console_command);
+        app.add_console_command::<CloudScaleConsoleCommand, _>(cloud_scale_console_command);
+        app.add_console_command::<CloudStepsConsoleCommand, _>(cloud_steps_console_command);
+        app.add_console_command::<CloudLacunarityConsoleCommand, _>(
+            cloud_lacunarity_console_command,
+        );
         app.add_console_command::<TonemapConsoleCommand, _>(tonemap_console_command);
         app.add_console_command::<ExposureConsoleCommand, _>(exposure_console_command);
         app.add_console_command::<GammaConsoleCommand, _>(gamma_console_command);
@@ -231,6 +243,13 @@ fn apply_global_light(
     }
 
     atmosphere.time += time.delta_secs() * *cloud_dt;
+
+    // cloud look (live-tunable, baked later)
+    atmosphere.cloud_density_cap = cloud.density_cap;
+    atmosphere.cloud_shadow = cloud.shadow;
+    atmosphere.cloud_scale = cloud.scale;
+    atmosphere.cloud_steps = cloud.steps;
+    atmosphere.cloud_lacunarity = cloud.lacunarity;
 
     // skip the light/fog/ambient writes (which trigger change detection and re-extraction)
     // when the light has settled and nothing else affecting them has changed
@@ -496,6 +515,16 @@ struct CloudConsoleCommand {
 pub struct CloudCover {
     pub cover: f32,
     pub speed: f32,
+    /// accumulated density that reads as fully opaque (lower = thicker clouds).
+    pub density_cap: f32,
+    /// shadow / minimum cloud brightness (the dark side of clouds).
+    pub shadow: f32,
+    /// cloud noise sample scale (higher = finer/smaller features).
+    pub scale: f32,
+    /// cloud ray-march step count (higher = smoother/more detail, more cost).
+    pub steps: u32,
+    /// per-octave frequency step of the cloud noise (default 2.345).
+    pub lacunarity: f32,
 }
 
 fn cloud_console_command(
@@ -513,6 +542,92 @@ fn cloud_console_command(
             "cloud cover {}, speed {}",
             command.cover, cloud.speed
         ));
+    }
+}
+
+/// max accumulated density that reads as fully opaque; lower = thicker clouds.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/clouddensity")]
+struct CloudDensityConsoleCommand {
+    cap: f32,
+}
+
+fn cloud_density_console_command(
+    mut input: ConsoleCommand<CloudDensityConsoleCommand>,
+    mut cloud: ResMut<CloudCover>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        cloud.density_cap = command.cap;
+        input.reply_ok(format!("cloud density cap {}", command.cap));
+    }
+}
+
+/// shadow / minimum cloud brightness (the dark side of clouds).
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/cloudshadow")]
+struct CloudShadowConsoleCommand {
+    value: f32,
+}
+
+fn cloud_shadow_console_command(
+    mut input: ConsoleCommand<CloudShadowConsoleCommand>,
+    mut cloud: ResMut<CloudCover>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        cloud.shadow = command.value;
+        input.reply_ok(format!("cloud shadow {}", command.value));
+    }
+}
+
+/// cloud noise sample scale; higher = finer/smaller features, lower = larger.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/cloudscale")]
+struct CloudScaleConsoleCommand {
+    scale: f32,
+}
+
+fn cloud_scale_console_command(
+    mut input: ConsoleCommand<CloudScaleConsoleCommand>,
+    mut cloud: ResMut<CloudCover>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        cloud.scale = command.scale;
+        input.reply_ok(format!("cloud scale {}", command.scale));
+    }
+}
+
+/// cloud ray-march step count; higher = smoother/more detail, more cost.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/cloudsteps")]
+struct CloudStepsConsoleCommand {
+    steps: u32,
+}
+
+fn cloud_steps_console_command(
+    mut input: ConsoleCommand<CloudStepsConsoleCommand>,
+    mut cloud: ResMut<CloudCover>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        cloud.steps = command.steps.max(1);
+        input.reply_ok(format!("cloud steps {}", cloud.steps));
+    }
+}
+
+/// per-octave frequency step of the cloud noise (how much finer each successive
+/// wave is); default 2.345.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/cloudlacunarity")]
+struct CloudLacunarityConsoleCommand {
+    lacunarity: f32,
+}
+
+fn cloud_lacunarity_console_command(
+    mut input: ConsoleCommand<CloudLacunarityConsoleCommand>,
+    mut cloud: ResMut<CloudCover>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        cloud.lacunarity = command.lacunarity;
+        input.reply_ok(format!("cloud lacunarity {}", command.lacunarity));
     }
 }
 
