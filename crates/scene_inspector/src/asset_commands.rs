@@ -42,10 +42,8 @@ pub fn add_asset_commands(app: &mut App) {
 
 // --- /scene_content ---
 
-/// List the current scene's content files (content-map paths, sorted) as a JSON array of strings,
-/// for the editor's content-file pickers (gltf/audio/video/texture). Includes imported assets
-/// (merged into the scene collection). Paths are lowercased, as stored; the editor filters by
-/// extension per the field's semantic.
+/// List the scene's content-map paths (sorted, lowercased) as a JSON string array — for the
+/// editor's content-file pickers. Includes imported assets; the editor filters by extension.
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/scene_content")]
 struct SceneContentCommand;
@@ -199,16 +197,10 @@ fn asset_catalog_cmd(
 
 // --- /init_asset ---
 
-/// Import a catalog asset into the current scene: fetch+cache each of its files, register them in
-/// the scene's content map under `base_dir`, and return the (path-substituted) composite for the
-/// editor to instance. Requires `/asset_catalog` to have been run first.
-///
-/// Collision-safety: `base_dir` defaults to `assets/imported/<asset_id>`, so every asset's files
-/// occupy a disjoint, per-asset path namespace within the scene's collection — distinct assets
-/// never share a path key, and re-importing the same asset re-inserts identical path→hash entries
-/// (idempotent). The on-disk byte cache is keyed by content hash, so files shared between assets
-/// dedupe rather than collide. (The merge into the scene collection itself is `extend`; the
-/// namespace is what keeps it from shadowing the scene's own files.)
+/// Import a catalog asset into the current scene: fetch+cache its files, register them in the scene
+/// content map under `base_dir`, return the path-substituted composite. Needs `/asset_catalog`
+/// first. `base_dir` defaults to a per-asset namespace (`assets/imported/<id>`) so imports can't
+/// collide/shadow scene files; re-import is idempotent.
 #[derive(clap::Parser, ConsoleCommand)]
 #[command(name = "/init_asset")]
 struct InitAssetCommand {
