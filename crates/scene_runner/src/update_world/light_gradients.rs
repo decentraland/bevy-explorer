@@ -1,7 +1,8 @@
 //! Day-cycle colour gradients for scene lighting: the directional ("sun")
-//! light, the ambient fill, and the fog tint. Values were sampled from
-//! reference-client captures, keyed by normalized time of day
-//! (0.0 = midnight, 0.5 = noon). Colors are linear HDR.
+//! light and the ambient fill. Values were sampled from reference-client
+//! captures, keyed by normalized time of day (0.0 = midnight, 0.5 = noon).
+//! Colors are linear HDR. (Fog tint is derived from the ambient colour in
+//! `visuals` so it follows scene light overrides.)
 
 use bevy::math::Vec3;
 use common::util::Gradient;
@@ -27,15 +28,4 @@ pub const AMBIENT: Gradient = Gradient(&[
     (0.5, Vec3::new(0.654, 0.758, 0.8)),
     (0.7, Vec3::new(1.0, 0.643, 0.619)),
     (1.0, Vec3::new(0.567, 0.485, 1.0)),
-]);
-
-/// Fog tint over the day.
-pub const FOG: Gradient = Gradient(&[
-    (0.05, Vec3::new(0.239, 0.086, 0.471)),
-    (0.133, Vec3::new(0.287, 0.278, 0.514)),
-    (0.25, Vec3::new(0.764, 0.551, 0.575)),
-    (0.503, Vec3::new(0.31, 0.556, 0.708)),
-    (0.7, Vec3::new(0.66, 0.539, 0.514)),
-    (0.873, Vec3::new(0.509, 0.156, 0.478)),
-    (1.0, Vec3::new(0.24, 0.086, 0.472)),
 ]);

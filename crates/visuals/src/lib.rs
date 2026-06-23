@@ -199,9 +199,6 @@ fn apply_global_light(
                 .into(),
             ambient_brightness: scene_global_light.ambient_brightness * new_amount
                 + prev.1.ambient_brightness * old_amount,
-            fog_color: (scene_global_light.fog_color.to_srgba() * new_amount
-                + prev.1.fog_color.to_srgba() * old_amount)
-                .into(),
             layers: scene_global_light.layers.clone(),
         }
     };
@@ -352,13 +349,18 @@ fn apply_global_light(
                 .max(scene_distance.load_imposter * 0.333)
                 + maybe_primary.map_or(0.0, |camera| camera.distance * 5.0);
 
-            // fog tint follows its own day-cycle gradient, scaled by overall
-            // sky brightness so night fog goes dark
-            let base_color = next_light.fog_color.to_srgba()
+            // fog hue follows the (scene-overridable) ambient light rather than a
+            // fixed gradient, so a scene's global light tints the fog too. Overall
+            // brightness tracks the sky; an extra dir-intensity pull drops night
+            // fog toward the dark horizon colour (the authored night fog is darker
+            // than a plain ambient tint).
+            let night_pull = (next_light.dir_illuminance / 7000.0).clamp(0.35, 1.0);
+            let base_color = next_light.ambient_color.to_srgba()
                 * next_light.ambient_brightness
                 * 0.5
                 * skybox_brightness
-                / 2000.0;
+                / 2000.0
+                * night_pull;
             let base_color = Color::from(base_color).with_alpha(1.0);
 
             fog.color = base_color;

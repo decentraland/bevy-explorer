@@ -140,7 +140,6 @@ pub fn update_directional_light(
     let energy = smoothstep(-0.05, 0.3, elevation);
     let dir = super::light_gradients::DIR_LIGHT.sample(day);
     let amb = super::light_gradients::AMBIENT.sample(day);
-    let fog = super::light_gradients::FOG.sample(day);
 
     *global_light = SceneGlobalLight {
         source: None,
@@ -153,7 +152,6 @@ pub fn update_directional_light(
         // (midnight ≈ 2.1, ~70% of a full ambient-dominant fill) so the moon
         // stays directional and the night doesn't wash out
         ambient_brightness: 1.0 + (1.0 - energy) * 1.1,
-        fog_color: Color::srgb(fog.x, fog.y, fog.z),
         layers: RenderLayers::default(),
     };
 
