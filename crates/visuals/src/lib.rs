@@ -25,9 +25,10 @@ use nishita_cloud::{init_noise, NishitaCloud};
 use bevy_console::ConsoleCommand;
 use common::{
     sets::SetupSets,
+    sky_params,
     structs::{
         AppConfig, DofConfig, FogSetting, PrimaryCamera, PrimaryCameraRes, PrimaryUser,
-        SceneGlobalLight, SceneLoadDistance, ShadowSetting, PRIMARY_AVATAR_LIGHT_LAYER,
+        SceneGlobalLight, SceneLoadDistance, ShadowSetting, TimeOfDay, PRIMARY_AVATAR_LIGHT_LAYER,
     },
 };
 use console::DoAddConsoleCommand;
@@ -152,6 +153,7 @@ fn apply_global_light(
     mut cameras: Query<(Option<&PrimaryCamera>, Option<&mut DistanceFog>), With<Camera3d>>,
     scene_distance: Res<SceneLoadDistance>,
     scene_global_light: Res<SceneGlobalLight>,
+    time_of_day: Res<TimeOfDay>,
     mut prev: Local<(f32, SceneGlobalLight)>,
     mut cloud_dt: Local<f32>,
     mut last_primary_distance: Local<f32>,
@@ -193,9 +195,15 @@ fn apply_global_light(
     };
 
     let rotation = Quat::from_rotation_arc(Vec3::NEG_Z, next_light.dir_direction);
+
+    // physically-simulated sky: rayleigh (hue) and mie (haze) are baked day-cycle
+    // curves keyed by time of day; the sun sets naturally (no floor), and a flat
+    // night colour (added in-shader) provides the night sky.
+    let day = (time_of_day.elapsed_secs() / (60.0 * 60.0 * 24.0)).rem_euclid(1.0);
     atmosphere.sun_position = -next_light.dir_direction;
-    atmosphere.rayleigh_coefficient =
-        Vec3::new(5.5e-6, 13.0e-6, 22.4e-6) * next_light.dir_color.to_srgba().to_vec3();
+    atmosphere.rayleigh_coefficient = sky_params::RAYLEIGH.sample(day);
+    atmosphere.mie_coefficient = sky_params::MIE.sample(day);
+    atmosphere.night_color = sky_params::NIGHT_SKY;
     atmosphere.dir_light_intensity = next_light.dir_illuminance;
     atmosphere.sun_color = next_light.dir_color.to_srgba().to_vec3();
     atmosphere.tick += 1;

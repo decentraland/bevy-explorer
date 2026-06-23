@@ -81,6 +81,9 @@ pub struct NishitaCloud {
     pub tick: u32,
     pub sun_color: Vec3,
     pub dir_light_intensity: f32,
+    /// flat night-sky colour, added per view direction weighted by
+    /// max(0, -sun·ray) so it fades in as the sun drops below the horizon.
+    pub night_color: Vec3,
 }
 
 #[derive(ShaderType)]
@@ -100,6 +103,9 @@ pub struct NishitaCloudUniform {
     pub tick: u32,
     pub sun_color: Vec3,
     pub dir_light_intensity: f32,
+    /// flat night-sky colour, added per view direction weighted by
+    /// max(0, -sun·ray) so it fades in as the sun drops below the horizon.
+    pub night_color: Vec3,
 }
 
 impl From<&NishitaCloud> for NishitaCloudUniform {
@@ -120,6 +126,7 @@ impl From<&NishitaCloud> for NishitaCloudUniform {
             tick: value.tick,
             sun_color: value.sun_color,
             dir_light_intensity: value.dir_light_intensity,
+            night_color: value.night_color,
         }
     }
 }
@@ -143,6 +150,7 @@ impl Default for NishitaCloud {
             tick: 0,
             sun_color: Vec3::new(1.0, 1.0, 0.7),
             dir_light_intensity: 10000.0,
+            night_color: Vec3::ZERO,
         }
     }
 }

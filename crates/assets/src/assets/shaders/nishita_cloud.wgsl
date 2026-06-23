@@ -23,6 +23,7 @@ struct Nishita {
     tick: u32,
     sun_color: vec3<f32>,
     dir_light_intensity: f32,
+    night_color: vec3<f32>,
 }
 
 const PI: f32 = 3.141592653589793;
@@ -321,6 +322,10 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
             nishita.mie_direction,
         );
 
+        // flat night-sky colour across the sky, weighted toward the anti-solar
+        // direction: (max(-1, -sun·ray) * 0.25 + 0.75)
+        render_base += nishita.night_color
+            * (max(-1.0, -dot(normalize(nishita.sun_position), ray)) * 0.25 + 0.75);
 
         // // add sun
         let sun_weight = dot(ray, normalize(nishita.sun_position));
@@ -337,8 +342,10 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
         }
     }
 
-    // stars
-    if nishita.dir_light_intensity < 1000.0 {
+    // stars: fade in by how far the sun is below the horizon (not intensity,
+    // which floors at the horizon and would show stars at dusk)
+    let night_amount = smoothstep(0.0, 0.15, -normalize(nishita.sun_position).y);
+    if night_amount > 0.0 {
         for (var i=0u; i<1000u; i++) {
             let star_world_dir = normalize(
                 vec3<f32>(
@@ -356,8 +363,8 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
                 let color = vec3<f32>(0.25 + 0.75 * fract(hash * 1000.0), 0.625 + 0.375 * fract(hash * 1000.0), 1.0);
                 let brightness = smoothstep(0.99995 + 0.000025, 0.99995, size);
                 render_base += vec3<f32>(
-                    color 
-                    * clamp(1.0 - nishita.dir_light_intensity / 1000.0, 0.0, 1.0)) // sun brightness
+                    color
+                    * night_amount) // fades in below the horizon
                     * brightness // star brightness
                     * pow(smoothstep(size, 1.0, stardirdot), 3.0)  // distance from middle of the star
                     * clamp(ray.y * 10.0, 0.0, 1.0); // distance above horizon
