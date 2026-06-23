@@ -1,14 +1,15 @@
 // Toon (cel) shading for avatars.
 //
-// A 3-band cel ramp driven by two independent darkening sources, each of which
-// steps the band down one level:
-//   - angle:       the surface faces away from the dominant light (low half-lambert)
-//   - cast shadow: the surface is in the dominant light's shadow
-// lit + unshadowed = HIGH band, exactly one source = MID, both = LOW. Light
-// COLOUR is ignored so avatars read consistently day and night; only overall
-// scene brightness is tracked (and capped, so bright daylight doesn't wash them
-// out). A fresnel backlight rim glows on the silhouette when the light is behind
-// the avatar.
+// A 3-band cel ramp. The cast shadow selects which pair of bands is in play,
+// and a half-lambert angle picks within that pair:
+//   - lit (out of cast shadow): HIGH vs MID by the dominant light's angle
+//   - shadowed (in cast shadow): MID vs LOW by an assumed overhead light, so
+//     indoors/full-shade shading stays stable instead of swinging with the
+//     hidden sun direction
+// Light COLOUR is ignored so avatars read consistently day and night; only
+// overall scene brightness is tracked (and capped, so bright daylight doesn't
+// wash them out). A fresnel backlight rim glows on the silhouette when the
+// light is behind the avatar.
 //
 // Avatars still CAST shadows (that is the shadow pass's job, not this shading).
 
@@ -31,6 +32,11 @@ const ANGLE_FEATHER: f32 = 0.05;
 // cast-shadow split (sun_shadow: 1 = lit, lower = shadowed).
 const SHADOW_STEP: f32 = 0.95;
 const SHADOW_FEATHER: f32 = 0.04;
+// shadowed MID/LOW split: dot(N, up) threshold. A surface counts as lit-from-
+// above (MID) only when it faces up by more than this; below it -> LOW. Lower
+// (negative) to shrink LOW so only clearly down-facing surfaces darken in shade.
+const DOWN_STEP: f32 = -0.1;
+const DOWN_FEATHER: f32 = 0.1;
 // fresnel backlight rim on the silhouette.
 const RIM_POWER: f32 = 5.0;
 const RIM_STRENGTH: f32 = 0.2;
@@ -92,14 +98,16 @@ fn toon_lighting(pbr_input: PbrInput) -> vec4<f32> {
     let angle_lit = smoothstep(ANGLE_STEP - ANGLE_FEATHER, ANGLE_STEP + ANGLE_FEATHER, sun_half_lambert);
     let shadow_lit = smoothstep(SHADOW_STEP - SHADOW_FEATHER, SHADOW_STEP + SHADOW_FEATHER, sun_shadow);
 
-    // each lit source raises the band one level: 0 -> LOW, 1 -> MID, 2 -> HIGH
-    let lit_steps = angle_lit + shadow_lit;
-    var band: f32;
-    if lit_steps > 1.0 {
-        band = mix(BAND_MID, BAND_HIGH, lit_steps - 1.0);
-    } else {
-        band = mix(BAND_LOW, BAND_MID, lit_steps);
-    }
+    // when lit, the sun's angle picks HIGH vs MID. When in cast shadow (e.g.
+    // indoors) the sun is irrelevant / unseen, so an assumed overhead light
+    // (straight down, direction-to-light +Y) picks MID vs LOW instead, giving
+    // stable top-lit shading that doesn't swing with the hidden sun.
+    let down_up = dot(n, vec3<f32>(0.0, 1.0, 0.0));
+    let down_lit = smoothstep(DOWN_STEP - DOWN_FEATHER, DOWN_STEP + DOWN_FEATHER, down_up);
+
+    let band_lit = mix(BAND_MID, BAND_HIGH, angle_lit);
+    let band_shadowed = mix(BAND_LOW, BAND_MID, down_lit);
+    let band = mix(band_shadowed, band_lit, shadow_lit);
     rim *= shadow_lit; // rim drops out in cast shadow
 
     // light colour ignored; track only overall scene brightness (capped) so
