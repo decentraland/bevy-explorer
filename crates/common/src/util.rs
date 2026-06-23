@@ -656,6 +656,76 @@ impl UrlLoopbackExt for url::Url {
     }
 }
 
+/// A colour ramp keyed by a normalized parameter in `[0, 1)` (e.g. time of day).
+/// Stops are sorted ascending; sampling wraps across the ends (last -> first).
+pub struct Gradient(pub &'static [(f32, Vec3)]);
+
+impl Gradient {
+    pub fn sample(&self, t: f32) -> Vec3 {
+        let stops = self.0;
+        let t = t.rem_euclid(1.0);
+        let first = stops.first().unwrap();
+        let last = stops.last().unwrap();
+        if t <= first.0 {
+            // wrap: blend from last stop to first
+            let span = first.0 + (1.0 - last.0);
+            let f = if span > 0.0 {
+                (t + (1.0 - last.0)) / span
+            } else {
+                0.0
+            };
+            return last.1.lerp(first.1, f);
+        }
+        if t >= last.0 {
+            let span = first.0 + (1.0 - last.0);
+            let f = if span > 0.0 { (t - last.0) / span } else { 0.0 };
+            return last.1.lerp(first.1, f);
+        }
+        for pair in stops.windows(2) {
+            let (t0, c0) = pair[0];
+            let (t1, c1) = pair[1];
+            if t >= t0 && t <= t1 {
+                return c0.lerp(c1, (t - t0) / (t1 - t0));
+            }
+        }
+        last.1
+    }
+}
+
+/// A scalar ramp, sampled the same way as [`Gradient`] (wraps across the ends).
+pub struct Curve(pub &'static [(f32, f32)]);
+
+impl Curve {
+    pub fn sample(&self, t: f32) -> f32 {
+        let stops = self.0;
+        let t = t.rem_euclid(1.0);
+        let first = stops.first().unwrap();
+        let last = stops.last().unwrap();
+        if t <= first.0 {
+            let span = first.0 + (1.0 - last.0);
+            let f = if span > 0.0 {
+                (t + (1.0 - last.0)) / span
+            } else {
+                0.0
+            };
+            return last.1 + (first.1 - last.1) * f;
+        }
+        if t >= last.0 {
+            let span = first.0 + (1.0 - last.0);
+            let f = if span > 0.0 { (t - last.0) / span } else { 0.0 };
+            return last.1 + (first.1 - last.1) * f;
+        }
+        for pair in stops.windows(2) {
+            let (t0, c0) = pair[0];
+            let (t1, c1) = pair[1];
+            if t >= t0 && t <= t1 {
+                return c0 + (c1 - c0) * (t - t0) / (t1 - t0);
+            }
+        }
+        last.1
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

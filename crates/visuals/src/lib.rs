@@ -1,3 +1,4 @@
+mod atmosphere_params;
 mod day_night;
 pub mod env_downsample;
 mod nishita_cloud;
@@ -25,7 +26,6 @@ use nishita_cloud::{init_noise, NishitaCloud};
 use bevy_console::ConsoleCommand;
 use common::{
     sets::SetupSets,
-    sky_params,
     structs::{
         AppConfig, DofConfig, FogSetting, PrimaryCamera, PrimaryCameraRes, PrimaryUser,
         SceneGlobalLight, SceneLoadDistance, ShadowSetting, TimeOfDay, PRIMARY_AVATAR_LIGHT_LAYER,
@@ -213,9 +213,9 @@ fn apply_global_light(
     // night colour (added in-shader) provides the night sky.
     let day = (time_of_day.elapsed_secs() / (60.0 * 60.0 * 24.0)).rem_euclid(1.0);
     atmosphere.sun_position = -next_light.dir_direction;
-    atmosphere.rayleigh_coefficient = sky_params::RAYLEIGH.sample(day);
-    atmosphere.mie_coefficient = sky_params::MIE.sample(day);
-    atmosphere.night_color = sky_params::NIGHT_SKY;
+    atmosphere.rayleigh_coefficient = atmosphere_params::RAYLEIGH.sample(day);
+    atmosphere.mie_coefficient = atmosphere_params::MIE.sample(day);
+    atmosphere.night_color = atmosphere_params::NIGHT_SKY;
     // moon on its own low orbit: rises at dusk, peaks at MOON_PEAK_ELEV around
     // midnight (well below the zenith, so it never sits overhead like the sun),
     // sets at dawn. Anti-phase to the sun but on an independent arc, so it has

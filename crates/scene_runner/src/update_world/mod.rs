@@ -40,6 +40,7 @@ pub mod avatar_modifier_area;
 pub mod billboard;
 pub mod camera_mode_area;
 pub mod gltf_container;
+pub mod light_gradients;
 pub mod lights;
 pub mod material;
 pub mod mesh_collider;

@@ -3,7 +3,6 @@ pub mod inputs;
 pub mod profile;
 pub mod rpc;
 pub mod sets;
-pub mod sky_params;
 pub mod structs;
 pub mod util;
 

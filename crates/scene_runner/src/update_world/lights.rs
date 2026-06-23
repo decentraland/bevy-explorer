@@ -129,7 +129,7 @@ pub fn update_directional_light(
     player: Query<Entity, With<PrimaryUser>>,
     time: Res<TimeOfDay>,
 ) {
-    // normalized day: 0.0 = midnight, 0.5 = noon (matches the sky_params gradients)
+    // normalized day: 0.0 = midnight, 0.5 = noon (matches the light_gradients ramps)
     let day = (time.elapsed_secs() / (60.0 * 60.0 * 24.0)).rem_euclid(1.0);
     let t = (day + 0.75).fract() * TAU;
 
@@ -138,9 +138,9 @@ pub fn update_directional_light(
     let dir_direction = Quat::from_euler(EulerRot::YXZ, FRAC_PI_2 * 0.8, -t, 0.0) * Vec3::NEG_Z;
     let elevation = -dir_direction.y;
     let energy = smoothstep(-0.05, 0.3, elevation);
-    let dir = common::sky_params::DIR_LIGHT.sample(day);
-    let amb = common::sky_params::AMBIENT.sample(day);
-    let fog = common::sky_params::FOG.sample(day);
+    let dir = super::light_gradients::DIR_LIGHT.sample(day);
+    let amb = super::light_gradients::AMBIENT.sample(day);
+    let fog = super::light_gradients::FOG.sample(day);
 
     *global_light = SceneGlobalLight {
         source: None,
