@@ -113,6 +113,11 @@ impl From<PbGlobalLight> for GlobalLight {
     }
 }
 
+fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
+    let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
 pub fn update_directional_light(
     lights: Query<(
         &RendererSceneContext,
@@ -124,16 +129,29 @@ pub fn update_directional_light(
     player: Query<Entity, With<PrimaryUser>>,
     time: Res<TimeOfDay>,
 ) {
-    // default 2-hourly cycle
-    let t = (time.elapsed_secs() / (60.0 * 60.0 * 24.0) + 0.75).fract() * TAU;
+    // normalized day: 0.0 = midnight, 0.5 = noon (matches the light_gradients ramps)
+    let day = (time.elapsed_secs() / (60.0 * 60.0 * 24.0)).rem_euclid(1.0);
+    let t = (day + 0.75).fract() * TAU;
+
+    // gradient colors over the day; sun energy driven by elevation, with a
+    // violet "moon" floor so the night stays directional
+    let dir_direction = Quat::from_euler(EulerRot::YXZ, FRAC_PI_2 * 0.8, -t, 0.0) * Vec3::NEG_Z;
+    let elevation = -dir_direction.y;
+    let energy = smoothstep(-0.05, 0.3, elevation);
+    let dir = super::light_gradients::DIR_LIGHT.sample(day);
+    let amb = super::light_gradients::AMBIENT.sample(day);
 
     *global_light = SceneGlobalLight {
         source: None,
-        dir_color: Color::srgb(1.0, 1.0, 0.7),
-        dir_illuminance: (t - 0.2).sin().max((t + 0.2).sin()).max(0.0).powf(2.0) * 10_000.0,
-        dir_direction: Quat::from_euler(EulerRot::YXZ, FRAC_PI_2 * 0.8, -t, 0.0) * Vec3::NEG_Z,
-        ambient_color: Color::srgb(0.85, 0.85, 1.0),
-        ambient_brightness: 1.0,
+        dir_color: Color::srgb(dir.x, dir.y, dir.z),
+        // sun energy peaks at ~0.7 * full scale; floor keeps a violet "moon" at night
+        dir_illuminance: (energy * 0.7 * 10_000.0).max(1500.0),
+        dir_direction,
+        ambient_color: Color::srgb(amb.x, amb.y, amb.z),
+        // stronger ambient fill when the sun is low, but kept modest at night
+        // (midnight ≈ 2.1, ~70% of a full ambient-dominant fill) so the moon
+        // stays directional and the night doesn't wash out
+        ambient_brightness: 1.0 + (1.0 - energy) * 1.1,
         layers: RenderLayers::default(),
     };
 

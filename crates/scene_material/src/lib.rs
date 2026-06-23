@@ -15,6 +15,8 @@ pub type SceneMaterial = ExtendedMaterial<SceneBound>;
 pub const SCENE_MATERIAL_SHOW_OUTSIDE_BOUNDS_MESH_TAG: u32 = 0x01000000;
 pub const SCENE_MATERIAL_NO_DITHERING_MESH_TAG: u32 = 0x02000000;
 pub const SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG: u32 = 0x04000000;
+// cel-shade this mesh (avatars) instead of standard PBR — see toon.wgsl
+pub const SCENE_MATERIAL_TOON_MESH_TAG: u32 = 0x08000000;
 pub const SCENE_MATERIAL_OUTLINE_MESH_TAGS: u32 = 0xF0000000;
 pub const SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG: u32 = 0x10000000;
 pub const SCENE_MATERIAL_OUTLINE_RED_MESH_TAG: u32 = 0x20000000;
@@ -252,6 +254,10 @@ impl MaterialExtension for SceneBound {
             fragment.shader_defs.push(ShaderDefVal::UInt(
                 "CONE_ONLY_DITHER_MESH_TAG".to_owned(),
                 SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG,
+            ));
+            fragment.shader_defs.push(ShaderDefVal::UInt(
+                "TOON_MESH_TAG".to_owned(),
+                SCENE_MATERIAL_TOON_MESH_TAG,
             ));
             fragment.shader_defs.push(ShaderDefVal::UInt(
                 "OUTLINE_MESH_TAGS".to_owned(),

@@ -1,3 +1,4 @@
+mod atmosphere_params;
 mod day_night;
 pub mod env_downsample;
 mod nishita_cloud;
@@ -27,7 +28,7 @@ use common::{
     sets::SetupSets,
     structs::{
         AppConfig, DofConfig, FogSetting, PrimaryCamera, PrimaryCameraRes, PrimaryUser,
-        SceneGlobalLight, SceneLoadDistance, ShadowSetting, PRIMARY_AVATAR_LIGHT_LAYER,
+        SceneGlobalLight, SceneLoadDistance, ShadowSetting, TimeOfDay, PRIMARY_AVATAR_LIGHT_LAYER,
     },
 };
 use console::DoAddConsoleCommand;
@@ -44,8 +45,13 @@ impl Plugin for VisualsPlugin {
         app.insert_resource(DirectionalLightShadowMap { size: 4096 })
             .init_resource::<SceneGlobalLight>()
             .insert_resource(CloudCover {
-                cover: 0.45,
-                speed: 10.0,
+                cover: 0.35,
+                speed: 30.0,
+                density_cap: 0.8,
+                shadow: 0.05,
+                scale: 1.5,
+                steps: 44,
+                lacunarity: 2.0,
             })
             .add_plugins(WireframePlugin::default())
             .add_plugins(DayNightPlugin)
@@ -79,6 +85,18 @@ impl Plugin for VisualsPlugin {
         app.add_console_command::<FogConsoleCommand, _>(fog_console_command);
         app.add_console_command::<DofConsoleCommand, _>(dof_console_command);
         app.add_console_command::<CloudConsoleCommand, _>(cloud_console_command);
+        app.add_console_command::<CloudDensityConsoleCommand, _>(cloud_density_console_command);
+        app.add_console_command::<CloudShadowConsoleCommand, _>(cloud_shadow_console_command);
+        app.add_console_command::<CloudScaleConsoleCommand, _>(cloud_scale_console_command);
+        app.add_console_command::<CloudStepsConsoleCommand, _>(cloud_steps_console_command);
+        app.add_console_command::<CloudLacunarityConsoleCommand, _>(
+            cloud_lacunarity_console_command,
+        );
+        app.add_console_command::<TonemapConsoleCommand, _>(tonemap_console_command);
+        app.add_console_command::<ExposureConsoleCommand, _>(exposure_console_command);
+        app.add_console_command::<GammaConsoleCommand, _>(gamma_console_command);
+        app.add_console_command::<SaturationConsoleCommand, _>(saturation_console_command);
+        app.add_console_command::<BloomConsoleCommand, _>(bloom_console_command);
     }
 
     fn finish(&self, app: &mut App) {
@@ -147,6 +165,7 @@ fn apply_global_light(
     mut cameras: Query<(Option<&PrimaryCamera>, Option<&mut DistanceFog>), With<Camera3d>>,
     scene_distance: Res<SceneLoadDistance>,
     scene_global_light: Res<SceneGlobalLight>,
+    time_of_day: Res<TimeOfDay>,
     mut prev: Local<(f32, SceneGlobalLight)>,
     mut cloud_dt: Local<f32>,
     mut last_primary_distance: Local<f32>,
@@ -185,9 +204,24 @@ fn apply_global_light(
     };
 
     let rotation = Quat::from_rotation_arc(Vec3::NEG_Z, next_light.dir_direction);
+
+    // physically-simulated sky: rayleigh (hue) and mie (haze) are baked day-cycle
+    // curves keyed by time of day; the sun sets naturally (no floor), and a flat
+    // night colour (added in-shader) provides the night sky.
+    let day = (time_of_day.elapsed_secs() / (60.0 * 60.0 * 24.0)).rem_euclid(1.0);
     atmosphere.sun_position = -next_light.dir_direction;
-    atmosphere.rayleigh_coefficient =
-        Vec3::new(5.5e-6, 13.0e-6, 22.4e-6) * next_light.dir_color.to_srgba().to_vec3();
+    atmosphere.rayleigh_coefficient = atmosphere_params::RAYLEIGH.sample(day);
+    atmosphere.mie_coefficient = atmosphere_params::MIE.sample(day);
+    atmosphere.night_color = atmosphere_params::NIGHT_SKY;
+    // moon on its own low orbit: rises at dusk, peaks at MOON_PEAK_ELEV around
+    // midnight (well below the zenith, so it never sits overhead like the sun),
+    // sets at dawn. Anti-phase to the sun but on an independent arc, so it has
+    // no singularity at midnight (where the antisolar direction is undefined).
+    const MOON_PEAK_ELEV: f32 = 0.45; // radians (~26°)
+    let a = day * std::f32::consts::TAU + std::f32::consts::FRAC_PI_2;
+    let (sin_a, cos_a) = a.sin_cos();
+    let (sin_b, cos_b) = MOON_PEAK_ELEV.sin_cos();
+    atmosphere.moon_position = Vec3::new(cos_a, sin_a * sin_b, -sin_a * cos_b);
     atmosphere.dir_light_intensity = next_light.dir_illuminance;
     atmosphere.sun_color = next_light.dir_color.to_srgba().to_vec3();
     atmosphere.tick += 1;
@@ -206,6 +240,13 @@ fn apply_global_light(
     }
 
     atmosphere.time += time.delta_secs() * *cloud_dt;
+
+    // cloud look (live-tunable, baked later)
+    atmosphere.cloud_density_cap = cloud.density_cap;
+    atmosphere.cloud_shadow = cloud.shadow;
+    atmosphere.cloud_scale = cloud.scale;
+    atmosphere.cloud_steps = cloud.steps;
+    atmosphere.cloud_lacunarity = cloud.lacunarity;
 
     // skip the light/fog/ambient writes (which trigger change detection and re-extraction)
     // when the light has settled and nothing else affecting them has changed
@@ -299,19 +340,27 @@ fn apply_global_light(
 
     for (maybe_primary, maybe_fog) in cameras.iter_mut() {
         let dir_light_lightness = Lcha::from(next_light.dir_color).lightness;
+        // floor keeps night fog tinted instead of going black
         let skybox_brightness =
-            (next_light.dir_illuminance.sqrt() * 40.0 * dir_light_lightness).min(2000.0);
+            (next_light.dir_illuminance.sqrt() * 40.0 * dir_light_lightness).clamp(400.0, 2000.0);
 
         if let Some(mut fog) = maybe_fog {
             let distance = (scene_distance.load + scene_distance.unload)
                 .max(scene_distance.load_imposter * 0.333)
                 + maybe_primary.map_or(0.0, |camera| camera.distance * 5.0);
 
+            // fog hue follows the (scene-overridable) ambient light rather than a
+            // fixed gradient, so a scene's global light tints the fog too. Overall
+            // brightness tracks the sky; an extra dir-intensity pull drops night
+            // fog toward the dark horizon colour (the authored night fog is darker
+            // than a plain ambient tint).
+            let night_pull = (next_light.dir_illuminance / 7000.0).clamp(0.35, 1.0);
             let base_color = next_light.ambient_color.to_srgba()
                 * next_light.ambient_brightness
                 * 0.5
                 * skybox_brightness
-                / 2000.0;
+                / 2000.0
+                * night_pull;
             let base_color = Color::from(base_color).with_alpha(1.0);
 
             fog.color = base_color;
@@ -468,6 +517,16 @@ struct CloudConsoleCommand {
 pub struct CloudCover {
     pub cover: f32,
     pub speed: f32,
+    /// accumulated density that reads as fully opaque (lower = thicker clouds).
+    pub density_cap: f32,
+    /// shadow / minimum cloud brightness (the dark side of clouds).
+    pub shadow: f32,
+    /// cloud noise sample scale (higher = finer/smaller features).
+    pub scale: f32,
+    /// cloud ray-march step count (higher = smoother/more detail, more cost).
+    pub steps: u32,
+    /// per-octave frequency step of the cloud noise (default 2.345).
+    pub lacunarity: f32,
 }
 
 fn cloud_console_command(
@@ -485,5 +544,230 @@ fn cloud_console_command(
             "cloud cover {}, speed {}",
             command.cover, cloud.speed
         ));
+    }
+}
+
+/// max accumulated density that reads as fully opaque; lower = thicker clouds.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/clouddensity")]
+struct CloudDensityConsoleCommand {
+    cap: f32,
+}
+
+fn cloud_density_console_command(
+    mut input: ConsoleCommand<CloudDensityConsoleCommand>,
+    mut cloud: ResMut<CloudCover>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        cloud.density_cap = command.cap;
+        input.reply_ok(format!("cloud density cap {}", command.cap));
+    }
+}
+
+/// shadow / minimum cloud brightness (the dark side of clouds).
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/cloudshadow")]
+struct CloudShadowConsoleCommand {
+    value: f32,
+}
+
+fn cloud_shadow_console_command(
+    mut input: ConsoleCommand<CloudShadowConsoleCommand>,
+    mut cloud: ResMut<CloudCover>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        cloud.shadow = command.value;
+        input.reply_ok(format!("cloud shadow {}", command.value));
+    }
+}
+
+/// cloud noise sample scale; higher = finer/smaller features, lower = larger.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/cloudscale")]
+struct CloudScaleConsoleCommand {
+    scale: f32,
+}
+
+fn cloud_scale_console_command(
+    mut input: ConsoleCommand<CloudScaleConsoleCommand>,
+    mut cloud: ResMut<CloudCover>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        cloud.scale = command.scale;
+        input.reply_ok(format!("cloud scale {}", command.scale));
+    }
+}
+
+/// cloud ray-march step count; higher = smoother/more detail, more cost.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/cloudsteps")]
+struct CloudStepsConsoleCommand {
+    steps: u32,
+}
+
+fn cloud_steps_console_command(
+    mut input: ConsoleCommand<CloudStepsConsoleCommand>,
+    mut cloud: ResMut<CloudCover>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        cloud.steps = command.steps.max(1);
+        input.reply_ok(format!("cloud steps {}", cloud.steps));
+    }
+}
+
+/// per-octave frequency step of the cloud noise (how much finer each successive
+/// wave is); default 2.345.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/cloudlacunarity")]
+struct CloudLacunarityConsoleCommand {
+    lacunarity: f32,
+}
+
+fn cloud_lacunarity_console_command(
+    mut input: ConsoleCommand<CloudLacunarityConsoleCommand>,
+    mut cloud: ResMut<CloudCover>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        cloud.lacunarity = command.lacunarity;
+        input.reply_ok(format!("cloud lacunarity {}", command.lacunarity));
+    }
+}
+
+// --- environment grading commands ---
+// expose the bevy post stack (tonemap + color grading + bloom) for live
+// tuning so the environment mood can be matched by eye against a reference.
+
+/// set the tonemapping curve.
+/// options: none, reinhard, reinhard_luma, aces (default), agx, sbdt, tmmf, blender
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/tonemap")]
+struct TonemapConsoleCommand {
+    mode: String,
+}
+
+fn tonemap_console_command(
+    mut input: ConsoleCommand<TonemapConsoleCommand>,
+    mut cam: Query<&mut bevy::core_pipeline::tonemapping::Tonemapping, With<PrimaryCamera>>,
+) {
+    use bevy::core_pipeline::tonemapping::Tonemapping;
+    if let Some(Ok(command)) = input.take() {
+        let Ok(mut tonemapping) = cam.single_mut() else {
+            return;
+        };
+        let mode = match command.mode.as_str() {
+            "none" => Tonemapping::None,
+            "reinhard" => Tonemapping::Reinhard,
+            "reinhard_luma" => Tonemapping::ReinhardLuminance,
+            "aces" => Tonemapping::AcesFitted,
+            "agx" => Tonemapping::AgX,
+            "sbdt" => Tonemapping::SomewhatBoringDisplayTransform,
+            "tmmf" => Tonemapping::TonyMcMapface,
+            "blender" => Tonemapping::BlenderFilmic,
+            other => {
+                input.reply_failed(format!("unknown mode `{other}`; options: none, reinhard, reinhard_luma, aces, agx, sbdt, tmmf, blender"));
+                return;
+            }
+        };
+        *tonemapping = mode;
+        input.reply_ok(format!("tonemapping: {}", command.mode));
+    }
+}
+
+/// set global exposure (stops, default 0.0)
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/exposure")]
+struct ExposureConsoleCommand {
+    exposure: f32,
+}
+
+fn exposure_console_command(
+    mut input: ConsoleCommand<ExposureConsoleCommand>,
+    mut cam: Query<&mut bevy::render::view::ColorGrading, With<PrimaryCamera>>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let Ok(mut grading) = cam.single_mut() else {
+            return;
+        };
+        grading.global.exposure = command.exposure;
+        input.reply_ok(format!("exposure: {}", command.exposure));
+    }
+}
+
+/// set gamma per tonal range (default 1.0 = neutral). `/gamma <shadows> [midtones] [highlights]`
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/gamma")]
+struct GammaConsoleCommand {
+    shadows: f32,
+    midtones: Option<f32>,
+    highlights: Option<f32>,
+}
+
+fn gamma_console_command(
+    mut input: ConsoleCommand<GammaConsoleCommand>,
+    mut cam: Query<&mut bevy::render::view::ColorGrading, With<PrimaryCamera>>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let Ok(mut grading) = cam.single_mut() else {
+            return;
+        };
+        let midtones = command.midtones.unwrap_or(command.shadows);
+        let highlights = command.highlights.unwrap_or(midtones);
+        grading.shadows.gamma = command.shadows;
+        grading.midtones.gamma = midtones;
+        grading.highlights.gamma = highlights;
+        input.reply_ok(format!(
+            "gamma: shadows {} midtones {} highlights {}",
+            command.shadows, midtones, highlights
+        ));
+    }
+}
+
+/// set saturation per tonal range (scene default 1.3); 0 = grayscale.
+/// `/saturation <shadows> [midtones] [highlights]`
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/saturation")]
+struct SaturationConsoleCommand {
+    shadows: f32,
+    midtones: Option<f32>,
+    highlights: Option<f32>,
+}
+
+fn saturation_console_command(
+    mut input: ConsoleCommand<SaturationConsoleCommand>,
+    mut cam: Query<&mut bevy::render::view::ColorGrading, With<PrimaryCamera>>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let Ok(mut grading) = cam.single_mut() else {
+            return;
+        };
+        let midtones = command.midtones.unwrap_or(command.shadows);
+        let highlights = command.highlights.unwrap_or(midtones);
+        grading.shadows.saturation = command.shadows;
+        grading.midtones.saturation = midtones;
+        grading.highlights.saturation = highlights;
+        input.reply_ok(format!(
+            "saturation: shadows {} midtones {} highlights {}",
+            command.shadows, midtones, highlights
+        ));
+    }
+}
+
+/// set bloom intensity (default 0.15; 0 = off)
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/bloom")]
+struct BloomConsoleCommand {
+    intensity: f32,
+}
+
+fn bloom_console_command(
+    mut input: ConsoleCommand<BloomConsoleCommand>,
+    mut cam: Query<&mut bevy::core_pipeline::bloom::Bloom, With<PrimaryCamera>>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let Ok(mut bloom) = cam.single_mut() else {
+            return;
+        };
+        bloom.intensity = command.intensity;
+        input.reply_ok(format!("bloom intensity: {}", command.intensity));
     }
 }

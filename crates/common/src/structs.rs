@@ -574,6 +574,8 @@ pub struct GraphicsSettings {
     pub ssao: SsaoSetting,
     pub oob: f32,
     pub ambient_brightness: i32,
+    /// cel-shade avatars (toon shading) instead of standard PBR
+    pub cel_shading: bool,
     pub gpu_bytes_per_frame: usize,
 }
 
@@ -596,6 +598,7 @@ impl Default for GraphicsSettings {
             ssao: SsaoSetting::Off,
             oob: 2.0,
             ambient_brightness: 50,
+            cel_shading: true,
             gpu_bytes_per_frame: 0,
         }
     }

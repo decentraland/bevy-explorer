@@ -81,6 +81,24 @@ pub struct NishitaCloud {
     pub tick: u32,
     pub sun_color: Vec3,
     pub dir_light_intensity: f32,
+    /// flat night-sky colour, added per view direction weighted by
+    /// max(0, -sun·ray) so it fades in as the sun drops below the horizon.
+    pub night_color: Vec3,
+    /// world-space direction to the moon. It rides its own low orbit (peaks
+    /// well below the zenith) so it never sits fully overhead like the sun.
+    pub moon_position: Vec3,
+    /// accumulated density that reads as fully opaque (lower = thicker clouds).
+    pub cloud_density_cap: f32,
+    /// shadow / minimum cloud brightness (the dark side of clouds).
+    pub cloud_shadow: f32,
+    /// multiplier on the cloud noise sample coordinate (higher = finer/smaller
+    /// cloud features, lower = larger).
+    pub cloud_scale: f32,
+    /// cloud ray-march step count (higher = smoother/more detail, more cost).
+    pub cloud_steps: u32,
+    /// per-octave frequency step of the cloud noise (how much finer each
+    /// successive "wave" is; default 2.345).
+    pub cloud_lacunarity: f32,
 }
 
 #[derive(ShaderType)]
@@ -100,6 +118,16 @@ pub struct NishitaCloudUniform {
     pub tick: u32,
     pub sun_color: Vec3,
     pub dir_light_intensity: f32,
+    /// flat night-sky colour, added per view direction weighted by
+    /// max(0, -sun·ray) so it fades in as the sun drops below the horizon.
+    pub night_color: Vec3,
+    /// world-space direction to the moon (own low orbit, never overhead).
+    pub moon_position: Vec3,
+    pub cloud_density_cap: f32,
+    pub cloud_shadow: f32,
+    pub cloud_scale: f32,
+    pub cloud_steps: u32,
+    pub cloud_lacunarity: f32,
 }
 
 impl From<&NishitaCloud> for NishitaCloudUniform {
@@ -120,6 +148,13 @@ impl From<&NishitaCloud> for NishitaCloudUniform {
             tick: value.tick,
             sun_color: value.sun_color,
             dir_light_intensity: value.dir_light_intensity,
+            night_color: value.night_color,
+            moon_position: value.moon_position,
+            cloud_density_cap: value.cloud_density_cap,
+            cloud_shadow: value.cloud_shadow,
+            cloud_scale: value.cloud_scale,
+            cloud_steps: value.cloud_steps,
+            cloud_lacunarity: value.cloud_lacunarity,
         }
     }
 }
@@ -143,6 +178,13 @@ impl Default for NishitaCloud {
             tick: 0,
             sun_color: Vec3::new(1.0, 1.0, 0.7),
             dir_light_intensity: 10000.0,
+            night_color: Vec3::ZERO,
+            moon_position: Vec3::new(0.0, 1.0, 0.0),
+            cloud_density_cap: 0.8,
+            cloud_shadow: 0.05,
+            cloud_scale: 1.5,
+            cloud_steps: 44,
+            cloud_lacunarity: 2.0,
         }
     }
 }

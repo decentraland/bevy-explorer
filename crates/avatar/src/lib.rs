@@ -29,6 +29,7 @@ use npc_dynamics::NpcMovementPlugin;
 use scene_material::{
     BoundRegion, SceneBound, SceneMaterial, SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG,
     SCENE_MATERIAL_NO_DITHERING_MESH_TAG, SCENE_MATERIAL_OUTLINE_BLACK_MESH_TAG,
+    SCENE_MATERIAL_TOON_MESH_TAG,
 };
 
 pub mod animate;
@@ -116,6 +117,7 @@ impl Plugin for AvatarPlugin {
                 spawn_scenes,
                 process_avatar.after(update_render_avatar),
                 set_avatar_visibility,
+                retag_avatars_on_cel_shading_change,
             ),
         );
 
@@ -495,6 +497,26 @@ pub struct AvatarDefinition {
 
 #[derive(Component)]
 pub struct RetryRenderAvatar;
+
+// when the cel-shading setting is toggled, re-render every avatar so their
+// meshes are respawned with (or without) the toon mesh tag. the tag is set once
+// at mesh creation in process_avatar, so an in-place flip isn't enough.
+fn retag_avatars_on_cel_shading_change(
+    config: Res<AppConfig>,
+    mut prev: Local<Option<bool>>,
+    avatars: Query<Entity, With<AvatarSelection>>,
+    mut commands: Commands,
+) {
+    let cur = config.graphics.cel_shading;
+    if *prev != Some(cur) {
+        if prev.is_some() {
+            for entity in &avatars {
+                commands.entity(entity).try_insert(RetryRenderAvatar);
+            }
+        }
+        *prev = Some(cur);
+    }
+}
 
 // load wearables and create renderable avatar entity once all loaded
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -1027,6 +1049,14 @@ fn process_avatar(
             Vec3::new(1.24, 2.42, 0.7) + root_gt.translation(),
         );
 
+        // cel-shade avatar meshes only when the setting is on; toggling it
+        // re-renders avatars (see retag_avatars_on_cel_shading_change)
+        let toon_tag = if config.graphics.cel_shading {
+            SCENE_MATERIAL_TOON_MESH_TAG
+        } else {
+            0
+        };
+
         let mut instance_scene_materials = HashMap::new();
         let mut armature_node = None;
         let mut target_armature_entities = HashMap::new();
@@ -1172,7 +1202,8 @@ fn process_avatar(
                                 } else {
                                     0
                                 })
-                                | SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG,
+                                | SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG
+                                | toon_tag,
                         ),
                     ));
                 }
@@ -1240,7 +1271,8 @@ fn process_avatar(
                                         } else {
                                             0
                                         })
-                                        | SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG,
+                                        | SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG
+                                        | toon_tag,
                                 ),
                             ));
                         };
@@ -1462,7 +1494,8 @@ fn process_avatar(
                                     } else {
                                         0
                                     })
-                                    | SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG,
+                                    | SCENE_MATERIAL_CONE_ONLY_DITHER_MESH_TAG
+                                    | toon_tag,
                             ),
                         ));
                     }

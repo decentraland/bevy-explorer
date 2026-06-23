@@ -120,6 +120,15 @@ bevy = { version = "0.16.1", default-features = false, features = [
 ] }
 wgpu = "24"
 bevy_console = { git = "https://github.com/robtfm/bevy-console", branch = "0.16" }
+# enables naga_oil function overrides on non-`virtual` bevy_pbr functions (e.g.
+# our shadow-darkness override in bound_material.wgsl). feature-unifies into the
+# naga_oil that bevy builds its shader composer with. version must match bevy's.
+# default-features = false is REQUIRED: naga_oil's defaults include `glsl`, which
+# bevy deliberately omits on native; with it on, debug builds validate composed
+# modules through the GLSL backend and panic serializing bevy_pbr's globals.
+naga_oil = { version = "0.17", default-features = false, features = [
+  "override_any",
+] }
 bevy_egui = { version = "0.34", default-features = false, features = [
   "default_fonts",
   "render",
@@ -251,6 +260,9 @@ image_processing = { workspace = true }
 bevy = { workspace = true }
 wgpu = { workspace = true }
 bevy_console = { workspace = true }
+# present only to enable the naga_oil `override_any` feature graph-wide (see
+# [workspace.dependencies]); not referenced from Rust.
+naga_oil = { workspace = true }
 
 serde_json = { workspace = true }
 clap = { workspace = true }
