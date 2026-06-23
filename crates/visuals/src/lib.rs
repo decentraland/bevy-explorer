@@ -204,6 +204,15 @@ fn apply_global_light(
     atmosphere.rayleigh_coefficient = sky_params::RAYLEIGH.sample(day);
     atmosphere.mie_coefficient = sky_params::MIE.sample(day);
     atmosphere.night_color = sky_params::NIGHT_SKY;
+    // moon on its own low orbit: rises at dusk, peaks at MOON_PEAK_ELEV around
+    // midnight (well below the zenith, so it never sits overhead like the sun),
+    // sets at dawn. Anti-phase to the sun but on an independent arc, so it has
+    // no singularity at midnight (where the antisolar direction is undefined).
+    const MOON_PEAK_ELEV: f32 = 0.45; // radians (~26°)
+    let a = day * std::f32::consts::TAU + std::f32::consts::FRAC_PI_2;
+    let (sin_a, cos_a) = a.sin_cos();
+    let (sin_b, cos_b) = MOON_PEAK_ELEV.sin_cos();
+    atmosphere.moon_position = Vec3::new(cos_a, sin_a * sin_b, -sin_a * cos_b);
     atmosphere.dir_light_intensity = next_light.dir_illuminance;
     atmosphere.sun_color = next_light.dir_color.to_srgba().to_vec3();
     atmosphere.tick += 1;

@@ -24,6 +24,7 @@ struct Nishita {
     sun_color: vec3<f32>,
     dir_light_intensity: f32,
     night_color: vec3<f32>,
+    moon_position: vec3<f32>,
 }
 
 const PI: f32 = 3.141592653589793;
@@ -345,6 +346,26 @@ fn main(@builtin(global_invocation_id) original_invocation_id: vec3<u32>, @built
     // stars: fade in by how far the sun is below the horizon (not intensity,
     // which floors at the horizon and would show stars at dusk)
     let night_amount = smoothstep(0.0, 0.15, -normalize(nishita.sun_position).y);
+
+    // moon: a plain disc (no tint) on its own low orbit, fading in with the
+    // night. A crescent is carved by subtracting a second disc of the same size
+    // offset toward the anti-sun side, so the lit limb faces the sun.
+    let moon_dir = normalize(nishita.moon_position);
+    let moon_dot = dot(ray, moon_dir);
+    let moon_disc = smoothstep(0.99914, 0.99971, moon_dot);
+    // tangent direction on the disc pointing away from the sun
+    let to_sun = normalize(nishita.sun_position);
+    let perp = -to_sun - moon_dir * dot(-to_sun, moon_dir);
+    let away = perp / max(length(perp), 1e-3);
+    // smaller offset -> thinner crescent; bite disc is 5% larger than the moon
+    // disc so it carves a slightly deeper inner terminator
+    let bite_dir = normalize(moon_dir + away * 0.012);
+    let bite = smoothstep(0.99905, 0.99968, dot(ray, bite_dir));
+    let crescent = moon_disc * (1.0 - bite);
+    render_base += vec3<f32>(1.6) * crescent * night_amount;
+    // faint cool halo (full circle)
+    render_base += vec3<f32>(0.5, 0.5, 0.6) * pow(max(moon_dot, 0.0), 250.0) * night_amount * 0.3;
+
     if night_amount > 0.0 {
         for (var i=0u; i<1000u; i++) {
             let star_world_dir = normalize(

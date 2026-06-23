@@ -84,6 +84,9 @@ pub struct NishitaCloud {
     /// flat night-sky colour, added per view direction weighted by
     /// max(0, -sun·ray) so it fades in as the sun drops below the horizon.
     pub night_color: Vec3,
+    /// world-space direction to the moon. It rides its own low orbit (peaks
+    /// well below the zenith) so it never sits fully overhead like the sun.
+    pub moon_position: Vec3,
 }
 
 #[derive(ShaderType)]
@@ -106,6 +109,8 @@ pub struct NishitaCloudUniform {
     /// flat night-sky colour, added per view direction weighted by
     /// max(0, -sun·ray) so it fades in as the sun drops below the horizon.
     pub night_color: Vec3,
+    /// world-space direction to the moon (own low orbit, never overhead).
+    pub moon_position: Vec3,
 }
 
 impl From<&NishitaCloud> for NishitaCloudUniform {
@@ -127,6 +132,7 @@ impl From<&NishitaCloud> for NishitaCloudUniform {
             sun_color: value.sun_color,
             dir_light_intensity: value.dir_light_intensity,
             night_color: value.night_color,
+            moon_position: value.moon_position,
         }
     }
 }
@@ -151,6 +157,7 @@ impl Default for NishitaCloud {
             sun_color: Vec3::new(1.0, 1.0, 0.7),
             dir_light_intensity: 10000.0,
             night_color: Vec3::ZERO,
+            moon_position: Vec3::new(0.0, 1.0, 0.0),
         }
     }
 }
