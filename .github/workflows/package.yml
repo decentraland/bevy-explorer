@@ -119,13 +119,13 @@ jobs:
               
           - name: Cargo build (windows)
             if: runner.os == 'windows'
-            run: cargo build --release --package dcl_deno_ipc -j8 && cargo build --release -j8
+            run: cargo build --release --locked --package dcl_deno_ipc -j8 && cargo build --release --locked -j8
           - name: Cargo build (macos)
             if: runner.os == 'macos'
-            run: cargo build --release --package dcl_deno_ipc && cargo build --release
+            run: cargo build --release --locked --package dcl_deno_ipc && cargo build --release --locked
           - name: Cargo build (linux)
             if: runner.os == 'linux'
-            run: cargo build --release --package dcl_deno_ipc && cargo build --release
+            run: cargo build --release --locked --package dcl_deno_ipc && cargo build --release --locked
 
           - name: Package common
             run: |
