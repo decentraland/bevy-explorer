@@ -1216,7 +1216,11 @@ fn load_imposters(
                         let base_size = 1i32 << base_imposter.level;
                         let scene_size = 1i32 << scene_imposter.level;
                         let parcel_size = base_size as f32 / scene_size as f32;
-                        let bottomleft = (base_imposter.parcel - scene_imposter.parcel).as_vec2()
+                        // subtract in float space: parcels can momentarily carry
+                        // sentinel/degenerate values (e.g. an empty realm) that
+                        // overflow the i32 subtraction (panics in debug builds)
+                        let bottomleft = (base_imposter.parcel.as_vec2()
+                            - scene_imposter.parcel.as_vec2())
                             / scene_size as f32;
 
                         for uv in uvs.iter_mut() {
