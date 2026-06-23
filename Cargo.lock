@@ -3542,6 +3542,7 @@ dependencies = [
  "scene_material",
  "scene_runner",
  "serde_json",
+ "social",
  "system_bridge",
  "system_ui",
  "texture_camera",
