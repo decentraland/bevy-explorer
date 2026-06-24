@@ -7,16 +7,18 @@ pub mod ui_text;
 use std::collections::{BTreeSet, VecDeque};
 
 use bevy::{
-    math::FloatOrd,
+    math::{Affine2, FloatOrd, Mat2},
     platform::collections::{HashMap, HashSet},
     prelude::*,
-    render::render_resource::Extent3d,
-    ui::{CameraCursorPosition, FocusPolicy},
+    render::{render_resource::Extent3d, renderer::RenderDevice},
+    transform::TransformSystem,
+    ui::{CameraCursorPosition, FocusPolicy, UiSystem},
     window::PrimaryWindow,
 };
 use bevy_console::ConsoleCommand;
 use bevy_dui::{DuiCommandsExt, DuiProps, DuiRegistry};
 use console::DoAddConsoleCommand;
+use scene_material::SceneMaterial;
 use ui_background::{set_ui_background, UiBackground};
 use ui_dropdown::{set_ui_dropdown, UiDropdown};
 use ui_input::{set_ui_input, UiInput};
@@ -55,7 +57,7 @@ use ui_core::{
     ui_actions::{DataChanged, On, UiActionSet, UiCaller},
 };
 
-use super::AddCrdtInterfaceExt;
+use super::{material::MaterialSource, AddCrdtInterfaceExt};
 
 pub struct SceneUiPlugin;
 
@@ -448,8 +450,16 @@ impl Plugin for SceneUiPlugin {
         );
 
         app.init_resource::<HiddenSceneUis>();
+        app.init_resource::<SceneCanvasAtlases>();
 
         app.add_systems(Update, init_scene_ui_root.in_set(SceneSets::PostInit));
+        app.add_systems(
+            PostUpdate,
+            (update_canvas_atlas, update_canvas_material_uvs)
+                .chain()
+                .after(UiSystem::Layout)
+                .after(TransformSystem::TransformPropagate),
+        );
         app.add_systems(
             Update,
             (
@@ -487,10 +497,47 @@ pub struct SceneUiData {
 
 #[derive(Component)]
 pub struct UiTextureOutput {
+    /// the shared per-scene atlas camera that renders this canvas
     pub camera: Entity,
+    /// the shared per-scene atlas image this canvas is packed into
     pub image: Handle<Image>,
-    pub texture_size: UVec2,
+    /// normalized offset of this canvas's slot within the atlas (material uv_transform translation)
+    pub uv_offset: Vec2,
+    /// normalized size of this canvas's slot within the atlas (material uv_transform scale)
+    pub uv_scale: Vec2,
+    /// physical-pixel offset of this canvas's slot within the atlas (manual cursor mapping)
+    pub px_offset: Vec2,
+    /// physical-pixel size of this canvas's slot (manual cursor mapping)
+    pub px_size: Vec2,
 }
+
+/// All `UiCanvas`es belonging to a single scene render into one shared atlas texture
+/// via one shared camera. Canvas roots are flex-wrap children of `container`; each quad
+/// samples its slot via a uv_transform derived from the post-layout slot rect.
+#[derive(Resource, Default)]
+pub struct SceneCanvasAtlases(HashMap<Entity, SceneCanvasAtlas>);
+
+pub struct SceneCanvasAtlas {
+    pub camera: Entity,
+    pub container: Entity,
+    pub image: Handle<Image>,
+    pub size: UVec2,
+}
+
+/// Marks a per-canvas UI root node living inside a scene's shared atlas container.
+#[derive(Component)]
+pub struct CanvasUiRoot {
+    pub canvas: Entity,
+    pub scene: Entity,
+}
+
+/// width of the atlas flex container before canvases wrap to a new row. wider keeps the
+/// atlas image squarer for large canvas counts (the image only grows to actual content, so
+/// this is free for the common few-canvas case). kept <= the desktop `max_texture_dimension_2d`
+/// floor (8192) so the atlas image width is always valid on desktop
+const CANVAS_ATLAS_WIDTH: f32 = 6144.0;
+/// gap around each canvas slot to avoid bilinear bleed between neighbours
+const CANVAS_ATLAS_GAP: f32 = 2.0;
 
 fn init_scene_ui_root(
     mut commands: Commands,
@@ -580,17 +627,12 @@ fn create_ui_roots(
     containing_scene: ContainingScene,
     current_uis: Query<(Entity, &SceneUiRoot)>,
     config: Res<AppConfig>,
-    mut canvas_infos: Query<(
-        Entity,
-        &ContainerEntity,
-        &UiCanvas,
-        Option<&UiLink>,
-        Option<&mut UiTextureOutput>,
-    )>,
+    canvas_infos: Query<(Entity, &ContainerEntity, Ref<UiCanvas>, Option<&UiLink>)>,
     images: ResMut<Assets<Image>>,
     hidden_uis: Res<HiddenSceneUis>,
     interactable_area: Res<InteractableArea>,
     window: Query<&Window, With<PrimaryWindow>>,
+    mut atlases: ResMut<SceneCanvasAtlases>,
 ) {
     let images = images.into_inner();
 
@@ -623,6 +665,31 @@ fn create_ui_roots(
             if let Ok(mut commands) = commands.get_entity(ui_root.canvas) {
                 commands.remove::<UiLink>();
             }
+        }
+    }
+
+    // tear down atlases for scenes that are no longer current: despawn the shared camera
+    // and container (recursively reaping the canvas roots), and drop the per-canvas UiLink
+    // so they're recreated lazily on re-entry
+    let dropped_scenes = atlases
+        .0
+        .keys()
+        .copied()
+        .filter(|scene| !current_scenes.contains(scene))
+        .collect::<Vec<_>>();
+    for scene in dropped_scenes {
+        if let Some(atlas) = atlases.0.remove(&scene) {
+            if let Ok(mut cmd) = commands.get_entity(atlas.container) {
+                cmd.despawn();
+            }
+            if let Ok(mut cmd) = commands.get_entity(atlas.camera) {
+                cmd.despawn();
+            }
+        }
+    }
+    for (ent, container, _, maybe_link) in canvas_infos.iter() {
+        if maybe_link.is_some() && !current_scenes.contains(&container.root) {
+            commands.entity(ent).remove::<UiLink>();
         }
     }
 
@@ -684,85 +751,227 @@ fn create_ui_roots(
         }
     }
 
-    // spawn texture ui nodes
-    for (ent, container, UiCanvas(canvas_info), maybe_link, maybe_texture) in
-        canvas_infos.iter_mut()
-    {
-        if current_scenes.contains(&container.root) {
-            let ui_entity = match maybe_link {
-                Some(link) => link.ui_entity,
-                None => {
-                    let existing_texture = maybe_texture.as_ref().map(|t| &t.image);
-                    debug!("create w/existing {existing_texture:?}");
-                    let (root, ui_texture) =
-                        world_ui::spawn_world_ui_view(&mut commands, images, existing_texture);
-                    commands.entity(root).try_insert((
-                        UiTargetCamera(root),
-                        CameraCursorPosition::default(),
-                        SceneUiRoot {
-                            scene: container.root,
-                            canvas: ent,
-                        },
-                        DespawnWith(ent),
-                        Node {
-                            position_type: PositionType::Absolute,
-                            width: Val::Percent(100.0),
-                            height: Val::Percent(100.0),
-                            ..Default::default()
-                        },
-                    ));
-                    debug!("create texture root {:?} -> {:?}", ent, root);
+    // spawn texture ui nodes, packed as flex children of a per-scene shared atlas
+    for (ent, container, canvas_ref, maybe_link) in canvas_infos.iter() {
+        if !current_scenes.contains(&container.root) {
+            continue;
+        }
 
-                    images.get_mut(&ui_texture).unwrap().texture_descriptor.size = Extent3d {
-                        width: canvas_info.width.max(16),
-                        height: canvas_info.height.max(16),
-                        depth_or_array_layers: 1,
-                    };
+        let canvas_info = &canvas_ref.0;
+        let canvas_size = UVec2::new(canvas_info.width.max(16), canvas_info.height.max(16));
+        let color = canvas_info
+            .color
+            .map(Color4DclToBevy::convert_srgba)
+            .unwrap_or(Color::NONE);
 
-                    commands.entity(ent).try_insert(UiTextureOutput {
-                        camera: root,
-                        image: ui_texture,
-                        texture_size: UVec2::new(canvas_info.width, canvas_info.height),
-                    });
-
-                    commands.entity(ent).try_insert(UiLink {
-                        ui_entity: root,
-                        is_window_ui: false,
-                        content_entity: root,
-                        ..Default::default()
-                    });
-                    root
-                }
-            };
-
-            // update dimensions if required
-            if let Some(mut texture) = maybe_texture {
-                if canvas_info.width != texture.texture_size.x
-                    || canvas_info.height != texture.texture_size.y
-                {
-                    images
-                        .get_mut(texture.image.id())
-                        .unwrap()
-                        .texture_descriptor
-                        .size = Extent3d {
-                        width: canvas_info.width.max(16),
-                        height: canvas_info.height.max(16),
-                        depth_or_array_layers: 1,
-                    };
-                    texture.texture_size = UVec2::new(canvas_info.width, canvas_info.height);
+        match maybe_link {
+            // existing canvas root: push size/colour through to the node only when the
+            // canvas component actually changed (avoids forcing a relayout every frame)
+            Some(link) => {
+                if canvas_ref.is_changed() {
+                    let ui_entity = link.ui_entity;
+                    commands
+                        .entity(ui_entity)
+                        .modify_component(move |n: &mut Node| {
+                            n.width = Val::Px(canvas_size.x as f32);
+                            n.height = Val::Px(canvas_size.y as f32);
+                        });
+                    commands
+                        .entity(ui_entity)
+                        .modify_component(move |bg: &mut BackgroundColor| bg.0 = color);
                 }
             }
+            // first appearance: get-or-create the scene atlas, then spawn this canvas's
+            // root as a fixed-size flex child of the atlas container
+            None => {
+                if !atlases.0.contains_key(&container.root) {
+                    let (camera, image) =
+                        world_ui::spawn_world_ui_view(&mut commands, images, None);
+                    commands
+                        .entity(camera)
+                        .try_insert(CameraCursorPosition::default());
+                    let atlas_container = commands
+                        .spawn((
+                            Node {
+                                flex_direction: FlexDirection::Row,
+                                flex_wrap: FlexWrap::Wrap,
+                                align_items: AlignItems::FlexStart,
+                                align_content: AlignContent::FlexStart,
+                                width: Val::Px(CANVAS_ATLAS_WIDTH),
+                                ..Default::default()
+                            },
+                            UiTargetCamera(camera),
+                            DespawnWith(container.root),
+                        ))
+                        .id();
+                    atlases.0.insert(
+                        container.root,
+                        SceneCanvasAtlas {
+                            camera,
+                            container: atlas_container,
+                            image,
+                            size: UVec2::splat(16),
+                        },
+                    );
+                }
+                let atlas = atlases.0.get(&container.root).unwrap();
+                let camera = atlas.camera;
+                let image = atlas.image.clone();
+                let atlas_container = atlas.container;
 
-            // and background
-            let color = canvas_info
-                .color
-                .map(Color4DclToBevy::convert_srgba)
-                .unwrap_or(Color::NONE);
-            commands
-                .entity(ui_entity)
-                .modify_component(move |c: &mut Camera| {
-                    c.clear_color = bevy::render::camera::ClearColorConfig::Custom(color)
+                let root = commands
+                    .spawn((
+                        Node {
+                            width: Val::Px(canvas_size.x as f32),
+                            height: Val::Px(canvas_size.y as f32),
+                            margin: UiRect::all(Val::Px(CANVAS_ATLAS_GAP)),
+                            overflow: Overflow::clip(),
+                            ..Default::default()
+                        },
+                        BackgroundColor(color),
+                        CanvasUiRoot {
+                            canvas: ent,
+                            scene: container.root,
+                        },
+                        DespawnWith(ent),
+                    ))
+                    .id();
+                commands.entity(atlas_container).add_child(root);
+                debug!("create atlas canvas root {:?} -> {:?}", ent, root);
+
+                commands.entity(ent).try_insert(UiTextureOutput {
+                    camera,
+                    image,
+                    uv_offset: Vec2::ZERO,
+                    uv_scale: Vec2::ONE,
+                    px_offset: Vec2::ZERO,
+                    px_size: canvas_size.as_vec2(),
                 });
+                commands.entity(ent).try_insert(UiLink {
+                    ui_entity: root,
+                    is_window_ui: false,
+                    content_entity: root,
+                    ..Default::default()
+                });
+            }
+        }
+    }
+}
+
+/// After UI layout, grow each scene's atlas image to fit its packed canvases and record
+/// each canvas's slot rectangle (as normalized uv for the material + physical px for the
+/// cursor) into its `UiTextureOutput`.
+fn update_canvas_atlas(
+    canvas_roots: Query<(&ComputedNode, &GlobalTransform, &CanvasUiRoot)>,
+    mut outputs: Query<&mut UiTextureOutput>,
+    mut atlases: ResMut<SceneCanvasAtlases>,
+    mut images: ResMut<Assets<Image>>,
+    // absent in headless tests (no render plugin); without a gpu there is nothing to overflow
+    render_device: Option<Res<RenderDevice>>,
+) {
+    // required atlas extent per scene = max bottom-right corner over its canvas slots
+    let mut required: HashMap<Entity, UVec2> = HashMap::new();
+    for (node, gt, root) in canvas_roots.iter() {
+        let bottomright = (gt.translation().xy() + node.size() / 2.0)
+            .ceil()
+            .as_uvec2();
+        let entry = required.entry(root.scene).or_default();
+        *entry = entry.max(bottomright);
+    }
+
+    // grow atlas images (grow-only; clamp to device max with a warn, as world_ui does)
+    let max_dim = render_device
+        .map(|d| d.limits().max_texture_dimension_2d)
+        .unwrap_or(u32::MAX);
+    for (scene, atlas) in atlases.0.iter_mut() {
+        let Some(image) = images.get(atlas.image.id()) else {
+            continue;
+        };
+        let current = image.size();
+        let req = required
+            .get(scene)
+            .copied()
+            .unwrap_or(UVec2::splat(16))
+            .max(UVec2::splat(16));
+        if current.cmplt(req).any() {
+            let max_size = UVec2::splat(max_dim);
+            if req.cmpge(max_size).any() {
+                warn!(
+                    "too many ui canvases, truncating atlas image {} to {}",
+                    req, max_size
+                );
+            }
+            let new_size = req.min(max_size).max(current);
+            images
+                .get_mut(atlas.image.id())
+                .unwrap()
+                .texture_descriptor
+                .size = Extent3d {
+                width: new_size.x,
+                height: new_size.y,
+                depth_or_array_layers: 1,
+            };
+            atlas.size = new_size;
+        } else {
+            atlas.size = current;
+        }
+    }
+
+    // record each canvas's slot rect, only when it actually moved/resized
+    for (node, gt, root) in canvas_roots.iter() {
+        let Some(atlas) = atlases.0.get(&root.scene) else {
+            continue;
+        };
+        let atlas_size = atlas.size.as_vec2().max(Vec2::splat(1.0));
+        let size = node.size();
+        let topleft = gt.translation().xy() - size / 2.0;
+        let uv_offset = topleft / atlas_size;
+        let uv_scale = size / atlas_size;
+
+        let Ok(mut out) = outputs.get_mut(root.canvas) else {
+            continue;
+        };
+        if (out.uv_offset - uv_offset).abs().max_element() > 1e-5
+            || (out.uv_scale - uv_scale).abs().max_element() > 1e-5
+            || (out.px_offset - topleft).abs().max_element() > 0.5
+            || (out.px_size - size).abs().max_element() > 0.5
+        {
+            out.uv_offset = uv_offset;
+            out.uv_scale = uv_scale;
+            out.px_offset = topleft;
+            out.px_size = size;
+        }
+    }
+}
+
+/// Apply each canvas's atlas-slot uv to its consuming mesh material in place, in the same
+/// frame as layout (chained after `update_canvas_atlas`). This keeps the sampled sub-rect
+/// in lockstep with the canvas content the atlas camera renders that frame, avoiding the
+/// 1-2 frame lag (and the per-frame new-material churn) of routing slot changes through
+/// material re-resolution. Mirrors `world_ui::update_worldui_materials`.
+fn update_canvas_material_uvs(
+    sourced: Query<(&MeshMaterial3d<SceneMaterial>, &MaterialSource)>,
+    outputs: Query<&UiTextureOutput>,
+    mut materials: ResMut<Assets<SceneMaterial>>,
+) {
+    for (mesh_mat, source) in sourced.iter() {
+        let Ok(out) = outputs.get(source.0) else {
+            continue;
+        };
+        let uv_transform = Affine2 {
+            matrix2: Mat2::from_diagonal(out.uv_scale),
+            translation: out.uv_offset,
+        };
+        // Assets::get_mut emits a Modified event on call, so check via get() first and only
+        // touch the material on a real change (otherwise static canvases re-upload every frame)
+        let needs_update = match materials.get(mesh_mat.id()) {
+            Some(mat) => mat.base.uv_transform != uv_transform,
+            None => continue,
+        };
+        if needs_update {
+            if let Some(mat) = materials.get_mut(mesh_mat.id()) {
+                mat.base.uv_transform = uv_transform;
+            }
         }
     }
 }
