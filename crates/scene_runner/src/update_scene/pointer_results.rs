@@ -440,6 +440,9 @@ fn update_pointer_target(
 pub struct ResolveCursor {
     pub camera: Entity,
     pub texture_size: Vec2,
+    /// physical-pixel offset of this canvas's slot within the shared atlas, added to the
+    /// hit uv so the cursor lands in atlas space
+    pub px_offset: Vec2,
 }
 
 fn update_manual_cursor(
@@ -595,7 +598,7 @@ fn update_manual_cursor(
         return;
     };
 
-    cursor.0 = Some(uv * resolve.texture_size);
+    cursor.0 = Some(resolve.px_offset + uv * resolve.texture_size);
 }
 
 /// Walks all entities carrying `PointerEvents` with at least one PROXIMITY entry
