@@ -314,6 +314,13 @@ web-fs = { workspace = true }
 prost-build = "0.11.8"
 
 [patch.crates-io]
+# naga_oil with deterministic override-emit order (redirect.rs HashMap ->
+# IndexMap). without it, function overrides (e.g. the toon shadow override) emit
+# composed shaders in random per-page-load order on wasm, so the gpu pipeline
+# cache never converges and the main pass recompiles cold every load.
+# carried on a fork branch off the 0.17.1 tag. not an upstream backport —
+# naga_oil main is 0.22; revisit only if bevy's pinned naga_oil moves.
+naga_oil = { git = "https://github.com/robtfm/naga_oil", branch = "fix/deterministic-override-emit-order" }
 # mess required by egui referencing bevy crates directly
 bevy = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
 bevy_a11y = { git = "https://github.com/robtfm/bevy", branch = "release-0.16-dcl" }
