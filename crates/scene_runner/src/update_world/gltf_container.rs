@@ -158,7 +158,7 @@ fn clear_stale_instance(
     for entity in scene_spawner.iter_instance_entities(**gltf_ready) {
         if let Ok(mut commands) = commands.get_entity(entity) {
             // have to do this non-recursively and safely because we may have removed some entities already
-            commands.despawn();
+            commands.try_despawn();
         }
     }
 }
