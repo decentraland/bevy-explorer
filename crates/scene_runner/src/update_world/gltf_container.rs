@@ -173,7 +173,16 @@ fn on_gltf_container_removed(trigger: Trigger<OnRemove, GltfDefinition>, mut com
 fn update_gltf(
     mut commands: Commands,
     mut commands2: Commands,
-    new_gltfs: Query<(Entity, &SceneEntity, &GltfDefinition), Changed<GltfDefinition>>,
+    new_gltfs: Query<
+        (
+            Entity,
+            &SceneEntity,
+            &GltfDefinition,
+            Option<&GltfLoaded>,
+            Has<GltfProcessed>,
+        ),
+        Changed<GltfDefinition>,
+    >,
     unprocessed_gltfs: Query<
         (Entity, &SceneEntity, &GltfHandle, &GltfDefinition),
         (With<GltfDefinition>, Without<GltfLoaded>),
@@ -220,13 +229,19 @@ fn update_gltf(
         };
     };
 
-    for (ent, scene_ent, gltf) in new_gltfs.iter() {
+    for (ent, scene_ent, gltf, maybe_loaded, has_gltf_processed) in new_gltfs.iter() {
         debug!("{} has {}", scene_ent.id, gltf.0.src);
 
         commands
             .entity(ent)
             .remove::<GltfLoaded>()
             .remove::<GltfProcessed>();
+
+        if let Some(GltfLoaded(Some(instance_id))) = maybe_loaded {
+            if !has_gltf_processed {
+                commands.entity(ent).try_insert(GltfReady(*instance_id));
+            }
+        }
 
         let Ok(h_scene_def) = scene_def_handles.get(scene_ent.root) else {
             warn!("no scene definition found, can't process file request");
