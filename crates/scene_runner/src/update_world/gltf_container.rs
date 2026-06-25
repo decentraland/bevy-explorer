@@ -261,7 +261,7 @@ fn update_gltf(
             Err(e) => {
                 warn!("gltf content file not found: {e}");
                 set_state(scene_ent, LoadingState::NotFound);
-                commands.entity(ent).remove::<GltfLoaded>();
+                commands.entity(ent).try_remove::<(GltfLoaded, GltfReady)>();
                 continue;
             }
         };
