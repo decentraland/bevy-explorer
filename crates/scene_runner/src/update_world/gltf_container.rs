@@ -114,6 +114,8 @@ impl Plugin for GltfDefinitionPlugin {
                 .before(TransformSystem::TransformPropagate),
         );
         app.add_systems(Update, debug_modifiers);
+
+        app.add_observer(clear_stale_instance);
     }
 }
 
@@ -138,20 +140,33 @@ struct DclNodeExtras {
 #[derive(Component)]
 pub struct GltfHandle(Handle<Gltf>);
 
+#[derive(Component, Deref)]
+pub struct GltfReady(InstanceId);
+
+fn clear_stale_instance(
+    trigger: Trigger<OnReplace, GltfReady>,
+    mut commands: Commands,
+    gltf_readys: Query<&GltfReady>,
+    scene_spawner: Res<SceneSpawner>,
+) {
+    let entity = trigger.target();
+    let Ok(gltf_ready) = gltf_readys.get(entity) else {
+        unreachable!("Infallible query");
+    };
+
+    for entity in scene_spawner.iter_instance_entities(**gltf_ready) {
+        if let Ok(mut commands) = commands.get_entity(entity) {
+            // have to do this non-recursively and safely because we may have removed some entities already
+            commands.despawn();
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn update_gltf(
     mut commands: Commands,
     mut commands2: Commands,
-    new_gltfs: Query<
-        (
-            Entity,
-            &SceneEntity,
-            &GltfDefinition,
-            Option<&GltfLoaded>,
-            Option<&GltfProcessed>,
-        ),
-        Changed<GltfDefinition>,
-    >,
+    new_gltfs: Query<(Entity, &SceneEntity, &GltfDefinition), Changed<GltfDefinition>>,
     unprocessed_gltfs: Query<
         (Entity, &SceneEntity, &GltfHandle, &GltfDefinition),
         (With<GltfDefinition>, Without<GltfLoaded>),
@@ -166,7 +181,6 @@ fn update_gltf(
     ),
     mut scene_spawner: ResMut<SceneSpawner>,
     mut contexts: Query<(Entity, &mut RendererSceneContext, Has<SceneResourceLookup>)>,
-    mut instances_to_despawn_when_ready: Local<Vec<InstanceId>>,
     containing_scenes: ContainingScene,
     oow_player: Query<Entity, (With<OutOfWorld>, With<PrimaryUser>)>,
 ) {
@@ -174,21 +188,6 @@ fn update_gltf(
         .single()
         .ok()
         .and_then(|e| containing_scenes.get_parcel_oow(e));
-
-    // clean up old instances
-    instances_to_despawn_when_ready.retain(|instance| {
-        if scene_spawner.instance_is_ready(*instance) {
-            for entity in scene_spawner.iter_instance_entities(*instance) {
-                if let Ok(mut commands) = commands.get_entity(entity) {
-                    // have to do this non-recursively and safely because we may have removed some entities already
-                    commands.despawn();
-                }
-            }
-            false
-        } else {
-            true
-        }
-    });
 
     let mut set_state = |scene_ent: &SceneEntity, current_state: LoadingState| {
         if let Ok((root, mut context, has_material_lookup)) = contexts.get_mut(scene_ent.root) {
@@ -214,22 +213,9 @@ fn update_gltf(
         };
     };
 
-    for (ent, scene_ent, gltf, maybe_loaded, maybe_processed) in new_gltfs.iter() {
+    for (ent, scene_ent, gltf) in new_gltfs.iter() {
         debug!("{} has {}", scene_ent.id, gltf.0.src);
 
-        if let Some(GltfLoaded(Some(instance))) = maybe_loaded {
-            // clean up from loaded state
-            // instances_to_despawn_when_ready.push(*instance);
-            scene_spawner.despawn_instance(*instance);
-        }
-        if let Some(GltfProcessed {
-            instance_id: Some(instance),
-            ..
-        }) = maybe_processed
-        {
-            // clean up from processed state
-            instances_to_despawn_when_ready.push(*instance);
-        }
         commands
             .entity(ent)
             .remove::<GltfLoaded>()
@@ -417,7 +403,8 @@ fn update_ready_gltfs(
             // nothing to process
             commands
                 .entity(bevy_scene_entity)
-                .try_insert(GltfProcessed::default());
+                .try_insert(GltfProcessed::default())
+                .try_remove::<GltfReady>();
             continue;
         }
         let instance = loaded.0.as_ref().unwrap();
@@ -425,7 +412,8 @@ fn update_ready_gltfs(
             let Some(gltf) = gltfs.get(h_gltf.0.id()) else {
                 commands
                     .entity(bevy_scene_entity)
-                    .try_insert(GltfProcessed::default());
+                    .try_insert(GltfProcessed::default())
+                    .try_remove::<GltfReady>();
                 error!("gltf was unloaded mysteriously. this shouldn't happen and things will be broken as a result.");
                 continue;
             };
@@ -985,12 +973,13 @@ fn update_ready_gltfs(
                     animation_names,
                 },
             );
-            commands
-                .entity(bevy_scene_entity)
-                .try_insert(GltfProcessed {
+            commands.entity(bevy_scene_entity).try_insert((
+                GltfProcessed {
                     instance_id: Some(*instance),
                     named_nodes,
-                });
+                },
+                GltfReady(*instance),
+            ));
             if has_animations && !gltf.animations.is_empty() {
                 let mut graph = AnimationGraph::new();
                 let animation_clips = Clips {
