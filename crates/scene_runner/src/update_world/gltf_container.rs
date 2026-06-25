@@ -116,6 +116,7 @@ impl Plugin for GltfDefinitionPlugin {
         app.add_systems(Update, debug_modifiers);
 
         app.add_observer(clear_stale_instance);
+        app.add_observer(on_gltf_container_removed);
     }
 }
 
@@ -160,6 +161,12 @@ fn clear_stale_instance(
             commands.despawn();
         }
     }
+}
+
+fn on_gltf_container_removed(trigger: Trigger<OnRemove, GltfDefinition>, mut commands: Commands) {
+    commands
+        .entity(trigger.target())
+        .try_remove::<(GltfLoaded, GltfProcessed, GltfReady)>();
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
