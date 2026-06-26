@@ -37,8 +37,97 @@ pub struct PulseFrame {
 pub enum PulseStatus {
     Connecting,
     Connected,
-    Disconnected(String),
+    /// Connected-then-dropped, carrying the server's reason (see [`PulseDisconnect`]).
+    Disconnected(PulseDisconnect),
+    /// Never established (DNS/socket/connect timeout) — always transient, safe to retry.
     Failed(String),
+}
+
+/// Server disconnect reason. This is an out-of-band ABI shared with the server
+/// (`Pulse.Transport.DisconnectReason`), *not* a wire message: it arrives as the ENet disconnect
+/// event's `data` code. The driver maps that `u32` here so the protocol layer can decide whether a
+/// reconnect could plausibly help — several reasons are terminal by the server's design (bad auth,
+/// ban, eviction, flagged misbehaviour) and must not trigger a reconnect loop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PulseDisconnect {
+    /// No reason supplied (e.g. a plain network timeout where the remote set no code).
+    None,
+    /// Clean shutdown / server stopping.
+    Graceful,
+    /// Our `PENDING_AUTH` deadline was exceeded (handshake too slow).
+    AuthTimeout,
+    /// Handshake validation failed.
+    AuthFailed,
+    /// Evicted by a newer connection with the same wallet — retrying fights that session.
+    DuplicateSession,
+    /// Banned platform-wide.
+    Banned,
+    /// Server at capacity.
+    ServerFull,
+    /// Per-source-IP pre-auth connection cap exceeded.
+    PreAuthIpLimit,
+    /// Global pre-auth budget exhausted.
+    PreAuthBudget,
+    /// Sent `PlayerStateInput` faster than the server's cap (misbehaving client).
+    InputRateExceeded,
+    /// Exceeded the discrete-event (emote/teleport) cap (misbehaving client).
+    DiscreteEventRateExceeded,
+    /// `PlayerStateInput` carried an invalid field.
+    InvalidInputField,
+    /// `EmoteStart` carried an invalid field.
+    InvalidEmoteField,
+    /// `TeleportRequest` carried an invalid field (oversized/empty realm, bad parcel).
+    InvalidTeleportField,
+    /// A handshake with the same (wallet, timestamp) was replayed inside the anti-replay window.
+    HandshakeReplayRejected,
+    /// `HandshakeRequest` carried a malformed `PlayerInitialState`.
+    InvalidHandshakeField,
+    /// Sustained corrupt/oversized packets (buggy client, fuzzer, or amplification probe).
+    PacketCorrupted,
+    /// A code this client build doesn't recognise. Treated as terminal to be safe.
+    Unknown(u32),
+}
+
+impl PulseDisconnect {
+    /// Map an ENet disconnect `data` code to a reason. Mirrors the server's `DisconnectReason` enum
+    /// 1:1; unrecognised codes (a newer server) fall through to [`PulseDisconnect::Unknown`].
+    pub fn from_code(code: u32) -> Self {
+        match code {
+            0 => Self::None,
+            1 => Self::Graceful,
+            2 => Self::AuthTimeout,
+            3 => Self::AuthFailed,
+            4 => Self::DuplicateSession,
+            5 => Self::Banned,
+            6 => Self::ServerFull,
+            7 => Self::PreAuthIpLimit,
+            8 => Self::PreAuthBudget,
+            9 => Self::InputRateExceeded,
+            10 => Self::DiscreteEventRateExceeded,
+            11 => Self::InvalidInputField,
+            12 => Self::InvalidEmoteField,
+            13 => Self::InvalidTeleportField,
+            14 => Self::HandshakeReplayRejected,
+            15 => Self::InvalidHandshakeField,
+            16 => Self::PacketCorrupted,
+            other => Self::Unknown(other),
+        }
+    }
+
+    /// Whether reconnecting could plausibly succeed. Only transient, server-side, or
+    /// too-slow-this-time reasons are retryable; auth/ban/eviction/misbehaviour reasons (and any
+    /// unrecognised code) are terminal — reconnecting against them just loops.
+    pub fn should_retry(self) -> bool {
+        matches!(
+            self,
+            Self::None
+                | Self::Graceful
+                | Self::AuthTimeout
+                | Self::ServerFull
+                | Self::PreAuthIpLimit
+                | Self::PreAuthBudget
+        )
+    }
 }
 
 /// Where to connect. Identity / `server_id` / realm live in the protocol layer (`PulseConfig`),

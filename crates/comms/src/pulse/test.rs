@@ -162,9 +162,9 @@ fn stale_delta_is_dropped() {
         ..Default::default()
     };
     assert!(decoder
-        .handle(server_msg(pulse::server_message::Message::PlayerStateDelta(
-            delta
-        )))
+        .handle(server_msg(
+            pulse::server_message::Message::PlayerStateDelta(delta)
+        ))
         .is_empty());
 }
 
@@ -213,9 +213,9 @@ fn left_drops_subject_and_emits_address() {
     };
     assert!(matches!(
         decoder
-            .handle(server_msg(pulse::server_message::Message::PlayerStateDelta(
-                delta
-            )))
+            .handle(server_msg(
+                pulse::server_message::Message::PlayerStateDelta(delta)
+            ))
             .as_slice(),
         [PulseEvent::Resync(_)]
     ));

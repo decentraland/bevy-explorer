@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use super::transport::{PulseDriverChannels, PulseStatus, PulseTransportConfig};
+use super::transport::{PulseDisconnect, PulseDriverChannels, PulseStatus, PulseTransportConfig};
 
 pub(super) fn spawn(
     config: PulseTransportConfig,
@@ -42,11 +42,12 @@ fn run(config: PulseTransportConfig, mut channels: PulseDriverChannels, stop: &A
 
         // TODO(pulse-enet): replace the sleep with `host.service(1ms)`. On Receive →
         // channels.inbound.try_send(bytes); on Connect → status Connected; on Disconnect/Timeout →
-        // status Disconnected + return.
+        // status Disconnected(PulseDisconnect::from_code(event.data)) + return.
         thread::sleep(Duration::from_millis(16));
     }
 
+    // Stop requested by the protocol layer (session dropped) — a clean local shutdown.
     let _ = channels
         .status
-        .try_send(PulseStatus::Disconnected("driver stopped".into()));
+        .try_send(PulseStatus::Disconnected(PulseDisconnect::Graceful));
 }
