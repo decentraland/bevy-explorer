@@ -236,6 +236,17 @@ fn participant_payload(
         );
         return;
     };
+
+    // Movement now comes from the Pulse transport; fully drop the legacy LiveKit movement
+    // messages so the two inbound pipes don't both drive foreign-avatar position. The send side
+    // is unchanged (we still broadcast Movement, carrying the scene-animation rider, as before).
+    if matches!(
+        message,
+        rfc4::packet::Message::Movement(_) | rfc4::packet::Message::MovementCompressed(_)
+    ) {
+        return;
+    }
+
     let room = *room_entity;
     let sender = global_crdt_state.get_sender();
 
