@@ -1,16 +1,24 @@
 use bevy::prelude::*;
 
 use common::{
-    structs::{AvatarDynamicState, MoveKind, SceneDrivenAnim, SceneDrivenAnimationRequest},
+    structs::{
+        avatar_tilt_quat, AvatarDynamicState, MoveKind, SceneDrivenAnim,
+        SceneDrivenAnimationRequest,
+    },
     util::QuatNormalizeExt,
 };
 
-use comms::{
-    global_crdt::{ForeignPlayer, PlayerPositionEvent},
-    movement_compressed::Temporal,
-};
+use comms::global_crdt::{ForeignPlayer, PlayerPositionEvent, PlayerSceneAnimEvent};
 use dcl_component::{transform_and_parent::DclTransformAndParent, SceneEntityId};
 use scene_runner::{update_world::mesh_collider::SceneColliderData, ContainingScene};
+
+/// Largest forward timestamp jump accepted as normal progress; a bigger leap is treated as a
+/// garbage stamp. Generous (the server clock can gap during a brief stall) but bounded so a single
+/// absurd-future stamp can't lock out every subsequent real update.
+const TIMESTAMP_FORWARD_LIMIT_SECS: f32 = 60.0;
+/// A backward jump beyond this reads as a wrap (`movement_compressed`'s range) or a sender restart,
+/// so we re-sync to it instead of freezing; smaller backward steps are reordered datagrams.
+const TIMESTAMP_RESET_SECS: f32 = 60.0;
 
 pub struct PlayerMovementPlugin;
 
@@ -20,6 +28,7 @@ impl Plugin for PlayerMovementPlugin {
             Update,
             (
                 update_foreign_user_target_position,
+                update_foreign_scene_anim,
                 update_foreign_user_actual_position,
             )
                 .chain(),
@@ -34,7 +43,6 @@ struct PlayerTargetPosition {
     velocity: Option<Vec3>,
     translation: Vec3,
     rotation: Quat,
-    index: Option<u32>,
     update_freq: f32,
     grounded: Option<bool>,
     // Jump / DoubleJump / Glide inferred from the rfc4::Movement packet. Applied to the
@@ -42,12 +50,30 @@ struct PlayerTargetPosition {
     // matching emote (DoubleJump / Glide); None resets a previously-applied remote state
     // back to Idle so the picker reclaims.
     remote_move_kind: Option<MoveKind>,
-    // Scene-driven animation state carried with this target. Applied to
-    // `SceneDrivenAnim` at `anim_apply_at` so it lines up with the interpolated
-    // position, then `anim_applied` blocks re-application until the next packet.
-    scene_anim: Option<SceneDrivenAnimationRequest>,
-    anim_apply_at: f32,
-    anim_applied: bool,
+}
+
+/// Pending scene-driven animation for a foreign player, fed by [`PlayerSceneAnimEvent`] and applied
+/// once the interpolated position's server timestamp reaches the SDA's — so the animation lines up
+/// with the visible motion despite arriving over a different transport. Ordering/dedup is already
+/// done in `global_crdt` (by the sender's sequence), so events arrive here in order.
+#[derive(Component)]
+struct PendingSceneAnim {
+    /// The next animation to apply (`None` = clear), and the movement-tick (seconds) it should land
+    /// at. `None` once applied / nothing pending.
+    pending: Option<(Option<SceneDrivenAnimationRequest>, f32)>,
+    /// Render-only lean from the latest scene-anim event, composed onto the interpolated yaw each
+    /// frame. Tracked continuously (not gated on the apply timestamp like the clip) since it's a
+    /// pose overlay, not a transition. `IDENTITY` = upright.
+    tilt: Quat,
+}
+
+impl Default for PendingSceneAnim {
+    fn default() -> Self {
+        Self {
+            pending: None,
+            tilt: Quat::IDENTITY,
+        }
+    }
 }
 
 fn update_foreign_user_target_position(
@@ -67,80 +93,74 @@ fn update_foreign_user_target_position(
 
         if let Ok((_player, maybe_pos)) = players.get_mut(ev.player) {
             if let Some(mut pos) = maybe_pos {
-                let mut is_valid = false;
-                if ev.index.is_some_and(|eix| {
-                    pos.timestamp.is_none() && pos.index.is_none_or(|pix| eix > pix)
-                }) {
-                    // we're using only position based updates, and this index is higher than previous
-                    is_valid = true;
-                }
-                if let Some(timestamp) = ev.timestamp {
-                    if pos.timestamp.is_none_or(|pts| {
-                        let threshold = Temporal::TIMESTAMP_MAX * 0.25;
-                        (timestamp > pts && timestamp < pts + threshold)
-                            || (timestamp + Temporal::TIMESTAMP_MAX > pts
-                                && timestamp + Temporal::TIMESTAMP_MAX < pts + threshold)
-                    }) {
-                        // we're using movement compressed, and this is a "later" timestamp
-                        // TODO: we can avoid using out-of-order messages as well by checking threshold vs prev
-                        is_valid = true;
-                    } else {
-                        debug!(
-                            "invalid timestamp: ev: {:?}, last: {:?}",
-                            timestamp, pos.timestamp
-                        );
-                    }
-                }
-
+                // The server tick is monotonic seconds: accept a strictly-newer stamp within a sane
+                // forward window, treat a large backward jump as a sender restart (re-sync rather
+                // than freeze), and reject small backward steps as reordered/duplicate datagrams.
+                let is_valid = pos.timestamp.is_none_or(|pts| {
+                    let forward = ev.timestamp - pts;
+                    (forward > 0.0 && forward < TIMESTAMP_FORWARD_LIMIT_SECS)
+                        || forward < -TIMESTAMP_RESET_SECS
+                });
                 if is_valid {
                     const LAG_DECAY_SECS: f32 = 1.5;
                     let delta = ev.time - pos.time;
                     let update_freq = LAG_DECAY_SECS
                         / ((LAG_DECAY_SECS - delta).max(0.0) / pos.update_freq
                             + (LAG_DECAY_SECS / delta).min(1.0));
-                    // Apply-before-overwrite: if the previous event's scene_anim never
-                    // reached its deadline, push it now so bursts of events (stalls,
-                    // multi-event frames) don't silently drop one-shot seeks or
-                    // intermediate transitions.
-                    if !pos.anim_applied {
-                        commands.entity(ev.player).try_insert(SceneDrivenAnim {
-                            active: pos.scene_anim.clone(),
-                        });
-                    }
                     *pos = PlayerTargetPosition {
                         time: ev.time,
-                        timestamp: ev.timestamp,
-                        velocity: ev.velocity,
+                        timestamp: Some(ev.timestamp),
+                        velocity: Some(ev.velocity),
                         translation: bevy_trans.translation,
                         rotation: bevy_trans.rotation.normalize_or_identity(),
-                        index: ev.index,
                         update_freq,
                         grounded: ev.grounded,
                         remote_move_kind: ev.remote_move_kind,
-                        scene_anim: ev.scene_anim.clone(),
-                        anim_apply_at: ev.time + update_freq,
-                        anim_applied: false,
                     }
+                } else {
+                    debug!(
+                        "invalid timestamp: ev: {}, last: {:?}",
+                        ev.timestamp, pos.timestamp
+                    );
                 }
             } else {
                 commands.entity(ev.player).try_insert((
                     PlayerTargetPosition {
                         time: ev.time,
-                        timestamp: ev.timestamp,
-                        velocity: ev.velocity,
+                        timestamp: Some(ev.timestamp),
+                        velocity: Some(ev.velocity),
                         translation: bevy_trans.translation,
                         rotation: bevy_trans.rotation,
-                        index: ev.index,
                         update_freq: 0.01,
                         grounded: ev.grounded,
                         remote_move_kind: ev.remote_move_kind,
-                        scene_anim: ev.scene_anim.clone(),
-                        anim_apply_at: ev.time + 0.01,
-                        anim_applied: false,
                     },
                     AvatarDynamicState::default(),
+                    PendingSceneAnim::default(),
                 ));
             }
+        }
+    }
+}
+
+/// Stash each incoming [`PlayerSceneAnimEvent`] as the player's pending animation, to be applied by
+/// [`update_foreign_user_actual_position`] once the interpolated position reaches its timestamp. The
+/// latest event wins (overwrites any unapplied pending); events already arrive in order.
+fn update_foreign_scene_anim(
+    mut commands: Commands,
+    mut anim_events: EventReader<PlayerSceneAnimEvent>,
+    mut players: Query<&mut PendingSceneAnim>,
+) {
+    for ev in anim_events.read() {
+        let tilt = avatar_tilt_quat(ev.tilt.0, ev.tilt.1);
+        if let Ok(mut slot) = players.get_mut(ev.player) {
+            slot.pending = Some((ev.anim.clone(), ev.timestamp));
+            slot.tilt = tilt;
+        } else {
+            commands.entity(ev.player).try_insert(PendingSceneAnim {
+                pending: Some((ev.anim.clone(), ev.timestamp)),
+                tilt,
+            });
         }
     }
 }
@@ -149,15 +169,16 @@ fn update_foreign_user_actual_position(
     mut commands: Commands,
     mut avatars: Query<(
         Entity,
-        &mut PlayerTargetPosition,
+        &PlayerTargetPosition,
         &mut Transform,
         &mut AvatarDynamicState,
+        Option<&mut PendingSceneAnim>,
     )>,
     mut scene_datas: Query<(&mut SceneColliderData, &GlobalTransform)>,
     containing_scene: ContainingScene,
     time: Res<Time>,
 ) {
-    for (foreign_ent, mut target, mut actual, mut dynamic_state) in avatars.iter_mut() {
+    for (foreign_ent, target, mut actual, mut dynamic_state, maybe_pending) in avatars.iter_mut() {
         debug!(
             "positioning foreign {foreign_ent:?}, target {}, current {}",
             target.translation, actual.translation
@@ -215,11 +236,20 @@ fn update_foreign_user_actual_position(
             turn_time = target.time + 0.2 - time.elapsed_secs();
         }
 
+        // Compose the render-only lean onto the (yaw-only) target before interpolating, so the
+        // existing rotation lerp carries the tilt as part of the rotation — tilt changes blend
+        // smoothly and the lean never decays out of the yaw interpolation. `target.rotation`
+        // itself stays yaw-only (that's the value scenes read via the CRDT transform).
+        let tilt = maybe_pending
+            .as_deref()
+            .map(|p| p.tilt)
+            .unwrap_or(Quat::IDENTITY);
+        let target_rotation = target.rotation * tilt;
         if turn_time <= 0.0 {
-            actual.rotation = target.rotation;
+            actual.rotation = target_rotation;
         } else {
             let turn_fraction = (time.delta_secs() / turn_time).min(1.0);
-            actual.rotation = actual.rotation.lerp(target.rotation, turn_fraction);
+            actual.rotation = actual.rotation.lerp(target_rotation, turn_fraction);
         }
 
         // Apply the remote-derived move_kind. Jump drives jump_time (the velocity picker
@@ -276,16 +306,18 @@ fn update_foreign_user_actual_position(
             }
         }
 
-        // Push the scene-driven animation state once the interpolation has had
-        // time to line up with this target. Ensures jump/walk/etc. transitions
-        // fire when the avatar visibly does the motion, not when the packet
-        // lands. `anim_apply_at` was set to `ev.time + update_freq` so it
-        // tracks the same catch-up window as the position blend.
-        if !target.anim_applied && time.elapsed_secs() >= target.anim_apply_at {
-            commands.entity(foreign_ent).try_insert(SceneDrivenAnim {
-                active: target.scene_anim.clone(),
-            });
-            target.anim_applied = true;
+        // Apply the pending scene-driven animation once the interpolated position has reached the
+        // server time it was stamped at, so jump/walk/etc. transitions fire when the avatar visibly
+        // does the motion rather than when the (separate-transport) SDA packet lands.
+        if let Some(mut pending) = maybe_pending {
+            if let Some((anim, apply_at)) = &pending.pending {
+                if target.timestamp.is_some_and(|t| t >= *apply_at) {
+                    commands.entity(foreign_ent).try_insert(SceneDrivenAnim {
+                        active: anim.clone(),
+                    });
+                    pending.pending = None;
+                }
+            }
         }
     }
 }

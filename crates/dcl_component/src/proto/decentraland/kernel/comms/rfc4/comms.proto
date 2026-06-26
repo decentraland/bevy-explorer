@@ -18,6 +18,9 @@ message Packet {
     PlayerEmote player_emote = 9;
     SceneEmote scene_emote = 10;
     MovementCompressed movement_compressed = 12;
+    // bevy-private: scene-driven animation, decoupled from movement (which now rides Pulse).
+    // Other clients (Unity, web) don't understand it and drop the unknown oneof field.
+    SceneDrivenAnimation scene_driven_animation = 13;
   }
   uint32 protocol_version = 11;
 }
@@ -132,6 +135,13 @@ message SceneDrivenAnimation {
   // remote's physics or the yaw other clients read. Absent/0 from senders without tilt.
   optional float tilt_pitch = 10;
   optional float tilt_roll = 11;
+  // Monotonic per-sender sequence counter. Carries no timing — the receiver uses it only to
+  // order SDA datagrams and drop reordered/duplicate ones (LiveKit is unreliable). The receiver
+  // schedules each accepted SDA against the sender's own last-received movement server tick, so
+  // anim and position — which ride different transports — apply on a shared clock without the
+  // sender's send-time leg polluting the alignment. Absent on the legacy nested usage; only the
+  // top-level `Packet.scene_driven_animation` carries it.
+  optional uint32 sequence = 12;
 }
 
 message MovementCompressed {

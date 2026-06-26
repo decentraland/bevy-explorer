@@ -25,7 +25,7 @@ use common::{
     util::{TaskCompat, TaskExt},
 };
 use dcl_component::proto_components::common::Vector3;
-use dcl_component::proto_components::kernel::comms::rfc4::{self, packet::Message};
+use dcl_component::proto_components::kernel::comms::rfc4;
 use dcl_component::proto_components::pulse;
 use dcl_component::transform_and_parent::DclTranslation;
 use prost::Message as _;
@@ -355,12 +355,12 @@ fn drain_inbound(
                 PulseEvent::Connected { success, error } => {
                     on_handshake_response(session, realm, player, now, success, error)
                 }
-                // Movement is bridged into the shared foreign-player pipeline as a synthesized
-                // `rfc4::Movement`, reusing `update_player` / `foreign_dynamics` verbatim.
+                // Movement is bridged into the shared foreign-player pipeline as its own
+                // `PlayerMessage::Movement`, reusing `update_player` / `foreign_dynamics` verbatim.
                 PulseEvent::Movement { address, movement } => {
                     let update = PlayerUpdate {
                         transport_id: session.foreign_transport,
-                        message: PlayerMessage::PlayerData(Message::Movement(*movement)),
+                        message: PlayerMessage::Movement(movement),
                         address,
                     };
                     let _ = session.sender.try_send(update.into());

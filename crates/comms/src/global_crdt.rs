@@ -10,8 +10,8 @@ use bimap::BiMap;
 use common::{
     rpc::{RpcCall, RpcEventSender, RpcStreamSender},
     structs::{
-        avatar_tilt_quat, AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate, HeadSync,
-        MoveKind, PointAtSync, SceneDrivenAnimationRequest,
+        AudioDecoderError, EmoteCommand, GlobalCrdtStateUpdate, HeadSync, MoveKind, PointAtSync,
+        SceneDrivenAnimationRequest,
     },
 };
 use ethers_core::types::Address;
@@ -35,7 +35,7 @@ use dcl_component::{
     DclReader, DclWriter, GlobalCrdtData, Localizer, SceneComponentId, SceneEntityId, SceneOrigin,
 };
 
-use crate::{movement_compressed::MovementCompressed, profile::ProfileMetaCache, Transport};
+use crate::{profile::ProfileMetaCache, Transport};
 
 #[cfg(not(target_arch = "wasm32"))]
 use kira::sound::streaming::StreamingSoundData;
@@ -95,16 +95,28 @@ impl Plugin for GlobalCrdtPlugin {
                 .chain(),
         );
         app.add_event::<PlayerPositionEvent>();
+        app.add_event::<PlayerSceneAnimEvent>();
         app.add_event::<ProfileEvent>();
         app.add_event::<ChatEvent>();
     }
 }
 
+// `PlayerData` wraps the full rfc4 message set, whose largest variants (Movement, the new
+// SceneDrivenAnimation) dwarf the others. Boxing it would add a heap allocation on every inbound
+// message — this is the hot path — so keep it inline and silence the size-difference lint.
+#[allow(clippy::large_enum_variant)]
 pub enum PlayerMessage {
     MetaData(String),
     PlayerData(rfc4::packet::Message),
-    AudioStreamAvailable { transport: Entity },
-    AudioStreamUnavailable { transport: Entity },
+    /// Pulse-decoded movement, delivered natively rather than as an rfc4 `Movement` packet (those
+    /// are no longer supported). Boxed because the decoder already hands us a `Box`.
+    Movement(Box<rfc4::Movement>),
+    AudioStreamAvailable {
+        transport: Entity,
+    },
+    AudioStreamUnavailable {
+        transport: Entity,
+    },
 }
 
 impl std::fmt::Debug for PlayerMessage {
@@ -112,6 +124,7 @@ impl std::fmt::Debug for PlayerMessage {
         let var_name = match self {
             Self::MetaData(arg0) => f.debug_tuple("MetaData").field(arg0).finish(),
             Self::PlayerData(arg0) => f.debug_tuple("PlayerData").field(arg0).finish(),
+            Self::Movement(arg0) => f.debug_tuple("Movement").field(arg0).finish(),
             Self::AudioStreamAvailable { transport } => f
                 .debug_tuple("AudioStreamAvailable")
                 .field(transport)
@@ -327,31 +340,44 @@ impl LocalAudioSource {
 pub struct ForeignMetaData {
     pub lambdas_endpoint: String,
 }
+/// A positional update for a foreign player from the Pulse-decoded movement stream. Position only;
+/// scene-driven animation travels separately as [`PlayerSceneAnimEvent`].
 #[derive(Event)]
 pub struct PlayerPositionEvent {
-    pub index: Option<u32>,
     pub player: Entity,
+    /// Local receive time (`time.elapsed_secs()`) — drives the interpolation catch-up window.
     pub time: f32,
-    pub timestamp: Option<f32>,
+    /// Server tick (seconds) — orders updates and anchors the shared clock SDA aligns against.
+    pub timestamp: f32,
     pub translation: DclTranslation,
     pub rotation: DclQuat,
-    pub velocity: Option<Vec3>,
+    pub velocity: Vec3,
     pub grounded: Option<bool>,
-    /// MoveKind inferred from the rfc4::Movement packet:
+    /// MoveKind inferred from the packet:
     ///   - `jump_count >= 2` → `DoubleJump`
     ///   - `glide_state` is `OPENING_PROP` or `GLIDING` → `Glide`
     ///   - `is_jumping` or `is_long_jump` → `Jump`
     ///
-    /// `None` means the packet has no movement state indicator — the velocity
-    /// fallback picks. Used to drive `jump_time` (Jump) and the matching emote
-    /// (DoubleJump / Glide) on foreign avatars.
+    /// `None` means no movement-state indicator — the velocity fallback picks. Drives `jump_time`
+    /// (Jump) and the matching emote (DoubleJump / Glide) on foreign avatars.
     pub remote_move_kind: Option<MoveKind>,
-    /// Resolved scene-driven animation state carried alongside this position packet.
-    /// `None` means the sender is not running a scene-driven animation. `Some` is
-    /// the full state (after URN latching for keepalive resolution). Applied with
-    /// interpolation delay in `foreign_dynamics` so the animation lines up with
-    /// the visibly-interpolated position.
-    pub scene_anim: Option<SceneDrivenAnimationRequest>,
+}
+
+/// Scene-driven animation state for a foreign player, decoded from the standalone
+/// `SceneDrivenAnimation` packet (LiveKit). `timestamp` is *this player's* latest movement server
+/// tick (seconds) at the moment the SDA was received — not anything the sender stamped — so
+/// `foreign_dynamics` applies it when the interpolated position reaches that same server time. Anim
+/// and position ride different transports but resolve onto one clock the sender's lag can't skew.
+#[derive(Event)]
+pub struct PlayerSceneAnimEvent {
+    pub player: Entity,
+    pub time: f32,
+    pub timestamp: f32,
+    /// Resolved animation; `None` clears any active one.
+    pub anim: Option<SceneDrivenAnimationRequest>,
+    /// Render-only avatar lean (pitch, roll) in degrees, composed onto the interpolated yaw in
+    /// `foreign_dynamics`. `(0, 0)` is upright.
+    pub tilt: (f32, f32),
 }
 
 pub enum ProfileEventType {
@@ -379,6 +405,21 @@ pub struct VoiceMessageStreams {
     streams: Vec<RpcStreamSender<VoiceMessage>>,
 }
 
+/// Per-player scene-driven-animation receive state, bundled into one [`Local`] to stay under
+/// Bevy's system-parameter limit.
+#[derive(Default)]
+pub struct RemoteAnimState {
+    /// Cached hash pair + URN per player, so ride-along packets (which omit the hashes between
+    /// keepalives) keep resolving without rebuilding.
+    cache: HashMap<Entity, CachedRemoteAnim>,
+    /// Highest SDA sequence seen per player, to drop reordered/duplicate datagrams (unreliable).
+    last_sequence: HashMap<Entity, u32>,
+    /// Latest movement server tick (seconds) seen per player. Each accepted SDA is tagged with this
+    /// so `foreign_dynamics` schedules it against the same clock the position stream rides — the SDA
+    /// carries only a sequence, not its own timing.
+    last_movement_tick: HashMap<Entity, f32>,
+}
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn process_transport_updates(
     mut commands: Commands,
@@ -387,13 +428,14 @@ pub fn process_transport_updates(
     time: Res<Time>,
     mut profile_events: EventWriter<ProfileEvent>,
     mut position_events: EventWriter<PlayerPositionEvent>,
+    mut anim_events: EventWriter<PlayerSceneAnimEvent>,
     mut chat_events: EventWriter<ChatEvent>,
     mut string_senders: Local<HashMap<String, RpcEventSender>>,
     mut binary_senders: Local<HashMap<String, RpcStreamSender<(String, Vec<u8>)>>>,
     mut subscribers: EventReader<RpcCall>,
     mut profile_meta_cache: ResMut<ProfileMetaCache>,
     mut duplicate_chat_filter: Local<HashMap<Entity, f64>>,
-    mut last_remote_anim: Local<HashMap<Entity, CachedRemoteAnim>>,
+    mut remote_anim: Local<RemoteAnimState>,
     discard_player_updates: Res<DiscardPlayerUpdates>,
 ) {
     // gather any event receivers
@@ -513,58 +555,14 @@ pub fn process_transport_updates(
                         let _ = audio_channel
                             .try_send(ForeignAudioData::TransportUnavailable(transport));
                     }
-                    PlayerMessage::PlayerData(Message::Position(pos)) => {
-                        let dcl_transform = DclTransformAndParent {
-                            translation: DclTranslation([
-                                pos.position_x,
-                                pos.position_y,
-                                pos.position_z,
-                            ]),
-                            rotation: DclQuat([
-                                pos.rotation_x,
-                                pos.rotation_y,
-                                pos.rotation_z,
-                                pos.rotation_w,
-                            ]),
-                            scale: Vec3::ONE,
-                            parent: SceneEntityId::WORLD_ORIGIN,
-                        };
-                        debug!(
-                            "player: {:#x} -> {}",
-                            update.address,
-                            Vec3::new(pos.position_x, pos.position_y, pos.position_z)
-                        );
-                        // commands
-                        //     .entity(entity)
-                        //     .insert(dcl_transform.to_bevy_transform());
-                        state.update_crdt(
-                            SceneComponentId::TRANSFORM,
-                            CrdtType::LWW_ANY,
-                            scene_id,
-                            &dcl_transform,
-                        );
-                        position_events.write(PlayerPositionEvent {
-                            index: Some(pos.index),
-                            time: time.elapsed_secs(),
-                            timestamp: None,
-                            player: entity,
-                            translation: DclTranslation([
-                                pos.position_x,
-                                pos.position_y,
-                                pos.position_z,
-                            ]),
-                            rotation: DclQuat([
-                                pos.rotation_x,
-                                pos.rotation_y,
-                                pos.rotation_z,
-                                pos.rotation_w,
-                            ]),
-                            velocity: None,
-                            grounded: None,
-                            remote_move_kind: None,
-                            scene_anim: None,
-                        });
-                    }
+                    // Legacy rfc4 movement packets (index-ordered Position, uncompressed Movement,
+                    // bit-packed MovementCompressed) are no longer supported — movement rides Pulse
+                    // and arrives as `PlayerMessage::Movement` above.
+                    PlayerMessage::PlayerData(
+                        Message::Position(_)
+                        | Message::Movement(_)
+                        | Message::MovementCompressed(_),
+                    ) => {}
                     PlayerMessage::PlayerData(Message::ProfileVersion(version)) => {
                         profile_events.write(ProfileEvent {
                             sender: entity,
@@ -607,8 +605,11 @@ pub fn process_transport_updates(
                         );
                     }
                     PlayerMessage::PlayerData(Message::Voice(_)) => (),
-                    PlayerMessage::PlayerData(Message::Movement(m)) => {
+                    PlayerMessage::Movement(m) => {
                         debug!("movement data: {m:?}");
+                        // Remember this player's latest server tick so a later SDA (which carries no
+                        // timing of its own) can be scheduled on the same clock as the position.
+                        remote_anim.last_movement_tick.insert(entity, m.timestamp);
                         commands.entity(entity).try_insert((
                             HeadSync {
                                 yaw_deg: m.head_yaw,
@@ -623,13 +624,10 @@ pub fn process_transport_updates(
                         ));
                         let pos = Vec3::new(m.position_x, m.position_y, -m.position_z);
                         let vel = Vec3::new(m.velocity_x, m.velocity_y, -m.velocity_z);
-                        // Compose the render-only lean on top of yaw; absent/old senders → upright.
-                        let tilt = m
-                            .scene_driven_animation
-                            .as_ref()
-                            .map(|s| avatar_tilt_quat(s.tilt_pitch(), s.tilt_roll()))
-                            .unwrap_or(Quat::IDENTITY);
-                        let rot = Quat::from_rotation_y(-m.rotation_y / 360.0 * TAU) * tilt;
+                        // Yaw only — the render-only lean is no longer composed here. It rides the
+                        // SceneDrivenAnimation packet and is applied in `foreign_dynamics`, so the
+                        // transform other clients read (and this CRDT entry) stays the bare yaw.
+                        let rot = Quat::from_rotation_y(-m.rotation_y / 360.0 * TAU);
                         let dcl_transform = DclTransformAndParent {
                             translation: DclTranslation::from_bevy_translation(pos),
                             rotation: DclQuat::from_bevy_quat(rot),
@@ -661,79 +659,49 @@ pub fn process_transport_updates(
                             (_, _, true) => Some(MoveKind::Jump),
                             _ => None,
                         };
-                        let scene_anim = resolve_remote_anim(
-                            entity,
-                            update.address,
-                            &mut last_remote_anim,
-                            m.scene_driven_animation,
-                        );
                         position_events.write(PlayerPositionEvent {
-                            index: None,
-                            time: time.elapsed_secs(),
-                            timestamp: Some(m.timestamp),
                             player: entity,
+                            time: time.elapsed_secs(),
+                            timestamp: m.timestamp,
                             translation: dcl_transform.translation,
                             rotation: dcl_transform.rotation,
-                            velocity: Some(vel),
+                            velocity: vel,
                             grounded: Some(m.is_grounded),
                             remote_move_kind,
-                            scene_anim,
                         });
                     }
-                    PlayerMessage::PlayerData(Message::MovementCompressed(mut m)) => {
-                        debug!("movement compressed data: {m:?}");
-                        // Compose the render-only lean on top of yaw; absent/old senders → upright.
-                        // Read tilt before `take()` below empties the field.
-                        let tilt = m
-                            .scene_driven_animation
-                            .as_ref()
-                            .map(|s| avatar_tilt_quat(s.tilt_pitch(), s.tilt_roll()))
-                            .unwrap_or(Quat::IDENTITY);
-                        let scene_anim = resolve_remote_anim(
-                            entity,
-                            update.address,
-                            &mut last_remote_anim,
-                            m.scene_driven_animation.take(),
-                        );
-                        let movement = MovementCompressed::from_proto(m);
-                        let pos = movement.position(state.realm_bounds.0, state.realm_bounds.1);
-                        let vel = movement.velocity();
-                        let rot = Quat::from_rotation_y(movement.temporal.rotation_f32()) * tilt;
-                        let dcl_transform = DclTransformAndParent {
-                            translation: DclTranslation::from_bevy_translation(pos),
-                            rotation: DclQuat::from_bevy_quat(rot),
-                            scale: Vec3::ONE,
-                            parent: SceneEntityId::WORLD_ORIGIN,
-                        };
-
-                        debug!("player: {:#x} -> {} -> {}", update.address, pos, vel);
-
-                        state.update_crdt(
-                            SceneComponentId::TRANSFORM,
-                            CrdtType::LWW_ANY,
-                            scene_id,
-                            &dcl_transform,
-                        );
-                        position_events.write(PlayerPositionEvent {
-                            index: None,
-                            time: time.elapsed_secs(),
-                            timestamp: Some(movement.temporal.timestamp_f32()),
-                            player: entity,
-                            translation: dcl_transform.translation,
-                            rotation: dcl_transform.rotation,
-                            velocity: Some(vel),
-                            grounded: movement.temporal.grounded_or_err().ok(),
-                            remote_move_kind: match movement
-                                .temporal
-                                .jump_or_err()
-                                .ok()
-                                .max(movement.temporal.long_jump_or_err().ok())
-                            {
-                                Some(true) => Some(MoveKind::Jump),
-                                _ => None,
-                            },
-                            scene_anim,
-                        });
+                    PlayerMessage::PlayerData(Message::SceneDrivenAnimation(sda)) => {
+                        // Standalone scene-driven animation (decoupled from movement). Order by the
+                        // sender's monotonic sequence — LiveKit is unreliable, so drop reordered /
+                        // duplicate datagrams. Schedule it against this player's latest movement tick
+                        // (the position stream's clock) rather than any stamp the sender chose, so a
+                        // laggy sender can't push the anim's apply time off the movement timeline.
+                        let sequence = sda.sequence();
+                        if remote_anim
+                            .last_sequence
+                            .get(&entity)
+                            .is_none_or(|&prev| sequence > prev)
+                        {
+                            remote_anim.last_sequence.insert(entity, sequence);
+                            let tilt = (sda.tilt_pitch(), sda.tilt_roll());
+                            let anim = resolve_remote_anim(
+                                entity,
+                                update.address,
+                                &mut remote_anim.cache,
+                                Some(sda),
+                            );
+                            anim_events.write(PlayerSceneAnimEvent {
+                                player: entity,
+                                time: time.elapsed_secs(),
+                                timestamp: remote_anim
+                                    .last_movement_tick
+                                    .get(&entity)
+                                    .copied()
+                                    .unwrap_or(0.0),
+                                anim,
+                                tilt,
+                            });
+                        }
                     }
                     PlayerMessage::PlayerData(Message::PlayerEmote(emote)) => {
                         debug!("emote: {emote:?}");
@@ -776,14 +744,12 @@ pub fn process_transport_updates(
     }
 }
 
-// Resolves the `SceneDrivenAnimation` nested message from a Movement /
-// MovementCompressed packet into the full state. An empty `scene_hash` clears the
-// state; absent hash fields (None) reuse the last cached pair for this entity so we
-// keep animating between keepalives. Returns `None` when the sender has no active
-// scene-driven animation, or when the nested message is absent entirely (the
-// common case for senders that don't speak our extension). The resolved state rides
-// on `PlayerPositionEvent` so `foreign_dynamics` can apply it with the same
-// interpolation delay as the visible position.
+// Resolves a standalone `SceneDrivenAnimation` packet into the full state. An empty
+// `scene_hash` clears the state; absent hash fields (None) reuse the last cached pair
+// for this entity so we keep animating between keepalives. Returns `None` when the
+// sender has no active scene-driven animation. The resolved state is emitted as a
+// `PlayerSceneAnimEvent` so `foreign_dynamics` can apply it when the interpolated
+// position reaches the SDA's server timestamp.
 pub struct CachedRemoteAnim {
     scene_hash: String,
     content_hash: String,
