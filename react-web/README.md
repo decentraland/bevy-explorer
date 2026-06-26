@@ -66,6 +66,27 @@ scene). React login → **Explore as Guest** (`/login_guest`) → scene-loading 
 **Mock mode** — `http://localhost:5188/?mock=1`: full UI (login + scene-loading) on
 a fake bridge, no engine. Add `&previousLogin=1` for the returning-user flow.
 
+## Testing
+
+Two tiers cover every domain's bridge API and the clicks that drive them:
+
+- **Tier 1 — deterministic (`npm test`, vitest + Testing Library).** A `FakeDriver`
+  records every page→scene API call and injects scene→page responses, so each domain
+  test drives the real `useEngineSession` hook and asserts: every action posts the exact
+  wire message, and every inbound message updates state. Covers all 13 domains —
+  *including* calls a guest can't reach (accept request, leave community, mark read).
+  Plus component **click** tests (sidebar nav, chat send, friend actions, …). Files in
+  `src/test/`. Runs in CI (no engine).
+- **Tier 2 — real engine (`npm run test:e2e`, Playwright).** Boots the live app + bridge
+  scene, enters as a guest, drives the player with **bevy console commands**
+  (`move_player_to`, `teleport`) and real clicks, and asserts each API call round-trips
+  over a BroadcastChannel spy. Needs a real GPU (WebGPU, headed) — see `e2e/README.md`.
+
+```bash
+npm test            # tier 1 (fast, deterministic)
+npm run test:e2e    # tier 2 (real engine; local, needs a GPU)
+```
+
 ## Status
 
 - [x] **Login slice** (loading / sign-in-or-guest / secure-step / reuse) — guest +
