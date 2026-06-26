@@ -108,8 +108,38 @@ pub struct PulsePlugin;
 
 impl Plugin for PulsePlugin {
     fn build(&self, app: &mut App) {
+        app.add_systems(Startup, configure_pulse);
         app.add_systems(Update, (connect_pulse, pump_pulse).chain());
     }
+}
+
+/// Default Pulse endpoint (production). Override with the `PULSE_SERVER=host:port` env var — e.g.
+/// `pulse-server.decentraland.zone:7777` for dev, or a local instance.
+const DEFAULT_PULSE_SERVER: &str = "pulse-server.decentraland.org:7777";
+
+/// Insert the [`PulseConfig`] that activates the transport. Targets [`DEFAULT_PULSE_SERVER`] unless
+/// `PULSE_SERVER` overrides it. The grid is the Decentraland Genesis City `ParcelEncoder` from the
+/// server's appsettings ([`PulseParcelGrid::default`]).
+fn configure_pulse(mut commands: Commands) {
+    let endpoint =
+        std::env::var("PULSE_SERVER").unwrap_or_else(|_| DEFAULT_PULSE_SERVER.to_owned());
+    let Some((host, port)) = endpoint.rsplit_once(':') else {
+        warn!("pulse: PULSE_SERVER must be host:port, got {endpoint:?}");
+        return;
+    };
+    let Ok(port) = port.parse::<u16>() else {
+        warn!("pulse: invalid port in PULSE_SERVER={endpoint:?}");
+        return;
+    };
+    commands.insert_resource(PulseConfig {
+        transport: PulseTransportConfig {
+            host: host.to_owned(),
+            port,
+        },
+        parcel_grid: PulseParcelGrid::default(),
+        server_id: String::new(),
+    });
+    info!("pulse: configured for {endpoint}");
 }
 
 /// Build a fresh driver + its protocol-side link for `config`.
