@@ -7,10 +7,53 @@ import {
   BRIDGE_CHANNEL,
   type Envelope,
   type PageToScene,
+  type Profile,
   type SceneToPage,
   type Setting,
   type Wearable
 } from './protocol'
+
+// A fully-populated passport for the mock, so the React passport shows every section.
+function richProfile(address: string, name: string, isGuest: boolean): Profile {
+  return {
+    address,
+    name,
+    picture: 'https://profile-images.decentraland.org/entities/bafkreid5btlh76opew65hxu6dtkdo6ybqhymdof6vrrmjy2p5a74oy4huq/face.png',
+    bodyImage: `https://picsum.photos/seed/${encodeURIComponent(address)}/360/760`,
+    hasClaimedName: !name.includes('#'),
+    isGuest,
+    description: 'Exploring Decentraland one plaza at a time. 🌅 DCL citizen since 2022.',
+    links: [
+      { title: 'Twitter', url: 'https://twitter.com' },
+      { title: 'Discord', url: 'https://discord.com' }
+    ],
+    mutuals: 30,
+    badges: Array.from({ length: 8 }, (_, i) => ({ id: `b${i}`, name: `Badge ${i + 1}`, tier: ['bronze', 'silver', 'gold'][i % 3] })),
+    info: {
+      gender: 'Male',
+      birthdate: '26/11/1991',
+      pronouns: 'He / Him',
+      relationship: 'Single',
+      language: 'Persian',
+      profession: 'IT',
+      employment: 'Chilling',
+      hobby: 'games.movie.party',
+      realName: 'mohammad'
+    }
+  }
+}
+
+// Nearby roster — shared by the `members` stream and getUserProfile (so a fetched
+// passport resolves a real name from the clicked sender's address).
+const MOCK_NEARBY = [
+  { address: '0x5854cce95d5e25817b41f4c41f06b695a83bc495', name: 'Mojito', picture: 'https://profile-images.decentraland.org/entities/bafkreid5btlh76opew65hxu6dtkdo6ybqhymdof6vrrmjy2p5a74oy4huq/face.png' },
+  { address: '0x6723dcb07f3ca735223cd1c0acfa62dd994a1bb4', name: 'Sharknado', picture: 'https://profile-images.decentraland.org/entities/bafkreie5bpho47gnh3jrfxoezwc4pxffup4cmmhmdxsmpf3oslopxb4enm/face.png' },
+  { address: '0x1e105bb213754519903788022b962fe2b9c4b263', name: 'Pravus', picture: 'https://profile-images.decentraland.org/entities/bafkreig4xay5oxgbf75hwkjefx5hgdcdvm6a4tnpiisltslxf4jtajkbyq/face.png' },
+  { address: '0x9f8c2a1b4d6e7f0a3b5c8d9e1f2a4b6c8d0e1f23', name: 'Johnny' },
+  { address: '0x3a1b2c4d5e6f7081920a3b4c5d6e7f8091a2b3c4', name: 'Clara' },
+  { address: '0x77a0b1c2d3e4f5061728394a5b6c7d8e9f001122', name: 'SpottyGoat' },
+  { address: '0xc0ffee254729296a45a3885639ac7e10f9d54979', name: '' }
+]
 
 const mockCommunities = [
   { id: 'c1', name: 'Decentraland Foundation', description: 'The official Decentraland Foundation community. Stay up to date with events, releases and everything happening across the metaverse.', thumbnail: 'https://picsum.photos/seed/dcl/540/360', membersCount: 1242, role: 'member', ownerName: 'DCLOfficial', privacy: 'public' },
@@ -163,15 +206,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       () =>
         reply({
           kind: 'members',
-          members: [
-            { address: '0x5854cce95d5e25817b41f4c41f06b695a83bc495', name: 'Mojito', picture: 'https://profile-images.decentraland.org/entities/bafkreid5btlh76opew65hxu6dtkdo6ybqhymdof6vrrmjy2p5a74oy4huq/face.png' },
-            { address: '0x6723dcb07f3ca735223cd1c0acfa62dd994a1bb4', name: 'Sharknado', picture: 'https://profile-images.decentraland.org/entities/bafkreie5bpho47gnh3jrfxoezwc4pxffup4cmmhmdxsmpf3oslopxb4enm/face.png' },
-            { address: '0x1e105bb213754519903788022b962fe2b9c4b263', name: 'Pravus', picture: 'https://profile-images.decentraland.org/entities/bafkreig4xay5oxgbf75hwkjefx5hgdcdvm6a4tnpiisltslxf4jtajkbyq/face.png' },
-            { address: '0x9f8c2a1b4d6e7f0a3b5c8d9e1f2a4b6c8d0e1f23', name: 'Johnny' },
-            { address: '0x3a1b2c4d5e6f7081920a3b4c5d6e7f8091a2b3c4', name: 'Clara' },
-            { address: '0x77a0b1c2d3e4f5061728394a5b6c7d8e9f001122', name: 'SpottyGoat' },
-            { address: '0xc0ffee254729296a45a3885639ac7e10f9d54979', name: '' }
-          ]
+          members: MOCK_NEARBY
         }),
       1400
     )
@@ -354,32 +389,15 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     if (msg.kind === 'getProfile') {
       reply({
         kind: 'profile',
-        profile: {
-          address: o.userId,
-          name: o.hasPreviousLogin ? 'Mojito' : 'Guest#beef',
-          picture: 'https://profile-images.decentraland.org/entities/bafkreid5btlh76opew65hxu6dtkdo6ybqhymdof6vrrmjy2p5a74oy4huq/face.png',
-          hasClaimedName: o.hasPreviousLogin,
-          isGuest: !o.hasPreviousLogin,
-          description: 'Exploring Decentraland one plaza at a time. 🌅 DCL citizen since 2022.',
-          links: [
-            { title: 'Twitter', url: 'https://twitter.com' },
-            { title: 'Discord', url: 'https://discord.com' }
-          ],
-          mutuals: 30,
-          badges: Array.from({ length: 8 }, (_, i) => ({ id: `b${i}`, name: `Badge ${i + 1}`, tier: ['bronze', 'silver', 'gold'][i % 3] })),
-          info: {
-            gender: 'Male',
-            birthdate: '26/11/1991',
-            pronouns: 'He / Him',
-            relationship: 'Single',
-            language: 'Persian',
-            profession: 'IT',
-            employment: 'Chilling',
-            hobby: 'games.movie.party',
-            realName: 'mohammad'
-          }
-        }
+        profile: richProfile(o.userId, o.hasPreviousLogin ? 'Mojito' : 'Guest#beef', !o.hasPreviousLogin)
       })
+      return
+    }
+    if (msg.kind === 'getUserProfile') {
+      // Resolve a real name from the nearby roster (real engine gets it from the catalyst).
+      const member = MOCK_NEARBY.find((m) => m.address.toLowerCase() === msg.address.toLowerCase())
+      const name = member?.name || `${msg.address.slice(0, 6)}…${msg.address.slice(-4)}`
+      reply({ kind: 'userProfile', address: msg.address, profile: richProfile(msg.address, name, false) })
       return
     }
 

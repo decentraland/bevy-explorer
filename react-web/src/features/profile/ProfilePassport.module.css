@@ -150,9 +150,16 @@
   width: 30%;
   min-width: 240px;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
   padding: 1rem;
+}
+/* Full-body avatar snapshot (catalyst body image) — the Unity-style hero. */
+.body {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: bottom;
 }
 
 .content {

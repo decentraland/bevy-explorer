@@ -130,6 +130,8 @@ export function ProfilePassport({
           <div className={styles.avatarCol}>
             {useEngineViewport && setEngineViewport ? (
               <EngineViewport region="avatarPreview" report={setEngineViewport} />
+            ) : profile.bodyImage ? (
+              <img className={styles.body} src={profile.bodyImage} alt={base} />
             ) : (
               <Avatar src={profile.picture} name={base} color={nameColor(profile.address || profile.name)} size={180} status="online" />
             )}

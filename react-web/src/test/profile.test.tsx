@@ -26,6 +26,19 @@ describe('profile domain', () => {
     expect(h.session().profile.data).toMatchObject({ address: '0xme', name: 'Tester' })
   })
 
+  it('requestUserProfile fetches a user and caches the response by address', async () => {
+    const h = renderSession()
+    await enterAsGuest(h)
+    act(() => h.session().requestUserProfile('0xKURD'))
+    expect(h.driver.last('getUserProfile')).toEqual({ kind: 'getUserProfile', address: '0xKURD' })
+    h.driver.emit({
+      kind: 'userProfile',
+      address: '0xKURD',
+      profile: { address: '0xkurd', name: 'kurd', hasClaimedName: true, isGuest: false, description: 'gm' }
+    })
+    expect(h.session().userProfiles['0xkurd']?.name).toBe('kurd')
+  })
+
   it('toggles the profile panel open/closed', async () => {
     const h = renderSession()
     await enterAsGuest(h)

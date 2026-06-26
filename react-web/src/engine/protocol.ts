@@ -70,6 +70,7 @@ export type PageToScene =
   | GetSettingsRequest
   | SetSettingRequest
   | GetProfileRequest
+  | GetUserProfileRequest
   | GetNotificationsRequest
   | MarkNotificationsReadRequest
   | GetEmotesRequest
@@ -254,6 +255,8 @@ export interface Profile {
   description?: string
   links?: { title: string; url: string }[]
   // --- rich passport fields (optional; populated by the passport fetch) -----
+  /** Full-body avatar snapshot (catalyst `avatar.snapshots.body`) — the passport hero image. */
+  bodyImage?: string
   badges?: Badge[]
   info?: ProfileInfo
   /** Mutual-friends count shown under the name. */
@@ -269,6 +272,20 @@ export interface ProfileMessage {
 
 export interface GetProfileRequest {
   kind: 'getProfile'
+}
+
+/** Fetch another user's full passport by address (View Profile). */
+export interface GetUserProfileRequest {
+  kind: 'getUserProfile'
+  address: string
+}
+
+/** A fetched user's passport (kept separate from the local `profile` message so it
+ *  never clobbers the local player's profile state). */
+export interface UserProfileMessage {
+  kind: 'userProfile'
+  address: string
+  profile: Profile | null
 }
 
 /** Mirrors the engine's BaseNotification (metadata varies by type). */
@@ -548,6 +565,7 @@ export type SceneToPage =
   | FriendsMessage
   | SettingsMessage
   | ProfileMessage
+  | UserProfileMessage
   | NotificationsMessage
   | EmotesMessage
   | MicMessage

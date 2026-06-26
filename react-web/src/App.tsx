@@ -52,16 +52,21 @@ function Hud(): React.JSX.Element {
 
   const session = useEngineSession(createDriver)
 
-  // Passport (View Profile) — full rich data for self; identity-only for others
-  // until the bridge can fetch a user's passport by address.
+  // Passport (View Profile). Self → the local rich profile; others → the fetched
+  // passport (requestUserProfile on open), falling back to identity-only while it loads.
   const [passport, setPassport] = useState<ChatUser | null>(null)
+  const isSelfPassport =
+    !!passport && !!session.profile.data && session.profile.data.address.toLowerCase() === passport.address.toLowerCase()
+  const openPassport = (user: ChatUser): void => {
+    setPassport(user)
+    if (user.address) session.requestUserProfile(user.address)
+  }
   const passportProfile: Profile | null = !passport
     ? null
-    : session.profile.data && session.profile.data.address.toLowerCase() === passport.address.toLowerCase()
+    : isSelfPassport
       ? session.profile.data
-      : {
-          // Other users: identity only until the bridge can fetch their passport by
-          // address (badges/about/info/equipped/mutuals are a backend follow-up).
+      : session.userProfiles[passport.address.toLowerCase()] ?? {
+          // Shown immediately (identity) while the fetch is in flight / if it has no profile.
           address: passport.address,
           name: passport.name,
           picture: passport.picture,
@@ -103,7 +108,7 @@ function Hud(): React.JSX.Element {
             me={session.profile.data}
             onAddFriend={(address) => session.friends.act('request', address)}
             onBlock={(address) => session.friends.act('block', address)}
-            onViewProfile={setPassport}
+            onViewProfile={openPassport}
             onTeleport={(x, y) => session.map.teleport(x, y)}
           />
           <FriendsPanel friends={session.friends} />
@@ -125,8 +130,8 @@ function Hud(): React.JSX.Element {
               profile={passportProfile}
               isFriend={session.friends.list.some((f) => f.address.toLowerCase() === passport.address.toLowerCase())}
               // The engine cutout renders the LOCAL avatar, so only use it for self;
-              // other users show their 2D avatar until per-user rendering exists.
-              useEngineViewport={!!session.profile.data && session.profile.data.address.toLowerCase() === passport.address.toLowerCase()}
+              // other users show their full-body snapshot from the fetched passport.
+              useEngineViewport={isSelfPassport}
               onAddFriend={(address) => session.friends.act('request', address)}
               onClose={() => setPassport(null)}
               setEngineViewport={session.setEngineViewport}

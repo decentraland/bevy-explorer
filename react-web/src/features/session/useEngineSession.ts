@@ -16,6 +16,7 @@ import type {
   HoverAction,
   NavAction,
   NearbyMember,
+  ProximityTip,
   Profile,
   SceneLoadingState,
   Setting,
@@ -136,10 +137,18 @@ export interface EngineSession {
   scene: SceneLoadingState | null
   /** World-entity hover hints under the reticle (empty = nothing hovered). */
   hover: HoverAction[]
+  /** Engine has grabbed the mouse for camera-look (OS cursor hidden) → show the crosshair. */
+  cursorLocked: boolean
+  /** In-range world-entity tooltips, anchored at projected screen coords. */
+  proximity: ProximityTip[]
   chat: ChatState
   friends: FriendsState
   settings: SettingsState
   profile: ProfileState
+  /** Fetched OTHER-user passports (View Profile), keyed by lowercased address. */
+  userProfiles: Record<string, Profile | null>
+  /** Request a user's passport by address (populates `userProfiles`). */
+  requestUserProfile: (address: string) => void
   notifications: NotificationsState
   emotes: EmotesState
   backpack: BackpackState
@@ -171,6 +180,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [playerReady, setPlayerReady] = useState(false)
   const [scene, setScene] = useState<SceneLoadingState | null>(null)
   const [hover, setHover] = useState<HoverAction[]>([])
+  const [proximity, setProximity] = useState<ProximityTip[]>([])
+  const [cursorLocked, setCursorLocked] = useState(false)
   const [messages, setMessages] = useState<ChatLine[]>([])
   const [members, setMembers] = useState<NearbyMember[]>([])
   const [chatOpen, setChatOpen] = useState(true)
@@ -187,6 +198,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [profileOpen, setProfileOpen] = useState(false)
+  // Fetched OTHER-user passports (View Profile), keyed by lowercased address.
+  const [userProfiles, setUserProfiles] = useState<Record<string, Profile | null>>({})
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [emotes, setEmotes] = useState<Emote[]>([])
@@ -219,6 +232,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'hover':
           setHover(msg.actions)
           break
+        case 'cursorLock':
+          setCursorLocked(msg.locked)
+          break
+        case 'proximity':
+          setProximity(msg.tips)
+          break
         case 'chat':
           setMessages((prev) =>
             [...prev, { ...msg.chat, id: chatId.current++, ts: Date.now() }].slice(
@@ -249,6 +268,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'profile':
           setProfile(msg.profile)
+          break
+        case 'userProfile':
+          setUserProfiles((prev) => ({ ...prev, [msg.address.toLowerCase()]: msg.profile }))
           break
         case 'notifications':
           setNotifications(msg.notifications)
@@ -438,6 +460,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     driverRef.current?.send({ kind: 'markNotificationsRead', ids: unreadIds })
     setNotifications((prev) => prev.map((n) => (n.read ? n : { ...n, read: true })))
   }, [notifications])
+  // Fetch another user's passport (View Profile). The reply arrives as a 'userProfile'
+  // message and lands in the userProfiles cache.
+  const requestUserProfile = useCallback((address: string) => {
+    driverRef.current?.send({ kind: 'getUserProfile', address })
+  }, [])
   const friendAct = useCallback((op: FriendAction, address: string) => {
     driverRef.current?.send({ kind: 'friendAction', op, address })
   }, [])
@@ -525,6 +552,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     phase,
     scene,
     hover,
+    cursorLocked,
+    proximity,
     chat: { messages, send: sendChat, open: chatOpen, toggle: toggleChat, members },
     friends: {
       available: friendsData.available,
@@ -538,6 +567,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     },
     settings: { list: settings, open: settingsOpen, toggle: toggleSettings, set: settingSet },
     profile: { data: profile, open: profileOpen, toggle: toggleProfile },
+    userProfiles,
+    requestUserProfile,
     notifications: {
       list: notifications,
       unread: notifications.reduce((n, x) => n + (x.read ? 0 : 1), 0),
