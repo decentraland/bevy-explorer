@@ -37,6 +37,16 @@ describe('profile passport', () => {
     expect(screen.getByRole('button', { name: 'FRIEND' })).toBeDisabled()
   })
 
+  it('hides the friend action on your own passport (isSelf)', () => {
+    render(<ProfilePassport profile={profile} isSelf onClose={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: /FRIEND/i })).toBeNull()
+  })
+
+  it('uses the full-body snapshot as the avatar when present', () => {
+    render(<ProfilePassport profile={{ ...profile, bodyImage: 'https://x/body.png' }} onClose={vi.fn()} />)
+    expect(screen.getAllByRole('img').some((i) => i.getAttribute('src') === 'https://x/body.png')).toBe(true)
+  })
+
   it('close button closes', async () => {
     const onClose = vi.fn()
     render(<ProfilePassport profile={profile} onClose={onClose} />)

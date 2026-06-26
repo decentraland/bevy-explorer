@@ -11,7 +11,6 @@
 import { useEffect, useState } from 'react'
 import { Avatar } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
-import { EngineViewport } from '../engine/EngineViewport'
 import type { Badge, Profile, ProfileInfo } from '../../engine/protocol'
 import styles from './ProfilePassport.module.css'
 
@@ -66,19 +65,16 @@ function BadgeTile({ badge }: { badge: Badge }): React.JSX.Element {
 export function ProfilePassport({
   profile,
   isFriend = false,
-  useEngineViewport = false,
+  isSelf = false,
   onAddFriend,
-  onClose,
-  setEngineViewport
+  onClose
 }: {
   profile: Profile
   isFriend?: boolean
-  /** Render the live 3D avatar into the engine cutout (only when the engine can render
-   *  THIS user — currently the local player). Otherwise the 2D avatar is shown. */
-  useEngineViewport?: boolean
+  /** Your own passport — hides the friend action (you can't friend yourself). */
+  isSelf?: boolean
   onAddFriend?: (address: string) => void
   onClose: () => void
-  setEngineViewport?: (region: 'map' | 'avatarPreview', rect: { x: number; y: number; width: number; height: number } | null) => void
 }): React.JSX.Element {
   const [tab, setTab] = useState<Tab>('overview')
   // Escape closes the passport.
@@ -95,8 +91,9 @@ export function ProfilePassport({
   const { base, tag } = splitName(profile.name)
   const claimed = profile.hasClaimedName
   const fields = FIELD_LABELS.filter(({ key }) => profile.info?.[key])
-  const hasOverview =
-    !!profile.description || fields.length > 0 || (profile.badges?.length ?? 0) > 0 || (profile.links?.length ?? 0) > 0
+  const hasBadges = (profile.badges?.length ?? 0) > 0
+  const hasAbout = !!profile.description || fields.length > 0 || (profile.links?.length ?? 0) > 0
+  const hasOverview = hasBadges || hasAbout
 
   return (
     <div className={styles.overlay}>
@@ -119,9 +116,11 @@ export function ProfilePassport({
             )}
           </div>
           <div className={styles.headActions}>
-            <button type="button" className={`${styles.friendBtn} ${isFriend ? styles.isFriend : ''}`.trim()} onClick={() => !isFriend && onAddFriend?.(profile.address)} disabled={isFriend}>
-              {isFriend ? 'FRIEND' : 'ADD FRIEND'}
-            </button>
+            {!isSelf && (
+              <button type="button" className={`${styles.friendBtn} ${isFriend ? styles.isFriend : ''}`.trim()} onClick={() => !isFriend && onAddFriend?.(profile.address)} disabled={isFriend}>
+                {isFriend ? 'FRIEND' : 'ADD FRIEND'}
+              </button>
+            )}
             <button type="button" className={styles.close} aria-label="Close" onClick={onClose}>×</button>
           </div>
         </header>
@@ -136,12 +135,10 @@ export function ProfilePassport({
         </nav>
 
         <div className={styles.body}>
-          {/* --- left: the avatar. Live 3D engine cutout (like the Backpack) only when the
-                  engine can render THIS user; otherwise their 2D avatar. --- */}
+          {/* --- left: the avatar — the catalyst full-body snapshot (Unity-style hero),
+                  falling back to the 2D face if the body render isn't available. --- */}
           <div className={styles.avatarCol}>
-            {useEngineViewport && setEngineViewport ? (
-              <EngineViewport region="avatarPreview" report={setEngineViewport} />
-            ) : profile.bodyImage ? (
+            {profile.bodyImage ? (
               <img className={styles.body} src={profile.bodyImage} alt={base} />
             ) : (
               <Avatar src={profile.picture} name={base} color={nameColor(profile.address || profile.name)} size={180} status="online" />
@@ -163,6 +160,7 @@ export function ProfilePassport({
                     </div>
                   </section>
                 )}
+                {hasAbout && (
                 <section className={styles.card}>
                   {profile.description && (
                     <>
@@ -193,6 +191,7 @@ export function ProfilePassport({
                     </>
                   )}
                 </section>
+                )}
               </>
             )}
 

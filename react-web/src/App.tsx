@@ -136,13 +136,10 @@ function Hud(): React.JSX.Element {
           {passport && passportProfile && (
             <ProfilePassport
               profile={passportProfile}
+              isSelf={isSelfPassport}
               isFriend={session.friends.list.some((f) => f.address.toLowerCase() === passport.address.toLowerCase())}
-              // The engine cutout renders the LOCAL avatar, so only use it for self;
-              // other users show their full-body snapshot from the fetched passport.
-              useEngineViewport={isSelfPassport}
               onAddFriend={(address) => session.friends.act('request', address)}
               onClose={() => setPassport(null)}
-              setEngineViewport={session.setEngineViewport}
             />
           )}
         </>
