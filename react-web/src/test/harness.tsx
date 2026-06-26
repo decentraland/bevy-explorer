@@ -7,7 +7,7 @@
 // inbound message kind updates the session state. No engine, no BroadcastChannel.
 
 import { renderHook, act, waitFor, type RenderHookResult } from '@testing-library/react'
-import { expect } from 'vitest'
+import { expect, vi } from 'vitest'
 import type { LoginDriver } from '../engine/driver'
 import type { PageToScene, SceneToPage } from '../engine/protocol'
 import { useEngineSession, type EngineSession } from '../features/session/useEngineSession'
@@ -111,4 +111,42 @@ export async function enterAsGuest(h: Harness, opts: { keepSent?: boolean } = {}
   h.driver.emit({ kind: 'event', name: 'playerReady' })
   await waitFor(() => expect(h.session().phase).toBe('world'))
   if (!opts.keepSent) h.driver.clearSent()
+}
+
+/**
+ * A complete EngineSession with vi.fn() spies for every action — for COMPONENT
+ * CLICK tests: render a real feature with this, click a control, and assert the
+ * matching session method fired. Tier 1 separately proves each method posts the
+ * right wire message, so click → method → API call is covered end to end.
+ */
+export function fakeSession(): EngineSession {
+  return {
+    phase: 'world',
+    scene: null,
+    hover: [],
+    chat: { messages: [], send: vi.fn(), open: true, toggle: vi.fn(), members: [] },
+    friends: { available: true, list: [], received: [], sent: [], blocked: [], open: false, toggle: vi.fn(), act: vi.fn() },
+    settings: { list: [], open: false, toggle: vi.fn(), set: vi.fn() },
+    profile: { data: null, open: false, toggle: vi.fn() },
+    notifications: { list: [], unread: 0, open: false, toggle: vi.fn(), markAllRead: vi.fn() },
+    emotes: { list: [], open: false, toggle: vi.fn(), play: vi.fn() },
+    backpack: { list: [], open: false, toggle: vi.fn(), equip: vi.fn(), preview: vi.fn() },
+    communities: { list: [], open: false, toggle: vi.fn(), join: vi.fn(), leave: vi.fn(), detail: null, loadDetail: vi.fn() },
+    map: { x: 0, y: 0, open: false, toggle: vi.fn(), teleport: vi.fn() },
+    mic: { enabled: false, available: true, toggle: vi.fn() },
+    nav: vi.fn(),
+    setEngineViewport: vi.fn(),
+    logout: vi.fn(),
+    menuOpen: false,
+    login: {
+      status: 'sign-in-or-guest',
+      account: null,
+      busy: false,
+      error: null,
+      startWithAccount: vi.fn(),
+      exploreAsGuest: vi.fn(),
+      jumpIn: vi.fn(),
+      useDifferentAccount: vi.fn()
+    }
+  }
 }
