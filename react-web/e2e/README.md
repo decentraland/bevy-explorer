@@ -60,3 +60,19 @@ One test per domain, in `engine.spec.ts` (boots the world once, serial):
 Data-dependent **actions** (friend accept/reject/cancel/block, community join/leave,
 notification mark-read, wearable equip/preview, emote play, setting change) are
 asserted in tier 1, where the state can be injected deterministically.
+
+## Sibling tier 1.5 — visual regression (no engine)
+
+`visual.spec.ts` (separate config: `../playwright.visual.config.ts`) screenshots **every DOM
+domain** in mock mode (`?mock=1`) — headless, no GPU, deterministic — and diffs against committed
+baselines in `visual.spec.ts-snapshots/`. This is the fast "did the UI change?" gate; the engine
+suite here is the slow "does it round-trip?" gate. `playwright.config.ts` ignores `visual.spec.ts`,
+so `npm run test:e2e` only runs the engine tests.
+
+```bash
+npm run test:visual            # check
+npm run test:visual:update     # refresh baselines (then eyeball the PNGs before committing)
+```
+
+See **`../review.md`** for the full harness overview, per-domain expectations, the world-space
+agent checklist, and the pre-merge review checklist.
