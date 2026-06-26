@@ -364,15 +364,13 @@ pub struct PlayerPositionEvent {
 }
 
 /// Scene-driven animation state for a foreign player, decoded from the standalone
-/// `SceneDrivenAnimation` packet (LiveKit). `timestamp` is *this player's* latest movement server
-/// tick (seconds) at the moment the SDA was received — not anything the sender stamped — so
-/// `foreign_dynamics` applies it when the interpolated position reaches that same server time. Anim
-/// and position ride different transports but resolve onto one clock the sender's lag can't skew.
+/// `SceneDrivenAnimation` packet (LiveKit). `time` is the local receive time; `foreign_dynamics`
+/// holds the clip for the foreign-position interpolation lag from there so it lands with the
+/// visible (delayed) avatar rather than the freshly-arrived data.
 #[derive(Event)]
 pub struct PlayerSceneAnimEvent {
     pub player: Entity,
     pub time: f32,
-    pub timestamp: f32,
     /// Resolved animation; `None` clears any active one.
     pub anim: Option<SceneDrivenAnimationRequest>,
     /// Render-only avatar lean (pitch, roll) in degrees, composed onto the interpolated yaw in
@@ -414,10 +412,6 @@ pub struct RemoteAnimState {
     cache: HashMap<Entity, CachedRemoteAnim>,
     /// Highest SDA sequence seen per player, to drop reordered/duplicate datagrams (unreliable).
     last_sequence: HashMap<Entity, u32>,
-    /// Latest movement server tick (seconds) seen per player. Each accepted SDA is tagged with this
-    /// so `foreign_dynamics` schedules it against the same clock the position stream rides — the SDA
-    /// carries only a sequence, not its own timing.
-    last_movement_tick: HashMap<Entity, f32>,
 }
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -607,9 +601,6 @@ pub fn process_transport_updates(
                     PlayerMessage::PlayerData(Message::Voice(_)) => (),
                     PlayerMessage::Movement(m) => {
                         debug!("movement data: {m:?}");
-                        // Remember this player's latest server tick so a later SDA (which carries no
-                        // timing of its own) can be scheduled on the same clock as the position.
-                        remote_anim.last_movement_tick.insert(entity, m.timestamp);
                         commands.entity(entity).try_insert((
                             HeadSync {
                                 yaw_deg: m.head_yaw,
@@ -673,9 +664,8 @@ pub fn process_transport_updates(
                     PlayerMessage::PlayerData(Message::SceneDrivenAnimation(sda)) => {
                         // Standalone scene-driven animation (decoupled from movement). Order by the
                         // sender's monotonic sequence — LiveKit is unreliable, so drop reordered /
-                        // duplicate datagrams. Schedule it against this player's latest movement tick
-                        // (the position stream's clock) rather than any stamp the sender chose, so a
-                        // laggy sender can't push the anim's apply time off the movement timeline.
+                        // duplicate datagrams. `foreign_dynamics` holds the resolved anim for the
+                        // foreign-position interpolation lag so it lands with the visible avatar.
                         let sequence = sda.sequence();
                         if remote_anim
                             .last_sequence
@@ -693,11 +683,6 @@ pub fn process_transport_updates(
                             anim_events.write(PlayerSceneAnimEvent {
                                 player: entity,
                                 time: time.elapsed_secs(),
-                                timestamp: remote_anim
-                                    .last_movement_tick
-                                    .get(&entity)
-                                    .copied()
-                                    .unwrap_or(0.0),
                                 anim,
                                 tilt,
                             });
@@ -748,8 +733,8 @@ pub fn process_transport_updates(
 // `scene_hash` clears the state; absent hash fields (None) reuse the last cached pair
 // for this entity so we keep animating between keepalives. Returns `None` when the
 // sender has no active scene-driven animation. The resolved state is emitted as a
-// `PlayerSceneAnimEvent` so `foreign_dynamics` can apply it when the interpolated
-// position reaches the SDA's server timestamp.
+// `PlayerSceneAnimEvent` so `foreign_dynamics` can apply it after the foreign-position
+// interpolation lag, lined up with the visible avatar.
 pub struct CachedRemoteAnim {
     scene_hash: String,
     content_hash: String,

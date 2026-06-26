@@ -52,34 +52,36 @@ struct PlayerTargetPosition {
     remote_move_kind: Option<MoveKind>,
 }
 
-/// Pending scene-driven animation for a foreign player, fed by [`PlayerSceneAnimEvent`] and applied
-/// once the interpolated position's server timestamp reaches the SDA's — so the animation lines up
-/// with the visible motion despite arriving over a different transport. Ordering/dedup is already
-/// done in `global_crdt` (by the sender's sequence), so events arrive here in order.
-#[derive(Component)]
+/// Pending scene-driven animation for a foreign player, fed by [`PlayerSceneAnimEvent`] (which rides
+/// LiveKit, separate from the Pulse position stream) and applied in sync with the position packet
+/// whose motion it belongs to, so the clip starts/stops with the visible avatar. Ordering/dedup is
+/// already done in `global_crdt` (by the sender's sequence), so events arrive here in order.
+#[derive(Component, Default)]
 struct PendingSceneAnim {
-    /// The next animation to apply (`None` = clear), and the movement-tick (seconds) it should land
-    /// at. `None` once applied / nothing pending.
-    pending: Option<(Option<SceneDrivenAnimationRequest>, f32)>,
+    /// The animation awaiting its movement trigger (`None` = clear). Fired in sync with the position
+    /// packet whose motion it belongs to: the next packet arms it ([`fire_on_next_movement`]) and the
+    /// one after fires it, delaying the clip by ~one packet interval so it lands with the interpolated
+    /// (lagged) body rather than ahead of it. As a backstop — a static sender stops sending packets —
+    /// it also fires once `update_freq` elapses from receipt. `None` once applied.
+    pending: Option<Option<SceneDrivenAnimationRequest>>,
+    /// Local time the pending anim was received, for the `update_freq` backstop.
+    received_at: f32,
+    /// Whether the next movement packet should fire `pending` (vs. merely arm it; see `pending`).
+    fire_on_next_movement: bool,
     /// Render-only lean from the latest scene-anim event, composed onto the interpolated yaw each
-    /// frame. Tracked continuously (not gated on the apply timestamp like the clip) since it's a
+    /// frame. Tracked continuously (not gated on the apply delay like the clip) since it's a
     /// pose overlay, not a transition. `IDENTITY` = upright.
     tilt: Quat,
-}
-
-impl Default for PendingSceneAnim {
-    fn default() -> Self {
-        Self {
-            pending: None,
-            tilt: Quat::IDENTITY,
-        }
-    }
 }
 
 fn update_foreign_user_target_position(
     mut commands: Commands,
     mut move_events: EventReader<PlayerPositionEvent>,
-    mut players: Query<(&ForeignPlayer, Option<&mut PlayerTargetPosition>)>,
+    mut players: Query<(
+        &ForeignPlayer,
+        Option<&mut PlayerTargetPosition>,
+        Option<&mut PendingSceneAnim>,
+    )>,
 ) {
     for ev in move_events.read() {
         let dcl_transform = DclTransformAndParent {
@@ -91,7 +93,7 @@ fn update_foreign_user_target_position(
 
         let bevy_trans = dcl_transform.to_bevy_transform();
 
-        if let Ok((_player, maybe_pos)) = players.get_mut(ev.player) {
+        if let Ok((_player, maybe_pos, maybe_pending)) = players.get_mut(ev.player) {
             if let Some(mut pos) = maybe_pos {
                 // The server tick is monotonic seconds: accept a strictly-newer stamp within a sane
                 // forward window, treat a large backward jump as a sender restart (re-sync rather
@@ -116,6 +118,20 @@ fn update_foreign_user_target_position(
                         update_freq,
                         grounded: ev.grounded,
                         remote_move_kind: ev.remote_move_kind,
+                    };
+                    // Movement trigger: the first packet after an anim arrives arms it; the next one
+                    // fires it, in sync with the motion (see `PendingSceneAnim`).
+                    if let Some(mut pending) = maybe_pending {
+                        if pending.pending.is_some() {
+                            if pending.fire_on_next_movement {
+                                let anim = pending.pending.take().unwrap();
+                                commands
+                                    .entity(ev.player)
+                                    .try_insert(SceneDrivenAnim { active: anim });
+                            } else {
+                                pending.fire_on_next_movement = true;
+                            }
+                        }
                     }
                 } else {
                     debug!(
@@ -144,21 +160,35 @@ fn update_foreign_user_target_position(
 }
 
 /// Stash each incoming [`PlayerSceneAnimEvent`] as the player's pending animation, to be applied by
-/// [`update_foreign_user_actual_position`] once the interpolated position reaches its timestamp. The
-/// latest event wins (overwrites any unapplied pending); events already arrive in order.
+/// the movement trigger (see [`PendingSceneAnim`]). Events arrive in order; if a newer one lands
+/// before the previous has fired, the previous is applied first (apply-before-overwrite) so it
+/// isn't silently dropped.
 fn update_foreign_scene_anim(
     mut commands: Commands,
     mut anim_events: EventReader<PlayerSceneAnimEvent>,
     mut players: Query<&mut PendingSceneAnim>,
+    time: Res<Time>,
 ) {
+    let now = time.elapsed_secs();
     for ev in anim_events.read() {
         let tilt = avatar_tilt_quat(ev.tilt.0, ev.tilt.1);
+        // The next movement packet arms the clip and the one after fires it (see `PendingSceneAnim`),
+        // delaying the anim by ~one packet interval so it lands in sync with the interpolated body.
         if let Ok(mut slot) = players.get_mut(ev.player) {
-            slot.pending = Some((ev.anim.clone(), ev.timestamp));
+            if let Some(anim) = slot.pending.take() {
+                commands
+                    .entity(ev.player)
+                    .try_insert(SceneDrivenAnim { active: anim });
+            }
+            slot.pending = Some(ev.anim.clone());
+            slot.received_at = now;
+            slot.fire_on_next_movement = false;
             slot.tilt = tilt;
         } else {
             commands.entity(ev.player).try_insert(PendingSceneAnim {
-                pending: Some((ev.anim.clone(), ev.timestamp)),
+                pending: Some(ev.anim.clone()),
+                received_at: now,
+                fire_on_next_movement: false,
                 tilt,
             });
         }
@@ -306,17 +336,17 @@ fn update_foreign_user_actual_position(
             }
         }
 
-        // Apply the pending scene-driven animation once the interpolated position has reached the
-        // server time it was stamped at, so jump/walk/etc. transitions fire when the avatar visibly
-        // does the motion rather than when the (separate-transport) SDA packet lands.
+        // Backstop: the movement trigger fires the pending anim in sync with the motion, but a
+        // static sender stops sending packets — so if `update_freq` elapses from receipt with no
+        // trigger, apply it anyway rather than strand it.
         if let Some(mut pending) = maybe_pending {
-            if let Some((anim, apply_at)) = &pending.pending {
-                if target.timestamp.is_some_and(|t| t >= *apply_at) {
-                    commands.entity(foreign_ent).try_insert(SceneDrivenAnim {
-                        active: anim.clone(),
-                    });
-                    pending.pending = None;
-                }
+            if pending.pending.is_some()
+                && time.elapsed_secs() >= pending.received_at + target.update_freq
+            {
+                let anim = pending.pending.take().unwrap();
+                commands
+                    .entity(foreign_ent)
+                    .try_insert(SceneDrivenAnim { active: anim });
             }
         }
     }
