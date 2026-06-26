@@ -6,15 +6,17 @@
 //! task) is selected at compile time and never seen here.
 
 use bevy::prelude::*;
+use dcl_component::proto_components::kernel::comms::rfc4::packet::Message;
 use dcl_component::proto_components::pulse;
 use prost::Message as _;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc;
 
 use super::transport::{
     self, PulseDriverHandle, PulseFrame, PulseLink, PulseReliability, PulseStatus,
     PulseTransportConfig,
 };
 use super::{PulseDecoder, PulseEvent, PulseParcelGrid};
+use crate::global_crdt::{GlobalCrdtState, NetworkUpdate, PlayerMessage, PlayerUpdate};
 
 /// Insert this resource to connect to a Pulse server. Absent → the plugin is fully inert.
 #[derive(Resource, Clone)]
@@ -29,9 +31,17 @@ pub struct PulseConfig {
 struct PulseSession {
     link: PulseLink,
     decoder: PulseDecoder,
+    /// Sink into the shared foreign-player pipeline — the same channel every transport feeds.
+    sender: mpsc::Sender<NetworkUpdate>,
+    /// Synthetic transport entity used as the foreign players' `transport_id`.
+    transport: Entity,
     /// Held for the session lifetime; dropping it stops the driver.
     _driver: PulseDriverHandle,
 }
+
+/// Marker for the synthetic Pulse transport entity (referenced by foreign players' `transport_id`).
+#[derive(Component)]
+struct PulseTransport;
 
 pub struct PulsePlugin;
 
@@ -44,6 +54,7 @@ impl Plugin for PulsePlugin {
 /// Bring a session up once a [`PulseConfig`] is present. No-op afterwards (session exists).
 fn connect_pulse(
     mut commands: Commands,
+    crdt: Res<GlobalCrdtState>,
     config: Option<Res<PulseConfig>>,
     session: Option<Res<PulseSession>>,
 ) {
@@ -53,10 +64,13 @@ fn connect_pulse(
 
     let (link, driver_channels) = transport::pulse_channels(1024);
     let driver = transport::spawn_pulse_driver(config.transport.clone(), driver_channels);
+    let transport = commands.spawn(PulseTransport).id();
 
     commands.insert_resource(PulseSession {
         link,
         decoder: PulseDecoder::new(config.parcel_grid),
+        sender: crdt.get_sender(),
+        transport,
         _driver: driver,
     });
 
@@ -86,35 +100,44 @@ fn pump_pulse(session: Option<ResMut<PulseSession>>) {
     }
 
     while let Ok(bytes) = session.link.inbound.try_recv() {
-        match pulse::ServerMessage::decode(bytes.as_slice()) {
-            Ok(message) => {
-                for event in session.decoder.handle(message) {
-                    route_event(event, &session.link.outbound);
-                }
+        let events = match pulse::ServerMessage::decode(bytes.as_slice()) {
+            Ok(message) => session.decoder.handle(message),
+            Err(err) => {
+                warn!("pulse: failed to decode ServerMessage: {err}");
+                continue;
             }
-            Err(err) => warn!("pulse: failed to decode ServerMessage: {err}"),
+        };
+        for event in events {
+            route_event(event, session);
         }
     }
 }
 
-/// Forward a decoded event toward its destination. Resync is wired (reliable ClientMessage back to
-/// the server); the foreign-player bridge is the next integration step.
-fn route_event(event: PulseEvent, outbound: &Sender<PulseFrame>) {
+/// Forward a decoded event toward its destination. Movement is bridged into the shared
+/// foreign-player pipeline as a synthesized `rfc4::Movement` (reusing `update_player` /
+/// `foreign_dynamics` verbatim); resync goes back reliably over the driver.
+fn route_event(event: PulseEvent, session: &PulseSession) {
     match event {
+        PulseEvent::Movement { address, movement } => {
+            let update = PlayerUpdate {
+                transport_id: session.transport,
+                message: PlayerMessage::PlayerData(Message::Movement(*movement)),
+                address,
+            };
+            let _ = session.sender.try_send(update.into());
+        }
         PulseEvent::Resync(request) => {
             let message = pulse::ClientMessage {
                 message: Some(pulse::client_message::Message::Resync(request)),
             };
-            let _ = outbound.try_send(PulseFrame {
+            let _ = session.link.outbound.try_send(PulseFrame {
                 bytes: message.encode_to_vec(),
                 reliability: PulseReliability::Reliable,
             });
         }
-        // TODO(pulse): bridge Movement → PlayerUpdate { transport_id, address, rfc4::Movement }
-        // onto GlobalCrdtState's sender; apply Joined/Left to the Pulse transport's foreign_aliases;
-        // surface Connected to gate the handshake/teleport.
-        PulseEvent::Movement { .. }
-        | PulseEvent::Joined { .. }
+        // TODO(pulse): PlayerLeft cleanup of the foreign player; profile-version announce on
+        // ProfileVersion; build + send the handshake (and TeleportRequest) on Connected.
+        PulseEvent::Joined { .. }
         | PulseEvent::Left { .. }
         | PulseEvent::ProfileVersion { .. }
         | PulseEvent::Connected { .. } => {}
