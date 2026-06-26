@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package decentraland.pulse;
+
+import "decentraland/common/vectors.proto";
+
+enum PlayerAnimationFlags {
+  NONE = 0;
+  GROUNDED = 1;
+  LONG_JUMP = 2;
+  LONG_FALL = 4;
+  FALLING = 8;
+  STUNNED = 16;
+  HEAD_YAW = 32;
+  HEAD_PITCH = 64;
+  POINTING_AT = 128;
+}
+
+enum GlideState {
+  PROP_CLOSED = 0;
+  OPENING_PROP = 1;
+  GLIDING = 2;
+  CLOSING_PROP = 3;
+}
+
+message PlayerState {
+  int32 parcel_index = 1;
+
+  decentraland.common.Vector3 position = 2;
+  decentraland.common.Vector3 velocity = 3;
+
+  float rotation_y = 4;
+
+  float movement_blend = 5;
+  float slide_blend = 6;
+
+  optional float head_yaw = 7;
+  optional float head_pitch = 8;
+
+  uint32 state_flags = 9;
+  GlideState glide_state = 10;
+
+  int32 jump_count = 11;
+
+  // Absolute world hit position the player is pointing at.
+  // Only meaningful when POINTING_AT is set in `state_flags`.
+  optional decentraland.common.Vector3 point_at = 12;
+}
