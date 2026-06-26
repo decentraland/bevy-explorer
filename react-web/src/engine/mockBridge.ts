@@ -289,6 +289,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       return
     }
     if (msg.kind === 'triggerEmote') return // no-op in the mock
+    if (msg.kind === 'equipEmote') return // no-op in the mock
     if (msg.kind === 'getWearables') {
       reply({ kind: 'wearables', wearables: mockWearables })
       return
@@ -319,6 +320,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       reply({ kind: 'mapState', x: msg.x, y: msg.y })
       return
     }
+    if (msg.kind === 'changeRealm') return // no realm switching in the mock
     if (msg.kind === 'getCommunities') {
       reply({ kind: 'communities', communities: mockCommunities })
       return

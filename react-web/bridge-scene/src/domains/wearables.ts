@@ -25,6 +25,18 @@ async function fetchCatalog(address: string): Promise<{ baseUrl: string; element
   return { baseUrl, elements: data?.elements ?? [] }
 }
 
+// The owned-wearables catalog rarely changes within a session → cache it (and the token index it
+// feeds) per address, so re-opening the Backpack doesn't refetch. Equipped state is read live from
+// getPlayer().wearables on each getWearables, so it stays current without invalidating the cache.
+let catalogCache: { address: string; baseUrl: string; elements: CatalogElement[] } | null = null
+async function getCatalog(address: string): Promise<{ baseUrl: string; elements: CatalogElement[] }> {
+  if (catalogCache?.address === address) return catalogCache
+  const { baseUrl, elements } = await fetchCatalog(address)
+  indexTokens(elements)
+  catalogCache = { address, baseUrl, elements }
+  return catalogCache
+}
+
 // Collection wearables must be referenced in the DEPLOYED profile by their full token URN
 // (…:{contract}:{itemId}:{tokenId}); the catalyst rejects the bare item URN with
 // "should be an item, not an asset. The URN must include the tokenId.". The catalog's
@@ -52,7 +64,7 @@ export function registerWearables(ctx: Ctx): void {
     const me = getPlayer()
     // Ensure the item→token map is loaded (equipping before the catalog was fetched).
     if (me != null && tokenUrnByItem.size === 0) {
-      indexTokens((await fetchCatalog(me.userId)).elements)
+      await getCatalog(me.userId)
     }
     const wearableUrns = msg.urns.map((u) => tokenUrnByItem.get(u) ?? u)
     BevyApi.setAvatar({
@@ -68,8 +80,7 @@ export function registerWearables(ctx: Ctx): void {
       ctx.send({ kind: 'wearables', wearables: [] })
       return
     }
-    const { baseUrl, elements } = await fetchCatalog(player.userId)
-    indexTokens(elements)
+    const { baseUrl, elements } = await getCatalog(player.userId)
     const owned = (player.wearables ?? []).map(String)
     const wearables: Wearable[] = elements.map((el) => {
       const file = el.entity?.metadata?.thumbnail

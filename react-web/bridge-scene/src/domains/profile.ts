@@ -11,6 +11,8 @@ import type { Ctx } from '../bridge'
 type CatalystAvatar = {
   name?: string
   hasClaimedName?: boolean
+  /** Profile-set custom name colour (claimed names only), 0–1 floats. */
+  nameColor?: { r: number; g: number; b: number }
   description?: string
   links?: Array<{ title: string; url: string }>
   avatar?: { snapshots?: { face256?: string; body?: string } }

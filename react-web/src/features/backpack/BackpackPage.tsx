@@ -19,6 +19,8 @@ const PAGE_SIZE = 16
 const NO_DESC = 'This wearable does not have a description set.'
 
 const RARITIES: Rarity[] = ['base', 'common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'unique', 'exotic']
+const RARITY_RANK: Record<string, number> = Object.fromEntries(RARITIES.map((r, i) => [r, i]))
+const MARKETPLACE_URL = 'https://decentraland.org/marketplace/'
 function asRarity(r?: string): Rarity {
   const k = (r ?? '').toLowerCase()
   return RARITIES.find((x) => x === k) ?? 'base'
@@ -119,6 +121,13 @@ export function BackpackPage({
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(0)
   const [selected, setSelected] = useState<Wearable | Emote | null>(null)
+  // The emote wheel slot (0–9) an assigned emote will go into; the left list selects it.
+  const [emoteSlot, setEmoteSlot] = useState(1)
+  // Filter & sort (client-side, on the loaded catalog).
+  const [showFilter, setShowFilter] = useState(false)
+  const [sortBy, setSortBy] = useState<'rarity' | 'name'>('rarity')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [collectiblesOnly, setCollectiblesOnly] = useState(false)
 
   // Categories present in the wearable list, ordered like Unity.
   const categories = useMemo(() => {
@@ -132,13 +141,25 @@ export function BackpackPage({
     return m
   }, [backpack.list])
 
-  const items = useMemo(
-    () =>
-      backpack.list.filter(
-        (w) => (cat === 'all' || w.category === cat) && (!query || (w.name ?? '').toLowerCase().includes(query.toLowerCase()))
-      ),
-    [backpack.list, cat, query]
-  )
+  const items = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1
+    return backpack.list
+      .filter(
+        (w) =>
+          (cat === 'all' || w.category === cat) &&
+          (!query || (w.name ?? '').toLowerCase().includes(query.toLowerCase())) &&
+          (!collectiblesOnly || (w.rarity ?? 'base') !== 'base')
+      )
+      .sort((a, b) =>
+        sortBy === 'name'
+          ? dir * (a.name ?? '').localeCompare(b.name ?? '')
+          : dir * ((RARITY_RANK[a.rarity ?? 'base'] ?? 0) - (RARITY_RANK[b.rarity ?? 'base'] ?? 0))
+      )
+  }, [backpack.list, cat, query, collectiblesOnly, sortBy, sortDir])
+  // Back to page 1 whenever the result set changes.
+  useEffect(() => {
+    setPage(0)
+  }, [cat, query, collectiblesOnly, sortBy, sortDir])
   const pageCount = Math.max(1, Math.ceil(items.length / PAGE_SIZE))
   const safePage = Math.min(page, pageCount - 1)
   const pageItems = items.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
@@ -202,9 +223,29 @@ export function BackpackPage({
               Emotes
             </button>
           </div>
-          <button type="button" className={styles.filterBtn}>
-            <FilterIcon /> FILTER &amp; SORT
-          </button>
+          <div className={styles.filterWrap}>
+            <button type="button" className={`${styles.filterBtn} ${showFilter ? styles.filterBtnOpen : ''}`.trim()} onClick={() => setShowFilter((s) => !s)}>
+              <FilterIcon /> FILTER &amp; SORT
+            </button>
+            {showFilter && (
+              <div className={styles.filterPop}>
+                <span className={styles.filterLabel}>Sort by</span>
+                <div className={styles.filterRow}>
+                  <button type="button" className={`${styles.filterOpt} ${sortBy === 'rarity' ? styles.filterOptActive : ''}`.trim()} onClick={() => setSortBy('rarity')}>Rarity</button>
+                  <button type="button" className={`${styles.filterOpt} ${sortBy === 'name' ? styles.filterOptActive : ''}`.trim()} onClick={() => setSortBy('name')}>Name</button>
+                </div>
+                <span className={styles.filterLabel}>Order</span>
+                <div className={styles.filterRow}>
+                  <button type="button" className={`${styles.filterOpt} ${sortDir === 'desc' ? styles.filterOptActive : ''}`.trim()} onClick={() => setSortDir('desc')}>{sortBy === 'name' ? 'Z – A' : 'Rarest'}</button>
+                  <button type="button" className={`${styles.filterOpt} ${sortDir === 'asc' ? styles.filterOptActive : ''}`.trim()} onClick={() => setSortDir('asc')}>{sortBy === 'name' ? 'A – Z' : 'Common'}</button>
+                </div>
+                <label className={styles.filterCheck}>
+                  <input type="checkbox" checked={collectiblesOnly} onChange={(e) => setCollectiblesOnly(e.target.checked)} />
+                  Collectibles only
+                </label>
+              </div>
+            )}
+          </div>
           <input className={styles.search} value={query} onChange={(e) => { setQuery(e.target.value); setPage(0) }} placeholder="Search item" />
         </div>
 
@@ -228,7 +269,7 @@ export function BackpackPage({
                   ⌂ SAVED OUTFITS
                 </button>
               </div>
-              <button type="button" className={styles.marketplace}>⬚ MARKETPLACE</button>
+              <button type="button" className={styles.marketplace} onClick={() => window.open(MARKETPLACE_URL, '_blank', 'noopener,noreferrer')}>⬚ MARKETPLACE</button>
             </div>
 
             {tab === 'wearables' ? (
@@ -286,7 +327,8 @@ export function BackpackPage({
               </div>
             ) : (
               <div className={styles.catalog}>
-                {/* Equipped emote slots (numbered 1..0). */}
+                {/* Emote wheel slots (numbered 1..0). Click to choose which slot the next emote you
+                    pick from the grid will be assigned to. */}
                 <div className={styles.slotList}>
                   {Array.from({ length: 10 }, (_, k) => {
                     const num = (k + 1) % 10
@@ -295,12 +337,15 @@ export function BackpackPage({
                       <button
                         key={num}
                         type="button"
-                        className={`${styles.slotRow} ${selected && 'urn' in selected && e?.urn === selected.urn ? styles.slotRowActive : ''}`.trim()}
-                        onClick={() => e && setSelected(e)}
+                        className={`${styles.emoteSlot} ${emoteSlot === num ? styles.emoteSlotActive : ''}`.trim()}
+                        onClick={() => {
+                          setEmoteSlot(num)
+                          if (e) setSelected(e)
+                        }}
                       >
-                        <span className={styles.slotNum}>{num}</span>
-                        <span className={styles.slotName}>{e?.name ?? '—'}</span>
-                        <span className={styles.slotThumb} style={{ background: rarityColor(e?.rarity) }}>
+                        <span className={styles.emoteSlotNum}>{num}</span>
+                        <span className={styles.emoteSlotName}>{e?.name ?? 'Empty'}</span>
+                        <span className={styles.emoteSlotThumb} style={{ background: rarityColor(e?.rarity) }}>
                           {e && <CatalystImg urn={e.urn} />}
                         </span>
                       </button>
@@ -313,9 +358,17 @@ export function BackpackPage({
                   ) : (
                     <div className={styles.grid}>
                       {emotes.list.map((e) => (
-                        <button key={e.urn} type="button" className={styles.emoteCard} onClick={() => setSelected(e)}>
-                          <CatalystImg urn={e.urn} />
-                        </button>
+                        <WearableCard
+                          key={e.urn}
+                          thumbnail={e.thumbnail}
+                          name={e.name}
+                          rarity={asRarity(e.rarity)}
+                          equipped={e.slot != null}
+                          selected={selected != null && 'urn' in selected && selected.urn === e.urn}
+                          count={e.count}
+                          onClick={() => setSelected(e)}
+                          onEquip={() => (e.slot != null ? emotes.equip(e.slot, '') : emotes.equip(emoteSlot, e.urn))}
+                        />
                       ))}
                     </div>
                   )}

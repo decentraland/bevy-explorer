@@ -8,62 +8,98 @@
   justify-content: center;
 }
 
-/* Center reticle, drawn only while pointer-locked (browser hides the OS cursor then). */
+/* 1st-person reticle (Figma Cursor page): a ring with a center dot, drawn only while pointer
+   -locked since the browser hides the OS cursor then. */
 .reticle {
-  width: 6px;
-  height: 6px;
+  position: relative;
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--ink-85);
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.55);
+  background: transparent;
+  box-shadow: 0 0 2px var(--scrim);
+  /* No --ui-scale here: the crosshair is a fixed-size aiming reticle, constant across viewports. */
   transition:
-    transform var(--dur-fast) ease,
+    width var(--dur-fast) ease,
+    height var(--dur-fast) ease,
     background var(--dur-fast) ease;
 }
-/* Highlight when the engine reports an interactable under the reticle. */
+.reticle::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: var(--text);
+}
+/* Hover state = a filled circle (grey), per the design. */
 .reticleActive {
-  transform: scale(1.6);
-  background: var(--accent);
-  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.55), 0 0 8px rgba(255, 116, 58, 0.7);
+  width: 18px;
+  height: 18px;
+  background: color-mix(in srgb, var(--pearl) 45%, transparent);
 }
 
-/* Hover prompt, just below the reticle. */
+/* Hover prompt, just below the reticle — black pills with the action's key icon + label. */
 .hints {
   position: absolute;
-  top: calc(50% + 22px);
+  top: calc(50% + 24px);
+  left: 50%;
+  max-width: 60vw;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  /* Pin to center, then DPI-scale around that anchor. */
+  transform: translateX(-50%) scale(var(--ui-scale));
+  transform-origin: top center;
 }
 .hint {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 11px 5px 6px;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.62);
-  color: #fff;
+  gap: 9px;
+  padding: 6px 16px 6px 9px;
+  border-radius: var(--r-pill);
+  background: var(--panel);
+  color: var(--text);
   font-family: var(--font-family);
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 600;
   white-space: nowrap;
 }
 .hintDisabled {
-  opacity: 0.6;
+  opacity: 0.55;
 }
 .hintText {
-  font-weight: 500;
+  line-height: 1;
 }
+.mouse {
+  flex: none;
+}
+/* Key-cap for keyboard actions (E / F / 1…). */
 .cap {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 5px;
-  border: 1.5px solid rgba(255, 255, 255, 0.85);
-  border-radius: 5px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1.5px solid var(--ink-85);
+  border-radius: 6px;
   font-size: 12px;
   font-weight: 700;
   line-height: 1;
-  color: #fff;
+  color: var(--text);
+}
+
+/* Proximity tooltip — anchored at the entity's projected screen position. */
+.proxTip {
+  position: absolute;
+  /* Pinned at the engine-projected screen point; DPI-scale around that same anchor. */
+  transform: translate(-50%, -50%) scale(var(--ui-scale));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
 }

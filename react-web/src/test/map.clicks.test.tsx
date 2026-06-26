@@ -43,9 +43,9 @@ describe('map page', () => {
     const map = renderMap()
 
     // A non-drag click on the atlas → fetchPlace → place panel.
-    const atlas = screen.getByAltText('Decentraland map')
-    fireEvent.mouseDown(atlas, { clientX: 5, clientY: 5 })
-    fireEvent.mouseUp(atlas, { clientX: 5, clientY: 5 })
+    const view = screen.getByTestId('map-view')
+    fireEvent.mouseDown(view, { clientX: 5, clientY: 5 })
+    fireEvent.mouseUp(view, { clientX: 5, clientY: 5 })
 
     await userEvent.click(await screen.findByRole('button', { name: 'JUMP IN' }))
     expect(vi.mocked(map.teleport)).toHaveBeenCalledWith(10, -5)

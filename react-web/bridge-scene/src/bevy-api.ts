@@ -51,6 +51,11 @@ export type HoverEntry = {
 }
 export type SystemHoverEvent = { entered: boolean; targetType: number; actions: HoverEntry[] }
 
+// Proximity (in-range) events for world entities. entityPosition is world-space; the bridge
+// projects it to screen each frame so React can anchor a tooltip on it.
+export type Vec3 = { x: number; y: number; z: number }
+export type SystemProximityEvent = { entered: boolean; entity: number; entityPosition: Vec3; actions: HoverEntry[] }
+
 export type KernelFetchRequest = {
   url: string
   init: { headers?: Record<string, string>; method: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: string }
@@ -65,6 +70,7 @@ export type BevyApiInterface = {
   getChatStream: () => Promise<AsyncIterable<ChatStreamMessage>>
   getSceneLoadingUIStream: () => Promise<AsyncIterable<SceneLoadingState>>
   getHoverStream: () => Promise<AsyncIterable<SystemHoverEvent>>
+  getProximityStream: () => Promise<AsyncIterable<SystemProximityEvent>>
   getMicState: () => Promise<MicState>
   setMicEnabled: (enabled: boolean) => void
   setAvatar: (data: { equip: { wearableUrns: string[]; emoteUrns: string[]; forceRender: string[] } }) => Promise<unknown>

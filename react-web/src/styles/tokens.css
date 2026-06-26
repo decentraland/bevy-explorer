@@ -10,6 +10,7 @@
   --brand-active: rgba(229, 39, 75, 0.5);
   --panel: #161518; /* dark panel surface */
   --accent: #ff743a; /* category / selected orange */
+  --accent-ink: #1a1206; /* dark text/icon on an --accent (orange) fill */
   --text: #fcfcfc;
   --gold: #ffc95b;
   --purple: #982de2;

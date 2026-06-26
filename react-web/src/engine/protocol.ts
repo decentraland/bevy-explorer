@@ -75,6 +75,7 @@ export type PageToScene =
   | MarkNotificationsReadRequest
   | GetEmotesRequest
   | TriggerEmoteRequest
+  | EquipEmoteRequest
   | SetMicRequest
   | GetWearablesRequest
   | EquipRequest
@@ -85,6 +86,7 @@ export type PageToScene =
   | GetCommunityDetailRequest
   | GetMapRequest
   | TeleportRequest
+  | ChangeRealmRequest
   | EngineViewportRequest
 
 // ---- scene -> page ---------------------------------------------------------
@@ -312,18 +314,28 @@ export interface MarkNotificationsReadRequest {
   ids: string[]
 }
 
-/** An equipped emote slot (0–9). */
+/** One owned emote. `slot` is its wheel slot (0–9) when currently equipped, undefined otherwise —
+ *  so the backpack shows the whole collection while the wheel still finds the 10 equipped by slot. */
 export interface Emote {
-  slot: number
+  slot?: number
   urn: string
   name: string
   thumbnail?: string
   rarity?: string
+  /** Owned quantity (×N badge). */
+  count?: number
 }
 
 export interface EmotesMessage {
   kind: 'emotes'
   emotes: Emote[]
+}
+
+/** Assign an owned emote to a wheel slot (0–9), or clear the slot with urn:''. */
+export interface EquipEmoteRequest {
+  kind: 'equipEmote'
+  slot: number
+  urn: string
 }
 
 export interface MicMessage {
@@ -353,6 +365,13 @@ export interface TeleportRequest {
   kind: 'teleport'
   x: number
   y: number
+}
+
+/** Change to a world/realm (page → scene → changeRealm). `realm` is a world name
+ *  (e.g. `boedo.dcl.eth`) or realm URL. */
+export interface ChangeRealmRequest {
+  kind: 'changeRealm'
+  realm: string
 }
 
 /**

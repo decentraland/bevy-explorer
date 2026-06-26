@@ -19,6 +19,7 @@ import { registerSettings } from './domains/settings'
 import { registerCommunities } from './domains/communities'
 import { registerWorld } from './domains/world'
 import { registerPointer } from './domains/pointer'
+import { registerProximity } from './domains/proximity'
 import { initNametags } from './domains/nametags'
 
 export function main(): void {
@@ -37,12 +38,13 @@ export function main(): void {
     registerCommunities(ctx)
     registerWorld(ctx)
     registerPointer(ctx)
+    registerProximity(ctx)
     registerAvatarPreview(ctx)
   })
 
   // The avatar preview is the scene's only full-screen UI — shown through React's Backpack cutout.
   ReactEcsRenderer.setUiRenderer(renderAvatarPreview)
 
-  // World-space UI the DOM can't do: billboarded nametags above each avatar's head.
+  // World-space UI the DOM can't track smoothly: the billboarded nametag above each avatar's head.
   initNametags()
 }

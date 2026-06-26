@@ -216,7 +216,7 @@
   justify-content: center;
   border: 1px solid var(--white-10);
   border-radius: 10px;
-  background-color: rgba(255, 255, 255, 0.06);
+  background-color: var(--fill-2);
   color: var(--ink-6);
   cursor: pointer;
   overflow: hidden;
@@ -322,7 +322,7 @@
   align-items: center;
   padding: 0 14px;
   border-radius: var(--r-pill);
-  color: #1a1206;
+  color: var(--accent-ink);
   font-size: 13px;
   font-weight: 700;
 }
@@ -337,23 +337,6 @@
   gap: 16px;
   align-content: start;
 }
-.emoteCard {
-  aspect-ratio: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--white-10);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.05);
-  cursor: pointer;
-  overflow: hidden;
-}
-.emoteCard img {
-  width: 78%;
-  height: 78%;
-  object-fit: contain;
-}
-
 .pager {
   flex: none;
   display: flex;
@@ -384,68 +367,79 @@
 }
 .pageNumActive {
   background: var(--accent);
-  color: #1a1206;
+  color: var(--accent-ink);
 }
 
-/* Emotes tab — numbered equipped-slot list. */
+/* Emotes tab — the numbered wheel-slot list (left). Bigger than wearables rows, matching Unity:
+   a circular number badge, the emote name, and a sizeable thumbnail. */
 .slotList {
   flex: none;
-  width: 300px;
+  width: 320px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 14px;
+  gap: 10px;
+  padding: 16px;
   overflow-y: auto;
   scrollbar-width: thin;
 }
-.slotRow {
+.emoteSlot {
   display: flex;
   align-items: center;
-  gap: 12px;
-  height: 56px;
-  padding: 0 10px;
-  border: none;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
+  gap: 16px;
+  height: 72px;
+  padding: 0 12px 0 14px;
+  border: 2px solid transparent;
+  border-radius: 16px;
+  background: var(--fill-1);
   color: var(--text);
   font-family: inherit;
   cursor: pointer;
+  transition:
+    background var(--dur-fast) ease,
+    border-color var(--dur-fast) ease,
+    transform var(--dur-fast) ease;
 }
-.slotRow:hover,
-.slotRowActive {
-  background: rgba(255, 255, 255, 0.09);
+.emoteSlot:hover {
+  background: var(--fill-4);
+  transform: translateY(-1px);
 }
-.slotNum {
+.emoteSlotActive {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: var(--accent);
+}
+.emoteSlotNum {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   background: var(--accent);
-  color: #1a1206;
-  font-size: 13px;
+  color: var(--accent-ink);
+  font-size: 16px;
   font-weight: 800;
 }
-.slotName {
+.emoteSlotName {
   flex: 1;
   text-align: left;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.slotThumb {
+.emoteSlotThumb {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
+  width: 54px;
+  height: 54px;
+  border-radius: 12px;
   overflow: hidden;
 }
-.slotThumb img {
+.emoteSlotThumb img {
   width: 100%;
   height: 100%;
   object-fit: contain;
@@ -461,7 +455,7 @@
   margin: 16px 16px 20px 16px;
   padding: 22px 22px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--fill-2);
   pointer-events: auto;
 }
 .detailEmpty {
@@ -493,7 +487,7 @@
 .detailRarity {
   padding: 4px 14px;
   border-radius: var(--r-pill);
-  color: #1a1206;
+  color: var(--accent-ink);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -541,4 +535,79 @@
   text-align: center;
   font-size: 14px;
   color: var(--ink-45);
+}
+
+/* ---- Filter & Sort dropdown ---- */
+.filterWrap {
+  position: relative;
+  margin-left: auto;
+}
+.filterBtnOpen {
+  border-color: var(--brand);
+  background: rgba(0, 0, 0, 0.45);
+}
+.filterPop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 5;
+  width: 224px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-radius: var(--r-card);
+  background: #241046;
+  border: 1px solid var(--white-10);
+  box-shadow: var(--shadow-modal);
+  animation: pillPop 0.18s var(--ease-spring, ease);
+}
+.filterLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-6);
+}
+.filterRow {
+  display: flex;
+  gap: 6px;
+}
+.filterOpt {
+  flex: 1;
+  height: 30px;
+  border: 1px solid var(--white-10);
+  border-radius: var(--r-control);
+  background: var(--fill-1);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) ease,
+    border-color var(--dur-fast) ease;
+}
+.filterOpt:hover {
+  background: var(--fill-3);
+}
+.filterOptActive,
+.filterOptActive:hover {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+.filterCheck {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+.filterCheck input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--brand);
+  cursor: pointer;
 }

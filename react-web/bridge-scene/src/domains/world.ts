@@ -2,7 +2,7 @@
 //   from: @dcl/sdk getPlayer().position (parcel), RestrictedActions.teleportTo,
 //         BevyApi.getMicState() / setMicEnabled().
 import { getPlayer } from '@dcl/sdk/players'
-import { teleportTo } from '~system/RestrictedActions'
+import { teleportTo, changeRealm } from '~system/RestrictedActions'
 import { BevyApi } from '../bevy-api'
 import type { Ctx } from '../bridge'
 
@@ -15,6 +15,14 @@ export function registerWorld(ctx: Ctx): void {
   ctx.on('teleport', (msg) => {
     teleportTo({ worldCoordinates: { x: msg.x, y: msg.y } }).catch((e: unknown) => {
       console.error('[world] teleport failed', e)
+    })
+  })
+
+  // Travel to a world/realm (e.g. boedo.dcl.eth). The engine auto-grants ChangeRealm for our
+  // super-user scene, so the React HUD owns the confirmation prompt.
+  ctx.on('changeRealm', (msg) => {
+    changeRealm({ realm: msg.realm }).catch((e: unknown) => {
+      console.error('[world] changeRealm failed', e)
     })
   })
 

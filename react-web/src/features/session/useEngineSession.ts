@@ -52,6 +52,8 @@ export interface MapState {
   open: boolean
   toggle: () => void
   teleport: (x: number, y: number) => void
+  /** Travel to a world/realm by name (e.g. `boedo.dcl.eth`). */
+  changeRealm: (realm: string) => void
 }
 
 export interface EmotesState {
@@ -59,6 +61,8 @@ export interface EmotesState {
   open: boolean
   toggle: () => void
   play: (urn: string) => void
+  /** Assign an owned emote to a wheel slot (0–9); urn:'' clears the slot. */
+  equip: (slot: number, urn: string) => void
 }
 
 export interface NotificationsState {
@@ -424,6 +428,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const teleport = useCallback((x: number, y: number) => {
     driverRef.current?.send({ kind: 'teleport', x, y })
   }, [])
+  const changeRealm = useCallback((realm: string) => {
+    driverRef.current?.send({ kind: 'changeRealm', realm })
+  }, [])
   const equipWearables = useCallback((urns: string[]) => {
     driverRef.current?.send({ kind: 'equip', urns })
     // Optimistically reflect the new equipped set so the button flips to "Unequip" immediately —
@@ -446,6 +453,18 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const playEmote = useCallback((urn: string) => {
     driverRef.current?.send({ kind: 'triggerEmote', urn })
     setEmotesOpen(false)
+  }, [])
+  // Assign an owned emote to a wheel slot (urn:'' clears it); optimistically reflect the slot move
+  // so the UI updates before the engine round-trips the new profile.
+  const equipEmote = useCallback((slot: number, urn: string) => {
+    driverRef.current?.send({ kind: 'equipEmote', slot, urn })
+    setEmotes((list) =>
+      list.map((e) => {
+        if (e.urn === urn) return { ...e, slot } // the newly assigned one
+        if (e.slot === slot) return { ...e, slot: undefined } // whatever was in that slot
+        return e
+      })
+    )
   }, [])
   const toggleMic = useCallback(() => {
     setMic((m) => {
@@ -576,10 +595,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       toggle: toggleNotifications,
       markAllRead: markNotificationsRead
     },
-    emotes: { list: emotes, open: emotesOpen, toggle: toggleEmotes, play: playEmote },
+    emotes: { list: emotes, open: emotesOpen, toggle: toggleEmotes, play: playEmote, equip: equipEmote },
     backpack: { list: wearables, open: backpackOpen, toggle: toggleBackpack, equip: equipWearables, preview: previewWearables },
     communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, join: joinCommunity, leave: leaveCommunity, detail: communityDetail, loadDetail: loadCommunityDetail },
-    map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport },
+    map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm },
     mic: { enabled: mic.enabled, available: mic.available, toggle: toggleMic },
     nav,
     setEngineViewport,
