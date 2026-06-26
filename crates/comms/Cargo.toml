@@ -53,6 +53,9 @@ livekit = { git = "https://github.com/robtfm/client-sdk-rust", branch = "decentr
   "native-tls",
 ], optional = true }
 cpal = "0.15.2"
+rusty_enet = { workspace = true }
+# Pulse's native ENet driver blocks on socket/channel readiness via a current-thread runtime.
+tokio = { workspace = true, features = ["net", "time"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { workspace = true }
