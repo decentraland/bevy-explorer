@@ -44,7 +44,7 @@ const BOTTOM: Item[] = [
   { kind: 'chat', icon: 'chat', label: 'Chat', shortcut: 'T' }
 ]
 
-function renderItem(item: Item, i: number, session: EngineSession): React.JSX.Element {
+function renderItem(item: Item, i: number, session: EngineSession, onViewProfile?: () => void): React.JSX.Element {
   if (item.kind === 'divider') return <div key={`d${i}`} className={styles.divider} />
   if (item.kind === 'chat')
     return (
@@ -87,7 +87,7 @@ function renderItem(item: Item, i: number, session: EngineSession): React.JSX.El
         icon={item.icon}
         label={item.label}
         active={session.profile.open}
-        onClick={session.profile.toggle}
+        onClick={onViewProfile ?? session.profile.toggle}
       />
     )
   if (item.kind === 'backpack')
@@ -175,11 +175,18 @@ function renderItem(item: Item, i: number, session: EngineSession): React.JSX.El
   )
 }
 
-export function Sidebar({ session }: { session: EngineSession }): React.JSX.Element {
+export function Sidebar({
+  session,
+  onViewProfile
+}: {
+  session: EngineSession
+  /** Open the local player's passport (the profile icon). */
+  onViewProfile?: () => void
+}): React.JSX.Element {
   return (
     <nav className={styles.root} aria-label="Main navigation">
-      <div className={styles.group}>{TOP.map((item, i) => renderItem(item, i, session))}</div>
-      <div className={styles.group}>{BOTTOM.map((item, i) => renderItem(item, i, session))}</div>
+      <div className={styles.group}>{TOP.map((item, i) => renderItem(item, i, session, onViewProfile))}</div>
+      <div className={styles.group}>{BOTTOM.map((item, i) => renderItem(item, i, session, onViewProfile))}</div>
     </nav>
   )
 }

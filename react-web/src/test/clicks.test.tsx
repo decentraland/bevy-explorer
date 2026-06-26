@@ -31,6 +31,15 @@ describe('sidebar clicks', () => {
     await userEvent.click(screen.getByRole('button', { name }))
     expect(vi.mocked(pick(s))).toHaveBeenCalledTimes(1)
   })
+
+  it('Profile opens the passport (onViewProfile) when provided, not the small panel', async () => {
+    const s = fakeSession()
+    const onViewProfile = vi.fn()
+    render(<Sidebar session={s} onViewProfile={onViewProfile} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Profile' }))
+    expect(onViewProfile).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(s.profile.toggle)).not.toHaveBeenCalled()
+  })
 })
 
 describe('chat input', () => {

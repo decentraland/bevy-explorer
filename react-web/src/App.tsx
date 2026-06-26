@@ -59,20 +59,27 @@ function Hud(): React.JSX.Element {
     !!passport && !!session.profile.data && session.profile.data.address.toLowerCase() === passport.address.toLowerCase()
   const openPassport = (user: ChatUser): void => {
     setPassport(user)
-    if (user.address) session.requestUserProfile(user.address)
+    if (user.address) session.requestUserProfile(user.address) // fetch badges/photos/catalyst data
+  }
+  // Open MY OWN passport (Sidebar profile icon + the menu's "View Profile").
+  const viewMyProfile = (): void => {
+    const me = session.profile.data
+    if (me) openPassport({ address: me.address, name: me.name, picture: me.picture })
   }
   const passportProfile: Profile | null = !passport
     ? null
-    : isSelfPassport
-      ? session.profile.data
-      : session.userProfiles[passport.address.toLowerCase()] ?? {
-          // Shown immediately (identity) while the fetch is in flight / if it has no profile.
-          address: passport.address,
-          name: passport.name,
-          picture: passport.picture,
-          hasClaimedName: !passport.name.includes('#') && !/^0x[0-9a-f]+$/i.test(passport.name),
-          isGuest: false
-        }
+    : // Prefer the fetched passport (badges/photos/about), even for self; fall back to the
+      // local profile (self) or identity-only (others) while the fetch is in flight.
+      session.userProfiles[passport.address.toLowerCase()] ??
+      (isSelfPassport
+        ? session.profile.data
+        : {
+            address: passport.address,
+            name: passport.name,
+            picture: passport.picture,
+            hasClaimedName: !passport.name.includes('#') && !/^0x[0-9a-f]+$/i.test(passport.name),
+            isGuest: false
+          })
 
   // Top-nav navigation between the full-screen menu pages (Settings/Backpack/Map)
   // and the Communities panel. Each toggle is mutually exclusive.
@@ -81,8 +88,9 @@ function Hud(): React.JSX.Element {
     else if (page === 'backpack') session.backpack.toggle()
     else if (page === 'communities') session.communities.toggle()
     else if (page === 'map') session.map.toggle()
-    // Profile-chip actions (forwarded from MainMenuShell's ProfileChip).
-    else if (page === 'profile') session.profile.toggle()
+    // Profile-chip actions (forwarded from MainMenuShell's ProfileChip): View Profile
+    // opens the full passport (same as for other users), not the small profile card.
+    else if (page === 'profile') viewMyProfile()
     else if (page === 'signout') session.logout()
   }
 
@@ -99,7 +107,7 @@ function Hud(): React.JSX.Element {
         <>
           {/* The full-screen menu pages own the whole screen; hide the rail + chat so
               they don't show through (the map page's body is transparent). */}
-          {!pageOpen && <Sidebar session={session} />}
+          {!pageOpen && <Sidebar session={session} onViewProfile={viewMyProfile} />}
           {/* Reticle (when pointer-locked) + world-hover prompt — hidden under a full-screen page. */}
           {!pageOpen && <Pointer hover={session.hover} locked={session.cursorLocked} proximity={session.proximity} />}
           <Chat
