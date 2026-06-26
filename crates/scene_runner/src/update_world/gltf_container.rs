@@ -246,7 +246,10 @@ fn update_gltf(
 
         if let Some(GltfLoaded(Some(instance_id))) = maybe_loaded {
             if !has_gltf_processed {
-                commands.entity(ent).try_insert(GltfReady(*instance_id));
+                despawn_instance_non_recursive(
+                    &mut commands,
+                    scene_spawner.iter_instance_entities(*instance_id),
+                );
             }
         }
 
