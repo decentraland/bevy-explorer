@@ -1,0 +1,46 @@
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal, 1000);
+}
+
+.card {
+  position: fixed;
+  z-index: calc(var(--z-modal, 1000) + 1);
+  width: 240px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 1rem;
+  border-radius: var(--r-lg, 14px);
+  background: var(--panel, rgba(24, 20, 26, 0.96));
+  border: 1px solid var(--white-10, rgba(255, 255, 255, 0.1));
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+}
+
+.name {
+  font-weight: 700;
+  font-size: var(--fs-200, 1rem);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.tag {
+  color: var(--text-dim, rgba(255, 255, 255, 0.5));
+  font-weight: 600;
+}
+
+.addr {
+  font-size: var(--fs-75, 0.75rem);
+  color: var(--text-dim, rgba(255, 255, 255, 0.5));
+  font-variant-numeric: tabular-nums;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}

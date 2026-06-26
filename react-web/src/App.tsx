@@ -76,8 +76,14 @@ function Hud(): React.JSX.Element {
               they don't show through (the map page's body is transparent). */}
           {!pageOpen && <Sidebar session={session} />}
           {/* Reticle (when pointer-locked) + world-hover prompt — hidden under a full-screen page. */}
-          {!pageOpen && <Pointer hover={session.hover} />}
-          <Chat chat={session.chat} hidden={session.friends.open || pageOpen} />
+          {!pageOpen && <Pointer hover={session.hover} locked={session.cursorLocked} proximity={session.proximity} />}
+          <Chat
+            chat={session.chat}
+            hidden={session.friends.open || pageOpen}
+            me={session.profile.data}
+            onAddFriend={(address) => session.friends.act('request', address)}
+            onTeleport={(x, y) => session.map.teleport(x, y)}
+          />
           <FriendsPanel friends={session.friends} />
           <SettingsPanel settings={session.settings} profile={session.profile} onNavigate={goToMenuPage} />
           <ProfilePanel profile={session.profile} />

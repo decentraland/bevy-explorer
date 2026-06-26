@@ -10,6 +10,8 @@ import type { NearbyMember } from '../../engine/protocol'
 import { Avatar, ControlButton, DclLogo } from '../../design'
 import { EmojiPicker } from './EmojiPicker'
 import { searchByShortcode, SHORTCODE_RE, type Emoji } from './emojiData'
+import { MessageText, mentionsMe, buildNameIndex } from './chatText'
+import { ProfileCard, type ChatUser } from './ProfileCard'
 import styles from './Chat.module.css'
 
 const MAX_LEN = 500
@@ -137,26 +139,51 @@ export function DaySeparator({ ts }: { ts: number }): React.JSX.Element {
   )
 }
 
+const MSG_STYLES = { url: styles.url, mention: styles.mention, location: styles.location }
+
 export function ChatBubble({
   line,
   name,
-  picture
+  picture,
+  members = [],
+  me,
+  onOpenProfile,
+  onLocation
 }: {
   line: ChatLine
   name: string
   picture?: string
+  members?: NearbyMember[]
+  me?: { address?: string; name?: string } | null
+  /** Open the profile viewer for a user, anchored at the click. */
+  onOpenProfile?: (user: ChatUser, e: React.MouseEvent) => void
+  /** A location link (x,y) in the message was clicked → teleport. */
+  onLocation?: (x: number, y: number) => void
 }): React.JSX.Element {
   const color = senderColor(line.sender)
   const { base, tag } = splitName(name)
+  const sender: ChatUser = { address: line.sender, name, picture }
+  const highlight = mentionsMe(line.message, me ?? null, buildNameIndex(members))
+
+  // Clicking an @mention opens that user's profile (resolved against the roster).
+  const onMention = (address: string, mname: string, e: React.MouseEvent): void => {
+    const m = members.find((mm) => mm.address.toLowerCase() === address.toLowerCase())
+    onOpenProfile?.({ address, name: m?.name ?? `@${mname}`, picture: m?.picture }, e)
+  }
+
   return (
-    <div className={styles.entry}>
-      <Avatar src={picture} name={name} color={color} size={28} />
+    <div className={`${styles.entry} ${highlight ? styles.mentionMe : ''}`.trim()}>
+      <button type="button" className={styles.avatarBtn} aria-label={`View ${base}`} onClick={(e) => onOpenProfile?.(sender, e)}>
+        <Avatar src={picture} name={name} color={color} size={28} />
+      </button>
       <div className={styles.bubble}>
-        <span className={styles.name} style={{ color }}>
+        <button type="button" className={styles.name} style={{ color }} onClick={(e) => onOpenProfile?.(sender, e)}>
           {base}
           {tag && <span className={styles.tag}>{tag}</span>}
+        </button>
+        <span className={styles.text}>
+          <MessageText text={line.message} members={members} styles={MSG_STYLES} onMention={onMention} onLocation={(x, y) => onLocation?.(x, y)} />
         </span>
-        <span className={styles.text}>{line.message}</span>
         <span className={styles.time}>{formatTime(line.ts)}</span>
       </div>
     </div>
@@ -217,7 +244,22 @@ function MembersOverlay({
   )
 }
 
-export function Chat({ chat, hidden = false }: { chat: ChatState; hidden?: boolean }): React.JSX.Element | null {
+export function Chat({
+  chat,
+  hidden = false,
+  me,
+  onAddFriend,
+  onTeleport
+}: {
+  chat: ChatState
+  hidden?: boolean
+  /** The local player (for @-me highlight + hiding self-actions in the viewer). */
+  me?: { address?: string; name?: string } | null
+  /** Add-friend from the profile viewer. */
+  onAddFriend?: (address: string) => void
+  /** A location link (x,y) in a message was clicked. */
+  onTeleport?: (x: number, y: number) => void
+}): React.JSX.Element | null {
   const [draft, setDraft] = useState('')
   const [picker, setPicker] = useState(false)
   const [showMembers, setShowMembers] = useState(false)
@@ -225,6 +267,9 @@ export function Chat({ chat, hidden = false }: { chat: ChatState; hidden?: boole
   const [scQuery, setScQuery] = useState<string | null>(null)
   const [hovered, setHovered] = useState(false)
   const [focused, setFocused] = useState(false)
+  const [viewUser, setViewUser] = useState<{ user: ChatUser; x: number; y: number } | null>(null)
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null)
+  const [mentionSug, setMentionSug] = useState<NearbyMember[]>([])
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -282,11 +327,38 @@ export function Chat({ chat, hidden = false }: { chat: ChatState; hidden?: boole
     if (!chat.open) chat.toggle()
   }
 
+  // Profile viewer: clicking a name/avatar/@mention opens a mini passport at the click.
+  const openProfile = (user: ChatUser, e: React.MouseEvent): void => {
+    setViewUser({ user, x: e.clientX, y: e.clientY })
+  }
+  // "Mention" from the viewer drops @name into the draft, ready to send.
+  const insertMention = (name: string): void => {
+    setDraft((d) => `${d.replace(/\s*$/, '')} @${name} `.trimStart())
+    openIfClosed()
+    inputRef.current?.focus()
+  }
+
+  const MENTION_RE = /@([\w-]*)$/
   const updateDraft = (value: string): void => {
     setDraft(value)
     const m = value.match(SHORTCODE_RE)
     setScQuery(m ? m[1] : null)
     setSuggestions(m ? searchByShortcode(m[1]) : [])
+    // @mention autocomplete from the nearby roster (trailing @partial).
+    const mm = value.match(MENTION_RE)
+    setMentionQuery(mm ? mm[1] : null)
+    const q = (mm?.[1] ?? '').toLowerCase()
+    setMentionSug(
+      mm ? chat.members.filter((p) => (p.name || p.address).toLowerCase().includes(q)).slice(0, 6) : []
+    )
+  }
+
+  const applyMention = (member: NearbyMember): void => {
+    const label = member.name.trim() ? member.name.split('#')[0] : member.address
+    setDraft((d) => d.replace(MENTION_RE, `@${label} `))
+    setMentionSug([])
+    setMentionQuery(null)
+    inputRef.current?.focus()
   }
 
   const applyEmoji = (glyph: string): void => {
@@ -305,16 +377,22 @@ export function Chat({ chat, hidden = false }: { chat: ChatState; hidden?: boole
     setDraft('')
     setSuggestions([])
     setScQuery(null)
+    setMentionSug([])
+    setMentionQuery(null)
   }
 
   const onKeyDown = (e: React.KeyboardEvent): void => {
     e.stopPropagation() // keep movement keys out of the engine while typing
     if (e.key === 'Enter') {
       e.preventDefault()
-      if (suggestions.length > 0) applyEmoji(suggestions[0].emoji)
+      if (mentionSug.length > 0) applyMention(mentionSug[0])
+      else if (suggestions.length > 0) applyEmoji(suggestions[0].emoji)
       else send()
     } else if (e.key === 'Escape') {
-      if (scQuery != null) {
+      if (mentionQuery != null) {
+        setMentionQuery(null)
+        setMentionSug([])
+      } else if (scQuery != null) {
         setScQuery(null)
         setSuggestions([])
       } else if (picker) setPicker(false)
@@ -376,6 +454,10 @@ export function Chat({ chat, hidden = false }: { chat: ChatState; hidden?: boole
                   line={r.line}
                   name={resolveName(r.line.sender)}
                   picture={pictureByAddr.get(r.line.sender.toLowerCase())}
+                  members={chat.members}
+                  me={me}
+                  onOpenProfile={openProfile}
+                  onLocation={(x, y) => onTeleport?.(x, y)}
                 />
               )
             )
@@ -386,6 +468,25 @@ export function Chat({ chat, hidden = false }: { chat: ChatState; hidden?: boole
       {active && picker && (
         <div className={styles.pickerWrap}>
           <EmojiPicker onPick={applyEmoji} onClose={() => setPicker(false)} />
+        </div>
+      )}
+
+      {active && mentionQuery != null && mentionSug.length > 0 && (
+        <div className={styles.suggest}>
+          <ul className={styles.suggestList}>
+            {mentionSug.map((m, i) => (
+              <li key={m.address}>
+                <button
+                  type="button"
+                  className={`${styles.suggestItem} ${i === 0 ? styles.suggestActive : ''}`.trim()}
+                  onClick={() => applyMention(m)}
+                >
+                  <Avatar src={m.picture} name={m.name} color={senderColor(m.address)} size={20} />
+                  <span className={styles.suggestName}>{m.name || shortAddr(m.address)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -456,6 +557,18 @@ export function Chat({ chat, hidden = false }: { chat: ChatState; hidden?: boole
             setShowMembers(false)
             chat.toggle()
           }}
+        />
+      )}
+
+      {viewUser && (
+        <ProfileCard
+          user={viewUser.user}
+          x={viewUser.x}
+          y={viewUser.y}
+          me={me}
+          onAddFriend={onAddFriend}
+          onMention={insertMention}
+          onClose={() => setViewUser(null)}
         />
       )}
     </div>
