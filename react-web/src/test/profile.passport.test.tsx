@@ -44,6 +44,11 @@ describe('profile passport', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('shows a graceful empty state when the user has no details', () => {
+    render(<ProfilePassport profile={{ address: '0xnobody', name: 'Nobody', hasClaimedName: false, isGuest: false }} onClose={vi.fn()} />)
+    expect(screen.getByText(/no details to show/i)).toBeInTheDocument()
+  })
+
   it('switches tabs (Photos shows empty state)', async () => {
     render(<ProfilePassport profile={profile} onClose={vi.fn()} />)
     await userEvent.click(screen.getByRole('button', { name: 'PHOTOS' }))

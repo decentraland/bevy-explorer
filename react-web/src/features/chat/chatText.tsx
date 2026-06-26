@@ -103,7 +103,13 @@ export function MessageText({
           const addr = resolveMention(t, index)
           if (!addr) return <span key={i}>{t.value}</span>
           return (
-            <button key={i} type="button" className={styles.mention} onClick={(e) => onMention(addr, t.name, e)}>
+            <button
+              key={i}
+              type="button"
+              className={styles.mention}
+              onClick={(e) => onMention(addr, t.name, e)}
+              onContextMenu={(e) => onMention(addr, t.name, e)}
+            >
               @{t.name}
             </button>
           )

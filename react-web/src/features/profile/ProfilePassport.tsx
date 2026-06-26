@@ -9,7 +9,8 @@
 // behind the cutout as a fallback meanwhile.
 
 import { useState } from 'react'
-import { shortAddr, splitName } from '../../lib/identity'
+import { Avatar } from '../../design'
+import { nameColor, shortAddr, splitName } from '../../lib/identity'
 import { EngineViewport } from '../engine/EngineViewport'
 import type { Badge, Profile, ProfileInfo } from '../../engine/protocol'
 import styles from './ProfilePassport.module.css'
@@ -65,12 +66,16 @@ function BadgeTile({ badge }: { badge: Badge }): React.JSX.Element {
 export function ProfilePassport({
   profile,
   isFriend = false,
+  useEngineViewport = false,
   onAddFriend,
   onClose,
   setEngineViewport
 }: {
   profile: Profile
   isFriend?: boolean
+  /** Render the live 3D avatar into the engine cutout (only when the engine can render
+   *  THIS user — currently the local player). Otherwise the 2D avatar is shown. */
+  useEngineViewport?: boolean
   onAddFriend?: (address: string) => void
   onClose: () => void
   setEngineViewport?: (region: 'map' | 'avatarPreview', rect: { x: number; y: number; width: number; height: number } | null) => void
@@ -79,6 +84,8 @@ export function ProfilePassport({
   const { base, tag } = splitName(profile.name)
   const claimed = profile.hasClaimedName
   const fields = FIELD_LABELS.filter(({ key }) => profile.info?.[key])
+  const hasOverview =
+    !!profile.description || fields.length > 0 || (profile.badges?.length ?? 0) > 0 || (profile.links?.length ?? 0) > 0
 
   return (
     <div className={styles.overlay}>
@@ -118,15 +125,22 @@ export function ProfilePassport({
         </nav>
 
         <div className={styles.body}>
-          {/* --- left: 3D avatar cutout (engine renders into it, like the Backpack) --- */}
+          {/* --- left: the avatar. Live 3D engine cutout (like the Backpack) only when the
+                  engine can render THIS user; otherwise their 2D avatar. --- */}
           <div className={styles.avatarCol}>
-            {profile.picture && <img className={styles.avatarFallback} src={profile.picture} alt="" />}
-            {setEngineViewport && <EngineViewport region="avatarPreview" report={setEngineViewport} />}
+            {useEngineViewport && setEngineViewport ? (
+              <EngineViewport region="avatarPreview" report={setEngineViewport} />
+            ) : (
+              <Avatar src={profile.picture} name={base} color={nameColor(profile.address || profile.name)} size={180} status="online" />
+            )}
           </div>
 
           {/* --- right: tab content --- */}
           <div className={styles.content}>
-            {tab === 'overview' && (
+            {tab === 'overview' && !hasOverview && (
+              <div className={styles.empty}>This profile has no details to show yet.</div>
+            )}
+            {tab === 'overview' && hasOverview && (
               <>
                 {profile.badges && profile.badges.length > 0 && (
                   <section className={styles.card}>

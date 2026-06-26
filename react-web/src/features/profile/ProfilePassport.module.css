@@ -150,17 +150,9 @@
   width: 30%;
   min-width: 240px;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-}
-.avatarFallback {
-  position: absolute;
-  bottom: 0;
-  max-height: 92%;
-  max-width: 90%;
-  object-fit: contain;
-  /* The face thumbnail is a headshot; show it low-opacity behind the engine cutout. */
-  opacity: 0.9;
+  padding: 1rem;
 }
 
 .content {

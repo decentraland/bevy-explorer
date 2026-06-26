@@ -165,19 +165,25 @@ export function ChatBubble({
   const sender: ChatUser = { address: line.sender, name, picture }
   const highlight = mentionsMe(line.message, me ?? null, buildNameIndex(members))
 
+  // Open the profile menu — on left-click OR right-click (suppress the browser menu).
+  const openSender = (e: React.MouseEvent): void => {
+    if (e.type === 'contextmenu') e.preventDefault()
+    onOpenProfile?.(sender, e)
+  }
   // Clicking an @mention opens that user's profile (resolved against the roster).
   const onMention = (address: string, mname: string, e: React.MouseEvent): void => {
+    if (e.type === 'contextmenu') e.preventDefault()
     const m = members.find((mm) => mm.address.toLowerCase() === address.toLowerCase())
     onOpenProfile?.({ address, name: m?.name ?? `@${mname}`, picture: m?.picture }, e)
   }
 
   return (
     <div className={`${styles.entry} ${highlight ? styles.mentionMe : ''}`.trim()}>
-      <button type="button" className={styles.avatarBtn} aria-label={`View ${base}`} onClick={(e) => onOpenProfile?.(sender, e)}>
+      <button type="button" className={styles.avatarBtn} aria-label={`View ${base}`} onClick={openSender} onContextMenu={openSender}>
         <Avatar src={picture} name={name} color={color} size={28} />
       </button>
       <div className={styles.bubble}>
-        <button type="button" className={styles.name} style={{ color }} onClick={(e) => onOpenProfile?.(sender, e)}>
+        <button type="button" className={styles.name} style={{ color }} onClick={openSender} onContextMenu={openSender}>
           {base}
           {tag && <span className={styles.tag}>{tag}</span>}
         </button>

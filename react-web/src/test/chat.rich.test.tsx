@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Chat } from '../features/chat/Chat'
 import type { ChatLine, ChatState } from '../features/session/useEngineSession'
@@ -99,6 +99,12 @@ describe('chat rich messages', () => {
   it('clicking a sender name opens their profile viewer', async () => {
     renderChat({ messages: [line('gm', '0xbob')], members: [{ address: '0xbob', name: 'Bob' }] })
     await userEvent.click(screen.getByRole('button', { name: 'View Bob' })) // avatar button
+    expect(screen.getByRole('dialog', { name: 'Profile' })).toBeInTheDocument()
+  })
+
+  it('right-clicking a sender also opens the profile menu', () => {
+    renderChat({ messages: [line('gm', '0xbob')], members: [{ address: '0xbob', name: 'Bob' }] })
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'View Bob' }))
     expect(screen.getByRole('dialog', { name: 'Profile' })).toBeInTheDocument()
   })
 

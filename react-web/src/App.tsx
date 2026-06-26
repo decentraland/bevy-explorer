@@ -124,6 +124,9 @@ function Hud(): React.JSX.Element {
             <ProfilePassport
               profile={passportProfile}
               isFriend={session.friends.list.some((f) => f.address.toLowerCase() === passport.address.toLowerCase())}
+              // The engine cutout renders the LOCAL avatar, so only use it for self;
+              // other users show their 2D avatar until per-user rendering exists.
+              useEngineViewport={!!session.profile.data && session.profile.data.address.toLowerCase() === passport.address.toLowerCase()}
               onAddFriend={(address) => session.friends.act('request', address)}
               onClose={() => setPassport(null)}
               setEngineViewport={session.setEngineViewport}
