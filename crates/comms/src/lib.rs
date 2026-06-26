@@ -6,6 +6,7 @@ pub mod livekit;
 pub mod movement_compressed;
 pub mod preview;
 pub mod profile;
+pub mod pulse;
 pub mod signed_login;
 #[cfg(test)]
 mod test;
@@ -79,6 +80,10 @@ impl Plugin for CommsPlugin {
         #[cfg(feature = "livekit")]
         app.add_plugins(LivekitPlugin);
         app.init_resource::<MicState>();
+
+        // Pulse movement transport. Inert until a `pulse::plugin::PulseConfig` resource is
+        // inserted; the driver (native ENet thread / wasm no-op) is selected at compile time.
+        app.add_plugins(pulse::plugin::PulsePlugin);
 
         app.add_systems(Update, (process_realm_change, connect_scene_room));
 
