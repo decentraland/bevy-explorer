@@ -75,8 +75,12 @@ Two tiers cover every domain's bridge API and the clicks that drive them:
   test drives the real `useEngineSession` hook and asserts: every action posts the exact
   wire message, and every inbound message updates state. Covers all 13 domains —
   *including* calls a guest can't reach (accept request, leave community, mark read).
-  Plus component **click** tests (sidebar nav, chat send, friend actions, …). Files in
-  `src/test/`. Runs in CI (no engine).
+  Plus **click** tests that render each real component and assert every button's
+  expected result (login CTAs, sidebar nav, chat send + emoji/members, friend
+  accept/reject/cancel/unblock, settings toggle/slider/select/reset, backpack
+  preview/equip, community join/leave/add-friend/open-chat, map jump-in/teleport,
+  notifications mark-read, menu nav, profile-chip sign-out/exit, emote play, …).
+  Files in `src/test/*.clicks.test.tsx`. Runs in CI (no engine).
 - **Tier 2 — real engine (`npm run test:e2e`, Playwright).** Boots the live app + bridge
   scene, enters as a guest, drives the player with **bevy console commands**
   (`move_player_to`, `teleport`) and real clicks, and asserts each API call round-trips
