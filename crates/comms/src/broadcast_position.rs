@@ -5,19 +5,14 @@ use bevy::prelude::*;
 use common::structs::{
     AvatarDynamicState, HeadSync, MoveKind, PointAtSync, PrimaryUser, SceneDrivenAnim,
 };
-use dcl_component::{
-    proto_components::kernel::comms::rfc4,
-    transform_and_parent::{DclQuat, DclTranslation},
-};
+use dcl_component::{proto_components::kernel::comms::rfc4, transform_and_parent::DclTranslation};
 use wallet::Wallet;
 
 use crate::{
     global_crdt::GlobalCrdtState,
     movement_compressed::{Movement, Temporal},
-    TransportType,
+    pulse::plugin::PulseSession,
 };
-
-use super::{NetworkMessage, Transport};
 
 pub struct BroadcastPositionPlugin;
 
@@ -67,12 +62,11 @@ fn broadcast_position(
         ),
         With<PrimaryUser>,
     >,
-    transports: Query<&Transport>,
+    pulse_session: Option<Res<PulseSession>>,
     mut last_position: Local<(Vec3, Quat, Vec3)>,
     mut last_head_sync: Local<HeadSync>,
     mut last_point_at: Local<PointAtSync>,
     mut last_sent: Local<f64>,
-    mut last_index: Local<u32>,
     mut last_anim: Local<LastAnim>,
     time: Res<Time>,
     global_crdt: Res<GlobalCrdtState>,
@@ -149,44 +143,8 @@ fn broadcast_position(
         return;
     }
 
-    // OLD CLIENT MESSAGES
-    // (bevy uses the old version only if no new ones are received from a particular player,
-    // so it doesn't use them between bevy instances)
     let dcl_position = DclTranslation::from_bevy_translation(translation);
-    let dcl_rotation = DclQuat::from_bevy_quat(rotation);
-    let position_packet = rfc4::Position {
-        index: *last_index,
-        position_x: dcl_position.0[0],
-        position_y: dcl_position.0[1],
-        position_z: dcl_position.0[2],
-        rotation_x: dcl_rotation.0[0],
-        rotation_y: dcl_rotation.0[1],
-        rotation_z: dcl_rotation.0[2],
-        rotation_w: dcl_rotation.0[3],
-    };
 
-    debug!("sending position: {position_packet:?}");
-    let packet = rfc4::Packet {
-        message: Some(rfc4::packet::Message::Position(position_packet)),
-        protocol_version: 100,
-    };
-
-    for transport in transports
-        .iter()
-        .filter(|t| t.transport_type != TransportType::SceneRoom)
-    {
-        if let Err(e) = transport
-            .sender
-            .try_send(NetworkMessage::unreliable(&packet))
-        {
-            warn!(
-                "failed to update position to transport {:?}: {e}",
-                transport.transport_type
-            );
-        }
-    }
-
-    // NEW CLIENT MESSAGES
     let movement = Movement::new(
         translation,
         dynamics.velocity,
@@ -345,34 +303,17 @@ fn broadcast_position(
     //     message: Some(rfc4::packet::Message::MovementCompressed(movement_packet)),
     //     protocol_version: 100,
     // };
-    let uncompressed_packet = rfc4::Packet {
-        message: Some(rfc4::packet::Message::Movement(movement_uncompressed)),
-        protocol_version: 100,
-    };
+    debug!("sending movement: {movement_uncompressed:?}");
 
-    debug!("sending uncompressed: {uncompressed_packet:?}");
-
-    for transport in transports.iter() {
-        // if let Err(e) = transport
-        //     .sender
-        //     .try_send(NetworkMessage::unreliable(&packet))
-        // {
-        //     warn!("failed to update to transport: {e}");
-        // }
-        if let Err(e) = transport
-            .sender
-            .try_send(NetworkMessage::unreliable(&uncompressed_packet))
-        {
-            warn!(
-                "failed to update movement to transport {:?}: {e}",
-                transport.transport_type
-            );
-        }
+    // Movement now goes out over Pulse only; the LiveKit broadcast is retired. The
+    // SceneDrivenAnimation rider built into `movement_uncompressed` above is carried here for when
+    // it's re-introduced as a separate, trimmed LiveKit message. No-op without a live Pulse session.
+    if let Some(pulse_session) = &pulse_session {
+        pulse_session.send_movement(&movement_uncompressed);
     }
 
     *last_position = (translation, rotation, dynamics.velocity);
     *last_head_sync = head_sync;
     *last_point_at = point_at;
-    *last_index += 1;
     *last_sent = time;
 }
