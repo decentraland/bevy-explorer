@@ -1,12 +1,11 @@
 // Passport — the full-screen profile view opened from the chat profile menu's
 // "View Profile" (Figma node 8337-…). Header (name/address/copy/mutuals + FRIEND /
-// ADD FRIEND), OVERVIEW / BADGES / PHOTOS tabs, a 3D avatar rendered into an engine
-// cutout (same pattern as the Backpack), then badges + about-me + fields + links.
+// ADD FRIEND), OVERVIEW / BADGES / PHOTOS tabs, the avatar as the catalyst full-body
+// snapshot (2D, falling back to the face), then badges + about-me + fields + links.
+// (No engine/3D render here — that's only the Backpack's avatar preview.)
 //
-// NOTE: two backend follow-ups for OTHER users — (1) the bridge must fetch their rich
-// profile (badges/info/equipped/mutuals) by address; (2) the engine cutout currently
-// renders the LOCAL avatar, so a per-user render is needed. The 2D picture is shown
-// behind the cutout as a fallback meanwhile.
+// NOTE: backend follow-up for OTHER users — the bridge must fetch their rich profile
+// (badges/info/mutuals) by address; the 2D picture is the fallback meanwhile.
 
 import { useEffect, useState } from 'react'
 import { Avatar } from '../../design'
@@ -65,18 +64,25 @@ function BadgeTile({ badge }: { badge: Badge }): React.JSX.Element {
 export function ProfilePassport({
   profile,
   isFriend = false,
+  requested = false,
   isSelf = false,
   onAddFriend,
   onClose
 }: {
   profile: Profile
   isFriend?: boolean
+  /** A friend request to this user is already pending (in the sent list). */
+  requested?: boolean
   /** Your own passport — hides the friend action (you can't friend yourself). */
   isSelf?: boolean
   onAddFriend?: (address: string) => void
   onClose: () => void
 }): React.JSX.Element {
   const [tab, setTab] = useState<Tab>('overview')
+  // Optimistic: flip to "Requested" the instant Add Friend is clicked (the sent-list
+  // poll catches up a beat later), so the button isn't a no-op visually.
+  const [justRequested, setJustRequested] = useState(false)
+  const pending = requested || justRequested
   // Escape closes the passport.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -116,11 +122,27 @@ export function ProfilePassport({
             )}
           </div>
           <div className={styles.headActions}>
-            {!isSelf && (
-              <button type="button" className={`${styles.friendBtn} ${isFriend ? styles.isFriend : ''}`.trim()} onClick={() => !isFriend && onAddFriend?.(profile.address)} disabled={isFriend}>
-                {isFriend ? 'FRIEND' : 'ADD FRIEND'}
-              </button>
-            )}
+            {!isSelf &&
+              (isFriend ? (
+                <button type="button" className={`${styles.friendBtn} ${styles.isFriend}`} disabled>
+                  FRIEND
+                </button>
+              ) : pending ? (
+                <button type="button" className={`${styles.friendBtn} ${styles.isFriend}`} disabled>
+                  REQUESTED
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className={styles.friendBtn}
+                  onClick={() => {
+                    onAddFriend?.(profile.address)
+                    setJustRequested(true)
+                  }}
+                >
+                  ADD FRIEND
+                </button>
+              ))}
             <button type="button" className={styles.close} aria-label="Close" onClick={onClose}>×</button>
           </div>
         </header>

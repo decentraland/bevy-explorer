@@ -37,6 +37,20 @@ describe('profile passport', () => {
     expect(screen.getByRole('button', { name: 'FRIEND' })).toBeDisabled()
   })
 
+  it('Add Friend requests, then flips to REQUESTED (optimistic feedback)', async () => {
+    const onAddFriend = vi.fn()
+    render(<ProfilePassport profile={profile} onAddFriend={onAddFriend} onClose={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button', { name: 'ADD FRIEND' }))
+    expect(onAddFriend).toHaveBeenCalledWith(profile.address)
+    expect(screen.getByRole('button', { name: 'REQUESTED' })).toBeDisabled()
+  })
+
+  it('shows REQUESTED (not Add Friend) when a request is already pending', () => {
+    render(<ProfilePassport profile={profile} requested onClose={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'REQUESTED' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'ADD FRIEND' })).toBeNull()
+  })
+
   it('hides the friend action on your own passport (isSelf)', () => {
     render(<ProfilePassport profile={profile} isSelf onClose={vi.fn()} />)
     expect(screen.queryByRole('button', { name: /FRIEND/i })).toBeNull()

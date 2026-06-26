@@ -135,9 +135,11 @@ function Hud(): React.JSX.Element {
           <MapPage map={session.map} profile={session.profile} onNavigate={goToMenuPage} />
           {passport && passportProfile && (
             <ProfilePassport
+              key={passport.address}
               profile={passportProfile}
               isSelf={isSelfPassport}
               isFriend={session.friends.list.some((f) => f.address.toLowerCase() === passport.address.toLowerCase())}
+              requested={session.friends.sent.some((r) => r.address.toLowerCase() === passport.address.toLowerCase())}
               onAddFriend={(address) => session.friends.act('request', address)}
               onClose={() => setPassport(null)}
             />
