@@ -28,7 +28,8 @@ function richProfile(address: string, name: string, isGuest: boolean): Profile {
       { title: 'Discord', url: 'https://discord.com' }
     ],
     mutuals: 30,
-    badges: Array.from({ length: 8 }, (_, i) => ({ id: `b${i}`, name: `Badge ${i + 1}`, tier: ['bronze', 'silver', 'gold'][i % 3] })),
+    badges: Array.from({ length: 8 }, (_, i) => ({ id: `b${i}`, name: `Badge ${i + 1}`, tier: ['bronze', 'silver', 'gold'][i % 3], image: `https://picsum.photos/seed/badge${i}/96/96` })),
+    photos: Array.from({ length: 6 }, (_, i) => `https://picsum.photos/seed/photo${i}/300/300`),
     info: {
       gender: 'Male',
       birthdate: '26/11/1991',

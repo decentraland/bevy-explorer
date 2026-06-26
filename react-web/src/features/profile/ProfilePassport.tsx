@@ -8,7 +8,7 @@
 // renders the LOCAL avatar, so a per-user render is needed. The 2D picture is shown
 // behind the cutout as a fallback meanwhile.
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Avatar } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
 import { EngineViewport } from '../engine/EngineViewport'
@@ -81,6 +81,17 @@ export function ProfilePassport({
   setEngineViewport?: (region: 'map' | 'avatarPreview', rect: { x: number; y: number; width: number; height: number } | null) => void
 }): React.JSX.Element {
   const [tab, setTab] = useState<Tab>('overview')
+  // Escape closes the passport.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
   const { base, tag } = splitName(profile.name)
   const claimed = profile.hasClaimedName
   const fields = FIELD_LABELS.filter(({ key }) => profile.info?.[key])
