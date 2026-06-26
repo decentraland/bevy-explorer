@@ -241,7 +241,7 @@ fn update_avatar_modifier_area(
                     PermissionState::Resolved(true) => true,
                     PermissionState::NotRequested => {
                         perms.check(
-                            common::structs::PermissionType::HideAvatars,
+                            common::structs::PermissionType::HideAvatarsNametags,
                             scene_ent.root,
                             scene_ent.root,
                             None,
@@ -378,13 +378,13 @@ fn update_avatar_modifier_area(
     }
 
     for allowed in perms
-        .drain_success(common::structs::PermissionType::HideAvatars)
+        .drain_success(common::structs::PermissionType::HideAvatarsNametags)
         .collect::<HashSet<_>>()
     {
         active_hide_areas.insert(allowed, PermissionState::Resolved(true));
     }
     for allowed in perms
-        .drain_fail(common::structs::PermissionType::HideAvatars)
+        .drain_fail(common::structs::PermissionType::HideAvatarsNametags)
         .collect::<HashSet<_>>()
     {
         active_hide_areas.insert(allowed, PermissionState::Resolved(false));

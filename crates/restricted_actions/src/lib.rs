@@ -1722,7 +1722,9 @@ pub fn handle_generic_perm(
         {
             let allow_out_of_scene = matches!(
                 ty,
-                PermissionType::HideAvatars | PermissionType::Fetch | PermissionType::Websocket
+                PermissionType::HideAvatarsNametags
+                    | PermissionType::Fetch
+                    | PermissionType::Websocket
             );
 
             perms.check(

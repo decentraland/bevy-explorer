@@ -547,7 +547,7 @@ impl AppConfig {
             | PermissionType::ForceCamera
             | PermissionType::PlayEmote
             | PermissionType::SetLocomotion
-            | PermissionType::HideAvatars
+            | PermissionType::HideAvatarsNametags
             | PermissionType::DisableVoice => PermissionValue::Allow,
             _ => PermissionValue::Ask,
         }
@@ -851,7 +851,7 @@ pub enum PermissionType {
     ForceCamera,
     PlayEmote,
     SetLocomotion,
-    HideAvatars,
+    HideAvatarsNametags,
     DisableVoice,
     Teleport,
     ChangeRealm,
@@ -882,7 +882,9 @@ impl PermissionStrings for PermissionType {
             PermissionType::ForceCamera => "Force Camera",
             PermissionType::PlayEmote => "Play Emote",
             PermissionType::SetLocomotion => "Set Locomotion",
-            PermissionType::HideAvatars => "Hide Avatars",
+            PermissionType::HideAvatarsNametags => {
+                "Hide Avatars and/or Nametags, and/or disables Passports"
+            }
             PermissionType::DisableVoice => "Disable Voice",
             PermissionType::Teleport => "Teleport",
             PermissionType::ChangeRealm => "Change Realm",
@@ -937,7 +939,9 @@ impl PermissionStrings for PermissionType {
             PermissionType::ForceCamera => "temporarily change the camera view",
             PermissionType::PlayEmote => "make your avatar perform an emote",
             PermissionType::SetLocomotion => "temporarily modify your avatar's locomotion settings",
-            PermissionType::HideAvatars => "temporarily hide player avatars",
+            PermissionType::HideAvatarsNametags => {
+                "temporarily hide player avatars and/or nametags, and/or disables passports"
+            }
             PermissionType::DisableVoice => "temporarily disable voice chat",
             PermissionType::Teleport => "teleport you to a new location",
             PermissionType::ChangeRealm => "move you to a new realm",
@@ -957,7 +961,9 @@ impl PermissionStrings for PermissionType {
             PermissionType::ForceCamera => "enforcing the camera view",
             PermissionType::PlayEmote => "making your avatar perform an emote",
             PermissionType::SetLocomotion => "enforcing your locomotion settings",
-            PermissionType::HideAvatars => "hiding some avatars",
+            PermissionType::HideAvatarsNametags => {
+                "hiding some avatars and/or nametags, and/or disables passports"
+            }
             PermissionType::DisableVoice => "disabling voice communications",
             PermissionType::Teleport => "teleporting you to a new location",
             PermissionType::ChangeRealm => "teleporting you to a new realm",
