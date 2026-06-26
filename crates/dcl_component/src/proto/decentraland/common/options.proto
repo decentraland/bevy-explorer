@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package decentraland.common;
+
+import "google/protobuf/descriptor.proto";
+
+// Options for quantizing a float value stored as a uint32 field.
+// The float is clamped to [min, max] and uniformly quantized to N bits;
+// protobuf encodes the resulting uint32 as a varint on the wire.
+// The generator emits a float {Name}Quantized accessor in the partial class.
+message QuantizedFloatOptions {
+  float  min  = 1;
+  float  max  = 2;
+  uint32 bits = 3;
+}
+
+// Options for bit-packing an integer field into fewer than 32 bits.
+message BitPackedOptions {
+  uint32 bits = 1;
+}
+
+extend google.protobuf.FieldOptions {
+  // Apply to uint32 fields to enable quantized float encoding.
+  // Example: uint32 dx = 1 [(decentraland.common.quantized) = { min: -100.0, max: 100.0, bits: 16 }];
+  QuantizedFloatOptions quantized  = 50001;
+
+  // Apply to uint32 fields to pack into fewer bits.
+  // Example: uint32 entity_id = 4 [(decentraland.common.bit_packed) = { bits: 20 }];
+  BitPackedOptions      bit_packed = 50002;
+}

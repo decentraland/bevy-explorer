@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package decentraland.pulse;
+
+import "decentraland/common/vectors.proto";
+import "decentraland/pulse/pulse_shared.proto";
+
+message HandshakeRequest {
+	bytes auth_chain = 1;
+  int32 profile_version = 2;
+  optional PlayerInitialState initial_state = 3;
+}
+
+// Describes the initial state of the player if (re-)connected in the middle of the session
+message PlayerInitialState {
+  PlayerState state = 1;
+  optional string emote_id = 2;
+  optional uint32 emote_duration_ms = 3;
+  // Indicates how many milliseconds ago the emote was started
+  optional uint32 emote_start_offset_ms = 4;
+}
+
+// Similarly to the LiveKit pipeline, a peer announces the version of its profile but
+// it only does it when it's changed as it's sent reliably and stored on the server for other peers
+message ProfileVersionAnnouncement {
+  int32 version = 1;
+}
+
+// Since the server doesn't simulate the scenes state, it trusts the values from the client
+message PlayerStateInput {
+  PlayerState state = 1;
+}
+
+// Client sends resync request if it has a gap in the known sequences and, thus, can't apply a delta.
+// It's sent reliably to prevent further desynchronization
+message ResyncRequest {
+  uint32 subject_id = 1;
+  // highest seq the client actually has for this subject
+  uint32 known_seq = 2;
+}
+
+// Client → Server. Client requests to start an emote.
+message EmoteStart {
+  string emote_id = 1;
+  optional uint32 duration_ms = 2;
+  PlayerState player_state = 3;
+}
+
+// Client → Server. Client requests to stop a looping emote.
+// One-shot emotes are terminated by the server timer.
+message EmoteStop {
+}
+
+// Client → Server. Also announces the peer's realm; peers in different realms never see each
+// other. Must be the first gameplay message after handshake. Same-realm re-teleports are valid.
+message TeleportRequest {
+  int32 parcel_index = 1;
+  decentraland.common.Vector3 position = 2;
+  // Non-empty realm identifier. Rejected if empty.
+  string realm = 3;
+}
+
+message ClientMessage {
+  oneof message {
+    HandshakeRequest handshake = 1;
+    PlayerStateInput input = 2;
+    ResyncRequest resync = 3;
+    ProfileVersionAnnouncement profile_announcement = 4;
+    EmoteStart emote_start = 5;
+    EmoteStop emote_stop = 6;
+    TeleportRequest teleport = 7;
+  }
+}
