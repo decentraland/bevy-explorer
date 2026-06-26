@@ -4,7 +4,8 @@
 // We only render the actions our bridge actually supports: Mention, Block. (View
 // Profile / Chat / Call / Hush / Gift / Report have no engine API yet.)
 
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Avatar } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
 import styles from './ProfileCard.module.css'
@@ -89,11 +90,22 @@ export function ProfileCard({
   onClose: () => void
 }): React.JSX.Element {
   const [copied, setCopied] = useState<'name' | 'address' | null>(null)
+  const cardRef = useRef<HTMLDivElement>(null)
+  // Start at the click point; once the card is laid out, clamp it to the viewport
+  // using its REAL size (the menu height varies with which actions are shown).
+  const [pos, setPos] = useState({ left: x, top: y })
+  useLayoutEffect(() => {
+    const el = cardRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    setPos({
+      left: Math.max(8, Math.min(x, window.innerWidth - r.width - 8)),
+      top: Math.max(8, Math.min(y, window.innerHeight - r.height - 8))
+    })
+  }, [x, y])
   const isMe = !!me?.address && !!user.address && me.address.toLowerCase() === user.address.toLowerCase()
   const { base, tag } = splitName(user.name)
   const color = nameColor(user.address || user.name)
-  const left = Math.min(x, window.innerWidth - 320)
-  const top = Math.min(y, window.innerHeight - 420)
 
   const copy = (text: string, which: 'name' | 'address'): void => {
     navigator.clipboard?.writeText(text).then(
@@ -105,10 +117,10 @@ export function ProfileCard({
     )
   }
 
-  return (
+  return createPortal(
     <>
       <div className={styles.scrim} onClick={onClose} />
-      <div className={styles.card} style={{ left, top }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Profile">
+      <div ref={cardRef} className={styles.card} style={{ left: pos.left, top: pos.top }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Profile">
         <div className={styles.header}>
           <Avatar src={user.picture} name={base} color={color} size={72} status="online" />
           <button type="button" className={styles.copyRow} title="Copy name" onClick={() => copy(user.name, 'name')}>
@@ -154,6 +166,7 @@ export function ProfileCard({
           </div>
         )}
       </div>
-    </>
+    </>,
+    document.body
   )
 }
