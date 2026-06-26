@@ -263,12 +263,11 @@ fn update_avatar_modifier_area(
                         .0
                         .modifiers
                         .contains(&(AvatarModifierType::AmtDisablePassports as i32));
+                    needs_hidden_nametag |= area
+                        .0
+                        .modifiers
+                        .contains(&(AvatarModifierType::AmtHideNametags as i32));
                 }
-
-                needs_hidden_nametag |= area
-                    .0
-                    .modifiers
-                    .contains(&(AvatarModifierType::AmtHideNametags as i32));
             }
 
             if let Some(movement) = maybe_area.and_then(|area| area.0.movement_settings.as_ref()) {
