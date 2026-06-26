@@ -332,9 +332,9 @@ impl PulseDecoder {
             position_x: world.x,
             position_y: world.y,
             position_z: world.z,
-            velocity_x: velocity.x,
-            velocity_y: velocity.y,
-            velocity_z: velocity.z,
+            velocity_x: velocity_deadzone(velocity.x),
+            velocity_y: velocity_deadzone(velocity.y),
+            velocity_z: velocity_deadzone(velocity.z),
             movement_blend_value: state.movement_blend,
             slide_blend_value: state.slide_blend,
             is_grounded: flag(flags, pulse::PlayerAnimationFlags::Grounded),
@@ -364,6 +364,25 @@ impl PulseDecoder {
 
 fn flag(flags: u32, f: pulse::PlayerAnimationFlags) -> bool {
     flags & (f as u32) != 0
+}
+
+/// Snap a quantization-residual velocity to exactly zero.
+///
+/// Pulse quantizes each velocity axis as min=-50, max=50, bits=8 (steps=255), so the step size is
+/// `100/255 ≈ 0.392`. Zero is unrepresentable: the two codes straddling it decode to ±0.196 (half
+/// a step), so a genuinely-stopped peer reports ±0.196 on every axis instead of 0. bevy's
+/// `foreign_dynamics` then dead-reckons that residual (`translation += velocity * dt`) with no
+/// damping or time bound, producing the slow vertical/horizontal drift seen when a remote stops.
+///
+/// The next representable magnitude above the residual is a full step away (±0.588), so a half-step
+/// threshold cleanly recovers the intended zero without affecting any real velocity level.
+fn velocity_deadzone(v: f32) -> f32 {
+    const HALF_STEP: f32 = 100.0 / 255.0 / 2.0;
+    if v.abs() <= HALF_STEP {
+        0.0
+    } else {
+        v
+    }
 }
 
 /// Overlay a field-masked delta onto a baseline full state. Present fields replace; absent fields
