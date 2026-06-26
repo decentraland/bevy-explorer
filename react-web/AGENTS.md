@@ -43,7 +43,23 @@ re-implementing a primitive.
 3. Is this genuinely one-off feature layout? → CSS Module, token-driven, composing
    primitives.
 
-## 4. Checks
+## 4. DPI / HUD scaling (`--ui-scale`)
+
+The HUD is scaled to the viewport like Unity's CanvasScaler (`useHudScale` sets
+`--ui-scale` on `:root`, 1080-reference). Every floating panel / overlay MUST honor it
+or it'll render too big on most displays:
+
+- Full-screen pages scale via `MainMenuShell` (reference-canvas) — already handled.
+- A **floating panel/popover** applies `transform: scale(var(--ui-scale)); transform-origin: …`
+  itself (see `MainMenuShell.module.css`, sidebar).
+- **Anything rendered through a React portal to `document.body`** escapes the HUD's
+  transform, so it loses the scale AND fixed-positioning context. Re-apply
+  `transform: scale(var(--ui-scale))` on the portaled element (and clamp to the viewport
+  using its *measured* — i.e. already-scaled — size). `ProfileCard` is the reference.
+- jsdom tests can't catch scaling/positioning (no layout). Verify floating UI **visually
+  in `?mock=1`** (full HUD, no engine) before claiming it works.
+
+## 5. Checks
 
 - `npm run typecheck` must pass.
 - No new hardcoded brand/status colors, radii, or type sizes — grep your diff for raw
