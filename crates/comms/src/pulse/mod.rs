@@ -444,11 +444,14 @@ pub(crate) fn from_movement(
 /// `foreign_dynamics` then dead-reckons that residual (`translation += velocity * dt`) with no
 /// damping or time bound, producing the slow vertical/horizontal drift seen when a remote stops.
 ///
-/// The next representable magnitude above the residual is a full step away (±0.588), so a half-step
-/// threshold cleanly recovers the intended zero without affecting any real velocity level.
+/// The two zero-straddling codes decode to ±half a step (≈0.196); the next real magnitude is a step
+/// and a half away (≈0.588). The dequant (`min + encoded/levels * range` = `-50 + 128/255*100`)
+/// computes the residual through a catastrophic cancellation, so it lands at 0.196 ± a float ULP and
+/// can creep just past an exact half-step compare. Threshold at a full step instead: comfortably
+/// above the residual (with float margin) and comfortably below any real velocity level.
 fn velocity_deadzone(v: f32) -> f32 {
-    const HALF_STEP: f32 = 100.0 / 255.0 / 2.0;
-    if v.abs() <= HALF_STEP {
+    const STEP: f32 = 100.0 / 255.0;
+    if v.abs() < STEP {
         0.0
     } else {
         v
