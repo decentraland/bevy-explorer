@@ -19,6 +19,7 @@ function renderChat(
     messages?: ChatLine[]
     members?: NearbyMember[]
     onAddFriend?: (a: string) => void
+    onBlock?: (a: string) => void
     onTeleport?: (x: number, y: number) => void
     me?: { address?: string; name?: string } | null
   } = {}
@@ -32,7 +33,7 @@ function renderChat(
     members: opts.members ?? []
   }
   const { container } = render(
-    <Chat chat={chat} me={opts.me} onAddFriend={opts.onAddFriend} onTeleport={opts.onTeleport} />
+    <Chat chat={chat} me={opts.me} onAddFriend={opts.onAddFriend} onBlock={opts.onBlock} onTeleport={opts.onTeleport} />
   )
   return { chat, container }
 }
@@ -52,17 +53,38 @@ describe('chat rich messages', () => {
     expect(onTeleport).toHaveBeenCalledWith(10, -5)
   })
 
-  it('an @mention opens the profile viewer and can add a friend', async () => {
+  it('an @mention opens the profile menu with the supported actions', async () => {
     const onAddFriend = vi.fn()
+    const onBlock = vi.fn()
     renderChat({
       messages: [line('yo @Alice')],
       members: [{ address: '0xalice', name: 'Alice', picture: 'p.png' }],
-      onAddFriend
+      onAddFriend,
+      onBlock
     })
     await userEvent.click(screen.getByRole('button', { name: '@Alice' }))
-    expect(screen.getByRole('dialog', { name: 'Profile' })).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Add Friend' }))
+    const dialog = screen.getByRole('dialog', { name: 'Profile' })
+    expect(dialog).toBeInTheDocument()
+    // Only the actions we support — no View Profile / Chat / Call / Hush / Gift / Report.
+    expect(screen.queryByRole('button', { name: /View Profile|Call|Hush|Gift|Report/i })).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: /ADD FRIEND/i }))
     expect(onAddFriend).toHaveBeenCalledWith('0xalice')
+  })
+
+  it('the profile menu can block and mention', async () => {
+    const onBlock = vi.fn()
+    renderChat({ messages: [line('yo @Alice')], members: [{ address: '0xalice', name: 'Alice' }], onBlock })
+    await userEvent.click(screen.getByRole('button', { name: '@Alice' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Block' }))
+    expect(onBlock).toHaveBeenCalledWith('0xalice')
+  })
+
+  it('Mention from the menu drops @name into the draft', async () => {
+    renderChat({ messages: [line('yo @Alice')], members: [{ address: '0xalice', name: 'Alice' }] })
+    await userEvent.click(screen.getByRole('button', { name: '@Alice' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Mention' }))
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toContain('@Alice')
   })
 
   it('clicking a sender name opens their profile viewer', async () => {

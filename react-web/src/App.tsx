@@ -82,6 +82,7 @@ function Hud(): React.JSX.Element {
             hidden={session.friends.open || pageOpen}
             me={session.profile.data}
             onAddFriend={(address) => session.friends.act('request', address)}
+            onBlock={(address) => session.friends.act('block', address)}
             onTeleport={(x, y) => session.map.teleport(x, y)}
           />
           <FriendsPanel friends={session.friends} />

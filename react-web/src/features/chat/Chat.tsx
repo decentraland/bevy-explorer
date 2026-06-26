@@ -249,6 +249,7 @@ export function Chat({
   hidden = false,
   me,
   onAddFriend,
+  onBlock,
   onTeleport
 }: {
   chat: ChatState
@@ -257,6 +258,8 @@ export function Chat({
   me?: { address?: string; name?: string } | null
   /** Add-friend from the profile viewer. */
   onAddFriend?: (address: string) => void
+  /** Block from the profile viewer. */
+  onBlock?: (address: string) => void
   /** A location link (x,y) in a message was clicked. */
   onTeleport?: (x: number, y: number) => void
 }): React.JSX.Element | null {
@@ -567,6 +570,7 @@ export function Chat({
           y={viewUser.y}
           me={me}
           onAddFriend={onAddFriend}
+          onBlock={onBlock}
           onMention={insertMention}
           onClose={() => setViewUser(null)}
         />
