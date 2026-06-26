@@ -7,8 +7,8 @@ use common::{
     dynamics::{PLAYER_COLLIDER_HEIGHT, PLAYER_COLLIDER_RADIUS},
     sets::SceneSets,
     structs::{
-        ActiveAvatarArea, AvatarControl, PermissionState, PlayerModifiers, PrimaryPlayerRes,
-        PrimaryUser,
+        ActiveAvatarArea, AttachPoints, AvatarControl, PermissionState, PlayerModifiers,
+        PrimaryPlayerRes, PrimaryUser,
     },
 };
 use comms::global_crdt::ForeignPlayer;
@@ -69,8 +69,14 @@ impl Plugin for AvatarModifierAreaPlugin {
                 .chain()
                 .in_set(SceneSets::PostLoop),
         );
+
+        app.add_observer(hide_nametag);
+        app.add_observer(show_nametag);
     }
 }
+
+#[derive(Component)]
+struct HiddenNametag;
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn update_avatar_modifier_area(
@@ -81,6 +87,7 @@ fn update_avatar_modifier_area(
             &GlobalTransform,
             Option<&ForeignPlayer>,
             Option<&mut PlayerModifiers>,
+            Has<HiddenNametag>,
         ),
         Or<(With<PrimaryUser>, With<ForeignPlayer>)>,
     >,
@@ -105,7 +112,7 @@ fn update_avatar_modifier_area(
     let scenes = containing_scene.get_area(player_res.0, PLAYER_COLLIDER_RADIUS);
 
     // for every player
-    for (player, gt, maybe_foreign, maybe_modifiers) in players.iter_mut() {
+    for (player, gt, maybe_foreign, maybe_modifiers, has_hidden_nametag) in players.iter_mut() {
         let Some(mut modifiers) = maybe_modifiers else {
             commands
                 .entity(player)
@@ -127,6 +134,8 @@ fn update_avatar_modifier_area(
                 .map(|f| f.address)
                 .unwrap_or(me.address().unwrap_or_default())
         );
+
+        let mut needs_hidden_nametag = false;
 
         // utility to check if player is within a camera area
         let player_in_area = |area: &AvatarModifierArea, transform: &GlobalTransform| -> bool {
@@ -232,7 +241,7 @@ fn update_avatar_modifier_area(
                     PermissionState::Resolved(true) => true,
                     PermissionState::NotRequested => {
                         perms.check(
-                            common::structs::PermissionType::HideAvatars,
+                            common::structs::PermissionType::HideAvatarsNametags,
                             scene_ent.root,
                             scene_ent.root,
                             None,
@@ -254,6 +263,10 @@ fn update_avatar_modifier_area(
                         .0
                         .modifiers
                         .contains(&(AvatarModifierType::AmtDisablePassports as i32));
+                    needs_hidden_nametag |= area
+                        .0
+                        .modifiers
+                        .contains(&(AvatarModifierType::AmtHideNametags as i32));
                 }
             }
 
@@ -352,17 +365,26 @@ fn update_avatar_modifier_area(
 
         modifiers.areas = areas_clone;
 
+        if has_hidden_nametag != needs_hidden_nametag {
+            let mut cmds = commands.entity(player);
+            if has_hidden_nametag {
+                cmds.try_remove::<HiddenNametag>();
+            } else {
+                cmds.try_insert(HiddenNametag);
+            }
+        }
+
         debug!("modifiers: {modifiers:?}");
     }
 
     for allowed in perms
-        .drain_success(common::structs::PermissionType::HideAvatars)
+        .drain_success(common::structs::PermissionType::HideAvatarsNametags)
         .collect::<HashSet<_>>()
     {
         active_hide_areas.insert(allowed, PermissionState::Resolved(true));
     }
     for allowed in perms
-        .drain_fail(common::structs::PermissionType::HideAvatars)
+        .drain_fail(common::structs::PermissionType::HideAvatarsNametags)
         .collect::<HashSet<_>>()
     {
         active_hide_areas.insert(allowed, PermissionState::Resolved(false));
@@ -386,4 +408,36 @@ fn manage_foreign_player_visibility(
             }
         }
     }
+}
+
+fn hide_nametag(
+    trigger: Trigger<OnAdd, HiddenNametag>,
+    attach_points: Query<&AttachPoints, Or<(With<PrimaryUser>, With<ForeignPlayer>)>>,
+    mut visibilities: Query<&mut Visibility>,
+) {
+    let entity = trigger.target();
+    let Ok(attach_points) = attach_points.get(entity) else {
+        return;
+    };
+
+    let Ok(mut visibility) = visibilities.get_mut(attach_points.nametag) else {
+        return;
+    };
+    *visibility = Visibility::Hidden;
+}
+
+fn show_nametag(
+    trigger: Trigger<OnRemove, HiddenNametag>,
+    attach_points: Query<&AttachPoints, Or<(With<PrimaryUser>, With<ForeignPlayer>)>>,
+    mut visibilities: Query<&mut Visibility>,
+) {
+    let entity = trigger.target();
+    let Ok(attach_points) = attach_points.get(entity) else {
+        return;
+    };
+
+    let Ok(mut visibility) = visibilities.get_mut(attach_points.nametag) else {
+        return;
+    };
+    *visibility = Visibility::Inherited;
 }
