@@ -71,21 +71,42 @@ Never blind-update. A baseline refresh in a PR must be reviewed image-by-image.
 - **Baselines are platform-specific** (`*-chromium-darwin.png`). Font hinting differs across OSes, so
   generate/verify on the same platform CI uses (or add a Linux baseline set when CI is wired).
 - **Mock data is the ceiling.** A panel can only be as rich as `src/engine/mockBridge.ts` makes it.
-  Two current gaps worth closing so the baselines exercise more:
-  - **`backpack-emotes` shows empty** — opening the Backpack doesn't trigger `getEmotes` (only the
-    emote *wheel* does), so `emotes.list` is empty there. *(Found by this harness.)* Fix: have the
-    Backpack ensure `getEmotes` on open; then enrich the mock `getEmotes` to return owned emotes with
-    rarities so the grid + assign-to-slot render.
-  - Mock `getEmotes` still returns the legacy "equipped only" shape — give it an owned collection
-    (some with `slot`, varied `rarity`/`count`) to exercise the new grid.
+  - **`backpack-emotes` renders empty in the baseline** — even though the Backpack *does* request
+    `getEmotes` on open and the mock returns 10 base emotes. *(Surfaced by this harness — to chase
+    down: is it a render/timing nuance in the capture, or does `emotes.list` not reach the grid?)*
+  - Enrich mock `getEmotes` with an OWNED collection (some with `slot`, varied `rarity`/`count`) so
+    the new owned-grid + assign-to-slot are exercised, not just the 10 base emotes.
 
 ---
 
-## 3. Tier 2 — real engine (`e2e/engine.spec.ts`)
+## 3. Tier 2 — real engine (`e2e/engine.spec.ts` + `e2e/engine-clicks.spec.ts`)
 
-See `e2e/README.md`. Needs a real GPU + a local engine build (`../deploy/web`). Drives the live app,
-moves the player with bevy console commands, and asserts each call crosses the bridge. Run before a
-release or when touching the bridge protocol.
+See `e2e/README.md`. Needs a real GPU + a local engine build (`../deploy/web`). Run before a release
+or when touching the bridge protocol.
+
+- **`engine.spec.ts`** — every panel *opens* and *fetches* (the call crosses the bridge).
+- **`engine-clicks.spec.ts`** — the controls *inside* panels do something the **engine** sees,
+  verified **through the bevy console API** where the engine exposes state, bridge-spy otherwise:
+
+  | Click | Verified by |
+  |-------|-------------|
+  | move / teleport | `/player_position` lands at the exact coords (`helpers.position`) |
+  | equip a wearable | `/get_user_data` profile **`vN` bumps** (`helpers.profileVersion`) + `equip` on the bridge |
+  | assign an emote to a slot | `equipEmote` on the bridge |
+  | play a wheel emote | `triggerEmote` on the bridge |
+  | change a setting (slider) | `setSetting` on the bridge |
+  | (sanity) profile + roster reachable | `/get_user_data`, `/connected_players` |
+
+  Console helpers live in `e2e/helpers.ts` (`position`, `getUserData`, `profileVersion`,
+  `connectedPlayers`). Available bevy commands: `move_player_to`, `walk_player_to`, `teleport`,
+  `player_position`, `get_user_data`, `connected_players`, `live_scenes`, `list_portables`, `emote`,
+  plus `/login_*`, `/logout`, `/chat`.
+
+**Still tier-1-only** (a fresh guest can't reach them, so they can't round-trip here): accepting a
+friend request, leaving a community, marking notifications read — these need seeded data and are
+covered deterministically in tier 1. **TODO to deepen tier 2** (would need engine query commands or
+fixtures): map *UI* teleport by clicking a parcel, a `/mic_state` query to confirm the mic toggle,
+logout via the profile chip.
 
 ---
 

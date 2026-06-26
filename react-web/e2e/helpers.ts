@@ -42,6 +42,24 @@ export const movePlayerTo = (page: Page, x: number, y: number, z: number): Promi
 export const teleport = (page: Page, x: number, y: number): Promise<string> => cmd(page, `teleport ${x} ${y}`)
 export const playerPosition = (page: Page): Promise<string> => cmd(page, 'player_position')
 
+// --- bevy state QUERIES — verify a click actually changed engine state ------------
+/** `/player_position` parsed to numbers (`(x, y, z)`), so a teleport/move can be asserted exactly. */
+export async function position(page: Page): Promise<{ x: number; y: number; z: number }> {
+  const raw = await playerPosition(page)
+  const m = raw.match(/\(?\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)/)
+  if (!m) throw new Error(`unparseable player_position: ${raw}`)
+  return { x: Number(m[1]), y: Number(m[2]), z: Number(m[3]) }
+}
+/** `/get_user_data` → "name (0x…): vN, web3=…". The profile VERSION bumps on every avatar change,
+ *  so equipping a wearable/emote is observable here without any DOM assertion. */
+export const getUserData = (page: Page): Promise<string> => cmd(page, 'get_user_data')
+export async function profileVersion(page: Page): Promise<number> {
+  const m = (await getUserData(page)).match(/\bv(\d+)\b/)
+  return m ? Number(m[1]) : -1
+}
+/** `/connected_players` → comma-separated addresses, or "no other players connected". */
+export const connectedPlayers = (page: Page): Promise<string> => cmd(page, 'connected_players')
+
 // --- bridge spy: record every envelope on the bridge channel, both directions ----
 export async function installBridgeSpy(page: Page): Promise<void> {
   await page.addInitScript((channel) => {
