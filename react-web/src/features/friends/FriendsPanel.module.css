@@ -1,0 +1,226 @@
+/* Friends panel — Explorer 2.0. Left-docked next to the rail, fixed height, scaled
+   with the HUD. Tabs (ruby underline) · collapsible sections · hover actions. */
+/* Friends docks exactly like the chat panel: same bottom-left anchor, width and
+   height, scaled from the bottom-left so it sits where the chat would. */
+.root {
+  position: fixed;
+  left: 58px;
+  bottom: 16px;
+  z-index: var(--z-hud);
+  display: flex;
+  flex-direction: column;
+  width: min(340px, calc(100vw - 80px));
+  height: min(578px, calc(100vh - 32px));
+  background: rgba(12, 11, 14, 0.95);
+  border-radius: 14px;
+  box-shadow: var(--shadow-panel);
+  font-family: var(--font-family);
+  transform: scale(var(--ui-scale)) translateZ(0);
+  transform-origin: bottom left;
+  contain: layout paint;
+  overflow: hidden;
+}
+
+/* Tabs row = the header (FRIENDS / REQUESTS / BLOCKED + close). */
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 52px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--white-10);
+  flex: none;
+}
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0 10px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--ink-6);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color var(--dur-fast) ease;
+}
+.tab:hover {
+  color: var(--text);
+}
+.tabActive {
+  color: var(--text);
+  border-bottom-color: var(--brand);
+}
+.tabBadge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--brand);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+}
+.closeGlyph {
+  margin-left: auto;
+  font-size: 20px;
+}
+
+.body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 6px 8px;
+  scrollbar-width: thin;
+}
+.body::-webkit-scrollbar {
+  width: 6px;
+}
+.body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+/* Collapsible section header. */
+.sectionHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 10px 6px;
+  border: none;
+  background: transparent;
+  color: var(--ink-7);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.chev {
+  width: 12px;
+  height: 12px;
+  transition: transform var(--dur-fast) ease;
+}
+.chevOpen {
+  transform: rotate(180deg);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 10px;
+  border-radius: 10px;
+}
+.row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 17px;
+  text-transform: capitalize;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.verified {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.tag {
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.45);
+}
+.status {
+  font-size: 12px;
+  line-height: 15px;
+  color: var(--ink-6);
+}
+.status.online {
+  color: var(--green);
+}
+.sub {
+  font-size: 12px;
+  line-height: 15px;
+  color: var(--ink-6);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Request date shows by default; row hover swaps to the action buttons. */
+.date {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-45);
+}
+.actions {
+  display: none;
+  align-items: center;
+  gap: 8px;
+}
+.row:hover .date {
+  display: none;
+}
+.row:hover .actions {
+  display: flex;
+}
+
+.empty {
+  padding: 14px 10px;
+  font-size: 13px;
+  color: var(--ink-45);
+}
+
+/* Tab placeholders (guest / no blocked). */
+.placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 48px 28px;
+}
+.phIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border: 2px solid var(--ink-45);
+  border-radius: 18px;
+  font-size: 34px;
+  color: var(--ink-7);
+}
+.phTitle {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+.phText {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-45);
+  max-width: 280px;
+}

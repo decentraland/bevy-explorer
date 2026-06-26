@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "jsx": "react",
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "strict": true,
+    "baseUrl": "."
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "assets/images/atlas/*.json"],
+  "extends": "@dcl/sdk/types/tsconfig.ecs7.json"
+}

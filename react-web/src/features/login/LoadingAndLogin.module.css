@@ -1,0 +1,240 @@
+.root {
+  position: absolute;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  font-family: var(--font-family);
+  /* Shared Unity magenta→purple backdrop (also used by the full-screen menu pages). */
+  background: var(--menu-bg);
+  animation: fade-in var(--dur-fade) var(--ease-out) both;
+}
+.root.leaving {
+  animation: fade-out 400ms var(--ease-out) both;
+}
+
+/* Faint scattered wearable/emote-icon watermark (Unity backdrop). */
+.watermark {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.06;
+  background:
+    url('/category-icons/tiara.png') 14% 14% / 70px no-repeat,
+    url('/category-icons/upper_body.png') 30% 64% / 66px no-repeat,
+    url('/category-icons/mask.png') 9% 84% / 62px no-repeat,
+    url('/category-icons/eyewear.png') 4% 44% / 60px no-repeat,
+    url('/category-icons/hat.png') 40% 30% / 66px no-repeat,
+    url('/category-icons/feet.png') 24% 90% / 60px no-repeat,
+    url('/category-icons/earring.png') 47% 76% / 56px no-repeat,
+    url('/category-icons/hair.png') 90% 12% / 70px no-repeat,
+    url('/category-icons/tiara.png') 80% 86% / 64px no-repeat,
+    url('/category-icons/mouth.png') 60% 18% / 58px no-repeat,
+    url('/category-icons/hands_wear.png') 55% 92% / 60px no-repeat;
+}
+
+/* ---- loading state ---- */
+.loading {
+  margin: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.spinnerLogo {
+  width: 10vh;
+  height: 10vh;
+  background: url('/assets/logo.png') center / contain no-repeat;
+  animation: pulse 1.6s var(--ease-out) infinite;
+}
+
+/* ---- left panel ---- */
+.panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(320px, 23vw);
+  margin-left: clamp(2.5rem, 10.5vw, 11rem);
+}
+.logo {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 14px;
+  background: url('/assets/logo.png') left center / contain no-repeat;
+}
+.title {
+  margin: 0;
+  font-size: clamp(1.8rem, 2.4vw, 2.3rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.05;
+  white-space: nowrap;
+  color: #fff;
+}
+.subtitle {
+  margin: 14px 0 0;
+  font-size: clamp(1.15rem, 1.55vw, 1.45rem);
+  font-weight: 400;
+  line-height: 1.2;
+  color: rgba(255, 255, 255, 0.95);
+  white-space: pre-line;
+}
+.account {
+  margin: 6px 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.65);
+}
+.error {
+  margin: 10px 0 0;
+  color: #ffd0d8;
+  font-size: 0.9rem;
+}
+
+/* ---- buttons (design-system Button; .buttons-scoped overrides win the variant) ---- */
+.buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+/* Figma JumpInCTA: DCL/Ruby, height 46, border-radius 12 — a rounded-rect, not the
+   design-system Button's default pill. The .buttons-scoped 2-class selector wins the variant. */
+.buttons .cta,
+.buttons .ctaSecondary {
+  position: relative;
+  width: 100%;
+  height: 46px;
+  border-radius: 12px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.buttons .cta {
+  box-shadow: 0 6px 18px rgba(255, 45, 85, 0.32);
+}
+.buttons .ctaSecondary {
+  background: rgba(108, 42, 168, 0.62);
+  box-shadow: none;
+}
+.buttons .ctaSecondary:hover:not(:disabled) {
+  background: rgba(124, 52, 188, 0.78);
+}
+.arrow {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+}
+
+/* ---- avatar (welcome-back screen) — full height, standing on Unity's golden podium ---- */
+.avatarWrap {
+  position: absolute;
+  right: clamp(1rem, 7vw, 9rem);
+  top: 0;
+  bottom: 0;
+  width: min(46vw, 720px);
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+}
+/* Golden podium disc the avatar stands on (Unity launcher). */
+.disc {
+  position: absolute;
+  bottom: 9%;
+  left: 50%;
+  width: 332px;
+  height: 76px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(ellipse 58% 66% at 50% 40%, #ffe891 0%, #f8bd3a 48%, #e09b22 72%, #c07d16 100%);
+  box-shadow:
+    inset 0 0 0 4px rgba(255, 224, 138, 0.55),
+    0 8px 0 #3a1c54,
+    0 18px 42px rgba(0, 0, 0, 0.5);
+}
+.glow {
+  position: absolute;
+  bottom: 10%;
+  left: 50%;
+  width: 360px;
+  height: 86px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(255, 205, 100, 0.35), rgba(255, 205, 100, 0) 70%);
+  filter: blur(8px);
+  animation: glow-pulse 4.5s ease-in-out infinite;
+}
+.avatar {
+  position: relative;
+  height: 92vh;
+  max-height: 1040px;
+  margin-bottom: 0;
+  object-fit: contain;
+  object-position: bottom;
+  filter: drop-shadow(0 24px 44px rgba(0, 0, 0, 0.35));
+  animation:
+    avatar-in 0.6s var(--ease-out) both,
+    avatar-float 5s ease-in-out 0.6s infinite;
+}
+
+@keyframes avatar-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes avatar-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+@keyframes glow-pulse {
+  0%,
+  100% {
+    opacity: 0.85;
+    transform: scaleX(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleX(1.06);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+}

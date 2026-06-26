@@ -1,0 +1,102 @@
+/* Design tokens — the single source of truth for the React HUD.
+   Values adapted from the Decentraland UI port (eordano/dcl-react-ui
+   primitives.css) and the SDK7 scene's constants. New components use the
+   canonical tokens below; the legacy --color-* aliases keep the first slices
+   (login/chat/loading) working. */
+:root {
+  /* ---- palette ---- */
+  --brand: #ff2d55; /* primary / ruby */
+  --brand-hover: #ff4d70;
+  --brand-active: rgba(229, 39, 75, 0.5);
+  --panel: #161518; /* dark panel surface */
+  --accent: #ff743a; /* category / selected orange */
+  --text: #fcfcfc;
+  --gold: #ffc95b;
+  --purple: #982de2;
+
+  /* Unity menu backdrop — vivid magenta→purple radial, brightest upper-right (shared with
+     the login screen). Full-screen menu pages paint this so the HUD matches Unity. */
+  --menu-bg: radial-gradient(circle at 66% 38%, #b528d8 0%, #8016b8 44%, #54098a 100%);
+
+  /* DCL named palette (Explorer 2.0 design system) */
+  --pearl: #ecebed; /* DCL/Pearl — menu dots */
+  --green: #30cd00; /* DCL/Green — connection/stream status */
+  --lavender: #c640cd; /* DCL/Lavender — secondary badge */
+  --red: #ff0000; /* DCL/Red — blocked */
+  --white-10: rgba(255, 255, 255, 0.1); /* DCL/White10% — dividers */
+
+  /* status */
+  --online: var(--green);
+  --away: #ffa25a;
+  --offline: #a09ba8;
+  --error: #ff2424;
+  --success: #44b600;
+
+  /* ---- surface washes / hairlines / text-on-dark ---- */
+  --fill-1: rgba(255, 255, 255, 0.04);
+  --fill-2: rgba(255, 255, 255, 0.06);
+  --fill-3: rgba(255, 255, 255, 0.08);
+  --fill-4: rgba(255, 255, 255, 0.1);
+  --fill-5: rgba(255, 255, 255, 0.12);
+  --line: rgba(255, 255, 255, 0.08);
+  --ink-85: rgba(255, 255, 255, 0.85);
+  --ink-7: rgba(255, 255, 255, 0.7);
+  --ink-6: rgba(255, 255, 255, 0.6);
+  --ink-45: rgba(255, 255, 255, 0.45);
+  --scrim: rgba(0, 0, 0, 0.5);
+
+  /* ---- radii ---- */
+  --r-control: 10px;
+  --r-card: 14px;
+  --r-panel: 18px;
+  --r-pill: 999px;
+
+  /* ---- elevation ---- */
+  --shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-modal: 0 30px 80px rgba(0, 0, 0, 0.5);
+
+  /* ---- stacking order ---- */
+  --z-hud: 100; /* in-world chrome: sidebar, chat, minimap */
+  --z-panel: 50;
+  --z-overlay: 60;
+  --z-modal: 1000;
+  --z-loading: 9998;
+  --z-login: 9999;
+
+  /* ---- typography (Inter scale) ---- */
+  --font-family: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', monospace;
+  --fs-xs: 0.72rem;
+  --fs-sm: 0.82rem;
+  --fs-md: 0.92rem;
+  --fs-lg: 1.05rem;
+  --fs-title: clamp(1.25rem, 2.6vh, 1.9rem);
+  --fs-display: clamp(2rem, 4.5vh, 3.25rem);
+
+  /* ---- HUD scale ---- */
+  /* The engine canvas + Unity's HUD scale with render resolution; our DOM overlay
+     is fixed CSS px, so it reads larger. This knob scales the floating HUD panels
+     to match. Tune to taste (1 = native px). */
+  --ui-scale: 0.85;
+
+  /* ---- motion ---- */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Unity DOTween Ease.OutBack — the spring overshoot the backpack UI uses on hover/select. */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-fast: 140ms;
+  --dur-mid: 300ms;
+  --dur-fade: 600ms;
+
+  /* ---- legacy aliases (first slices: login / chat / loading) ---- */
+  --color-ruby: var(--brand);
+  --color-ruby-clicked: var(--brand-active);
+  --color-almost-black: var(--panel);
+  --color-almost-white: var(--text);
+  --color-gray: #808080;
+  --color-text: var(--text);
+  --color-bg: var(--panel);
+  --font-title-xl: var(--fs-display);
+  --font-title-l: var(--fs-title);
+  --font-body: var(--fs-md);
+  --font-button: var(--fs-md);
+}

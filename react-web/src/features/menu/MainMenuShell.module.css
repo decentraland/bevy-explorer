@@ -1,0 +1,161 @@
+/* Shared full-screen menu chrome. The overlay is a reference-resolution canvas: it's sized
+   at 100%/scale and scaled back down by --ui-scale (innerHeight/1080), so every fixed-px
+   child scales with the viewport exactly like Unity's CanvasScaler ("Scale With Screen Size",
+   1080 reference). Anchored top-left so the scaled box still fills the viewport.
+   contain isolates paints from the engine's per-frame main-thread work for snappier UI. */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: calc(100% / var(--ui-scale));
+  height: calc(100% / var(--ui-scale));
+  transform: scale(var(--ui-scale));
+  transform-origin: top left;
+  z-index: var(--z-modal);
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(150deg, #1c0d33 0%, #3a1660 55%, #5a2185 100%);
+  font-family: var(--font-family);
+  overflow: hidden;
+  contain: layout paint;
+  /* Open animation — Unity ExplorePanel fades in (0.2s). */
+  animation: menuIn 0.22s var(--ease-out, ease);
+}
+@keyframes menuIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* Transparent-body pages (engine map / avatar preview): the overlay itself becomes a
+   pass-through hole so the scene behind receives map-drag / avatar-rotate events. The
+   top bar re-enables pointer events for its own controls. */
+.overlayPass {
+  background: transparent;
+  pointer-events: none;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: 64px;
+  padding: 0 16px;
+  background: #0c0b0e;
+  flex: none;
+  pointer-events: auto;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.brandName {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+.menu {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 auto;
+}
+/* Figma nav item: icon on top, LABEL [shortcut] below (uppercase). */
+.menuItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 72px;
+  padding: 7px 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink-7);
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) ease,
+    background-color var(--dur-fast) ease,
+    transform 0.16s var(--ease-spring, ease);
+}
+.menuItem:hover {
+  color: var(--text);
+  background: var(--white-10);
+  transform: scale(1.06);
+}
+.menuActive {
+  color: var(--text);
+  background: var(--fill-4);
+  animation: navPop 0.24s var(--ease-spring, ease);
+}
+@keyframes navPop {
+  0% {
+    transform: scale(0.94);
+  }
+  60% {
+    transform: scale(1.07);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.menuLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.menuKey {
+  color: var(--ink-45);
+}
+.profile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.profileName {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 10px;
+  background: #000;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.close:hover {
+  background: var(--white-10);
+}
+/* Rainbow accent line under the nav bar (Figma). */
+.accent {
+  height: 2px;
+  flex: none;
+  background: linear-gradient(90deg, #ff2d55 0%, #ff743a 22%, #ffc95b 42%, #30cd00 60%, #6c7aff 80%, #c640cd 100%);
+}
+
+.body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 22px clamp(20px, 6vw, 120px);
+  overflow-y: auto;
+}
+/* Engine view fills the body with no chrome; events pass through to the scene. */
+.bodyTransparent {
+  padding: 0;
+  overflow: hidden;
+  pointer-events: none;
+}

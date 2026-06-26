@@ -1,0 +1,1775 @@
+{
+	"frames": {
+		"Loading.png": {
+			"frame": {
+				"x": 1,
+				"y": 1,
+				"w": 120,
+				"h": 120
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 120,
+				"h": 120
+			},
+			"sourceSize": {
+				"w": 120,
+				"h": 120
+			}
+		},
+		"add-icon.png": {
+			"frame": {
+				"x": 123,
+				"y": 1,
+				"w": 35,
+				"h": 36
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 35,
+				"h": 36
+			},
+			"sourceSize": {
+				"w": 35,
+				"h": 36
+			}
+		},
+		"all.png": {
+			"frame": {
+				"x": 160,
+				"y": 1,
+				"w": 52,
+				"h": 51
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 52,
+				"h": 51
+			},
+			"sourceSize": {
+				"w": 52,
+				"h": 51
+			}
+		},
+		"brightness-slider.png": {
+			"frame": {
+				"x": 214,
+				"y": 1,
+				"w": 266,
+				"h": 31
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 266,
+				"h": 31
+			},
+			"sourceSize": {
+				"w": 266,
+				"h": 31
+			}
+		},
+		"catalog-selection-frame.png": {
+			"frame": {
+				"x": 482,
+				"y": 1,
+				"w": 312,
+				"h": 396
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 312,
+				"h": 396
+			},
+			"sourceSize": {
+				"w": 312,
+				"h": 396
+			}
+		},
+		"category-body_shape.png": {
+			"frame": {
+				"x": 796,
+				"y": 1,
+				"w": 80,
+				"h": 81
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 80,
+				"h": 81
+			},
+			"sourceSize": {
+				"w": 80,
+				"h": 81
+			}
+		},
+		"category-button-hover.png": {
+			"frame": {
+				"x": 878,
+				"y": 1,
+				"w": 78,
+				"h": 78
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 78,
+				"h": 78
+			},
+			"sourceSize": {
+				"w": 78,
+				"h": 78
+			}
+		},
+		"category-dance.png": {
+			"frame": {
+				"x": 958,
+				"y": 1,
+				"w": 16,
+				"h": 17
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 16,
+				"h": 17
+			},
+			"sourceSize": {
+				"w": 16,
+				"h": 17
+			}
+		},
+		"category-earring.png": {
+			"frame": {
+				"x": 976,
+				"y": 1,
+				"w": 80,
+				"h": 81
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 80,
+				"h": 81
+			},
+			"sourceSize": {
+				"w": 80,
+				"h": 81
+			}
+		},
+		"category-emote.png": {
+			"frame": {
+				"x": 123,
+				"y": 84,
+				"w": 24,
+				"h": 19
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 24,
+				"h": 19
+			},
+			"sourceSize": {
+				"w": 24,
+				"h": 19
+			}
+		},
+		"category-eyebrows.png": {
+			"frame": {
+				"x": 149,
+				"y": 84,
+				"w": 80,
+				"h": 81
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 80,
+				"h": 81
+			},
+			"sourceSize": {
+				"w": 80,
+				"h": 81
+			}
+		},
+		"category-eyes.png": {
+			"frame": {
+				"x": 231,
+				"y": 84,
+				"w": 80,
+				"h": 81
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 80,
+				"h": 81
+			},
+			"sourceSize": {
+				"w": 80,
+				"h": 81
+			}
+		},
+		"category-eyewear.png": {
+			"frame": {
+				"x": 313,
+				"y": 84,
+				"w": 80,
+				"h": 81
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 80,
+				"h": 81
+			},
+			"sourceSize": {
+				"w": 80,
+				"h": 81
+			}
+		},
+		"category-facial_hair.png": {
+			"frame": {
+				"x": 395,
+				"y": 84,
+				"w": 80,
+				"h": 81
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 80,
+				"h": 81
+			},
+			"sourceSize": {
+				"w": 80,
+				"h": 81
+			}
+		},
+		"category-feet.png": {
+			"frame": {
+				"x": 796,
+				"y": 84,
+				"w": 80,
+				"h": 81
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 80,
+				"h": 81
+			},
+			"sourceSize": {
+				"w": 80,
+				"h": 81
+			}
+		},
+		"category-fun.png": {
+			"frame": {
+				"x": 1058,
+				"y": 1,
+				"w": 16,
+				"h": 17
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 16,
+				"h": 17
+			},
+			"sourceSize": {
+				"w": 16,
+				"h": 17
+			}
+		},
+		"category-greetings.png": {
+			"frame": {
+				"x": 958,
+				"y": 20,
+				"w": 16,
+				"h": 17
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 16,
+				"h": 17
+			},
+			"sourceSize": {
+				"w": 16,
+				"h": 17
+			}
+		},
+		"category-hair.png": {
+			"frame": {
+				"x": 878,
+				"y": 84,
+				"w": 80,
+				"h": 81
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 80,
+				"h": 81
+			},
+			"sourceSize": {
+				"w": 80,
+				"h": 81
+			}
+		},
+		"category-hands_wear.png": {
+			"frame": {
+				"x": 960,
+				"y": 84,
+				"w": 80,
+				"h": 81
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 80,
+				"h": 81
+			},
+			"sourceSize": {
+				"w": 80,
+				"h": 81
+			}
+		},
+		"category-hat.png": {
+			"frame": {
+				"x": 1,
+				"y": 167,
+				"w": 80,
+				"h": 81
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 80,
+				"h": 81
+			},
+			"sourceSize": {
+				"w": 80,
+				"h": 81
+			}
+		},
+		"category-helmet.png": {
+			"frame": {
+				"x": 83,
+				"y": 167,
+				"w": 80,
+				"h": 81
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 80,
+				"h": 81
+			},
+			"sourceSize": {
+				"w": 80,
+				"h": 81
+			}
+		},
+		"category-lower_body.png": {
+			"frame": {
+				"x": 165,
+				"y": 167,
+				"w": 80,
+				"h": 81
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 80,
+				"h": 81
+			},
+			"sourceSize": {
+				"w": 80,
+				"h": 81
+			}
+		},
+		"category-male.png": {
+			"frame": {
+				"x": 247,
+				"y": 167,
+				"w": 81,
+				"h": 81
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 81,
+				"h": 81
+			},
+			"sourceSize": {
+				"w": 81,
+				"h": 81
+			}
+		},
+		"category-mask.png": {
+			"frame": {
+				"x": 330,
+				"y": 167,
+				"w": 80,
+				"h": 81
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 80,
+				"h": 81
+			},
+			"sourceSize": {
+				"w": 80,
+				"h": 81
+			}
+		},
+		"category-miscellaneous.png": {
+			"frame": {
+				"x": 1058,
+				"y": 20,
+				"w": 16,
+				"h": 17
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 16,
+				"h": 17
+			},
+			"sourceSize": {
+				"w": 16,
+				"h": 17
+			}
+		},
+		"category-mouth.png": {
+			"frame": {
+				"x": 796,
+				"y": 167,
+				"w": 80,
+				"h": 81
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 80,
+				"h": 81
+			},
+			"sourceSize": {
+				"w": 80,
+				"h": 81
+			}
+		},
+		"category-poses.png": {
+			"frame": {
+				"x": 123,
+				"y": 39,
+				"w": 16,
+				"h": 17
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 16,
+				"h": 17
+			},
+			"sourceSize": {
+				"w": 16,
+				"h": 17
+			}
+		},
+		"category-reactions.png": {
+			"frame": {
+				"x": 141,
+				"y": 39,
+				"w": 16,
+				"h": 17
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 16,
+				"h": 17
+			},
+			"sourceSize": {
+				"w": 16,
+				"h": 17
+			}
+		},
+		"category-skin.png": {
+			"frame": {
+				"x": 878,
+				"y": 167,
+				"w": 80,
+				"h": 81
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 80,
+				"h": 81
+			},
+			"sourceSize": {
+				"w": 80,
+				"h": 81
+			}
+		},
+		"category-stunt.png": {
+			"frame": {
+				"x": 214,
+				"y": 39,
+				"w": 16,
+				"h": 17
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 16,
+				"h": 17
+			},
+			"sourceSize": {
+				"w": 16,
+				"h": 17
+			}
+		},
+		"category-tiara.png": {
+			"frame": {
+				"x": 960,
+				"y": 167,
+				"w": 80,
+				"h": 81
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 80,
+				"h": 81
+			},
+			"sourceSize": {
+				"w": 80,
+				"h": 81
+			}
+		},
+		"category-top_head.png": {
+			"frame": {
+				"x": 1,
+				"y": 250,
+				"w": 80,
+				"h": 81
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 80,
+				"h": 81
+			},
+			"sourceSize": {
+				"w": 80,
+				"h": 81
+			}
+		},
+		"category-upper_body.png": {
+			"frame": {
+				"x": 83,
+				"y": 250,
+				"w": 80,
+				"h": 81
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 80,
+				"h": 81
+			},
+			"sourceSize": {
+				"w": 80,
+				"h": 81
+			}
+		},
+		"check-off.png": {
+			"frame": {
+				"x": 232,
+				"y": 39,
+				"w": 18,
+				"h": 17
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 18,
+				"h": 17
+			},
+			"sourceSize": {
+				"w": 18,
+				"h": 17
+			}
+		},
+		"check-on.png": {
+			"frame": {
+				"x": 252,
+				"y": 39,
+				"w": 18,
+				"h": 17
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 18,
+				"h": 17
+			},
+			"sourceSize": {
+				"w": 18,
+				"h": 17
+			}
+		},
+		"colo-slider.png": {
+			"frame": {
+				"x": 165,
+				"y": 250,
+				"w": 266,
+				"h": 45
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 266,
+				"h": 45
+			},
+			"sourceSize": {
+				"w": 266,
+				"h": 45
+			}
+		},
+		"color-slider.png": {
+			"frame": {
+				"x": 796,
+				"y": 250,
+				"w": 266,
+				"h": 31
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 266,
+				"h": 31
+			},
+			"sourceSize": {
+				"w": 266,
+				"h": 31
+			}
+		},
+		"delete-icon.png": {
+			"frame": {
+				"x": 1042,
+				"y": 84,
+				"w": 24,
+				"h": 24
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 24,
+				"h": 24
+			},
+			"sourceSize": {
+				"w": 24,
+				"h": 24
+			}
+		},
+		"delete-outfit-icon.png": {
+			"frame": {
+				"x": 796,
+				"y": 283,
+				"w": 72,
+				"h": 61
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 72,
+				"h": 61
+			},
+			"sourceSize": {
+				"w": 72,
+				"h": 61
+			}
+		},
+		"emote-circle-0.png": {
+			"frame": {
+				"x": 412,
+				"y": 167,
+				"w": 50,
+				"h": 50
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 50,
+				"h": 50
+			},
+			"sourceSize": {
+				"w": 50,
+				"h": 50
+			}
+		},
+		"emote-circle-1.png": {
+			"frame": {
+				"x": 870,
+				"y": 283,
+				"w": 50,
+				"h": 50
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 50,
+				"h": 50
+			},
+			"sourceSize": {
+				"w": 50,
+				"h": 50
+			}
+		},
+		"emote-circle-2.png": {
+			"frame": {
+				"x": 922,
+				"y": 283,
+				"w": 50,
+				"h": 50
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 50,
+				"h": 50
+			},
+			"sourceSize": {
+				"w": 50,
+				"h": 50
+			}
+		},
+		"emote-circle-3.png": {
+			"frame": {
+				"x": 974,
+				"y": 283,
+				"w": 50,
+				"h": 50
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 50,
+				"h": 50
+			},
+			"sourceSize": {
+				"w": 50,
+				"h": 50
+			}
+		},
+		"emote-circle-4.png": {
+			"frame": {
+				"x": 1026,
+				"y": 283,
+				"w": 50,
+				"h": 50
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 50,
+				"h": 50
+			},
+			"sourceSize": {
+				"w": 50,
+				"h": 50
+			}
+		},
+		"emote-circle-5.png": {
+			"frame": {
+				"x": 1,
+				"y": 335,
+				"w": 50,
+				"h": 50
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 50,
+				"h": 50
+			},
+			"sourceSize": {
+				"w": 50,
+				"h": 50
+			}
+		},
+		"emote-circle-6.png": {
+			"frame": {
+				"x": 53,
+				"y": 335,
+				"w": 50,
+				"h": 50
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 50,
+				"h": 50
+			},
+			"sourceSize": {
+				"w": 50,
+				"h": 50
+			}
+		},
+		"emote-circle-7.png": {
+			"frame": {
+				"x": 105,
+				"y": 335,
+				"w": 50,
+				"h": 50
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 50,
+				"h": 50
+			},
+			"sourceSize": {
+				"w": 50,
+				"h": 50
+			}
+		},
+		"emote-circle-8.png": {
+			"frame": {
+				"x": 157,
+				"y": 335,
+				"w": 50,
+				"h": 50
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 50,
+				"h": 50
+			},
+			"sourceSize": {
+				"w": 50,
+				"h": 50
+			}
+		},
+		"emote-circle-9.png": {
+			"frame": {
+				"x": 209,
+				"y": 335,
+				"w": 50,
+				"h": 50
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 50,
+				"h": 50
+			},
+			"sourceSize": {
+				"w": 50,
+				"h": 50
+			}
+		},
+		"empty-category-result.png": {
+			"frame": {
+				"x": 261,
+				"y": 335,
+				"w": 200,
+				"h": 200
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 200,
+				"h": 200
+			},
+			"sourceSize": {
+				"w": 200,
+				"h": 200
+			}
+		},
+		"empty-icon.png": {
+			"frame": {
+				"x": 433,
+				"y": 250,
+				"w": 39,
+				"h": 38
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 39,
+				"h": 38
+			},
+			"sourceSize": {
+				"w": 39,
+				"h": 38
+			}
+		},
+		"empty-search-result.png": {
+			"frame": {
+				"x": 870,
+				"y": 335,
+				"w": 200,
+				"h": 200
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 200,
+				"h": 200
+			},
+			"sourceSize": {
+				"w": 200,
+				"h": 200
+			}
+		},
+		"empty-wearable-field.png": {
+			"frame": {
+				"x": 1,
+				"y": 537,
+				"w": 70,
+				"h": 70
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 70,
+				"h": 70
+			},
+			"sourceSize": {
+				"w": 70,
+				"h": 70
+			}
+		},
+		"hand.png": {
+			"frame": {
+				"x": 73,
+				"y": 537,
+				"w": 96,
+				"h": 96
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 96,
+				"h": 96
+			},
+			"sourceSize": {
+				"w": 96,
+				"h": 96
+			}
+		},
+		"history-icon.png": {
+			"frame": {
+				"x": 1042,
+				"y": 110,
+				"w": 25,
+				"h": 24
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 25,
+				"h": 24
+			},
+			"sourceSize": {
+				"w": 25,
+				"h": 24
+			}
+		},
+		"hover-item.png": {
+			"frame": {
+				"x": 171,
+				"y": 537,
+				"w": 138,
+				"h": 138
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 138,
+				"h": 138
+			},
+			"sourceSize": {
+				"w": 138,
+				"h": 138
+			}
+		},
+		"icon-hidden.png": {
+			"frame": {
+				"x": 272,
+				"y": 39,
+				"w": 20,
+				"h": 20
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 20,
+				"h": 20
+			},
+			"sourceSize": {
+				"w": 20,
+				"h": 20
+			}
+		},
+		"icon-shown.png": {
+			"frame": {
+				"x": 294,
+				"y": 39,
+				"w": 20,
+				"h": 17
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 20,
+				"h": 17
+			},
+			"sourceSize": {
+				"w": 20,
+				"h": 17
+			}
+		},
+		"loading-wearable.png": {
+			"frame": {
+				"x": 311,
+				"y": 537,
+				"w": 120,
+				"h": 120
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 120,
+				"h": 120
+			},
+			"sourceSize": {
+				"w": 120,
+				"h": 120
+			}
+		},
+		"mask-slider.png": {
+			"frame": {
+				"x": 433,
+				"y": 537,
+				"w": 266,
+				"h": 31
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 266,
+				"h": 31
+			},
+			"sourceSize": {
+				"w": 266,
+				"h": 31
+			}
+		},
+		"nft-empty.png": {
+			"frame": {
+				"x": 701,
+				"y": 537,
+				"w": 70,
+				"h": 70
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 70,
+				"h": 70
+			},
+			"sourceSize": {
+				"w": 70,
+				"h": 70
+			}
+		},
+		"outfit-dashed-background.png": {
+			"frame": {
+				"x": 773,
+				"y": 537,
+				"w": 200,
+				"h": 350
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 200,
+				"h": 350
+			},
+			"sourceSize": {
+				"w": 200,
+				"h": 350
+			}
+		},
+		"outfit-save.png": {
+			"frame": {
+				"x": 1042,
+				"y": 136,
+				"w": 35,
+				"h": 36
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 35,
+				"h": 36
+			},
+			"sourceSize": {
+				"w": 35,
+				"h": 36
+			}
+		},
+		"outfit-slot-background.png": {
+			"frame": {
+				"x": 1079,
+				"y": 1,
+				"w": 400,
+				"h": 700
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 400,
+				"h": 700
+			},
+			"sourceSize": {
+				"w": 400,
+				"h": 700
+			}
+		},
+		"outfit-slot-highlight.png": {
+			"frame": {
+				"x": 1,
+				"y": 703,
+				"w": 222,
+				"h": 426
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 222,
+				"h": 426
+			},
+			"sourceSize": {
+				"w": 222,
+				"h": 426
+			}
+		},
+		"outfit-slot-silhouette.png": {
+			"frame": {
+				"x": 225,
+				"y": 703,
+				"w": 146,
+				"h": 268
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 146,
+				"h": 268
+			},
+			"sourceSize": {
+				"w": 146,
+				"h": 268
+			}
+		},
+		"outfits-icon.png": {
+			"frame": {
+				"x": 373,
+				"y": 703,
+				"w": 24,
+				"h": 24
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 24,
+				"h": 24
+			},
+			"sourceSize": {
+				"w": 24,
+				"h": 24
+			}
+		},
+		"rarity-background-base.png": {
+			"frame": {
+				"x": 399,
+				"y": 703,
+				"w": 120,
+				"h": 127
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 120,
+				"h": 127
+			},
+			"sourceSize": {
+				"w": 120,
+				"h": 127
+			}
+		},
+		"rarity-background-common.png": {
+			"frame": {
+				"x": 521,
+				"y": 703,
+				"w": 121,
+				"h": 127
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 121,
+				"h": 127
+			},
+			"sourceSize": {
+				"w": 121,
+				"h": 127
+			}
+		},
+		"rarity-background-epic.png": {
+			"frame": {
+				"x": 644,
+				"y": 703,
+				"w": 120,
+				"h": 127
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 120,
+				"h": 127
+			},
+			"sourceSize": {
+				"w": 120,
+				"h": 127
+			}
+		},
+		"rarity-background-exotic.png": {
+			"frame": {
+				"x": 975,
+				"y": 703,
+				"w": 120,
+				"h": 127
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 120,
+				"h": 127
+			},
+			"sourceSize": {
+				"w": 120,
+				"h": 127
+			}
+		},
+		"rarity-background-legendary.png": {
+			"frame": {
+				"x": 1097,
+				"y": 703,
+				"w": 120,
+				"h": 127
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 120,
+				"h": 127
+			},
+			"sourceSize": {
+				"w": 120,
+				"h": 127
+			}
+		},
+		"rarity-background-mythic.png": {
+			"frame": {
+				"x": 1219,
+				"y": 703,
+				"w": 120,
+				"h": 127
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 120,
+				"h": 127
+			},
+			"sourceSize": {
+				"w": 120,
+				"h": 127
+			}
+		},
+		"rarity-background-rare.png": {
+			"frame": {
+				"x": 1341,
+				"y": 703,
+				"w": 120,
+				"h": 127
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 120,
+				"h": 127
+			},
+			"sourceSize": {
+				"w": 120,
+				"h": 127
+			}
+		},
+		"rarity-background-uncommon.png": {
+			"frame": {
+				"x": 373,
+				"y": 832,
+				"w": 120,
+				"h": 127
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 120,
+				"h": 127
+			},
+			"sourceSize": {
+				"w": 120,
+				"h": 127
+			}
+		},
+		"rarity-background-unique.png": {
+			"frame": {
+				"x": 495,
+				"y": 832,
+				"w": 120,
+				"h": 127
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 120,
+				"h": 127
+			},
+			"sourceSize": {
+				"w": 120,
+				"h": 127
+			}
+		},
+		"rarity-corner-base.png": {
+			"frame": {
+				"x": 617,
+				"y": 832,
+				"w": 46,
+				"h": 45
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 46,
+				"h": 45
+			},
+			"sourceSize": {
+				"w": 46,
+				"h": 45
+			}
+		},
+		"rarity-corner-common.png": {
+			"frame": {
+				"x": 665,
+				"y": 832,
+				"w": 47,
+				"h": 45
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 47,
+				"h": 45
+			},
+			"sourceSize": {
+				"w": 47,
+				"h": 45
+			}
+		},
+		"rarity-corner-epic.png": {
+			"frame": {
+				"x": 714,
+				"y": 832,
+				"w": 46,
+				"h": 45
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 46,
+				"h": 45
+			},
+			"sourceSize": {
+				"w": 46,
+				"h": 45
+			}
+		},
+		"rarity-corner-exotic.png": {
+			"frame": {
+				"x": 975,
+				"y": 832,
+				"w": 46,
+				"h": 45
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 46,
+				"h": 45
+			},
+			"sourceSize": {
+				"w": 46,
+				"h": 45
+			}
+		},
+		"rarity-corner-legendary.png": {
+			"frame": {
+				"x": 1023,
+				"y": 832,
+				"w": 46,
+				"h": 45
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 46,
+				"h": 45
+			},
+			"sourceSize": {
+				"w": 46,
+				"h": 45
+			}
+		},
+		"rarity-corner-mythic.png": {
+			"frame": {
+				"x": 1071,
+				"y": 832,
+				"w": 46,
+				"h": 45
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 46,
+				"h": 45
+			},
+			"sourceSize": {
+				"w": 46,
+				"h": 45
+			}
+		},
+		"rarity-corner-rare.png": {
+			"frame": {
+				"x": 1119,
+				"y": 832,
+				"w": 46,
+				"h": 45
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 46,
+				"h": 45
+			},
+			"sourceSize": {
+				"w": 46,
+				"h": 45
+			}
+		},
+		"rarity-corner-uncommon.png": {
+			"frame": {
+				"x": 1167,
+				"y": 832,
+				"w": 46,
+				"h": 45
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 46,
+				"h": 45
+			},
+			"sourceSize": {
+				"w": 46,
+				"h": 45
+			}
+		},
+		"rarity-corner-unique.png": {
+			"frame": {
+				"x": 1215,
+				"y": 832,
+				"w": 46,
+				"h": 45
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 46,
+				"h": 45
+			},
+			"sourceSize": {
+				"w": 46,
+				"h": 45
+			}
+		},
+		"saturation-slider.png": {
+			"frame": {
+				"x": 975,
+				"y": 879,
+				"w": 266,
+				"h": 31
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 266,
+				"h": 31
+			},
+			"sourceSize": {
+				"w": 266,
+				"h": 31
+			}
+		},
+		"search-icon.png": {
+			"frame": {
+				"x": 1263,
+				"y": 832,
+				"w": 21,
+				"h": 20
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 21,
+				"h": 20
+			},
+			"sourceSize": {
+				"w": 21,
+				"h": 20
+			}
+		},
+		"value-slider.png": {
+			"frame": {
+				"x": 617,
+				"y": 912,
+				"w": 266,
+				"h": 31
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 266,
+				"h": 31
+			},
+			"sourceSize": {
+				"w": 266,
+				"h": 31
+			}
+		}
+	},
+	"meta": {
+		"app": "http://www.codeandweb.com/texturepacker",
+		"version": "1.0",
+		"image": "spritesheet.png",
+		"format": "RGBA8888",
+		"size": {
+			"w": 1480,
+			"h": 1130
+		},
+		"scale": "1"
+	}
+}

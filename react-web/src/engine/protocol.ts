@@ -1,0 +1,510 @@
+// Wire protocol between the React page and the super-user "bridge" scene.
+//
+// Transport is a same-origin BroadcastChannel (exposed to the --ui super-user
+// scene only — see bevy-explorer deploy/web/sandbox_worker.js). Every message is
+// wrapped in an addressed Envelope so each side ignores its own posts.
+//
+// Domain types mirror scene/src/bevy-api/interface.ts so the bridge scene can
+// forward SystemApi results verbatim.
+
+export const BRIDGE_CHANNEL = 'bevy-ui-bridge'
+
+/** Mirrors SystemApi.getPreviousLogin(): userId is absent for a fresh user. */
+export interface PreviousLogin {
+  userId: string | null
+}
+
+/** Mirrors SystemApi.loginPrevious() result. */
+export interface LoginPreviousResult {
+  success: boolean
+  error: string
+}
+
+/** Simple promise-returning SystemApi calls the login slice needs. */
+export type RpcMethod =
+  | 'getPreviousLogin'
+  | 'loginPrevious'
+  | 'loginGuest'
+  | 'loginIdentity'
+  | 'loginCancel'
+  | 'logout'
+
+// ---- page -> scene ---------------------------------------------------------
+
+export interface RpcRequest {
+  kind: 'rpc:req'
+  id: string
+  method: RpcMethod
+}
+
+/** Send a chat message (page → engine via the scene's BevyApi.sendChat). */
+export interface SendChatRequest {
+  kind: 'sendChat'
+  message: string
+  channel: string
+}
+
+/** Sidebar nav actions the React sidebar triggers in the scene (open a menu/popup,
+ *  toggle emote wheel / mic) until those panels are themselves migrated to React. */
+export type NavAction =
+  | 'map'
+  | 'settings'
+  | 'backpack'
+  | 'communities'
+  | 'friends'
+  | 'profile'
+  | 'notifications'
+  | 'emotes'
+  | 'mic'
+
+export interface NavActionRequest {
+  kind: 'navAction'
+  action: NavAction
+}
+
+export type PageToScene =
+  | RpcRequest
+  | SendChatRequest
+  | NavActionRequest
+  | FriendActionRequest
+  | GetSettingsRequest
+  | SetSettingRequest
+  | GetProfileRequest
+  | GetNotificationsRequest
+  | MarkNotificationsReadRequest
+  | GetEmotesRequest
+  | TriggerEmoteRequest
+  | SetMicRequest
+  | GetWearablesRequest
+  | EquipRequest
+  | PreviewAvatarRequest
+  | GetCommunitiesRequest
+  | JoinCommunityRequest
+  | LeaveCommunityRequest
+  | GetCommunityDetailRequest
+  | GetMapRequest
+  | TeleportRequest
+  | EngineViewportRequest
+
+// ---- scene -> page ---------------------------------------------------------
+
+export interface RpcResponse {
+  kind: 'rpc:res'
+  id: string
+  ok: boolean
+  value?: unknown
+  error?: string
+}
+
+/** Fired once the local player has spawned in-world (getPlayer() non-null). */
+export interface PlayerReadyEvent {
+  kind: 'event'
+  name: 'playerReady'
+}
+
+/** Mirrors SystemApi SceneLoadingWindow — the scene-asset loading state. */
+export interface SceneLoadingState {
+  visible: boolean
+  realmConnected: boolean
+  title: string
+  pendingAssets: number | null
+}
+
+/** Streamed scene-asset loading updates (drives the React loading screen). */
+export interface SceneLoadingMessage {
+  kind: 'sceneLoading'
+  state: SceneLoadingState
+}
+
+/** Mirrors SystemApi ChatMessageDefinition (sender_address → sender). */
+export interface ChatMessage {
+  sender: string
+  message: string
+  channel: string
+}
+
+/** Streamed incoming chat messages (scene → page). */
+export interface ChatRelayMessage {
+  kind: 'chat'
+  chat: ChatMessage
+}
+
+/** Chat panel visibility, driven by the scene's sidebar chat icon (hud.chatOpen). */
+export interface ChatVisibilityMessage {
+  kind: 'chatVisibility'
+  open: boolean
+}
+
+/** A nearby player (from the scene's PlayerIdentityData set). */
+export interface NearbyMember {
+  address: string
+  name: string
+  /** Avatar face snapshot URL (when the profile has loaded). */
+  picture?: string
+}
+
+/** Nearby members + count, polled by the scene (chat header "Nearby · N"). */
+export interface MembersMessage {
+  kind: 'members'
+  members: NearbyMember[]
+}
+
+/** A full menu page (map/settings/backpack/communities) is open in the scene — the
+ *  React HUD (sidebar + chat) hides while it is, since the menu has its own nav. */
+export interface MenuVisibilityMessage {
+  kind: 'menuVisibility'
+  open: boolean
+}
+
+export type FriendStatus = 'online' | 'offline' | 'away'
+
+/** Mirrors the scene's FriendStatusData (profilePictureUrl → picture). */
+export interface Friend {
+  address: string
+  name: string
+  picture?: string
+  status: FriendStatus
+}
+
+/** Mirrors the scene's FriendRequestData. */
+export interface FriendRequest {
+  address: string
+  name: string
+  picture?: string
+  message?: string
+  id: string
+  createdAt?: number
+}
+
+/** Friends snapshot relayed from the scene's social state (hud.friends + requests).
+ *  `available` is false for guests / before the relationship snapshot is seeded. */
+export interface FriendsMessage {
+  kind: 'friends'
+  available: boolean
+  friends: Friend[]
+  received: FriendRequest[]
+  sent: FriendRequest[]
+  /** Blocked addresses (names/avatars not resolved here). */
+  blocked: string[]
+}
+
+/** Friends social action (page → scene → BevyApi.social.*). Guest-disabled. */
+export type FriendAction = 'request' | 'accept' | 'reject' | 'cancel' | 'delete' | 'block' | 'unblock'
+
+export interface FriendActionRequest {
+  kind: 'friendAction'
+  op: FriendAction
+  address: string
+}
+
+export interface SettingVariant {
+  name: string
+  description: string
+}
+
+/** Mirrors the engine's ExplorerSetting (BevyApi.getSettings). A setting is a
+ *  Select when it has namedVariants, otherwise a numeric Slider; a 2-variant or
+ *  0..1 setting renders as a Toggle. */
+export interface Setting {
+  name: string
+  category: string
+  description: string
+  minValue: number
+  maxValue: number
+  namedVariants: SettingVariant[]
+  value: number
+  default: number
+  stepSize: number
+}
+
+export interface SettingsMessage {
+  kind: 'settings'
+  settings: Setting[]
+}
+
+/** The local player's profile (passport). */
+export interface Profile {
+  address: string
+  name: string
+  picture?: string
+  hasClaimedName: boolean
+  isGuest: boolean
+  description?: string
+  links?: { title: string; url: string }[]
+}
+
+export interface ProfileMessage {
+  kind: 'profile'
+  profile: Profile | null
+}
+
+export interface GetProfileRequest {
+  kind: 'getProfile'
+}
+
+/** Mirrors the engine's BaseNotification (metadata varies by type). */
+export interface AppNotification {
+  id: string
+  type: string
+  timestamp: string
+  read: boolean
+  metadata: Record<string, unknown>
+}
+
+export interface NotificationsMessage {
+  kind: 'notifications'
+  notifications: AppNotification[]
+}
+
+export interface GetNotificationsRequest {
+  kind: 'getNotifications'
+}
+
+/** Persist "mark as read" for the given notification ids (signed PUT in the relay). */
+export interface MarkNotificationsReadRequest {
+  kind: 'markNotificationsRead'
+  ids: string[]
+}
+
+/** An equipped emote slot (0–9). */
+export interface Emote {
+  slot: number
+  urn: string
+  name: string
+  thumbnail?: string
+  rarity?: string
+}
+
+export interface EmotesMessage {
+  kind: 'emotes'
+  emotes: Emote[]
+}
+
+export interface MicMessage {
+  kind: 'mic'
+  enabled: boolean
+  available: boolean
+}
+
+export interface SetMicRequest {
+  kind: 'setMic'
+  enabled: boolean
+}
+
+/** The local player's current parcel (for the map marker / centering). */
+export interface MapMessage {
+  kind: 'mapState'
+  x: number
+  y: number
+}
+
+export interface GetMapRequest {
+  kind: 'getMap'
+}
+
+/** Teleport to a parcel (page → scene → teleportTo). */
+export interface TeleportRequest {
+  kind: 'teleport'
+  x: number
+  y: number
+}
+
+/**
+ * Tells the scene to render an engine-backed view (the rich map, or the avatar
+ * preview) into a screen rectangle that a React page has carved out as transparent.
+ * `rect` is in CSS pixels relative to the viewport; null hides the view (on close).
+ */
+export interface EngineViewportRequest {
+  kind: 'engineViewport'
+  region: 'map' | 'avatarPreview'
+  rect: { x: number; y: number; width: number; height: number } | null
+}
+
+/** A community (from the scene's fetchCommunities). */
+export interface Community {
+  id: string
+  name: string
+  description: string
+  thumbnail?: string
+  membersCount: number
+  /** 'owner' | 'moderator' | 'member' | 'none' — membership of the local user. */
+  role: string
+  ownerName: string
+  /** 'public' | 'private' — gates the join flow (public = join, private = request). */
+  privacy?: string
+}
+
+export interface CommunitiesMessage {
+  kind: 'communities'
+  communities: Community[]
+}
+
+export interface GetCommunitiesRequest {
+  kind: 'getCommunities'
+}
+
+export interface JoinCommunityRequest {
+  kind: 'joinCommunity'
+  id: string
+}
+
+export interface LeaveCommunityRequest {
+  kind: 'leaveCommunity'
+  id: string
+}
+
+/** A member of a community (Members tab). */
+export interface CommunityMember {
+  address: string
+  name: string
+  /** 'owner' | 'moderator' | 'member' */
+  role: string
+  picture?: string
+  hasClaimedName?: boolean
+  /** the local user already follows them (hides "Add Friend"). */
+  isFriend?: boolean
+}
+
+/** A place shared by a community (Places tab). */
+export interface CommunityPlace {
+  id: string
+  title: string
+  thumbnail?: string
+  /** e.g. "-66,56" */
+  positions?: string
+  /** 0..1 like rate. */
+  likeRate?: number
+}
+
+/** An announcement post (Announcements tab). */
+export interface CommunityPost {
+  id: string
+  author: string
+  authorAddress: string
+  authorPicture?: string
+  text: string
+  timestamp: number
+  likes: number
+}
+
+/** An upcoming event (right-hand sidebar). */
+export interface CommunityEvent {
+  id: string
+  name: string
+  thumbnail?: string
+  startsAt: number
+}
+
+/** A camera-reel photo shared in the community (Photos tab). */
+export interface CommunityPhoto {
+  id: string
+  url: string
+  thumbnail?: string
+}
+
+/** Request the per-community detail when the modal opens. */
+export interface GetCommunityDetailRequest {
+  kind: 'getCommunityDetail'
+  id: string
+}
+export interface CommunityDetailMessage {
+  kind: 'communityDetail'
+  id: string
+  members: CommunityMember[]
+  posts: CommunityPost[]
+  places: CommunityPlace[]
+  events: CommunityEvent[]
+  photos: CommunityPhoto[]
+}
+
+/** An owned wearable (backpack catalog item). */
+export interface Wearable {
+  urn: string
+  name: string
+  rarity: string
+  category: string
+  thumbnail?: string
+  count?: number
+  equipped: boolean
+}
+
+export interface WearablesMessage {
+  kind: 'wearables'
+  wearables: Wearable[]
+}
+
+export interface GetWearablesRequest {
+  kind: 'getWearables'
+}
+
+/** Equip a new full wearable set (page → scene → BevyApi.setAvatar). */
+export interface EquipRequest {
+  kind: 'equip'
+  urns: string[]
+}
+
+/** Preview a wearable set on the Backpack avatar WITHOUT persisting it to the profile
+ *  (selecting an item, not equipping). `urns: null` clears the preview (revert to profile). */
+export interface PreviewAvatarRequest {
+  kind: 'previewAvatar'
+  urns: string[] | null
+}
+
+export interface GetEmotesRequest {
+  kind: 'getEmotes'
+}
+
+export interface TriggerEmoteRequest {
+  kind: 'triggerEmote'
+  urn: string
+}
+
+export interface GetSettingsRequest {
+  kind: 'getSettings'
+}
+
+export interface SetSettingRequest {
+  kind: 'setSetting'
+  name: string
+  value: number
+}
+
+/** One hover hint for a world entity under the reticle (from the engine getHoverStream). */
+export interface HoverAction {
+  /** The `InputAction` enum the action is bound to; React maps it to a key label (E / 🖱 / 1…). */
+  button: number
+  text: string
+  /** false → out of range ("Too far, get closer"). */
+  enabled: boolean
+}
+/** Hover hints to show near the reticle. Empty array = nothing hovered. */
+export interface HoverMessage {
+  kind: 'hover'
+  actions: HoverAction[]
+}
+
+export type SceneToPage =
+  | RpcResponse
+  | HoverMessage
+  | PlayerReadyEvent
+  | SceneLoadingMessage
+  | ChatRelayMessage
+  | ChatVisibilityMessage
+  | MembersMessage
+  | MenuVisibilityMessage
+  | FriendsMessage
+  | SettingsMessage
+  | ProfileMessage
+  | NotificationsMessage
+  | EmotesMessage
+  | MicMessage
+  | WearablesMessage
+  | CommunitiesMessage
+  | CommunityDetailMessage
+  | MapMessage
+
+// ---- envelope --------------------------------------------------------------
+
+export type Envelope =
+  | { to: 'scene'; msg: PageToScene }
+  | { to: 'page'; msg: SceneToPage }

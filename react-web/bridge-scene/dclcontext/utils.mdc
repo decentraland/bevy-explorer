@@ -1,0 +1,467 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# @dcl-sdk/utils Context7 Reference
+
+## Installation & Import
+```typescript
+// Install via npm
+npm install @dcl-sdk/utils
+
+// Import in your code
+import * as utils from '@dcl-sdk/utils'
+```
+
+## Debug Helpers
+
+### Add Label
+```typescript
+const entity = engine.addEntity()
+// Add floating text label above an entity
+utils.addLabel(
+  'Label Text',     // Text to display
+  entity,           // Parent entity
+  true,             // Billboard mode (optional, default: true)
+  Color4.Black(),   // Text color (optional, default: Black)
+  3,                // Text size (optional, default: 3)
+  {x: 0, y: 1.5, z: 0} // Position offset (optional)
+)
+```
+
+### Add Test Cube
+```typescript
+// Create a simple test cube
+const cube = utils.addTestCube(
+  { position: { x: 1, y: 1, z: 1 } },  // Transform object
+  (e) => { console.log('clicked') },   // Click callback (optional)
+  'Cube Label',                        // Label text (optional)
+  Color4.Red(),                        // Cube color (optional)
+  false,                               // Sphere shape instead (optional, default: false)
+  false                                // Disable collider (optional, default: false)
+)
+```
+
+## Tweens
+
+### Translation
+```typescript
+// Move entity from one position to another over time
+utils.tweens.startTranslation(
+  entity,                      // Entity to move
+  Vector3.create(1, 1, 1),     // Start position
+  Vector3.create(5, 1, 5),     // End position
+  2,                           // Duration in seconds
+  utils.InterpolationType.LINEAR, // Easing function (optional)
+  () => { console.log('Done') }   // Completion callback (optional)
+)
+
+// Stop translation
+utils.tweens.stopTranslation(entity)
+```
+
+### Rotation
+```typescript
+// Rotate entity over time
+utils.tweens.startRotation(
+  entity,
+  Quaternion.fromEulerDegrees(0, 0, 0),   // Start rotation
+  Quaternion.fromEulerDegrees(0, 90, 0),  // End rotation
+  2,                                      // Duration in seconds
+  utils.InterpolationType.EASEINQUAD,     // Easing function (optional)
+  () => { console.log('Done') }           // Completion callback (optional)
+)
+
+// Stop rotation
+utils.tweens.stopRotation(entity)
+```
+
+### Scaling
+```typescript
+// Scale entity over time
+utils.tweens.startScaling(
+  entity,
+  Vector3.create(1, 1, 1),     // Start scale
+  Vector3.create(2, 2, 2),     // End scale
+  2,                           // Duration in seconds
+  utils.InterpolationType.LINEAR, // Easing function (optional)
+  () => { console.log('Done') }   // Completion callback (optional)
+)
+
+// Stop scaling
+utils.tweens.stopScaling(entity)
+```
+
+### Interpolation Types
+```typescript
+// Available interpolation types:
+utils.InterpolationType.LINEAR
+utils.InterpolationType.EASEINQUAD
+utils.InterpolationType.EASEOUTQUAD
+utils.InterpolationType.EASEQUAD
+utils.InterpolationType.EASEINSINE
+utils.InterpolationType.EASEOUTSINE
+utils.InterpolationType.EASESINE
+utils.InterpolationType.EASEINEXPO
+utils.InterpolationType.EASEOUTEXPO
+utils.InterpolationType.EASEEXPO
+utils.InterpolationType.EASEINELASTIC
+utils.InterpolationType.EASEOUTELASTIC
+utils.InterpolationType.EASEELASTIC
+utils.InterpolationType.EASEINBOUNCE
+utils.InterpolationType.EASEOUTBOUNCE
+utils.InterpolationType.EASEBOUNCE
+```
+
+## Perpetual Motions
+
+### Rotation
+```typescript
+// Start continuous rotation
+utils.perpetualMotions.smoothRotation(
+  entity,     // Entity to rotate
+  2000,       // Duration of full 360° rotation in milliseconds
+  'y'         // Rotation axis (optional, default: 'y')
+)
+
+// Stop rotation
+utils.perpetualMotions.stopRotation(entity)
+```
+
+## Paths
+
+### Straight Path
+```typescript
+// Move entity along a straight path through points
+utils.paths.startStraightPath(
+  entity,                 // Entity to move
+  [                       // Array of Vector3 points
+    Vector3.create(1, 1, 1),
+    Vector3.create(5, 1, 5),
+    Vector3.create(10, 1, 2)
+  ],
+  10,                     // Duration in seconds
+  true,                   // Face movement direction (optional, default: false)
+  () => {                 // Completion callback (optional)
+    console.log('Path complete')
+  },
+  (pointIndex, point, nextPoint) => {  // Point reached callback (optional)
+    console.log(`Reached point ${pointIndex}`)
+  }
+)
+```
+
+### Smooth Path
+```typescript
+// Move entity along a smooth curve through points
+utils.paths.startSmoothPath(
+  entity,                 // Entity to move
+  [                       // Array of Vector3 points
+    Vector3.create(1, 1, 1),
+    Vector3.create(5, 1, 5),
+    Vector3.create(10, 1, 2)
+  ],
+  10,                     // Duration in seconds
+  20,                     // Number of segments (higher = smoother)
+  true,                   // Face movement direction (optional, default: false)
+  () => {                 // Completion callback (optional)
+    console.log('Path complete')
+  },
+  (pointIndex, point, nextPoint) => {  // Point reached callback (optional)
+    console.log(`Reached point ${pointIndex}`)
+  }
+)
+```
+
+### Stop Path
+```typescript
+// Stop path movement
+utils.paths.stopPath(entity)
+```
+
+## Toggles
+
+### Create Toggle
+```typescript
+// Add toggle behavior to entity
+utils.toggles.addToggle(
+  entity,                   // Entity to toggle
+  utils.ToggleState.Off,    // Initial state (On or Off)
+  (state) => {              // Change callback
+    if (state === utils.ToggleState.On) {
+      // Handle ON state
+    } else {
+      // Handle OFF state
+    }
+  }
+)
+
+// Check toggle state
+const isOn = utils.toggles.isOn(entity)
+
+// Change state
+utils.toggles.set(entity, utils.ToggleState.On)  // Set to specific state
+utils.toggles.flip(entity)                       // Toggle between states
+
+// Remove toggle
+utils.toggles.removeToggle(entity)
+```
+
+## Timers
+
+### Timeouts & Intervals
+```typescript
+// Run function after delay
+const timeoutId = utils.timers.setTimeout(() => {
+  console.log('Delayed operation')
+}, 2000)  // milliseconds
+
+// Cancel timeout
+utils.timers.clearTimeout(timeoutId)
+
+// Run function repeatedly
+const intervalId = utils.timers.setInterval(() => {
+  console.log('Repeating operation')
+}, 1000)  // milliseconds
+
+// Cancel interval
+utils.timers.clearInterval(intervalId)
+```
+
+## Triggers
+
+### Trigger Areas
+```typescript
+// Predefined layers
+utils.LAYER_1, utils.LAYER_2, ... utils.LAYER_8
+utils.ALL_LAYERS   // All layers combined
+utils.NO_LAYERS    // No layers
+
+// Add trigger area to entity
+utils.triggers.addTrigger(
+  entity,               // Entity to add trigger to
+  utils.LAYER_2,        // Layers this entity belongs to
+  utils.LAYER_1,        // Layers that can trigger this entity
+  [                     // Array of shapes defining trigger area
+    {
+      type: 'box',      // Box trigger shape
+      position: { x: 0, y: 0, z: 0 },  // Optional, relative to entity
+      scale: { x: 1, y: 1, z: 1 }      // Optional, default: 1,1,1
+    },
+    {
+      type: 'sphere',   // Sphere trigger shape
+      position: { x: 0, y: 0, z: 0 },  // Optional
+      radius: 2                        // Optional, default: 1
+    }
+  ],
+  (otherEntity) => {    // On enter callback
+    console.log(`${otherEntity} entered trigger`)
+  },
+  (otherEntity) => {    // On exit callback (optional)
+    console.log(`${otherEntity} exited trigger`)
+  },
+  Color4.Red()          // Debug visualization color (optional)
+)
+
+// Enable debug visualization of all triggers
+utils.triggers.enableDebugDraw(true)
+
+// Enable/disable a trigger
+utils.triggers.enableTrigger(entity, false)  // Disable
+utils.triggers.enableTrigger(entity, true)   // Enable
+
+// Remove trigger
+utils.triggers.removeTrigger(entity)
+```
+
+### One-Time Trigger
+```typescript
+// Create trigger that only fires once
+utils.triggers.oneTimeTrigger(
+  entity,
+  utils.NO_LAYERS,
+  utils.LAYER_1,
+  [{ type: 'box', scale: { x: 5, y: 2, z: 5 } }],
+  (otherEntity) => {
+    console.log('Triggered once')
+  }
+)
+```
+
+## Math Helpers
+
+### Remap Value
+```typescript
+// Remap value from one range to another
+const result = utils.remap(
+  5,      // Input value
+  0, 10,  // Input range (min, max)
+  0, 100  // Output range (min, max)
+)  // Returns 50
+```
+
+### World Position & Rotation
+```typescript
+// Get world position considering parent entities
+const worldPos = utils.getWorldPosition(entity)
+
+// Get world rotation considering parent entities
+const worldRot = utils.getWorldRotation(entity)
+```
+
+## Entity Helpers
+
+```typescript
+// Get entity's parent
+const parent = utils.getEntityParent(entity)
+
+// Get all children of entity
+const children = utils.getEntitiesWithParent(parentEntity)
+
+// Get player position
+const playerPos = utils.getPlayerPosition()
+
+// Play sound
+utils.playSound(
+  'sounds/mySound.mp3',       // Sound file path
+  false,                      // Loop (optional, default: false)
+  Vector3.create(10, 1, 10)   // Position (optional, default: camera position)
+)
+```
+
+## Action Sequences
+
+```typescript
+// Define custom actions implementing IAction interface
+class MyAction implements utils.actions.IAction {
+  hasFinished: boolean = false
+  
+  onStart(): void {
+    // Action start logic
+    // Set hasFinished = true when done
+  }
+  
+  update(dt: number): void {
+    // Per-frame logic
+  }
+  
+  onFinish(): void {
+    // Clean-up logic
+  }
+}
+
+// Create sequence
+const sequence = new utils.actions.SequenceBuilder()
+  .then(new MyAction())                     // Add action
+  .if(() => someBooleanCondition)           // Conditional branch
+    .then(new MyAction())
+  .else()
+    .then(new MyAction())
+  .endIf()
+  .while(() => someLoopCondition)           // Loop
+    .then(new MyAction())
+  .endWhile()
+
+// Run sequence
+const runner = new utils.actions.SequenceRunner(
+  engine,
+  sequence,
+  () => { console.log('Sequence complete') }  // Completion callback
+)
+
+// Control sequence
+runner.stop()      // Pause execution
+runner.resume()    // Resume execution
+runner.reset()     // Restart from beginning
+runner.destroy()   // Remove sequence
+```
+
+## Common Patterns
+
+### Moving entity between positions on click
+```typescript
+const entity = utils.addTestCube({ position: { x: 1, y: 1, z: 1 } })
+
+// Define positions
+const pos1 = Vector3.create(1, 1, 1)
+const pos2 = Vector3.create(5, 1, 5)
+
+// Add toggle behavior for position change
+utils.toggles.addToggle(entity, utils.ToggleState.Off, (state) => {
+  if (state === utils.ToggleState.On) {
+    utils.tweens.startTranslation(entity, pos1, pos2, 1)
+  } else {
+    utils.tweens.startTranslation(entity, pos2, pos1, 1)
+  }
+})
+
+// Toggle position on click
+pointerEventsSystem.onPointerDown(
+  entity,
+  () => utils.toggles.flip(entity),
+  { button: InputAction.IA_POINTER, hoverText: 'Move' }
+)
+```
+
+### Creating a looping path
+```typescript
+function createLoopingPath(entity) {
+  const path = [
+    Vector3.create(1, 1, 1),
+    Vector3.create(5, 1, 5),
+    Vector3.create(8, 1, 2),
+    Vector3.create(1, 1, 1)  // Back to start for seamless loop
+  ]
+  
+  function startPath() {
+    utils.paths.startSmoothPath(
+      entity,
+      path,
+      10,
+      20,
+      true,
+      () => startPath()  // Restart path when done
+    )
+  }
+  
+  startPath()
+}
+```
+
+### Timed sequence of actions
+```typescript
+// Simple sequence using timers
+function runSequence(entity) {
+  // Initial state
+  Transform.getMutable(entity).scale = Vector3.create(1, 1, 1)
+  
+  // First action
+  utils.tweens.startScaling(
+    entity,
+    Vector3.create(1, 1, 1),
+    Vector3.create(2, 2, 2),
+    1
+  )
+  
+  // Second action after delay
+  utils.timers.setTimeout(() => {
+    utils.tweens.startRotation(
+      entity,
+      Quaternion.fromEulerDegrees(0, 0, 0),
+      Quaternion.fromEulerDegrees(0, 180, 0),
+      1
+    )
+  }, 1200)
+  
+  // Third action after longer delay
+  utils.timers.setTimeout(() => {
+    utils.tweens.startTranslation(
+      entity,
+      Transform.get(entity).position,
+      Vector3.create(5, 1, 5),
+      2
+    )
+  }, 2500)
+}
+```

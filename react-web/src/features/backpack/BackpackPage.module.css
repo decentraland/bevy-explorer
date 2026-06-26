@@ -1,0 +1,544 @@
+/* Backpack — avatar cutout (left) + content panel (categories column + grid) + detail
+   panel (right). Body is the MainMenuShell pass-through hole, so opaque pieces paint
+   their own purple and re-enable pointer events; the avatar column stays transparent. */
+.layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* Top bar row. */
+.head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 28px 14px;
+  /* Unity backdrop. `fixed` anchors the radial to the viewport so the head and the panel
+     area below share one continuous gradient across the transparent avatar cutout. */
+  background: var(--menu-bg) fixed;
+  pointer-events: auto;
+}
+.title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--text);
+}
+.tabs {
+  display: flex;
+  gap: 8px;
+}
+.tab {
+  height: 34px;
+  padding: 0 18px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--fill-3);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    transform 0.16s var(--ease-spring, ease),
+    background-color var(--dur-fast) ease;
+}
+.tab:hover {
+  transform: scale(1.06);
+}
+.tab:hover:not(.tabActive) {
+  background: var(--fill-4);
+}
+.tabActive,
+.tabActive:hover {
+  background: var(--accent);
+  animation: pillPop 0.24s var(--ease-spring, ease);
+}
+@keyframes pillPop {
+  0% {
+    transform: scale(0.92);
+  }
+  60% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.filterBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--white-10);
+  border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+.filterBtn:hover {
+  background: var(--white-10);
+}
+.search {
+  width: 240px;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--white-10);
+  border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+}
+.search::placeholder {
+  color: var(--ink-45);
+}
+
+/* Avatar + content + detail. */
+.main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.preview {
+  position: relative;
+  flex: 0 0 29%;
+  min-width: 300px;
+}
+
+/* Opaque panel area behind the content + detail (everything except the avatar preview),
+   so the live world doesn't show through the transparent-body cutout. */
+.panelArea {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  background: var(--menu-bg) fixed;
+  pointer-events: auto;
+}
+
+/* Content panel (opaque). */
+.content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 16px 0 20px 16px;
+  border-radius: 16px;
+  background: rgba(13, 6, 24, 0.55);
+  pointer-events: auto;
+}
+.contentHead {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--white-10);
+}
+.sectionTabs {
+  display: flex;
+  gap: 18px;
+}
+.sectionTab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 2px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--ink-6);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.sectionTab:hover {
+  color: var(--text);
+}
+.sectionActive {
+  color: var(--text);
+  border-bottom-color: var(--brand);
+}
+.marketplace {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--white-10);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+.marketplace:hover {
+  background: var(--white-10);
+}
+
+.catalog {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* Category column — 2-wide grid of tiles showing the equipped item per body part. */
+.catColumn {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  align-content: start;
+  width: 204px;
+  padding: 16px 14px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.catTile {
+  position: relative;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--white-10);
+  border-radius: 10px;
+  background-color: rgba(255, 255, 255, 0.06);
+  color: var(--ink-6);
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.2s ease;
+}
+/* Hover focus highlight (::after) + selected fill (::before) both scale in from 0 with the
+   Unity AvatarSlotView spring (Ease.OutBack, 0.2s) — the colour "paints in" with a bounce. */
+.catTile::before,
+.catTile::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  transform: scale(0);
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+}
+/* Selected fill — behind the icon (icon turns white on top). */
+.catTile::before {
+  z-index: 0;
+  background-color: var(--accent);
+}
+/* Hover wash — ON TOP so it's visible even over an equipped thumbnail; paints in with the spring. */
+.catTile::after {
+  z-index: 3;
+  background-color: rgba(255, 116, 58, 0.32);
+}
+.catTile:hover:not(.catActive) {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 4px 14px rgba(255, 116, 58, 0.4);
+}
+.catTile:hover:not(.catActive)::after {
+  transform: scale(1);
+}
+.catActive {
+  border-color: var(--accent);
+}
+.catActive::before {
+  transform: scale(1);
+}
+/* Icon / thumbnail ride above the fill layers. */
+.catThumb,
+.catGlyph {
+  position: relative;
+  z-index: 1;
+}
+.catActive .catGlyph {
+  color: #fff;
+}
+.catTile:hover:not(.catActive) .catGlyph {
+  color: var(--accent);
+}
+.catThumb {
+  width: 88%;
+  height: 88%;
+  object-fit: contain;
+}
+.catGlyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-6, rgba(255, 255, 255, 0.7));
+  transition:
+    color 0.3s ease,
+    transform 0.25s ease;
+}
+
+/* Grid area. */
+.gridArea {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px 24px;
+}
+.chips {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.chip {
+  height: 30px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--fill-3);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.chipActive {
+  background: var(--white-10);
+}
+.chipSel {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 14px;
+  border-radius: var(--r-pill);
+  color: #1a1206;
+  font-size: 13px;
+  font-weight: 700;
+}
+.grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 148px));
+  justify-content: center;
+  gap: 16px;
+  align-content: start;
+}
+.emoteCard {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--white-10);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  overflow: hidden;
+}
+.emoteCard img {
+  width: 78%;
+  height: 78%;
+  object-fit: contain;
+}
+
+.pager {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding-top: 14px;
+}
+.pageArrow,
+.pageNum {
+  min-width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.pageArrow:disabled {
+  color: var(--ink-45);
+  cursor: default;
+}
+.pageNum:hover {
+  background: var(--white-10);
+}
+.pageNumActive {
+  background: var(--accent);
+  color: #1a1206;
+}
+
+/* Emotes tab — numbered equipped-slot list. */
+.slotList {
+  flex: none;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.slotRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-family: inherit;
+  cursor: pointer;
+}
+.slotRow:hover,
+.slotRowActive {
+  background: rgba(255, 255, 255, 0.09);
+}
+.slotNum {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #1a1206;
+  font-size: 13px;
+  font-weight: 800;
+}
+.slotName {
+  flex: 1;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.slotThumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.slotThumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Detail panel (right). */
+.detail {
+  flex: 0 0 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 16px 20px 16px;
+  padding: 22px 22px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.06);
+  pointer-events: auto;
+}
+.detailEmpty {
+  margin: auto;
+  color: var(--ink-45);
+  font-size: 14px;
+}
+.detailThumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 14px;
+  overflow: hidden;
+}
+.detailThumb img {
+  width: 86%;
+  height: 86%;
+  object-fit: contain;
+}
+.detailName {
+  margin-top: 4px;
+  font-size: 17px;
+  font-weight: 800;
+  text-align: center;
+  color: var(--text);
+}
+.detailRarity {
+  padding: 4px 14px;
+  border-radius: var(--r-pill);
+  color: #1a1206;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.detailMetaRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 6px;
+}
+.detailMetaLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--ink-45);
+}
+.detailMetaValue {
+  font-size: 13px;
+  color: var(--text);
+}
+.detailDescLabel {
+  align-self: flex-start;
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--ink-45);
+}
+.detailDesc {
+  align-self: flex-start;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-6);
+}
+
+.empty {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--ink-45);
+}

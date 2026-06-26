@@ -1,0 +1,69 @@
+.root {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: var(--z-hud);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Center reticle, drawn only while pointer-locked (browser hides the OS cursor then). */
+.reticle {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.55);
+  transition:
+    transform var(--dur-fast) ease,
+    background var(--dur-fast) ease;
+}
+/* Highlight when the engine reports an interactable under the reticle. */
+.reticleActive {
+  transform: scale(1.6);
+  background: var(--accent);
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.55), 0 0 8px rgba(255, 116, 58, 0.7);
+}
+
+/* Hover prompt, just below the reticle. */
+.hints {
+  position: absolute;
+  top: calc(50% + 22px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 11px 5px 6px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-family: var(--font-family);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.hintDisabled {
+  opacity: 0.6;
+}
+.hintText {
+  font-weight: 500;
+}
+.cap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+}

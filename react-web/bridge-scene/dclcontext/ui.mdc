@@ -1,0 +1,900 @@
+# @dcl-ui-toolkit Context7 Reference
+
+## Installation & Import
+```typescript
+// Install via npm
+npm install dcl-ui-toolkit
+
+// Import in your code
+import * as ui from 'dcl-ui-toolkit'
+import { ReactEcsRenderer } from '@dcl/sdk/react-ecs'
+import { Color4 } from '@dcl/sdk/math'
+```
+
+## Basic Setup
+
+### Initialize UI Renderer
+```typescript
+// Set up the UI renderer to display toolkit components
+ReactEcsRenderer.setUiRenderer(ui.render)
+
+// Or combine with custom UI
+const uiComponent = () => [
+  ui.render(),
+  MyCustomUI()
+]
+ReactEcsRenderer.setUiRenderer(uiComponent)
+```
+
+## Text Announcement
+
+### Simple Text Announcement
+```typescript
+// Show a text announcement that fades out
+ui.displayAnnouncement('Welcome to the scene!')
+
+// With custom duration (default: 3 seconds)
+ui.displayAnnouncement('Quest completed!', 5)
+```
+
+### Styled Text Announcement
+```typescript
+// Custom styled announcement
+ui.displayAnnouncement('Important message!', 4, {
+  color: Color4.Red(),
+  fontSize: 24,
+  textAlign: 'middle-center'
+})
+```
+
+## Counter Display
+
+### Basic Counter
+```typescript
+// Create a counter that displays in the corner
+const counter = ui.createCounter({
+  value: 0,
+  xOffset: 10,
+  yOffset: 10
+})
+
+// Update counter value
+counter.setValue(5)
+
+// Increment/decrement
+counter.increment()
+counter.decrement()
+
+// Hide/show counter
+counter.hide()
+counter.show()
+```
+
+### Styled Counter
+```typescript
+const styledCounter = ui.createCounter({
+  value: 100,
+  xOffset: 50,
+  yOffset: 50,
+  color: Color4.Yellow(),
+  fontSize: 20,
+  textAlign: 'middle-left'
+})
+```
+
+## Corner Labels
+
+### Simple Corner Label
+```typescript
+// Create a label in the corner
+const label = ui.createCornerLabel({
+  value: 'Score: 0',
+  xOffset: 10,
+  yOffset: 50
+})
+
+// Update label text
+label.setValue('Score: 150')
+
+// Hide/show label
+label.hide()
+label.show()
+```
+
+### Styled Corner Label
+```typescript
+const styledLabel = ui.createCornerLabel({
+  value: 'Health: 100%',
+  xOffset: 10,
+  yOffset: 80,
+  color: Color4.Green(),
+  fontSize: 16,
+  textAlign: 'middle-left'
+})
+```
+
+## Progress Bars
+
+### Basic Progress Bar
+```typescript
+// Create a progress bar
+const progressBar = ui.createBar({
+  value: 50,  // Percentage (0-100)
+  xOffset: 10,
+  yOffset: 120,
+  width: 200,
+  height: 20
+})
+
+// Update progress
+progressBar.setValue(75)
+
+// Hide/show bar
+progressBar.hide()
+progressBar.show()
+```
+
+### Styled Progress Bar
+```typescript
+const styledBar = ui.createBar({
+  value: 25,
+  xOffset: 10,
+  yOffset: 150,
+  width: 300,
+  height: 25,
+  color: Color4.Blue(),
+  backgroundColor: Color4.Gray()
+})
+```
+
+## Corner Icons
+
+### Basic Corner Icon
+```typescript
+// Create an icon in the corner
+const icon = ui.createCornerIcon({
+  image: 'images/icon.png',
+  xOffset: 10,
+  yOffset: 200,
+  width: 64,
+  height: 64
+})
+
+// Hide/show icon
+icon.hide()
+icon.show()
+```
+
+### Styled Corner Icon
+```typescript
+const styledIcon = ui.createCornerIcon({
+  image: 'images/health-icon.png',
+  xOffset: 80,
+  yOffset: 200,
+  width: 48,
+  height: 48,
+  section: {
+    sourceWidth: 64,
+    sourceHeight: 64,
+    sourceLeft: 0,
+    sourceTop: 0,
+    atlasWidth: 256,
+    atlasHeight: 256
+  }
+})
+```
+
+## Loading Icon
+
+### Basic Loading Icon
+```typescript
+// Create a loading spinner
+const loadingIcon = ui.createLoadingIcon({
+  xOffset: 10,
+  yOffset: 280
+})
+
+// Start/stop loading animation
+loadingIcon.start()
+loadingIcon.stop()
+
+// Hide/show loading icon
+loadingIcon.hide()
+loadingIcon.show()
+```
+
+### Styled Loading Icon
+```typescript
+const styledLoading = ui.createLoadingIcon({
+  xOffset: 80,
+  yOffset: 280,
+  size: 32,
+  color: Color4.Yellow()
+})
+```
+
+## Large Image Display
+
+### Basic Large Image
+```typescript
+// Display a large image
+const largeImage = ui.createLargeImage({
+  image: 'images/background.jpg',
+  xOffset: 0,
+  yOffset: 0,
+  width: 800,
+  height: 600
+})
+
+// Hide/show image
+largeImage.hide()
+largeImage.show()
+```
+
+### Styled Large Image
+```typescript
+const styledImage = ui.createLargeImage({
+  image: 'images/artwork.png',
+  xOffset: 50,
+  yOffset: 50,
+  width: 400,
+  height: 300,
+  section: {
+    sourceWidth: 512,
+    sourceHeight: 512,
+    sourceLeft: 0,
+    sourceTop: 0,
+    atlasWidth: 1024,
+    atlasHeight: 1024
+  }
+})
+```
+
+## Predefined Prompt Windows
+
+### OK Prompt
+```typescript
+// Simple OK prompt
+ui.displayOkPrompt({
+  title: 'Welcome!',
+  text: 'This is a simple message.',
+  onAccept: () => {
+    console.log('OK clicked')
+  }
+})
+```
+
+### Option Prompt
+```typescript
+// Yes/No prompt
+ui.displayOptionPrompt({
+  title: 'Confirm Action',
+  text: 'Are you sure you want to proceed?',
+  onAccept: () => {
+    console.log('Yes clicked')
+  },
+  onReject: () => {
+    console.log('No clicked')
+  }
+})
+```
+
+### Fill-in Prompt
+```typescript
+// Text input prompt
+ui.displayFillInPrompt({
+  title: 'Enter Name',
+  placeholder: 'Type your name here',
+  onAccept: (value) => {
+    console.log('Name entered:', value)
+  },
+  onReject: () => {
+    console.log('Cancelled')
+  }
+})
+```
+
+## Custom Prompt Windows
+
+### Create Custom Prompt
+```typescript
+// Create a custom prompt window
+const customPrompt = ui.createComponent(ui.CustomPrompt, {
+  style: ui.PromptStyles.DARKSLANTED  // Or LIGHTROUND, DARKROUND, etc.
+})
+
+// Show/hide the prompt
+customPrompt.show()
+customPrompt.hide()
+```
+
+### Available Prompt Styles
+```typescript
+ui.PromptStyles.DARKSLANTED    // Dark background with slanted corners
+ui.PromptStyles.LIGHTROUND     // Light background with rounded corners
+ui.PromptStyles.DARKROUND      // Dark background with rounded corners
+ui.PromptStyles.LIGHTSLANTED   // Light background with slanted corners
+```
+
+### Add Text to Custom Prompt
+```typescript
+const promptTitle = customPrompt.addText({
+  value: 'Custom Title',
+  color: Color4.Yellow(),
+  size: 30,
+  xOffset: 0,
+  yOffset: 80
+})
+
+const promptText = customPrompt.addText({
+  value: 'This is the main text content',
+  color: Color4.White(),
+  size: 16,
+  xOffset: 0,
+  yOffset: 40
+})
+```
+
+### Add Buttons to Custom Prompt
+```typescript
+// Primary button (E key)
+const primaryButton = customPrompt.addButton({
+  style: ui.ButtonStyles.E,
+  text: 'Accept',
+  onMouseDown: () => {
+    console.log('Primary button clicked')
+  }
+})
+
+// Secondary button (F key)
+const secondaryButton = customPrompt.addButton({
+  style: ui.ButtonStyles.F,
+  text: 'Cancel',
+  onMouseDown: () => {
+    console.log('Secondary button clicked')
+  }
+})
+
+// Close button
+const closeButton = customPrompt.addButton({
+  style: ui.ButtonStyles.CLOSE,
+  onMouseDown: () => {
+    customPrompt.hide()
+  }
+})
+```
+
+### Available Button Styles
+```typescript
+ui.ButtonStyles.E        // Primary action (E key)
+ui.ButtonStyles.F        // Secondary action (F key)
+ui.ButtonStyles.CLOSE    // Close button
+ui.ButtonStyles.ROUNDGREEN   // Round green button
+ui.ButtonStyles.ROUNDWHITE   // Round white button
+ui.ButtonStyles.ROUNDRED     // Round red button
+ui.ButtonStyles.SQUAREGREEN  // Square green button
+ui.ButtonStyles.SQUAREWHITE  // Square white button
+ui.ButtonStyles.SQUARERED    // Square red button
+```
+
+### Add Checkbox to Custom Prompt
+```typescript
+const promptCheckbox = customPrompt.addCheckbox({
+  text: 'Remember my choice',
+  onCheck: () => {
+    console.log('Checkbox checked')
+  },
+  onUncheck: () => {
+    console.log('Checkbox unchecked')
+  },
+  xPosition: 0,
+  yPosition: 0,
+  startChecked: false
+})
+
+// Control checkbox programmatically
+promptCheckbox.check()    // Check without triggering callback
+promptCheckbox.uncheck()  // Uncheck without triggering callback
+promptCheckbox.hide()     // Hide checkbox
+promptCheckbox.show()     // Show checkbox
+```
+
+### Add Switch to Custom Prompt
+```typescript
+const promptSwitch = customPrompt.addSwitch({
+  text: 'Enable notifications',
+  onCheck: () => {
+    console.log('Switch turned on')
+  },
+  onUncheck: () => {
+    console.log('Switch turned off')
+  },
+  xPosition: 0,
+  yPosition: -30,
+  style: ui.PromptSwitchStyles.ROUNDGREEN,
+  startChecked: false
+})
+
+// Control switch programmatically
+promptSwitch.check()    // Turn on without triggering callback
+promptSwitch.uncheck()  // Turn off without triggering callback
+promptSwitch.hide()     // Hide switch
+promptSwitch.show()     // Show switch
+```
+
+### Available Switch Styles
+```typescript
+ui.PromptSwitchStyles.ROUNDGREEN    // Round green switch
+ui.PromptSwitchStyles.ROUNDWHITE    // Round white switch
+ui.PromptSwitchStyles.ROUNDRED      // Round red switch
+ui.PromptSwitchStyles.SQUAREGREEN   // Square green switch
+ui.PromptSwitchStyles.SQUAREWHITE   // Square white switch
+ui.PromptSwitchStyles.SQUARERED     // Square red switch
+```
+
+### Add Icon to Custom Prompt
+```typescript
+const promptIcon = customPrompt.addIcon({
+  image: 'images/icon.png',
+  xPosition: 0,
+  yPosition: 60,
+  width: 64,
+  height: 64
+})
+
+// Control icon
+promptIcon.hide()  // Hide icon
+promptIcon.show()  // Show icon
+```
+
+### Add Input Box to Custom Prompt
+```typescript
+const promptTextBox = customPrompt.addTextBox({
+  placeholder: 'Enter your name',
+  onChange: (value) => {
+    console.log('Text changed:', value)
+  },
+  xPosition: 0,
+  yPosition: -60
+})
+
+// Access current text
+console.log('Current text:', promptTextBox.currentText)
+
+// Control input box
+promptTextBox.hide()  // Hide input box
+promptTextBox.show()  // Show input box
+```
+
+## Complete Custom Prompt Example
+
+### Full Custom UI Example
+```typescript
+// Set up UI renderer
+ReactEcsRenderer.setUiRenderer(ui.render)
+
+// Create custom prompt
+export const customPrompt = ui.createComponent(ui.CustomPrompt, {
+  style: ui.PromptStyles.DARKSLANTED,
+})
+
+// Add title
+const promptTitle = customPrompt.addText({
+  value: 'What will you do?',
+  color: Color4.Yellow(),
+  size: 30,
+})
+
+// Add description
+const promptText = customPrompt.addText({
+  value: "It's an important decision",
+})
+
+// Add checkbox
+const promptCheckbox = customPrompt.addCheckbox({
+  text: "Don't show again",
+  onCheck: () => {
+    console.log('checkbox checked')
+  },
+  onUncheck: () => {
+    console.log('checkbox unchecked')
+  },
+})
+
+// Add switch
+const promptSwitch = customPrompt.addSwitch({
+  text: 'Turn me',
+  onCheck: () => {
+    console.log('switch checked')
+  },
+  onUncheck: () => {
+    console.log('switch unchecked')
+  },
+})
+
+// Add text input
+const promptTextBox = customPrompt.addTextBox({
+  placeholder: 'Enter text',
+  onChange: (value) => {
+    console.log('textbox changed:', value)
+  },
+})
+
+// Add buttons
+const promptButtonE = customPrompt.addButton({
+  style: ui.ButtonStyles.E,
+  text: 'Yeah',
+  onMouseDown: () => {
+    console.log('Yeah clicked')
+  },
+})
+
+const promptButtonF = customPrompt.addButton({
+  style: ui.ButtonStyles.F,
+  text: 'Nope',
+  onMouseDown: () => {
+    console.log('Nope clicked')
+  },
+})
+
+// Add icon
+const promptIcon = customPrompt.addIcon({
+  image: 'images/scene-thumbnail.png',
+})
+
+// Show the prompt
+customPrompt.show()
+```
+
+## Combining with Custom UI
+
+### Mix Toolkit with Custom UI
+```typescript
+const uiComponent = () => [
+  ui.render(),
+  MyCustomUI()
+]
+
+ReactEcsRenderer.setUiRenderer(uiComponent)
+
+function MyCustomUI() {
+  return (
+    <UiEntity
+      uiTransform={{
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        positionType: 'absolute',
+        position: { right: '3%', bottom: '3%' },
+      }}
+    >
+      <Label value="Hello World!" fontSize={18} textAlign="middle-center" />
+    </UiEntity>
+  )
+}
+```
+
+## Common UI Patterns
+
+### Game HUD Example
+```typescript
+// Create a complete game HUD
+function createGameHUD() {
+  // Health bar
+  const healthBar = ui.createBar({
+    value: 100,
+    xOffset: 10,
+    yOffset: 10,
+    width: 200,
+    height: 20,
+    color: Color4.Green()
+  })
+  
+  // Score counter
+  const scoreCounter = ui.createCounter({
+    value: 0,
+    xOffset: 10,
+    yOffset: 40,
+    color: Color4.Yellow()
+  })
+  
+  // Ammo label
+  const ammoLabel = ui.createCornerLabel({
+    value: 'Ammo: 30',
+    xOffset: 10,
+    yOffset: 70,
+    color: Color4.White()
+  })
+  
+  // Weapon icon
+  const weaponIcon = ui.createCornerIcon({
+    image: 'images/weapon.png',
+    xOffset: 10,
+    yOffset: 100,
+    width: 48,
+    height: 48
+  })
+  
+  return {
+    healthBar,
+    scoreCounter,
+    ammoLabel,
+    weaponIcon
+  }
+}
+
+// Usage
+const hud = createGameHUD()
+
+// Update HUD during gameplay
+hud.healthBar.setValue(75)
+hud.scoreCounter.setValue(1500)
+hud.ammoLabel.setValue('Ammo: 15')
+```
+
+### Menu System Example
+```typescript
+// Create a menu system
+function createMenuSystem() {
+  const mainMenu = ui.createComponent(ui.CustomPrompt, {
+    style: ui.PromptStyles.DARKSLANTED
+  })
+  
+  // Menu title
+  mainMenu.addText({
+    value: 'Main Menu',
+    color: Color4.Yellow(),
+    size: 30
+  })
+  
+  // Menu options
+  const playButton = mainMenu.addButton({
+    style: ui.ButtonStyles.E,
+    text: 'Play Game',
+    onMouseDown: () => {
+      console.log('Starting game...')
+      mainMenu.hide()
+    }
+  })
+  
+  const settingsButton = mainMenu.addButton({
+    style: ui.ButtonStyles.F,
+    text: 'Settings',
+    onMouseDown: () => {
+      console.log('Opening settings...')
+      showSettingsMenu()
+    }
+  })
+  
+  const quitButton = mainMenu.addButton({
+    style: ui.ButtonStyles.CLOSE,
+    onMouseDown: () => {
+      console.log('Quitting...')
+    }
+  })
+  
+  return mainMenu
+}
+
+// Usage
+const menu = createMenuSystem()
+menu.show()
+```
+
+### Notification System Example
+```typescript
+// Create a notification system
+class NotificationSystem {
+  private notifications: any[] = []
+  private currentY = 10
+  
+  showNotification(message: string, duration: number = 3) {
+    const notification = ui.createCornerLabel({
+      value: message,
+      xOffset: 10,
+      yOffset: this.currentY,
+      color: Color4.White(),
+      fontSize: 16
+    })
+    
+    this.notifications.push(notification)
+    this.currentY += 30
+    
+    // Auto-hide after duration
+    setTimeout(() => {
+      notification.hide()
+      const index = this.notifications.indexOf(notification)
+      if (index > -1) {
+        this.notifications.splice(index, 1)
+      }
+    }, duration * 1000)
+  }
+  
+  clearAll() {
+    this.notifications.forEach(n => n.hide())
+    this.notifications = []
+    this.currentY = 10
+  }
+}
+
+// Usage
+const notifications = new NotificationSystem()
+notifications.showNotification('Quest completed!', 5)
+notifications.showNotification('Level up!', 3)
+```
+
+## Performance Optimization
+
+### UI Component Pooling
+```typescript
+class UIComponentPool {
+  private activeComponents: any[] = []
+  private inactiveComponents: any[] = []
+  private maxComponents: number = 20
+  
+  createCounter(options: any) {
+    let counter: any
+    
+    if (this.inactiveComponents.length > 0) {
+      counter = this.inactiveComponents.pop()
+      // Reuse existing counter
+    } else if (this.activeComponents.length < this.maxComponents) {
+      counter = ui.createCounter(options)
+    } else {
+      // Reuse oldest component
+      counter = this.activeComponents.shift()
+    }
+    
+    this.activeComponents.push(counter)
+    return counter
+  }
+  
+  deactivateComponent(component: any) {
+    const index = this.activeComponents.indexOf(component)
+    if (index > -1) {
+      this.activeComponents.splice(index, 1)
+      this.inactiveComponents.push(component)
+    }
+  }
+}
+
+// Usage
+const uiPool = new UIComponentPool()
+const counter1 = uiPool.createCounter({ value: 0, xOffset: 10, yOffset: 10 })
+const counter2 = uiPool.createCounter({ value: 0, xOffset: 10, yOffset: 40 })
+```
+
+### Batch UI Updates
+```typescript
+// Batch multiple UI updates for better performance
+function updateGameUI(gameState: any) {
+  // Update all UI elements at once
+  if (gameState.health !== undefined) {
+    healthBar.setValue(gameState.health)
+  }
+  
+  if (gameState.score !== undefined) {
+    scoreCounter.setValue(gameState.score)
+  }
+  
+  if (gameState.ammo !== undefined) {
+    ammoLabel.setValue(`Ammo: ${gameState.ammo}`)
+  }
+  
+  if (gameState.weapon !== undefined) {
+    weaponIcon.setImage(`images/${gameState.weapon}.png`)
+  }
+}
+```
+
+## Best Practices
+
+### UI Design Guidelines
+```typescript
+// 1. Use consistent positioning
+const UI_OFFSETS = {
+  TOP_LEFT: { x: 10, y: 10 },
+  TOP_RIGHT: { x: -10, y: 10 },
+  BOTTOM_LEFT: { x: 10, y: -10 },
+  BOTTOM_RIGHT: { x: -10, y: -10 }
+}
+
+// 2. Use consistent colors
+const UI_COLORS = {
+  PRIMARY: Color4.Yellow(),
+  SECONDARY: Color4.White(),
+  SUCCESS: Color4.Green(),
+  WARNING: Color4.Red(),
+  INFO: Color4.Blue()
+}
+
+// 3. Use consistent sizing
+const UI_SIZES = {
+  SMALL: 12,
+  MEDIUM: 16,
+  LARGE: 20,
+  TITLE: 30
+}
+
+// 4. Implement proper cleanup
+function cleanupUI() {
+  // Hide all UI components when scene changes
+  healthBar.hide()
+  scoreCounter.hide()
+  ammoLabel.hide()
+  weaponIcon.hide()
+}
+```
+
+### Memory Management
+```typescript
+// Clean up UI components when they're no longer needed
+function cleanupUIComponent(component: any) {
+  if (component && typeof component.hide === 'function') {
+    component.hide()
+  }
+  
+  // Remove from any tracking arrays
+  const index = activeComponents.indexOf(component)
+  if (index > -1) {
+    activeComponents.splice(index, 1)
+  }
+}
+
+// Batch cleanup for better performance
+function cleanupAllUI() {
+  activeComponents.forEach(component => {
+    if (component && typeof component.hide === 'function') {
+      component.hide()
+    }
+  })
+  activeComponents = []
+}
+```
+
+### Accessibility Considerations
+```typescript
+// Ensure UI is accessible
+function createAccessiblePrompt() {
+  const prompt = ui.createComponent(ui.CustomPrompt, {
+    style: ui.PromptStyles.DARKSLANTED
+  })
+  
+  // Add clear title
+  prompt.addText({
+    value: 'Important Decision',
+    color: Color4.Yellow(),
+    size: 30
+  })
+  
+  // Add descriptive text
+  prompt.addText({
+    value: 'This action cannot be undone. Please confirm your choice.',
+    color: Color4.White(),
+    size: 16
+  })
+  
+  // Add clear button labels
+  prompt.addButton({
+    style: ui.ButtonStyles.E,
+    text: 'Confirm Action',
+    onMouseDown: () => {
+      console.log('Action confirmed')
+    }
+  })
+  
+  prompt.addButton({
+    style: ui.ButtonStyles.F,
+    text: 'Cancel',
+    onMouseDown: () => {
+      console.log('Action cancelled')
+    }
+  })
+  
+  return prompt
+}
+```
+description:
+globs:
+alwaysApply: false
+---

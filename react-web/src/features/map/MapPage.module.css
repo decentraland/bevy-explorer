@@ -1,0 +1,231 @@
+/* Map page — atlas fills the body; chips overlay the top, controls float. */
+.wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: -22px clamp(-120px, -6vw, -20px) 0;
+}
+
+.chips {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  right: 16px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.chip {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 16px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: rgba(10, 8, 14, 0.85);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.chip:hover {
+  background: rgba(30, 24, 40, 0.9);
+}
+.chipActive {
+  background: var(--brand);
+}
+.search {
+  width: 220px;
+  margin-left: auto;
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.95);
+  color: #111;
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+}
+
+/* Atlas viewport. */
+.view {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  background: #0e0c12;
+  cursor: grab;
+}
+.view:active {
+  cursor: grabbing;
+}
+.atlasWrap {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform-origin: center;
+}
+.atlas {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  image-rendering: pixelated;
+  user-select: none;
+  pointer-events: none;
+}
+.marker {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-top: 16px solid #ff2d55;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.6));
+}
+
+/* Zoom controls. */
+.zoom {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.zoom button {
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(10, 8, 14, 0.85);
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+.zoom button:hover {
+  background: rgba(30, 24, 40, 0.9);
+}
+
+/* Satellite minimap. */
+.minimap {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 3;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--white-10);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+.minimap img {
+  display: block;
+  image-rendering: pixelated;
+}
+
+/* Place detail panel. */
+.place {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  background: #14101c;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
+  overflow-y: auto;
+}
+.placeClose {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--text);
+  font-size: 18px;
+  cursor: pointer;
+}
+.placeImg {
+  height: 180px;
+  background: #2a2335 center/cover no-repeat;
+  flex: none;
+}
+.placeBody {
+  padding: 18px;
+}
+.placeTitle {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+}
+.placeOwner {
+  font-size: 13px;
+  color: var(--ink-6);
+  margin-bottom: 10px;
+}
+.placeStats {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--ink-7);
+  margin-bottom: 14px;
+}
+.jumpBtn {
+  width: 100%;
+  height: 44px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--brand);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  margin-bottom: 18px;
+}
+.jumpBtn:hover {
+  filter: brightness(1.08);
+}
+.placeMetaRow {
+  display: flex;
+  gap: 36px;
+  margin-bottom: 16px;
+}
+.placeMetaLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--ink-45);
+  margin-bottom: 3px;
+}
+.placeMetaValue {
+  font-size: 14px;
+  color: var(--text);
+}
+.placeDesc {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-7);
+}

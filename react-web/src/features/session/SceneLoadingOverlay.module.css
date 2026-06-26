@@ -1,0 +1,72 @@
+.root {
+  position: absolute;
+  inset: 0;
+  z-index: 9998;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  background:
+    url('/assets/login/gradient-background.png') center / cover no-repeat,
+    var(--color-bg);
+  animation: fade-in 400ms var(--ease-out) both;
+}
+
+.logo {
+  width: 8vh;
+  height: 8vh;
+  background: url('/assets/logo.png') center / contain no-repeat;
+}
+
+.title {
+  font-size: var(--font-title-l);
+  font-weight: 700;
+  margin: 0;
+}
+
+.subtitle {
+  font-size: var(--font-body);
+  opacity: 0.8;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* progress bar */
+.track {
+  width: min(28rem, 60vw);
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+
+.fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--color-ruby), #ff7a39);
+  transition: width 300ms var(--ease-out);
+}
+
+.fill.indeterminate {
+  width: 35% !important;
+  animation: slide 1.2s var(--ease-out) infinite;
+}
+
+@keyframes slide {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(340%);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
