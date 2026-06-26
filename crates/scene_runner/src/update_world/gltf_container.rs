@@ -155,7 +155,14 @@ fn clear_stale_instance(
         unreachable!("Infallible query");
     };
 
-    for entity in scene_spawner.iter_instance_entities(**gltf_ready) {
+    despawn_instance_non_recursive(
+        &mut commands,
+        scene_spawner.iter_instance_entities(**gltf_ready),
+    );
+}
+
+fn despawn_instance_non_recursive(commands: &mut Commands, entities: impl Iterator<Item = Entity>) {
+    for entity in entities {
         if let Ok(mut commands) = commands.get_entity(entity) {
             // have to do this non-recursively and safely because we may have removed some entities already
             commands.try_despawn();
