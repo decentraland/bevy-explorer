@@ -366,7 +366,7 @@ fn update_avatar_modifier_area(
 
         modifiers.areas = areas_clone;
 
-        if has_hidden_nametag ^ needs_hidden_nametag {
+        if has_hidden_nametag != needs_hidden_nametag {
             let mut cmds = commands.entity(player);
             if has_hidden_nametag {
                 cmds.try_remove::<HiddenNametag>();
