@@ -1,0 +1,52 @@
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { ProfilePassport } from '../features/profile/ProfilePassport'
+import type { Profile } from '../engine/protocol'
+
+const profile: Profile = {
+  address: '0xkurd000000000000000000000000000000006b635',
+  name: 'kurd',
+  picture: 'k.png',
+  hasClaimedName: true,
+  isGuest: false,
+  description: 'old gamer in dcl',
+  mutuals: 30,
+  links: [{ title: 'x account', url: 'https://x.com/kurd' }],
+  badges: [{ id: 'b1', name: 'Festive Trail' }],
+  info: { gender: 'Male', realName: 'mohammad', language: 'Persian' }
+}
+
+describe('profile passport', () => {
+  it('renders the overview: name, about, fields, links, mutuals', () => {
+    render(<ProfilePassport profile={profile} onClose={vi.fn()} />)
+    expect(screen.getByText('kurd')).toBeInTheDocument()
+    expect(screen.getByText('old gamer in dcl')).toBeInTheDocument()
+    expect(screen.getByText('mohammad')).toBeInTheDocument() // Real Name field value
+    expect(screen.getByText('30 Mutual')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /x account/i })).toHaveAttribute('href', 'https://x.com/kurd')
+  })
+
+  it('ADD FRIEND when not a friend; FRIEND (disabled) when already', async () => {
+    const onAddFriend = vi.fn()
+    const { rerender } = render(<ProfilePassport profile={profile} onAddFriend={onAddFriend} onClose={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button', { name: 'ADD FRIEND' }))
+    expect(onAddFriend).toHaveBeenCalledWith(profile.address)
+
+    rerender(<ProfilePassport profile={profile} isFriend onAddFriend={onAddFriend} onClose={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'FRIEND' })).toBeDisabled()
+  })
+
+  it('close button closes', async () => {
+    const onClose = vi.fn()
+    render(<ProfilePassport profile={profile} onClose={onClose} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('switches tabs (Photos shows empty state)', async () => {
+    render(<ProfilePassport profile={profile} onClose={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button', { name: 'PHOTOS' }))
+    expect(screen.getByText(/No photos shared yet/i)).toBeInTheDocument()
+  })
+})

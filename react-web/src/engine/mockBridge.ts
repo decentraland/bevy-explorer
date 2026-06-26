@@ -360,8 +360,24 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
           picture: 'https://profile-images.decentraland.org/entities/bafkreid5btlh76opew65hxu6dtkdo6ybqhymdof6vrrmjy2p5a74oy4huq/face.png',
           hasClaimedName: o.hasPreviousLogin,
           isGuest: !o.hasPreviousLogin,
-          description: 'Exploring Decentraland one plaza at a time. 🌅',
-          links: [{ title: 'Twitter', url: 'https://twitter.com' }]
+          description: 'Exploring Decentraland one plaza at a time. 🌅 DCL citizen since 2022.',
+          links: [
+            { title: 'Twitter', url: 'https://twitter.com' },
+            { title: 'Discord', url: 'https://discord.com' }
+          ],
+          mutuals: 30,
+          badges: Array.from({ length: 8 }, (_, i) => ({ id: `b${i}`, name: `Badge ${i + 1}`, tier: ['bronze', 'silver', 'gold'][i % 3] })),
+          info: {
+            gender: 'Male',
+            birthdate: '26/11/1991',
+            pronouns: 'He / Him',
+            relationship: 'Single',
+            language: 'Persian',
+            profession: 'IT',
+            employment: 'Chilling',
+            hobby: 'games.movie.party',
+            realName: 'mohammad'
+          }
         }
       })
       return

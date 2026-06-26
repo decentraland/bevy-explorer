@@ -1,0 +1,283 @@
+/* Full-screen, DPI-scaled like MainMenuShell (reference-canvas: size at 100%/scale,
+   scale back by --ui-scale, anchored top-left). */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: calc(100% / var(--ui-scale));
+  height: calc(100% / var(--ui-scale));
+  transform: scale(var(--ui-scale));
+  transform-origin: top left;
+  z-index: var(--z-modal, 1000);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3vh 3vw;
+  background: rgba(8, 6, 12, 0.55);
+}
+
+.panel {
+  width: min(1180px, 96%);
+  height: min(760px, 92%);
+  display: flex;
+  flex-direction: column;
+  border-radius: 22px;
+  overflow: hidden;
+  /* Passport gradient (Figma): purple → indigo → teal. */
+  background: linear-gradient(105deg, #5a2a8f 0%, #34308f 45%, #1c6f8e 100%);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* --- header --------------------------------------------------------------- */
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 1.5rem 1.75rem 0.75rem;
+}
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.name {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #6fe3ff;
+}
+.tag {
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 600;
+}
+.addrRow {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.15rem;
+}
+.addr {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+.copy {
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.55);
+  display: inline-flex;
+}
+.copy:hover {
+  color: #fff;
+}
+.mutual {
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.headActions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.friendBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1.4rem;
+  border-radius: 10px;
+  border: none;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.friendBtn:not(.isFriend):hover {
+  background: var(--brand, #ff2d55);
+}
+.isFriend {
+  cursor: default;
+}
+.close {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: none;
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
+  font-size: 1.4rem;
+  cursor: pointer;
+}
+.close:hover {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+/* --- tabs ----------------------------------------------------------------- */
+.tabs {
+  display: flex;
+  gap: 1.5rem;
+  padding: 0 1.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+.tab {
+  background: none;
+  border: none;
+  padding: 0.6rem 0;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+}
+.tabActive {
+  color: #fff;
+  border-bottom-color: var(--brand, #ff2d55);
+}
+
+/* --- body ----------------------------------------------------------------- */
+.body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.avatarCol {
+  position: relative;
+  width: 30%;
+  min-width: 240px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.avatarFallback {
+  position: absolute;
+  bottom: 0;
+  max-height: 92%;
+  max-width: 90%;
+  object-fit: contain;
+  /* The face thumbnail is a headshot; show it low-opacity behind the engine cutout. */
+  opacity: 0.9;
+}
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.25rem 1.5rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.card {
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 1.1rem 1.25rem;
+}
+.cardTitle {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.8);
+}
+.cardTitle:not(:first-child) {
+  margin-top: 1.25rem;
+}
+
+.badgeRow,
+.badgeGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.badge {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.badge img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.badgePlaceholder {
+  width: 60%;
+  height: 60%;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.about {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 1rem 1.5rem;
+  margin-top: 1rem;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.fieldLabel {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.55);
+}
+.fieldValue {
+  font-size: 0.9rem;
+  color: #fff;
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.link {
+  padding: 0.45rem 0.85rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #6fe3ff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.link:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.photoGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.6rem;
+}
+.photoGrid img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 10px;
+}
+
+.empty {
+  padding: 2rem;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.55);
+}

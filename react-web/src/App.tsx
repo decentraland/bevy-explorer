@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { BridgeClient } from './engine/bridge'
 import { EngineDriver } from './engine/EngineDriver'
 import { EngineRpc } from './engine/engineRpc'
@@ -17,6 +17,9 @@ import { CommunitiesPage } from './features/communities/CommunitiesPage'
 import { MapPage } from './features/map/MapPage'
 import { Sidebar } from './features/sidebar/Sidebar'
 import { Pointer } from './features/pointer/Pointer'
+import { ProfilePassport } from './features/profile/ProfilePassport'
+import type { ChatUser } from './features/chat/ProfileCard'
+import type { Profile } from './engine/protocol'
 import { LoadingAndLogin } from './features/login/LoadingAndLogin'
 import { SceneLoadingOverlay } from './features/session/SceneLoadingOverlay'
 import { useEngineSession } from './features/session/useEngineSession'
@@ -48,6 +51,23 @@ function Hud(): React.JSX.Element {
   }, [])
 
   const session = useEngineSession(createDriver)
+
+  // Passport (View Profile) — full rich data for self; identity-only for others
+  // until the bridge can fetch a user's passport by address.
+  const [passport, setPassport] = useState<ChatUser | null>(null)
+  const passportProfile: Profile | null = !passport
+    ? null
+    : session.profile.data && session.profile.data.address.toLowerCase() === passport.address.toLowerCase()
+      ? session.profile.data
+      : {
+          // Other users: identity only until the bridge can fetch their passport by
+          // address (badges/about/info/equipped/mutuals are a backend follow-up).
+          address: passport.address,
+          name: passport.name,
+          picture: passport.picture,
+          hasClaimedName: !passport.name.includes('#') && !/^0x[0-9a-f]+$/i.test(passport.name),
+          isGuest: false
+        }
 
   // Top-nav navigation between the full-screen menu pages (Settings/Backpack/Map)
   // and the Communities panel. Each toggle is mutually exclusive.
@@ -83,6 +103,7 @@ function Hud(): React.JSX.Element {
             me={session.profile.data}
             onAddFriend={(address) => session.friends.act('request', address)}
             onBlock={(address) => session.friends.act('block', address)}
+            onViewProfile={setPassport}
             onTeleport={(x, y) => session.map.teleport(x, y)}
           />
           <FriendsPanel friends={session.friends} />
@@ -99,6 +120,15 @@ function Hud(): React.JSX.Element {
             onOpenChat={() => session.chat.toggle()}
           />
           <MapPage map={session.map} profile={session.profile} onNavigate={goToMenuPage} />
+          {passport && passportProfile && (
+            <ProfilePassport
+              profile={passportProfile}
+              isFriend={session.friends.list.some((f) => f.address.toLowerCase() === passport.address.toLowerCase())}
+              onAddFriend={(address) => session.friends.act('request', address)}
+              onClose={() => setPassport(null)}
+              setEngineViewport={session.setEngineViewport}
+            />
+          )}
         </>
       )}
     </>

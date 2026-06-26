@@ -47,6 +47,15 @@ function AddFriendIcon(): React.JSX.Element {
     </svg>
   )
 }
+function ViewProfileIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
+      <rect x="3" y="5" width="18" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="8.5" cy="12" r="2.2" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M13.5 10.5h4M13.5 14h2.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  )
+}
 function MentionIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
@@ -77,6 +86,7 @@ export function ProfileCard({
   me,
   onAddFriend,
   onMention,
+  onViewProfile,
   onBlock,
   onClose
 }: {
@@ -86,6 +96,7 @@ export function ProfileCard({
   me?: { address?: string } | null
   onAddFriend?: (address: string) => void
   onMention?: (name: string) => void
+  onViewProfile?: (user: ChatUser) => void
   onBlock?: (address: string) => void
   onClose: () => void
 }): React.JSX.Element {
@@ -146,12 +157,18 @@ export function ProfileCard({
           </button>
         )}
 
-        {!isMe && (onMention || onBlock) && (
+        {!isMe && (onMention || onViewProfile || onBlock) && (
           <div className={styles.menu}>
             {onMention && (
               <button type="button" className={styles.row} onClick={() => { onMention(base); onClose() }}>
                 <MentionIcon />
                 <span>Mention</span>
+              </button>
+            )}
+            {onViewProfile && (
+              <button type="button" className={styles.row} onClick={() => { onViewProfile(user); onClose() }}>
+                <ViewProfileIcon />
+                <span>View Profile</span>
               </button>
             )}
             {onBlock && user.address && (

@@ -222,6 +222,28 @@ export interface SettingsMessage {
   settings: Setting[]
 }
 
+/** A passport achievement badge. */
+export interface Badge {
+  id: string
+  name: string
+  /** e.g. 'bronze' | 'silver' | 'gold' — for the tier ring. */
+  tier?: string
+  image?: string
+}
+
+/** The about-me field grid on the passport (all optional). */
+export interface ProfileInfo {
+  gender?: string
+  birthdate?: string
+  pronouns?: string
+  relationship?: string
+  language?: string
+  profession?: string
+  employment?: string
+  hobby?: string
+  realName?: string
+}
+
 /** The local player's profile (passport). */
 export interface Profile {
   address: string
@@ -231,6 +253,13 @@ export interface Profile {
   isGuest: boolean
   description?: string
   links?: { title: string; url: string }[]
+  // --- rich passport fields (optional; populated by the passport fetch) -----
+  badges?: Badge[]
+  info?: ProfileInfo
+  /** Mutual-friends count shown under the name. */
+  mutuals?: number
+  /** Camera-reel photo URLs (Photos tab). */
+  photos?: string[]
 }
 
 export interface ProfileMessage {
@@ -483,9 +512,33 @@ export interface HoverMessage {
   actions: HoverAction[]
 }
 
+/** Whether the engine has grabbed the mouse for camera-look (OS cursor hidden) → draw the
+ *  center crosshair. Derived from PrimaryPointerInfo.screenCoordinates being absent. */
+export interface CursorLockMessage {
+  kind: 'cursorLock'
+  locked: boolean
+}
+
+/** A proximity tooltip for an in-range world entity, anchored at its projected screen position
+ *  (the bridge does the world→screen projection each frame). */
+export interface ProximityTip {
+  id: number
+  /** Screen pixel coords of the entity (tooltip is centered on this). */
+  x: number
+  y: number
+  actions: HoverAction[]
+}
+/** All in-range entity tooltips this frame (empty = none). */
+export interface ProximityMessage {
+  kind: 'proximity'
+  tips: ProximityTip[]
+}
+
 export type SceneToPage =
   | RpcResponse
   | HoverMessage
+  | CursorLockMessage
+  | ProximityMessage
   | PlayerReadyEvent
   | SceneLoadingMessage
   | ChatRelayMessage
