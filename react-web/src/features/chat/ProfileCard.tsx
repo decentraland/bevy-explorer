@@ -4,7 +4,7 @@
 // We only render the actions our bridge actually supports: Mention, Block. (View
 // Profile / Chat / Call / Hush / Gift / Report have no engine API yet.)
 
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Avatar } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
@@ -84,6 +84,7 @@ export function ProfileCard({
   x,
   y,
   me,
+  relationship = 'none',
   onAddFriend,
   onMention,
   onViewProfile,
@@ -94,6 +95,8 @@ export function ProfileCard({
   x: number
   y: number
   me?: { address?: string } | null
+  /** Friendship status, so the CTA reflects reality (hide ADD FRIEND once friends/requested). */
+  relationship?: 'none' | 'requested' | 'friend'
   onAddFriend?: (address: string) => void
   onMention?: (name: string) => void
   onViewProfile?: (user: ChatUser) => void
@@ -101,6 +104,13 @@ export function ProfileCard({
   onClose: () => void
 }): React.JSX.Element {
   const [copied, setCopied] = useState<'name' | 'address' | null>(null)
+  const [justSent, setJustSent] = useState(false)
+  // After firing the friend request, show "REQUEST SENT" briefly, then close.
+  useEffect(() => {
+    if (!justSent) return
+    const t = setTimeout(onClose, 1100)
+    return () => clearTimeout(t)
+  }, [justSent, onClose])
   const cardRef = useRef<HTMLDivElement>(null)
   // Start at the click point; once the card is laid out, clamp it to the viewport
   // using its REAL size (the menu height varies with which actions are shown).
@@ -151,10 +161,14 @@ export function ProfileCard({
           {copied && <span className={styles.copied}>Copied {copied}</span>}
         </div>
 
-        {!isMe && user.address && onAddFriend && (
-          <button type="button" className={styles.cta} onClick={() => { onAddFriend(user.address); onClose() }}>
-            <AddFriendIcon /> ADD FRIEND
-          </button>
+        {!isMe && user.address && onAddFriend && relationship !== 'friend' && (
+          justSent || relationship === 'requested' ? (
+            <div className={`${styles.cta} ${styles.ctaSent}`}>✓ REQUEST SENT</div>
+          ) : (
+            <button type="button" className={styles.cta} onClick={() => { onAddFriend(user.address); setJustSent(true) }}>
+              <AddFriendIcon /> ADD FRIEND
+            </button>
+          )
         )}
 
         {!isMe && (onMention || onViewProfile || onBlock) && (

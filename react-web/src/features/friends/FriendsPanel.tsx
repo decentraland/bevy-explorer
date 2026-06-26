@@ -8,9 +8,11 @@ import { Avatar, Button, ControlButton } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
 import type { Friend, FriendRequest } from '../../engine/protocol'
 import type { FriendsState } from '../session/useEngineSession'
+import { ProfileCard, type ChatUser } from '../chat/ProfileCard'
 import styles from './FriendsPanel.module.css'
 
 type Tab = 'friends' | 'requests' | 'blocked'
+type OpenMenu = (user: ChatUser, e: React.MouseEvent) => void
 
 function label(name: string, address: string): string {
   return name.trim() ? name : shortAddr(address)
@@ -81,15 +83,20 @@ function Collapsible({
 
 const STATUS_LABEL = { online: 'Online', away: 'Away', offline: 'Offline' } as const
 
-function FriendRow({ friend }: { friend: Friend }): React.JSX.Element {
+function FriendRow({ friend, onOpen }: { friend: Friend; onOpen?: OpenMenu }): React.JSX.Element {
+  const user: ChatUser = { address: friend.address, name: friend.name, picture: friend.picture }
+  const open = (e: React.MouseEvent): void => {
+    if (e.type === 'contextmenu') e.preventDefault()
+    onOpen?.(user, e)
+  }
   return (
-    <div className={styles.row}>
+    <button type="button" className={`${styles.row} ${styles.rowBtn}`} onClick={open} onContextMenu={open}>
       <Avatar src={friend.picture} name={label(friend.name, friend.address)} color={nameColor(friend.address)} size={40} status={friend.status} />
       <div className={styles.info}>
         <NameLabel name={friend.name} address={friend.address} />
         <span className={`${styles.status} ${styles[friend.status]}`}>{STATUS_LABEL[friend.status]}</span>
       </div>
-    </div>
+    </button>
   )
 }
 
@@ -145,8 +152,26 @@ function SentRow({ req, onCancel }: { req: FriendRequest; onCancel: () => void }
   )
 }
 
-export function FriendsPanel({ friends }: { friends: FriendsState }): React.JSX.Element | null {
+export function FriendsPanel({
+  friends,
+  me,
+  relationshipOf,
+  onAddFriend,
+  onViewProfile,
+  onBlock
+}: {
+  friends: FriendsState
+  me?: { address?: string } | null
+  /** Friendship status for a user (drives the menu CTA). */
+  relationshipOf?: (address: string) => 'none' | 'requested' | 'friend'
+  onAddFriend?: (address: string) => void
+  onViewProfile?: (user: ChatUser) => void
+  onBlock?: (address: string) => void
+}): React.JSX.Element | null {
   const [tab, setTab] = useState<Tab>('friends')
+  // Same profile menu the chat opens, anchored at the clicked row.
+  const [menu, setMenu] = useState<{ user: ChatUser; x: number; y: number } | null>(null)
+  const openMenu: OpenMenu = (user, e) => setMenu({ user, x: e.clientX, y: e.clientY })
 
   const { online, offline } = useMemo(() => {
     const on: Friend[] = []
@@ -198,12 +223,12 @@ export function FriendsPanel({ friends }: { friends: FriendsState }): React.JSX.
             <>
               <Collapsible title="Online" count={online.length}>
                 {online.map((f) => (
-                  <FriendRow key={f.address} friend={f} />
+                  <FriendRow key={f.address} friend={f} onOpen={openMenu} />
                 ))}
               </Collapsible>
               <Collapsible title="Offline" count={offline.length}>
                 {offline.map((f) => (
-                  <FriendRow key={f.address} friend={f} />
+                  <FriendRow key={f.address} friend={f} onOpen={openMenu} />
                 ))}
               </Collapsible>
             </>
@@ -261,6 +286,20 @@ export function FriendsPanel({ friends }: { friends: FriendsState }): React.JSX.
           ))
         )}
       </div>
+
+      {menu && (
+        <ProfileCard
+          user={menu.user}
+          x={menu.x}
+          y={menu.y}
+          me={me}
+          relationship={relationshipOf?.(menu.user.address) ?? 'friend'}
+          onAddFriend={onAddFriend}
+          onViewProfile={onViewProfile}
+          onBlock={onBlock}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </div>
   )
 }

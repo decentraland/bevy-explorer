@@ -31,6 +31,21 @@ describe('parseMessage', () => {
     expect(parseMessage('yo @Bob#12ab')[1]).toEqual({ type: 'mention', value: '@Bob#12ab', name: 'Bob', tag: '12ab' })
   })
 
+  it('extracts a world name (.dcl.eth and bare .eth)', () => {
+    expect(parseMessage('join boedo.dcl.eth now')).toEqual([
+      { type: 'text', value: 'join ' },
+      { type: 'world', value: 'boedo.dcl.eth' },
+      { type: 'text', value: ' now' }
+    ])
+    expect(parseMessage('go name.eth')[1]).toEqual({ type: 'world', value: 'name.eth' })
+  })
+
+  it('does not break a URL that contains a world name', () => {
+    expect(parseMessage('https://play.decentraland.org/?realm=boedo.dcl.eth')).toEqual([
+      { type: 'url', value: 'https://play.decentraland.org/?realm=boedo.dcl.eth' }
+    ])
+  })
+
   it('handles a message mixing all three', () => {
     const t = parseMessage('@Alice come to 5,5 see https://x.io')
     expect(t.map((x) => x.type)).toEqual(['mention', 'text', 'location', 'text', 'url'])

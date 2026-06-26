@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MainMenuShell } from '../menu/MainMenuShell'
 import type { MapState, ProfileState } from '../session/useEngineSession'
+import { WorldVisitModal } from '../../components/WorldVisitModal'
 import styles from './MapPage.module.css'
 
 // Genesis City satellite atlas — identical source/geometry to unity-explorer's
@@ -538,20 +539,12 @@ export function MapPage({
         {place && <PlacePanel place={place} onClose={() => setPlace(null)} onJump={() => jumpTo(place)} />}
 
         {confirmWorld && (
-          <div className={styles.modalOverlay} onClick={() => setConfirmWorld(null)}>
-            <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-              <button type="button" className={styles.modalClose} aria-label="Close" onClick={() => setConfirmWorld(null)}>✕</button>
-              <div className={styles.modalQuestion}>Do you want to jump to the following realm?</div>
-              <div className={styles.modalRealm}>{confirmWorld.world_name}</div>
-              {confirmWorld.title && confirmWorld.title !== confirmWorld.world_name && (
-                <div className={styles.modalRealmSub}>{confirmWorld.title}</div>
-              )}
-              <div className={styles.modalActions}>
-                <button type="button" className={styles.modalCancel} onClick={() => setConfirmWorld(null)}>CANCEL</button>
-                <button type="button" className={styles.modalGo} onClick={() => visitWorld(confirmWorld)}>CONTINUE</button>
-              </div>
-            </div>
-          </div>
+          <WorldVisitModal
+            worldName={confirmWorld.world_name}
+            title={confirmWorld.title}
+            onCancel={() => setConfirmWorld(null)}
+            onConfirm={() => visitWorld(confirmWorld)}
+          />
         )}
       </div>
     </MainMenuShell>

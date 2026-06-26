@@ -139,7 +139,7 @@ export function DaySeparator({ ts }: { ts: number }): React.JSX.Element {
   )
 }
 
-const MSG_STYLES = { url: styles.url, mention: styles.mention, location: styles.location }
+const MSG_STYLES = { url: styles.url, mention: styles.mention, location: styles.location, world: styles.world }
 
 export function ChatBubble({
   line,
@@ -148,7 +148,8 @@ export function ChatBubble({
   members = [],
   me,
   onOpenProfile,
-  onLocation
+  onLocation,
+  onVisitWorld
 }: {
   line: ChatLine
   name: string
@@ -159,6 +160,8 @@ export function ChatBubble({
   onOpenProfile?: (user: ChatUser, e: React.MouseEvent) => void
   /** A location link (x,y) in the message was clicked → teleport. */
   onLocation?: (x: number, y: number) => void
+  /** A world name (e.g. boedo.dcl.eth) in the message was clicked → prompt to jump there. */
+  onVisitWorld?: (name: string) => void
 }): React.JSX.Element {
   const color = senderColor(line.sender)
   const { base, tag } = splitName(name)
@@ -188,7 +191,7 @@ export function ChatBubble({
           {tag && <span className={styles.tag}>{tag}</span>}
         </button>
         <span className={styles.text}>
-          <MessageText text={line.message} members={members} styles={MSG_STYLES} onMention={onMention} onLocation={(x, y) => onLocation?.(x, y)} />
+          <MessageText text={line.message} members={members} styles={MSG_STYLES} onMention={onMention} onLocation={(x, y) => onLocation?.(x, y)} onWorld={onVisitWorld} />
         </span>
         <span className={styles.time}>{formatTime(line.ts)}</span>
       </div>
@@ -257,12 +260,16 @@ export function Chat({
   onAddFriend,
   onBlock,
   onViewProfile,
-  onTeleport
+  onTeleport,
+  onVisitWorld,
+  relationshipOf
 }: {
   chat: ChatState
   hidden?: boolean
   /** The local player (for @-me highlight + hiding self-actions in the viewer). */
   me?: { address?: string; name?: string } | null
+  /** Friendship status for a user — drives the profile menu's ADD FRIEND CTA. */
+  relationshipOf?: (address: string) => 'none' | 'requested' | 'friend'
   /** Add-friend from the profile viewer. */
   onAddFriend?: (address: string) => void
   /** Block from the profile viewer. */
@@ -271,6 +278,8 @@ export function Chat({
   onViewProfile?: (user: ChatUser) => void
   /** A location link (x,y) in a message was clicked. */
   onTeleport?: (x: number, y: number) => void
+  /** A world name (e.g. boedo.dcl.eth) in a message was clicked → prompt to jump there. */
+  onVisitWorld?: (name: string) => void
 }): React.JSX.Element | null {
   const [draft, setDraft] = useState('')
   const [picker, setPicker] = useState(false)
@@ -470,6 +479,7 @@ export function Chat({
                   me={me}
                   onOpenProfile={openProfile}
                   onLocation={(x, y) => onTeleport?.(x, y)}
+                  onVisitWorld={onVisitWorld}
                 />
               )
             )
@@ -578,6 +588,7 @@ export function Chat({
           x={viewUser.x}
           y={viewUser.y}
           me={me}
+          relationship={viewUser.user.address ? relationshipOf?.(viewUser.user.address) : undefined}
           onAddFriend={onAddFriend}
           onBlock={onBlock}
           onViewProfile={onViewProfile}

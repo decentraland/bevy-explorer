@@ -412,7 +412,8 @@
   text-decoration: underline;
 }
 .location,
-.mention {
+.mention,
+.world {
   background: none;
   border: none;
   padding: 0;
@@ -422,7 +423,8 @@
   font-weight: 700;
 }
 .location:hover,
-.mention:hover {
+.mention:hover,
+.world:hover {
   text-decoration: underline;
 }
 

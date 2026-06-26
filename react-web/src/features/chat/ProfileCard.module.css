@@ -84,6 +84,15 @@
 .cta:hover {
   filter: brightness(1.08);
 }
+/* Confirmation state after firing a friend request. */
+.ctaSent {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink-7, #b9b6c2);
+  cursor: default;
+}
+.ctaSent:hover {
+  filter: none;
+}
 
 /* --- action list ---------------------------------------------------------- */
 .menu {

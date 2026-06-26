@@ -8,14 +8,16 @@ import type { NearbyMember } from '../../engine/protocol'
 export type Token =
   | { type: 'text'; value: string }
   | { type: 'url'; value: string }
+  | { type: 'world'; value: string }
   | { type: 'location'; value: string; x: number; y: number }
   | { type: 'mention'; value: string; name: string; tag?: string }
 
-// URL → location (x,y) → @mention, scanned in one pass to keep original order.
-// Coords require both signs/commas so we don't linkify every number; mentions allow
-// an optional #tag suffix (Name#a1b2) like the engine's claimed-name disambiguation.
+// URL → world name → location (x,y) → @mention, scanned in one pass to keep original order.
+// Worlds are ENS names (e.g. boedo.dcl.eth) → clickable "jump to realm". Coords require both
+// signs/commas so we don't linkify every number; mentions allow an optional #tag suffix
+// (Name#a1b2) like the engine's claimed-name disambiguation.
 const TOKEN_RE =
-  /(?<url>https?:\/\/[^\s<>"']+)|(?<loc>-?\d{1,3}\s*,\s*-?\d{1,3})|(?<mention>@[\w-]+(?:#[\w]+)?)/g
+  /(?<url>https?:\/\/[^\s<>"']+)|(?<world>[a-z0-9][\w-]*\.(?:dcl\.)?eth\b)|(?<loc>-?\d{1,3}\s*,\s*-?\d{1,3})|(?<mention>@[\w-]+(?:#[\w]+)?)/gi
 
 export function parseMessage(text: string): Token[] {
   const tokens: Token[] = []
@@ -26,6 +28,8 @@ export function parseMessage(text: string): Token[] {
     const g = m.groups ?? {}
     if (g.url) {
       tokens.push({ type: 'url', value: g.url })
+    } else if (g.world) {
+      tokens.push({ type: 'world', value: g.world })
     } else if (g.loc) {
       const [x, y] = g.loc.split(',').map((s) => parseInt(s.trim(), 10))
       tokens.push({ type: 'location', value: g.loc, x, y })
@@ -71,15 +75,18 @@ export function MessageText({
   members,
   styles,
   onMention,
-  onLocation
+  onLocation,
+  onWorld
 }: {
   text: string
   members: NearbyMember[]
-  styles: { url: string; mention: string; location: string }
+  styles: { url: string; mention: string; location: string; world: string }
   /** A resolved @mention was clicked (address known). */
   onMention: (address: string, name: string, e: React.MouseEvent) => void
   /** A location link (x,y) was clicked. */
   onLocation: (x: number, y: number) => void
+  /** A world name (e.g. boedo.dcl.eth) was clicked → prompt to jump to that realm. */
+  onWorld?: (name: string) => void
 }): React.JSX.Element {
   const index = buildNameIndex(members)
   return (
@@ -90,6 +97,14 @@ export function MessageText({
             <a key={i} className={styles.url} href={t.value} target="_blank" rel="noreferrer noopener">
               {t.value}
             </a>
+          )
+        }
+        if (t.type === 'world') {
+          if (!onWorld) return <span key={i}>{t.value}</span>
+          return (
+            <button key={i} type="button" className={styles.world} onClick={() => onWorld(t.value)}>
+              {t.value}
+            </button>
           )
         }
         if (t.type === 'location') {

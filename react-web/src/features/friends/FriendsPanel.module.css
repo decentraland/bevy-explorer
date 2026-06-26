@@ -224,3 +224,17 @@
   color: var(--ink-45);
   max-width: 280px;
 }
+
+/* A friend row that opens the profile menu — reset the <button> chrome. */
+.rowBtn {
+  width: 100%;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rowBtn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}

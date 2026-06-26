@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { BridgeClient } from './engine/bridge'
 import { EngineDriver } from './engine/EngineDriver'
 import { EngineRpc } from './engine/engineRpc'
@@ -18,8 +18,10 @@ import { MapPage } from './features/map/MapPage'
 import { Sidebar } from './features/sidebar/Sidebar'
 import { Pointer } from './features/pointer/Pointer'
 import { ProfilePassport } from './features/profile/ProfilePassport'
+import { WorldVisitModal } from './components/WorldVisitModal'
 import type { ChatUser } from './features/chat/ProfileCard'
 import type { Profile } from './engine/protocol'
+import { FpsMeter } from './features/debug/FpsMeter'
 import { LoadingAndLogin } from './features/login/LoadingAndLogin'
 import { SceneLoadingOverlay } from './features/session/SceneLoadingOverlay'
 import { useEngineSession } from './features/session/useEngineSession'
@@ -33,8 +35,29 @@ const SHOWCASE = params.get('showcase') === '1'
 
 export function App(): React.JSX.Element {
   useHudScale() // keep --ui-scale in sync with the viewport (DPI-correct, like Unity)
-  if (SHOWCASE) return <Showcase />
-  return <Hud />
+  const showFps = useFpsToggle()
+  return (
+    <>
+      {SHOWCASE ? <Showcase /> : <Hud />}
+      {showFps && <FpsMeter />}
+    </>
+  )
+}
+
+// Perf overlay visibility: on via ?fps=1, toggle anytime with Ctrl/Cmd+Shift+F.
+function useFpsToggle(): boolean {
+  const [on, setOn] = useState(params.get('fps') === '1')
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'F' || e.key === 'f')) {
+        e.preventDefault()
+        setOn((v) => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  return on
 }
 
 function Hud(): React.JSX.Element {
@@ -55,11 +78,20 @@ function Hud(): React.JSX.Element {
   // Passport (View Profile). Self → the local rich profile; others → the fetched
   // passport (requestUserProfile on open), falling back to identity-only while it loads.
   const [passport, setPassport] = useState<ChatUser | null>(null)
+  // A world (e.g. boedo.dcl.eth) the user asked to jump to — drives the shared confirm modal.
+  const [visitWorld, setVisitWorld] = useState<string | null>(null)
   const isSelfPassport =
     !!passport && !!session.profile.data && session.profile.data.address.toLowerCase() === passport.address.toLowerCase()
   const openPassport = (user: ChatUser): void => {
     setPassport(user)
     if (user.address) session.requestUserProfile(user.address) // fetch badges/photos/catalyst data
+  }
+  // Friendship status for a user — drives the profile menu's CTA (chat + friends list).
+  const relationshipOf = (address: string): 'none' | 'requested' | 'friend' => {
+    const a = address.toLowerCase()
+    if (session.friends.list.some((f) => f.address.toLowerCase() === a)) return 'friend'
+    if (session.friends.sent.some((r) => r.address.toLowerCase() === a)) return 'requested'
+    return 'none'
   }
   // Open MY OWN passport (Sidebar profile icon + the menu's "View Profile").
   const viewMyProfile = (): void => {
@@ -118,8 +150,17 @@ function Hud(): React.JSX.Element {
             onBlock={(address) => session.friends.act('block', address)}
             onViewProfile={openPassport}
             onTeleport={(x, y) => session.map.teleport(x, y)}
+            onVisitWorld={(name) => setVisitWorld(name)}
+            relationshipOf={relationshipOf}
           />
-          <FriendsPanel friends={session.friends} />
+          <FriendsPanel
+            friends={session.friends}
+            me={session.profile.data}
+            relationshipOf={relationshipOf}
+            onAddFriend={(address) => session.friends.act('request', address)}
+            onViewProfile={openPassport}
+            onBlock={(address) => session.friends.act('block', address)}
+          />
           <SettingsPanel settings={session.settings} profile={session.profile} onNavigate={goToMenuPage} />
           <ProfilePanel profile={session.profile} />
           <NotificationsPanel notifications={session.notifications} />
@@ -142,6 +183,16 @@ function Hud(): React.JSX.Element {
               requested={session.friends.sent.some((r) => r.address.toLowerCase() === passport.address.toLowerCase())}
               onAddFriend={(address) => session.friends.act('request', address)}
               onClose={() => setPassport(null)}
+            />
+          )}
+          {visitWorld && (
+            <WorldVisitModal
+              worldName={visitWorld}
+              onCancel={() => setVisitWorld(null)}
+              onConfirm={() => {
+                session.map.changeRealm(visitWorld)
+                setVisitWorld(null)
+              }}
             />
           )}
         </>
