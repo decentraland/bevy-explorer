@@ -108,6 +108,9 @@ export async function enterAsGuest(h: Harness, opts: { keepSent?: boolean } = {}
   await waitFor(() => expect(h.session().login.status).not.toBe('loading'))
   act(() => h.session().login.exploreAsGuest())
   await waitFor(() => expect(h.session().phase).toBe('entering'))
+  // The engine login is deferred until the loader has painted, so wait for it to actually fire
+  // (getPreviousLogin is the first call; the login adds a second) before driving world entry.
+  await waitFor(() => expect(h.driver.calls.length).toBeGreaterThan(1))
   h.driver.emit({ kind: 'event', name: 'playerReady' })
   await waitFor(() => expect(h.session().phase).toBe('world'))
   if (!opts.keepSent) h.driver.clearSent()

@@ -520,35 +520,41 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     []
   )
 
-  const exploreAsGuest = useCallback(() => {
-    const driver = driverRef.current
-    if (!driver || busy) return
-    setBusy(true)
-    setError(null)
-    driver
-      .loginGuest()
-      .then(() => setSubmitted(true))
-      .catch((e: Error) => {
-        setError(e.message)
-        setBusy(false)
-      })
-  }, [busy])
+  // Show the loader BEFORE starting login. The engine's WASM/GPU init runs heavily on the shared
+  // main thread and freezes whatever's on screen; starting it while the login screen is still up
+  // hangs the login UI (the frozen "Jump in" button). So flip to the loader and let it paint (two
+  // frames) first, THEN kick off the engine work — the freeze then happens behind the loader, where
+  // it reads as loading. On failure, fall back to the login screen.
+  const submitLogin = useCallback(
+    (loginCall: (driver: LoginDriver) => Promise<unknown>) => {
+      const driver = driverRef.current
+      if (driver == null || busy) return
+      setError(null)
+      setBusy(true)
+      setSubmitted(true)
+      // Start the engine ONLY after the loader has painted. rAF gives the real paint boundary in the
+      // browser; the setTimeout fallback guarantees it still fires where rAF is throttled/absent
+      // (backgrounded tab, jsdom). The guard runs it exactly once.
+      let started = false
+      const start = (): void => {
+        if (started) return
+        started = true
+        loginCall(driver).catch((e: Error) => {
+          setError(e.message)
+          setBusy(false)
+          setSubmitted(false)
+        })
+      }
+      requestAnimationFrame(() => requestAnimationFrame(start))
+      setTimeout(start, 60)
+    },
+    [busy]
+  )
 
+  const exploreAsGuest = useCallback(() => submitLogin((d) => d.loginGuest()), [submitLogin])
   // Reuse the existing login. The driver picks the path its backend supports (console
   // `/login_identity` for the engine, `loginPrevious` over the bridge).
-  const jumpIn = useCallback(() => {
-    const driver = driverRef.current
-    if (!driver || busy) return
-    setBusy(true)
-    setError(null)
-    driver
-      .jumpIn()
-      .then(() => setSubmitted(true))
-      .catch((e: Error) => {
-        setError(e.message)
-        setBusy(false)
-      })
-  }, [busy])
+  const jumpIn = useCallback(() => submitLogin((d) => d.jumpIn()), [submitLogin])
 
   // Fresh sign-in (or signing in with a different account): bounce to the same-domain auth
   // site, which writes the identity back to this origin's localStorage and redirects here.
