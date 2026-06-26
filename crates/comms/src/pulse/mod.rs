@@ -80,6 +80,22 @@ impl PulseParcelGrid {
             (z * self.parcel_size) as f32 + local.z,
         )
     }
+
+    /// Inverse of [`Self::decode_to_world`]: a world position (DCL convention) → the server's
+    /// `parcel_index` plus the in-parcel local offset, matching the server's `ParcelEncoder.Encode`
+    /// + relative-position split. Used to build our own `TeleportRequest`.
+    pub fn encode_to_parcel(&self, world: Vec3) -> (i32, Vec3) {
+        let size = self.parcel_size as f32;
+        let parcel_x = (world.x / size).floor() as i32;
+        let parcel_z = (world.z / size).floor() as i32;
+        let parcel_index = (parcel_x - self.min_x) + (parcel_z - self.min_z) * self.width;
+        let local = Vec3::new(
+            world.x - (parcel_x * self.parcel_size) as f32,
+            world.y,
+            world.z - (parcel_z * self.parcel_size) as f32,
+        );
+        (parcel_index, local)
+    }
 }
 
 impl Default for PulseParcelGrid {
@@ -96,11 +112,21 @@ impl Default for PulseParcelGrid {
 #[derive(Debug)]
 pub enum PulseEvent {
     /// Handshake ack from the server. `success == false` carries the rejection reason.
-    Connected { success: bool, error: Option<String> },
+    Connected {
+        success: bool,
+        error: Option<String>,
+    },
     /// Reconstructed full movement state for a subject, ready to push through the rfc4 pipeline.
-    Movement { address: Address, movement: Box<rfc4::Movement> },
+    Movement {
+        address: Address,
+        movement: Box<rfc4::Movement>,
+    },
     /// Subject entered the interest set (or connected). Establishes the subject↔wallet alias.
-    Joined { subject_id: u32, address: Address, profile_version: i32 },
+    Joined {
+        subject_id: u32,
+        address: Address,
+        profile_version: i32,
+    },
     /// Subject left the interest set (or disconnected). Drop the alias / foreign player.
     Left { address: Address },
     /// Subject announced a new profile version.
@@ -146,13 +172,21 @@ impl PulseDecoder {
             }],
             Message::PlayerJoined(j) => self.on_joined(j),
             Message::PlayerLeft(l) => self.on_left(l.subject_id),
-            Message::PlayerStateFull(f) => self.on_full(f.subject_id, f.sequence, f.server_tick, f.state),
+            Message::PlayerStateFull(f) => {
+                self.on_full(f.subject_id, f.sequence, f.server_tick, f.state)
+            }
             // Teleport / emote start / stop all piggyback full state; treat them as a full refresh
             // so the subject's position never goes stale. The emote/teleport semantics themselves
             // are out of scope for the movement read path (handled later via the avatar pipeline).
-            Message::Teleported(t) => self.on_full(t.subject_id, t.sequence, t.server_tick, t.state),
-            Message::EmoteStarted(e) => self.on_full(e.subject_id, e.sequence, e.server_tick, e.player_state),
-            Message::EmoteStopped(e) => self.on_full(e.subject_id, e.sequence, e.server_tick, e.player_state),
+            Message::Teleported(t) => {
+                self.on_full(t.subject_id, t.sequence, t.server_tick, t.state)
+            }
+            Message::EmoteStarted(e) => {
+                self.on_full(e.subject_id, e.sequence, e.server_tick, e.player_state)
+            }
+            Message::EmoteStopped(e) => {
+                self.on_full(e.subject_id, e.sequence, e.server_tick, e.player_state)
+            }
             Message::PlayerStateDelta(d) => self.on_delta(d),
             Message::PlayerProfileVersionAnnounced(p) => self.on_profile(p.subject_id, p.version),
         }
@@ -166,7 +200,10 @@ impl PulseDecoder {
             return Vec::new();
         };
         let Ok(address) = joined.user_id.parse::<Address>() else {
-            bevy::log::warn!("pulse: PlayerJoined with unparseable user_id {:?}", joined.user_id);
+            bevy::log::warn!(
+                "pulse: PlayerJoined with unparseable user_id {:?}",
+                joined.user_id
+            );
             return Vec::new();
         };
 
@@ -195,7 +232,9 @@ impl PulseDecoder {
 
     fn on_left(&mut self, subject_id: u32) -> Vec<PulseEvent> {
         match self.subjects.remove(&subject_id) {
-            Some(subject) => vec![PulseEvent::Left { address: subject.wallet }],
+            Some(subject) => vec![PulseEvent::Left {
+                address: subject.wallet,
+            }],
             None => Vec::new(),
         }
     }
