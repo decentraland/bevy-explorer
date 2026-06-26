@@ -311,7 +311,7 @@ fn animate(
         Option<&ContainerEntity>,
         Option<&PrimaryUser>,
         Option<&mut LastEmoteCommand>,
-        Option<&SceneDrivenAnim>,
+        Option<Ref<SceneDrivenAnim>>,
     )>,
     time: Res<Time>,
     player: Query<(&PrimaryUser, Option<&PlayerModifiers>)>,
@@ -356,7 +356,12 @@ fn animate(
         let damped_velocity_len = damped_velocity.xz().length();
         anim_state.damped_velocity = damped_velocity;
 
-        let scene_anim = maybe_scene_anim.and_then(|a| a.active.as_ref());
+        // `seek` (playback_time) is a one-shot, but it lives in the persistent `SceneDrivenAnim`
+        // component, so honor it only on a frame the component actually arrived/changed. Remotes
+        // only re-insert it on an SDA apply (so the seek fires once even while a static sender is
+        // silent — e.g. a stunned hard landing); the local player's scene rewrites it every frame.
+        let scene_anim_changed = maybe_scene_anim.as_ref().is_some_and(|a| a.is_changed());
+        let scene_anim = maybe_scene_anim.as_deref().and_then(|a| a.active.as_ref());
 
         // get requested emote
         let (mut requested_emote, given_urn, request_loop) =
@@ -602,7 +607,7 @@ fn animate(
                 transition_seconds: req.transition_seconds,
                 initial_audio_mark: None,
                 overridable: req.idle,
-                pending_seek: req.seek,
+                pending_seek: if scene_anim_changed { req.seek } else { None },
                 source: ActiveEmoteSource::SceneMovementAnim,
                 scene_anim_src: Some(req.src.clone()),
                 fallback: Some(Box::new(velocity_emote)),
