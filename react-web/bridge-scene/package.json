@@ -15,7 +15,6 @@
     "upgrade-sdk": "npm install @dcl/sdk@protocol-squad @dcl/js-runtime@protocol-squad @dcl/react-ecs@protocol-squad @dcl/sdk-commands@protocol-squad @dcl/ecs@protocol-squad --save-exact"
   },
   "devDependencies": {
-    "@dcl-sdk/utils": "^1.2.8",
     "@dcl/ecs": "7.22.6-25007982108.commit-83012ab",
     "@dcl/js-runtime": "7.22.6-25007982108.commit-83012ab",
     "@dcl/react-ecs": "7.22.6-25007982108.commit-83012ab",

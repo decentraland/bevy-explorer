@@ -6,8 +6,8 @@
     <title>Decentraland — React HUD (dev)</title>
   </head>
   <body>
-    <!-- Milestone 2: the engine <iframe> mounts behind #root as a sibling layer.
-         For now #root renders the login UI over a placeholder backdrop. -->
+    <!-- React HUD mounts here; the engine runs in a same-origin iframe rendered
+         behind it (see src/features/engine/EngineHost.tsx). -->
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

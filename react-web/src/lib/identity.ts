@@ -27,41 +27,6 @@ export function rarityColor(rarity?: string): string {
   return RARITY_COLOR[(rarity ?? 'base').toLowerCase()] ?? RARITY_COLOR.base
 }
 
-// Lighter rarity tints — the inner glow in the Figma EmoteWheelSlot (Rarities/*-Light).
-const RARITY_LIGHT: Record<string, string> = {
-  base: '#cfcdd4',
-  common: '#b5fff6',
-  uncommon: '#ffe0b2',
-  rare: '#73ffaf',
-  epic: '#4deaff',
-  legendary: '#e579fb',
-  mythic: '#ffa6c1',
-  unique: '#ffdd2c',
-  exotic: '#e8ffb0'
-}
-
-export function rarityLight(rarity?: string): string {
-  return RARITY_LIGHT[(rarity ?? 'base').toLowerCase()] ?? RARITY_LIGHT.base
-}
-
-// Darker rarity shades — the edge/vignette (matches WearableCard gradients) so petals
-// read as their rarity with depth, instead of a clashing purple base bleed.
-const RARITY_DARK: Record<string, string> = {
-  base: '#4c4953',
-  common: '#2f6b6b',
-  uncommon: '#8a3a28',
-  rare: '#176b3a',
-  epic: '#1d4a99',
-  legendary: '#5a228a',
-  mythic: '#8a2080',
-  unique: '#8a6500',
-  exotic: '#52731f'
-}
-
-export function rarityDark(rarity?: string): string {
-  return RARITY_DARK[(rarity ?? 'base').toLowerCase()] ?? RARITY_DARK.base
-}
-
 // Catalyst thumbnail for an emote URN — derived client-side so the wheel shows previews
 // even if the scene relay didn't send a thumbnail. Strips a trailing `:tokenId` (on-chain NFTs).
 const CATALYST_CONTENTS = 'https://peer.decentraland.org/lambdas/collections/contents'

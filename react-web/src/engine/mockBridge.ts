@@ -1,8 +1,7 @@
-// A fake bridge "scene" that answers the protocol on the BroadcastChannel, so
-// the React HUD runs fully standalone (no engine, no wasm) during Milestone 1.
-//
-// In Milestone 2 this is replaced by a real super-user SDK7 scene that forwards
-// to SystemApi — the page-side BridgeClient does not change at all.
+// A fake bridge "scene" that answers the protocol on the BroadcastChannel, so the
+// React HUD runs fully standalone (no engine, no wasm) under `?mock=1`. In the real
+// app this is the super-user SDK7 bridge scene forwarding to SystemApi — the
+// page-side BridgeClient does not change at all.
 
 import {
   BRIDGE_CHANNEL,

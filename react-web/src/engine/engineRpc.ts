@@ -1,10 +1,9 @@
 // Thin wrapper over the engine's console-command RPC seam.
 //
 // Upstream bevy-explorer exposes `window.engine_console_command(line)` on the
-// engine document (src/web.rs, attached in deploy/web/engine.js). When the engine
-// runs in a same-origin iframe we reach it via `iframe.contentWindow`; the only
-// thing that differs between same-document and iframe hosting is which window we
-// point at — keep that behind here.
+// engine document (src/web.rs, attached in deploy/web/engine.js). The engine runs
+// in a same-origin iframe, so we reach it via `iframe.contentWindow`; which window
+// to point at is kept behind here so callers don't care.
 
 export class EngineRpc {
   private win: (Window & { engine_console_command?: (line: string) => Promise<string> }) | null =
