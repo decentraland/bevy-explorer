@@ -113,6 +113,12 @@ export interface ChatState {
 
 const MAX_CHAT_LINES = 200
 
+// Render-settle: after a scene first reports loaded, hold the loader at least this long for the
+// engine to render the first frame (so the world isn't revealed as black models), and at most this
+// long so a stuck render probe never traps the loader.
+const MIN_REVEAL_MS = 700
+const MAX_REVEAL_MS = 6000
+
 export type LoginStatus =
   | 'loading'
   | 'sign-in-or-guest'
@@ -556,14 +562,43 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     redirectToAuth()
   }, [busy])
 
+  // Render-settle. When the scene flips from loading → loaded (visible true→false), hold the loader
+  // a beat longer while the engine actually renders the world (compiling shaders / uploading
+  // textures) — otherwise it's revealed as black models. Gated on the engine's `renderBusy` probe
+  // and capped by MAX_REVEAL_MS so it never hangs. Mock has no engine to wait for (no renderBusy) →
+  // no delay. Applies to every scene stream, not just the first, so crossings don't flash black.
+  const [revealing, setRevealing] = useState(false)
+  const prevSceneVisible = useRef<boolean | undefined>(undefined)
+  useEffect(() => {
+    const visible = scene?.visible
+    const justLoaded = prevSceneVisible.current === true && visible === false
+    prevSceneVisible.current = visible
+    if (!justLoaded || typeof driverRef.current?.renderBusy !== 'function') return
+    setRevealing(true)
+    const startedAt = performance.now()
+    let timer: ReturnType<typeof setTimeout>
+    const tick = (): void => {
+      const elapsed = performance.now() - startedAt
+      const stillRendering = driverRef.current?.renderBusy?.() === true
+      if ((elapsed >= MIN_REVEAL_MS && !stillRendering) || elapsed >= MAX_REVEAL_MS) {
+        setRevealing(false)
+        return
+      }
+      timer = setTimeout(tick, 120)
+    }
+    timer = setTimeout(tick, MIN_REVEAL_MS)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scene?.visible])
+
   // Mirror the engine's native loading screen (SDK7 SceneLoadingWindow: `if (!visible) return null`)
   // — reactive to `scene.visible`, NO latch. The engine keeps its loader visible until the player's
   // scene is actually rendered, and flips it back on for each scene streamed into Genesis Plaza, so
   // mirroring it covers the black, still-loading world instead of revealing it. Stay on the loader
-  // until the player has spawned too, so the HUD never flashes before there's a world.
+  // until the player has spawned AND the render-settle (above) has cleared.
   const phase: SessionPhase = !submitted
     ? 'login'
-    : scene?.visible === true || !playerReady
+    : scene?.visible === true || !playerReady || revealing
       ? 'entering'
       : 'world'
 

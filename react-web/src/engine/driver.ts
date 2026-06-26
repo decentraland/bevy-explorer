@@ -27,4 +27,8 @@ export interface LoginDriver {
   /** Subscribe to every scene→page message. Returns an unsubscribe. */
   on(fn: (msg: SceneToPage) => void): () => void
   dispose(): void
+  /** True while the engine is still rendering the just-loaded scene (shaders compiling). The session
+   *  holds the loading screen until this clears so the world isn't revealed as black models.
+   *  Optional — the mock has no engine to wait for. */
+  renderBusy?(): boolean
 }

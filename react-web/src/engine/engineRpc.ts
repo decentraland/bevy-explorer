@@ -32,4 +32,17 @@ export class EngineRpc {
     await this.waitReady()
     return this.win!.engine_console_command!(line)
   }
+
+  /** True while the engine is still compiling shaders for the current scene — i.e. revealing the
+   *  world now would show black/untextured models. Read from the engine doc's `#shader-compiling`
+   *  indicator (same-origin iframe). Best-effort: false when the window/element isn't reachable. */
+  renderBusy(): boolean {
+    try {
+      const w = this.win as (Window & typeof globalThis) | null
+      const el = w?.document.getElementById('shader-compiling')
+      return el != null && w!.getComputedStyle(el).display !== 'none'
+    } catch {
+      return false
+    }
+  }
 }

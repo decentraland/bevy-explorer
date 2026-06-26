@@ -15,9 +15,10 @@ const SYSTEM_SCENE = 'http://localhost:8100'
 
 // Trailing slash matters: the engine derives its service-worker scope + worker
 // paths from location.pathname, so it must boot at /engine/ not /engine/index.html.
+// hideLoader=1 suppresses the engine's built-in loading UI — React renders the only loader.
 const ENGINE_SRC =
   `/engine/?initialRealm=${encodeURIComponent(REALM)}` +
-  `&position=0,0&systemScene=${encodeURIComponent(SYSTEM_SCENE)}`
+  `&position=0,0&systemScene=${encodeURIComponent(SYSTEM_SCENE)}&hideLoader=1`
 
 export function EngineHost({ rpc }: { rpc: EngineRpc }): React.JSX.Element {
   const ref = useRef<HTMLIFrameElement>(null)

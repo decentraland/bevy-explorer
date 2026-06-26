@@ -19,6 +19,17 @@
         })();
     </script>
     <script>
+        // When embedded in the React HUD (which renders its OWN loading screen), suppress the
+        // engine's built-in loading UI so only one loader shows — the page passes ?hideLoader=1
+        // (see react-web EngineHost). Standalone use keeps its loader. Runs in <head>, before the
+        // loader paints.
+        if (new URLSearchParams(window.location.search).get('hideLoader') === '1') {
+            var s = document.createElement('style');
+            s.textContent = '#loading-container,#loading-logo,#bevy-badge{display:none !important}';
+            document.head.appendChild(s);
+        }
+    </script>
+    <script>
     (function () {
         function isMobile() {
             return /Android|iPhone|iPad|iPod|webOS|BlackBerry|Opera Mini|IEMobile|Windows Phone/i.test(navigator.userAgent);

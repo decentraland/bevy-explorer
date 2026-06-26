@@ -92,6 +92,10 @@ export class EngineDriver implements LoginDriver {
     this.listeners.clear()
   }
 
+  renderBusy(): boolean {
+    return this.rpc.renderBusy()
+  }
+
   private emit(msg: SceneToPage): void {
     this.listeners.forEach((fn) => fn(msg))
   }
