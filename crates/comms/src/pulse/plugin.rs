@@ -25,7 +25,7 @@ use common::{
     util::{TaskCompat, TaskExt},
 };
 use dcl_component::proto_components::common::Vector3;
-use dcl_component::proto_components::kernel::comms::rfc4::packet::Message;
+use dcl_component::proto_components::kernel::comms::rfc4::{self, packet::Message};
 use dcl_component::proto_components::pulse;
 use dcl_component::transform_and_parent::DclTranslation;
 use prost::Message as _;
@@ -36,7 +36,7 @@ use super::transport::{
     self, PulseDriverHandle, PulseFrame, PulseLink, PulseReliability, PulseStatus,
     PulseTransportConfig,
 };
-use super::{PulseDecoder, PulseEvent, PulseParcelGrid};
+use super::{from_movement, PulseDecoder, PulseEvent, PulseParcelGrid};
 use crate::global_crdt::{GlobalCrdtState, NetworkUpdate, PlayerMessage, PlayerUpdate};
 
 /// Insert this resource to connect to a Pulse server. Absent → the plugin is fully inert.
@@ -80,7 +80,7 @@ const RETRY_COOLDOWN_SECS: f64 = 2.0;
 const HANDSHAKE_RESPONSE_TIMEOUT_SECS: f64 = 5.0;
 
 #[derive(Resource)]
-struct PulseSession {
+pub(crate) struct PulseSession {
     /// The byte boundary to the current driver. `None` between attempts (`Down`/`Dead`).
     link: Option<PulseLink>,
     /// Current driver; dropping it stops the thread. `None` between attempts. Replaced wholesale on
@@ -98,6 +98,33 @@ struct PulseSession {
     /// Server instance id, folded into the connect signature (re-signed on each attempt).
     server_id: String,
     state: Connection,
+}
+
+impl PulseSession {
+    /// Queue a locally-built [`rfc4::Movement`] to the server as a `PlayerStateInput` — the write-side
+    /// mirror of `pump_pulse`'s decode. The movement is inverted into a Pulse `PlayerState` via
+    /// [`from_movement`] (the server computes the per-field deltas it fans out) and sent
+    /// unreliable-sequenced, matching Unity's `PacketMode.UNRELIABLE_SEQUENCED`. No-op unless the
+    /// session is `Established` with a live link, so callers can fire unconditionally.
+    pub(crate) fn send_movement(&self, movement: &rfc4::Movement) {
+        if !matches!(self.state, Connection::Established) {
+            return;
+        }
+        let Some(link) = self.link.as_ref() else {
+            return;
+        };
+        let message = pulse::ClientMessage {
+            message: Some(pulse::client_message::Message::Input(
+                pulse::PlayerStateInput {
+                    state: Some(from_movement(movement, &self.grid)),
+                },
+            )),
+        };
+        let _ = link.outbound.try_send(PulseFrame {
+            bytes: message.encode_to_vec(),
+            reliability: PulseReliability::UnreliableSequenced,
+        });
+    }
 }
 
 /// Marker for the synthetic Pulse transport entity (referenced by foreign players' `transport_id`).

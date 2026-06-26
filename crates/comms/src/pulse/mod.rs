@@ -19,7 +19,7 @@
 use std::collections::HashMap;
 
 use bevy::math::Vec3;
-use dcl_component::proto_components::{kernel::comms::rfc4, pulse};
+use dcl_component::proto_components::{common::Vector3, kernel::comms::rfc4, pulse};
 use ethers_core::types::Address;
 
 pub mod plugin;
@@ -364,6 +364,76 @@ impl PulseDecoder {
 
 fn flag(flags: u32, f: pulse::PlayerAnimationFlags) -> bool {
     flags & (f as u32) != 0
+}
+
+/// Inverse of [`PulseDecoder::to_movement`]: pack a locally-built [`rfc4::Movement`] into the Pulse
+/// [`PlayerState`] we send. World position is split into `parcel_index` + in-parcel local; the rfc4
+/// bool fields are folded back into `state_flags`; head yaw/pitch and point-at ride only when their
+/// enable flag is set (matching Unity's `WritePlayerState`). Fields with no Pulse equivalent
+/// (`is_jumping`, `is_emoting`, `scene_driven_animation`) are dropped — animation stays on LiveKit.
+pub(crate) fn from_movement(
+    movement: &rfc4::Movement,
+    grid: &PulseParcelGrid,
+) -> pulse::PlayerState {
+    let world = Vec3::new(
+        movement.position_x,
+        movement.position_y,
+        movement.position_z,
+    );
+    let (parcel_index, local) = grid.encode_to_parcel(world);
+
+    let mut state_flags = 0u32;
+    let mut set = |on: bool, f: pulse::PlayerAnimationFlags| {
+        if on {
+            state_flags |= f as u32;
+        }
+    };
+    set(movement.is_grounded, pulse::PlayerAnimationFlags::Grounded);
+    set(movement.is_long_jump, pulse::PlayerAnimationFlags::LongJump);
+    set(movement.is_long_fall, pulse::PlayerAnimationFlags::LongFall);
+    set(movement.is_falling, pulse::PlayerAnimationFlags::Falling);
+    set(movement.is_stunned, pulse::PlayerAnimationFlags::Stunned);
+    set(
+        movement.head_ik_yaw_enabled,
+        pulse::PlayerAnimationFlags::HeadYaw,
+    );
+    set(
+        movement.head_ik_pitch_enabled,
+        pulse::PlayerAnimationFlags::HeadPitch,
+    );
+    set(
+        movement.is_pointing_at,
+        pulse::PlayerAnimationFlags::PointingAt,
+    );
+
+    pulse::PlayerState {
+        parcel_index,
+        position: Some(Vector3 {
+            x: local.x,
+            y: local.y,
+            z: local.z,
+        }),
+        velocity: Some(Vector3 {
+            x: movement.velocity_x,
+            y: movement.velocity_y,
+            z: movement.velocity_z,
+        }),
+        rotation_y: movement.rotation_y,
+        movement_blend: movement.movement_blend_value,
+        slide_blend: movement.slide_blend_value,
+        head_yaw: movement.head_ik_yaw_enabled.then_some(movement.head_yaw),
+        head_pitch: movement
+            .head_ik_pitch_enabled
+            .then_some(movement.head_pitch),
+        state_flags,
+        glide_state: movement.glide_state,
+        jump_count: movement.jump_count,
+        point_at: movement.is_pointing_at.then_some(Vector3 {
+            x: movement.point_at_x,
+            y: movement.point_at_y,
+            z: movement.point_at_z,
+        }),
+    }
 }
 
 /// Snap a quantization-residual velocity to exactly zero.
