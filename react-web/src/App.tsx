@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { BridgeClient } from './engine/bridge'
 import { EngineDriver } from './engine/EngineDriver'
 import { EngineRpc } from './engine/engineRpc'
@@ -26,6 +26,7 @@ import { LoadingAndLogin } from './features/login/LoadingAndLogin'
 import { SceneLoadingOverlay } from './features/session/SceneLoadingOverlay'
 import { useEngineSession } from './features/session/useEngineSession'
 import { useHudScale } from './lib/useHudScale'
+import { useGlobalHotkey } from './lib/useGlobalHotkey'
 
 const params = new URLSearchParams(location.search)
 // MOCK (?mock=1): UI only, no engine, fake bridge (?previousLogin=1 → returning user).
@@ -44,19 +45,14 @@ export function App(): React.JSX.Element {
   )
 }
 
-// Perf overlay visibility: on via ?fps=1, toggle anytime with Ctrl/Cmd+Shift+F.
+// Perf overlay visibility: on via ?fps=1, toggle anytime with Ctrl/Cmd+Shift+F
+// (works even when the engine iframe holds keyboard focus — see useGlobalHotkey).
 function useFpsToggle(): boolean {
   const [on, setOn] = useState(params.get('fps') === '1')
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'F' || e.key === 'f')) {
-        e.preventDefault()
-        setOn((v) => !v)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  useGlobalHotkey(
+    (e) => (e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'F' || e.key === 'f'),
+    () => setOn((v) => !v)
+  )
   return on
 }
 
