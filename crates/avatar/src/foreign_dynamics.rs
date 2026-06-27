@@ -12,12 +12,8 @@ use comms::global_crdt::{ForeignPlayer, PlayerPositionEvent, PlayerSceneAnimEven
 use dcl_component::{transform_and_parent::DclTransformAndParent, SceneEntityId};
 use scene_runner::{update_world::mesh_collider::SceneColliderData, ContainingScene};
 
-/// Largest forward timestamp jump accepted as normal progress; a bigger leap is treated as a
-/// garbage stamp. Generous (the server clock can gap during a brief stall) but bounded so a single
-/// absurd-future stamp can't lock out every subsequent real update.
-const TIMESTAMP_FORWARD_LIMIT_SECS: f32 = 60.0;
-/// A backward jump beyond this reads as a wrap (`movement_compressed`'s range) or a sender restart,
-/// so we re-sync to it instead of freezing; smaller backward steps are reordered datagrams.
+/// A backward jump beyond this reads as a server restart (the Pulse `server_tick` resets to ~0), so
+/// we re-sync to it instead of freezing; smaller backward steps are reordered/duplicate datagrams.
 const TIMESTAMP_RESET_SECS: f32 = 60.0;
 
 pub struct PlayerMovementPlugin;
@@ -95,13 +91,16 @@ fn update_foreign_user_target_position(
 
         if let Ok((_player, maybe_pos, maybe_pending)) = players.get_mut(ev.player) {
             if let Some(mut pos) = maybe_pos {
-                // The server tick is monotonic seconds: accept a strictly-newer stamp within a sane
-                // forward window, treat a large backward jump as a sender restart (re-sync rather
-                // than freeze), and reject small backward steps as reordered/duplicate datagrams.
+                // The Pulse server tick is monotonic seconds: accept any strictly-newer stamp — a
+                // large forward jump is a legitimate resume (an idle peer whose unchanged state the
+                // server stopped republishing, now moving again), not a garbage future stamp. Treat
+                // a large backward jump as a server restart (re-sync rather than freeze), and reject
+                // small backward steps as reordered/duplicate datagrams.
                 let is_valid = pos.timestamp.is_none_or(|pts| {
                     let forward = ev.timestamp - pts;
-                    (forward > 0.0 && forward < TIMESTAMP_FORWARD_LIMIT_SECS)
-                        || forward < -TIMESTAMP_RESET_SECS
+                    let is_forward = forward > 0.0;
+                    let is_restart = forward < -TIMESTAMP_RESET_SECS;
+                    is_forward || is_restart
                 });
                 if is_valid {
                     const LAG_DECAY_SECS: f32 = 1.5;
