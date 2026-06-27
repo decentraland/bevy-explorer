@@ -98,6 +98,10 @@ function Panel({ flow, name }: { flow: LoginFlow; name?: string }): React.JSX.El
   const status = flow.status as Exclude<LoginStatus, 'loading'>
   const copy = COPY[status]
   const title = status === 'reuse-login-or-new' && name != null && name !== '' ? `Welcome back ${name}` : copy.title
+  // The engine boots in the background while this screen is up. Keep the engine-driven CTAs disabled
+  // (showing a starting state) until it can take the login command, so a click never lands in a
+  // silent wait. The auth-redirect buttons don't touch the engine, so they stay enabled.
+  const enginePending = !flow.engineReady
 
   return (
     <div className={styles.panel}>
@@ -113,17 +117,17 @@ function Panel({ flow, name }: { flow: LoginFlow; name?: string }): React.JSX.El
               START WITH ACCOUNT
               <ArrowIcon />
             </Button>
-            <Button variant="secondary" size="lg" className={styles.ctaSecondary} onClick={flow.exploreAsGuest} disabled={flow.busy}>
-              EXPLORE AS GUEST
+            <Button variant="secondary" size="lg" className={styles.ctaSecondary} onClick={flow.exploreAsGuest} disabled={flow.busy || enginePending}>
+              {enginePending ? 'STARTING…' : 'EXPLORE AS GUEST'}
             </Button>
           </>
         )}
 
         {status === 'reuse-login-or-new' && (
           <>
-            <Button variant="primary" size="lg" className={styles.cta} onClick={flow.jumpIn} disabled={flow.busy}>
-              JUMP INTO DECENTRALAND
-              <ArrowIcon />
+            <Button variant="primary" size="lg" className={styles.cta} onClick={flow.jumpIn} disabled={flow.busy || enginePending}>
+              {enginePending ? 'STARTING…' : 'JUMP INTO DECENTRALAND'}
+              {!enginePending && <ArrowIcon />}
             </Button>
             <Button variant="secondary" size="lg" className={styles.ctaSecondary} onClick={flow.useDifferentAccount} disabled={flow.busy}>
               USE A DIFFERENT ACCOUNT

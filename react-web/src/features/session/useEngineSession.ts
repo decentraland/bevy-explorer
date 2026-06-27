@@ -115,9 +115,11 @@ const MAX_CHAT_LINES = 200
 
 // Render-settle: after a scene first reports loaded, hold the loader at least this long for the
 // engine to render the first frame (so the world isn't revealed as black models), and at most this
-// long so a stuck render probe never traps the loader.
-const MIN_REVEAL_MS = 700
-const MAX_REVEAL_MS = 6000
+// long so a stuck/absent render probe never traps the loader. The cap is deliberately short: the
+// `renderBusy` probe is best-effort (the engine build may not even expose `#shader-compiling`), so a
+// long cap turned a missed probe into a multi-second frozen-looking hold with the engine idle.
+const MIN_REVEAL_MS = 300
+const MAX_REVEAL_MS = 1500
 
 export type LoginStatus =
   | 'loading'
@@ -132,6 +134,9 @@ export interface LoginFlow {
   account: string | null
   busy: boolean
   error: string | null
+  /** Engine has booted and can accept the login command. The engine-driven CTAs (Jump in / Explore)
+   *  stay disabled until this is true so a click never lands in a silent wait. Always true for mock. */
+  engineReady: boolean
   /** Fresh sign-in → redirect to the same-domain auth site. */
   startWithAccount: () => void
   exploreAsGuest: () => void
@@ -184,6 +189,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [prevUserId, setPrevUserId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Engine boots (autostart) while the login screen is up; this flips true once it can take commands.
+  const [engineReady, setEngineReady] = useState(false)
 
   // Past login → waiting for the world.
   const [submitted, setSubmitted] = useState(false)
@@ -331,6 +338,27 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     }
     // createDriver is stable; run-once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Watch engine boot: the iframe autostarts on mount, so poll until it can take commands, then stop.
+  // Drivers without an engine (mock/tests) report ready immediately.
+  useEffect(() => {
+    const driver = driverRef.current
+    if (driver == null || typeof driver.engineReady !== 'function') {
+      setEngineReady(true)
+      return
+    }
+    if (driver.engineReady()) {
+      setEngineReady(true)
+      return
+    }
+    const id = setInterval(() => {
+      if (driverRef.current?.engineReady?.() === true) {
+        setEngineReady(true)
+        clearInterval(id)
+      }
+    }, 200)
+    return () => clearInterval(id)
   }, [])
 
   // On world-entry, pull the profile (top-bar chip) and notifications (so the unread badge
@@ -528,7 +556,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const submitLogin = useCallback(
     (loginCall: (driver: LoginDriver) => Promise<unknown>) => {
       const driver = driverRef.current
-      if (driver == null || busy) return
+      if (driver == null || busy || !engineReady) return
       setError(null)
       setBusy(true)
       setSubmitted(true)
@@ -548,7 +576,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       requestAnimationFrame(() => requestAnimationFrame(start))
       setTimeout(start, 60)
     },
-    [busy]
+    [busy, engineReady]
   )
 
   const exploreAsGuest = useCallback(() => submitLogin((d) => d.loginGuest()), [submitLogin])
@@ -650,6 +678,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       account: prevUserId ?? (stored ? rootAddress(stored.identity) : null),
       busy,
       error,
+      engineReady,
       startWithAccount,
       exploreAsGuest,
       jumpIn,

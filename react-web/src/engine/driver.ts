@@ -31,4 +31,8 @@ export interface LoginDriver {
    *  holds the loading screen until this clears so the world isn't revealed as black models.
    *  Optional — the mock has no engine to wait for. */
   renderBusy?(): boolean
+  /** True once the engine can accept console commands (WASM booted, `engine_console_command` live).
+   *  The login screen keeps its engine-driven buttons in a "Starting…" state until this is true, so a
+   *  click can't land in a silent `waitReady()` poll. Optional — the mock is always ready. */
+  engineReady?(): boolean
 }
