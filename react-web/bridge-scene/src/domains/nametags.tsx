@@ -60,10 +60,14 @@ const BORDER = 2
 // the per-frame system has measured it.
 const ASPECT = 4
 const SIZE_FACTOR = 0.05
-const MIN_DIST = 2
+const MIN_DIST = 1
 const FADE_START = 20
 const MAX_DIST = 40
 const DEFAULT_DIST = 6
+// The pill is attached at the avatar's NAME_TAG anchor (above the head), but getPlayer().position is
+// the avatar's feet. For distant tags that offset is noise; for a CLOSE one the head is much nearer
+// the camera than the feet, so sizing by the feet distance over-enlarges it. Measure to the head.
+const NAMETAG_HEIGHT = 2.2
 function tagScale(dist: number): Vector3 {
   const d = Math.max(MIN_DIST, Math.min(MAX_DIST, dist))
   const m = SIZE_FACTOR * d
@@ -212,7 +216,8 @@ function hasLivePosition(userId: string): boolean {
 function distanceTo(userId: string, cam: { x: number; y: number; z: number }): number | null {
   const pos = getPlayer({ userId })?.position
   if (pos == null) return null
-  return Math.hypot(pos.x - cam.x, pos.y - cam.y, pos.z - cam.z)
+  // Measure to the name-tag anchor (above the head), not the feet, so a close tag isn't over-enlarged.
+  return Math.hypot(pos.x - cam.x, pos.y + NAMETAG_HEIGHT - cam.y, pos.z - cam.z)
 }
 
 // Guard on globalThis (NOT a module-local) so a module re-eval / HMR that keeps the engine context
@@ -337,9 +342,18 @@ export function initNametags(): void {
     const doOpacity = opTick === 0
     for (const [plane] of engine.getEntitiesWith(UiCanvas, MeshRenderer)) {
       const anchor = Transform.getOrNull(plane)?.parent
-      if (anchor == null) continue
-      const uid = uidOf.get(anchor)
-      if (uid == null) continue
+      const uid = anchor != null ? uidOf.get(anchor) : undefined
+      if (uid == null) {
+        // Orphan plane (no tracked anchor): a leftover from a despawn/respawn that sweepOrphans
+        // hasn't deleted yet. Collapse it NOW so its stale (possibly huge) scale can't flash as a
+        // giant pill in the meantime — don't just skip it, which is what left the giant duplicates.
+        const t = Transform.getMutableOrNull(plane)
+        if (t != null && lastScaleDist.get(plane) !== -1) {
+          t.scale = Vector3.create(0, 0, 0)
+          lastScaleDist.set(plane, -1)
+        }
+        continue
+      }
       const dist = distanceTo(uid, cam)
       const t = Transform.getMutableOrNull(plane)
 
