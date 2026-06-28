@@ -146,6 +146,7 @@ export function fakeSession(): EngineSession {
     map: { x: 0, y: 0, open: false, toggle: vi.fn(), teleport: vi.fn(), changeRealm: vi.fn() },
     places: { open: false, toggle: vi.fn() },
     gallery: { list: [], current: 0, max: 0, loaded: false, open: false, toggle: vi.fn(), metas: {}, loadPhoto: vi.fn(), remove: vi.fn() },
+    permissions: { pending: [], resolve: vi.fn() },
     mic: { enabled: false, available: true, toggle: vi.fn() },
     nav: vi.fn(),
     setEngineViewport: vi.fn(),

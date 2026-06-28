@@ -407,10 +407,7 @@ fn decentraland_app_arguments(
         login: false,
         emote_wheel: false,
         chat: false,
-        // React owns the rest of the HUD, but the scene permission prompt (ChangeRealm, OpenUrl,
-        // Web3, …) is drawn by the engine's native dialog — it also handles the "used" toasts and
-        // the Settings permissions tab, which the React HUD does not reimplement.
-        permissions: true,
+        permissions: false,
         profile: false,
         nametags: false,
         tooltips: false,

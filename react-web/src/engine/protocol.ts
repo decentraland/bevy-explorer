@@ -88,6 +88,7 @@ export type PageToScene =
   | GetMapRequest
   | TeleportRequest
   | ChangeRealmRequest
+  | PermissionResolveRequest
   | EngineViewportRequest
   | GetGalleryRequest
   | GetGalleryPhotoRequest
@@ -375,6 +376,39 @@ export interface TeleportRequest {
  *  (e.g. `boedo.dcl.eth`) or realm URL. */
 export interface ChangeRealmRequest {
   kind: 'changeRealm'
+  realm: string
+}
+
+/** A scene's pending permission prompt relayed from the engine (e.g. it wants to move you
+ *  to a new realm). Shown as the React permission dialog; resolved with permissionResolve. */
+export interface PermissionRequestMessage {
+  kind: 'permissionRequest'
+  /** Engine-assigned request id (echoed back to resolve a "Once" decision). */
+  id: number
+  /** PermissionType serde name, e.g. 'ChangeRealm' — React maps it to the human prompt. */
+  ty: string
+  /** Scene title (e.g. 'Genesis Plaza') for the dialog text. */
+  sceneName: string
+  /** Scene hash — the value for a Scene-level "Always" grant. */
+  scene: string
+  /** Realm url the request was made under — the value for a Realm-level "Always" grant. */
+  realm: string
+  /** Extra context line (e.g. 'Jump to DCL Kickoff Challenge?'). */
+  additional?: string
+}
+
+/** Which scope an Allow/Deny applies to. `once` = just this request; the rest persist a rule. */
+export type PermissionLevelChoice = 'once' | 'scene' | 'realm' | 'global'
+
+/** The user's decision on a permission prompt (page → scene → SystemApi). */
+export interface PermissionResolveRequest {
+  kind: 'permissionResolve'
+  id: number
+  ty: string
+  allow: boolean
+  level: PermissionLevelChoice
+  /** Scene hash + realm carried back so the scene can target a permanent grant. */
+  scene: string
   realm: string
 }
 
@@ -671,6 +705,7 @@ export type SceneToPage =
   | MapMessage
   | GalleryMessage
   | GalleryPhotoMessage
+  | PermissionRequestMessage
 
 // ---- envelope --------------------------------------------------------------
 

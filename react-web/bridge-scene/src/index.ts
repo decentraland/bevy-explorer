@@ -21,6 +21,7 @@ import { registerGallery } from './domains/gallery'
 import { registerWorld } from './domains/world'
 import { registerPointer } from './domains/pointer'
 import { registerProximity } from './domains/proximity'
+import { registerPermissions } from './domains/permissions'
 import { initNametags } from './domains/nametags'
 
 export function main(): void {
@@ -41,6 +42,7 @@ export function main(): void {
     registerWorld(ctx)
     registerPointer(ctx)
     registerProximity(ctx)
+    registerPermissions(ctx)
     registerAvatarPreview(ctx)
   })
 

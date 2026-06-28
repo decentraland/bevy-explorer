@@ -264,6 +264,23 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
         2500 + i * 2200
       )
     )
+
+    // ?perm=1 → fire a sample scene permission prompt so the dialog is exercisable in the mock.
+    if (new URLSearchParams(location.search).get('perm') === '1') {
+      setTimeout(
+        () =>
+          reply({
+            kind: 'permissionRequest',
+            id: 1,
+            ty: 'ChangeRealm',
+            sceneName: 'Genesis Plaza',
+            scene: 'bafkreigenesisplazahash',
+            realm: 'https://realm-provider.decentraland.org/main',
+            additional: 'Jump to DCL Kickoff Challenge?'
+          }),
+        3000
+      )
+    }
   }
 
   ch.onmessage = async (e: MessageEvent<Envelope>) => {
@@ -337,6 +354,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       return
     }
     if (msg.kind === 'changeRealm') return // no realm switching in the mock
+    if (msg.kind === 'permissionResolve') return // no engine to apply the decision in the mock
     if (msg.kind === 'getCommunities') {
       reply({ kind: 'communities', communities: mockCommunities })
       return
