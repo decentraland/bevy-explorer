@@ -22,6 +22,7 @@ system_bridge = { workspace = true }
 
 bevy = { workspace = true }
 bimap = { workspace = true }
+bitflags = { workspace = true }
 ethers-core = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

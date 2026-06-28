@@ -98,6 +98,51 @@ pub enum TransportType {
     Livekit,
     Archipelago,
     SceneRoom,
+    /// The realm's high-frequency avatar-state carrier (UDP/ENet). A real transport entity whose
+    /// channel feeds a bridge that converts rfc4 bytes into Pulse `ClientMessage`s; spawned only on
+    /// livekit realms (see `pulse::plugin`).
+    Pulse,
+}
+
+bitflags::bitflags! {
+    /// Which transports a broadcast targets, so a sender declares intent once (`broadcast_to`)
+    /// instead of repeating `transport_type != X` filters at every call site. Flags compose, so a
+    /// message bound for several transports is a single `broadcast_to` call (e.g.
+    /// `PRIMARY | ARCHIPELAGO`) rather than one per transport. Pulse is just another transport here:
+    /// its entity's channel feeds a bridge that converts the rfc4 bytes into Pulse `ClientMessage`s
+    /// (see `pulse::plugin`), and drops anything it can't convert — so only `PULSE`-targeted
+    /// (avatar-state) messages should carry the bit.
+    #[derive(Clone, Copy, Debug)]
+    pub struct BroadcastTarget: u8 {
+        /// The local websocket dev server (the realm's non-LiveKit avatar-state byte transport).
+        const WEBSOCKET = 1 << 0;
+        const LIVEKIT = 1 << 1;
+        /// The Archipelago island-assignment transport.
+        const ARCHIPELAGO = 1 << 2;
+        /// The per-scene messagebus room.
+        const SCENE_ROOM = 1 << 3;
+        /// The realm's Pulse avatar-state transport (only carries convertible avatar state).
+        const PULSE = 1 << 4;
+
+        /// Realm avatar state: the websocket dev server plus Pulse. Movement rides this.
+        const PRIMARY = Self::WEBSOCKET.bits() | Self::PULSE.bits();
+    }
+}
+
+impl BroadcastTarget {
+    fn flag_for(transport_type: &TransportType) -> BroadcastTarget {
+        match transport_type {
+            TransportType::WebsocketRoom => BroadcastTarget::WEBSOCKET,
+            TransportType::Livekit => BroadcastTarget::LIVEKIT,
+            TransportType::Archipelago => BroadcastTarget::ARCHIPELAGO,
+            TransportType::SceneRoom => BroadcastTarget::SCENE_ROOM,
+            TransportType::Pulse => BroadcastTarget::PULSE,
+        }
+    }
+
+    pub fn includes(self, transport_type: &TransportType) -> bool {
+        self.contains(Self::flag_for(transport_type))
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -107,6 +152,7 @@ pub enum NetworkMessageRecipient {
     AuthServer,
 }
 
+#[derive(Clone)]
 pub struct NetworkMessage {
     pub data: Vec<u8>,
     pub unreliable: bool,
@@ -150,6 +196,24 @@ pub struct Transport {
     pub sender: Sender<NetworkMessage>,
     pub control: Option<Sender<ChannelControl>>,
     pub foreign_aliases: BiMap<u32, Address>,
+}
+
+/// Encode `message` once and queue it onto every transport matching `target`. The single point that
+/// turns a [`BroadcastTarget`] into per-transport sends; full channels are dropped (best-effort).
+pub fn broadcast_to<'a, D: ToDclWriter>(
+    transports: impl Iterator<Item = &'a Transport>,
+    target: BroadcastTarget,
+    unreliable: bool,
+    message: &D,
+) {
+    let message = if unreliable {
+        NetworkMessage::unreliable(message)
+    } else {
+        NetworkMessage::reliable(message)
+    };
+    for transport in transports.filter(|t| target.includes(&t.transport_type)) {
+        let _ = transport.sender.try_send(message.clone());
+    }
 }
 
 fn process_realm_change(
@@ -282,6 +346,9 @@ pub struct AdapterManager<'w, 's> {
     ws_room_events: EventWriter<'w, StartWsRoom>,
     #[cfg(feature = "livekit")]
     livekit_events: EventWriter<'w, StartLivekit>,
+    // Pulse rides alongside livekit realms; spawned from the livekit arm of `connect`.
+    #[cfg(feature = "livekit")]
+    pulse_events: EventWriter<'w, pulse::plugin::StartPulse>,
     archipelago_events: EventWriter<'w, StartArchipelago>,
     // can't use event writer due to conflict on Res<Events>
     pub signed_login_events: ResMut<'w, Events<StartSignedLogin>>,
@@ -313,6 +380,10 @@ impl AdapterManager<'_, '_> {
                     entity,
                     address: address.to_owned(),
                 });
+                // A livekit realm is a Pulse realm: (re)spawn the Pulse routing transport and
+                // announce the new realm. On the first such realm this also establishes the
+                // connection; on later ones it just re-teleports.
+                self.pulse_events.write(pulse::plugin::StartPulse);
                 return Some(entity);
             }
             #[cfg(not(feature = "livekit"))]

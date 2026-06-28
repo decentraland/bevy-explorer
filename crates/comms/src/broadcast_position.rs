@@ -3,17 +3,20 @@ use bevy::prelude::*;
 use common::structs::{
     AvatarDynamicState, HeadSync, MoveKind, PointAtSync, PrimaryUser, SceneDrivenAnim,
 };
-use dcl_component::{proto_components::kernel::comms::rfc4, transform_and_parent::DclTranslation};
+use dcl_component::{
+    proto_components::kernel::comms::rfc4,
+    transform_and_parent::{DclQuat, DclTranslation},
+};
 use wallet::Wallet;
 
 use crate::{
+    broadcast_to,
     global_crdt::GlobalCrdtState,
     movement_compressed::{Movement, Temporal},
-    pulse::plugin::PulseSession,
-    TransportType,
+    BroadcastTarget,
 };
 
-use super::{NetworkMessage, Transport};
+use super::Transport;
 
 pub struct BroadcastPositionPlugin;
 
@@ -66,12 +69,12 @@ fn broadcast_position(
         ),
         With<PrimaryUser>,
     >,
-    pulse_session: Option<Res<PulseSession>>,
     transports: Query<&Transport>,
     mut last_position: Local<(Vec3, Quat, Vec3)>,
     mut last_head_sync: Local<HeadSync>,
     mut last_point_at: Local<PointAtSync>,
     mut last_sent: Local<f64>,
+    mut last_index: Local<u32>,
     mut last_anim: Local<LastAnim>,
     time: Res<Time>,
     global_crdt: Res<GlobalCrdtState>,
@@ -322,34 +325,58 @@ fn broadcast_position(
     // };
     debug!("sending movement: {movement_uncompressed:?}");
 
-    // Movement goes out over Pulse only; the LiveKit movement broadcast is retired. No-op without a
-    // live Pulse session.
-    if let Some(pulse_session) = &pulse_session {
-        pulse_session.send_movement(&movement_uncompressed);
-    }
+    // Movement rides each rfc4 packet to exactly its consumer: `Movement` on `PRIMARY` (the websocket
+    // dev server, plus Pulse — whose routing transport bridges it into a `PlayerStateInput`), and
+    // `Position` to Archipelago, which clusters islands from it. LiveKit is excluded throughout, the
+    // way movement always was.
+    let dcl_rotation = DclQuat::from_bevy_quat(rotation);
+    let position_packet = rfc4::Packet {
+        message: Some(rfc4::packet::Message::Position(rfc4::Position {
+            index: *last_index,
+            position_x: dcl_position.0[0],
+            position_y: dcl_position.0[1],
+            position_z: dcl_position.0[2],
+            rotation_x: dcl_rotation.0[0],
+            rotation_y: dcl_rotation.0[1],
+            rotation_z: dcl_rotation.0[2],
+            rotation_w: dcl_rotation.0[3],
+        })),
+        protocol_version: 100,
+    };
+    let movement_packet = rfc4::Packet {
+        message: Some(rfc4::packet::Message::Movement(movement_uncompressed)),
+        protocol_version: 100,
+    };
+    broadcast_to(
+        transports.iter(),
+        BroadcastTarget::PRIMARY,
+        true,
+        &movement_packet,
+    );
+    broadcast_to(
+        transports.iter(),
+        BroadcastTarget::ARCHIPELAGO,
+        true,
+        &position_packet,
+    );
+    *last_index = last_index.wrapping_add(1);
 
-    // Scene-driven animation rides its own LiveKit packet (unreliable, like the old movement), only
-    // when there's anim state to send. Carries a monotonic sequence (for ordering); the receiver
-    // aligns it to our Pulse positions using its own last-received movement tick from us.
+    // Scene-driven animation rides its own packet (unreliable, like the old movement) to the avatar
+    // renderers — LiveKit and the websocket dev server — only when there's anim state to send. Not
+    // Archipelago (island assignment, no rendering) nor Pulse (no animation conversion). Carries a
+    // monotonic sequence (for ordering); the receiver aligns it to our Pulse positions using its own
+    // last-received movement tick from us.
     if let Some(anim) = scene_driven_animation {
         let packet = rfc4::Packet {
             message: Some(rfc4::packet::Message::SceneDrivenAnimation(anim)),
             protocol_version: 100,
         };
-        for transport in transports
-            .iter()
-            .filter(|t| t.transport_type != TransportType::SceneRoom)
-        {
-            if let Err(e) = transport
-                .sender
-                .try_send(NetworkMessage::unreliable(&packet))
-            {
-                warn!(
-                    "failed to send scene anim to transport {:?}: {e}",
-                    transport.transport_type
-                );
-            }
-        }
+        broadcast_to(
+            transports.iter(),
+            BroadcastTarget::WEBSOCKET | BroadcastTarget::LIVEKIT,
+            true,
+            &packet,
+        );
     }
 
     *last_position = (translation, rotation, dynamics.velocity);
