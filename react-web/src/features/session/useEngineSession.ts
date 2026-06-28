@@ -18,8 +18,6 @@ import type {
   HoverAction,
   NavAction,
   NearbyMember,
-  PermissionLevelChoice,
-  PermissionRequestMessage,
   ProximityTip,
   Profile,
   SceneLoadingState,
@@ -129,13 +127,6 @@ export interface FriendsState {
   act: (op: FriendAction, address: string) => void
 }
 
-export interface PermissionsState {
-  /** Outstanding scene permission prompts, oldest first (the HUD shows one at a time). */
-  pending: PermissionRequestMessage[]
-  /** Allow/deny the request `id` at the chosen scope, then drop it from the queue. */
-  resolve: (id: number, allow: boolean, level: PermissionLevelChoice) => void
-}
-
 export type ChatLine = ChatMessage & { id: number; ts: number }
 
 export interface ChatState {
@@ -218,8 +209,6 @@ export interface EngineSession {
   map: MapState
   places: PlacesState
   gallery: GalleryState
-  /** Scene permission prompts (e.g. ChangeRealm) awaiting an Allow/Deny. */
-  permissions: PermissionsState
   mic: { enabled: boolean; available: boolean; toggle: () => void }
   /** Trigger a sidebar nav action in the scene (open menu/popup, emotes, mic). */
   nav: (action: NavAction) => void
@@ -301,7 +290,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [galleryLoaded, setGalleryLoaded] = useState(false)
   const [galleryMetas, setGalleryMetas] = useState<Record<string, GalleryPhotoMeta | null>>({})
   const [galleryOpen, setGalleryOpen] = useState(false)
-  const [permissionQueue, setPermissionQueue] = useState<PermissionRequestMessage[]>([])
   const chatId = useRef(0)
   // Catalog fetches done once per session (cache; relays re-emit on change).
   const fetchedRef = useRef<Set<string>>(new Set())
@@ -390,9 +378,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'galleryPhoto':
           setGalleryMetas((prev) => ({ ...prev, [msg.id]: msg.meta }))
-          break
-        case 'permissionRequest':
-          setPermissionQueue((q) => (q.some((r) => r.id === msg.id) ? q : [...q, msg]))
           break
       }
     })
@@ -561,18 +546,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const changeRealm = useCallback((realm: string) => {
     driverRef.current?.send({ kind: 'changeRealm', realm })
   }, [])
-  const resolvePermission = useCallback(
-    (id: number, allow: boolean, level: PermissionLevelChoice) => {
-      setPermissionQueue((q) => {
-        const req = q.find((r) => r.id === id)
-        if (req) {
-          driverRef.current?.send({ kind: 'permissionResolve', id, ty: req.ty, allow, level, scene: req.scene, realm: req.realm })
-        }
-        return q.filter((r) => r.id !== id)
-      })
-    },
-    []
-  )
   // Post-jump-in Places picker: choose a destination (or null to skip → Genesis Plaza), then leave
   // the picker. A world switches realm now; a parcel is teleported once the avatar spawns.
   const pickDestination = useCallback((dest: Destination) => {
@@ -836,7 +809,6 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       loadPhoto: loadGalleryPhoto,
       remove: removeGalleryPhoto
     },
-    permissions: { pending: permissionQueue, resolve: resolvePermission },
     mic: { enabled: mic.enabled, available: mic.available, toggle: toggleMic },
     nav,
     setEngineViewport,

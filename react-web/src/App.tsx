@@ -23,7 +23,6 @@ import { Sidebar } from './features/sidebar/Sidebar'
 import { Pointer } from './features/pointer/Pointer'
 import { ProfilePassport } from './features/profile/ProfilePassport'
 import { WorldVisitModal } from './components/WorldVisitModal'
-import { PermissionDialog } from './features/permissions/PermissionDialog'
 import type { ChatUser } from './features/chat/ProfileCard'
 import type { Profile } from './engine/protocol'
 import { FpsMeter } from './features/debug/FpsMeter'
@@ -234,16 +233,6 @@ function Hud(): React.JSX.Element {
             />
           )}
         </>
-      )}
-      {/* Scene permission prompts (e.g. ChangeRealm) — one at a time, above any open menu. */}
-      {session.phase === 'world' && session.permissions.pending.length > 0 && (
-        <PermissionDialog
-          key={session.permissions.pending[0].id}
-          request={session.permissions.pending[0]}
-          onResolve={(allow, level) =>
-            session.permissions.resolve(session.permissions.pending[0].id, allow, level)
-          }
-        />
       )}
     </>
   )
