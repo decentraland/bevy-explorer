@@ -414,6 +414,78 @@ pub struct RemoteAnimState {
     last_sequence: HashMap<Entity, u32>,
 }
 
+/// Apply a foreign player's [`rfc4::Movement`], whether it arrived over Pulse (as
+/// [`PlayerMessage::Movement`]) or as a legacy rfc4 packet over a websocket transport (as
+/// [`PlayerMessage::PlayerData`]). Writes the CRDT transform and emits a [`PlayerPositionEvent`]
+/// for `foreign_dynamics` to interpolate.
+fn apply_foreign_movement(
+    m: &rfc4::Movement,
+    entity: Entity,
+    scene_id: SceneEntityId,
+    now: f32,
+    commands: &mut Commands,
+    state: &mut GlobalCrdtState,
+    position_events: &mut EventWriter<PlayerPositionEvent>,
+) {
+    debug!("movement data: {m:?}");
+    commands.entity(entity).try_insert((
+        HeadSync {
+            yaw_deg: m.head_yaw,
+            pitch_deg: m.head_pitch,
+            yaw_enabled: m.head_ik_yaw_enabled,
+            pitch_enabled: m.head_ik_pitch_enabled,
+        },
+        PointAtSync {
+            target_world: Vec3::new(m.point_at_x, m.point_at_y, m.point_at_z),
+            is_pointing: m.is_pointing_at,
+        },
+    ));
+    let pos = Vec3::new(m.position_x, m.position_y, -m.position_z);
+    let vel = Vec3::new(m.velocity_x, m.velocity_y, -m.velocity_z);
+    // Yaw only — the render-only lean is no longer composed here. It rides the
+    // SceneDrivenAnimation packet and is applied in `foreign_dynamics`, so the
+    // transform other clients read (and this CRDT entry) stays the bare yaw.
+    let rot = Quat::from_rotation_y(-m.rotation_y / 360.0 * TAU);
+    let dcl_transform = DclTransformAndParent {
+        translation: DclTranslation::from_bevy_translation(pos),
+        rotation: DclQuat::from_bevy_quat(rot),
+        scale: Vec3::ONE,
+        parent: SceneEntityId::WORLD_ORIGIN,
+    };
+
+    state.update_crdt(
+        SceneComponentId::TRANSFORM,
+        CrdtType::LWW_ANY,
+        scene_id,
+        &dcl_transform,
+    );
+    // Glide is checked before DoubleJump because Unity keeps `jump_count`
+    // at its last value (usually 2) through the whole glide — so the
+    // DoubleJump-first ordering would mask an active glide.
+    let remote_move_kind = match (
+        m.glide_state(),
+        m.jump_count,
+        m.is_jumping || m.is_long_jump,
+    ) {
+        (rfc4::movement::GlideState::OpeningProp | rfc4::movement::GlideState::Gliding, _, _) => {
+            Some(MoveKind::Glide)
+        }
+        (_, c, _) if c >= 2 => Some(MoveKind::DoubleJump),
+        (_, _, true) => Some(MoveKind::Jump),
+        _ => None,
+    };
+    position_events.write(PlayerPositionEvent {
+        player: entity,
+        time: now,
+        timestamp: m.timestamp,
+        translation: dcl_transform.translation,
+        rotation: dcl_transform.rotation,
+        velocity: vel,
+        grounded: Some(m.is_grounded),
+        remote_move_kind,
+    });
+}
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn process_transport_updates(
     mut commands: Commands,
@@ -549,14 +621,22 @@ pub fn process_transport_updates(
                         let _ = audio_channel
                             .try_send(ForeignAudioData::TransportUnavailable(transport));
                     }
-                    // Legacy rfc4 movement packets (index-ordered Position, uncompressed Movement,
-                    // bit-packed MovementCompressed) are no longer supported — movement rides Pulse
-                    // and arrives as `PlayerMessage::Movement` above.
+                    // Legacy rfc4 index-ordered Position and bit-packed MovementCompressed are no
+                    // longer supported. Uncompressed Movement IS still ingested (next arm) for peers
+                    // on a non-Pulse / local-websocket realm; on a Pulse realm the same state arrives
+                    // as `PlayerMessage::Movement` below.
                     PlayerMessage::PlayerData(
-                        Message::Position(_)
-                        | Message::Movement(_)
-                        | Message::MovementCompressed(_),
+                        Message::Position(_) | Message::MovementCompressed(_),
                     ) => {}
+                    PlayerMessage::PlayerData(Message::Movement(m)) => apply_foreign_movement(
+                        &m,
+                        entity,
+                        scene_id,
+                        time.elapsed_secs(),
+                        &mut commands,
+                        &mut state,
+                        &mut position_events,
+                    ),
                     PlayerMessage::PlayerData(Message::ProfileVersion(version)) => {
                         profile_events.write(ProfileEvent {
                             sender: entity,
@@ -599,68 +679,15 @@ pub fn process_transport_updates(
                         );
                     }
                     PlayerMessage::PlayerData(Message::Voice(_)) => (),
-                    PlayerMessage::Movement(m) => {
-                        debug!("movement data: {m:?}");
-                        commands.entity(entity).try_insert((
-                            HeadSync {
-                                yaw_deg: m.head_yaw,
-                                pitch_deg: m.head_pitch,
-                                yaw_enabled: m.head_ik_yaw_enabled,
-                                pitch_enabled: m.head_ik_pitch_enabled,
-                            },
-                            PointAtSync {
-                                target_world: Vec3::new(m.point_at_x, m.point_at_y, m.point_at_z),
-                                is_pointing: m.is_pointing_at,
-                            },
-                        ));
-                        let pos = Vec3::new(m.position_x, m.position_y, -m.position_z);
-                        let vel = Vec3::new(m.velocity_x, m.velocity_y, -m.velocity_z);
-                        // Yaw only — the render-only lean is no longer composed here. It rides the
-                        // SceneDrivenAnimation packet and is applied in `foreign_dynamics`, so the
-                        // transform other clients read (and this CRDT entry) stays the bare yaw.
-                        let rot = Quat::from_rotation_y(-m.rotation_y / 360.0 * TAU);
-                        let dcl_transform = DclTransformAndParent {
-                            translation: DclTranslation::from_bevy_translation(pos),
-                            rotation: DclQuat::from_bevy_quat(rot),
-                            scale: Vec3::ONE,
-                            parent: SceneEntityId::WORLD_ORIGIN,
-                        };
-
-                        state.update_crdt(
-                            SceneComponentId::TRANSFORM,
-                            CrdtType::LWW_ANY,
-                            scene_id,
-                            &dcl_transform,
-                        );
-                        // Glide is checked before DoubleJump because Unity keeps `jump_count`
-                        // at its last value (usually 2) through the whole glide — so the
-                        // DoubleJump-first ordering would mask an active glide.
-                        let remote_move_kind = match (
-                            m.glide_state(),
-                            m.jump_count,
-                            m.is_jumping || m.is_long_jump,
-                        ) {
-                            (
-                                rfc4::movement::GlideState::OpeningProp
-                                | rfc4::movement::GlideState::Gliding,
-                                _,
-                                _,
-                            ) => Some(MoveKind::Glide),
-                            (_, c, _) if c >= 2 => Some(MoveKind::DoubleJump),
-                            (_, _, true) => Some(MoveKind::Jump),
-                            _ => None,
-                        };
-                        position_events.write(PlayerPositionEvent {
-                            player: entity,
-                            time: time.elapsed_secs(),
-                            timestamp: m.timestamp,
-                            translation: dcl_transform.translation,
-                            rotation: dcl_transform.rotation,
-                            velocity: vel,
-                            grounded: Some(m.is_grounded),
-                            remote_move_kind,
-                        });
-                    }
+                    PlayerMessage::Movement(m) => apply_foreign_movement(
+                        &m,
+                        entity,
+                        scene_id,
+                        time.elapsed_secs(),
+                        &mut commands,
+                        &mut state,
+                        &mut position_events,
+                    ),
                     PlayerMessage::PlayerData(Message::SceneDrivenAnimation(sda)) => {
                         // Standalone scene-driven animation (decoupled from movement). Order by the
                         // sender's monotonic sequence — LiveKit is unreliable, so drop reordered /

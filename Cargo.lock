@@ -2730,6 +2730,7 @@ dependencies = [
  "bevy",
  "bevy_kira_audio",
  "bimap",
+ "bitflags 2.11.0",
  "cid",
  "common",
  "cpal",
