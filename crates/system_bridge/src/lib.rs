@@ -368,6 +368,10 @@ pub struct PermissionRequest {
     pub ty: PermissionType,
     pub additional: Option<String>,
     pub scene: String,
+    /// Scene title (e.g. "Genesis Plaza") for the dialog text; `scene` is the hash.
+    pub scene_name: String,
+    /// Realm the request was made under — the value for a Realm-level permanent grant.
+    pub realm: String,
     pub id: usize,
 }
 

@@ -359,7 +359,9 @@ pub fn handle_scene_permissions(
             SystemApi::GetPermissionRequestStream(stream) => {
                 // send any current outstanding requests when a new stream is attached
                 for (handle, req) in permission_ids.iter().zip(manager.pending.iter()) {
-                    let Ok(hash) = scenes.get(req.scene).map(|ctx| &ctx.hash) else {
+                    let Ok((hash, name)) =
+                        scenes.get(req.scene).map(|ctx| (&ctx.hash, &ctx.title))
+                    else {
                         continue;
                     };
 
@@ -367,6 +369,8 @@ pub fn handle_scene_permissions(
                         ty: req.ty,
                         additional: req.additional.clone(),
                         scene: hash.clone(),
+                        scene_name: name.clone(),
+                        realm: req.realm.clone(),
                         id: *handle,
                     });
                 }
@@ -452,7 +456,7 @@ pub fn handle_scene_permissions(
     for i in permission_ids.len()..manager.pending.len() {
         let req = manager.pending.get(i).unwrap();
 
-        let Ok(hash) = scenes.get(req.scene).map(|ctx| &ctx.hash) else {
+        let Ok((hash, name)) = scenes.get(req.scene).map(|ctx| (&ctx.hash, &ctx.title)) else {
             resolved.insert(i, false);
             continue;
         };
@@ -479,6 +483,8 @@ pub fn handle_scene_permissions(
                     ty: req.ty,
                     additional: req.additional.clone(),
                     scene: hash.clone(),
+                    scene_name: name.clone(),
+                    realm: req.realm.clone(),
                     id: next_id,
                 });
             }
