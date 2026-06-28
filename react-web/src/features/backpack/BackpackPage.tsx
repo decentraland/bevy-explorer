@@ -194,6 +194,19 @@ export function BackpackPage({
   const safePage = Math.min(page, pageCount - 1)
   const pageItems = items.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
 
+  // Emotes share the same search / sort / collectibles filter as wearables (no category — emotes
+  // aren't grouped by body part). The wheel slot list on the left is unaffected.
+  const emoteItems = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1
+    return emotes.list
+      .filter((e) => (!query || (e.name ?? '').toLowerCase().includes(query.toLowerCase())) && (!collectiblesOnly || (e.rarity ?? 'base') !== 'base'))
+      .sort((a, b) =>
+        sortBy === 'name'
+          ? dir * (a.name ?? '').localeCompare(b.name ?? '')
+          : dir * ((RARITY_RANK[a.rarity ?? 'base'] ?? 0) - (RARITY_RANK[b.rarity ?? 'base'] ?? 0))
+      )
+  }, [emotes.list, query, collectiblesOnly, sortBy, sortDir])
+
   // Open on the requested tab (the emote wheel's "Customise [E]" requests 'emotes'). Only fires on the
   // open transition / when the request changes, so a manual tab switch while open is preserved.
   useEffect(() => {
@@ -398,11 +411,11 @@ export function BackpackPage({
                   })}
                 </div>
                 <div className={styles.gridArea}>
-                  {emotes.list.length === 0 ? (
-                    <div className={styles.empty}>No emotes.</div>
+                  {emoteItems.length === 0 ? (
+                    <div className={styles.empty}>{emotes.list.length === 0 ? 'No emotes.' : 'No matches.'}</div>
                   ) : (
                     <div className={styles.grid}>
-                      {emotes.list.map((e) => (
+                      {emoteItems.map((e) => (
                         <WearableCard
                           key={e.urn}
                           thumbnail={e.thumbnail ?? catalystThumbUrl(e.urn)}

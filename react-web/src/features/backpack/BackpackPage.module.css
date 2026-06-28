@@ -336,9 +336,13 @@
   scrollbar-width: thin;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 148px));
+  grid-auto-rows: max-content;
   justify-content: center;
   gap: 16px;
   align-content: start;
+  /* Items keep their aspect-ratio:1 height; without this the default `stretch` pulls each card
+     taller than its column (portrait) and rows overlap — see the emotes grid with many rows. */
+  align-items: start;
 }
 .pager {
   flex: none;
