@@ -38,6 +38,7 @@ use super::transport::{
 };
 use super::{from_movement, PulseDecoder, PulseEvent, PulseParcelGrid};
 use crate::global_crdt::{GlobalCrdtState, NetworkUpdate, PlayerMessage, PlayerUpdate};
+use crate::{NetworkMessage, Transport, TransportType};
 
 /// Insert this resource to connect to a Pulse server. Absent → the plugin is fully inert.
 #[derive(Resource, Clone)]
@@ -97,28 +98,42 @@ pub(crate) struct PulseSession {
     transport_config: PulseTransportConfig,
     /// Server instance id, folded into the connect signature (re-signed on each attempt).
     server_id: String,
+    /// Latched true once we first enter a livekit (Pulse) realm. Gates the driver bring-up so we
+    /// don't dial out until needed, then stays set so the connection is kept alive across non-Pulse
+    /// realms (we simply stop sending to it there — the routing entity is gone).
+    wanted: bool,
     state: Connection,
 }
 
 impl PulseSession {
-    /// Queue a locally-built [`rfc4::Movement`] to the server as a `PlayerStateInput` — the write-side
-    /// mirror of `pump_pulse`'s decode. The movement is inverted into a Pulse `PlayerState` via
-    /// [`from_movement`] (the server computes the per-field deltas it fans out) and sent
-    /// unreliable-sequenced, matching Unity's `PacketMode.UNRELIABLE_SEQUENCED`. No-op unless the
-    /// session is `Established` with a live link, so callers can fire unconditionally.
-    pub(crate) fn send_movement(&self, movement: &rfc4::Movement) {
+    /// Bridge an outbound rfc4 packet — the bytes a `BroadcastTarget::PULSE` send queued onto the
+    /// Pulse transport — into a Pulse `ClientMessage`. The write-side mirror of `pump_pulse`'s
+    /// decode. No-op unless the session is `Established` with a live link, so callers can fire
+    /// unconditionally. Only avatar-state messages have a conversion; anything else is dropped with a
+    /// warning (only `PULSE`-targeted sends should ever reach here — see [`BroadcastTarget`]).
+    fn send_rfc4(&self, packet: &rfc4::Packet) {
         if !matches!(self.state, Connection::Established) {
             return;
         }
         let Some(link) = self.link.as_ref() else {
             return;
         };
-        let message = pulse::ClientMessage {
-            message: Some(pulse::client_message::Message::Input(
-                pulse::PlayerStateInput {
-                    state: Some(from_movement(movement, &self.grid)),
-                },
-            )),
+        let message = match &packet.message {
+            // Movement → `PlayerStateInput`: the movement is inverted into a Pulse `PlayerState` via
+            // [`from_movement`] (the server computes the per-field deltas it fans out) and sent
+            // unreliable-sequenced, matching Unity's `PacketMode.UNRELIABLE_SEQUENCED`.
+            Some(rfc4::packet::Message::Movement(movement)) => pulse::ClientMessage {
+                message: Some(pulse::client_message::Message::Input(
+                    pulse::PlayerStateInput {
+                        state: Some(from_movement(movement, &self.grid)),
+                    },
+                )),
+            },
+            // TODO(pulse): emote → EmoteStart, profile-version → ProfileVersionAnnouncement.
+            other => {
+                warn!("pulse: no conversion for outbound rfc4 message, dropping: {other:?}");
+                return;
+            }
         };
         let _ = link.outbound.try_send(PulseFrame {
             bytes: message.encode_to_vec(),
@@ -127,16 +142,31 @@ impl PulseSession {
     }
 }
 
-/// Marker for the synthetic Pulse transport entity (referenced by foreign players' `transport_id`).
+/// Marker for the synthetic Pulse transport entity used as foreign players' `transport_id`. Distinct
+/// from the routing `Transport` entity (which carries [`PulseOutbox`]); this one is never despawned.
 #[derive(Component)]
 struct PulseTransport;
+
+/// The drain end of the Pulse routing `Transport` entity's channel — its companion, like
+/// `WebsocketRoomTransport.receiver`. `drain_pulse_outbox` decodes and bridges what lands here.
+#[derive(Component)]
+struct PulseOutbox(mpsc::Receiver<NetworkMessage>);
+
+/// Written from `AdapterManager` when a livekit (Pulse) realm is entered: (re)spawn the routing
+/// transport, ensure the connection is up, and announce the realm.
+#[derive(Event)]
+pub struct StartPulse;
 
 pub struct PulsePlugin;
 
 impl Plugin for PulsePlugin {
     fn build(&self, app: &mut App) {
+        app.add_event::<StartPulse>();
         app.add_systems(Startup, configure_pulse);
-        app.add_systems(Update, (connect_pulse, pump_pulse).chain());
+        app.add_systems(
+            Update,
+            (connect_pulse, start_pulse, pump_pulse, drain_pulse_outbox).chain(),
+        );
     }
 }
 
@@ -200,6 +230,7 @@ fn connect_pulse(
         grid: config.parcel_grid,
         transport_config: config.transport.clone(),
         server_id: config.server_id.clone(),
+        wanted: false,
         state: Connection::Down { respawn_at: 0.0 },
     });
 
@@ -207,6 +238,63 @@ fn connect_pulse(
         "pulse: session created for {}:{}",
         config.transport.host, config.transport.port
     );
+}
+
+/// React to a livekit (Pulse) realm being entered: (re)spawn the routing `Transport` entity,
+/// mark the session `wanted` (establishing the connection on the first realm), and — if already
+/// connected — announce the new realm with a teleport. The previous routing entity has been
+/// despawned by `process_realm_change` this same frame, so we spawn unconditionally (once per frame
+/// with an event) rather than presence-checking, which would race that deferred despawn.
+fn start_pulse(
+    mut commands: Commands,
+    mut events: EventReader<StartPulse>,
+    session: Option<ResMut<PulseSession>>,
+    realm: Res<CurrentRealm>,
+    player: Query<&GlobalTransform, With<PrimaryUser>>,
+) {
+    if events.is_empty() {
+        return;
+    }
+    events.clear();
+    let Some(mut session) = session else {
+        // `PulseConfig` absent, or `connect_pulse`'s deferred insert hasn't applied yet. A realm
+        // change re-fires `StartPulse`, so a missed first event self-heals on the next one.
+        return;
+    };
+
+    let (sender, receiver) = mpsc::channel(1000);
+    commands.spawn((
+        Transport {
+            transport_type: TransportType::Pulse,
+            sender,
+            control: None,
+            foreign_aliases: Default::default(),
+        },
+        PulseOutbox(receiver),
+    ));
+
+    session.wanted = true;
+    // Already up (a later realm) → re-teleport now. Otherwise the first handshake's
+    // `on_handshake_response` sends the initial teleport once the connection establishes.
+    if matches!(session.state, Connection::Established) {
+        send_teleport(&session, &realm, &player);
+    }
+}
+
+/// Drain the Pulse routing entity's channel each frame and bridge the rfc4 bytes a `PULSE`-targeted
+/// broadcast queued there into Pulse `ClientMessage`s. No-op until the session connects.
+fn drain_pulse_outbox(session: Option<Res<PulseSession>>, mut outboxes: Query<&mut PulseOutbox>) {
+    let Some(session) = session else {
+        return;
+    };
+    for mut outbox in outboxes.iter_mut() {
+        while let Ok(message) = outbox.0.try_recv() {
+            match rfc4::Packet::decode(message.data.as_slice()) {
+                Ok(packet) => session.send_rfc4(&packet),
+                Err(err) => warn!("pulse: failed to decode outbound rfc4 packet: {err}"),
+            }
+        }
+    }
 }
 
 /// Drain status + inbound bytes each frame; advance the connection; decode and dispatch.
@@ -271,7 +359,8 @@ fn drive_connection(session: &mut PulseSession, wallet: &Wallet, now: f64) {
         // steady.
         Connection::Dead | Connection::Established | Connection::Connecting => {}
         Connection::Down { respawn_at } => {
-            if now < *respawn_at {
+            // Don't dial out until a livekit realm has been entered (`start_pulse` sets `wanted`).
+            if !session.wanted || now < *respawn_at {
                 return;
             }
             let (link, driver) = spawn_driver(&session.transport_config);
@@ -433,6 +522,22 @@ fn on_handshake_response(
     }
     info!("pulse: handshake accepted");
     session.state = Connection::Established;
+    send_teleport(session, realm, player);
+}
+
+/// Send a `TeleportRequest` announcing our current realm + position, so the server (re)starts
+/// streaming same-realm peers (peers in different realms never see each other). The `realm` string is
+/// the load-bearing field; a one-frame stale position is corrected by the next movement packet. Sent
+/// reliably. No-op without a live link or realm name. Used both on first handshake and on every later
+/// realm change (the server supports same-peer re-teleports).
+fn send_teleport(
+    session: &PulseSession,
+    realm: &CurrentRealm,
+    player: &Query<&GlobalTransform, With<PrimaryUser>>,
+) {
+    let Some(link) = session.link.as_ref() else {
+        return;
+    };
 
     // The realm identifier must match what other clients announce (Unity sends
     // `configurations.realmName`). Empty/missing realm is rejected by the server.
@@ -469,12 +574,10 @@ fn on_handshake_response(
     let message = pulse::ClientMessage {
         message: Some(pulse::client_message::Message::Teleport(teleport)),
     };
-    if let Some(link) = session.link.as_ref() {
-        let _ = link.outbound.try_send(PulseFrame {
-            bytes: message.encode_to_vec(),
-            reliability: PulseReliability::Reliable,
-        });
-    }
+    let _ = link.outbound.try_send(PulseFrame {
+        bytes: message.encode_to_vec(),
+        reliability: PulseReliability::Reliable,
+    });
     info!("pulse: teleport sent (parcel {parcel_index})");
 }
 
