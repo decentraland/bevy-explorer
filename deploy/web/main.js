@@ -73,7 +73,19 @@ initEngine()
         if (autoStart) {
             start();
         } else {
-            // Show the button when loading is complete
+            // Embedded (manualParams) mode: the WASM is compiled and the GPU cache is warm, but the
+            // bevy app is NOT running yet — so no realm scene has loaded. Expose a programmatic launch
+            // so the host (React) can boot the engine at a chosen realm/position only once the user
+            // picks a destination, avoiding a wasted default-scene (Genesis Plaza) load.
+            window.__bevyLaunch = (realm, position) => {
+                const r = document.getElementById('realm');
+                const p = document.getElementById('position');
+                if (r && realm) r.value = realm;
+                if (p) p.value = position || '';
+                start();
+            };
+            window.__bevyReadyToLaunch = true;
+            // Keep the manual launch button working for standalone manual use too.
             initButton.style.display = 'block';
         }
     })

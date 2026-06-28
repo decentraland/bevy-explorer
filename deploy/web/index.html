@@ -25,7 +25,7 @@
         // loader paints.
         if (new URLSearchParams(window.location.search).get('hideLoader') === '1') {
             var s = document.createElement('style');
-            s.textContent = '#loading-container,#loading-logo,#bevy-badge{display:none !important}';
+            s.textContent = '#loading-container,#loading-logo,#bevy-badge,#header,form,#initButton{display:none !important}';
             document.head.appendChild(s);
         }
     </script>

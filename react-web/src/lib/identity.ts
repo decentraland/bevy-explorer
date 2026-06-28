@@ -38,11 +38,20 @@ const CATALYST_CONTENTS = 'https://peer.decentraland.org/lambdas/collections/con
 //
 // Base emotes sometimes arrive as bare ids ("wave") from the engine's player data, but the
 // catalyst contents endpoint 404s on those — it needs the full off-chain URN. Full URNs
-// (urn:…) and on-chain NFT urns (with a trailing :tokenId, stripped) pass through unchanged.
+// (urn:…) pass through; an owned-NFT urn carrying a trailing :tokenId is reduced to its item urn.
 export function catalystThumbUrl(urn: string): string {
-  const base = urn.replace(/:\d+$/, '')
-  const full = base.startsWith('urn:') ? base : `urn:decentraland:off-chain:base-emotes:${base}`
-  return `${CATALYST_CONTENTS}/${full}/thumbnail`
+  const base = urn.startsWith('urn:') ? urn : `urn:decentraland:off-chain:base-emotes:${urn}`
+  return `${CATALYST_CONTENTS}/${itemUrn(base)}/thumbnail`
+}
+
+// The contents endpoint serves the ITEM urn. A collections-v2 item urn ends with :<contract>:<itemId>
+// (the itemId is required — stripping it 404s); an owned token urn appends a further :<tokenId>.
+// Only drop that trailing tokenId — i.e. the last segment when the last TWO are both numeric.
+function itemUrn(urn: string): string {
+  const parts = urn.split(':')
+  const n = parts.length
+  if (n >= 2 && /^\d+$/.test(parts[n - 1]) && /^\d+$/.test(parts[n - 2])) return parts.slice(0, -1).join(':')
+  return urn
 }
 
 function hash(s: string): number {

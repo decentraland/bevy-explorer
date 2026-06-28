@@ -29,6 +29,9 @@ describe('session domain', () => {
     const h = renderSession({ userId: '0xabc' })
     await waitFor(() => expect(h.session().login.status).toBe('reuse-login-or-new'))
     act(() => h.session().login.jumpIn())
+    // Jump in shows the picker; the login is deferred until a destination is chosen.
+    await waitFor(() => expect(h.session().phase).toBe('picking'))
+    act(() => h.session().pickDestination(null))
     await waitFor(() => expect(h.driver.calls).toContain('jumpIn'))
   })
 

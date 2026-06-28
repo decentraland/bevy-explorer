@@ -98,6 +98,31 @@ export default defineConfig({
     // the engine's systemScene so it loads as the trusted --ui scene.
     serveStatic('/bridge-scene/static/', './bridge-scene/static')
   ],
+  build: {
+    // The only chunk over the default 500KB is the isolated emoji dataset (a cached data blob,
+    // not executable HUD code). Raise the limit so the build stays clean; revisit if a CODE chunk
+    // approaches it.
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        // Split the single ~880KB bundle so chunks download in parallel and cache
+        // independently (vendor + design system rarely change). The heavy full-screen
+        // menu pages are grouped together and kept out of the core HUD chunk.
+        manualChunks(id) {
+          if (id.includes('node_modules')) return 'vendor'
+          // The emoji dataset is ~716KB (78KB gz) — over half the JS. Pin it to its own chunk so
+          // it caches independently and never bloats/busts the core HUD chunk. (Deferring it fully
+          // behind the chat picker/autocomplete is a follow-up — see emojiData.ts.)
+          if (id.includes('emojis_complete.json') || id.includes('/chat/emojiData')) return 'emoji'
+          // Showcase is dev-only (?showcase=1) and lazy-loaded — leave it out of the design
+          // chunk so its lazy boundary survives and it never ships in the prod HUD path.
+          if (id.includes('/src/design/') && !id.includes('Showcase')) return 'design'
+          if (/\/src\/features\/(map|backpack|communities|gallery|places)\//.test(id)) return 'menus'
+          return undefined
+        }
+      }
+    }
+  },
   server: {
     // Proxy the auth dapp so it is served same-origin on localhost — sign in locally against
     // zone and the signed AuthIdentity lands in this origin's localStorage (the marketplace

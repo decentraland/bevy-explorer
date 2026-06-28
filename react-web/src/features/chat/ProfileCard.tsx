@@ -111,6 +111,12 @@ export function ProfileCard({
     const t = setTimeout(onClose, 1100)
     return () => clearTimeout(t)
   }, [justSent, onClose])
+  // Reset the "copied" hint after a beat — in an effect so the timer is cleared on unmount.
+  useEffect(() => {
+    if (!copied) return
+    const t = setTimeout(() => setCopied(null), 1200)
+    return () => clearTimeout(t)
+  }, [copied])
   const cardRef = useRef<HTMLDivElement>(null)
   // Start at the click point; once the card is laid out, clamp it to the viewport
   // using its REAL size (the menu height varies with which actions are shown).
@@ -130,10 +136,7 @@ export function ProfileCard({
 
   const copy = (text: string, which: 'name' | 'address'): void => {
     navigator.clipboard?.writeText(text).then(
-      () => {
-        setCopied(which)
-        setTimeout(() => setCopied(null), 1200)
-      },
+      () => setCopied(which),
       () => {}
     )
   }

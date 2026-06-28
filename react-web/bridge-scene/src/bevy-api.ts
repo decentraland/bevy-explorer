@@ -63,6 +63,25 @@ export type KernelFetchRequest = {
 }
 export type KernelFetchResponse = { ok: boolean; status: number; statusText?: string; body: string }
 
+// A scene's pending permission request (e.g. ChangeRealm). `ty` is the serde enum name
+// (e.g. 'ChangeRealm'); `scene` is the scene hash, `scene_name` its title.
+export type PermissionRequestRaw = {
+  ty: string
+  additional?: string | null
+  scene: string
+  scene_name: string
+  realm: string
+  id: number
+}
+// Persist a permission at a level. `value` is the scene hash (Scene) or realm url (Realm),
+// unused for Global. `allow: null` clears the stored value.
+export type SetPermanentPermissionBody = {
+  level: 'Scene' | 'Realm' | 'Global'
+  value?: string
+  ty: string
+  allow: 'Allow' | 'Deny' | null
+}
+
 export type BevyApiInterface = {
   getSettings: () => Promise<Setting[]>
   setSetting: (name: string, value: number) => Promise<void>
@@ -73,6 +92,9 @@ export type BevyApiInterface = {
   getProximityStream: () => Promise<AsyncIterable<SystemProximityEvent>>
   getMicState: () => Promise<MicState>
   setMicEnabled: (enabled: boolean) => void
+  getPermissionRequestStream: () => Promise<AsyncIterable<PermissionRequestRaw>>
+  setSinglePermission: (body: { id: number; allow: boolean }) => void
+  setPermanentPermission: (body: SetPermanentPermissionBody) => void
   setAvatar: (data: { equip: { wearableUrns: string[]; emoteUrns: string[]; forceRender: string[] } }) => Promise<unknown>
   kernelFetch: (req: KernelFetchRequest) => Promise<KernelFetchResponse>
   getRealmProvider: () => Promise<string>

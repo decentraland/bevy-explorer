@@ -7,9 +7,17 @@
   align-items: center;
   justify-content: center;
   gap: 1.25rem;
+  /* Base is the instant magenta menu gradient (same as login/picker) so the transition into
+     loading never flashes the near-black --panel while the heavy gradient PNG decodes; the PNG
+     layers on top once ready. Engine_run freezes the main thread right after we enter, so the
+     base MUST paint on frame 1 without waiting on any asset. */
   background:
     url('/assets/login/gradient-background.png') center / cover no-repeat,
-    var(--color-bg);
+    var(--menu-bg);
+}
+/* Fade in the CONTENT only — the background must be opaque from frame 1, otherwise the
+   still-black engine behind shows through while the overlay's opacity ramps up. */
+.root > * {
   animation: fade-in 400ms var(--ease-out) both;
 }
 

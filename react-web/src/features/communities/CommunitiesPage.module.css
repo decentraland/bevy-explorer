@@ -69,11 +69,18 @@
   justify-content: space-between;
 }
 .viewAll {
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.03em;
   color: var(--brand);
   cursor: pointer;
+}
+.viewAll:hover {
+  text-decoration: underline;
 }
 .sideHead {
   margin-bottom: 6px;
@@ -130,13 +137,15 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border: 1px solid var(--white-10);
   border-radius: var(--r-lg);
-  background: var(--fill-2);
+  background: rgba(0, 0, 0, 0.4); /* translucent body, like PlaceCard — reads as a card on the purple page */
   cursor: pointer;
-  transition: transform var(--dur-fast) ease, background-color var(--dur-fast) ease;
+  transition: transform var(--dur-fast) ease, border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
 }
 .card:hover {
-  background: var(--fill-3);
+  border-color: rgba(255, 255, 255, 0.25);
+  box-shadow: var(--shadow-panel);
   transform: translateY(-2px);
 }
 .cover {

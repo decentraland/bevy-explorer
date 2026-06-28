@@ -5,8 +5,8 @@
 // of fetchWearablesPage; equipping goes back through setAvatar.
 
 import { useEffect, useMemo, useState } from 'react'
-import { WearableCard, type Rarity } from '../../design'
-import { rarityColor } from '../../lib/identity'
+import { EmptyState, WearableCard, type Rarity } from '../../design'
+import { catalystThumbUrl, rarityColor } from '../../lib/identity'
 import { CatalystImg } from '../../components/CatalystImg'
 import { CategoryIcon } from './categoryIcons'
 import { EngineViewport } from '../engine/EngineViewport'
@@ -102,20 +102,50 @@ function FilterIcon(): React.JSX.Element {
   )
 }
 
+// Header icons (replace the tofu unicode glyphs ☰ ⌂ ⬚ that rendered inconsistently across fonts).
+function GridIcon({ size = 15 }: { size?: number }): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" aria-hidden="true">
+      <rect x="4" y="4" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="2" />
+      <rect x="14" y="4" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="2" />
+      <rect x="4" y="14" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="2" />
+      <rect x="14" y="14" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  )
+}
+function BookmarkIcon({ size = 15 }: { size?: number }): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" aria-hidden="true">
+      <path d="M6 4h12v16l-6-4-6 4V4z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+    </svg>
+  )
+}
+function BagIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true">
+      <path d="M6 7h12l-1 13H7L6 7z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M9 7V6a3 3 0 0 1 6 0v1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 export function BackpackPage({
   backpack,
   emotes,
   profile,
   onNavigate,
-  setEngineViewport
+  setEngineViewport,
+  initialTab = 'wearables'
 }: {
   backpack: BackpackState
   emotes: EmotesState
   profile: ProfileState
   onNavigate: (page: string) => void
   setEngineViewport: (region: 'map' | 'avatarPreview', rect: { x: number; y: number; width: number; height: number } | null) => void
+  /** Which tab to open on (e.g. the emote wheel's "Customise [E]" opens 'emotes'). */
+  initialTab?: 'wearables' | 'emotes'
 }): React.JSX.Element | null {
-  const [tab, setTab] = useState<'wearables' | 'emotes'>('wearables')
+  const [tab, setTab] = useState<'wearables' | 'emotes'>(initialTab)
   const [section, setSection] = useState<'categories' | 'outfits'>('categories')
   const [cat, setCat] = useState('all')
   const [query, setQuery] = useState('')
@@ -163,6 +193,12 @@ export function BackpackPage({
   const pageCount = Math.max(1, Math.ceil(items.length / PAGE_SIZE))
   const safePage = Math.min(page, pageCount - 1)
   const pageItems = items.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
+
+  // Open on the requested tab (the emote wheel's "Customise [E]" requests 'emotes'). Only fires on the
+  // open transition / when the request changes, so a manual tab switch while open is preserved.
+  useEffect(() => {
+    if (backpack.open) setTab(initialTab)
+  }, [backpack.open, initialTab])
 
   // When the Backpack closes, drop any unequipped preview so the avatar reverts to the
   // actual profile (selecting an item must never persist).
@@ -263,28 +299,36 @@ export function BackpackPage({
             <div className={styles.contentHead}>
               <div className={styles.sectionTabs}>
                 <button type="button" className={`${styles.sectionTab} ${section === 'categories' ? styles.sectionActive : ''}`.trim()} onClick={() => setSection('categories')}>
-                  ☰ CATEGORIES
+                  <GridIcon /> CATEGORIES
                 </button>
                 <button type="button" className={`${styles.sectionTab} ${section === 'outfits' ? styles.sectionActive : ''}`.trim()} onClick={() => setSection('outfits')}>
-                  ⌂ SAVED OUTFITS
+                  <BookmarkIcon /> SAVED OUTFITS
                 </button>
               </div>
-              <button type="button" className={styles.marketplace} onClick={() => window.open(MARKETPLACE_URL, '_blank', 'noopener,noreferrer')}>⬚ MARKETPLACE</button>
+              <button type="button" className={styles.marketplace} onClick={() => window.open(MARKETPLACE_URL, '_blank', 'noopener,noreferrer')}><BagIcon /> MARKETPLACE</button>
             </div>
 
             {tab === 'wearables' ? (
+              section === 'outfits' ? (
+                <div className={styles.outfits}>
+                  <EmptyState
+                    variant="inline"
+                    icon={<BookmarkIcon size={34} />}
+                    title="No saved outfits yet"
+                    subtitle="Saving and loading outfits isn’t available in this explorer yet."
+                  />
+                </div>
+              ) : (
               <div className={styles.catalog}>
-                {section === 'categories' && (
-                  <div className={styles.catColumn}>
-                    {categories.map((c) => (
-                      <CategoryTile key={c} cat={c} active={cat === c} equipped={equippedByCat.get(c)} onClick={() => pick(c)} />
-                    ))}
-                  </div>
-                )}
+                <div className={styles.catColumn}>
+                  {categories.map((c) => (
+                    <CategoryTile key={c} cat={c} active={cat === c} equipped={equippedByCat.get(c)} onClick={() => pick(c)} />
+                  ))}
+                </div>
                 <div className={styles.gridArea}>
                   <div className={styles.chips}>
                     <button type="button" className={`${styles.chip} ${cat === 'all' ? styles.chipActive : ''}`.trim()} onClick={() => pick('all')}>
-                      ∞ ALL
+                      <GridIcon size={13} /> ALL
                     </button>
                     {cat !== 'all' && (
                       <span className={styles.chipSel} style={{ background: 'var(--accent)' }}>
@@ -325,6 +369,7 @@ export function BackpackPage({
                   )}
                 </div>
               </div>
+              )
             ) : (
               <div className={styles.catalog}>
                 {/* Emote wheel slots (numbered 1..0). Click to choose which slot the next emote you
@@ -360,7 +405,7 @@ export function BackpackPage({
                       {emotes.list.map((e) => (
                         <WearableCard
                           key={e.urn}
-                          thumbnail={e.thumbnail}
+                          thumbnail={e.thumbnail ?? catalystThumbUrl(e.urn)}
                           name={e.name}
                           rarity={asRarity(e.rarity)}
                           equipped={e.slot != null}

@@ -13,9 +13,13 @@ import type {
   Friend,
   FriendAction,
   FriendRequest,
+  GalleryPhoto,
+  GalleryPhotoMeta,
   HoverAction,
   NavAction,
   NearbyMember,
+  PermissionLevelChoice,
+  PermissionRequestMessage,
   ProximityTip,
   Profile,
   SceneLoadingState,
@@ -37,6 +41,8 @@ export interface CommunitiesState {
   list: Community[]
   open: boolean
   toggle: () => void
+  /** Create a community (name + description + Public/Private + discoverable). */
+  create: (input: { name: string; description: string; privacy: 'public' | 'private'; discoverable: boolean }) => void
   join: (id: string) => void
   leave: (id: string) => void
   /** Per-community detail (members/posts/places/events) for the open modal. */
@@ -54,6 +60,30 @@ export interface MapState {
   teleport: (x: number, y: number) => void
   /** Travel to a world/realm by name (e.g. `boedo.dcl.eth`). */
   changeRealm: (realm: string) => void
+}
+
+// Places browses the places API over HTTP (no bridge data) — it only needs open/close.
+export interface PlacesState {
+  open: boolean
+  toggle: () => void
+}
+
+export interface GalleryState {
+  /** The local player's camera-reel photos (newest first by dateTime). */
+  list: GalleryPhoto[]
+  /** Storage usage — `current` of `max` photos (0 until the gallery first loads). */
+  current: number
+  max: number
+  /** False until the first gallery response arrives (spinner vs empty state). */
+  loaded: boolean
+  open: boolean
+  toggle: () => void
+  /** Per-photo metadata cache (place + people), filled lazily when a detail view opens. */
+  metas: Record<string, GalleryPhotoMeta | null | undefined>
+  /** Fetch one photo's full metadata (populates `metas`). */
+  loadPhoto: (id: string) => void
+  /** Delete one of the player's photos (re-emits the gallery). */
+  remove: (id: string) => void
 }
 
 export interface EmotesState {
@@ -99,6 +129,13 @@ export interface FriendsState {
   act: (op: FriendAction, address: string) => void
 }
 
+export interface PermissionsState {
+  /** Outstanding scene permission prompts, oldest first (the HUD shows one at a time). */
+  pending: PermissionRequestMessage[]
+  /** Allow/deny the request `id` at the chosen scope, then drop it from the queue. */
+  resolve: (id: number, allow: boolean, level: PermissionLevelChoice) => void
+}
+
 export type ChatLine = ChatMessage & { id: number; ts: number }
 
 export interface ChatState {
@@ -120,13 +157,21 @@ const MAX_CHAT_LINES = 200
 // long cap turned a missed probe into a multi-second frozen-looking hold with the engine idle.
 const MIN_REVEAL_MS = 300
 const MAX_REVEAL_MS = 1500
+// While loading, the engine streams scenes and `visible` can briefly drop between one finishing
+// and the next starting. Revealing the world in that gap flashes the HUD (chat + sidebar) in and
+// out, so we only drop the loader once loading has been stably clear for this long.
+const REVEAL_DEBOUNCE_MS = 600
 
 export type LoginStatus =
   | 'loading'
   | 'sign-in-or-guest'
   | 'reuse-login-or-new'
 
-export type SessionPhase = 'login' | 'entering' | 'world'
+export type SessionPhase = 'login' | 'picking' | 'entering' | 'world'
+
+// Where the user chose to spawn after login (the post-jump-in Places picker). `null` = skip → the
+// engine's default spawn (Genesis Plaza). A world switches realm; a parcel teleports once spawned.
+export type Destination = { kind: 'parcel'; x: number; y: number } | { kind: 'world'; realm: string } | null
 
 export interface LoginFlow {
   status: LoginStatus
@@ -148,6 +193,8 @@ export interface LoginFlow {
 
 export interface EngineSession {
   phase: SessionPhase
+  /** Post-jump-in Places picker: choose where to spawn (or null to skip → Genesis Plaza). */
+  pickDestination: (dest: Destination) => void
   login: LoginFlow
   scene: SceneLoadingState | null
   /** World-entity hover hints under the reticle (empty = nothing hovered). */
@@ -169,6 +216,10 @@ export interface EngineSession {
   backpack: BackpackState
   communities: CommunitiesState
   map: MapState
+  places: PlacesState
+  gallery: GalleryState
+  /** Scene permission prompts (e.g. ChangeRealm) awaiting an Allow/Deny. */
+  permissions: PermissionsState
   mic: { enabled: boolean; available: boolean; toggle: () => void }
   /** Trigger a sidebar nav action in the scene (open menu/popup, emotes, mic). */
   nav: (action: NavAction) => void
@@ -178,6 +229,16 @@ export interface EngineSession {
   logout: () => void
   /** A full scene menu page is open → the React HUD (sidebar + chat) hides. */
   menuOpen: boolean
+}
+
+/** Parse a camera-reel `dateTime` (unix seconds, unix ms, or ISO) to epoch ms for sort/grouping. */
+export function photoTime(dateTime: string): number {
+  if (/^\d+$/.test(dateTime)) {
+    const n = Number(dateTime)
+    return n < 1e12 ? n * 1000 : n // sub-1e12 → seconds, else already ms
+  }
+  const t = Date.parse(dateTime)
+  return Number.isNaN(t) ? 0 : t
 }
 
 export function useEngineSession(createDriver: () => LoginDriver): EngineSession {
@@ -194,6 +255,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
 
   // Past login → waiting for the world.
   const [submitted, setSubmitted] = useState(false)
+  // The post-jump-in Places picker: stay in 'picking' until the user chooses a destination (or skips).
+  const [destinationPicked, setDestinationPicked] = useState(false)
+  // Deferred login: the login call captured on Jump in, run only once the user picks a destination
+  // (so the engine is launched straight at that destination instead of loading Genesis Plaza first).
+  const pendingLogin = useRef<((driver: LoginDriver) => Promise<unknown>) | null>(null)
   const [playerReady, setPlayerReady] = useState(false)
   const [scene, setScene] = useState<SceneLoadingState | null>(null)
   const [hover, setHover] = useState<HoverAction[]>([])
@@ -229,6 +295,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [communityDetail, setCommunityDetail] = useState<CommunityDetailMessage | null>(null)
   const [mapParcel, setMapParcel] = useState({ x: 0, y: 0 })
   const [mapOpen, setMapOpen] = useState(false)
+  const [placesOpen, setPlacesOpen] = useState(false)
+  const [galleryPhotos, setGalleryPhotos] = useState<GalleryPhoto[]>([])
+  const [galleryStorage, setGalleryStorage] = useState({ current: 0, max: 0 })
+  const [galleryLoaded, setGalleryLoaded] = useState(false)
+  const [galleryMetas, setGalleryMetas] = useState<Record<string, GalleryPhotoMeta | null>>({})
+  const [galleryOpen, setGalleryOpen] = useState(false)
+  const [permissionQueue, setPermissionQueue] = useState<PermissionRequestMessage[]>([])
   const chatId = useRef(0)
   // Catalog fetches done once per session (cache; relays re-emit on change).
   const fetchedRef = useRef<Set<string>>(new Set())
@@ -310,6 +383,17 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         case 'mapState':
           setMapParcel({ x: msg.x, y: msg.y })
           break
+        case 'gallery':
+          setGalleryPhotos([...msg.photos].sort((a, b) => photoTime(b.dateTime) - photoTime(a.dateTime)))
+          setGalleryStorage({ current: msg.current, max: msg.max })
+          setGalleryLoaded(true)
+          break
+        case 'galleryPhoto':
+          setGalleryMetas((prev) => ({ ...prev, [msg.id]: msg.meta }))
+          break
+        case 'permissionRequest':
+          setPermissionQueue((q) => (q.some((r) => r.id === msg.id) ? q : [...q, msg]))
+          break
       }
     })
 
@@ -383,7 +467,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
 
   // Toggle one exclusive panel (closing chat + all others); optionally run onOpen.
   // All exclusive (one-at-a-time) panel setters. Toggling one closes chat + the rest.
-  const panelSetters = [setFriendsOpen, setSettingsOpen, setProfileOpen, setNotificationsOpen, setEmotesOpen, setBackpackOpen, setCommunitiesOpen, setMapOpen]
+  const panelSetters = [setFriendsOpen, setSettingsOpen, setProfileOpen, setNotificationsOpen, setEmotesOpen, setBackpackOpen, setCommunitiesOpen, setMapOpen, setPlacesOpen, setGalleryOpen]
   const exclusive = useCallback(
     (setSelf: React.Dispatch<React.SetStateAction<boolean>>, onOpen?: () => void) => {
       setChatOpen(false)
@@ -409,7 +493,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // re-emit fresh data through the relay, so we never need to re-pull on reopen. Avoids
   // hammering the catalyst every time a menu is reopened.
   const ensure = useCallback(
-    (kind: 'getSettings' | 'getProfile' | 'getEmotes' | 'getWearables' | 'getCommunities') => {
+    (kind: 'getSettings' | 'getProfile' | 'getEmotes' | 'getWearables' | 'getCommunities' | 'getGallery') => {
       if (fetchedRef.current.has(kind)) return
       fetchedRef.current.add(kind)
       driverRef.current?.send({ kind })
@@ -432,7 +516,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // intercept when a non-chat panel is open so ESC stays free for chat/the engine.
   const anyPanelOpen =
     friendsOpen || settingsOpen || profileOpen || notificationsOpen ||
-    emotesOpen || backpackOpen || communitiesOpen || mapOpen
+    emotesOpen || backpackOpen || communitiesOpen || mapOpen || placesOpen || galleryOpen
   useEffect(() => {
     if (!anyPanelOpen) return
     const onKey = (e: KeyboardEvent): void => {
@@ -459,11 +543,68 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   )
   const toggleCommunities = useCallback(() => exclusive(setCommunitiesOpen, () => ensure('getCommunities')), [exclusive, ensure])
   const toggleMap = useCallback(() => exclusive(setMapOpen, () => send('getMap')), [exclusive, send])
+  // Places fetches its own HTTP data (no bridge), so opening needs no engine request.
+  const togglePlaces = useCallback(() => exclusive(setPlacesOpen), [exclusive])
+  const toggleGallery = useCallback(() => exclusive(setGalleryOpen, () => ensure('getGallery')), [exclusive, ensure])
+  const loadGalleryPhoto = useCallback((id: string) => {
+    driverRef.current?.send({ kind: 'getGalleryPhoto', id })
+  }, [])
+  const removeGalleryPhoto = useCallback((id: string) => {
+    driverRef.current?.send({ kind: 'deleteGalleryPhoto', id })
+    // Optimistically drop it; the bridge re-emits the full gallery to confirm.
+    setGalleryPhotos((list) => list.filter((p) => p.id !== id))
+    setGalleryStorage((s) => ({ ...s, current: Math.max(0, s.current - 1) }))
+  }, [])
   const teleport = useCallback((x: number, y: number) => {
     driverRef.current?.send({ kind: 'teleport', x, y })
   }, [])
   const changeRealm = useCallback((realm: string) => {
     driverRef.current?.send({ kind: 'changeRealm', realm })
+  }, [])
+  const resolvePermission = useCallback(
+    (id: number, allow: boolean, level: PermissionLevelChoice) => {
+      setPermissionQueue((q) => {
+        const req = q.find((r) => r.id === id)
+        if (req) {
+          driverRef.current?.send({ kind: 'permissionResolve', id, ty: req.ty, allow, level, scene: req.scene, realm: req.realm })
+        }
+        return q.filter((r) => r.id !== id)
+      })
+    },
+    []
+  )
+  // Post-jump-in Places picker: choose a destination (or null to skip → Genesis Plaza), then leave
+  // the picker. A world switches realm now; a parcel is teleported once the avatar spawns.
+  const pickDestination = useCallback((dest: Destination) => {
+    const driver = driverRef.current
+    if (driver == null) return
+    setBusy(true)
+    setDestinationPicked(true) // flip to the loading overlay first
+
+    // Boot the engine straight at the chosen destination, then run the deferred login. `engine_run`
+    // is heavy and runs on the shared main thread, so defer it a paint (rAF, setTimeout fallback) so
+    // the loading overlay is on screen before the freeze — same trick as the login loader. Run once.
+    let ran = false
+    const run = (): void => {
+      if (ran) return
+      ran = true
+      // World by realm, parcel by spawn position, skip at 0,0 (Genesis). Nothing loaded before this,
+      // so only the chosen scene streams in. (No-op on the mock, which has no engine to launch.)
+      if (dest == null) driver.launch?.(undefined, '0,0')
+      else if (dest.kind === 'world') driver.launch?.(dest.realm, undefined)
+      else driver.launch?.(undefined, `${dest.x},${dest.y}`)
+      const login = pendingLogin.current
+      pendingLogin.current = null
+      Promise.resolve(login?.(driver))
+        .then(() => setBusy(false))
+        .catch((e: Error) => {
+          setError(e.message)
+          setBusy(false)
+          setDestinationPicked(false) // back to the picker on failure
+        })
+    }
+    requestAnimationFrame(() => requestAnimationFrame(run))
+    setTimeout(run, 60)
   }, [])
   const equipWearables = useCallback((urns: string[]) => {
     driverRef.current?.send({ kind: 'equip', urns })
@@ -474,6 +615,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const previewWearables = useCallback((urns: string[] | null) => {
     driverRef.current?.send({ kind: 'previewAvatar', urns })
   }, [])
+  const createCommunity = useCallback(
+    (input: { name: string; description: string; privacy: 'public' | 'private'; discoverable: boolean }) => {
+      driverRef.current?.send({ kind: 'createCommunity', ...input })
+    },
+    []
+  )
   const joinCommunity = useCallback((id: string) => {
     driverRef.current?.send({ kind: 'joinCommunity', id })
   }, [])
@@ -539,6 +686,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     closeAllPanels()
     setPlayerReady(false)
     setSubmitted(false) // back to the login screen
+    setDestinationPicked(false) // re-show the picker on the next jump-in
+    pendingLogin.current = null
   }, [closeAllPanels])
 
   const setEngineViewport = useCallback(
@@ -558,23 +707,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       const driver = driverRef.current
       if (driver == null || busy || !engineReady) return
       setError(null)
-      setBusy(true)
+      // Don't log in yet — capture the login and show the destination picker. The engine is warm
+      // (WASM + GPU) but hasn't loaded any scene; pickDestination launches it at the chosen place and
+      // runs this login then. Deferring the engine work to the pick is what avoids the wasted load.
+      pendingLogin.current = loginCall
       setSubmitted(true)
-      // Start the engine ONLY after the loader has painted. rAF gives the real paint boundary in the
-      // browser; the setTimeout fallback guarantees it still fires where rAF is throttled/absent
-      // (backgrounded tab, jsdom). The guard runs it exactly once.
-      let started = false
-      const start = (): void => {
-        if (started) return
-        started = true
-        loginCall(driver).catch((e: Error) => {
-          setError(e.message)
-          setBusy(false)
-          setSubmitted(false)
-        })
-      }
-      requestAnimationFrame(() => requestAnimationFrame(start))
-      setTimeout(start, 60)
     },
     [busy, engineReady]
   )
@@ -625,19 +762,38 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene?.visible])
 
-  // Mirror the engine's native loading screen (SDK7 SceneLoadingWindow: `if (!visible) return null`)
-  // — reactive to `scene.visible`, NO latch. The engine keeps its loader visible until the player's
-  // scene is actually rendered, and flips it back on for each scene streamed into Genesis Plaza, so
-  // mirroring it covers the black, still-loading world instead of revealing it. Stay on the loader
-  // until the player has spawned AND the render-settle (above) has cleared.
+  // Mirror the engine's native loading screen (SDK7 SceneLoadingWindow: `if (!visible) return null`).
+  // The engine keeps its loader visible until the player's scene is rendered, and flips it back on
+  // for each scene streamed into Genesis Plaza. We debounce the *reveal* (loading→world) so a brief
+  // `visible` gap between scenes doesn't flash the HUD; the loader still appears INSTANTLY whenever
+  // loading re-asserts. Loading = scene visible, or not spawned, or the render-settle still holding.
+  const loadingNow = scene?.visible === true || !playerReady || revealing
+  const [loaderActive, setLoaderActive] = useState(true)
+  useEffect(() => {
+    if (loadingNow) {
+      setLoaderActive(true)
+      return
+    }
+    // No engine to stream scenes (mock / tests) → nothing to bridge, reveal immediately.
+    if (typeof driverRef.current?.renderBusy !== 'function') {
+      setLoaderActive(false)
+      return
+    }
+    const t = setTimeout(() => setLoaderActive(false), REVEAL_DEBOUNCE_MS)
+    return () => clearTimeout(t)
+  }, [loadingNow])
+
   const phase: SessionPhase = !submitted
     ? 'login'
-    : scene?.visible === true || !playerReady || revealing
-      ? 'entering'
-      : 'world'
+    : !destinationPicked
+      ? 'picking'
+      : loaderActive
+        ? 'entering'
+        : 'world'
 
   return {
     phase,
+    pickDestination,
     scene,
     hover,
     cursorLocked,
@@ -666,8 +822,21 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     },
     emotes: { list: emotes, open: emotesOpen, toggle: toggleEmotes, play: playEmote, equip: equipEmote },
     backpack: { list: wearables, open: backpackOpen, toggle: toggleBackpack, equip: equipWearables, preview: previewWearables },
-    communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, join: joinCommunity, leave: leaveCommunity, detail: communityDetail, loadDetail: loadCommunityDetail },
+    communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, create: createCommunity, join: joinCommunity, leave: leaveCommunity, detail: communityDetail, loadDetail: loadCommunityDetail },
     map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm },
+    places: { open: placesOpen, toggle: togglePlaces },
+    gallery: {
+      list: galleryPhotos,
+      current: galleryStorage.current,
+      max: galleryStorage.max,
+      loaded: galleryLoaded,
+      open: galleryOpen,
+      toggle: toggleGallery,
+      metas: galleryMetas,
+      loadPhoto: loadGalleryPhoto,
+      remove: removeGalleryPhoto
+    },
+    permissions: { pending: permissionQueue, resolve: resolvePermission },
     mic: { enabled: mic.enabled, available: mic.available, toggle: toggleMic },
     nav,
     setEngineViewport,

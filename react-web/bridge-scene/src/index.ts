@@ -17,9 +17,11 @@ import { registerWearables } from './domains/wearables'
 import { registerNotifications } from './domains/notifications'
 import { registerSettings } from './domains/settings'
 import { registerCommunities } from './domains/communities'
+import { registerGallery } from './domains/gallery'
 import { registerWorld } from './domains/world'
 import { registerPointer } from './domains/pointer'
 import { registerProximity } from './domains/proximity'
+import { registerPermissions } from './domains/permissions'
 import { initNametags } from './domains/nametags'
 
 export function main(): void {
@@ -36,9 +38,11 @@ export function main(): void {
     registerNotifications(ctx)
     registerSettings(ctx)
     registerCommunities(ctx)
+    registerGallery(ctx)
     registerWorld(ctx)
     registerPointer(ctx)
     registerProximity(ctx)
+    registerPermissions(ctx)
     registerAvatarPreview(ctx)
   })
 

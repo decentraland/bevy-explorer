@@ -26,6 +26,7 @@ export class EngineDriver implements LoginDriver {
   private readonly ch: BroadcastChannel
   private readonly listeners = new Set<(msg: SceneToPage) => void>()
   private playerReadyFired = false
+  private readyFallbackTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(private readonly rpc: EngineRpc) {
     this.ch = new BroadcastChannel(BRIDGE_CHANNEL)
@@ -88,6 +89,7 @@ export class EngineDriver implements LoginDriver {
   }
 
   dispose(): void {
+    if (this.readyFallbackTimer != null) clearTimeout(this.readyFallbackTimer)
     this.ch.close()
     this.listeners.clear()
   }
@@ -97,7 +99,13 @@ export class EngineDriver implements LoginDriver {
   }
 
   engineReady(): boolean {
-    return this.rpc.ready()
+    // Ready-to-launch (WASM compiled + GPU warm), not console-ready — the console only comes up after
+    // launch (which we defer until the user picks a destination).
+    return this.rpc.readyToLaunch()
+  }
+
+  launch(realm?: string, position?: string): void {
+    this.rpc.launch(realm, position)
   }
 
   private emit(msg: SceneToPage): void {
@@ -107,7 +115,9 @@ export class EngineDriver implements LoginDriver {
   // The bridge scene emits a precise playerReady; until it does, hand off to the
   // engine a few seconds after login so the world isn't hidden forever.
   private scheduleReadyFallback(): void {
-    setTimeout(() => {
+    if (this.readyFallbackTimer != null) clearTimeout(this.readyFallbackTimer)
+    this.readyFallbackTimer = setTimeout(() => {
+      this.readyFallbackTimer = null
       if (!this.playerReadyFired) {
         this.playerReadyFired = true
         this.emit({ kind: 'event', name: 'playerReady' })

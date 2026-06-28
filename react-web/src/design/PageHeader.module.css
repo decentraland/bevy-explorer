@@ -1,0 +1,66 @@
+.pageheader {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.main {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 24px;
+  min-width: 0;
+}
+
+.leading {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.titles {
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-weight: 600;
+  font-size: 24px;
+  line-height: 42px;
+  letter-spacing: 0.4px;
+  color: var(--text);
+}
+
+.hero .title {
+  font-size: 40px;
+  line-height: 1.1;
+  letter-spacing: -0.5px;
+}
+
+.section .title {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.subtitle {
+  margin: 8px 0 0;
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 400;
+  color: var(--ink-6);
+}
+.hero .subtitle {
+  color: var(--text);
+}
+
+.actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+}

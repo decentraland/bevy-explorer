@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from 'react'
 import { Button } from '../../design'
+import { prefetchPlaces } from '../places/placesApi'
 import type { LoginFlow, LoginStatus } from '../session/useEngineSession'
 import styles from './LoadingAndLogin.module.css'
 
@@ -74,6 +75,11 @@ const COPY: Record<Exclude<LoginStatus, 'loading'>, { title: string; subtitle?: 
 }
 
 export function LoadingAndLogin({ flow }: { flow: LoginFlow }): React.JSX.Element {
+  // Warm the default places list now, while the user is on the login screen, so the post-jump-in
+  // picker renders with data instead of a spinner.
+  useEffect(() => {
+    prefetchPlaces()
+  }, [])
   const reuse = flow.status === 'reuse-login-or-new'
   const profile = useProfile(reuse && flow.account != null ? flow.account : undefined)
 

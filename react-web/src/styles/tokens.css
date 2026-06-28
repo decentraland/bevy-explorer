@@ -88,6 +88,13 @@
   --dur-mid: 300ms;
   --dur-fade: 600ms;
 
+  /* ---- modal (ported from dcl-react-ui) ---- */
+  --modal-pad: 30px;
+  --modal-gap: 20px;
+  --modal-btn-h: 46px;
+  --z-dialog: 1200;
+  --z-toast: 2000;
+
   /* ---- legacy aliases (first slices: login / chat / loading) ---- */
   --color-ruby: var(--brand);
   --color-ruby-clicked: var(--brand-active);

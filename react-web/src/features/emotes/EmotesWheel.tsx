@@ -2,7 +2,7 @@
 // its silhouette + number stay upright). Centre shows the hovered emote + hints. Click a
 // card to play it. Built from the Figma-matched EmoteSlot (node 10386-4701).
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { catalystThumbUrl } from '../../lib/identity'
 import { EmoteSlot } from './EmoteSlot'
 import type { EmotesState } from '../session/useEngineSession'
@@ -12,8 +12,29 @@ const CENTER = 215 // wheel viewport is 430×430 (then HUD-scaled)
 const RADIUS = 152 // centre → slot centre
 const CARD_W = 112
 
-export function EmotesWheel({ emotes }: { emotes: EmotesState }): React.JSX.Element | null {
+export function EmotesWheel({
+  emotes,
+  onCustomise
+}: {
+  emotes: EmotesState
+  /** Open the Backpack on the Emotes tab ("Customise [E]"). */
+  onCustomise?: () => void
+}): React.JSX.Element | null {
   const [hover, setHover] = useState<number | null>(null)
+
+  // While the wheel is open, E (the on-screen "[E]" shortcut) opens the backpack's Emotes tab.
+  useEffect(() => {
+    if (!emotes.open || onCustomise == null) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'e' || e.key === 'E') {
+        e.preventDefault()
+        onCustomise()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [emotes.open, onCustomise])
+
   if (!emotes.open) return null
 
   // number 1 at top (−90°), clockwise; 0 sits just left of 1.
@@ -57,7 +78,9 @@ export function EmotesWheel({ emotes }: { emotes: EmotesState }): React.JSX.Elem
         <div className={styles.center}>
           <div className={styles.hoverName}>{hovered?.name ?? ' '}</div>
           <div className={styles.title}>EMOTES</div>
-          <div className={styles.customise}>Customise [E]</div>
+          <button type="button" className={styles.customise} onClick={onCustomise}>
+            Customise [E]
+          </button>
           <div className={styles.hint}>
             Hold [B+num] to run an emote
             <br />

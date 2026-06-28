@@ -1,0 +1,195 @@
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  background: var(--scrim);
+  display: flex;
+  padding: 20px;
+  overflow: auto;
+  animation: fadeIn 0.3s linear;
+}
+
+.card {
+  margin: auto;
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  outline: none;
+  border-radius: var(--r-panel);
+  padding: 28px;
+  box-shadow: var(--shadow-modal);
+  color: var(--text);
+  max-width: 100%;
+  animation: fadeIn 0.3s linear;
+}
+.card:focus,
+.card:focus-visible {
+  outline: none;
+}
+
+@media (max-height: 540px) {
+  .backdrop {
+    padding: 8px;
+  }
+  .card {
+    padding: 18px;
+    border-radius: var(--r-control);
+    max-height: calc(100dvh - 16px);
+  }
+}
+
+/* ---- ModalShell ---- */
+.shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--modal-gap);
+  padding: var(--modal-pad);
+}
+.shellBody {
+  min-width: 0;
+  line-height: 1.5;
+  color: var(--ink-85);
+}
+
+@media (max-height: 540px) {
+  .shell {
+    padding: 18px;
+    gap: 14px;
+  }
+}
+
+/* ---- ModalTitle ---- */
+.title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.titleText {
+  min-width: 0;
+}
+.titleCentered {
+  position: relative;
+  display: block;
+}
+.titleCentered .titleText {
+  width: 100%;
+}
+.titleCentered .titleHeading {
+  justify-content: center;
+  text-align: center;
+}
+.titleCentered .subtitle {
+  text-align: center;
+}
+.titleCentered .close {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+.titleCentered .back {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+.titleHeading {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.icon {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.subtitle {
+  margin-top: 6px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--ink-45);
+}
+.close,
+.back {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-control);
+  background: transparent;
+  color: currentColor;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.close:hover,
+.back:hover {
+  opacity: 1;
+}
+.close:focus-visible,
+.back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- ModalActions ---- */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+/* Only the lead-note footer wraps (note above buttons on tight widths); equal
+   button rows must stay side by side. */
+.actionsLead {
+  flex-wrap: wrap;
+}
+.actionBtn {
+  flex: 1 1 0;
+}
+/* Equal buttons fill their column so a Cancel | Confirm pair stays balanced. */
+.actionBtn > * {
+  width: 100%;
+}
+.actionsColumn {
+  flex-direction: column;
+  align-items: stretch;
+  flex-wrap: nowrap;
+}
+.actionsColumn .actionBtn {
+  flex: 0 0 auto;
+}
+.actions button,
+.actionBtn > * {
+  min-height: var(--modal-btn-h);
+}
+/* Lead note keeps a sensible min width and grows; the button group stays glued
+   together and right-aligned, wrapping below on tight widths. */
+.lead {
+  flex: 1 1 16rem;
+  min-width: 0;
+  color: var(--ink-7);
+  line-height: 1.45;
+}
+.group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+  margin-left: auto;
+}

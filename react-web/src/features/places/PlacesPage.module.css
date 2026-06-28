@@ -1,0 +1,167 @@
+/* Places browser body — "What's On" layout: Live Now + Featured highlight sections, then a toolbar
+   (section tabs + search + Any Category + Sort by) over a purple grid panel. Shared by the in-world
+   PlacesPage and the picker. */
+
+/* Live Now / Featured Places highlight sections. */
+.section {
+  margin-bottom: 28px;
+}
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+}
+.liveDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fb3b3b;
+  box-shadow: 0 0 6px rgba(251, 59, 59, 0.7);
+  animation: liveDotPulse 1.5s ease-in-out infinite;
+}
+@keyframes liveDotPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+/* Section pills: Explore all / Favourites / My places (decentraland-ui2 TabButton). */
+.tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 50px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.46px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.tab:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+.tabActive {
+  background: #fff;
+  color: #16131a;
+}
+.tabActive:hover {
+  background: #fff;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+.controls > * {
+  flex: none;
+}
+.search {
+  width: 240px;
+}
+.dd {
+  width: 168px;
+}
+.search > *,
+.dd > * {
+  width: 100%;
+}
+
+/* Purple grid panel (decentraland-ui2 GridPanel). */
+.panel {
+  background: rgba(179, 47, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  padding: 24px;
+}
+.grid {
+  display: grid;
+  /* Wide cards that fill the full width (~4 columns), like the Figma — not a narrow centered grid. */
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  gap: 18px;
+  align-content: start;
+}
+
+.center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 0;
+}
+
+/* Featured Places — 2-row horizontal carousel of small FeaturedCards with arrow controls. */
+.carousel {
+  position: relative;
+  /* A horizontal scroll container clips overflow on BOTH axes, which would cut off a hovered card's
+     lift + white glow. Pad the track to give it room, then pull the box back with a negative margin
+     so the section spacing stays tight. */
+  margin: -24px 0;
+}
+.track {
+  display: grid;
+  grid-template-rows: repeat(2, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: calc((100% - 3 * 18px) / 4); /* 4 cards visible, the rest scroll */
+  gap: 18px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 24px 14px;
+}
+.track::-webkit-scrollbar {
+  display: none;
+}
+.carouselArrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(20, 8, 30, 0.8);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  transition: background-color var(--dur-fast) ease;
+}
+.carouselArrow:hover {
+  background: var(--brand);
+}
+.carouselPrev {
+  left: -8px;
+}
+.carouselNext {
+  right: -8px;
+}

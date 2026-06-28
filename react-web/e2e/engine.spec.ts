@@ -72,6 +72,13 @@ test.describe('react HUD ↔ real engine', () => {
     await expectBridge(page, 'page', 'communities')
   })
 
+  // --- gallery: open → fetch the camera reel ---------------------------------
+  test('gallery: opening the gallery fetches the camera reel', async () => {
+    await sidebar(page, 'Gallery')
+    await expectBridge(page, 'scene', 'getGallery')
+    await expectBridge(page, 'page', 'gallery')
+  })
+
   // --- world/map: open map → current parcel ----------------------------------
   test('map: opening the map fetches the current parcel', async () => {
     await sidebar(page, 'Map')

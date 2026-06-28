@@ -58,9 +58,21 @@
   letter-spacing: 0.06em;
 }
 .customise {
-  font-size: 13px;
-  color: var(--ink-7);
   margin-bottom: 10px;
+  padding: 4px 12px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-7);
+  cursor: pointer;
+  transition: color var(--dur-fast) ease, background-color var(--dur-fast) ease;
+}
+.customise:hover {
+  color: var(--text);
+  background: var(--white-10);
 }
 .hint {
   font-size: 11px;

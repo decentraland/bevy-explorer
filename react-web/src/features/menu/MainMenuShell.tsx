@@ -2,9 +2,17 @@
 // body). Every full-screen menu page (Settings, Backpack, …) renders inside this so
 // the top bar is identical and consistent. Pages pass their content as children.
 
+import { useEffect, useState } from 'react'
 import { DclLogo, Icon, type IconName } from '../../design'
 import { ProfileChip } from './ProfileChip'
 import styles from './MainMenuShell.module.css'
+
+// How many menu shells are currently mounted. Each full-screen page renders its own shell, so
+// SWITCHING pages unmounts one and mounts another. A shell that mounts while another is already open
+// is a page switch (skip the entrance fade so the shared chrome doesn't flash "close → reopen"); a
+// shell that mounts with none open is a fresh open (animate). The previous shell's unmount cleanup
+// runs AFTER the new shell renders, so reading this at render time correctly sees the outgoing shell.
+let openShells = 0
 
 export interface MenuItem {
   label: string
@@ -18,8 +26,10 @@ export interface MenuItem {
 // (icon + LABEL [shortcut]). Every item is now a React page.
 export const MENU_ITEMS: MenuItem[] = [
   { label: 'Communities', icon: 'communities', shortcut: 'O', page: 'communities' },
+  { label: 'Places', icon: 'places', shortcut: 'Z', page: 'places' },
   { label: 'Map', icon: 'map', shortcut: 'M', page: 'map' },
   { label: 'Backpack', icon: 'backpack', shortcut: 'I', page: 'backpack' },
+  { label: 'Gallery', icon: 'gallery', shortcut: 'G', page: 'gallery' },
   { label: 'Settings', icon: 'settings', shortcut: 'P', page: 'settings' }
 ]
 
@@ -46,8 +56,17 @@ export function MainMenuShell({
   transparentBody?: boolean
   children: React.ReactNode
 }): React.JSX.Element {
+  // Animate the entrance only on a fresh open (no other shell mounted), not on page switches.
+  const [animate] = useState(() => openShells === 0)
+  useEffect(() => {
+    openShells++
+    return () => {
+      openShells--
+    }
+  }, [])
+
   return (
-    <div className={`${styles.overlay} ${transparentBody ? styles.overlayPass : ''}`.trim()}>
+    <div className={`${styles.overlay} ${animate ? styles.animateIn : ''} ${transparentBody ? styles.overlayPass : ''}`.trim()}>
       <header className={styles.topbar}>
         <div className={styles.brand}>
           <DclLogo size={26} />

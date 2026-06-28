@@ -1,7 +1,7 @@
 // Communities: browse list, joining, and per-community detail (members/posts/places).
 //   from: social-api communities service via BevyApi.kernelFetch (signed GETs / POST join).
 import { getPlayer } from '@dcl/sdk/players'
-import { getJson, isZone, signed } from '../http'
+import { getJson, isZone, signed, signedForm } from '../http'
 import type { Ctx } from '../bridge'
 import type { Community, CommunityEvent, CommunityMember, CommunityPhoto, CommunityPlace, CommunityPost } from '../../../src/engine/protocol'
 
@@ -114,6 +114,18 @@ async function detail(id: string): Promise<{ members: CommunityMember[]; posts: 
 
 export function registerCommunities(ctx: Ctx): void {
   ctx.on('getCommunities', async () => {
+    ctx.send({ kind: 'communities', communities: await list() })
+  })
+  ctx.on('createCommunity', async (msg) => {
+    // Text-only multipart (no thumbnail — see signedForm). Matches Unity's create payload.
+    await signedForm(await base(), 'POST', {
+      name: msg.name,
+      description: msg.description,
+      privacy: msg.privacy,
+      visibility: msg.discoverable ? 'all' : 'unlisted'
+    }).catch((e: unknown) => {
+      console.error('[communities] create failed', e)
+    })
     ctx.send({ kind: 'communities', communities: await list() })
   })
   ctx.on('joinCommunity', async (msg) => {

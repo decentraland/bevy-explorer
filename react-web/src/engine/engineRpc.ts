@@ -5,12 +5,27 @@
 // in a same-origin iframe, so we reach it via `iframe.contentWindow`; which window
 // to point at is kept behind here so callers don't care.
 
+type EngineWindow = Window & {
+  engine_console_command?: (line: string) => Promise<string>
+  __bevyReadyToLaunch?: boolean
+  __bevyLaunch?: (realm?: string, position?: string) => void
+}
+
 export class EngineRpc {
-  private win: (Window & { engine_console_command?: (line: string) => Promise<string> }) | null =
-    null
+  private win: EngineWindow | null = null
 
   setWindow(win: Window | null): void {
-    this.win = win as typeof this.win
+    this.win = win as EngineWindow | null
+  }
+
+  /** True once the WASM is compiled + GPU cache warm (manualParams mode) — ready to be launched. */
+  readyToLaunch(): boolean {
+    return this.win?.__bevyReadyToLaunch === true
+  }
+
+  /** Boot the bevy app at a realm/position (only valid in manualParams mode, after readyToLaunch). */
+  launch(realm?: string, position?: string): void {
+    this.win?.__bevyLaunch?.(realm, position)
   }
 
   ready(): boolean {

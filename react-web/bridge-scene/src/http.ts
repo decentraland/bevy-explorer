@@ -66,3 +66,28 @@ export async function signed<T>(
   const parsed = JSON.parse(result.body) as { data?: T } & T
   return parsed.data ?? parsed
 }
+
+// Signed multipart/form-data POST/PUT with TEXT fields only (kernelFetch bodies are strings,
+// so binary file parts like thumbnails can't go through here). The social-api community
+// create/edit endpoints expect multipart, which is valid with text-only sections.
+export async function signedForm<T>(
+  url: string,
+  method: 'POST' | 'PUT',
+  fields: Record<string, string>
+): Promise<T | undefined> {
+  const boundary = '----DclBridgeFormBoundaryqZ1x9b7Kt3'
+  let body = ''
+  for (const [key, value] of Object.entries(fields)) {
+    body += `--${boundary}\r\nContent-Disposition: form-data; name="${key}"\r\n\r\n${value}\r\n`
+  }
+  body += `--${boundary}--\r\n`
+  const result = await BevyApi.kernelFetch({
+    url,
+    init: { headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` }, method, body },
+    meta: META
+  })
+  if (!result.ok) throw new Error(`HTTP ${result.status}: ${result.statusText ?? result.body}`)
+  if (!result.body) return undefined
+  const parsed = JSON.parse(result.body) as { data?: T } & T
+  return parsed.data ?? parsed
+}

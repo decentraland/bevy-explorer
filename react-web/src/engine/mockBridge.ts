@@ -164,11 +164,27 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
   seedMockSso(o)
   // Stateful so markNotificationsRead persists across reopens (like the real service).
   const mockNow = 1_700_000_000_000
+  // Shapes mirror the real notifications service: friendship notifications carry the other user
+  // under metadata.sender (name + avatar), with no metadata.title.
   const mockNotifications = [
-    { id: 'n1', type: 'friendship_accepted', read: false, timestamp: new Date(mockNow).toISOString(), metadata: { title: 'New friend', description: 'Mojito accepted your friend request.' } },
-    { id: 'n2', type: 'item_sold', read: false, timestamp: new Date(mockNow - 3600_000).toISOString(), metadata: { title: 'Item sold', description: 'Your “Sunset Hoodie” sold for 120 MANA.', image: 'https://profile-images.decentraland.org/entities/bafkreie5bpho47gnh3jrfxoezwc4pxffup4cmmhmdxsmpf3oslopxb4enm/face.png' } },
-    { id: 'n3', type: 'event_started', read: true, timestamp: new Date(mockNow - 86_400_000).toISOString(), metadata: { title: 'Event live', description: 'Music Festival is happening now in Genesis Plaza.' } }
+    { id: 'n1', type: 'social_service_friendship_accepted', read: false, timestamp: new Date(mockNow).toISOString(), metadata: { sender: { address: '0x5854cce95d5e25817b41f4c41f06b695a83bc495', name: 'Mojito', profileImageUrl: 'https://profile-images.decentraland.org/entities/bafkreid5btlh76opew65hxu6dtkdo6ybqhymdof6vrrmjy2p5a74oy4huq/face.png' } } },
+    { id: 'n2', type: 'social_service_friendship_request', read: false, timestamp: new Date(mockNow - 1800_000).toISOString(), metadata: { sender: { address: '0x6723dcb07f3ca735223cd1c0acfa62dd994a1bb4', name: 'Sharknado', profileImageUrl: 'https://profile-images.decentraland.org/entities/bafkreie5bpho47gnh3jrfxoezwc4pxffup4cmmhmdxsmpf3oslopxb4enm/face.png' } } },
+    { id: 'n3', type: 'item_sold', read: false, timestamp: new Date(mockNow - 3600_000).toISOString(), metadata: { title: 'Item sold', description: 'Your “Sunset Hoodie” sold for 120 MANA.', image: 'https://profile-images.decentraland.org/entities/bafkreie5bpho47gnh3jrfxoezwc4pxffup4cmmhmdxsmpf3oslopxb4enm/face.png' } },
+    { id: 'n4', type: 'event_started', read: true, timestamp: new Date(mockNow - 86_400_000).toISOString(), metadata: { title: 'Event live', description: 'Music Festival is happening now in Genesis Plaza.' } },
+    // Title-less types (server sends only structured fields) — formatted client-side in the panel.
+    { id: 'n5', type: 'community_post_added', read: false, timestamp: new Date(mockNow - 2400_000).toISOString(), metadata: { communityName: 'Toxic Events', communityId: 'c5', thumbnailUrl: 'https://picsum.photos/seed/dcl/80/80' } },
+    { id: 'n6', type: 'credits_reminder_claim_credits', read: false, timestamp: new Date(mockNow - 5400_000).toISOString(), metadata: {} }
   ]
+  // Mock camera-reel gallery — ~3-day spacing spans two months (exercises month grouping).
+  // dateTime is a unix-seconds string, like the real compact endpoint. Mutable (delete splices).
+  const DAY = 86_400_000
+  const mockGallery = Array.from({ length: 14 }, (_, i) => ({
+    id: `g${i}`,
+    url: `https://picsum.photos/seed/reel${i}/1200/800`,
+    thumbnailUrl: `https://picsum.photos/seed/reel${i}/400/300`,
+    isPublic: i % 2 === 0,
+    dateTime: String(Math.floor((mockNow - i * 3 * DAY) / 1000))
+  }))
   const ch = new BroadcastChannel(BRIDGE_CHANNEL)
   const wait = (ms: number): Promise<void> =>
     new Promise((r) => setTimeout(r, ms))
@@ -248,6 +264,23 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
         2500 + i * 2200
       )
     )
+
+    // ?perm=1 → fire a sample scene permission prompt so the dialog is exercisable in the mock.
+    if (new URLSearchParams(location.search).get('perm') === '1') {
+      setTimeout(
+        () =>
+          reply({
+            kind: 'permissionRequest',
+            id: 1,
+            ty: 'ChangeRealm',
+            sceneName: 'Genesis Plaza',
+            scene: 'bafkreigenesisplazahash',
+            realm: 'https://realm-provider.decentraland.org/main',
+            additional: 'Jump to DCL Kickoff Challenge?'
+          }),
+        3000
+      )
+    }
   }
 
   ch.onmessage = async (e: MessageEvent<Envelope>) => {
@@ -321,7 +354,22 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       return
     }
     if (msg.kind === 'changeRealm') return // no realm switching in the mock
+    if (msg.kind === 'permissionResolve') return // no engine to apply the decision in the mock
     if (msg.kind === 'getCommunities') {
+      reply({ kind: 'communities', communities: mockCommunities })
+      return
+    }
+    if (msg.kind === 'createCommunity') {
+      mockCommunities.unshift({
+        id: `new-${mockCommunities.length}`,
+        name: msg.name,
+        description: msg.description,
+        thumbnail: '',
+        membersCount: 1,
+        role: 'owner',
+        ownerName: 'You',
+        privacy: msg.privacy
+      })
       reply({ kind: 'communities', communities: mockCommunities })
       return
     }
@@ -387,6 +435,32 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     if (msg.kind === 'markNotificationsRead') {
       // Persist read state in the mock so reopening reflects it (mirrors the real service).
       for (const n of mockNotifications) if (msg.ids.includes(n.id)) n.read = true
+      return
+    }
+    if (msg.kind === 'getGallery') {
+      reply({ kind: 'gallery', photos: mockGallery, current: mockGallery.length, max: 500 })
+      return
+    }
+    if (msg.kind === 'getGalleryPhoto') {
+      reply({
+        kind: 'galleryPhoto',
+        id: msg.id,
+        meta: {
+          userName: o.hasPreviousLogin ? 'Mojito' : 'Guest',
+          userAddress: o.userId,
+          sceneName: 'Genesis Plaza',
+          x: -9,
+          y: 14,
+          realm: 'main',
+          people: MOCK_NEARBY.slice(0, 3).map((m) => ({ address: m.address, name: m.name || 'Guest', isGuest: false }))
+        }
+      })
+      return
+    }
+    if (msg.kind === 'deleteGalleryPhoto') {
+      const i = mockGallery.findIndex((p) => p.id === msg.id)
+      if (i >= 0) mockGallery.splice(i, 1)
+      reply({ kind: 'gallery', photos: mockGallery, current: mockGallery.length, max: 500 })
       return
     }
     if (msg.kind === 'getProfile') {

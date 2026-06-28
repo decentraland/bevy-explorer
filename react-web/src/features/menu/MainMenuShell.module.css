@@ -18,7 +18,10 @@
   font-family: var(--font-family);
   overflow: hidden;
   contain: layout paint;
-  /* Open animation — Unity ExplorePanel fades in (0.2s). */
+}
+/* Open animation — Unity ExplorePanel fades in (0.2s). Applied only on a FRESH open, not when
+   switching pages (which remounts the shell) — so changing pages just swaps the body, no flash. */
+.animateIn {
   animation: menuIn 0.22s var(--ease-out, ease);
 }
 @keyframes menuIn {

@@ -19,4 +19,15 @@ describe('emotes wheel slot play', () => {
     fireEvent.click(screen.getByText('3'))
     expect(vi.mocked(s.emotes.play)).not.toHaveBeenCalled()
   })
+
+  it('"Customise [E]" — click and the E key both open the backpack on the Emotes tab', () => {
+    const s = fakeSession()
+    s.emotes = { ...s.emotes, open: true }
+    const onCustomise = vi.fn()
+    render(<EmotesWheel emotes={s.emotes} onCustomise={onCustomise} />)
+    fireEvent.click(screen.getByRole('button', { name: /Customise/i }))
+    expect(onCustomise).toHaveBeenCalledTimes(1)
+    fireEvent.keyDown(window, { key: 'e' })
+    expect(onCustomise).toHaveBeenCalledTimes(2)
+  })
 })

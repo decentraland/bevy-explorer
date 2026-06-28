@@ -107,10 +107,13 @@ export function renderSession(previousLogin?: { userId: string | null }): Harnes
 export async function enterAsGuest(h: Harness, opts: { keepSent?: boolean } = {}): Promise<void> {
   await waitFor(() => expect(h.session().login.status).not.toBe('loading'))
   act(() => h.session().login.exploreAsGuest())
-  await waitFor(() => expect(h.session().phase).toBe('entering'))
-  // The engine login is deferred until the loader has painted, so wait for it to actually fire
-  // (getPreviousLogin is the first call; the login adds a second) before driving world entry.
+  // Jump in now just shows the Places picker — the login is deferred until a destination is picked.
+  await waitFor(() => expect(h.session().phase).toBe('picking'))
+  // Skip it (null = default spawn); this launches the engine and runs the deferred login.
+  act(() => h.session().pickDestination(null))
+  // getPreviousLogin is the first call; the deferred login (fired on pick) adds a second.
   await waitFor(() => expect(h.driver.calls.length).toBeGreaterThan(1))
+  await waitFor(() => expect(h.session().phase).toBe('entering'))
   h.driver.emit({ kind: 'event', name: 'playerReady' })
   await waitFor(() => expect(h.session().phase).toBe('world'))
   if (!opts.keepSent) h.driver.clearSent()
@@ -125,6 +128,7 @@ export async function enterAsGuest(h: Harness, opts: { keepSent?: boolean } = {}
 export function fakeSession(): EngineSession {
   return {
     phase: 'world',
+    pickDestination: vi.fn(),
     scene: null,
     hover: [],
     cursorLocked: false,
@@ -138,8 +142,11 @@ export function fakeSession(): EngineSession {
     notifications: { list: [], unread: 0, open: false, toggle: vi.fn(), markAllRead: vi.fn() },
     emotes: { list: [], open: false, toggle: vi.fn(), play: vi.fn(), equip: vi.fn() },
     backpack: { list: [], open: false, toggle: vi.fn(), equip: vi.fn(), preview: vi.fn() },
-    communities: { list: [], open: false, toggle: vi.fn(), join: vi.fn(), leave: vi.fn(), detail: null, loadDetail: vi.fn() },
+    communities: { list: [], open: false, toggle: vi.fn(), create: vi.fn(), join: vi.fn(), leave: vi.fn(), detail: null, loadDetail: vi.fn() },
     map: { x: 0, y: 0, open: false, toggle: vi.fn(), teleport: vi.fn(), changeRealm: vi.fn() },
+    places: { open: false, toggle: vi.fn() },
+    gallery: { list: [], current: 0, max: 0, loaded: false, open: false, toggle: vi.fn(), metas: {}, loadPhoto: vi.fn(), remove: vi.fn() },
+    permissions: { pending: [], resolve: vi.fn() },
     mic: { enabled: false, available: true, toggle: vi.fn() },
     nav: vi.fn(),
     setEngineViewport: vi.fn(),

@@ -81,13 +81,18 @@ export type PageToScene =
   | EquipRequest
   | PreviewAvatarRequest
   | GetCommunitiesRequest
+  | CreateCommunityRequest
   | JoinCommunityRequest
   | LeaveCommunityRequest
   | GetCommunityDetailRequest
   | GetMapRequest
   | TeleportRequest
   | ChangeRealmRequest
+  | PermissionResolveRequest
   | EngineViewportRequest
+  | GetGalleryRequest
+  | GetGalleryPhotoRequest
+  | DeleteGalleryPhotoRequest
 
 // ---- scene -> page ---------------------------------------------------------
 
@@ -374,6 +379,39 @@ export interface ChangeRealmRequest {
   realm: string
 }
 
+/** A scene's pending permission prompt relayed from the engine (e.g. it wants to move you
+ *  to a new realm). Shown as the React permission dialog; resolved with permissionResolve. */
+export interface PermissionRequestMessage {
+  kind: 'permissionRequest'
+  /** Engine-assigned request id (echoed back to resolve a "Once" decision). */
+  id: number
+  /** PermissionType serde name, e.g. 'ChangeRealm' — React maps it to the human prompt. */
+  ty: string
+  /** Scene title (e.g. 'Genesis Plaza') for the dialog text. */
+  sceneName: string
+  /** Scene hash — the value for a Scene-level "Always" grant. */
+  scene: string
+  /** Realm url the request was made under — the value for a Realm-level "Always" grant. */
+  realm: string
+  /** Extra context line (e.g. 'Jump to DCL Kickoff Challenge?'). */
+  additional?: string
+}
+
+/** Which scope an Allow/Deny applies to. `once` = just this request; the rest persist a rule. */
+export type PermissionLevelChoice = 'once' | 'scene' | 'realm' | 'global'
+
+/** The user's decision on a permission prompt (page → scene → SystemApi). */
+export interface PermissionResolveRequest {
+  kind: 'permissionResolve'
+  id: number
+  ty: string
+  allow: boolean
+  level: PermissionLevelChoice
+  /** Scene hash + realm carried back so the scene can target a permanent grant. */
+  scene: string
+  realm: string
+}
+
 /**
  * Tells the scene to render an engine-backed view (the rich map, or the avatar
  * preview) into a screen rectangle that a React page has carved out as transparent.
@@ -406,6 +444,16 @@ export interface CommunitiesMessage {
 
 export interface GetCommunitiesRequest {
   kind: 'getCommunities'
+}
+
+/** Create a community (page → scene → signed multipart POST to the social-api). */
+export interface CreateCommunityRequest {
+  kind: 'createCommunity'
+  name: string
+  description: string
+  privacy: 'public' | 'private'
+  /** Discoverable in the directory → visibility 'all', otherwise 'unlisted'. */
+  discoverable: boolean
 }
 
 export interface JoinCommunityRequest {
@@ -480,6 +528,69 @@ export interface CommunityDetailMessage {
   places: CommunityPlace[]
   events: CommunityEvent[]
   photos: CommunityPhoto[]
+}
+
+// ---- gallery (camera reel) -------------------------------------------------
+
+/** One camera-reel photo (compact list item). `dateTime` is the service's raw string
+ *  (a unix timestamp in seconds or ms, or ISO) — parsed for month-grouping on the page. */
+export interface GalleryPhoto {
+  id: string
+  url: string
+  thumbnailUrl?: string
+  dateTime: string
+  /** Whether the photo is publicly shareable (only the owner can flip it). */
+  isPublic?: boolean
+}
+
+/** A person captured in a photo (the detail-view "people in this photo" list). */
+export interface GalleryPerson {
+  address: string
+  name: string
+  isGuest?: boolean
+}
+
+/** Full metadata for one photo (fetched lazily when its detail view opens). */
+export interface GalleryPhotoMeta {
+  /** Who took the photo. */
+  userName?: string
+  userAddress?: string
+  /** Scene name + parcel where it was taken (for "Jump In"). */
+  sceneName?: string
+  x?: number
+  y?: number
+  realm?: string
+  people?: GalleryPerson[]
+}
+
+export interface GetGalleryRequest {
+  kind: 'getGallery'
+}
+
+/** The local player's camera-reel photos + storage usage (current/max). */
+export interface GalleryMessage {
+  kind: 'gallery'
+  photos: GalleryPhoto[]
+  current: number
+  max: number
+}
+
+/** Fetch one photo's full metadata (place + people) for its detail view. */
+export interface GetGalleryPhotoRequest {
+  kind: 'getGalleryPhoto'
+  id: string
+}
+
+export interface GalleryPhotoMessage {
+  kind: 'galleryPhoto'
+  id: string
+  meta: GalleryPhotoMeta | null
+}
+
+/** Delete one of the local player's photos (signed DELETE; re-emits the gallery). */
+export interface DeleteGalleryPhotoRequest {
+  kind: 'deleteGalleryPhoto'
+  id: string
 }
 
 /** An owned wearable (backpack catalog item). */
@@ -592,6 +703,9 @@ export type SceneToPage =
   | CommunitiesMessage
   | CommunityDetailMessage
   | MapMessage
+  | GalleryMessage
+  | GalleryPhotoMessage
+  | PermissionRequestMessage
 
 // ---- envelope --------------------------------------------------------------
 

@@ -18,6 +18,7 @@ describe('sidebar clicks', () => {
     ['Map', (s) => s.map.toggle],
     ['Communities', (s) => s.communities.toggle],
     ['Backpack', (s) => s.backpack.toggle],
+    ['Gallery', (s) => s.gallery.toggle],
     ['Settings', (s) => s.settings.toggle],
     ['Voice chat', (s) => s.mic.toggle],
     ['Emotes', (s) => s.emotes.toggle],

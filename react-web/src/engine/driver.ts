@@ -31,8 +31,12 @@ export interface LoginDriver {
    *  holds the loading screen until this clears so the world isn't revealed as black models.
    *  Optional — the mock has no engine to wait for. */
   renderBusy?(): boolean
-  /** True once the engine can accept console commands (WASM booted, `engine_console_command` live).
-   *  The login screen keeps its engine-driven buttons in a "Starting…" state until this is true, so a
-   *  click can't land in a silent `waitReady()` poll. Optional — the mock is always ready. */
+  /** True once the engine is warm enough to launch (WASM compiled + GPU cache ready). The login
+   *  screen keeps its CTAs in a "Starting…" state until this is true. Optional — the mock is always
+   *  ready. */
   engineReady?(): boolean
+  /** Boot the engine at a chosen realm/position (deferred-start: nothing loads until the user picks
+   *  a destination). A parcel passes `position` "x,y"; a world passes `realm`; skip passes "0,0".
+   *  Optional — the mock has no engine to launch. */
+  launch?(realm?: string, position?: string): void
 }

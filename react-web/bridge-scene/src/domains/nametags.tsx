@@ -4,6 +4,11 @@
 // with a faint border, the name in its address-hashed palette colour, the DCL verified seal for
 // claimed names, and a white-40% `#abcd` discriminator for unclaimed ones. Opacity is full within
 // 20m and fades out to 40m, where the tag is culled (matching NametagPlacementSystem).
+//
+// When a player talks, the pill grows a CHAT BUBBLE line under the name (see setChatBubble + the
+// chat domain) — restoring the previous SDK7 HUD's behaviour (bevy-ui-scene avatar-tags): the
+// message shows for a few seconds, the newest one replacing any prior, with a bigger font for a
+// single emoji and a brand-coloured border when the message @-mentions you.
 import ReactEcs, { UiEntity } from '@dcl/react-ecs'
 import {
   AvatarAnchorPointType,
@@ -55,15 +60,25 @@ const BORDER = 2
 
 // Constant ON-SCREEN size: scale the plane ∝ distance so perspective cancels out and the pill stays
 // the same size whatever the camera distance (unity-explorer's CalculateTagScale = fovScaleFactor ×
-// distance). Canvas 640×160 → 4:1. SIZE_FACTOR tunes apparent size; the distance is clamped so a
-// transient bad reading can never fill the screen. DEFAULT_DIST is the size a tag is born at, before
-// the per-frame system has measured it.
+// distance). SIZE_FACTOR tunes apparent size; the distance is clamped so a transient bad reading can
+// never fill the screen. DEFAULT_DIST is the size a tag is born at, before the per-frame system has
+// measured it.
+//
+// The canvas is taller than the pill (640×NAME_BAND would be 4:1 for the name alone) to leave room
+// BELOW the name for the chat bubble (the message line). The plane's HEIGHT is scaled by
+// CANVAS_H/NAME_BAND so the name still renders at the same on-screen size as a name-only 4:1 tag —
+// only the (transparent until someone talks) bubble area is extra. Width is unchanged (ASPECT·m), so
+// the name keeps its width too.
 const ASPECT = 4
-const SIZE_FACTOR = 0.05
+const CANVAS_W = 640
+const NAME_BAND = 160 // the name-only height the on-screen size is calibrated against (the old canvas)
+const CANVAS_H = 440 // taller → room for a ~3-line bubble under the name
+const Y_SCALE = CANVAS_H / NAME_BAND // plane height multiplier that preserves the name's on-screen size
+const SIZE_FACTOR = 0.057 // a touch larger so names read better, esp. at distance
 const MIN_DIST = 1
 const FADE_START = 20
 const MAX_DIST = 40
-const DEFAULT_DIST = 6
+const DEFAULT_DIST = 4 // smaller birth size, before the sizing system measures the real distance
 // The pill is attached at the avatar's NAME_TAG anchor (above the head), but getPlayer().position is
 // the avatar's feet. For distant tags that offset is noise; for a CLOSE one the head is much nearer
 // the camera than the feet, so sizing by the feet distance over-enlarges it. Measure to the head.
@@ -71,7 +86,54 @@ const NAMETAG_HEIGHT = 2.2
 function tagScale(dist: number): Vector3 {
   const d = Math.max(MIN_DIST, Math.min(MAX_DIST, dist))
   const m = SIZE_FACTOR * d
-  return Vector3.create(ASPECT * m, m, 1)
+  return Vector3.create(ASPECT * m, Y_SCALE * m, 1)
+}
+
+// --- chat bubble (the message line under the name) -----------------------------------------------
+// When a player talks, their name pill grows a second line with the message — matching the previous
+// SDK7 HUD (bevy-ui-scene avatar-tags) + unity-explorer: shown ~5s, REPLACED (not queued) on a new
+// message, a bigger font for a single emoji, and a brand-coloured border for a message that @-mentions
+// you. The chat domain feeds messages in via setChatBubble; an aging system expires them by dt (the
+// scene sandbox has no wall clock).
+const BUBBLE_TTL = 5 // seconds a bubble stays up; reset on each new message
+const BUBBLE_MAX_W = 480 // message wrap width, in canvas px
+const MSG_FONT = 30
+const EMOJI_FONT = 62
+const MSG_GAP = 2
+const MSG_TRUNCATE = 100
+const MENTION_BORDER = Color4.create(1, 45 / 255, 85 / 255, 1) // brand #ff2d55
+
+type Bubble = { message: string; mention: boolean; ttl: number }
+const bubbles = new Map<string, Bubble>() // lowercased address → its live bubble
+
+/** Show (or refresh) a player's chat bubble. Called by the chat domain for each incoming message. */
+export function setChatBubble(address: string, message: string, mention: boolean): void {
+  const text = message.trim()
+  if (address === '' || text === '') return
+  bubbles.set(address.toLowerCase(), { message: text, mention, ttl: BUBBLE_TTL })
+}
+
+// Single-emoji detection (renders bigger, like the reference). Codepoint-range based so it works in
+// the scene's JS runtime without Unicode property escapes; allows a trailing VS16 / skin-tone / ZWJ.
+function isSingleEmoji(s: string): boolean {
+  const cps = Array.from(s.trim())
+  if (cps.length === 0 || cps.length > 3) return false
+  let hasEmoji = false
+  for (const c of cps) {
+    const cp = c.codePointAt(0) ?? 0
+    if (cp >= 0x1f000 || (cp >= 0x2600 && cp <= 0x27bf)) hasEmoji = true
+    else if (cp === 0xfe0f || cp === 0x200d || (cp >= 0x1f3fb && cp <= 0x1f3ff)) continue // VS16 / ZWJ / skin tone
+    else return false // a normal character → not emoji-only
+  }
+  return hasEmoji
+}
+
+// Truncate to a length without breaking the final word (… suffix), matching the reference bubble.
+function truncateMessage(s: string, max: number): string {
+  if (s.length <= max) return s
+  const cut = s.slice(0, max)
+  const sp = cut.lastIndexOf(' ')
+  return (sp > max * 0.6 ? cut.slice(0, sp) : cut).replace(/\s+$/, '') + '…'
 }
 
 // 64-bit FNV-1a over the lowercase hex address — matches the engine + scene `simpleHash` exactly.
@@ -138,25 +200,45 @@ function tagElement(userId: string): () => ReactEcs.JSX.Element | null {
     // them flush). Name is bold in its hash colour (the element's base colour); the wallet id uses
     // the engine's <color=RRGGBBAA> markup → white-40%, regular weight. Claimed names show no id.
     const value = isClaimed ? `<b>${baseName}</b>` : `<b>${baseName}</b><color=${WALLET_ID_HEX}>#${userId.slice(-4)}</color>`
+    // The live chat bubble (if this player has spoken in the last few seconds). The pill is a COLUMN:
+    // name row on top, message below — so the bubble reads as growing out of the nametag.
+    const bubble = bubbles.get(userId.toLowerCase()) ?? null
 
     return (
       <UiEntity uiTransform={{ width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }}>
         <UiEntity
           uiTransform={{
-            flexDirection: 'row',
+            flexDirection: 'column',
             alignItems: 'center',
-            padding: PAD,
+            // PAD's right (6) is tuned for an unclaimed name's #id tail; the verified badge needs the
+            // same breathing room as the left, else it sits flush against the rounded edge.
+            padding: isClaimed ? { ...PAD, right: PAD.left } : PAD,
             borderRadius: RADIUS,
             borderWidth: BORDER,
-            borderColor: PILL_BORDER
+            // @-mention: brand-coloured border (the reference highlights mentions of you).
+            borderColor: bubble?.mention === true ? MENTION_BORDER : PILL_BORDER
           }}
           uiBackground={{ color: PILL_BG }}
         >
-          <UiEntity uiText={{ value, fontSize: FONT, color: nameColor(userId), textAlign: 'middle-center' }} />
-          {isClaimed && (
+          <UiEntity uiTransform={{ flexDirection: 'row', alignItems: 'center' }}>
+            <UiEntity uiText={{ value, fontSize: FONT, color: nameColor(userId), textAlign: 'middle-center' }} />
+            {isClaimed && (
+              <UiEntity
+                uiTransform={{ width: BADGE, height: BADGE, margin: { left: GAP } }}
+                uiBackground={{ textureMode: 'stretch', texture: { src: 'images/icon-verified.png' } }}
+              />
+            )}
+          </UiEntity>
+          {bubble != null && (
             <UiEntity
-              uiTransform={{ width: BADGE, height: BADGE, margin: { left: GAP } }}
-              uiBackground={{ textureMode: 'stretch', texture: { src: 'images/icon-verified.png' } }}
+              uiTransform={{ maxWidth: BUBBLE_MAX_W, margin: { top: MSG_GAP } }}
+              uiText={{
+                value: truncateMessage(bubble.message, MSG_TRUNCATE),
+                fontSize: isSingleEmoji(bubble.message) ? EMOJI_FONT : MSG_FONT,
+                color: Color4.White(),
+                textAlign: 'top-center',
+                textWrap: 'wrap'
+              }}
             />
           )}
         </UiEntity>
@@ -188,9 +270,12 @@ function setTagMaterial(tag: Entity, opacity: number): void {
 // scene writes only the plane's local scale (for constant on-screen size). Splitting them is what
 // kills the flicker — writing scale on the attached entity itself races the engine's per-frame
 // position write and snaps the tag between the avatar and the origin.
-function createTag(userId: string, isSelf: boolean): Entity {
+function createTag(userId: string, isSelf: boolean, avatarPos?: { x: number; y: number; z: number }): Entity {
   const anchor = engine.addEntity()
-  Transform.create(anchor)
+  // Born AT the avatar (head height), not the origin: if AvatarAttach later fails to bind, the tag
+  // sits on the avatar instead of stranding at world-origin where the distance-sizing balloons it into
+  // a giant pill. When the attach DOES bind, the engine overwrites this position every frame.
+  Transform.create(anchor, avatarPos != null ? { position: Vector3.create(avatarPos.x, avatarPos.y + NAMETAG_HEIGHT, avatarPos.z) } : {})
   // SELF attaches with NO avatarId → the engine binds it to the primary user directly (attach.rs),
   // which can never fail the avatar-shape-by-id lookup that was leaving the own-name tag frozen.
   AvatarAttach.create(anchor, isSelf ? { anchorPointId: AvatarAnchorPointType.AAPT_NAME_TAG } : { avatarId: userId, anchorPointId: AvatarAnchorPointType.AAPT_NAME_TAG })
@@ -201,7 +286,7 @@ function createTag(userId: string, isSelf: boolean): Entity {
   const plane = engine.addEntity()
   Transform.create(plane, { parent: anchor, scale: tagScale(DEFAULT_DIST) })
   MeshRenderer.setPlane(plane)
-  UiCanvas.create(plane, { width: 640, height: 160, color: Color4.Clear() })
+  UiCanvas.create(plane, { width: CANVAS_W, height: CANVAS_H, color: Color4.Clear() })
   ReactEcsRenderer.setTextureRenderer(plane, tagElement(userId))
   setTagMaterial(plane, 1)
   return anchor
@@ -220,6 +305,14 @@ function distanceTo(userId: string, cam: { x: number; y: number; z: number }): n
   return Math.hypot(pos.x - cam.x, pos.y + NAMETAG_HEIGHT - cam.y, pos.z - cam.z)
 }
 
+// Canonical address key. The SAME wallet can arrive in different casings from different sources
+// (onEnterScene's player.userId, PlayerIdentityData.address, getPlayer().userId), and a case-sensitive
+// Map key would treat `0xAbc…` and `0xabc…` as two players — spawning a SECOND tag whose AvatarAttach
+// often fails to bind, so it strands at the origin and the distance-sizing blows it up (the duplicate
+// "giant pill" bug). Keying every tag by the lowercased address makes the cache one-per-wallet. We
+// still pass the engine the address in its ORIGINAL casing (what getPlayer/AvatarAttach already match).
+const canon = (address: string): string => address.toLowerCase()
+
 // Guard on globalThis (NOT a module-local) so a module re-eval / HMR that keeps the engine context
 // can't start a SECOND copy of these systems beside the still-running first copy — two reconcilers,
 // each with its own map, would spawn (and then fight over) duplicate tags.
@@ -229,8 +322,8 @@ export function initNametags(): void {
   if (initFlag.__bevyNametagsStarted === true) return // never stack the systems twice
   initFlag.__bevyNametagsStarted = true
 
-  const tags = new Map<string, Entity>() // userId → anchor (one tag per player)
-  const uidOf = new Map<Entity, string>() // anchor → userId (so the size system finds the self tag too)
+  const tags = new Map<string, Entity>() // canonical address → anchor (exactly one tag per wallet)
+  const uidOf = new Map<Entity, string>() // anchor → address (original casing, for getPlayer/distance)
   const selfId = (): string | undefined => {
     const id = getPlayer()?.userId
     return id != null && id !== '' ? id : undefined
@@ -238,19 +331,24 @@ export function initNametags(): void {
 
   const add = (userId: string): void => {
     // Only once the avatar actually has a position — otherwise AvatarAttach has nothing to bind to
-    // and the tag would strand at the origin / get mis-placed on first load.
-    if (userId === '' || tags.has(userId) || !hasLivePosition(userId)) return
-    const anchor = createTag(userId, userId === selfId())
-    tags.set(userId, anchor)
+    // and the tag would strand at the origin / get mis-placed on first load. Keyed by canon(address)
+    // so a different casing of an already-tagged wallet can't create a duplicate.
+    const key = canon(userId)
+    if (userId === '' || tags.has(key) || !hasLivePosition(userId)) return
+    const anchor = createTag(userId, key === canon(selfId() ?? ''), getPlayer({ userId })?.position)
+    tags.set(key, anchor)
     uidOf.set(anchor, userId)
     resolveClaimed(userId)
   }
-  const remove = (userId: string): void => {
-    const anchor = tags.get(userId)
+  const removeByKey = (key: string): void => {
+    const anchor = tags.get(key)
     if (anchor == null) return
     engine.removeEntityWithChildren(anchor)
-    tags.delete(userId)
+    tags.delete(key)
     uidOf.delete(anchor)
+  }
+  const remove = (userId: string): void => {
+    removeByKey(canon(userId))
   }
 
   // THE hard guarantee against duplicate "stuck" pills: remove every nametag entity that doesn't
@@ -291,18 +389,33 @@ export function initNametags(): void {
 
     sweepOrphans()
     const me = selfId()
-    const present = new Set<string>()
+    const meKey = me != null ? canon(me) : ''
+    // Presence keyed by canon(address) → the address as the engine reported it (authoritative casing),
+    // so the same wallet collapses to ONE entry however its address is cased across sources.
+    const present = new Map<string, string>()
     for (const [, data] of engine.getEntitiesWith(PlayerIdentityData)) {
-      if (data.address !== '' && hasLivePosition(data.address)) present.add(data.address)
+      if (data.address !== '' && hasLivePosition(data.address)) present.set(canon(data.address), data.address)
     }
-    if (me != null && hasLivePosition(me)) present.add(me)
-    for (const userId of [...tags.keys()]) if (!present.has(userId)) remove(userId)
-    for (const userId of present) {
-      add(userId)
-      resolveClaimed(userId)
-      if (userId !== me) {
-        const anchor = tags.get(userId)
-        if (anchor != null) AvatarAttach.createOrReplace(anchor, { avatarId: userId, anchorPointId: AvatarAnchorPointType.AAPT_NAME_TAG })
+    if (me != null && hasLivePosition(me)) present.set(meKey, me)
+    for (const key of [...tags.keys()]) if (!present.has(key)) removeByKey(key)
+    for (const [key, addr] of present) {
+      add(addr)
+      resolveClaimed(addr)
+      if (key !== meKey) {
+        const anchor = tags.get(key)
+        if (anchor != null) {
+          // Re-assert the attachment on the authoritative address — re-links a tag whose AvatarAttach
+          // failed the avatar-shape-by-id lookup (the "stuck giant" case), and re-keys uidOf so the
+          // size/distance system reads the correct avatar.
+          AvatarAttach.createOrReplace(anchor, { avatarId: addr, anchorPointId: AvatarAnchorPointType.AAPT_NAME_TAG })
+          uidOf.set(anchor, addr)
+          // Keep the anchor's fallback position on the avatar: harmless while bound (the engine
+          // overwrites it every frame), but if the attach never binds the tag follows the avatar
+          // instead of stranding at world-origin and ballooning into a giant.
+          const at = Transform.getMutableOrNull(anchor)
+          const ap = getPlayer({ userId: addr })?.position
+          if (at != null && ap != null) at.position = Vector3.create(ap.x, ap.y + NAMETAG_HEIGHT, ap.z)
+        }
       }
     }
   })
@@ -315,6 +428,16 @@ export function initNametags(): void {
     if (sacc < 0.3) return
     sacc = 0
     sweepOrphans()
+  })
+
+  // Age out chat bubbles: the scene sandbox has no wall clock, so expire by accumulated frame time.
+  // tagElement reads the live `bubbles` map each render, so deleting one drops its message next frame.
+  engine.addSystem((dt: number) => {
+    if (bubbles.size === 0) return
+    for (const [addr, b] of bubbles) {
+      b.ttl -= dt
+      if (b.ttl <= 0) bubbles.delete(addr)
+    }
   })
 
   // Constant on-screen size (plane scale ∝ distance, clamped) + distance opacity. Writes ONLY the

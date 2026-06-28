@@ -302,6 +302,9 @@
   margin-bottom: 14px;
 }
 .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   height: 30px;
   padding: 0 14px;
   border: none;
@@ -523,6 +526,16 @@
   font-size: 13px;
   line-height: 1.5;
   color: var(--ink-6);
+}
+
+/* Saved Outfits placeholder — fills the catalog area (outfits aren't wired to the engine yet). */
+.outfits {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
 }
 
 .empty {

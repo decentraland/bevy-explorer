@@ -49,6 +49,7 @@ One test per domain, in `engine.spec.ts` (boots the world once, serial):
 | emotes | click Emotes | `getEmotes` → `emotes` |
 | wearables + avatarPreview | click Backpack | `getWearables` → `wearables`, `engineViewport` |
 | communities | click Communities | `getCommunities` → `communities` |
+| gallery | click Gallery | `getGallery` → `gallery` |
 | world (map) | click Map | `getMap` → `mapState` |
 | profile | relay + click Profile | `profile`, panel active |
 | notifications | click Notifications | `getNotifications` → `notifications` |
@@ -58,8 +59,9 @@ One test per domain, in `engine.spec.ts` (boots the world once, serial):
 | pointer, nametags | — | world-space / data-dependent → covered in tier 1 |
 
 Data-dependent **actions** (friend accept/reject/cancel/block, community join/leave,
-notification mark-read, wearable equip/preview, emote play, setting change) are
-asserted in tier 1, where the state can be injected deterministically.
+notification mark-read, wearable equip/preview, emote play, setting change, gallery
+photo metadata/delete) are asserted in tier 1, where the state can be injected
+deterministically.
 
 ## Sibling tier 1.5 — visual regression (no engine)
 

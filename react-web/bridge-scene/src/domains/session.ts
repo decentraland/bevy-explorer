@@ -18,7 +18,7 @@ export function registerSession(ctx: Ctx): void {
         case 'loginGuest': BevyApi.loginGuest(); break
         case 'loginCancel': BevyApi.loginCancel(); break
         case 'logout': BevyApi.logout(); break
-        default: throw new Error(`unsupported method ${msg.method}`)
+        default: throw new Error(`unsupported method ${String(msg.method)}`)
       }
       ctx.send({ kind: 'rpc:res', id: msg.id, ok: true, value })
     } catch (err) {

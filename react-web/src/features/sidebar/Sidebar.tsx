@@ -22,6 +22,8 @@ type Item =
   | { kind: 'backpack'; icon: IconName; label: string; shortcut?: string }
   | { kind: 'communities'; icon: IconName; label: string; shortcut?: string }
   | { kind: 'map'; icon: IconName; label: string; shortcut?: string }
+  | { kind: 'places'; icon: IconName; label: string; shortcut?: string }
+  | { kind: 'gallery'; icon: IconName; label: string; shortcut?: string }
   | { kind: 'help'; icon: IconName; label: string }
   | { kind: 'divider' }
 
@@ -29,8 +31,10 @@ const TOP: Item[] = [
   { kind: 'profile', icon: 'profile', label: 'Profile' },
   { kind: 'notifications', icon: 'notifications', label: 'Notifications' },
   { kind: 'map', icon: 'map', label: 'Map', shortcut: 'M' },
+  { kind: 'places', icon: 'places', label: 'Places', shortcut: 'Z' },
   { kind: 'communities', icon: 'communities', label: 'Communities', shortcut: 'O' },
   { kind: 'backpack', icon: 'backpack', label: 'Backpack', shortcut: 'I' },
+  { kind: 'gallery', icon: 'gallery', label: 'Gallery', shortcut: 'G' },
   { kind: 'settings', icon: 'settings', label: 'Settings', shortcut: 'P' },
   { kind: 'divider' },
   { kind: 'help', icon: 'help', label: 'Help & Support' }
@@ -121,6 +125,28 @@ function renderItem(item: Item, i: number, session: EngineSession, onViewProfile
         shortcut={item.shortcut}
         active={session.map.open}
         onClick={session.map.toggle}
+      />
+    )
+  if (item.kind === 'places')
+    return (
+      <IconButton
+        key="places"
+        icon={item.icon}
+        label={item.label}
+        shortcut={item.shortcut}
+        active={session.places.open}
+        onClick={session.places.toggle}
+      />
+    )
+  if (item.kind === 'gallery')
+    return (
+      <IconButton
+        key="gallery"
+        icon={item.icon}
+        label={item.label}
+        shortcut={item.shortcut}
+        active={session.gallery.open}
+        onClick={session.gallery.toggle}
       />
     )
   if (item.kind === 'notifications')

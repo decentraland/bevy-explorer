@@ -9,6 +9,7 @@ import { Avatar, Button } from '../../design'
 import { nameColor } from '../../lib/identity'
 import { MainMenuShell } from '../menu/MainMenuShell'
 import { CommunityModal } from './CommunityModal'
+import { CommunityCreateModal } from './CommunityCreateModal'
 import type { Community } from '../../engine/protocol'
 import type { CommunitiesState, ProfileState } from '../session/useEngineSession'
 import styles from './CommunitiesPage.module.css'
@@ -74,6 +75,9 @@ export function CommunitiesPage({
 }): React.JSX.Element | null {
   const [query, setQuery] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  // Main area shows the browse grid, or all of "My Communities" (via VIEW ALL).
+  const [tab, setTab] = useState<'browse' | 'mine'>('browse')
   const { loadDetail } = communities
 
   // Load the per-community detail (members/posts/places/events) when a modal opens.
@@ -81,11 +85,12 @@ export function CommunitiesPage({
     if (openId != null) loadDetail(openId)
   }, [openId, loadDetail])
 
+  const matchesQuery = (c: Community): boolean => !query || c.name.toLowerCase().includes(query.toLowerCase())
   const mine = useMemo(() => communities.list.filter((c) => isMember(c.role)), [communities.list])
-  const browse = useMemo(
-    () => communities.list.filter((c) => !query || c.name.toLowerCase().includes(query.toLowerCase())),
-    [communities.list, query]
-  )
+  const browse = useMemo(() => communities.list.filter(matchesQuery), [communities.list, query])
+  const mineFiltered = useMemo(() => mine.filter(matchesQuery), [mine, query])
+  const showingMine = tab === 'mine'
+  const gridList = showingMine ? mineFiltered : browse
 
   if (!communities.open) return null
 
@@ -113,13 +118,17 @@ export function CommunitiesPage({
 
       <div className={styles.layout}>
         <aside className={styles.side}>
-          <button type="button" className={styles.createBtn}>+ CREATE A COMMUNITY</button>
+          <button type="button" className={styles.createBtn} onClick={() => setCreating(true)}>+ CREATE A COMMUNITY</button>
           <div className={styles.sideSection}>
             <span className={styles.sideHead}>Invites &amp; Requests</span>
           </div>
           <div className={styles.myHead}>
             <span className={styles.sideHead}>My Communities</span>
-            {mine.length > 0 && <span className={styles.viewAll}>VIEW ALL ›</span>}
+            {mine.length > 0 && (
+              <button type="button" className={styles.viewAll} onClick={() => setTab(showingMine ? 'browse' : 'mine')}>
+                {showingMine ? '‹ BACK' : 'VIEW ALL ›'}
+              </button>
+            )}
           </div>
           {mine.length === 0 ? (
             <span className={styles.sideEmpty}>You haven't joined any communities yet.</span>
@@ -134,12 +143,14 @@ export function CommunitiesPage({
         </aside>
 
         <section className={styles.main}>
-          <span className={styles.browseHead}>Browse Communities ({browse.length})</span>
-          {browse.length === 0 ? (
-            <div className={styles.empty}>No communities found.</div>
+          <span className={styles.browseHead}>
+            {showingMine ? `My Communities (${mineFiltered.length})` : `Browse Communities (${browse.length})`}
+          </span>
+          {gridList.length === 0 ? (
+            <div className={styles.empty}>{showingMine ? 'You haven’t joined any communities yet.' : 'No communities found.'}</div>
           ) : (
             <div className={styles.grid}>
-              {browse.map((c) => (
+              {gridList.map((c) => (
                 <CommunityCard key={c.id} c={c} onJoin={communities.join} onOpen={() => setOpenId(c.id)} />
               ))}
             </div>
@@ -156,6 +167,14 @@ export function CommunitiesPage({
           onAddFriend={onAddFriend}
           onOpenChat={() => { setOpenId(null); onOpenChat() }}
           onClose={() => setOpenId(null)}
+        />
+      )}
+
+      {creating && (
+        <CommunityCreateModal
+          canCreate={!!p && p.hasClaimedName && !p.isGuest}
+          onCreate={communities.create}
+          onClose={() => setCreating(false)}
         />
       )}
     </MainMenuShell>

@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Decentraland — React HUD (dev)</title>
+    <!-- The loading overlay's full-screen backdrop (1.7MB). Prefetch it during the login screen
+         (low priority, won't fight first paint) so it's cached before we enter and freeze. -->
+    <link rel="prefetch" as="image" href="/assets/login/gradient-background.png" />
   </head>
   <body>
     <!-- React HUD mounts here; the engine runs in a same-origin iframe rendered

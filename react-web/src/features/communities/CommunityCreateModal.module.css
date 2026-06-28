@@ -1,0 +1,239 @@
+/* Create-a-Community modal — faithfully matches dcl-react-ui's CommunityCreate. */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(rgba(18, 7, 33, 0.6), rgba(18, 7, 33, 0.6));
+  backdrop-filter: blur(2px);
+  padding: 24px;
+}
+
+.modal {
+  display: flex;
+  flex-direction: column;
+  width: clamp(440px, 38vw, 760px);
+  max-height: min(820px, calc(100dvh - 48px));
+  padding: 34px 40px 26px;
+  border-radius: var(--r-panel);
+  overflow: hidden;
+  color: #fff;
+  background: linear-gradient(160deg, #3a1660 0%, #25103f 55%, #1a0c2e 100%);
+  box-shadow: var(--shadow-modal);
+}
+.title {
+  margin: 0 0 24px;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text);
+}
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  margin: 0 -40px;
+  padding: 0 40px;
+}
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--ink-7);
+}
+.req {
+  color: var(--brand);
+}
+.hint {
+  margin-top: -4px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: rgba(252, 252, 252, 0.5);
+}
+
+/* Profile picture. */
+.pfp {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  margin-top: 4px;
+}
+.pfpImg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08) center/cover no-repeat;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.4);
+}
+.pfpEdit {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background: #2a0a45;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+.pfpEdit:hover {
+  background: #3a1158;
+}
+
+/* White name input. */
+.input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #fff;
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
+  color: #1a1a1a;
+  font-family: inherit;
+  font-size: 14px;
+  padding: 12px 14px;
+  outline: none;
+}
+.input:focus {
+  border-color: var(--brand);
+}
+.input::placeholder {
+  color: rgba(0, 0, 0, 0.35);
+}
+
+/* White membership dropdown. */
+.selectWrap {
+  position: relative;
+}
+.select {
+  width: 100%;
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  background: #fff;
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
+  color: #1a1a1a;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 12px 40px 12px 14px;
+  outline: none;
+  cursor: pointer;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.select:focus {
+  border-color: var(--brand);
+}
+.chevron {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  color: #1a1a1a;
+  pointer-events: none;
+}
+
+/* Actions + policy. */
+.actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+.primary {
+  background: var(--brand);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 13px 28px;
+  border-radius: var(--r-pill);
+}
+.primary:hover {
+  background: var(--brand-hover);
+}
+.primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.ghost {
+  background: transparent;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 13px 28px;
+  border-radius: var(--r-pill);
+}
+.ghost:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.cancel,
+.create {
+  flex: 1;
+}
+.policy {
+  margin: 16px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+  color: rgba(252, 252, 252, 0.62);
+}
+
+/* NAME gate. */
+.gate {
+  width: min(440px, 100%);
+  border-radius: var(--r-panel);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(160deg, #3a1660 0%, #25103f 55%, #1a0c2e 100%);
+  box-shadow: var(--shadow-modal);
+  padding: 32px 28px;
+  text-align: center;
+}
+.gateArt {
+  color: var(--brand);
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+.gateTitle {
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text);
+}
+.gateBody {
+  margin: 0 0 22px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-6);
+}
+.gateBtns {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
