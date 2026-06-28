@@ -10,13 +10,17 @@ export function registerPermissions(ctx: Ctx): void {
     try {
       const stream = await BevyApi.getPermissionRequestStream()
       for await (const req of stream) {
+        // The engine's request only carries the scene HASH. Resolve the title (hash→title) and the
+        // current realm from the existing SystemApi — same as the SDK7 scene, so no Rust change.
+        const sceneName = (await BevyApi.liveSceneInfo()).find((s) => s.hash === req.scene)?.title ?? 'A scene'
+        const realm = await BevyApi.getRealmProvider().catch(() => '')
         ctx.send({
           kind: 'permissionRequest',
           id: req.id,
           ty: req.ty,
-          sceneName: req.scene_name,
+          sceneName,
           scene: req.scene,
-          realm: req.realm,
+          realm,
           additional: req.additional ?? undefined
         })
       }

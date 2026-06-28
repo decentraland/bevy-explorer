@@ -64,13 +64,11 @@ export type KernelFetchRequest = {
 export type KernelFetchResponse = { ok: boolean; status: number; statusText?: string; body: string }
 
 // A scene's pending permission request (e.g. ChangeRealm). `ty` is the serde enum name
-// (e.g. 'ChangeRealm'); `scene` is the scene hash, `scene_name` its title.
+// (e.g. 'ChangeRealm'); `scene` is the scene HASH — resolve its title via liveSceneInfo().
 export type PermissionRequestRaw = {
   ty: string
   additional?: string | null
   scene: string
-  scene_name: string
-  realm: string
   id: number
 }
 // Persist a permission at a level. `value` is the scene hash (Scene) or realm url (Realm),
@@ -95,6 +93,8 @@ export type BevyApiInterface = {
   getPermissionRequestStream: () => Promise<AsyncIterable<PermissionRequestRaw>>
   setSinglePermission: (body: { id: number; allow: boolean }) => void
   setPermanentPermission: (body: SetPermanentPermissionBody) => void
+  /** Live scenes (hash → title), for resolving a permission request's scene name. */
+  liveSceneInfo: () => Promise<Array<{ hash: string; title: string }>>
   setAvatar: (data: { equip: { wearableUrns: string[]; emoteUrns: string[]; forceRender: string[] } }) => Promise<unknown>
   kernelFetch: (req: KernelFetchRequest) => Promise<KernelFetchResponse>
   getRealmProvider: () => Promise<string>

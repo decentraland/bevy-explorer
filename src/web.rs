@@ -407,10 +407,7 @@ fn decentraland_app_arguments(
         login: false,
         emote_wheel: false,
         chat: false,
-        // Use the engine's native permission dialog (it also handles the "used" toasts and the
-        // Settings permissions tab). Until the engine WASM is rebuilt with this flag, the React
-        // bridge permission relay still covers the prompt against the older engine bundle.
-        permissions: true,
+        permissions: false,
         profile: false,
         nametags: false,
         tooltips: false,
