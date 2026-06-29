@@ -291,7 +291,7 @@ export function initNametags(): void {
   initFlag.__bevyNametagsStarted = true
   // BUILD MARKER — to tell whether the engine is actually running this build. If you DON'T see this in
   // the console after a reload, the scene is stale (cached / not reloaded), not a code bug.
-  console.log('[nametags] BUILD=noself+dedup+fixedscale')
+  console.log('[nametags] BUILD=noself+dedup+fixedscale+census')
 
   const tags = new Map<string, Entity>() // canonical address → anchor (exactly one tag per wallet)
   // PLANE entity → address. The size + sweep systems identify a tag's plane by its OWN id, NOT via its
@@ -412,14 +412,18 @@ export function initNametags(): void {
     for (const [, data] of engine.getEntitiesWith(PlayerIdentityData)) if (data.address !== '') present.add(canon(data.address))
 
     const byKey = new Map<string, Entity[]>()
+    let orphans = 0
     for (const [plane] of engine.getEntitiesWith(UiCanvas, MeshRenderer)) {
       const uid = planeUid.get(plane)
-      if (uid == null) { dropPlane(plane); continue } // orphan plane (untracked) → gone
+      if (uid == null) { orphans++; dropPlane(plane); continue } // orphan plane (untracked) → gone
       const key = canon(uid)
       const arr = byKey.get(key)
       if (arr != null) arr.push(plane)
       else byKey.set(key, [plane])
     }
+    // DIAGNOSTIC: one compact line/sec — `addr6:planeCount` per player, who is self, how many orphans.
+    // Tells us if a duplicate is 2 planes for one address, 2 addresses, or a self tag slipping through.
+    console.log(`[nametags] census self=${meKey?.slice(-6) ?? 'none'} orphans=${orphans} planes=${[...byKey.entries()].map(([k, ps]) => `${k.slice(-6)}:${ps.length}`).join(' ') || '(none)'}`)
 
     tags.clear()
     anchorPlane.clear()
