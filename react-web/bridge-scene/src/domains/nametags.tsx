@@ -289,7 +289,7 @@ const initFlag = globalThis as { __bevyNametagsStarted?: boolean }
 export function initNametags(): void {
   if (initFlag.__bevyNametagsStarted === true) return // never stack the systems twice
   initFlag.__bevyNametagsStarted = true
-  console.log('[nametags] BUILD=pool+showhide+nodestroy')
+  console.log('[nametags] BUILD=pool+showhide+self')
 
   // THE POOL: one entity per wallet, created on first sight and kept FOREVER (never destroyed — entity
   // removal doesn't work here, which is what made tags pile up). show() reveals + attaches it; hide()
@@ -333,8 +333,10 @@ export function initNametags(): void {
       if (!pendingShows.includes(userId)) pendingShows.push(userId)
       return
     }
-    if (canon(me) === key) return // never tag the local player
-    if (!shown.has(key) && !avatarPresent(key)) return // don't reveal for an avatar that isn't really here
+    // self has no PlayerIdentityData entry (it's us) so avatarPresent() is false for it — always allow our
+    // own tag; OTHERS must be really here so AvatarAttach has a shape to bind to (else it would strand).
+    const isSelf = canon(me) === key
+    if (!isSelf && !shown.has(key) && !avatarPresent(key)) return
     let entry = pool.get(key)
     if (entry == null) {
       const built = createPoolEntry(userId)
@@ -369,6 +371,7 @@ export function initNametags(): void {
     const me = selfId()
     if (me == null) return
     knownSelf = me
+    show(me) // our OWN nametag too — above our head in third person, hidden in first person (tagElement)
     for (const u of pendingShows.splice(0)) show(u)
   })
 
@@ -399,8 +402,8 @@ export function initNametags(): void {
     const meKey = me != null ? canon(me) : undefined
     const present = new Set<string>()
     for (const [, data] of engine.getEntitiesWith(PlayerIdentityData)) if (data.address !== '') present.add(canon(data.address))
+    if (meKey != null) present.add(meKey) // our own avatar is always present (no PlayerIdentityData for self)
     for (const key of [...shown]) {
-      if (key === meKey) { hide(key); continue }
       if (present.has(key)) { absent.set(key, 0) }
       else {
         const n = (absent.get(key) ?? 0) + 1
