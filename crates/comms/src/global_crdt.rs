@@ -109,8 +109,12 @@ pub enum PlayerMessage {
     MetaData(String),
     PlayerData(rfc4::packet::Message),
     /// Pulse-decoded movement, delivered natively rather than as an rfc4 `Movement` packet (those
-    /// are no longer supported). Boxed because the decoder already hands us a `Box`.
-    Movement(Box<rfc4::Movement>),
+    /// are no longer supported). Boxed because the decoder already hands us a `Box`. `teleport` marks
+    /// a discontinuous reposition (`TeleportPerformed`) so foreign dynamics snaps rather than lerps.
+    Movement {
+        movement: Box<rfc4::Movement>,
+        teleport: bool,
+    },
     AudioStreamAvailable {
         transport: Entity,
     },
@@ -124,7 +128,11 @@ impl std::fmt::Debug for PlayerMessage {
         let var_name = match self {
             Self::MetaData(arg0) => f.debug_tuple("MetaData").field(arg0).finish(),
             Self::PlayerData(arg0) => f.debug_tuple("PlayerData").field(arg0).finish(),
-            Self::Movement(arg0) => f.debug_tuple("Movement").field(arg0).finish(),
+            Self::Movement { movement, teleport } => f
+                .debug_struct("Movement")
+                .field("movement", movement)
+                .field("teleport", teleport)
+                .finish(),
             Self::AudioStreamAvailable { transport } => f
                 .debug_tuple("AudioStreamAvailable")
                 .field(transport)
@@ -366,6 +374,9 @@ pub struct PlayerPositionEvent {
     /// `None` means no movement-state indicator — the velocity fallback picks. Drives `jump_time`
     /// (Jump) and the matching emote (DoubleJump / Glide) on foreign avatars.
     pub remote_move_kind: Option<MoveKind>,
+    /// This update is a discontinuous reposition (a Pulse `TeleportPerformed`), so `foreign_dynamics`
+    /// snaps straight to it instead of interpolating across the gap.
+    pub teleport: bool,
 }
 
 /// Scene-driven animation state for a foreign player, decoded from the standalone
@@ -423,11 +434,13 @@ pub struct RemoteAnimState {
 /// [`PlayerMessage::Movement`]) or as a legacy rfc4 packet over a websocket transport (as
 /// [`PlayerMessage::PlayerData`]). Writes the CRDT transform and emits a [`PlayerPositionEvent`]
 /// for `foreign_dynamics` to interpolate.
+#[allow(clippy::too_many_arguments)]
 fn apply_foreign_movement(
     m: &rfc4::Movement,
     entity: Entity,
     scene_id: SceneEntityId,
     now: f32,
+    teleport: bool,
     commands: &mut Commands,
     state: &mut GlobalCrdtState,
     position_events: &mut EventWriter<PlayerPositionEvent>,
@@ -488,6 +501,7 @@ fn apply_foreign_movement(
         velocity: vel,
         grounded: Some(m.is_grounded),
         remote_move_kind,
+        teleport,
     });
 }
 
@@ -639,6 +653,7 @@ pub fn process_transport_updates(
                         entity,
                         scene_id,
                         time.elapsed_secs(),
+                        false,
                         &mut commands,
                         &mut state,
                         &mut position_events,
@@ -700,11 +715,12 @@ pub fn process_transport_updates(
                         );
                     }
                     PlayerMessage::PlayerData(Message::Voice(_)) => (),
-                    PlayerMessage::Movement(m) => apply_foreign_movement(
-                        &m,
+                    PlayerMessage::Movement { movement, teleport } => apply_foreign_movement(
+                        &movement,
                         entity,
                         scene_id,
                         time.elapsed_secs(),
+                        teleport,
                         &mut commands,
                         &mut state,
                         &mut position_events,

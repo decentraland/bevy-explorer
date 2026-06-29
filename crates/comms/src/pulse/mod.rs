@@ -117,9 +117,12 @@ pub enum PulseEvent {
         error: Option<String>,
     },
     /// Reconstructed full movement state for a subject, ready to push through the rfc4 pipeline.
+    /// `teleport` marks state from a `TeleportPerformed` — foreign dynamics snaps to it instead of
+    /// interpolating, since it represents a discontinuous reposition, not travel.
     Movement {
         address: Address,
         movement: Box<rfc4::Movement>,
+        teleport: bool,
     },
     /// Subject entered the interest set (or connected). Establishes the subject↔wallet alias.
     Joined {
@@ -190,18 +193,24 @@ impl PulseDecoder {
             Message::PlayerJoined(j) => self.on_joined(j),
             Message::PlayerLeft(l) => self.on_left(l.subject_id),
             Message::PlayerStateFull(f) => {
-                self.on_full(f.subject_id, f.sequence, f.server_tick, f.state)
+                self.on_full(f.subject_id, f.sequence, f.server_tick, f.state, false)
             }
             // Teleport / emote start / stop all piggyback full state; treat them as a full refresh
             // so the subject's position never goes stale, then (for emotes) emit the emote event so
             // the avatar pipeline plays/stops it. Order: movement first so the position is current
-            // before the emote starts.
+            // before the emote starts. Teleport is flagged so foreign dynamics snaps rather than
+            // interpolates across the jump.
             Message::Teleported(t) => {
-                self.on_full(t.subject_id, t.sequence, t.server_tick, t.state)
+                self.on_full(t.subject_id, t.sequence, t.server_tick, t.state, true)
             }
             Message::EmoteStarted(e) => {
-                let mut events =
-                    self.on_full(e.subject_id, e.sequence, e.server_tick, e.player_state);
+                let mut events = self.on_full(
+                    e.subject_id,
+                    e.sequence,
+                    e.server_tick,
+                    e.player_state,
+                    false,
+                );
                 if let Some(subject) = self.subjects.get(&e.subject_id) {
                     events.push(PulseEvent::EmoteStart {
                         address: subject.wallet,
@@ -212,8 +221,13 @@ impl PulseDecoder {
                 events
             }
             Message::EmoteStopped(e) => {
-                let mut events =
-                    self.on_full(e.subject_id, e.sequence, e.server_tick, e.player_state);
+                let mut events = self.on_full(
+                    e.subject_id,
+                    e.sequence,
+                    e.server_tick,
+                    e.player_state,
+                    false,
+                );
                 if let Some(subject) = self.subjects.get(&e.subject_id) {
                     events.push(PulseEvent::EmoteStop {
                         address: subject.wallet,
@@ -260,6 +274,7 @@ impl PulseDecoder {
             PulseEvent::Movement {
                 address,
                 movement: Box::new(movement),
+                teleport: false,
             },
         ]
     }
@@ -281,6 +296,7 @@ impl PulseDecoder {
         sequence: u32,
         server_tick: u32,
         state: Option<pulse::PlayerState>,
+        teleport: bool,
     ) -> Vec<PulseEvent> {
         let Some(state) = state else {
             return Vec::new();
@@ -296,6 +312,7 @@ impl PulseDecoder {
         vec![PulseEvent::Movement {
             address,
             movement: Box::new(movement),
+            teleport,
         }]
     }
 
@@ -329,6 +346,7 @@ impl PulseDecoder {
         vec![PulseEvent::Movement {
             address,
             movement: Box::new(movement),
+            teleport: false,
         }]
     }
 
