@@ -22,18 +22,15 @@
 /* Open animation — Unity ExplorePanel fades in (0.2s). Applied only on a FRESH open, not when
    switching pages (which remounts the shell) — so changing pages just swaps the body, no flash. */
 .animateIn {
-  animation: menuIn 0.26s var(--ease-spring, ease);
+  /* Same plain opacity fade as the modal (Modal.module.css fadeIn 0.3s linear). */
+  animation: menuIn 0.3s linear;
 }
-/* Same lovely fade + spring scale-pop as the modal; subtle here since it's a full-screen,
-   top-left-anchored surface. Settles at the DPI scale. */
 @keyframes menuIn {
   from {
     opacity: 0;
-    transform: scale(calc(var(--ui-scale) * 0.97));
   }
   to {
     opacity: 1;
-    transform: scale(var(--ui-scale));
   }
 }
 /* Transparent-body pages (engine map / avatar preview): the overlay itself becomes a
