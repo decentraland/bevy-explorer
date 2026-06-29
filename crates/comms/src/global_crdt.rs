@@ -35,7 +35,7 @@ use dcl_component::{
     DclReader, DclWriter, GlobalCrdtData, Localizer, SceneComponentId, SceneEntityId, SceneOrigin,
 };
 
-use crate::{profile::ProfileMetaCache, Transport};
+use crate::{profile::ProfileMetaCache, Transport, TransportType};
 
 #[cfg(not(target_arch = "wasm32"))]
 use kira::sound::streaming::StreamingSoundData;
@@ -288,7 +288,12 @@ impl GlobalCrdtState {
 #[derive(Component, Debug)]
 pub struct ForeignPlayer {
     pub address: Address,
-    pub transport_id: Entity,
+    /// The transport this peer last announced their profile over. `None` until we receive a
+    /// profile-version announcement over a profile-capable transport — profile request/response
+    /// are sent here, so it's always a transport the peer is provably present on and that can
+    /// carry profile request/response payloads (never Pulse, which only relays version
+    /// announcements).
+    pub profile_transport: Option<Entity>,
     pub last_update: f32,
     pub scene_id: SceneEntityId,
     pub profile_version: u32,
@@ -491,6 +496,7 @@ pub fn process_transport_updates(
     mut commands: Commands,
     mut state: ResMut<GlobalCrdtState>,
     mut players: Query<&mut ForeignPlayer>,
+    transports: Query<&Transport>,
     time: Res<Time>,
     mut profile_events: EventWriter<ProfileEvent>,
     mut position_events: EventWriter<PlayerPositionEvent>,
@@ -530,7 +536,8 @@ pub fn process_transport_updates(
                 if discard_player_updates.0 {
                     continue;
                 }
-                // create/update timestamp/transport_id on the foreign player
+                // create/update the foreign player's timestamp; `profile_transport` is updated
+                // separately, only on a profile-version announcement (see the ProfileVersion arm).
                 let (entity, scene_id, audio_channel) = if let Some((entity, scene_id, channel)) =
                     created_this_frame.get(&update.address)
                 {
@@ -538,7 +545,6 @@ pub fn process_transport_updates(
                 } else if let Some(existing) = state.lookup.get_by_left(&update.address) {
                     let mut foreign_player = players.get_mut(*existing).unwrap();
                     foreign_player.last_update = time.elapsed_secs();
-                    foreign_player.transport_id = update.transport_id;
                     (
                         *existing,
                         foreign_player.scene_id,
@@ -568,7 +574,7 @@ pub fn process_transport_updates(
                             Visibility::default(),
                             ForeignPlayer {
                                 address: update.address,
-                                transport_id: update.transport_id,
+                                profile_transport: None,
                                 last_update: time.elapsed_secs(),
                                 scene_id: next_free,
                                 profile_version: 0,
@@ -638,6 +644,21 @@ pub fn process_transport_updates(
                         &mut position_events,
                     ),
                     PlayerMessage::PlayerData(Message::ProfileVersion(version)) => {
+                        // Adopt the transport this announcement arrived on as the peer's profile
+                        // transport, but only if it can carry profile request/response. Pulse only
+                        // relays version announcements (the bridge can't encode a `ProfileRequest`),
+                        // and inbound Pulse updates arrive via a synthetic marker entity with no
+                        // `Transport` at all — so skip Pulse and leave `profile_transport` pointing at
+                        // whatever data transport (livekit/websocket/scene room) the peer also
+                        // announces on.
+                        let profile_capable = transports
+                            .get(update.transport_id)
+                            .is_ok_and(|t| t.transport_type != TransportType::Pulse);
+                        if profile_capable {
+                            if let Ok(mut foreign_player) = players.get_mut(entity) {
+                                foreign_player.profile_transport = Some(update.transport_id);
+                            }
+                        }
                         profile_events.write(ProfileEvent {
                             sender: entity,
                             event: ProfileEventType::Version(version),
