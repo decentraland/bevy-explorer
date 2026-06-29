@@ -159,6 +159,7 @@ message PlayerEmote {
   uint32 incremental_id = 1;
   string urn = 2;
   float timestamp = 3;
+  optional bool is_stopping = 4; // true means the emote has been stopped in the sender's client
 }
 
 message SceneEmote {

@@ -10,7 +10,7 @@ use dcl_component::{
 use wallet::Wallet;
 
 use crate::{
-    broadcast_to,
+    broadcast, broadcast_to,
     global_crdt::GlobalCrdtState,
     movement_compressed::{Movement, Temporal},
     BroadcastTarget,
@@ -343,15 +343,11 @@ fn broadcast_position(
         })),
         protocol_version: 100,
     };
-    let movement_packet = rfc4::Packet {
-        message: Some(rfc4::packet::Message::Movement(movement_uncompressed)),
-        protocol_version: 100,
-    };
-    broadcast_to(
+    broadcast(
         transports.iter(),
         BroadcastTarget::PRIMARY,
         true,
-        &movement_packet,
+        movement_uncompressed,
     );
     broadcast_to(
         transports.iter(),

@@ -237,12 +237,16 @@ fn participant_payload(
         return;
     };
 
-    // Movement now comes from the Pulse transport; fully drop the legacy LiveKit movement
-    // messages so the two inbound pipes don't both drive foreign-avatar position. The send side
-    // is unchanged (we still broadcast Movement, carrying the scene-animation rider, as before).
+    // Movement and player emotes now come from the Pulse transport; fully drop the legacy LiveKit
+    // copies so the two inbound pipes don't both drive the foreign avatar (double-applied position /
+    // double-played emote). We no longer send either over LiveKit (both go to PRIMARY =
+    // websocket + Pulse); this guards against peers still emitting them here. Movement still carries
+    // the scene-animation rider on the send side, as before; SceneEmote is unaffected.
     if matches!(
         message,
-        rfc4::packet::Message::Movement(_) | rfc4::packet::Message::MovementCompressed(_)
+        rfc4::packet::Message::Movement(_)
+            | rfc4::packet::Message::MovementCompressed(_)
+            | rfc4::packet::Message::PlayerEmote(_)
     ) {
         return;
     }

@@ -36,7 +36,7 @@ use super::transport::{
     self, PulseDriverHandle, PulseFrame, PulseLink, PulseReliability, PulseStatus,
     PulseTransportConfig,
 };
-use super::{from_movement, PulseDecoder, PulseEvent, PulseParcelGrid};
+use super::{PulseCtx, PulseDecoder, PulseEvent, PulseParcelGrid};
 use crate::global_crdt::{GlobalCrdtState, NetworkUpdate, PlayerMessage, PlayerUpdate};
 use crate::{NetworkMessage, Transport, TransportType};
 
@@ -102,44 +102,10 @@ pub(crate) struct PulseSession {
     /// don't dial out until needed, then stays set so the connection is kept alive across non-Pulse
     /// realms (we simply stop sending to it there — the routing entity is gone).
     wanted: bool,
+    /// Last `PlayerState` we sent, cached by movement's `Broadcast::to_pulse`. An outbound
+    /// `EmoteStart` attaches this — the server rejects an emote with a null `player_state`.
+    last_state: Option<pulse::PlayerState>,
     state: Connection,
-}
-
-impl PulseSession {
-    /// Bridge an outbound rfc4 packet — the bytes a `BroadcastTarget::PULSE` send queued onto the
-    /// Pulse transport — into a Pulse `ClientMessage`. The write-side mirror of `pump_pulse`'s
-    /// decode. No-op unless the session is `Established` with a live link, so callers can fire
-    /// unconditionally. Only avatar-state messages have a conversion; anything else is dropped with a
-    /// warning (only `PULSE`-targeted sends should ever reach here — see [`BroadcastTarget`]).
-    fn send_rfc4(&self, packet: &rfc4::Packet) {
-        if !matches!(self.state, Connection::Established) {
-            return;
-        }
-        let Some(link) = self.link.as_ref() else {
-            return;
-        };
-        let message = match &packet.message {
-            // Movement → `PlayerStateInput`: the movement is inverted into a Pulse `PlayerState` via
-            // [`from_movement`] (the server computes the per-field deltas it fans out) and sent
-            // unreliable-sequenced, matching Unity's `PacketMode.UNRELIABLE_SEQUENCED`.
-            Some(rfc4::packet::Message::Movement(movement)) => pulse::ClientMessage {
-                message: Some(pulse::client_message::Message::Input(
-                    pulse::PlayerStateInput {
-                        state: Some(from_movement(movement, &self.grid)),
-                    },
-                )),
-            },
-            // TODO(pulse): emote → EmoteStart, profile-version → ProfileVersionAnnouncement.
-            other => {
-                warn!("pulse: no conversion for outbound rfc4 message, dropping: {other:?}");
-                return;
-            }
-        };
-        let _ = link.outbound.try_send(PulseFrame {
-            bytes: message.encode_to_vec(),
-            reliability: PulseReliability::UnreliableSequenced,
-        });
-    }
 }
 
 /// Marker for the synthetic Pulse transport entity used as foreign players' `transport_id`. Distinct
@@ -231,6 +197,7 @@ fn connect_pulse(
         transport_config: config.transport.clone(),
         server_id: config.server_id.clone(),
         wanted: false,
+        last_state: None,
         state: Connection::Down { respawn_at: 0.0 },
     });
 
@@ -281,17 +248,34 @@ fn start_pulse(
     }
 }
 
-/// Drain the Pulse routing entity's channel each frame and bridge the rfc4 bytes a `PULSE`-targeted
-/// broadcast queued there into Pulse `ClientMessage`s. No-op until the session connects.
-fn drain_pulse_outbox(session: Option<Res<PulseSession>>, mut outboxes: Query<&mut PulseOutbox>) {
+/// Drain the Pulse routing entity's channel each frame and convert each queued message to a Pulse
+/// frame via [`Broadcast::to_pulse`] — movement → `PlayerStateInput`, emote → `EmoteStart`/`EmoteStop`
+/// — sending what comes back. Messages with no Pulse form (e.g. byte-only chat/profile that happened
+/// onto this transport) yield `None` and are dropped. No-op until the session is `Established`.
+fn drain_pulse_outbox(
+    session: Option<ResMut<PulseSession>>,
+    mut outboxes: Query<&mut PulseOutbox>,
+) {
     let Some(session) = session else {
         return;
     };
+    let session = session.into_inner();
+    let established = matches!(session.state, Connection::Established) && session.link.is_some();
+    let grid = session.grid;
     for mut outbox in outboxes.iter_mut() {
         while let Ok(message) = outbox.0.try_recv() {
-            match rfc4::Packet::decode(message.data.as_slice()) {
-                Ok(packet) => session.send_rfc4(&packet),
-                Err(err) => warn!("pulse: failed to decode outbound rfc4 packet: {err}"),
+            if !established {
+                continue;
+            }
+            let frame = {
+                let mut ctx = PulseCtx {
+                    grid: &grid,
+                    last_state: &mut session.last_state,
+                };
+                message.message.to_pulse(&mut ctx)
+            };
+            if let (Some(frame), Some(link)) = (frame, session.link.as_ref()) {
+                let _ = link.outbound.try_send(frame);
             }
         }
     }
@@ -465,6 +449,39 @@ fn drain_inbound(
                             reliability: PulseReliability::Reliable,
                         });
                     }
+                }
+                // Emote start/stop are bridged as an rfc4 `PlayerEmote` so they reuse the same
+                // foreign-emote handling as the LiveKit path (`global_crdt`); a stop carries
+                // `is_stopping`, which removes the foreign `EmoteCommand`.
+                PulseEvent::EmoteStart { address, urn, tick } => {
+                    let update = PlayerUpdate {
+                        transport_id: session.foreign_transport,
+                        message: PlayerMessage::PlayerData(rfc4::packet::Message::PlayerEmote(
+                            rfc4::PlayerEmote {
+                                incremental_id: tick,
+                                urn,
+                                timestamp: 0.0,
+                                is_stopping: Some(false),
+                            },
+                        )),
+                        address,
+                    };
+                    let _ = session.sender.try_send(update.into());
+                }
+                PulseEvent::EmoteStop { address } => {
+                    let update = PlayerUpdate {
+                        transport_id: session.foreign_transport,
+                        message: PlayerMessage::PlayerData(rfc4::packet::Message::PlayerEmote(
+                            rfc4::PlayerEmote {
+                                incremental_id: 0,
+                                urn: String::new(),
+                                timestamp: 0.0,
+                                is_stopping: Some(true),
+                            },
+                        )),
+                        address,
+                    };
+                    let _ = session.sender.try_send(update.into());
                 }
                 // TODO(pulse): PlayerLeft cleanup of the foreign player; profile-version announce.
                 PulseEvent::Joined { .. }
