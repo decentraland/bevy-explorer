@@ -849,7 +849,8 @@ fn drain_control_commands(
             crdt_contexts.0.insert(scene_id.to_owned(), context);
             context
         });
-        if let Some(ent) = manager.connect(adapter, context) {
+        // a scene room, never the realm island: it must not bring up Pulse
+        if let Some(ent) = manager.connect_scene(adapter, context) {
             commands
                 .entity(ent)
                 .try_insert(comms::SceneRoom(scene_id.to_owned()));

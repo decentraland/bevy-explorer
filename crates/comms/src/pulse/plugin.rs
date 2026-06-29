@@ -18,6 +18,8 @@
 //! the whole driver/link from `Down` (unless the last reason was terminal, in which case it parks in
 //! `Dead`). Initial connect is just the first such build.
 
+use std::sync::{Arc, Weak};
+
 use bevy::prelude::*;
 use bevy::tasks::{IoTaskPool, Task};
 use common::{
@@ -107,8 +109,19 @@ pub(crate) struct PulseSession {
     /// Last `PlayerState` we sent, cached by movement's `Broadcast::to_pulse`. An outbound
     /// `EmoteStart` attaches this — the server rejects an emote with a null `player_state`.
     last_state: Option<pulse::PlayerState>,
+    /// Liveness anchor for the realm's Pulse routing entity. The routing entity holds a strong clone
+    /// (`PulsePresence`) while it exists; the driver holds a `Weak` and surfaces inbound only while
+    /// `strong_count() > 1`. Lives here (not on the entity) so reconnects, which rebuild the driver,
+    /// can hand it a fresh `Weak` — the entity (and thus the signal) outlives any single driver.
+    liveness: Arc<()>,
     state: Connection,
 }
+
+/// The realm's Pulse routing entity holds this while it exists (i.e. while we're on a Pulse realm).
+/// It's a strong clone of [`PulseSession::liveness`]; despawning the entity drops it, which the driver
+/// observes via its `Weak` to stop surfacing inbound peer state. See [`PulseSession::liveness`].
+#[derive(Component)]
+struct PulsePresence(#[expect(dead_code)] Arc<()>);
 
 /// Marker for the synthetic Pulse transport entity used as foreign players' `transport_id`. Distinct
 /// from the routing `Transport` entity (which carries [`PulseOutbox`]); this one is never despawned.
@@ -169,9 +182,13 @@ fn configure_pulse(mut commands: Commands) {
     info!("pulse: configured for {endpoint}");
 }
 
-/// Build a fresh driver + its protocol-side link for `config`.
-fn spawn_driver(config: &PulseTransportConfig) -> (PulseLink, PulseDriverHandle) {
-    let (link, channels) = transport::pulse_channels(1024);
+/// Build a fresh driver + its protocol-side link for `config`. `presence` is a weak handle to the
+/// session's liveness anchor, handed fresh to every (re)built driver so it survives reconnects.
+fn spawn_driver(
+    config: &PulseTransportConfig,
+    presence: Weak<()>,
+) -> (PulseLink, PulseDriverHandle) {
+    let (link, channels) = transport::pulse_channels(1024, presence);
     let driver = transport::spawn_pulse_driver(config.clone(), channels);
     (link, driver)
 }
@@ -202,6 +219,7 @@ fn connect_pulse(
         server_id: config.server_id.clone(),
         wanted: false,
         last_state: None,
+        liveness: Arc::new(()),
         state: Connection::Down { respawn_at: 0.0 },
     });
 
@@ -243,6 +261,9 @@ fn start_pulse(
             foreign_aliases: Default::default(),
         },
         PulseOutbox(receiver),
+        // While this entity lives (i.e. we're on a Pulse realm) the driver sees a strong ref and
+        // surfaces inbound peer state; despawn (realm change away from Pulse) drops it.
+        PulsePresence(session.liveness.clone()),
     ));
 
     session.wanted = true;
@@ -362,7 +383,8 @@ fn drive_connection(session: &mut PulseSession, wallet: &Wallet, profile_version
             if !session.wanted || now < *respawn_at {
                 return;
             }
-            let (link, driver) = spawn_driver(&session.transport_config);
+            let (link, driver) =
+                spawn_driver(&session.transport_config, Arc::downgrade(&session.liveness));
             session.link = Some(link);
             session._driver = Some(driver);
             session.state = Connection::Connecting;

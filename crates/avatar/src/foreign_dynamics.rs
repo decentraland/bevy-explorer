@@ -142,11 +142,6 @@ fn update_foreign_user_target_position(
                             }
                         }
                     }
-                } else {
-                    debug!(
-                        "invalid timestamp: ev: {}, last: {:?}",
-                        ev.timestamp, pos.timestamp
-                    );
                 }
             } else {
                 commands.entity(ev.player).try_insert((

@@ -166,7 +166,13 @@ async fn drive(channels: &mut PulseDriverChannels, address: SocketAddr, stop: &A
                     return;
                 }
                 Ok(Some(enet::Event::Receive { packet, .. })) => {
-                    let _ = channels.inbound.try_send(packet.data().to_vec());
+                    // Only surface peer state while a routing entity is alive (we're on a Pulse
+                    // realm). Off-realm we stay connected — the host is still serviced, keeping the
+                    // peer warm — but drop inbound so old-realm peers don't leak through; the Bevy
+                    // decoder's resulting gap is healed by resync/teleport on return.
+                    if channels.presence.strong_count() > 1 {
+                        let _ = channels.inbound.try_send(packet.data().to_vec());
+                    }
                 }
                 Ok(None) => break,
                 Err(err) => return fail(channels, format!("enet service error: {err}")),
