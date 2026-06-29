@@ -104,14 +104,17 @@
    design-system Button's default pill. The .buttons-scoped 2-class selector wins the variant. */
 .buttons .cta,
 .buttons .ctaSecondary {
-  position: relative;
   width: 100%;
-  height: 46px;
+  min-height: 46px;
+  padding: 9px 16px;
   border-radius: 12px;
   font-size: 0.84rem;
   font-weight: 700;
   letter-spacing: 0.03em;
+  line-height: 1.15;
   text-transform: uppercase;
+  text-align: center;
+  white-space: normal;
 }
 .buttons .cta {
   box-shadow: 0 6px 18px rgba(255, 45, 85, 0.32);
@@ -123,12 +126,14 @@
 .buttons .ctaSecondary:hover:not(:disabled) {
   background: rgba(124, 52, 188, 0.78);
 }
+.label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .arrow {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
+  flex: 0 0 auto;
   display: flex;
+  align-items: center;
 }
 
 /* ---- avatar (welcome-back screen) — full height, standing on Unity's golden podium ---- */

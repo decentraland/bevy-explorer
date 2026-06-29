@@ -120,11 +120,11 @@ function Panel({ flow, name }: { flow: LoginFlow; name?: string }): React.JSX.El
         {status === 'sign-in-or-guest' && (
           <>
             <Button variant="primary" size="lg" className={styles.cta} onClick={flow.startWithAccount} disabled={flow.busy}>
-              START WITH ACCOUNT
+              <span className={styles.label}>START WITH ACCOUNT</span>
               <ArrowIcon />
             </Button>
             <Button variant="secondary" size="lg" className={styles.ctaSecondary} onClick={flow.exploreAsGuest} disabled={flow.busy || enginePending}>
-              {enginePending ? 'STARTING…' : 'EXPLORE AS GUEST'}
+              <span className={styles.label}>{enginePending ? 'STARTING…' : 'EXPLORE AS GUEST'}</span>
             </Button>
           </>
         )}
@@ -132,11 +132,11 @@ function Panel({ flow, name }: { flow: LoginFlow; name?: string }): React.JSX.El
         {status === 'reuse-login-or-new' && (
           <>
             <Button variant="primary" size="lg" className={styles.cta} onClick={flow.jumpIn} disabled={flow.busy || enginePending}>
-              {enginePending ? 'STARTING…' : 'JUMP INTO DECENTRALAND'}
+              <span className={styles.label}>{enginePending ? 'STARTING…' : 'JUMP INTO DECENTRALAND'}</span>
               {!enginePending && <ArrowIcon />}
             </Button>
             <Button variant="secondary" size="lg" className={styles.ctaSecondary} onClick={flow.useDifferentAccount} disabled={flow.busy}>
-              USE A DIFFERENT ACCOUNT
+              <span className={styles.label}>USE A DIFFERENT ACCOUNT</span>
             </Button>
           </>
         )}
