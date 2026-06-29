@@ -728,9 +728,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     redirectToAuth()
   }, [busy])
 
+  // "Use a different account" shows the sign-in/guest screen (Start with account + Explore as
+  // guest) rather than jumping straight to auth — matching the reference scene, and the only way a
+  // returning user can reach Explore as Guest.
   const useDifferentAccount = useCallback(() => {
     if (busy) return
-    redirectToAuth()
+    setStatus('sign-in-or-guest')
   }, [busy])
 
   // Render-settle. When the scene flips from loading → loaded (visible true→false), hold the loader
