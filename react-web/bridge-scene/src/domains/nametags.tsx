@@ -58,42 +58,21 @@ const BADGE = 22
 const GAP = 6
 const BORDER = 2
 
-// Constant ON-SCREEN size: scale the plane ∝ distance so perspective cancels out and the pill stays
-// the same size whatever the camera distance (unity-explorer's CalculateTagScale = fovScaleFactor ×
-// distance). SIZE_FACTOR tunes apparent size; the distance is clamped so a transient bad reading can
-// never fill the screen. DEFAULT_DIST is the size a tag is born at, before the per-frame system has
-// measured it.
-//
-// The canvas is taller than the pill (640×NAME_BAND would be 4:1 for the name alone) to leave room
-// BELOW the name for the chat bubble (the message line). The plane's HEIGHT is scaled by
-// CANVAS_H/NAME_BAND so the name still renders at the same on-screen size as a name-only 4:1 tag —
-// only the (transparent until someone talks) bubble area is extra. Width is unchanged (ASPECT·m), so
-// the name keeps its width too.
-const ASPECT = 4
+// FIXED world size for the pill — the previous SDK scene used a constant (2,1,1) scale and never
+// produced a giant. We deliberately do NOT resize per-frame by camera distance: that "constant on-screen
+// size" trick scales the plane UP in world space as the camera pulls away, so a zoomed-out / overhead
+// view balloons every tag, and a tag whose AvatarAttach failed to bind amplifies into the screen-filling
+// giant. A fixed scale can't balloon, whatever the camera does or whether the attach bound.
 const CANVAS_W = 640
-const NAME_BAND = 160 // the name-only height the on-screen size is calibrated against (the old canvas)
-const CANVAS_H = 440 // taller → room for a ~3-line bubble under the name
-const Y_SCALE = CANVAS_H / NAME_BAND // plane height multiplier that preserves the name's on-screen size
-const SIZE_FACTOR = 0.057 // a touch larger so names read better, esp. at distance
-const MIN_DIST = 1
+const CANVAS_H = 440 // taller than the name → room for a chat bubble below it (transparent until used)
 const FADE_START = 20
-const MAX_DIST = 40
-const DEFAULT_DIST = 4 // smaller birth size, before the sizing system measures the real distance
-// HARD CEILING on apparent size. The plane stops growing past this distance — beyond it, perspective
-// just shrinks the tag (exactly like the PREVIOUS SDK scene's fixed-scale nametags, which is why those
-// never produced a giant). Without this cap, a tag sized for a far avatar whose AvatarAttach fails to
-// bind strands near the camera at that huge scale and fills the screen. With it, the worst case is a
-// normal ~2-wide pill. Keep it ABOVE typical reading range so near tags still scale to constant size.
-const SIZE_CLAMP = 8
-// The pill is attached at the avatar's NAME_TAG anchor (above the head), but getPlayer().position is
-// the avatar's feet. For distant tags that offset is noise; for a CLOSE one the head is much nearer
-// the camera than the feet, so sizing by the feet distance over-enlarges it. Measure to the head.
+const MAX_DIST = 40 // past this the tag fades out entirely (kept for the opacity-only system below)
+// The pill attaches at the avatar's NAME_TAG anchor (above the head) while getPlayer().position is the
+// feet — offset the distance used for the opacity fade so a close tag isn't dimmed by the feet distance.
 const NAMETAG_HEIGHT = 2.2
-function tagScale(dist: number): Vector3 {
-  const d = Math.max(MIN_DIST, Math.min(SIZE_CLAMP, dist))
-  const m = SIZE_FACTOR * d
-  return Vector3.create(ASPECT * m, Y_SCALE * m, 1)
-}
+// Width ≈ the old 2-wide pill (a touch larger for our taller canvas); height keeps the canvas aspect so
+// the texture isn't stretched. Applied ONCE at creation and never changed → no path to a giant.
+const TAG_SCALE = Vector3.create(2.4, (2.4 * CANVAS_H) / CANVAS_W, 1)
 
 // --- chat bubble (the message line under the name) -----------------------------------------------
 // When a player talks, their name pill grows a second line with the message — matching the previous
@@ -286,7 +265,7 @@ function createTag(userId: string): { anchor: Entity; plane: Entity } {
   Billboard.create(anchor, {})
 
   const plane = engine.addEntity()
-  Transform.create(plane, { parent: anchor, scale: tagScale(DEFAULT_DIST) })
+  Transform.create(plane, { parent: anchor, scale: TAG_SCALE })
   MeshRenderer.setPlane(plane)
   UiCanvas.create(plane, { width: CANVAS_W, height: CANVAS_H, color: Color4.Clear() })
   ReactEcsRenderer.setTextureRenderer(plane, tagElement(userId))
@@ -312,7 +291,7 @@ export function initNametags(): void {
   initFlag.__bevyNametagsStarted = true
   // BUILD MARKER — to tell whether the engine is actually running this build. If you DON'T see this in
   // the console after a reload, the scene is stale (cached / not reloaded), not a code bug.
-  console.log(`[nametags] BUILD=noself+dedup+clamp${SIZE_CLAMP}`)
+  console.log('[nametags] BUILD=noself+dedup+fixedscale')
 
   const tags = new Map<string, Entity>() // canonical address → anchor (exactly one tag per wallet)
   // PLANE entity → address. The size + sweep systems identify a tag's plane by its OWN id, NOT via its
@@ -479,9 +458,10 @@ export function initNametags(): void {
     }
   })
 
-  // SIZE ONLY (no positioning — AvatarAttach owns the anchor's position natively, smooth at render rate).
-  // Writes ONLY the plane child, so it never fights the engine. Constant on-screen size (clamped) + fade.
-  const lastScaleDist = new Map<number, number>()
+  // VISIBILITY ONLY (no per-frame resize — the scale is FIXED, set once at creation). AvatarAttach owns
+  // the anchor's position natively. Each tick we only: hide a plane whose avatar has no live position (a
+  // stale/duplicate plane → scale 0), restore a valid one to the FIXED scale, and fade opacity by distance.
+  const hidden = new Map<number, boolean>()
   const lastOpacity = new Map<number, number>()
   let sacc2 = 0
   let opTick = 0
@@ -496,23 +476,22 @@ export function initNametags(): void {
     for (const [plane] of engine.getEntitiesWith(UiCanvas, MeshRenderer)) {
       const t = Transform.getMutableOrNull(plane)
       const uid = planeUid.get(plane)
-      // Untracked plane (stale/duplicate) or avatar with no live position → don't render.
+      // Untracked plane (stale/duplicate) or avatar with no live position → don't render it.
       const avPos = uid != null ? getPlayer({ userId: uid })?.position : undefined
       if (avPos == null) {
-        if (t != null && lastScaleDist.get(plane) !== -1) {
+        if (t != null && hidden.get(plane) !== true) {
           t.scale = Vector3.create(0, 0, 0)
-          lastScaleDist.set(plane, -1)
+          hidden.set(plane, true)
         }
         continue
       }
-      const dist = Math.hypot(avPos.x - cam.x, avPos.y + NAMETAG_HEIGHT - cam.y, avPos.z - cam.z)
-      const lsd = lastScaleDist.get(plane)
-      if (lsd == null || Math.abs(lsd - dist) >= 0.05) {
-        lastScaleDist.set(plane, dist)
-        if (t != null) t.scale = tagScale(dist)
+      if (t != null && hidden.get(plane) !== false) {
+        t.scale = TAG_SCALE // valid again (or first sight) → fixed size, never distance-scaled
+        hidden.set(plane, false)
       }
       if (doOpacity) {
-        const opacity = dist < MIN_DIST || dist > MAX_DIST ? 0 : Math.max(0, Math.min(1, (MAX_DIST - dist) / (MAX_DIST - FADE_START)))
+        const dist = Math.hypot(avPos.x - cam.x, avPos.y + NAMETAG_HEIGHT - cam.y, avPos.z - cam.z)
+        const opacity = dist > MAX_DIST ? 0 : Math.max(0, Math.min(1, (MAX_DIST - dist) / (MAX_DIST - FADE_START)))
         const prev = lastOpacity.get(plane)
         if (prev == null || Math.abs(prev - opacity) >= 0.02) {
           lastOpacity.set(plane, opacity)
