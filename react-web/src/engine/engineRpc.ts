@@ -9,6 +9,8 @@ type EngineWindow = Window & {
   engine_console_command?: (line: string) => Promise<string>
   __bevyReadyToLaunch?: boolean
   __bevyLaunch?: (realm?: string, position?: string) => void
+  __bevyLoadProgress?: number
+  __bevyLoadStep?: string | null
 }
 
 export class EngineRpc {
@@ -21,6 +23,16 @@ export class EngineRpc {
   /** True once the WASM is compiled + GPU cache warm (manualParams mode) — ready to be launched. */
   readyToLaunch(): boolean {
     return this.win?.__bevyReadyToLaunch === true
+  }
+
+  /** Overall weighted boot progress (0–100) from the engine loader; 0 if the iframe isn't reachable yet. */
+  loadProgress(): number {
+    return this.win?.__bevyLoadProgress ?? 0
+  }
+
+  /** Current boot step id ('download'|'compile'|'init'|'workers'|'gpu') or null. */
+  loadStep(): string | null {
+    return this.win?.__bevyLoadStep ?? null
   }
 
   /** Boot the bevy app at a realm/position (only valid in manualParams mode, after readyToLaunch). */

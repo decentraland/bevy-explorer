@@ -136,6 +136,38 @@
   align-items: center;
 }
 
+/* ---- engine boot progress (footer bar) — real weighted WASM-download progress from the iframe ---- */
+.bootBar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  padding: 16px clamp(2.5rem, 10.5vw, 11rem);
+  pointer-events: none;
+  animation: fade-in var(--dur-fade) var(--ease-out) both;
+}
+.bootLabel {
+  margin-bottom: 7px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.8);
+}
+.bootTrack {
+  width: min(420px, 80vw);
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+.bootFill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #ff2d55, #ffbc5b);
+  transition: width 0.3s ease;
+}
+
 /* ---- avatar (welcome-back screen) — full height, standing on Unity's golden podium ---- */
 .avatarWrap {
   position: absolute;

@@ -32,4 +32,20 @@ describe('login screen clicks', () => {
     render(<LoadingAndLogin flow={flow({ status: 'sign-in-or-guest', busy: true })} />)
     expect(screen.getByRole('button', { name: /EXPLORE AS GUEST/i })).toBeDisabled()
   })
+
+  it('shows the engine boot progress bar while loading, hides it when ready', () => {
+    const { rerender } = render(
+      <LoadingAndLogin flow={flow({ status: 'sign-in-or-guest', engineReady: false, loadProgress: 42, loadStep: 'download' })} />
+    )
+    const bar = screen.getByRole('progressbar')
+    expect(bar).toHaveTextContent(/Downloading engine · 42%/i)
+    expect(bar).toHaveAttribute('aria-valuenow', '42')
+    // The gated CTA shows the live download percent instead of "STARTING…".
+    const gated = screen.getByRole('button', { name: /DOWNLOADING/i })
+    expect(gated).toHaveTextContent(/DOWNLOADING…?\s*42%/i)
+
+    rerender(<LoadingAndLogin flow={flow({ status: 'sign-in-or-guest', engineReady: true })} />)
+    expect(screen.queryByRole('progressbar')).toBeNull()
+    expect(screen.getByRole('button', { name: /EXPLORE AS GUEST/i })).toBeInTheDocument()
+  })
 })

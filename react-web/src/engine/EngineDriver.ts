@@ -104,6 +104,14 @@ export class EngineDriver implements LoginDriver {
     return this.rpc.readyToLaunch()
   }
 
+  loadProgress(): number {
+    return this.rpc.loadProgress()
+  }
+
+  loadStep(): string | null {
+    return this.rpc.loadStep()
+  }
+
   launch(realm?: string, position?: string): void {
     this.rpc.launch(realm, position)
   }

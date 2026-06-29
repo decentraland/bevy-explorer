@@ -35,16 +35,23 @@ import { useExitGuard } from './lib/useExitGuard'
 import { useHudScale } from './lib/useHudScale'
 import { useGlobalHotkey } from './lib/useGlobalHotkey'
 import { useMenuShortcuts } from './lib/useMenuShortcuts'
+import { isMobile } from './lib/isMobile'
+import { MobileGate } from './features/gate/MobileGate'
 
 const params = new URLSearchParams(location.search)
 // MOCK (?mock=1): UI only, no engine, fake bridge (?previousLogin=1 → returning user).
 // ENGINE (default): real engine in a same-origin iframe + super-user bridge scene.
 const MODE: 'mock' | 'engine' = params.get('mock') === '1' ? 'mock' : 'engine'
 const SHOWCASE = params.get('showcase') === '1'
+// Mobile gate: the desktop engine can't run on mobile (no WebGPU/SharedArrayBuffer), so show the
+// download-the-app page instead of mounting the HUD/engine. ?gate=1 forces it (testing on desktop);
+// ?nogate=1 bypasses it (load the HUD on a mobile device anyway).
+const GATE = (isMobile() || params.get('gate') === '1') && params.get('nogate') !== '1'
 
 export function App(): React.JSX.Element {
   useHudScale() // keep --ui-scale in sync with the viewport (DPI-correct, like Unity)
   const showFps = useFpsToggle()
+  if (GATE) return <MobileGate />
   return (
     <>
       {SHOWCASE ? (

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "react-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "react-web", "run", "dev", "--", "--port", "5199", "--strictPort"],
+      "port": 5199
+    }
+  ]
+}

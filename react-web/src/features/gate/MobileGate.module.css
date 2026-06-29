@@ -1,0 +1,74 @@
+.root {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  /* Shared Unity magenta→purple backdrop (also used by the login screen). */
+  background: var(--menu-bg);
+  font-family: var(--font-family);
+  color: var(--text);
+}
+.card {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.logo {
+  width: 72px;
+  height: 72px;
+  margin-bottom: 20px;
+}
+.title {
+  margin: 0;
+  font-size: var(--fs-display);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.subtitle {
+  margin: 12px 0 28px;
+  font-size: var(--fs-lg);
+  line-height: 1.4;
+  color: var(--ink-7);
+}
+.buttons {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.store {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 20px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--white-10);
+  background: var(--fill-4);
+  color: var(--text);
+  font-size: var(--fs-md);
+  font-weight: 700;
+  text-decoration: none;
+  transition:
+    background-color var(--dur-fast) ease,
+    transform var(--dur-fast) ease;
+}
+.store:hover {
+  background: var(--fill-5);
+}
+.store:active {
+  transform: translateY(1px);
+}
+.store svg {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+}

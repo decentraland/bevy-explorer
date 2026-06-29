@@ -158,6 +158,8 @@ export function fakeSession(): EngineSession {
       busy: false,
       error: null,
       engineReady: true,
+      loadProgress: 100,
+      loadStep: null,
       startWithAccount: vi.fn(),
       exploreAsGuest: vi.fn(),
       jumpIn: vi.fn(),

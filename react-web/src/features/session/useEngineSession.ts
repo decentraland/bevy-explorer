@@ -182,6 +182,10 @@ export interface LoginFlow {
   /** Engine has booted and can accept the login command. The engine-driven CTAs (Jump in / Explore)
    *  stay disabled until this is true so a click never lands in a silent wait. Always true for mock. */
   engineReady: boolean
+  /** Real boot progress (0–100, weighted) from the engine loader, for the login footer bar. */
+  loadProgress: number
+  /** Active boot step id ('download'|'compile'|'init'|'workers'|'gpu') or null. */
+  loadStep: string | null
   /** Fresh sign-in → redirect to the same-domain auth site. */
   startWithAccount: () => void
   exploreAsGuest: () => void
@@ -252,6 +256,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [error, setError] = useState<string | null>(null)
   // Engine boots (autostart) while the login screen is up; this flips true once it can take commands.
   const [engineReady, setEngineReady] = useState(false)
+  // Real WASM-download/boot progress surfaced from the engine iframe (0–100) + the active step id,
+  // for the login footer bar. The engine's own loader is hidden (hideLoader=1).
+  const [loadProgress, setLoadProgress] = useState(0)
+  const [loadStep, setLoadStep] = useState<string | null>(null)
 
   // Past login → waiting for the world.
   const [submitted, setSubmitted] = useState(false)
@@ -430,15 +438,22 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     const driver = driverRef.current
     if (driver == null || typeof driver.engineReady !== 'function') {
       setEngineReady(true)
+      setLoadProgress(100)
       return
     }
     if (driver.engineReady()) {
       setEngineReady(true)
+      setLoadProgress(100)
       return
     }
     const id = setInterval(() => {
-      if (driverRef.current?.engineReady?.() === true) {
+      const d = driverRef.current
+      setLoadProgress(d?.loadProgress?.() ?? 0)
+      setLoadStep(d?.loadStep?.() ?? null)
+      if (d?.engineReady?.() === true) {
         setEngineReady(true)
+        setLoadProgress(100)
+        setLoadStep(null)
         clearInterval(id)
       }
     }, 200)
@@ -851,6 +866,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       busy,
       error,
       engineReady,
+      loadProgress,
+      loadStep,
       startWithAccount,
       exploreAsGuest,
       jumpIn,
