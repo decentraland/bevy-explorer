@@ -76,7 +76,8 @@ host. `npm run bundle` (in `bridge-scene`) builds it, exports a static realm wit
 resolves it same-origin (`<origin>/bridge-scene/static/BevyExplorerUI`).
 
 ```bash
-cd react-web/bridge-scene && npm run bundle   # build → export-static → copy into deploy/web
+npm run bundle:scene                          # from the repo root (convenience wrapper)
+# or: cd react-web/bridge-scene && npm run bundle   # build → export-static → copy into deploy/web
 ```
 
 > Run `npm run bundle` before publishing the web package (the output is git-ignored, regenerated).
