@@ -28,6 +28,7 @@ use dcl_component::proto_components::common::Vector3;
 use dcl_component::proto_components::kernel::comms::rfc4;
 use dcl_component::proto_components::pulse;
 use dcl_component::transform_and_parent::DclTranslation;
+use ethers_core::types::Address;
 use prost::Message as _;
 use tokio::sync::mpsc;
 use wallet::Wallet;
@@ -38,6 +39,7 @@ use super::transport::{
 };
 use super::{PulseCtx, PulseDecoder, PulseEvent, PulseParcelGrid};
 use crate::global_crdt::{GlobalCrdtState, NetworkUpdate, PlayerMessage, PlayerUpdate};
+use crate::profile::CurrentUserProfile;
 use crate::{NetworkMessage, Transport, TransportType};
 
 /// Insert this resource to connect to a Pulse server. Absent → the plugin is fully inert.
@@ -288,6 +290,7 @@ fn pump_pulse(
     wallet: Res<Wallet>,
     time: Res<Time>,
     player: Query<&GlobalTransform, With<PrimaryUser>>,
+    profile: Option<Res<CurrentUserProfile>>,
 ) {
     let Some(session) = session else {
         return;
@@ -295,8 +298,14 @@ fn pump_pulse(
     let session = session.into_inner();
     let now = time.elapsed_secs_f64();
 
+    // Version to announce in the handshake — our connect-time profile announce on Pulse. 0 until the
+    // profile loads; the periodic announce (`profile::mod`) corrects it once available.
+    let profile_version = profile
+        .and_then(|p| p.profile.as_ref().map(|p| p.version as i32))
+        .unwrap_or(0);
+
     drain_status(session, now);
-    drive_connection(session, &wallet, now);
+    drive_connection(session, &wallet, profile_version, now);
     drain_inbound(session, &realm, &player, now);
 }
 
@@ -337,7 +346,7 @@ fn drain_status(session: &mut PulseSession, now: f64) {
 /// the transport-up status; signing waits additionally for an identity (`PulseConfig` may be present
 /// before login). Each retryable handshake failure folds back to `Idle` (driver still up) with a
 /// cooldown.
-fn drive_connection(session: &mut PulseSession, wallet: &Wallet, now: f64) {
+fn drive_connection(session: &mut PulseSession, wallet: &Wallet, profile_version: i32, now: f64) {
     match &mut session.state {
         // Passive states: `Connecting` waits for the transport-up status; the others are terminal or
         // steady.
@@ -360,7 +369,7 @@ fn drive_connection(session: &mut PulseSession, wallet: &Wallet, now: f64) {
             let wallet = wallet.clone();
             let server_id = session.server_id.clone();
             let task = IoTaskPool::get().spawn_compat(async move {
-                build_handshake_request(&wallet, &server_id)
+                build_handshake_request(&wallet, &server_id, profile_version)
                     .await
                     .map(|request| {
                         pulse::ClientMessage {
@@ -483,13 +492,38 @@ fn drain_inbound(
                     };
                     let _ = session.sender.try_send(update.into());
                 }
-                // TODO(pulse): PlayerLeft cleanup of the foreign player; profile-version announce.
-                PulseEvent::Joined { .. }
-                | PulseEvent::Left { .. }
-                | PulseEvent::ProfileVersion { .. } => {}
+                // A peer's profile version — on join (the initial version) or a later announcement.
+                // Bridged as an rfc4 `AnnounceProfileVersion` so it reuses the LiveKit/websocket
+                // profile path; the set is idempotent, so we don't dedupe against any LiveKit copy.
+                PulseEvent::Joined {
+                    address,
+                    profile_version,
+                    ..
+                } => bridge_profile_version(session, address, profile_version),
+                PulseEvent::ProfileVersion { address, version } => {
+                    bridge_profile_version(session, address, version)
+                }
+                // TODO(pulse): PlayerLeft cleanup of the foreign player.
+                PulseEvent::Left { .. } => {}
             }
         }
     }
+}
+
+/// Bridge a Pulse-announced profile version into the shared foreign-player pipeline as an rfc4
+/// `AnnounceProfileVersion`, reusing the same handling as the LiveKit/websocket profile-version path
+/// (`global_crdt` → `ProfileEvent::Version`). The address resolves to (or creates) the foreign player.
+fn bridge_profile_version(session: &PulseSession, address: Address, version: i32) {
+    let update = PlayerUpdate {
+        transport_id: session.foreign_transport,
+        message: PlayerMessage::PlayerData(rfc4::packet::Message::ProfileVersion(
+            rfc4::AnnounceProfileVersion {
+                profile_version: version.max(0) as u32,
+            },
+        )),
+        address,
+    };
+    let _ = session.sender.try_send(update.into());
 }
 
 /// The transport is gone — tear the driver/link down and decide what's next: schedule a rebuild from
@@ -605,6 +639,7 @@ fn send_teleport(
 async fn build_handshake_request(
     wallet: &Wallet,
     server_id: &str,
+    profile_version: i32,
 ) -> Result<pulse::HandshakeRequest, String> {
     let timestamp = web_time::SystemTime::now()
         .duration_since(web_time::UNIX_EPOCH)
@@ -635,8 +670,7 @@ async fn build_handshake_request(
 
     Ok(pulse::HandshakeRequest {
         auth_chain,
-        // TODO(pulse): announce the real profile version (Unity sends the self-profile version).
-        profile_version: 0,
+        profile_version,
         initial_state: None,
     })
 }
