@@ -131,8 +131,25 @@ pub enum PulseEvent {
     Left { address: Address },
     /// Subject announced a new profile version.
     ProfileVersion { address: Address, version: i32 },
+    /// Subject started an emote. Emitted alongside the piggybacked `Movement`. `tick` is the
+    /// server tick, used downstream only as a monotonic id so re-triggering the same urn replays.
+    EmoteStart {
+        address: Address,
+        urn: String,
+        tick: u32,
+    },
+    /// Subject's emote stopped (one-shot completed or looping cancelled).
+    EmoteStop { address: Address },
     /// A sequence gap was detected — transmit this reliably so the server replays full state.
     Resync(pulse::ResyncRequest),
+}
+
+/// Borrowed context handed to `Broadcast::to_pulse` so an outbound message can build its Pulse frame:
+/// the parcel grid (to encode world position) and the last `PlayerState` we sent (movement caches it
+/// here so an emote can attach the full state the server requires on an `EmoteStart`).
+pub struct PulseCtx<'a> {
+    pub grid: &'a PulseParcelGrid,
+    pub last_state: &'a mut Option<pulse::PlayerState>,
 }
 
 /// Per-subject baseline. Pulse sends field-masked deltas against the last sequence we acked, so we
@@ -176,16 +193,33 @@ impl PulseDecoder {
                 self.on_full(f.subject_id, f.sequence, f.server_tick, f.state)
             }
             // Teleport / emote start / stop all piggyback full state; treat them as a full refresh
-            // so the subject's position never goes stale. The emote/teleport semantics themselves
-            // are out of scope for the movement read path (handled later via the avatar pipeline).
+            // so the subject's position never goes stale, then (for emotes) emit the emote event so
+            // the avatar pipeline plays/stops it. Order: movement first so the position is current
+            // before the emote starts.
             Message::Teleported(t) => {
                 self.on_full(t.subject_id, t.sequence, t.server_tick, t.state)
             }
             Message::EmoteStarted(e) => {
-                self.on_full(e.subject_id, e.sequence, e.server_tick, e.player_state)
+                let mut events =
+                    self.on_full(e.subject_id, e.sequence, e.server_tick, e.player_state);
+                if let Some(subject) = self.subjects.get(&e.subject_id) {
+                    events.push(PulseEvent::EmoteStart {
+                        address: subject.wallet,
+                        urn: e.emote_id,
+                        tick: e.server_tick,
+                    });
+                }
+                events
             }
             Message::EmoteStopped(e) => {
-                self.on_full(e.subject_id, e.sequence, e.server_tick, e.player_state)
+                let mut events =
+                    self.on_full(e.subject_id, e.sequence, e.server_tick, e.player_state);
+                if let Some(subject) = self.subjects.get(&e.subject_id) {
+                    events.push(PulseEvent::EmoteStop {
+                        address: subject.wallet,
+                    });
+                }
+                events
             }
             Message::PlayerStateDelta(d) => self.on_delta(d),
             Message::PlayerProfileVersionAnnounced(p) => self.on_profile(p.subject_id, p.version),

@@ -25,19 +25,12 @@ use common::{
     util::TryPushChildrenEx,
 };
 use comms::{
-    chat_marker_things,
-    global_crdt::{ChatEvent, ForeignPlayer},
-    profile::CurrentUserProfile,
-    NetworkMessage, Transport, TransportType,
+    broadcast, global_crdt::ForeignPlayer, profile::CurrentUserProfile, BroadcastTarget, Transport,
 };
 use console::DoAddConsoleCommand;
 use dcl::interface::CrdtType;
 use dcl_component::{
-    proto_components::{
-        kernel::comms::rfc4::{self, Chat, PlayerEmote},
-        sdk::components::PbAvatarEmoteCommand,
-    },
-    SceneComponentId, SceneEntityId,
+    proto_components::sdk::components::PbAvatarEmoteCommand, SceneComponentId, SceneEntityId,
 };
 use ipfs::IpfsAssetServer;
 use scene_runner::{
@@ -79,7 +72,7 @@ impl Plugin for AvatarAnimationPlugin {
         app.add_systems(
             Update,
             (
-                (handle_trigger_emotes, broadcast_emote, receive_emotes).before(animate),
+                (handle_trigger_emotes, broadcast_emote).before(animate),
                 (animate, play_current_emote).chain().after(process_avatar),
                 play_scene_driven_sounds.after(process_avatar),
             )
@@ -132,11 +125,17 @@ fn handle_trigger_emotes(
     for _ in perms.drain_fail(common::structs::PermissionType::PlayEmote) {}
 }
 
+// Broadcast the local player's triggered emotes. Sourced from `ActiveEmote` (set by `animate` and
+// stamped with the clip duration by `play_current_emote`) rather than the raw `EmoteCommand`, so a
+// one-shot can carry its resolved duration and a loop is known. A start goes out on first appearance
+// (or a switch to a different urn); a looping emote also sends an explicit stop when it ends —
+// one-shots end on the receiver's own timer (and the Pulse server's), so they need no stop.
 fn broadcast_emote(
-    q: Query<&EmoteCommand, With<PrimaryUser>>,
+    q: Query<&ActiveEmote, With<PrimaryUser>>,
     transports: Query<&Transport>,
-    mut last: Local<Option<EmoteCommand>>,
-    mut count: Local<usize>,
+    // (urn, looping) of the emote we last announced a start for.
+    mut last: Local<Option<(EmoteUrn, bool)>>,
+    mut count: Local<u32>,
     time: Res<Time>,
     mut senders: Local<Vec<RpcEventSender>>,
     mut subscribe_events: EventReader<RpcCall>,
@@ -149,75 +148,70 @@ fn broadcast_emote(
         senders.push(sender.clone());
     }
 
-    if let Ok(emote) = q.single() {
-        if last.as_ref() != Some(emote) {
+    // The currently-broadcastable emote: a user-triggered emote that's still playing, whose clip has
+    // resolved (`duration_ms` is stamped by `play_current_emote` only once the clip loads, which is
+    // also where `repeat` gets `default_repeat` folded in). Gating on it means we never announce a
+    // start with a stale `repeat`/`duration` — an emote that never resolves is simply never sent.
+    // Velocity-selected locomotion and scene movement anims aren't user emotes; a finished one-shot
+    // has ended.
+    let current = q.single().ok().and_then(|active| {
+        (active.source == ActiveEmoteSource::TriggeredEmote
+            && !active.finished
+            && active.duration_ms.is_some())
+        .then(|| (active.urn.clone(), active.repeat, active.duration_ms))
+    });
+
+    let prev = last.take();
+    match (&prev, &current) {
+        // New emote, or a switch to a different urn: announce the start.
+        (p, Some((urn, repeat, duration_ms))) if p.as_ref().map(|(u, _)| u) != Some(urn) => {
             *count += 1;
-            debug!("sending emote: {emote:?} {}", *count);
-            let old_packet = rfc4::Packet {
-                message: Some(rfc4::packet::Message::Chat(Chat {
-                    message: format!("{}{} {}", chat_marker_things::EMOTE, emote.urn, *count),
-                    timestamp: time.elapsed_secs_f64(),
-                })),
-                protocol_version: 100,
-            };
-
-            let new_packet = rfc4::Packet {
-                message: Some(rfc4::packet::Message::PlayerEmote(PlayerEmote {
-                    incremental_id: *count as u32,
-                    urn: emote.urn.clone(),
+            debug!("sending emote start: {} {}", urn.as_str(), *count);
+            // A one-shot carries its duration (observers and the Pulse completion timer use it); a
+            // looping emote omits it and is ended by the explicit stop below.
+            let duration_ms = if *repeat { None } else { *duration_ms };
+            broadcast(
+                transports.iter(),
+                BroadcastTarget::PRIMARY,
+                false,
+                comms::Emote {
+                    urn: urn.as_str().to_owned(),
+                    incremental_id: *count,
                     timestamp: time.elapsed_secs(),
-                })),
-                protocol_version: 100,
-            };
-
-            for transport in transports.iter() {
-                if transport.transport_type != TransportType::Archipelago {
-                    if transport.transport_type != TransportType::SceneRoom {
-                        let _ = transport
-                            .sender
-                            .blocking_send(NetworkMessage::reliable(&old_packet));
-                    }
-
-                    let _ = transport
-                        .sender
-                        .blocking_send(NetworkMessage::reliable(&new_packet));
-                }
-            }
-
-            *last = Some(emote.clone());
-
+                    duration_ms,
+                    stopping: false,
+                },
+            );
             senders.retain(|sender| {
-                let _ = sender.send(format!("{{ \"expressionId\": \"{}\" }}", emote.urn));
+                let _ = sender.send(format!("{{ \"expressionId\": \"{}\" }}", urn.as_str()));
                 !sender.is_closed()
-            })
-        }
-        return;
-    }
-
-    *last = None;
-}
-
-fn receive_emotes(mut commands: Commands, mut chat_events: EventReader<ChatEvent>) {
-    for ev in chat_events
-        .read()
-        .filter(|e| e.message.starts_with(chat_marker_things::EMOTE))
-    {
-        let mut emote_and_timestamp = ev
-            .message
-            .strip_prefix(chat_marker_things::EMOTE)
-            .unwrap()
-            .split(' ');
-        if let (Some(emote_urn), Some(timestamp)) =
-            (emote_and_timestamp.next(), emote_and_timestamp.next())
-        {
-            debug!("adding remote emote: {}", emote_urn);
-            commands.entity(ev.sender).try_insert(EmoteCommand {
-                urn: emote_urn.to_owned(),
-                timestamp: timestamp.parse().unwrap_or_default(),
-                r#loop: false,
             });
         }
+        // A looping emote ended: send an explicit stop. One-shots end on the receiver's own timer
+        // (and the Pulse server's), so they need no stop and fall through to the `_` arm.
+        (Some((urn, repeat)), None) if *repeat => {
+            *count += 1;
+            debug!("sending emote stop: {}", urn.as_str());
+            broadcast(
+                transports.iter(),
+                BroadcastTarget::PRIMARY,
+                false,
+                comms::Emote {
+                    urn: urn.as_str().to_owned(),
+                    incremental_id: *count,
+                    timestamp: time.elapsed_secs(),
+                    duration_ms: None,
+                    stopping: true,
+                },
+            );
+        }
+        _ => {}
     }
+
+    // Track the current emote (urn, looping) so the next frame can detect a change; `None` when
+    // nothing is playing. Set in one place so the unchanged `_` case can't drop the state and
+    // re-fire the start.
+    *last = current.map(|(urn, repeat, _)| (urn, repeat));
 }
 
 /// Where the current ActiveEmote came from. Controls override precedence and whether
@@ -240,6 +234,9 @@ pub struct ActiveEmote {
     restart: bool,
     repeat: bool,
     finished: bool,
+    /// Resolved clip duration in milliseconds, stamped by `play_current_emote` for the local player.
+    /// `broadcast_emote` attaches it to a one-shot emote's start so observers know when it ends.
+    duration_ms: Option<u32>,
     transition_seconds: f32,
     initial_audio_mark: Option<f32>,
     /// Whether a `triggerSceneEmote` should be allowed to take over. Mirrors the movement
@@ -267,6 +264,7 @@ impl Default for ActiveEmote {
             restart: false,
             repeat: false,
             finished: false,
+            duration_ms: None,
             transition_seconds: 0.2,
             initial_audio_mark: None,
             overridable: true,
@@ -390,9 +388,13 @@ fn animate(
             let playing_min_vel = anim_state.current_emote_min_velocity;
             // A non-idle scene-driven animation takes precedence over a triggered emote.
             let scene_cancels = scene_anim.is_some_and(|req| !req.idle);
-            // Scene-driven animations handle their own motion semantics; don't cancel on move.
-            let velocity_cancels =
-                scene_anim.is_none() && active_emote.source != ActiveEmoteSource::SceneMovementAnim;
+            // Scene-driven animations handle their own motion semantics; don't cancel on move. Only
+            // the local player's emotes cancel on motion — foreign emotes persist under movement
+            // until an explicit stop arrives over the wire (matching Unity), so we never infer their
+            // cancellation from interpolated velocity.
+            let velocity_cancels = maybe_foreign.is_none()
+                && scene_anim.is_none()
+                && active_emote.source != ActiveEmoteSource::SceneMovementAnim;
             if scene_cancels {
                 debug!("clear on scene anim {:?}", active_emote.urn);
                 requested_emote = None;
@@ -604,6 +606,7 @@ fn animate(
                 restart: is_new_anim,
                 repeat: req.r#loop,
                 finished: false,
+                duration_ms: None,
                 transition_seconds: req.transition_seconds,
                 initial_audio_mark: None,
                 overridable: req.idle,
@@ -1186,6 +1189,7 @@ fn play_current_emote(
         }
 
         if maybe_primary.is_some() {
+            active_emote.duration_ms = Some((clip_duration * 1000.0) as u32);
             match active_emote.source {
                 ActiveEmoteSource::SceneMovementAnim => {
                     let loops = elapsed / clip_duration;

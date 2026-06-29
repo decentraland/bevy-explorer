@@ -33,8 +33,12 @@ use serde::{Deserialize, Serialize};
 use signed_login::{SignedLoginPlugin, StartSignedLogin};
 use tokio::sync::mpsc::Sender;
 
-use dcl_component::{DclWriter, ToDclWriter};
+use dcl_component::{
+    proto_components::{kernel::comms::rfc4, pulse as pulse_proto},
+    DclWriter, ToDclWriter,
+};
 use ipfs::IpfsAssetServer;
+use prost::Message as _;
 use wallet::{sign_request, Wallet};
 
 use crate::global_crdt::ChannelControl;
@@ -44,6 +48,11 @@ use self::{
     broadcast_position::BroadcastPositionPlugin,
     global_crdt::GlobalCrdtPlugin,
     profile::UserProfilePlugin,
+    pulse::{
+        from_movement,
+        transport::{PulseFrame, PulseReliability},
+        PulseCtx,
+    },
     websocket_room::{StartWsRoom, WebsocketRoomPlugin},
 };
 
@@ -152,9 +161,13 @@ pub enum NetworkMessageRecipient {
     AuthServer,
 }
 
-#[derive(Clone)]
+/// A queued broadcast that carries its own per-transport encodings rather than pre-resolved bytes,
+/// so a single message reaches transports that want different wire forms. Each receive side pulls the
+/// representation it needs off [`Broadcast`]: byte transports (websocket/livekit/archipelago) take
+/// `to_rfc4`; the Pulse transport takes `to_pulse`. Byte-only sends box already-encoded rfc4 bytes
+/// (a `Vec<u8>`), while dual-representation messages (movement, emote) build each form on demand.
 pub struct NetworkMessage {
-    pub data: Vec<u8>,
+    pub(crate) message: Box<dyn Broadcast>,
     pub unreliable: bool,
     pub recipient: NetworkMessageRecipient,
 }
@@ -165,7 +178,7 @@ impl NetworkMessage {
         let mut writer = DclWriter::new(&mut data);
         message.to_writer(&mut writer);
         Self {
-            data,
+            message: Box::new(data),
             unreliable: true,
             recipient: NetworkMessageRecipient::All,
         }
@@ -190,6 +203,113 @@ impl NetworkMessage {
     }
 }
 
+/// A message's per-transport representations. A type implements only the forms it has: the trivial
+/// `Vec<u8>` carrier is already-encoded rfc4 bytes (no Pulse form), while dual-representation types
+/// (movement, emote) build both, so each transport gets its native encoding without the other having
+/// to re-decode. The receive side of every transport pulls the form it wants through this trait.
+pub trait Broadcast: Send + Sync {
+    /// rfc4 wire bytes for byte transports. `None` if this message has no rfc4 form.
+    fn to_rfc4(&self) -> Option<Vec<u8>>;
+    /// A Pulse frame for the Pulse transport. `None` (the default) if there's no Pulse form — so a
+    /// byte-only message queued onto the Pulse transport is simply dropped there.
+    fn to_pulse(&self, ctx: &mut PulseCtx) -> Option<PulseFrame> {
+        let _ = ctx;
+        None
+    }
+}
+
+/// The trivial carrier: already-encoded rfc4 bytes. Byte-only senders encode upfront (via the
+/// [`NetworkMessage`] constructors / [`broadcast_to`]) and box the bytes; Pulse drops them.
+impl Broadcast for Vec<u8> {
+    fn to_rfc4(&self) -> Option<Vec<u8>> {
+        Some(self.clone())
+    }
+}
+
+impl Broadcast for rfc4::Movement {
+    fn to_rfc4(&self) -> Option<Vec<u8>> {
+        Some(encode_packet(rfc4::packet::Message::Movement(self.clone())))
+    }
+
+    fn to_pulse(&self, ctx: &mut PulseCtx) -> Option<PulseFrame> {
+        let state = from_movement(self, ctx.grid);
+        // Cache the full state so a following emote can attach it — the Pulse server rejects an
+        // `EmoteStart` with a null `player_state`.
+        *ctx.last_state = Some(state.clone());
+        Some(PulseFrame {
+            bytes: pulse_proto::ClientMessage {
+                message: Some(pulse_proto::client_message::Message::Input(
+                    pulse_proto::PlayerStateInput { state: Some(state) },
+                )),
+            }
+            .encode_to_vec(),
+            reliability: PulseReliability::UnreliableSequenced,
+        })
+    }
+}
+
+/// A local emote start or stop. Dual-representation: an rfc4 `PlayerEmote` for byte transports and a
+/// Pulse `EmoteStart`/`EmoteStop` for Pulse. Sent via [`broadcast`].
+#[derive(Clone)]
+pub struct Emote {
+    pub urn: String,
+    pub incremental_id: u32,
+    pub timestamp: f32,
+    /// `Some` for a one-shot (the Pulse server auto-completes it after the duration); `None` for a
+    /// looping emote (ended by a later `stopping` send). Ignored on a stop.
+    pub duration_ms: Option<u32>,
+    /// A stop: clears a looping emote. rfc4 `is_stopping = true` / Pulse `EmoteStop`.
+    pub stopping: bool,
+}
+
+impl Broadcast for Emote {
+    fn to_rfc4(&self) -> Option<Vec<u8>> {
+        Some(encode_packet(rfc4::packet::Message::PlayerEmote(
+            rfc4::PlayerEmote {
+                incremental_id: self.incremental_id,
+                urn: self.urn.clone(),
+                timestamp: self.timestamp,
+                is_stopping: Some(self.stopping),
+            },
+        )))
+    }
+
+    fn to_pulse(&self, ctx: &mut PulseCtx) -> Option<PulseFrame> {
+        let message = if self.stopping {
+            pulse_proto::client_message::Message::EmoteStop(pulse_proto::EmoteStop {})
+        } else {
+            // The server rejects an `EmoteStart` with a null `player_state`. If we haven't sent any
+            // movement yet there's nothing to attach, so skip the start rather than be disconnected;
+            // an emote after the first movement goes out fine.
+            let state = ctx.last_state.clone()?;
+            pulse_proto::client_message::Message::EmoteStart(pulse_proto::EmoteStart {
+                emote_id: self.urn.clone(),
+                duration_ms: self.duration_ms,
+                player_state: Some(state),
+            })
+        };
+        Some(PulseFrame {
+            bytes: pulse_proto::ClientMessage {
+                message: Some(message),
+            }
+            .encode_to_vec(),
+            reliability: PulseReliability::Reliable,
+        })
+    }
+}
+
+/// Encode an rfc4 oneof body into a protocol-version-100 `Packet`'s wire bytes.
+fn encode_packet(message: rfc4::packet::Message) -> Vec<u8> {
+    let mut data = Vec::new();
+    let mut writer = DclWriter::new(&mut data);
+    rfc4::Packet {
+        message: Some(message),
+        protocol_version: 100,
+    }
+    .to_writer(&mut writer);
+    data
+}
+
 #[derive(Component)]
 pub struct Transport {
     pub transport_type: TransportType,
@@ -206,13 +326,35 @@ pub fn broadcast_to<'a, D: ToDclWriter>(
     unreliable: bool,
     message: &D,
 ) {
-    let message = if unreliable {
-        NetworkMessage::unreliable(message)
-    } else {
-        NetworkMessage::reliable(message)
-    };
+    let mut data = Vec::new();
+    let mut writer = DclWriter::new(&mut data);
+    message.to_writer(&mut writer);
     for transport in transports.filter(|t| target.includes(&t.transport_type)) {
-        let _ = transport.sender.try_send(message.clone());
+        let _ = transport.sender.try_send(NetworkMessage {
+            message: Box::new(data.clone()),
+            unreliable,
+            recipient: NetworkMessageRecipient::All,
+        });
+    }
+}
+
+/// Queue a [`Broadcast`] message onto every transport matching `target`, boxed fresh per transport so
+/// each receive side pulls its own representation ([`Broadcast::to_rfc4`] for byte transports,
+/// [`Broadcast::to_pulse`] for Pulse). The counterpart to [`broadcast_to`] for messages that carry a
+/// native (non-rfc4-bytes) form — currently [`rfc4::Movement`] and [`Emote`], both sent on
+/// [`BroadcastTarget::PRIMARY`] (movement unreliable, emote reliable).
+pub fn broadcast<'a, B: Broadcast + Clone + 'static>(
+    transports: impl Iterator<Item = &'a Transport>,
+    target: BroadcastTarget,
+    unreliable: bool,
+    message: B,
+) {
+    for transport in transports.filter(|t| target.includes(&t.transport_type)) {
+        let _ = transport.sender.try_send(NetworkMessage {
+            message: Box::new(message.clone()),
+            unreliable,
+            recipient: NetworkMessageRecipient::All,
+        });
     }
 }
 

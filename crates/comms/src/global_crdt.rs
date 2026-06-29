@@ -717,11 +717,18 @@ pub fn process_transport_updates(
                     }
                     PlayerMessage::PlayerData(Message::PlayerEmote(emote)) => {
                         debug!("emote: {emote:?}");
-                        commands.entity(entity).try_insert(EmoteCommand {
-                            timestamp: emote.incremental_id as i64,
-                            urn: emote.urn,
-                            r#loop: false,
-                        });
+                        if emote.is_stopping == Some(true) {
+                            // Explicit stop (a looping emote cancelled, or a one-shot's server
+                            // completion). Foreign emotes no longer self-cancel on motion (see
+                            // `animate`), so the wire stop is what ends a looping one.
+                            commands.entity(entity).remove::<EmoteCommand>();
+                        } else {
+                            commands.entity(entity).try_insert(EmoteCommand {
+                                timestamp: emote.incremental_id as i64,
+                                urn: emote.urn,
+                                r#loop: false,
+                            });
+                        }
                     }
                     PlayerMessage::PlayerData(Message::SceneEmote(scene_emote)) => {
                         debug!("scene emote: {scene_emote:?}");
