@@ -22,8 +22,9 @@ use crate::{
 };
 
 use super::{
+    broadcast,
     global_crdt::{process_transport_updates, ForeignPlayer, ProfileEvent, ProfileEventType},
-    NetworkMessage, Transport,
+    BroadcastTarget, NetworkMessage, ProfileUpdate, Transport,
 };
 use common::{
     profile::{LambdaProfiles, SerializedProfile},
@@ -211,22 +212,22 @@ pub fn setup_primary_profile(
                 },
             );
 
-            // send over network
-            debug!("sending profile new version {:?}", profile.version);
-            let response = rfc4::Packet {
-                message: Some(rfc4::packet::Message::ProfileResponse(
-                    rfc4::ProfileResponse {
-                        serialized_profile: serde_json::to_string(&profile.content).unwrap(),
-                        base_url: profile.base_url.clone(),
-                    },
-                )),
-                protocol_version: 100,
-            };
-            for transport in &transports {
-                let _ = transport
-                    .sender
-                    .try_send(NetworkMessage::reliable(&response));
-            }
+            // Push the profile update over PRIMARY only (not Archipelago/scene-room). The websocket
+            // dev server gets the full `ProfileResponse` as before; Pulse gets a
+            // `ProfileVersionAnnouncement` (the peer refetches from catalyst). Reset the keepalive
+            // timer so the periodic re-announce below doesn't immediately fire again.
+            debug!("announcing profile new version {:?}", profile.version);
+            broadcast(
+                transports.iter(),
+                BroadcastTarget::PRIMARY,
+                false,
+                ProfileUpdate {
+                    serialized_profile: serde_json::to_string(&profile.content).unwrap(),
+                    base_url: profile.base_url.clone(),
+                    version: profile.version,
+                },
+            );
+            *last_announce = time.elapsed_secs();
 
             // send to event receivers
             senders.retain(|sender| {
@@ -254,17 +255,16 @@ pub fn setup_primary_profile(
             let now = time.elapsed_secs();
             if now > *last_announce + 5.0 {
                 debug!("announcing profile v {}", current_profile.version);
-                let packet = rfc4::Packet {
-                    message: Some(rfc4::packet::Message::ProfileVersion(
-                        rfc4::AnnounceProfileVersion {
-                            profile_version: current_profile.version,
-                        },
-                    )),
-                    protocol_version: 100,
-                };
-                for transport in transports.iter() {
-                    let _ = transport.sender.try_send(NetworkMessage::reliable(&packet));
-                }
+                // Avatar state rides PRIMARY (websocket + Pulse), matching movement/emote — Pulse
+                // converts this to a `ProfileVersionAnnouncement`. Not Archipelago/scene-room.
+                broadcast(
+                    transports.iter(),
+                    BroadcastTarget::PRIMARY,
+                    false,
+                    rfc4::AnnounceProfileVersion {
+                        profile_version: current_profile.version,
+                    },
+                );
                 *last_announce = now;
             }
         }
