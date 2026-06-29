@@ -66,6 +66,27 @@ scene). React login → **Explore as Guest** (`/login_guest`) → scene-loading 
 **Mock mode** — `http://localhost:5188/?mock=1`: full UI (login + scene-loading) on
 a fake bridge, no engine. Add `&previousLogin=1` for the returning-user flow.
 
+## Deploy (bundled, no GitHub Action)
+
+The bridge scene ships **inside** the engine web bundle — no GitHub Pages, no Action, no external
+host. `npm run bundle` (in `bridge-scene`) builds it, exports a static realm with a **relative**
+`baseUrl` (`/bridge-scene/static/`) so it's origin-portable, and copies it into
+`deploy/web/bridge-scene/static`. It then rides along in the existing
+`@dcl-regenesislabs/bevy-explorer-web` publish, and `deploy/web/ui.js`'s `DEFAULT_SYSTEMSCENE`
+resolves it same-origin (`<origin>/bridge-scene/static/BevyExplorerUI`).
+
+```bash
+cd react-web/bridge-scene && npm run bundle   # build → export-static → copy into deploy/web
+```
+
+> Run `npm run bundle` before publishing the web package (the output is git-ignored, regenerated).
+> The comms adapter is a real `ws-room` (NOT `comms:offline`, which would stop the relay).
+
+**Test the bundle in dev** — append `?bundled=1` to the app URL. Instead of the live preview realm
+(`sdk-commands start` on :8100), the engine loads the exported static bundle vite serves from
+`/bridge-scene/static` — i.e. exactly what ships in prod. (No `?bundled` → live preview, fast
+iteration with scene hot-reload.)
+
 ## Testing
 
 Two tiers cover every domain's bridge API and the clicks that drive them:

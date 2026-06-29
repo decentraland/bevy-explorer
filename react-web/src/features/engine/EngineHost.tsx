@@ -7,11 +7,16 @@ import type { EngineRpc } from '../../engine/engineRpc'
 
 const REALM = 'https://realm-provider-ea.decentraland.org/main'
 
-// Our super-user bridge scene, served live by `sdk-commands start` (like
-// dcl-editor's editor scene). It relays the scene-loading stream + player-ready
-// over BroadcastChannel and renders no UI. The scene SOURCE is cross-origin, but
-// it executes in the engine's same-origin worker, so its channel reaches the page.
-const SYSTEM_SCENE = 'http://localhost:8100'
+// Our super-user bridge scene. It relays the scene-loading stream + player-ready over
+// BroadcastChannel and renders no UI.
+//   • DEFAULT (dev): the LIVE preview realm from `sdk-commands start` on :8100 — fast iteration
+//     (the scene hot-reloads). Run it: `cd bridge-scene && npx sdk-commands start --port 8100`.
+//   • `?bundled=1`: the EXPORTED static bundle — exactly what ships in production. Vite serves it
+//     same-origin from `/bridge-scene/static` (and prod serves the same path from
+//     `deploy/web/bridge-scene/static`). Generate it first: `cd bridge-scene && npm run bundle`.
+const SYSTEM_SCENE = new URLSearchParams(location.search).has('bundled')
+  ? `${location.origin}/bridge-scene/static/BevyExplorerUI`
+  : 'http://localhost:8100'
 
 // Trailing slash matters: the engine derives its service-worker scope + worker
 // paths from location.pathname, so it must boot at /engine/ not /engine/index.html.
