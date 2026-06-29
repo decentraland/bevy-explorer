@@ -79,12 +79,18 @@ const MIN_DIST = 1
 const FADE_START = 20
 const MAX_DIST = 40
 const DEFAULT_DIST = 4 // smaller birth size, before the sizing system measures the real distance
+// HARD CEILING on apparent size. The plane stops growing past this distance — beyond it, perspective
+// just shrinks the tag (exactly like the PREVIOUS SDK scene's fixed-scale nametags, which is why those
+// never produced a giant). Without this cap, a tag sized for a far avatar whose AvatarAttach fails to
+// bind strands near the camera at that huge scale and fills the screen. With it, the worst case is a
+// normal ~2-wide pill. Keep it ABOVE typical reading range so near tags still scale to constant size.
+const SIZE_CLAMP = 8
 // The pill is attached at the avatar's NAME_TAG anchor (above the head), but getPlayer().position is
 // the avatar's feet. For distant tags that offset is noise; for a CLOSE one the head is much nearer
 // the camera than the feet, so sizing by the feet distance over-enlarges it. Measure to the head.
 const NAMETAG_HEIGHT = 2.2
 function tagScale(dist: number): Vector3 {
-  const d = Math.max(MIN_DIST, Math.min(MAX_DIST, dist))
+  const d = Math.max(MIN_DIST, Math.min(SIZE_CLAMP, dist))
   const m = SIZE_FACTOR * d
   return Vector3.create(ASPECT * m, Y_SCALE * m, 1)
 }
@@ -264,45 +270,27 @@ function setTagMaterial(tag: Entity, opacity: number): void {
   })
 }
 
-// Two entities: an ANCHOR attached to the avatar's NAME_TAG point and billboarded to face the
-// camera — its transform is owned entirely by the engine (AvatarAttach + Billboard run in the render
-// loop), so the scene NEVER writes it. The PLANE is its child and carries the mesh/UiCanvas; the
-// scene writes only the plane's local scale (for constant on-screen size). Splitting them is what
-// kills the flicker — writing scale on the attached entity itself races the engine's per-frame
-// position write and snaps the tag between the avatar and the origin.
-function createTag(userId: string, isSelf: boolean, avatarPos?: { x: number; y: number; z: number }): Entity {
+// The OLD-scene approach (which worked): an ANCHOR positioned NATIVELY by the engine via AvatarAttach
+// (smooth, render-rate, zero lag) + billboarded to face the camera, and a child PLANE carrying the
+// mesh/UiCanvas. The scene NEVER writes the anchor's transform — only the plane's local scale (for our
+// constant-on-screen sizing), so it never fights the engine's per-frame position write. The crucial
+// invariant that keeps it from ever stranding into a giant lives in `add()`: we only ever create a tag
+// for an avatar that is ACTUALLY PRESENT, so AvatarAttach always has a shape to bind to.
+function createTag(userId: string, isSelf: boolean): { anchor: Entity; plane: Entity } {
   const anchor = engine.addEntity()
-  // Born AT the avatar (head height), not the origin: if AvatarAttach later fails to bind, the tag
-  // sits on the avatar instead of stranding at world-origin where the distance-sizing balloons it into
-  // a giant pill. When the attach DOES bind, the engine overwrites this position every frame.
-  Transform.create(anchor, avatarPos != null ? { position: Vector3.create(avatarPos.x, avatarPos.y + NAMETAG_HEIGHT, avatarPos.z) } : {})
-  // SELF attaches with NO avatarId → the engine binds it to the primary user directly (attach.rs),
-  // which can never fail the avatar-shape-by-id lookup that was leaving the own-name tag frozen.
+  Transform.create(anchor) // owned by the engine (AvatarAttach + Billboard); the scene never writes it
+  // SELF binds with NO avatarId → the engine attaches it to the primary user directly (can't fail the
+  // avatar-shape-by-id lookup); others bind by address.
   AvatarAttach.create(anchor, isSelf ? { anchorPointId: AvatarAnchorPointType.AAPT_NAME_TAG } : { avatarId: userId, anchorPointId: AvatarAnchorPointType.AAPT_NAME_TAG })
   Billboard.create(anchor, {})
 
-  // PLANE is a child: the scene writes only its local scale (constant size); the anchor's transform
-  // is engine-owned (AvatarAttach + Billboard). Splitting them is what kills the scale-write flicker.
   const plane = engine.addEntity()
   Transform.create(plane, { parent: anchor, scale: tagScale(DEFAULT_DIST) })
   MeshRenderer.setPlane(plane)
   UiCanvas.create(plane, { width: CANVAS_W, height: CANVAS_H, color: Color4.Clear() })
   ReactEcsRenderer.setTextureRenderer(plane, tagElement(userId))
   setTagMaterial(plane, 1)
-  return anchor
-}
-
-// getPlayer().position is the avatar's LIVE position; it's absent until the avatar has loaded and
-// goes away when it despawns. We gate tag creation on it (so tags only appear once the avatar is in
-// world — no first-frame glitch) and use it to drop+recreate tags across despawn/respawn.
-function hasLivePosition(userId: string): boolean {
-  return getPlayer({ userId })?.position != null
-}
-function distanceTo(userId: string, cam: { x: number; y: number; z: number }): number | null {
-  const pos = getPlayer({ userId })?.position
-  if (pos == null) return null
-  // Measure to the name-tag anchor (above the head), not the feet, so a close tag isn't over-enlarged.
-  return Math.hypot(pos.x - cam.x, pos.y + NAMETAG_HEIGHT - cam.y, pos.z - cam.z)
+  return { anchor, plane }
 }
 
 // Canonical address key. The SAME wallet can arrive in different casings from different sources
@@ -321,23 +309,41 @@ const initFlag = globalThis as { __bevyNametagsStarted?: boolean }
 export function initNametags(): void {
   if (initFlag.__bevyNametagsStarted === true) return // never stack the systems twice
   initFlag.__bevyNametagsStarted = true
+  // BUILD MARKER — to tell whether the engine is actually running this build. If you DON'T see this in
+  // the console after a reload, the scene is stale (cached / not reloaded), not a code bug.
+  console.log(`[nametags] BUILD=nativeattach+onenter+clamp${SIZE_CLAMP}`)
 
   const tags = new Map<string, Entity>() // canonical address → anchor (exactly one tag per wallet)
-  const uidOf = new Map<Entity, string>() // anchor → address (original casing, for getPlayer/distance)
+  // PLANE entity → address. The size + sweep systems identify a tag's plane by its OWN id, NOT via its
+  // parent anchor — because DCL recycles entity ids, so a removed anchor's id can be reused by a new
+  // tag, making a STALE duplicate plane's parent resolve to a valid anchor and escape cleanup (the "two
+  // kurd tags" bug). Keying off the plane's own id, a duplicate is always untracked → hidden + removed.
+  const planeUid = new Map<Entity, string>()
+  const anchorPlane = new Map<Entity, Entity>() // anchor → its plane (to drop both from tracking on removal)
   const selfId = (): string | undefined => {
     const id = getPlayer()?.userId
     return id != null && id !== '' ? id : undefined
   }
 
+  // Is this avatar actually in-world (does it have a PlayerIdentityData entity)? The OLD-SCENE INVARIANT:
+  // only ever create a tag for a present avatar, so AvatarAttach always has a shape to bind to and the tag
+  // can never strand at the origin as a giant. (Our previous reconcile tagged comms-only/far avatars that
+  // weren't really here → AvatarAttach had nothing to bind → stranded giant. That's the bug we're killing.)
+  const avatarPresent = (key: string): boolean => {
+    for (const [, data] of engine.getEntitiesWith(PlayerIdentityData)) if (canon(data.address) === key) return true
+    return false
+  }
+
   const add = (userId: string): void => {
-    // Only once the avatar actually has a position — otherwise AvatarAttach has nothing to bind to
-    // and the tag would strand at the origin / get mis-placed on first load. Keyed by canon(address)
-    // so a different casing of an already-tagged wallet can't create a duplicate.
     const key = canon(userId)
-    if (userId === '' || tags.has(key) || !hasLivePosition(userId)) return
-    const anchor = createTag(userId, key === canon(selfId() ?? ''), getPlayer({ userId })?.position)
+    if (userId === '' || tags.has(key)) return
+    const me = selfId()
+    const isSelf = me != null && canon(me) === key
+    if (!isSelf && !avatarPresent(key)) return
+    const { anchor, plane } = createTag(userId, isSelf)
     tags.set(key, anchor)
-    uidOf.set(anchor, userId)
+    planeUid.set(plane, userId)
+    anchorPlane.set(anchor, plane)
     resolveClaimed(userId)
   }
   const removeByKey = (key: string): void => {
@@ -345,93 +351,56 @@ export function initNametags(): void {
     if (anchor == null) return
     engine.removeEntityWithChildren(anchor)
     tags.delete(key)
-    uidOf.delete(anchor)
-  }
-  const remove = (userId: string): void => {
-    removeByKey(canon(userId))
-  }
-
-  // THE hard guarantee against duplicate "stuck" pills: remove every nametag entity that doesn't
-  // belong to a tracked tag. Two ways an orphan survives a removeEntityWithChildren that didn't fully
-  // land (engine paused on alt+tab, child not yet linked, id churn): an untracked ANCHOR
-  // (AvatarAttach+Billboard) OR a child PLANE (UiCanvas+MeshRenderer) whose parent anchor is gone /
-  // untracked. We sweep BOTH. The global init guard keeps us the single authority, so this can't
-  // fight another reconciler.
-  const sweepOrphans = (): void => {
-    const valid = new Set<Entity>(tags.values())
-    for (const [anchor] of engine.getEntitiesWith(AvatarAttach, Billboard)) {
-      if (!valid.has(anchor)) engine.removeEntityWithChildren(anchor)
+    const plane = anchorPlane.get(anchor)
+    if (plane != null) {
+      planeUid.delete(plane)
+      anchorPlane.delete(anchor)
     }
+  }
+  const remove = (userId: string): void => removeByKey(canon(userId))
+
+  // Remove any stray nametag PLANE that isn't a tracked tag (identify by the plane's OWN id — id recycling
+  // makes a stale plane's parent look valid). Cheap; only acts when something is actually untracked.
+  const sweepOrphans = (): void => {
     for (const [plane] of engine.getEntitiesWith(UiCanvas, MeshRenderer)) {
-      const parent = Transform.getOrNull(plane)?.parent
-      if (parent == null || !valid.has(parent)) engine.removeEntityWithChildren(plane)
+      if (!planeUid.has(plane)) engine.removeEntityWithChildren(plane)
     }
   }
   sweepOrphans() // clear any orphans left by a previous scene instance before we start fresh
 
-  onEnterScene((player) => {
-    add(player.userId)
-  })
-  onLeaveScene((userId) => {
-    remove(userId)
+  // LIFECYCLE (old-scene style): create a tag when a player ENTERS the scene (engine event → the avatar is
+  // really rendered here, so the attach binds), remove it when they leave. No reconcile re-creating tags
+  // from comms presence — that was the source of the stranded giants.
+  onEnterScene((player) => add(player.userId))
+  onLeaveScene((userId) => remove(userId))
+
+  // Self tag: selfId() is briefly null at boot, so onEnterScene may have created self as an "other" (the
+  // wrong attach). Once self is known, recreate it with the primary-user attach (no avatarId).
+  let selfReady = false
+  engine.addSystem(() => {
+    const me = selfId()
+    if (selfReady || me == null) return
+    selfReady = true
+    remove(me)
+    add(me)
   })
 
-  // Reconcile (~1s): presence = players whose avatar has a LIVE position (despawned avatars drop out,
-  // so a frozen tag is removed and recreated fresh on respawn — the fix for tab-switch re-streams).
-  // Adds missing, drops absent, and re-asserts the attachment so it re-links after a wearable rebuild
-  // (the engine only re-links on Changed<AvatarAttach>). Self is always present and its attach can't
-  // go stale (primary-user bind), so it's never re-asserted.
+  // CLEANUP (~1s, REMOVAL-ONLY): drop a tag whose avatar has left the world (backstops a missed
+  // onLeaveScene). It NEVER creates, so it can't reintroduce stranding. Also sweeps stray planes.
   let racc = 0
   engine.addSystem((dt: number) => {
     racc += dt
     if (racc < 1) return
     racc = 0
-
     sweepOrphans()
+    const present = new Set<string>()
+    for (const [, data] of engine.getEntitiesWith(PlayerIdentityData)) if (data.address !== '') present.add(canon(data.address))
     const me = selfId()
-    const meKey = me != null ? canon(me) : ''
-    // Presence keyed by canon(address) → the address as the engine reported it (authoritative casing),
-    // so the same wallet collapses to ONE entry however its address is cased across sources.
-    const present = new Map<string, string>()
-    for (const [, data] of engine.getEntitiesWith(PlayerIdentityData)) {
-      if (data.address !== '' && hasLivePosition(data.address)) present.set(canon(data.address), data.address)
-    }
-    if (me != null && hasLivePosition(me)) present.set(meKey, me)
+    if (me != null) present.add(canon(me))
     for (const key of [...tags.keys()]) if (!present.has(key)) removeByKey(key)
-    for (const [key, addr] of present) {
-      add(addr)
-      resolveClaimed(addr)
-      if (key !== meKey) {
-        const anchor = tags.get(key)
-        if (anchor != null) {
-          // Re-assert the attachment on the authoritative address — re-links a tag whose AvatarAttach
-          // failed the avatar-shape-by-id lookup (the "stuck giant" case), and re-keys uidOf so the
-          // size/distance system reads the correct avatar.
-          AvatarAttach.createOrReplace(anchor, { avatarId: addr, anchorPointId: AvatarAnchorPointType.AAPT_NAME_TAG })
-          uidOf.set(anchor, addr)
-          // Keep the anchor's fallback position on the avatar: harmless while bound (the engine
-          // overwrites it every frame), but if the attach never binds the tag follows the avatar
-          // instead of stranding at world-origin and ballooning into a giant.
-          const at = Transform.getMutableOrNull(anchor)
-          const ap = getPlayer({ userId: addr })?.position
-          if (at != null && ap != null) at.position = Vector3.create(ap.x, ap.y + NAMETAG_HEIGHT, ap.z)
-        }
-      }
-    }
-  })
-
-  // Fast orphan sweep (~3Hz) so a stray pill is gone in a blink, not up to a full reconcile second.
-  // Cheap (two entity queries); only acts when something is actually untracked.
-  let sacc = 0
-  engine.addSystem((dt: number) => {
-    sacc += dt
-    if (sacc < 0.3) return
-    sacc = 0
-    sweepOrphans()
   })
 
   // Age out chat bubbles: the scene sandbox has no wall clock, so expire by accumulated frame time.
-  // tagElement reads the live `bubbles` map each render, so deleting one drops its message next frame.
   engine.addSystem((dt: number) => {
     if (bubbles.size === 0) return
     for (const [addr, b] of bubbles) {
@@ -440,53 +409,33 @@ export function initNametags(): void {
     }
   })
 
-  // Constant on-screen size (plane scale ∝ distance, clamped) + distance opacity. Writes ONLY the
-  // plane child, so it never fights the engine's anchor transform; change-gated so a stationary scene
-  // writes nothing. Runs at ~20Hz, not every frame: the anchor's POSITION is engine-driven (smooth at
-  // render rate), and size only needs to re-measure occasionally — 20Hz keeps the per-frame entity
-  // query + getPlayer cost off the hot path while staying visually identical for size.
+  // SIZE ONLY (no positioning — AvatarAttach owns the anchor's position natively, smooth at render rate).
+  // Writes ONLY the plane child, so it never fights the engine. Constant on-screen size (clamped) + fade.
   const lastScaleDist = new Map<number, number>()
   const lastOpacity = new Map<number, number>()
   let sacc2 = 0
   let opTick = 0
   engine.addSystem((dt: number) => {
     sacc2 += dt
-    if (sacc2 < 0.05) return
+    if (sacc2 < 0.1) return
     sacc2 = 0
     const cam = Transform.getOrNull(engine.CameraEntity)?.position
-    const self = getPlayer()?.position
-    if (cam == null || self == null) return
-    // The camera always sits within a few metres of the local player once initialised. On first enter
-    // its transform briefly reads the origin while avatars are already elsewhere → every distance
-    // comes out huge (the "row of giant pills"). Skip sizing until the camera is actually near you.
-    if (Math.hypot(cam.x - self.x, cam.y - self.y, cam.z - self.z) > 30) return
-
-    opTick = (opTick + 1) % 3 // opacity ~every 3rd tick (~6.7Hz); it changes slowly + is heavier
+    if (cam == null) return
+    opTick = (opTick + 1) % 3
     const doOpacity = opTick === 0
     for (const [plane] of engine.getEntitiesWith(UiCanvas, MeshRenderer)) {
-      const anchor = Transform.getOrNull(plane)?.parent
-      const uid = anchor != null ? uidOf.get(anchor) : undefined
-      if (uid == null) {
-        // Orphan plane (no tracked anchor): a leftover from a despawn/respawn that sweepOrphans
-        // hasn't deleted yet. Collapse it NOW so its stale (possibly huge) scale can't flash as a
-        // giant pill in the meantime — don't just skip it, which is what left the giant duplicates.
-        const t = Transform.getMutableOrNull(plane)
+      const t = Transform.getMutableOrNull(plane)
+      const uid = planeUid.get(plane)
+      // Untracked plane (stale/duplicate) or avatar with no live position → don't render.
+      const avPos = uid != null ? getPlayer({ userId: uid })?.position : undefined
+      if (avPos == null) {
         if (t != null && lastScaleDist.get(plane) !== -1) {
           t.scale = Vector3.create(0, 0, 0)
           lastScaleDist.set(plane, -1)
         }
         continue
       }
-      const dist = distanceTo(uid, cam)
-      const t = Transform.getMutableOrNull(plane)
-
-      if (dist == null) {
-        // avatar gone (despawn/loading) — hide immediately; reconcile will recreate on respawn
-        if (lastScaleDist.get(plane) !== -1 && t != null) t.scale = Vector3.create(0, 0, 0)
-        lastScaleDist.set(plane, -1)
-        continue
-      }
-
+      const dist = Math.hypot(avPos.x - cam.x, avPos.y + NAMETAG_HEIGHT - cam.y, avPos.z - cam.z)
       const lsd = lastScaleDist.get(plane)
       if (lsd == null || Math.abs(lsd - dist) >= 0.05) {
         lastScaleDist.set(plane, dist)
