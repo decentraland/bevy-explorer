@@ -21,7 +21,7 @@
 use bevy::prelude::*;
 use bevy::tasks::{IoTaskPool, Task};
 use common::{
-    structs::{CurrentRealm, PrimaryUser},
+    structs::{CurrentRealm, OutOfWorld, PlayerTeleported, PrimaryUser},
     util::{TaskCompat, TaskExt},
 };
 use dcl_component::proto_components::common::Vector3;
@@ -130,11 +130,13 @@ pub struct PulsePlugin;
 impl Plugin for PulsePlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<StartPulse>();
+        app.add_event::<PlayerTeleported>();
         app.add_systems(Startup, configure_pulse);
         app.add_systems(
             Update,
             (connect_pulse, start_pulse, pump_pulse, drain_pulse_outbox).chain(),
         );
+        app.add_systems(Update, pulse_teleport_on_local_move);
     }
 }
 
@@ -220,6 +222,7 @@ fn start_pulse(
     session: Option<ResMut<PulseSession>>,
     realm: Res<CurrentRealm>,
     player: Query<&GlobalTransform, With<PrimaryUser>>,
+    out_of_world: Query<(), (With<PrimaryUser>, With<OutOfWorld>)>,
 ) {
     if events.is_empty() {
         return;
@@ -243,9 +246,10 @@ fn start_pulse(
     ));
 
     session.wanted = true;
-    // Already up (a later realm) → re-teleport now. Otherwise the first handshake's
-    // `on_handshake_response` sends the initial teleport once the connection establishes.
-    if matches!(session.state, Connection::Established) {
+    // Already up (a later realm) → re-teleport now, unless out of world (position provisional behind
+    // the loading screen); the spawn `PlayerTeleported` re-announces realm + position. Otherwise the
+    // first handshake's `on_handshake_response` sends the initial teleport once established.
+    if matches!(session.state, Connection::Established) && out_of_world.is_empty() {
         send_teleport(&session, &realm, &player);
     }
 }
@@ -291,12 +295,14 @@ fn pump_pulse(
     time: Res<Time>,
     player: Query<&GlobalTransform, With<PrimaryUser>>,
     profile: Option<Res<CurrentUserProfile>>,
+    out_of_world: Query<(), (With<PrimaryUser>, With<OutOfWorld>)>,
 ) {
     let Some(session) = session else {
         return;
     };
     let session = session.into_inner();
     let now = time.elapsed_secs_f64();
+    let in_world = out_of_world.is_empty();
 
     // Version to announce in the handshake — our connect-time profile announce on Pulse. 0 until the
     // profile loads; the periodic announce (`profile::mod`) corrects it once available.
@@ -306,7 +312,7 @@ fn pump_pulse(
 
     drain_status(session, now);
     drive_connection(session, &wallet, profile_version, now);
-    drain_inbound(session, &realm, &player, now);
+    drain_inbound(session, &realm, &player, in_world, now);
 }
 
 /// Drain the driver's status channel into the connection state machine. `link`'s borrow ends at
@@ -421,6 +427,7 @@ fn drain_inbound(
     session: &mut PulseSession,
     realm: &CurrentRealm,
     player: &Query<&GlobalTransform, With<PrimaryUser>>,
+    in_world: bool,
     now: f64,
 ) {
     while let Some(Ok(bytes)) = session.link.as_mut().map(|link| link.inbound.try_recv()) {
@@ -435,14 +442,18 @@ fn drain_inbound(
             match event {
                 // The handshake ack drives the connect sequence.
                 PulseEvent::Connected { success, error } => {
-                    on_handshake_response(session, realm, player, now, success, error)
+                    on_handshake_response(session, realm, player, in_world, now, success, error)
                 }
                 // Movement is bridged into the shared foreign-player pipeline as its own
                 // `PlayerMessage::Movement`, reusing `update_player` / `foreign_dynamics` verbatim.
-                PulseEvent::Movement { address, movement } => {
+                PulseEvent::Movement {
+                    address,
+                    movement,
+                    teleport,
+                } => {
                     let update = PlayerUpdate {
                         transport_id: session.foreign_transport,
-                        message: PlayerMessage::Movement(movement),
+                        message: PlayerMessage::Movement { movement, teleport },
                         address,
                     };
                     let _ = session.sender.try_send(update.into());
@@ -549,10 +560,12 @@ fn lost_connection(session: &mut PulseSession, retry: bool, now: f64) {
 /// Handle the server's `HandshakeResponse`. On success, send the first gameplay message — a
 /// `TeleportRequest` announcing our realm + position, so the server begins streaming same-realm
 /// peers (peers in different realms never see each other).
+#[allow(clippy::too_many_arguments)]
 fn on_handshake_response(
     session: &mut PulseSession,
     realm: &CurrentRealm,
     player: &Query<&GlobalTransform, With<PrimaryUser>>,
+    in_world: bool,
     now: f64,
     success: bool,
     error: Option<String>,
@@ -573,7 +586,14 @@ fn on_handshake_response(
     }
     info!("pulse: handshake accepted");
     session.state = Connection::Established;
-    send_teleport(session, realm, player);
+    // Suppress the connect-time teleport while out of world — our position is provisional behind the
+    // loading screen. The teleport sent when the player is placed in-world (`PlayerTeleported`, via
+    // `pulse_teleport_on_local_move`) announces the real position + realm once we have one.
+    if in_world {
+        send_teleport(session, realm, player);
+    } else {
+        debug!("pulse: out of world at handshake, deferring teleport to spawn");
+    }
 }
 
 /// Send a `TeleportRequest` announcing our current realm + position, so the server (re)starts
@@ -586,6 +606,17 @@ fn send_teleport(
     realm: &CurrentRealm,
     player: &Query<&GlobalTransform, With<PrimaryUser>>,
 ) {
+    let world = player
+        .single()
+        .map(|t| t.translation())
+        .unwrap_or(Vec3::ZERO);
+    send_teleport_at(session, realm, world);
+}
+
+/// Send a `TeleportRequest` for an explicit Bevy world-space position. Used by [`send_teleport`] (the
+/// player's current position) and by [`pulse_teleport_on_local_move`] (an instant move, whose final
+/// position is passed directly so it doesn't depend on transform propagation having run this frame).
+fn send_teleport_at(session: &PulseSession, realm: &CurrentRealm, world: Vec3) {
     let Some(link) = session.link.as_ref() else {
         return;
     };
@@ -604,10 +635,6 @@ fn send_teleport(
 
     // Bevy render position → DCL world coords (the `-z` flip), then split into parcel + local —
     // exactly the inverse of how inbound state is decoded.
-    let world = player
-        .single()
-        .map(|t| t.translation())
-        .unwrap_or(Vec3::ZERO);
     let dcl = DclTranslation::from_bevy_translation(world).0;
     let (parcel_index, local) = session
         .grid
@@ -630,6 +657,27 @@ fn send_teleport(
         reliability: PulseReliability::Reliable,
     });
     info!("pulse: teleport sent (parcel {parcel_index})");
+}
+
+/// The local player was instantly repositioned (durationless `move_player_to`, `teleport_player`, a
+/// spawn snap). Announce it to the Pulse server as a `TeleportRequest` so peers snap to the new
+/// position instead of interpolating across the jump. The event carries the final world position, so
+/// this doesn't depend on `GlobalTransform` propagation having run this frame.
+fn pulse_teleport_on_local_move(
+    session: Option<ResMut<PulseSession>>,
+    realm: Res<CurrentRealm>,
+    mut events: EventReader<PlayerTeleported>,
+) {
+    // Coalesce to the latest reposition this frame; earlier ones are superseded.
+    let Some(position) = events.read().last().map(|ev| ev.position) else {
+        return;
+    };
+    let Some(session) = session else {
+        return;
+    };
+    if matches!(session.state, Connection::Established) {
+        send_teleport_at(&session, &realm, position);
+    }
 }
 
 /// Build a `HandshakeRequest`: sign `connect:/{server_id}:{ts}:{}` with the local identity and pack
