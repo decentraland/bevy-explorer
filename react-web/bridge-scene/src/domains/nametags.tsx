@@ -276,12 +276,13 @@ function setTagMaterial(tag: Entity, opacity: number): void {
 // constant-on-screen sizing), so it never fights the engine's per-frame position write. The crucial
 // invariant that keeps it from ever stranding into a giant lives in `add()`: we only ever create a tag
 // for an avatar that is ACTUALLY PRESENT, so AvatarAttach always has a shape to bind to.
-function createTag(userId: string, isSelf: boolean): { anchor: Entity; plane: Entity } {
+function createTag(userId: string): { anchor: Entity; plane: Entity } {
   const anchor = engine.addEntity()
   Transform.create(anchor) // owned by the engine (AvatarAttach + Billboard); the scene never writes it
-  // SELF binds with NO avatarId → the engine attaches it to the primary user directly (can't fail the
-  // avatar-shape-by-id lookup); others bind by address.
-  AvatarAttach.create(anchor, isSelf ? { anchorPointId: AvatarAnchorPointType.AAPT_NAME_TAG } : { avatarId: userId, anchorPointId: AvatarAnchorPointType.AAPT_NAME_TAG })
+  // Bind by address to the (present) foreign avatar. We NEVER tag the local player (see add()), so this
+  // always has a real avatar shape to attach to — the no-avatarId "primary user" attach, which binds
+  // inconsistently for a global scene and stranded into a giant centred pill, is gone.
+  AvatarAttach.create(anchor, { avatarId: userId, anchorPointId: AvatarAnchorPointType.AAPT_NAME_TAG })
   Billboard.create(anchor, {})
 
   const plane = engine.addEntity()
@@ -311,7 +312,7 @@ export function initNametags(): void {
   initFlag.__bevyNametagsStarted = true
   // BUILD MARKER — to tell whether the engine is actually running this build. If you DON'T see this in
   // the console after a reload, the scene is stale (cached / not reloaded), not a code bug.
-  console.log(`[nametags] BUILD=nativeattach+onenter+clamp${SIZE_CLAMP}`)
+  console.log(`[nametags] BUILD=noself+nativeattach+clamp${SIZE_CLAMP}`)
 
   const tags = new Map<string, Entity>() // canonical address → anchor (exactly one tag per wallet)
   // PLANE entity → address. The size + sweep systems identify a tag's plane by its OWN id, NOT via its
@@ -334,13 +335,23 @@ export function initNametags(): void {
     return false
   }
 
+  // We must NEVER create a tag for our own avatar (the old scene skipped self entirely — you don't see
+  // your own nametag). selfId() is briefly null at boot, so an add() that arrives before we know who we
+  // are is QUEUED, not created, then flushed once self is known. This is what guarantees self is filtered
+  // out: the boot-race add() that used to slip through as a giant centred self pill now waits.
+  const pendingAdds: string[] = []
+  let knownSelf: string | undefined
   const add = (userId: string): void => {
     const key = canon(userId)
     if (userId === '' || tags.has(key)) return
-    const me = selfId()
-    const isSelf = me != null && canon(me) === key
-    if (!isSelf && !avatarPresent(key)) return
-    const { anchor, plane } = createTag(userId, isSelf)
+    const me = knownSelf ?? selfId()
+    if (me == null) {
+      if (!pendingAdds.includes(userId)) pendingAdds.push(userId)
+      return
+    }
+    if (canon(me) === key) return // never tag the local player
+    if (!avatarPresent(key)) return
+    const { anchor, plane } = createTag(userId)
     tags.set(key, anchor)
     planeUid.set(plane, userId)
     anchorPlane.set(anchor, plane)
@@ -374,15 +385,14 @@ export function initNametags(): void {
   onEnterScene((player) => add(player.userId))
   onLeaveScene((userId) => remove(userId))
 
-  // Self tag: selfId() is briefly null at boot, so onEnterScene may have created self as an "other" (the
-  // wrong attach). Once self is known, recreate it with the primary-user attach (no avatarId).
-  let selfReady = false
+  // Learn the local player's id as soon as it's available, then flush the adds that arrived before we
+  // knew it (deferred so they couldn't accidentally tag our own avatar). Stops once self is known.
   engine.addSystem(() => {
+    if (knownSelf != null) return
     const me = selfId()
-    if (selfReady || me == null) return
-    selfReady = true
-    remove(me)
-    add(me)
+    if (me == null) return
+    knownSelf = me
+    for (const u of pendingAdds.splice(0)) add(u)
   })
 
   // CLEANUP (~1s, REMOVAL-ONLY): drop a tag whose avatar has left the world (backstops a missed
@@ -396,8 +406,11 @@ export function initNametags(): void {
     const present = new Set<string>()
     for (const [, data] of engine.getEntitiesWith(PlayerIdentityData)) if (data.address !== '') present.add(canon(data.address))
     const me = selfId()
-    if (me != null) present.add(canon(me))
-    for (const key of [...tags.keys()]) if (!present.has(key)) removeByKey(key)
+    // Drop tags for avatars that have left — and ALWAYS drop one for the local player (a boot race must
+    // never leave our own giant pill on screen). sweepOrphans above already clears any untracked plane.
+    for (const key of [...tags.keys()]) {
+      if (!present.has(key) || (me != null && canon(me) === key)) removeByKey(key)
+    }
   })
 
   // Age out chat bubbles: the scene sandbox has no wall clock, so expire by accumulated frame time.
