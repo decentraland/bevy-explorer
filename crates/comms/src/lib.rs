@@ -298,6 +298,63 @@ impl Broadcast for Emote {
     }
 }
 
+impl Broadcast for rfc4::AnnounceProfileVersion {
+    fn to_rfc4(&self) -> Option<Vec<u8>> {
+        Some(encode_packet(rfc4::packet::Message::ProfileVersion(
+            self.clone(),
+        )))
+    }
+
+    fn to_pulse(&self, _ctx: &mut PulseCtx) -> Option<PulseFrame> {
+        Some(PulseFrame {
+            bytes: pulse_proto::ClientMessage {
+                message: Some(pulse_proto::client_message::Message::ProfileAnnouncement(
+                    pulse_proto::ProfileVersionAnnouncement {
+                        version: self.profile_version as i32,
+                    },
+                )),
+            }
+            .encode_to_vec(),
+            reliability: PulseReliability::Reliable,
+        })
+    }
+}
+
+/// A local profile update. Dual-representation: byte transports get the full rfc4 `ProfileResponse`
+/// (peers apply it directly), while Pulse — which carries no profile payload — gets only a
+/// `ProfileVersionAnnouncement`, on which peers refetch the profile from catalyst.
+#[derive(Clone)]
+pub struct ProfileUpdate {
+    pub serialized_profile: String,
+    pub base_url: String,
+    pub version: u32,
+}
+
+impl Broadcast for ProfileUpdate {
+    fn to_rfc4(&self) -> Option<Vec<u8>> {
+        Some(encode_packet(rfc4::packet::Message::ProfileResponse(
+            rfc4::ProfileResponse {
+                serialized_profile: self.serialized_profile.clone(),
+                base_url: self.base_url.clone(),
+            },
+        )))
+    }
+
+    fn to_pulse(&self, _ctx: &mut PulseCtx) -> Option<PulseFrame> {
+        Some(PulseFrame {
+            bytes: pulse_proto::ClientMessage {
+                message: Some(pulse_proto::client_message::Message::ProfileAnnouncement(
+                    pulse_proto::ProfileVersionAnnouncement {
+                        version: self.version as i32,
+                    },
+                )),
+            }
+            .encode_to_vec(),
+            reliability: PulseReliability::Reliable,
+        })
+    }
+}
+
 /// Encode an rfc4 oneof body into a protocol-version-100 `Packet`'s wire bytes.
 fn encode_packet(message: rfc4::packet::Message) -> Vec<u8> {
     let mut data = Vec::new();
