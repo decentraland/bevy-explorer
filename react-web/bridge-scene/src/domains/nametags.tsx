@@ -255,20 +255,17 @@ function setTagMaterial(tag: Entity, opacity: number): void {
 // constant-on-screen sizing), so it never fights the engine's per-frame position write. The crucial
 // invariant that keeps it from ever stranding into a giant lives in `add()`: we only ever create a tag
 // for an avatar that is ACTUALLY PRESENT, so AvatarAttach always has a shape to bind to.
-function createTag(userId: string): { anchor: Entity; plane: Entity } {
+// Build the ONE reusable anchor+plane for a wallet — created once and kept FOREVER. We never destroy
+// nametag entities: removeEntityWithChildren is unreliable for avatar-attached entities, so every
+// create/destroy cycle leaked a plane and they piled up into a row of duplicate pills. The pool reuses a
+// single entity per wallet and only show()/hide()s it. Born hidden: parked at y=-1000, scale 0, no attach.
+function createPoolEntry(userId: string): { anchor: Entity; plane: Entity } {
   const anchor = engine.addEntity()
-  // Born FAR BELOW the world. AvatarAttach overrides this with the avatar's nametag-anchor position once
-  // it binds — but the engine only binds if the avatar's SHAPE is already loaded when it processes the
-  // attach (attach.rs `continue`s otherwise and never retries on its own). A tag created in that brief
-  // pre-load window would otherwise sit at the origin and float in the plaza centre; parking it at
-  // y=-1000 keeps an as-yet-unbound tag out of sight until the reconcile's re-assert binds it.
   Transform.create(anchor, { position: Vector3.create(0, -1000, 0) })
-  // Bind by address to the (present) foreign avatar. We NEVER tag the local player (see add()).
-  AvatarAttach.create(anchor, { avatarId: userId, anchorPointId: AvatarAnchorPointType.AAPT_NAME_TAG })
   Billboard.create(anchor, {})
 
   const plane = engine.addEntity()
-  Transform.create(plane, { parent: anchor, scale: TAG_SCALE })
+  Transform.create(plane, { parent: anchor, scale: Vector3.create(0, 0, 0) })
   MeshRenderer.setPlane(plane)
   UiCanvas.create(plane, { width: CANVAS_W, height: CANVAS_H, color: Color4.Clear() })
   ReactEcsRenderer.setTextureRenderer(plane, tagElement(userId))
@@ -292,160 +289,93 @@ const initFlag = globalThis as { __bevyNametagsStarted?: boolean }
 export function initNametags(): void {
   if (initFlag.__bevyNametagsStarted === true) return // never stack the systems twice
   initFlag.__bevyNametagsStarted = true
-  // BUILD MARKER — to tell whether the engine is actually running this build. If you DON'T see this in
-  // the console after a reload, the scene is stale (cached / not reloaded), not a code bug.
-  console.log('[nametags] BUILD=addrcache+sweep+stripmesh+cooldown')
+  console.log('[nametags] BUILD=pool+showhide+nodestroy')
 
-  const tags = new Map<string, Entity>() // canonical address → anchor (exactly one tag per wallet)
-  // PLANE entity → address. The size + sweep systems identify a tag's plane by its OWN id, NOT via its
-  // parent anchor — because DCL recycles entity ids, so a removed anchor's id can be reused by a new
-  // tag, making a STALE duplicate plane's parent resolve to a valid anchor and escape cleanup (the "two
-  // kurd tags" bug). Keying off the plane's own id, a duplicate is always untracked → hidden + removed.
-  const planeUid = new Map<Entity, string>()
-  const anchorPlane = new Map<Entity, Entity>() // anchor → its plane (to drop both from tracking on removal)
+  // THE POOL: one entity per wallet, created on first sight and kept FOREVER (never destroyed — entity
+  // removal doesn't work here, which is what made tags pile up). show() reveals + attaches it; hide()
+  // detaches + parks it at y=-1000 with scale 0. Exactly one entity per address that is only ever shown or
+  // hidden ⇒ duplicates and the accumulating-pile bug are structurally impossible.
+  const pool = new Map<string, { anchor: Entity; plane: Entity; userId: string }>()
+  const shown = new Set<string>() // addresses whose tag is currently visible
   const absent = new Map<string, number>() // key → consecutive reconcile ticks the avatar has been gone
-  const bornSec = new Map<string, number>() // key → seconds since the tag was created (rebind heal window)
+  const bornSec = new Map<string, number>() // key → seconds shown (window in which we re-assert the attach)
+  const pendingShows: string[] = []
+  let knownSelf: string | undefined
+
   const selfId = (): string | undefined => {
     const id = getPlayer()?.userId
     return id != null && id !== '' ? id : undefined
   }
-
-  // Is this avatar actually in-world (does it have a PlayerIdentityData entity)? The OLD-SCENE INVARIANT:
-  // only ever create a tag for a present avatar, so AvatarAttach always has a shape to bind to and the tag
-  // can never strand at the origin as a giant. (Our previous reconcile tagged comms-only/far avatars that
-  // weren't really here → AvatarAttach had nothing to bind → stranded giant. That's the bug we're killing.)
+  // Is this avatar actually in-world (has a PlayerIdentityData entity)? Only reveal a tag for a present
+  // avatar so AvatarAttach has a shape to bind to (else it would strand).
   const avatarPresent = (key: string): boolean => {
     for (const [, data] of engine.getEntitiesWith(PlayerIdentityData)) if (canon(data.address) === key) return true
     return false
   }
 
-  // Is there ALREADY a live nametag plane for this player? Checked before creating one so two sources
-  // (onEnterScene + the deferred flush, or a re-enter) can never spawn a second plane even if the `tags`
-  // map momentarily lost its entry — the duplicate "giant pill" was exactly a second plane for a player
-  // who already had one. We scan live entities (not just `tags`) because that is the real source of truth.
-  const hasLivePlane = (key: string): boolean => {
-    for (const [plane] of engine.getEntitiesWith(UiCanvas, MeshRenderer)) {
-      const uid = planeUid.get(plane)
-      if (uid != null && canon(uid) === key) return true
-    }
-    return false
-  }
-  // Destroy one tag's plane AND its anchor — bulletproof. removeEntityWithChildren has proven unreliable
-  // for an avatar-ATTACHED entity (the engine reparents it, and the despawn doesn't take), which let a
-  // duplicate pill survive every sweep. So FIRST strip what makes it visible and what keeps it positioned
-  // — delete the MeshRenderer (the rendered quad → instantly invisible) and the AvatarAttach (detach so
-  // nothing re-places it) and collapse its scale — THEN despawn. Even if the despawn is ignored, the
-  // duplicate is already gone from the screen. Drops the plane→addr entry too.
-  const dropPlane = (plane: Entity): void => {
-    const anchor = Transform.getOrNull(plane)?.parent as Entity | undefined
-    planeUid.delete(plane)
+  // INIT: a previous scene instance may have leaked nametag planes (we can't destroy them — removal is
+  // broken — so make them invisible). Pool entities are created AFTER this, so they're untouched.
+  for (const [plane] of engine.getEntitiesWith(UiCanvas, MeshRenderer)) {
     MeshRenderer.deleteFrom(plane)
-    const pt = Transform.getMutableOrNull(plane)
-    if (pt != null) pt.scale = Vector3.create(0, 0, 0)
-    if (anchor != null) {
-      AvatarAttach.deleteFrom(anchor)
-      engine.removeEntityWithChildren(anchor)
-    }
-    engine.removeEntityWithChildren(plane)
+    const t = Transform.getMutableOrNull(plane)
+    if (t != null) t.scale = Vector3.create(0, 0, 0)
+    engine.removeEntityWithChildren(plane) // try anyway, in case it does work in some builds
   }
 
-  // We must NEVER create a tag for our own avatar (the old scene skipped self entirely — you don't see
-  // your own nametag). selfId() is briefly null at boot, so an add() that arrives before we know who we
-  // are is QUEUED, not created, then flushed once self is known. This is what guarantees self is filtered
-  // out: the boot-race add() that used to slip through as a giant centred self pill now waits.
-  const pendingAdds: string[] = []
-  let knownSelf: string | undefined
-  const add = (userId: string): void => {
+  // Reveal (and bind) a wallet's pooled tag. selfId() is briefly null at boot, so a show that arrives
+  // before we know who we are is QUEUED, then flushed once self is known — this is what filters out our
+  // own avatar (we never tag the local player).
+  const show = (userId: string): void => {
+    if (userId === '') return
     const key = canon(userId)
-    if (userId === '' || tags.has(key) || hasLivePlane(key)) return
     const me = knownSelf ?? selfId()
     if (me == null) {
-      if (!pendingAdds.includes(userId)) pendingAdds.push(userId)
+      if (!pendingShows.includes(userId)) pendingShows.push(userId)
       return
     }
     if (canon(me) === key) return // never tag the local player
-    if (!avatarPresent(key)) return
-    const { anchor, plane } = createTag(userId)
-    tags.set(key, anchor)
-    planeUid.set(plane, userId)
-    anchorPlane.set(anchor, plane)
+    if (!shown.has(key) && !avatarPresent(key)) return // don't reveal for an avatar that isn't really here
+    let entry = pool.get(key)
+    if (entry == null) {
+      const built = createPoolEntry(userId)
+      entry = { anchor: built.anchor, plane: built.plane, userId }
+      pool.set(key, entry)
+      resolveClaimed(userId)
+    }
+    AvatarAttach.createOrReplace(entry.anchor, { avatarId: entry.userId, anchorPointId: AvatarAnchorPointType.AAPT_NAME_TAG })
+    const t = Transform.getMutableOrNull(entry.plane)
+    if (t != null) t.scale = TAG_SCALE
+    if (!shown.has(key)) bornSec.set(key, 0)
+    shown.add(key)
     absent.set(key, 0)
-    bornSec.set(key, 0)
-    resolveClaimed(userId)
   }
-  const removeByKey = (key: string): void => {
-    absent.delete(key)
+
+  // Hide (don't destroy) a wallet's pooled tag: detach it and park it out of sight at scale 0.
+  const hide = (key: string): void => {
+    shown.delete(key)
     bornSec.delete(key)
-    const anchor = tags.get(key)
-    if (anchor == null) return
-    tags.delete(key)
-    const plane = anchorPlane.get(anchor)
-    anchorPlane.delete(anchor)
-    if (plane != null) dropPlane(plane)
-    else engine.removeEntityWithChildren(anchor)
+    const entry = pool.get(key)
+    if (entry == null) return
+    AvatarAttach.deleteFrom(entry.anchor)
+    const at = Transform.getMutableOrNull(entry.anchor)
+    if (at != null) at.position = Vector3.create(0, -1000, 0)
+    const pt = Transform.getMutableOrNull(entry.plane)
+    if (pt != null) pt.scale = Vector3.create(0, 0, 0)
   }
 
-  // Clear any nametag plane left over from a previous scene instance before we start fresh.
-  for (const [plane] of engine.getEntitiesWith(UiCanvas, MeshRenderer)) engine.removeEntityWithChildren(plane)
-
-  // LIFECYCLE: create a tag when a player ENTERS the scene. We deliberately do NOT remove on onLeaveScene
-  // — a livekit reconnect fires leave→enter in quick succession, and destroy-then-recreate was the source
-  // of the duplicate (the deferred destroy raced the recreate). Removal is instead driven by the engine's
-  // PlayerIdentityData presence in the reconcile below, and add() is a no-op when the address is already
-  // cached, so a blip can't churn a tag. onLeaveScene only clears the stale chat bubble.
-  onEnterScene((player) => add(player.userId))
-  onLeaveScene((userId) => bubbles.delete(canon(userId)))
-
-  // Learn the local player's id as soon as it's available, then flush the adds that arrived before we
-  // knew it (deferred so they couldn't accidentally tag our own avatar). Stops once self is known.
+  // Learn the local player's id, then flush the shows deferred while it was unknown.
   engine.addSystem(() => {
     if (knownSelf != null) return
     const me = selfId()
     if (me == null) return
     knownSelf = me
-    for (const u of pendingAdds.splice(0)) add(u)
+    for (const u of pendingShows.splice(0)) show(u)
   })
 
-  // REMOVAL + REBIND (~1s), driven by the engine's PlayerIdentityData presence (its source of truth),
-  // NOT the flaky leave/enter callbacks. A cached tag whose address is no longer present — or is the local
-  // player — is destroyed. We also re-assert each surviving tag's AvatarAttach so one created before its
-  // avatar's shape loaded (parked at y=-1000) re-binds once the shape exists. This keeps the address→tag
-  // cache honest; the 0.1s sweep below is what actually guarantees ONE plane per address on screen.
-  let racc = 0
-  engine.addSystem((dt: number) => {
-    racc += dt
-    if (racc < 1) return
-    racc = 0
-    const me = selfId()
-    const meKey = me != null ? canon(me) : undefined
-    const present = new Set<string>()
-    for (const [, data] of engine.getEntitiesWith(PlayerIdentityData)) if (data.address !== '') present.add(canon(data.address))
-    for (const key of [...tags.keys()]) {
-      if (key === meKey) { removeByKey(key); continue } // never tag the local player — remove at once
-      // COOLDOWN: don't remove the instant the avatar drops out of the presence query — comms/livekit
-      // blips flicker a present player in and out, which was making tags blink. Only remove after the
-      // avatar has been absent for 3 consecutive checks (~3s); any reappearance resets the counter.
-      if (present.has(key)) { absent.set(key, 0) }
-      else {
-        const n = (absent.get(key) ?? 0) + 1
-        absent.set(key, n)
-        if (n >= 3) removeByKey(key)
-        continue
-      }
-      // Re-assert AvatarAttach ONLY during the first few seconds of a tag's life — the window in which a
-      // tag created before its avatar's shape loaded needs the engine to retry the bind. Re-asserting
-      // forever was unnecessary and a possible source of periodic rebind flicker.
-      const age = (bornSec.get(key) ?? 0) + 1
-      bornSec.set(key, age)
-      if (age <= 6) {
-        const anchor = tags.get(key)
-        const plane = anchor != null ? anchorPlane.get(anchor) : undefined
-        const userId = plane != null ? planeUid.get(plane) : undefined
-        if (anchor != null && userId != null) AvatarAttach.createOrReplace(anchor, { avatarId: userId, anchorPointId: AvatarAnchorPointType.AAPT_NAME_TAG })
-      }
-    }
-    console.log(`[nametags] census self=${meKey?.slice(-6) ?? 'none'} cached=${[...tags.keys()].map((k) => k.slice(-6)).join(',') || '(none)'}`)
-  })
+  // Reveal on enter. We do NOT hide on leave — a livekit blip fires leave→enter and would just flicker the
+  // tag; presence (below) drives hiding instead. onLeaveScene only clears the stale chat bubble.
+  onEnterScene((player) => show(player.userId))
+  onLeaveScene((userId) => bubbles.delete(canon(userId)))
 
   // Age out chat bubbles: the scene sandbox has no wall clock, so expire by accumulated frame time.
   engine.addSystem((dt: number) => {
@@ -456,11 +386,39 @@ export function initNametags(): void {
     }
   })
 
-  // SWEEP + VISIBILITY (~0.1s) — THE GUARANTEE. Build the set of "blessed" planes (the one cached tag per
-  // address, via tags → anchorPlane) and DESTROY every other live nametag plane. Any second plane for a
-  // player — churn from a livekit blip, id recycling, a leftover from a previous scene instance — is by
-  // definition not the cached one, so it's gone within 0.1s. There is no path to a visible duplicate that
-  // survives this. For the survivors we only fade opacity by distance; the scale is fixed at creation.
+  // PRESENCE + REBIND (~1s), driven by the engine's PlayerIdentityData (its source of truth), NOT the
+  // flaky leave/enter callbacks. Hide a shown tag for the local player, or for an avatar that's been
+  // absent for ~3 consecutive checks (a cooldown so comms blips don't flicker it). Re-assert the attach
+  // for the first few seconds so a tag shown before its avatar's shape loaded binds once it exists.
+  let racc = 0
+  engine.addSystem((dt: number) => {
+    racc += dt
+    if (racc < 1) return
+    racc = 0
+    const me = selfId()
+    const meKey = me != null ? canon(me) : undefined
+    const present = new Set<string>()
+    for (const [, data] of engine.getEntitiesWith(PlayerIdentityData)) if (data.address !== '') present.add(canon(data.address))
+    for (const key of [...shown]) {
+      if (key === meKey) { hide(key); continue }
+      if (present.has(key)) { absent.set(key, 0) }
+      else {
+        const n = (absent.get(key) ?? 0) + 1
+        absent.set(key, n)
+        if (n >= 3) hide(key)
+        continue
+      }
+      const age = (bornSec.get(key) ?? 0) + 1
+      bornSec.set(key, age)
+      if (age <= 6) {
+        const e = pool.get(key)
+        if (e != null) AvatarAttach.createOrReplace(e.anchor, { avatarId: e.userId, anchorPointId: AvatarAnchorPointType.AAPT_NAME_TAG })
+      }
+    }
+    console.log(`[nametags] census self=${meKey?.slice(-6) ?? 'none'} pool=${pool.size} shown=${[...shown].map((k) => k.slice(-6)).join(',') || '(none)'}`)
+  })
+
+  // OPACITY (~0.1s): fade shown tags by distance. No sweep needed — the pool can't produce extra planes.
   const lastOpacity = new Map<number, number>()
   let sacc2 = 0
   let opTick = 0
@@ -468,26 +426,21 @@ export function initNametags(): void {
     sacc2 += dt
     if (sacc2 < 0.1) return
     sacc2 = 0
-    const blessed = new Set<Entity>()
-    for (const anchor of tags.values()) {
-      const p = anchorPlane.get(anchor)
-      if (p != null) blessed.add(p)
-    }
     const cam = Transform.getOrNull(engine.CameraEntity)?.position
+    if (cam == null) return
     opTick = (opTick + 1) % 3
-    const doOpacity = opTick === 0
-    for (const [plane] of engine.getEntitiesWith(UiCanvas, MeshRenderer)) {
-      if (!blessed.has(plane)) { dropPlane(plane); continue } // not the cached tag → duplicate/orphan → destroy
-      if (cam == null || !doOpacity) continue
-      const uid = planeUid.get(plane)
-      const avPos = uid != null ? getPlayer({ userId: uid })?.position : undefined
+    if (opTick !== 0) return
+    for (const key of shown) {
+      const e = pool.get(key)
+      if (e == null) continue
+      const avPos = getPlayer({ userId: e.userId })?.position
       if (avPos == null) continue
       const dist = Math.hypot(avPos.x - cam.x, avPos.y + NAMETAG_HEIGHT - cam.y, avPos.z - cam.z)
       const opacity = dist > MAX_DIST ? 0 : Math.max(0, Math.min(1, (MAX_DIST - dist) / (MAX_DIST - FADE_START)))
-      const prev = lastOpacity.get(plane)
+      const prev = lastOpacity.get(e.plane)
       if (prev == null || Math.abs(prev - opacity) >= 0.02) {
-        lastOpacity.set(plane, opacity)
-        setTagMaterial(plane, opacity)
+        lastOpacity.set(e.plane, opacity)
+        setTagMaterial(e.plane, opacity)
       }
     }
   })
