@@ -418,7 +418,6 @@ export function initNametags(): void {
         if (e != null) AvatarAttach.createOrReplace(e.anchor, { avatarId: e.userId, anchorPointId: AvatarAnchorPointType.AAPT_NAME_TAG })
       }
     }
-    console.log(`[nametags] census self=${meKey?.slice(-6) ?? 'none'} pool=${pool.size} shown=${[...shown].map((k) => k.slice(-6)).join(',') || '(none)'}`)
   })
 
   // OPACITY (~0.1s): fade shown tags by distance. No sweep needed — the pool can't produce extra planes.
