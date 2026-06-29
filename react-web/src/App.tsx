@@ -29,7 +29,9 @@ import type { Profile } from './engine/protocol'
 import { FpsMeter } from './features/debug/FpsMeter'
 import { LoadingAndLogin } from './features/login/LoadingAndLogin'
 import { SceneLoadingOverlay } from './features/session/SceneLoadingOverlay'
+import { ExitConfirm } from './features/session/ExitConfirm'
 import { useEngineSession } from './features/session/useEngineSession'
+import { useExitGuard } from './lib/useExitGuard'
 import { useHudScale } from './lib/useHudScale'
 import { useGlobalHotkey } from './lib/useGlobalHotkey'
 import { useMenuShortcuts } from './lib/useMenuShortcuts'
@@ -83,6 +85,8 @@ function Hud(): React.JSX.Element {
 
   const session = useEngineSession(createDriver)
   useMenuShortcuts(session) // [O]/[M]/[I]/[G]/[P]/[B]/[L]/[T] hints in the nav + sidebar
+  // Warn before the back gesture / Back button unloads the engine (only once in-world).
+  const exitGuard = useExitGuard(session.phase === 'entering' || session.phase === 'world')
 
   // Passport (View Profile). Self → the local rich profile; others → the fetched
   // passport (requestUserProfile on open), falling back to identity-only while it loads.
@@ -245,6 +249,8 @@ function Hud(): React.JSX.Element {
           }
         />
       )}
+      {/* Confirm before the back gesture / Back button unloads the engine. */}
+      {exitGuard.confirming && <ExitConfirm onStay={exitGuard.stay} onLeave={exitGuard.leave} />}
     </>
   )
 }
