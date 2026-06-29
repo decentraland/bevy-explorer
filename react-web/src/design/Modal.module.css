@@ -7,6 +7,18 @@
   }
 }
 
+/* Lovely entrance: fade + a spring scale-pop that settles at the DPI scale. */
+@keyframes modalPop {
+  from {
+    opacity: 0;
+    transform: scale(calc(var(--ui-scale) * 0.94));
+  }
+  to {
+    opacity: 1;
+    transform: scale(var(--ui-scale));
+  }
+}
+
 .backdrop {
   position: fixed;
   inset: 0;
@@ -34,7 +46,7 @@
   /* DPI-match the rest of the HUD (scaled by --ui-scale = innerHeight/1080), else the modal
      renders oversized against the scaled-down chrome. Centred, so scaling keeps it centred. */
   transform: scale(var(--ui-scale));
-  animation: fadeIn 0.3s linear;
+  animation: modalPop 0.26s var(--ease-spring);
 }
 .card:focus,
 .card:focus-visible {
