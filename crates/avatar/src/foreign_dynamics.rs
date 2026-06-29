@@ -46,6 +46,9 @@ struct PlayerTargetPosition {
     // matching emote (DoubleJump / Glide); None resets a previously-applied remote state
     // back to Idle so the picker reclaims.
     remote_move_kind: Option<MoveKind>,
+    /// This target came from a teleport (discontinuous reposition) — snap straight to it rather than
+    /// interpolating across the gap. Cleared by the next ordinary movement packet.
+    teleport: bool,
 }
 
 /// Pending scene-driven animation for a foreign player, fed by [`PlayerSceneAnimEvent`] (which rides
@@ -96,12 +99,18 @@ fn update_foreign_user_target_position(
                 // server stopped republishing, now moving again), not a garbage future stamp. Treat
                 // a large backward jump as a server restart (re-sync rather than freeze), and reject
                 // small backward steps as reordered/duplicate datagrams.
-                let is_valid = pos.timestamp.is_none_or(|pts| {
-                    let forward = ev.timestamp - pts;
-                    let is_forward = forward > 0.0;
-                    let is_restart = forward < -TIMESTAMP_RESET_SECS;
-                    is_forward || is_restart
-                });
+                // A teleport is an authoritative discontinuity — always valid, bypassing the
+                // monotonic-timestamp gate. That gate exists to drop reordered / duplicate deltas;
+                // a teleport's server tick may not advance past the delta that landed just before it
+                // (e.g. after an out-of-world gap), and dropping it would leave the avatar
+                // interpolating across the jump instead of snapping.
+                let is_valid = ev.teleport
+                    || pos.timestamp.is_none_or(|pts| {
+                        let forward = ev.timestamp - pts;
+                        let is_forward = forward > 0.0;
+                        let is_restart = forward < -TIMESTAMP_RESET_SECS;
+                        is_forward || is_restart
+                    });
                 if is_valid {
                     const LAG_DECAY_SECS: f32 = 1.5;
                     let delta = ev.time - pos.time;
@@ -117,6 +126,7 @@ fn update_foreign_user_target_position(
                         update_freq,
                         grounded: ev.grounded,
                         remote_move_kind: ev.remote_move_kind,
+                        teleport: ev.teleport,
                     };
                     // Movement trigger: the first packet after an anim arrives arms it; the next one
                     // fires it, in sync with the motion (see `PendingSceneAnim`).
@@ -149,6 +159,7 @@ fn update_foreign_user_target_position(
                         update_freq: 0.01,
                         grounded: ev.grounded,
                         remote_move_kind: ev.remote_move_kind,
+                        teleport: ev.teleport,
                     },
                     AvatarDynamicState::default(),
                     PendingSceneAnim::default(),
@@ -213,7 +224,9 @@ fn update_foreign_user_actual_position(
             target.translation, actual.translation
         );
 
-        if (actual.translation - target.translation).length() > 125.0 {
+        // Snap (no interpolation) for a teleport, or when the target is implausibly far — both are
+        // discontinuous repositions rather than travel.
+        if target.teleport || (actual.translation - target.translation).length() > 125.0 {
             actual.translation = target.translation;
             dynamic_state.velocity = target.velocity.unwrap_or_default();
         }
