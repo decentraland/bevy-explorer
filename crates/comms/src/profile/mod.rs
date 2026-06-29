@@ -212,14 +212,16 @@ pub fn setup_primary_profile(
                 },
             );
 
-            // Push the profile update over PRIMARY only (not Archipelago/scene-room). The websocket
-            // dev server gets the full `ProfileResponse` as before; Pulse gets a
-            // `ProfileVersionAnnouncement` (the peer refetches from catalyst). Reset the keepalive
+            // Push the profile update over PRIMARY + LiveKit + scene room (not Archipelago). The
+            // websocket dev server, LiveKit and scene room get the full `ProfileResponse` as before;
+            // Pulse gets a `ProfileVersionAnnouncement` (the peer refetches from catalyst). The full
+            // profile rides every data transport so guests — whose profiles never deploy to catalyst
+            // — still reach peers on a Pulse realm, whichever rooms they share. Reset the keepalive
             // timer so the periodic re-announce below doesn't immediately fire again.
             debug!("announcing profile new version {:?}", profile.version);
             broadcast(
                 transports.iter(),
-                BroadcastTarget::PRIMARY,
+                BroadcastTarget::PRIMARY | BroadcastTarget::LIVEKIT | BroadcastTarget::SCENE_ROOM,
                 false,
                 ProfileUpdate {
                     serialized_profile: serde_json::to_string(&profile.content).unwrap(),
@@ -255,11 +257,17 @@ pub fn setup_primary_profile(
             let now = time.elapsed_secs();
             if now > *last_announce + 5.0 {
                 debug!("announcing profile v {}", current_profile.version);
-                // Avatar state rides PRIMARY (websocket + Pulse), matching movement/emote — Pulse
-                // converts this to a `ProfileVersionAnnouncement`. Not Archipelago/scene-room.
+                // Avatar state rides PRIMARY (websocket + Pulse) + LiveKit + scene room, matching
+                // movement/emote — Pulse converts this to a `ProfileVersionAnnouncement`, the others
+                // carry it as an rfc4 `AnnounceProfileVersion`. Not Archipelago. The announcement over
+                // a real data transport is what makes a peer adopt that transport as their
+                // `profile_transport`, so guest profile request/response can flow even when state
+                // arrives over Pulse.
                 broadcast(
                     transports.iter(),
-                    BroadcastTarget::PRIMARY,
+                    BroadcastTarget::PRIMARY
+                        | BroadcastTarget::LIVEKIT
+                        | BroadcastTarget::SCENE_ROOM,
                     false,
                     rfc4::AnnounceProfileVersion {
                         profile_version: current_profile.version,
@@ -372,7 +380,10 @@ fn request_missing_profiles(
             }
         }
 
-        if let Ok(transport) = transports.get(player.transport_id) {
+        if let Some(transport) = player
+            .profile_transport
+            .and_then(|t| transports.get(t).ok())
+        {
             let request = rfc4::Packet {
                 message: Some(rfc4::packet::Message::ProfileRequest(
                     rfc4::ProfileRequest {
@@ -420,12 +431,16 @@ pub fn process_profile_events(
                         let Ok((player, _)) = players.get(ev.sender) else {
                             continue;
                         };
-                        if last_sent_request.get(&player.transport_id).is_some() {
+                        let Some(profile_transport) = player.profile_transport else {
+                            debug!("not sending profile, no profile transport");
+                            continue;
+                        };
+                        if last_sent_request.get(&profile_transport).is_some() {
                             debug!("ignoring request for my profile (sent recently)");
                             continue;
                         }
 
-                        let Ok(transport) = transports.get(player.transport_id) else {
+                        let Ok(transport) = transports.get(profile_transport) else {
                             debug!("not sending profile, no transport");
                             continue;
                         };
@@ -450,7 +465,7 @@ pub fn process_profile_events(
                         let _ = transport
                             .sender
                             .try_send(NetworkMessage::reliable(&response));
-                        last_sent_request.insert(player.transport_id, time.elapsed_secs());
+                        last_sent_request.insert(profile_transport, time.elapsed_secs());
                     }
                 }
             }

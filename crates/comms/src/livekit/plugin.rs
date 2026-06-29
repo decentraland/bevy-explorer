@@ -61,9 +61,10 @@ fn start_livekit(mut commands: Commands, mut room_events: EventReader<StartLivek
         let (sender, receiver) = tokio::sync::mpsc::channel(1000);
         let (control_sender, control_receiver) = tokio::sync::mpsc::channel(128);
 
-        // Profile version is announced over PRIMARY (Pulse, plus the websocket dev server) now — the
-        // Pulse handshake carries the connect-time version and `profile::mod` re-announces it; no
-        // LiveKit copy (it would double up with the Pulse `ProfileVersionAnnouncement`).
+        // No connect-time profile announce here — `profile::mod` periodically announces the version
+        // over PRIMARY (Pulse + websocket dev server) and LiveKit, and the Pulse handshake carries
+        // the connect-time version. The LiveKit copy also lets peers adopt this transport as their
+        // `profile_transport` so guest profile request/response can flow on a Pulse realm.
 
         commands.entity(ev.entity).try_insert((
             Transport {
