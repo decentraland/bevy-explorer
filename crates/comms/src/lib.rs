@@ -106,7 +106,6 @@ pub enum TransportType {
     WebsocketRoom,
     Livekit,
     Archipelago,
-    SceneRoom,
     /// The realm's high-frequency avatar-state carrier (UDP/ENet). A real transport entity whose
     /// channel feeds a bridge that converts rfc4 bytes into Pulse `ClientMessage`s; spawned only on
     /// livekit realms (see `pulse::plugin`).
@@ -128,8 +127,6 @@ bitflags::bitflags! {
         const LIVEKIT = 1 << 1;
         /// The Archipelago island-assignment transport.
         const ARCHIPELAGO = 1 << 2;
-        /// The per-scene messagebus room.
-        const SCENE_ROOM = 1 << 3;
         /// The realm's Pulse avatar-state transport (only carries convertible avatar state).
         const PULSE = 1 << 4;
 
@@ -144,7 +141,6 @@ impl BroadcastTarget {
             TransportType::WebsocketRoom => BroadcastTarget::WEBSOCKET,
             TransportType::Livekit => BroadcastTarget::LIVEKIT,
             TransportType::Archipelago => BroadcastTarget::ARCHIPELAGO,
-            TransportType::SceneRoom => BroadcastTarget::SCENE_ROOM,
             TransportType::Pulse => BroadcastTarget::PULSE,
         }
     }
@@ -526,7 +522,7 @@ fn connect_scene_room(
             None => *gatekeeper_task = Some(task),
             Some(Err(e)) => warn!("failed to get scene room from gatekeeper: {e}"),
             Some(Ok((adapter, ev))) => {
-                if let Some(ent) = manager.connect(&adapter) {
+                if let Some(ent) = manager.connect_scene(&adapter) {
                     warn!("added scene channel {ev:?}");
                     commands
                         .entity(ent)
@@ -555,7 +551,22 @@ pub struct AdapterManager<'w, 's> {
 }
 
 impl AdapterManager<'_, '_> {
+    /// Connect the realm's island comms. A livekit island also brings up the realm's Pulse
+    /// avatar-state transport.
     pub fn connect(&mut self, adapter: &str) -> Option<Entity> {
+        self.connect_inner(adapter, true)
+    }
+
+    /// Connect a per-scene messagebus room. Even when it resolves to livekit it must NOT bring up
+    /// Pulse: Pulse is the *realm's* avatar-state transport, not a per-scene room. A scene room is
+    /// distinguished only by its [`SceneRoom`] marker — its `TransportType` is its wire protocol
+    /// (livekit/ws-room), so the realm island and a livekit scene room are otherwise identical here.
+    pub fn connect_scene(&mut self, adapter: &str) -> Option<Entity> {
+        self.connect_inner(adapter, false)
+    }
+
+    #[cfg_attr(not(feature = "livekit"), allow(unused_variables))]
+    fn connect_inner(&mut self, adapter: &str, is_realm_island: bool) -> Option<Entity> {
         let Some((protocol, address)) = adapter.split_once(':') else {
             warn!("unrecognised adapter string: {adapter}");
             return None;
@@ -579,10 +590,13 @@ impl AdapterManager<'_, '_> {
                     entity,
                     address: address.to_owned(),
                 });
-                // A livekit realm is a Pulse realm: (re)spawn the Pulse routing transport and
-                // announce the new realm. On the first such realm this also establishes the
-                // connection; on later ones it just re-teleports.
-                self.pulse_events.write(pulse::plugin::StartPulse);
+                // A livekit *realm island* is a Pulse realm: (re)spawn the Pulse routing transport
+                // and announce the new realm. On the first such realm this also establishes the
+                // connection; on later ones it just re-teleports. A livekit *scene room* lands here
+                // too but must not touch Pulse, hence the realm-island gate.
+                if is_realm_island {
+                    self.pulse_events.write(pulse::plugin::StartPulse);
+                }
                 return Some(entity);
             }
             #[cfg(not(feature = "livekit"))]
@@ -600,7 +614,7 @@ impl AdapterManager<'_, '_> {
             }
             "fixed-adapter" => {
                 // fixed-adapter should be ignored and we use the tail as the full protocol:address
-                return self.connect(address);
+                return self.connect_inner(address, is_realm_island);
             }
             _ => {
                 warn!("unrecognised adapter protocol: {protocol}");

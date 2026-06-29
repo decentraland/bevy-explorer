@@ -8,7 +8,7 @@
 //! once, regardless of whether the driver is the native ENet thread or the wasm WebTransport task.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use tokio::sync::mpsc;
 
@@ -151,10 +151,17 @@ pub struct PulseDriverChannels {
     pub outbound: mpsc::Receiver<PulseFrame>,
     pub inbound: mpsc::Sender<Vec<u8>>,
     pub status: mpsc::Sender<PulseStatus>,
+    /// Liveness handle for the realm's Pulse routing entity. A weak ref to the session's `Arc<()>`
+    /// anchor; the routing entity holds a strong clone while it exists, so `strong_count() > 1` means
+    /// "currently on a Pulse realm". The driver reads this to decide whether to surface inbound peer
+    /// state (it stays connected across realms either way). A `Weak` so the driver never keeps the
+    /// session alive, and a fresh one is handed to each rebuilt driver so reconnects don't lose it.
+    pub presence: Weak<()>,
 }
 
-/// Build a matched [`PulseLink`] / [`PulseDriverChannels`] pair.
-pub fn pulse_channels(capacity: usize) -> (PulseLink, PulseDriverChannels) {
+/// Build a matched [`PulseLink`] / [`PulseDriverChannels`] pair. `presence` is the driver's liveness
+/// handle (see [`PulseDriverChannels::presence`]).
+pub fn pulse_channels(capacity: usize, presence: Weak<()>) -> (PulseLink, PulseDriverChannels) {
     let (outbound_tx, outbound_rx) = mpsc::channel(capacity);
     let (inbound_tx, inbound_rx) = mpsc::channel(capacity);
     let (status_tx, status_rx) = mpsc::channel(16);
@@ -169,6 +176,7 @@ pub fn pulse_channels(capacity: usize) -> (PulseLink, PulseDriverChannels) {
             outbound: outbound_rx,
             inbound: inbound_tx,
             status: status_tx,
+            presence,
         },
     )
 }
