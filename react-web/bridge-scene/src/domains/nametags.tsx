@@ -312,7 +312,7 @@ export function initNametags(): void {
   initFlag.__bevyNametagsStarted = true
   // BUILD MARKER — to tell whether the engine is actually running this build. If you DON'T see this in
   // the console after a reload, the scene is stale (cached / not reloaded), not a code bug.
-  console.log(`[nametags] BUILD=noself+nativeattach+clamp${SIZE_CLAMP}`)
+  console.log(`[nametags] BUILD=noself+dedup+clamp${SIZE_CLAMP}`)
 
   const tags = new Map<string, Entity>() // canonical address → anchor (exactly one tag per wallet)
   // PLANE entity → address. The size + sweep systems identify a tag's plane by its OWN id, NOT via its
@@ -335,6 +335,25 @@ export function initNametags(): void {
     return false
   }
 
+  // Is there ALREADY a live nametag plane for this player? Checked before creating one so two sources
+  // (onEnterScene + the deferred flush, or a re-enter) can never spawn a second plane even if the `tags`
+  // map momentarily lost its entry — the duplicate "giant pill" was exactly a second plane for a player
+  // who already had one. We scan live entities (not just `tags`) because that is the real source of truth.
+  const hasLivePlane = (key: string): boolean => {
+    for (const [plane] of engine.getEntitiesWith(UiCanvas, MeshRenderer)) {
+      const uid = planeUid.get(plane)
+      if (uid != null && canon(uid) === key) return true
+    }
+    return false
+  }
+  // Remove one tag PLANE and its parent anchor outright (used by the reconcile). Drops the plane→addr
+  // entry; the reconcile rebuilds tags/anchorPlane wholesale, so we don't touch those here.
+  const dropPlane = (plane: Entity): void => {
+    const anchor = Transform.getOrNull(plane)?.parent as Entity | undefined
+    planeUid.delete(plane)
+    engine.removeEntityWithChildren(anchor ?? plane)
+  }
+
   // We must NEVER create a tag for our own avatar (the old scene skipped self entirely — you don't see
   // your own nametag). selfId() is briefly null at boot, so an add() that arrives before we know who we
   // are is QUEUED, not created, then flushed once self is known. This is what guarantees self is filtered
@@ -343,7 +362,7 @@ export function initNametags(): void {
   let knownSelf: string | undefined
   const add = (userId: string): void => {
     const key = canon(userId)
-    if (userId === '' || tags.has(key)) return
+    if (userId === '' || tags.has(key) || hasLivePlane(key)) return
     const me = knownSelf ?? selfId()
     if (me == null) {
       if (!pendingAdds.includes(userId)) pendingAdds.push(userId)
@@ -395,21 +414,59 @@ export function initNametags(): void {
     for (const u of pendingAdds.splice(0)) add(u)
   })
 
-  // CLEANUP (~1s, REMOVAL-ONLY): drop a tag whose avatar has left the world (backstops a missed
-  // onLeaveScene). It NEVER creates, so it can't reintroduce stranding. Also sweeps stray planes.
+  // RECONCILE (~1s): the authoritative backstop enforcing the invariant the user spelled out — EXACTLY
+  // ONE nametag per present foreign player, and NONE for the local player or anyone who has left. The
+  // incremental path can leave a SECOND tracked plane for a player (id recycling, or a tag made before the
+  // avatar finished rendering so its anchor never bound) — that is the giant duplicate, and because its
+  // key is "present" a removal-only cleanup never touches it. Here we scan every live tag plane, group by
+  // player, drop self/absent/orphan planes, and for any player carrying MORE THAN ONE plane we drop them
+  // all and recreate a single fresh tag (the avatar is fully present by now, so the new attach binds — no
+  // re-stranding). Tracking maps are rebuilt from the survivors so add() never spawns a duplicate again.
   let racc = 0
   engine.addSystem((dt: number) => {
     racc += dt
     if (racc < 1) return
     racc = 0
-    sweepOrphans()
+    const me = selfId()
+    const meKey = me != null ? canon(me) : undefined
     const present = new Set<string>()
     for (const [, data] of engine.getEntitiesWith(PlayerIdentityData)) if (data.address !== '') present.add(canon(data.address))
-    const me = selfId()
-    // Drop tags for avatars that have left — and ALWAYS drop one for the local player (a boot race must
-    // never leave our own giant pill on screen). sweepOrphans above already clears any untracked plane.
-    for (const key of [...tags.keys()]) {
-      if (!present.has(key) || (me != null && canon(me) === key)) removeByKey(key)
+
+    const byKey = new Map<string, Entity[]>()
+    for (const [plane] of engine.getEntitiesWith(UiCanvas, MeshRenderer)) {
+      const uid = planeUid.get(plane)
+      if (uid == null) { dropPlane(plane); continue } // orphan plane (untracked) → gone
+      const key = canon(uid)
+      const arr = byKey.get(key)
+      if (arr != null) arr.push(plane)
+      else byKey.set(key, [plane])
+    }
+
+    tags.clear()
+    anchorPlane.clear()
+    for (const [key, planes] of byKey) {
+      if (key === meKey || !present.has(key)) {
+        for (const p of planes) dropPlane(p) // self, or avatar left → no tag at all
+        continue
+      }
+      if (planes.length > 1) {
+        const userId = planeUid.get(planes[0]) // keep original casing to recreate
+        for (const p of planes) dropPlane(p) // nuke the duplicates…
+        if (userId != null && avatarPresent(key)) {
+          const { anchor, plane } = createTag(userId) // …and put back exactly one, freshly bound
+          tags.set(key, anchor)
+          planeUid.set(plane, userId)
+          anchorPlane.set(anchor, plane)
+        }
+        continue
+      }
+      // exactly one plane → keep it; just make the tracking maps agree with reality
+      const only = planes[0]
+      const anchor = Transform.getOrNull(only)?.parent as Entity | undefined
+      if (anchor != null) {
+        tags.set(key, anchor)
+        anchorPlane.set(anchor, only)
+      }
     }
   })
 
