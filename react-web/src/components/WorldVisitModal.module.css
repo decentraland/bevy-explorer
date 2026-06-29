@@ -18,6 +18,7 @@
   background: var(--modal-bg);
   box-shadow: var(--shadow-modal);
   text-align: center;
+  transform: scale(var(--ui-scale)); /* DPI-match the scaled HUD */
 }
 .close {
   position: absolute;

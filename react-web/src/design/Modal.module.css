@@ -31,6 +31,9 @@
   box-shadow: var(--shadow-modal);
   color: var(--text);
   max-width: 100%;
+  /* DPI-match the rest of the HUD (scaled by --ui-scale = innerHeight/1080), else the modal
+     renders oversized against the scaled-down chrome. Centred, so scaling keeps it centred. */
+  transform: scale(var(--ui-scale));
   animation: fadeIn 0.3s linear;
 }
 .card:focus,

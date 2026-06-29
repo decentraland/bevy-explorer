@@ -22,6 +22,7 @@
   color: #fff;
   background: var(--modal-bg);
   box-shadow: var(--shadow-modal);
+  transform: scale(var(--ui-scale)); /* DPI-match the scaled HUD */
 }
 .title {
   margin: 0 0 24px;
@@ -213,6 +214,7 @@
   box-shadow: var(--shadow-modal);
   padding: 32px 28px;
   text-align: center;
+  transform: scale(var(--ui-scale)); /* DPI-match the scaled HUD */
 }
 .gateArt {
   color: var(--brand);

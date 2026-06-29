@@ -23,6 +23,7 @@
   color: #fff;
   background: var(--modal-bg);
   box-shadow: var(--shadow-modal);
+  transform: scale(var(--ui-scale)); /* DPI-match the scaled HUD */
 }
 .icon {
   display: flex;
