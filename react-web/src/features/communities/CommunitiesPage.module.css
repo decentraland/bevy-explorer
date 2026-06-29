@@ -100,7 +100,7 @@
   align-items: center;
   gap: 10px;
   padding: 6px 8px;
-  border-radius: var(--r-md);
+  border-radius: var(--r-control);
   cursor: pointer;
 }
 .sideRow:hover {
@@ -138,15 +138,15 @@
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--white-10);
-  border-radius: var(--r-lg);
+  border-radius: var(--r-card);
   background: rgba(0, 0, 0, 0.4); /* translucent body, like PlaceCard — reads as a card on the purple page */
   cursor: pointer;
   transition: transform var(--dur-fast) ease, border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
 }
 .card:hover {
-  border-color: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.28);
   box-shadow: var(--shadow-panel);
-  transform: translateY(-2px);
+  transform: translateY(-3px);
 }
 .cover {
   position: relative;
@@ -154,6 +154,15 @@
   align-items: center;
   justify-content: center;
   aspect-ratio: 16 / 10;
+  overflow: hidden;
+}
+/* Sheen at the top + shade at the bottom so a flat colour reads as a banner (like dcl-react-ui). */
+.cover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, transparent 32%, rgba(0, 0, 0, 0.28) 100%);
+  pointer-events: none;
 }
 .coverImg {
   width: 100%;
@@ -163,7 +172,8 @@
 .coverInitial {
   font-size: 44px;
   font-weight: 800;
-  color: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
 }
 .cardBody {
   display: flex;
