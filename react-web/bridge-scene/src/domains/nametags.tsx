@@ -294,7 +294,7 @@ export function initNametags(): void {
   initFlag.__bevyNametagsStarted = true
   // BUILD MARKER — to tell whether the engine is actually running this build. If you DON'T see this in
   // the console after a reload, the scene is stale (cached / not reloaded), not a code bug.
-  console.log('[nametags] BUILD=addrcache+blessedsweep+presence')
+  console.log('[nametags] BUILD=addrcache+sweep+stripmesh+cooldown')
 
   const tags = new Map<string, Entity>() // canonical address → anchor (exactly one tag per wallet)
   // PLANE entity → address. The size + sweep systems identify a tag's plane by its OWN id, NOT via its
@@ -303,6 +303,8 @@ export function initNametags(): void {
   // kurd tags" bug). Keying off the plane's own id, a duplicate is always untracked → hidden + removed.
   const planeUid = new Map<Entity, string>()
   const anchorPlane = new Map<Entity, Entity>() // anchor → its plane (to drop both from tracking on removal)
+  const absent = new Map<string, number>() // key → consecutive reconcile ticks the avatar has been gone
+  const bornSec = new Map<string, number>() // key → seconds since the tag was created (rebind heal window)
   const selfId = (): string | undefined => {
     const id = getPlayer()?.userId
     return id != null && id !== '' ? id : undefined
@@ -328,14 +330,23 @@ export function initNametags(): void {
     }
     return false
   }
-  // Destroy one tag's plane AND its anchor. We remove the PLANE itself directly (not just the parent
-  // anchor) — relying on the parent→child cascade was letting a duplicate's visible plane survive after
-  // its anchor was removed. Drops the plane→addr entry too.
+  // Destroy one tag's plane AND its anchor — bulletproof. removeEntityWithChildren has proven unreliable
+  // for an avatar-ATTACHED entity (the engine reparents it, and the despawn doesn't take), which let a
+  // duplicate pill survive every sweep. So FIRST strip what makes it visible and what keeps it positioned
+  // — delete the MeshRenderer (the rendered quad → instantly invisible) and the AvatarAttach (detach so
+  // nothing re-places it) and collapse its scale — THEN despawn. Even if the despawn is ignored, the
+  // duplicate is already gone from the screen. Drops the plane→addr entry too.
   const dropPlane = (plane: Entity): void => {
     const anchor = Transform.getOrNull(plane)?.parent as Entity | undefined
     planeUid.delete(plane)
+    MeshRenderer.deleteFrom(plane)
+    const pt = Transform.getMutableOrNull(plane)
+    if (pt != null) pt.scale = Vector3.create(0, 0, 0)
+    if (anchor != null) {
+      AvatarAttach.deleteFrom(anchor)
+      engine.removeEntityWithChildren(anchor)
+    }
     engine.removeEntityWithChildren(plane)
-    if (anchor != null) engine.removeEntityWithChildren(anchor)
   }
 
   // We must NEVER create a tag for our own avatar (the old scene skipped self entirely — you don't see
@@ -358,9 +369,13 @@ export function initNametags(): void {
     tags.set(key, anchor)
     planeUid.set(plane, userId)
     anchorPlane.set(anchor, plane)
+    absent.set(key, 0)
+    bornSec.set(key, 0)
     resolveClaimed(userId)
   }
   const removeByKey = (key: string): void => {
+    absent.delete(key)
+    bornSec.delete(key)
     const anchor = tags.get(key)
     if (anchor == null) return
     tags.delete(key)
@@ -406,12 +421,28 @@ export function initNametags(): void {
     const present = new Set<string>()
     for (const [, data] of engine.getEntitiesWith(PlayerIdentityData)) if (data.address !== '') present.add(canon(data.address))
     for (const key of [...tags.keys()]) {
-      if (key === meKey || !present.has(key)) removeByKey(key)
-    }
-    for (const [, anchor] of tags) {
-      const plane = anchorPlane.get(anchor)
-      const userId = plane != null ? planeUid.get(plane) : undefined
-      if (userId != null) AvatarAttach.createOrReplace(anchor, { avatarId: userId, anchorPointId: AvatarAnchorPointType.AAPT_NAME_TAG })
+      if (key === meKey) { removeByKey(key); continue } // never tag the local player — remove at once
+      // COOLDOWN: don't remove the instant the avatar drops out of the presence query — comms/livekit
+      // blips flicker a present player in and out, which was making tags blink. Only remove after the
+      // avatar has been absent for 3 consecutive checks (~3s); any reappearance resets the counter.
+      if (present.has(key)) { absent.set(key, 0) }
+      else {
+        const n = (absent.get(key) ?? 0) + 1
+        absent.set(key, n)
+        if (n >= 3) removeByKey(key)
+        continue
+      }
+      // Re-assert AvatarAttach ONLY during the first few seconds of a tag's life — the window in which a
+      // tag created before its avatar's shape loaded needs the engine to retry the bind. Re-asserting
+      // forever was unnecessary and a possible source of periodic rebind flicker.
+      const age = (bornSec.get(key) ?? 0) + 1
+      bornSec.set(key, age)
+      if (age <= 6) {
+        const anchor = tags.get(key)
+        const plane = anchor != null ? anchorPlane.get(anchor) : undefined
+        const userId = plane != null ? planeUid.get(plane) : undefined
+        if (anchor != null && userId != null) AvatarAttach.createOrReplace(anchor, { avatarId: userId, anchorPointId: AvatarAnchorPointType.AAPT_NAME_TAG })
+      }
     }
     console.log(`[nametags] census self=${meKey?.slice(-6) ?? 'none'} cached=${[...tags.keys()].map((k) => k.slice(-6)).join(',') || '(none)'}`)
   })
