@@ -11,10 +11,10 @@ export function ExitConfirm({ onStay, onLeave }: { onStay: () => void; onLeave: 
       width={420}
       actions={
         <>
-          <Button variant="primary" onClick={onStay}>
+          <Button variant="ghost" onClick={onStay}>
             Stay
           </Button>
-          <Button variant="secondary" onClick={onLeave}>
+          <Button variant="primary" onClick={onLeave}>
             Leave
           </Button>
         </>

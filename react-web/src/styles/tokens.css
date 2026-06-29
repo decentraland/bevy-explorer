@@ -46,6 +46,10 @@
   --ink-45: rgba(255, 255, 255, 0.45);
   --scrim: rgba(0, 0, 0, 0.5);
 
+  /* ---- modal (the shared violet design-system dialog: permissions, communities, etc.) ---- */
+  --modal-bg: linear-gradient(160deg, #3a1660 0%, #25103f 55%, #1a0c2e 100%);
+  --modal-scrim: rgba(18, 7, 33, 0.6);
+
   /* ---- radii ---- */
   --r-control: 10px;
   --r-card: 14px;

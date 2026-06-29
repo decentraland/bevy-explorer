@@ -11,7 +11,8 @@
   position: fixed;
   inset: 0;
   z-index: var(--z-modal);
-  background: var(--scrim);
+  background: var(--modal-scrim);
+  backdrop-filter: blur(2px);
   display: flex;
   padding: 20px;
   overflow: auto;
@@ -22,8 +23,8 @@
   margin: auto;
   max-height: calc(100dvh - 40px);
   overflow-y: auto;
-  background: var(--panel);
-  border: 1px solid var(--line);
+  background: var(--modal-bg);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   outline: none;
   border-radius: var(--r-panel);
   padding: 28px;

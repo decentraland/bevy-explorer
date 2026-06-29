@@ -6,7 +6,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(rgba(18, 7, 33, 0.6), rgba(18, 7, 33, 0.6));
+  background: var(--modal-scrim);
   backdrop-filter: blur(2px);
   padding: 24px;
 }
@@ -20,7 +20,7 @@
   border-radius: var(--r-panel);
   overflow: hidden;
   color: #fff;
-  background: linear-gradient(160deg, #3a1660 0%, #25103f 55%, #1a0c2e 100%);
+  background: var(--modal-bg);
   box-shadow: var(--shadow-modal);
 }
 .title {
@@ -209,7 +209,7 @@
   width: min(440px, 100%);
   border-radius: var(--r-panel);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: linear-gradient(160deg, #3a1660 0%, #25103f 55%, #1a0c2e 100%);
+  background: var(--modal-bg);
   box-shadow: var(--shadow-modal);
   padding: 32px 28px;
   text-align: center;

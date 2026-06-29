@@ -6,7 +6,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(4, 3, 8, 0.6);
+  background: var(--modal-scrim);
   backdrop-filter: blur(2px);
 }
 .modal {
@@ -14,9 +14,9 @@
   width: 420px;
   max-width: calc(100% - 32px);
   padding: 40px 32px 24px;
-  border-radius: 16px;
-  background: #161a23;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  border-radius: var(--r-panel);
+  background: var(--modal-bg);
+  box-shadow: var(--shadow-modal);
   text-align: center;
 }
 .close {
