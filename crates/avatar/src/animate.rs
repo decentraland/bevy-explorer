@@ -82,11 +82,9 @@ impl Plugin for AvatarAnimationPlugin {
                 (handle_trigger_emotes, broadcast_emote, receive_emotes).before(animate),
                 (animate, play_current_emote).chain().after(process_avatar),
                 play_scene_driven_sounds.after(process_avatar),
-                prewarm_glide_prop,
             )
                 .in_set(SceneSets::PostLoop),
         );
-        app.init_resource::<GlidePropPrewarm>();
         app.add_console_command::<EmoteConsoleCommand, _>(emote_console_command);
     }
 }
@@ -641,55 +639,6 @@ impl SpawnedExtras {
             audio: None,
             clip: None,
             deferred_start: None,
-        }
-    }
-}
-
-// Glide carries a prop model (the glider) that play_current_emote only spawns the moment
-// you start gliding, so the first glide pays the scene-instantiation cost mid-air and the
-// model pops in late. Pre-instantiate it once into a hidden, resident wrapper so the glb's
-// scene, meshes, materials and prop animation are fully resolved before the first glide.
-#[derive(Resource, Default)]
-struct GlidePropPrewarm {
-    instance: Option<InstanceId>,
-    done: bool,
-}
-
-fn prewarm_glide_prop(
-    mut commands: Commands,
-    mut state: ResMut<GlidePropPrewarm>,
-    mut emote_loader: CollectibleManager<Emote>,
-    gltfs: Res<Assets<Gltf>>,
-    mut scene_spawner: ResMut<SceneSpawner>,
-) {
-    if state.done {
-        return;
-    }
-
-    match state.instance {
-        None => {
-            // glide is a builtin emote registered for both base bodyshapes; either resolves.
-            let scene = match emote_loader
-                .get_representation(&*URN_GLIDE, "urn:decentraland:off-chain:base-avatars:basemale")
-                .map(|emote| emote.prop_scene(&gltfs))
-            {
-                Ok(Ok(Some(scene))) => scene,
-                // not loaded yet (or no prop) — retry next frame
-                _ => return,
-            };
-            let wrapper = commands
-                .spawn((
-                    Transform::default(),
-                    Visibility::Hidden,
-                    Name::new("glide_prop_prewarm"),
-                ))
-                .id();
-            state.instance = Some(scene_spawner.spawn_as_child(scene, wrapper));
-        }
-        Some(instance) => {
-            if scene_spawner.instance_is_ready(instance) {
-                state.done = true;
-            }
         }
     }
 }
