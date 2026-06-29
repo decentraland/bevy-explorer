@@ -257,10 +257,13 @@ function setTagMaterial(tag: Entity, opacity: number): void {
 // for an avatar that is ACTUALLY PRESENT, so AvatarAttach always has a shape to bind to.
 function createTag(userId: string): { anchor: Entity; plane: Entity } {
   const anchor = engine.addEntity()
-  Transform.create(anchor) // owned by the engine (AvatarAttach + Billboard); the scene never writes it
-  // Bind by address to the (present) foreign avatar. We NEVER tag the local player (see add()), so this
-  // always has a real avatar shape to attach to — the no-avatarId "primary user" attach, which binds
-  // inconsistently for a global scene and stranded into a giant centred pill, is gone.
+  // Born FAR BELOW the world. AvatarAttach overrides this with the avatar's nametag-anchor position once
+  // it binds — but the engine only binds if the avatar's SHAPE is already loaded when it processes the
+  // attach (attach.rs `continue`s otherwise and never retries on its own). A tag created in that brief
+  // pre-load window would otherwise sit at the origin and float in the plaza centre; parking it at
+  // y=-1000 keeps an as-yet-unbound tag out of sight until the reconcile's re-assert binds it.
+  Transform.create(anchor, { position: Vector3.create(0, -1000, 0) })
+  // Bind by address to the (present) foreign avatar. We NEVER tag the local player (see add()).
   AvatarAttach.create(anchor, { avatarId: userId, anchorPointId: AvatarAnchorPointType.AAPT_NAME_TAG })
   Billboard.create(anchor, {})
 
@@ -291,7 +294,7 @@ export function initNametags(): void {
   initFlag.__bevyNametagsStarted = true
   // BUILD MARKER — to tell whether the engine is actually running this build. If you DON'T see this in
   // the console after a reload, the scene is stale (cached / not reloaded), not a code bug.
-  console.log('[nametags] BUILD=noself+dedup+fixedscale+census')
+  console.log('[nametags] BUILD=noself+dedup+fixedscale+rebind')
 
   const tags = new Map<string, Entity>() // canonical address → anchor (exactly one tag per wallet)
   // PLANE entity → address. The size + sweep systems identify a tag's plane by its OWN id, NOT via its
@@ -450,6 +453,16 @@ export function initNametags(): void {
         tags.set(key, anchor)
         anchorPlane.set(anchor, only)
       }
+    }
+
+    // Re-assert every kept tag's attach. The engine (re)binds AvatarAttach only on a Changed event, so a
+    // tag that was created before its avatar's shape finished loading stays stranded at y=-1000 forever
+    // otherwise. Re-setting it each second makes the engine retry → it snaps onto the avatar once the
+    // shape exists (and is a no-op re-sync for tags already bound, so no jitter).
+    for (const [, anchor] of tags) {
+      const plane = anchorPlane.get(anchor)
+      const userId = plane != null ? planeUid.get(plane) : undefined
+      if (userId != null) AvatarAttach.createOrReplace(anchor, { avatarId: userId, anchorPointId: AvatarAnchorPointType.AAPT_NAME_TAG })
     }
   })
 
