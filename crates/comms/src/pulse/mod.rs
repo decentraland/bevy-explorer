@@ -7,8 +7,9 @@
 //! rest of the client never learns Pulse exists below the `PlayerUpdate` line.
 //!
 //! Two contracts are agreed out-of-band, not on the wire:
-//!   * the quantization ABI (`{min,max,bits}` per delta field) — handled by the `*_dequantized()`
-//!     accessors generated from the proto descriptor in `dcl_component`;
+//!   * the quantization ABI (linear `{min,max,bits}` or power-law `{max,pow,bits}` per delta field)
+//!     — handled by the `*_dequantized()` accessors generated from the proto descriptor in
+//!     `dcl_component`;
 //!   * the parcel grid ([`PulseParcelGrid`]) — the server's `ParcelEncoder` config, which maps a
 //!     `parcel_index` + in-parcel local position back to world coordinates.
 //!
@@ -384,9 +385,9 @@ impl PulseDecoder {
             position_x: world.x,
             position_y: world.y,
             position_z: world.z,
-            velocity_x: velocity_deadzone(velocity.x),
-            velocity_y: velocity_deadzone(velocity.y),
-            velocity_z: velocity_deadzone(velocity.z),
+            velocity_x: velocity.x,
+            velocity_y: velocity.y,
+            velocity_z: velocity.z,
             movement_blend_value: state.movement_blend,
             slide_blend_value: state.slide_blend,
             is_grounded: flag(flags, pulse::PlayerAnimationFlags::Grounded),
@@ -485,28 +486,6 @@ pub(crate) fn from_movement(
             y: movement.point_at_y,
             z: movement.point_at_z,
         }),
-    }
-}
-
-/// Snap a quantization-residual velocity to exactly zero.
-///
-/// Pulse quantizes each velocity axis as min=-50, max=50, bits=8 (steps=255), so the step size is
-/// `100/255 ≈ 0.392`. Zero is unrepresentable: the two codes straddling it decode to ±0.196 (half
-/// a step), so a genuinely-stopped peer reports ±0.196 on every axis instead of 0. bevy's
-/// `foreign_dynamics` then dead-reckons that residual (`translation += velocity * dt`) with no
-/// damping or time bound, producing the slow vertical/horizontal drift seen when a remote stops.
-///
-/// The two zero-straddling codes decode to ±half a step (≈0.196); the next real magnitude is a step
-/// and a half away (≈0.588). The dequant (`min + encoded/levels * range` = `-50 + 128/255*100`)
-/// computes the residual through a catastrophic cancellation, so it lands at 0.196 ± a float ULP and
-/// can creep just past an exact half-step compare. Threshold at a full step instead: comfortably
-/// above the residual (with float margin) and comfortably below any real velocity level.
-fn velocity_deadzone(v: f32) -> f32 {
-    const STEP: f32 = 100.0 / 255.0;
-    if v.abs() < STEP {
-        0.0
-    } else {
-        v
     }
 }
 
