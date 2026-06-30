@@ -11,7 +11,9 @@
       /* Instant branded first paint. The JS bundle + React mount take a moment (longer over a slow
          tunnel/network) and #root is empty until then — without this the page flashes white. This
          splash paints from index.html with zero JS; React's login screen (same purple backdrop)
-         replaces #root on mount, so the hand-off is seamless. */
+         replaces #root on mount, so the hand-off is seamless. The colors below mirror tokens.css
+         `--menu-bg` (the radial gradient) and its `#54098a` end stop — kept literal because this must
+         paint before any CSS/JS loads, so it can't reference the token. */
       html,
       body {
         margin: 0;

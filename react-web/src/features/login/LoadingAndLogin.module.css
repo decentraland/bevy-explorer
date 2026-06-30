@@ -152,19 +152,19 @@
   font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.02em;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--ink-85);
 }
 .bootTrack {
   width: min(420px, 80vw);
   height: 4px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--white-10);
   overflow: hidden;
 }
 .bootFill {
   height: 100%;
   border-radius: 2px;
-  background: linear-gradient(90deg, #ff2d55, #ffbc5b);
+  background: linear-gradient(90deg, var(--brand), var(--gold));
   transition: width 0.3s ease;
 }
 

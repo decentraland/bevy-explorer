@@ -64,6 +64,22 @@ test.describe('visual — mock HUD', () => {
     await expect(page).toHaveScreenshot('login-welcome.png')
   })
 
+  // Mobile gate — the download-the-app page shown on mobile (forced with ?gate=1; desktop UA → both
+  // store buttons). Returns before the HUD, so no ?mock needed.
+  test('mobile gate', async ({ page }) => {
+    await page.goto('/?gate=1')
+    await settle(page)
+    await expect(page).toHaveScreenshot('mobile-gate.png')
+  })
+
+  // Engine error popup — ?simerror=launch seeds a sample boot-panic (fatal: Reload + Copy, no
+  // Dismiss). Mock mode → no engine iframe, fully deterministic.
+  test('engine error popup', async ({ page }) => {
+    await page.goto('/?mock=1&simerror=launch')
+    await settle(page)
+    await expect(page).toHaveScreenshot('engine-error.png')
+  })
+
   test('world HUD (sidebar + chat)', async ({ page }) => {
     await enterWorld(page)
     await settle(page)
