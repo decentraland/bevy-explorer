@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
 import type { LoginDriver } from '../../engine/driver'
+import type { FatalError } from '../error/EngineErrorModal'
 import type {
   AppNotification,
   ChatMessage,
@@ -203,7 +204,7 @@ export interface EngineSession {
   scene: SceneLoadingState | null
   /** Fatal engine error → full-screen error popup. 'launch' = boot panic (fatal), 'runtime' =
    *  post-launch crash bridged from the engine watchdog (dismissable). null when healthy. */
-  fatalError: { message: string; source: 'launch' | 'runtime' } | null
+  fatalError: FatalError | null
   /** Reload the whole page (error-popup action). */
   reload: () => void
   /** Dismiss a non-fatal (runtime) error popup. */
@@ -270,7 +271,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // Fatal engine error → full-screen popup. 'launch' = boot panic (fatal, no dismiss); 'runtime' =
   // post-launch crash bridged from the engine watchdog (can be a false positive → dismissable).
   // ?simerror=1 (or =launch) seeds a sample so the popup can be iterated without a real panic.
-  const [fatalError, setFatalError] = useState<{ message: string; source: 'launch' | 'runtime' } | null>(() => {
+  const [fatalError, setFatalError] = useState<FatalError | null>(() => {
     const sim = new URLSearchParams(location.search).get('simerror')
     if (sim == null) return null
     return {

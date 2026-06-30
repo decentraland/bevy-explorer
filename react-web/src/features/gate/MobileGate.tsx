@@ -38,13 +38,13 @@ export function MobileGate(): React.JSX.Element {
         </p>
         <div className={styles.buttons}>
           {showApple && (
-            <a className={styles.store} href={APP_STORE_URL} target="_blank" rel="noopener noreferrer">
+            <a className={styles.store} href={APP_STORE_URL} target="_blank" rel="noopener">
               <AppleIcon />
               <span>Install from App Store</span>
             </a>
           )}
           {showGoogle && (
-            <a className={styles.store} href={PLAY_STORE_URL} target="_blank" rel="noopener noreferrer">
+            <a className={styles.store} href={PLAY_STORE_URL} target="_blank" rel="noopener">
               <GooglePlayIcon />
               <span>Install from Google Play</span>
             </a>
