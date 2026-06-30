@@ -100,6 +100,22 @@ message Movement {
   // drops the whole field, instead of handing us a plausible-looking string we'd try to
   // resolve as a GLB hash.
   optional SceneDrivenAnimation scene_driven_animation = 10000;
+
+  // Per-axis position quantization half-step ("box radius"), a bevy-explorer local extension.
+  // Filled ONLY by the Pulse receiver, where position arrives quantized: it tells the
+  // foreign-avatar interpolator the ± box the true position lies within, so it dead-reckons inside
+  // that box rather than snapping to the quantized centre. Never set on the send path (so never
+  // serialised); absent from precise sources (LiveKit, full-state snapshots), where absence means
+  // "exact". Wrapped in a nested message at a high private tag for the same collision-avoidance
+  // reason as scene_driven_animation.
+  optional PositionPrecision position_precision = 10001;
+}
+
+// Carrier for Movement.position_precision — per-axis ± half-step box around the quantized position.
+message PositionPrecision {
+  float x = 1;
+  float y = 2;
+  float z = 3;
 }
 
 // Nested carrier for scene-driven movement animation state. All fields are optional so

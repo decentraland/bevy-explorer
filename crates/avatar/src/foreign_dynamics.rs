@@ -37,6 +37,9 @@ struct PlayerTargetPosition {
     time: f32,
     timestamp: Option<f32>,
     velocity: Option<Vec3>,
+    /// Already box-resolved against the quantization grid when the packet landed (see
+    /// `update_foreign_user_target_position`); the interpolator treats it as an exact, stable
+    /// goalpost.
     translation: Vec3,
     rotation: Quat,
     update_freq: f32,
@@ -117,11 +120,26 @@ fn update_foreign_user_target_position(
                     let update_freq = LAG_DECAY_SECS
                         / ((LAG_DECAY_SECS - delta).max(0.0) / pos.update_freq
                             + (LAG_DECAY_SECS / delta).min(1.0));
+                    // Resolve the quantized observation once, here — not per frame in the
+                    // interpolator (running the ±box through `v_req = dp/dt` there amplified it into
+                    // velocity jerks). Dead-reckon the previous goalpost forward over the inter-packet
+                    // interval at the velocity that was in effect across it (the previous packet's),
+                    // then constrain that prediction to the ±precision box the new observation
+                    // vouches for: while the avatar tracks its velocity the prediction stays inside
+                    // the box and rides it smoothly (no re-anchoring onto the quantization grid — that
+                    // re-anchoring was the jitter); only genuine drift reaches a box face, and is
+                    // corrected by at most a half-step. Zero precision (a precise transport, or
+                    // full-state) collapses the box to a point, so `resolved == observed` and the
+                    // prior snap-to-observation behaviour stands.
+                    let observed = bevy_trans.translation;
+                    let predicted = pos.translation + pos.velocity.unwrap_or(ev.velocity) * delta;
+                    let resolved =
+                        predicted.clamp(observed - ev.precision, observed + ev.precision);
                     *pos = PlayerTargetPosition {
                         time: ev.time,
                         timestamp: Some(ev.timestamp),
                         velocity: Some(ev.velocity),
-                        translation: bevy_trans.translation,
+                        translation: resolved,
                         rotation: bevy_trans.rotation.normalize_or_identity(),
                         update_freq,
                         grounded: ev.grounded,

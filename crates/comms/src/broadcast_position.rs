@@ -311,6 +311,9 @@ fn broadcast_position(
         is_pointing_at: point_at.is_pointing,
         // Scene-driven animation no longer rides the movement — it goes out as its own packet below.
         scene_driven_animation: None,
+        // Receive-side only (the Pulse decoder stamps it); never set on the send path, so it stays
+        // out of the serialized packet.
+        position_precision: None,
     };
 
     // let movement_packet = rfc4::MovementCompressed {

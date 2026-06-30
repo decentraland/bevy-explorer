@@ -377,6 +377,11 @@ pub struct PlayerPositionEvent {
     /// This update is a discontinuous reposition (a Pulse `TeleportPerformed`), so `foreign_dynamics`
     /// snaps straight to it instead of interpolating across the gap.
     pub teleport: bool,
+    /// Per-axis ± box the true position lies within (the position quantization half-step). `ZERO`
+    /// for precise sources (LiveKit, full-state snapshots); set only by the Pulse delta receiver,
+    /// where position arrives quantized. `foreign_dynamics` dead-reckons inside this box instead of
+    /// snapping to `translation`, so a slowly-moving peer doesn't jitter on the quantization grid.
+    pub precision: Vec3,
 }
 
 /// Scene-driven animation state for a foreign player, decoded from the standalone
@@ -492,6 +497,13 @@ fn apply_foreign_movement(
         (_, _, true) => Some(MoveKind::Jump),
         _ => None,
     };
+    // Set only by the Pulse delta receiver; absent (→ ZERO, exact) for LiveKit and full-state.
+    // A symmetric ± box, so the z-axis negation above doesn't affect it.
+    let precision = m
+        .position_precision
+        .as_ref()
+        .map(|p| Vec3::new(p.x, p.y, p.z))
+        .unwrap_or(Vec3::ZERO);
     position_events.write(PlayerPositionEvent {
         player: entity,
         time: now,
@@ -502,6 +514,7 @@ fn apply_foreign_movement(
         grounded: Some(m.is_grounded),
         remote_move_kind,
         teleport,
+        precision,
     });
 }
 
