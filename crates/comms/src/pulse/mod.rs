@@ -343,7 +343,16 @@ impl PulseDecoder {
         apply_delta(&mut subject.baseline, &delta);
         subject.last_seq = delta.new_seq;
         let address = subject.wallet;
-        let movement = self.to_movement_for(delta.subject_id, delta.server_tick);
+        let mut movement = self.to_movement_for(delta.subject_id, delta.server_tick);
+        // A delta carries position quantized to the parcel grid, so the true position is only known
+        // to within ±half a step. Hand that box to the interpolator (via the rfc4 carrier) so it
+        // dead-reckons inside the box instead of snapping to the quantized centre every packet.
+        // Full-state / join movements leave this unset (exact position).
+        movement.position_precision = Some(rfc4::PositionPrecision {
+            x: pulse::PlayerStateDeltaTier0::position_x_step() * 0.5,
+            y: pulse::PlayerStateDeltaTier0::position_y_step() * 0.5,
+            z: pulse::PlayerStateDeltaTier0::position_z_step() * 0.5,
+        });
         vec![PulseEvent::Movement {
             address,
             movement: Box::new(movement),
@@ -411,6 +420,9 @@ impl PulseDecoder {
             head_yaw: state.head_yaw.unwrap_or(0.0),
             head_pitch: state.head_pitch.unwrap_or(0.0),
             scene_driven_animation: None,
+            // Stamped only on delta-derived movements (see `on_delta`); a full state carries an
+            // exact position, so the shared builder leaves the box unset (precise).
+            position_precision: None,
         }
     }
 }
