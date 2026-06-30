@@ -9,10 +9,12 @@ The UI being ported lives in the separate **`bevy-ui-scene`** repo
 (`scene/src/ui-classes`, `scene/src/bevy-api`); the `scene/...` paths below refer
 to that repo.
 
-> **Production is untouched.** This app sits at the repo root, NOT under
-> `deploy/web`, so it is excluded from the `@dcl-regenesislabs/bevy-explorer-web`
-> npm publish (which ships the whole `deploy/web` tree) and from the cargo/wasm
-> build. Never move it under `deploy/web` — it would bloat the package.
+> **What ships vs. what doesn't.** The React HUD *app* (`react-web/src`) sits at the repo root, NOT
+> under `deploy/web` — it's excluded from the `@dcl-regenesislabs/bevy-explorer-web` npm publish and the
+> cargo/wasm build. Never move the **app** under `deploy/web` — it would bloat the package. The **bridge
+> scene**, however, *is* now shipped in production: `npm run bundle:scene` exports it into
+> `deploy/web/bridge-scene/static` (git-ignored, regenerated) so the engine publish carries it, and
+> `deploy/web/ui.js`'s `DEFAULT_SYSTEMSCENE` loads it same-origin. See **Deploy (bundled)** below.
 
 ## Why
 
