@@ -37,9 +37,13 @@ message PlayerStateDeltaTier0 {
   // Z position inside the parcel
   optional uint32 position_z = 8 [(decentraland.common.quantized) = { min:  0,  max:   16, bits: 8 }];
 
-  optional uint32 velocity_x = 9 [(decentraland.common.quantized) = { min:  -50,  max:   50, bits: 8 }];
-  optional uint32 velocity_y = 10 [(decentraland.common.quantized) = { min:  -50,  max:   50, bits: 8 }];
-  optional uint32 velocity_z = 11 [(decentraland.common.quantized) = { min:  -50,  max:   50, bits: 8 }];
+  // Power-law quantized: a sign bit + 7-bit magnitude curve over [-50, 50]. Zero is exactly
+  // representable (a stopped peer reports an exact 0 instead of the linear quantizer's ±0.196
+  // residual that drove foreign-avatar drift), and pow=2 concentrates resolution at the low speeds
+  // where avatars actually move, leaving only the visually-irrelevant extremes coarse.
+  optional uint32 velocity_x = 9 [(decentraland.common.quantized_power) = { max: 50, pow: 2, bits: 8 }];
+  optional uint32 velocity_y = 10 [(decentraland.common.quantized_power) = { max: 50, pow: 2, bits: 8 }];
+  optional uint32 velocity_z = 11 [(decentraland.common.quantized_power) = { max: 50, pow: 2, bits: 8 }];
 
   optional uint32 rotation_y = 12 [(decentraland.common.quantized) = { min:  0,  max:   360.0, bits: 7 }];
   optional uint32 movement_blend = 13 [(decentraland.common.quantized) = { min:  0,  max:   3, bits: 5 }];
