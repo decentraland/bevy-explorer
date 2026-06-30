@@ -28,6 +28,8 @@ ffmpeg = ["av/ffmpeg"]
 social = ["social/social"]
 remote = ["bevy/bevy_remote"]
 bevy_mesh_picking_backend = ["bevy/bevy_mesh_picking_backend"]
+# POC: overlay the react-web HUD as a transparent webview on the native window (desktop only).
+react-hud = ["dep:wry", "dep:objc", "dep:cocoa", "dep:raw-window-handle"]
 
 # Debug features
 tween_debug = ["tween/tween_debug"]
@@ -293,6 +295,16 @@ bevy_simple_text_input = { workspace = true }
 dcl_deno = { workspace = true }
 dcl_deno_ipc = { workspace = true }
 mimalloc = { version = "*", default-features = false }
+# POC: native webview overlay for the react-web HUD (feature `react-hud`).
+# `transparent` is required for with_transparent to take effect (else the webview is opaque white).
+wry = { version = "0.45", optional = true, features = ["transparent"] }
+
+# POC (macOS): host the webview in a borderless transparent child NSWindow over bevy's window so the
+# window server composites it normally (a child overlay view never swaps its surface to screen).
+[target.'cfg(all(target_os = "macos", not(target_arch = "wasm32")))'.dependencies]
+objc = { version = "0.2", optional = true }
+cocoa = { version = "0.26", optional = true }
+raw-window-handle = { version = "0.6", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 av = { workspace = true, features = ["html"] }

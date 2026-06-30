@@ -39,7 +39,10 @@ import { useMenuShortcuts } from './lib/useMenuShortcuts'
 const params = new URLSearchParams(location.search)
 // MOCK (?mock=1): UI only, no engine, fake bridge (?previousLogin=1 → returning user).
 // ENGINE (default): real engine in a same-origin iframe + super-user bridge scene.
-const MODE: 'mock' | 'engine' = params.get('mock') === '1' ? 'mock' : 'engine'
+// NATIVE (?native=1): HUD in a wry webview over the native bevy engine — a JS shim bridges this
+// app's BroadcastChannel to the engine's native SystemApi relay (no iframe, no mock).
+const MODE: 'mock' | 'engine' | 'native' =
+  params.get('mock') === '1' ? 'mock' : params.get('native') === '1' ? 'native' : 'engine'
 const SHOWCASE = params.get('showcase') === '1'
 
 export function App(): React.JSX.Element {
@@ -77,6 +80,10 @@ function Hud(): React.JSX.Element {
   } => {
     if (MODE === 'mock') {
       startMockBridge()
+      return { rpc: null, createDriver: () => new BridgeClient() }
+    }
+    if (MODE === 'native') {
+      // The wry shim wires this BroadcastChannel to the native engine relay (see src/react_hud.rs).
       return { rpc: null, createDriver: () => new BridgeClient() }
     }
     const engineRpc = new EngineRpc()

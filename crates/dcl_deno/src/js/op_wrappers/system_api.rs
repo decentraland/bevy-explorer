@@ -50,6 +50,9 @@ pub fn ops(super_user: bool) -> Vec<OpDecl> {
             op_get_chat_stream(),
             op_read_chat_stream(),
             op_send_chat(),
+            op_bridge_to_page(),
+            op_get_bridge_stream(),
+            op_read_bridge_stream(),
             op_get_profile_extras(),
             op_quit(),
             op_get_permission_request_stream(),
@@ -295,6 +298,25 @@ pub fn op_send_chat(
     #[string] channel: String,
 ) {
     dcl::js::system_api::op_send_chat(state, message, channel)
+}
+
+#[op2(fast)]
+pub fn op_bridge_to_page(state: Rc<RefCell<OpState>>, #[string] msg: String) {
+    dcl::js::system_api::op_bridge_to_page(state, msg)
+}
+
+#[op2(async)]
+pub async fn op_get_bridge_stream(state: Rc<RefCell<OpState>>) -> u32 {
+    dcl::js::system_api::op_get_bridge_stream(state).await
+}
+
+#[op2(async)]
+#[string]
+pub async fn op_read_bridge_stream(
+    state: Rc<RefCell<OpState>>,
+    rid: u32,
+) -> Result<String, deno_core::anyhow::Error> {
+    dcl::js::system_api::op_read_bridge_stream(state, rid).await
 }
 
 #[op2(async)]
