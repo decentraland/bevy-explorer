@@ -197,6 +197,13 @@
             shown = true;
             var msg = errMessage(err);
             console.error('[crash overlay]', source || 'error', err);
+            // Bridge runtime crashes to the embedding host (react-web covers this iframe, so its own
+            // overlay would be hidden). The parent is same-origin.
+            try {
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({ type: 'bevy-crash', message: msg, source: source || 'error' }, location.origin);
+                }
+            } catch (_) {}
 
             function render() {
                 var overlay = document.createElement('div');
@@ -278,6 +285,21 @@
             lastError = { err: err, source: source || 'error', at: nowMs() };
         }
         window.reportEngineError = recordError;
+
+        // Capture Rust panic text. The wasm panic hook prints "panicked at …" via console.error; the
+        // JS that surfaces to the host is only a generic "unreachable" trap, so we stash the readable
+        // message on window.__bevyPanic for react-web to show (it can't recover it from the throw).
+        var __origConsoleError = console.error.bind(console);
+        console.error = function () {
+            try {
+                var first = arguments[0];
+                if (typeof first === 'string' && first.indexOf('panicked at') !== -1) {
+                    window.__bevyPanic = { message: String(first), at: nowMs() };
+                    recordError(first, 'panic');
+                }
+            } catch (_) {}
+            return __origConsoleError.apply(console, arguments);
+        };
 
         // Heartbeat sink: the Rust loop calls this once per frame.
         window.__engineHeartbeat = function () {

@@ -39,6 +39,8 @@ export interface LoginDriver {
    *  the login footer bar. Optional — the mock has no engine to download. */
   loadProgress?(): number
   loadStep?(): string | null
+  /** Last Rust panic text captured from the engine, or null. Optional — the mock has no engine. */
+  enginePanic?(): { message: string } | null
   /** Boot the engine at a chosen realm/position (deferred-start: nothing loads until the user picks
    *  a destination). A parcel passes `position` "x,y"; a world passes `realm`; skip passes "0,0".
    *  Optional — the mock has no engine to launch. */

@@ -37,6 +37,8 @@ import { useGlobalHotkey } from './lib/useGlobalHotkey'
 import { useMenuShortcuts } from './lib/useMenuShortcuts'
 import { isMobile } from './lib/isMobile'
 import { MobileGate } from './features/gate/MobileGate'
+import { ErrorBoundary } from './features/error/ErrorBoundary'
+import { EngineErrorModal } from './features/error/EngineErrorModal'
 
 const params = new URLSearchParams(location.search)
 // MOCK (?mock=1): UI only, no engine, fake bridge (?previousLogin=1 → returning user).
@@ -53,7 +55,7 @@ export function App(): React.JSX.Element {
   const showFps = useFpsToggle()
   if (GATE) return <MobileGate />
   return (
-    <>
+    <ErrorBoundary>
       {SHOWCASE ? (
         <Suspense fallback={null}>
           <Showcase />
@@ -62,7 +64,7 @@ export function App(): React.JSX.Element {
         <Hud />
       )}
       {showFps && <FpsMeter />}
-    </>
+    </ErrorBoundary>
   )
 }
 
@@ -258,6 +260,14 @@ function Hud(): React.JSX.Element {
       )}
       {/* Confirm before the back gesture / Back button unloads the engine. */}
       {exitGuard.confirming && <ExitConfirm onStay={exitGuard.stay} onLeave={exitGuard.leave} />}
+      {/* Fatal engine error (boot panic / runtime crash) — above everything. */}
+      {session.fatalError && (
+        <EngineErrorModal
+          error={session.fatalError}
+          onReload={session.reload}
+          onDismiss={session.fatalError.source === 'runtime' ? session.dismissFatal : undefined}
+        />
+      )}
     </>
   )
 }

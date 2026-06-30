@@ -11,6 +11,7 @@ type EngineWindow = Window & {
   __bevyLaunch?: (realm?: string, position?: string) => void
   __bevyLoadProgress?: number
   __bevyLoadStep?: string | null
+  __bevyPanic?: { message: string }
 }
 
 export class EngineRpc {
@@ -33,6 +34,12 @@ export class EngineRpc {
   /** Current boot step id ('download'|'compile'|'init'|'workers'|'gpu') or null. */
   loadStep(): string | null {
     return this.win?.__bevyLoadStep ?? null
+  }
+
+  /** Last Rust panic text captured from the engine console (manualParams iframe), or null. The throw
+   *  that reaches us is only a generic "unreachable" trap; the readable message is stashed here. */
+  enginePanic(): { message: string } | null {
+    return this.win?.__bevyPanic ?? null
   }
 
   /** Boot the bevy app at a realm/position (only valid in manualParams mode, after readyToLaunch). */

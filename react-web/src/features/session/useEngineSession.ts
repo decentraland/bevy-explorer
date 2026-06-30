@@ -201,6 +201,13 @@ export interface EngineSession {
   pickDestination: (dest: Destination) => void
   login: LoginFlow
   scene: SceneLoadingState | null
+  /** Fatal engine error → full-screen error popup. 'launch' = boot panic (fatal), 'runtime' =
+   *  post-launch crash bridged from the engine watchdog (dismissable). null when healthy. */
+  fatalError: { message: string; source: 'launch' | 'runtime' } | null
+  /** Reload the whole page (error-popup action). */
+  reload: () => void
+  /** Dismiss a non-fatal (runtime) error popup. */
+  dismissFatal: () => void
   /** World-entity hover hints under the reticle (empty = nothing hovered). */
   hover: HoverAction[]
   /** Engine has grabbed the mouse for camera-look (OS cursor hidden) → show the crosshair. */
@@ -260,6 +267,17 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // for the login footer bar. The engine's own loader is hidden (hideLoader=1).
   const [loadProgress, setLoadProgress] = useState(0)
   const [loadStep, setLoadStep] = useState<string | null>(null)
+  // Fatal engine error → full-screen popup. 'launch' = boot panic (fatal, no dismiss); 'runtime' =
+  // post-launch crash bridged from the engine watchdog (can be a false positive → dismissable).
+  // ?simerror=1 (or =launch) seeds a sample so the popup can be iterated without a real panic.
+  const [fatalError, setFatalError] = useState<{ message: string; source: 'launch' | 'runtime' } | null>(() => {
+    const sim = new URLSearchParams(location.search).get('simerror')
+    if (sim == null) return null
+    return {
+      message: "panicked at crates/dcl_wasm/src/inner/mod.rs:41:9:\ncan't init wasm queue\n\n(simulated)",
+      source: sim === 'launch' ? 'launch' : 'runtime'
+    }
+  })
 
   // Past login → waiting for the world.
   const [submitted, setSubmitted] = useState(false)
@@ -460,6 +478,20 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     return () => clearInterval(id)
   }, [])
 
+  // Runtime engine crashes (heartbeat stall) are detected by the bundle's watchdog and bridged to us
+  // as a same-origin postMessage (the iframe's own overlay is hidden behind react-web's HUD).
+  useEffect(() => {
+    const onMessage = (e: MessageEvent): void => {
+      if (e.origin !== location.origin) return
+      const data = e.data as { type?: string; message?: string } | null
+      if (data?.type === 'bevy-crash') {
+        setFatalError((prev) => prev ?? { message: data.message ?? 'The engine stopped responding.', source: 'runtime' })
+      }
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
+
   // On world-entry, pull the profile (top-bar chip) and notifications (so the unread badge
   // shows immediately, not only after the panel is first opened). Marked fetched once.
   useEffect(() => {
@@ -605,9 +637,18 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       ran = true
       // World by realm, parcel by spawn position, skip at 0,0 (Genesis). Nothing loaded before this,
       // so only the chosen scene streams in. (No-op on the mock, which has no engine to launch.)
-      if (dest == null) driver.launch?.(undefined, '0,0')
-      else if (dest.kind === 'world') driver.launch?.(dest.realm, undefined)
-      else driver.launch?.(undefined, `${dest.x},${dest.y}`)
+      try {
+        if (dest == null) driver.launch?.(undefined, '0,0')
+        else if (dest.kind === 'world') driver.launch?.(dest.realm, undefined)
+        else driver.launch?.(undefined, `${dest.x},${dest.y}`)
+      } catch (e) {
+        // A boot-time engine panic throws synchronously out of launch() (a generic "unreachable"
+        // wasm trap). The readable message is captured on the iframe via enginePanic().
+        const panic = driverRef.current?.enginePanic?.()?.message
+        setFatalError({ message: panic ?? (e as Error)?.message ?? 'The engine failed to start.', source: 'launch' })
+        setBusy(false)
+        return
+      }
       const login = pendingLogin.current
       pendingLogin.current = null
       Promise.resolve(login?.(driver))
@@ -813,6 +854,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     phase,
     pickDestination,
     scene,
+    fatalError,
+    reload: () => location.reload(),
+    dismissFatal: () => setFatalError(null),
     hover,
     cursorLocked,
     proximity,

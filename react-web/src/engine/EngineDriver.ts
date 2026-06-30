@@ -112,6 +112,10 @@ export class EngineDriver implements LoginDriver {
     return this.rpc.loadStep()
   }
 
+  enginePanic(): { message: string } | null {
+    return this.rpc.enginePanic()
+  }
+
   launch(realm?: string, position?: string): void {
     this.rpc.launch(realm, position)
   }
