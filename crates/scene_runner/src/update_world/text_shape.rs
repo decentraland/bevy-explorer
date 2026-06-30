@@ -846,7 +846,11 @@ fn build_text_spans(
 ) -> (Vec<TextSpanData>, Vec<(usize, String)>) {
     let mut links = Vec::default();
 
-    let text = text.replace("\\n", "\n");
+    // The reference renderer treats CR/LF as teletype ops (CR returns to the
+    // line start, LF advances a line) which we can't reproduce; strip CRs so
+    // CRLF renders as a single line break and a lone CR collapses onto one line
+    // (the realistic cases). A lone LF is left as a normal line break.
+    let text = text.replace("\\n", "\n").replace('\r', "");
 
     let font_name = match font {
         dcl_component::proto_components::sdk::components::common::Font::FSansSerif => {
