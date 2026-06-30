@@ -266,6 +266,16 @@ export async function initEngine() {
  * Starts the game engine with values from the UI inputs.
  */
 export function start() {
+  // Launch at most once per page. The host iframe outlives react-web's re-mounts (HMR / a second
+  // destination pick), so launch() / start() can be invoked again over the same engine. A second
+  // engine_run re-runs init_runtime, whose OnceCell is already set, and panics ("can't init wasm
+  // queue"). One engine per page — ignore re-entry. (A fresh page reload makes a new iframe.)
+  if (window.__bevyStarted) {
+    console.warn('[engine] start() ignored — the engine is already running');
+    return;
+  }
+  window.__bevyStarted = true;
+
   const realmValue = realmInput.value;
   const positionValue = positionInput.value;
   const systemScene = systemSceneInput.value;

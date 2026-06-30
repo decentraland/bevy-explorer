@@ -654,6 +654,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       Promise.resolve(login?.(driver))
         .then(() => setBusy(false))
         .catch((e: Error) => {
+          console.error('[login] post-launch login failed:', e)
           setError(e.message)
           setBusy(false)
           setDestinationPicked(false) // back to the picker on failure
