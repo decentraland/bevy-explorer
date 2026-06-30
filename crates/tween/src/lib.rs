@@ -134,6 +134,19 @@ impl Tween {
                 let end = data.end.unwrap_or_default().abs_vec_to_vec3();
                 Self::apply_scale(start, end, ease_value, transform);
             }
+            Some(Mode::MoveRotateScale(data)) => {
+                let move_start = data.position_start.unwrap_or_default().abs_vec_to_vec3();
+                let move_end = data.position_end.unwrap_or_default().abs_vec_to_vec3();
+                Self::apply_translation(move_start, move_end, ease_value, false, 0., transform);
+
+                let rotate_start = data.rotation_start.unwrap_or_default().to_bevy_normalized();
+                let rotate_end = data.rotation_end.unwrap_or_default().to_bevy_normalized();
+                Self::apply_rotation(rotate_start, rotate_end, ease_value, transform);
+
+                let scale_start = data.scale_start.unwrap_or_default().abs_vec_to_vec3();
+                let scale_end = data.scale_end.unwrap_or_default().abs_vec_to_vec3();
+                Self::apply_scale(scale_start, scale_end, ease_value, transform);
+            }
             Some(Mode::TextureMove(data)) => {
                 let start: Vec2 = (&data.start.unwrap_or_default()).into();
                 let end: Vec2 = (&data.end.unwrap_or_default()).into();
