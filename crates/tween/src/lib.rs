@@ -115,39 +115,24 @@ impl Tween {
             Some(Mode::Move(data)) => {
                 let start = data.start.unwrap_or_default().world_vec_to_vec3();
                 let end = data.end.unwrap_or_default().world_vec_to_vec3();
-
-                if data.face_direction == Some(true) && tween_apply_update.progress == 0.0 {
-                    let direction = end - start;
-                    if direction == Vec3::ZERO {
-                        // can't look nowhere
-                    } else if direction * Vec3::new(1.0, 0.0, 1.0) != Vec3::ZERO {
-                        // randomly assume +z is up for a vertical movement
-                        transform.look_at(end - start, Vec3::Z);
-                    } else {
-                        transform.look_at(end - start, Vec3::Y);
-                    }
-                }
-
-                transform.translation = start + (end - start) * ease_value;
+                Self::apply_translation(
+                    start,
+                    end,
+                    ease_value,
+                    data.face_direction == Some(true),
+                    tween_apply_update.progress,
+                    transform,
+                );
             }
             Some(Mode::Rotate(data)) => {
                 let start: Quat = data.start.unwrap_or_default().to_bevy_normalized();
                 let end = data.end.unwrap_or_default().to_bevy_normalized();
-                transform.rotation = start.slerp(end, ease_value);
+                Self::apply_rotation(start, end, ease_value, transform);
             }
             Some(Mode::Scale(data)) => {
                 let start = data.start.unwrap_or_default().abs_vec_to_vec3();
                 let end = data.end.unwrap_or_default().abs_vec_to_vec3();
-                transform.scale = start + ((end - start) * ease_value);
-                if transform.scale.x == 0.0 {
-                    transform.scale.x = f32::EPSILON;
-                };
-                if transform.scale.y == 0.0 {
-                    transform.scale.y = f32::EPSILON;
-                };
-                if transform.scale.z == 0.0 {
-                    transform.scale.z = f32::EPSILON;
-                };
+                Self::apply_scale(start, end, ease_value, transform);
             }
             Some(Mode::TextureMove(data)) => {
                 let start: Vec2 = (&data.start.unwrap_or_default()).into();
@@ -234,6 +219,46 @@ impl Tween {
             }
             _ => {}
         }
+    }
+
+    fn apply_translation(
+        start: Vec3,
+        end: Vec3,
+        ease_value: f32,
+        face_direction: bool,
+        progress: f32,
+        transform: &mut Transform,
+    ) {
+        if face_direction && progress == 0.0 {
+            let direction = end - start;
+            if direction == Vec3::ZERO {
+                // can't look nowhere
+            } else if direction * Vec3::new(1.0, 0.0, 1.0) != Vec3::ZERO {
+                // randomly assume +z is up for a vertical movement
+                transform.look_at(end - start, Vec3::Z);
+            } else {
+                transform.look_at(end - start, Vec3::Y);
+            }
+        }
+
+        transform.translation = start + (end - start) * ease_value;
+    }
+
+    fn apply_rotation(start: Quat, end: Quat, ease_value: f32, transform: &mut Transform) {
+        transform.rotation = start.slerp(end, ease_value);
+    }
+
+    fn apply_scale(start: Vec3, end: Vec3, ease_value: f32, transform: &mut Transform) {
+        transform.scale = start + ((end - start) * ease_value);
+        if transform.scale.x == 0.0 {
+            transform.scale.x = f32::EPSILON;
+        };
+        if transform.scale.y == 0.0 {
+            transform.scale.y = f32::EPSILON;
+        };
+        if transform.scale.z == 0.0 {
+            transform.scale.z = f32::EPSILON;
+        };
     }
 }
 
