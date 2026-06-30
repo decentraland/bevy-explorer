@@ -6,6 +6,13 @@ is not optional — it is the only sanctioned way to build UI here.**
 Design source of truth: the **Explorer 2.0 Figma**
 (`Design System | Explorer 2.0`, file `CuOxttfA4jZ5I6gyH4YCsc`).
 
+> **⛔ Before you review or merge ANYTHING in `react-web/`, read [`review.md`](./review.md) first.**
+> It is the always-on pre-merge source of truth: the test harness (tiers 1 / 1.5 / 2), per-domain
+> expectations, the **§4 world-space (nametags / crosshair) manual checklist**, and the **§5 pre-merge
+> review checklist** — every PR review runs through §5. This `AGENTS.md` defines *how to build*;
+> `review.md` defines *how we prove it still works*. Keep `review.md` current when you add a domain or
+> a rule (it goes stale — e.g. when engine-drawn behaviour like the nametags changes).
+
 ## 1. Always use the design system
 
 - **Tokens are mandatory.** Every color, radius, spacing, shadow, z-index, font size,

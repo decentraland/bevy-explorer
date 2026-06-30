@@ -120,9 +120,16 @@ these by hand (or have an agent drive the Chrome extension against a live world)
 - [ ] **Nametags** appear above every avatar's head, follow them while walking, and **face the camera**.
 - [ ] Name **colour** = profile custom colour if set, else the address-hash palette; **claimed** names
       show the verified seal, **unclaimed** show `#abcd` tight to the name.
-- [ ] **Constant on-screen size** — a tag is the same size up close and far (not ballooning when near).
-- [ ] **No duplicates / orphans** after alt-tabbing away and back (the classic regression).
-- [ ] Tags **fade out** past ~20–40 m and hide your own tag in first person.
+- [ ] **Fixed world scale — never a giant.** A tag is a constant *world* size (it shrinks with distance,
+      like the old SDK scene); it must NEVER balloon into a screen-filling pill when the camera pulls back
+      or when its `AvatarAttach` fails to bind. (We dropped the old constant-on-screen scaling precisely
+      because it turned a stranded tag into a giant.)
+- [ ] **Exactly one tag per address — no duplicates / orphans / pile-up.** None accumulate over a long
+      session, after alt-tabbing away and back, or across a comms/livekit blip's leave→enter churn (the
+      classic regression). They're pooled — one reusable entity per wallet, never destroyed (engine entity
+      removal is unreliable for attached entities; we show/hide instead).
+- [ ] Tags **fade out** past ~20–40 m. Your **own** tag shows above your head in third person and is
+      hidden in first person.
 - [ ] **Crosshair** shows when the camera is locked (mouse hidden) and hides when the cursor is free.
 - [ ] **Hover / proximity prompts** ("Press E…") show on interactables and sit on the right entity.
 
