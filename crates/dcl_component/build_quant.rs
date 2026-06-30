@@ -73,6 +73,10 @@ pub fn generate(descriptor_bytes: &[u8], out_path: &std::path::Path) {
                     "    /// Dequantized `{name}` ({min}..={max}, {bits} bits); `None` when absent from the delta.\n    \
                      pub fn {name}_dequantized(&self) -> Option<f32> {{\n        \
                      self.{name}.map(|v| dequantize(v, {min}f32, {max}f32, {bits}))\n    \
+                     }}\n    \
+                     /// Quantization step (granularity) of `{name}`: `(max - min) / (2^bits - 1)`.\n    \
+                     pub fn {name}_step() -> f32 {{\n        \
+                     ({max}f32 - {min}f32) / ((1u32 << {bits}) - 1) as f32\n    \
                      }}",
                 )
                 .unwrap();
