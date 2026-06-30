@@ -174,7 +174,7 @@ const AUTO_MAX_PT: f32 = 72.0;
 /// PIX_PER_M_PER_PT / font_size`). Calibrated against the reference renderer:
 /// lower = larger text. Drives the non-auto world scale, the auto floor size,
 /// and the box<->point-size conversion in the auto fit.
-const PIX_PER_M_PER_PT: f32 = 225.0;
+const PIX_PER_M_PER_PT: f32 = 190.0;
 
 /// With `fontAutoSize`, match unity-explorer: ignore the SDK font size and size
 /// the font so the (unwrapped) text block fits the box, clamped to [18, 72]pt.
