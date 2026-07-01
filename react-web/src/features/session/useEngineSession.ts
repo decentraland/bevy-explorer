@@ -288,8 +288,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // (so the engine is launched straight at that destination instead of loading Genesis Plaza first).
   const pendingLogin = useRef<((driver: LoginDriver) => Promise<unknown>) | null>(null)
   // Stops the post-launch boot-panic poll once the world is reached (so it can't mislabel a benign
-  // post-boot panic as a launch failure).
+  // post-boot panic as a launch failure). The timer id is kept so it's cancelled on unmount.
   const bootPollStop = useRef(false)
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [playerReady, setPlayerReady] = useState(false)
   const [scene, setScene] = useState<SceneLoadingState | null>(null)
   const [hover, setHover] = useState<HoverAction[]>([])
@@ -499,6 +500,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     return () => window.removeEventListener('message', onMessage)
   }, [])
 
+  // Cancel the boot-panic poll on unmount — the one self-scheduling timer in this hook.
+  useEffect(() => () => { if (pollTimer.current) clearTimeout(pollTimer.current) }, [])
+
   // On world-entry, pull the profile (top-bar chip) and notifications (so the unread badge
   // shows immediately, not only after the panel is first opened). Marked fetched once.
   useEffect(() => {
@@ -672,9 +676,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           driverRef.current?.clearEnginePanic?.()
           return
         }
-        if (++polls < 24) setTimeout(pollPanic, 250) // ~6s boot window
+        if (++polls < 24) pollTimer.current = setTimeout(pollPanic, 250) // ~6s boot window
       }
-      setTimeout(pollPanic, 250)
+      pollTimer.current = setTimeout(pollPanic, 250)
       const login = pendingLogin.current
       pendingLogin.current = null
       Promise.resolve(login?.(driver))

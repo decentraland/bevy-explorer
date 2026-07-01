@@ -19,7 +19,7 @@ export function isMobile(): boolean {
 // Safari don't, and the engine renders its own "Browser Not Supported" page there — so react-web must
 // gate too, or the HUD mounts over that page and the login sits frozen at 0%.
 export function isChromiumBased(): boolean {
-  if (typeof navigator === 'undefined') return true
+  if (typeof navigator === 'undefined') return true // fail-open (SSR/tests): never gate without a UA
   return /Chrome\//.test(navigator.userAgent)
 }
 

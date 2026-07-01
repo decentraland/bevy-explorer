@@ -51,6 +51,8 @@ const SHOWCASE = params.get('showcase') === '1'
 // 0%). `?gate=1` forces the mobile variant, `?gate=browser` the browser variant (both for testing);
 // `?nogate=1` bypasses; the shared `bypass_browser_check` cookie ("try anyway") also bypasses.
 function gateReason(): 'mobile' | 'browser' | null {
+  // Precedence: a real device constraint wins over a test override — mobile is checked before
+  // `?gate=browser`, so on an actual phone that param still (correctly) yields the mobile variant.
   if (params.get('nogate') === '1') return null
   if (isMobile() || params.get('gate') === '1') return 'mobile'
   if (params.get('gate') === 'browser') return 'browser'
