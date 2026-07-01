@@ -42,32 +42,23 @@
   flex-direction: column;
   gap: 12px;
 }
-.store {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
+/* Store / Chrome links reuse the Button (variant="secondary") primitive for the pill base (bg, hover,
+   radius, active, transition). These `.buttons .store` rules (2-class → win over Button's variant/size
+   regardless of stylesheet order) add only the gate-specific deltas: full-width, taller, bordered,
+   title-case (Button is uppercase). */
+.buttons .store {
   width: 100%;
   min-height: 52px;
   padding: 12px 20px;
-  border-radius: var(--r-pill);
+  gap: 10px;
   border: 1px solid var(--white-10);
-  background: var(--fill-4);
-  color: var(--text);
   font-size: var(--fs-md);
   font-weight: 700;
+  text-transform: none;
+  letter-spacing: normal;
   text-decoration: none;
-  transition:
-    background-color var(--dur-fast) ease,
-    transform var(--dur-fast) ease;
 }
-.store:hover {
-  background: var(--fill-5);
-}
-.store:active {
-  transform: translateY(1px);
-}
-.store svg {
+.buttons .store svg {
   width: 22px;
   height: 22px;
   flex: 0 0 auto;

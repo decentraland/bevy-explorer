@@ -1,8 +1,12 @@
 // Gate — shown instead of the HUD when the engine can't run: on a mobile browser (→ native apps) or
 // a non-Chromium desktop browser (→ "use Chrome"). Copy, store links, and the Chrome bypass mirror
 // the engine bundle's own gate (deploy/web/index.html) so the two stay consistent.
+//
+// KEEP IN SYNC with deploy/web/index.html: the store/Chrome URLs and the Apple/Google/Chrome SVGs are
+// duplicated there (the engine loader gates before react-web mounts, so it can't import from here).
 
 import { mobilePlatform } from '../../lib/isMobile'
+import { Button } from '../../design'
 import styles from './MobileGate.module.css'
 
 const APP_STORE_URL = 'https://testflight.apple.com/join/KF4r3jlU'
@@ -68,10 +72,10 @@ export function MobileGate({ reason = 'mobile' }: { reason?: 'mobile' | 'browser
             Decentraland Web requires <strong>Google Chrome</strong> on desktop to run.
           </p>
           <div className={styles.buttons}>
-            <a className={styles.store} href={CHROME_URL} target="_blank" rel="noopener">
+            <Button variant="secondary" href={CHROME_URL} target="_blank" rel="noopener" className={styles.store}>
               <ChromeIcon />
               <span>Download Chrome</span>
-            </a>
+            </Button>
           </div>
           <button type="button" className={styles.tryAnyway} onClick={tryAnyway}>
             try anyway…
@@ -94,16 +98,16 @@ export function MobileGate({ reason = 'mobile' }: { reason?: 'mobile' | 'browser
         </p>
         <div className={styles.buttons}>
           {showApple && (
-            <a className={styles.store} href={APP_STORE_URL} target="_blank" rel="noopener">
+            <Button variant="secondary" href={APP_STORE_URL} target="_blank" rel="noopener" className={styles.store}>
               <AppleIcon />
               <span>Install from App Store</span>
-            </a>
+            </Button>
           )}
           {showGoogle && (
-            <a className={styles.store} href={PLAY_STORE_URL} target="_blank" rel="noopener">
+            <Button variant="secondary" href={PLAY_STORE_URL} target="_blank" rel="noopener" className={styles.store}>
               <GooglePlayIcon />
               <span>Install from Google Play</span>
-            </a>
+            </Button>
           )}
         </div>
       </div>

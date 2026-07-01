@@ -2,7 +2,7 @@
 // everything (login/loading). Fed by useEngineSession's fatalError or the ErrorBoundary fallback.
 
 import { useState } from 'react'
-import { Button } from '../../design'
+import { ModalShell, Button } from '../../design'
 import styles from './EngineErrorModal.module.css'
 
 export interface FatalError {
@@ -43,12 +43,21 @@ export function EngineErrorModal({
   }
 
   return (
-    <div className={styles.root} role="alertdialog" aria-modal="true" aria-label={title}>
-      <div className={styles.card}>
-        <h1 className={styles.title}>{title}</h1>
-        <p className={styles.subtitle}>{subtitle}</p>
-        <pre className={styles.detail}>{error.message}</pre>
-        <div className={styles.actions}>
+    <ModalShell
+      title={title}
+      subtitle={subtitle}
+      role="alertdialog"
+      ariaLabel={title}
+      // A dismissable (runtime) crash can be closed via Escape or scrim-click; a fatal boot/react crash
+      // has no onDismiss → onClose is undefined → it can't be escaped. No header X — footer buttons drive it.
+      // (ModalShell ties Escape to dismissOnScrim, so gate both on onDismiss.)
+      onClose={onDismiss}
+      dismissOnScrim={!!onDismiss}
+      closeButton={false}
+      // Sit above login/loading (Modal's default backdrop is --z-modal).
+      backdropClassName={styles.fatalLayer}
+      actions={
+        <>
           {onDismiss && (
             <Button variant="ghost" onClick={onDismiss}>
               Dismiss
@@ -60,8 +69,10 @@ export function EngineErrorModal({
           <Button variant="primary" onClick={onReload}>
             Reload
           </Button>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      <pre className={styles.detail}>{error.message}</pre>
+    </ModalShell>
   )
 }
