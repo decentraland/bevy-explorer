@@ -105,7 +105,10 @@
 .buttons .cta,
 .buttons .ctaSecondary {
   width: 100%;
-  min-height: 46px;
+  /* Fixed height + nowrap so the primary/secondary CTAs stay the SAME height — a wrapping label
+     (long/translated, or the narrow 23vw panel) would otherwise make them ragged. overflow:hidden
+     contains an over-long label instead of letting it spill outside the pill. */
+  height: 46px;
   padding: 9px 16px;
   border-radius: 12px;
   font-size: 0.84rem;
@@ -114,7 +117,8 @@
   line-height: 1.15;
   text-transform: uppercase;
   text-align: center;
-  white-space: normal;
+  white-space: nowrap;
+  overflow: hidden;
 }
 .buttons .cta {
   box-shadow: 0 6px 18px rgba(255, 45, 85, 0.32);

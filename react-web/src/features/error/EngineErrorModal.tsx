@@ -31,10 +31,15 @@ export function EngineErrorModal({
         : 'The app hit an unexpected error.'
 
   const copy = (): void => {
-    void navigator.clipboard?.writeText(error.message).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1200)
-    })
+    // clipboard.writeText rejects when the document isn't focused (e.g. right after an alt-tab back
+    // to the crashed tab) — handle the rejection so it's not an unhandled promise error.
+    navigator.clipboard?.writeText(error.message).then(
+      () => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1200)
+      },
+      () => {}
+    )
   }
 
   return (
