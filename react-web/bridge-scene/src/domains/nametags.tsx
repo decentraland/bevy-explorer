@@ -377,7 +377,9 @@ export function initNametags(): void {
 
   // Reveal on enter. We do NOT hide on leave — a livekit blip fires leave→enter and would just flicker the
   // tag; presence (below) drives hiding instead. onLeaveScene only clears the stale chat bubble.
-  onEnterScene((player) => show(player.userId))
+  onEnterScene((player) => {
+    show(player.userId)
+  })
   onLeaveScene((userId) => bubbles.delete(canon(userId)))
 
   // Age out chat bubbles: the scene sandbox has no wall clock, so expire by accumulated frame time.
