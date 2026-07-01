@@ -230,9 +230,10 @@ export interface EngineSession {
   cursorLocked: boolean
   /** In-range world-entity tooltips, anchored at projected screen coords. */
   proximity: ProximityTip[]
-  /** A nearby avatar was just clicked in the world → open their profile card at (x,y). New object
-   *  per click so App's effect re-fires even for the same avatar. */
-  avatarClick: { address: string; name: string; x: number; y: number } | null
+  /** The nearby avatar whose profile card is open in the world (clicked at x,y), or null. */
+  worldCard: { address: string; name: string; x: number; y: number } | null
+  /** Dismiss the world profile card. */
+  closeWorldCard: () => void
   chat: ChatState
   friends: FriendsState
   settings: SettingsState
@@ -315,7 +316,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null)
   const [proximity, setProximity] = useState<ProximityTip[]>([])
   const [cursorLocked, setCursorLocked] = useState(false)
-  const [avatarClick, setAvatarClick] = useState<{ address: string; name: string; x: number; y: number } | null>(null)
+  const [worldCard, setWorldCard] = useState<{ address: string; name: string; x: number; y: number } | null>(null)
   const [messages, setMessages] = useState<ChatLine[]>([])
   const [members, setMembers] = useState<NearbyMember[]>([])
   const [chatOpen, setChatOpen] = useState(true)
@@ -386,7 +387,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           setProximity(msg.tips)
           break
         case 'avatarClick':
-          setAvatarClick({ address: msg.address, name: msg.name, x: msg.x, y: msg.y })
+          setWorldCard({ address: msg.address, name: msg.name, x: msg.x, y: msg.y })
           break
         case 'chat':
           setMessages((prev) =>
@@ -606,6 +607,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const consumeMention = useCallback(() => setPendingMention(null), [])
+  const closeWorldCard = useCallback(() => setWorldCard(null), [])
 
   // Escape closes any open React panel/menu and returns to the world view. We only
   // intercept when a non-chat panel is open so ESC stays free for chat/the engine.
@@ -943,7 +945,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     hoverPos,
     cursorLocked,
     proximity,
-    avatarClick,
+    worldCard,
+    closeWorldCard,
     chat: { messages, send: sendChat, open: chatOpen, toggle: toggleChat, members, mention: mentionInChat, pendingMention, consumeMention },
     friends: {
       available: friendsData.available,
