@@ -67,6 +67,7 @@
   --z-modal: 1000;
   --z-loading: 9998;
   --z-login: 9999;
+  --z-fatal: 10010; /* engine crash / boot-panic popup — above login + loading */
 
   /* ---- typography (Inter scale) ---- */
   --font-family: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;

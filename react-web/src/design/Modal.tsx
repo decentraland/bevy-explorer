@@ -23,6 +23,9 @@ interface ModalProps {
   ariaLabel?: string
   role?: string
   className?: string
+  /** Extra class on the fixed backdrop — escape-hatch for a non-default z-layer (e.g. the fatal
+   *  error popup, which must sit above login). */
+  backdropClassName?: string
 }
 
 export function Modal({
@@ -31,7 +34,8 @@ export function Modal({
   width = 420,
   ariaLabel,
   role = 'dialog',
-  className = ''
+  className = '',
+  backdropClassName = ''
 }: ModalProps): React.JSX.Element {
   const cardRef = useRef<HTMLDivElement>(null)
 
@@ -70,7 +74,7 @@ export function Modal({
   }, [onClose])
 
   return createPortal(
-    <div className={styles.backdrop} onClick={onClose}>
+    <div className={`${styles.backdrop} ${backdropClassName}`.trim()} onClick={onClose}>
       <div
         className={`${styles.card} ${className}`.trim()}
         style={{ width }}
@@ -263,6 +267,7 @@ interface ModalShellProps {
   size?: keyof typeof SIZES
   dismissOnScrim?: boolean
   className?: string
+  backdropClassName?: string
   ariaLabel?: string
   role?: string
   bodyless?: boolean
@@ -290,6 +295,7 @@ export function ModalShell({
   size = 'sm',
   dismissOnScrim = true,
   className = '',
+  backdropClassName,
   ariaLabel,
   role = 'dialog',
   bodyless = false,
@@ -352,6 +358,7 @@ export function ModalShell({
       onClose={dismissOnScrim ? onClose : undefined}
       width={resolvedWidth}
       className={`${styles.shell} ${className}`.trim()}
+      backdropClassName={backdropClassName}
       ariaLabel={ariaLabel}
       role={role}
     >
