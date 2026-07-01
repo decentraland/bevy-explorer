@@ -105,10 +105,12 @@
 .buttons .cta,
 .buttons .ctaSecondary {
   width: 100%;
-  /* Fixed height + nowrap so the primary/secondary CTAs stay the SAME height — a wrapping label
-     (long/translated, or the narrow 23vw panel) would otherwise make them ragged. overflow:hidden
-     contains an over-long label instead of letting it spill outside the pill. */
-  height: 46px;
+  /* A label that doesn't fit (long/translated copy, or the narrow 23vw panel) wraps onto a second
+     line and grows the pill (min-height) instead of being clipped under the arrow — the Button base
+     is nowrap, so re-enable wrapping here. Both CTAs are 46px when their label fits on one line; a
+     wrapped one grows, and since sibling labels are similar length they wrap together in practice,
+     so the pair stays visually matched. */
+  min-height: 46px;
   padding: 9px 16px;
   border-radius: 12px;
   font-size: 0.84rem;
@@ -117,8 +119,7 @@
   line-height: 1.15;
   text-transform: uppercase;
   text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
+  white-space: normal;
 }
 .buttons .cta {
   box-shadow: 0 6px 18px color-mix(in srgb, var(--brand) 32%, transparent);
@@ -133,6 +134,10 @@
 .label {
   flex: 1 1 auto;
   min-width: 0;
+  /* Break a word too long for the text column (e.g. "DECENTRALAND" in the narrow panel) onto the
+     next line instead of letting it overflow — a single unbreakable word would otherwise spill,
+     centered, into the arrow's reserved column and sit under the icon. */
+  overflow-wrap: break-word;
 }
 .arrow {
   flex: 0 0 auto;
