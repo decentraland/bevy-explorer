@@ -18,6 +18,7 @@ import type {
   GalleryPhoto,
   GalleryPhotoMeta,
   HoverAction,
+  InvitableCommunity,
   NavAction,
   NearbyMember,
   PermissionLevelChoice,
@@ -51,6 +52,12 @@ export interface CommunitiesState {
   detail: CommunityDetailMessage | null
   /** Request a community's detail (call when its modal opens). */
   loadDetail: (id: string) => void
+  /** Communities the local user can invite a given address to, keyed by lowercased address. */
+  invitable: Record<string, InvitableCommunity[]>
+  /** Fetch the invitable list for an address (call when a profile card opens). */
+  requestInvitable: (address: string) => void
+  /** Invite an address to a community (owner/moderator only, enforced server-side). */
+  invite: (communityId: string, address: string) => void
 }
 
 export interface MapState {
@@ -148,6 +155,12 @@ export interface ChatState {
   toggle: () => void
   /** Nearby players (drives the "Nearby · N" header + members list). */
   members: NearbyMember[]
+  /** Open chat and queue an @name mention into the draft (from a profile card's "Mention"). */
+  mention: (name: string) => void
+  /** A queued @name waiting to be dropped into the chat draft (consumed by Chat), or null. */
+  pendingMention: string | null
+  /** Clear the queued mention once Chat has inserted it. */
+  consumeMention: () => void
 }
 
 const MAX_CHAT_LINES = 200
@@ -213,12 +226,17 @@ export interface EngineSession {
   reload: () => void
   /** Dismiss a non-fatal (runtime) error popup. */
   dismissFatal: () => void
-  /** World-entity hover hints under the reticle (empty = nothing hovered). */
+  /** World-entity hover hints (empty = nothing hovered). */
   hover: HoverAction[]
+  /** Cursor screen position for the hover hint (from the engine; null = show at the reticle). */
+  hoverPos: { x: number; y: number } | null
   /** Engine has grabbed the mouse for camera-look (OS cursor hidden) → show the crosshair. */
   cursorLocked: boolean
   /** In-range world-entity tooltips, anchored at projected screen coords. */
   proximity: ProximityTip[]
+  /** A nearby avatar was just clicked in the world → open their profile card at (x,y). New object
+   *  per click so App's effect re-fires even for the same avatar. */
+  avatarClick: { address: string; name: string; x: number; y: number } | null
   chat: ChatState
   friends: FriendsState
   settings: SettingsState
@@ -298,11 +316,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [playerReady, setPlayerReady] = useState(false)
   const [scene, setScene] = useState<SceneLoadingState | null>(null)
   const [hover, setHover] = useState<HoverAction[]>([])
+  const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null)
   const [proximity, setProximity] = useState<ProximityTip[]>([])
   const [cursorLocked, setCursorLocked] = useState(false)
+  const [avatarClick, setAvatarClick] = useState<{ address: string; name: string; x: number; y: number } | null>(null)
   const [messages, setMessages] = useState<ChatLine[]>([])
   const [members, setMembers] = useState<NearbyMember[]>([])
   const [chatOpen, setChatOpen] = useState(true)
+  const [pendingMention, setPendingMention] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [friendsData, setFriendsData] = useState<{
     available: boolean
@@ -328,6 +349,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [communities, setCommunities] = useState<Community[]>([])
   const [communitiesOpen, setCommunitiesOpen] = useState(false)
   const [communityDetail, setCommunityDetail] = useState<CommunityDetailMessage | null>(null)
+  const [invitable, setInvitable] = useState<Record<string, InvitableCommunity[]>>({})
   const [mapParcel, setMapParcel] = useState({ x: 0, y: 0 })
   const [mapOpen, setMapOpen] = useState(false)
   const [placesOpen, setPlacesOpen] = useState(false)
@@ -359,12 +381,16 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'hover':
           setHover(msg.actions)
+          setHoverPos(msg.x != null && msg.y != null ? { x: msg.x, y: msg.y } : null)
           break
         case 'cursorLock':
           setCursorLocked(msg.locked)
           break
         case 'proximity':
           setProximity(msg.tips)
+          break
+        case 'avatarClick':
+          setAvatarClick({ address: msg.address, name: msg.name, x: msg.x, y: msg.y })
           break
         case 'chat':
           setMessages((prev) =>
@@ -417,6 +443,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           break
         case 'communityDetail':
           setCommunityDetail(msg)
+          break
+        case 'invitableCommunities':
+          setInvitable((prev) => ({ ...prev, [msg.address.toLowerCase()]: msg.communities }))
           break
         case 'mapState':
           setMapParcel({ x: msg.x, y: msg.y })
@@ -573,6 +602,14 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setChatOpen((o) => !o)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // "Mention" from a profile card opens chat and queues the @name; Chat consumes it into its draft.
+  const mentionInChat = useCallback((name: string) => {
+    panelSetters.forEach((set) => set(false))
+    setChatOpen(true)
+    setPendingMention(name)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const consumeMention = useCallback(() => setPendingMention(null), [])
 
   // Escape closes any open React panel/menu and returns to the world view. We only
   // intercept when a non-chat panel is open so ESC stays free for chat/the engine.
@@ -779,6 +816,12 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setCommunityDetail(null) // clear stale detail while the new one loads
     driverRef.current?.send({ kind: 'getCommunityDetail', id })
   }, [])
+  const requestInvitable = useCallback((address: string) => {
+    driverRef.current?.send({ kind: 'getInvitableCommunities', address })
+  }, [])
+  const inviteToCommunity = useCallback((communityId: string, address: string) => {
+    driverRef.current?.send({ kind: 'inviteToCommunity', communityId, address })
+  }, [])
   const playEmote = useCallback((urn: string) => {
     driverRef.current?.send({ kind: 'triggerEmote', urn })
     setEmotesOpen(false)
@@ -958,9 +1001,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       setFatalError(null)
     },
     hover,
+    hoverPos,
     cursorLocked,
     proximity,
-    chat: { messages, send: sendChat, open: chatOpen, toggle: toggleChat, members },
+    avatarClick,
+    chat: { messages, send: sendChat, open: chatOpen, toggle: toggleChat, members, mention: mentionInChat, pendingMention, consumeMention },
     friends: {
       available: friendsData.available,
       list: friendsData.friends,
@@ -984,7 +1029,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     },
     emotes: { list: emotes, open: emotesOpen, toggle: toggleEmotes, play: playEmote, equip: equipEmote },
     backpack: { list: wearables, open: backpackOpen, toggle: toggleBackpack, equip: equipWearables, preview: previewWearables },
-    communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, create: createCommunity, join: joinCommunity, leave: leaveCommunity, detail: communityDetail, loadDetail: loadCommunityDetail },
+    communities: { list: communities, open: communitiesOpen, toggle: toggleCommunities, create: createCommunity, join: joinCommunity, leave: leaveCommunity, detail: communityDetail, loadDetail: loadCommunityDetail, invitable, requestInvitable, invite: inviteToCommunity },
     map: { x: mapParcel.x, y: mapParcel.y, open: mapOpen, toggle: toggleMap, teleport, changeRealm },
     places: { open: placesOpen, toggle: togglePlaces },
     gallery: {

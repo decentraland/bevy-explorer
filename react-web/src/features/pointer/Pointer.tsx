@@ -40,7 +40,7 @@ function KeyCap({ button }: { button: number }): React.JSX.Element {
   return <span className={styles.cap}>{KEY_LABEL[button] ?? '?'}</span>
 }
 
-export function Pointer({ hover, locked, proximity }: { hover: HoverAction[]; locked: boolean; proximity: ProximityTip[] }): React.JSX.Element | null {
+export function Pointer({ hover, hoverPos, locked, proximity }: { hover: HoverAction[]; hoverPos?: { x: number; y: number } | null; locked: boolean; proximity: ProximityTip[] }): React.JSX.Element | null {
   // The engine grabs the mouse without the browser Pointer Lock API, so `locked` comes from the
   // bridge (PrimaryPointerInfo). Keep the browser API as a fallback for setups that do use it.
   const [browserLocked, setBrowserLocked] = useState(false)
@@ -59,7 +59,9 @@ export function Pointer({ hover, locked, proximity }: { hover: HoverAction[]; lo
     <div className={styles.root} aria-hidden="true">
       {showReticle && <div data-testid="reticle" className={`${styles.reticle}${active ? ` ${styles.reticleActive}` : ''}`} />}
       {active && (
-        <div className={styles.hints}>
+        // Anchor the hint at the cursor (from PrimaryPointerInfo) when the pointer is free; fall back
+        // to below the reticle when pointer-locked or the position is unavailable.
+        <div className={styles.hints} style={!showReticle && hoverPos ? { left: hoverPos.x, top: hoverPos.y + 18 } : undefined}>
           {hover.map((a, i) => (
             <div key={i} className={`${styles.hint}${a.enabled ? '' : ` ${styles.hintDisabled}`}`}>
               <KeyCap button={a.button} />

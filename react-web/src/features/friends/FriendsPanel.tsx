@@ -6,9 +6,9 @@
 import { useMemo, useState } from 'react'
 import { Avatar, Button, ControlButton } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
-import type { Friend, FriendRequest } from '../../engine/protocol'
+import type { Friend, FriendRequest, InvitableCommunity } from '../../engine/protocol'
 import type { FriendsState } from '../session/useEngineSession'
-import { ProfileCard, type ChatUser } from '../chat/ProfileCard'
+import { ProfileCard, type ChatUser, type Relationship } from '../chat/ProfileCard'
 import styles from './FriendsPanel.module.css'
 
 type Tab = 'friends' | 'requests' | 'blocked'
@@ -156,17 +156,23 @@ export function FriendsPanel({
   friends,
   me,
   relationshipOf,
-  onAddFriend,
   onViewProfile,
-  onBlock
+  onReport,
+  onMention,
+  invitable,
+  onRequestInvitable,
+  onInvite
 }: {
   friends: FriendsState
   me?: { address?: string } | null
-  /** Friendship status for a user (drives the menu CTA). */
-  relationshipOf?: (address: string) => 'none' | 'requested' | 'friend'
-  onAddFriend?: (address: string) => void
+  /** Friendship status for a user (drives the profile card CTA). */
+  relationshipOf?: (address: string) => Relationship
   onViewProfile?: (user: ChatUser) => void
-  onBlock?: (address: string) => void
+  onReport?: (user: ChatUser) => void
+  onMention?: (name: string) => void
+  invitable?: Record<string, InvitableCommunity[]>
+  onRequestInvitable?: (address: string) => void
+  onInvite?: (communityId: string, address: string) => void
 }): React.JSX.Element | null {
   const [tab, setTab] = useState<Tab>('friends')
   // Same profile menu the chat opens, anchored at the clicked row.
@@ -294,9 +300,13 @@ export function FriendsPanel({
           y={menu.y}
           me={me}
           relationship={relationshipOf?.(menu.user.address) ?? 'friend'}
-          onAddFriend={onAddFriend}
+          onFriendAction={friends.act}
           onViewProfile={onViewProfile}
-          onBlock={onBlock}
+          onMention={onMention}
+          onReport={onReport}
+          invitableCommunities={menu.user.address ? invitable?.[menu.user.address.toLowerCase()] : undefined}
+          onRequestInvitable={onRequestInvitable}
+          onInvite={onInvite}
           onClose={() => setMenu(null)}
         />
       )}
