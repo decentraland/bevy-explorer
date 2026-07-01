@@ -153,7 +153,7 @@
 }
 .bootLabel {
   margin-bottom: 7px;
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--ink-85);
@@ -169,7 +169,7 @@
   height: 100%;
   border-radius: 2px;
   background: linear-gradient(90deg, var(--brand), var(--gold));
-  transition: width 0.3s ease;
+  transition: width var(--dur-mid) ease;
 }
 
 /* ---- avatar (welcome-back screen) — full height, standing on Unity's golden podium ---- */
