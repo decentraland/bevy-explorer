@@ -40,6 +40,41 @@ function KeyCap({ button }: { button: number }): React.JSX.Element {
   return <span className={styles.cap}>{KEY_LABEL[button] ?? '?'}</span>
 }
 
+// Radial tooltip slots around the free cursor — ported from bevy-ui-scene's hover-action-component:
+// the first prompt sits to the RIGHT of the pointer, the second to the LEFT, then top-centre, then
+// the lower and upper flanks. Up to 7 shown at once. Left-side slots reverse so the key-cap stays
+// nearest the cursor. Offsets are pre-scale px (the container applies --ui-scale).
+const H = 14 // horizontal gap from the cursor
+const V = 34 // vertical spacing between rows
+interface Slot { x: number; y: number; side: 'r' | 'l' | 't' }
+const HOVER_SLOTS: Slot[] = [
+  { x: H, y: 0, side: 'r' }, // right-middle
+  { x: -H, y: 0, side: 'l' }, // left-middle
+  { x: 0, y: -2 * V, side: 't' }, // top-centre
+  { x: H, y: V, side: 'r' }, // right-lower
+  { x: -H, y: V, side: 'l' }, // left-lower
+  { x: H, y: -V, side: 'r' }, // right-upper
+  { x: -H, y: -V, side: 'l' } // left-upper
+]
+function slotStyle(s: Slot): React.CSSProperties {
+  if (s.side === 't') return { position: 'absolute', left: s.x, top: s.y, transform: 'translate(-50%, -50%)' }
+  if (s.side === 'l') return { position: 'absolute', left: s.x, top: s.y, transform: 'translate(-100%, -50%)' }
+  return { position: 'absolute', left: s.x, top: s.y, transform: 'translateY(-50%)' }
+}
+
+function Hint({ action, slot }: { action: HoverAction; slot?: Slot }): React.JSX.Element {
+  const reverse = slot?.side === 'l'
+  return (
+    <div
+      className={`${styles.hint}${reverse ? ` ${styles.hintReverse}` : ''}${action.enabled ? '' : ` ${styles.hintDisabled}`}`}
+      style={slot ? slotStyle(slot) : undefined}
+    >
+      <KeyCap button={action.button} />
+      <span className={styles.hintText}>{action.enabled ? action.text : 'Too far, get closer'}</span>
+    </div>
+  )
+}
+
 export function Pointer({ hover, hoverPos, locked, proximity }: { hover: HoverAction[]; hoverPos?: { x: number; y: number } | null; locked: boolean; proximity: ProximityTip[] }): React.JSX.Element | null {
   // The engine grabs the mouse without the browser Pointer Lock API, so `locked` comes from the
   // bridge (PrimaryPointerInfo). Keep the browser API as a fallback for setups that do use it.
@@ -58,18 +93,22 @@ export function Pointer({ hover, hoverPos, locked, proximity }: { hover: HoverAc
   return (
     <div className={styles.root} aria-hidden="true">
       {showReticle && <div data-testid="reticle" className={`${styles.reticle}${active ? ` ${styles.reticleActive}` : ''}`} />}
-      {active && (
-        // Anchor the hint at the cursor (from PrimaryPointerInfo) when the pointer is free; fall back
-        // to below the reticle when pointer-locked or the position is unavailable.
-        <div className={styles.hints} style={!showReticle && hoverPos ? { left: hoverPos.x, top: hoverPos.y + 18 } : undefined}>
-          {hover.map((a, i) => (
-            <div key={i} className={`${styles.hint}${a.enabled ? '' : ` ${styles.hintDisabled}`}`}>
-              <KeyCap button={a.button} />
-              <span className={styles.hintText}>{a.enabled ? a.text : 'Too far, get closer'}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {active &&
+        (!showReticle && hoverPos ? (
+          // Free cursor: spread the prompts radially around the pointer (up to 7 slots).
+          <div className={styles.hintsRadial} style={{ left: hoverPos.x, top: hoverPos.y }}>
+            {hover.slice(0, HOVER_SLOTS.length).map((a, i) => (
+              <Hint key={i} action={a} slot={HOVER_SLOTS[i]} />
+            ))}
+          </div>
+        ) : (
+          // Pointer-locked (or no cursor pos): stack the prompts just below the centre reticle.
+          <div className={styles.hints}>
+            {hover.map((a, i) => (
+              <Hint key={i} action={a} />
+            ))}
+          </div>
+        ))}
       {/* In-range entity tooltips, anchored at the engine-projected screen coords. */}
       {proximity.map((tip) => (
         <div key={tip.id} data-testid={`proxtip-${tip.id}`} className={styles.proxTip} style={{ left: `${tip.x}px`, top: `${tip.y}px` }}>

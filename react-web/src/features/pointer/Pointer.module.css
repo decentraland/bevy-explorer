@@ -55,6 +55,13 @@
   transform: translateX(-50%) scale(var(--ui-scale));
   transform-origin: top center;
 }
+/* Free-cursor hover: a zero-size anchor at the pointer; each prompt is absolutely placed in a
+   radial slot around it (see HOVER_SLOTS). DPI-scale around the cursor point (top-left origin). */
+.hintsRadial {
+  position: absolute;
+  transform: scale(var(--ui-scale));
+  transform-origin: top left;
+}
 .hint {
   display: flex;
   align-items: center;
@@ -67,6 +74,11 @@
   font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
+}
+/* Left-side radial slots: key-cap nearest the cursor, so mirror the row + padding. */
+.hintReverse {
+  flex-direction: row-reverse;
+  padding: 6px 9px 6px 16px;
 }
 .hintDisabled {
   opacity: 0.55;

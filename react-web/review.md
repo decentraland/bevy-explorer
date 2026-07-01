@@ -125,8 +125,9 @@ these by hand (or have an agent drive the Chrome extension against a live world)
 - [ ] Tags **fade out** past ~20–40 m and hide your own tag in first person.
 - [ ] **Crosshair** shows when the camera is locked (mouse hidden) and hides when the cursor is free.
 - [ ] **Hover / proximity prompts** ("Press E…") show on interactables and sit on the right entity.
-      The free-cursor "Show Profile" hint sits **next to the mouse** (from `PrimaryPointerInfo`), not
-      under the (hidden) reticle.
+      Free-cursor prompts sit **around the mouse** in radial slots (from `PrimaryPointerInfo`) — first
+      to the right, then left, then top, up to 7 (mirrors bevy-ui-scene); pointer-locked falls back to
+      a stack under the reticle. (Visual baseline via `?mock=1&simhover=N`.)
 - [ ] **Nearby-avatar click → profile card** (`domains/avatarPointer.ts`) — aiming at another avatar
       shows a **"Show Profile"** hover; clicking it frees the cursor and opens that avatar's
       **profile card** anchored **at the click point**. The card mirrors the old profile-menu action
