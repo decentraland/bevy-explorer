@@ -141,11 +141,13 @@ describe('session domain', () => {
     )
   })
 
-  it('a nearby-avatar click (avatarClick message) sets session.avatarClick → drives the profile card', () => {
+  it('a nearby-avatar click (avatarClick message) opens session.worldCard; closeWorldCard clears it', () => {
     const h = renderSession({ userId: null })
-    expect(h.session().avatarClick).toBeNull()
+    expect(h.session().worldCard).toBeNull()
     act(() => h.driver.emit({ kind: 'avatarClick', address: '0xABC', name: 'Alice', x: 120, y: 240 }))
-    expect(h.session().avatarClick).toEqual({ address: '0xABC', name: 'Alice', x: 120, y: 240 })
+    expect(h.session().worldCard).toEqual({ address: '0xABC', name: 'Alice', x: 120, y: 240 })
+    act(() => h.session().closeWorldCard())
+    expect(h.session().worldCard).toBeNull()
   })
 
   it('invite-to-community: requestInvitable posts, inbound fills state, invite posts', async () => {
