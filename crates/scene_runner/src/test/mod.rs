@@ -127,6 +127,11 @@ fn init_test_app(entity_json: &str) -> App {
     app.init_asset::<AnimationClip>();
     app.init_asset::<Image>();
     app.init_asset::<StretchUvMaterial>();
+    // resources update_text_shapes needs from bevy's text stack; we don't add
+    // the full TextPlugin as its text2d layout system pulls in sprite/atlas deps
+    app.init_asset::<bevy::text::Font>();
+    app.init_resource::<bevy::text::TextPipeline>();
+    app.init_resource::<bevy::text::CosmicFontSystem>();
     app.add_plugins(MaterialPlugin::<StandardMaterial>::default());
     app.add_plugins(GizmoPlugin);
     app.add_plugins(SceneRunnerPlugin);
