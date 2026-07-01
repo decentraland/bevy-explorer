@@ -35,7 +35,7 @@ import { useExitGuard } from './lib/useExitGuard'
 import { useHudScale } from './lib/useHudScale'
 import { useGlobalHotkey } from './lib/useGlobalHotkey'
 import { useMenuShortcuts } from './lib/useMenuShortcuts'
-import { isMobile } from './lib/isMobile'
+import { isMobile, isChromiumBased, hasBypassCookie } from './lib/isMobile'
 import { MobileGate } from './features/gate/MobileGate'
 import { ErrorBoundary } from './features/error/ErrorBoundary'
 import { EngineErrorModal } from './features/error/EngineErrorModal'
@@ -45,15 +45,24 @@ const params = new URLSearchParams(location.search)
 // ENGINE (default): real engine in a same-origin iframe + super-user bridge scene.
 const MODE: 'mock' | 'engine' = params.get('mock') === '1' ? 'mock' : 'engine'
 const SHOWCASE = params.get('showcase') === '1'
-// Mobile gate: the desktop engine can't run on mobile (no WebGPU/SharedArrayBuffer), so show the
-// download-the-app page instead of mounting the HUD/engine. ?gate=1 forces it (testing on desktop);
-// ?nogate=1 bypasses it (load the HUD on a mobile device anyway).
-const GATE = (isMobile() || params.get('gate') === '1') && params.get('nogate') !== '1'
+// Gate: don't mount the HUD/engine where the engine can't run — mobile (no WebGPU/SharedArrayBuffer)
+// or a non-Chromium desktop browser (the engine bundle renders its own "Browser Not Supported" page
+// there — see deploy/web/index.html — which the HUD would otherwise cover, leaving login frozen at
+// 0%). `?gate=1` forces the mobile variant, `?gate=browser` the browser variant (both for testing);
+// `?nogate=1` bypasses; the shared `bypass_browser_check` cookie ("try anyway") also bypasses.
+function gateReason(): 'mobile' | 'browser' | null {
+  if (params.get('nogate') === '1') return null
+  if (isMobile() || params.get('gate') === '1') return 'mobile'
+  if (params.get('gate') === 'browser') return 'browser'
+  if (!isChromiumBased() && !hasBypassCookie()) return 'browser'
+  return null
+}
+const GATE_REASON = gateReason()
 
 export function App(): React.JSX.Element {
   useHudScale() // keep --ui-scale in sync with the viewport (DPI-correct, like Unity)
   const showFps = useFpsToggle()
-  if (GATE) return <MobileGate />
+  if (GATE_REASON) return <MobileGate reason={GATE_REASON} />
   return (
     <ErrorBoundary>
       {SHOWCASE ? (

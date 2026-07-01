@@ -72,3 +72,18 @@
   height: 22px;
   flex: 0 0 auto;
 }
+/* "try anyway" bypass — a subtle text link under the Chrome button (browser variant). */
+.tryAnyway {
+  margin-top: 16px;
+  background: none;
+  border: none;
+  padding: 4px;
+  color: var(--ink-6);
+  font-family: var(--font-family);
+  font-size: var(--fs-sm);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.tryAnyway:hover {
+  color: var(--text);
+}

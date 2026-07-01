@@ -72,6 +72,13 @@ test.describe('visual — mock HUD', () => {
     await expect(page).toHaveScreenshot('mobile-gate.png')
   })
 
+  // Browser gate — the "use Chrome" page shown on non-Chromium desktop (forced with ?gate=browser).
+  test('browser gate', async ({ page }) => {
+    await page.goto('/?gate=browser')
+    await settle(page)
+    await expect(page).toHaveScreenshot('browser-gate.png')
+  })
+
   // Engine error popup — ?simerror=launch seeds a sample boot-panic (fatal: Reload + Copy, no
   // Dismiss). Mock mode → no engine iframe, fully deterministic.
   test('engine error popup', async ({ page }) => {

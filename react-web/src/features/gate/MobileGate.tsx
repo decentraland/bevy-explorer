@@ -1,12 +1,13 @@
-// Mobile gate — shown instead of the HUD when react-web is opened on a mobile browser (see
-// App.tsx). The desktop engine can't run there, so we point users to the native apps. Copy + store
-// links mirror the engine bundle's own gate (deploy/web/index.html).
+// Gate — shown instead of the HUD when the engine can't run: on a mobile browser (→ native apps) or
+// a non-Chromium desktop browser (→ "use Chrome"). Copy, store links, and the Chrome bypass mirror
+// the engine bundle's own gate (deploy/web/index.html) so the two stay consistent.
 
 import { mobilePlatform } from '../../lib/isMobile'
 import styles from './MobileGate.module.css'
 
 const APP_STORE_URL = 'https://testflight.apple.com/join/KF4r3jlU'
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=org.decentraland.godotexplorer'
+const CHROME_URL = 'https://www.google.com/chrome/'
 
 function AppleIcon(): React.JSX.Element {
   return (
@@ -24,7 +25,62 @@ function GooglePlayIcon(): React.JSX.Element {
   )
 }
 
-export function MobileGate(): React.JSX.Element {
+function ChromeIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="cg-a" x1="3.2173" y1="15" x2="44.7812" y2="15" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#d93025" />
+          <stop offset="1" stopColor="#ea4335" />
+        </linearGradient>
+        <linearGradient id="cg-b" x1="20.7219" y1="47.6791" x2="41.5039" y2="11.6837" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#fcc934" />
+          <stop offset="1" stopColor="#fbbc04" />
+        </linearGradient>
+        <linearGradient id="cg-c" x1="26.5981" y1="46.5015" x2="5.8161" y2="10.506" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#1e8e3e" />
+          <stop offset="1" stopColor="#34a853" />
+        </linearGradient>
+      </defs>
+      <circle cx="24" cy="23.9947" r="12" fill="#fff" />
+      <path d="M24,12H44.7812a23.9939,23.9939,0,0,0-41.5639.0029L13.6079,30l.0093-.0024A11.9852,11.9852,0,0,1,24,12Z" fill="url(#cg-a)" />
+      <circle cx="24" cy="24" r="9.5" fill="#1a73e8" />
+      <path d="M34.3913,30.0029,24.0007,48A23.994,23.994,0,0,0,44.78,12.0031H23.9989l-.0025.0093A11.985,11.985,0,0,1,34.3913,30.0029Z" fill="url(#cg-b)" />
+      <path d="M13.6086,30.0031,3.218,12.006A23.994,23.994,0,0,0,24.0025,48L34.3931,30.0029l-.0067-.0068a11.9852,11.9852,0,0,1-20.7778.007Z" fill="url(#cg-c)" />
+    </svg>
+  )
+}
+
+// "try anyway" — mirror the engine gate's escape hatch: set the shared bypass cookie + reload.
+function tryAnyway(): void {
+  document.cookie = 'bypass_browser_check=1;path=/;max-age=2592000'
+  location.reload()
+}
+
+export function MobileGate({ reason = 'mobile' }: { reason?: 'mobile' | 'browser' }): React.JSX.Element {
+  if (reason === 'browser') {
+    return (
+      <div className={styles.root}>
+        <div className={styles.card}>
+          <img className={styles.logo} src="/assets/logo.png" alt="" draggable={false} />
+          <h1 className={styles.title}>Browser Not Supported</h1>
+          <p className={styles.subtitle}>
+            Decentraland Web requires <strong>Google Chrome</strong> on desktop to run.
+          </p>
+          <div className={styles.buttons}>
+            <a className={styles.store} href={CHROME_URL} target="_blank" rel="noopener">
+              <ChromeIcon />
+              <span>Download Chrome</span>
+            </a>
+          </div>
+          <button type="button" className={styles.tryAnyway} onClick={tryAnyway}>
+            try anyway…
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   const platform = mobilePlatform()
   const showApple = platform === 'ios' || platform === 'other'
   const showGoogle = platform === 'android' || platform === 'other'
