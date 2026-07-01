@@ -34,6 +34,8 @@ async function settle(page: Page): Promise<void> {
 async function enterWorld(page: Page): Promise<void> {
   await page.goto('/?mock=1')
   await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click()
+  // Entry now goes through the destination picker; skip it (default spawn) to reach the world HUD.
+  await page.getByRole('button', { name: /SKIP TO GENESIS PLAZA/i }).click()
   await page.waitForSelector('nav[aria-label="Main navigation"]')
 }
 
