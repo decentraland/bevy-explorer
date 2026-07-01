@@ -287,6 +287,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // Deferred login: the login call captured on Jump in, run only once the user picks a destination
   // (so the engine is launched straight at that destination instead of loading Genesis Plaza first).
   const pendingLogin = useRef<((driver: LoginDriver) => Promise<unknown>) | null>(null)
+  // Stops the post-launch boot-panic poll once the world is reached (so it can't mislabel a benign
+  // post-boot panic as a launch failure).
+  const bootPollStop = useRef(false)
   const [playerReady, setPlayerReady] = useState(false)
   const [scene, setScene] = useState<SceneLoadingState | null>(null)
   const [hover, setHover] = useState<HoverAction[]>([])
@@ -341,7 +344,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     const off = driver.on((msg) => {
       switch (msg.kind) {
         case 'event':
-          if (msg.name === 'playerReady') setPlayerReady(true)
+          if (msg.name === 'playerReady') {
+            setPlayerReady(true)
+            bootPollStop.current = true // world reached → stop watching for a boot panic
+          }
           break
         case 'sceneLoading':
           setScene(msg.state)
@@ -636,6 +642,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     const run = (): void => {
       if (ran) return
       ran = true
+      bootPollStop.current = false
+      driverRef.current?.clearEnginePanic?.() // start clean so the boot poll only sees THIS launch's panic
       // World by realm, parcel by spawn position, skip at 0,0 (Genesis). Nothing loaded before this,
       // so only the chosen scene streams in. (No-op on the mock, which has no engine to launch.)
       try {
@@ -647,9 +655,26 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         // wasm trap). The readable message is captured on the iframe via enginePanic().
         const panic = driverRef.current?.enginePanic?.()?.message
         setFatalError({ message: panic ?? (e as Error)?.message ?? 'The engine failed to start.', source: 'launch' })
+        driverRef.current?.clearEnginePanic?.()
         setBusy(false)
         return
       }
+      // A boot panic can also surface a frame or two AFTER launch() returns (async wasm init / OnceCell)
+      // — launch() returns normally, so poll the panic hook during boot and raise it as a FATAL 'launch'
+      // error, not the dismissable 'runtime' crash the heartbeat watchdog would otherwise mislabel it as.
+      // Stops on world-entry (bootPollStop) or after the window elapses.
+      let polls = 0
+      const pollPanic = (): void => {
+        if (bootPollStop.current) return
+        const panic = driverRef.current?.enginePanic?.()?.message
+        if (panic != null) {
+          setFatalError((prev) => prev ?? { message: panic, source: 'launch' })
+          driverRef.current?.clearEnginePanic?.()
+          return
+        }
+        if (++polls < 24) setTimeout(pollPanic, 250) // ~6s boot window
+      }
+      setTimeout(pollPanic, 250)
       const login = pendingLogin.current
       pendingLogin.current = null
       Promise.resolve(login?.(driver))
@@ -858,7 +883,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     scene,
     fatalError,
     reload: () => location.reload(),
-    dismissFatal: () => setFatalError(null),
+    dismissFatal: () => {
+      // Re-arm the iframe watchdog (it left its `shown` flag set when it bridged the crash) so a later
+      // genuine crash still surfaces, and clear the stashed panic so it isn't re-read stale.
+      driverRef.current?.rearmCrashWatchdog?.()
+      driverRef.current?.clearEnginePanic?.()
+      setFatalError(null)
+    },
     hover,
     cursorLocked,
     proximity,

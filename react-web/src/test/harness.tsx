@@ -45,6 +45,12 @@ export class FakeDriver implements LoginDriver {
   async jumpIn(): Promise<void> {
     this.calls.push('jumpIn')
   }
+  clearEnginePanic(): void {
+    this.calls.push('clearEnginePanic')
+  }
+  rearmCrashWatchdog(): void {
+    this.calls.push('rearmCrashWatchdog')
+  }
   send(msg: PageToScene): void {
     this.sent.push(msg)
   }

@@ -12,6 +12,7 @@ type EngineWindow = Window & {
   __bevyLoadProgress?: number
   __bevyLoadStep?: string | null
   __bevyPanic?: { message: string }
+  __rearmCrashWatchdog?: () => void
 }
 
 export class EngineRpc {
@@ -40,6 +41,18 @@ export class EngineRpc {
    *  that reaches us is only a generic "unreachable" trap; the readable message is stashed here. */
   enginePanic(): { message: string } | null {
     return this.win?.__bevyPanic ?? null
+  }
+
+  /** Drop the stashed panic once consumed — it's set on every "panicked at" log and never cleared by
+   *  the engine, so a later read (a fresh launch throw, or the boot poll) would surface a stale one. */
+  clearEnginePanic(): void {
+    if (this.win) this.win.__bevyPanic = undefined
+  }
+
+  /** Re-arm the iframe's crash watchdog (resets its `shown` flag) after the host dismisses a runtime
+   *  crash — otherwise a second genuine crash hits the watchdog's `if (shown) return` and is swallowed. */
+  rearmCrashWatchdog(): void {
+    this.win?.__rearmCrashWatchdog?.()
   }
 
   /** Boot the bevy app at a realm/position (only valid in manualParams mode, after readyToLaunch). */

@@ -275,7 +275,13 @@
             missedTicks = 0;
             recoverTicks = 0;
             lastBeatCount = beatCount;
+            // Clear the stashed panic too, so a re-armed watchdog / later launch reads fresh (the
+            // panic hook below never clears it on its own).
+            window.__bevyPanic = undefined;
         }
+        // Let the embedding host (react-web, whose HUD covers this iframe) re-arm the watchdog when it
+        // dismisses a bridged runtime crash — otherwise `shown` stays true and a second crash is swallowed.
+        window.__rearmCrashWatchdog = hideCrashOverlay;
 
         // Record an error as context for the watchdog. Does NOT show the overlay —
         // only a stalled heartbeat does that. Exposed so engine.js worker handlers

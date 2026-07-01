@@ -71,4 +71,20 @@ describe('session domain', () => {
     await waitFor(() => expect(h.session().phase).toBe('login'))
     expect(h.driver.calls).toContain('logout')
   })
+
+  it('a bridged runtime crash sets a dismissable fatal; dismiss re-arms the iframe watchdog', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    // The engine bundle's watchdog bridges runtime crashes as a same-origin postMessage.
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', { origin: location.origin, data: { type: 'bevy-crash', message: 'engine stalled' } }))
+    })
+    await waitFor(() => expect(h.session().fatalError).toEqual({ message: 'engine stalled', source: 'runtime' }))
+    // Dismiss must re-arm the iframe watchdog (reset its `shown` flag) + clear the stashed panic,
+    // else a second genuine crash is swallowed / a stale panic is re-read.
+    act(() => h.session().dismissFatal())
+    expect(h.session().fatalError).toBeNull()
+    expect(h.driver.calls).toContain('rearmCrashWatchdog')
+    expect(h.driver.calls).toContain('clearEnginePanic')
+  })
 })
