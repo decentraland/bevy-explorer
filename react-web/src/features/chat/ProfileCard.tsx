@@ -197,8 +197,10 @@ export function ProfileCard({
 
   return createPortal(
     <>
-      <div className={styles.scrim} onClick={onClose} />
-      <div ref={cardRef} className={styles.card} style={{ left: pos.left, top: pos.top }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Profile">
+      {/* Hide the card (not unmount — keeps its state) while the Report confirm is up, so the popup
+          isn't stuck behind it. Proper stacking is backlog item 9 (consolidate modals + z-layer). */}
+      <div className={styles.scrim} onClick={onClose} style={confirmReport ? { display: 'none' } : undefined} />
+      <div ref={cardRef} className={styles.card} style={confirmReport ? { display: 'none' } : { left: pos.left, top: pos.top }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Profile">
         <div className={styles.header}>
           <Avatar src={user.picture} name={base} color={color} size={72} status="online" />
           <button type="button" className={styles.copyRow} title="Copy name" onClick={() => copy(user.name, 'name')}>
