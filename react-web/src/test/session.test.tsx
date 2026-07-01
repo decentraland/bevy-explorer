@@ -140,4 +140,32 @@ describe('session domain', () => {
       { timeout: 2000 }
     )
   })
+
+  it('a nearby-avatar click (avatarClick message) sets session.avatarClick → drives the profile card', () => {
+    const h = renderSession({ userId: null })
+    expect(h.session().avatarClick).toBeNull()
+    act(() => h.driver.emit({ kind: 'avatarClick', address: '0xABC', name: 'Alice', x: 120, y: 240 }))
+    expect(h.session().avatarClick).toEqual({ address: '0xABC', name: 'Alice', x: 120, y: 240 })
+  })
+
+  it('invite-to-community: requestInvitable posts, inbound fills state, invite posts', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    act(() => h.session().communities.requestInvitable('0xABC'))
+    expect(h.driver.last('getInvitableCommunities')).toEqual({ kind: 'getInvitableCommunities', address: '0xABC' })
+    act(() => h.driver.emit({ kind: 'invitableCommunities', address: '0xABC', communities: [{ id: 'c1', name: 'Builders' }] }))
+    expect(h.session().communities.invitable['0xabc']).toEqual([{ id: 'c1', name: 'Builders' }])
+    act(() => h.session().communities.invite('c1', '0xABC'))
+    expect(h.driver.last('inviteToCommunity')).toEqual({ kind: 'inviteToCommunity', communityId: 'c1', address: '0xABC' })
+  })
+
+  it('chat.mention opens chat and queues the @name until consumed', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    act(() => h.session().chat.mention('Alice'))
+    expect(h.session().chat.open).toBe(true)
+    expect(h.session().chat.pendingMention).toBe('Alice')
+    act(() => h.session().chat.consumeMention())
+    expect(h.session().chat.pendingMention).toBeNull()
+  })
 })
