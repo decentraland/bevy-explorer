@@ -644,7 +644,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     // the loading overlay is on screen before the freeze — same trick as the login loader. Run once.
     let ran = false
     const run = (): void => {
-      if (ran) return
+      // Bail if the session unmounted during the deferred kick — cleanup nulls driverRef, so this
+      // guards against launching on a disposed driver (the rAF/timeout aren't otherwise cancellable).
+      if (ran || driverRef.current == null) return
       ran = true
       bootPollStop.current = false
       driverRef.current?.clearEnginePanic?.() // start clean so the boot poll only sees THIS launch's panic
