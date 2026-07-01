@@ -384,6 +384,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           setHover(msg.actions)
           setHoverPos(msg.x != null && msg.y != null ? { x: msg.x, y: msg.y } : null)
           break
+        case 'hoverPos':
+          setHoverPos({ x: msg.x, y: msg.y })
+          break
         case 'cursorLock':
           setCursorLocked(msg.locked)
           break
