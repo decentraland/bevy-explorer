@@ -691,6 +691,14 @@ export interface HoverMessage {
   y?: number
 }
 
+/** Streamed cursor position while a hover is active (free cursor) so the tooltip follows the mouse —
+ *  the hover stream only fires on enter/exit, so position updates come through here per-frame. */
+export interface HoverPosMessage {
+  kind: 'hoverPos'
+  x: number
+  y: number
+}
+
 /** Whether the engine has grabbed the mouse for camera-look (OS cursor hidden) → draw the
  *  center crosshair. Derived from PrimaryPointerInfo.screenCoordinates being absent. */
 export interface CursorLockMessage {
@@ -726,6 +734,7 @@ export interface AvatarClickMessage {
 export type SceneToPage =
   | RpcResponse
   | HoverMessage
+  | HoverPosMessage
   | CursorLockMessage
   | ProximityMessage
   | AvatarClickMessage

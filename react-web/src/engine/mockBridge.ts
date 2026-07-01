@@ -245,6 +245,9 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       const cx = (window.innerWidth || 1600) / 2
       const cy = (window.innerHeight || 900) / 2
       setTimeout(() => reply({ kind: 'hover', actions: sample, x: cx, y: cy }), 1500)
+      // Follow the real cursor so the tooltip-tracks-the-mouse behaviour is verifiable in ?mock=1
+      // (the real bridge streams this from PrimaryPointerInfo per frame).
+      window.addEventListener('mousemove', (e) => reply({ kind: 'hoverPos', x: e.clientX, y: e.clientY }))
     }
 
     // Fake friends + requests for the React friends panel.
