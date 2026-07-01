@@ -411,7 +411,9 @@ impl DecentralandApp {
 
         // Analytics plugins
         app.add_plugins(MetricsPlugin);
-        if graphics_config.log_fps || decentraland_app_config.arguments.is_preview {
+        if (graphics_config.log_fps || decentraland_app_config.arguments.is_preview)
+            && !app.is_plugin_added::<FrameTimeDiagnosticsPlugin>()
+        {
             app.add_plugins(FrameTimeDiagnosticsPlugin::default());
         }
         if graphics_config.log_fps {

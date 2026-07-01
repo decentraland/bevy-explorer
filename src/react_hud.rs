@@ -16,6 +16,7 @@
 
 use std::sync::mpsc::{channel, Receiver};
 
+use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::prelude::*;
 use bevy::window::{PrimaryWindow, WindowResized};
 use bevy::winit::WinitWindows;
@@ -29,6 +30,10 @@ pub struct ReactHudPlugin;
 
 impl Plugin for ReactHudPlugin {
     fn build(&self, app: &mut App) {
+        // Needed to read engine fps for the perf overlay; may already be added by --log_fps/preview.
+        if !app.is_plugin_added::<FrameTimeDiagnosticsPlugin>() {
+            app.add_plugins(FrameTimeDiagnosticsPlugin::default());
+        }
         app.add_systems(Update, attach_react_hud); // exclusive (main-thread webview create)
         app.add_systems(
             Update,
@@ -38,6 +43,9 @@ impl Plugin for ReactHudPlugin {
                 pump_bridge,
                 player_ready,
                 resize_react_hud,
+                push_engine_fps,
+                push_ui_scale,
+                forward_keys_to_hud,
                 #[cfg(target_os = "macos")]
                 mouse_passthrough,
             ),
@@ -711,6 +719,114 @@ fn player_ready(hud: Option<NonSendMut<ReactHud>>, players: Query<(), With<Prima
         serde_json::json!({ "kind":"event", "name":"playerReady" }),
     );
     hud.player_ready_sent = true;
+}
+
+// Push bevy's measured render fps into the webview (~2x/sec) so the React perf overlay (FpsMeter)
+// shows real ENGINE fps on native — there's no engine iframe to hook the heartbeat on as on web.
+fn push_engine_fps(
+    hud: Option<NonSendMut<ReactHud>>,
+    diagnostics: Res<DiagnosticsStore>,
+    time: Res<Time>,
+    mut acc: Local<f32>,
+) {
+    let Some(hud) = hud else { return };
+    *acc += time.delta_secs();
+    if *acc < 0.5 {
+        return;
+    }
+    *acc = 0.0;
+    if let Some(fps) = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FPS)
+        .and_then(|d| d.smoothed())
+    {
+        let _ = hud
+            .webview
+            .evaluate_script(&format!("window.__nativeEngineFps={:.0}", fps));
+    }
+}
+
+// Push bevy's authoritative logical window height to the webview so the HUD's `--ui-scale`
+// (height/1080) stays correct on native. The wry/WKWebView fires no dependable `resize`, so
+// `--ui-scale` used to freeze at a stale value (oversized full-screen menu pages); we re-push on
+// every size change and also synthesize a `resize` so any resize-driven UI updates too.
+fn push_ui_scale(hud: Option<NonSendMut<ReactHud>>, mut last: Local<f64>) {
+    let Some(hud) = hud else { return };
+    let h = hud.logical_size.1;
+    if (h - *last).abs() < 0.5 {
+        return;
+    }
+    *last = h;
+    let _ = hud.webview.evaluate_script(&format!(
+        "window.__nativeUiHeight={h:.0};window.dispatchEvent(new Event('resize'))"
+    ));
+}
+
+// Forward keyboard shortcuts to the webview. On native, bevy owns OS keyboard focus, so the React
+// app's global hotkeys (Cmd/Ctrl+Shift+F perf overlay, [M]/[O]/… menu shortcuts) never fire. Re-
+// dispatch each key press into the page as a synthetic KeyboardEvent — bevy still gets the real key
+// for movement (this is an additive copy). Skipped while a HUD text field is focused (chat), so
+// typed characters aren't doubled.
+fn forward_keys_to_hud(hud: Option<NonSendMut<ReactHud>>, keys: Res<ButtonInput<KeyCode>>) {
+    let Some(hud) = hud else { return };
+    if hud.text_focused {
+        return;
+    }
+    let mut just = keys.get_just_pressed().peekable();
+    if just.peek().is_none() {
+        return;
+    }
+    let meta = keys.pressed(KeyCode::SuperLeft) || keys.pressed(KeyCode::SuperRight);
+    let ctrl = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
+    for code in just {
+        let Some((key, js_code)) = js_key(*code, shift) else {
+            continue;
+        };
+        let script = format!(
+            "window.dispatchEvent(new KeyboardEvent('keydown',{{key:'{key}',code:'{js_code}',ctrlKey:{ctrl},metaKey:{meta},shiftKey:{shift},altKey:{alt},bubbles:true}}))"
+        );
+        let _ = hud.webview.evaluate_script(&script);
+    }
+}
+
+// Map a bevy KeyCode to (DOM `key`, DOM `code`) for the keys the HUD's shortcuts use (letters +
+// Escape). Letters honour Shift for the `key` value (React chords match on e.g. 'F').
+fn js_key(code: KeyCode, shift: bool) -> Option<(String, &'static str)> {
+    let letter = |c: char, name: &'static str| {
+        let k = if shift { c.to_ascii_uppercase() } else { c };
+        Some((k.to_string(), name))
+    };
+    match code {
+        KeyCode::KeyA => letter('a', "KeyA"),
+        KeyCode::KeyB => letter('b', "KeyB"),
+        KeyCode::KeyC => letter('c', "KeyC"),
+        KeyCode::KeyD => letter('d', "KeyD"),
+        KeyCode::KeyE => letter('e', "KeyE"),
+        KeyCode::KeyF => letter('f', "KeyF"),
+        KeyCode::KeyG => letter('g', "KeyG"),
+        KeyCode::KeyH => letter('h', "KeyH"),
+        KeyCode::KeyI => letter('i', "KeyI"),
+        KeyCode::KeyJ => letter('j', "KeyJ"),
+        KeyCode::KeyK => letter('k', "KeyK"),
+        KeyCode::KeyL => letter('l', "KeyL"),
+        KeyCode::KeyM => letter('m', "KeyM"),
+        KeyCode::KeyN => letter('n', "KeyN"),
+        KeyCode::KeyO => letter('o', "KeyO"),
+        KeyCode::KeyP => letter('p', "KeyP"),
+        KeyCode::KeyQ => letter('q', "KeyQ"),
+        KeyCode::KeyR => letter('r', "KeyR"),
+        KeyCode::KeyS => letter('s', "KeyS"),
+        KeyCode::KeyT => letter('t', "KeyT"),
+        KeyCode::KeyU => letter('u', "KeyU"),
+        KeyCode::KeyV => letter('v', "KeyV"),
+        KeyCode::KeyW => letter('w', "KeyW"),
+        KeyCode::KeyX => letter('x', "KeyX"),
+        KeyCode::KeyY => letter('y', "KeyY"),
+        KeyCode::KeyZ => letter('z', "KeyZ"),
+        KeyCode::Escape => Some(("Escape".to_string(), "Escape")),
+        _ => None,
+    }
 }
 
 // Per-pixel mouse passthrough: when the cursor moves, ask the page whether it's over a HUD element
