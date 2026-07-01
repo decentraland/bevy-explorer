@@ -84,6 +84,8 @@ export type PageToScene =
   | CreateCommunityRequest
   | JoinCommunityRequest
   | LeaveCommunityRequest
+  | GetInvitableCommunitiesRequest
+  | InviteToCommunityRequest
   | GetCommunityDetailRequest
   | GetMapRequest
   | TeleportRequest
@@ -466,6 +468,32 @@ export interface LeaveCommunityRequest {
   id: string
 }
 
+/** Communities the local user can invite `address` to (server filters: caller is owner/mod, target not a member). */
+export interface GetInvitableCommunitiesRequest {
+  kind: 'getInvitableCommunities'
+  address: string
+}
+
+/** Invite `address` to a community (page → scene → signed POST to the social-api). */
+export interface InviteToCommunityRequest {
+  kind: 'inviteToCommunity'
+  communityId: string
+  address: string
+}
+
+/** A community the local user can invite someone to (id + name only, per the social-api). */
+export interface InvitableCommunity {
+  id: string
+  name: string
+}
+
+/** The invitable-communities list for `address` (empty → hide "Invite to Community"). */
+export interface InvitableCommunitiesMessage {
+  kind: 'invitableCommunities'
+  address: string
+  communities: InvitableCommunity[]
+}
+
 /** A member of a community (Members tab). */
 export interface CommunityMember {
   address: string
@@ -653,10 +681,14 @@ export interface HoverAction {
   /** false → out of range ("Too far, get closer"). */
   enabled: boolean
 }
-/** Hover hints to show near the reticle. Empty array = nothing hovered. */
+/** Hover hints to show at the pointer. Empty array = nothing hovered. */
 export interface HoverMessage {
   kind: 'hover'
   actions: HoverAction[]
+  /** Cursor screen-pixel position (from PrimaryPointerInfo) so the hint sits at the pointer, not the
+   *  reticle. It's the screen centre while pointer-locked; absent if unavailable. */
+  x?: number
+  y?: number
 }
 
 /** Whether the engine has grabbed the mouse for camera-look (OS cursor hidden) → draw the
@@ -681,11 +713,22 @@ export interface ProximityMessage {
   tips: ProximityTip[]
 }
 
+/** A nearby avatar was clicked in the world → open their profile card, anchored at the click. */
+export interface AvatarClickMessage {
+  kind: 'avatarClick'
+  address: string
+  name: string
+  /** Cursor screen-pixel position at the click (from PrimaryPointerInfo) — where to anchor the card. */
+  x: number
+  y: number
+}
+
 export type SceneToPage =
   | RpcResponse
   | HoverMessage
   | CursorLockMessage
   | ProximityMessage
+  | AvatarClickMessage
   | PlayerReadyEvent
   | SceneLoadingMessage
   | ChatRelayMessage
@@ -702,6 +745,7 @@ export type SceneToPage =
   | WearablesMessage
   | CommunitiesMessage
   | CommunityDetailMessage
+  | InvitableCommunitiesMessage
   | MapMessage
   | GalleryMessage
   | GalleryPhotoMessage

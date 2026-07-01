@@ -95,6 +95,19 @@ test.describe('visual — mock HUD', () => {
     await expect(page).toHaveScreenshot('world-hud.png')
   })
 
+  // Profile card — the popover opened by clicking a chat sender / nearby avatar. Baselines the
+  // synchronous action set (View Passport · Mention · Block · Report). The async "Invite to
+  // Community" row + submenu, the Report confirm, and the relationship states (Accept/Reject/Unblock)
+  // are covered deterministically by the tier-1 profileCard.test.tsx.
+  test('profile card', async ({ page }) => {
+    await enterWorld(page)
+    await page.getByRole('button', { name: 'View Sharknado' }).first().click()
+    const card = page.getByRole('dialog', { name: 'Profile' })
+    await card.getByRole('button', { name: 'Report' }).waitFor()
+    await settle(page)
+    await expect(page).toHaveScreenshot('profile-card.png')
+  })
+
   // Floating panels + full-screen pages, opened from the sidebar.
   for (const [label, name] of [
     ['Friends', 'friends'],
