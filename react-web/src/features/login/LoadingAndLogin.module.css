@@ -70,14 +70,14 @@
   letter-spacing: -0.01em;
   line-height: 1.05;
   white-space: nowrap;
-  color: #fff;
+  color: var(--text);
 }
 .subtitle {
   margin: 14px 0 0;
   font-size: clamp(1.15rem, 1.55vw, 1.45rem);
   font-weight: 400;
   line-height: 1.2;
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--ink-95);
   white-space: pre-line;
 }
 .account {
@@ -85,11 +85,11 @@
   font-family: var(--font-mono);
   font-size: 0.85rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--ink-65);
 }
 .error {
   margin: 10px 0 0;
-  color: #ffd0d8;
+  color: var(--error-text);
   font-size: 0.9rem;
 }
 
@@ -121,14 +121,14 @@
   overflow: hidden;
 }
 .buttons .cta {
-  box-shadow: 0 6px 18px rgba(255, 45, 85, 0.32);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--brand) 32%, transparent);
 }
 .buttons .ctaSecondary {
-  background: rgba(108, 42, 168, 0.62);
+  background: var(--login-cta2);
   box-shadow: none;
 }
 .buttons .ctaSecondary:hover:not(:disabled) {
-  background: rgba(124, 52, 188, 0.78);
+  background: var(--login-cta2-hover);
 }
 .label {
   flex: 1 1 auto;
@@ -194,11 +194,13 @@
   height: 76px;
   transform: translateX(-50%);
   border-radius: 50%;
+  /* Decorative golden podium (Unity welcome-back): a bespoke multi-stop gold gradient + gold rim +
+     dark-purple lip — one-off ornament, no design token maps to it (like the boot-splash gradient). */
   background: radial-gradient(ellipse 58% 66% at 50% 40%, #ffe891 0%, #f8bd3a 48%, #e09b22 72%, #c07d16 100%);
   box-shadow:
     inset 0 0 0 4px rgba(255, 224, 138, 0.55),
     0 8px 0 #3a1c54,
-    0 18px 42px rgba(0, 0, 0, 0.5);
+    0 18px 42px var(--scrim);
 }
 .glow {
   position: absolute;
@@ -208,6 +210,7 @@
   height: 86px;
   transform: translateX(-50%);
   border-radius: 50%;
+  /* Decorative golden glow under the podium — bespoke ornament, no token maps (see .podium). */
   background: radial-gradient(ellipse at center, rgba(255, 205, 100, 0.35), rgba(255, 205, 100, 0) 70%);
   filter: blur(8px);
   animation: glow-pulse 4.5s ease-in-out infinite;
