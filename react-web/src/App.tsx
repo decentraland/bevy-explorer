@@ -111,8 +111,6 @@ function Hud(): React.JSX.Element {
   // Passport (View Profile). Self → the local rich profile; others → the fetched
   // passport (requestUserProfile on open), falling back to identity-only while it loads.
   const [passport, setPassport] = useState<ChatUser | null>(null)
-  // A nearby avatar's profile card (world avatar click → session.avatarClick), anchored at the cursor.
-  const [worldCard, setWorldCard] = useState<{ user: ChatUser; x: number; y: number } | null>(null)
   // A world (e.g. boedo.dcl.eth) the user asked to jump to — drives the shared confirm modal.
   const [visitWorld, setVisitWorld] = useState<string | null>(null)
   // Which tab the Backpack opens on. The emote wheel's "Customise [E]" opens it on Emotes; it resets
@@ -127,13 +125,6 @@ function Hud(): React.JSX.Element {
     setPassport(user)
     if (user.address) session.requestUserProfile(user.address) // fetch badges/photos/catalyst data
   }
-  // Clicking a nearby avatar in the world (bridge → session.avatarClick, a fresh object per click)
-  // opens their ProfileCard at the cursor — the same menu (Add friend / View Profile / Block) the
-  // chat opens; "View Profile" inside it then opens the full passport.
-  useEffect(() => {
-    const c = session.avatarClick
-    if (c) setWorldCard({ user: { address: c.address, name: c.name }, x: c.x, y: c.y })
-  }, [session.avatarClick])
   // Friendship status for a user — drives the profile card's CTA (chat + friends list + world).
   const relationshipOf = (address: string): Relationship => {
     const a = address.toLowerCase()
@@ -269,21 +260,21 @@ function Hud(): React.JSX.Element {
               onClose={() => setPassport(null)}
             />
           )}
-          {worldCard && (
+          {session.worldCard && (
             <ProfileCard
-              user={worldCard.user}
-              x={worldCard.x}
-              y={worldCard.y}
+              user={{ address: session.worldCard.address, name: session.worldCard.name }}
+              x={session.worldCard.x}
+              y={session.worldCard.y}
               me={session.profile.data}
-              relationship={relationshipOf(worldCard.user.address)}
+              relationship={relationshipOf(session.worldCard.address)}
               onFriendAction={session.friends.act}
               onMention={session.chat.mention}
               onViewProfile={openPassport}
               onReport={reportUser}
-              invitableCommunities={session.communities.invitable[worldCard.user.address.toLowerCase()]}
+              invitableCommunities={session.communities.invitable[session.worldCard.address.toLowerCase()]}
               onRequestInvitable={session.communities.requestInvitable}
               onInvite={session.communities.invite}
-              onClose={() => setWorldCard(null)}
+              onClose={session.closeWorldCard}
             />
           )}
           {visitWorld && (
