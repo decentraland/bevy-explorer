@@ -108,6 +108,18 @@ test.describe('visual — mock HUD', () => {
     await expect(page).toHaveScreenshot('profile-card.png')
   })
 
+  // Radial free-cursor hover tooltips around the pointer (up to 7 slots), ported from the old scene.
+  // ?simhover=7 seeds seven prompts (one disabled → "Too far, get closer") at the viewport centre.
+  test('hover tooltips (radial)', async ({ page }) => {
+    await page.goto('/?mock=1&simhover=7')
+    await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click()
+    await page.getByRole('button', { name: /SKIP TO GENESIS PLAZA/i }).click()
+    await page.waitForSelector('nav[aria-label="Main navigation"]')
+    await page.getByText('Show Profile').waitFor() // the seeded hover arrives ~1.5s after entry
+    await settle(page)
+    await expect(page).toHaveScreenshot('hover-tooltips.png')
+  })
+
   // Floating panels + full-screen pages, opened from the sidebar.
   for (const [label, name] of [
     ['Friends', 'friends'],
