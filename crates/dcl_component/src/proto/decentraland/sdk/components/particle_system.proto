@@ -1,0 +1,129 @@
+syntax = "proto3";
+
+package decentraland.sdk.components;
+
+import "decentraland/common/colors.proto";
+import "decentraland/common/floats.proto";
+import "decentraland/common/texture.proto";
+import "decentraland/common/vectors.proto";
+import "decentraland/sdk/components/common/id.proto";
+
+option (common.ecs_component_id) = 1217;
+
+message PBParticleSystem {
+  // --- Emission ---
+  optional bool active = 1;              // default = true
+  optional float rate = 2;              // default = 10. Particles emitted per second.
+  optional uint32 max_particles = 3;    // default = 1000. Maximum number of live particles.
+  optional float lifetime = 4;          // default = 5. Particle lifetime in seconds.
+
+  // --- Motion ---
+  optional float gravity = 5;           // default = 0. Multiplier of Explorer's physics engine Gravity (normally -9.81)
+  optional decentraland.common.Vector3 additional_force = 6; // Constant force vector applied to each particle (world space).
+
+  // --- Size ---
+  optional decentraland.common.FloatRange initial_size = 7;     // default = {1, 1}. Particle size at spawn.
+  optional decentraland.common.FloatRange size_over_time = 8;   // default = {1, 1}. Particle size lerped from start to end over its lifetime.
+
+  // --- Rotation ---
+  optional decentraland.common.Quaternion initial_rotation = 9;      // default = identity (0,0,0,1). 3D start rotation for each particle.
+  optional decentraland.common.Quaternion rotation_over_time = 10;   // default = identity (0,0,0,1). Per-axis angular velocity as quaternion; converted to Euler XYZ.
+  optional bool face_travel_direction = 28; // default = false. Particles orient along their velocity direction.
+
+  // --- Color ---
+  optional decentraland.common.ColorRange initial_color = 11;    // default = {white, white}. Particle color at spawn, randomized between start and end.
+  optional decentraland.common.ColorRange color_over_time = 12;  // default = {white, white}. Particle color lerped from start to end over its lifetime.
+
+  // --- Velocity ---
+  optional decentraland.common.FloatRange initial_velocity_speed = 13; // default = {1, 1}. Initial speed in m/s, randomized between start and end.
+
+  // --- Rendering ---
+  optional decentraland.common.Texture texture = 14; // Particle texture. default = null (plain white quad).
+  optional BlendMode blend_mode = 15;                // default = PSB_ALPHA
+  optional bool billboard = 16;  // default = true
+
+  // --- Sprite Sheet Animation ---
+  optional SpriteSheetAnimation sprite_sheet = 17;
+
+  // --- Emitter Shape ---
+  oneof shape {
+    Point point = 18;
+    Sphere sphere = 19;
+    Cone cone = 20;
+    Box box = 21;
+  }
+
+  // --- Simulation ---
+  optional bool loop = 24;     // default = true. Loop the emission cycle.
+  optional bool prewarm = 25;  // default = false. Start as if already simulated for one full loop cycle. Requires loop = true.
+  optional SimulationSpace simulation_space = 27; // default = PSS_LOCAL. Controls whether particles simulate in local or world space.
+
+  // --- Limit Velocity Over Lifetime ---
+  optional LimitVelocity limit_velocity = 26; // Clamps particle speed over its lifetime.
+
+  // --- Playback ---
+  optional PlaybackState playback_state = 22; // default = PS_PLAYING
+
+  // --- Emission Bursts ---
+  repeated Burst bursts = 29;
+
+  // ---- Nested types ----
+
+  // Sprite sheet (texture atlas) animation settings.
+  message SpriteSheetAnimation {
+    uint32 tiles_x = 1;      // Number of columns in the sprite sheet.
+    uint32 tiles_y = 2;      // Number of rows in the sprite sheet.
+    optional float frames_per_second = 3; // default = 30. Playback speed in frames per second.
+  }
+
+  // Clamps particle speed over lifetime.
+  message LimitVelocity {
+    float speed = 1;            // Maximum particle speed (m/s).
+    optional float dampen = 2;  // default = 1. Fraction (0–1) of excess velocity removed per frame. 1 = hard clamp.
+  }
+
+  // Emitter spawns particles from a single point.
+  message Point {}
+
+  // Emitter spawns particles from the surface or volume of a sphere.
+  message Sphere {
+    optional float radius = 1; // default = 1
+  }
+
+  // Emitter spawns particles from the base of a cone and projects them outward.
+  message Cone {
+    optional float angle = 1;  // default = 25. Half-angle of the cone in degrees.
+    optional float radius = 2; // default = 1. Base radius in meters.
+  }
+
+  // Emitter spawns particles from the surface or volume of a box.
+  message Box {
+    optional decentraland.common.Vector3 size = 1; // default = {1, 1, 1}
+  }
+
+  // Emission burst configuration.
+  message Burst {
+    float time = 1;                // Seconds from start of cycle.
+    uint32 count = 2;             // Particles to emit.
+    optional int32 cycles = 3;    // default = 1. Repeat count (0 = infinite).
+    optional float interval = 4;  // default = 0.01. Seconds between cycles.
+    optional float probability = 5; // default = 1.0. Emission chance [0,1].
+  }
+
+  enum BlendMode {
+    PSB_ALPHA = 0;     // Standard alpha transparency.
+    PSB_ADD = 1;       // Additive blending (brightens underlying pixels).
+    PSB_MULTIPLY = 2;  // Multiply blending (darkens underlying pixels).
+  }
+
+  enum PlaybackState {
+    PS_PLAYING = 0; // Particle system is emitting and simulating.
+    PS_PAUSED = 1;  // Simulation is frozen; no new particles are emitted.
+    PS_STOPPED = 2; // Simulation stopped and existing particles cleared.
+  }
+
+  enum SimulationSpace {
+    PSS_LOCAL = 0; // Particles move with the entity transform.
+    PSS_WORLD = 1; // Particles stay in world position after emission.
+  }
+}
