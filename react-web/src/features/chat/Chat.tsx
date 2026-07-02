@@ -438,8 +438,15 @@ export function Chat({
         setScQuery(null)
         setSuggestions([])
       } else if (picker) setPicker(false)
-      // Nothing to dismiss first → blur back to the world (DCL convention: Escape leaves chat).
-      else inputRef.current?.blur()
+      else {
+        // Nothing to dismiss first → blur back to the world (DCL convention: Escape leaves
+        // chat). Blurring alone only drops DOM focus to <body> — it doesn't return it to the
+        // engine iframe, so movement keys would stop reaching the engine and Enter couldn't
+        // refocus chat either (the engine's own "Chat" system action only fires while its
+        // window holds real DOM focus). Explicitly re-focus the iframe.
+        inputRef.current?.blur()
+        document.querySelector<HTMLIFrameElement>('iframe[title="Decentraland engine"]')?.focus()
+      }
     }
   }
 
