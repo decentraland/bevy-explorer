@@ -23,7 +23,10 @@ const SHORTCUTS: Record<string, (s: EngineSession) => () => void> = {
   p: (s) => s.settings.toggle,
   b: (s) => s.emotes.toggle,
   l: (s) => s.friends.toggle,
-  t: (s) => s.chat.toggle
+  t: (s) => s.chat.toggle,
+  // Enter focuses chat (DCL convention) even when DOM focus sits on some other HUD control —
+  // otherwise the browser would just "activate" that focused element (e.g. click a button).
+  enter: (s) => s.chat.requestFocus
 }
 
 export function useMenuShortcuts(session: EngineSession): void {

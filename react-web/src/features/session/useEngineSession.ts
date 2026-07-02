@@ -164,6 +164,9 @@ export interface ChatState {
   /** Bumped on every engine "focus chat" request (Enter, even while idle-open) — Chat watches
    *  this to (re)focus the input beyond the open-transition case. */
   focusTick: number
+  /** Open + (re)focus chat. Called by useMenuShortcuts' page-level Enter handler for when DOM
+   *  focus is on some other HUD element (a button would otherwise just activate on Enter). */
+  requestFocus: () => void
 }
 
 const MAX_CHAT_LINES = 200
@@ -351,6 +354,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // Read inside the message-subscription closure (mounted once), not via a stale `chatOpen` capture.
   const chatOpenRef = useRef(chatOpen)
   chatOpenRef.current = chatOpen
+  // Open + (re)focus chat — the engine's "Chat" system action (Enter while the iframe has focus)
+  // and the page-level Enter shortcut (Enter while some other HUD element has focus, see
+  // useMenuShortcuts) both funnel into this single action.
+  const requestFocusChat = useCallback(() => {
+    setChatOpen(true)
+    setChatFocusTick((t) => t + 1)
+  }, [])
   const [pendingMention, setPendingMention] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [friendsData, setFriendsData] = useState<{
@@ -450,8 +460,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           if (!chatOpenRef.current) setChatUnread((n) => n + 1)
           break
         case 'focusChat':
-          setChatOpen(true)
-          setChatFocusTick((t) => t + 1)
+          requestFocusChat()
           break
         case 'chatVisibility':
           setChatOpen(msg.open)
@@ -1170,7 +1179,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       pendingMention,
       consumeMention,
       unread: chatUnread,
-      focusTick: chatFocusTick
+      focusTick: chatFocusTick,
+      requestFocus: requestFocusChat
     },
     friends: {
       available: friendsData.available,
