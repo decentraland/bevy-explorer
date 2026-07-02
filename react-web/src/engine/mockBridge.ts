@@ -229,7 +229,9 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
     )
 
     // ?simhover=N seeds N world-hover prompts at screen centre so the radial cursor tooltips are
-    // visible/verifiable in ?mock=1 (the real engine hover stream isn't mocked). One is disabled.
+    // visible/verifiable in ?mock=1 (the real engine hover stream isn't mocked). One is disabled
+    // (camera-distance gated, the PBPointerEvents default → shows the camera glyph; see pointer.test.tsx
+    // for the player-distance / walking-glyph variant).
     const simHover = Number(new URLSearchParams(location.search).get('simhover') ?? 0)
     if (simHover > 0) {
       const sample = [
@@ -237,7 +239,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
         { button: 1, text: 'Open', enabled: true },
         { button: 2, text: 'Inspect', enabled: true },
         { button: 8, text: 'Jump', enabled: true },
-        { button: 4, text: 'Grab', enabled: false },
+        { button: 4, text: 'Grab', enabled: false, tooFarReason: 'camera' as const },
         { button: 10, text: 'Use', enabled: true },
         { button: 11, text: 'Activate', enabled: true }
       ].slice(0, Math.min(simHover, 7))

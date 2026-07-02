@@ -134,7 +134,11 @@ these by hand (or have an agent drive the Chrome extension against a live world)
 - [ ] **Hover / proximity prompts** ("Press E…") show on interactables and sit on the right entity.
       Free-cursor prompts sit **around the mouse** in radial slots (from `PrimaryPointerInfo`) — first
       to the right, then left, then top, up to 7 (mirrors bevy-ui-scene); pointer-locked falls back to
-      a stack under the reticle. (Visual baseline via `?mock=1&simhover=N`.)
+      a stack under the reticle. A **disabled** prompt swaps its key-cap and copy by which
+      `PBPointerEvents` distance rule gates it: **camera** (no `maxPlayerDistance` configured — the
+      common case, incl. the implicit 10m default) shows a camera glyph + "Get camera closer";
+      **player** (`maxPlayerDistance` configured) shows the bevy-ui-scene walking glyph + "Get player
+      closer". (Visual baseline via `?mock=1&simhover=N`.)
 - [ ] **Nearby-avatar click → profile card** (`domains/avatarPointer.ts`) — aiming at another avatar
       shows a **"Show Profile"** hover; clicking it frees the cursor and opens that avatar's
       **profile card** anchored **at the click point**. The card mirrors the old profile-menu action

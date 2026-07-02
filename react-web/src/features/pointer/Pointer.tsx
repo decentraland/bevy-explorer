@@ -3,6 +3,7 @@
 // engine reports an interactable under it. The "press E to interact" prompt comes from the engine
 // hover stream (relayed by the bridge's pointer domain) — InputAction → key label is mapped here.
 import { useEffect, useState, useSyncExternalStore } from 'react'
+import { CameraIcon, WalkIcon } from '../../design'
 import type { HoverAction, ProximityTip } from '../../engine/protocol'
 import styles from './Pointer.module.css'
 
@@ -67,15 +68,31 @@ function slotStyle(s: Slot): React.CSSProperties {
   return { position: 'absolute', left: s.x, top: s.y, transform: 'translateY(-50%)' }
 }
 
+// Out-of-range hint: which rule gates it decides both the glyph and the copy. 'player' is the
+// bevy-ui-scene case (its hover-actions showed a walking-person icon for the unreachable state);
+// 'camera' — including entries with no distance rule at all, the implicit 10m default — is new here
+// since the old scene never distinguished the two.
+const TOO_FAR_COPY: Record<'camera' | 'player', { Icon: (p: { size: number; className?: string }) => React.JSX.Element; text: string }> = {
+  camera: { Icon: CameraIcon, text: 'Get camera closer' },
+  player: { Icon: WalkIcon, text: 'Get player closer' }
+}
+
 function Hint({ action, slot }: { action: HoverAction; slot?: Slot }): React.JSX.Element {
   const reverse = slot?.side === 'l'
+  const tooFar = !action.enabled ? TOO_FAR_COPY[action.tooFarReason ?? 'camera'] : null
   return (
     <div
       className={`${styles.hint}${reverse ? ` ${styles.hintReverse}` : ''}${action.enabled ? '' : ` ${styles.hintDisabled}`}`}
       style={slot ? slotStyle(slot) : undefined}
     >
-      <KeyCap button={action.button} />
-      <span className={styles.hintText}>{action.enabled ? action.text : 'Too far, get closer'}</span>
+      {tooFar ? (
+        <span className={styles.mouse} data-testid={`too-far-icon-${action.tooFarReason ?? 'camera'}`}>
+          <tooFar.Icon size={22} />
+        </span>
+      ) : (
+        <KeyCap button={action.button} />
+      )}
+      <span className={styles.hintText}>{action.enabled ? action.text : tooFar?.text}</span>
     </div>
   )
 }

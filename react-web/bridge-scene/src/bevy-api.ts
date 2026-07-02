@@ -52,7 +52,9 @@ export type AvatarModifierState = { userId: string; hideAvatar: boolean; hidePro
 export type HoverEntry = {
   eventType: number
   enabled?: boolean
-  eventInfo?: { button?: number; hoverText?: string; showFeedback?: boolean }
+  // maxPlayerDistance absent/null → the entry is range-gated by camera distance only (the PBPointerEvents
+  // default when neither is set is a 10m camera check), per pointer_events.proto's distance-rule doc.
+  eventInfo?: { button?: number; hoverText?: string; showFeedback?: boolean; maxPlayerDistance?: number | null }
 }
 export type SystemHoverEvent = { entered: boolean; targetType: number; actions: HoverEntry[] }
 

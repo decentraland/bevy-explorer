@@ -680,6 +680,11 @@ export interface HoverAction {
   text: string
   /** false → out of range ("Too far, get closer"). */
   enabled: boolean
+  /** Only meaningful when `enabled` is false — which distance rule (PBPointerEvents) is gating the
+   *  action: 'camera' (no `maxPlayerDistance` configured — the implicit-default case too) shows a
+   *  camera glyph + "Get camera closer"; 'player' (`maxPlayerDistance` configured) shows the
+   *  bevy-ui-scene walking glyph + "Get player closer". Defaults to 'camera' when absent. */
+  tooFarReason?: 'camera' | 'player'
 }
 /** Hover hints to show at the pointer. Empty array = nothing hovered. */
 export interface HoverMessage {

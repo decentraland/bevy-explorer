@@ -51,7 +51,10 @@ export function registerPointer(ctx: Ctx): void {
           .map((a) => ({
             button: a.eventInfo?.button ?? 1,
             text: a.eventInfo?.hoverText ?? 'Interact',
-            enabled: a.enabled !== false
+            enabled: a.enabled !== false,
+            // maxPlayerDistance configured → the entry is (also) range-gated by player distance;
+            // otherwise it's the camera-distance rule (incl. the implicit 10m default).
+            tooFarReason: a.enabled === false ? (a.eventInfo?.maxPlayerDistance == null ? 'camera' : 'player') : undefined
           }))
         // Cursor screen position so React anchors the hint at the pointer (centre while locked).
         const p = PrimaryPointerInfo.getOrNull(engine.RootEntity)?.screenCoordinates
