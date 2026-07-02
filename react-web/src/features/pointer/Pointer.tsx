@@ -2,9 +2,14 @@
 // browser hides the OS cursor, so we draw a center reticle ourselves; it highlights when the
 // engine reports an interactable under it. The "press E to interact" prompt comes from the engine
 // hover stream (relayed by the bridge's pointer domain) — InputAction → key label is mapped here.
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { HoverAction, ProximityTip } from '../../engine/protocol'
 import styles from './Pointer.module.css'
+
+// Stable defaults so tests/callers that don't stream cursor position can omit the props — module-scope
+// identity keeps useSyncExternalStore from resubscribing every render.
+const noSubscribe = (): (() => void) => () => {}
+const noHoverPos = (): null => null
 
 // Default DCL key bindings (custom rebinds aren't reflected yet — v1).
 const IA_POINTER = 0
@@ -75,7 +80,22 @@ function Hint({ action, slot }: { action: HoverAction; slot?: Slot }): React.JSX
   )
 }
 
-export function Pointer({ hover, hoverPos, locked, proximity }: { hover: HoverAction[]; hoverPos?: { x: number; y: number } | null; locked: boolean; proximity: ProximityTip[] }): React.JSX.Element | null {
+export function Pointer({
+  hover,
+  subscribeHoverPos = noSubscribe,
+  getHoverPos = noHoverPos,
+  locked,
+  proximity
+}: {
+  hover: HoverAction[]
+  subscribeHoverPos?: (onChange: () => void) => () => void
+  getHoverPos?: () => { x: number; y: number } | null
+  locked: boolean
+  proximity: ProximityTip[]
+}): React.JSX.Element | null {
+  // Subscribed independently of the rest of the HUD's session state — hoverPos changes at mouse-move
+  // frequency while a free-cursor hover is active, so only this component should re-render on it.
+  const hoverPos = useSyncExternalStore(subscribeHoverPos, getHoverPos)
   // The engine grabs the mouse without the browser Pointer Lock API, so `locked` comes from the
   // bridge (PrimaryPointerInfo). Keep the browser API as a fallback for setups that do use it.
   const [browserLocked, setBrowserLocked] = useState(false)

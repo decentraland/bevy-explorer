@@ -149,10 +149,11 @@ export function registerCommunities(ctx: Ctx): void {
     ctx.send({ kind: 'communityDetail', id: msg.id, members, posts, places, events, photos })
   })
   // Communities the local user can invite `address` to. The social-api filters server-side
-  // (caller must be owner/moderator, target not already a member) and returns just {id,name}.
+  // (caller must be owner/moderator, target not already a member) and returns {data:[{id,name}]}
+  // (the /members/:address/invites route envelopes under `data`, unlike the /communities routes above).
   ctx.on('getInvitableCommunities', async (msg) => {
-    const communities = await signed<InvitableCommunity[]>(`${await membersBase()}/${msg.address.toLowerCase()}/invites`).catch(() => undefined)
-    ctx.send({ kind: 'invitableCommunities', address: msg.address, communities: communities ?? [] })
+    const res = await signed<{ data?: InvitableCommunity[] }>(`${await membersBase()}/${msg.address.toLowerCase()}/invites`).catch(() => undefined)
+    ctx.send({ kind: 'invitableCommunities', address: msg.address, communities: res?.data ?? [] })
   })
   ctx.on('inviteToCommunity', async (msg) => {
     await signed(`${await base()}/${msg.communityId}/requests`, 'POST', { targetedAddress: msg.address.toLowerCase(), type: 'invite' }).catch((e: unknown) => {
