@@ -695,20 +695,27 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     requestAnimationFrame(() => requestAnimationFrame(run))
     setTimeout(run, 60)
   }, [])
-  // ?position=x,y (parity with the plain engine page): skip the Places picker and launch straight
-  // at that parcel. Consumed once — after a sign-out the picker shows normally.
-  const urlPosition = useRef<Destination>(
+  // ?position=x,y / ?realm= (parity with the plain engine page): skip the Places picker and launch
+  // straight there. position wins when both are given (the realm still applies — EngineHost feeds
+  // it to the iframe as initialRealm, which a position-only launch inherits). Consumed once —
+  // after a sign-out the picker shows normally.
+  const urlDestination = useRef<Destination>(
     (() => {
-      const raw = new URLSearchParams(location.search).get('position')
-      if (raw == null) return null
-      const [x, y] = raw.split(',').map((n) => parseInt(n.trim(), 10))
-      return Number.isFinite(x) && Number.isFinite(y) ? { kind: 'parcel', x, y } : null
+      const q = new URLSearchParams(location.search)
+      const raw = q.get('position')
+      if (raw != null) {
+        const [x, y] = raw.split(',').map((n) => parseInt(n.trim(), 10))
+        if (Number.isFinite(x) && Number.isFinite(y)) return { kind: 'parcel', x, y }
+      }
+      const realm = q.get('realm')
+      if (realm != null && realm !== '') return { kind: 'world', realm }
+      return null
     })()
   )
   useEffect(() => {
-    if (!submitted || destinationPicked || urlPosition.current == null) return
-    const dest = urlPosition.current
-    urlPosition.current = null
+    if (!submitted || destinationPicked || urlDestination.current == null) return
+    const dest = urlDestination.current
+    urlDestination.current = null
     pickDestination(dest)
   }, [submitted, destinationPicked, pickDestination])
   const equipWearables = useCallback((urns: string[]) => {
@@ -894,7 +901,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const phase: SessionPhase = !submitted
     ? 'login'
     : !destinationPicked
-      ? 'picking'
+      ? urlDestination.current != null
+        ? 'entering' // a ?position/?realm launch is about to fire — never flash the picker
+        : 'picking'
       : loaderActive
         ? 'entering'
         : 'world'
