@@ -19,3 +19,4 @@ config.json
 .idea
 *.pem
 .DS_Store
+/react-web/bridge-scene/static-native

@@ -272,10 +272,16 @@ jobs:
           echo "PUBLIC_URL=$PUBLIC_URL"
           npm ci --prefix react-web
           npm run build --prefix react-web
-      # The headless bridge scene the engine loads as its --ui systemScene, served from the
-      # package at bridge-scene/static (same-origin with the engine iframe).
+      # The headless bridge scene the engine loads as its --ui systemScene. The realm (about) is
+      # served same-origin with the engine iframe, but the scene CONTENT baseUrl is baked at
+      # export — point it at the versioned CDN path so it's version-pinned + immutable and never
+      # depends on where the site tree is mounted (the entry lives under /bevy-web, not /).
       - name: Bundle bridge scene
-        run: npm ci && npm run bundle
+        run: |
+          export SCENE_BASE_URL="$(node -p "require('../../deploy/web/package.json').homepage || ''")/bridge-scene/static/"
+          echo "SCENE_BASE_URL=$SCENE_BASE_URL"
+          npm ci
+          npm run bundle
         working-directory: react-web/bridge-scene
       - name: Publish
         if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'release'

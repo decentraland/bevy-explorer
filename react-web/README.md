@@ -60,12 +60,12 @@ cd bridge-scene && npm install && npx sdk-commands start --no-browser --port 810
 npm install && npm run dev
 ```
 
-**Engine mode (default)** — `http://localhost:5188/`: real engine in a same-origin
+**Engine mode (default)** — `http://localhost:5173/`: real engine in a same-origin
 iframe (`../deploy/web`), with `systemScene=http://localhost:8100` (the bridge
 scene). React login → **Explore as Guest** (`/login_guest`) → scene-loading overlay
 (real data) → world. Needs a local engine build at `../deploy/web`.
 
-**Mock mode** — `http://localhost:5188/?mock=1`: full UI (login + scene-loading) on
+**Mock mode** — `http://localhost:5173/?mock=1`: full UI (login + scene-loading) on
 a fake bridge, no engine. Add `&previousLogin=1` for the returning-user flow.
 
 ## Deploy (production)
