@@ -120,6 +120,10 @@ bevy = { version = "0.16.1", default-features = false, features = [
 ] }
 wgpu = "24"
 bevy_console = { git = "https://github.com/robtfm/bevy-console", branch = "0.16" }
+# robtfm fork of rusty_enet, retargeted from upstream lsalzman ENet 1.3.x to the
+# nxrighthere/SoftwareGuy ENet-CSharp "modified protocol" fork that Decentraland's
+# Pulse server runs (header flag bits only — see src/c/protocol.rs). Native only.
+rusty_enet = { git = "https://github.com/robtfm/rusty_enet", branch = "decentraland-pulse" }
 # enables naga_oil function overrides on non-`virtual` bevy_pbr functions (e.g.
 # our shadow-darkness override in bound_material.wgsl). feature-unifies into the
 # naga_oil that bevy builds its shader composer with. version must match bevy's.
@@ -148,6 +152,7 @@ ethers-signers = "2.0.3"
 ethers-core = "2.0.3"
 futures-lite = "2.6"
 bimap = "0.6.3"
+bitflags = "2"
 prost = "0.11.8"
 prost-reflect = "0.11"
 clap = "4.6"

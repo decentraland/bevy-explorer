@@ -1159,6 +1159,20 @@ pub enum PreviewCommand {
     ReloadScene { hash: String },
 }
 
+/// The local player was instantly repositioned — a durationless `move_player_to`, a `teleport_player`,
+/// or a spawn snap — rather than walking there. Comms turns this into a Pulse `TeleportRequest` so peers
+/// snap to the new position instead of interpolating across the gap. `position` is Bevy world space.
+#[derive(Event)]
+pub struct PlayerTeleported {
+    pub position: Vec3,
+}
+
+/// Marks the local player as behind the loading screen — teleported or spawning, with a provisional
+/// position — until the destination scene resolves and they're placed in-world. Lives here (rather
+/// than `scene_runner`) so lower-level crates like `comms` can read it; `scene_runner` re-exports it.
+#[derive(Component)]
+pub struct OutOfWorld;
+
 pub struct StartupScene {
     pub source: String,
     pub super_user: bool,
