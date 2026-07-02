@@ -1300,6 +1300,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_hanabi"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98bb4b6d8b60909e495d2cd93222d2907d12502234b54c3294c013c1bced2b05"
+dependencies = [
+ "anyhow",
+ "bevy",
+ "bitflags 2.11.0",
+ "bytemuck",
+ "copyless",
+ "fixedbitset 0.5.7",
+ "naga",
+ "naga_oil",
+ "rand 0.8.5",
+ "rand_pcg",
+ "ron",
+ "serde",
+ "thiserror 2.0.18",
+ "wgpu",
+]
+
+[[package]]
 name = "bevy_image"
 version = "0.16.1"
 source = "git+https://github.com/robtfm/bevy?branch=release-0.16-dcl#794172be404e4c8ec64572ba9aae7421f12225c5"
@@ -2041,7 +2063,7 @@ dependencies = [
  "bitflags 2.11.0",
  "cexpr",
  "clang-sys",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "log",
  "prettyplease 0.2.37",
  "proc-macro2",
@@ -2061,7 +2083,7 @@ dependencies = [
  "bitflags 2.11.0",
  "cexpr",
  "clang-sys",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "regex",
@@ -2239,7 +2261,7 @@ version = "0.1.1"
 source = "git+https://github.com/robtfm/boimp?branch=feat%2Fcomposite-bake-via-storage-texture#8abfcf6d0d2a9ec8beefbbc96822968379501d7c"
 dependencies = [
  "anyhow",
- "async-channel 1.9.0",
+ "async-channel 2.5.0",
  "bevy",
  "bytemuck",
  "crossbeam-channel",
@@ -2906,6 +2928,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "147be55d677052dabc6b22252d5dd0fd4c29c8c27aa4f2fbef0f94aa003b406f"
 
 [[package]]
+name = "copyless"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2df960f5d869b2dd8532793fde43eb5427cceb126c929747a26823ab0eeb536"
+
+[[package]]
 name = "copypwasmta"
 version = "0.1.0"
 source = "git+https://github.com/robtfm/copypwasmta#04da562fdfe1198f7ff4796ed5392938873505b9"
@@ -3535,6 +3563,7 @@ dependencies = [
  "naga_oil",
  "nft",
  "once_cell",
+ "particle_system",
  "pico-args",
  "platform",
  "prost-build 0.11.9",
@@ -8040,6 +8069,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "particle_system"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_hanabi",
+ "dcl_component",
+ "scene_runner",
+]
+
+[[package]]
 name = "password-hash"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8608,7 +8647,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22505a5c94da8e3b7c2996394d1c933236c4d743e81a410bcca4e6989fc066a4"
 dependencies = [
  "bytes",
- "heck 0.4.1",
+ "heck 0.5.0",
  "itertools 0.12.1",
  "log",
  "multimap 0.10.1",
@@ -8833,6 +8872,15 @@ checksum = "32cb0b9bc82b0a0876c2dd994a7e7a2683d3e7390ca40e6886785ef0c7e3ee31"
 dependencies = [
  "num-traits",
  "rand 0.8.5",
+]
+
+[[package]]
+name = "rand_pcg"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59cad018caf63deb318e5a4586d99a24424a364f40f1e5778c29aca23f4fc73e"
+dependencies = [
+ "rand_core 0.6.4",
 ]
 
 [[package]]
@@ -11379,7 +11427,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c5f7c95348f20c1c913d72157b3c6dee6ea3e30b3d19502c5a7f6d3f160dacbf"
 dependencies = [
  "cc",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -12551,7 +12599,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
