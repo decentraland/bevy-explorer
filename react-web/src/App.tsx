@@ -24,7 +24,7 @@ import { Pointer } from './features/pointer/Pointer'
 import { ProfilePassport } from './features/profile/ProfilePassport'
 import { WorldVisitModal } from './components/WorldVisitModal'
 import { PermissionDialog } from './features/permissions/PermissionDialog'
-import type { ChatUser } from './features/chat/ProfileCard'
+import { ProfileCard, type ChatUser, type Relationship } from './features/chat/ProfileCard'
 import type { Profile } from './engine/protocol'
 import { FpsMeter } from './features/debug/FpsMeter'
 import { LoadingAndLogin } from './features/login/LoadingAndLogin'
@@ -125,12 +125,19 @@ function Hud(): React.JSX.Element {
     setPassport(user)
     if (user.address) session.requestUserProfile(user.address) // fetch badges/photos/catalyst data
   }
-  // Friendship status for a user — drives the profile menu's CTA (chat + friends list).
-  const relationshipOf = (address: string): 'none' | 'requested' | 'friend' => {
+  // Friendship status for a user — drives the profile card's CTA (chat + friends list + world).
+  const relationshipOf = (address: string): Relationship => {
     const a = address.toLowerCase()
+    if (session.friends.blocked.some((b) => b.toLowerCase() === a)) return 'blocked'
     if (session.friends.list.some((f) => f.address.toLowerCase() === a)) return 'friend'
+    if (session.friends.received.some((r) => r.address.toLowerCase() === a)) return 'incoming'
     if (session.friends.sent.some((r) => r.address.toLowerCase() === a)) return 'requested'
     return 'none'
+  }
+  // Report a user — no report endpoint is wired yet, so this stubs (matches the old scene, which
+  // logged too). The ProfileCard shows a confirm before calling this.
+  const reportUser = (u: ChatUser): void => {
+    console.log('[hud] report submitted (stub)', u.address)
   }
   // Open MY OWN passport (Sidebar profile icon + the menu's "View Profile").
   const viewMyProfile = (): void => {
@@ -183,14 +190,25 @@ function Hud(): React.JSX.Element {
               they don't show through (the map page's body is transparent). */}
           {!pageOpen && <Sidebar session={session} onViewProfile={viewMyProfile} />}
           {/* Reticle (when pointer-locked) + world-hover prompt — hidden under a full-screen page. */}
-          {!pageOpen && <Pointer hover={session.hover} locked={session.cursorLocked} proximity={session.proximity} />}
+          {!pageOpen && (
+            <Pointer
+              hover={session.hover}
+              subscribeHoverPos={session.subscribeHoverPos}
+              getHoverPos={session.getHoverPos}
+              locked={session.cursorLocked}
+              proximity={session.proximity}
+            />
+          )}
           <Chat
             chat={session.chat}
             hidden={session.friends.open || pageOpen}
             me={session.profile.data}
-            onAddFriend={(address) => session.friends.act('request', address)}
-            onBlock={(address) => session.friends.act('block', address)}
+            onFriendAction={session.friends.act}
             onViewProfile={openPassport}
+            onReport={reportUser}
+            invitable={session.communities.invitable}
+            onRequestInvitable={session.communities.requestInvitable}
+            onInvite={session.communities.invite}
             onTeleport={(x, y) => session.map.teleport(x, y)}
             onVisitWorld={(name) => setVisitWorld(name)}
             relationshipOf={relationshipOf}
@@ -199,9 +217,12 @@ function Hud(): React.JSX.Element {
             friends={session.friends}
             me={session.profile.data}
             relationshipOf={relationshipOf}
-            onAddFriend={(address) => session.friends.act('request', address)}
             onViewProfile={openPassport}
-            onBlock={(address) => session.friends.act('block', address)}
+            onReport={reportUser}
+            onMention={session.chat.mention}
+            invitable={session.communities.invitable}
+            onRequestInvitable={session.communities.requestInvitable}
+            onInvite={session.communities.invite}
           />
           <SettingsPanel settings={session.settings} profile={session.profile} onNavigate={goToMenuPage} />
           <ProfilePanel profile={session.profile} />
@@ -241,10 +262,27 @@ function Hud(): React.JSX.Element {
               key={passport.address}
               profile={passportProfile}
               isSelf={isSelfPassport}
-              isFriend={session.friends.list.some((f) => f.address.toLowerCase() === passport.address.toLowerCase())}
-              requested={session.friends.sent.some((r) => r.address.toLowerCase() === passport.address.toLowerCase())}
+              relationship={relationshipOf(passport.address)}
               onAddFriend={(address) => session.friends.act('request', address)}
               onClose={() => setPassport(null)}
+            />
+          )}
+          {session.worldCard && (
+            <ProfileCard
+              key={session.worldCard.address}
+              user={{ address: session.worldCard.address, name: session.worldCard.name }}
+              x={session.worldCard.x}
+              y={session.worldCard.y}
+              me={session.profile.data}
+              relationship={relationshipOf(session.worldCard.address)}
+              onFriendAction={session.friends.act}
+              onMention={session.chat.mention}
+              onViewProfile={openPassport}
+              onReport={reportUser}
+              invitableCommunities={session.communities.invitable[session.worldCard.address.toLowerCase()]}
+              onRequestInvitable={session.communities.requestInvitable}
+              onInvite={session.communities.invite}
+              onClose={session.closeWorldCard}
             />
           )}
           {visitWorld && (

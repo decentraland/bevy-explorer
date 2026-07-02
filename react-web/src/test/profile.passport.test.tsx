@@ -33,7 +33,7 @@ describe('profile passport', () => {
     await userEvent.click(screen.getByRole('button', { name: 'ADD FRIEND' }))
     expect(onAddFriend).toHaveBeenCalledWith(profile.address)
 
-    rerender(<ProfilePassport profile={profile} isFriend onAddFriend={onAddFriend} onClose={vi.fn()} />)
+    rerender(<ProfilePassport profile={profile} relationship="friend" onAddFriend={onAddFriend} onClose={vi.fn()} />)
     expect(screen.getByRole('button', { name: 'FRIEND' })).toBeDisabled()
   })
 
@@ -46,9 +46,19 @@ describe('profile passport', () => {
   })
 
   it('shows REQUESTED (not Add Friend) when a request is already pending', () => {
-    render(<ProfilePassport profile={profile} requested onClose={vi.fn()} />)
+    render(<ProfilePassport profile={profile} relationship="requested" onClose={vi.fn()} />)
     expect(screen.getByRole('button', { name: 'REQUESTED' })).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'ADD FRIEND' })).toBeNull()
+  })
+
+  it('hides the friend action for an incoming request (would duplicate-request otherwise)', () => {
+    render(<ProfilePassport profile={profile} relationship="incoming" onClose={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: /FRIEND/i })).toBeNull()
+  })
+
+  it('hides the friend action for a blocked user', () => {
+    render(<ProfilePassport profile={profile} relationship="blocked" onClose={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: /FRIEND/i })).toBeNull()
   })
 
   it('hides the friend action on your own passport (isSelf)', () => {

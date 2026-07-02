@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Chat } from '../features/chat/Chat'
 import type { ChatLine, ChatState } from '../features/session/useEngineSession'
-import type { NearbyMember } from '../engine/protocol'
+import type { FriendAction, NearbyMember } from '../engine/protocol'
 import { fakeSession } from './harness'
 
 const line = (message: string, sender = '0xsender'): ChatLine => ({
@@ -18,8 +18,7 @@ function renderChat(
   opts: {
     messages?: ChatLine[]
     members?: NearbyMember[]
-    onAddFriend?: (a: string) => void
-    onBlock?: (a: string) => void
+    onFriendAction?: (op: FriendAction, a: string) => void
     onViewProfile?: (u: { address: string; name: string }) => void
     onTeleport?: (x: number, y: number) => void
     me?: { address?: string; name?: string } | null
@@ -34,7 +33,7 @@ function renderChat(
     members: opts.members ?? []
   }
   const { container } = render(
-    <Chat chat={chat} me={opts.me} onAddFriend={opts.onAddFriend} onBlock={opts.onBlock} onViewProfile={opts.onViewProfile} onTeleport={opts.onTeleport} />
+    <Chat chat={chat} me={opts.me} onFriendAction={opts.onFriendAction} onViewProfile={opts.onViewProfile} onTeleport={opts.onTeleport} />
   )
   return { chat, container }
 }
@@ -54,38 +53,39 @@ describe('chat rich messages', () => {
     expect(onTeleport).toHaveBeenCalledWith(10, -5)
   })
 
-  it('an @mention opens the profile menu with the supported actions', async () => {
-    const onAddFriend = vi.fn()
-    const onBlock = vi.fn()
+  it('an @mention opens the profile card with the supported actions', async () => {
+    const onFriendAction = vi.fn()
     renderChat({
       messages: [line('yo @Alice')],
       members: [{ address: '0xalice', name: 'Alice', picture: 'p.png' }],
-      onAddFriend,
-      onBlock
+      onFriendAction
     })
     await userEvent.click(screen.getByRole('button', { name: '@Alice' }))
     const dialog = screen.getByRole('dialog', { name: 'Profile' })
     expect(dialog).toBeInTheDocument()
-    // Only the actions we support — no View Profile / Chat / Call / Hush / Gift / Report.
-    expect(screen.queryByRole('button', { name: /View Profile|Call|Hush|Gift|Report/i })).toBeNull()
+    // Only the actions wired here — no View Passport / Report (those callbacks weren't passed).
+    expect(screen.queryByRole('button', { name: /View Passport|Report/i })).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: /ADD FRIEND/i }))
-    expect(onAddFriend).toHaveBeenCalledWith('0xalice')
+    expect(onFriendAction).toHaveBeenCalledWith('request', '0xalice')
   })
 
-  it('the profile menu can block and mention', async () => {
-    const onBlock = vi.fn()
-    renderChat({ messages: [line('yo @Alice')], members: [{ address: '0xalice', name: 'Alice' }], onBlock })
+  it('the profile card can block via the unified friend action', async () => {
+    const onFriendAction = vi.fn()
+    renderChat({ messages: [line('yo @Alice')], members: [{ address: '0xalice', name: 'Alice' }], onFriendAction })
     await userEvent.click(screen.getByRole('button', { name: '@Alice' }))
     await userEvent.click(screen.getByRole('button', { name: 'Block' }))
-    expect(onBlock).toHaveBeenCalledWith('0xalice')
+    // Block asks for confirmation first (mirrors Report).
+    const confirm = screen.getByText('Block Alice?').closest('[role="dialog"]') as HTMLElement
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Block' }))
+    expect(onFriendAction).toHaveBeenCalledWith('block', '0xalice')
   })
 
-  it('View Profile from the menu opens the passport for that user', async () => {
+  it('View Passport from the menu opens the passport for that user', async () => {
     const onViewProfile = vi.fn()
     renderChat({ messages: [line('yo @Alice')], members: [{ address: '0xalice', name: 'Alice' }], onViewProfile })
     await userEvent.click(screen.getByRole('button', { name: '@Alice' }))
-    await userEvent.click(screen.getByRole('button', { name: 'View Profile' }))
+    await userEvent.click(screen.getByRole('button', { name: 'View Passport' }))
     expect(onViewProfile).toHaveBeenCalledWith(expect.objectContaining({ address: '0xalice' }))
   })
 

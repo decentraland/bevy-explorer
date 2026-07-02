@@ -95,6 +95,31 @@ test.describe('visual — mock HUD', () => {
     await expect(page).toHaveScreenshot('world-hud.png')
   })
 
+  // Profile card — the popover opened by clicking a chat sender / nearby avatar. Baselines the
+  // synchronous action set (View Passport · Mention · Block · Report). The async "Invite to
+  // Community" row + submenu, the Report confirm, and the relationship states (Accept/Reject/Unblock)
+  // are covered deterministically by the tier-1 profileCard.test.tsx.
+  test('profile card', async ({ page }) => {
+    await enterWorld(page)
+    await page.getByRole('button', { name: 'View Sharknado' }).first().click()
+    const card = page.getByRole('dialog', { name: 'Profile' })
+    await card.getByRole('button', { name: 'Report' }).waitFor()
+    await settle(page)
+    await expect(page).toHaveScreenshot('profile-card.png')
+  })
+
+  // Radial free-cursor hover tooltips around the pointer (up to 7 slots), ported from the old scene.
+  // ?simhover=7 seeds seven prompts (one disabled → "Too far, get closer") at the viewport centre.
+  test('hover tooltips (radial)', async ({ page }) => {
+    await page.goto('/?mock=1&simhover=7')
+    await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click()
+    await page.getByRole('button', { name: /SKIP TO GENESIS PLAZA/i }).click()
+    await page.waitForSelector('nav[aria-label="Main navigation"]')
+    await page.getByText('Show Profile').waitFor() // the seeded hover arrives ~1.5s after entry
+    await settle(page)
+    await expect(page).toHaveScreenshot('hover-tooltips.png')
+  })
+
   // Floating panels + full-screen pages, opened from the sidebar.
   for (const [label, name] of [
     ['Friends', 'friends'],

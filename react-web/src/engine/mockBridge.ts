@@ -228,6 +228,28 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       1400
     )
 
+    // ?simhover=N seeds N world-hover prompts at screen centre so the radial cursor tooltips are
+    // visible/verifiable in ?mock=1 (the real engine hover stream isn't mocked). One is disabled.
+    const simHover = Number(new URLSearchParams(location.search).get('simhover') ?? 0)
+    if (simHover > 0) {
+      const sample = [
+        { button: 0, text: 'Show Profile', enabled: true },
+        { button: 1, text: 'Open', enabled: true },
+        { button: 2, text: 'Inspect', enabled: true },
+        { button: 8, text: 'Jump', enabled: true },
+        { button: 4, text: 'Grab', enabled: false },
+        { button: 10, text: 'Use', enabled: true },
+        { button: 11, text: 'Activate', enabled: true }
+      ].slice(0, Math.min(simHover, 7))
+      // Centre of the viewport (fallback to the visual-baseline size if innerWidth is momentarily 0).
+      const cx = (window.innerWidth || 1600) / 2
+      const cy = (window.innerHeight || 900) / 2
+      setTimeout(() => reply({ kind: 'hover', actions: sample, x: cx, y: cy }), 1500)
+      // Follow the real cursor so the tooltip-tracks-the-mouse behaviour is verifiable in ?mock=1
+      // (the real bridge streams this from PrimaryPointerInfo per frame).
+      window.addEventListener('mousemove', (e) => reply({ kind: 'hoverPos', x: e.clientX, y: e.clientY }))
+    }
+
     // Fake friends + requests for the React friends panel.
     setTimeout(
       () =>
@@ -389,6 +411,18 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
         c.membersCount = Math.max(0, c.membersCount - 1)
       }
       reply({ kind: 'communities', communities: mockCommunities })
+      return
+    }
+    if (msg.kind === 'getInvitableCommunities') {
+      // The social-api filters by role server-side; mock it by offering the ones you own/moderate.
+      const invitable = mockCommunities
+        .filter((c) => c.role === 'owner' || c.role === 'moderator')
+        .map((c) => ({ id: c.id, name: c.name }))
+      reply({ kind: 'invitableCommunities', address: msg.address, communities: invitable })
+      return
+    }
+    if (msg.kind === 'inviteToCommunity') {
+      console.log('[mock] invite', msg.address, '→', msg.communityId)
       return
     }
     if (msg.kind === 'getCommunityDetail') {

@@ -3,10 +3,13 @@
 import { getPlayer } from '@dcl/sdk/players'
 import { getJson, isZone, signed, signedForm } from '../http'
 import type { Ctx } from '../bridge'
-import type { Community, CommunityEvent, CommunityMember, CommunityPhoto, CommunityPlace, CommunityPost } from '../../../src/engine/protocol'
+import type { Community, CommunityEvent, CommunityMember, CommunityPhoto, CommunityPlace, CommunityPost, InvitableCommunity } from '../../../src/engine/protocol'
 
 const ORG = 'https://social-api.decentraland.org/v1/communities'
 const ZONE = 'https://social-api.decentraland.zone/v1/communities'
+// The invitable-communities list is served off the members service, not /communities.
+const MEMBERS_ORG = 'https://social-api.decentraland.org/v1/members'
+const MEMBERS_ZONE = 'https://social-api.decentraland.zone/v1/members'
 // Community events live on the (public) events-api, filtered by community_id.
 const EVENTS_ORG = 'https://events.decentraland.org/api/events'
 const EVENTS_ZONE = 'https://events.decentraland.zone/api/events'
@@ -41,6 +44,10 @@ const FRIEND = 3
 
 async function base(): Promise<string> {
   return (await isZone()) ? ZONE : ORG
+}
+
+async function membersBase(): Promise<string> {
+  return (await isZone()) ? MEMBERS_ZONE : MEMBERS_ORG
 }
 
 async function list(): Promise<Community[]> {
@@ -140,5 +147,17 @@ export function registerCommunities(ctx: Ctx): void {
   ctx.on('getCommunityDetail', async (msg) => {
     const { members, posts, places, events, photos } = await detail(msg.id).catch(() => ({ members: [], posts: [], places: [], events: [], photos: [] }))
     ctx.send({ kind: 'communityDetail', id: msg.id, members, posts, places, events, photos })
+  })
+  // Communities the local user can invite `address` to. The social-api filters server-side
+  // (caller must be owner/moderator, target not already a member) and returns {data:[{id,name}]}
+  // (the /members/:address/invites route envelopes under `data`, unlike the /communities routes above).
+  ctx.on('getInvitableCommunities', async (msg) => {
+    const res = await signed<{ data?: InvitableCommunity[] }>(`${await membersBase()}/${msg.address.toLowerCase()}/invites`).catch(() => undefined)
+    ctx.send({ kind: 'invitableCommunities', address: msg.address, communities: res?.data ?? [] })
+  })
+  ctx.on('inviteToCommunity', async (msg) => {
+    await signed(`${await base()}/${msg.communityId}/requests`, 'POST', { targetedAddress: msg.address.toLowerCase(), type: 'invite' }).catch((e: unknown) => {
+      console.error('[communities] invite failed', e)
+    })
   })
 }

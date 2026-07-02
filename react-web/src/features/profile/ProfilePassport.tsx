@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react'
 import { Avatar } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
 import type { Badge, Profile, ProfileInfo } from '../../engine/protocol'
+import type { Relationship } from '../chat/ProfileCard'
 import styles from './ProfilePassport.module.css'
 
 type Tab = 'overview' | 'badges' | 'photos'
@@ -63,16 +64,15 @@ function BadgeTile({ badge }: { badge: Badge }): React.JSX.Element {
 
 export function ProfilePassport({
   profile,
-  isFriend = false,
-  requested = false,
+  relationship = 'none',
   isSelf = false,
   onAddFriend,
   onClose
 }: {
   profile: Profile
-  isFriend?: boolean
-  /** A friend request to this user is already pending (in the sent list). */
-  requested?: boolean
+  /** Relationship of the local user to this profile — drives the header CTA. Hides it entirely for
+   *  'incoming' (they requested us — showing ADD FRIEND would fire a duplicate request) and 'blocked'. */
+  relationship?: Relationship
   /** Your own passport — hides the friend action (you can't friend yourself). */
   isSelf?: boolean
   onAddFriend?: (address: string) => void
@@ -82,7 +82,7 @@ export function ProfilePassport({
   // Optimistic: flip to "Requested" the instant Add Friend is clicked (the sent-list
   // poll catches up a beat later), so the button isn't a no-op visually.
   const [justRequested, setJustRequested] = useState(false)
-  const pending = requested || justRequested
+  const pending = relationship === 'requested' || justRequested
   // Escape closes the passport.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -122,8 +122,8 @@ export function ProfilePassport({
             )}
           </div>
           <div className={styles.headActions}>
-            {!isSelf &&
-              (isFriend ? (
+            {!isSelf && relationship !== 'incoming' && relationship !== 'blocked' &&
+              (relationship === 'friend' ? (
                 <button type="button" className={`${styles.friendBtn} ${styles.isFriend}`} disabled>
                   FRIEND
                 </button>

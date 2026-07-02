@@ -115,7 +115,7 @@ logout via the profile chip.
 The 3D nametags, the pointer-lock crosshair, and projected proximity tips are drawn **in the engine
 scene**, not the DOM, so `?mock=1` can't show them and screenshots can't be deterministic. Verify
 these by hand (or have an agent drive the Chrome extension against a live world) after any change to
-`bridge-scene/src/domains/{nametags,pointer,proximity}.*`:
+`bridge-scene/src/domains/{nametags,pointer,proximity,avatarPointer}.*`:
 
 - [ ] **Nametags** appear above every avatar's head, follow them while walking, and **face the camera**.
 - [ ] Name **colour** = profile custom colour if set, else the address-hash palette; **claimed** names
@@ -132,6 +132,18 @@ these by hand (or have an agent drive the Chrome extension against a live world)
       hidden in first person.
 - [ ] **Crosshair** shows when the camera is locked (mouse hidden) and hides when the cursor is free.
 - [ ] **Hover / proximity prompts** ("Press E…") show on interactables and sit on the right entity.
+      Free-cursor prompts sit **around the mouse** in radial slots (from `PrimaryPointerInfo`) — first
+      to the right, then left, then top, up to 7 (mirrors bevy-ui-scene); pointer-locked falls back to
+      a stack under the reticle. (Visual baseline via `?mock=1&simhover=N`.)
+- [ ] **Nearby-avatar click → profile card** (`domains/avatarPointer.ts`) — aiming at another avatar
+      shows a **"Show Profile"** hover; clicking it frees the cursor and opens that avatar's
+      **profile card** anchored **at the click point**. The card mirrors the old profile-menu action
+      set: friend CTA (Add / Accept+Reject / Requested), **View Passport** (→ passport-popup),
+      **Mention** (drops @name into chat), **Invite to Community** (owner/mod only — expands the list),
+      **Block/Unblock** (confirm), **Report** (confirm). Walking a player out of / back into range removes/re-adds
+      the click; the card dismisses on scrim-click or an action. (Report has no endpoint yet — stub.)
+      Your own avatar is never clickable (third person). Standing in a **DISABLE_PASSPORTS** privacy
+      area hides the profile card on click for nearby avatars (`BevyApi.getAvatarModifiers`).
 
 ---
 

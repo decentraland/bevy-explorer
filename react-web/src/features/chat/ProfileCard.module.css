@@ -73,7 +73,7 @@
   margin: 0.85rem 0.25rem 0.4rem;
   padding: 0.7rem;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--r-control);
   background: var(--brand, #ff2d55);
   color: #fff;
   font-weight: 700;
@@ -94,6 +94,32 @@
   filter: none;
 }
 
+/* Accept + Reject pair for an incoming friend request. */
+.ctaRow {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.85rem 0.25rem 0.4rem;
+}
+.ctaRow .cta {
+  flex: 1;
+  margin: 0;
+}
+.ctaGhost {
+  flex: 1;
+  padding: 0.7rem;
+  border: 1px solid var(--white-10, rgba(255, 255, 255, 0.14));
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--text, #fff);
+  font-weight: 700;
+  font-size: 0.9rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+.ctaGhost:hover {
+  background: var(--white-10, rgba(255, 255, 255, 0.07));
+}
+
 /* --- action list ---------------------------------------------------------- */
 .menu {
   display: flex;
@@ -108,7 +134,7 @@
   padding: 0.7rem 0.6rem;
   background: none;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--r-control);
   color: var(--text, #fff);
   font-size: 0.95rem;
   font-weight: 600;
@@ -120,6 +146,39 @@
 }
 .row svg {
   flex: none;
+}
+/* Chevron on the "Invite to Community" row (pushes to the far right, rotates when open). */
+.chevron {
+  margin-left: auto;
+  color: var(--text-dim, rgba(255, 255, 255, 0.5));
+  transition: transform var(--dur-fast, 0.15s) ease;
+}
+.chevron[data-open='true'] {
+  transform: rotate(90deg);
+}
+
+/* Invitable-communities list under the "Invite to Community" row. */
+.submenu {
+  display: flex;
+  flex-direction: column;
+  margin: 0.1rem 0 0.2rem 2.45rem;
+  max-height: 9rem;
+  overflow-y: auto;
+}
+.subRow {
+  padding: 0.5rem 0.6rem;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: var(--text-dim, rgba(255, 255, 255, 0.72));
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.subRow:hover {
+  background: var(--white-10, rgba(255, 255, 255, 0.07));
+  color: var(--text, #fff);
 }
 
 .danger {

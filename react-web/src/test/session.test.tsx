@@ -140,4 +140,45 @@ describe('session domain', () => {
       { timeout: 2000 }
     )
   })
+
+  it('a nearby-avatar click (avatarClick message) opens session.worldCard; closeWorldCard clears it', () => {
+    const h = renderSession({ userId: null })
+    expect(h.session().worldCard).toBeNull()
+    act(() => h.driver.emit({ kind: 'avatarClick', address: '0xABC', name: 'Alice', x: 120, y: 240 }))
+    expect(h.session().worldCard).toEqual({ address: '0xABC', name: 'Alice', x: 120, y: 240 })
+    act(() => h.session().closeWorldCard())
+    expect(h.session().worldCard).toBeNull()
+  })
+
+  it('invite-to-community: requestInvitable posts, inbound fills state, invite posts', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    act(() => h.session().communities.requestInvitable('0xABC'))
+    expect(h.driver.last('getInvitableCommunities')).toEqual({ kind: 'getInvitableCommunities', address: '0xABC' })
+    act(() => h.driver.emit({ kind: 'invitableCommunities', address: '0xABC', communities: [{ id: 'c1', name: 'Builders' }] }))
+    expect(h.session().communities.invitable['0xabc']).toEqual([{ id: 'c1', name: 'Builders' }])
+    act(() => h.session().communities.invite('c1', '0xABC'))
+    expect(h.driver.last('inviteToCommunity')).toEqual({ kind: 'inviteToCommunity', communityId: 'c1', address: '0xABC' })
+  })
+
+  it('requestInvitable is cached per address (re-opening the same card does not re-issue the fetch)', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    act(() => h.session().communities.requestInvitable('0xABC'))
+    act(() => h.session().communities.requestInvitable('0xABC')) // e.g. re-opening the same profile card
+    act(() => h.session().communities.requestInvitable('0xabc')) // same address, different casing
+    expect(h.driver.sentOf('getInvitableCommunities')).toHaveLength(1)
+    act(() => h.session().communities.requestInvitable('0xDEF')) // a different address still fetches
+    expect(h.driver.sentOf('getInvitableCommunities')).toHaveLength(2)
+  })
+
+  it('chat.mention opens chat and queues the @name until consumed', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    act(() => h.session().chat.mention('Alice'))
+    expect(h.session().chat.open).toBe(true)
+    expect(h.session().chat.pendingMention).toBe('Alice')
+    act(() => h.session().chat.consumeMention())
+    expect(h.session().chat.pendingMention).toBeNull()
+  })
 })
