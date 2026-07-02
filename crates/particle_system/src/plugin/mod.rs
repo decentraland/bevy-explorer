@@ -21,6 +21,16 @@ const MIN_SPHERE_RADIUS: f32 = 1. / 128.;
 /// Keep in sync with https://github.com/robtfm/movement-scene/blob/main/src/constants.ts
 const GRAVITY: Vec3 = Vec3::new(0., -10., 0.);
 
+const ROTATION_ATTR: Attribute = Attribute::F32_0;
+const GRAVITY_ATTR: Attribute = Attribute::F32X3_0;
+const ADDITIONAL_FORCE_ATTR: Attribute = Attribute::F32X3_1;
+
+macro_rules! set {
+    ($effect:expr, $stage:ident, $value:expr) => {
+        $effect = $effect.$stage($value);
+    };
+}
+
 pub struct ParticleSystemPlugin;
 
 impl Plugin for ParticleSystemPlugin {
@@ -70,7 +80,7 @@ fn particle_system_on_insert(
     // Modifiers
     let init_position = make_position(particle_system.shape.as_ref(), &writer);
     let init_rotation = SetAttributeModifier::new(
-        Attribute::F32_0,
+        ROTATION_ATTR,
         (writer.rand(ScalarType::Float) * writer.lit(std::f32::consts::TAU)).expr(),
     );
     let init_velocity = SetVelocitySphereModifier {
@@ -83,13 +93,13 @@ fn particle_system_on_insert(
     };
     let init_age = SetAttributeModifier::new(Attribute::AGE, writer.lit(0.).expr());
     let init_lifetime = SetAttributeModifier::new(Attribute::LIFETIME, writer.lit(lifetime).expr());
-    let init_gravity = SetAttributeModifier::new(Attribute::F32X3_0, writer.lit(GRAVITY).expr());
+    let init_gravity = SetAttributeModifier::new(GRAVITY_ATTR, writer.lit(GRAVITY).expr());
     let init_additional_force =
-        SetAttributeModifier::new(Attribute::F32X3_1, writer.lit(additional_force).expr());
+        SetAttributeModifier::new(ADDITIONAL_FORCE_ATTR, writer.lit(additional_force).expr());
 
     let update_accel = AccelModifier::new(
-        (writer.attr(Attribute::F32X3_0) * writer.lit(Vec3::new(1., gravity, 1.))
-            + writer.attr(Attribute::F32X3_1))
+        (writer.attr(GRAVITY_ATTR) * writer.lit(Vec3::new(1., gravity, 1.))
+            + writer.attr(ADDITIONAL_FORCE_ATTR))
         .expr(),
     );
 
@@ -104,18 +114,20 @@ fn particle_system_on_insert(
         max_particles,
         SpawnerSettings::rate(rate.into()).with_starts_active(active),
         module,
-    )
-    .init(init_position)
-    .init(init_rotation)
-    .init(init_velocity)
-    .init(init_age)
-    .init(init_lifetime)
-    .init(init_gravity)
-    .init(init_additional_force)
-    .update(update_accel);
+    );
+
+    set!(effect_asset, init, init_position);
+    set!(effect_asset, init, init_rotation);
+    set!(effect_asset, init, init_velocity);
+    set!(effect_asset, init, init_age);
+    set!(effect_asset, init, init_lifetime);
+    set!(effect_asset, init, init_gravity);
+    set!(effect_asset, init, init_additional_force);
+
+    set!(effect_asset, update, update_accel);
 
     if billboard {
-        effect_asset = effect_asset.render(render_billboard);
+        set!(effect_asset, render, render_billboard);
     }
 
     let handle = effect_assets.add(effect_asset);
