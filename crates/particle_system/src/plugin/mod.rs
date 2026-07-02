@@ -2,9 +2,9 @@ mod set_position_modifier;
 
 use bevy::{math::bounding::Aabb3d, prelude::*};
 use bevy_hanabi::{
-    AccelModifier, Attribute, EffectAsset, ExprHandle, ExprWriter, HanabiPlugin, ParticleEffect,
-    ScalarType, SetAttributeModifier, SetPositionCone3dModifier, SetPositionSphereModifier,
-    SetVelocitySphereModifier, SpawnerSettings,
+    AccelModifier, Attribute, EffectAsset, ExprHandle, ExprWriter, HanabiPlugin, OrientMode,
+    OrientModifier, ParticleEffect, ScalarType, SetAttributeModifier, SetPositionCone3dModifier,
+    SetPositionSphereModifier, SetVelocitySphereModifier, SpawnerSettings,
 };
 use dcl_component::{
     proto_components::{
@@ -56,10 +56,19 @@ fn particle_system_on_insert(
         .initial_velocity_speed
         .unwrap_or(FloatRange { start: 1., end: 1. });
     let gravity = particle_system.gravity.unwrap_or(0.);
+    let billboard = particle_system.billboard.unwrap_or(true);
 
     let writer = ExprWriter::new();
 
+    // Attributes
+    let rotation_attr = writer.attr(Attribute::F32_0).expr();
+
+    // Modifiers
     let position = make_position(particle_system.shape.as_ref(), &writer);
+    let rotation = SetAttributeModifier::new(
+        Attribute::F32_0,
+        (writer.rand(ScalarType::Float) * writer.lit(std::f32::consts::TAU)).expr(),
+    );
     let velocity = SetVelocitySphereModifier {
         center: writer.lit(Vec3::ZERO).expr(),
         speed: random_lerp(
@@ -75,16 +84,24 @@ fn particle_system_on_insert(
 
     let module = writer.finish();
 
-    let effect_asset = EffectAsset::new(
+    let mut effect_asset = EffectAsset::new(
         max_particles,
         SpawnerSettings::rate(rate.into()).with_starts_active(active),
         module,
     )
     .init(position)
+    .init(rotation)
     .init(velocity)
     .init(age)
     .init(lifetime)
     .update(accel);
+
+    if billboard {
+        effect_asset = effect_asset.render(OrientModifier {
+            mode: OrientMode::FaceCameraPosition,
+            rotation: Some(rotation_attr),
+        });
+    }
 
     let handle = effect_assets.add(effect_asset);
 
