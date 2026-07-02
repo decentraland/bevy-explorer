@@ -3,9 +3,10 @@ mod speed_dampen;
 
 use bevy::{math::bounding::Aabb3d, prelude::*};
 use bevy_hanabi::{
-    AccelModifier, Attribute, EffectAsset, ExprHandle, ExprWriter, HanabiPlugin, OrientMode,
-    OrientModifier, ParticleEffect, ScalarType, SetAttributeModifier, SetPositionCone3dModifier,
-    SetPositionSphereModifier, SetVelocitySphereModifier, SpawnerSettings,
+    AccelModifier, Attribute, EffectAsset, ExprHandle, ExprWriter, Gradient, HanabiPlugin,
+    OrientMode, OrientModifier, ParticleEffect, ScalarType, SetAttributeModifier,
+    SetPositionCone3dModifier, SetPositionSphereModifier, SetVelocitySphereModifier,
+    SizeOverLifetimeModifier, SpawnerSettings,
 };
 use dcl_component::{
     proto_components::{
@@ -81,6 +82,9 @@ fn particle_system_on_insert(
     let initial_size = particle_system
         .initial_size
         .unwrap_or(FloatRange { start: 1., end: 1. });
+    let size_over_lifetime = particle_system
+        .size_over_time
+        .unwrap_or(FloatRange { start: 1., end: 1. });
 
     let writer = ExprWriter::new();
 
@@ -124,6 +128,13 @@ fn particle_system_on_insert(
         mode: OrientMode::FaceCameraPosition,
         rotation: Some(writer.attr(ROTATION_ATTR).expr()),
     };
+    let render_size_over_lifetime = SizeOverLifetimeModifier {
+        gradient: Gradient::from_keys([
+            (0., Vec3::splat(size_over_lifetime.start)),
+            (1., Vec3::splat(size_over_lifetime.end)),
+        ]),
+        screen_space_size: false,
+    };
 
     let module = writer.finish();
 
@@ -147,6 +158,7 @@ fn particle_system_on_insert(
         set!(effect_asset, update, update_clamp_velocity);
     }
 
+    set!(effect_asset, render, render_size_over_lifetime);
     if billboard {
         set!(effect_asset, render, render_billboard);
     }
