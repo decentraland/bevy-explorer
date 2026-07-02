@@ -228,8 +228,12 @@ export interface EngineSession {
   dismissFatal: () => void
   /** World-entity hover hints (empty = nothing hovered). */
   hover: HoverAction[]
-  /** Cursor screen position for the hover hint (from the engine; null = show at the reticle). */
-  hoverPos: { x: number; y: number } | null
+  /** Subscribe to cursor-position updates (streamed at mouse-move frequency while a free-cursor hover
+   *  is active) without re-rendering the rest of the HUD on every move — pair with getHoverPos via
+   *  useSyncExternalStore. Only <Pointer> should consume this. */
+  subscribeHoverPos: (onChange: () => void) => () => void
+  /** Synchronously read the current cursor position (for useSyncExternalStore); null = show at the reticle. */
+  getHoverPos: () => { x: number; y: number } | null
   /** Engine has grabbed the mouse for camera-look (OS cursor hidden) → show the crosshair. */
   cursorLocked: boolean
   /** In-range world-entity tooltips, anchored at projected screen coords. */
@@ -317,7 +321,20 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [playerReady, setPlayerReady] = useState(false)
   const [scene, setScene] = useState<SceneLoadingState | null>(null)
   const [hover, setHover] = useState<HoverAction[]>([])
-  const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null)
+  // hoverPos streams at mouse-move frequency while a free-cursor hover is active — kept out of React
+  // state (which would re-render the whole HUD per frame) and exposed as its own tiny external store
+  // that only <Pointer> subscribes to via useSyncExternalStore.
+  const hoverPosRef = useRef<{ x: number; y: number } | null>(null)
+  const hoverPosListeners = useRef<Set<() => void>>(new Set())
+  const setHoverPos = useCallback((pos: { x: number; y: number } | null) => {
+    hoverPosRef.current = pos
+    hoverPosListeners.current.forEach((fn) => fn())
+  }, [])
+  const subscribeHoverPos = useCallback((onChange: () => void) => {
+    hoverPosListeners.current.add(onChange)
+    return () => { hoverPosListeners.current.delete(onChange) }
+  }, [])
+  const getHoverPos = useCallback(() => hoverPosRef.current, [])
   const [proximity, setProximity] = useState<ProximityTip[]>([])
   const [cursorLocked, setCursorLocked] = useState(false)
   const [worldCard, setWorldCard] = useState<{ address: string; name: string; x: number; y: number } | null>(null)
@@ -363,6 +380,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const chatId = useRef(0)
   // Catalog fetches done once per session (cache; relays re-emit on change).
   const fetchedRef = useRef<Set<string>>(new Set())
+  // Invitable-communities fetches done once per address (re-opening the same profile card shouldn't
+  // re-issue the signed /invites GET — the answer is already cached in `invitable[address]`).
+  const invitableFetchedRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     const driver = createDriver()
@@ -822,6 +842,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     driverRef.current?.send({ kind: 'getCommunityDetail', id })
   }, [])
   const requestInvitable = useCallback((address: string) => {
+    const key = address.toLowerCase()
+    if (invitableFetchedRef.current.has(key)) return
+    invitableFetchedRef.current.add(key)
     driverRef.current?.send({ kind: 'getInvitableCommunities', address })
   }, [])
   const inviteToCommunity = useCallback((communityId: string, address: string) => {
@@ -1006,7 +1029,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       setFatalError(null)
     },
     hover,
-    hoverPos,
+    subscribeHoverPos,
+    getHoverPos,
     cursorLocked,
     proximity,
     worldCard,

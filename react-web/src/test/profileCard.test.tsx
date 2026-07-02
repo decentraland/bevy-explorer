@@ -72,4 +72,15 @@ describe('profile-card actions', () => {
     await userEvent.click(within(confirm).getByRole('button', { name: 'Report' }))
     expect(onReport).toHaveBeenCalledWith(expect.objectContaining({ address: '0xalice' }))
   })
+
+  it('Block asks for confirmation before firing', async () => {
+    const onFriendAction = vi.fn()
+    renderCard({ onFriendAction })
+    await userEvent.click(screen.getByRole('button', { name: 'Block' }))
+    // A confirm dialog appears; onFriendAction only fires on confirm.
+    const confirm = screen.getByText('Block Alice?').closest('[role="dialog"]') as HTMLElement
+    expect(onFriendAction).not.toHaveBeenCalled()
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Block' }))
+    expect(onFriendAction).toHaveBeenCalledWith('block', '0xalice')
+  })
 })

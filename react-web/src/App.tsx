@@ -190,7 +190,15 @@ function Hud(): React.JSX.Element {
               they don't show through (the map page's body is transparent). */}
           {!pageOpen && <Sidebar session={session} onViewProfile={viewMyProfile} />}
           {/* Reticle (when pointer-locked) + world-hover prompt — hidden under a full-screen page. */}
-          {!pageOpen && <Pointer hover={session.hover} hoverPos={session.hoverPos} locked={session.cursorLocked} proximity={session.proximity} />}
+          {!pageOpen && (
+            <Pointer
+              hover={session.hover}
+              subscribeHoverPos={session.subscribeHoverPos}
+              getHoverPos={session.getHoverPos}
+              locked={session.cursorLocked}
+              proximity={session.proximity}
+            />
+          )}
           <Chat
             chat={session.chat}
             hidden={session.friends.open || pageOpen}
@@ -254,14 +262,14 @@ function Hud(): React.JSX.Element {
               key={passport.address}
               profile={passportProfile}
               isSelf={isSelfPassport}
-              isFriend={session.friends.list.some((f) => f.address.toLowerCase() === passport.address.toLowerCase())}
-              requested={session.friends.sent.some((r) => r.address.toLowerCase() === passport.address.toLowerCase())}
+              relationship={relationshipOf(passport.address)}
               onAddFriend={(address) => session.friends.act('request', address)}
               onClose={() => setPassport(null)}
             />
           )}
           {session.worldCard && (
             <ProfileCard
+              key={session.worldCard.address}
               user={{ address: session.worldCard.address, name: session.worldCard.name }}
               x={session.worldCard.x}
               y={session.worldCard.y}

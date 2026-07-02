@@ -43,6 +43,11 @@ export type ChatStreamMessage = { sender_address: string; message: string; chann
 export type SceneLoadingState = { visible?: boolean; realmConnected?: boolean; title?: string; pendingAssets?: number | null }
 export type MicState = { enabled: boolean; available: boolean }
 
+// Per-player modifiers from AvatarModifierArea (privacy zones etc), only for players carrying one —
+// e.g. hideProfile means the local player is standing in a DISABLE_PASSPORTS area, so `userId`'s
+// passport should not be opened. Only present in the array when at least one flag is set.
+export type AvatarModifierState = { userId: string; hideAvatar: boolean; hideProfile: boolean }
+
 // World-entity hover events. targetType: 0=WORLD, 1=UI, 2=AVATAR. eventType: PointerEventType.
 export type HoverEntry = {
   eventType: number
@@ -90,6 +95,7 @@ export type BevyApiInterface = {
   getProximityStream: () => Promise<AsyncIterable<SystemProximityEvent>>
   getMicState: () => Promise<MicState>
   setMicEnabled: (enabled: boolean) => void
+  getAvatarModifiers: () => Promise<AvatarModifierState[]>
   getPermissionRequestStream: () => Promise<AsyncIterable<PermissionRequestRaw>>
   setSinglePermission: (body: { id: number; allow: boolean }) => void
   setPermanentPermission: (body: SetPermanentPermissionBody) => void

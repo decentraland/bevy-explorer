@@ -147,6 +147,7 @@ export function ProfileCard({
   const [justSent, setJustSent] = useState(false)
   const [inviteOpen, setInviteOpen] = useState(false)
   const [confirmReport, setConfirmReport] = useState(false)
+  const [confirmBlock, setConfirmBlock] = useState(false)
   // After firing the friend request, show "REQUEST SENT" briefly, then close.
   useEffect(() => {
     if (!justSent) return
@@ -197,10 +198,10 @@ export function ProfileCard({
 
   return createPortal(
     <>
-      {/* Hide the card (not unmount — keeps its state) while the Report confirm is up, so the popup
-          isn't stuck behind it. Proper stacking is backlog item 9 (consolidate modals + z-layer). */}
-      <div className={styles.scrim} onClick={onClose} style={confirmReport ? { display: 'none' } : undefined} />
-      <div ref={cardRef} className={styles.card} style={confirmReport ? { display: 'none' } : { left: pos.left, top: pos.top }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Profile">
+      {/* Hide the card (not unmount — keeps its state) while a destructive confirm is up, so the
+          popup isn't stuck behind it. Proper stacking is backlog item 9 (consolidate modals + z-layer). */}
+      <div className={styles.scrim} onClick={onClose} style={confirmReport || confirmBlock ? { display: 'none' } : undefined} />
+      <div ref={cardRef} className={styles.card} style={confirmReport || confirmBlock ? { display: 'none' } : { left: pos.left, top: pos.top }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Profile">
         <div className={styles.header}>
           <Avatar src={user.picture} name={base} color={color} size={72} status="online" />
           <button type="button" className={styles.copyRow} title="Copy name" onClick={() => copy(user.name, 'name')}>
@@ -279,7 +280,7 @@ export function ProfileCard({
                   <span>Unblock</span>
                 </button>
               ) : (
-                <button type="button" className={`${styles.row} ${styles.danger}`} onClick={() => { onFriendAction('block', user.address); onClose() }}>
+                <button type="button" className={`${styles.row} ${styles.danger}`} onClick={() => setConfirmBlock(true)}>
                   <BlockIcon />
                   <span>Block</span>
                 </button>
@@ -312,6 +313,26 @@ export function ProfileCard({
           actionsEqual
         >
           Reports help moderators take action against users that break Decentraland&apos;s Community Guidelines.
+        </ModalShell>
+      )}
+      {confirmBlock && (
+        <ModalShell
+          title={`Block ${base}?`}
+          onClose={() => setConfirmBlock(false)}
+          width={420}
+          actions={
+            <>
+              <Button variant="ghost" onClick={() => setConfirmBlock(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={() => { onFriendAction?.('block', user.address); setConfirmBlock(false); onClose() }}>
+                Block
+              </Button>
+            </>
+          }
+          actionsEqual
+        >
+          Blocked users won&apos;t be able to message you, join your community events, or see when you&apos;re online.
         </ModalShell>
       )}
     </>,

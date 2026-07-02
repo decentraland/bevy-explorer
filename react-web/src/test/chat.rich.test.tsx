@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Chat } from '../features/chat/Chat'
 import type { ChatLine, ChatState } from '../features/session/useEngineSession'
@@ -75,6 +75,9 @@ describe('chat rich messages', () => {
     renderChat({ messages: [line('yo @Alice')], members: [{ address: '0xalice', name: 'Alice' }], onFriendAction })
     await userEvent.click(screen.getByRole('button', { name: '@Alice' }))
     await userEvent.click(screen.getByRole('button', { name: 'Block' }))
+    // Block asks for confirmation first (mirrors Report).
+    const confirm = screen.getByText('Block Alice?').closest('[role="dialog"]') as HTMLElement
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Block' }))
     expect(onFriendAction).toHaveBeenCalledWith('block', '0xalice')
   })
 

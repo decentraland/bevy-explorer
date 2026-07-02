@@ -161,6 +161,17 @@ describe('session domain', () => {
     expect(h.driver.last('inviteToCommunity')).toEqual({ kind: 'inviteToCommunity', communityId: 'c1', address: '0xABC' })
   })
 
+  it('requestInvitable is cached per address (re-opening the same card does not re-issue the fetch)', async () => {
+    const h = renderSession({ userId: null })
+    await enterAsGuest(h)
+    act(() => h.session().communities.requestInvitable('0xABC'))
+    act(() => h.session().communities.requestInvitable('0xABC')) // e.g. re-opening the same profile card
+    act(() => h.session().communities.requestInvitable('0xabc')) // same address, different casing
+    expect(h.driver.sentOf('getInvitableCommunities')).toHaveLength(1)
+    act(() => h.session().communities.requestInvitable('0xDEF')) // a different address still fetches
+    expect(h.driver.sentOf('getInvitableCommunities')).toHaveLength(2)
+  })
+
   it('chat.mention opens chat and queues the @name until consumed', async () => {
     const h = renderSession({ userId: null })
     await enterAsGuest(h)

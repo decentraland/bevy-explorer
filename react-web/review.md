@@ -140,8 +140,10 @@ these by hand (or have an agent drive the Chrome extension against a live world)
       **profile card** anchored **at the click point**. The card mirrors the old profile-menu action
       set: friend CTA (Add / Accept+Reject / Requested), **View Passport** (→ passport-popup),
       **Mention** (drops @name into chat), **Invite to Community** (owner/mod only — expands the list),
-      **Block/Unblock**, **Report** (confirm). Walking a player out of / back into range removes/re-adds
+      **Block/Unblock** (confirm), **Report** (confirm). Walking a player out of / back into range removes/re-adds
       the click; the card dismisses on scrim-click or an action. (Report has no endpoint yet — stub.)
+      Your own avatar is never clickable (third person). Standing in a **DISABLE_PASSPORTS** privacy
+      area hides the profile card on click for nearby avatars (`BevyApi.getAvatarModifiers`).
 
 ---
 
