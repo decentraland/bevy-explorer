@@ -152,6 +152,12 @@ export interface ChatVisibilityMessage {
   open: boolean
 }
 
+/** Enter was pressed (engine "Chat" system action) → open + focus the chat input, even while
+ *  the engine iframe holds keyboard focus (pointer-locked camera-look). */
+export interface FocusChatMessage {
+  kind: 'focusChat'
+}
+
 /** A nearby player (from the scene's PlayerIdentityData set). */
 export interface NearbyMember {
   address: string
@@ -724,6 +730,7 @@ export type SceneToPage =
   | SceneLoadingMessage
   | ChatRelayMessage
   | ChatVisibilityMessage
+  | FocusChatMessage
   | MembersMessage
   | MenuVisibilityMessage
   | FriendsMessage

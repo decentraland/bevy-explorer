@@ -314,17 +314,43 @@ export function Chat({
     return out
   }, [chat.messages])
 
+  // Opening/activating the chat always jumps to the latest message.
   useEffect(() => {
     if (!open) return
     const el = listRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [chat.messages, open, active])
+  }, [open, active])
 
-  // Opening chat (e.g. via the sidebar icon) focuses the input so it comes up in the
-  // active/focused state, ready to type — matches Unity's "click chat → start typing".
+  // A new message only auto-scrolls if the user was already near the bottom — otherwise it
+  // would yank them away from history they scrolled up to read. Tracked via a live `scroll`
+  // listener (not recomputed at message time) so a burst of several messages landing in one
+  // React batch — which only re-renders once — still checks the position from just before the
+  // burst, not the cumulative jump the batch itself causes.
+  const NEAR_BOTTOM_PX = 80
+  const nearBottomRef = useRef(true)
+  useEffect(() => {
+    const el = listRef.current
+    if (!el) return
+    const onScroll = (): void => {
+      nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX
+    }
+    el.addEventListener('scroll', onScroll)
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [open])
+  useEffect(() => {
+    if (!open) return
+    const el = listRef.current
+    if (el && nearBottomRef.current) el.scrollTop = el.scrollHeight
+  }, [chat.messages, open])
+
+  // Opening chat (sidebar icon, a queued mention, or Enter) focuses the input so it comes up in
+  // the active/focused state, ready to type — matches Unity's "click chat → start typing". Also
+  // reacts to focusTick alone: Enter while chat is already idle-open doesn't change `open`, so
+  // the engine's "Chat" system action (see bridge-scene chat.ts) bumps this tick to force focus.
   useEffect(() => {
     if (open) inputRef.current?.focus()
-  }, [open])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, chat.focusTick])
 
   // Leaving the chat (click outside → not hovered/focused) resets the nearby-members
   // overlay, so re-entering shows messages — not the members list left open from before.
@@ -412,6 +438,8 @@ export function Chat({
         setScQuery(null)
         setSuggestions([])
       } else if (picker) setPicker(false)
+      // Nothing to dismiss first → blur back to the world (DCL convention: Escape leaves chat).
+      else inputRef.current?.blur()
     }
   }
 

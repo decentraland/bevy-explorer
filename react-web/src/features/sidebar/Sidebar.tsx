@@ -57,6 +57,7 @@ function renderItem(item: Item, i: number, session: EngineSession, onViewProfile
         icon={item.icon}
         label={item.label}
         shortcut={item.shortcut}
+        badge={session.chat.unread}
         active={session.chat.open}
         onClick={session.chat.toggle}
       />

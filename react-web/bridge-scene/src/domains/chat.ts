@@ -37,6 +37,21 @@ export function registerChat(ctx: Ctx): void {
     }
   })()
 
+  // Enter → focus chat, even while the engine iframe holds keyboard focus (pointer-locked
+  // camera-look swallows a plain DOM keydown before it reaches the React page). The engine
+  // binds Enter/NumpadEnter to the "Chat" system action at the input layer and reports it here
+  // regardless of DOM focus — this is the same stream the old SDK7 scene used.
+  void (async () => {
+    try {
+      const stream = await BevyApi.getSystemActionStream()
+      for await (const a of stream) {
+        if (a.action === 'Chat' && a.pressed) ctx.send({ kind: 'focusChat' })
+      }
+    } catch (e) {
+      console.error('[chat] system action stream relay failed', e)
+    }
+  })()
+
   // Nearby players (PlayerIdentityData set) → chat header "Nearby · N". Poll ~3s, push on change.
   let acc = 3
   let lastKey = ''

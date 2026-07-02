@@ -159,6 +159,11 @@ export interface ChatState {
   pendingMention: string | null
   /** Clear the queued mention once Chat has inserted it. */
   consumeMention: () => void
+  /** Messages received while closed, reset to 0 on open (drives the sidebar badge). */
+  unread: number
+  /** Bumped on every engine "focus chat" request (Enter, even while idle-open) — Chat watches
+   *  this to (re)focus the input beyond the open-transition case. */
+  focusTick: number
 }
 
 const MAX_CHAT_LINES = 200
@@ -341,6 +346,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // avatarClick uses it to centre the card while the camera has the pointer locked.
   const cursorLockedRef = useRef(false)
   const [chatOpen, setChatOpen] = useState(true)
+  const [chatUnread, setChatUnread] = useState(0)
+  const [chatFocusTick, setChatFocusTick] = useState(0)
+  // Read inside the message-subscription closure (mounted once), not via a stale `chatOpen` capture.
+  const chatOpenRef = useRef(chatOpen)
+  chatOpenRef.current = chatOpen
   const [pendingMention, setPendingMention] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [friendsData, setFriendsData] = useState<{
@@ -437,6 +447,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
               -MAX_CHAT_LINES
             )
           )
+          if (!chatOpenRef.current) setChatUnread((n) => n + 1)
+          break
+        case 'focusChat':
+          setChatOpen(true)
+          setChatFocusTick((t) => t + 1)
           break
         case 'chatVisibility':
           setChatOpen(msg.open)
@@ -638,6 +653,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setChatOpen((o) => !o)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // Opening chat (any path — sidebar, Enter, a queued mention) clears the unread badge.
+  useEffect(() => {
+    if (chatOpen) setChatUnread(0)
+  }, [chatOpen])
   // "Mention" from a profile card opens chat and queues the @name; Chat consumes it into its draft.
   const mentionInChat = useCallback((name: string) => {
     panelSetters.forEach((set) => set(false))
@@ -1141,7 +1160,18 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     hover,
     cursorLocked,
     proximity,
-    chat: { messages, send: sendChat, open: chatOpen, toggle: toggleChat, members, mention: mentionInChat, pendingMention, consumeMention },
+    chat: {
+      messages,
+      send: sendChat,
+      open: chatOpen,
+      toggle: toggleChat,
+      members,
+      mention: mentionInChat,
+      pendingMention,
+      consumeMention,
+      unread: chatUnread,
+      focusTick: chatFocusTick
+    },
     friends: {
       available: friendsData.available,
       list: friendsData.friends,
