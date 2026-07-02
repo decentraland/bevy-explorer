@@ -12,7 +12,7 @@
      layers on top once ready. Engine_run freezes the main thread right after we enter, so the
      base MUST paint on frame 1 without waiting on any asset. */
   background:
-    url('/assets/login/gradient-background.png') center / cover no-repeat,
+    url('/assets/login/gradient-background.webp') center / cover no-repeat,
     var(--menu-bg);
 }
 /* Fade in the CONTENT only — the background must be opaque from frame 1, otherwise the
