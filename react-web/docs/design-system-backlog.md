@@ -9,50 +9,60 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
 
 ## 🔴 High
 
-1. **Toast system** — *new*. Nothing transient/cross-cutting exists. Needed for real-time events
+1. **Enter should focus the chat input (core in-world interaction, currently broken)** — *behavior/
+   bug, high impact*. Pressing **Enter** in-world doesn't focus the chat input, so you can't start
+   typing the standard way (DCL/game convention: Enter focuses chat → type → Enter sends → Escape
+   blurs). The crux: while the engine iframe holds keyboard focus (pointer-locked camera-look) the
+   keypress reaches the **engine iframe**, not react-web's DOM, so a plain `keydown` listener never
+   sees it. Fix path: capture it globally like `useGlobalHotkey` (already survives engine-iframe focus
+   — the FPS toggle uses it) to focus the chat input, **or** have the engine/bridge emit a "focus
+   chat" event (the old scene owned chat focus in-engine). Also free the pointer + stop keystrokes
+   reaching the engine while typing (so the avatar doesn't move), and restore on blur/Escape. (Old:
+   bevy-ui-scene chat Enter-to-focus.)
+2. **Toast system** — *new*. Nothing transient/cross-cutting exists. Needed for real-time events
    (remote friend accepted, community invites, item sold…), ephemeral confirmations, and operational
    errors. Today faked with per-component `setTimeout`. (Old: `notification-toast-stack`.)
-2. **`Tabs` primitive** — *new*. Tabs are reimplemented bespoke in ~37 files (Settings, Backpack,
+3. **`Tabs` primitive** — *new*. Tabs are reimplemented bespoke in ~37 files (Settings, Backpack,
    FriendsPanel, CommunityModal…). (Old: `tab-component.tsx`.)
-3. **Reusable `FriendButton` + full relationship model** — *new + pattern*. State is already a single
+4. **Reusable `FriendButton` + full relationship model** — *new + pattern*. State is already a single
    reactive source ✅, but the add-friend CTA is duplicated per view (ProfileCard, ProfilePassport,
    CommunityModal) with ad-hoc optimism. Need `<FriendButton address>` / `useRelationship`, a
    **6-state** relationship (add `blocked`, `incoming`/Accept to the current 3), centralized optimistic
    update, and **fix CommunityModal desync** (it reads `member.isFriend`, not `session.friends`).
-4. **`Button`: `loading` state + `danger`/`destructive` + `link`/text variant** — *extend*. Recurring
+5. **`Button`: `loading` state + `danger`/`destructive` + `link`/text variant** — *extend*. Recurring
    need (jump-in/create/send → loading; unfriend/reject/leave/delete → danger; a subtle underlined
    text-link like the gate's "try anyway…" → link, currently a bespoke `<button>`). (Old:
    `ButtonComponent`.)
 
 ## 🟡 Medium
 
-5. **Engine-panic / error capture → popup** — *new* (ACTIVE — see plan). No `ErrorBoundary`, no
+6. **Engine-panic / error capture → popup** — *new* (ACTIVE — see plan). No `ErrorBoundary`, no
    `unhandledrejection`/`window.onerror` handler, no global error surface. The engine WASM can panic
    on launch (e.g. `can't init wasm queue`) and today it only hits the console. Capture engine panics
    + uncaught errors and show the user a popup (message + copy details + reload). (Old: `error-popup`
    + `error-popup-service.showErrorPopup`.)
-6. **`useConfirm` / `showAlert` (imperative dialog helpers)** — *new*. `Modal`/`ModalShell` exist but
+7. **`useConfirm` / `showAlert` (imperative dialog helpers)** — *new*. `Modal`/`ModalShell` exist but
    each confirm is rebuilt (WorldVisitModal, ExitConfirm). (Old: `confirm-popup` / `alert-popup`.)
-7. **`Badge` (standalone)** — *extract*. Badge logic is trapped inside `IconButton`; can't put a badge
+8. **`Badge` (standalone)** — *extract*. Badge logic is trapped inside `IconButton`; can't put a badge
    on a tab/avatar/chip without reimplementing. (Old: `notification-badge.tsx`.)
-8. **`Chip` / `Tag`** — *new*. "chip" is bespoke in ~11 files (map categories, count pills, status).
+9. **`Chip` / `Tag`** — *new*. "chip" is bespoke in ~11 files (map categories, count pills, status).
    (Old: `color-tag.tsx`.)
-9. **Consolidate modals onto `Modal`/`ModalShell`** — *cleanup*. ProfileCard, CommunityModal,
-   CommunityCreateModal, WorldVisitModal roll their own portal/overlay and hardcode `z-index: 10001`.
-   Unify backdrop / escape / focus-trap / z-layer.
-10. **`Radio` / `RadioGroup`** — *new*. Have Checkbox/Toggle/Select but no Radio; bespoke in
+10. **Consolidate modals onto `Modal`/`ModalShell`** — *cleanup*. ProfileCard, CommunityModal,
+    CommunityCreateModal, WorldVisitModal roll their own portal/overlay and hardcode `z-index: 10001`.
+    Unify backdrop / escape / focus-trap / z-layer.
+11. **`Radio` / `RadioGroup`** — *new*. Have Checkbox/Toggle/Select but no Radio; bespoke in
     PermissionDialog. (Old: `radio-button.tsx`.)
-11. **`Skeleton`** — *new*. Only `Spinner` exists; no load placeholders for lists/cards.
+12. **`Skeleton`** — *new*. Only `Spinner` exists; no load placeholders for lists/cards.
     (Old: `loading-placeholder.tsx`.)
 
 ## 🟢 Low / when a feature needs it
 
-12. **`Divider`** (bespoke in ~4 places · old `bottom-border`)
-13. **`Pagination`** (unused today · old `pagination/`)
-14. **`CopyButton`** (inline in ProfileCard · old `copy-button`)
-15. **`Username`** (name + verified · old `player-name-component`)
-16. `Button` `iconLeft`/`iconRight` props + `hoverIcon` (niche · old `ButtonComponent`)
-17. **HUD state: `useEngineSession` hook prop-drilled → consider Context / a store** — *architecture,
+13. **`Divider`** (bespoke in ~4 places · old `bottom-border`)
+14. **`Pagination`** (unused today · old `pagination/`)
+15. **`CopyButton`** (inline in ProfileCard · old `copy-button`)
+16. **`Username`** (name + verified · old `player-name-component`)
+17. `Button` `iconLeft`/`iconRight` props + `hoverIcon` (niche · old `ButtonComponent`)
+18. **HUD state: `useEngineSession` hook prop-drilled → consider Context / a store** — *architecture,
     low priority*. All HUD state lives in one `useEngineSession` hook at the top of `Hud`, prop-drilled
     down; the returned `session` is a fresh object every render, so the whole HUD re-renders on any
     change. Fine at current scale (engine round-trips are the bottleneck, not React renders), so **not
@@ -64,7 +74,7 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
     test cost (harness passes props today; Context needs a provider wrapper). Recommendation: keep
     prop-drilling; add a single `SessionContext` only if drilling ergonomics annoy; memoized slices /
     store only if re-renders become a *measured* problem.
-18. **Deep-linkable / bookmarkable navigation — reflect location in the URL** — *architecture, low
+19. **Deep-linkable / bookmarkable navigation — reflect location in the URL** — *architecture, low
     priority*. Entering a scene/world (and, ideally, opening HUD surfaces like the map/backpack) should
     be **parameterized in the URL** so the state is shareable and bookmarkable: reload/paste a URL and
     land in the same realm + coords. Scope to nail down: realm/world + parcel coords (e.g.
@@ -72,7 +82,7 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
     (`pickDestination`) + `map.teleport`/`changeRealm` so URL ⇄ engine stay in sync (`popstate` → jump,
     jump → `pushState`). Deferred: needs a small router/URL-sync layer (project is router-free today).
 
-19. **Voice feedback — "who's speaking" indicator** — *feature parity, when voice chat is prioritized*.
+20. **Voice feedback — "who's speaking" indicator** — *feature parity, when voice chat is prioritized*.
     The old scene showed an **animated speaking indicator on each avatar nametag** while a nearby player
     talked (and used the local mic state for your own tag). Mechanism to port: the engine exposes a
     voice stream — `BevyApi.getVoiceStream()` yielding `{ sender_address, active }` (`MicActivation`);
