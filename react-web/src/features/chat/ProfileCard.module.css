@@ -73,7 +73,7 @@
   margin: 0.85rem 0.25rem 0.4rem;
   padding: 0.7rem;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--r-control);
   background: var(--brand, #ff2d55);
   color: #fff;
   font-weight: 700;
@@ -108,7 +108,7 @@
   flex: 1;
   padding: 0.7rem;
   border: 1px solid var(--white-10, rgba(255, 255, 255, 0.14));
-  border-radius: 10px;
+  border-radius: var(--r-control);
   background: transparent;
   color: var(--text, #fff);
   font-weight: 700;
@@ -134,7 +134,7 @@
   padding: 0.7rem 0.6rem;
   background: none;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--r-control);
   color: var(--text, #fff);
   font-size: 0.95rem;
   font-weight: 600;
