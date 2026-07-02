@@ -42,32 +42,9 @@ export function useMenuShortcuts(session: EngineSession): void {
       toggle(s)()
     }
 
-    const attached = new Set<Window>()
-    const attach = (w: Window | null | undefined): void => {
-      if (!w || attached.has(w)) return
-      try {
-        w.addEventListener('keydown', handler, true)
-        attached.add(w)
-      } catch {
-        /* cross-origin window — ignore */
-      }
-    }
-    attach(window)
-    // The engine iframe mounts async; poll briefly to attach once it (re)appears.
-    const poll = window.setInterval(() => {
-      const iframe = document.querySelector<HTMLIFrameElement>('iframe[title="Decentraland engine"]')
-      attach(iframe?.contentWindow)
-    }, 500)
-
-    return () => {
-      window.clearInterval(poll)
-      attached.forEach((w) => {
-        try {
-          w.removeEventListener('keydown', handler, true)
-        } catch {
-          /* window gone */
-        }
-      })
-    }
+    // Same-document engine (no iframe): the canvas shares this window, so one capture-phase
+    // listener sees keys wherever focus is.
+    window.addEventListener('keydown', handler, true)
+    return () => window.removeEventListener('keydown', handler, true)
   }, [])
 }

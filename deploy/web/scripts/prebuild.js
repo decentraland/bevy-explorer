@@ -27,42 +27,13 @@ fs.writeFileSync(
 
 fs.writeFileSync("./package.json", JSON.stringify(packageJson, null, 2));
 
-// Update the ENGINE page to include PUBLIC_URL in script src. The engine now lives under
-// engine/ (the React app owns the root index.html — built by Vite with the base baked in),
-// so the engine page's PUBLIC_URL gets the /engine suffix: engine.js resolves pkg/ from it.
-const htmlPath = "engine/index.html";
-if (fs.existsSync(htmlPath)) {
-  let htmlContent = fs.readFileSync(htmlPath).toString();
-  const rootUrl = ENV_CONTENT["PUBLIC_URL"];
-  const publicUrl = rootUrl ? `${rootUrl}/engine` : "";
-  const scriptPath = publicUrl ? `${publicUrl}/main.js` : "main.js";
-
-  // Inject PUBLIC_URL as a global variable
-  const publicUrlScript = `<script>window.PUBLIC_URL = ${JSON.stringify(publicUrl)};</script>`;
-  htmlContent = htmlContent.replace(
-    /<\/head>/,
-    `  ${publicUrlScript}\n  </head>`
-  );
-
-  // Replace the main.js script src. The tag is emitted via document.write, so the closing tag is
-  // escaped in source (`<\/script>`) — match both forms and preserve whichever was there.
-  htmlContent = htmlContent.replace(
-    /<script type="module" src="main\.js"><(\\?)\/script>/,
-    `<script type="module" src="${scriptPath}"><$1/script>`
-  );
-
-  fs.writeFileSync(htmlPath, htmlContent);
-  console.log(`Updated ${htmlPath} with script path: ${scriptPath}`);
-} else {
-  console.error(`${htmlPath} not found`);
-}
+// No HTML rewriting: the React app (the only page) bakes PUBLIC_URL in at build time (vite base),
+// and sets window.PUBLIC_URL for the engine's pkg/ fetches (react-web EngineHost). This script's
+// remaining job is stamping homepage/.env and the ::set-output lines the CDN deployer reads.
 
 function getPublicUrls() {
-  console.log('Get public urls')
   if (!process.env.GEN_STATIC_LOCAL) {
-    console.log('Get public urls 1')
     if (process.env.CI) {
-      console.log('Get public urls 2', `https://cdn.decentraland.org/${packageJson.name}/${packageJson.version}`)
       return {
         PUBLIC_URL: `https://cdn.decentraland.org/${packageJson.name}/${packageJson.version}`,
       };

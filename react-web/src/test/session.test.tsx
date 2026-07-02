@@ -87,15 +87,15 @@ describe('session domain', () => {
     expect(h.driver.calls).toContain('logout')
   })
 
-  it('a bridged runtime crash sets a dismissable fatal; dismiss re-arms the iframe watchdog', async () => {
+  it('a runtime crash from the watchdog sets a dismissable fatal; dismiss re-arms the watchdog', async () => {
     const h = renderSession({ userId: null })
     await enterAsGuest(h)
-    // The engine bundle's watchdog bridges runtime crashes as a same-origin postMessage.
+    // Same-document engine: boot.js's crash watchdog calls window.__onEngineCrash directly.
     act(() => {
-      window.dispatchEvent(new MessageEvent('message', { origin: location.origin, data: { type: 'bevy-crash', message: 'engine stalled' } }))
+      ;(window as Window & { __onEngineCrash?: (m: string, s: string) => void }).__onEngineCrash?.('engine stalled', 'watchdog')
     })
     await waitFor(() => expect(h.session().fatalError).toEqual({ message: 'engine stalled', source: 'runtime' }))
-    // Dismiss must re-arm the iframe watchdog (reset its `shown` flag) + clear the stashed panic,
+    // Dismiss must re-arm the watchdog (reset its `shown` flag) + clear the stashed panic,
     // else a second genuine crash is swallowed / a stale panic is re-read.
     act(() => h.session().dismissFatal())
     expect(h.session().fatalError).toBeNull()

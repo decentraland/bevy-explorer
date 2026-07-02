@@ -490,15 +490,15 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // Runtime engine crashes (heartbeat stall) are detected by the bundle's watchdog and bridged to us
   // as a same-origin postMessage (the iframe's own overlay is hidden behind react-web's HUD).
   useEffect(() => {
-    const onMessage = (e: MessageEvent): void => {
-      if (e.origin !== location.origin) return
-      const data = e.data as { type?: string; message?: string } | null
-      if (data?.type === 'bevy-crash') {
-        setFatalError((prev) => prev ?? { message: data.message ?? 'The engine stopped responding.', source: 'runtime' })
-      }
+    // Same-document engine (no iframe): the crash watchdog in engine/boot.js calls this directly
+    // instead of rendering any overlay — React owns the error UI.
+    const w = window as Window & { __onEngineCrash?: (message: string, source: string) => void }
+    w.__onEngineCrash = (message) => {
+      setFatalError((prev) => prev ?? { message: message || 'The engine stopped responding.', source: 'runtime' })
     }
-    window.addEventListener('message', onMessage)
-    return () => window.removeEventListener('message', onMessage)
+    return () => {
+      delete w.__onEngineCrash
+    }
   }, [])
 
   // Cancel the boot-panic poll on unmount — the one self-scheduling timer in this hook.

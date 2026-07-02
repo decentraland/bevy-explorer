@@ -11,8 +11,9 @@ to that repo.
 
 > **This app IS production.** CI builds it (`vite build`) into `deploy/web/` — the tree published
 > as `@dcl-regenesislabs/bevy-explorer-web` and served at the explorer URL. The React page owns the
-> root `index.html`; the old engine boot page lives under `deploy/web/engine/` and loads in a
-> same-origin iframe; the bridge scene ships at `deploy/web/bridge-scene/static`. Only the
+> root `index.html`; the engine boots IN the same document — no iframe, no old boot page — from
+> `deploy/web/engine/` (boot module + workers + wasm); the bridge scene ships at
+> `deploy/web/bridge-scene/static`. Only the
 > *sources* stay here at the repo root — build artifacts in `deploy/web` are git-ignored.
 > See **Deploy (production)** below.
 
@@ -57,9 +58,9 @@ npm install && (cd bridge-scene && npm install)   # once
 npm run dev
 ```
 
-**Engine mode (default)** — `http://localhost:5173/`: real engine in a same-origin
-iframe (`../deploy/web`), with `systemScene=http://localhost:8100` (the bridge
-scene). React login → **Explore as Guest** (`/login_guest`) → scene-loading overlay
+**Engine mode (default)** — `http://localhost:5173/`: real engine in the SAME document
+(canvas at z-0 behind the HUD; engine module from `../deploy/web/engine`), with
+`systemScene=http://localhost:8100` (the bridge scene). React login → **Explore as Guest** (`/login_guest`) → scene-loading overlay
 (real data) → world. Needs a local engine build at `../deploy/web`.
 
 **Mock mode** — `http://localhost:5173/?mock=1`: full UI (login + scene-loading) on
@@ -74,7 +75,7 @@ explorer URL (e.g. `decentraland.zone/bevy-web`, assets on the versioned CDN pat
 | Path in `deploy/web` | What | Built by |
 |---|---|---|
 | `index.html` + `assets/` … | **this React app** (the production page) | `vite build` (CI) |
-| `engine/` | the engine boot page + `pkg/` (wasm) | `wasm-pack` (CI) |
+| `engine/` | engine boot module + workers + `pkg/` (wasm) — no page | `wasm-pack` (CI) |
 | `bridge-scene/static/` | the exported bridge-scene realm | `npm run bundle` (CI) |
 | `service_worker.js` | shared root-scope SW: rewrites COEP → `credentialless` | tracked |
 
@@ -83,7 +84,7 @@ explorer URL (e.g. `decentraland.zone/bevy-web`, assets on the versioned CDN pat
   **versioned CDN** — so the React build uses an *absolute* base (`PUBLIC_URL`, from
   `deploy/web/scripts/prebuild.js` → `package.json.homepage`) and never `./`-relative refs
   in `index.html`.
-- The **engine iframe + bridge scene + service worker must stay same-origin** with the page
+- The **engine module + bridge scene + service worker must stay same-origin** with the page
   (BroadcastChannel / `contentWindow`): they resolve against `PAGE_DIR`
   (`src/lib/publicUrl.ts`), *never* against the CDN base.
 
@@ -144,5 +145,5 @@ npm run test:e2e    # tier 2 (real engine; local, needs a GPU)
   react-ecs flat UI, keep only 3D/world-space (nametags, pointer events). Hybrid:
   SDK7 keeps 3D + bridges; React renders all flat UI.
 - [ ] Port remaining slices (chat, menu/settings, profile, map, friends, …).
-- [ ] **Integration (Approach A)** — see `docs/followups.md` for the full post-launch list — mount React in the explorer's own
-  `deploy/web/index.html` (no iframe); transport-agnostic client unchanged.
+- [x] **Integration (Approach A)** — the engine runs in the React document itself (no iframe,
+  old boot page deleted); `deploy/web/engine/boot.js` is the whole boot surface.
