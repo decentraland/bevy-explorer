@@ -60,16 +60,13 @@ fn particle_system_on_insert(
 
     let writer = ExprWriter::new();
 
-    // Attributes
-    let rotation_attr = writer.attr(Attribute::F32_0).expr();
-
     // Modifiers
-    let position = make_position(particle_system.shape.as_ref(), &writer);
-    let rotation = SetAttributeModifier::new(
+    let init_position = make_position(particle_system.shape.as_ref(), &writer);
+    let init_rotation = SetAttributeModifier::new(
         Attribute::F32_0,
         (writer.rand(ScalarType::Float) * writer.lit(std::f32::consts::TAU)).expr(),
     );
-    let velocity = SetVelocitySphereModifier {
+    let init_velocity = SetVelocitySphereModifier {
         center: writer.lit(Vec3::ZERO).expr(),
         speed: random_lerp(
             &writer,
@@ -77,10 +74,18 @@ fn particle_system_on_insert(
             initial_velocity_speed.end,
         ),
     };
-    let age = SetAttributeModifier::new(Attribute::AGE, writer.lit(0.).expr());
-    let lifetime = SetAttributeModifier::new(Attribute::LIFETIME, writer.lit(lifetime).expr());
-    let accel =
-        AccelModifier::new((writer.lit(GRAVITY) * writer.lit(Vec3::new(1., gravity, 1.))).expr());
+    let init_age = SetAttributeModifier::new(Attribute::AGE, writer.lit(0.).expr());
+    let init_lifetime = SetAttributeModifier::new(Attribute::LIFETIME, writer.lit(lifetime).expr());
+    let init_gravity = SetAttributeModifier::new(Attribute::F32X3_0, writer.lit(GRAVITY).expr());
+
+    let update_accel = AccelModifier::new(
+        (writer.attr(Attribute::F32X3_0) * writer.lit(Vec3::new(1., gravity, 1.))).expr(),
+    );
+
+    let render_billboard = OrientModifier {
+        mode: OrientMode::FaceCameraPosition,
+        rotation: Some(writer.attr(Attribute::F32_0).expr()),
+    };
 
     let module = writer.finish();
 
@@ -89,18 +94,16 @@ fn particle_system_on_insert(
         SpawnerSettings::rate(rate.into()).with_starts_active(active),
         module,
     )
-    .init(position)
-    .init(rotation)
-    .init(velocity)
-    .init(age)
-    .init(lifetime)
-    .update(accel);
+    .init(init_position)
+    .init(init_rotation)
+    .init(init_velocity)
+    .init(init_age)
+    .init(init_lifetime)
+    .init(init_gravity)
+    .update(update_accel);
 
     if billboard {
-        effect_asset = effect_asset.render(OrientModifier {
-            mode: OrientMode::FaceCameraPosition,
-            rotation: Some(rotation_attr),
-        });
+        effect_asset = effect_asset.render(render_billboard);
     }
 
     let handle = effect_assets.add(effect_asset);
