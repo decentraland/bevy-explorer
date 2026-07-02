@@ -730,11 +730,11 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
         .then((r) => {
           urlDestination.current = null
           if (r.ok) pickDestination(dest)
-          else setFatalError({ message: `The world "${dest.realm}" was not found (${r.status}).`, source: 'realm' })
+          else setFatalError({ message: `The world "${dest.realm}" doesn't exist.`, source: 'realm' })
         })
         .catch(() => {
           urlDestination.current = null
-          setFatalError({ message: `The world "${dest.realm}" could not be reached.`, source: 'realm' })
+          setFatalError({ message: `The world "${dest.realm}" isn't reachable right now.`, source: 'realm' })
         })
         .finally(() => {
           validatingRealm.current = false

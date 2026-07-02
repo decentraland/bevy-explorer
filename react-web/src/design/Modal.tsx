@@ -178,7 +178,7 @@ export function ModalTitle({
 }
 
 type ActionsDirection = 'row' | 'column'
-type ActionsAlign = 'stretch' | 'start' | 'end' | 'between'
+type ActionsAlign = 'stretch' | 'start' | 'center' | 'end' | 'between'
 
 interface ModalActionsProps {
   children: ReactNode
@@ -218,11 +218,13 @@ export function ModalActions({
   const justify =
     align === 'start'
       ? 'flex-start'
-      : align === 'end'
-        ? 'flex-end'
-        : align === 'between'
-          ? 'space-between'
-          : undefined
+      : align === 'center'
+        ? 'center'
+        : align === 'end'
+          ? 'flex-end'
+          : align === 'between'
+            ? 'space-between'
+            : undefined
 
   const wrapped = equal
     ? flattenChildren(children).map((child, i) => (

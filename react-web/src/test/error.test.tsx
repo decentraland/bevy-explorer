@@ -22,17 +22,17 @@ describe('EngineErrorModal', () => {
     expect(screen.getByRole('button', { name: /Dismiss/i })).toBeInTheDocument()
   })
 
-  it('realm not-found: OK only — no Reload, no raw detail', async () => {
+  it('realm not-found: names the world, OK only — no Reload', async () => {
     const onDismiss = vi.fn()
     render(
       <EngineErrorModal
-        error={{ message: 'The world "nope.dcl.eth" was not found (404).', source: 'realm' }}
+        error={{ message: 'The world "nope.dcl.eth" doesn\'t exist.', source: 'realm' }}
         onReload={vi.fn()}
         onDismiss={onDismiss}
       />
     )
     expect(screen.getByText(/World not found/i)).toBeInTheDocument()
-    expect(screen.queryByText(/nope\.dcl\.eth/)).toBeNull()
+    expect(screen.getByText(/nope\.dcl\.eth/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Reload/i })).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: /^OK$/i }))
     expect(onDismiss).toHaveBeenCalledTimes(1)

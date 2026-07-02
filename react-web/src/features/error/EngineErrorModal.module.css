@@ -6,6 +6,28 @@
   z-index: var(--z-fatal);
 }
 
+/* Alert-style centered header — title-scale type instead of the shell's compact panel heading. */
+.head {
+  padding: 12px 12px 0;
+  text-align: center;
+}
+.title {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 700;
+  line-height: 1.2;
+}
+.subtitle {
+  margin: 10px 0 0;
+  font-size: var(--fs-lg);
+  line-height: 1.45;
+  color: var(--ink-7);
+}
+/* Footer buttons: centered by the shell (actionsAlign), kept comfortably wide. */
+.btn {
+  min-width: 150px;
+}
+
 /* The raw panic / crash message, monospaced + scrollable. */
 .detail {
   margin: 0;
