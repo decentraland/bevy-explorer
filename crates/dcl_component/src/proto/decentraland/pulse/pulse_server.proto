@@ -49,7 +49,7 @@ message PlayerStateDeltaTier0 {
   optional uint32 movement_blend = 13 [(decentraland.common.quantized) = { min:  0,  max:   3, bits: 5 }];
   optional uint32 slide_blend = 14 [(decentraland.common.quantized) = { min:  0,  max:   1, bits: 4 }];
   optional uint32 head_yaw = 15 [(decentraland.common.quantized) = { min:  0,  max:   360.0, bits: 7 }];
-  optional uint32 head_pitch = 16 [(decentraland.common.quantized) = { min:  0,  max:   180.0, bits: 6 }];
+  optional uint32 head_pitch = 16 [(decentraland.common.quantized) = { min:  0,  max:   360.0, bits: 7 }];
 
   optional uint32 state_flags = 17;
   optional GlideState glide_state = 18;
@@ -105,6 +105,7 @@ message EmoteStarted {
   uint32 server_tick = 3;
   string emote_id = 4;
   PlayerState player_state = 5;
+  optional int32 mask = 6;
 }
 
 // Server → All Observers

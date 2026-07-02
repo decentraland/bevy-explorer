@@ -48,6 +48,29 @@ pub fn generate(descriptor_bytes: &[u8], out_path: &std::path::Path) {
          if encoded & 1 != 0 { -magnitude } else { magnitude }\n\
          }\n\n",
     );
+    // The encode side, needed for the outbound PlayerState. Mirror of the server's Quantize.Encode:
+    // clamp to [min, max], scale onto [0, 2^bits - 1], round to the nearest integer.
+    out.push_str(
+        "#[inline]\n\
+         fn quantize(value: f32, min: f32, max: f32, bits: u32) -> u32 {\n    \
+         let levels = ((1u32 << bits) - 1) as f32;\n    \
+         let t = ((value - min) / (max - min)).clamp(0.0, 1.0);\n    \
+         (t * levels).round() as u32\n\
+         }\n\n",
+    );
+    // Mirror of the server's Quantize.EncodePower: `(magnitude << 1) | sign`, magnitude from the
+    // inverse power curve `(|value|/max)^(1/pow)`. A zero magnitude never sets the sign bit, so a
+    // stopped field canonicalizes to 0 and proto3 omits it.
+    out.push_str(
+        "#[inline]\n\
+         fn quantize_power(value: f32, max: f32, pow: f32, bits: u32) -> u32 {\n    \
+         let mag_steps = ((1u32 << (bits - 1)) - 1) as f32;\n    \
+         let t = (value.abs() / max).clamp(0.0, 1.0);\n    \
+         let magnitude = (t.powf(1.0 / pow) * mag_steps).round() as u32;\n    \
+         let sign = if value < 0.0 && magnitude != 0 { 1 } else { 0 };\n    \
+         (magnitude << 1) | sign\n\
+         }\n\n",
+    );
 
     for msg in pool.all_messages() {
         if msg.package_name() != "decentraland.pulse" {
@@ -58,6 +81,9 @@ pub fn generate(descriptor_bytes: &[u8], out_path: &std::path::Path) {
         for field in msg.fields() {
             let opts = field.options();
             let name = field.name();
+            // `optional uint32` (delta fields) decodes to `Option<f32>`; a plain `uint32` (the
+            // non-optional PlayerState fields) decodes straight to `f32`.
+            let optional = field.supports_presence();
 
             if opts.has_extension(&quant) {
                 let value = opts.get_extension(&quant);
@@ -68,11 +94,28 @@ pub fn generate(descriptor_bytes: &[u8], out_path: &std::path::Path) {
                 let max = get_f32(q, "max");
                 let bits = get_u32(q, "bits");
 
+                let decode = if optional {
+                    format!(
+                        "    /// Dequantized `{name}` ({min}..={max}, {bits} bits); `None` when absent.\n    \
+                         pub fn {name}_dequantized(&self) -> Option<f32> {{\n        \
+                         self.{name}.map(|v| dequantize(v, {min}f32, {max}f32, {bits}))\n    \
+                         }}\n"
+                    )
+                } else {
+                    format!(
+                        "    /// Dequantized `{name}` ({min}..={max}, {bits} bits).\n    \
+                         pub fn {name}_dequantized(&self) -> f32 {{\n        \
+                         dequantize(self.{name}, {min}f32, {max}f32, {bits})\n    \
+                         }}\n"
+                    )
+                };
+
                 writeln!(
                     accessors,
-                    "    /// Dequantized `{name}` ({min}..={max}, {bits} bits); `None` when absent from the delta.\n    \
-                     pub fn {name}_dequantized(&self) -> Option<f32> {{\n        \
-                     self.{name}.map(|v| dequantize(v, {min}f32, {max}f32, {bits}))\n    \
+                    "{decode}    \
+                     /// Quantize a float into `{name}` ({min}..={max}, {bits} bits).\n    \
+                     pub fn {name}_quantized(value: f32) -> u32 {{\n        \
+                     quantize(value, {min}f32, {max}f32, {bits})\n    \
                      }}\n    \
                      /// Quantization step (granularity) of `{name}`: `(max - min) / (2^bits - 1)`.\n    \
                      pub fn {name}_step() -> f32 {{\n        \
@@ -89,11 +132,28 @@ pub fn generate(descriptor_bytes: &[u8], out_path: &std::path::Path) {
                 let pow = get_f32(q, "pow");
                 let bits = get_u32(q, "bits");
 
+                let decode = if optional {
+                    format!(
+                        "    /// Dequantized `{name}` (\u{00b1}{max}, power-law pow {pow}, {bits} bits); `None` when absent.\n    \
+                         pub fn {name}_dequantized(&self) -> Option<f32> {{\n        \
+                         self.{name}.map(|v| dequantize_power(v, {max}f32, {pow}f32, {bits}))\n    \
+                         }}\n"
+                    )
+                } else {
+                    format!(
+                        "    /// Dequantized `{name}` (\u{00b1}{max}, power-law pow {pow}, {bits} bits).\n    \
+                         pub fn {name}_dequantized(&self) -> f32 {{\n        \
+                         dequantize_power(self.{name}, {max}f32, {pow}f32, {bits})\n    \
+                         }}\n"
+                    )
+                };
+
                 writeln!(
                     accessors,
-                    "    /// Dequantized `{name}` (\u{00b1}{max}, power-law pow {pow}, {bits} bits); `None` when absent from the delta.\n    \
-                     pub fn {name}_dequantized(&self) -> Option<f32> {{\n        \
-                     self.{name}.map(|v| dequantize_power(v, {max}f32, {pow}f32, {bits}))\n    \
+                    "{decode}    \
+                     /// Quantize a float into `{name}` (\u{00b1}{max}, power-law pow {pow}, {bits} bits).\n    \
+                     pub fn {name}_quantized(value: f32) -> u32 {{\n        \
+                     quantize_power(value, {max}f32, {pow}f32, {bits})\n    \
                      }}",
                 )
                 .unwrap();
