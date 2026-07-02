@@ -56,6 +56,11 @@ fn particle_system_on_insert(
         .initial_velocity_speed
         .unwrap_or(FloatRange { start: 1., end: 1. });
     let gravity = particle_system.gravity.unwrap_or(0.);
+    let additional_force = particle_system
+        .additional_force
+        .as_ref()
+        .map(Vector3::abs_vec_to_vec3)
+        .unwrap_or(Vec3::ZERO);
     let billboard = particle_system.billboard.unwrap_or(true);
 
     let writer = ExprWriter::new();
@@ -77,9 +82,13 @@ fn particle_system_on_insert(
     let init_age = SetAttributeModifier::new(Attribute::AGE, writer.lit(0.).expr());
     let init_lifetime = SetAttributeModifier::new(Attribute::LIFETIME, writer.lit(lifetime).expr());
     let init_gravity = SetAttributeModifier::new(Attribute::F32X3_0, writer.lit(GRAVITY).expr());
+    let init_additional_force =
+        SetAttributeModifier::new(Attribute::F32X3_1, writer.lit(additional_force).expr());
 
     let update_accel = AccelModifier::new(
-        (writer.attr(Attribute::F32X3_0) * writer.lit(Vec3::new(1., gravity, 1.))).expr(),
+        (writer.attr(Attribute::F32X3_0) * writer.lit(Vec3::new(1., gravity, 1.))
+            + writer.attr(Attribute::F32X3_1))
+        .expr(),
     );
 
     let render_billboard = OrientModifier {
@@ -100,6 +109,7 @@ fn particle_system_on_insert(
     .init(init_age)
     .init(init_lifetime)
     .init(init_gravity)
+    .init(init_additional_force)
     .update(update_accel);
 
     if billboard {
