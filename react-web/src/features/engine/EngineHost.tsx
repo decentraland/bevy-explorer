@@ -6,7 +6,10 @@ import { useEffect, useRef } from 'react'
 import type { EngineRpc } from '../../engine/engineRpc'
 import { PAGE_DIR } from '../../lib/publicUrl'
 
-const REALM = 'https://realm-provider-ea.decentraland.org/main'
+// The main (Genesis City) realm. Exported: parcel launches pass it EXPLICITLY so a ?realm
+// override baked into the iframe's initialRealm — possibly an invalid world — never leaks into
+// a Places pick (which is always a Genesis coordinate).
+export const DEFAULT_REALM = 'https://realm-provider-ea.decentraland.org/main'
 
 // The engine iframe MUST stay same-origin with this page — BroadcastChannel and direct
 // iframe.contentWindow access don't cross origins — so it can NEVER live on the asset CDN
@@ -42,7 +45,7 @@ const engineQuery = ((): URLSearchParams => {
   for (const [k, v] of new URLSearchParams(location.search)) {
     if (!EXCLUDED_PARAMS.has(k)) q.set(k, v)
   }
-  q.set('initialRealm', q.get('realm') ?? REALM)
+  q.set('initialRealm', q.get('realm') ?? DEFAULT_REALM)
   q.delete('realm')
   if (!q.has('systemScene')) q.set('systemScene', SYSTEM_SCENE)
   if (!q.has('position')) q.set('position', '0,0')

@@ -16,32 +16,42 @@ export function registerCoiServiceWorker(): void {
   if (!import.meta.env.PROD || !('serviceWorker' in navigator)) return
 
   // The SW scope is the package DIRECTORY (…/bevy-web/), but the production entry URL has no
-  // trailing slash (…/bevy-web) — which is OUTSIDE that scope, so the page would never be
-  // controlled and would keep the host's require-corp COEP forever. Canonicalize the URL to the
-  // directory form (keeps query/hash); the one-shot reload below then navigates in scope.
+  // trailing slash (…/bevy-web) — OUTSIDE that scope, so this page load is never controlled and
+  // keeps the host's require-corp COEP. Canonicalize the URL to the directory form (keeps
+  // query/hash); the one-shot reload below then navigates in scope and gets the rewrite.
   if (!location.pathname.endsWith('/')) {
     history.replaceState(history.state, '', `${location.pathname}/${location.search}${location.hash}`)
   }
 
   navigator.serviceWorker
     .register(new URL('service_worker.js', PAGE_DIR))
+    .then((reg) => {
+      if (navigator.serviceWorker.controller) {
+        sessionStorage.removeItem(FLAG)
+        return
+      }
+      // Uncontrolled — a first visit or a hard reload (both bypass the SW for the navigation).
+      // Reload ONCE when the worker is active so the navigation goes through it; the flag stops
+      // a broken worker from reload-looping. NOTE: navigator.serviceWorker.ready is useless here
+      // — it matches the client's CREATION url (the no-slash entry, outside the scope) and never
+      // resolves, so watch the registration instead.
+      const reloadOnce = (): void => {
+        if (sessionStorage.getItem(FLAG)) {
+          sessionStorage.removeItem(FLAG)
+          console.error('[coi] service worker failed to take control after reload')
+        } else {
+          sessionStorage.setItem(FLAG, 'true')
+          window.location.reload()
+        }
+      }
+      if (reg.active) {
+        reloadOnce()
+        return
+      }
+      const pending = reg.installing ?? reg.waiting
+      pending?.addEventListener('statechange', () => {
+        if (pending.state === 'activated') reloadOnce()
+      })
+    })
     .catch((e: unknown) => console.log('[coi] service worker registration failed:', e))
-
-  if (navigator.serviceWorker.controller) {
-    sessionStorage.removeItem(FLAG)
-    return
-  }
-  // Not controlled — a first visit or a hard reload (both bypass the SW for the navigation, so
-  // this page still has the server's require-corp headers). Once the worker is active, reload
-  // ONCE so the navigation goes through it; the flag stops a broken worker from reload-looping.
-  void navigator.serviceWorker.ready.then(() => {
-    if (navigator.serviceWorker.controller) return
-    if (sessionStorage.getItem(FLAG)) {
-      sessionStorage.removeItem(FLAG)
-      console.error('[coi] service worker failed to take control after reload')
-    } else {
-      sessionStorage.setItem(FLAG, 'true')
-      window.location.reload()
-    }
-  })
 }

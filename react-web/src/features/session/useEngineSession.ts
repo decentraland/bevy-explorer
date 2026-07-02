@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
 import type { LoginDriver } from '../../engine/driver'
 import type { FatalError } from '../error/EngineErrorModal'
+import { DEFAULT_REALM } from '../engine/EngineHost'
 import type {
   AppNotification,
   ChatMessage,
@@ -652,10 +653,13 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       driverRef.current?.clearEnginePanic?.() // start clean so the boot poll only sees THIS launch's panic
       // World by realm, parcel by spawn position, skip at 0,0 (Genesis). Nothing loaded before this,
       // so only the chosen scene streams in. (No-op on the mock, which has no engine to launch.)
+      // Parcels pass the MAIN realm explicitly — the iframe's initialRealm may carry a ?realm
+      // override (possibly an invalid world after a failed validation), and inheriting it would
+      // strand a Genesis pick "Reconnecting to the realm" forever.
       try {
-        if (dest == null) driver.launch?.(undefined, '0,0')
+        if (dest == null) driver.launch?.(DEFAULT_REALM, '0,0')
         else if (dest.kind === 'world') driver.launch?.(dest.realm, undefined)
-        else driver.launch?.(undefined, `${dest.x},${dest.y}`)
+        else driver.launch?.(DEFAULT_REALM, `${dest.x},${dest.y}`)
       } catch (e) {
         // A boot-time engine panic throws synchronously out of launch() (a generic "unreachable"
         // wasm trap). The readable message is captured on the iframe via enginePanic().
