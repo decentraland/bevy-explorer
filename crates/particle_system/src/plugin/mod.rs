@@ -105,7 +105,7 @@ fn particle_system_on_insert(
 
     let render_billboard = OrientModifier {
         mode: OrientMode::FaceCameraPosition,
-        rotation: Some(writer.attr(Attribute::F32_0).expr()),
+        rotation: Some(writer.attr(ROTATION_ATTR).expr()),
     };
 
     let module = writer.finish();
