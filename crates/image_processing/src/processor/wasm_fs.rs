@@ -4,7 +4,9 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Cache, DedicatedWorkerGlobalScope, Response, ResponseInit};
 
-// must match key used in service_worker.js
+// must match key AND cache name used in service_worker.js (CACHE_NAME — currently ipfs-path-cache-v2):
+// the SW stores the raw fetch there, we read it, process, and write the processed bytes back
+// over the same key so subsequent loads are served pre-processed.
 fn key(filename: &str) -> Result<String, JsValue> {
     let url = web_sys::Url::new(filename)?;
     Ok(format!("{}{}", url.pathname(), url.search()))
@@ -21,7 +23,7 @@ async fn read_file_internal(filename: &str) -> Result<Vec<u8>, JsValue> {
     let filename = &key(filename)?;
     let global = js_sys::global().dyn_into::<DedicatedWorkerGlobalScope>()?;
     let caches = global.caches()?;
-    let cache: Cache = JsFuture::from(caches.open("ipfs-path-cache-v1"))
+    let cache: Cache = JsFuture::from(caches.open("ipfs-path-cache-v2"))
         .await?
         .dyn_into()?;
 
@@ -59,7 +61,7 @@ pub async fn write_file_internal(filename: &str, data: &[u8]) -> Result<(), JsVa
     // 1. Open the Cache
     let global = js_sys::global().dyn_into::<DedicatedWorkerGlobalScope>()?;
     let caches = global.caches()?;
-    let cache: Cache = JsFuture::from(caches.open("ipfs-path-cache-v1"))
+    let cache: Cache = JsFuture::from(caches.open("ipfs-path-cache-v2"))
         .await?
         .dyn_into()?;
 
