@@ -34,28 +34,34 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
    Recurring need (jump-in/create/send → loading; unfriend/reject/leave/delete → danger; a subtle
    underlined text-link like the gate's "try anyway…" → link, currently a bespoke `<button>`). (Old:
    `ButtonComponent`.)
+5. `[bug]` **"Jump in" icon on the initial scene catalog is actually a pencil** — *visible on first
+   impression*. `JumpInGlyph()`'s SVG path (`M5 12l9-9 4 4-9 9-5 1z` + `M13 4l3 3M5 12l-1 7 7-1`) draws a
+   diagonal pencil-with-tip shape, not a "jump in" arrow — a copy/paste-wrong-glyph mistake, not a design
+   choice. **Duplicated identically** in both `PlaceCard.tsx` and `FeaturedCard.tsx` (the login-flow
+   "Live Now"/"Featured Places" catalog, `LoadingAndLogin.tsx`), so fix both — or better, extract one
+   shared glyph while fixing it (there's no `src/design/` icon for this yet).
 
 ## 🟡 Medium
 
-5. `[feature]` **Engine-panic / error capture → popup** — *new* (largely SHIPPED — `ErrorBoundary` +
+6. `[feature]` **Engine-panic / error capture → popup** — *new* (largely SHIPPED — `ErrorBoundary` +
    `EngineErrorModal` + crash watchdog landed on `fix/react-web-hud`). Kept as a tracking entry: engine
    WASM panics on launch (e.g. `can't init wasm queue`) and runtime crashes now surface a popup
    (message + copy details + reload/dismiss). (Old: `error-popup` + `error-popup-service`.)
-6. `[DS]` **`useConfirm` / `showAlert` (imperative dialog helpers)** — *new*. `Modal`/`ModalShell`
+7. `[DS]` **`useConfirm` / `showAlert` (imperative dialog helpers)** — *new*. `Modal`/`ModalShell`
    exist but each confirm is rebuilt (WorldVisitModal, ExitConfirm). (Old: `confirm-popup` /
    `alert-popup`.)
-7. `[DS]` **`Badge` (standalone)** — *extract*. Badge logic is trapped inside `IconButton`; can't put a
+8. `[DS]` **`Badge` (standalone)** — *extract*. Badge logic is trapped inside `IconButton`; can't put a
    badge on a tab/avatar/chip without reimplementing. (Old: `notification-badge.tsx`.)
-8. `[DS]` **`Chip` / `Tag`** — *new*. "chip" is bespoke in ~11 files (map categories, count pills,
+9. `[DS]` **`Chip` / `Tag`** — *new*. "chip" is bespoke in ~11 files (map categories, count pills,
    status). (Old: `color-tag.tsx`.)
-9. `[DS]` **Consolidate modals onto `Modal`/`ModalShell`** — *cleanup*. ProfileCard, CommunityModal,
+10. `[DS]` **Consolidate modals onto `Modal`/`ModalShell`** — *cleanup*. ProfileCard, CommunityModal,
     CommunityCreateModal, WorldVisitModal roll their own portal/overlay and hardcode `z-index: 10001`.
     Unify backdrop / escape / focus-trap / z-layer.
-10. `[DS]` **`Radio` / `RadioGroup`** — *new*. Have Checkbox/Toggle/Select but no Radio; bespoke in
+11. `[DS]` **`Radio` / `RadioGroup`** — *new*. Have Checkbox/Toggle/Select but no Radio; bespoke in
     PermissionDialog. (Old: `radio-button.tsx`.)
-11. `[DS]` **`Skeleton`** — *new*. Only `Spinner` exists; no load placeholders for lists/cards.
+12. `[DS]` **`Skeleton`** — *new*. Only `Spinner` exists; no load placeholders for lists/cards.
     (Old: `loading-placeholder.tsx`.)
-12. `[feature]` **Passport — finish the sections (feature parity with unity-explorer / bevy-ui-scene)**
+13. `[feature]` **Passport — finish the sections (feature parity with unity-explorer / bevy-ui-scene)**
     — *feature parity*. The passport has OVERVIEW/BADGES/PHOTOS tabs but is missing sections the old
     scene renders (`bevy-ui-scene`: `ui-classes/main-hud/passport/passport-popup.tsx`). Gaps that
     **need new bridge/protocol data:** (a) **Equipped Wearables + Emotes** of the *viewed* avatar (grid:
@@ -69,7 +75,7 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     set. (f) Wire the **3D avatar preview** into the passport (machinery exists —
     `setEngineViewport('avatarPreview')`, used by the Backpack) instead of the 2D snapshot, + 3D badge
     preview on the Badges tab.
-13. `[feature]` **Notifications panel — bounded height, load-on-scroll, click-through to a detail
+14. `[feature]` **Notifications panel — bounded height, load-on-scroll, click-through to a detail
     popup** — *feature/bug*. `NotificationsPanel.tsx` fixes `.root` to `top: 16px; bottom: 16px`
     (`NotificationsPanel.module.css`), so the panel is always full-viewport-tall regardless of content —
     both `bevy-ui-scene` (`notifications-menu.tsx`, a fixed `menuHeight = fontSize * 30 * 1.1`) and
@@ -84,18 +90,18 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     through the `getNotifications` bridge request. (b) **clickable rows → a detail popup** — rows are
     inert today (no `onClick`); tapping a notification should open more detail (and, for actionable types
     like community invites, act on it). **Open sequencing question**: is a one-off popup component worth
-    building now, or should this wait on **stackable popups** — i.e. #9 (consolidate modals onto
+    building now, or should this wait on **stackable popups** — i.e. #10 (consolidate modals onto
     `Modal`/`ModalShell`) landing first, so a notification-detail popup doesn't become yet another bespoke
-    overlay to migrate later. Leaning toward doing #9 first if both are picked up.
+    overlay to migrate later. Leaning toward doing #10 first if both are picked up.
 
 ## 🟢 Low / when a feature needs it
 
-14. `[DS]` **`Divider`** (bespoke in ~4 places · old `bottom-border`)
-15. `[DS]` **`Pagination`** (unused today · old `pagination/`)
-16. `[DS]` **`CopyButton`** (inline in ProfileCard · old `copy-button`)
-17. `[DS]` **`Username`** (name + verified · old `player-name-component`)
-18. `[DS]` `Button` `iconLeft`/`iconRight` props + `hoverIcon` (niche · old `ButtonComponent`)
-18b. `[feature]` **Re-enable "Invite to Community" in `ProfileCard`** — *feature, parked until
+15. `[DS]` **`Divider`** (bespoke in ~4 places · old `bottom-border`)
+16. `[DS]` **`Pagination`** (unused today · old `pagination/`)
+17. `[DS]` **`CopyButton`** (inline in ProfileCard · old `copy-button`)
+18. `[DS]` **`Username`** (name + verified · old `player-name-component`)
+19. `[DS]` `Button` `iconLeft`/`iconRight` props + `hoverIcon` (niche · old `ButtonComponent`)
+19b. `[feature]` **Re-enable "Invite to Community" in `ProfileCard`** — *feature, parked until
     communities work*. The row/submenu UI was removed from `ProfileCard` (PR #915 follow-up); the
     protocol messages, `session.communities.invitable`/`requestInvitable`/`invite`, and the bridge
     handlers all remain. When re-enabling: (1) the `/invites` response is `{data:[…]}` but `signed()`
@@ -106,7 +112,7 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     clear both `invitable` and the ref on logout/identity change; (3) surface invite errors to the user
     (the bridge currently swallows them with `console.error`); (4) build the submenu on the
     `ContextMenu` primitive instead of the removed bespoke `.submenu`/`.subRow` CSS.
-19. `[arch]` **HUD state: `useEngineSession` hook prop-drilled → consider Context / a store** —
+20. `[arch]` **HUD state: `useEngineSession` hook prop-drilled → consider Context / a store** —
     *architecture, low priority*. All HUD state lives in one `useEngineSession` hook at the top of
     `Hud`, prop-drilled down; the returned `session` is a fresh object every render, so the whole HUD
     re-renders on any change. Fine at current scale (engine round-trips are the bottleneck, not React
@@ -118,7 +124,7 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     state-lib-free). Also a test cost (harness passes props today; Context needs a provider wrapper).
     Recommendation: keep prop-drilling; add a single `SessionContext` only if drilling ergonomics annoy;
     memoized slices / store only if re-renders become a *measured* problem.
-20. `[arch]` **Deep-linkable / bookmarkable navigation — reflect location in the URL** — *architecture,
+21. `[arch]` **Deep-linkable / bookmarkable navigation — reflect location in the URL** — *architecture,
     low priority*. Entering a scene/world (and, ideally, opening HUD surfaces like the map/backpack)
     should be **parameterized in the URL** so the state is shareable and bookmarkable: reload/paste a
     URL and land in the same realm + coords. Scope to nail down: realm/world + parcel coords (e.g.
@@ -126,7 +132,7 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     (`pickDestination`) + `map.teleport`/`changeRealm` so URL ⇄ engine stay in sync (`popstate` → jump,
     jump → `pushState`). Deferred: needs a small router/URL-sync layer (project is router-free today).
 
-21. `[feature]` **Voice feedback — "who's speaking" indicator** — *feature parity, when voice chat is
+22. `[feature]` **Voice feedback — "who's speaking" indicator** — *feature parity, when voice chat is
     prioritized*. The old scene showed an **animated speaking indicator on each avatar nametag** while a
     nearby player talked (and used the local mic state for your own tag). Mechanism to port: the engine
     exposes a voice stream — `BevyApi.getVoiceStream()` yielding `{ sender_address, active }`
@@ -139,23 +145,23 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     mic ring. Depends on voice chat being wired end-to-end; today only the local `mic` toggle exists (no
     per-remote-speaker signal). Could yield a reusable `SpeakingIndicator` primitive.
 
-22. `[feature]` **Passport edit mode (own profile)** — *feature, own-profile only*. bevy-ui-scene lets
+23. `[feature]` **Passport edit mode (own profile)** — *feature, own-profile only*. bevy-ui-scene lets
     you edit your own passport in place — About Me, the info-field dropdowns, links (add/remove, up to
     5), and display name — then deploys the updated profile. react-web's passport is read-only today.
-    Larger than the view-parity item (#12) — needs edit inputs + a profile-deploy path over the bridge —
+    Larger than the view-parity item (#13) — needs edit inputs + a profile-deploy path over the bridge —
     hence separate and lower priority than showing OTHER users' passports correctly.
 
-23. `[feature]` **Chat slash-commands (`/help`, `/goto`, `/world`)** — *feature parity, cross-client*.
+24. `[feature]` **Chat slash-commands (`/help`, `/goto`, `/world`)** — *feature parity, cross-client*.
     All three prior clients have these (`bevy-ui-scene`'s `sendChatMessage`, unity-explorer's
     `IChatCommand`/`GoToChatCommand`/`HelpChatCommand`), so they're a real gap, not polish — but net-new
     parsing/dispatch in react-web's `Chat.tsx` `send()`, so scoped separately from the Enter-focus fix
     (`fix/02-chat-enter-focus`). `/goto <x,y>` and `/goto <world>.dcl.eth` need `teleportTo`/`changeRealm`
     over the bridge (see `onTeleport`/`onVisitWorld` already wired for in-message links — same plumbing).
-24. `[feature]` **Chat rate limiting** — *hardening, not in bevy-ui-scene*. unity-explorer's
+25. `[feature]` **Chat rate limiting** — *hardening, not in bevy-ui-scene*. unity-explorer's
     `MultiplayerChatMessagesBus` dedupes + rate-limits + buffers sends; react-web (like bevy-ui-scene)
     sends on every Enter with no client-side throttle. Only worth adding if spam becomes a real problem
     server-side rate limiting doesn't already cover.
-25. `[feature]` **DMs / private chat channels** — *net-new, not a port*. Neither `bevy-ui-scene` nor
+26. `[feature]` **DMs / private chat channels** — *net-new, not a port*. Neither `bevy-ui-scene` nor
     today's react-web have anything beyond the single "Nearby" channel; unity-explorer's
     `ChatChannelsPresenter`/`ChatChannelType.USER` is the only prior-art reference. Large scope (channel
     list UI, per-conversation history, member-list → "message" entry point) — flag for a dedicated design
