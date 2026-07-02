@@ -1,0 +1,38 @@
+{
+  "name": "bevy-ui-scene",
+  "version": "1.0.0",
+  "description": "UI Scene shows a functional UI for the Bevy Explorer",
+  "scripts": {
+    "update-version": "node -e \"const {execSync} = require('child_process'); const hash = execSync('git rev-parse --short HEAD').toString().trim(); require('fs').writeFileSync('src/version.ts', 'export const COMMIT_HASH = \\x27' + hash + '\\x27\\n');\"",
+    "start": "npm run update-version && sdk-commands start",
+    "deploy": "sdk-commands deploy",
+    "build": "npm run update-version && sdk-commands build",
+    "export-static": "sdk-commands export-static --destination static/ --realmName BevyExplorerUI --baseUrl ${SCENE_BASE_URL:-/bridge-scene/static/} --commsAdapter ws-room:ws-room-service.decentraland.org/rooms/bevy-explorer-ui",
+    "bundle": "npm run build && npm run export-static && rm -rf ../../deploy/web/bridge-scene && mkdir -p ../../deploy/web/bridge-scene && cp -R static ../../deploy/web/bridge-scene/static",
+    "lint": "eslint \"./src/**/*.{ts,tsx}\"",
+    "lint:fix": "eslint --fix \"./src/**/*.{ts,tsx}\"",
+    "format": "prettier --config .prettierrc -c \"./src/**/*.{ts,tsx}\"",
+    "format:fix": "prettier -w --config .prettierrc \"./src/**/*.{ts,tsx}\"",
+    "upgrade-sdk": "npm install @dcl/sdk@protocol-squad @dcl/js-runtime@protocol-squad @dcl/react-ecs@protocol-squad @dcl/sdk-commands@protocol-squad @dcl/ecs@protocol-squad --save-exact"
+  },
+  "devDependencies": {
+    "@dcl/ecs": "7.22.6-25007982108.commit-83012ab",
+    "@dcl/js-runtime": "7.22.6-25007982108.commit-83012ab",
+    "@dcl/react-ecs": "7.22.6-25007982108.commit-83012ab",
+    "@dcl/sdk": "7.22.6-25007982108.commit-83012ab",
+    "@dcl/sdk-commands": "7.22.6-25007982108.commit-83012ab",
+    "@typescript-eslint/eslint-plugin": "^6.10.0",
+    "@typescript-eslint/parser": "^6.10.0",
+    "eslint": "^8.53.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-config-standard-with-typescript": "^39.1.1",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-n": "^16.6.2",
+    "eslint-plugin-react": "^7.33.2",
+    "prettier": "3.0.3"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=6.0.0"
+  }
+}

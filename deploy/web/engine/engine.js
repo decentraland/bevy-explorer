@@ -1,0 +1,372 @@
+// Engine logic - ES module
+// Handles WASM/WebGPU initialization and game execution
+
+import init, { engine_init, engine_run, engine_console_command, gpu_cache_hash } from "./pkg/webgpu_build.js";
+import { initGpuCache } from "./gpu_cache.js";
+
+// Re-export for main.js
+export { gpu_cache_hash, initGpuCache };
+
+/**
+ * Records an uncaught worker error as context for the crash watchdog. A worker
+ * thread that traps (panic / OOM) while holding a lock can deadlock the other
+ * shared-memory threads with no exception on the main thread; the resulting
+ * heartbeat stall is what actually surfaces the overlay, with this as the reason.
+ * @param {string} name - worker name for logging
+ * @returns {(e: ErrorEvent) => void}
+ */
+function workerCrashHandler(name) {
+  return (e) => {
+    if (window.reportEngineError) {
+      window.reportEngineError(e.message || `${name} worker crashed`, `${name} worker`);
+    } else {
+      console.error(`[Main JS] ${name} worker crashed`, e);
+    }
+  };
+}
+
+/**
+ * Fetches a URL with download progress tracking.
+ * @param {string} url - URL to fetch
+ * @param {function} onProgress - Callback with percentage (0-100)
+ * @param {number|null} expectedSize - Expected uncompressed size in bytes (fallback when Content-Length is missing due to content-encoding)
+ * @returns {Promise<ArrayBuffer>}
+ */
+async function fetchWithProgress(url, onProgress, expectedSize) {
+  const response = await fetch(url);
+  const contentLength = response.headers.get('Content-Length');
+  const total = contentLength ? parseInt(contentLength, 10) : expectedSize;
+
+  if (!total || !response.body) {
+    // Fallback if no size info available or no streaming support
+    const buffer = await response.arrayBuffer();
+    onProgress(100);
+    return buffer;
+  }
+
+  const reader = response.body.getReader();
+  const chunks = [];
+  let received = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    chunks.push(value);
+    received += value.length;
+    onProgress(Math.min((received / total) * 100, 100));
+  }
+
+  // Combine chunks into single ArrayBuffer
+  const buffer = new Uint8Array(received);
+  let position = 0;
+  for (const chunk of chunks) {
+    buffer.set(chunk, position);
+    position += chunk.length;
+  }
+
+  return buffer.buffer;
+}
+
+/**
+ * Initializes the WASM engine, shared memory, and worker threads.
+ * @returns {Promise<void>}
+ */
+export async function initEngine() {
+
+  // Versioned CDN base in prod (set by the host before boot); fall back to this module's own
+  // directory — NOT the page path, which is the React app's URL in same-document mode.
+  const publicUrl = window.PUBLIC_URL || new URL(".", import.meta.url).href.replace(/\/$/, "");
+  const wasmUrl = `${publicUrl}/pkg/webgpu_build_bg.wasm`;
+
+  // Fetch manifest for expected WASM size (used when Content-Length is missing due to CDN compression)
+  let expectedWasmSize = null;
+  try {
+    const manifest = await fetch(`${publicUrl}/pkg/manifest.json`).then(r => r.json());
+    expectedWasmSize = manifest.wasmSize;
+  } catch (e) {
+    console.warn("Could not load manifest.json, progress may not be accurate", e);
+  }
+
+  // Step 1: Download WASM with progress
+  setLoadingStepActive('download');
+  const wasmBytes = await fetchWithProgress(wasmUrl, (percent) => {
+    setLoadingStepProgress('download', percent);
+  }, expectedWasmSize);
+  setLoadingStepCompleted('download');
+
+  // Step 2: Compile WASM
+  setLoadingStepActive('compile');
+  console.time("compileTime")
+  const compiledModule = await WebAssembly.compile(wasmBytes);
+  console.timeEnd("compileTime") // 70 ms
+  setLoadingStepCompleted('compile');
+
+  const initialMemoryPages = 1280; // setting initial memory high causes malloc failures
+  const maximumMemoryPages = 65536;
+  const sharedMemory = new WebAssembly.Memory({
+    initial: initialMemoryPages,
+    maximum: maximumMemoryPages,
+    shared: true,
+  });
+  window.wasm_memory = sharedMemory;
+
+  // Setup HLS video source callback
+  window.setVideoSource = (video, src) => {
+    async function isHlsStream(url) {
+      try {
+        const response = await fetch(url, {
+          method: "HEAD",
+          mode: "cors",
+        });
+
+        if (!response.ok) {
+          return false;
+        }
+
+        const contentType = response.headers.get("Content-Type");
+
+        if (contentType) {
+          return (
+            contentType.includes("application/vnd.apple.mpegurl") ||
+            contentType.includes("application/x-mpegURL")
+          );
+        }
+
+        return false;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = src;
+    } else if (Hls.isSupported()) {
+      // check if we need hls
+      setTimeout(async () => {
+        if (await isHlsStream(src)) {
+          var hls = new Hls();
+          hls.loadSource(src);
+          hls.attachMedia(video);
+        } else {
+          video.src = src;
+        }
+      }, 0);
+    }
+  };
+
+  // Setup sandbox worker spawn callback
+  window.spawn_and_init_sandbox = async () => {
+    var timeoutId;
+    return new Promise((resolve, _reject) => {
+      const sandboxWorkerPath = new URL("./sandbox_worker.js", import.meta.url);
+      var sandboxWorker = new Worker(sandboxWorkerPath, { type: "module" });
+      sandboxWorker.onerror = workerCrashHandler("sandbox");
+
+      var timeoutCount = 0;
+      let logTimeout = () => {
+        console.log(
+          "[Main JS] Still waiting for worker to init",
+          timeoutCount
+        );
+        timeoutCount += 1;
+        timeoutId = setTimeout(logTimeout, 5000);
+      };
+      timeoutId = setTimeout(logTimeout, 5000);
+
+      sandboxWorker.onmessage = (workerEvent) => {
+        if (workerEvent.data.type === "READY") {
+          sandboxWorker.postMessage({
+            type: "INIT_WORKER",
+            payload: {
+              compiledModule,
+              sharedMemory,
+            },
+          });
+        }
+        if (workerEvent.data.type === "INIT_COMPLETE") {
+          resolve();
+        }
+        if (workerEvent.data.type === "INIT_FAILED") {
+          console.log("[Main JS] Sandbox init failed; retrying");
+          sandboxWorker = new Worker(sandboxWorkerPath, { type: "module" });
+          sandboxWorker.onerror = workerCrashHandler("sandbox");
+        }
+      };
+    }).finally(() => {
+      clearTimeout(timeoutId);
+    });
+  };
+
+  // Step 3: Initialize engine
+  setLoadingStepActive('init');
+  await init({ module_or_path: compiledModule, memory: sharedMemory });
+  console.log("[Main JS] Main application WebAssembly module initialized.");
+
+  let res = await engine_init();
+  console.log(
+    "[Main JS] Main application WebAssembly module custom initialized: ",
+    res
+  );
+  setLoadingStepCompleted('init');
+
+  // Step 4: Start workers
+  setLoadingStepActive('workers');
+  setLoadingStepProgress('workers', 0);
+
+  // start asset loader thread
+  await new Promise((resolve, _reject) => {
+    const assetLoaderPath = new URL("./asset_loader.js", import.meta.url);
+
+    const assetLoader = new Worker(assetLoaderPath, { type: "module" });
+    assetLoader.onerror = workerCrashHandler("asset loader");
+    assetLoader.onmessage = (workerEvent) => {
+      if (workerEvent.data.type === "READY") {
+        assetLoader.postMessage({
+          type: "INIT_ASSET_LOADER",
+          payload: {
+            compiledModule,
+            sharedMemory,
+          },
+        });
+      }
+      if (workerEvent.data.type === "INITIALIZED") {
+        resolve();
+      }
+    };
+  });
+  setLoadingStepProgress('workers', 50);
+
+  // start asset processor thread
+  await new Promise((resolve, _reject) => {
+    const assetProcessorPath = new URL("./asset_processor.js", import.meta.url);
+
+    const assetProcessor = new Worker(assetProcessorPath, { type: "module" });
+    assetProcessor.onerror = workerCrashHandler("asset processor");
+    assetProcessor.onmessage = (workerEvent) => {
+      if (workerEvent.data.type === "READY") {
+        assetProcessor.postMessage({
+          type: "INIT_ASSET_PROCESSOR",
+          payload: {
+            compiledModule,
+            sharedMemory,
+          },
+        });
+      }
+      if (workerEvent.data.type === "INITIALIZED") {
+        resolve();
+      }
+    };
+  });
+  setLoadingStepCompleted('workers');
+}
+
+/**
+ * Starts the game engine. Values come from the caller (boot.js's __bevyLaunch, fed by the React
+ * host) — the old boot page's form inputs are gone.
+ */
+export function start({ realm, position, systemScene, portables, preview } = {}) {
+  // Launch at most once per page: a second engine_run re-runs init_runtime, whose OnceCell is
+  // already set, and panics ("can't init wasm queue"). One engine per page — ignore re-entry.
+  if (window.__bevyStarted) {
+    console.warn('[engine] start() ignored — the engine is already running');
+    return;
+  }
+  window.__bevyStarted = true;
+
+  const realmValue = realm ?? '';
+  const positionValue = position ?? '';
+  const systemSceneValue = systemScene ?? '';
+  const portablesValue = portables ?? 'basiccontroller.dcl.eth';
+  const previewValue = preview === true;
+
+  // Build params from URL, overriding with form field values
+  const urlParams = new URLSearchParams(window.location.search);
+  urlParams.set("realm", realmValue);
+  if (positionValue) {
+    urlParams.set("position", positionValue);
+  }
+  urlParams.set("systemScene", systemSceneValue);
+  urlParams.set("portables", portablesValue);
+  urlParams.delete("initialRealm");
+  if (previewValue) {
+    urlParams.set("preview", "true");
+  } else {
+    urlParams.delete("preview");
+  }
+  const params = urlParams.toString();
+  console.log(
+    `[Main JS] "Launch" button clicked. Initial Realm: "${realmValue}", Position (coords): "${positionValue}", System Scene: "${systemSceneValue}", Portables: "${portablesValue}"`
+  );
+  hideHeader();
+
+  const platform = (() => {
+    if (navigator.userAgent.includes("Mac")) return "macos";
+    if (navigator.userAgent.includes("Win")) return "windows";
+    if (navigator.userAgent.includes("Linux")) return "linux";
+    return "unknown";
+  })();
+
+  // Callback invoked by Rust once console command metadata is available.
+  window._buildEngineApi = (json) => {
+    try {
+      const api = JSON.parse(json);
+      window.engine = {};
+      for (const cmd of api) {
+        const jsName = cmd.cmd
+          .replace(/^\//, '')
+          .replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+        const paramNames = cmd.args.map(a => a.name);
+        const body = [
+          `var parts = [${JSON.stringify(cmd.cmd)}];`,
+          `var defs = ${JSON.stringify(cmd.args)};`,
+          `for (var i = 0; i < defs.length; i++) {`,
+          `  var val = arguments[i];`,
+          `  if (val === undefined) { if (!defs[i].optional) throw new Error(${JSON.stringify(jsName)} + ": missing arg '" + defs[i].name + "'"); break; }`,
+          `  parts.push(defs[i].kind === 'json' ? JSON.stringify(val) : String(val));`,
+          `}`,
+          `return window.engine_console_command(parts.join(' ')).then(function(r) { try { return JSON.parse(r); } catch(e) { return r; } });`,
+        ].join('\n');
+        const fn = new Function(...paramNames, body);
+        const sig = cmd.args.map(a => {
+          const name = a.kind === 'json' ? `${a.name}: object` : a.name;
+          return a.optional ? `[${name}]` : `<${name}>`;
+        }).join(', ');
+        fn._sig = `(${sig})`;
+        fn._help = cmd.help || '';
+        fn.toString = () => `${jsName}${fn._sig}${fn._help ? ' — ' + fn._help : ''}`;
+        window.engine[jsName] = fn;
+      }
+      window.engine.help = (name) => {
+        if (!name) {
+          const lines = ['Available commands:'];
+          for (const [k, v] of Object.entries(window.engine)) {
+            if (typeof v === 'function' && v._help) lines.push(`  ${k} - ${v._help}`);
+          }
+          return lines.join('\n');
+        }
+        const fn = window.engine[name];
+        if (!fn?._sig) return `Unknown command: ${name}`;
+        return `${name}${fn._sig}\n${fn._help || ''}`;
+      };
+    } catch (e) {
+      console.warn('Failed to build engine API:', e);
+    }
+    delete window._buildEngineApi;
+  };
+
+  engine_run(platform, realmValue, positionValue, systemSceneValue, portablesValue, true, previewValue, 1e7, params);
+  window.engine_console_command = engine_console_command;
+  window.loadSceneUtils = () => {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = new URL('./sceneUtils.js', import.meta.url);
+      s.onload = () => { console.log('sceneUtils loaded'); resolve(); };
+      s.onerror = () => reject(new Error('failed to load sceneUtils.js'));
+      document.head.appendChild(s);
+    });
+  };
+  setTimeout(showCanvas, 200);
+
+  document.getElementById("mygame-canvas").started = true;
+}

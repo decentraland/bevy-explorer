@@ -1,0 +1,117 @@
+/* Scene permission prompt (e.g. ChangeRealm). Restores the native/unity dialog the react-web HUD
+   dropped, in the design-system violet treatment shared with the Create-a-Community modal. */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--modal-scrim);
+  backdrop-filter: blur(2px);
+  padding: 24px;
+}
+.modal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 18px;
+  width: min(460px, 100%);
+  padding: 32px 36px 26px;
+  border-radius: var(--r-panel);
+  color: #fff;
+  background: var(--modal-bg);
+  box-shadow: var(--shadow-modal);
+  transform: scale(var(--ui-scale)); /* DPI-match the scaled HUD */
+}
+.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.prompt {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: #fff;
+  line-height: 1.4;
+}
+.scene {
+  font-weight: 800;
+}
+.additional {
+  font-size: var(--fs-sm);
+  color: rgba(252, 252, 252, 0.62);
+  line-height: 1.4;
+}
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  margin: 2px 0;
+}
+.option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--r-control);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  color: #fff;
+  text-align: left;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.option:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.radio {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  display: grid;
+  place-items: center;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.option:hover .radio {
+  border-color: rgba(255, 255, 255, 0.7);
+}
+.radioOn {
+  border-color: var(--brand);
+}
+.radioDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+/* keep the native radio for a11y/keyboard, hidden behind the custom control */
+.input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+}
+/* Deny: ghost outline tuned for the violet card (the primitive's ghost is greyed for dark panels). */
+.deny {
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #fff;
+}
+.deny:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.6);
+  color: #fff;
+}

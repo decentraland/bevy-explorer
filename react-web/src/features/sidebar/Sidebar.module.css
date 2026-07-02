@@ -1,0 +1,39 @@
+/* Nav rail — Explorer 2.0 spec: 46px wide, rgba(0,0,0,0.7), full height, with a
+   top group (nav/menus) and a bottom group (world tools + social) pinned to the
+   ends. translateZ(0)/contain isolate hover paints from the engine's per-frame
+   work on the shared main thread (same-origin iframe). */
+.root {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 46px;
+  /* DPI scaling like MainMenuShell: a reference-height box scaled by --ui-scale so the rail
+     width + icons track the viewport (Unity CanvasScaler) instead of staying a fixed 46px at
+     1x — keeps the rail consistent with the scaled chat/floating panels beside it. */
+  height: calc(100% / var(--ui-scale));
+  background: rgba(0, 0, 0, 0.7);
+  z-index: var(--z-hud);
+  transform: scale(var(--ui-scale)) translateZ(0);
+  transform-origin: top left;
+  contain: layout paint;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0 13px;
+  box-sizing: border-box;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 40px hairline divider — DCL/White10%. */
+.divider {
+  width: 40px;
+  height: 0;
+  border-top: 1px solid var(--white-10);
+}

@@ -1,0 +1,105 @@
+.root {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: var(--z-hud);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 1st-person reticle (Figma Cursor page): a ring with a center dot, drawn only while pointer
+   -locked since the browser hides the OS cursor then. */
+.reticle {
+  position: relative;
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--ink-85);
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: 0 0 2px var(--scrim);
+  /* No --ui-scale here: the crosshair is a fixed-size aiming reticle, constant across viewports. */
+  transition:
+    width var(--dur-fast) ease,
+    height var(--dur-fast) ease,
+    background var(--dur-fast) ease;
+}
+.reticle::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: var(--text);
+}
+/* Hover state = a filled circle (grey), per the design. */
+.reticleActive {
+  width: 18px;
+  height: 18px;
+  background: color-mix(in srgb, var(--pearl) 45%, transparent);
+}
+
+/* Hover prompt, just below the reticle — black pills with the action's key icon + label. */
+.hints {
+  position: absolute;
+  top: calc(50% + 24px);
+  left: 50%;
+  max-width: 60vw;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  /* Pin to center, then DPI-scale around that anchor. */
+  transform: translateX(-50%) scale(var(--ui-scale));
+  transform-origin: top center;
+}
+.hint {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 16px 6px 9px;
+  border-radius: var(--r-pill);
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--font-family);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.hintDisabled {
+  opacity: 0.55;
+}
+.hintText {
+  line-height: 1;
+}
+.mouse {
+  flex: none;
+}
+/* Key-cap for keyboard actions (E / F / 1…). */
+.cap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1.5px solid var(--ink-85);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+}
+
+/* Proximity tooltip — anchored at the entity's projected screen position. */
+.proxTip {
+  position: absolute;
+  /* Pinned at the engine-projected screen point; DPI-scale around that same anchor. */
+  transform: translate(-50%, -50%) scale(var(--ui-scale));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}

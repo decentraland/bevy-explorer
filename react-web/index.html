@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Decentraland</title>
+    <meta
+      name="description"
+      content="Explore Decentraland — a social virtual world. Jump in from your browser: events, games, and places built by the community."
+    />
+    <meta name="theme-color" content="#2c1442" />
+    <!-- Favicons (same art as the engine page's set). Vite rebases these for the CDN base. -->
+    <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="Decentraland Web" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <!-- Social cards -->
+    <meta property="og:title" content="Decentraland" />
+    <meta property="og:description" content="Explore a social virtual world from your browser." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary" />
+    <!-- The loading overlay's full-screen backdrop (1.7MB). Prefetch it during the login screen
+         (low priority, won't fight first paint) so it's cached before we enter and freeze. -->
+    <link rel="prefetch" as="image" href="/assets/login/gradient-background.webp" />
+    <style>
+      /* Instant branded first paint. The JS bundle + React mount take a moment (longer over a slow
+         tunnel/network) and #root is empty until then — without this the page flashes white. This
+         splash paints from index.html with zero JS; React's login screen (same purple backdrop)
+         replaces #root on mount, so the hand-off is seamless. The colors below mirror tokens.css
+         `--menu-bg` (the radial gradient) and its `#54098a` end stop — kept literal because this must
+         paint before any CSS/JS loads, so it can't reference the token. */
+      html,
+      body {
+        margin: 0;
+        background: #54098a;
+      }
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        background: radial-gradient(circle at 66% 38%, #b528d8 0%, #8016b8 44%, #54098a 100%);
+        font-family: system-ui, -apple-system, sans-serif;
+        color: #fff;
+      }
+      #boot-splash img {
+        width: 88px;
+        height: 88px;
+        animation: boot-pulse 1.6s ease-in-out infinite;
+      }
+      #boot-splash h1 {
+        margin: 0;
+        font-size: 1.5rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+      }
+      @keyframes boot-pulse {
+        0%,
+        100% {
+          transform: scale(1);
+          opacity: 0.85;
+        }
+        50% {
+          transform: scale(1.08);
+          opacity: 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- React HUD mounts here; the engine runs in a same-origin iframe rendered
+         behind it (see src/features/engine/EngineHost.tsx). The #boot-splash inside #root is the
+         pre-React branded splash; createRoot() clears it on mount. -->
+    <div id="root">
+      <div id="boot-splash">
+        <img src="/assets/logo.png" alt="" />
+        <h1>Decentraland</h1>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

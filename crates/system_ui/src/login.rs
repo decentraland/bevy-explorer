@@ -384,6 +384,67 @@ fn get_previous_login(config: &AppConfig) -> Option<PreviousLogin> {
     }
 }
 
+/// Decode a base64(JSON) AuthIdentity into the pieces the wallet needs: the root (signer)
+/// address, the ephemeral LocalWallet, and the delegate auth chain (the ECDSA_EPHEMERAL
+/// link(s), i.e. the chain WITHOUT the SIGNER entry — matching what
+/// `finish_remote_ephemeral_request` / `get_previous_login` use).
+///
+/// This is the standard Decentraland AuthIdentity, so it is identical regardless of how the
+/// user signed in (wallet/MetaMask, social, OTP, magic). The web page just reads it from
+/// localStorage and forwards it — there is nothing login-method-specific here.
+fn parse_auth_identity(payload: &str) -> Result<(Address, LocalWallet, Vec<ChainLink>), String> {
+    use base64::Engine as _;
+
+    #[derive(serde::Deserialize)]
+    struct Ephemeral {
+        #[serde(rename = "privateKey")]
+        private_key: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct AuthIdentity {
+        #[serde(rename = "ephemeralIdentity")]
+        ephemeral_identity: Ephemeral,
+        #[serde(rename = "authChain")]
+        auth_chain: Vec<ChainLink>,
+    }
+
+    let json = base64::engine::general_purpose::STANDARD
+        .decode(payload.trim())
+        .map_err(|e| format!("bad identity base64: {e}"))?;
+    let identity: AuthIdentity =
+        serde_json::from_slice(&json).map_err(|e| format!("bad identity json: {e}"))?;
+
+    // Root wallet address = the SIGNER link's payload.
+    let signer = identity
+        .auth_chain
+        .iter()
+        .find(|l| l.ty == "SIGNER")
+        .ok_or_else(|| "identity missing SIGNER link".to_string())?;
+    let root_address =
+        Address::from_str(signer.payload.trim()).map_err(|e| format!("bad root address: {e}"))?;
+
+    // Ephemeral signer from the 0x-prefixed private key.
+    let key_hex = identity
+        .ephemeral_identity
+        .private_key
+        .trim()
+        .trim_start_matches("0x");
+    let local_wallet =
+        LocalWallet::from_str(key_hex).map_err(|e| format!("bad ephemeral key: {e}"))?;
+
+    // Delegate chain = everything except the SIGNER (the ECDSA_EPHEMERAL link the engine stores).
+    let auth: Vec<ChainLink> = identity
+        .auth_chain
+        .into_iter()
+        .filter(|l| l.ty != "SIGNER")
+        .collect();
+    if auth.is_empty() {
+        return Err("identity missing ephemeral delegate link".to_string());
+    }
+
+    Ok((root_address, local_wallet, auth))
+}
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn process_login_bridge(
     mut e: EventReader<SystemApi>,
@@ -480,6 +541,25 @@ fn process_login_bridge(
                     let profile = get_remote_profile(root_address, ipfs, None).await.ok();
 
                     Ok((root_address, local_wallet, auth, profile, result_sender))
+                }));
+            }
+            SystemApi::LoginWithIdentity(payload, rpc_result_sender) => {
+                // The web page already holds a signed AuthIdentity (read from localStorage,
+                // produced by whatever sign-in method the user used) — finalize the wallet
+                // from it directly, no auth-server request/poll. Mirrors LoginPrevious.
+                let ipfs = ipfas.ipfs().clone();
+                *login_task = Some(IoTaskPool::get().spawn_compat(async move {
+                    let (root_address, local_wallet, auth) = match parse_auth_identity(&payload) {
+                        Ok(parts) => parts,
+                        Err(e) => {
+                            rpc_result_sender.send(Err(e));
+                            return Err(());
+                        }
+                    };
+
+                    let profile = get_remote_profile(root_address, ipfs, None).await.ok();
+
+                    Ok((root_address, local_wallet, auth, profile, rpc_result_sender))
                 }));
             }
             SystemApi::LoginGuest => {

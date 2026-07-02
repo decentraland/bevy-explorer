@@ -1,0 +1,97 @@
+.root {
+  position: relative;
+  display: inline-block;
+  min-width: 160px;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--white-10);
+  border-radius: 12px;
+  background: var(--fill-3);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) ease;
+}
+.field:hover:not(:disabled) {
+  background: var(--fill-4);
+}
+.field:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* Light variant — white field with dark text (Settings menu). */
+.light {
+  background: #fcfcfc;
+  border-color: transparent;
+  color: #161518;
+  font-weight: 600;
+}
+.light:hover:not(:disabled) {
+  background: #fff;
+}
+.light .chev {
+  color: #161518;
+}
+.value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chev {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  color: var(--ink-7);
+  transition: transform var(--dur-fast) ease;
+}
+.chevOpen {
+  transform: rotate(180deg);
+}
+
+.list {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: var(--panel);
+  border: 1px solid var(--white-10);
+  border-radius: 12px;
+  box-shadow: var(--shadow-panel);
+  max-height: 260px;
+  overflow-y: auto;
+  z-index: var(--z-overlay);
+  scrollbar-width: thin;
+}
+.option {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-7);
+  font-family: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.option:hover {
+  background: var(--white-10);
+  color: var(--text);
+}
+.optionActive {
+  background: var(--fill-3);
+  color: var(--text);
+}

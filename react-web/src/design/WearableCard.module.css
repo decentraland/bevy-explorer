@@ -1,0 +1,194 @@
+/* WearableCard — backpack item tile, matching Figma "NFT Items & Badges → Backpack items".
+   Soft two-tone rarity gradient (light sheen at top → main rarity colour), rounded 16px.
+   States (Figma button variants): Equipped = orange ring, Selected = pink ring,
+   hover reveals an EQUIP (red) / UNEQUIP (dark) pill. NEW + ×count badges. */
+.card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 2.5px solid transparent;
+  border-radius: 16px;
+  cursor: pointer;
+  overflow: hidden;
+  /* Light sheen at top, rarity main through the body, a touch deeper at the bottom. */
+  background: radial-gradient(
+    128% 110% at 50% -12%,
+    var(--rl, #cfcdd4) 0%,
+    var(--rm, #a09ba8) 60%,
+    color-mix(in srgb, var(--rm, #a09ba8) 86%, #000) 100%
+  );
+  transition:
+    transform 0.13s var(--ease-spring, ease),
+    border-color var(--dur-fast) ease,
+    box-shadow var(--dur-fast) ease;
+}
+/* Unity BackpackItemView hover: scale to 1.1 with a spring (Ease, 0.1s). */
+.card:hover {
+  transform: scale(1.1);
+  z-index: 2;
+}
+
+/* Equipped (worn) → orange ring, like Unity's category highlight. */
+.equipped {
+  border-color: #ff7439;
+  box-shadow:
+    0 0 0 1px rgba(255, 116, 57, 0.55),
+    0 0 14px rgba(255, 116, 57, 0.5);
+}
+/* Selected (open in the detail panel) → pink ring. */
+.selected {
+  border-color: #ff4bed;
+  box-shadow:
+    0 0 0 1px rgba(255, 75, 237, 0.5),
+    0 0 14px rgba(255, 75, 237, 0.45);
+}
+.incompatible {
+  filter: grayscale(0.75) brightness(0.62);
+}
+
+/* Top-left category flap (Unity FlapBackground + CategoryImage): a rounded corner tab
+   carrying the body-part glyph. */
+.flap {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-bottom-right-radius: 10px;
+  background: rgba(12, 8, 20, 0.55);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+/* Equipped indicator dot (top-right) — hidden on hover, where the UNEQUIP pill takes over. */
+.equippedDot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #ff7439;
+  box-shadow: 0 0 0 2px rgba(12, 8, 20, 0.55);
+}
+.card:hover .equippedDot {
+  opacity: 0;
+}
+
+.thumb {
+  width: 88%;
+  height: 88%;
+  object-fit: contain;
+}
+.placeholder {
+  width: 52%;
+  height: 52%;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+/* NEW (red, bottom-left) + ×count (dark, bottom-right) badges. */
+.new {
+  position: absolute;
+  left: 7px;
+  bottom: 7px;
+  padding: 2px 7px;
+  border-radius: 7px;
+  background: #ff2d55;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+.count {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  padding: 2px 7px;
+  border-radius: 7px;
+  background: rgba(20, 15, 30, 0.7);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* Hover action pill (EQUIP / UNEQUIP) — replaces the badges row on hover. */
+.action {
+  position: absolute;
+  left: 7px;
+  right: 7px;
+  bottom: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  border-radius: 9px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity var(--dur-fast) ease,
+    transform var(--dur-fast) ease;
+  pointer-events: none;
+}
+.card:hover .action {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+  cursor: pointer;
+}
+.equip {
+  background: #ff2d55;
+}
+.unequip {
+  background: rgba(18, 13, 28, 0.92);
+}
+
+/* Rarity palette — main (--rm) + light sheen (--rl). Matches the rarity tokens /
+   emote-wheel slots so colours stay consistent app-wide. */
+.base {
+  --rm: #a09ba8;
+  --rl: #cfcdd4;
+}
+.common {
+  --rm: #73d3d3;
+  --rl: #b5fff6;
+}
+.uncommon {
+  --rm: #ff8362;
+  --rl: #ffe0c8;
+}
+.rare {
+  --rm: #34ce76;
+  --rl: #9bf3c2;
+}
+.epic {
+  --rm: #438fff;
+  --rl: #a9d4ff;
+}
+.legendary {
+  --rm: #b05dff;
+  --rl: #e0c0ff;
+}
+.mythic {
+  --rm: #ff4bed;
+  --rl: #ffb0f3;
+}
+.unique {
+  --rm: #ffc647;
+  --rl: #ffe6a8;
+}
+.exotic {
+  --rm: #a5e242;
+  --rl: #d6f59a;
+}
