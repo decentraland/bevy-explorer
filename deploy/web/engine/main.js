@@ -3,11 +3,13 @@
 
 import { initEngine, start, gpu_cache_hash, initGpuCache } from "./engine.js";
 
-// Service Worker registration
+// Service Worker registration. The worker lives at the PACKAGE ROOT (one directory up from this
+// engine/ page) so its scope covers the whole site — the React HUD page registers the same script,
+// and both pages get the COOP/COEP (credentialless) rewrite from a single registration.
 if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
         const basePath = window.location.pathname.replace(/\/$/, ''); // removes trailing slash if present
-        const serviceWorkerPath = new URL(`${basePath}/service_worker.js`, window.location.origin);
+        const serviceWorkerPath = new URL(`${basePath}/../service_worker.js`, window.location.origin);
 
         navigator.serviceWorker
             .register(serviceWorkerPath)

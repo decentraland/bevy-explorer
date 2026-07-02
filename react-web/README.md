@@ -9,12 +9,12 @@ The UI being ported lives in the separate **`bevy-ui-scene`** repo
 (`scene/src/ui-classes`, `scene/src/bevy-api`); the `scene/...` paths below refer
 to that repo.
 
-> **What ships vs. what doesn't.** The React HUD *app* (`react-web/src`) sits at the repo root, NOT
-> under `deploy/web` — it's excluded from the `@dcl-regenesislabs/bevy-explorer-web` npm publish and the
-> cargo/wasm build. Never move the **app** under `deploy/web` — it would bloat the package. The **bridge
-> scene**, however, *is* now shipped in production: `npm run bundle:scene` exports it into
-> `deploy/web/bridge-scene/static` (git-ignored, regenerated) so the engine publish carries it, and
-> `deploy/web/ui.js`'s `DEFAULT_SYSTEMSCENE` loads it same-origin. See **Deploy (bundled)** below.
+> **This app IS production.** CI builds it (`vite build`) into `deploy/web/` — the tree published
+> as `@dcl-regenesislabs/bevy-explorer-web` and served at the explorer URL. The React page owns the
+> root `index.html`; the old engine boot page lives under `deploy/web/engine/` and loads in a
+> same-origin iframe; the bridge scene ships at `deploy/web/bridge-scene/static`. Only the
+> *sources* stay here at the repo root — build artifacts in `deploy/web` are git-ignored.
+> See **Deploy (production)** below.
 
 ## Why
 
@@ -68,27 +68,44 @@ scene). React login → **Explore as Guest** (`/login_guest`) → scene-loading 
 **Mock mode** — `http://localhost:5188/?mock=1`: full UI (login + scene-loading) on
 a fake bridge, no engine. Add `&previousLogin=1` for the returning-user flow.
 
-## Deploy (bundled, no GitHub Action)
+## Deploy (production)
 
-The bridge scene ships **inside** the engine web bundle — no GitHub Pages, no Action, no external
-host. `npm run bundle` (in `bridge-scene`) builds it, exports a static realm with a **relative**
-`baseUrl` (`/bridge-scene/static/`) so it's origin-portable, and copies it into
-`deploy/web/bridge-scene/static`. It then rides along in the existing
-`@dcl-regenesislabs/bevy-explorer-web` publish, and `deploy/web/ui.js`'s `DEFAULT_SYSTEMSCENE`
-resolves it same-origin (`<origin>/bridge-scene/static/BevyExplorerUI`).
+Everything ships in the one `@dcl-regenesislabs/bevy-explorer-web` package (the `deploy/web`
+tree), published by CI's **Build and Deploy Web** job on merge to `main` and served at the
+explorer URL (e.g. `decentraland.zone/bevy-web`, assets on the versioned CDN path). Layout:
+
+| Path in `deploy/web` | What | Built by |
+|---|---|---|
+| `index.html` + `assets/` … | **this React app** (the production page) | `vite build` (CI) |
+| `engine/` | the engine boot page + `pkg/` (wasm) | `wasm-pack` (CI) |
+| `bridge-scene/static/` | the exported bridge-scene realm | `npm run bundle` (CI) |
+| `service_worker.js` | shared root-scope SW: rewrites COEP → `credentialless` | tracked |
+
+**URL rules (learned the hard way):**
+- The page is served at a **no-trailing-slash entry** (`/bevy-web`) while assets live on the
+  **versioned CDN** — so the React build uses an *absolute* base (`PUBLIC_URL`, from
+  `deploy/web/scripts/prebuild.js` → `package.json.homepage`) and never `./`-relative refs
+  in `index.html`.
+- The **engine iframe + bridge scene + service worker must stay same-origin** with the page
+  (BroadcastChannel / `contentWindow`): they resolve against `PAGE_DIR`
+  (`src/lib/publicUrl.ts`), *never* against the CDN base.
 
 ```bash
-npm run bundle:scene                          # from the repo root (convenience wrapper)
-# or: cd react-web/bridge-scene && npm run bundle   # build → export-static → copy into deploy/web
+# CI does, in order (see .github/workflows/ci.yml build-deploy-web):
+wasm-pack build --out-dir deploy/web/engine/pkg …   # engine wasm
+npm i                 # in deploy/web — prebuild.js stamps PUBLIC_URL/homepage
+PUBLIC_URL=<homepage> npm run build                 # in react-web — the HUD → deploy/web
+npm run bundle        # in react-web/bridge-scene — realm → deploy/web/bridge-scene/static
+# then oddish publishes deploy/web → npm + CDN
 ```
 
-> Run `npm run bundle` before publishing the web package (the output is git-ignored, regenerated).
-> The comms adapter is a real `ws-room` (NOT `comms:offline`, which would stop the relay).
+Local prod-shape check: build the three pieces, then `npx serve deploy/web` (serve.json carries
+the COOP/COEP headers) and open `http://localhost:3000`.
 
-**Test the bundle in dev** — append `?bundled=1` to the app URL. Instead of the live preview realm
-(`sdk-commands start` on :8100), the engine loads the exported static bundle vite serves from
-`/bridge-scene/static` — i.e. exactly what ships in prod. (No `?bundled` → live preview, fast
-iteration with scene hot-reload.)
+**Test the bundled scene in dev** — append `?bundled=1` to the app URL. Instead of the live
+preview realm (`sdk-commands start` on :8100), the engine loads the exported static bundle vite
+serves from `/bridge-scene/static` — i.e. exactly what ships in prod. (No `?bundled` → live
+preview, fast iteration with scene hot-reload.)
 
 ## Testing
 

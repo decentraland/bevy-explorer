@@ -89,16 +89,25 @@ function coiHeadersExceptAuth(): Plugin {
   }
 }
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // Production is served from a VERSIONED CDN subpath (cdn.decentraland.org/<pkg>/<version>/ —
+  // see deploy/web/scripts/prebuild.js), so built asset URLs can't be origin-absolute. CI passes
+  // PUBLIC_URL for an absolute CDN base; otherwise './' (relative → works from any path, e.g. a
+  // local `serve deploy/web`). Dev keeps '/'.
+  base: command === 'build' ? (process.env.PUBLIC_URL ? `${process.env.PUBLIC_URL}/` : './') : '/',
   plugins: [
     react(),
     coiHeadersExceptAuth(),
-    serveStatic('/engine/', '../deploy/web'),
+    serveStatic('/engine/', '../deploy/web/engine'),
     // Our headless super-user bridge scene (exported deployable). Pointed at by
     // the engine's systemScene so it loads as the trusted --ui scene.
     serveStatic('/bridge-scene/static/', './bridge-scene/static')
   ],
   build: {
+    // The app IS the production page: build straight into the npm-published deploy/web tree,
+    // beside engine/ + bridge-scene/ (emptyOutDir would wipe them).
+    outDir: '../deploy/web',
+    emptyOutDir: false,
     // The only chunk over the default 500KB is the isolated emoji dataset (a cached data blob,
     // not executable HUD code). Raise the limit so the build stays clean; revisit if a CODE chunk
     // approaches it.
@@ -146,4 +155,4 @@ export default defineConfig({
     }
   },
   preview: { headers: crossOriginIsolation }
-})
+}))

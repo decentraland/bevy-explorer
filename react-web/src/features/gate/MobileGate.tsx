@@ -6,6 +6,7 @@
 // duplicated there (the engine loader gates before react-web mounts, so it can't import from here).
 
 import { mobilePlatform } from '../../lib/isMobile'
+import { publicUrl } from '../../lib/publicUrl'
 import { Button } from '../../design'
 import styles from './MobileGate.module.css'
 
@@ -66,7 +67,7 @@ export function MobileGate({ reason = 'mobile' }: { reason?: 'mobile' | 'browser
     return (
       <div className={styles.root}>
         <div className={styles.card}>
-          <img className={styles.logo} src="/assets/logo.png" alt="" draggable={false} />
+          <img className={styles.logo} src={publicUrl('assets/logo.png')} alt="" draggable={false} />
           <h1 className={styles.title}>Browser Not Supported</h1>
           <p className={styles.subtitle}>
             Decentraland Web requires <strong>Google Chrome</strong> on desktop to run.
@@ -93,7 +94,7 @@ export function MobileGate({ reason = 'mobile' }: { reason?: 'mobile' | 'browser
   return (
     <div className={styles.root}>
       <div className={styles.card}>
-        <img className={styles.logo} src="/assets/logo.png" alt="" draggable={false} />
+        <img className={styles.logo} src={publicUrl('assets/logo.png')} alt="" draggable={false} />
         <h1 className={styles.title}>Decentraland</h1>
         <p className={styles.subtitle}>
           This experience isn’t available on mobile browsers. Download the app to explore:

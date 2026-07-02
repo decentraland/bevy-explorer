@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MainMenuShell } from '../menu/MainMenuShell'
+import { publicUrl } from '../../lib/publicUrl'
 import type { MapState, ProfileState } from '../session/useEngineSession'
 import { WorldVisitModal } from '../../components/WorldVisitModal'
 import styles from './MapPage.module.css'
@@ -435,7 +436,7 @@ export function MapPage({
               <div className={styles.results}>
                 {worldHits.map((w) => (
                   <button key={w.world_name} type="button" className={styles.result} onClick={() => setConfirmWorld(w)}>
-                    <img className={styles.resultWorldIcon} src="/assets/map/world.png" alt="" />
+                    <img className={styles.resultWorldIcon} src={publicUrl('assets/map/world.png')} alt="" />
                     <div className={styles.resultBody}>
                       <div className={styles.resultTitle}>{w.title || w.world_name}</div>
                       <div className={styles.resultSub}>{w.world_name}</div>

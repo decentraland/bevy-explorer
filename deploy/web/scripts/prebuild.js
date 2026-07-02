@@ -27,11 +27,14 @@ fs.writeFileSync(
 
 fs.writeFileSync("./package.json", JSON.stringify(packageJson, null, 2));
 
-// Update HTML file to include PUBLIC_URL in script src
-const htmlPath = "index.html";
+// Update the ENGINE page to include PUBLIC_URL in script src. The engine now lives under
+// engine/ (the React app owns the root index.html — built by Vite with the base baked in),
+// so the engine page's PUBLIC_URL gets the /engine suffix: engine.js resolves pkg/ from it.
+const htmlPath = "engine/index.html";
 if (fs.existsSync(htmlPath)) {
   let htmlContent = fs.readFileSync(htmlPath).toString();
-  const publicUrl = ENV_CONTENT["PUBLIC_URL"];
+  const rootUrl = ENV_CONTENT["PUBLIC_URL"];
+  const publicUrl = rootUrl ? `${rootUrl}/engine` : "";
   const scriptPath = publicUrl ? `${publicUrl}/main.js` : "main.js";
 
   // Inject PUBLIC_URL as a global variable
@@ -41,16 +44,17 @@ if (fs.existsSync(htmlPath)) {
     `  ${publicUrlScript}\n  </head>`
   );
 
-  // Replace the main.js script src
+  // Replace the main.js script src. The tag is emitted via document.write, so the closing tag is
+  // escaped in source (`<\/script>`) — match both forms and preserve whichever was there.
   htmlContent = htmlContent.replace(
-    /<script type="module" src="main\.js"><\/script>/,
-    `<script type="module" src="${scriptPath}"></script>`
+    /<script type="module" src="main\.js"><(\\?)\/script>/,
+    `<script type="module" src="${scriptPath}"><$1/script>`
   );
 
   fs.writeFileSync(htmlPath, htmlContent);
   console.log(`Updated ${htmlPath} with script path: ${scriptPath}`);
 } else {
-  console.error(`index.html not found`);
+  console.error(`${htmlPath} not found`);
 }
 
 function getPublicUrls() {

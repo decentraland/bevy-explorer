@@ -255,13 +255,28 @@ jobs:
         run: sudo apt install -y --no-install-recommends clang curl
       - name: Build WASM package
         run: |
-          wasm-pack build --target web --out-dir ./deploy/web/pkg --no-default-features --features="livekit,social"
-          rm -f ./deploy/web/pkg/.gitignore
-          WASM_SIZE=$(wc -c < ./deploy/web/pkg/webgpu_build_bg.wasm)
-          echo "{\"wasmSize\":${WASM_SIZE}}" > ./deploy/web/pkg/manifest.json
+          wasm-pack build --target web --out-dir ./deploy/web/engine/pkg --no-default-features --features="livekit,social"
+          rm -f ./deploy/web/engine/pkg/.gitignore
+          WASM_SIZE=$(wc -c < ./deploy/web/engine/pkg/webgpu_build_bg.wasm)
+          echo "{\"wasmSize\":${WASM_SIZE}}" > ./deploy/web/engine/pkg/manifest.json
       - name: Install
         run: npm i
         working-directory: deploy/web
+      # The React HUD is the production page: build it into deploy/web root (vite outDir).
+      # PUBLIC_URL = the versioned CDN base prebuild.js just wrote into package.json homepage —
+      # index.html asset refs must be ABSOLUTE because the entry URL (decentraland.zone/bevy-web)
+      # has no trailing slash, so relative refs would resolve against the origin root.
+      - name: Build react-web HUD
+        run: |
+          export PUBLIC_URL=$(node -p "require('./deploy/web/package.json').homepage || ''")
+          echo "PUBLIC_URL=$PUBLIC_URL"
+          npm ci --prefix react-web
+          npm run build --prefix react-web
+      # The headless bridge scene the engine loads as its --ui systemScene, served from the
+      # package at bridge-scene/static (same-origin with the engine iframe).
+      - name: Bundle bridge scene
+        run: npm ci && npm run bundle
+        working-directory: react-web/bridge-scene
       - name: Publish
         if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'release'
         uses: decentraland/oddish-action@0074f2d535c43b5c83f136525304a6277166d77f # @master
