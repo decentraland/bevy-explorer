@@ -282,6 +282,8 @@ impl Broadcast for Emote {
                 emote_id: self.urn.clone(),
                 duration_ms: self.duration_ms,
                 player_state: Some(state),
+                // Emote animation bone mask (upstream field); bevy doesn't drive bone masking yet.
+                mask: None,
             })
         };
         Some(PulseFrame {

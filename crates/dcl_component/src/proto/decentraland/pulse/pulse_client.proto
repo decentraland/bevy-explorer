@@ -18,6 +18,9 @@ message PlayerInitialState {
   optional uint32 emote_duration_ms = 3;
   // Indicates how many milliseconds ago the emote was started
   optional uint32 emote_start_offset_ms = 4;
+  // Non-empty realm identifier. Rejected if empty.
+  string realm = 5;
+  optional int32 emote_mask = 6;
 }
 
 // Similarly to the LiveKit pipeline, a peer announces the version of its profile but
@@ -44,6 +47,7 @@ message EmoteStart {
   string emote_id = 1;
   optional uint32 duration_ms = 2;
   PlayerState player_state = 3;
+  optional int32 mask = 4;
 }
 
 // Client → Server. Client requests to stop a looping emote.

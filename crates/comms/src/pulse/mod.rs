@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 
 use bevy::math::Vec3;
-use dcl_component::proto_components::{common::Vector3, kernel::comms::rfc4, pulse};
+use dcl_component::proto_components::{kernel::comms::rfc4, pulse};
 use ethers_core::types::Address;
 
 pub mod plugin;
@@ -157,11 +157,126 @@ pub struct PulseCtx<'a> {
 }
 
 /// Per-subject baseline. Pulse sends field-masked deltas against the last sequence we acked, so we
-/// keep the last full [`pulse::PlayerState`] and overlay deltas onto it.
+/// keep the last reconstructed full state and overlay deltas onto it.
 struct Subject {
     wallet: Address,
     last_seq: u32,
-    baseline: pulse::PlayerState,
+    baseline: SubjectState,
+}
+
+/// A subject's reconstructed full state, in floats. Both full [`pulse::PlayerState`] snapshots and
+/// field-masked deltas dequantize into this — each field via its own proto-derived accessor — so the
+/// baseline is independent of the wire quantization grid (a full state and a delta needn't share
+/// identical `{min,max,bits}` for a field). `to_movement` then reads it directly.
+#[derive(Debug, Clone, Default)]
+struct SubjectState {
+    parcel_index: i32,
+    /// In-parcel local position (world altitude in `y`); parcel-decoded to world in `to_movement`.
+    position: Vec3,
+    velocity: Vec3,
+    rotation_y: f32,
+    movement_blend: f32,
+    slide_blend: f32,
+    head_yaw: Option<f32>,
+    head_pitch: Option<f32>,
+    state_flags: u32,
+    /// Raw `GlideState` discriminant (shared verbatim with rfc4's identical enum).
+    glide_state: i32,
+    jump_count: i32,
+    /// Absolute world point-at target; only meaningful when `POINTING_AT` is set in `state_flags`.
+    point_at: Vec3,
+}
+
+impl SubjectState {
+    /// Dequantize a wire full state into the float baseline.
+    fn from_player_state(s: &pulse::PlayerState) -> Self {
+        Self {
+            parcel_index: s.parcel_index,
+            position: Vec3::new(
+                s.position_x_dequantized(),
+                s.position_y_dequantized(),
+                s.position_z_dequantized(),
+            ),
+            velocity: Vec3::new(
+                s.velocity_x_dequantized(),
+                s.velocity_y_dequantized(),
+                s.velocity_z_dequantized(),
+            ),
+            rotation_y: s.rotation_y_dequantized(),
+            movement_blend: s.movement_blend_dequantized(),
+            slide_blend: s.slide_blend_dequantized(),
+            head_yaw: s.head_yaw_dequantized(),
+            head_pitch: s.head_pitch_dequantized(),
+            state_flags: s.state_flags,
+            glide_state: s.glide_state,
+            jump_count: s.jump_count,
+            point_at: Vec3::new(
+                s.point_at_x_dequantized().unwrap_or_default(),
+                s.point_at_y_dequantized().unwrap_or_default(),
+                s.point_at_z_dequantized().unwrap_or_default(),
+            ),
+        }
+    }
+
+    /// Overlay a field-masked delta. Present fields replace (dequantized via the delta's own
+    /// accessors); absent fields carry forward. Discrete fields (parcel, flags, glide, jump) are
+    /// plain; position/velocity/head/point-at are quantized.
+    fn apply_delta(&mut self, delta: &pulse::PlayerStateDeltaTier0) {
+        if let Some(parcel) = delta.parcel_index {
+            self.parcel_index = parcel;
+        }
+        if let Some(x) = delta.position_x_dequantized() {
+            self.position.x = x;
+        }
+        if let Some(y) = delta.position_y_dequantized() {
+            self.position.y = y;
+        }
+        if let Some(z) = delta.position_z_dequantized() {
+            self.position.z = z;
+        }
+        if let Some(x) = delta.velocity_x_dequantized() {
+            self.velocity.x = x;
+        }
+        if let Some(y) = delta.velocity_y_dequantized() {
+            self.velocity.y = y;
+        }
+        if let Some(z) = delta.velocity_z_dequantized() {
+            self.velocity.z = z;
+        }
+        if let Some(rotation_y) = delta.rotation_y_dequantized() {
+            self.rotation_y = rotation_y;
+        }
+        if let Some(movement_blend) = delta.movement_blend_dequantized() {
+            self.movement_blend = movement_blend;
+        }
+        if let Some(slide_blend) = delta.slide_blend_dequantized() {
+            self.slide_blend = slide_blend;
+        }
+        if let Some(head_yaw) = delta.head_yaw_dequantized() {
+            self.head_yaw = Some(head_yaw);
+        }
+        if let Some(head_pitch) = delta.head_pitch_dequantized() {
+            self.head_pitch = Some(head_pitch);
+        }
+        if let Some(state_flags) = delta.state_flags {
+            self.state_flags = state_flags;
+        }
+        if let Some(glide_state) = delta.glide_state {
+            self.glide_state = glide_state;
+        }
+        if let Some(jump_count) = delta.jump_count {
+            self.jump_count = jump_count;
+        }
+        if let Some(x) = delta.point_at_x_dequantized() {
+            self.point_at.x = x;
+        }
+        if let Some(y) = delta.point_at_y_dequantized() {
+            self.point_at.y = y;
+        }
+        if let Some(z) = delta.point_at_z_dequantized() {
+            self.point_at.z = z;
+        }
+    }
 }
 
 /// Owns all Pulse-specific sliding-window state. Single-threaded; lives inside the Pulse transport.
@@ -256,13 +371,14 @@ impl PulseDecoder {
             return Vec::new();
         };
 
-        let movement = self.to_movement(&state, full.server_tick);
+        let baseline = SubjectState::from_player_state(&state);
+        let movement = self.to_movement(&baseline, full.server_tick);
         self.subjects.insert(
             full.subject_id,
             Subject {
                 wallet: address,
                 last_seq: full.sequence,
-                baseline: state,
+                baseline,
             },
         );
 
@@ -306,7 +422,7 @@ impl PulseDecoder {
             return Vec::new();
         };
 
-        subject.baseline = state;
+        subject.baseline = SubjectState::from_player_state(&state);
         subject.last_seq = sequence;
         let address = subject.wallet;
         let movement = self.to_movement_for(subject_id, server_tick);
@@ -340,7 +456,7 @@ impl PulseDecoder {
             })];
         }
 
-        apply_delta(&mut subject.baseline, &delta);
+        subject.baseline.apply_delta(&delta);
         subject.last_seq = delta.new_seq;
         let address = subject.wallet;
         let mut movement = self.to_movement_for(delta.subject_id, delta.server_tick);
@@ -375,16 +491,15 @@ impl PulseDecoder {
         self.to_movement(&self.subjects[&subject_id].baseline, server_tick)
     }
 
-    /// Reconstruct an `rfc4::Movement` from a full Pulse `PlayerState`. Position is parcel-decoded
+    /// Reconstruct an `rfc4::Movement` from a subject's float baseline. Position is parcel-decoded
     /// to world; `state_flags` is unpacked into the rfc4 bool fields; the animation rider is left
     /// empty (it arrives over LiveKit).
-    fn to_movement(&self, state: &pulse::PlayerState, server_tick: u32) -> rfc4::Movement {
-        let local = state.position.unwrap_or_default();
+    fn to_movement(&self, state: &SubjectState, server_tick: u32) -> rfc4::Movement {
         let world = self
             .grid
-            .decode_to_world(state.parcel_index, Vec3::new(local.x, local.y, local.z));
-        let velocity = state.velocity.unwrap_or_default();
-        let point_at = state.point_at.unwrap_or_default();
+            .decode_to_world(state.parcel_index, state.position);
+        let velocity = state.velocity;
+        let point_at = state.point_at;
         let flags = state.state_flags;
 
         rfc4::Movement {
@@ -471,106 +586,36 @@ pub(crate) fn from_movement(
         pulse::PlayerAnimationFlags::PointingAt,
     );
 
+    use pulse::PlayerState as P;
     pulse::PlayerState {
         parcel_index,
-        position: Some(Vector3 {
-            x: local.x,
-            y: local.y,
-            z: local.z,
-        }),
-        velocity: Some(Vector3 {
-            x: movement.velocity_x,
-            y: movement.velocity_y,
-            z: movement.velocity_z,
-        }),
-        rotation_y: movement.rotation_y,
-        movement_blend: movement.movement_blend_value,
-        slide_blend: movement.slide_blend_value,
-        head_yaw: movement.head_ik_yaw_enabled.then_some(movement.head_yaw),
+        position_x: P::position_x_quantized(local.x),
+        position_y: P::position_y_quantized(local.y),
+        position_z: P::position_z_quantized(local.z),
+        velocity_x: P::velocity_x_quantized(movement.velocity_x),
+        velocity_y: P::velocity_y_quantized(movement.velocity_y),
+        velocity_z: P::velocity_z_quantized(movement.velocity_z),
+        rotation_y: P::rotation_y_quantized(movement.rotation_y),
+        movement_blend: P::movement_blend_quantized(movement.movement_blend_value),
+        slide_blend: P::slide_blend_quantized(movement.slide_blend_value),
+        head_yaw: movement
+            .head_ik_yaw_enabled
+            .then(|| P::head_yaw_quantized(movement.head_yaw)),
         head_pitch: movement
             .head_ik_pitch_enabled
-            .then_some(movement.head_pitch),
+            .then(|| P::head_pitch_quantized(movement.head_pitch)),
         state_flags,
         glide_state: movement.glide_state,
         jump_count: movement.jump_count,
-        point_at: movement.is_pointing_at.then_some(Vector3 {
-            x: movement.point_at_x,
-            y: movement.point_at_y,
-            z: movement.point_at_z,
-        }),
-    }
-}
-
-/// Overlay a field-masked delta onto a baseline full state. Present fields replace; absent fields
-/// are carried forward. Position/velocity/head are quantized (dequantized via generated
-/// accessors); discrete fields (parcel, flags, glide, jump) are plain.
-fn apply_delta(baseline: &mut pulse::PlayerState, delta: &pulse::PlayerStateDeltaTier0) {
-    if let Some(parcel) = delta.parcel_index {
-        baseline.parcel_index = parcel;
-    }
-
-    {
-        let position = baseline.position.get_or_insert_with(Default::default);
-        if let Some(x) = delta.position_x_dequantized() {
-            position.x = x;
-        }
-        if let Some(y) = delta.position_y_dequantized() {
-            position.y = y;
-        }
-        if let Some(z) = delta.position_z_dequantized() {
-            position.z = z;
-        }
-    }
-
-    {
-        let velocity = baseline.velocity.get_or_insert_with(Default::default);
-        if let Some(x) = delta.velocity_x_dequantized() {
-            velocity.x = x;
-        }
-        if let Some(y) = delta.velocity_y_dequantized() {
-            velocity.y = y;
-        }
-        if let Some(z) = delta.velocity_z_dequantized() {
-            velocity.z = z;
-        }
-    }
-
-    if let Some(rotation_y) = delta.rotation_y_dequantized() {
-        baseline.rotation_y = rotation_y;
-    }
-    if let Some(movement_blend) = delta.movement_blend_dequantized() {
-        baseline.movement_blend = movement_blend;
-    }
-    if let Some(slide_blend) = delta.slide_blend_dequantized() {
-        baseline.slide_blend = slide_blend;
-    }
-    if let Some(head_yaw) = delta.head_yaw_dequantized() {
-        baseline.head_yaw = Some(head_yaw);
-    }
-    if let Some(head_pitch) = delta.head_pitch_dequantized() {
-        baseline.head_pitch = Some(head_pitch);
-    }
-    if let Some(state_flags) = delta.state_flags {
-        baseline.state_flags = state_flags;
-    }
-    if let Some(glide_state) = delta.glide_state {
-        baseline.glide_state = glide_state;
-    }
-    if let Some(jump_count) = delta.jump_count {
-        baseline.jump_count = jump_count;
-    }
-
-    if delta.point_at_x.is_some() || delta.point_at_y.is_some() || delta.point_at_z.is_some() {
-        let point_at = baseline.point_at.get_or_insert_with(Default::default);
-        if let Some(x) = delta.point_at_x_dequantized() {
-            point_at.x = x;
-        }
-        if let Some(y) = delta.point_at_y_dequantized() {
-            point_at.y = y;
-        }
-        if let Some(z) = delta.point_at_z_dequantized() {
-            point_at.z = z;
-        }
+        point_at_x: movement
+            .is_pointing_at
+            .then(|| P::point_at_x_quantized(movement.point_at_x)),
+        point_at_y: movement
+            .is_pointing_at
+            .then(|| P::point_at_y_quantized(movement.point_at_y)),
+        point_at_z: movement
+            .is_pointing_at
+            .then(|| P::point_at_z_quantized(movement.point_at_z)),
     }
 }
 
