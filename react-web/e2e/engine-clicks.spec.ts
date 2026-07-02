@@ -60,7 +60,7 @@ test.describe('react HUD ↔ engine — in-panel clicks (console-verified)', () 
     await sidebar(page, 'Emotes')
     await expectBridge(page, 'page', 'emotes') // wheel populated
     // Slots are numbered 1..9,0; slot "1" holds a base emote for a fresh guest.
-    await page.getByText('1', { exact: true }).first().click()
+    await page.getByRole('button', { name: /^Emote slot 1/ }).click()
     await expectBridge(page, 'scene', 'triggerEmote')
   })
 

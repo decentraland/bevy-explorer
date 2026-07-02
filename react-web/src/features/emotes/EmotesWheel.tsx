@@ -58,6 +58,8 @@ export function EmotesWheel({
           return (
             <div
               key={num}
+              role="button"
+              aria-label={`Emote slot ${num}${emote ? `: ${emote.name}` : ''}`}
               className={`${styles.slotPos} ${hover === num ? styles.slotHover : ''} ${emote ? '' : styles.slotEmpty}`.trim()}
               style={{ left: `${cx}px`, top: `${cy}px` }}
               onMouseEnter={() => emote && setHover(num)}

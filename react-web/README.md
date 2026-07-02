@@ -144,5 +144,5 @@ npm run test:e2e    # tier 2 (real engine; local, needs a GPU)
   react-ecs flat UI, keep only 3D/world-space (nametags, pointer events). Hybrid:
   SDK7 keeps 3D + bridges; React renders all flat UI.
 - [ ] Port remaining slices (chat, menu/settings, profile, map, friends, …).
-- [ ] **Integration (Approach A)** — mount React in the explorer's own
+- [ ] **Integration (Approach A)** — see `docs/followups.md` for the full post-launch list — mount React in the explorer's own
   `deploy/web/index.html` (no iframe); transport-agnostic client unchanged.
