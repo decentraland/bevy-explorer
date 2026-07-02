@@ -119,6 +119,48 @@ fn in_sequence_delta_applies_and_dequantizes() {
 }
 
 #[test]
+fn head_angles_round_trip_signed() {
+    // A left/up look: negative yaw and pitch. Head angles quantize over the unsigned [0, 360]
+    // range, so without the sender's `rem_euclid` wrap + receiver's `signed_angle` unwrap these
+    // would clamp to 0 — only right/down (positive) would survive.
+    let grid = PulseParcelGrid::default();
+    let movement = rfc4::Movement {
+        position_x: 161.0,
+        position_y: 2.0,
+        position_z: 323.0,
+        head_ik_yaw_enabled: true,
+        head_ik_pitch_enabled: true,
+        head_yaw: -30.0,
+        head_pitch: -20.0,
+        ..Default::default()
+    };
+    let state = from_movement(&movement, &grid);
+
+    let mut decoder = PulseDecoder::new(grid);
+    let out = only_movement(decoder.handle(server_msg(
+        pulse::server_message::Message::PlayerJoined(pulse::PlayerJoined {
+            user_id: WALLET.to_string(),
+            profile_version: 1,
+            state: Some(pulse::PlayerStateFull {
+                subject_id: SUBJECT,
+                sequence: 1,
+                server_tick: 1000,
+                state: Some(state),
+            }),
+        }),
+    )));
+
+    assert!(out.head_ik_yaw_enabled && out.head_ik_pitch_enabled);
+    // 7 bits over 360° ≈ 2.83°/step.
+    assert!((out.head_yaw - (-30.0)).abs() < 3.0, "yaw {}", out.head_yaw);
+    assert!(
+        (out.head_pitch - (-20.0)).abs() < 3.0,
+        "pitch {}",
+        out.head_pitch
+    );
+}
+
+#[test]
 fn sequence_gap_requests_resync_without_applying() {
     let mut decoder = PulseDecoder::new(PulseParcelGrid::default());
     decoder.handle(server_msg(joined(5, (1.0, 2.0, 3.0), 0)));
