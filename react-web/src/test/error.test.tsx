@@ -5,11 +5,10 @@ import { EngineErrorModal } from '../features/error/EngineErrorModal'
 import { ErrorBoundary } from '../features/error/ErrorBoundary'
 
 describe('EngineErrorModal', () => {
-  it('shows the message + Reload/Copy, calls onReload', async () => {
+  it('shows the crash message + Reload, calls onReload', async () => {
     const onReload = vi.fn()
     render(<EngineErrorModal error={{ message: "can't init wasm queue", source: 'launch' }} onReload={onReload} />)
     expect(screen.getByText(/can't init wasm queue/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Copy details/i })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /Reload/i }))
     expect(onReload).toHaveBeenCalledTimes(1)
   })
@@ -21,6 +20,22 @@ describe('EngineErrorModal', () => {
     expect(screen.queryByRole('button', { name: /Dismiss/i })).toBeNull()
     rerender(<EngineErrorModal error={{ message: 'boom', source: 'runtime' }} onReload={vi.fn()} onDismiss={vi.fn()} />)
     expect(screen.getByRole('button', { name: /Dismiss/i })).toBeInTheDocument()
+  })
+
+  it('realm not-found: OK only — no Reload, no raw detail', async () => {
+    const onDismiss = vi.fn()
+    render(
+      <EngineErrorModal
+        error={{ message: 'The world "nope.dcl.eth" was not found (404).', source: 'realm' }}
+        onReload={vi.fn()}
+        onDismiss={onDismiss}
+      />
+    )
+    expect(screen.getByText(/World not found/i)).toBeInTheDocument()
+    expect(screen.queryByText(/nope\.dcl\.eth/)).toBeNull()
+    expect(screen.queryByRole('button', { name: /Reload/i })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: /^OK$/i }))
+    expect(onDismiss).toHaveBeenCalledTimes(1)
   })
 })
 
