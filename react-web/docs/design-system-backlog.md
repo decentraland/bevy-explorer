@@ -54,15 +54,29 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
     PermissionDialog. (Old: `radio-button.tsx`.)
 12. **`Skeleton`** — *new*. Only `Spinner` exists; no load placeholders for lists/cards.
     (Old: `loading-placeholder.tsx`.)
+13. **Passport — finish the sections (feature parity with unity-explorer / bevy-ui-scene)** — *feature
+    parity*. The passport has OVERVIEW/BADGES/PHOTOS tabs but is missing sections the old scene renders
+    (`bevy-ui-scene`: `ui-classes/main-hud/passport/passport-popup.tsx`). Gaps that **need new
+    bridge/protocol data:** (a) **Equipped Wearables + Emotes** of the *viewed* avatar (grid:
+    rarity-tinted card + name + rarity tag + click → marketplace) — today `Wearable` only exists for
+    your OWN backpack, not another user's passport. (b) **Richer badges** — add `category`
+    (Explorer/Collector/Creator/Socializer/Builder), `completedAt`, and in-progress `progress
+    {current,total}` to `Badge` (today just `{id,name,tier,image}`). (c) **Profile fields** `country` +
+    `sexualOrientation` in `ProfileInfo` (has the other 9). **UI-only (data mostly present):** (d)
+    Badges tab category-filter row + per-badge date / progress bar (once (b) lands). (e) Passport-header
+    **⋮ menu** (Block/Unblock · Report · Invite to Community) — reuse the world `ProfileCard`'s action
+    set. (f) Wire the **3D avatar preview** into the passport (machinery exists —
+    `setEngineViewport('avatarPreview')`, used by the Backpack) instead of the 2D snapshot, + 3D badge
+    preview on the Badges tab.
 
 ## 🟢 Low / when a feature needs it
 
-13. **`Divider`** (bespoke in ~4 places · old `bottom-border`)
-14. **`Pagination`** (unused today · old `pagination/`)
-15. **`CopyButton`** (inline in ProfileCard · old `copy-button`)
-16. **`Username`** (name + verified · old `player-name-component`)
-17. `Button` `iconLeft`/`iconRight` props + `hoverIcon` (niche · old `ButtonComponent`)
-18. **HUD state: `useEngineSession` hook prop-drilled → consider Context / a store** — *architecture,
+14. **`Divider`** (bespoke in ~4 places · old `bottom-border`)
+15. **`Pagination`** (unused today · old `pagination/`)
+16. **`CopyButton`** (inline in ProfileCard · old `copy-button`)
+17. **`Username`** (name + verified · old `player-name-component`)
+18. `Button` `iconLeft`/`iconRight` props + `hoverIcon` (niche · old `ButtonComponent`)
+19. **HUD state: `useEngineSession` hook prop-drilled → consider Context / a store** — *architecture,
     low priority*. All HUD state lives in one `useEngineSession` hook at the top of `Hud`, prop-drilled
     down; the returned `session` is a fresh object every render, so the whole HUD re-renders on any
     change. Fine at current scale (engine round-trips are the bottleneck, not React renders), so **not
@@ -74,7 +88,7 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
     test cost (harness passes props today; Context needs a provider wrapper). Recommendation: keep
     prop-drilling; add a single `SessionContext` only if drilling ergonomics annoy; memoized slices /
     store only if re-renders become a *measured* problem.
-19. **Deep-linkable / bookmarkable navigation — reflect location in the URL** — *architecture, low
+20. **Deep-linkable / bookmarkable navigation — reflect location in the URL** — *architecture, low
     priority*. Entering a scene/world (and, ideally, opening HUD surfaces like the map/backpack) should
     be **parameterized in the URL** so the state is shareable and bookmarkable: reload/paste a URL and
     land in the same realm + coords. Scope to nail down: realm/world + parcel coords (e.g.
@@ -82,7 +96,7 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
     (`pickDestination`) + `map.teleport`/`changeRealm` so URL ⇄ engine stay in sync (`popstate` → jump,
     jump → `pushState`). Deferred: needs a small router/URL-sync layer (project is router-free today).
 
-20. **Voice feedback — "who's speaking" indicator** — *feature parity, when voice chat is prioritized*.
+21. **Voice feedback — "who's speaking" indicator** — *feature parity, when voice chat is prioritized*.
     The old scene showed an **animated speaking indicator on each avatar nametag** while a nearby player
     talked (and used the local mic state for your own tag). Mechanism to port: the engine exposes a
     voice stream — `BevyApi.getVoiceStream()` yielding `{ sender_address, active }` (`MicActivation`);
@@ -94,6 +108,12 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
     list** (`chat.members`) — e.g. a pulsing mic ring. Depends on voice chat being wired end-to-end;
     today only the local `mic` toggle exists (no per-remote-speaker signal). Could yield a reusable
     `SpeakingIndicator` primitive.
+
+22. **Passport edit mode (own profile)** — *feature, own-profile only*. bevy-ui-scene lets you edit your
+    own passport in place — About Me, the info-field dropdowns, links (add/remove, up to 5), and display
+    name — then deploys the updated profile. react-web's passport is read-only today. Larger than the
+    view-parity item (#13) — needs edit inputs + a profile-deploy path over the bridge — hence separate
+    and lower priority than showing OTHER users' passports correctly.
 
 ## Not gaps (already good / ahead)
 
