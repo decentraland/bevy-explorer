@@ -1,6 +1,8 @@
-// Bumped v1 → v2 so the `activate` handler deletes the old cache once — it held stale local-preview
-// scene builds (see the localhost bypass below) that pinned the first build forever.
-const CACHE_NAME = 'ipfs-path-cache-v2';
+// MUST stay in sync with crates/image_processing/src/processor/wasm_fs.rs: the asset processor
+// reads the raw responses this worker caches and writes the processed bytes back over the same
+// key. (A one-time v2 bump to purge stale local-preview entries broke that pairing — the
+// localhost bypass below already makes stale localhost entries unreadable, so no purge needed.)
+const CACHE_NAME = 'ipfs-path-cache-v1';
 const CUSTOM_HEADER = 'X-IPFS';
 
 self.addEventListener('install', (event) => {
