@@ -48,19 +48,21 @@ fn particle_system_on_insert(
         unreachable!("Infallible query");
     };
 
-    let max_particles = particle_system.max_particles.unwrap_or(1000);
-    let rate = particle_system.rate.unwrap_or(10.);
     let active = particle_system.active.unwrap_or(true);
+    let rate = particle_system.rate.unwrap_or(10.);
+    let max_particles = particle_system.max_particles.unwrap_or(1000);
     let lifetime = particle_system.lifetime.unwrap_or(5.);
-    let initial_velocity_speed = particle_system
-        .initial_velocity_speed
-        .unwrap_or(FloatRange { start: 1., end: 1. });
+    // TODO bursts
     let gravity = particle_system.gravity.unwrap_or(0.);
     let additional_force = particle_system
         .additional_force
         .as_ref()
         .map(Vector3::abs_vec_to_vec3)
         .unwrap_or(Vec3::ZERO);
+    let initial_velocity_speed = particle_system
+        .initial_velocity_speed
+        .unwrap_or(FloatRange { start: 1., end: 1. });
+    // TODO limitVelocity
     let billboard = particle_system.billboard.unwrap_or(true);
 
     let writer = ExprWriter::new();
