@@ -695,6 +695,22 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     requestAnimationFrame(() => requestAnimationFrame(run))
     setTimeout(run, 60)
   }, [])
+  // ?position=x,y (parity with the plain engine page): skip the Places picker and launch straight
+  // at that parcel. Consumed once — after a sign-out the picker shows normally.
+  const urlPosition = useRef<Destination>(
+    (() => {
+      const raw = new URLSearchParams(location.search).get('position')
+      if (raw == null) return null
+      const [x, y] = raw.split(',').map((n) => parseInt(n.trim(), 10))
+      return Number.isFinite(x) && Number.isFinite(y) ? { kind: 'parcel', x, y } : null
+    })()
+  )
+  useEffect(() => {
+    if (!submitted || destinationPicked || urlPosition.current == null) return
+    const dest = urlPosition.current
+    urlPosition.current = null
+    pickDestination(dest)
+  }, [submitted, destinationPicked, pickDestination])
   const equipWearables = useCallback((urns: string[]) => {
     driverRef.current?.send({ kind: 'equip', urns })
     // Optimistically reflect the new equipped set so the button flips to "Unequip" immediately —

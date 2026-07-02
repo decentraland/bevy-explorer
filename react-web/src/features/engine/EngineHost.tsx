@@ -27,15 +27,37 @@ const SYSTEM_SCENE =
     ? new URL('bridge-scene/static/BevyExplorerUI', PAGE_DIR).href
     : 'http://localhost:8100'
 
+// Engine/scene params on the page URL ride through to the iframe for parity with the plain
+// engine page (?position, ?realm, ?portables, ?preview, …). The engine hands its whole query
+// string to scenes as SceneParams, so unknown keys are forwarded verbatim too. App-level params
+// stay out, and this host owns initialRealm (override with ?realm), systemScene (overridable),
+// hideLoader and manualParams — the deferred-launch flow depends on the last two.
+// Never forwarded: the app's own flags, plus the two this host always sets itself below.
+const EXCLUDED_PARAMS = new Set([
+  'mock', 'showcase', 'gate', 'nogate', 'simerror', 'bundled', 'fps', 'previousLogin',
+  'initialRealm', 'manualParams'
+])
+const engineQuery = ((): URLSearchParams => {
+  const q = new URLSearchParams()
+  for (const [k, v] of new URLSearchParams(location.search)) {
+    if (!EXCLUDED_PARAMS.has(k)) q.set(k, v)
+  }
+  q.set('initialRealm', q.get('realm') ?? REALM)
+  q.delete('realm')
+  if (!q.has('systemScene')) q.set('systemScene', SYSTEM_SCENE)
+  if (!q.has('position')) q.set('position', '0,0')
+  // hideLoader=1 suppresses the engine's built-in loading UI — React renders the only loader.
+  // manualParams=1 → the engine compiles the WASM + warms the GPU cache but does NOT auto-run the
+  // bevy app, so no realm scene loads. The host launches it (engine_run) at the user's chosen
+  // destination once they pick in the post-jump-in Places picker — avoiding a wasted Genesis load.
+  q.set('hideLoader', '1')
+  q.set('manualParams', '1')
+  return q
+})()
+
 // Trailing slash matters: the engine derives its service-worker scope + worker
 // paths from location.pathname, so it must boot at /engine/ not /engine/index.html.
-// hideLoader=1 suppresses the engine's built-in loading UI — React renders the only loader.
-// manualParams=1 → the engine compiles the WASM + warms the GPU cache but does NOT auto-run the bevy
-// app, so no realm scene loads. The host launches it (engine_run) at the user's chosen destination
-// once they pick in the post-jump-in Places picker — avoiding a wasted Genesis Plaza load.
-const ENGINE_SRC =
-  `${new URL('engine/', PAGE_DIR).href}?initialRealm=${encodeURIComponent(REALM)}` +
-  `&position=0,0&systemScene=${encodeURIComponent(SYSTEM_SCENE)}&hideLoader=1&manualParams=1`
+const ENGINE_SRC = `${new URL('engine/', PAGE_DIR).href}?${engineQuery.toString()}`
 
 export function EngineHost({ rpc }: { rpc: EngineRpc }): React.JSX.Element {
   const ref = useRef<HTMLIFrameElement>(null)
