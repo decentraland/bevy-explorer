@@ -69,6 +69,7 @@ fn gen_sdk_components() -> Result<()> {
         "avatar_locomotion_settings",
         "physics_combined_force",
         "physics_combined_impulse",
+        "particle_system",
     ];
 
     let mut sources = components
@@ -93,6 +94,7 @@ fn gen_sdk_components() -> Result<()> {
         "Vector3",
         "Color3",
         "Color4",
+        "ColorRange",
         "Quaternion",
         "TextureUnion",
         "TextureUnion.tex",
@@ -101,6 +103,7 @@ fn gen_sdk_components() -> Result<()> {
         "UiCanvasTexture",
         "Texture",
         "BorderRect",
+        "FloatRange",
     ];
 
     for component in serde_components {

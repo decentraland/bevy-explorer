@@ -1,0 +1,11 @@
+[package]
+name = "particle_system"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = { workspace = true }
+bevy_hanabi = { workspace = true, features = ["2d", "3d", "gpu_tests"] }
+
+dcl_component = { workspace = true }
+scene_runner = { workspace = true }
