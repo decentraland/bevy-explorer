@@ -404,12 +404,31 @@ pub fn broadcast<'a, B: Broadcast + Clone + 'static>(
     unreliable: bool,
     message: B,
 ) {
-    for transport in transports.filter(|t| target.includes(&t.transport_type)) {
-        let _ = transport.sender.try_send(NetworkMessage {
-            message: Box::new(message.clone()),
-            unreliable,
-            recipient: NetworkMessageRecipient::All,
-        });
+    // Avatar state that rides Pulse still has to reach the LiveKit `authoritative-server` participant
+    // (scene room / a LiveKit realm island) — it isn't a Pulse peer. So a Pulse-targeted broadcast
+    // also fans a copy out to the auth server on every LiveKit transport (a no-op where no such
+    // participant exists), targeted at the auth server alone rather than `All`: human peers already
+    // get avatar state via Pulse, so re-broadcasting to them here would only double up. Skipped when
+    // the target already includes LIVEKIT (the auth server is covered by that `All` send). This is
+    // what makes `PRIMARY` (movement, emote) reach the auth server; temporary until it speaks Pulse.
+    let auth_server_fanout =
+        target.contains(BroadcastTarget::PULSE) && !target.contains(BroadcastTarget::LIVEKIT);
+
+    for transport in transports {
+        if target.includes(&transport.transport_type) {
+            let _ = transport.sender.try_send(NetworkMessage {
+                message: Box::new(message.clone()),
+                unreliable,
+                recipient: NetworkMessageRecipient::All,
+            });
+        } else if auth_server_fanout && BroadcastTarget::LIVEKIT.includes(&transport.transport_type)
+        {
+            let _ = transport.sender.try_send(NetworkMessage {
+                message: Box::new(message.clone()),
+                unreliable,
+                recipient: NetworkMessageRecipient::AuthServer,
+            });
+        }
     }
 }
 
