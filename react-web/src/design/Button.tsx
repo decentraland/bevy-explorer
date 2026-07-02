@@ -6,23 +6,22 @@ import styles from './Button.module.css'
 type Variant = 'primary' | 'secondary' | 'ghost'
 type Size = 'sm' | 'md' | 'lg'
 
-interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+interface Common {
   variant?: Variant
   size?: Size
 }
+// Renders a <button>, or — when `href` is given — an <a> styled identically, so links that need the
+// pill CTA reuse the primitive instead of re-rolling its CSS.
+type ButtonProps =
+  | (Common & React.ButtonHTMLAttributes<HTMLButtonElement> & { href?: undefined })
+  | (Common & React.AnchorHTMLAttributes<HTMLAnchorElement> & { href: string })
 
-export function Button({
-  variant = 'primary',
-  size = 'md',
-  className = '',
-  type = 'button',
-  ...rest
-}: ButtonProps): React.JSX.Element {
-  return (
-    <button
-      type={type}
-      className={`${styles.btn} ${styles[variant]} ${styles[size]} ${className}`.trim()}
-      {...rest}
-    />
-  )
+export function Button(props: ButtonProps): React.JSX.Element {
+  const { variant = 'primary', size = 'md', className = '', ...rest } = props
+  const cls = `${styles.btn} ${styles[variant]} ${styles[size]} ${className}`.trim()
+  if (rest.href != null) {
+    return <a className={cls} {...(rest as React.AnchorHTMLAttributes<HTMLAnchorElement>)} />
+  }
+  const { type = 'button', ...btnRest } = rest as React.ButtonHTMLAttributes<HTMLButtonElement>
+  return <button type={type} className={cls} {...btnRest} />
 }

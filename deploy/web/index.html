@@ -197,6 +197,13 @@
             shown = true;
             var msg = errMessage(err);
             console.error('[crash overlay]', source || 'error', err);
+            // Bridge runtime crashes to the embedding host (react-web covers this iframe, so its own
+            // overlay would be hidden). The parent is same-origin.
+            try {
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({ type: 'bevy-crash', message: msg, source: source || 'error' }, location.origin);
+                }
+            } catch (_) {}
 
             function render() {
                 var overlay = document.createElement('div');
@@ -268,7 +275,13 @@
             missedTicks = 0;
             recoverTicks = 0;
             lastBeatCount = beatCount;
+            // Clear the stashed panic too, so a re-armed watchdog / later launch reads fresh (the
+            // panic hook below never clears it on its own).
+            window.__bevyPanic = undefined;
         }
+        // Let the embedding host (react-web, whose HUD covers this iframe) re-arm the watchdog when it
+        // dismisses a bridged runtime crash — otherwise `shown` stays true and a second crash is swallowed.
+        window.__rearmCrashWatchdog = hideCrashOverlay;
 
         // Record an error as context for the watchdog. Does NOT show the overlay —
         // only a stalled heartbeat does that. Exposed so engine.js worker handlers
@@ -278,6 +291,21 @@
             lastError = { err: err, source: source || 'error', at: nowMs() };
         }
         window.reportEngineError = recordError;
+
+        // Capture Rust panic text. The wasm panic hook prints "panicked at …" via console.error; the
+        // JS that surfaces to the host is only a generic "unreachable" trap, so we stash the readable
+        // message on window.__bevyPanic for react-web to show (it can't recover it from the throw).
+        var __origConsoleError = console.error.bind(console);
+        console.error = function () {
+            try {
+                var first = arguments[0];
+                if (typeof first === 'string' && first.indexOf('panicked at') !== -1) {
+                    window.__bevyPanic = { message: String(first), at: nowMs() };
+                    recordError(first, 'panic');
+                }
+            } catch (_) {}
+            return __origConsoleError.apply(console, arguments);
+        };
 
         // Heartbeat sink: the Rust loop calls this once per frame.
         window.__engineHeartbeat = function () {
@@ -367,6 +395,8 @@
 
         }
         body:before {
+            /* Boot-splash purple — mirrors react-web's --menu-bg. Literal hex is required: this paints
+               before any JS/CSS in the engine iframe, which never loads tokens.css. Keep in sync. */
             background: radial-gradient(
                     circle,
                     #A42CC4 0%,
@@ -488,6 +518,8 @@
         }
         .loading-overall-fill {
             height: 100%;
+            /* Progress fill — mirrors react-web's --brand → --gold. Literal hex required (iframe has no
+               tokens.css); keep in sync with tokens.css. */
             background: linear-gradient(90deg, #FF2D55, #FFBC5B);
             width: 0%;
             transition: width 0.3s ease;

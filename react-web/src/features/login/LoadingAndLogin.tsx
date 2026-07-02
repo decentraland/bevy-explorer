@@ -9,6 +9,42 @@ import { prefetchPlaces } from '../places/placesApi'
 import type { LoginFlow, LoginStatus } from '../session/useEngineSession'
 import styles from './LoadingAndLogin.module.css'
 
+// Engine boot steps surfaced from the iframe loader (deploy/web/ui.js), shown in the footer bar.
+const STEP_LABEL: Record<string, string> = {
+  download: 'Downloading engine',
+  compile: 'Compiling',
+  init: 'Initializing',
+  workers: 'Starting workers',
+  gpu: 'Preparing graphics'
+}
+
+// Footer progress bar driven by the engine's REAL weighted boot progress (the bundle's own bar is
+// hidden via hideLoader=1). Visible only while the engine is still booting; the user can pick an
+// account meanwhile, and "Jump in" / "Explore as guest" un-gate when it reaches ready.
+function BootProgress({ flow }: { flow: LoginFlow }): React.JSX.Element | null {
+  if (flow.engineReady) return null
+  const label = (flow.loadStep != null ? STEP_LABEL[flow.loadStep] : undefined) ?? 'Starting…'
+  const pct = Math.round(flow.loadProgress)
+  return (
+    <div className={styles.bootBar} role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
+      <div className={styles.bootLabel}>
+        {label} · {pct}%
+      </div>
+      <div className={styles.bootTrack}>
+        <div className={styles.bootFill} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  )
+}
+
+// Pending-CTA label: surface the real boot progress while the WASM downloads (the long phase),
+// e.g. "DOWNLOADING… 47%", then a generic "STARTING…" for the quick compile/GPU tail. The percent
+// is the overall weighted progress (download is weighted ~80%), matching the footer bar.
+function pendingLabel(flow: LoginFlow): string {
+  if (flow.loadStep === 'download') return `DOWNLOADING… ${Math.round(flow.loadProgress)}%`
+  return 'STARTING…'
+}
+
 // Circled arrow on the primary CTA (Figma "JUMP IN" button): white disc + brand arrow.
 function ArrowIcon(): React.JSX.Element {
   return (
@@ -94,6 +130,7 @@ export function LoadingAndLogin({ flow }: { flow: LoginFlow }): React.JSX.Elemen
           <div className={styles.watermark} />
           <Panel flow={flow} name={profile.name} />
           {reuse && profile.body != null && <LoginAvatar body={profile.body} />}
+          <BootProgress flow={flow} />
         </>
       )}
     </div>
@@ -120,11 +157,11 @@ function Panel({ flow, name }: { flow: LoginFlow; name?: string }): React.JSX.El
         {status === 'sign-in-or-guest' && (
           <>
             <Button variant="primary" size="lg" className={styles.cta} onClick={flow.startWithAccount} disabled={flow.busy}>
-              START WITH ACCOUNT
+              <span className={styles.label}>START WITH ACCOUNT</span>
               <ArrowIcon />
             </Button>
             <Button variant="secondary" size="lg" className={styles.ctaSecondary} onClick={flow.exploreAsGuest} disabled={flow.busy || enginePending}>
-              {enginePending ? 'STARTING…' : 'EXPLORE AS GUEST'}
+              <span className={styles.label}>{enginePending ? pendingLabel(flow) : 'EXPLORE AS GUEST'}</span>
             </Button>
           </>
         )}
@@ -132,11 +169,11 @@ function Panel({ flow, name }: { flow: LoginFlow; name?: string }): React.JSX.El
         {status === 'reuse-login-or-new' && (
           <>
             <Button variant="primary" size="lg" className={styles.cta} onClick={flow.jumpIn} disabled={flow.busy || enginePending}>
-              {enginePending ? 'STARTING…' : 'JUMP INTO DECENTRALAND'}
+              <span className={styles.label}>{enginePending ? pendingLabel(flow) : 'JUMP INTO DECENTRALAND'}</span>
               {!enginePending && <ArrowIcon />}
             </Button>
             <Button variant="secondary" size="lg" className={styles.ctaSecondary} onClick={flow.useDifferentAccount} disabled={flow.busy}>
-              USE A DIFFERENT ACCOUNT
+              <span className={styles.label}>USE A DIFFERENT ACCOUNT</span>
             </Button>
           </>
         )}

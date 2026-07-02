@@ -124,6 +124,10 @@ export default defineConfig({
     }
   },
   server: {
+    // Allow Cloudflare quick-tunnel hosts (random *.trycloudflare.com per run) so the dev server
+    // can be reached through a tunnel. The leading dot matches any subdomain; scoping to this
+    // domain keeps Vite's DNS-rebinding protection on for everything else.
+    allowedHosts: ['.trycloudflare.com'],
     // Proxy the auth dapp so it is served same-origin on localhost — sign in locally against
     // zone and the signed AuthIdentity lands in this origin's localStorage (the marketplace
     // does the same). Because it's same-origin, the auth site also accepts our localhost

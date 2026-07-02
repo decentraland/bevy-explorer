@@ -34,6 +34,8 @@ async function settle(page: Page): Promise<void> {
 async function enterWorld(page: Page): Promise<void> {
   await page.goto('/?mock=1')
   await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click()
+  // Entry now goes through the destination picker; skip it (default spawn) to reach the world HUD.
+  await page.getByRole('button', { name: /SKIP TO GENESIS PLAZA/i }).click()
   await page.waitForSelector('nav[aria-label="Main navigation"]')
 }
 
@@ -62,6 +64,29 @@ test.describe('visual — mock HUD', () => {
     await page.goto('/?mock=1&previousLogin=1')
     await settle(page)
     await expect(page).toHaveScreenshot('login-welcome.png')
+  })
+
+  // Mobile gate — the download-the-app page shown on mobile (forced with ?gate=1; desktop UA → both
+  // store buttons). Returns before the HUD, so no ?mock needed.
+  test('mobile gate', async ({ page }) => {
+    await page.goto('/?gate=1')
+    await settle(page)
+    await expect(page).toHaveScreenshot('mobile-gate.png')
+  })
+
+  // Browser gate — the "use Chrome" page shown on non-Chromium desktop (forced with ?gate=browser).
+  test('browser gate', async ({ page }) => {
+    await page.goto('/?gate=browser')
+    await settle(page)
+    await expect(page).toHaveScreenshot('browser-gate.png')
+  })
+
+  // Engine error popup — ?simerror=launch seeds a sample boot-panic (fatal: Reload + Copy, no
+  // Dismiss). Mock mode → no engine iframe, fully deterministic.
+  test('engine error popup', async ({ page }) => {
+    await page.goto('/?mock=1&simerror=launch')
+    await settle(page)
+    await expect(page).toHaveScreenshot('engine-error.png')
   })
 
   test('world HUD (sidebar + chat)', async ({ page }) => {

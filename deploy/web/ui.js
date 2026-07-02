@@ -237,6 +237,11 @@ function updateOverallProgress() {
   if (loadingOverallFill) {
     loadingOverallFill.style.width = `${percent}%`;
   }
+
+  // Surface boot progress to the embedding host (React reads these off the iframe window,
+  // since hideLoader=1 hides this bar). 0–100 weighted; step is the active phase id or null.
+  window.__bevyLoadProgress = percent;
+  window.__bevyLoadStep = currentStepName;
 }
 
 /**

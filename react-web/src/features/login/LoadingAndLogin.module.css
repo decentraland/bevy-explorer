@@ -70,14 +70,14 @@
   letter-spacing: -0.01em;
   line-height: 1.05;
   white-space: nowrap;
-  color: #fff;
+  color: var(--text);
 }
 .subtitle {
   margin: 14px 0 0;
   font-size: clamp(1.15rem, 1.55vw, 1.45rem);
   font-weight: 400;
   line-height: 1.2;
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--ink-95);
   white-space: pre-line;
 }
 .account {
@@ -85,11 +85,11 @@
   font-family: var(--font-mono);
   font-size: 0.85rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--ink-65);
 }
 .error {
   margin: 10px 0 0;
-  color: #ffd0d8;
+  color: var(--error-text);
   font-size: 0.9rem;
 }
 
@@ -104,31 +104,77 @@
    design-system Button's default pill. The .buttons-scoped 2-class selector wins the variant. */
 .buttons .cta,
 .buttons .ctaSecondary {
-  position: relative;
   width: 100%;
-  height: 46px;
+  /* A label that doesn't fit (long/translated copy, or the narrow 23vw panel) wraps onto a second
+     line and grows the pill (min-height) instead of being clipped under the arrow — the Button base
+     is nowrap, so re-enable wrapping here. Both CTAs are 46px when their label fits on one line; a
+     wrapped one grows, and since sibling labels are similar length they wrap together in practice,
+     so the pair stays visually matched. */
+  min-height: 46px;
+  padding: 9px 16px;
   border-radius: 12px;
   font-size: 0.84rem;
   font-weight: 700;
   letter-spacing: 0.03em;
+  line-height: 1.15;
   text-transform: uppercase;
+  text-align: center;
+  white-space: normal;
 }
 .buttons .cta {
-  box-shadow: 0 6px 18px rgba(255, 45, 85, 0.32);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--brand) 32%, transparent);
 }
 .buttons .ctaSecondary {
-  background: rgba(108, 42, 168, 0.62);
+  background: var(--login-cta2);
   box-shadow: none;
 }
 .buttons .ctaSecondary:hover:not(:disabled) {
-  background: rgba(124, 52, 188, 0.78);
+  background: var(--login-cta2-hover);
+}
+.label {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Break a word too long for the text column (e.g. "DECENTRALAND" in the narrow panel) onto the
+     next line instead of letting it overflow — a single unbreakable word would otherwise spill,
+     centered, into the arrow's reserved column and sit under the icon. */
+  overflow-wrap: break-word;
 }
 .arrow {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
+  flex: 0 0 auto;
   display: flex;
+  align-items: center;
+}
+
+/* ---- engine boot progress (footer bar) — real weighted WASM-download progress from the iframe ---- */
+.bootBar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  padding: 16px clamp(2.5rem, 10.5vw, 11rem);
+  pointer-events: none;
+  animation: fade-in var(--dur-fade) var(--ease-out) both;
+}
+.bootLabel {
+  margin-bottom: 7px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-85);
+}
+.bootTrack {
+  width: min(420px, 80vw);
+  height: 4px;
+  border-radius: 2px;
+  background: var(--white-10);
+  overflow: hidden;
+}
+.bootFill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--brand), var(--gold));
+  transition: width var(--dur-mid) ease;
 }
 
 /* ---- avatar (welcome-back screen) — full height, standing on Unity's golden podium ---- */
@@ -153,11 +199,13 @@
   height: 76px;
   transform: translateX(-50%);
   border-radius: 50%;
+  /* Decorative golden podium (Unity welcome-back): a bespoke multi-stop gold gradient + gold rim +
+     dark-purple lip — one-off ornament, no design token maps to it (like the boot-splash gradient). */
   background: radial-gradient(ellipse 58% 66% at 50% 40%, #ffe891 0%, #f8bd3a 48%, #e09b22 72%, #c07d16 100%);
   box-shadow:
     inset 0 0 0 4px rgba(255, 224, 138, 0.55),
     0 8px 0 #3a1c54,
-    0 18px 42px rgba(0, 0, 0, 0.5);
+    0 18px 42px var(--scrim);
 }
 .glow {
   position: absolute;
@@ -167,6 +215,7 @@
   height: 86px;
   transform: translateX(-50%);
   border-radius: 50%;
+  /* Decorative golden glow under the podium — bespoke ornament, no token maps (see .podium). */
   background: radial-gradient(ellipse at center, rgba(255, 205, 100, 0.35), rgba(255, 205, 100, 0) 70%);
   filter: blur(8px);
   animation: glow-pulse 4.5s ease-in-out infinite;

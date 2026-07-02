@@ -1,0 +1,23 @@
+/* The popup itself now reuses the Modal/ModalShell primitive (backdrop + card + focus-trap + Escape).
+   Only two things are feature-specific: raising the backdrop above login, and the panic-text block. */
+
+/* Raise Modal's backdrop above login/loading (its default is --z-modal). */
+.fatalLayer {
+  z-index: var(--z-fatal);
+}
+
+/* The raw panic / crash message, monospaced + scrollable. */
+.detail {
+  margin: 0;
+  max-height: 30vh;
+  overflow: auto;
+  padding: 12px;
+  border-radius: var(--r-card);
+  background: var(--fill-2);
+  color: var(--ink-6);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
