@@ -1,4 +1,3 @@
-use dcl_component::proto_components::common::Vector3;
 use dcl_component::proto_components::pulse;
 use ethers_core::types::Address;
 
@@ -24,12 +23,9 @@ fn server_msg(message: pulse::server_message::Message) -> pulse::ServerMessage {
 fn player_state(local: (f32, f32, f32), flags: u32) -> pulse::PlayerState {
     pulse::PlayerState {
         parcel_index: PARCEL_INDEX,
-        position: Some(Vector3 {
-            x: local.0,
-            y: local.1,
-            z: local.2,
-        }),
-        velocity: Some(Vector3::default()),
+        position_x: pulse::PlayerState::position_x_quantized(local.0),
+        position_y: pulse::PlayerState::position_y_quantized(local.1),
+        position_z: pulse::PlayerState::position_z_quantized(local.2),
         state_flags: flags,
         ..Default::default()
     }
