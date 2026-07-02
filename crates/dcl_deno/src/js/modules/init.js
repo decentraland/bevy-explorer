@@ -145,6 +145,41 @@ globalThis.localStorage = webstorage.localStorage();
 import * as performance from "ext:deno_web/15_performance.js"
 globalThis.performance = performance.performance;
 
+// Native super-user bridge transport. The web super-user scene gets a real BroadcastChannel from the
+// browser; native deno has none, so expose one backed by host ops (op_bridge_to_page + the page->scene
+// stream). Defined unconditionally (the ops aren't attached to Deno.core.ops yet at this esm-entry
+// load time); each method guards on the op existing, so it's a live channel only in super-user scenes
+// (where the ops are registered) and inert elsewhere. Lets the bridge-scene run unchanged on native.
+globalThis.BroadcastChannel = class BroadcastChannel {
+    constructor(name) {
+        this.name = name;
+        this.onmessage = null;
+        this._closed = false;
+        const self = this;
+        if (Deno.core.ops.op_get_bridge_stream) {
+            Deno.core.ops.op_get_bridge_stream().then(function (rid) {
+                (async function () {
+                    while (!self._closed) {
+                        const s = await Deno.core.ops.op_read_bridge_stream(rid);
+                        if (!s) break; // "" => stream closed
+                        if (self.onmessage) {
+                            try { self.onmessage({ data: JSON.parse(s) }); } catch (e) {}
+                        }
+                    }
+                })();
+            });
+        }
+    }
+    postMessage(msg) {
+        if (Deno.core.ops.op_bridge_to_page) {
+            try { Deno.core.ops.op_bridge_to_page(JSON.stringify(msg)); } catch (e) {}
+        }
+    }
+    addEventListener(type, fn) { if (type === 'message') this.onmessage = fn; }
+    removeEventListener() {}
+    close() { this._closed = true; }
+};
+
 Deno.core.setUnhandledPromiseRejectionHandler((promise, reason) => {
     console.error('Unhandled promise rejection: ', reason)
     return true;

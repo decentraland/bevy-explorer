@@ -2,6 +2,9 @@ mod commands;
 mod ext;
 #[cfg(target_arch = "wasm32")]
 mod web;
+// POC: native webview overlay of the react-web HUD (desktop, `react-hud` feature).
+#[cfg(all(not(target_arch = "wasm32"), feature = "react-hud"))]
+mod react_hud;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
@@ -179,6 +182,10 @@ impl DecentralandApp {
         #[cfg(target_arch = "wasm32")]
         app.add_plugins(wasm_default_plugins(&decentraland_app_config));
 
+        // POC: attach the react-web HUD as a transparent native webview overlay.
+        #[cfg(all(not(target_arch = "wasm32"), feature = "react-hud"))]
+        app.add_plugins(react_hud::ReactHudPlugin);
+
         let version_hash = version();
         let version = format!("{VERSION} ({version_hash})");
 
@@ -318,6 +325,20 @@ impl DecentralandApp {
             });
         }
 
+        // POC: the react-web overlay is the HUD — turn off the engine's native UI so it doesn't
+        // render its own login/chat/etc. behind the webview. (Overrides the inserts above.)
+        #[cfg(all(not(target_arch = "wasm32"), feature = "react-hud"))]
+        app.insert_resource(NativeUi {
+            login: false,
+            emote_wheel: false,
+            chat: false,
+            permissions: false,
+            profile: false,
+            nametags: false,
+            tooltips: false,
+            loading_scene: false,
+        });
+
         if !startup_scenes.is_empty() {
             app.add_systems(Update, process_startup_scenes);
             info!("spawning {} startup scenes", startup_scenes.len());
@@ -390,7 +411,9 @@ impl DecentralandApp {
 
         // Analytics plugins
         app.add_plugins(MetricsPlugin);
-        if graphics_config.log_fps || decentraland_app_config.arguments.is_preview {
+        if (graphics_config.log_fps || decentraland_app_config.arguments.is_preview)
+            && !app.is_plugin_added::<FrameTimeDiagnosticsPlugin>()
+        {
             app.add_plugins(FrameTimeDiagnosticsPlugin::default());
         }
         if graphics_config.log_fps {
