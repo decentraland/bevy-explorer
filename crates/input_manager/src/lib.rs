@@ -13,7 +13,7 @@ use bevy::{
     },
     platform::collections::{HashMap, HashSet},
     prelude::*,
-    window::{PrimaryWindow, WindowFocused},
+    window::PrimaryWindow,
 };
 
 use common::{
@@ -107,6 +107,14 @@ fn any_unbound_modifier_held(key_input: &ButtonInput<KeyCode>, map: &InputMap) -
     SUPPRESSING_MODIFIERS
         .iter()
         .any(|m| key_input.pressed(*m) && !key_bound(map, *m))
+}
+
+// Shift doesn't trigger OS-shortcut suppression (it isn't in
+// SUPPRESSING_MODIFIERS) but it is still a modifier for stuck-key
+// force-release purposes: a genuinely-held bound Shift (e.g. shift-to-run)
+// must not be released alongside stuck non-modifiers.
+fn modifier_key(k: &KeyCode) -> bool {
+    SUPPRESSING_MODIFIERS.contains(k) || matches!(k, KeyCode::ShiftLeft | KeyCode::ShiftRight)
 }
 
 pub struct InputManagerPlugin;
@@ -462,42 +470,46 @@ struct CurrentNativeInputRequest {
 // (e.g. a focused text field, which reserves at TextEntry). In that state
 // gameplay keys are already blocked by priority, so there is nothing to
 // suppress — and that consumer reads raw ButtonInput modifier state (Shift
-// for selection/redo etc.) which suppression would otherwise clobber. On
-// leaving that state we reset any leftover non-modifier presses (e.g. a
-// macOS Cmd+V whose keyUp was suppressed) so gameplay resumes clean.
+// for selection/redo etc.) which suppression would otherwise clobber.
+//
+// Key-state correctness across focus loss is handled upstream (winit web
+// window-focus fix + bevy's KeyboardFocusLost release_all). The one state
+// workaround kept here is the force-release below: macOS (natively and in
+// Chrome) suppresses keyUp for non-modifier keys while Cmd is held, and no
+// focus transition covers that.
 fn handle_modifier_keys(
     mut key_input: ResMut<ButtonInput<KeyCode>>,
     map: Res<InputMap>,
     priorities: Res<InputPriorities>,
-    mut focus_events: EventReader<WindowFocused>,
     mut was_active: Local<bool>,
-    mut was_keyboard_claimed: Local<bool>,
+    mut was_super_held: Local<bool>,
 ) {
-    // An OS chord that steals focus (e.g. Cmd+Shift+5 screen grab) delivers the
-    // modifier keydown but its keyup lands while we're unfocused, so winit never
-    // reports the release and the modifier stays pressed() on return — latching
-    // suppression on forever. Clear all key state on focus loss so nothing
-    // survives the round trip.
-    if focus_events.read().any(|e| !e.focused) {
-        key_input.reset_all();
+    // Any non-modifier still marked pressed when the last Super key goes up
+    // may never receive its keyup — force-release them all. Scoped to Super:
+    // keyups are delivered normally while Ctrl/Alt/Shift are held, and
+    // force-releasing on those would strand genuinely-held keys (e.g. W while
+    // tapping a bound walk/run modifier). A key genuinely still held at
+    // Cmd-up can't be told apart from a stuck one; re-pressing it is the
+    // acceptable cost, and outside text entry it was already released at
+    // Cmd-down by the suppression below.
+    let super_held =
+        key_input.pressed(KeyCode::SuperLeft) || key_input.pressed(KeyCode::SuperRight);
+    if *was_super_held && !super_held {
+        let held: Vec<KeyCode> = key_input
+            .get_pressed()
+            .copied()
+            .filter(|k| !modifier_key(k))
+            .collect();
+        for key in held {
+            key_input.release(key);
+        }
     }
+    *was_super_held = super_held;
 
     let keyboard_claimed = priorities
         .get(InputType::All)
         .max(priorities.get(InputType::Keyboard))
         >= InputPriority::TextEntry;
-
-    if *was_keyboard_claimed && !keyboard_claimed {
-        let held: Vec<KeyCode> = key_input
-            .get_pressed()
-            .copied()
-            .filter(|k| !SUPPRESSING_MODIFIERS.contains(k))
-            .collect();
-        for key in held {
-            key_input.reset(key);
-        }
-    }
-    *was_keyboard_claimed = keyboard_claimed;
 
     let active = !keyboard_claimed && any_unbound_modifier_held(&key_input, &map);
 
