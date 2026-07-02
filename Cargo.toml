@@ -178,7 +178,7 @@ bevy_kira_audio = { git = "https://github.com/robtfm/bevy_kira_audio", branch = 
 bevy_simple_text_input = { git = "https://github.com/robtfm/bevy_simple_text_input", features = [
   "clipboard",
 ], branch = "0.16" }
-bevy_hanabi = { version = "0.16", default-features = false }
+bevy_hanabi = { git = "https://github.com/robtfm/bevy_hanabi", branch = "0.16-dcl", default-features = false }
 directories = "6"
 uuid = { version = "1.23", features = ["v4"] }
 build-time = "0.1.3"
