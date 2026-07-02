@@ -69,15 +69,33 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     set. (f) Wire the **3D avatar preview** into the passport (machinery exists —
     `setEngineViewport('avatarPreview')`, used by the Backpack) instead of the 2D snapshot, + 3D badge
     preview on the Badges tab.
+13. `[feature]` **Notifications panel — bounded height, load-on-scroll, click-through to a detail
+    popup** — *feature/bug*. `NotificationsPanel.tsx` fixes `.root` to `top: 16px; bottom: 16px`
+    (`NotificationsPanel.module.css`), so the panel is always full-viewport-tall regardless of content —
+    both `bevy-ui-scene` (`notifications-menu.tsx`, a fixed `menuHeight = fontSize * 30 * 1.1`) and
+    unity-explorer size it to a bounded, content-driven height instead. Most of the time only the most
+    recent 1–2 notifications matter, so a full-height panel is wrong by default; bound the height
+    (roughly N rows tall, scrollable within that) closer to the old panels. Two follow-on gaps found
+    alongside this: (a) **load-on-scroll / pagination** — the bridge fetches the whole notification list
+    in one shot (`fetchNotifications`); `bevy-ui-scene`'s own fetch util already accepts `from`/`limit`
+    (`notifications-promise-utils.ts`, default `limit: 50`) so the backend supports paging even though
+    the old scene doesn't use it either — unity-explorer's list (`NotificationsPanelController`, built on
+    a `SuperScrollView` `LoopList`) does load incrementally. react-web would need to thread `from`/`limit`
+    through the `getNotifications` bridge request. (b) **clickable rows → a detail popup** — rows are
+    inert today (no `onClick`); tapping a notification should open more detail (and, for actionable types
+    like community invites, act on it). **Open sequencing question**: is a one-off popup component worth
+    building now, or should this wait on **stackable popups** — i.e. #9 (consolidate modals onto
+    `Modal`/`ModalShell`) landing first, so a notification-detail popup doesn't become yet another bespoke
+    overlay to migrate later. Leaning toward doing #9 first if both are picked up.
 
 ## 🟢 Low / when a feature needs it
 
-13. `[DS]` **`Divider`** (bespoke in ~4 places · old `bottom-border`)
-14. `[DS]` **`Pagination`** (unused today · old `pagination/`)
-15. `[DS]` **`CopyButton`** (inline in ProfileCard · old `copy-button`)
-16. `[DS]` **`Username`** (name + verified · old `player-name-component`)
-17. `[DS]` `Button` `iconLeft`/`iconRight` props + `hoverIcon` (niche · old `ButtonComponent`)
-17b. `[feature]` **Re-enable "Invite to Community" in `ProfileCard`** — *feature, parked until
+14. `[DS]` **`Divider`** (bespoke in ~4 places · old `bottom-border`)
+15. `[DS]` **`Pagination`** (unused today · old `pagination/`)
+16. `[DS]` **`CopyButton`** (inline in ProfileCard · old `copy-button`)
+17. `[DS]` **`Username`** (name + verified · old `player-name-component`)
+18. `[DS]` `Button` `iconLeft`/`iconRight` props + `hoverIcon` (niche · old `ButtonComponent`)
+18b. `[feature]` **Re-enable "Invite to Community" in `ProfileCard`** — *feature, parked until
     communities work*. The row/submenu UI was removed from `ProfileCard` (PR #915 follow-up); the
     protocol messages, `session.communities.invitable`/`requestInvitable`/`invite`, and the bridge
     handlers all remain. When re-enabling: (1) the `/invites` response is `{data:[…]}` but `signed()`
@@ -88,7 +106,7 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     clear both `invitable` and the ref on logout/identity change; (3) surface invite errors to the user
     (the bridge currently swallows them with `console.error`); (4) build the submenu on the
     `ContextMenu` primitive instead of the removed bespoke `.submenu`/`.subRow` CSS.
-18. `[arch]` **HUD state: `useEngineSession` hook prop-drilled → consider Context / a store** —
+19. `[arch]` **HUD state: `useEngineSession` hook prop-drilled → consider Context / a store** —
     *architecture, low priority*. All HUD state lives in one `useEngineSession` hook at the top of
     `Hud`, prop-drilled down; the returned `session` is a fresh object every render, so the whole HUD
     re-renders on any change. Fine at current scale (engine round-trips are the bottleneck, not React
@@ -100,7 +118,7 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     state-lib-free). Also a test cost (harness passes props today; Context needs a provider wrapper).
     Recommendation: keep prop-drilling; add a single `SessionContext` only if drilling ergonomics annoy;
     memoized slices / store only if re-renders become a *measured* problem.
-19. `[arch]` **Deep-linkable / bookmarkable navigation — reflect location in the URL** — *architecture,
+20. `[arch]` **Deep-linkable / bookmarkable navigation — reflect location in the URL** — *architecture,
     low priority*. Entering a scene/world (and, ideally, opening HUD surfaces like the map/backpack)
     should be **parameterized in the URL** so the state is shareable and bookmarkable: reload/paste a
     URL and land in the same realm + coords. Scope to nail down: realm/world + parcel coords (e.g.
@@ -108,7 +126,7 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     (`pickDestination`) + `map.teleport`/`changeRealm` so URL ⇄ engine stay in sync (`popstate` → jump,
     jump → `pushState`). Deferred: needs a small router/URL-sync layer (project is router-free today).
 
-20. `[feature]` **Voice feedback — "who's speaking" indicator** — *feature parity, when voice chat is
+21. `[feature]` **Voice feedback — "who's speaking" indicator** — *feature parity, when voice chat is
     prioritized*. The old scene showed an **animated speaking indicator on each avatar nametag** while a
     nearby player talked (and used the local mic state for your own tag). Mechanism to port: the engine
     exposes a voice stream — `BevyApi.getVoiceStream()` yielding `{ sender_address, active }`
@@ -121,23 +139,23 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     mic ring. Depends on voice chat being wired end-to-end; today only the local `mic` toggle exists (no
     per-remote-speaker signal). Could yield a reusable `SpeakingIndicator` primitive.
 
-21. `[feature]` **Passport edit mode (own profile)** — *feature, own-profile only*. bevy-ui-scene lets
+22. `[feature]` **Passport edit mode (own profile)** — *feature, own-profile only*. bevy-ui-scene lets
     you edit your own passport in place — About Me, the info-field dropdowns, links (add/remove, up to
     5), and display name — then deploys the updated profile. react-web's passport is read-only today.
-    Larger than the view-parity item (#13) — needs edit inputs + a profile-deploy path over the bridge —
+    Larger than the view-parity item (#12) — needs edit inputs + a profile-deploy path over the bridge —
     hence separate and lower priority than showing OTHER users' passports correctly.
 
-22. `[feature]` **Chat slash-commands (`/help`, `/goto`, `/world`)** — *feature parity, cross-client*.
+23. `[feature]` **Chat slash-commands (`/help`, `/goto`, `/world`)** — *feature parity, cross-client*.
     All three prior clients have these (`bevy-ui-scene`'s `sendChatMessage`, unity-explorer's
     `IChatCommand`/`GoToChatCommand`/`HelpChatCommand`), so they're a real gap, not polish — but net-new
     parsing/dispatch in react-web's `Chat.tsx` `send()`, so scoped separately from the Enter-focus fix
     (`fix/02-chat-enter-focus`). `/goto <x,y>` and `/goto <world>.dcl.eth` need `teleportTo`/`changeRealm`
     over the bridge (see `onTeleport`/`onVisitWorld` already wired for in-message links — same plumbing).
-23. `[feature]` **Chat rate limiting** — *hardening, not in bevy-ui-scene*. unity-explorer's
+24. `[feature]` **Chat rate limiting** — *hardening, not in bevy-ui-scene*. unity-explorer's
     `MultiplayerChatMessagesBus` dedupes + rate-limits + buffers sends; react-web (like bevy-ui-scene)
     sends on every Enter with no client-side throttle. Only worth adding if spam becomes a real problem
     server-side rate limiting doesn't already cover.
-24. `[feature]` **DMs / private chat channels** — *net-new, not a port*. Neither `bevy-ui-scene` nor
+25. `[feature]` **DMs / private chat channels** — *net-new, not a port*. Neither `bevy-ui-scene` nor
     today's react-web have anything beyond the single "Nearby" channel; unity-explorer's
     `ChatChannelsPresenter`/`ChatChannelType.USER` is the only prior-art reference. Large scope (channel
     list UI, per-conversation history, member-list → "message" entry point) — flag for a dedicated design
