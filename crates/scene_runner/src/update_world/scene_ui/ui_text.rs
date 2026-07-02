@@ -73,7 +73,7 @@ impl From<PbUiText> for UiText {
             },
             font: value.font(),
             font_size: value.font_size.unwrap_or(10) as f32,
-            wrapping: value.text_wrap() == components::TextWrap::TwWrap,
+            wrapping: value.text_wrap != Some(components::TextWrap::TwNoWrap as i32),
         }
     }
 }
