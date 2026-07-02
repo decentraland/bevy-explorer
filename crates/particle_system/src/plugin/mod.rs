@@ -78,6 +78,9 @@ fn particle_system_on_insert(
         .unwrap_or(FloatRange { start: 1., end: 1. });
     let limit_velocity = particle_system.limit_velocity.as_ref();
     let billboard = particle_system.billboard.unwrap_or(true);
+    let initial_size = particle_system
+        .initial_size
+        .unwrap_or(FloatRange { start: 1., end: 1. });
 
     let writer = ExprWriter::new();
 
@@ -86,6 +89,10 @@ fn particle_system_on_insert(
     let init_rotation = SetAttributeModifier::new(
         ROTATION_ATTR,
         (writer.rand(ScalarType::Float) * writer.lit(std::f32::consts::TAU)).expr(),
+    );
+    let init_size = SetAttributeModifier::new(
+        Attribute::SIZE,
+        random_lerp(&writer, initial_size.start, initial_size.end),
     );
     let init_velocity = SetVelocitySphereModifier {
         center: writer.lit(Vec3::ZERO).expr(),
@@ -128,6 +135,7 @@ fn particle_system_on_insert(
 
     set!(effect_asset, init, init_position);
     set!(effect_asset, init, init_rotation);
+    set!(effect_asset, init, init_size);
     set!(effect_asset, init, init_velocity);
     set!(effect_asset, init, init_age);
     set!(effect_asset, init, init_lifetime);
