@@ -7,8 +7,18 @@ import styles from './EngineErrorModal.module.css'
 
 export interface FatalError {
   message: string
-  /** 'launch' = boot panic (fatal), 'runtime' = engine crash (dismissable), 'react' = UI render crash. */
-  source: 'launch' | 'runtime' | 'react'
+  /**
+   * 'launch' = boot panic (fatal), 'runtime' = engine crash (dismissable), 'react' = UI render
+   * crash (fatal), 'realm' = the requested ?realm/world doesn't exist (dismissable → picker).
+   */
+  source: 'launch' | 'runtime' | 'react' | 'realm'
+}
+
+const COPY: Record<FatalError['source'], { title: string; subtitle: string }> = {
+  launch: { title: 'Something went wrong', subtitle: "The 3D engine couldn't start. Reloading often fixes it." },
+  runtime: { title: 'The world crashed', subtitle: 'The 3D engine stopped unexpectedly.' },
+  react: { title: 'Something went wrong', subtitle: 'The app hit an unexpected error.' },
+  realm: { title: 'World not found', subtitle: "That world doesn't exist or isn't reachable right now." }
 }
 
 export function EngineErrorModal({
@@ -26,13 +36,7 @@ export function EngineErrorModal({
   // (Reload navigates, or a runtime crash is dismissed, within the window).
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => () => { if (copiedTimer.current) clearTimeout(copiedTimer.current) }, [])
-  const title = error.source === 'runtime' ? 'The world crashed' : 'Something went wrong'
-  const subtitle =
-    error.source === 'launch'
-      ? "The 3D engine couldn't start. Reloading often fixes it."
-      : error.source === 'runtime'
-        ? 'The 3D engine stopped unexpectedly.'
-        : 'The app hit an unexpected error.'
+  const { title, subtitle } = COPY[error.source]
 
   const copy = (): void => {
     // clipboard.writeText rejects when the document isn't focused (e.g. right after an alt-tab back

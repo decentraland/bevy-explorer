@@ -276,7 +276,7 @@ function Hud(): React.JSX.Element {
         <EngineErrorModal
           error={session.fatalError}
           onReload={session.reload}
-          onDismiss={session.fatalError.source === 'runtime' ? session.dismissFatal : undefined}
+          onDismiss={session.fatalError.source === 'runtime' || session.fatalError.source === 'realm' ? session.dismissFatal : undefined}
         />
       )}
     </>

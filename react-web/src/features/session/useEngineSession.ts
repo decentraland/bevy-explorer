@@ -712,9 +712,35 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       return null
     })()
   )
+  const validatingRealm = useRef(false)
   useEffect(() => {
     if (!submitted || destinationPicked || urlDestination.current == null) return
     const dest = urlDestination.current
+    if (dest != null && dest.kind === 'world') {
+      // Validate the realm BEFORE launching — a typo'd ?realm= would otherwise strand the loading
+      // overlay forever. Same bare-name mapping as the engine (ipfs map_realm_name). The ref is
+      // consumed only on resolution, so phase stays 'entering' (no picker flash) while checking.
+      if (validatingRealm.current) return
+      validatingRealm.current = true
+      const base =
+        dest.realm.endsWith('.dcl.eth') && !dest.realm.startsWith('https://')
+          ? `https://worlds-content-server.decentraland.org/world/${dest.realm}`
+          : dest.realm
+      fetch(`${base.replace(/\/+$/, '')}/about`)
+        .then((r) => {
+          urlDestination.current = null
+          if (r.ok) pickDestination(dest)
+          else setFatalError({ message: `The world "${dest.realm}" was not found (${r.status}).`, source: 'realm' })
+        })
+        .catch(() => {
+          urlDestination.current = null
+          setFatalError({ message: `The world "${dest.realm}" could not be reached.`, source: 'realm' })
+        })
+        .finally(() => {
+          validatingRealm.current = false
+        })
+      return
+    }
     urlDestination.current = null
     pickDestination(dest)
   }, [submitted, destinationPicked, pickDestination])
