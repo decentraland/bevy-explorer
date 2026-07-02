@@ -21,17 +21,17 @@
   pointer-events: none;
   opacity: 0.06;
   background:
-    url('/category-icons/tiara.png') 14% 14% / 70px no-repeat,
-    url('/category-icons/upper_body.png') 30% 64% / 66px no-repeat,
-    url('/category-icons/mask.png') 9% 84% / 62px no-repeat,
-    url('/category-icons/eyewear.png') 4% 44% / 60px no-repeat,
-    url('/category-icons/hat.png') 40% 30% / 66px no-repeat,
-    url('/category-icons/feet.png') 24% 90% / 60px no-repeat,
-    url('/category-icons/earring.png') 47% 76% / 56px no-repeat,
-    url('/category-icons/hair.png') 90% 12% / 70px no-repeat,
-    url('/category-icons/tiara.png') 80% 86% / 64px no-repeat,
-    url('/category-icons/mouth.png') 60% 18% / 58px no-repeat,
-    url('/category-icons/hands_wear.png') 55% 92% / 60px no-repeat;
+    url('../../assets/category-icons/tiara.png') 14% 14% / 70px no-repeat,
+    url('../../assets/category-icons/upper_body.png') 30% 64% / 66px no-repeat,
+    url('../../assets/category-icons/mask.png') 9% 84% / 62px no-repeat,
+    url('../../assets/category-icons/eyewear.png') 4% 44% / 60px no-repeat,
+    url('../../assets/category-icons/hat.png') 40% 30% / 66px no-repeat,
+    url('../../assets/category-icons/feet.png') 24% 90% / 60px no-repeat,
+    url('../../assets/category-icons/earring.png') 47% 76% / 56px no-repeat,
+    url('../../assets/category-icons/hair.png') 90% 12% / 70px no-repeat,
+    url('../../assets/category-icons/tiara.png') 80% 86% / 64px no-repeat,
+    url('../../assets/category-icons/mouth.png') 60% 18% / 58px no-repeat,
+    url('../../assets/category-icons/hands_wear.png') 55% 92% / 60px no-repeat;
 }
 
 /* ---- loading state ---- */
