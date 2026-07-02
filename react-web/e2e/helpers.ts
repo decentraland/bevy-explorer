@@ -99,6 +99,13 @@ export async function enterAsGuest(page: Page): Promise<void> {
   await page.waitForSelector('nav[aria-label="Main navigation"]', { timeout: 180000 })
 }
 
-/** Click a sidebar nav icon by its aria-label (Profile, Map, Settings, Emotes, …). */
-export const sidebar = (page: Page, label: string): Promise<void> =>
-  page.getByRole('button', { name: label, exact: true }).click()
+/** Click a sidebar nav icon by its aria-label (Profile, Map, Settings, Emotes, …).
+ *  A prior test may have left a full-screen menu page (Settings/Backpack/…) covering the
+ *  sidebar — close it first (MainMenuShell's X), or the click starves behind it. */
+export async function sidebar(page: Page, label: string): Promise<void> {
+  for (const name of ['Close', 'Close emotes']) {
+    const close = page.getByRole('button', { name, exact: true }).first()
+    if (await close.isVisible().catch(() => false)) await close.click()
+  }
+  await page.getByRole('button', { name: label, exact: true }).click()
+}
