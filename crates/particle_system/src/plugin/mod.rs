@@ -1,4 +1,5 @@
 mod set_position_modifier;
+mod speed_dampen;
 
 use bevy::{math::bounding::Aabb3d, prelude::*};
 use bevy_hanabi::{
@@ -15,7 +16,10 @@ use dcl_component::{
 };
 use scene_runner::update_world::AddCrdtInterfaceExt;
 
-use crate::{plugin::set_position_modifier::SetPositionModifier, ParticleSystem};
+use crate::{
+    plugin::{set_position_modifier::SetPositionModifier, speed_dampen::SpeedDampenModifier},
+    ParticleSystem,
+};
 
 const MIN_SPHERE_RADIUS: f32 = 1. / 128.;
 /// Keep in sync with https://github.com/robtfm/movement-scene/blob/main/src/constants.ts
@@ -72,7 +76,7 @@ fn particle_system_on_insert(
     let initial_velocity_speed = particle_system
         .initial_velocity_speed
         .unwrap_or(FloatRange { start: 1., end: 1. });
-    // TODO limitVelocity
+    let limit_velocity = particle_system.limit_velocity.as_ref();
     let billboard = particle_system.billboard.unwrap_or(true);
 
     let writer = ExprWriter::new();
@@ -102,6 +106,12 @@ fn particle_system_on_insert(
             + writer.attr(ADDITIONAL_FORCE_ATTR))
         .expr(),
     );
+    let update_clamp_velocity = limit_velocity.map(|limit_velocity| SpeedDampenModifier {
+        max_speed: writer.lit(limit_velocity.speed).expr(),
+        dampen: writer
+            .lit(limit_velocity.dampen.unwrap_or(1.).clamp(0., 1.))
+            .expr(),
+    });
 
     let render_billboard = OrientModifier {
         mode: OrientMode::FaceCameraPosition,
@@ -125,6 +135,9 @@ fn particle_system_on_insert(
     set!(effect_asset, init, init_additional_force);
 
     set!(effect_asset, update, update_accel);
+    if let Some(update_clamp_velocity) = update_clamp_velocity {
+        set!(effect_asset, update, update_clamp_velocity);
+    }
 
     if billboard {
         set!(effect_asset, render, render_billboard);
