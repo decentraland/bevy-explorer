@@ -532,8 +532,11 @@ impl PulseDecoder {
             is_pointing_at: flag(flags, pulse::PlayerAnimationFlags::PointingAt),
             head_ik_yaw_enabled: flag(flags, pulse::PlayerAnimationFlags::HeadYaw),
             head_ik_pitch_enabled: flag(flags, pulse::PlayerAnimationFlags::HeadPitch),
-            head_yaw: state.head_yaw.unwrap_or(0.0),
-            head_pitch: state.head_pitch.unwrap_or(0.0),
+            // Head angles are quantized over the unsigned [0, 360] range, so the sender wraps
+            // negatives (via `rem_euclid`); undo that to the signed range the head-IK consumer
+            // expects (pitch especially — it's clamped to ±cone, not wrapped).
+            head_yaw: state.head_yaw.map(signed_angle).unwrap_or(0.0),
+            head_pitch: state.head_pitch.map(signed_angle).unwrap_or(0.0),
             scene_driven_animation: None,
             // Stamped only on delta-derived movements (see `on_delta`); a full state carries an
             // exact position, so the shared builder leaves the box unset (precise).
@@ -544,6 +547,16 @@ impl PulseDecoder {
 
 fn flag(flags: u32, f: pulse::PlayerAnimationFlags) -> bool {
     flags & (f as u32) != 0
+}
+
+/// Map a dequantized head angle from the wire's unsigned [0, 360) range back to the signed
+/// (-180, 180] range the head-IK consumer works in. Inverse of the sender's `rem_euclid(360)`.
+fn signed_angle(deg: f32) -> f32 {
+    if deg > 180.0 {
+        deg - 360.0
+    } else {
+        deg
+    }
 }
 
 /// Inverse of [`PulseDecoder::to_movement`]: pack a locally-built [`rfc4::Movement`] into the Pulse
@@ -598,12 +611,14 @@ pub(crate) fn from_movement(
         rotation_y: P::rotation_y_quantized(movement.rotation_y),
         movement_blend: P::movement_blend_quantized(movement.movement_blend_value),
         slide_blend: P::slide_blend_quantized(movement.slide_blend_value),
+        // Head angles quantize over the unsigned [0, 360] range; wrap negatives so a left/up look
+        // (negative yaw/pitch) doesn't clamp to 0. The receiver undoes this via `signed_angle`.
         head_yaw: movement
             .head_ik_yaw_enabled
-            .then(|| P::head_yaw_quantized(movement.head_yaw)),
+            .then(|| P::head_yaw_quantized(movement.head_yaw.rem_euclid(360.0))),
         head_pitch: movement
             .head_ik_pitch_enabled
-            .then(|| P::head_pitch_quantized(movement.head_pitch)),
+            .then(|| P::head_pitch_quantized(movement.head_pitch.rem_euclid(360.0))),
         state_flags,
         glide_state: movement.glide_state,
         jump_count: movement.jump_count,
