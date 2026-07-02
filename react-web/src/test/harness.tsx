@@ -97,9 +97,11 @@ export interface Harness {
   session: () => EngineSession
 }
 
-/** Render the real session hook wired to a FakeDriver. */
-export function renderSession(previousLogin?: { userId: string | null }): Harness {
-  const driver = new FakeDriver()
+/** Render the real session hook wired to a FakeDriver (pass a subclass to simulate boot panics). */
+export function renderSession(
+  previousLogin?: { userId: string | null },
+  driver: FakeDriver = new FakeDriver()
+): Harness {
   if (previousLogin) driver.previousLogin = previousLogin
   const { result } = renderHook(() => useEngineSession(() => driver))
   return { driver, result, session: () => result.current }
