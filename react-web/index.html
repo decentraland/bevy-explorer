@@ -3,7 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Decentraland — React HUD (dev)</title>
+    <title>Decentraland</title>
+    <meta
+      name="description"
+      content="Explore Decentraland — a social virtual world. Jump in from your browser: events, games, and places built by the community."
+    />
+    <meta name="theme-color" content="#2c1442" />
+    <!-- Favicons (same art as the engine page's set). Vite rebases these for the CDN base. -->
+    <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="Decentraland Web" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <!-- Social cards -->
+    <meta property="og:title" content="Decentraland" />
+    <meta property="og:description" content="Explore a social virtual world from your browser." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary" />
     <!-- The loading overlay's full-screen backdrop (1.7MB). Prefetch it during the login screen
          (low priority, won't fight first paint) so it's cached before we enter and freeze. -->
     <link rel="prefetch" as="image" href="/assets/login/gradient-background.webp" />

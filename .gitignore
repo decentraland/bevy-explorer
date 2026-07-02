@@ -9,6 +9,7 @@ config.json
 /deploy/web/assets
 /deploy/web/index.html
 /deploy/web/category-icons
+/deploy/web/favicon
 /deploy/web/sidebar-icons
 /deploy/web/modules
 /deploy/web/engine/pkg
