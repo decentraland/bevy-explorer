@@ -49,15 +49,12 @@ React DOM page  ──BroadcastChannel('bevy-ui-bridge')──►  super-user br
 
 ## Run
 
-Two processes — the bridge scene (super-user SDK7 scene that relays engine streams)
-and the React dev server:
+One command — vite starts the bridge scene's live preview (:8100, scene hot-reload) alongside
+the app unless one is already running:
 
 ```bash
-# 1. the bridge scene (live preview realm — MUST be sdk-commands start, not export)
-cd bridge-scene && npm install && npx sdk-commands start --no-browser --port 8100
-
-# 2. the React app + engine
-npm install && npm run dev
+npm install && (cd bridge-scene && npm install)   # once
+npm run dev
 ```
 
 **Engine mode (default)** — `http://localhost:5173/`: real engine in a same-origin

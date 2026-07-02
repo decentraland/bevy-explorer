@@ -96,6 +96,8 @@ export async function enterAsGuest(page: Page): Promise<void> {
   await installBridgeSpy(page)
   await page.goto(APP_URL)
   await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click({ timeout: 90000 })
+  // Entry now goes through the destination picker — skip it (default spawn → Genesis Plaza).
+  await page.getByRole('button', { name: /SKIP TO GENESIS PLAZA/i }).click({ timeout: 60000 })
   // World-ready: the React sidebar nav mounts once phase === 'world'.
   await page.waitForSelector('nav[aria-label="Main navigation"]', { timeout: 180000 })
 }
