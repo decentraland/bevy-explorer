@@ -1,7 +1,7 @@
 // Full-screen error popup shown when the engine panics/crashes or react-web itself throws. Sits above
 // everything (login/loading). Fed by useEngineSession's fatalError or the ErrorBoundary fallback.
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ModalShell, Button } from '../../design'
 import styles from './EngineErrorModal.module.css'
 
@@ -22,6 +22,10 @@ export function EngineErrorModal({
   onDismiss?: () => void
 }): React.JSX.Element {
   const [copied, setCopied] = useState(false)
+  // Reset the "Copied" label after a beat; cleared on unmount so it can't fire on a gone component
+  // (Reload navigates, or a runtime crash is dismissed, within the window).
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (copiedTimer.current) clearTimeout(copiedTimer.current) }, [])
   const title = error.source === 'runtime' ? 'The world crashed' : 'Something went wrong'
   const subtitle =
     error.source === 'launch'
@@ -36,7 +40,8 @@ export function EngineErrorModal({
     navigator.clipboard?.writeText(error.message).then(
       () => {
         setCopied(true)
-        setTimeout(() => setCopied(false), 1200)
+        if (copiedTimer.current) clearTimeout(copiedTimer.current)
+        copiedTimer.current = setTimeout(() => setCopied(false), 1200)
       },
       () => {}
     )

@@ -19,8 +19,10 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
    CommunityModal) with ad-hoc optimism. Need `<FriendButton address>` / `useRelationship`, a
    **6-state** relationship (add `blocked`, `incoming`/Accept to the current 3), centralized optimistic
    update, and **fix CommunityModal desync** (it reads `member.isFriend`, not `session.friends`).
-4. **`Button`: `loading` state + `danger`/`destructive` variant** — *extend*. Recurring need
-   (jump-in/create/send → loading; unfriend/reject/leave/delete → danger). (Old: `ButtonComponent`.)
+4. **`Button`: `loading` state + `danger`/`destructive` + `link`/text variant** — *extend*. Recurring
+   need (jump-in/create/send → loading; unfriend/reject/leave/delete → danger; a subtle underlined
+   text-link like the gate's "try anyway…" → link, currently a bespoke `<button>`). (Old:
+   `ButtonComponent`.)
 
 ## 🟡 Medium
 
