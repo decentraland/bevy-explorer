@@ -16,7 +16,7 @@ use dcl_component::{
     proto_components::{
         common::{texture_union::Tex, Color4, ColorRange, FloatRange, Vector3},
         sdk::components::{
-            pb_particle_system::{BlendMode, Shape},
+            pb_particle_system::{BlendMode, Shape, SimulationSpace},
             PbParticleSystem,
         },
         Color4DclToBevy,
@@ -159,6 +159,13 @@ fn particle_system_on_insert(
     };
     let billboard = particle_system.billboard.unwrap_or(true);
     let sprite_sheet = particle_system.sprite_sheet.as_ref();
+    // TODO playback state
+    // TODO loop
+    // TODO prewarm
+    let simulation_space = match particle_system.simulation_space() {
+        SimulationSpace::PssLocal => bevy_hanabi::SimulationSpace::Local,
+        SimulationSpace::PssWorld => bevy_hanabi::SimulationSpace::Global,
+    };
 
     let writer = ExprWriter::new();
 
@@ -270,7 +277,8 @@ fn particle_system_on_insert(
         SpawnerSettings::rate(rate.into()).with_starts_active(active),
         module,
     )
-    .with_alpha_mode(blend_mode);
+    .with_alpha_mode(blend_mode)
+    .with_simulation_space(simulation_space);
 
     set!(effect_asset, init, init_position);
     set!(effect_asset, init, init_rotation);
