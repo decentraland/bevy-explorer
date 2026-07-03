@@ -153,9 +153,32 @@ impl Plugin for PulsePlugin {
     }
 }
 
-/// Default Pulse endpoint (production). Override with the `PULSE_SERVER=host:port` env var — e.g.
-/// `pulse-server.decentraland.zone:7777` for dev, or a local instance.
+/// Default Pulse endpoint (production). Native speaks ENet/UDP (7777); wasm has no ENet, so it speaks
+/// WebTransport on 7443. Override with the `PULSE_SERVER=host:port` env var — e.g.
+/// `pulse-server.decentraland.zone` for dev, or a local instance.
+#[cfg(not(target_arch = "wasm32"))]
 const DEFAULT_PULSE_SERVER: &str = "pulse-server.decentraland.org:7777";
+#[cfg(target_arch = "wasm32")]
+const DEFAULT_PULSE_SERVER: &str = "pulse-server.decentraland.org:7443";
+
+/// SHA-256 to pin the server's TLS cert via WebTransport's `serverCertificateHashes`. Production is
+/// CA-signed → `None` (default trust); native (ENet) never needs one.
+#[cfg(not(target_arch = "wasm32"))]
+fn dev_cert_hash() -> Option<Vec<u8>> {
+    None
+}
+#[cfg(target_arch = "wasm32")]
+fn dev_cert_hash() -> Option<Vec<u8>> {
+    // To test against a local self-signed dev server, point DEFAULT_PULSE_SERVER at it and return the
+    // SHA-256 of its cert (e.g. claude-work/pulse-dev-cert/cert.pem — regenerate + refresh if expired,
+    // `openssl x509 -outform DER | openssl dgst -sha256`):
+    // Some(vec![
+    //     0x00, 0x0c, 0x4f, 0xec, 0xc3, 0x81, 0x1d, 0xe4, 0x9a, 0x8a, 0x9d, 0x31, 0x6c, 0x3e, 0x40,
+    //     0x49, 0xdd, 0xb4, 0x8e, 0x0f, 0xfd, 0x87, 0x51, 0x60, 0x92, 0x01, 0x35, 0xb4, 0x1a, 0xf7,
+    //     0xdd, 0xda,
+    // ])
+    None
+}
 
 /// Insert the [`PulseConfig`] that activates the transport. Targets [`DEFAULT_PULSE_SERVER`] unless
 /// `PULSE_SERVER` overrides it. The grid is the Decentraland Genesis City `ParcelEncoder` from the
@@ -175,6 +198,7 @@ fn configure_pulse(mut commands: Commands) {
         transport: PulseTransportConfig {
             host: host.to_owned(),
             port,
+            cert_hash: dev_cert_hash(),
         },
         parcel_grid: PulseParcelGrid::default(),
         server_id: String::new(),

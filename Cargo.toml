@@ -241,6 +241,18 @@ web-sys = { version = "0.3", features = [
   "ResponseInit",
   "Headers",
   "Url",
+  "ReadableStream",
+  "ReadableStreamDefaultReader",
+  "WritableStream",
+  "WritableStreamDefaultWriter",
+  "WebTransport",
+  "WebTransportOptions",
+  "WebTransportHash",
+  "WebTransportBidirectionalStream",
+  "WebTransportReceiveStream",
+  "WebTransportSendStream",
+  "WebTransportDatagramDuplexStream",
+  "WebTransportCloseInfo",
 ] }
 web-time = "1.1"
 copypwasmta = { git = "https://github.com/robtfm/copypwasmta" }

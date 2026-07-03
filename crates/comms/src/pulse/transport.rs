@@ -136,6 +136,11 @@ impl PulseDisconnect {
 pub struct PulseTransportConfig {
     pub host: String,
     pub port: u16,
+    /// SHA-256 of the server's certificate, for the wasm WebTransport driver only. A browser refuses a
+    /// self-signed dev cert via the CA path, so it must be pinned by hash (the reference client's
+    /// `serverCertHash`); `None` uses default CA trust, which is what a production cert needs. Ignored
+    /// by the native ENet driver.
+    pub cert_hash: Option<Vec<u8>>,
 }
 
 /// Protocol-layer end of the boundary (held by the Bevy plugin). `Send + Sync`, so it lives in a
@@ -224,7 +229,7 @@ pub fn spawn_pulse_driver(
 
     #[cfg(target_arch = "wasm32")]
     {
-        super::wasm::spawn(config, channels);
+        super::wasm::spawn(config, channels, stop.clone());
         PulseDriverHandle { stop }
     }
 }
