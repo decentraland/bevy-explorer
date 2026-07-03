@@ -1,3 +1,4 @@
+mod random_color_modifier;
 mod set_position_modifier;
 mod speed_dampen;
 
@@ -10,15 +11,19 @@ use bevy_hanabi::{
 };
 use dcl_component::{
     proto_components::{
-        common::{FloatRange, Vector3},
+        common::{Color4, ColorRange, FloatRange, Vector3},
         sdk::components::{pb_particle_system::Shape, PbParticleSystem},
+        Color4DclToBevy,
     },
     ComponentPosition, SceneComponentId,
 };
 use scene_runner::update_world::AddCrdtInterfaceExt;
 
 use crate::{
-    plugin::{set_position_modifier::SetPositionModifier, speed_dampen::SpeedDampenModifier},
+    plugin::{
+        random_color_modifier::RandomColorModifier, set_position_modifier::SetPositionModifier,
+        speed_dampen::SpeedDampenModifier,
+    },
     ParticleSystem,
 };
 
@@ -85,6 +90,23 @@ fn particle_system_on_insert(
     let size_over_lifetime = particle_system
         .size_over_time
         .unwrap_or(FloatRange { start: 1., end: 1. });
+    // TODO initial_rotation
+    // TODO rotation_over_time
+    // TODO face_travel_direction
+    let initial_color = particle_system.initial_color.unwrap_or(ColorRange {
+        start: Some(Color4 {
+            r: 1.,
+            g: 1.,
+            b: 1.,
+            a: 1.,
+        }),
+        end: Some(Color4 {
+            r: 1.,
+            g: 1.,
+            b: 1.,
+            a: 1.,
+        }),
+    });
 
     let writer = ExprWriter::new();
 
@@ -111,6 +133,28 @@ fn particle_system_on_insert(
     let init_gravity = SetAttributeModifier::new(GRAVITY_ATTR, writer.lit(GRAVITY).expr());
     let init_additional_force =
         SetAttributeModifier::new(ADDITIONAL_FORCE_ATTR, writer.lit(additional_force).expr());
+    let init_color = RandomColorModifier {
+        start: writer
+            .lit(
+                initial_color
+                    .start
+                    .map(|color| color.convert_srgba())
+                    .unwrap_or(Color::WHITE)
+                    .to_linear()
+                    .to_vec4(),
+            )
+            .expr(),
+        end: writer
+            .lit(
+                initial_color
+                    .end
+                    .map(|color| color.convert_srgba())
+                    .unwrap_or(Color::WHITE)
+                    .to_linear()
+                    .to_vec4(),
+            )
+            .expr(),
+    };
 
     let update_accel = AccelModifier::new(
         (writer.attr(GRAVITY_ATTR) * writer.lit(Vec3::new(1., gravity, 1.))
@@ -152,6 +196,7 @@ fn particle_system_on_insert(
     set!(effect_asset, init, init_lifetime);
     set!(effect_asset, init, init_gravity);
     set!(effect_asset, init, init_additional_force);
+    set!(effect_asset, init, init_color);
 
     set!(effect_asset, update, update_accel);
     if let Some(update_clamp_velocity) = update_clamp_velocity {
