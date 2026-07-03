@@ -149,10 +149,12 @@ const config = window.__bevyBootConfig ?? {}
 // the same place. Defaults are omitted so the canonical entry URL stays clean.
 const DEFAULT_SERVER = 'https://realm-provider-ea.decentraland.org/main'
 const DEFAULT_PORTABLES = 'basiccontroller.dcl.eth'
-window.set_url_params = (x, y, server, system_scene, portables, preview) => {
+window.set_url_params = (position, server, system_scene, portables, preview) => {
   try {
     const urlParams = new URLSearchParams(window.location.search)
-    urlParams.set('position', `${x},${y}`)
+    // absent when the realm won't honour a position (worlds spawn at their base scene)
+    if (position != null) urlParams.set('position', position)
+    else urlParams.delete('position')
     if (server !== DEFAULT_SERVER) urlParams.set('realm', server)
     else urlParams.delete('realm')
     if (system_scene !== (config.systemScene ?? '')) urlParams.set('systemScene', system_scene)
