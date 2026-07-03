@@ -253,10 +253,14 @@ jobs:
         run: |
           curl -fsSL https://github.com/rustwasm/wasm-pack/releases/download/v0.15.0/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz \
             | tar -xz --strip-components=1 -C "$HOME/.cargo/bin" wasm-pack-v0.15.0-x86_64-unknown-linux-musl/wasm-pack
-      # No alsa/udev here: those are native-target deps (cpal/gilrs), never
-      # compiled for wasm32.
+      # alsa/udev ARE still needed despite targeting wasm32: the build compiles a HOST-side
+      # graph too (build scripts + their deps, x86_64), and that graph links libudev via
+      # pkg-config — dropping them fails `libudev-sys` before wasm-pack even reaches the
+      # wasm target.
+      - name: Install alsa and udev
+        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
       - name: install deps (linux)
-        run: sudo apt-get update; sudo apt install -y --no-install-recommends clang
+        run: sudo apt install -y --no-install-recommends clang
       # wasm-opt costs ~9 min and only matters for the published binary — PRs
       # never publish (see the Publish step's if), so they skip it.
       - name: Build WASM package
