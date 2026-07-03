@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatLine, ChatState } from '../session/useEngineSession'
-import type { FriendAction, InvitableCommunity, NearbyMember } from '../../engine/protocol'
+import type { FriendAction, NearbyMember } from '../../engine/protocol'
 import { Avatar, ControlButton, DclLogo } from '../../design'
 import { EmojiPicker } from './EmojiPicker'
 import { searchByShortcode, SHORTCODE_RE, type Emoji } from './emojiData'
@@ -260,9 +260,6 @@ export function Chat({
   onFriendAction,
   onViewProfile,
   onReport,
-  invitable,
-  onRequestInvitable,
-  onInvite,
   onTeleport,
   onVisitWorld,
   relationshipOf
@@ -279,12 +276,6 @@ export function Chat({
   onViewProfile?: (user: ChatUser) => void
   /** Report a user from the profile card. */
   onReport?: (user: ChatUser) => void
-  /** Invitable communities per lowercased address (for "Invite to Community"). */
-  invitable?: Record<string, InvitableCommunity[]>
-  /** Fetch the invitable list for an address (called when the card opens). */
-  onRequestInvitable?: (address: string) => void
-  /** Invite an address to a community. */
-  onInvite?: (communityId: string, address: string) => void
   /** A location link (x,y) in a message was clicked. */
   onTeleport?: (x: number, y: number) => void
   /** A world name (e.g. boedo.dcl.eth) in a message was clicked → prompt to jump there. */
@@ -609,9 +600,6 @@ export function Chat({
           onViewProfile={onViewProfile}
           onMention={insertMention}
           onReport={onReport}
-          invitableCommunities={viewUser.user.address ? invitable?.[viewUser.user.address.toLowerCase()] : undefined}
-          onRequestInvitable={onRequestInvitable}
-          onInvite={onInvite}
           onClose={() => setViewUser(null)}
         />
       )}

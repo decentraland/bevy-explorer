@@ -2,13 +2,14 @@
 // sender's name/avatar, an @mention, or a nearby avatar in the world. Header with
 // avatar / name+copy / address+copy, a relationship-driven friend CTA (Add / Accept +
 // Reject / Requested), then the action list — mirroring bevy-ui-scene's profile-menu:
-// View Passport · Mention · Invite to Community · Block/Unblock · Report.
+// View Passport · Mention · Block/Unblock · Report. ("Invite to Community" is parked
+// until the communities feature — see backlog.)
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Avatar, ModalShell, Button } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
-import type { FriendAction, InvitableCommunity } from '../../engine/protocol'
+import type { FriendAction } from '../../engine/protocol'
 import styles from './ProfileCard.module.css'
 
 export interface ChatUser {
@@ -79,15 +80,6 @@ function BlockIcon(): React.JSX.Element {
   )
 }
 
-function CommunityIcon(): React.JSX.Element {
-  return (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
-      <circle cx="8" cy="9" r="2.6" stroke="currentColor" strokeWidth="1.7" />
-      <circle cx="16" cy="9" r="2.6" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M3.5 18c0-2.5 2-3.8 4.5-3.8s4.5 1.3 4.5 3.8M12.5 14.6c.9-.3 2-.4 3-.4 2.5 0 4 1.3 4 3.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-    </svg>
-  )
-}
 function ReportIcon(): React.JSX.Element {
   return (
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
@@ -97,14 +89,6 @@ function ReportIcon(): React.JSX.Element {
     </svg>
   )
 }
-function Chevron({ open }: { open: boolean }): React.JSX.Element {
-  return (
-    <svg className={styles.chevron} data-open={open} viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
-      <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
 function isClaimed(name: string): boolean {
   return !!name && !name.includes('#') && !/^0x[0-9a-f]+$/i.test(name)
 }
@@ -119,9 +103,6 @@ export function ProfileCard({
   onMention,
   onViewProfile,
   onReport,
-  invitableCommunities,
-  onRequestInvitable,
-  onInvite,
   onClose
 }: {
   user: ChatUser
@@ -136,24 +117,22 @@ export function ProfileCard({
   /** Open the full passport (labelled "View Passport"). */
   onViewProfile?: (user: ChatUser) => void
   onReport?: (user: ChatUser) => void
-  /** Communities the local user can invite this address to (empty/undefined → hide the row). */
-  invitableCommunities?: InvitableCommunity[]
-  /** Fetch the invitable list for this address (called once when the card opens). */
-  onRequestInvitable?: (address: string) => void
-  onInvite?: (communityId: string, address: string) => void
   onClose: () => void
 }): React.JSX.Element {
   const [copied, setCopied] = useState<'name' | 'address' | null>(null)
   const [justSent, setJustSent] = useState(false)
-  const [inviteOpen, setInviteOpen] = useState(false)
   const [confirmReport, setConfirmReport] = useState(false)
   const [confirmBlock, setConfirmBlock] = useState(false)
-  // After firing the friend request, show "REQUEST SENT" briefly, then close.
+  // After firing the friend request, show "REQUEST SENT" briefly, then close. onClose goes through
+  // a ref: call sites pass inline arrows, and having it in the deps would restart the timer on
+  // every parent re-render (which busy scenes trigger more often than every 1.1s).
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
   useEffect(() => {
     if (!justSent) return
-    const t = setTimeout(onClose, 1100)
+    const t = setTimeout(() => onCloseRef.current(), 1100)
     return () => clearTimeout(t)
-  }, [justSent, onClose])
+  }, [justSent])
   // Reset the "copied" hint after a beat — in an effect so the timer is cleared on unmount.
   useEffect(() => {
     if (!copied) return
@@ -162,28 +141,24 @@ export function ProfileCard({
   }, [copied])
   const cardRef = useRef<HTMLDivElement>(null)
   // Start at the click point; once the card is laid out, clamp it to the viewport using its REAL
-  // size. Re-clamp when the height can change after mount — the relationship-driven CTA, the async
-  // "Invite to Community" row (arrives via fetch), and expanding its submenu all grow the card, and
-  // a stale clamp would push the lower rows off-screen.
+  // size. Re-clamp when the height can change after mount — the relationship-driven CTA grows the
+  // card, and a stale clamp would push the lower rows off-screen.
   const [pos, setPos] = useState({ left: x, top: y })
   useLayoutEffect(() => {
     const el = cardRef.current
     if (!el) return
     const r = el.getBoundingClientRect()
+    // While hidden behind a destructive confirm (display:none) the rect is 0×0 — clamping against
+    // that would park the card unclamped at the raw click point, so keep the last good position.
+    if (r.width === 0) return
     setPos({
       left: Math.max(8, Math.min(x, window.innerWidth - r.width - 8)),
       top: Math.max(8, Math.min(y, window.innerHeight - r.height - 8))
     })
-  }, [x, y, relationship, inviteOpen, invitableCommunities?.length])
+  }, [x, y, relationship])
   const isMe = !!me?.address && !!user.address && me.address.toLowerCase() === user.address.toLowerCase()
   const { base, tag } = splitName(user.name)
   const color = nameColor(user.address || user.name)
-  // Ask which communities the local user can invite this address to (server filters by role);
-  // an empty result hides the "Invite to Community" row (mirrors the old profile-menu).
-  useEffect(() => {
-    if (!isMe && user.address && onRequestInvitable) onRequestInvitable(user.address)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user.address])
 
   const copy = (text: string, which: 'name' | 'address'): void => {
     navigator.clipboard?.writeText(text).then(
@@ -192,9 +167,8 @@ export function ProfileCard({
     )
   }
 
-  const hasInvite = !!onInvite && !!user.address && !!invitableCommunities && invitableCommunities.length > 0
   const hasDestructive = (!!onFriendAction && !!user.address) || !!onReport
-  const hasMenu = !isMe && (!!onViewProfile || !!onMention || hasInvite || hasDestructive)
+  const hasMenu = !isMe && (!!onViewProfile || !!onMention || hasDestructive)
 
   return createPortal(
     <>
@@ -224,12 +198,12 @@ export function ProfileCard({
         {!isMe && user.address && onFriendAction && relationship !== 'friend' && relationship !== 'blocked' && (
           relationship === 'incoming' ? (
             <div className={styles.ctaRow}>
-              <button type="button" className={styles.cta} onClick={() => { onFriendAction('accept', user.address); onClose() }}>
+              <Button className={styles.ctaHalf} onClick={() => { onFriendAction('accept', user.address); onClose() }}>
                 ACCEPT
-              </button>
-              <button type="button" className={styles.ctaGhost} onClick={() => { onFriendAction('reject', user.address); onClose() }}>
+              </Button>
+              <Button variant="ghost" className={styles.ctaHalf} onClick={() => { onFriendAction('reject', user.address); onClose() }}>
                 REJECT
-              </button>
+              </Button>
             </div>
           ) : justSent || relationship === 'requested' ? (
             <div className={`${styles.cta} ${styles.ctaSent}`}>✓ REQUEST SENT</div>
@@ -253,24 +227,6 @@ export function ProfileCard({
                 <MentionIcon />
                 <span>Mention</span>
               </button>
-            )}
-            {hasInvite && (
-              <>
-                <button type="button" className={styles.row} aria-expanded={inviteOpen} onClick={() => setInviteOpen((o) => !o)}>
-                  <CommunityIcon />
-                  <span>Invite to Community</span>
-                  <Chevron open={inviteOpen} />
-                </button>
-                {inviteOpen && (
-                  <div className={styles.submenu}>
-                    {invitableCommunities!.map((c) => (
-                      <button key={c.id} type="button" className={styles.subRow} onClick={() => { onInvite!(c.id, user.address); onClose() }}>
-                        {c.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </>
             )}
             {hasDestructive && <div className={styles.divider} />}
             {onFriendAction && user.address && (

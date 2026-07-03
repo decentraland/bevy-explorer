@@ -5,7 +5,8 @@ import { ProfileCard } from '../features/chat/ProfileCard'
 
 // DOMAIN: profile-card — the shared popover (chat / friends / world avatar click). Covers the
 // action set ported from bevy-ui-scene's profile-menu: relationship-driven friend CTA (Add /
-// Accept+Reject / Requested / Unblock), View Passport, Mention, Invite to Community, Block, Report.
+// Accept+Reject / Requested / Unblock), View Passport, Mention, Block, Report. ("Invite to
+// Community" is parked until the communities feature — see design-system-backlog.md.)
 const ALICE = { address: '0xalice', name: 'Alice' }
 
 function renderCard(props: Partial<React.ComponentProps<typeof ProfileCard>> = {}): { onClose: () => void } {
@@ -39,27 +40,6 @@ describe('profile-card actions', () => {
     renderCard({ onViewProfile })
     await userEvent.click(screen.getByRole('button', { name: 'View Passport' }))
     expect(onViewProfile).toHaveBeenCalledWith(expect.objectContaining({ address: '0xalice' }))
-  })
-
-  it('fetches invitable communities on open and invites via the submenu', async () => {
-    const onRequestInvitable = vi.fn()
-    const onInvite = vi.fn()
-    renderCard({
-      onRequestInvitable,
-      onInvite,
-      invitableCommunities: [{ id: 'c1', name: 'Builders' }]
-    })
-    expect(onRequestInvitable).toHaveBeenCalledWith('0xalice')
-    // Submenu is collapsed until the row is clicked.
-    expect(screen.queryByRole('button', { name: 'Builders' })).toBeNull()
-    await userEvent.click(screen.getByRole('button', { name: /Invite to Community/i }))
-    await userEvent.click(screen.getByRole('button', { name: 'Builders' }))
-    expect(onInvite).toHaveBeenCalledWith('c1', '0xalice')
-  })
-
-  it('hides "Invite to Community" when there are no invitable communities', () => {
-    renderCard({ onRequestInvitable: vi.fn(), onInvite: vi.fn(), invitableCommunities: [] })
-    expect(screen.queryByRole('button', { name: /Invite to Community/i })).toBeNull()
   })
 
   it('Report asks for confirmation before firing', async () => {

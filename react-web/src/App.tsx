@@ -206,9 +206,6 @@ function Hud(): React.JSX.Element {
             onFriendAction={session.friends.act}
             onViewProfile={openPassport}
             onReport={reportUser}
-            invitable={session.communities.invitable}
-            onRequestInvitable={session.communities.requestInvitable}
-            onInvite={session.communities.invite}
             onTeleport={(x, y) => session.map.teleport(x, y)}
             onVisitWorld={(name) => setVisitWorld(name)}
             relationshipOf={relationshipOf}
@@ -220,9 +217,6 @@ function Hud(): React.JSX.Element {
             onViewProfile={openPassport}
             onReport={reportUser}
             onMention={session.chat.mention}
-            invitable={session.communities.invitable}
-            onRequestInvitable={session.communities.requestInvitable}
-            onInvite={session.communities.invite}
           />
           <SettingsPanel settings={session.settings} profile={session.profile} onNavigate={goToMenuPage} />
           <ProfilePanel profile={session.profile} />
@@ -279,9 +273,6 @@ function Hud(): React.JSX.Element {
               onMention={session.chat.mention}
               onViewProfile={openPassport}
               onReport={reportUser}
-              invitableCommunities={session.communities.invitable[session.worldCard.address.toLowerCase()]}
-              onRequestInvitable={session.communities.requestInvitable}
-              onInvite={session.communities.invite}
               onClose={session.closeWorldCard}
             />
           )}

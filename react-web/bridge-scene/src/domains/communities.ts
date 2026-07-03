@@ -149,11 +149,14 @@ export function registerCommunities(ctx: Ctx): void {
     ctx.send({ kind: 'communityDetail', id: msg.id, members, posts, places, events, photos })
   })
   // Communities the local user can invite `address` to. The social-api filters server-side
-  // (caller must be owner/moderator, target not already a member) and returns {data:[{id,name}]}
-  // (the /members/:address/invites route envelopes under `data`, unlike the /communities routes above).
+  // (caller must be owner/moderator, target not already a member) and returns {data:[{id,name}]} —
+  // and `signed()` already unwraps the `data` envelope, so the result IS the array (typing it as
+  // the envelope and reading `.data` again would always yield [] — see PR #915 review).
+  // NOTE: currently unused — the profile-card's "Invite to Community" row is parked until the
+  // communities feature (see react-web/docs/design-system-backlog.md).
   ctx.on('getInvitableCommunities', async (msg) => {
-    const res = await signed<{ data?: InvitableCommunity[] }>(`${await membersBase()}/${msg.address.toLowerCase()}/invites`).catch(() => undefined)
-    ctx.send({ kind: 'invitableCommunities', address: msg.address, communities: res?.data ?? [] })
+    const res = await signed<InvitableCommunity[]>(`${await membersBase()}/${msg.address.toLowerCase()}/invites`).catch(() => undefined)
+    ctx.send({ kind: 'invitableCommunities', address: msg.address, communities: res ?? [] })
   })
   ctx.on('inviteToCommunity', async (msg) => {
     await signed(`${await base()}/${msg.communityId}/requests`, 'POST', { targetedAddress: msg.address.toLowerCase(), type: 'invite' }).catch((e: unknown) => {

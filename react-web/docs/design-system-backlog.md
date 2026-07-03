@@ -62,6 +62,17 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
 15. **`CopyButton`** (inline in ProfileCard · old `copy-button`)
 16. **`Username`** (name + verified · old `player-name-component`)
 17. `Button` `iconLeft`/`iconRight` props + `hoverIcon` (niche · old `ButtonComponent`)
+17b. **Re-enable "Invite to Community" in `ProfileCard`** — *feature, parked until communities work*.
+    The row/submenu UI was removed from `ProfileCard` (PR #915 follow-up); the protocol messages,
+    `session.communities.invitable`/`requestInvitable`/`invite`, and the bridge handlers all remain.
+    When re-enabling: (1) the `/invites` response is `{data:[…]}` but `signed()` already unwraps the
+    envelope — type it as the bare array (fixed in `communities.ts`, don't regress it); (2) the
+    `invitableFetchedRef` once-per-address cache needs invalidation — drop the key on fetch failure
+    (a transient 500 currently caches "no communities" for the session), remove/refetch after a
+    successful invite (else the card re-offers it and the duplicate POST fails silently), and clear
+    both `invitable` and the ref on logout/identity change; (3) surface invite errors to the user
+    (the bridge currently swallows them with `console.error`); (4) build the submenu on the
+    `ContextMenu` primitive instead of the removed bespoke `.submenu`/`.subRow` CSS.
 18. **HUD state: `useEngineSession` hook prop-drilled → consider Context / a store** — *architecture,
     low priority*. All HUD state lives in one `useEngineSession` hook at the top of `Hud`, prop-drilled
     down; the returned `session` is a fresh object every render, so the whole HUD re-renders on any

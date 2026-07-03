@@ -6,7 +6,7 @@
 import { useMemo, useState } from 'react'
 import { Avatar, Button, ControlButton } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
-import type { Friend, FriendRequest, InvitableCommunity } from '../../engine/protocol'
+import type { Friend, FriendRequest } from '../../engine/protocol'
 import type { FriendsState } from '../session/useEngineSession'
 import { ProfileCard, type ChatUser, type Relationship } from '../chat/ProfileCard'
 import styles from './FriendsPanel.module.css'
@@ -158,10 +158,7 @@ export function FriendsPanel({
   relationshipOf,
   onViewProfile,
   onReport,
-  onMention,
-  invitable,
-  onRequestInvitable,
-  onInvite
+  onMention
 }: {
   friends: FriendsState
   me?: { address?: string } | null
@@ -170,9 +167,6 @@ export function FriendsPanel({
   onViewProfile?: (user: ChatUser) => void
   onReport?: (user: ChatUser) => void
   onMention?: (name: string) => void
-  invitable?: Record<string, InvitableCommunity[]>
-  onRequestInvitable?: (address: string) => void
-  onInvite?: (communityId: string, address: string) => void
 }): React.JSX.Element | null {
   const [tab, setTab] = useState<Tab>('friends')
   // Same profile menu the chat opens, anchored at the clicked row.
@@ -304,9 +298,6 @@ export function FriendsPanel({
           onViewProfile={onViewProfile}
           onMention={onMention}
           onReport={onReport}
-          invitableCommunities={menu.user.address ? invitable?.[menu.user.address.toLowerCase()] : undefined}
-          onRequestInvitable={onRequestInvitable}
-          onInvite={onInvite}
           onClose={() => setMenu(null)}
         />
       )}

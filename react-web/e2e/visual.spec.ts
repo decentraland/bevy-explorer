@@ -96,9 +96,8 @@ test.describe('visual — mock HUD', () => {
   })
 
   // Profile card — the popover opened by clicking a chat sender / nearby avatar. Baselines the
-  // synchronous action set (View Passport · Mention · Block · Report). The async "Invite to
-  // Community" row + submenu, the Report confirm, and the relationship states (Accept/Reject/Unblock)
-  // are covered deterministically by the tier-1 profileCard.test.tsx.
+  // action set (View Passport · Mention · Block · Report). The Report confirm and the relationship
+  // states (Accept/Reject/Unblock) are covered deterministically by the tier-1 profileCard.test.tsx.
   test('profile card', async ({ page }) => {
     await enterWorld(page)
     await page.getByRole('button', { name: 'View Sharknado' }).first().click()
