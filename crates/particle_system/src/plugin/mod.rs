@@ -102,7 +102,6 @@ fn particle_system_on_insert(
         .initial_velocity_speed
         .unwrap_or(FloatRange { start: 1., end: 1. });
     let limit_velocity = particle_system.limit_velocity.as_ref();
-    let billboard = particle_system.billboard.unwrap_or(true);
     let initial_size = particle_system
         .initial_size
         .unwrap_or(FloatRange { start: 1., end: 1. });
@@ -157,6 +156,7 @@ fn particle_system_on_insert(
         BlendMode::PsbAdd => AlphaMode::Add,
         BlendMode::PsbMultiply => AlphaMode::Multiply,
     };
+    let billboard = particle_system.billboard.unwrap_or(true);
 
     let writer = ExprWriter::new();
 
