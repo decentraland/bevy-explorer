@@ -1,14 +1,15 @@
 mod random_color_modifier;
 mod set_position_modifier;
 mod speed_dampen;
+mod update_sprite_index;
 
 use bevy::{math::bounding::Aabb3d, prelude::*};
 use bevy_hanabi::{
     AccelModifier, AlphaMode, Attribute, ColorOverLifetimeModifier, EffectAsset, EffectMaterial,
-    ExprHandle, ExprWriter, Gradient, HanabiPlugin, OrientMode, OrientModifier, ParticleEffect,
-    ParticleTextureModifier, ScalarType, SetAttributeModifier, SetPositionCone3dModifier,
-    SetPositionSphereModifier, SetVelocitySphereModifier, SizeOverLifetimeModifier,
-    SpawnerSettings,
+    ExprHandle, ExprWriter, FlipbookModifier, Gradient, HanabiPlugin, OrientMode, OrientModifier,
+    ParticleEffect, ParticleTextureModifier, ScalarType, SetAttributeModifier,
+    SetPositionCone3dModifier, SetPositionSphereModifier, SetVelocitySphereModifier,
+    SizeOverLifetimeModifier, SpawnerSettings,
 };
 use common::debug_panic;
 use dcl_component::{
@@ -31,7 +32,7 @@ use scene_runner::{
 use crate::{
     plugin::{
         random_color_modifier::RandomColorModifier, set_position_modifier::SetPositionModifier,
-        speed_dampen::SpeedDampenModifier,
+        speed_dampen::SpeedDampenModifier, update_sprite_index::UpdateSpriteIndexModifier,
     },
     ParticleSystem,
 };
@@ -157,6 +158,7 @@ fn particle_system_on_insert(
         BlendMode::PsbMultiply => AlphaMode::Multiply,
     };
     let billboard = particle_system.billboard.unwrap_or(true);
+    let sprite_sheet = particle_system.sprite_sheet.as_ref();
 
     let writer = ExprWriter::new();
 
@@ -214,6 +216,10 @@ fn particle_system_on_insert(
             .lit(limit_velocity.dampen.unwrap_or(1.).clamp(0., 1.))
             .expr(),
     });
+    let update_sprite_sheet = sprite_sheet.map(|sprite_sheet| UpdateSpriteIndexModifier {
+        frame_count: sprite_sheet.tiles_x * sprite_sheet.tiles_y,
+        frames_per_second: sprite_sheet.frames_per_second.unwrap_or(30.),
+    });
 
     let render_size_over_lifetime = SizeOverLifetimeModifier {
         gradient: Gradient::from_keys([
@@ -247,6 +253,12 @@ fn particle_system_on_insert(
         mode: OrientMode::FaceCameraPosition,
         rotation: Some(writer.attr(ROTATION_ATTR).expr()),
     };
+    let render_sprite_sheet = sprite_sheet.map(|sprite_sheet| FlipbookModifier {
+        sprite_grid_size: UVec2 {
+            x: sprite_sheet.tiles_x,
+            y: sprite_sheet.tiles_y,
+        },
+    });
 
     let mut module = writer.finish();
     if render_texture.is_some() {
@@ -272,6 +284,9 @@ fn particle_system_on_insert(
     if let Some(update_clamp_velocity) = update_clamp_velocity {
         set!(effect_asset, update, update_clamp_velocity);
     }
+    if let Some(update_sprite_sheet) = update_sprite_sheet {
+        set!(effect_asset, update, update_sprite_sheet);
+    }
 
     set!(effect_asset, render, render_size_over_lifetime);
     if particle_system.color_over_time.is_some() {
@@ -282,6 +297,9 @@ fn particle_system_on_insert(
     }
     if billboard {
         set!(effect_asset, render, render_billboard);
+    }
+    if let Some(render_sprite_sheet) = render_sprite_sheet {
+        set!(effect_asset, render, render_sprite_sheet);
     }
 
     let handle = effect_assets.add(effect_asset);
