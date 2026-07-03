@@ -162,6 +162,8 @@ function seedMockSso(o: MockOptions): void {
 export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
   const o = { ...DEFAULTS, ...opts }
   seedMockSso(o)
+  // ?simhover cursor-follow listener — kept here so the cleanup below can remove it.
+  let simHoverMove: ((e: MouseEvent) => void) | null = null
   // Stateful so markNotificationsRead persists across reopens (like the real service).
   const mockNow = 1_700_000_000_000
   // Shapes mirror the real notifications service: friendship notifications carry the other user
@@ -248,8 +250,11 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
       const cy = (window.innerHeight || 900) / 2
       setTimeout(() => reply({ kind: 'hover', actions: sample, x: cx, y: cy }), 1500)
       // Follow the real cursor so the tooltip-tracks-the-mouse behaviour is verifiable in ?mock=1
-      // (the real bridge streams this from PrimaryPointerInfo per frame).
-      window.addEventListener('mousemove', (e) => reply({ kind: 'hoverPos', x: e.clientX, y: e.clientY }))
+      // (the real bridge streams this from PrimaryPointerInfo per frame). Kept in simHoverMove so
+      // the bridge cleanup removes it (spawnPlayer can run again after a re-login).
+      if (simHoverMove) window.removeEventListener('mousemove', simHoverMove)
+      simHoverMove = (e) => reply({ kind: 'hoverPos', x: e.clientX, y: e.clientY })
+      window.addEventListener('mousemove', simHoverMove)
     }
 
     // Fake friends + requests for the React friends panel.
@@ -549,6 +554,7 @@ export function startMockBridge(opts: Partial<MockOptions> = {}): () => void {
   }
 
   return () => {
+    if (simHoverMove) window.removeEventListener('mousemove', simHoverMove)
     ch.close()
   }
 }
