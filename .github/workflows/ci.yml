@@ -18,8 +18,7 @@ jobs:
   # No separate `cargo check` job: clippy compiles everything check does, plus lints.
   hardcore-test:
     name: Test Scenes
-    # Dependabot bumps don't need the expensive jobs (the macOS/Windows matrix bills 10x/2x
-    # minutes) — fmt/clippy still validate cargo bumps.
+    # Dependabot bumps skip this full release build; fmt/clippy still validate them.
     if: ${{ github.actor != 'dependabot[bot]' }}
     runs-on: ubuntu-22.04
     # Main runs no longer share a workflow group, so coalescing moves here: a
@@ -62,8 +61,8 @@ jobs:
 
   test:
     name: Test Suite
-    # Dependabot bumps don't need the expensive jobs (the macOS/Windows matrix bills 10x/2x
-    # minutes) — fmt/clippy still validate cargo bumps.
+    # Dependabot bumps skip the heavy matrix (macOS bills 10x, Windows 2x minutes);
+    # fmt/clippy still validate cargo bumps and build-deploy-web covers npm ones.
     if: ${{ github.actor != 'dependabot[bot]' }}
     strategy:
       fail-fast: false
@@ -209,9 +208,8 @@ jobs:
 
   build-deploy-web:
     name: Build and Deploy Web
-    # Dependabot bumps don't need the expensive jobs (the macOS/Windows matrix bills 10x/2x
-    # minutes) — fmt/clippy still validate cargo bumps.
-    if: ${{ github.actor != 'dependabot[bot]' }}
+    # Not gated off dependabot: this is the only job that builds the npm trees
+    # (react-web, bridge-scene, deploy/web), so npm bumps need it to merge safely.
     # needs: [test, fmt, clippy]
     runs-on: ubuntu-latest
     # Serialize deploys per ref so two main pushes can't publish concurrently.
