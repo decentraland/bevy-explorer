@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "ignoreDeprecations": "6.0",
     "jsx": "react",
     "allowJs": true,
     "resolveJsonModule": true,
