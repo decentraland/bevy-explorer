@@ -17,7 +17,11 @@ const BLANK_PNG = Buffer.from(
 
 /** Make the page deterministic — call before the first navigation in each test. */
 async function prepare(page: Page): Promise<void> {
-  await page.clock.setFixedTime(FIXED_TIME)
+  // install (not setFixedTime): setFixedTime pins Date but leaves setTimeout on REAL time, so the
+  // mock bridge's staggered delivery (roster 1.4s, friends 1.6s, chat drip ≤6.9s — mockBridge
+  // spawnPlayer) raced the screenshot and pass/fail depended on machine load. install virtualizes
+  // the timers too, letting settle() fast-forward every test to the same terminal state.
+  await page.clock.install({ time: FIXED_TIME })
   await page.route(/^https?:\/\/(?!localhost|127\.0\.0\.1)/, (route) => {
     const type = route.request().resourceType()
     if (type === 'image' || type === 'media') return route.fulfill({ contentType: 'image/png', body: BLANK_PNG })
@@ -28,6 +32,9 @@ async function prepare(page: Page): Promise<void> {
 /** Fonts loaded + a beat for layout to settle (animations are frozen at screenshot time anyway). */
 async function settle(page: Page): Promise<void> {
   await page.evaluate(() => document.fonts.ready.then(() => undefined))
+  // Jump virtual time past the mock bridge's last staggered timer (chat drip ends at ~6.9s) so
+  // every screenshot captures the same fully-delivered state, regardless of wall-clock timing.
+  await page.clock.fastForward(15_000)
   await page.waitForTimeout(200)
 }
 
