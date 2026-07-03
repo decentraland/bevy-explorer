@@ -19,6 +19,15 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
    chat" event (the old scene owned chat focus in-engine). Also free the pointer + stop keystrokes
    reaching the engine while typing (so the avatar doesn't move), and restore on blur/Escape. (Old:
    bevy-ui-scene chat Enter-to-focus.)
+1b. **HUD hotkeys fire while typing in an SDK7 scene text input** — *behavior/bug, high impact*.
+   Typing in a scene-rendered input (search boxes, in-scene forms) triggers the menu shortcuts —
+   e.g. pressing **P** opens Settings mid-word. Cause: `useMenuShortcuts` attaches capture-phase
+   `keydown` to the **engine iframe window**, and a scene UI input is drawn inside the canvas, so
+   `e.target` is the canvas — the `INPUT`/`TEXTAREA`/`isContentEditable` guard never matches.
+   Fix path: the HUD needs to know when a scene text input has focus — have the bridge scene relay
+   the engine's text-input/IME focus state (a `textInputFocus` message) and suspend `useMenuShortcuts`
+   (and any other letter-key hotkeys) while it's true. Same underlying HUD↔engine keyboard-focus
+   problem as item 1 — solve them together.
 2. **Toast system** — *new*. Nothing transient/cross-cutting exists. Needed for real-time events
    (remote friend accepted, community invites, item sold…), ephemeral confirmations, and operational
    errors. Today faked with per-component `setTimeout`. (Old: `notification-toast-stack`.)
