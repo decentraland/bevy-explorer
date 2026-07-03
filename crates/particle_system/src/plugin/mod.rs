@@ -4,8 +4,8 @@ mod speed_dampen;
 
 use bevy::{math::bounding::Aabb3d, prelude::*};
 use bevy_hanabi::{
-    AccelModifier, Attribute, ColorOverLifetimeModifier, EffectAsset, EffectMaterial, ExprHandle,
-    ExprWriter, Gradient, HanabiPlugin, OrientMode, OrientModifier, ParticleEffect,
+    AccelModifier, AlphaMode, Attribute, ColorOverLifetimeModifier, EffectAsset, EffectMaterial,
+    ExprHandle, ExprWriter, Gradient, HanabiPlugin, OrientMode, OrientModifier, ParticleEffect,
     ParticleTextureModifier, ScalarType, SetAttributeModifier, SetPositionCone3dModifier,
     SetPositionSphereModifier, SetVelocitySphereModifier, SizeOverLifetimeModifier,
     SpawnerSettings,
@@ -14,7 +14,10 @@ use common::debug_panic;
 use dcl_component::{
     proto_components::{
         common::{texture_union::Tex, Color4, ColorRange, FloatRange, Vector3},
-        sdk::components::{pb_particle_system::Shape, PbParticleSystem},
+        sdk::components::{
+            pb_particle_system::{BlendMode, Shape},
+            PbParticleSystem,
+        },
         Color4DclToBevy,
     },
     ComponentPosition, SceneComponentId,
@@ -149,6 +152,11 @@ fn particle_system_on_insert(
                 .ok()
         })
         .map(|resolved_texture| resolved_texture.image);
+    let blend_mode = match particle_system.blend_mode() {
+        BlendMode::PsbAlpha => AlphaMode::Blend,
+        BlendMode::PsbAdd => AlphaMode::Add,
+        BlendMode::PsbMultiply => AlphaMode::Multiply,
+    };
 
     let writer = ExprWriter::new();
 
@@ -249,7 +257,8 @@ fn particle_system_on_insert(
         max_particles,
         SpawnerSettings::rate(rate.into()).with_starts_active(active),
         module,
-    );
+    )
+    .with_alpha_mode(blend_mode);
 
     set!(effect_asset, init, init_position);
     set!(effect_asset, init, init_rotation);
