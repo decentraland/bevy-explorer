@@ -9,3 +9,5 @@ yarn-debug.log*
 yarn-error.log*
 # export-static output (regenerate with `npm run export-static`)
 static/
+# sdk-commands build context (regenerated on every build)
+dclcontext/
