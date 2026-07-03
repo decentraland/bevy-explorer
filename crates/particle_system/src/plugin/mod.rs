@@ -32,8 +32,6 @@ const MIN_SPHERE_RADIUS: f32 = 1. / 128.;
 const GRAVITY: Vec3 = Vec3::new(0., -10., 0.);
 
 const ROTATION_ATTR: Attribute = Attribute::F32_0;
-const GRAVITY_ATTR: Attribute = Attribute::F32X3_0;
-const ADDITIONAL_FORCE_ATTR: Attribute = Attribute::F32X3_1;
 
 macro_rules! set {
     ($effect:expr, $stage:ident, $value:expr) => {
@@ -130,9 +128,6 @@ fn particle_system_on_insert(
     };
     let init_age = SetAttributeModifier::new(Attribute::AGE, writer.lit(0.).expr());
     let init_lifetime = SetAttributeModifier::new(Attribute::LIFETIME, writer.lit(lifetime).expr());
-    let init_gravity = SetAttributeModifier::new(GRAVITY_ATTR, writer.lit(GRAVITY).expr());
-    let init_additional_force =
-        SetAttributeModifier::new(ADDITIONAL_FORCE_ATTR, writer.lit(additional_force).expr());
     let init_color = RandomColorModifier {
         start: writer
             .lit(
@@ -157,8 +152,8 @@ fn particle_system_on_insert(
     };
 
     let update_accel = AccelModifier::new(
-        (writer.attr(GRAVITY_ATTR) * writer.lit(Vec3::new(1., gravity, 1.))
-            + writer.attr(ADDITIONAL_FORCE_ATTR))
+        (writer.lit(GRAVITY) * writer.lit(Vec3::new(1., gravity, 1.))
+            + writer.lit(additional_force))
         .expr(),
     );
     let update_clamp_velocity = limit_velocity.map(|limit_velocity| SpeedDampenModifier {
@@ -168,16 +163,16 @@ fn particle_system_on_insert(
             .expr(),
     });
 
-    let render_billboard = OrientModifier {
-        mode: OrientMode::FaceCameraPosition,
-        rotation: Some(writer.attr(ROTATION_ATTR).expr()),
-    };
     let render_size_over_lifetime = SizeOverLifetimeModifier {
         gradient: Gradient::from_keys([
             (0., Vec3::splat(size_over_lifetime.start)),
             (1., Vec3::splat(size_over_lifetime.end)),
         ]),
         screen_space_size: false,
+    };
+    let render_billboard = OrientModifier {
+        mode: OrientMode::FaceCameraPosition,
+        rotation: Some(writer.attr(ROTATION_ATTR).expr()),
     };
 
     let module = writer.finish();
@@ -194,8 +189,6 @@ fn particle_system_on_insert(
     set!(effect_asset, init, init_velocity);
     set!(effect_asset, init, init_age);
     set!(effect_asset, init, init_lifetime);
-    set!(effect_asset, init, init_gravity);
-    set!(effect_asset, init, init_additional_force);
     set!(effect_asset, init, init_color);
 
     set!(effect_asset, update, update_accel);
