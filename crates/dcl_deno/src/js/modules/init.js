@@ -35,7 +35,7 @@ function require(moduleName) {
         require,                    // require
         module,                     // module
         moduleName.substring(1),    // __filename
-        moduleName.substring(0,1)   // __dirname
+        moduleName.substring(0, 1)   // __dirname
     );
 
     return module.exports;
@@ -109,6 +109,7 @@ globalThis.setImmediate = (fn) => Promise.resolve().then(fn)
 
 globalThis.require = require;
 globalThis.console = console;
+globalThis.self = {};
 
 // this does NOT seem like the nicest way to do re-exports but i can't figure out how to do it otherwise
 import { Request } from "ext:deno_fetch/23_request.js"

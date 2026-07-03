@@ -74,7 +74,9 @@ async function fetchWithProgress(url, onProgress, expectedSize) {
  */
 export async function initEngine() {
 
-  const publicUrl = window.PUBLIC_URL || ".";
+  // Versioned CDN base in prod (set by the host before boot); fall back to this module's own
+  // directory — NOT the page path, which is the React app's URL in same-document mode.
+  const publicUrl = window.PUBLIC_URL || new URL(".", import.meta.url).href.replace(/\/$/, "");
   const wasmUrl = `${publicUrl}/pkg/webgpu_build_bg.wasm`;
 
   // Fetch manifest for expected WASM size (used when Content-Length is missing due to CDN compression)
@@ -157,8 +159,7 @@ export async function initEngine() {
   window.spawn_and_init_sandbox = async () => {
     var timeoutId;
     return new Promise((resolve, _reject) => {
-      const basePath = window.location.pathname.replace(/\/$/, ''); // removes trailing slash if present
-      const sandboxWorkerPath = new URL(`${basePath}/sandbox_worker.js`, window.location.origin);
+      const sandboxWorkerPath = new URL("./sandbox_worker.js", import.meta.url);
       var sandboxWorker = new Worker(sandboxWorkerPath, { type: "module" });
       sandboxWorker.onerror = workerCrashHandler("sandbox");
 
@@ -215,8 +216,7 @@ export async function initEngine() {
 
   // start asset loader thread
   await new Promise((resolve, _reject) => {
-    const basePath = window.location.pathname.replace(/\/$/, ''); // removes trailing slash if present
-    const assetLoaderPath = new URL(`${basePath}/asset_loader.js`, window.location.origin);
+    const assetLoaderPath = new URL("./asset_loader.js", import.meta.url);
 
     const assetLoader = new Worker(assetLoaderPath, { type: "module" });
     assetLoader.onerror = workerCrashHandler("asset loader");
@@ -239,8 +239,7 @@ export async function initEngine() {
 
   // start asset processor thread
   await new Promise((resolve, _reject) => {
-    const basePath = window.location.pathname.replace(/\/$/, ''); // removes trailing slash if present
-    const assetProcessorPath = new URL(`${basePath}/asset_processor.js`, window.location.origin);
+    const assetProcessorPath = new URL("./asset_processor.js", import.meta.url);
 
     const assetProcessor = new Worker(assetProcessorPath, { type: "module" });
     assetProcessor.onerror = workerCrashHandler("asset processor");
@@ -263,14 +262,23 @@ export async function initEngine() {
 }
 
 /**
- * Starts the game engine with values from the UI inputs.
+ * Starts the game engine. Values come from the caller (boot.js's __bevyLaunch, fed by the React
+ * host) — the old boot page's form inputs are gone.
  */
-export function start() {
-  const realmValue = realmInput.value;
-  const positionValue = positionInput.value;
-  const systemScene = systemSceneInput.value;
-  const portables = portablesInput.value;
-  const preview = previewInput.checked;
+export function start({ realm, position, systemScene, portables, preview } = {}) {
+  // Launch at most once per page: a second engine_run re-runs init_runtime, whose OnceCell is
+  // already set, and panics ("can't init wasm queue"). One engine per page — ignore re-entry.
+  if (window.__bevyStarted) {
+    console.warn('[engine] start() ignored — the engine is already running');
+    return;
+  }
+  window.__bevyStarted = true;
+
+  const realmValue = realm ?? '';
+  const positionValue = position ?? '';
+  const systemSceneValue = systemScene ?? '';
+  const portablesValue = portables ?? 'basiccontroller.dcl.eth';
+  const previewValue = preview === true;
 
   // Build params from URL, overriding with form field values
   const urlParams = new URLSearchParams(window.location.search);
@@ -278,17 +286,17 @@ export function start() {
   if (positionValue) {
     urlParams.set("position", positionValue);
   }
-  urlParams.set("systemScene", systemScene);
-  urlParams.set("portables", portables);
+  urlParams.set("systemScene", systemSceneValue);
+  urlParams.set("portables", portablesValue);
   urlParams.delete("initialRealm");
-  if (preview) {
+  if (previewValue) {
     urlParams.set("preview", "true");
   } else {
     urlParams.delete("preview");
   }
   const params = urlParams.toString();
   console.log(
-    `[Main JS] "Launch" button clicked. Initial Realm: "${realmValue}", Position (coords): "${positionValue}", System Scene: "${systemScene}, Portables: "${portables}"`
+    `[Main JS] "Launch" button clicked. Initial Realm: "${realmValue}", Position (coords): "${positionValue}", System Scene: "${systemSceneValue}", Portables: "${portablesValue}"`
   );
   hideHeader();
 
@@ -347,13 +355,12 @@ export function start() {
     delete window._buildEngineApi;
   };
 
-  engine_run(platform, realmValue, positionValue, systemScene, portables, true, preview, 1e7, params);
+  engine_run(platform, realmValue, positionValue, systemSceneValue, portablesValue, true, previewValue, 1e7, params);
   window.engine_console_command = engine_console_command;
   window.loadSceneUtils = () => {
     return new Promise((resolve, reject) => {
-      const basePath = window.location.pathname.replace(/\/$/, '');
       const s = document.createElement('script');
-      s.src = new URL(`${basePath}/sceneUtils.js`, window.location.origin);
+      s.src = new URL('./sceneUtils.js', import.meta.url);
       s.onload = () => { console.log('sceneUtils loaded'); resolve(); };
       s.onerror = () => reject(new Error('failed to load sceneUtils.js'));
       document.head.appendChild(s);

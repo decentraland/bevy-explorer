@@ -55,15 +55,6 @@ test.describe('react HUD ↔ engine — in-panel clicks (console-verified)', () 
       .toBe(true)
   })
 
-  // --- emote wheel: clicking a slot plays that emote (bridge: triggerEmote) -----
-  test('emotes: clicking a wheel slot plays that emote', async () => {
-    await sidebar(page, 'Emotes')
-    await expectBridge(page, 'page', 'emotes') // wheel populated
-    // Slots are numbered 1..9,0; slot "1" holds a base emote for a fresh guest.
-    await page.getByText('1', { exact: true }).first().click()
-    await expectBridge(page, 'scene', 'triggerEmote')
-  })
-
   // --- backpack: equipping a wearable bumps the deployed profile version --------
   // The clearest console-observable click: equip → setAvatar → profile re-deploy → version++.
   test('backpack: equipping a wearable bumps the profile version (get_user_data)', async () => {
@@ -75,7 +66,7 @@ test.describe('react HUD ↔ engine — in-panel clicks (console-verified)', () 
     await card.hover()
     await card.getByText(/EQUIP|UNEQUIP/i).click()
     await expectBridge(page, 'scene', 'equip')
-    await expect.poll(() => profileVersion(page), { timeout: 30_000 }).toBeGreaterThan(before)
+    await expect.poll(() => profileVersion(page), { timeout: 60_000 }).toBeGreaterThan(before) // catalyst deploy can be slow
   })
 
   // --- backpack → Emotes tab: assigning an emote to a slot (bridge: equipEmote) --
@@ -88,6 +79,17 @@ test.describe('react HUD ↔ engine — in-panel clicks (console-verified)', () 
     await card.hover()
     await card.getByText(/EQUIP|UNEQUIP/i).click()
     await expectBridge(page, 'scene', 'equipEmote')
+  })
+
+  // --- emote wheel: clicking a populated slot plays that emote (bridge: triggerEmote) --
+  // Runs AFTER the assign test: a fresh guest's wheel can be empty, so we click a slot the
+  // previous test just filled — the aria-label carries ": <name>" only for populated slots.
+  test('emotes: clicking a wheel slot plays that emote', async () => {
+    await sidebar(page, 'Emotes')
+    await expectBridge(page, 'page', 'emotes') // wheel data arrived
+    const populated = page.getByRole('button', { name: /^Emote slot \d+: / }).first()
+    await populated.click({ timeout: 30_000 })
+    await expectBridge(page, 'scene', 'triggerEmote')
   })
 
   // --- settings: nudging a slider posts setSetting -----------------------------

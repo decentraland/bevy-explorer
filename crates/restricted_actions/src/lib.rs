@@ -1088,8 +1088,17 @@ fn get_user_data(
                 Some(profile) => response.send(Ok(profile.content.clone())),
                 None => {
                     if let Ok(mut ctx) = scenes.get_mut(*scene) {
-                        // force scene to wait till user data is available
-                        ctx.blocked.insert("get_user_data");
+                        // Force parcel scenes to wait until user data is available
+                        // (existing scenes rely on getUserData resolving before they
+                        // proceed). Portables/global scenes must NOT be frozen this
+                        // way: a startup portable would otherwise be held out of the
+                        // scheduler entirely until the local profile loads (~when the
+                        // player lands in-world), so it can't run `main()` — or issue
+                        // asset preloads — before login completes. The pending request
+                        // is still queued below and answered once the profile arrives.
+                        if !ctx.is_portable {
+                            ctx.blocked.insert("get_user_data");
+                        }
                     }
                     info!("cloning response");
                     pending_primary_requests.push((*scene, response.clone()))

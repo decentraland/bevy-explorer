@@ -1,13 +1,13 @@
 // Live FPS measurement for the perf overlay.
 //
 // PAGE fps = the React/page main-thread frame rate (requestAnimationFrame). Because the
-// engine runs in a SAME-ORIGIN iframe, it shares this main thread — so if React re-renders
+// engine runs in THIS document, sharing the main thread — so if React re-renders
 // starve the frame budget, this number drops. That's the "is the HUD hurting perf?" signal.
 //
-// ENGINE fps = the bevy render loop's rate. On WEB it's read by wrapping the engine iframe's
-// per-frame `window.__engineHeartbeat()` (deploy/web/index.html). On NATIVE there is no iframe —
-// the native overlay pushes the engine's measured fps to `window.__nativeEngineFps` (see
-// src/react_hud.rs), which we read directly. null when there's no engine or it hasn't booted yet.
+// ENGINE fps = the bevy render loop's rate, read by wrapping the engine's per-frame
+// `window.__engineHeartbeat()` (deploy/web/engine/boot.js; the Rust loop calls it every frame).
+// On NATIVE the overlay pushes bevy's measured fps to `window.__nativeEngineFps` instead.
+// null when there's no engine (mock mode) or it hasn't booted yet.
 
 import { useEffect, useState } from 'react'
 
@@ -22,7 +22,7 @@ export interface FpsStats {
 
 type HeartbeatWindow = Window & {
   __engineHeartbeat?: (...a: unknown[]) => unknown
-  // Native overlay pushes bevy's measured fps here (no engine iframe on native).
+  // Native overlay pushes bevy's measured fps here (no engine on this document's rAF loop).
   __nativeEngineFps?: number
 }
 
@@ -40,11 +40,12 @@ export function useFps(enabled: boolean): FpsStats {
     let lastTs = windowStart
     let msAccum = 0
 
-    // Wrap the engine iframe's per-frame heartbeat so we can count its frames.
+    // Wrap the engine's per-frame heartbeat so we can count its frames. Same-document engine
+    // (no iframe): boot.js installs __engineHeartbeat on THIS window once the module loads —
+    // re-check each frame until it appears.
     const hookEngine = (): void => {
-      const iframe = document.querySelector<HTMLIFrameElement>('iframe[title="Decentraland engine"]')
-      const w = iframe?.contentWindow as HeartbeatWindow | null | undefined
-      if (!w || w === hookedWin || typeof w.__engineHeartbeat !== 'function') return
+      const w = window as HeartbeatWindow
+      if (w === hookedWin || typeof w.__engineHeartbeat !== 'function') return
       origBeat = w.__engineHeartbeat
       w.__engineHeartbeat = function (this: unknown, ...args: unknown[]) {
         engineFrames++
@@ -60,17 +61,16 @@ export function useFps(enabled: boolean): FpsStats {
       hookEngine()
       if (t - windowStart >= 500) {
         const secs = (t - windowStart) / 1000
-        // Native pushes the real engine fps here; otherwise count the iframe heartbeat (web).
-        const nativeEngine = (window as HeartbeatWindow).__nativeEngineFps
-        const engine =
-          typeof nativeEngine === 'number'
-            ? Math.round(nativeEngine)
-            : hookedWin
-              ? Math.round(engineFrames / secs)
-              : null
         setStats({
           page: Math.round(frames / secs),
-          engine,
+          // Native pushes the real engine fps (see src/react_hud.rs); otherwise count the
+          // same-document heartbeat (web).
+          engine:
+            typeof (window as HeartbeatWindow).__nativeEngineFps === 'number'
+              ? Math.round((window as HeartbeatWindow).__nativeEngineFps!)
+              : hookedWin
+                ? Math.round(engineFrames / secs)
+                : null,
           ms: Number((msAccum / frames).toFixed(1))
         })
         frames = 0

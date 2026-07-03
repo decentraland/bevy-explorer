@@ -4,6 +4,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { clearStoredLogins, getStoredLogin, redirectToAuth, rootAddress, type StoredLogin } from '../auth/sso'
 import type { LoginDriver } from '../../engine/driver'
+import type { FatalError } from '../error/EngineErrorModal'
+import { DEFAULT_REALM } from '../engine/EngineHost'
 import type {
   AppNotification,
   ChatMessage,
@@ -182,6 +184,10 @@ export interface LoginFlow {
   /** Engine has booted and can accept the login command. The engine-driven CTAs (Jump in / Explore)
    *  stay disabled until this is true so a click never lands in a silent wait. Always true for mock. */
   engineReady: boolean
+  /** Real boot progress (0–100, weighted) from the engine loader, for the login footer bar. */
+  loadProgress: number
+  /** Active boot step id ('download'|'compile'|'init'|'workers'|'gpu') or null. */
+  loadStep: string | null
   /** Fresh sign-in → redirect to the same-domain auth site. */
   startWithAccount: () => void
   exploreAsGuest: () => void
@@ -197,6 +203,13 @@ export interface EngineSession {
   pickDestination: (dest: Destination) => void
   login: LoginFlow
   scene: SceneLoadingState | null
+  /** Fatal engine error → full-screen error popup. 'launch' = boot panic (fatal), 'runtime' =
+   *  post-launch crash bridged from the engine watchdog (dismissable). null when healthy. */
+  fatalError: FatalError | null
+  /** Reload the whole page (error-popup action). */
+  reload: () => void
+  /** Dismiss a non-fatal (runtime) error popup. */
+  dismissFatal: () => void
   /** World-entity hover hints under the reticle (empty = nothing hovered). */
   hover: HoverAction[]
   /** Engine has grabbed the mouse for camera-look (OS cursor hidden) → show the crosshair. */
@@ -252,6 +265,21 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const [error, setError] = useState<string | null>(null)
   // Engine boots (autostart) while the login screen is up; this flips true once it can take commands.
   const [engineReady, setEngineReady] = useState(false)
+  // Real WASM-download/boot progress surfaced from the engine iframe (0–100) + the active step id,
+  // for the login footer bar. The engine's own loader is hidden (hideLoader=1).
+  const [loadProgress, setLoadProgress] = useState(0)
+  const [loadStep, setLoadStep] = useState<string | null>(null)
+  // Fatal engine error → full-screen popup. 'launch' = boot panic (fatal, no dismiss); 'runtime' =
+  // post-launch crash bridged from the engine watchdog (can be a false positive → dismissable).
+  // ?simerror=1 (or =launch) seeds a sample so the popup can be iterated without a real panic.
+  const [fatalError, setFatalError] = useState<FatalError | null>(() => {
+    const sim = new URLSearchParams(location.search).get('simerror')
+    if (sim == null) return null
+    return {
+      message: "panicked at crates/dcl_wasm/src/inner/mod.rs:41:9:\ncan't init wasm queue\n\n(simulated)",
+      source: sim === 'launch' ? 'launch' : 'runtime'
+    }
+  })
 
   // Past login → waiting for the world.
   const [submitted, setSubmitted] = useState(false)
@@ -260,6 +288,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   // Deferred login: the login call captured on Jump in, run only once the user picks a destination
   // (so the engine is launched straight at that destination instead of loading Genesis Plaza first).
   const pendingLogin = useRef<((driver: LoginDriver) => Promise<unknown>) | null>(null)
+  // Stops the post-launch boot-panic poll once the world is reached (so it can't mislabel a benign
+  // post-boot panic as a launch failure). The timer id is kept so it's cancelled on unmount.
+  const bootPollStop = useRef(false)
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [playerReady, setPlayerReady] = useState(false)
   const [scene, setScene] = useState<SceneLoadingState | null>(null)
   const [hover, setHover] = useState<HoverAction[]>([])
@@ -314,7 +346,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     const off = driver.on((msg) => {
       switch (msg.kind) {
         case 'event':
-          if (msg.name === 'playerReady') setPlayerReady(true)
+          if (msg.name === 'playerReady') {
+            setPlayerReady(true)
+            bootPollStop.current = true // world reached → stop watching for a boot panic
+          }
           break
         case 'sceneLoading':
           setScene(msg.state)
@@ -430,20 +465,44 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     const driver = driverRef.current
     if (driver == null || typeof driver.engineReady !== 'function') {
       setEngineReady(true)
+      setLoadProgress(100)
       return
     }
     if (driver.engineReady()) {
       setEngineReady(true)
+      setLoadProgress(100)
       return
     }
     const id = setInterval(() => {
-      if (driverRef.current?.engineReady?.() === true) {
+      const d = driverRef.current
+      setLoadProgress(d?.loadProgress?.() ?? 0)
+      setLoadStep(d?.loadStep?.() ?? null)
+      if (d?.engineReady?.() === true) {
         setEngineReady(true)
+        setLoadProgress(100)
+        setLoadStep(null)
         clearInterval(id)
       }
     }, 200)
     return () => clearInterval(id)
   }, [])
+
+  // Runtime engine crashes (heartbeat stall) are detected by the bundle's watchdog and bridged to us
+  // as a same-origin postMessage (the iframe's own overlay is hidden behind react-web's HUD).
+  useEffect(() => {
+    // Same-document engine (no iframe): the crash watchdog in engine/boot.js calls this directly
+    // instead of rendering any overlay — React owns the error UI.
+    const w = window as Window & { __onEngineCrash?: (message: string, source: string) => void }
+    w.__onEngineCrash = (message) => {
+      setFatalError((prev) => prev ?? { message: message || 'The engine stopped responding.', source: 'runtime' })
+    }
+    return () => {
+      delete w.__onEngineCrash
+    }
+  }, [])
+
+  // Cancel the boot-panic poll on unmount — the one self-scheduling timer in this hook.
+  useEffect(() => () => { if (pollTimer.current) clearTimeout(pollTimer.current) }, [])
 
   // On world-entry, pull the profile (top-bar chip) and notifications (so the unread badge
   // shows immediately, not only after the panel is first opened). Marked fetched once.
@@ -586,18 +645,52 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     // the loading overlay is on screen before the freeze — same trick as the login loader. Run once.
     let ran = false
     const run = (): void => {
-      if (ran) return
+      // Bail if the session unmounted during the deferred kick — cleanup nulls driverRef, so this
+      // guards against launching on a disposed driver (the rAF/timeout aren't otherwise cancellable).
+      if (ran || driverRef.current == null) return
       ran = true
+      bootPollStop.current = false
+      driverRef.current?.clearEnginePanic?.() // start clean so the boot poll only sees THIS launch's panic
       // World by realm, parcel by spawn position, skip at 0,0 (Genesis). Nothing loaded before this,
       // so only the chosen scene streams in. (No-op on the mock, which has no engine to launch.)
-      if (dest == null) driver.launch?.(undefined, '0,0')
-      else if (dest.kind === 'world') driver.launch?.(dest.realm, undefined)
-      else driver.launch?.(undefined, `${dest.x},${dest.y}`)
+      // Parcels pass the MAIN realm explicitly — the iframe's initialRealm may carry a ?realm
+      // override (possibly an invalid world after a failed validation), and inheriting it would
+      // strand a Genesis pick "Reconnecting to the realm" forever.
+      try {
+        if (dest == null) driver.launch?.(DEFAULT_REALM, '0,0')
+        else if (dest.kind === 'world') driver.launch?.(dest.realm, undefined)
+        else driver.launch?.(DEFAULT_REALM, `${dest.x},${dest.y}`)
+      } catch (e) {
+        // A boot-time engine panic throws synchronously out of launch() (a generic "unreachable"
+        // wasm trap). The readable message is captured on the iframe via enginePanic().
+        const panic = driverRef.current?.enginePanic?.()?.message
+        setFatalError({ message: panic ?? (e as Error)?.message ?? 'The engine failed to start.', source: 'launch' })
+        driverRef.current?.clearEnginePanic?.()
+        setBusy(false)
+        return
+      }
+      // A boot panic can also surface a frame or two AFTER launch() returns (async wasm init / OnceCell)
+      // — launch() returns normally, so poll the panic hook during boot and raise it as a FATAL 'launch'
+      // error, not the dismissable 'runtime' crash the heartbeat watchdog would otherwise mislabel it as.
+      // Stops on world-entry (bootPollStop) or after the window elapses.
+      let polls = 0
+      const pollPanic = (): void => {
+        if (bootPollStop.current) return
+        const panic = driverRef.current?.enginePanic?.()?.message
+        if (panic != null) {
+          setFatalError((prev) => prev ?? { message: panic, source: 'launch' })
+          driverRef.current?.clearEnginePanic?.()
+          return
+        }
+        if (++polls < 24) pollTimer.current = setTimeout(pollPanic, 250) // ~6s boot window
+      }
+      pollTimer.current = setTimeout(pollPanic, 250)
       const login = pendingLogin.current
       pendingLogin.current = null
       Promise.resolve(login?.(driver))
         .then(() => setBusy(false))
         .catch((e: Error) => {
+          console.error('[login] post-launch login failed:', e)
           setError(e.message)
           setBusy(false)
           setDestinationPicked(false) // back to the picker on failure
@@ -606,6 +699,55 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     requestAnimationFrame(() => requestAnimationFrame(run))
     setTimeout(run, 60)
   }, [])
+  // ?position=x,y / ?realm= (parity with the plain engine page): skip the Places picker and launch
+  // straight there. position wins when both are given (the realm still applies — EngineHost feeds
+  // it to the iframe as initialRealm, which a position-only launch inherits). Consumed once —
+  // after a sign-out the picker shows normally.
+  const urlDestination = useRef<Destination>(
+    (() => {
+      const q = new URLSearchParams(location.search)
+      const raw = q.get('position')
+      if (raw != null) {
+        const [x, y] = raw.split(',').map((n) => parseInt(n.trim(), 10))
+        if (Number.isFinite(x) && Number.isFinite(y)) return { kind: 'parcel', x, y }
+      }
+      const realm = q.get('realm')
+      if (realm != null && realm !== '') return { kind: 'world', realm }
+      return null
+    })()
+  )
+  const validatingRealm = useRef(false)
+  useEffect(() => {
+    if (!submitted || destinationPicked || urlDestination.current == null) return
+    const dest = urlDestination.current
+    if (dest != null && dest.kind === 'world') {
+      // Validate the realm BEFORE launching — a typo'd ?realm= would otherwise strand the loading
+      // overlay forever. Same bare-name mapping as the engine (ipfs map_realm_name). The ref is
+      // consumed only on resolution, so phase stays 'entering' (no picker flash) while checking.
+      if (validatingRealm.current) return
+      validatingRealm.current = true
+      const base =
+        dest.realm.endsWith('.dcl.eth') && !dest.realm.startsWith('https://')
+          ? `https://worlds-content-server.decentraland.org/world/${dest.realm}`
+          : dest.realm
+      fetch(`${base.replace(/\/+$/, '')}/about`)
+        .then((r) => {
+          urlDestination.current = null
+          if (r.ok) pickDestination(dest)
+          else setFatalError({ message: `The world "${dest.realm}" doesn't exist.`, source: 'realm' })
+        })
+        .catch(() => {
+          urlDestination.current = null
+          setFatalError({ message: `The world "${dest.realm}" isn't reachable right now.`, source: 'realm' })
+        })
+        .finally(() => {
+          validatingRealm.current = false
+        })
+      return
+    }
+    urlDestination.current = null
+    pickDestination(dest)
+  }, [submitted, destinationPicked, pickDestination])
   const equipWearables = useCallback((urns: string[]) => {
     driverRef.current?.send({ kind: 'equip', urns })
     // Optimistically reflect the new equipped set so the button flips to "Unequip" immediately —
@@ -789,7 +931,9 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
   const phase: SessionPhase = !submitted
     ? 'login'
     : !destinationPicked
-      ? 'picking'
+      ? urlDestination.current != null
+        ? 'entering' // a ?position/?realm launch is about to fire — never flash the picker
+        : 'picking'
       : loaderActive
         ? 'entering'
         : 'world'
@@ -798,6 +942,15 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     phase,
     pickDestination,
     scene,
+    fatalError,
+    reload: () => location.reload(),
+    dismissFatal: () => {
+      // Re-arm the iframe watchdog (it left its `shown` flag set when it bridged the crash) so a later
+      // genuine crash still surfaces, and clear the stashed panic so it isn't re-read stale.
+      driverRef.current?.rearmCrashWatchdog?.()
+      driverRef.current?.clearEnginePanic?.()
+      setFatalError(null)
+    },
     hover,
     cursorLocked,
     proximity,
@@ -851,6 +1004,8 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       busy,
       error,
       engineReady,
+      loadProgress,
+      loadStep,
       startWithAccount,
       exploreAsGuest,
       jumpIn,

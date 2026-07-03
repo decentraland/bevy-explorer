@@ -2,10 +2,12 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import '@fontsource-variable/inter/index.css' // self-hosted Inter (matches the Figma type)
 import { App } from './App'
+import { registerCoiServiceWorker } from './lib/coiServiceWorker'
 import './styles/global.css'
 
 // NATIVE (?native=1): bevy renders the 3D world *behind* this transparent webview, so the page must
-// be transparent (in web mode the engine is an iframe inside the page, so the body background is fine).
+// be transparent (in web mode the engine canvas lives in this document at z-0, so the body
+// background is fine).
 if (new URLSearchParams(location.search).get('native') === '1') {
   document.documentElement.style.background = 'transparent'
   document.body.style.background = 'transparent'
@@ -20,6 +22,10 @@ if (new URLSearchParams(location.search).get('native') === '1') {
   } catch {
     /* defineProperty can throw if already overridden; non-fatal */
   }
+} else {
+  // Prod-only (web): swap the host's COEP require-corp for credentialless via the shared root SW
+  // (catalyst <img> thumbnails send no CORP). No-op in dev; never in the native webview.
+  registerCoiServiceWorker()
 }
 
 // App picks the mode: ?mock=1 → login UI against the fake bridge (no engine);

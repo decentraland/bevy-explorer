@@ -1,5 +1,5 @@
 // Tier 2 — REAL-engine e2e helpers (Playwright), mirroring dcl-editor's validate.mjs:
-// drive the live app, the engine via bevy console commands, and observe the bridge
+// drive the live app, the same-document engine via bevy console commands, and observe the bridge
 // over a BroadcastChannel spy. Runs HEADED with a real GPU (WebGPU) — see e2e/README.
 //
 // Why a second tier: tier 1 (vitest) proves every API call's contract deterministically;
@@ -7,21 +7,18 @@
 // bridge scene. Many calls (friend accept, community leave, mark-read) need seeded data
 // a fresh guest doesn't have, so they live only in tier 1.
 
-import { type Page, type Frame, expect } from '@playwright/test'
+import { type Page, expect } from '@playwright/test'
 
 export const APP_URL = process.env.E2E_URL ?? 'http://localhost:5173/'
 export const BRIDGE_CHANNEL = 'bevy-ui-bridge'
 
-/** The same-origin engine iframe (served under /engine/), once its console RPC is live. */
-export async function engineFrame(page: Page): Promise<Frame> {
+/** Wait until the engine console RPC is live (same document as the app — no iframe). */
+async function engineReady(page: Page): Promise<void> {
   for (let i = 0; i < 240; i++) {
-    const f = page.frames().find((fr) => fr.url().includes('/engine'))
-    if (f) {
-      const ready = await f
-        .evaluate(() => typeof (window as unknown as { engine_console_command?: unknown }).engine_console_command === 'function')
-        .catch(() => false)
-      if (ready) return f
-    }
+    const ready = await page
+      .evaluate(() => typeof (window as unknown as { engine_console_command?: unknown }).engine_console_command === 'function')
+      .catch(() => false)
+    if (ready) return
     await page.waitForTimeout(500)
   }
   throw new Error('engine console RPC never became ready')
@@ -29,8 +26,8 @@ export async function engineFrame(page: Page): Promise<Frame> {
 
 /** Run a bevy/engine console command and return its string reply. */
 export async function cmd(page: Page, line: string): Promise<string> {
-  const f = await engineFrame(page)
-  return f.evaluate(
+  await engineReady(page)
+  return page.evaluate(
     (l) => (window as unknown as { engine_console_command: (s: string) => Promise<string> }).engine_console_command(l),
     line
   )
@@ -96,10 +93,19 @@ export async function enterAsGuest(page: Page): Promise<void> {
   await installBridgeSpy(page)
   await page.goto(APP_URL)
   await page.getByRole('button', { name: /EXPLORE AS GUEST/i }).click({ timeout: 90000 })
+  // Entry now goes through the destination picker — skip it (default spawn → Genesis Plaza).
+  await page.getByRole('button', { name: /SKIP TO GENESIS PLAZA/i }).click({ timeout: 60000 })
   // World-ready: the React sidebar nav mounts once phase === 'world'.
   await page.waitForSelector('nav[aria-label="Main navigation"]', { timeout: 180000 })
 }
 
-/** Click a sidebar nav icon by its aria-label (Profile, Map, Settings, Emotes, …). */
-export const sidebar = (page: Page, label: string): Promise<void> =>
-  page.getByRole('button', { name: label, exact: true }).click()
+/** Click a sidebar nav icon by its aria-label (Profile, Map, Settings, Emotes, …).
+ *  A prior test may have left a full-screen menu page (Settings/Backpack/…) covering the
+ *  sidebar — close it first (MainMenuShell's X), or the click starves behind it. */
+export async function sidebar(page: Page, label: string): Promise<void> {
+  for (const name of ['Close', 'Close emotes']) {
+    const close = page.getByRole('button', { name, exact: true }).first()
+    if (await close.isVisible().catch(() => false)) await close.click()
+  }
+  await page.getByRole('button', { name: label, exact: true }).click()
+}

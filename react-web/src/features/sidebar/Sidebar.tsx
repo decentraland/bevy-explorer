@@ -187,7 +187,7 @@ function renderItem(item: Item, i: number, session: EngineSession, onViewProfile
         key="help"
         icon={item.icon}
         label={item.label}
-        onClick={() => window.open('https://decentraland.org/help/', '_blank')}
+        onClick={() => window.open('https://decentraland.org/help/', '_blank', 'noopener')}
       />
     )
   return (

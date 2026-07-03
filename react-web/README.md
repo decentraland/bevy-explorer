@@ -9,12 +9,13 @@ The UI being ported lives in the separate **`bevy-ui-scene`** repo
 (`scene/src/ui-classes`, `scene/src/bevy-api`); the `scene/...` paths below refer
 to that repo.
 
-> **What ships vs. what doesn't.** The React HUD *app* (`react-web/src`) sits at the repo root, NOT
-> under `deploy/web` — it's excluded from the `@dcl-regenesislabs/bevy-explorer-web` npm publish and the
-> cargo/wasm build. Never move the **app** under `deploy/web` — it would bloat the package. The **bridge
-> scene**, however, *is* now shipped in production: `npm run bundle:scene` exports it into
-> `deploy/web/bridge-scene/static` (git-ignored, regenerated) so the engine publish carries it, and
-> `deploy/web/ui.js`'s `DEFAULT_SYSTEMSCENE` loads it same-origin. See **Deploy (bundled)** below.
+> **This app IS production.** CI builds it (`vite build`) into `deploy/web/` — the tree published
+> as `@dcl-regenesislabs/bevy-explorer-web` and served at the explorer URL. The React page owns the
+> root `index.html`; the engine boots IN the same document — no iframe, no old boot page — from
+> `deploy/web/engine/` (boot module + workers + wasm); the bridge scene ships at
+> `deploy/web/bridge-scene/static`. Only the
+> *sources* stay here at the repo root — build artifacts in `deploy/web` are git-ignored.
+> See **Deploy (production)** below.
 
 ## Why
 
@@ -49,46 +50,60 @@ React DOM page  ──BroadcastChannel('bevy-ui-bridge')──►  super-user br
 
 ## Run
 
-Two processes — the bridge scene (super-user SDK7 scene that relays engine streams)
-and the React dev server:
+One command — vite starts the bridge scene's live preview (:8100, scene hot-reload) alongside
+the app unless one is already running:
 
 ```bash
-# 1. the bridge scene (live preview realm — MUST be sdk-commands start, not export)
-cd bridge-scene && npm install && npx sdk-commands start --no-browser --port 8100
-
-# 2. the React app + engine
-npm install && npm run dev
+npm install && (cd bridge-scene && npm install)   # once
+npm run dev
 ```
 
-**Engine mode (default)** — `http://localhost:5188/`: real engine in a same-origin
-iframe (`../deploy/web`), with `systemScene=http://localhost:8100` (the bridge
-scene). React login → **Explore as Guest** (`/login_guest`) → scene-loading overlay
+**Engine mode (default)** — `http://localhost:5173/`: real engine in the SAME document
+(canvas at z-0 behind the HUD; engine module from `../deploy/web/engine`), with
+`systemScene=http://localhost:8100` (the bridge scene). React login → **Explore as Guest** (`/login_guest`) → scene-loading overlay
 (real data) → world. Needs a local engine build at `../deploy/web`.
 
-**Mock mode** — `http://localhost:5188/?mock=1`: full UI (login + scene-loading) on
+**Mock mode** — `http://localhost:5173/?mock=1`: full UI (login + scene-loading) on
 a fake bridge, no engine. Add `&previousLogin=1` for the returning-user flow.
 
-## Deploy (bundled, no GitHub Action)
+## Deploy (production)
 
-The bridge scene ships **inside** the engine web bundle — no GitHub Pages, no Action, no external
-host. `npm run bundle` (in `bridge-scene`) builds it, exports a static realm with a **relative**
-`baseUrl` (`/bridge-scene/static/`) so it's origin-portable, and copies it into
-`deploy/web/bridge-scene/static`. It then rides along in the existing
-`@dcl-regenesislabs/bevy-explorer-web` publish, and `deploy/web/ui.js`'s `DEFAULT_SYSTEMSCENE`
-resolves it same-origin (`<origin>/bridge-scene/static/BevyExplorerUI`).
+Everything ships in the one `@dcl-regenesislabs/bevy-explorer-web` package (the `deploy/web`
+tree), published by CI's **Build and Deploy Web** job on merge to `main` and served at the
+explorer URL (e.g. `decentraland.zone/bevy-web`, assets on the versioned CDN path). Layout:
+
+| Path in `deploy/web` | What | Built by |
+|---|---|---|
+| `index.html` + `assets/` … | **this React app** (the production page) | `vite build` (CI) |
+| `engine/` | engine boot module + workers + `pkg/` (wasm) — no page | `wasm-pack` (CI) |
+| `bridge-scene/static/` | the exported bridge-scene realm | `npm run bundle` (CI) |
+| `service_worker.js` | shared root-scope SW: rewrites COEP → `credentialless` | tracked |
+
+**URL rules (learned the hard way):**
+- The page is served at a **no-trailing-slash entry** (`/bevy-web`) while assets live on the
+  **versioned CDN** — so the React build uses an *absolute* base (`PUBLIC_URL`, from
+  `deploy/web/scripts/prebuild.js` → `package.json.homepage`) and never `./`-relative refs
+  in `index.html`.
+- The **engine module + bridge scene + service worker must stay same-origin** with the page
+  (BroadcastChannel / `contentWindow`): they resolve against `PAGE_DIR`
+  (`src/lib/publicUrl.ts`), *never* against the CDN base.
 
 ```bash
-npm run bundle:scene                          # from the repo root (convenience wrapper)
-# or: cd react-web/bridge-scene && npm run bundle   # build → export-static → copy into deploy/web
+# CI does, in order (see .github/workflows/ci.yml build-deploy-web):
+wasm-pack build --out-dir deploy/web/engine/pkg …   # engine wasm
+npm i                 # in deploy/web — prebuild.js stamps PUBLIC_URL/homepage
+PUBLIC_URL=<homepage> npm run build                 # in react-web — the HUD → deploy/web
+npm run bundle        # in react-web/bridge-scene — realm → deploy/web/bridge-scene/static
+# then oddish publishes deploy/web → npm + CDN
 ```
 
-> Run `npm run bundle` before publishing the web package (the output is git-ignored, regenerated).
-> The comms adapter is a real `ws-room` (NOT `comms:offline`, which would stop the relay).
+Local prod-shape check: build the three pieces, then `npx serve deploy/web` (serve.json carries
+the COOP/COEP headers) and open `http://localhost:3000`.
 
-**Test the bundle in dev** — append `?bundled=1` to the app URL. Instead of the live preview realm
-(`sdk-commands start` on :8100), the engine loads the exported static bundle vite serves from
-`/bridge-scene/static` — i.e. exactly what ships in prod. (No `?bundled` → live preview, fast
-iteration with scene hot-reload.)
+**Test the bundled scene in dev** — append `?bundled=1` to the app URL. Instead of the live
+preview realm (`sdk-commands start` on :8100), the engine loads the exported static bundle vite
+serves from `/bridge-scene/static` — i.e. exactly what ships in prod. (No `?bundled` → live
+preview, fast iteration with scene hot-reload.)
 
 ## Testing
 
@@ -130,5 +145,5 @@ npm run test:e2e    # tier 2 (real engine; local, needs a GPU)
   react-ecs flat UI, keep only 3D/world-space (nametags, pointer events). Hybrid:
   SDK7 keeps 3D + bridges; React renders all flat UI.
 - [ ] Port remaining slices (chat, menu/settings, profile, map, friends, …).
-- [ ] **Integration (Approach A)** — mount React in the explorer's own
-  `deploy/web/index.html` (no iframe); transport-agnostic client unchanged.
+- [x] **Integration (Approach A)** — the engine runs in the React document itself (no iframe,
+  old boot page deleted); `deploy/web/engine/boot.js` is the whole boot surface.

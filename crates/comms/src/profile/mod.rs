@@ -360,6 +360,10 @@ fn request_missing_profiles(
                         profile.version, player.profile_version, dbb,
                     );
                     manager.remove(player.address);
+                    // debounce the re-fetch: remove() cleared the cache, so without
+                    // this the next frame would re-spawn the catalyst request (and
+                    // its POST) every tick until the registry serves the new version.
+                    requested.insert(player.address, time.elapsed_secs());
                 }
                 continue;
             }

@@ -93,7 +93,7 @@ use bevy::{
     platform::collections::HashSet,
     prelude::*,
     render::view::VisibilitySystems,
-    text::{ComputedTextBlock, CosmicBuffer, LineBreak},
+    text::{ComputedTextBlock, CosmicBuffer, CosmicFontSystem, Font, LineBreak, TextPipeline},
     ui::{update::update_clipping_system, widget::text_system, UiSystem},
 };
 use common::{
@@ -166,6 +166,87 @@ pub struct RetryTextShape(u32);
 #[derive(Default, Resource, Deref, DerefMut)]
 pub struct UnrecognisedTags(HashSet<String>);
 
+/// TMP auto-size point-size clamp used by the reference renderer:
+/// defaultFontSize 36 * { minRatio 0.5, maxRatio 2 }.
+const AUTO_MIN_PT: f32 = 18.0;
+const AUTO_MAX_PT: f32 = 72.0;
+/// Pixels-per-meter of rendered text per point of font size (`pix_per_m =
+/// PIX_PER_M_PER_PT / font_size`). Calibrated against the reference renderer:
+/// lower = larger text. Drives the non-auto world scale, the auto floor size,
+/// and the box<->point-size conversion in the auto fit.
+const PIX_PER_M_PER_PT: f32 = 190.0;
+
+/// With `fontAutoSize`, match unity-explorer: ignore the SDK font size and size
+/// the font so the (unwrapped) text block fits the box, clamped to [18, 72]pt.
+///
+/// The box only applies when `text_wrapping` is set (TMP only sizes its rect
+/// when wrapping is requested; otherwise the rect is zero and auto pins to the
+/// floor). Because wrapping is force-disabled while auto-sizing, the block
+/// scales linearly with point size, so one measurement of the unwrapped block
+/// at the raster size gives a closed-form fit — no iterative re-layout.
+///
+/// Returns `None` if a required font asset isn't loaded yet (caller retries).
+#[allow(clippy::too_many_arguments)]
+fn auto_fit_point_size(
+    text_shape: &PbTextShape,
+    source: &str,
+    raster_pt: f32,
+    text_pipeline: &mut TextPipeline,
+    fonts: &Assets<Font>,
+    font_system: &mut CosmicFontSystem,
+    measure_entity: Entity,
+    unrecognized_tags: &mut UnrecognisedTags,
+) -> Option<f32> {
+    if !text_shape.text_wrapping() {
+        return Some(AUTO_MIN_PT);
+    }
+
+    let (spans, _) = build_text_spans(
+        source,
+        raster_pt,
+        Color::WHITE,
+        text_shape.font(),
+        unrecognized_tags,
+    );
+
+    // create_text_measure panics if a span's font hasn't loaded yet.
+    if spans
+        .iter()
+        .any(|(_, font, _, _)| fonts.get(font.font.id()).is_none())
+    {
+        return None;
+    }
+
+    let measure_layout = TextLayout::new(JustifyText::Left, LineBreak::NoWrap);
+    let mut computed = ComputedTextBlock::default();
+    // `max` is the unbounded (unwrapped) block size in pixels at the raster size.
+    let natural = text_pipeline
+        .create_text_measure(
+            measure_entity,
+            fonts,
+            spans.iter().enumerate().map(|(i, (span, font, color, _))| {
+                (measure_entity, i, span.0.as_str(), font, color.0)
+            }),
+            1.0,
+            &measure_layout,
+            &mut computed,
+            font_system,
+        )
+        .ok()?
+        .max;
+
+    if natural.x <= 0.0 || natural.y <= 0.0 {
+        return Some(AUTO_MIN_PT);
+    }
+
+    // Unity defaults the missing dimension to a tiny value, so a w-only / h-only
+    // box still pins to the floor.
+    let w_box = text_shape.width.unwrap_or(1.0);
+    let h_box = text_shape.height.unwrap_or(0.2);
+    let fit = PIX_PER_M_PER_PT * (w_box / natural.x).min(h_box / natural.y);
+    Some(fit.clamp(AUTO_MIN_PT, AUTO_MAX_PT))
+}
+
 fn update_text_shapes(
     mut commands: Commands,
     images: ResMut<Assets<Image>>,
@@ -185,6 +266,9 @@ fn update_text_shapes(
     mut cameras: Query<&mut Camera>,
     mut views: Query<&mut TextShapeUi>,
     mut unrecognized_tags: ResMut<UnrecognisedTags>,
+    mut text_pipeline: ResMut<TextPipeline>,
+    fonts: Res<Assets<Font>>,
+    mut font_system: ResMut<CosmicFontSystem>,
 ) {
     // remove deleted ui nodes
     for e in removed.read() {
@@ -351,27 +435,7 @@ fn update_text_shapes(
 
         let halign_wui = if wrapping { 0.0 } else { halign_wui };
 
-        // use constant font size to avoid small text being illegible
-        let font_size = 20.0;
-
-        // use pix per meter based on font size to scale appropriately
-        let pix_per_m = 225.0 / text_shape.0.font_size.unwrap_or(10.0);
-
-        let add_y_pix = (text_shape.0.padding_bottom() - text_shape.0.padding_top()) * pix_per_m;
-
-        let width = if wrapping {
-            text_shape.0.width.unwrap_or(1.0) * pix_per_m
-        } else {
-            4096.0
-        };
-
-        let height = if let Some(height) = text_shape.0.height {
-            Val::Px(pix_per_m * height)
-        } else {
-            Val::Auto
-        };
-
-        // create ui layout
+        // truncate very long text (used for both measuring and rendering)
         let source = if text_shape.0.text.len() > 2048 {
             warn!(
                 "textshape text truncated from {} to 2048 chars",
@@ -389,6 +453,67 @@ fn update_text_shapes(
         } else {
             text_shape.0.text.as_str()
         };
+
+        // use constant font size to avoid small text being illegible
+        let font_size = 20.0;
+
+        // With fontAutoSize the SDK font size is ignored; the font is sized to
+        // fit the text block into the box (clamped), matching unity-explorer.
+        // Otherwise the SDK font size drives the world scale directly.
+        let effective_pt = if text_shape.0.font_auto_size() {
+            match auto_fit_point_size(
+                &text_shape.0,
+                source,
+                font_size,
+                &mut text_pipeline,
+                &fonts,
+                &mut font_system,
+                ent,
+                &mut unrecognized_tags,
+            ) {
+                Some(pt) => pt,
+                None => {
+                    // required font not loaded yet; retry next frame
+                    commands.entity(ent).try_insert(RetryTextShape(frame.0));
+                    continue;
+                }
+            }
+        } else {
+            text_shape.0.font_size.unwrap_or(10.0)
+        };
+
+        // use pix per meter based on the effective font size to scale appropriately
+        let pix_per_m = PIX_PER_M_PER_PT / effective_pt;
+
+        // fontAutoSize centres the text box on the entity (matching TMP's rect),
+        // so a taller box shifts bottom/top-aligned text vertically by the box
+        // half-height. Only when the box applies (i.e. wrapping is set).
+        let box_y_offset = if text_shape.0.font_auto_size() && text_shape.0.text_wrapping() {
+            -valign_wui * text_shape.0.height.unwrap_or(0.2) * pix_per_m
+        } else {
+            0.0
+        };
+        let add_y_pix =
+            (text_shape.0.padding_bottom() - text_shape.0.padding_top()) * pix_per_m + box_y_offset;
+
+        let width = if wrapping {
+            text_shape.0.width.unwrap_or(1.0) * pix_per_m
+        } else {
+            4096.0
+        };
+
+        let height = if text_shape.0.font_auto_size() {
+            // the box is only used to pick the font size; the node must size to
+            // content so the text isn't clipped when it can't shrink to fit
+            // (the reference renderer overflows the box in that case).
+            Val::Auto
+        } else if let Some(height) = text_shape.0.height {
+            Val::Px(pix_per_m * height)
+        } else {
+            Val::Auto
+        };
+
+        // create ui layout
         let (text, _) = make_text_section(
             source,
             font_size,
@@ -710,18 +835,22 @@ pub struct TextExtras {
     mark: Option<Color>,
 }
 
-pub fn make_text_section(
+type TextSpanData = (TextSpan, TextFont, TextColor, Option<TextExtras>);
+
+fn build_text_spans(
     text: &str,
     font_size: f32,
     color: Color,
     font: dcl_component::proto_components::sdk::components::common::Font,
-    justify: JustifyText,
-    wrapping: bool,
     unrecognized_tags: &mut UnrecognisedTags,
-) -> (impl Bundle, Vec<(usize, String)>) {
+) -> (Vec<TextSpanData>, Vec<(usize, String)>) {
     let mut links = Vec::default();
 
-    let text = text.replace("\\n", "\n");
+    // The reference renderer treats CR/LF as teletype ops (CR returns to the
+    // line start, LF advances a line) which we can't reproduce; strip CRs so
+    // CRLF renders as a single line break and a lone CR collapses onto one line
+    // (the realistic cases). A lone LF is left as a normal line break.
+    let text = text.replace("\\n", "\n").replace('\r', "");
 
     let font_name = match font {
         dcl_component::proto_components::sdk::components::common::Font::FSansSerif => {
@@ -901,6 +1030,20 @@ pub fn make_text_section(
         section_start = section_end;
         span_index += 1;
     }
+
+    (spans, links)
+}
+
+pub fn make_text_section(
+    text: &str,
+    font_size: f32,
+    color: Color,
+    font: dcl_component::proto_components::sdk::components::common::Font,
+    justify: JustifyText,
+    wrapping: bool,
+    unrecognized_tags: &mut UnrecognisedTags,
+) -> (impl Bundle, Vec<(usize, String)>) {
+    let (spans, links) = build_text_spans(text, font_size, color, font, unrecognized_tags);
 
     let f = move |parent: &mut RelatedSpawner<ChildOf>| {
         for (span, font, color, maybe_extras) in spans {

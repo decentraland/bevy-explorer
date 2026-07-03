@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MainMenuShell } from '../menu/MainMenuShell'
+import { CAT_ICONS, CAT_PINS, WORLD_ICON } from './mapArt'
 import type { MapState, ProfileState } from '../session/useEngineSession'
 import { WorldVisitModal } from '../../components/WorldVisitModal'
 import styles from './MapPage.module.css'
@@ -54,8 +55,8 @@ const SORTS = [
   { key: 'created_at', label: 'NEWEST' }
 ]
 
-const catIcon = (key: string): string => `/assets/map/categories/${key}.png`
-const catPin = (key: string): string => `/assets/map/pins/${key}.png`
+const catIcon = (key: string): string => CAT_ICONS[key] ?? CAT_ICONS.all
+const catPin = (key: string): string => CAT_PINS[key] ?? CAT_ICONS.all
 
 // The 8×8 satellite chunk grid, sized at `size` px per parcel. The container's local origin
 // (0,0) is the atlas's top-left corner = parcel (ORIGIN_X, ORIGIN_Y).
@@ -435,7 +436,7 @@ export function MapPage({
               <div className={styles.results}>
                 {worldHits.map((w) => (
                   <button key={w.world_name} type="button" className={styles.result} onClick={() => setConfirmWorld(w)}>
-                    <img className={styles.resultWorldIcon} src="/assets/map/world.png" alt="" />
+                    <img className={styles.resultWorldIcon} src={WORLD_ICON} alt="" />
                     <div className={styles.resultBody}>
                       <div className={styles.resultTitle}>{w.title || w.world_name}</div>
                       <div className={styles.resultSub}>{w.world_name}</div>

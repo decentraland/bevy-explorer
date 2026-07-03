@@ -1,8 +1,45 @@
+import { spawn } from 'node:child_process'
 import { createReadStream, statSync } from 'node:fs'
+import { createConnection } from 'node:net'
 import { extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+
+// Dev-only: run the bridge scene's live preview (`sdk-commands start` on :8100 — the engine's
+// default systemScene in dev, with scene hot-reload) alongside vite, so `npm run dev` is the ONE
+// command. If :8100 is already serving (your own terminal, or Playwright's webServer), leave it
+// alone. The child is killed with the dev server (detached group so sdk-commands' own children
+// don't survive as orphans).
+function bridgeScenePreview(): Plugin {
+  return {
+    name: 'bridge-scene-preview',
+    apply: 'serve',
+    configureServer(server) {
+      const probe = createConnection({ port: 8100, host: '127.0.0.1' })
+      probe.once('connect', () => probe.destroy()) // already running — reuse it
+      probe.once('error', () => {
+        console.log('[bridge-scene] starting live preview on :8100')
+        const child = spawn('npx', ['sdk-commands', 'start', '--no-browser', '--port', '8100'], {
+          cwd: fileURLToPath(new URL('./bridge-scene', import.meta.url)),
+          stdio: ['ignore', 'inherit', 'inherit'],
+          detached: true
+        })
+        const stop = (): void => {
+          if (child.pid != null) {
+            try {
+              process.kill(-child.pid, 'SIGTERM')
+            } catch {
+              /* already gone */
+            }
+          }
+        }
+        server.httpServer?.once('close', stop)
+        process.once('exit', stop)
+      })
+    }
+  }
+}
 
 // Cross-origin isolation is REQUIRED by the engine (SharedArrayBuffer + WebGPU).
 const crossOriginIsolation = {
@@ -89,16 +126,26 @@ function coiHeadersExceptAuth(): Plugin {
   }
 }
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // Production is served from a VERSIONED CDN subpath (cdn.decentraland.org/<pkg>/<version>/ —
+  // see deploy/web/scripts/prebuild.js), so built asset URLs can't be origin-absolute. CI passes
+  // PUBLIC_URL for an absolute CDN base; otherwise './' (relative → works from any path, e.g. a
+  // local `serve deploy/web`). Dev keeps '/'.
+  base: command === 'build' ? (process.env.PUBLIC_URL ? `${process.env.PUBLIC_URL}/` : './') : '/',
   plugins: [
     react(),
+    bridgeScenePreview(),
     coiHeadersExceptAuth(),
-    serveStatic('/engine/', '../deploy/web'),
+    serveStatic('/engine/', '../deploy/web/engine'),
     // Our headless super-user bridge scene (exported deployable). Pointed at by
     // the engine's systemScene so it loads as the trusted --ui scene.
     serveStatic('/bridge-scene/static/', './bridge-scene/static')
   ],
   build: {
+    // The app IS the production page: build straight into the npm-published deploy/web tree,
+    // beside engine/ + bridge-scene/ (emptyOutDir would wipe them).
+    outDir: '../deploy/web',
+    emptyOutDir: false,
     // The only chunk over the default 500KB is the isolated emoji dataset (a cached data blob,
     // not executable HUD code). Raise the limit so the build stays clean; revisit if a CODE chunk
     // approaches it.
@@ -124,6 +171,10 @@ export default defineConfig({
     }
   },
   server: {
+    // Allow Cloudflare quick-tunnel hosts (random *.trycloudflare.com per run) so the dev server
+    // can be reached through a tunnel. The leading dot matches any subdomain; scoping to this
+    // domain keeps Vite's DNS-rebinding protection on for everything else.
+    allowedHosts: ['.trycloudflare.com'],
     // Proxy the auth dapp so it is served same-origin on localhost — sign in locally against
     // zone and the signed AuthIdentity lands in this origin's localStorage (the marketplace
     // does the same). Because it's same-origin, the auth site also accepts our localhost
@@ -142,4 +193,4 @@ export default defineConfig({
     }
   },
   preview: { headers: crossOriginIsolation }
-})
+}))

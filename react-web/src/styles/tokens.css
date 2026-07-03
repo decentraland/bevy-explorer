@@ -31,6 +31,7 @@
   --away: #ffa25a;
   --offline: #a09ba8;
   --error: #ff2424;
+  --error-text: #ffd0d8; /* soft error text on dark (readable, vs the solid --error) */
   --success: #44b600;
 
   /* ---- surface washes / hairlines / text-on-dark ---- */
@@ -40,11 +41,16 @@
   --fill-4: rgba(255, 255, 255, 0.1);
   --fill-5: rgba(255, 255, 255, 0.12);
   --line: rgba(255, 255, 255, 0.08);
+  --ink-95: rgba(255, 255, 255, 0.95);
   --ink-85: rgba(255, 255, 255, 0.85);
   --ink-7: rgba(255, 255, 255, 0.7);
+  --ink-65: rgba(255, 255, 255, 0.65);
   --ink-6: rgba(255, 255, 255, 0.6);
   --ink-45: rgba(255, 255, 255, 0.45);
   --scrim: rgba(0, 0, 0, 0.5);
+  /* Login secondary CTA — translucent purple over the --menu-bg backdrop. */
+  --login-cta2: rgba(108, 42, 168, 0.62);
+  --login-cta2-hover: rgba(124, 52, 188, 0.78);
 
   /* ---- modal (the shared violet design-system dialog: permissions, communities, etc.) ---- */
   --modal-bg: linear-gradient(160deg, #3a1660 0%, #25103f 55%, #1a0c2e 100%);
@@ -67,6 +73,7 @@
   --z-modal: 1000;
   --z-loading: 9998;
   --z-login: 9999;
+  --z-fatal: 10010; /* engine crash / boot-panic popup — above login + loading */
 
   /* ---- typography (Inter scale) ---- */
   --font-family: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;

@@ -35,6 +35,10 @@ import { useExitGuard } from './lib/useExitGuard'
 import { useHudScale } from './lib/useHudScale'
 import { useGlobalHotkey } from './lib/useGlobalHotkey'
 import { useMenuShortcuts } from './lib/useMenuShortcuts'
+import { isMobile, isChromiumBased, hasBypassCookie } from './lib/isMobile'
+import { MobileGate } from './features/gate/MobileGate'
+import { ErrorBoundary } from './features/error/ErrorBoundary'
+import { EngineErrorModal } from './features/error/EngineErrorModal'
 
 const params = new URLSearchParams(location.search)
 // MOCK (?mock=1): UI only, no engine, fake bridge (?previousLogin=1 → returning user).
@@ -44,12 +48,31 @@ const params = new URLSearchParams(location.search)
 const MODE: 'mock' | 'engine' | 'native' =
   params.get('mock') === '1' ? 'mock' : params.get('native') === '1' ? 'native' : 'engine'
 const SHOWCASE = params.get('showcase') === '1'
+// Gate: don't mount the HUD/engine where the engine can't run — mobile (no WebGPU/SharedArrayBuffer)
+// or a non-Chromium desktop browser (the engine bundle renders its own "Browser Not Supported" page
+// there — see deploy/web/index.html — which the HUD would otherwise cover, leaving login frozen at
+// 0%). `?gate=1` forces the mobile variant, `?gate=browser` the browser variant (both for testing);
+// `?nogate=1` bypasses; the shared `bypass_browser_check` cookie ("try anyway") also bypasses.
+function gateReason(): 'mobile' | 'browser' | null {
+  // Precedence: a real device constraint wins over a test override — mobile is checked before
+  // `?gate=browser`, so on an actual phone that param still (correctly) yields the mobile variant.
+  // Native (wry webview over native bevy): no browser/mobile gate — the host app IS the platform
+  // (and wry's UA is WebKit, which would misread as an unsupported browser).
+  if (MODE === 'native') return null
+  if (params.get('nogate') === '1') return null
+  if (isMobile() || params.get('gate') === '1') return 'mobile'
+  if (params.get('gate') === 'browser') return 'browser'
+  if (!isChromiumBased() && !hasBypassCookie()) return 'browser'
+  return null
+}
+const GATE_REASON = gateReason()
 
 export function App(): React.JSX.Element {
   useHudScale() // keep --ui-scale in sync with the viewport (DPI-correct, like Unity)
   const showFps = useFpsToggle()
+  if (GATE_REASON) return <MobileGate reason={GATE_REASON} />
   return (
-    <>
+    <ErrorBoundary>
       {SHOWCASE ? (
         <Suspense fallback={null}>
           <Showcase />
@@ -58,7 +81,7 @@ export function App(): React.JSX.Element {
         <Hud />
       )}
       {showFps && <FpsMeter />}
-    </>
+    </ErrorBoundary>
   )
 }
 
@@ -258,6 +281,14 @@ function Hud(): React.JSX.Element {
       )}
       {/* Confirm before the back gesture / Back button unloads the engine. */}
       {exitGuard.confirming && <ExitConfirm onStay={exitGuard.stay} onLeave={exitGuard.leave} />}
+      {/* Fatal engine error (boot panic / runtime crash) — above everything. */}
+      {session.fatalError && (
+        <EngineErrorModal
+          error={session.fatalError}
+          onReload={session.reload}
+          onDismiss={session.fatalError.source === 'runtime' || session.fatalError.source === 'realm' ? session.dismissFatal : undefined}
+        />
+      )}
     </>
   )
 }

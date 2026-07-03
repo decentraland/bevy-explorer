@@ -243,7 +243,7 @@ function patchWebgpuAdapter(fakeAsync) {
         if (!window.nextPipelineCanFail) {
           return inline_function.apply(device, args);
         }
-        document.getElementById("shader-compiling").style.display = "flex";
+        const sc = document.getElementById("shader-compiling"); if (sc) sc.style.display = "flex";
         window.nextPipelineCanFail = false;
         window.lastPipelineWasValidFlag = false;
         window.pendingAsyncPipelineCount++;
@@ -268,7 +268,7 @@ function patchWebgpuAdapter(fakeAsync) {
             while (window.wgpuResolveIdle.length > 0) {
               window.wgpuResolveIdle.pop()();
             }
-            document.getElementById("shader-compiling").style.display = "none";
+            const sc2 = document.getElementById("shader-compiling"); if (sc2) sc2.style.display = "none";
           }
 
           return item;
