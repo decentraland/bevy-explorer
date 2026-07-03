@@ -4,9 +4,13 @@ on:
       - main
   pull_request:
 
+# PRs share a per-ref group so a superseded push cancels the in-flight run. Main
+# pushes get a unique group each (run_id): sharing one made every main run queue
+# behind the previous run's whole test matrix, delaying deploy starts by up to an
+# hour. Only the deploy job serializes, via its job-level group.
 concurrency:
-  group: ${{github.workflow}}-${{github.ref}}
-  cancel-in-progress: ${{github.event_name == 'pull_request'}}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 name: Continuous integration
 
@@ -198,6 +202,9 @@ jobs:
     if: ${{ github.actor != 'dependabot[bot]' }}
     # needs: [test, fmt, clippy]
     runs-on: ubuntu-latest
+    # Serialize deploys per ref so overlapping main pushes can't publish out of order.
+    concurrency:
+      group: ${{ github.workflow }}-deploy-web-${{ github.ref }}
 
     permissions:
       id-token: write
