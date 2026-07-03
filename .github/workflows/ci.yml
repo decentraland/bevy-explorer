@@ -23,6 +23,9 @@ jobs:
     if: ${{ github.actor != 'dependabot[bot]' }}
     runs-on: ubuntu-22.04
     steps:
+      # Checkout must precede rust-cache: the cache key hashes Cargo.lock, and
+      # without it the key is constant — saved once from main, then frozen stale.
+      - uses: actions/checkout@v6
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -47,7 +50,6 @@ jobs:
         run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
       - name: install livekit deps
         run: sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev
-      - uses: actions/checkout@v6
       - name: Test Scenes
         continue-on-error: true
         run: |
