@@ -30,6 +30,9 @@ pub mod transport;
 mod native;
 #[cfg(target_arch = "wasm32")]
 mod wasm;
+// The wasm driver's wire framing, split out so it's unit-testable on the native `test` target.
+#[cfg(any(target_arch = "wasm32", test))]
+mod framing;
 
 /// World ↔ parcel mapping, mirroring the server's `ParcelEncoder`. The server folds `Padding` into
 /// the bounds, so we recompute `min`/`width` exactly the same way rather than pre-baking a width —

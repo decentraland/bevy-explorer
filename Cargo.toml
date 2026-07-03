@@ -271,6 +271,18 @@ web-sys = { version = "0.3", features = [
   "WorkerGlobalScope",
   "WorkerNavigator",
   "WritableStream",
+  # WebTransport, the wasm Pulse driver's wire (crates/comms/src/pulse/wasm.rs).
+  "ReadableStream",
+  "ReadableStreamDefaultReader",
+  "WritableStreamDefaultWriter",
+  "WebTransport",
+  "WebTransportOptions",
+  "WebTransportHash",
+  "WebTransportBidirectionalStream",
+  "WebTransportReceiveStream",
+  "WebTransportSendStream",
+  "WebTransportDatagramDuplexStream",
+  "WebTransportCloseInfo",
 ] }
 web-time = "1.1"
 copypwasmta = { git = "https://github.com/robtfm/copypwasmta" }
