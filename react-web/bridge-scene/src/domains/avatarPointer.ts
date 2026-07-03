@@ -10,9 +10,9 @@ import type { Ctx } from '../bridge'
 export function registerAvatarPointer(ctx: Ctx): void {
   const registered = new Set<Entity>()
   // Addresses (lowercased) currently hide_profile per an AvatarModifierArea's DISABLE_PASSPORTS
-  // (the old scene's avatar-tracker — isProfileBlocked — respected this too). Polled alongside the
-  // avatar rescan and checked at click-time (not registration-time), since a player can walk into a
-  // modifier area mid-hover.
+  // (the old scene's avatar-tracker — isProfileBlocked — respected this too). A disabled avatar is
+  // treated as absent in the rescan, so its pointer-down (and the "Show Profile" hover) is removed
+  // within a poll cycle; the click-time check stays as a belt-and-braces for that stale window.
   const passportDisabled = new Set<string>()
   let frame = 0
   ctx.push(() => {
@@ -31,6 +31,7 @@ export function registerAvatarPointer(ctx: Ctx): void {
     const present = new Set<Entity>()
     for (const [entity, data] of engine.getEntitiesWith(PlayerIdentityData)) {
       if (data.address === '' || data.address.toLowerCase() === me) continue
+      if (passportDisabled.has(data.address.toLowerCase())) continue
       present.add(entity)
       if (registered.has(entity)) continue
       registered.add(entity)
