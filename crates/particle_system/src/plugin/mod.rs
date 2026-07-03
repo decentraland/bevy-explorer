@@ -4,10 +4,10 @@ mod speed_dampen;
 
 use bevy::{math::bounding::Aabb3d, prelude::*};
 use bevy_hanabi::{
-    AccelModifier, Attribute, EffectAsset, ExprHandle, ExprWriter, Gradient, HanabiPlugin,
-    OrientMode, OrientModifier, ParticleEffect, ScalarType, SetAttributeModifier,
-    SetPositionCone3dModifier, SetPositionSphereModifier, SetVelocitySphereModifier,
-    SizeOverLifetimeModifier, SpawnerSettings,
+    AccelModifier, Attribute, ColorOverLifetimeModifier, EffectAsset, ExprHandle, ExprWriter,
+    Gradient, HanabiPlugin, OrientMode, OrientModifier, ParticleEffect, ScalarType,
+    SetAttributeModifier, SetPositionCone3dModifier, SetPositionSphereModifier,
+    SetVelocitySphereModifier, SizeOverLifetimeModifier, SpawnerSettings,
 };
 use dcl_component::{
     proto_components::{
@@ -105,6 +105,20 @@ fn particle_system_on_insert(
             a: 1.,
         }),
     });
+    let color_over_time = particle_system.color_over_time.unwrap_or(ColorRange {
+        start: Some(Color4 {
+            r: 1.,
+            g: 1.,
+            b: 1.,
+            a: 1.,
+        }),
+        end: Some(Color4 {
+            r: 1.,
+            g: 1.,
+            b: 1.,
+            a: 1.,
+        }),
+    });
 
     let writer = ExprWriter::new();
 
@@ -170,6 +184,22 @@ fn particle_system_on_insert(
         ]),
         screen_space_size: false,
     };
+    let render_color_over_time = ColorOverLifetimeModifier::new(Gradient::from_keys([
+        (
+            0.,
+            color_over_time
+                .start
+                .map(|color| color.convert_srgba().to_linear().to_vec4())
+                .unwrap_or(Vec4::ONE),
+        ),
+        (
+            1.,
+            color_over_time
+                .end
+                .map(|color| color.convert_srgba().to_linear().to_vec4())
+                .unwrap_or(Vec4::ONE),
+        ),
+    ]));
     let render_billboard = OrientModifier {
         mode: OrientMode::FaceCameraPosition,
         rotation: Some(writer.attr(ROTATION_ATTR).expr()),
@@ -197,6 +227,9 @@ fn particle_system_on_insert(
     }
 
     set!(effect_asset, render, render_size_over_lifetime);
+    if particle_system.color_over_time.is_some() {
+        set!(effect_asset, render, render_color_over_time);
+    }
     if billboard {
         set!(effect_asset, render, render_billboard);
     }
