@@ -173,7 +173,10 @@ export type SessionPhase = 'login' | 'picking' | 'entering' | 'world'
 
 // Where the user chose to spawn after login (the post-jump-in Places picker). `null` = skip → the
 // engine's default spawn (Genesis Plaza). A world switches realm; a parcel teleports once spawned.
-export type Destination = { kind: 'parcel'; x: number; y: number } | { kind: 'world'; realm: string } | null
+export type Destination =
+  | { kind: 'parcel'; x: number; y: number }
+  | { kind: 'world'; realm: string; position?: string }
+  | null
 
 export interface LoginFlow {
   status: LoginStatus
@@ -658,7 +661,7 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
       // strand a Genesis pick "Reconnecting to the realm" forever.
       try {
         if (dest == null) driver.launch?.(DEFAULT_REALM, '0,0')
-        else if (dest.kind === 'world') driver.launch?.(dest.realm, undefined)
+        else if (dest.kind === 'world') driver.launch?.(dest.realm, dest.position)
         else driver.launch?.(DEFAULT_REALM, `${dest.x},${dest.y}`)
       } catch (e) {
         // A boot-time engine panic throws synchronously out of launch() (a generic "unreachable"
@@ -700,19 +703,22 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
     setTimeout(run, 60)
   }, [])
   // ?position=x,y / ?realm= (parity with the plain engine page): skip the Places picker and launch
-  // straight there. position wins when both are given (the realm still applies — EngineHost feeds
-  // it to the iframe as initialRealm, which a position-only launch inherits). Consumed once —
-  // after a sign-out the picker shows normally.
+  // straight there. realm wins when both are given, carrying the position along — letting
+  // ?position shadow ?realm made a reload in a custom realm respawn in Genesis at the same
+  // coordinates (a parcel launch passes DEFAULT_REALM explicitly). The engine's URL sync only
+  // writes ?position when the realm honours one; realms with fixed scene urns (worlds) spawn at
+  // their base scene and ignore it anyway. Consumed once — after a sign-out the picker shows
+  // normally.
   const urlDestination = useRef<Destination>(
     (() => {
       const q = new URLSearchParams(location.search)
       const raw = q.get('position')
-      if (raw != null) {
-        const [x, y] = raw.split(',').map((n) => parseInt(n.trim(), 10))
-        if (Number.isFinite(x) && Number.isFinite(y)) return { kind: 'parcel', x, y }
-      }
+      const [x, y] = raw?.split(',').map((n) => parseInt(n.trim(), 10)) ?? []
+      const hasPosition = Number.isFinite(x) && Number.isFinite(y)
       const realm = q.get('realm')
-      if (realm != null && realm !== '') return { kind: 'world', realm }
+      if (realm != null && realm !== '')
+        return { kind: 'world', realm, position: hasPosition ? `${x},${y}` : undefined }
+      if (hasPosition) return { kind: 'parcel', x, y }
       return null
     })()
   )

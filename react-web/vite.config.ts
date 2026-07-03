@@ -20,7 +20,9 @@ function bridgeScenePreview(): Plugin {
       probe.once('connect', () => probe.destroy()) // already running — reuse it
       probe.once('error', () => {
         console.log('[bridge-scene] starting live preview on :8100')
-        const child = spawn('npx', ['sdk-commands', 'start', '--no-browser', '--port', '8100'], {
+        // --no-install: only run the locally-installed @dcl/sdk-commands bin. Without it, a stale
+        // bridge-scene/node_modules makes npx fetch the UNRELATED registry package "sdk-commands".
+        const child = spawn('npx', ['--no-install', 'sdk-commands', 'start', '--no-browser', '--port', '8100'], {
           cwd: fileURLToPath(new URL('./bridge-scene', import.meta.url)),
           stdio: ['ignore', 'inherit', 'inherit'],
           detached: true
@@ -137,6 +139,11 @@ export default defineConfig(({ command }) => ({
     bridgeScenePreview(),
     coiHeadersExceptAuth(),
     serveStatic('/engine/', '../deploy/web/engine'),
+    // The IPFS-cache service worker, at the ROOT so its scope covers the page (like prod). The
+    // engine tags cacheable asset fetches with an X-IPFS header for it; without a SW to strip
+    // that header the requests need a CORS preflight, which the peer catalysts reject — no
+    // scenes, no avatars. (serveStatic handles a single file fine: rel resolves to the root.)
+    serveStatic('/service_worker.js', '../deploy/web/service_worker.js'),
     // Our headless super-user bridge scene (exported deployable). Pointed at by
     // the engine's systemScene so it loads as the trusted --ui scene.
     serveStatic('/bridge-scene/static/', './bridge-scene/static')

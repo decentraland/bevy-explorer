@@ -4,7 +4,7 @@
 //
 // Contract with the host page (react-web/src/engine/engineRpc.ts):
 //   set BEFORE injecting:  window.PUBLIC_URL   — base for pkg/ fetches (versioned CDN in prod)
-//                          window.__bevyBootConfig = { systemScene, portables }
+//                          window.__bevyBootConfig = { systemScene, portables, preview }
 //   provided by this module:
 //     __bevyLoadProgress / __bevyLoadStep  — weighted boot progress for the login bar
 //     __bevyReadyToLaunch / __bevyLaunch(realm?, position?) — deferred engine_run
@@ -149,10 +149,12 @@ const config = window.__bevyBootConfig ?? {}
 // the same place. Defaults are omitted so the canonical entry URL stays clean.
 const DEFAULT_SERVER = 'https://realm-provider-ea.decentraland.org/main'
 const DEFAULT_PORTABLES = 'basiccontroller.dcl.eth'
-window.set_url_params = (x, y, server, system_scene, portables, preview) => {
+window.set_url_params = (position, server, system_scene, portables, preview) => {
   try {
     const urlParams = new URLSearchParams(window.location.search)
-    urlParams.set('position', `${x},${y}`)
+    // absent when the realm won't honour a position (worlds spawn at their base scene)
+    if (position != null) urlParams.set('position', position)
+    else urlParams.delete('position')
     if (server !== DEFAULT_SERVER) urlParams.set('realm', server)
     else urlParams.delete('realm')
     if (system_scene !== (config.systemScene ?? '')) urlParams.set('systemScene', system_scene)
@@ -189,7 +191,7 @@ initEngine()
     window.setLoadingStepCompleted('gpu')
     // Deferred launch: the host calls this once the user picks a destination — avoiding a wasted
     // default-realm load. One engine per page (see start()'s __bevyStarted guard).
-    window.__bevyLaunch = (realm, position) => start({ realm, position, systemScene: config.systemScene, portables: config.portables })
+    window.__bevyLaunch = (realm, position) => start({ realm, position, systemScene: config.systemScene, portables: config.portables, preview: config.preview })
     window.__bevyReadyToLaunch = true
   })
   .catch((e) => {
