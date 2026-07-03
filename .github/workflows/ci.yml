@@ -39,6 +39,9 @@ jobs:
 
   hardcore-test:
     name: Test Scenes
+    # Dependabot bumps don't need the expensive jobs (the macOS/Windows matrix bills 10x/2x
+    # minutes) — check/fmt/clippy still validate cargo bumps.
+    if: ${{ github.actor != 'dependabot[bot]' }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions-rs/toolchain@v1
@@ -71,6 +74,9 @@ jobs:
 
   test:
     name: Test Suite
+    # Dependabot bumps don't need the expensive jobs (the macOS/Windows matrix bills 10x/2x
+    # minutes) — check/fmt/clippy still validate cargo bumps.
+    if: ${{ github.actor != 'dependabot[bot]' }}
     strategy:
       fail-fast: false
       matrix:
@@ -217,6 +223,9 @@ jobs:
 
   build-deploy-web:
     name: Build and Deploy Web
+    # Dependabot bumps don't need the expensive jobs (the macOS/Windows matrix bills 10x/2x
+    # minutes) — check/fmt/clippy still validate cargo bumps.
+    if: ${{ github.actor != 'dependabot[bot]' }}
     # needs: [check, test, fmt, clippy]
     runs-on: ubuntu-latest
 
