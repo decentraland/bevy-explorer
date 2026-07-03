@@ -4,20 +4,26 @@ mod speed_dampen;
 
 use bevy::{math::bounding::Aabb3d, prelude::*};
 use bevy_hanabi::{
-    AccelModifier, Attribute, ColorOverLifetimeModifier, EffectAsset, ExprHandle, ExprWriter,
-    Gradient, HanabiPlugin, OrientMode, OrientModifier, ParticleEffect, ScalarType,
-    SetAttributeModifier, SetPositionCone3dModifier, SetPositionSphereModifier,
-    SetVelocitySphereModifier, SizeOverLifetimeModifier, SpawnerSettings,
+    AccelModifier, Attribute, ColorOverLifetimeModifier, EffectAsset, EffectMaterial, ExprHandle,
+    ExprWriter, Gradient, HanabiPlugin, OrientMode, OrientModifier, ParticleEffect,
+    ParticleTextureModifier, ScalarType, SetAttributeModifier, SetPositionCone3dModifier,
+    SetPositionSphereModifier, SetVelocitySphereModifier, SizeOverLifetimeModifier,
+    SpawnerSettings,
 };
+use common::debug_panic;
 use dcl_component::{
     proto_components::{
-        common::{Color4, ColorRange, FloatRange, Vector3},
+        common::{texture_union::Tex, Color4, ColorRange, FloatRange, Vector3},
         sdk::components::{pb_particle_system::Shape, PbParticleSystem},
         Color4DclToBevy,
     },
     ComponentPosition, SceneComponentId,
 };
-use scene_runner::update_world::AddCrdtInterfaceExt;
+use scene_runner::{
+    renderer_context::RendererSceneContext,
+    update_world::{material::TextureResolver, AddCrdtInterfaceExt},
+    ContainerEntity,
+};
 
 use crate::{
     plugin::{
@@ -58,13 +64,25 @@ impl Plugin for ParticleSystemPlugin {
 fn particle_system_on_insert(
     trigger: Trigger<OnInsert, ParticleSystem>,
     mut commands: Commands,
-    particle_systems: Query<&ParticleSystem>,
+    particle_systems: Query<(&ParticleSystem, Option<&ContainerEntity>)>,
+    renderer_scene_contexts: Query<&RendererSceneContext>,
     mut effect_assets: ResMut<Assets<EffectAsset>>,
+    mut texture_resolver: TextureResolver,
 ) {
     let entity = trigger.target();
-    let Ok(particle_system) = particle_systems.get(entity) else {
+    let Ok((particle_system, maybe_container_entity)) = particle_systems.get(entity) else {
         unreachable!("Infallible query");
     };
+
+    let Some(container_entity) = maybe_container_entity else {
+        debug_panic!("Particle system does not have ContainerEntity.");
+    };
+
+    let Ok(scene) = renderer_scene_contexts.get(container_entity.root) else {
+        debug_panic!("Particle system is not contained in a valid scene.");
+    };
+
+    let mut effect_material = EffectMaterial { images: vec![] };
 
     let active = particle_system.active.unwrap_or(true);
     let rate = particle_system.rate.unwrap_or(10.);
@@ -119,6 +137,18 @@ fn particle_system_on_insert(
             a: 1.,
         }),
     });
+    let texture = particle_system
+        .texture
+        .as_ref()
+        .and_then(|texture| {
+            texture_resolver
+                .resolve_texture(scene, &Tex::Texture(texture.clone()))
+                .inspect_err(|err| {
+                    error!("Could not resolve particle system texture due to '{err:?}'.")
+                })
+                .ok()
+        })
+        .map(|resolved_texture| resolved_texture.image);
 
     let writer = ExprWriter::new();
 
@@ -200,12 +230,20 @@ fn particle_system_on_insert(
                 .unwrap_or(Vec4::ONE),
         ),
     ]));
+    let render_texture = texture.as_ref().map(|texture| {
+        let texture_slot = writer.lit(effect_material.images.len() as u32).expr();
+        effect_material.images.push(texture.clone());
+        ParticleTextureModifier::new(texture_slot)
+    });
     let render_billboard = OrientModifier {
         mode: OrientMode::FaceCameraPosition,
         rotation: Some(writer.attr(ROTATION_ATTR).expr()),
     };
 
-    let module = writer.finish();
+    let mut module = writer.finish();
+    if render_texture.is_some() {
+        module.add_texture_slot("color");
+    }
 
     let mut effect_asset = EffectAsset::new(
         max_particles,
@@ -230,13 +268,18 @@ fn particle_system_on_insert(
     if particle_system.color_over_time.is_some() {
         set!(effect_asset, render, render_color_over_time);
     }
+    if let Some(render_texture) = render_texture {
+        set!(effect_asset, render, render_texture);
+    }
     if billboard {
         set!(effect_asset, render, render_billboard);
     }
 
     let handle = effect_assets.add(effect_asset);
 
-    commands.entity(entity).insert(ParticleEffect::new(handle));
+    commands
+        .entity(entity)
+        .insert((ParticleEffect::new(handle), effect_material));
 }
 
 fn particle_system_on_remove(trigger: Trigger<OnRemove, ParticleSystem>, mut commands: Commands) {
