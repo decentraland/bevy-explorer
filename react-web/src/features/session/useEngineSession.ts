@@ -414,6 +414,10 @@ export function useEngineSession(createDriver: () => LoginDriver): EngineSession
           setProximity(msg.tips)
           break
         case 'avatarClick':
+          // The card's scrim swallows mouse input, so the engine's raycast freezes and never sends
+          // the hover-exit — clear the hover here or its tooltip stays painted beside the card.
+          setHover([])
+          setHoverPos(null)
           setWorldCard({ address: msg.address, name: msg.name, x: msg.x, y: msg.y })
           break
         case 'chat':
