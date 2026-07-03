@@ -63,6 +63,9 @@ export function registerPointer(ctx: Ctx): void {
       }
     } catch (e) {
       console.error('[pointer] hover stream failed', e)
+    } finally {
+      hoverActive = false
+      ctx.send({ kind: 'hover', actions: [] })
     }
   })()
 }
