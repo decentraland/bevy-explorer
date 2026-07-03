@@ -1,11 +1,13 @@
-// COOP/COEP escape hatch for production. The hosting site (decentraland.zone/bevy-web) serves
-// `COEP: require-corp`, which blocks plain <img> loads from catalysts (they send no CORP header).
-// The shared service worker at the PACKAGE ROOT (deploy/web/service_worker.js) rewrites
-// same-origin navigations to `COEP: credentialless`, which allows credential-less no-CORP images
-// while keeping crossOriginIsolated for the engine. The engine page registers the SAME script
-// (engine/main.js), so one registration scopes both.
+// COOP/COEP escape hatch AND the engine's IPFS cache. The hosting site (decentraland.zone/
+// bevy-web) serves `COEP: require-corp`, which blocks plain <img> loads from catalysts (they
+// send no CORP header). The shared service worker at the PACKAGE ROOT (deploy/web/
+// service_worker.js) rewrites same-origin navigations to `COEP: credentialless`, which allows
+// credential-less no-CORP images while keeping crossOriginIsolated for the engine.
 //
-// Dev is a no-op: Vite already serves credentialless headers directly and doesn't host the SW.
+// The SW is REQUIRED in dev too (vite serves it at /service_worker.js): the engine tags
+// cacheable asset fetches with an X-IPFS header for the SW to strip + cache. Uncontrolled,
+// that custom header forces a CORS preflight the peer catalysts reject — scene content and
+// avatar wearables all fail to download.
 import { PAGE_DIR } from './publicUrl'
 
 // One-shot reload guard. Deliberately NOT the engine's `sw_reloaded` — the iframe shares this
@@ -13,7 +15,7 @@ import { PAGE_DIR } from './publicUrl'
 const FLAG = 'coi_sw_reloaded'
 
 export function registerCoiServiceWorker(): void {
-  if (!import.meta.env.PROD || !('serviceWorker' in navigator)) return
+  if (!('serviceWorker' in navigator)) return
 
   // The SW scope is the package DIRECTORY (…/bevy-web/), but the production entry URL has no
   // trailing slash (…/bevy-web) — OUTSIDE that scope, so this page load is never controlled and
