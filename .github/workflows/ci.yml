@@ -11,34 +11,12 @@ concurrency:
 name: Continuous integration
 
 jobs:
-  check:
-    name: Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - uses: Swatinem/rust-cache@v2
-      - name: Install protoc
-        uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install alsa and udev
-        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
-      - name: install ffmpeg deps
-        run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
-      - name: install livekit deps
-        run: sudo apt update -y; sudo apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev
-      - uses: actions/checkout@v6
-      - uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --locked
-
+  # No separate `cargo check` job: clippy compiles everything check does, plus lints.
   hardcore-test:
     name: Test Scenes
+    # Dependabot bumps don't need the expensive jobs (the macOS/Windows matrix bills 10x/2x
+    # minutes) — fmt/clippy still validate cargo bumps.
+    if: ${{ github.actor != 'dependabot[bot]' }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions-rs/toolchain@v1
@@ -47,6 +25,8 @@ jobs:
           toolchain: stable
           override: true
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
         uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
@@ -71,6 +51,9 @@ jobs:
 
   test:
     name: Test Suite
+    # Dependabot bumps don't need the expensive jobs (the macOS/Windows matrix bills 10x/2x
+    # minutes) — fmt/clippy still validate cargo bumps.
+    if: ${{ github.actor != 'dependabot[bot]' }}
     strategy:
       fail-fast: false
       matrix:
@@ -155,15 +138,6 @@ jobs:
           toolchain: stable
           override: true
       - run: rustup component add rustfmt
-      - uses: Swatinem/rust-cache@v2
-      - name: Install protoc
-        uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install alsa and udev
-        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
-      - name: install ffmpeg deps (linux)
-        run: sudo apt install -y --no-install-recommends clang curl pkg-config libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev
       - uses: actions-rs/cargo@v1
         with:
           command: fmt
@@ -181,6 +155,8 @@ jobs:
           override: true
       - run: rustup component add clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
         uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
@@ -217,7 +193,10 @@ jobs:
 
   build-deploy-web:
     name: Build and Deploy Web
-    # needs: [check, test, fmt, clippy]
+    # Dependabot bumps don't need the expensive jobs (the macOS/Windows matrix bills 10x/2x
+    # minutes) — fmt/clippy still validate cargo bumps.
+    if: ${{ github.actor != 'dependabot[bot]' }}
+    # needs: [test, fmt, clippy]
     runs-on: ubuntu-latest
 
     permissions:
@@ -243,19 +222,31 @@ jobs:
           target: wasm32-unknown-unknown
           components: rust-src
           override: true
+      # Save only from main so PR runs restore main's cache instead of writing
+      # per-PR copies that thrash the repo's 10GB cache quota.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: wasm-web
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
         uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # @master
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install wasm-pack
-        run: cargo install wasm-pack --locked
+        run: |
+          curl -fsSL https://github.com/rustwasm/wasm-pack/releases/download/v0.15.0/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz \
+            | tar -xz --strip-components=1 -C "$HOME/.cargo/bin" wasm-pack-v0.15.0-x86_64-unknown-linux-musl/wasm-pack
       - name: Install alsa and udev
         run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
       - name: install deps (linux)
         run: sudo apt install -y --no-install-recommends clang curl
+      # wasm-opt costs ~9 min and only matters for the published binary — PRs
+      # never publish (see the Publish step's if), so they skip it.
       - name: Build WASM package
+        env:
+          WASM_OPT_FLAG: ${{ github.event_name == 'pull_request' && '--no-opt' || '' }}
         run: |
-          wasm-pack build --target web --out-dir ./deploy/web/engine/pkg --no-default-features --features="livekit,social"
+          wasm-pack build --target web $WASM_OPT_FLAG --out-dir ./deploy/web/engine/pkg --no-default-features --features="livekit,social"
           rm -f ./deploy/web/engine/pkg/.gitignore
           WASM_SIZE=$(wc -c < ./deploy/web/engine/pkg/webgpu_build_bg.wasm)
           echo "{\"wasmSize\":${WASM_SIZE}}" > ./deploy/web/engine/pkg/manifest.json
