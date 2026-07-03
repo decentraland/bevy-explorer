@@ -17,7 +17,9 @@ extern "C" {
     async fn local_participant_publish_data(
         local_participant: &LocalParticipant,
         data: &[u8],
-        data_publish_options: DataPublishOptions,
+        reliable: bool,
+        topic: Option<String>,
+        destination_identities: Vec<String>,
     ) -> RoomResult<()>;
     #[wasm_bindgen(catch)]
     async fn local_participant_publish_track(
@@ -54,16 +56,13 @@ impl LocalParticipant {
             destination_identities,
         } = data;
 
-        let data_publish_options = DataPublishOptions {
-            reliable,
-            topic,
-            destination_identities: destination_identities
-                .into_iter()
-                .map(|participant_identity| participant_identity.0)
-                .collect(),
-        };
+        let destination_identities = destination_identities
+            .into_iter()
+            .map(|participant_identity| participant_identity.0)
+            .collect();
 
-        local_participant_publish_data(self, &payload, data_publish_options).await
+        local_participant_publish_data(self, &payload, reliable, topic, destination_identities)
+            .await
     }
 
     pub async fn publish_track(
@@ -132,15 +131,4 @@ impl IntoWasmAbi for &LocalParticipant {
     fn into_abi(self) -> JsValueAbi {
         self.inner.clone().into_abi()
     }
-}
-
-#[expect(dead_code, reason = "Read on JavaScript side")]
-#[wasm_bindgen]
-struct DataPublishOptions {
-    #[wasm_bindgen = "reliable"]
-    reliable: bool,
-    #[wasm_bindgen = "topic"]
-    topic: Option<String>,
-    #[wasm_bindgen = "destinationIdentities"]
-    destination_identities: Vec<String>,
 }

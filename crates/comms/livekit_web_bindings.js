@@ -291,14 +291,19 @@ export async function participant_is_local(participant) {
 }
 
 /**
- * 
+ *
  * @param {livekit.LocalParticipant} local_participant
- * @param {Uint8Array} payload 
- * @param {livekit.DataPublishOptions} payload 
- * @returns string
+ * @param {Uint8Array} payload
+ * @param {boolean} reliable
+ * @param {string | undefined} topic
+ * @param {string[]} destination_identities
  */
-export async function local_participant_publish_data(local_participant, payload, data_publish_options) {
-    local_participant.publishData(payload, data_publish_options).await;
+export async function local_participant_publish_data(local_participant, payload, reliable, topic, destination_identities) {
+    await local_participant.publishData(payload, {
+        reliable,
+        topic: topic ?? undefined,
+        destinationIdentities: destination_identities,
+    });
 }
 
 /**
