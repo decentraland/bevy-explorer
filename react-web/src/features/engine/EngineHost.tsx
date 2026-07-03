@@ -15,14 +15,17 @@ export const DEFAULT_REALM = 'https://realm-provider-ea.decentraland.org/main'
 
 // Our super-user bridge scene. It relays the scene-loading stream + player-ready over
 // BroadcastChannel and renders no UI.
-//   • PROD (built app): the EXPORTED static bundle shipped in this package at
-//     `bridge-scene/static`, served same-origin beside the page.
+//   • PROD (built app): the EXPORTED static bundle shipped in this package, loaded from the
+//     VERSIONED CDN base (BASE_URL) — NOT the page origin: the zone site mirror drops the
+//     realm's extensionless files (`about`, bafk… content hashes) and 404s them, while the CDN
+//     serves the full package. The engine only ever FETCHES the realm (CORS, ACAO:* on the CDN),
+//     so it doesn't need to be same-origin — and version-pinning it avoids mirror skew anyway.
 //   • DEV default: the LIVE preview realm from `sdk-commands start` on :8100 (started by the vite
-//     plugin) — fast iteration, the scene hot-reloads.
-//   • `?bundled=1` (dev): opt into the exported bundle — exactly what ships.
+//     plugin) — fast iteration, the scene hot-reloads. (BASE_URL is '/' in dev, so ?bundled=1
+//     still resolves to this origin's /bridge-scene/static.)
 const SYSTEM_SCENE =
   import.meta.env.PROD || new URLSearchParams(location.search).has('bundled')
-    ? new URL('bridge-scene/static/BevyExplorerUI', PAGE_DIR).href
+    ? new URL('bridge-scene/static/BevyExplorerUI', new URL(import.meta.env.BASE_URL, PAGE_DIR)).href
     : 'http://localhost:8100'
 
 // Engine media libs the wasm expects as globals (LivekitClient, Hls) — loaded from CDNs like the
