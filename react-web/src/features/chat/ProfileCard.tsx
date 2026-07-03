@@ -206,11 +206,11 @@ export function ProfileCard({
               </Button>
             </div>
           ) : justSent || relationship === 'requested' ? (
-            <div className={`${styles.cta} ${styles.ctaSent}`}>✓ REQUEST SENT</div>
+            <div className={styles.ctaSent}>✓ REQUEST SENT</div>
           ) : (
-            <button type="button" className={styles.cta} onClick={() => { onFriendAction('request', user.address); setJustSent(true) }}>
+            <Button className={styles.ctaFull} onClick={() => { onFriendAction('request', user.address); setJustSent(true) }}>
               <AddFriendIcon /> ADD FRIEND
-            </button>
+            </Button>
           )
         )}
 

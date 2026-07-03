@@ -10,9 +10,11 @@ import type { Ctx } from '../bridge'
 export function registerAvatarPointer(ctx: Ctx): void {
   const registered = new Set<Entity>()
   // Addresses (lowercased) currently hide_profile per an AvatarModifierArea's DISABLE_PASSPORTS
-  // (the old scene's avatar-tracker — isProfileBlocked — respected this too). A disabled avatar is
-  // treated as absent in the rescan, so its pointer-down (and the "Show Profile" hover) is removed
-  // within a poll cycle; the click-time check stays as a belt-and-braces for that stale window.
+  // (the old scene's avatar-tracker — isProfileBlocked — respected this too), or hide per
+  // HIDE_AVATARS — the engine only hides the mesh (the collider stays live), so without this an
+  // invisible avatar would still show "Show Profile" over empty space and leak who's there. A
+  // disabled avatar is treated as absent in the rescan, so its pointer-down (and the hover) is
+  // removed within a poll cycle; the click-time check stays as a belt-and-braces for that stale window.
   const passportDisabled = new Set<string>()
   let frame = 0
   ctx.push(() => {
@@ -22,7 +24,7 @@ export function registerAvatarPointer(ctx: Ctx): void {
     void BevyApi.getAvatarModifiers()
       .then((mods) => {
         passportDisabled.clear()
-        for (const m of mods) if (m.hideProfile) passportDisabled.add(m.userId.toLowerCase())
+        for (const m of mods) if (m.hideProfile || m.hideAvatar) passportDisabled.add(m.userId.toLowerCase())
       })
       .catch(() => {})
     // Never attach our own avatar — PlayerIdentityData is written for the local player too (profile
