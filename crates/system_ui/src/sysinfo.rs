@@ -15,7 +15,7 @@ use common::{
     sets::{SceneSets, SetupSets},
     structs::{
         AppConfig, CurrentRealm, CursorLocks, DebugInfo, PreviewCommand, PreviewMode, PrimaryUser,
-        SettingsTab, ShowSettingsEvent, StartupScenes, Version, ZOrder,
+        SettingsTab, ShowSettingsEvent, StartupScenes, UiRoot, Version, ZOrder,
     },
     util::{ModifyComponentExt, TryPushChildrenEx},
 };
@@ -445,6 +445,7 @@ fn setup_minimap(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn update_minimap(
     q: Query<&DuiEntities, With<Minimap>>,
     mut maps: Query<&mut MapTexture>,
@@ -453,7 +454,18 @@ fn update_minimap(
     scenes: Query<(&RendererSceneContext, Option<&GltfLoadingCount>)>,
     mut text: Query<&mut Text>,
     preview: Res<PreviewMode>,
+    root: Query<&Node, With<UiRoot>>,
 ) {
+    // skip the scene lookup / string churn while the native hud is hidden (ui-scene
+    // mode); preview-server minimaps live outside the root so they always update
+    if preview.server.is_none()
+        && !root
+            .single()
+            .is_ok_and(|node| node.display == Display::Flex)
+    {
+        return;
+    }
+
     let Ok(gt) = player.single() else {
         return;
     };

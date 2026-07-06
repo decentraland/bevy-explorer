@@ -102,7 +102,9 @@ impl PluginGroup for TestPlugins {
             .add(InputPlugin)
             .add(ScenePlugin)
             .add(StatesPlugin)
-            .add(ConsolePlugin { add_egui: false })
+            .add(ConsolePlugin {
+                add_bevy_console: false,
+            })
             .add(WalletPlugin)
             .add(CommsPlugin)
             .add(DuiPlugin)

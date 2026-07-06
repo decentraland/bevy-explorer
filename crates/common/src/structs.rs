@@ -1267,7 +1267,6 @@ pub enum ZOrder {
     Toast,
     Permission,
     DefaultComboPopup,
-    EguiBlocker,
 }
 
 impl ZOrder {

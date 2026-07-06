@@ -27,7 +27,6 @@ use bevy::{
     text::CosmicFontSystem,
 };
 use bevy_dui::{DuiNodeList, DuiPlugin, DuiRegistry};
-use bevy_egui::EguiPlugin;
 use bound_node::BoundedNodePlugin;
 use button::{DuiButtonSetTemplate, DuiButtonTemplate, DuiTabGroupTemplate};
 use color_picker::ColorPickerPlugin;
@@ -82,9 +81,6 @@ impl Plugin for UiCorePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(DuiPlugin);
         app.add_plugins(BoundedNodePlugin);
-        app.add_plugins(EguiPlugin {
-            enable_multipass_for_primary_context: false,
-        });
         app.add_plugins(UiActionPlugin);
         app.add_plugins(FocusPlugin);
         app.add_plugins(InteractStylePlugin);
@@ -322,7 +318,3 @@ impl<S: States + FreelyMutableState> StateTracker<S> {
         system.into_configs()
     }
 }
-
-// blocker for egui elements to prevent interaction fallthrough
-#[derive(Component)]
-struct Blocker;
