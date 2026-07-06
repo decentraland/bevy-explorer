@@ -3,6 +3,8 @@ mod set_position_modifier;
 mod speed_dampen;
 mod update_sprite_index;
 
+use std::cmp::Ordering;
+
 use bevy::{math::bounding::Aabb3d, prelude::*};
 use bevy_hanabi::{
     AccelModifier, AlphaMode, Attribute, ColorOverLifetimeModifier, EffectAsset, EffectMaterial,
@@ -68,13 +70,15 @@ impl Plugin for ParticleSystemPlugin {
 fn particle_system_on_insert(
     trigger: Trigger<OnInsert, ParticleSystem>,
     mut commands: Commands,
-    particle_systems: Query<(&ParticleSystem, Option<&ContainerEntity>)>,
+    particle_systems: Query<(&ParticleSystem, Option<&ContainerEntity>, Option<&Children>)>,
     renderer_scene_contexts: Query<&RendererSceneContext>,
     mut effect_assets: ResMut<Assets<EffectAsset>>,
     mut texture_resolver: TextureResolver,
 ) {
     let entity = trigger.target();
-    let Ok((particle_system, maybe_container_entity)) = particle_systems.get(entity) else {
+    let Ok((particle_system, maybe_container_entity, maybe_children)) =
+        particle_systems.get(entity)
+    else {
         unreachable!("Infallible query");
     };
 
@@ -86,8 +90,9 @@ fn particle_system_on_insert(
         debug_panic!("Particle system is not contained in a valid scene.");
     };
 
+    let active = particle_system.active.unwrap_or(true);
     {
-        let active = particle_system.active.unwrap_or(true);
+        debug!("Creating main particle system");
         let rate = particle_system.rate.unwrap_or(10.);
         let r#loop = particle_system.r#loop.unwrap_or(true);
         make_particle_system(
@@ -101,6 +106,57 @@ fn particle_system_on_insert(
             renderer_scene_context,
             &mut effect_assets,
         );
+    }
+
+    if let Some(bursts_config) = &particle_system.bursts {
+        let bursts = &bursts_config.values;
+        let children = if let Some(children) = maybe_children {
+            let mut filtered_children = children
+                .into_iter()
+                .copied()
+                .filter(|child| particle_systems.contains(*child))
+                .collect::<Vec<_>>();
+            match filtered_children.len().cmp(&bursts.len()) {
+                Ordering::Greater => {
+                    for child in &filtered_children[bursts.len()..] {
+                        commands.entity(*child).despawn();
+                    }
+                    filtered_children[..bursts.len()].to_vec()
+                }
+                Ordering::Equal => filtered_children,
+                Ordering::Less => {
+                    for _ in filtered_children.len()..bursts.len() {
+                        filtered_children.push(commands.spawn(ChildOf(entity)).id());
+                    }
+                    filtered_children
+                }
+            }
+        } else {
+            (0..bursts.len())
+                .map(|_| commands.spawn(ChildOf(entity)).id())
+                .collect()
+        };
+
+        for (burst, entity) in bursts.iter().zip(children) {
+            debug!("Creating burst particle system");
+            // TODO burst.time
+            // TODO burst.probability
+            make_particle_system(
+                &mut commands,
+                entity,
+                particle_system,
+                SpawnerSettings::new(
+                    (burst.count as f32).into(),
+                    0.0.into(),
+                    burst.interval.unwrap_or(0.01).into(),
+                    burst.cycles.unwrap_or(1) as u32,
+                )
+                .with_starts_active(active),
+                &mut texture_resolver,
+                renderer_scene_context,
+                &mut effect_assets,
+            );
+        }
     }
 }
 
