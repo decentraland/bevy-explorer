@@ -139,8 +139,6 @@ fn particle_system_on_insert(
 
         for (burst, entity) in bursts.iter().zip(children) {
             debug!("Creating burst particle system");
-            // TODO burst.time
-            // TODO burst.probability
             make_particle_system(
                 &mut commands,
                 entity,
@@ -151,7 +149,9 @@ fn particle_system_on_insert(
                     burst.interval.unwrap_or(0.01).into(),
                     burst.cycles.unwrap_or(1) as u32,
                 )
-                .with_starts_active(active),
+                .with_starts_active(active)
+                .with_first_emission(burst.time)
+                .with_probability(burst.probability.unwrap_or(1.)),
                 &mut texture_resolver,
                 renderer_scene_context,
                 &mut effect_assets,
