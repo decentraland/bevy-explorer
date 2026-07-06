@@ -82,14 +82,47 @@ fn particle_system_on_insert(
         debug_panic!("Particle system does not have ContainerEntity.");
     };
 
-    let Ok(scene) = renderer_scene_contexts.get(container_entity.root) else {
+    let Ok(renderer_scene_context) = renderer_scene_contexts.get(container_entity.root) else {
         debug_panic!("Particle system is not contained in a valid scene.");
     };
 
+    {
+        let active = particle_system.active.unwrap_or(true);
+        let rate = particle_system.rate.unwrap_or(10.);
+        let r#loop = particle_system.r#loop.unwrap_or(true);
+        make_particle_system(
+            &mut commands,
+            entity,
+            particle_system,
+            SpawnerSettings::rate(rate.into())
+                .with_starts_active(active)
+                .with_cycle_count(!r#loop as u32),
+            &mut texture_resolver,
+            renderer_scene_context,
+            &mut effect_assets,
+        );
+    }
+}
+
+fn particle_system_on_remove(trigger: Trigger<OnRemove, ParticleSystem>, mut commands: Commands) {
+    // On replace ParticleEffect will be replaced with a new value
+    // On despawn ParticleEffect will cease to exist anyways
+    commands
+        .entity(trigger.target())
+        .try_remove::<ParticleEffect>();
+}
+
+fn make_particle_system(
+    commands: &mut Commands,
+    entity: Entity,
+    particle_system: &ParticleSystem,
+    spawner_settings: SpawnerSettings,
+    texture_resolver: &mut TextureResolver,
+    renderer_scene_context: &RendererSceneContext,
+    effect_assets: &mut Assets<EffectAsset>,
+) {
     let mut effect_material = EffectMaterial { images: vec![] };
 
-    let active = particle_system.active.unwrap_or(true);
-    let rate = particle_system.rate.unwrap_or(10.);
     let max_particles = particle_system.max_particles.unwrap_or(1000);
     let lifetime = particle_system.lifetime.unwrap_or(5.);
     // TODO bursts
@@ -145,7 +178,7 @@ fn particle_system_on_insert(
         .as_ref()
         .and_then(|texture| {
             texture_resolver
-                .resolve_texture(scene, &Tex::Texture(texture.clone()))
+                .resolve_texture(renderer_scene_context, &Tex::Texture(texture.clone()))
                 .inspect_err(|err| {
                     error!("Could not resolve particle system texture due to '{err:?}'.")
                 })
@@ -160,7 +193,6 @@ fn particle_system_on_insert(
     let billboard = particle_system.billboard.unwrap_or(true);
     let sprite_sheet = particle_system.sprite_sheet.as_ref();
     // TODO playback state
-    let r#loop = particle_system.r#loop.unwrap_or(true);
     // TODO prewarm
     let simulation_space = match particle_system.simulation_space() {
         SimulationSpace::PssLocal => bevy_hanabi::SimulationSpace::Local,
@@ -272,15 +304,9 @@ fn particle_system_on_insert(
         module.add_texture_slot("color");
     }
 
-    let mut effect_asset = EffectAsset::new(
-        max_particles,
-        SpawnerSettings::rate(rate.into())
-            .with_starts_active(active)
-            .with_cycle_count(!r#loop as u32),
-        module,
-    )
-    .with_alpha_mode(blend_mode)
-    .with_simulation_space(simulation_space);
+    let mut effect_asset = EffectAsset::new(max_particles, spawner_settings, module)
+        .with_alpha_mode(blend_mode)
+        .with_simulation_space(simulation_space);
 
     set!(effect_asset, init, init_position);
     set!(effect_asset, init, init_rotation);
@@ -318,14 +344,6 @@ fn particle_system_on_insert(
         .entity(entity)
         .insert((ParticleEffect::new(handle), effect_material))
         .try_remove::<EffectSpawner>();
-}
-
-fn particle_system_on_remove(trigger: Trigger<OnRemove, ParticleSystem>, mut commands: Commands) {
-    // On replace ParticleEffect will be replaced with a new value
-    // On despawn ParticleEffect will cease to exist anyways
-    commands
-        .entity(trigger.target())
-        .try_remove::<ParticleEffect>();
 }
 
 fn make_position(shape: Option<&Shape>, writer: &ExprWriter) -> SetPositionModifier {
