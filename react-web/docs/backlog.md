@@ -166,6 +166,20 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     `ChatChannelsPresenter`/`ChatChannelType.USER` is the only prior-art reference. Large scope (channel
     list UI, per-conversation history, member-list → "message" entry point) — flag for a dedicated design
     pass, not a drive-by addition.
+27. `[arch]` **SSO redirect on the login screen throws away the in-flight engine WASM download** —
+    *boot perf, not blocking / not a direct bug*. On the login/loading screen the engine WASM is
+    already downloading in the background while the sign-in buttons are live. "Start with account" /
+    "Use different account" call `redirectToAuth()` → `location.replace('/auth/login?redirectTo=…')`
+    (`src/features/auth/sso.ts`), a **same-tab, same-page navigation** that tears down the document and
+    **cancels the partial WASM download**; when the auth site bounces back, the download restarts from
+    zero, so the user waits through it twice. Doesn't block anyone and isn't wrong per se — just wasted
+    bytes + a slower perceived boot on the primary flow. Options to evaluate: (a) run the auth handoff
+    in a **new tab** (`window.open(authLoginUrl(), '_blank', 'noopener')` — mind the noopener/reverse-
+    tabnabbing rule) and detect the returned identity in the original tab (poll the SSO localStorage
+    keys / `storage` event) so this document — and its download — survives; or (b) run the auth flow in
+    a hidden **iframe** and read back the identity via `postMessage`/`storage` (auth site must allow
+    being framed same-origin — verify its CSP/`X-Frame-Options`). Both are more moving parts than the
+    current straight redirect, so only worth it if boot time on login is a measured concern.
 
 ## Not gaps (already good / ahead)
 
