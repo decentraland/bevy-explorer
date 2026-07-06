@@ -16,10 +16,33 @@ name: Continuous integration
 
 jobs:
   # No separate `cargo check` job: clippy compiles everything check does, plus lints.
+
+  # Did this change touch the rust dependency graph? The expensive jobs below scale
+  # their coverage on this. On pull_request the filter reads the PR file list from
+  # the API; on push it diffs against the pre-push commit (hence the checkout).
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    outputs:
+      rust-deps: ${{ steps.filter.outputs.rust-deps }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        with:
+          filters: |
+            rust-deps:
+              - 'Cargo.lock'
+              - 'Cargo.toml'
+              - '**/Cargo.toml'
+              - '.cargo/config.toml'
+
   hardcore-test:
     name: Test Scenes
-    # Dependabot bumps skip this full release build; fmt/clippy still validate them.
-    if: ${{ github.actor != 'dependabot[bot]' }}
+    needs: changes
+    # Runs only when the rust dep files change, and never for dependabot: its bumps
+    # are validated by the merge push to main, where the actor is the human merger.
+    if: ${{ needs.changes.outputs.rust-deps == 'true' && github.actor != 'dependabot[bot]' }}
     runs-on: ubuntu-22.04
     # Main runs no longer share a workflow group, so coalescing moves here: a
     # newer push cancels this job's superseded in-flight run.
@@ -61,13 +84,17 @@ jobs:
 
   test:
     name: Test Suite
-    # Dependabot bumps skip the heavy matrix (macOS bills 10x, Windows 2x minutes);
-    # fmt/clippy still validate cargo bumps and build-deploy-web covers npm ones.
-    if: ${{ github.actor != 'dependabot[bot]' }}
+    needs: changes
+    # Ubuntu always runs as the cheap unit-test leg. The 10x-macOS/2x-Windows legs
+    # only run when the rust dep files change — their main value is catching
+    # platform-specific dependency breakage. Dependabot cargo bumps get the ubuntu
+    # leg here plus the full matrix post-merge (main push: human actor + lock diff);
+    # its npm/actions bumps skip the job entirely (they can't affect the rust build).
+    if: ${{ needs.changes.outputs.rust-deps == 'true' || github.actor != 'dependabot[bot]' }}
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-15]
+        os: ${{ (needs.changes.outputs.rust-deps == 'true' && github.actor != 'dependabot[bot]') && fromJSON('["windows-latest", "ubuntu-latest", "macos-15"]') || fromJSON('["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     # Same coalescing as Test Scenes, per matrix leg — without this, every push
     # in a burst of main merges would bill the full 10x-macOS/2x-Windows matrix.
