@@ -93,6 +93,32 @@ priority. Each item is tagged at the start: `[DS]` design-system primitive / ext
     building now, or should this wait on **stackable popups** — i.e. #10 (consolidate modals onto
     `Modal`/`ModalShell`) landing first, so a notification-detail popup doesn't become yet another bespoke
     overlay to migrate later. Leaning toward doing #10 first if both are picked up.
+14b. `[arch]` **Pointer-lock / camera-look coordination across the HUD — the "right-click to move the
+    camera again" confusion** — *behavior/parity, review + decision*. On web the engine's camera-look
+    *is* the browser Pointer Lock (bevy `CursorGrabMode::Locked` → `requestPointerLock` on the iframe
+    canvas; see `crates/user_input/src/camera.rs` `update_cursor_lock` +
+    `crates/scene_runner/src/update_scene/pointer_lock.rs`). Because the React chat/menus are DOM
+    surfaces **outside** the iframe, opening one has to free the cursor by releasing the engine lock
+    (`PointerLock.isPointerLocked = false` on `CameraEntity` — done today only for the profile-card
+    `avatarPointer.ts` and chat `chat.ts`). The catch: **the browser can't re-lock without a fresh
+    user gesture**, and the React→bridge→engine hop loses that gesture, so **camera-look does NOT
+    auto-resume** — after closing chat/a menu the player must **right-click (or click) into the world**
+    to re-engage the camera, which is not discoverable and confuses users. Two things to do here: **(a)
+    the review/decision:** evaluate **mirroring an in-engine chat input** — route chat keystrokes through
+    the engine's own `TextEntry` (`crates/ui_core/src/text_entry.rs`, which just re-prioritises the
+    keyboard via `reserve(InputType::Keyboard, InputPriority::TextEntry)` and **never drops the pointer
+    lock**) and relay its value to the React chat display over the bridge. That restores the old
+    `bevy-ui-scene` seamless feel (type → close → camera resumes instantly, no click) at the cost of
+    re-introducing engine-owned input + a split display/input source of truth — hence a decision, not a
+    given. (Escape stays a hard limit either way: the browser's Esc-exits-pointer-lock is not cancelable;
+    a fragile `exitPointerLock()`-then-gesture-less-`requestPointerLock()` trick exists but is
+    browser/version-dependent — don't rely on it.) **(b) the related bug:** full-screen menus
+    (settings/map/backpack…) opened via their **hotkey while camera-look is active** (`useMenuShortcuts`
+    fires even when the iframe holds focus) **don't free the cursor at all** — only profile-card + chat
+    do — so the menu renders over a still-locked cursor and is unusable until you click. Fold this into
+    the same pass: a single "any HUD panel/overlay open → engine cursor free" rule instead of the current
+    per-trigger frees. Kept Medium: chat + click-to-open panels work today, so it's not blocking — it's a
+    core-interaction UX/parity gap, not an MVP blocker.
 
 ## 🟢 Low / when a feature needs it
 
