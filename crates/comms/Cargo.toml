@@ -39,7 +39,7 @@ http = { workspace = true }
 multihash-codetable = { workspace = true }
 web-time = { workspace = true }
 
-modular-bitfield = "0.11"
+modular-bitfield = "0.13"
 
 cid = "0.11.0"
 multipart = { version = "0.18.0", default-features = false, features = [
@@ -52,7 +52,7 @@ image = { workspace = true }
 livekit = { git = "https://github.com/robtfm/client-sdk-rust", branch = "decentraland-webrtc", features = [
   "native-tls",
 ], optional = true }
-cpal = "0.15.2"
+cpal = "0.17.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { workspace = true }
@@ -60,4 +60,4 @@ wasm-bindgen-futures = { workspace = true }
 js-sys = { workspace = true }
 serde-wasm-bindgen = { workspace = true }
 serde_bytes = { workspace = true }
-gloo-timers = "0.3"
+gloo-timers = "0.4"

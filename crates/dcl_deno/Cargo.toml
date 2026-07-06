@@ -40,7 +40,7 @@ deno_webstorage = "0.163"
 bytes = "1.11.1"
 
 # inspector requirements
-fastwebsockets = { version = "0.4.4", optional = true, features = ["upgrade"] }
+fastwebsockets = { version = "0.8.1", optional = true, features = ["upgrade"] }
 hyper = { version = "0.14.26", features = [
   "runtime",
   "http1",

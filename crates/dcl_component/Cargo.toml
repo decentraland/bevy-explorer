@@ -18,7 +18,7 @@ dcl-rpc = { workspace = true, optional = true }
 async-trait = { workspace = true }
 
 [build-dependencies]
-prost-build = "0.11.8"
+prost-build = "0.12.6"
 # Host-only: build.rs reflects over the proto descriptor to generate the component
 # schema JSON (with the hand-authored semantic overlay). NOT a runtime/wasm dependency.
 prost-reflect = { workspace = true }

@@ -48,4 +48,4 @@ futures-lite = { workspace = true }
 web-time = { workspace = true }
 copypwasmta = { workspace = true }
 
-shlex = "1"
+shlex = "2"

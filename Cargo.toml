@@ -129,7 +129,7 @@ bevy_console = { git = "https://github.com/robtfm/bevy-console", branch = "0.16"
 naga_oil = { version = "0.17", default-features = false, features = [
   "override_any",
 ] }
-bevy_egui = { version = "0.34", default-features = false, features = [
+bevy_egui = { version = "0.40", default-features = false, features = [
   "default_fonts",
   "render",
 ] }
@@ -137,7 +137,7 @@ bevy_egui = { version = "0.34", default-features = false, features = [
 serde = "1.0.152"
 serde_json = { version = "1.0.92", features = ["raw_value"] }
 
-itertools = "0.14"
+itertools = "0.15"
 tokio = { version = "1.44", features = ["sync", "macros", "rt"] }
 tokio-util = "*"
 anyhow = "1.0.70"
@@ -148,11 +148,11 @@ ethers-signers = "2.0.3"
 ethers-core = "2.0.3"
 futures-lite = "2.6"
 bimap = "0.6.3"
-prost = "0.11.8"
-prost-reflect = "0.11"
+prost = "0.12.6"
+prost-reflect = "0.16"
 clap = "4.6"
 once_cell = "1.16.0"
-rapier3d-f64 = "0.31"
+rapier3d-f64 = "0.34"
 urlencoding = "2.1.2"
 async-std = "1.12.0"
 reqwest = { version = "0.12", default-features = false, features = [
@@ -161,8 +161,8 @@ reqwest = { version = "0.12", default-features = false, features = [
   "blocking",
   "stream",
 ] }
-kira = "0.9.6"
-zip = { version = "2", default-features = false }
+kira = "0.12.1"
+zip = { version = "8", default-features = false }
 image = "0.25"
 opener = { version = "0.8", git = "https://github.com/robtfm/opener" }
 chrono = { version = "0.4.31", features = ["serde"] }
@@ -180,8 +180,8 @@ bevy_simple_text_input = { git = "https://github.com/robtfm/bevy_simple_text_inp
 directories = "6"
 uuid = { version = "1.23", features = ["v4"] }
 build-time = "0.1.3"
-async-tungstenite = { version = "0.25", features = ["async-native-tls"] }
-tungstenite = { version = "0.21.0" }
+async-tungstenite = { version = "0.34", features = ["async-native-tls"] }
+tungstenite = { version = "0.29.0" }
 dcl-rpc = { git = "https://github.com/decentraland/rpc-rust", branch = "feat/wasm-compat", default-features = false, features = [
   "client",
   "websockets",
@@ -189,10 +189,10 @@ dcl-rpc = { git = "https://github.com/decentraland/rpc-rust", branch = "feat/was
 ] }
 async-trait = "0.1.68"
 fastrand = "2"
-rand = "0.8.5"
+rand = "0.10.0"
 futures-util = "0.3.28"
 futures-timer = "3"
-async-native-tls = { version = "0.5", features = ["runtime-async-std"] }
+async-native-tls = { version = "0.6", features = ["runtime-async-std"] }
 boimp = { git = "https://github.com/robtfm/boimp", branch = "feat/composite-bake-via-storage-texture" }
 crc = "3"
 num-traits = "0.2"
@@ -200,8 +200,8 @@ async-compat = "0.2"
 async-fs = "2.0"
 base64 = "0.22"
 multihash-codetable = { version = "0.1.1", features = ["digest", "sha2"] }
-strum = "0.27"
-strum_macros = "0.27"
+strum = "0.28"
+strum_macros = "0.28"
 wasm-bindgen = "0.2.92"
 wasm-bindgen-futures = "0.4.50"
 js-sys = "0.3"
@@ -225,7 +225,7 @@ web-sys = { version = "0.3", features = [
 web-time = "1.1"
 copypwasmta = { git = "https://github.com/robtfm/copypwasmta" }
 web-fs = "0.2.6"
-getrandom = { version = "0.3" }
+getrandom = { version = "0.4" }
 
 [dependencies]
 assets = { workspace = true }

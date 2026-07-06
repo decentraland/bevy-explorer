@@ -33,5 +33,5 @@ wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 js-sys = { workspace = true }
 ws_stream_wasm = "0.7.5"
-spin = { version = "0.9.8", default-features = false, features = ["rwlock"] }
+spin = { version = "0.10.0", default-features = false, features = ["rwlock"] }
 web-fs = { workspace = true }
