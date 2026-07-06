@@ -6,8 +6,8 @@ mod update_sprite_index;
 use bevy::{math::bounding::Aabb3d, prelude::*};
 use bevy_hanabi::{
     AccelModifier, AlphaMode, Attribute, ColorOverLifetimeModifier, EffectAsset, EffectMaterial,
-    ExprHandle, ExprWriter, FlipbookModifier, Gradient, HanabiPlugin, OrientMode, OrientModifier,
-    ParticleEffect, ParticleTextureModifier, ScalarType, SetAttributeModifier,
+    EffectSpawner, ExprHandle, ExprWriter, FlipbookModifier, Gradient, HanabiPlugin, OrientMode,
+    OrientModifier, ParticleEffect, ParticleTextureModifier, ScalarType, SetAttributeModifier,
     SetPositionCone3dModifier, SetPositionSphereModifier, SetVelocitySphereModifier,
     SizeOverLifetimeModifier, SpawnerSettings,
 };
@@ -160,7 +160,7 @@ fn particle_system_on_insert(
     let billboard = particle_system.billboard.unwrap_or(true);
     let sprite_sheet = particle_system.sprite_sheet.as_ref();
     // TODO playback state
-    // TODO loop
+    let r#loop = particle_system.r#loop.unwrap_or(true);
     // TODO prewarm
     let simulation_space = match particle_system.simulation_space() {
         SimulationSpace::PssLocal => bevy_hanabi::SimulationSpace::Local,
@@ -274,7 +274,9 @@ fn particle_system_on_insert(
 
     let mut effect_asset = EffectAsset::new(
         max_particles,
-        SpawnerSettings::rate(rate.into()).with_starts_active(active),
+        SpawnerSettings::rate(rate.into())
+            .with_starts_active(active)
+            .with_cycle_count(!r#loop as u32),
         module,
     )
     .with_alpha_mode(blend_mode)
@@ -314,7 +316,8 @@ fn particle_system_on_insert(
 
     commands
         .entity(entity)
-        .insert((ParticleEffect::new(handle), effect_material));
+        .insert((ParticleEffect::new(handle), effect_material))
+        .try_remove::<EffectSpawner>();
 }
 
 fn particle_system_on_remove(trigger: Trigger<OnRemove, ParticleSystem>, mut commands: Commands) {
