@@ -41,20 +41,13 @@ export function registerChat(ctx: Ctx): void {
   // camera-look swallows a plain DOM keydown before it reaches the React page). The engine
   // binds Enter/NumpadEnter to the "Chat" system action at the input layer and reports it here
   // regardless of DOM focus — this is the same stream the old SDK7 scene used.
+  let freeCursorPending = false
   void (async () => {
     try {
       const stream = await BevyApi.getSystemActionStream()
       for await (const a of stream) {
         if (a.action === 'Chat' && a.pressed) {
-          // The React chat is a DOM <input> in the parent page, so typing needs DOM focus outside
-          // the engine iframe — which can't coexist with the iframe holding pointer lock, and the
-          // browser won't let us re-lock it after Escape. So release the engine's camera-look now
-          // (free cursor to type); the player re-engages camera-look with a click, same as leaving
-          // any other panel. Mirrors the profile-card free-cursor (avatarPointer.ts). The old SDK7
-          // chat kept the lock because it was an in-engine TextEntry that only re-prioritised the
-          // keyboard — a DOM input can't.
-          const pl = PointerLock.getMutableOrNull(engine.CameraEntity)
-          if (pl != null) pl.isPointerLocked = false
+          freeCursorPending = true
           ctx.send({ kind: 'focusChat' })
         }
       }
@@ -62,6 +55,21 @@ export function registerChat(ctx: Ctx): void {
       console.error('[chat] system action stream relay failed', e)
     }
   })()
+
+  // Release the engine's camera-look when Enter opens chat. The React chat is a DOM <input> in the
+  // parent page, so typing needs DOM focus outside the iframe — which can't coexist with the iframe
+  // holding pointer lock, and the browser won't re-lock it after Escape. Freeing the cursor here lets
+  // the player type; they re-engage camera-look with a click, same as leaving any other panel. (The
+  // old SDK7 chat kept the lock because it was an in-engine TextEntry that only re-prioritised the
+  // keyboard — a DOM input can't.) Must run in a frame system, NOT the async stream callback above: a
+  // component write from an async callback doesn't flush to the engine — the same reason nametag chat
+  // bubbles defer their writes to a system (setChatBubble just queues state).
+  ctx.push(() => {
+    if (!freeCursorPending) return
+    freeCursorPending = false
+    const pl = PointerLock.getMutableOrNull(engine.CameraEntity)
+    if (pl != null) pl.isPointerLocked = false
+  })
 
   // Nearby players (PlayerIdentityData set) → chat header "Nearby · N". Poll ~3s, push on change.
   let acc = 3
