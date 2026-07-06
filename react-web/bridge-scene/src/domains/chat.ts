@@ -1,7 +1,7 @@
 // Chat: incoming messages, sending, and the nearby-players roster.
 //   from: BevyApi.getChatStream() / sendChat(), @dcl/sdk PlayerIdentityData (nearby roster)
 //         + the catalyst profile cache (profile.ts) for faces.
-import { engine, PlayerIdentityData } from '@dcl/sdk/ecs'
+import { engine, PlayerIdentityData, PointerLock } from '@dcl/sdk/ecs'
 import { getPlayer } from '@dcl/sdk/players'
 import { BevyApi } from '../bevy-api'
 import { fetchProfile, profileCache } from './profile'
@@ -45,7 +45,18 @@ export function registerChat(ctx: Ctx): void {
     try {
       const stream = await BevyApi.getSystemActionStream()
       for await (const a of stream) {
-        if (a.action === 'Chat' && a.pressed) ctx.send({ kind: 'focusChat' })
+        if (a.action === 'Chat' && a.pressed) {
+          // The React chat is a DOM <input> in the parent page, so typing needs DOM focus outside
+          // the engine iframe — which can't coexist with the iframe holding pointer lock, and the
+          // browser won't let us re-lock it after Escape. So release the engine's camera-look now
+          // (free cursor to type); the player re-engages camera-look with a click, same as leaving
+          // any other panel. Mirrors the profile-card free-cursor (avatarPointer.ts). The old SDK7
+          // chat kept the lock because it was an in-engine TextEntry that only re-prioritised the
+          // keyboard — a DOM input can't.
+          const pl = PointerLock.getMutableOrNull(engine.CameraEntity)
+          if (pl != null) pl.isPointerLocked = false
+          ctx.send({ kind: 'focusChat' })
+        }
       }
     } catch (e) {
       console.error('[chat] system action stream relay failed', e)

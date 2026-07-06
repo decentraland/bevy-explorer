@@ -439,12 +439,11 @@ export function Chat({
         setSuggestions([])
       } else if (picker) setPicker(false)
       // Nothing to dismiss first → blur back to the world (DCL convention: Escape leaves chat).
-      // Don't re-focus the engine iframe here: the real Escape keypress was consumed by this
-      // DOM input and never reached the engine, so if camera-lock was toggled on before the
-      // player opened chat, the engine's own lock state never got released — re-focusing the
-      // iframe would just re-assert that stale lock (cursor grabbed with no warning). Leave
-      // focus off the iframe; Enter still refocuses chat from anywhere (useMenuShortcuts), and
-      // resuming movement takes one click into the world, same as every other panel today.
+      // Opening chat already released the engine's camera-look (bridge chat.ts frees the pointer
+      // lock so the cursor is free to type), so there's nothing to restore here — and the browser
+      // won't re-lock without a fresh click anyway. Just blur; the player re-engages camera-look
+      // with a click into the world, same as leaving any other panel. Enter refocuses chat from
+      // anywhere (useMenuShortcuts).
       else inputRef.current?.blur()
     }
   }
