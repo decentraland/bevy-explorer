@@ -5,12 +5,19 @@
 .vscode/settings.json
 config.json
 /log
+# react-web build outputs (vite build --outDir deploy/web) + its public/ copies
 /deploy/web/assets
+/deploy/web/index.html
+/deploy/web/category-icons
+/deploy/web/favicon
+/deploy/web/sidebar-icons
 /deploy/web/modules
-/deploy/web/pkg
+/deploy/web/engine/pkg
+/deploy/web/bridge-scene
 /deploy/web/.env
 /deploy/web/package-lock.json
 /deploy/web/node_modules
 .idea
 *.pem
 .DS_Store
+/react-web/bridge-scene/static-native

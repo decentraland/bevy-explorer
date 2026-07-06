@@ -10,6 +10,7 @@ impl Plugin for AgentCommandsPlugin {
     fn build(&self, app: &mut App) {
         app.add_console_command::<LoginGuestCommand, _>(login_guest_cmd);
         app.add_console_command::<LoginPreviousCommand, _>(login_previous_cmd);
+        app.add_console_command::<LoginIdentityCommand, _>(login_identity_cmd);
         app.add_console_command::<LogoutCommand, _>(logout_cmd);
         app.add_console_command::<LiveScenesCommand, _>(live_scenes_cmd);
         app.add_console_command::<ChatCommand, _>(chat_cmd);
@@ -53,6 +54,38 @@ fn login_previous_cmd(
             rx,
             |result| match result {
                 Ok(()) => Ok("logged in with previous credentials".to_string()),
+                Err(e) => Err(e),
+            },
+            responder,
+        );
+    }
+}
+
+// --- /login_identity ---
+
+/// Login with an AuthIdentity the web page already holds (base64-encoded AuthIdentity JSON).
+/// The web page reads it from localStorage and forwards it; the identity is the same however
+/// the user signed in (wallet, social, OTP, magic), so this is not login-method-specific.
+#[derive(clap::Parser, ConsoleCommand)]
+#[command(name = "/login_identity")]
+struct LoginIdentityCommand {
+    /// base64(JSON) of the stored AuthIdentity.
+    payload: String,
+}
+
+fn login_identity_cmd(
+    mut input: ConsoleCommand<LoginIdentityCommand>,
+    mut events: EventWriter<SystemApi>,
+    mut pending: ResMut<PendingConsoleResponses>,
+) {
+    if let Some(Ok(command)) = input.take() {
+        let (sx, rx) = common::rpc::RpcResultSender::<Result<(), String>>::channel();
+        events.write(SystemApi::LoginWithIdentity(command.payload.clone(), sx));
+        let responder = input.take_responder();
+        pending.push_receiver(
+            rx,
+            |result| match result {
+                Ok(()) => Ok("logged in with identity".to_string()),
                 Err(e) => Err(e),
             },
             responder,

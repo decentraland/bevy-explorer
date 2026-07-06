@@ -4,7 +4,9 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Cache, DedicatedWorkerGlobalScope, Response, ResponseInit};
 
-// must match key used in service_worker.js
+// must match key AND cache name used in service_worker.js (CACHE_NAME — currently ipfs-path-cache-v1):
+// the SW stores the raw fetch there, we read it, process, and write the processed bytes back
+// over the same key so subsequent loads are served pre-processed.
 fn key(filename: &str) -> Result<String, JsValue> {
     let url = web_sys::Url::new(filename)?;
     Ok(format!("{}{}", url.pathname(), url.search()))

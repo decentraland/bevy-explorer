@@ -1,0 +1,75 @@
+/* Sidebar control — matches the Explorer 2.0 spec: 32×32 hit area, 8px radius,
+   right-side tooltip on #161518 (Shadow), Ruby notification badge. */
+.btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text); /* DCL/Snow — icons are full-white by default */
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) ease,
+    transform 0.16s var(--ease-spring, ease);
+}
+/* Unity sidebar: a GREY rounded background springs in (Ease.OutBack); the orange is only
+   inside the icon (currentColor). The icon + badge ride above the background. */
+.btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  background-color: rgba(255, 255, 255, 0.1);
+  transform: scale(0);
+  transition:
+    transform 0.2s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
+    background-color var(--dur-fast) ease;
+}
+.btn > * {
+  position: relative;
+  z-index: 1;
+}
+.btn:hover {
+  color: var(--accent); /* orange icon */
+}
+.btn:hover::before {
+  transform: scale(1);
+}
+.active {
+  color: var(--accent); /* orange icon */
+}
+.active::before {
+  transform: scale(1);
+  background-color: rgba(255, 255, 255, 0.13);
+}
+
+/* Ruby notification badge — 16×16, 2px Shadow ring, Inter 600 10px/12px Snow. */
+.badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border: 2px solid var(--panel);
+  border-radius: 100px;
+  background: var(--brand);
+  color: var(--text);
+  font-family: var(--font-family);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 12px;
+}
+
+.badgeLavender {
+  background: var(--lavender);
+}

@@ -155,6 +155,10 @@ pub enum SystemApi {
         RpcResultSender<Result<Option<i32>, String>>,
         RpcResultSender<Result<(), String>>,
     ),
+    /// Log in with an AuthIdentity the web page already holds (base64-encoded AuthIdentity
+    /// JSON read from localStorage) — no auth-server round-trip. The identity is the same
+    /// regardless of how the user signed in (wallet, social, OTP, magic).
+    LoginWithIdentity(String, RpcResultSender<Result<(), String>>),
     LoginGuest,
     LoginCancel,
     Logout,

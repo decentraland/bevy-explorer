@@ -1,0 +1,45 @@
+/* The popup itself now reuses the Modal/ModalShell primitive (backdrop + card + focus-trap + Escape).
+   Only two things are feature-specific: raising the backdrop above login, and the panic-text block. */
+
+/* Raise Modal's backdrop above login/loading (its default is --z-modal). */
+.fatalLayer {
+  z-index: var(--z-fatal);
+}
+
+/* Alert-style centered header — title-scale type instead of the shell's compact panel heading. */
+.head {
+  padding: 12px 12px 0;
+  text-align: center;
+}
+.title {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 700;
+  line-height: 1.2;
+}
+.subtitle {
+  margin: 10px 0 0;
+  font-size: var(--fs-lg);
+  line-height: 1.45;
+  color: var(--ink-7);
+}
+/* Footer buttons: centered by the shell (actionsAlign), kept comfortably wide. */
+.btn {
+  min-width: 150px;
+}
+
+/* The raw panic / crash message, monospaced + scrollable. */
+.detail {
+  margin: 0;
+  max-height: 30vh;
+  overflow: auto;
+  padding: 12px;
+  border-radius: var(--r-card);
+  background: var(--fill-2);
+  color: var(--ink-6);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

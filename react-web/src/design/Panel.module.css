@@ -1,0 +1,12 @@
+.panel {
+  background: rgba(22, 21, 24, 0.92);
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  box-shadow: var(--shadow-panel);
+  color: var(--text);
+}
+
+.blur {
+  background: rgba(22, 21, 24, 0.6);
+  backdrop-filter: blur(8px);
+}

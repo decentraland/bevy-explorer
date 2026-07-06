@@ -1,0 +1,289 @@
+.root {
+  position: absolute;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  font-family: var(--font-family);
+  /* Shared Unity magenta→purple backdrop (also used by the full-screen menu pages). */
+  background: var(--menu-bg);
+  animation: fade-in var(--dur-fade) var(--ease-out) both;
+}
+.root.leaving {
+  animation: fade-out 400ms var(--ease-out) both;
+}
+
+/* Faint scattered wearable/emote-icon watermark (Unity backdrop). */
+.watermark {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.06;
+  background:
+    url('../../assets/category-icons/tiara.png') 14% 14% / 70px no-repeat,
+    url('../../assets/category-icons/upper_body.png') 30% 64% / 66px no-repeat,
+    url('../../assets/category-icons/mask.png') 9% 84% / 62px no-repeat,
+    url('../../assets/category-icons/eyewear.png') 4% 44% / 60px no-repeat,
+    url('../../assets/category-icons/hat.png') 40% 30% / 66px no-repeat,
+    url('../../assets/category-icons/feet.png') 24% 90% / 60px no-repeat,
+    url('../../assets/category-icons/earring.png') 47% 76% / 56px no-repeat,
+    url('../../assets/category-icons/hair.png') 90% 12% / 70px no-repeat,
+    url('../../assets/category-icons/tiara.png') 80% 86% / 64px no-repeat,
+    url('../../assets/category-icons/mouth.png') 60% 18% / 58px no-repeat,
+    url('../../assets/category-icons/hands_wear.png') 55% 92% / 60px no-repeat;
+}
+
+/* ---- loading state ---- */
+.loading {
+  margin: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.spinnerLogo {
+  width: 10vh;
+  height: 10vh;
+  background: url('/assets/logo.png') center / contain no-repeat;
+  animation: pulse 1.6s var(--ease-out) infinite;
+}
+
+/* ---- left panel ---- */
+.panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(320px, 23vw);
+  margin-left: clamp(2.5rem, 10.5vw, 11rem);
+}
+.logo {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 14px;
+  background: url('/assets/logo.png') left center / contain no-repeat;
+}
+.title {
+  margin: 0;
+  font-size: clamp(1.8rem, 2.4vw, 2.3rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.05;
+  white-space: nowrap;
+  color: var(--text);
+}
+.subtitle {
+  margin: 14px 0 0;
+  font-size: clamp(1.15rem, 1.55vw, 1.45rem);
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--ink-95);
+  white-space: pre-line;
+}
+.account {
+  margin: 6px 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-65);
+}
+.error {
+  margin: 10px 0 0;
+  color: var(--error-text);
+  font-size: 0.9rem;
+}
+
+/* ---- buttons (design-system Button; .buttons-scoped overrides win the variant) ---- */
+.buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+/* Figma JumpInCTA: DCL/Ruby, height 46, border-radius 12 — a rounded-rect, not the
+   design-system Button's default pill. The .buttons-scoped 2-class selector wins the variant. */
+.buttons .cta,
+.buttons .ctaSecondary {
+  width: 100%;
+  /* A label that doesn't fit (long/translated copy, or the narrow 23vw panel) wraps onto a second
+     line and grows the pill (min-height) instead of being clipped under the arrow — the Button base
+     is nowrap, so re-enable wrapping here. Both CTAs are 46px when their label fits on one line; a
+     wrapped one grows, and since sibling labels are similar length they wrap together in practice,
+     so the pair stays visually matched. */
+  min-height: 46px;
+  padding: 9px 16px;
+  border-radius: 12px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 1.15;
+  text-transform: uppercase;
+  text-align: center;
+  white-space: normal;
+}
+.buttons .cta {
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--brand) 32%, transparent);
+}
+.buttons .ctaSecondary {
+  background: var(--login-cta2);
+  box-shadow: none;
+}
+.buttons .ctaSecondary:hover:not(:disabled) {
+  background: var(--login-cta2-hover);
+}
+.label {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Break a word too long for the text column (e.g. "DECENTRALAND" in the narrow panel) onto the
+     next line instead of letting it overflow — a single unbreakable word would otherwise spill,
+     centered, into the arrow's reserved column and sit under the icon. */
+  overflow-wrap: break-word;
+}
+.arrow {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+
+/* ---- engine boot progress (footer bar) — real weighted WASM-download progress from the iframe ---- */
+.bootBar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  padding: 16px clamp(2.5rem, 10.5vw, 11rem);
+  pointer-events: none;
+  animation: fade-in var(--dur-fade) var(--ease-out) both;
+}
+.bootLabel {
+  margin-bottom: 7px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-85);
+}
+.bootTrack {
+  width: min(420px, 80vw);
+  height: 4px;
+  border-radius: 2px;
+  background: var(--white-10);
+  overflow: hidden;
+}
+.bootFill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--brand), var(--gold));
+  transition: width var(--dur-mid) ease;
+}
+
+/* ---- avatar (welcome-back screen) — full height, standing on Unity's golden podium ---- */
+.avatarWrap {
+  position: absolute;
+  right: clamp(1rem, 7vw, 9rem);
+  top: 0;
+  bottom: 0;
+  width: min(46vw, 720px);
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+}
+/* Golden podium disc the avatar stands on (Unity launcher). */
+.disc {
+  position: absolute;
+  bottom: 9%;
+  left: 50%;
+  width: 332px;
+  height: 76px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  /* Decorative golden podium (Unity welcome-back): a bespoke multi-stop gold gradient + gold rim +
+     dark-purple lip — one-off ornament, no design token maps to it (like the boot-splash gradient). */
+  background: radial-gradient(ellipse 58% 66% at 50% 40%, #ffe891 0%, #f8bd3a 48%, #e09b22 72%, #c07d16 100%);
+  box-shadow:
+    inset 0 0 0 4px rgba(255, 224, 138, 0.55),
+    0 8px 0 #3a1c54,
+    0 18px 42px var(--scrim);
+}
+.glow {
+  position: absolute;
+  bottom: 10%;
+  left: 50%;
+  width: 360px;
+  height: 86px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  /* Decorative golden glow under the podium — bespoke ornament, no token maps (see .podium). */
+  background: radial-gradient(ellipse at center, rgba(255, 205, 100, 0.35), rgba(255, 205, 100, 0) 70%);
+  filter: blur(8px);
+  animation: glow-pulse 4.5s ease-in-out infinite;
+}
+.avatar {
+  position: relative;
+  height: 92vh;
+  max-height: 1040px;
+  margin-bottom: 0;
+  object-fit: contain;
+  object-position: bottom;
+  filter: drop-shadow(0 24px 44px rgba(0, 0, 0, 0.35));
+  animation:
+    avatar-in 0.6s var(--ease-out) both,
+    avatar-float 5s ease-in-out 0.6s infinite;
+}
+
+@keyframes avatar-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes avatar-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+@keyframes glow-pulse {
+  0%,
+  100% {
+    opacity: 0.85;
+    transform: scaleX(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleX(1.06);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+}
