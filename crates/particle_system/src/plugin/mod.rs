@@ -344,7 +344,7 @@ fn make_particle_system(
         ParticleTextureModifier::new(texture_slot)
     });
     let render_billboard = OrientModifier {
-        mode: OrientMode::FaceCameraPosition,
+        mode: OrientMode::ParallelCameraDepthPlane,
         rotation: Some(writer.attr(ROTATION_ATTR).expr()),
     };
     let render_sprite_sheet = sprite_sheet.map(|sprite_sheet| FlipbookModifier {
