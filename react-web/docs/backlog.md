@@ -129,6 +129,13 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
     today only the local `mic` toggle exists (no per-remote-speaker signal). Could yield a reusable
     `SpeakingIndicator` primitive.
 
+21. **Migrate inline `dt`-throttle timers to `bridge-scene/src/system-helpers.ts`** — *cleanup*. The
+    `throttleByDt` helper (added in PR #915 for `avatarPointer`) replaces a dt-accumulator that's
+    re-implemented inline across most bridge domains (`chat`, `world`, `friends`, `project`,
+    `nametags` — two timers there —, `avatarPreview`). Migrate them to the helper (and consider
+    `singleFlight` / a named `pollSequential` wrapper where a polled async RPC could overlap). Pure
+    cleanup, no behavior change; kept out of #915 to stay surgical.
+
 ## Not gaps (already good / ahead)
 
 `Modal` (portal + focus-trap + blur + `--ui-scale`, richer than the old backdrop), `IconButton`
