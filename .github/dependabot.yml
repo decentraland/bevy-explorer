@@ -1,0 +1,48 @@
+# Keep dependabot cheap: one grouped PR per ecosystem per week (each PR run of the full CI
+# matrix bills ~700 runner-minutes; the heavy jobs are also gated off dependabot in ci.yml).
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      cargo-deps:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /react-web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      react-web-deps:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /react-web/bridge-scene
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      bridge-scene-deps:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /deploy/web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 1
+    groups:
+      deploy-web-deps:
+        patterns: ['*']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 1
+    groups:
+      actions-deps:
+        patterns: ['*']
