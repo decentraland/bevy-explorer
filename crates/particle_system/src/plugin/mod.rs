@@ -181,7 +181,6 @@ fn make_particle_system(
 
     let max_particles = particle_system.max_particles.unwrap_or(1000);
     let lifetime = particle_system.lifetime.unwrap_or(5.);
-    // TODO bursts
     let gravity = particle_system.gravity.unwrap_or(0.);
     let additional_force = particle_system
         .additional_force
