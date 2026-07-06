@@ -1,1 +1,1 @@
-export const COMMIT_HASH = 'f9393e2'
+export const COMMIT_HASH = 'a77ba788'

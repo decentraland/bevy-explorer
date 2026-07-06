@@ -59,6 +59,20 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
 10. **Consolidate modals onto `Modal`/`ModalShell`** — *cleanup*. ProfileCard, CommunityModal,
     CommunityCreateModal, WorldVisitModal roll their own portal/overlay and hardcode `z-index: 10001`.
     Unify backdrop / escape / focus-trap / z-layer.
+    10b. **Suppress the world-hover tooltip while any overlay/scrim is open** — *mechanism, from PR #915
+    review*. A scrim freezes the engine raycast, so no hover-exit fires; the world-hover prompt
+    (`<Pointer>`) can stay painted behind/beside a popup. Today only the `avatarClick` path clears it
+    (a per-message `setHover([])` in `useEngineSession`), which doesn't scale — the next world-entity
+    click that opens a popup needs its own clear. The deciding factor is trigger origin, not the
+    overlay: DOM-triggered popups (chat/friends/menus) are safe because reaching them crosses free
+    canvas and fires the exit; only world-entity clicks drop the scrim onto the hovered entity with no
+    exit. Clean fix, once the scrims are unified here: (a) the shared scrim/Modal primitive publishes an
+    "overlay open" signal (context or ref-count); (b) `<Pointer>` gates its hover hints on that signal
+    (render-level suppression, **don't** mutate `session.hover` — that just relocates the special case
+    and, because the frozen `hoverPos` is stale, can flash a mispositioned prompt on close); (c) drop
+    the per-message `setHover([])`. Covers every popup, present/future, for free. *(Point 1 of the
+    review — tooltip only returns after a 1px move on close — is expected native tooltip behavior and is
+    not addressed by this; leave as-is.)*
 11. **`Radio` / `RadioGroup`** — *new*. Have Checkbox/Toggle/Select but no Radio; bespoke in
     PermissionDialog. (Old: `radio-button.tsx`.)
 12. **`Skeleton`** — *new*. Only `Spinner` exists; no load placeholders for lists/cards.

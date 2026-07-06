@@ -6,7 +6,7 @@ import { ProfileCard } from '../features/chat/ProfileCard'
 // DOMAIN: profile-card — the shared popover (chat / friends / world avatar click). Covers the
 // action set ported from bevy-ui-scene's profile-menu: relationship-driven friend CTA (Add /
 // Accept+Reject / Requested / Unblock), View Passport, Mention, Block, Report. ("Invite to
-// Community" is parked until the communities feature — see design-system-backlog.md.)
+// Community" is parked until the communities feature — see backlog.md.)
 const ALICE = { address: '0xalice', name: 'Alice' }
 
 function renderCard(props: Partial<React.ComponentProps<typeof ProfileCard>> = {}): { onClose: () => void } {

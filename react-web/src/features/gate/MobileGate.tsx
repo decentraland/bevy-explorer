@@ -79,7 +79,7 @@ export function MobileGate({ reason = 'mobile' }: { reason?: 'mobile' | 'browser
             </Button>
           </div>
           {/* Bespoke text-link, not a Button: no link/text variant exists yet (Button is primary/
-              secondary/ghost pills) — tracked in docs/design-system-backlog.md (Button extend). */}
+              secondary/ghost pills) — tracked in docs/backlog.md (Button extend). */}
           <button type="button" className={styles.tryAnyway} onClick={tryAnyway}>
             try anyway…
           </button>

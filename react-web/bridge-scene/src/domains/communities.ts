@@ -153,7 +153,7 @@ export function registerCommunities(ctx: Ctx): void {
   // and `signed()` already unwraps the `data` envelope, so the result IS the array (typing it as
   // the envelope and reading `.data` again would always yield [] — see PR #915 review).
   // NOTE: currently unused — the profile-card's "Invite to Community" row is parked until the
-  // communities feature (see react-web/docs/design-system-backlog.md).
+  // communities feature (see react-web/docs/backlog.md).
   ctx.on('getInvitableCommunities', async (msg) => {
     const res = await signed<InvitableCommunity[]>(`${await membersBase()}/${msg.address.toLowerCase()}/invites`).catch(() => undefined)
     ctx.send({ kind: 'invitableCommunities', address: msg.address, communities: res ?? [] })
