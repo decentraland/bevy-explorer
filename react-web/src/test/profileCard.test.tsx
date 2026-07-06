@@ -1,12 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ProfileCard } from '../features/chat/ProfileCard'
 
 // DOMAIN: profile-card — the shared popover (chat / friends / world avatar click). Covers the
 // action set ported from bevy-ui-scene's profile-menu: relationship-driven friend CTA (Add /
-// Accept+Reject / Requested / Unblock), View Passport, Mention, Block, Report. ("Invite to
-// Community" is parked until the communities feature — see backlog.md.)
+// Accept+Reject / Requested / Unblock), View Passport, Mention, Block. (Report was removed until a
+// moderation endpoint exists, and "Invite to Community" is parked for the communities feature — see backlog.md.)
 const ALICE = { address: '0xalice', name: 'Alice' }
 
 function renderCard(props: Partial<React.ComponentProps<typeof ProfileCard>> = {}): { onClose: () => void } {
@@ -42,25 +42,13 @@ describe('profile-card actions', () => {
     expect(onViewProfile).toHaveBeenCalledWith(expect.objectContaining({ address: '0xalice' }))
   })
 
-  it('Report asks for confirmation before firing', async () => {
-    const onReport = vi.fn()
-    renderCard({ onReport })
-    await userEvent.click(screen.getByRole('button', { name: 'Report' }))
-    // A confirm dialog appears; onReport only fires on confirm.
-    const confirm = screen.getByText('Report Alice?').closest('[role="dialog"]') as HTMLElement
-    expect(onReport).not.toHaveBeenCalled()
-    await userEvent.click(within(confirm).getByRole('button', { name: 'Report' }))
-    expect(onReport).toHaveBeenCalledWith(expect.objectContaining({ address: '0xalice' }))
-  })
-
-  it('Block asks for confirmation before firing', async () => {
-    const onFriendAction = vi.fn()
-    renderCard({ onFriendAction })
+  // Block closes the card and delegates to the parent, which owns the single confirm dialog
+  // (the confirm-then-act flow is covered where App wires runBlock).
+  it('Block closes the card and delegates to onBlock', async () => {
+    const onBlock = vi.fn()
+    const { onClose } = renderCard({ onBlock })
     await userEvent.click(screen.getByRole('button', { name: 'Block' }))
-    // A confirm dialog appears; onFriendAction only fires on confirm.
-    const confirm = screen.getByText('Block Alice?').closest('[role="dialog"]') as HTMLElement
-    expect(onFriendAction).not.toHaveBeenCalled()
-    await userEvent.click(within(confirm).getByRole('button', { name: 'Block' }))
-    expect(onFriendAction).toHaveBeenCalledWith('block', '0xalice')
+    expect(onBlock).toHaveBeenCalledWith(expect.objectContaining({ address: '0xalice' }))
+    expect(onClose).toHaveBeenCalled()
   })
 })

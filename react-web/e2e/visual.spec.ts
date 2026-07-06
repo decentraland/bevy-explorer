@@ -103,13 +103,13 @@ test.describe('visual — mock HUD', () => {
   })
 
   // Profile card — the popover opened by clicking a chat sender / nearby avatar. Baselines the
-  // action set (View Passport · Mention · Block · Report). The Report confirm and the relationship
+  // action set (View Passport · Mention · Block). The block confirm and the relationship
   // states (Accept/Reject/Unblock) are covered deterministically by the tier-1 profileCard.test.tsx.
   test('profile card', async ({ page }) => {
     await enterWorld(page)
     await page.getByRole('button', { name: 'View Sharknado' }).first().click()
     const card = page.getByRole('dialog', { name: 'Profile' })
-    await card.getByRole('button', { name: 'Report' }).waitFor()
+    await card.getByRole('button', { name: 'Block' }).waitFor()
     await settle(page)
     await expect(page).toHaveScreenshot('profile-card.png')
   })

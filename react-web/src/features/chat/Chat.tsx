@@ -259,7 +259,7 @@ export function Chat({
   me,
   onFriendAction,
   onViewProfile,
-  onReport,
+  onBlock,
   onTeleport,
   onVisitWorld,
   relationshipOf
@@ -270,12 +270,12 @@ export function Chat({
   me?: { address?: string; name?: string } | null
   /** Friendship status for a user — drives the profile card's CTA. */
   relationshipOf?: (address: string) => Relationship
-  /** Friend action (request/accept/reject/block/unblock) from the profile card. */
+  /** Friend action (request/accept/reject/unblock) from the profile card. */
   onFriendAction?: (op: FriendAction, address: string) => void
   /** Open the full passport for a user (View Passport). */
   onViewProfile?: (user: ChatUser) => void
-  /** Report a user from the profile card. */
-  onReport?: (user: ChatUser) => void
+  /** Block a user from the profile card (parent shows the confirm). */
+  onBlock?: (user: ChatUser) => void
   /** A location link (x,y) in a message was clicked. */
   onTeleport?: (x: number, y: number) => void
   /** A world name (e.g. boedo.dcl.eth) in a message was clicked → prompt to jump there. */
@@ -599,7 +599,7 @@ export function Chat({
           onFriendAction={onFriendAction}
           onViewProfile={onViewProfile}
           onMention={insertMention}
-          onReport={onReport}
+          onBlock={onBlock}
           onClose={() => setViewUser(null)}
         />
       )}

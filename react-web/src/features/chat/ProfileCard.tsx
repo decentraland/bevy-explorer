@@ -2,12 +2,12 @@
 // sender's name/avatar, an @mention, or a nearby avatar in the world. Header with
 // avatar / name+copy / address+copy, a relationship-driven friend CTA (Add / Accept +
 // Reject / Requested), then the action list — mirroring bevy-ui-scene's profile-menu:
-// View Passport · Mention · Block/Unblock · Report. ("Invite to Community" is parked
+// View Passport · Mention · Block/Unblock. ("Invite to Community" is parked
 // until the communities feature — see backlog.)
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Avatar, ModalShell, Button } from '../../design'
+import { Avatar, Button } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
 import type { FriendAction } from '../../engine/protocol'
 import styles from './ProfileCard.module.css'
@@ -80,15 +80,6 @@ function BlockIcon(): React.JSX.Element {
   )
 }
 
-function ReportIcon(): React.JSX.Element {
-  return (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
-      <path d="M12 3l9 16H3L12 3z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-      <path d="M12 10v4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <circle cx="12" cy="16.6" r="0.5" fill="currentColor" stroke="currentColor" />
-    </svg>
-  )
-}
 function isClaimed(name: string): boolean {
   return !!name && !name.includes('#') && !/^0x[0-9a-f]+$/i.test(name)
 }
@@ -102,7 +93,7 @@ export function ProfileCard({
   onFriendAction,
   onMention,
   onViewProfile,
-  onReport,
+  onBlock,
   onClose
 }: {
   user: ChatUser
@@ -111,18 +102,17 @@ export function ProfileCard({
   me?: { address?: string } | null
   /** Relationship of the local user to this profile — drives the friend CTA + Block/Unblock. */
   relationship?: Relationship
-  /** Unified friend action (request/accept/reject/block/unblock). Absent → no friend controls. */
+  /** Friend action (request/accept/reject/unblock). Block is separate (onBlock) — it confirms. */
   onFriendAction?: (op: FriendAction, address: string) => void
   onMention?: (name: string) => void
   /** Open the full passport (labelled "View Passport"). */
   onViewProfile?: (user: ChatUser) => void
-  onReport?: (user: ChatUser) => void
+  /** Block a user — closes the card and asks the parent to show the confirm. */
+  onBlock?: (user: ChatUser) => void
   onClose: () => void
 }): React.JSX.Element {
   const [copied, setCopied] = useState<'name' | 'address' | null>(null)
   const [justSent, setJustSent] = useState(false)
-  const [confirmReport, setConfirmReport] = useState(false)
-  const [confirmBlock, setConfirmBlock] = useState(false)
   // After firing the friend request, show "REQUEST SENT" briefly, then close. onClose goes through
   // a ref: call sites pass inline arrows, and having it in the deps would restart the timer on
   // every parent re-render (which busy scenes trigger more often than every 1.1s).
@@ -148,9 +138,6 @@ export function ProfileCard({
     const el = cardRef.current
     if (!el) return
     const r = el.getBoundingClientRect()
-    // While hidden behind a destructive confirm (display:none) the rect is 0×0 — clamping against
-    // that would park the card unclamped at the raw click point, so keep the last good position.
-    if (r.width === 0) return
     setPos({
       left: Math.max(8, Math.min(x, window.innerWidth - r.width - 8)),
       top: Math.max(8, Math.min(y, window.innerHeight - r.height - 8))
@@ -167,15 +154,16 @@ export function ProfileCard({
     )
   }
 
-  const hasDestructive = (!!onFriendAction && !!user.address) || !!onReport
+  // Block goes via onBlock, unblock via onFriendAction — the parent owns the destructive confirm.
+  const canUnblock = relationship === 'blocked' && !!onFriendAction && !!user.address
+  const canBlock = relationship !== 'blocked' && !!onBlock && !!user.address
+  const hasDestructive = canUnblock || canBlock
   const hasMenu = !isMe && (!!onViewProfile || !!onMention || hasDestructive)
 
   return createPortal(
     <>
-      {/* Hide the card (not unmount — keeps its state) while a destructive confirm is up, so the
-          popup isn't stuck behind it. Proper stacking is backlog item 9 (consolidate modals + z-layer). */}
-      <div className={styles.scrim} onClick={onClose} style={confirmReport || confirmBlock ? { display: 'none' } : undefined} />
-      <div ref={cardRef} className={styles.card} style={confirmReport || confirmBlock ? { display: 'none' } : { left: pos.left, top: pos.top }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Profile">
+      <div className={styles.scrim} onClick={onClose} />
+      <div ref={cardRef} className={styles.card} style={{ left: pos.left, top: pos.top }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Profile">
         <div className={styles.header}>
           <Avatar src={user.picture} name={base} color={color} size={72} status="online" />
           <button type="button" className={styles.copyRow} title="Copy name" onClick={() => copy(user.name, 'name')}>
@@ -229,68 +217,21 @@ export function ProfileCard({
               </button>
             )}
             {hasDestructive && <div className={styles.divider} />}
-            {onFriendAction && user.address && (
-              relationship === 'blocked' ? (
-                <button type="button" className={styles.row} onClick={() => { onFriendAction('unblock', user.address); onClose() }}>
-                  <BlockIcon />
-                  <span>Unblock</span>
-                </button>
-              ) : (
-                <button type="button" className={`${styles.row} ${styles.danger}`} onClick={() => setConfirmBlock(true)}>
-                  <BlockIcon />
-                  <span>Block</span>
-                </button>
-              )
+            {canUnblock && (
+              <button type="button" className={styles.row} onClick={() => { onFriendAction?.('unblock', user.address); onClose() }}>
+                <BlockIcon />
+                <span>Unblock</span>
+              </button>
             )}
-            {onReport && (
-              <button type="button" className={`${styles.row} ${styles.danger}`} onClick={() => setConfirmReport(true)}>
-                <ReportIcon />
-                <span>Report</span>
+            {canBlock && (
+              <button type="button" className={`${styles.row} ${styles.danger}`} onClick={() => { onClose(); onBlock?.(user) }}>
+                <BlockIcon />
+                <span>Block</span>
               </button>
             )}
           </div>
         )}
       </div>
-      {confirmReport && (
-        <ModalShell
-          title={`Report ${base}?`}
-          onClose={() => setConfirmReport(false)}
-          width={420}
-          actions={
-            <>
-              <Button variant="ghost" onClick={() => setConfirmReport(false)}>
-                Cancel
-              </Button>
-              <Button variant="primary" onClick={() => { onReport?.(user); setConfirmReport(false); onClose() }}>
-                Report
-              </Button>
-            </>
-          }
-          actionsEqual
-        >
-          Reports help moderators take action against users that break Decentraland&apos;s Community Guidelines.
-        </ModalShell>
-      )}
-      {confirmBlock && (
-        <ModalShell
-          title={`Block ${base}?`}
-          onClose={() => setConfirmBlock(false)}
-          width={420}
-          actions={
-            <>
-              <Button variant="ghost" onClick={() => setConfirmBlock(false)}>
-                Cancel
-              </Button>
-              <Button variant="primary" onClick={() => { onFriendAction?.('block', user.address); setConfirmBlock(false); onClose() }}>
-                Block
-              </Button>
-            </>
-          }
-          actionsEqual
-        >
-          Blocked users won&apos;t be able to message you, join your community events, or see when you&apos;re online.
-        </ModalShell>
-      )}
     </>,
     document.body
   )

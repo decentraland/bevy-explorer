@@ -136,6 +136,13 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
     `singleFlight` / a named `pollSequential` wrapper where a polled async RPC could overlap). Pure
     cleanup, no behavior change; kept out of #915 to stay surgical.
 
+22. **Re-add "Report" to the profile card once a moderation/report endpoint exists** — *feature,
+    low priority*. Report was removed from `ProfileCard` in PR #915 because there's no backend — it was
+    only a `console.log` stub, so shipping a dead action was worse than hiding it. When a report/
+    moderation endpoint lands: re-add the `Report` row + `onBlock`-style `onReport` request prop
+    (parent-owned confirm, same pattern as Block), the `ReportIcon` glyph, and wire the actual submit.
+    (Old scene logged too — this is genuinely new backend work, not just UI.)
+
 ## Not gaps (already good / ahead)
 
 `Modal` (portal + focus-trap + blur + `--ui-scale`, richer than the old backdrop), `IconButton`

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Chat } from '../features/chat/Chat'
 import type { ChatLine, ChatState } from '../features/session/useEngineSession'
@@ -20,6 +20,7 @@ function renderChat(
     members?: NearbyMember[]
     onFriendAction?: (op: FriendAction, a: string) => void
     onViewProfile?: (u: { address: string; name: string }) => void
+    onBlock?: (u: { address: string; name: string }) => void
     onTeleport?: (x: number, y: number) => void
     me?: { address?: string; name?: string } | null
   } = {}
@@ -33,7 +34,7 @@ function renderChat(
     members: opts.members ?? []
   }
   const { container } = render(
-    <Chat chat={chat} me={opts.me} onFriendAction={opts.onFriendAction} onViewProfile={opts.onViewProfile} onTeleport={opts.onTeleport} />
+    <Chat chat={chat} me={opts.me} onFriendAction={opts.onFriendAction} onViewProfile={opts.onViewProfile} onBlock={opts.onBlock} onTeleport={opts.onTeleport} />
   )
   return { chat, container }
 }
@@ -63,22 +64,19 @@ describe('chat rich messages', () => {
     await userEvent.click(screen.getByRole('button', { name: '@Alice' }))
     const dialog = screen.getByRole('dialog', { name: 'Profile' })
     expect(dialog).toBeInTheDocument()
-    // Only the actions wired here — no View Passport / Report (those callbacks weren't passed).
-    expect(screen.queryByRole('button', { name: /View Passport|Report/i })).toBeNull()
+    // Only the actions wired here — no View Passport (that callback wasn't passed).
+    expect(screen.queryByRole('button', { name: /View Passport/i })).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: /ADD FRIEND/i }))
     expect(onFriendAction).toHaveBeenCalledWith('request', '0xalice')
   })
 
-  it('the profile card can block via the unified friend action', async () => {
-    const onFriendAction = vi.fn()
-    renderChat({ messages: [line('yo @Alice')], members: [{ address: '0xalice', name: 'Alice' }], onFriendAction })
+  it('the profile card delegates Block to onBlock (the parent owns the confirm)', async () => {
+    const onBlock = vi.fn()
+    renderChat({ messages: [line('yo @Alice')], members: [{ address: '0xalice', name: 'Alice' }], onBlock })
     await userEvent.click(screen.getByRole('button', { name: '@Alice' }))
     await userEvent.click(screen.getByRole('button', { name: 'Block' }))
-    // Block asks for confirmation first (mirrors Report).
-    const confirm = screen.getByText('Block Alice?').closest('[role="dialog"]') as HTMLElement
-    await userEvent.click(within(confirm).getByRole('button', { name: 'Block' }))
-    expect(onFriendAction).toHaveBeenCalledWith('block', '0xalice')
+    expect(onBlock).toHaveBeenCalledWith(expect.objectContaining({ address: '0xalice' }))
   })
 
   it('View Passport from the menu opens the passport for that user', async () => {
