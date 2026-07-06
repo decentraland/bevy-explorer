@@ -199,7 +199,7 @@ fn make_particle_system(
         .unwrap_or(FloatRange { start: 1., end: 1. });
     // TODO initial_rotation
     // TODO rotation_over_time
-    // TODO face_travel_direction
+    let face_travel_velocity = particle_system.face_travel_direction.unwrap_or(false);
     let initial_color = particle_system.initial_color.unwrap_or(ColorRange {
         start: Some(Color4 {
             r: 1.,
@@ -322,6 +322,10 @@ fn make_particle_system(
         ]),
         screen_space_size: false,
     };
+    let render_face_travel_velocity = OrientModifier {
+        mode: OrientMode::AlongVelocity,
+        rotation: None,
+    };
     let render_color_over_time = ColorOverLifetimeModifier::new(Gradient::from_keys([
         (
             0.,
@@ -380,6 +384,9 @@ fn make_particle_system(
     }
 
     set!(effect_asset, render, render_size_over_lifetime);
+    if face_travel_velocity {
+        set!(effect_asset, render, render_face_travel_velocity);
+    }
     if particle_system.color_over_time.is_some() {
         set!(effect_asset, render, render_color_over_time);
     }
