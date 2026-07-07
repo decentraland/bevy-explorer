@@ -5,7 +5,7 @@ mod update_sprite_index;
 
 use std::cmp::Ordering;
 
-use bevy::{math::bounding::Aabb3d, prelude::*};
+use bevy::{math::bounding::Aabb3d, platform::collections::HashSet, prelude::*};
 use bevy_hanabi::{
     AccelModifier, AlphaMode, Attribute, ColorOverLifetimeModifier, EffectAsset, EffectMaterial,
     EffectSpawner, ExprHandle, ExprWriter, FlipbookModifier, Gradient, HanabiPlugin, OrientMode,
@@ -13,7 +13,7 @@ use bevy_hanabi::{
     SetPositionCone3dModifier, SetPositionSphereModifier, SetVelocitySphereModifier,
     SizeOverLifetimeModifier, SpawnerSettings,
 };
-use common::debug_panic;
+use common::{debug_panic, structs::PrimaryUser};
 use dcl_component::{
     proto_components::{
         common::{texture_union::Tex, Color4, ColorRange, FloatRange, Vector3},
@@ -28,7 +28,7 @@ use dcl_component::{
 use scene_runner::{
     renderer_context::RendererSceneContext,
     update_world::{material::TextureResolver, AddCrdtInterfaceExt},
-    ContainerEntity,
+    ContainerEntity, ContainingScene, SceneEntity,
 };
 
 use crate::{
@@ -57,13 +57,72 @@ impl Plugin for ParticleSystemPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(HanabiPlugin);
 
+        app.init_resource::<ActiveScenes>();
+
         app.add_crdt_lww_component::<PbParticleSystem, ParticleSystem>(
             SceneComponentId::PARTICLE_SYSTEM,
             ComponentPosition::EntityOnly,
         );
 
+        app.add_systems(
+            Update,
+            (
+                collect_active_scenes,
+                enable_disable_particle_systems.run_if(resource_changed::<ActiveScenes>),
+            ),
+        );
+
         app.add_observer(particle_system_on_insert);
         app.add_observer(particle_system_on_remove);
+    }
+}
+
+#[derive(Default, Resource, Deref, DerefMut)]
+struct ActiveScenes(HashSet<Entity>);
+
+fn collect_active_scenes(
+    primary_user: Single<Entity, With<PrimaryUser>>,
+    mut active_scenes: ResMut<ActiveScenes>,
+    containing_scene: ContainingScene,
+) {
+    let player_in = containing_scene.get(*primary_user);
+
+    let difference = active_scenes
+        .symmetric_difference(&player_in)
+        .copied()
+        .collect::<HashSet<_>>();
+    if !difference.is_empty() {
+        **active_scenes = player_in;
+    }
+}
+
+fn enable_disable_particle_systems(
+    particle_systems: Query<(Entity, &SceneEntity, Option<&Children>), With<ParticleSystem>>,
+    mut effect_spawner: Query<&mut EffectSpawner>,
+    active_scenes: Res<ActiveScenes>,
+) {
+    let mut set_active = |entity: Entity, active: bool| -> bool {
+        if let Ok(mut effect_spawner) = effect_spawner.get_mut(entity) {
+            effect_spawner.active = active;
+            true
+        } else {
+            false
+        }
+    };
+
+    for (entity, scene_entity, maybe_children) in particle_systems {
+        let active = active_scenes.contains(&scene_entity.root);
+        if !set_active(entity, active) {
+            error!("Entity with `ParticleSystem` must have `EffectSpawner`");
+        }
+        for child in maybe_children
+            .map(|children| children.collection())
+            .into_iter()
+            .flatten()
+            .copied()
+        {
+            set_active(child, active);
+        }
     }
 }
 
@@ -74,6 +133,7 @@ fn particle_system_on_insert(
     renderer_scene_contexts: Query<&RendererSceneContext>,
     mut effect_assets: ResMut<Assets<EffectAsset>>,
     mut texture_resolver: TextureResolver,
+    active_scenes: Res<ActiveScenes>,
 ) {
     let entity = trigger.target();
     let Ok((particle_system, maybe_container_entity, maybe_children)) =
@@ -90,7 +150,8 @@ fn particle_system_on_insert(
         debug_panic!("Particle system is not contained in a valid scene.");
     };
 
-    let active = particle_system.active.unwrap_or(true);
+    let active =
+        particle_system.active.unwrap_or(true) && active_scenes.contains(&container_entity.root);
     {
         debug!("Creating main particle system");
         let rate = particle_system.rate.unwrap_or(10.);
