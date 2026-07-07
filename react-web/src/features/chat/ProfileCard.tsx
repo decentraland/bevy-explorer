@@ -7,7 +7,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Avatar, Button } from '../../design'
+import { Avatar, Button, showConfirm } from '../../design'
 import { nameColor, shortAddr, splitName } from '../../lib/identity'
 import type { FriendAction } from '../../engine/protocol'
 import styles from './ProfileCard.module.css'
@@ -93,7 +93,6 @@ export function ProfileCard({
   onFriendAction,
   onMention,
   onViewProfile,
-  onBlock,
   onClose
 }: {
   user: ChatUser
@@ -102,13 +101,11 @@ export function ProfileCard({
   me?: { address?: string } | null
   /** Relationship of the local user to this profile — drives the friend CTA + Block/Unblock. */
   relationship?: Relationship
-  /** Friend action (request/accept/reject/unblock). Block is separate (onBlock) — it confirms. */
-  onFriendAction?: (op: FriendAction, address: string) => void
+  /** Friend action (request/accept/reject/block/unblock). Block opens a confirm first. */
+  onFriendAction?: (op: FriendAction, address: string) => void //TODO to be removed
   onMention?: (name: string) => void
   /** Open the full passport (labelled "View Passport"). */
   onViewProfile?: (user: ChatUser) => void
-  /** Block a user — closes the card and asks the parent to show the confirm. */
-  onBlock?: (user: ChatUser) => void
   onClose: () => void
 }): React.JSX.Element {
   const [copied, setCopied] = useState<'name' | 'address' | null>(null)
@@ -154,9 +151,9 @@ export function ProfileCard({
     )
   }
 
-  // Block goes via onBlock, unblock via onFriendAction — the parent owns the destructive confirm.
+  // Unblock fires immediately; Block opens a confirm first — both go through onFriendAction.
   const canUnblock = relationship === 'blocked' && !!onFriendAction && !!user.address
-  const canBlock = relationship !== 'blocked' && !!onBlock && !!user.address
+  const canBlock = relationship !== 'blocked' && !!onFriendAction && !!user.address
   const hasDestructive = canUnblock || canBlock
   const hasMenu = !isMe && (!!onViewProfile || !!onMention || hasDestructive)
 
@@ -224,7 +221,19 @@ export function ProfileCard({
               </button>
             )}
             {canBlock && (
-              <button type="button" className={`${styles.row} ${styles.danger}`} onClick={() => { onClose(); onBlock?.(user) }}>
+              <button
+                type="button"
+                className={`${styles.row} ${styles.danger}`}
+                onClick={async () => {
+                  onClose()
+                  const ok = await showConfirm({
+                    title: `Block ${base}?`,
+                    body: "Blocked users won't be able to message you, join your community events, or see when you're online.",
+                    confirmLabel: 'Block'
+                  })
+                  if (ok) onFriendAction?.('block', user.address)
+                }}
+              >
                 <BlockIcon />
                 <span>Block</span>
               </button>

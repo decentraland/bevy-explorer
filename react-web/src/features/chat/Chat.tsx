@@ -259,7 +259,6 @@ export function Chat({
   me,
   onFriendAction,
   onViewProfile,
-  onBlock,
   onTeleport,
   onVisitWorld,
   relationshipOf
@@ -274,8 +273,6 @@ export function Chat({
   onFriendAction?: (op: FriendAction, address: string) => void
   /** Open the full passport for a user (View Passport). */
   onViewProfile?: (user: ChatUser) => void
-  /** Block a user from the profile card (parent shows the confirm). */
-  onBlock?: (user: ChatUser) => void
   /** A location link (x,y) in a message was clicked. */
   onTeleport?: (x: number, y: number) => void
   /** A world name (e.g. boedo.dcl.eth) in a message was clicked → prompt to jump there. */
@@ -599,7 +596,6 @@ export function Chat({
           onFriendAction={onFriendAction}
           onViewProfile={onViewProfile}
           onMention={insertMention}
-          onBlock={onBlock}
           onClose={() => setViewUser(null)}
         />
       )}

@@ -1,10 +1,14 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Chat } from '../features/chat/Chat'
+import { PopupHost, resetPopups } from '../design'
 import type { ChatLine, ChatState } from '../features/session/useEngineSession'
 import type { FriendAction, NearbyMember } from '../engine/protocol'
 import { fakeSession } from './harness'
+
+// The popup store is a module singleton — clear it between tests so open dialogs don't leak.
+afterEach(resetPopups)
 
 const line = (message: string, sender = '0xsender'): ChatLine => ({
   sender,
@@ -20,7 +24,6 @@ function renderChat(
     members?: NearbyMember[]
     onFriendAction?: (op: FriendAction, a: string) => void
     onViewProfile?: (u: { address: string; name: string }) => void
-    onBlock?: (u: { address: string; name: string }) => void
     onTeleport?: (x: number, y: number) => void
     me?: { address?: string; name?: string } | null
   } = {}
@@ -34,7 +37,10 @@ function renderChat(
     members: opts.members ?? []
   }
   const { container } = render(
-    <Chat chat={chat} me={opts.me} onFriendAction={opts.onFriendAction} onViewProfile={opts.onViewProfile} onBlock={opts.onBlock} onTeleport={opts.onTeleport} />
+    <>
+      <Chat chat={chat} me={opts.me} onFriendAction={opts.onFriendAction} onViewProfile={opts.onViewProfile} onTeleport={opts.onTeleport} />
+      <PopupHost />
+    </>
   )
   return { chat, container }
 }
@@ -71,12 +77,14 @@ describe('chat rich messages', () => {
     expect(onFriendAction).toHaveBeenCalledWith('request', '0xalice')
   })
 
-  it('the profile card delegates Block to onBlock (the parent owns the confirm)', async () => {
-    const onBlock = vi.fn()
-    renderChat({ messages: [line('yo @Alice')], members: [{ address: '0xalice', name: 'Alice' }], onBlock })
+  it('the profile card Block opens a confirm that fires onFriendAction', async () => {
+    const onFriendAction = vi.fn()
+    renderChat({ messages: [line('yo @Alice')], members: [{ address: '0xalice', name: 'Alice' }], onFriendAction })
     await userEvent.click(screen.getByRole('button', { name: '@Alice' }))
     await userEvent.click(screen.getByRole('button', { name: 'Block' }))
-    expect(onBlock).toHaveBeenCalledWith(expect.objectContaining({ address: '0xalice' }))
+    const confirm = screen.getByText('Block Alice?').closest('[role="dialog"]') as HTMLElement
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Block' }))
+    expect(onFriendAction).toHaveBeenCalledWith('block', '0xalice')
   })
 
   it('View Passport from the menu opens the passport for that user', async () => {

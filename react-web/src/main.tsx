@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import '@fontsource-variable/inter/index.css' // self-hosted Inter (matches the Figma type)
 import { App } from './App'
+import { PopupHost } from './design'
 import { registerCoiServiceWorker } from './lib/coiServiceWorker'
 import './styles/global.css'
 
@@ -14,5 +15,6 @@ registerCoiServiceWorker()
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
+    <PopupHost />
   </StrictMode>
 )

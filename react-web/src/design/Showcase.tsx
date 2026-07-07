@@ -13,6 +13,7 @@ import { Panel } from './Panel'
 import { DclLogo } from './DclLogo'
 import { Avatar } from './Avatar'
 import { WearableCard, type Rarity } from './WearableCard'
+import { showConfirm, showDialog } from './popups'
 import type { IconName } from './icons'
 import { ChatBubble, DaySeparator, MemberRow } from '../features/chat/Chat'
 import { EmoteSlot } from '../features/emotes/EmoteSlot'
@@ -184,6 +185,52 @@ export function Showcase(): React.JSX.Element {
           <Button size="sm">Small</Button>
           <Button size="md">Medium</Button>
           <Button size="lg">Large</Button>
+        </div>
+      </Section>
+
+      <Section title="Dialogs (imperative popup layer — showDialog / showConfirm)">
+        <div style={row}>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              void showConfirm({
+                title: 'Block Pablo?',
+                body: "Blocked users won't be able to message you, join your community events, or see when you're online.",
+                confirmLabel: 'Block'
+              })
+            }}
+          >
+            Confirm
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              void showDialog({
+                title: 'Report submitted',
+                body: 'Thanks — our moderators will review this report.',
+                actions: [{ id: 'ok', label: 'OK', variant: 'primary' }]
+              })
+            }}
+          >
+            Alert
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              void showDialog({
+                title: 'Unsaved changes',
+                body: 'You have unsaved changes to your avatar.',
+                width: 520,
+                actions: [
+                  { id: 'cancel', label: 'Cancel', variant: 'ghost' },
+                  { id: 'discard', label: 'Discard', variant: 'secondary' },
+                  { id: 'save', label: 'Save', variant: 'primary' }
+                ]
+              })
+            }}
+          >
+            Custom actions
+          </Button>
         </div>
       </Section>
 

@@ -25,8 +25,6 @@ import { ProfilePassport } from './features/profile/ProfilePassport'
 import { WorldVisitModal } from './components/WorldVisitModal'
 import { PermissionDialog } from './features/permissions/PermissionDialog'
 import { ProfileCard, type ChatUser, type Relationship } from './features/chat/ProfileCard'
-import { ModalShell, Button } from './design'
-import { splitName } from './lib/identity'
 import type { Profile } from './engine/protocol'
 import { FpsMeter } from './features/debug/FpsMeter'
 import { LoadingAndLogin } from './features/login/LoadingAndLogin'
@@ -115,7 +113,6 @@ function Hud(): React.JSX.Element {
   const [passport, setPassport] = useState<ChatUser | null>(null)
   // A world (e.g. boedo.dcl.eth) the user asked to jump to — drives the shared confirm modal.
   const [visitWorld, setVisitWorld] = useState<string | null>(null)
-  const [blockTarget, setBlockTarget] = useState<ChatUser | null>(null)
   // Which tab the Backpack opens on. The emote wheel's "Customise [E]" opens it on Emotes; it resets
   // to Wearables once the Backpack closes so a normal (sidebar/topbar) open lands on Wearables.
   const [backpackTab, setBackpackTab] = useState<'wearables' | 'emotes'>('wearables')
@@ -136,14 +133,6 @@ function Hud(): React.JSX.Element {
     if (session.friends.received.some((r) => r.address.toLowerCase() === a)) return 'incoming'
     if (session.friends.sent.some((r) => r.address.toLowerCase() === a)) return 'requested'
     return 'none'
-  }
-  // Blocking another user confirms first. The profile card closes on click and asks here to open a
-  // single top-level confirm (not one rebuilt per card).
-  const requestBlock = (u: ChatUser): void => setBlockTarget(u)
-  const runBlock = (): void => {
-    if (!blockTarget) return
-    session.friends.act('block', blockTarget.address)
-    setBlockTarget(null)
   }
   // Open MY OWN passport (Sidebar profile icon + the menu's "View Profile").
   const viewMyProfile = (): void => {
@@ -211,7 +200,6 @@ function Hud(): React.JSX.Element {
             me={session.profile.data}
             onFriendAction={session.friends.act}
             onViewProfile={openPassport}
-            onBlock={requestBlock}
             onTeleport={(x, y) => session.map.teleport(x, y)}
             onVisitWorld={(name) => setVisitWorld(name)}
             relationshipOf={relationshipOf}
@@ -221,7 +209,6 @@ function Hud(): React.JSX.Element {
             me={session.profile.data}
             relationshipOf={relationshipOf}
             onViewProfile={openPassport}
-            onBlock={requestBlock}
             onMention={session.chat.mention}
           />
           <SettingsPanel settings={session.settings} profile={session.profile} onNavigate={goToMenuPage} />
@@ -278,29 +265,8 @@ function Hud(): React.JSX.Element {
               onFriendAction={session.friends.act}
               onMention={session.chat.mention}
               onViewProfile={openPassport}
-              onBlock={requestBlock}
               onClose={session.closeWorldCard}
             />
-          )}
-          {blockTarget && (
-            <ModalShell
-              title={`Block ${splitName(blockTarget.name).base}?`}
-              onClose={() => setBlockTarget(null)}
-              width={420}
-              actions={
-                <>
-                  <Button variant="ghost" onClick={() => setBlockTarget(null)}>
-                    Cancel
-                  </Button>
-                  <Button variant="primary" onClick={runBlock}>
-                    Block
-                  </Button>
-                </>
-              }
-              actionsEqual
-            >
-              Blocked users won&apos;t be able to message you, join your community events, or see when you&apos;re online.
-            </ModalShell>
           )}
           {visitWorld && (
             <WorldVisitModal

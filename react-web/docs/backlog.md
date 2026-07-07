@@ -50,8 +50,16 @@ Gaps found by auditing the old system-scene (`~/dev/protocol-squad/bevy-ui-scene
    on launch (e.g. `can't init wasm queue`) and today it only hits the console. Capture engine panics
    + uncaught errors and show the user a popup (message + copy details + reload). (Old: `error-popup`
    + `error-popup-service.showErrorPopup`.)
-7. **`useConfirm` / `showAlert` (imperative dialog helpers)** — *new*. `Modal`/`ModalShell` exist but
-   each confirm is rebuilt (WorldVisitModal, ExitConfirm). (Old: `confirm-popup` / `alert-popup`.)
+7. **`showDialog` / `showConfirm` (imperative dialog helpers)** — *mostly DONE (PR #915)*. Added
+   `openPopup` + `showDialog` + `showConfirm` + `<PopupHost/>` in `src/design/popups.tsx` — an
+   imperative, stackable popup layer backed by a **module-level store** (like the `hoverPos` store,
+   read by the single `<PopupHost/>` via `useSyncExternalStore`), callable from anywhere without a
+   hook or prop-threading (a popup can open a popup). `showDialog({ title, body, actions })` renders a
+   ModalShell with an arbitrary footer (confirm / alert / custom multi-action) and resolves the chosen
+   action id (Promise); `showConfirm` is sugar resolving a boolean. The profile-card Block confirm
+   runs on it (`if (await showConfirm(…)) …`). **Remaining:** migrate the still-bespoke confirms
+   (`WorldVisitModal`, `ExitConfirm`) + the passport/community chains onto `openPopup`.
+   (Old: `confirm-popup` / `alert-popup`.)
 8. **`Badge` (standalone)** — *extract*. Badge logic is trapped inside `IconButton`; can't put a badge
    on a tab/avatar/chip without reimplementing. (Old: `notification-badge.tsx`.)
 9. **`Chip` / `Tag`** — *new*. "chip" is bespoke in ~11 files (map categories, count pills, status).
@@ -152,7 +160,12 @@ the old version-bump), `tokens.css`, and primitives the old lacks (`WearableCard
 
 ## Deliberately NOT ported
 
-- The old Redux `shownPopups` popup-stack registry — React composition + portals already handle modal
-  stacking.
+- The old Redux `shownPopups` popup-stack **store/type-registry** — React composition + portals handle
+  the *stacking* (z-order) for free, so the Redux store + `HUD_POPUP_TYPE` enum weren't ported. The
+  *imperative-open pattern* it enabled (open a popup from anywhere, popups open popups) **was** kept —
+  as `openPopup`/`showDialog` + `<PopupHost/>` — a module store rendering JSX directly (no type map,
+  no Redux store/dispatcher). `<PopupHost/>` is a top-level layer; the popups it renders use
+  `ModalShell`, which is what portals to `document.body` (to escape the HUD `--ui-scale` transform).
+  See item 7.
 - The `friendshipStateVersion` + cached-snapshot + event-bus machinery — an artifact of the SDK7
   per-frame render model; React's targeted re-renders make it unnecessary.

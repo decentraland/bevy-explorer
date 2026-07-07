@@ -157,7 +157,6 @@ export function FriendsPanel({
   me,
   relationshipOf,
   onViewProfile,
-  onBlock,
   onMention
 }: {
   friends: FriendsState
@@ -165,7 +164,6 @@ export function FriendsPanel({
   /** Friendship status for a user (drives the profile card CTA). */
   relationshipOf?: (address: string) => Relationship
   onViewProfile?: (user: ChatUser) => void
-  onBlock?: (user: ChatUser) => void
   onMention?: (name: string) => void
 }): React.JSX.Element | null {
   const [tab, setTab] = useState<Tab>('friends')
@@ -297,7 +295,6 @@ export function FriendsPanel({
           onFriendAction={friends.act}
           onViewProfile={onViewProfile}
           onMention={onMention}
-          onBlock={onBlock}
           onClose={() => setMenu(null)}
         />
       )}

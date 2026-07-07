@@ -1,7 +1,11 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ProfileCard } from '../features/chat/ProfileCard'
+import { PopupHost, resetPopups } from '../design'
+
+// The popup store is a module singleton — clear it between tests so open dialogs don't leak.
+afterEach(resetPopups)
 
 // DOMAIN: profile-card — the shared popover (chat / friends / world avatar click). Covers the
 // action set ported from bevy-ui-scene's profile-menu: relationship-driven friend CTA (Add /
@@ -11,7 +15,13 @@ const ALICE = { address: '0xalice', name: 'Alice' }
 
 function renderCard(props: Partial<React.ComponentProps<typeof ProfileCard>> = {}): { onClose: () => void } {
   const onClose = vi.fn()
-  render(<ProfileCard user={ALICE} x={20} y={20} me={{ address: '0xme' }} onClose={onClose} {...props} />)
+  // PopupHost renders the imperative confirm (Block) opened via showConfirm.
+  render(
+    <>
+      <ProfileCard user={ALICE} x={20} y={20} me={{ address: '0xme' }} onClose={onClose} {...props} />
+      <PopupHost />
+    </>
+  )
   return { onClose }
 }
 
@@ -42,13 +52,15 @@ describe('profile-card actions', () => {
     expect(onViewProfile).toHaveBeenCalledWith(expect.objectContaining({ address: '0xalice' }))
   })
 
-  // Block closes the card and delegates to the parent, which owns the single confirm dialog
-  // (the confirm-then-act flow is covered where App wires runBlock).
-  it('Block closes the card and delegates to onBlock', async () => {
-    const onBlock = vi.fn()
-    const { onClose } = renderCard({ onBlock })
+  // Block closes the card and opens a confirm (via the popup layer); confirming fires the friend action.
+  it('Block closes the card and opens a confirm that fires onFriendAction', async () => {
+    const onFriendAction = vi.fn()
+    const { onClose } = renderCard({ onFriendAction })
     await userEvent.click(screen.getByRole('button', { name: 'Block' }))
-    expect(onBlock).toHaveBeenCalledWith(expect.objectContaining({ address: '0xalice' }))
     expect(onClose).toHaveBeenCalled()
+    const confirm = screen.getByText('Block Alice?').closest('[role="dialog"]') as HTMLElement
+    expect(onFriendAction).not.toHaveBeenCalled()
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Block' }))
+    expect(onFriendAction).toHaveBeenCalledWith('block', '0xalice')
   })
 })

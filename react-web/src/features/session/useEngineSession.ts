@@ -134,6 +134,8 @@ export interface FriendsState {
   blocked: string[]
   open: boolean
   toggle: () => void
+  /* TODO: split domain data (queries) from commands — act/toggle don't belong in "State".
+   Expose commands as an imperative service/context (like the popup service), not prop-drilled. (#18) */
   /** accept/reject/cancel/delete/block/unblock a user (guest-disabled in-engine). */
   act: (op: FriendAction, address: string) => void
 }
