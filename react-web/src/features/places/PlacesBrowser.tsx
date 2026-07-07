@@ -59,7 +59,7 @@ export function PlacesBrowser({
   headExtra?: React.ReactNode
   onPick: (place: DiscoverPlace) => void
 }): React.JSX.Element {
-  const { places: list, loading, error, search, setSearch, category, setCategory, sort, setSort, section, setSection } = usePlaces()
+  const { places: list, liveWorlds, loading, error, search, setSearch, category, setCategory, sort, setSort, section, setSection } = usePlaces()
   // Local input value, debounced into the hook's `search` so we don't refetch on every keystroke.
   const [draft, setDraft] = useState(search)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -75,10 +75,14 @@ export function PlacesBrowser({
   // Highlights are derived from the full Explore-all list (most populated first / points of interest).
   // Each place belongs to ONE section only — priority Live Now → Featured → the discover grid — so a
   // place like Genesis Plaza (populated AND a POI) doesn't repeat across all three.
-  const liveNow = useMemo(
-    () => [...list].filter((p) => placePlayers(p) > 0).sort((a, b) => placePlayers(b) - placePlayers(a)).slice(0, LIVE_NOW_LIMIT),
-    [list]
-  )
+  // Live Now pools places with live worlds (worlds-content-server counts; /places is Genesis only).
+  const liveNow = useMemo(() => {
+    const ids = new Set(list.map((p) => p.id))
+    return [...list, ...liveWorlds.filter((w) => !ids.has(w.id))]
+      .filter((p) => placePlayers(p) > 0)
+      .sort((a, b) => placePlayers(b) - placePlayers(a))
+      .slice(0, LIVE_NOW_LIMIT)
+  }, [list, liveWorlds])
   const liveIds = useMemo(() => new Set(liveNow.map((p) => p.id)), [liveNow])
   const featured = useMemo(() => list.filter((p) => placeIsFeatured(p) && !liveIds.has(p.id)), [list, liveIds])
   const showHighlights = section === 'all' && category === 'all' && search.trim() === '' && !loading && !error
